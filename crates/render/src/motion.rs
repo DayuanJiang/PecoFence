@@ -476,6 +476,14 @@ impl<K: Hash + Eq + Copy> Fades<K> {
         self.map.get(key).map_or(0.0, |t| t.value_at(now))
     }
 
+    /// Hands the fade of `old` to `new` as it is (the thing it describes got a new identity,
+    /// e.g. a renamed file whose id comes from its path). `new`'s own fade, if any, is replaced.
+    pub fn rekey(&mut self, old: &K, new: K) {
+        if let Some(t) = self.map.remove(old) {
+            self.map.insert(new, t);
+        }
+    }
+
     /// True while any fade is still moving (the caller keeps requesting frames).
     pub fn busy(&self, now: Instant) -> bool {
         self.map.values().any(|t| !t.is_done(now))
@@ -584,6 +592,14 @@ mod tests {
         assert!(!f.busy(t0));
         f.snap(1, 0.0, t0);
         assert!(f.map.is_empty());
+        // A rekey carries the running fade to the new key; an absent key carries nothing.
+        f.set(true, 4, 1.0, t0);
+        let mid = t0 + Duration::from_millis(50);
+        f.rekey(&4, 8);
+        assert_eq!(f.value(&4, mid), 0.0);
+        assert!((f.value(&8, mid) - 0.5).abs() < 1e-3);
+        f.rekey(&2, 6);
+        assert_eq!(f.map.len(), 1);
     }
 
     #[test]

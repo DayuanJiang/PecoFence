@@ -176,17 +176,19 @@ impl FenceViewState {
         let old_ids: Vec<ItemId> = self.items.iter().map(|i| i.id).collect();
         // Keep icons / labels for unchanged items.
         let mut old: HashMap<ItemId, ItemView> = self.items.drain(..).map(|i| (i.id, i)).collect();
+        let icons = self.icons.borrow();
         self.items = items
             .into_iter()
             .map(|mut n| {
-                if let Some(o) = old.remove(&n.id)
-                    && o.icon_key == n.icon_key
-                    && o.name == n.name
-                {
+                let Some(o) = old.remove(&n.id) else {
+                    return n;
+                };
+                if o.icon_key == n.icon_key && o.name == n.name {
                     n.icon = o.icon;
                     n.icon_px = o.icon_px;
                     n.icon_fade = o.icon_fade;
                     n.icon_waited = o.icon_waited;
+                    n.icon_stand_in = o.icon_stand_in;
                     n.label = o.label;
                     n.icon_failed = o.icon_failed;
                     n.type_label = o.type_label;
@@ -196,10 +198,24 @@ impl FenceViewState {
                     if o.size == n.size {
                         n.size_label = o.size_label;
                     }
+                } else if o.icon.is_some() {
+                    // The same item under a new name or icon key (a rename; a per-file key
+                    // holds the path): its picture stays up, as in Explorer, until the lookup
+                    // for the new key answers (`ensure_icons_and_labels`, no fade). It keeps
+                    // the draw key it was uploaded under, and size 0 asks for the new one.
+                    tracing::debug!(
+                        item = ?n.id,
+                        key_changed = o.icon_key != n.icon_key,
+                        "item changed: its icon stays up until the new one arrives"
+                    );
+                    n.icon_stand_in = Some(o.draw_key(&icons));
+                    n.icon = o.icon;
+                    n.icon_px = 0;
                 }
                 n
             })
             .collect();
+        drop(icons);
         // `old` now holds only the removed items: their fades leave with them.
         if !old.is_empty() {
             self.item_hover.prune(now, |k| !old.contains_key(k));
@@ -389,7 +405,7 @@ impl FenceViewState {
                 y,
                 w: c.w,
                 h: c.h,
-                icon_key: icons.draw_key(&o.icon_key, o.icon_px),
+                icon_key: o.draw_key(&icons),
                 icon: o.icon,
                 label: o.label.unwrap_or(o.name),
                 date: o.date_label.unwrap_or_default(),

@@ -848,11 +848,11 @@ impl FenceWindow {
                 if let Some(motion) = v.item_motion.remove(&old) {
                     v.item_motion.insert(new, motion);
                 }
-                let now = Instant::now();
-                v.item_hover.prune(now, |id| *id != old);
-                v.item_sel.prune(now, |id| *id != old);
-                v.drop_fades.prune(now, |id| *id != old);
-                v.search_dim.prune(now, |id| *id != old);
+                // Its hover and selection fills stay as they are (no snap off and fade back in).
+                v.item_hover.rekey(&old, new);
+                v.item_sel.rekey(&old, new);
+                v.drop_fades.rekey(&old, new);
+                v.search_dim.rekey(&old, new);
                 if v.renaming == Some(old) {
                     v.renaming = Some(new);
                 }
@@ -1608,7 +1608,7 @@ impl FenceWindow {
             for item in &v.items {
                 out.insert(icons.draw_key(&item.icon_key, px));
                 if item.icon.is_some() && item.icon_px != px {
-                    out.insert(icons.draw_key(&item.icon_key, item.icon_px));
+                    out.insert(item.draw_key(icons));
                 }
             }
         }
@@ -1934,6 +1934,7 @@ impl FenceWindow {
                 item.icon_failed = false;
                 item.icon_waited = false;
                 item.icon_fade = None;
+                item.icon_stand_in = None;
             }
             let _ = v.redraw();
         });
@@ -2149,6 +2150,7 @@ impl FenceWindow {
                 item.icon_failed = false;
                 item.icon_waited = false;
                 item.icon_fade = None;
+                item.icon_stand_in = None;
             }
             v.device_lost = false;
             let (w, h) = window::window_rect_size(v.hwnd);

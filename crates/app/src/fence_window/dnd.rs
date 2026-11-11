@@ -1512,7 +1512,7 @@ impl FenceViewState {
             cells
                 .iter()
                 .map(|(i, _)| &self.items[*i])
-                .map(|it| icons.draw_key(&it.icon_key, it.icon_px))
+                .map(|it| it.draw_key(&icons))
                 .collect()
         };
         let drawn = match &layout {

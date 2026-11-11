@@ -709,6 +709,7 @@ impl FenceViewState {
                     Lookup::Ready(Some(img)) => {
                         item.icon = Some(img);
                         item.icon_px = icon_px;
+                        item.icon_stand_in = None;
                         if item.icon_waited {
                             // Delivered by the worker: cross-fade over the loading tile (167 ms
                             // linear); a synchronous cache hit shows at once.
@@ -721,7 +722,13 @@ impl FenceViewState {
                             started = true;
                         }
                     }
-                    Lookup::Ready(None) => item.icon_failed = true,
+                    Lookup::Ready(None) => {
+                        item.icon_failed = true;
+                        // No picture for the new key: the stand-in goes too (the glyph shows).
+                        if item.icon_stand_in.take().is_some() {
+                            item.icon = None;
+                        }
+                    }
                     // Another size's bitmap is the same picture: it stays up, and the sharper
                     // one replaces it without the fade.
                     Lookup::Pending => {
@@ -1069,7 +1076,7 @@ impl FenceViewState {
             let icons = self.icons.borrow();
             placed
                 .iter()
-                .map(|&(i, ..)| icons.draw_key(&self.items[i].icon_key, self.items[i].icon_px))
+                .map(|&(i, ..)| self.items[i].draw_key(&icons))
                 .collect()
         };
         // Removed items fade out beneath everything else (painted first).
@@ -1247,7 +1254,7 @@ impl FenceViewState {
             let icons = self.icons.borrow();
             placed
                 .iter()
-                .map(|&(i, ..)| icons.draw_key(&self.items[i].icon_key, self.items[i].icon_px))
+                .map(|&(i, ..)| self.items[i].draw_key(&icons))
                 .collect()
         };
         // Removed rows fade out beneath everything else (painted first).
