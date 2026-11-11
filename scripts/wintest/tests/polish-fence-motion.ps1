@@ -303,6 +303,21 @@ if ($Part -match 'B') {
   Pf fence roll Pusher | Out-Null; Start-Sleep -Milliseconds 800
   Pf fence move Pushed --rect '1000,488,300,280' | Out-Null; Start-Sleep -Milliseconds 900
 
+  Case 'B a fence put under an open one by the CLI'
+  # A CLI move may put a fence under the title row of one that is already open (a drop by hand
+  # is moved out of the way instead). The open one then pushes it, and where it cannot go lower
+  # the open one yields like one that has just opened; it has its height back when the other
+  # fence goes.
+  Pf fence create --title Open1 --rect '300,200,300,250' | Out-Null
+  Pf fence create --title Big --rect '650,300,300,500' | Out-Null; Start-Sleep -Milliseconds 900
+  Pf fence move Big --rect '320,300,300,500' | Out-Null; Start-Sleep -Milliseconds 1300
+  Clean 'a fence moved under an open one by the CLI' @('Open1', 'Big')
+  $f = FenceGet Open1
+  Check 'the open fence yields to the room, its saved height stays' ((WinH Open1) -eq ($WorkB - 500 - 8 - 200) -and $f.rect.h -eq 250) "window $(WinH Open1) px, saved rect h $($f.rect.h); $(State @('Open1', 'Big'))"
+  Pf fence delete Big | Out-Null; Start-Sleep -Milliseconds 1300
+  Check 'the other fence gone: the open fence has its height back' ((WinH Open1) -eq 250) "window $(WinH Open1) px"
+  Pf fence delete Open1 | Out-Null; Start-Sleep -Milliseconds 600
+
   Case 'B auto height'
   Pf fence set Pusher autoHeight true | Out-Null; Start-Sleep -Milliseconds 500
   Pf fence unroll Pusher | Out-Null; Start-Sleep -Milliseconds 1400
