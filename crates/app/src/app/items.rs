@@ -868,11 +868,12 @@ impl App {
                     .collect()
             })
             .unwrap_or_default();
-        // The pasted icons selected before stay selected, the new arrivals join them.
         let mut chosen = p.chosen.clone();
-        if ids.iter().any(|id| !chosen.contains(id)) {
-            let mut want = chosen.clone();
-            want.extend(ids.iter().copied().filter(|id| !chosen.contains(id)));
+        let renaming = w.renaming_item().is_some();
+        if renaming {
+            tracing::debug!(%fence, arrived = ids.len(), "pasted files wait: a name box is open in the fence");
+        }
+        if let Some(want) = pasted_to_select(&chosen, &ids, renaming) {
             let got = w.select_items(&want);
             tracing::debug!(
                 %fence,
@@ -1071,6 +1072,23 @@ impl App {
         }
         moved
     }
+}
+
+/// The icons a paste selects now: the pasted ones it selected before (`chosen`) plus those
+/// that have `arrived` since. None when nothing new has arrived, and while a name box is open
+/// in the fence (F2 on a file that arrived earlier): selecting scrolls, and a scroll closes
+/// the box with whatever is typed so far, so the paste waits for the next change of the files.
+pub(super) fn pasted_to_select(
+    chosen: &[ItemId],
+    arrived: &[ItemId],
+    renaming: bool,
+) -> Option<Vec<ItemId>> {
+    if renaming || arrived.iter().all(|id| chosen.contains(id)) {
+        return None;
+    }
+    let mut want = chosen.to_vec();
+    want.extend(arrived.iter().copied().filter(|id| !chosen.contains(id)));
+    Some(want)
 }
 
 /// The entries directly in `dir` (before and after a paste that copies within it).

@@ -2553,10 +2553,13 @@ impl FenceWindow {
     /// Selects exactly the icons of `items` that are shown (what a paste just put here, as
     /// Explorer selects what it pasted): the first of them becomes the keyboard cursor and is
     /// scrolled into view. Returns the ones selected; none (and the selection as it was) when
-    /// none of them is shown.
+    /// none of them is shown, or while a name box is open here (the scroll would close it).
     pub fn select_items(&self, items: &[ItemId]) -> Vec<ItemId> {
         let mut selected = Vec::new();
         self.with_view(|v| {
+            if v.renaming.is_some() {
+                return;
+            }
             let found: Vec<usize> = v
                 .items
                 .iter()

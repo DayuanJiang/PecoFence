@@ -1,5 +1,36 @@
 use super::dnd::url_shortcut_base_name;
-use super::items::pasted_duplicates;
+use super::items::{pasted_duplicates, pasted_to_select};
+
+/// Files of one paste that arrive one after the other: a later one joins the pasted icons
+/// selected before, and nothing is selected (so nothing scrolls and no name box closes) while
+/// a name box is open in the fence or when nothing new has arrived.
+#[test]
+fn a_later_pasted_file_joins_the_selection_unless_a_name_box_is_open() {
+    let (first, second) = (
+        pecofence_core::ItemId::new_v4(),
+        pecofence_core::ItemId::new_v4(),
+    );
+    // The first arrival is selected on its own.
+    assert_eq!(pasted_to_select(&[], &[first], false), Some(vec![first]));
+    // The second joins it; the first stays selected.
+    assert_eq!(
+        pasted_to_select(&[first], &[first, second], false),
+        Some(vec![first, second])
+    );
+    // F2 on the first, then the second arrives: the paste waits.
+    assert_eq!(pasted_to_select(&[first], &[first, second], true), None);
+    assert_eq!(pasted_to_select(&[], &[first], true), None);
+    // Nothing new: nothing to select again.
+    assert_eq!(
+        pasted_to_select(&[first, second], &[second, first], false),
+        None
+    );
+    // The first was renamed meanwhile (its path no longer counts as arrived): it stays selected.
+    assert_eq!(
+        pasted_to_select(&[first], &[second], false),
+        Some(vec![first, second])
+    );
+}
 use std::collections::HashSet;
 use std::path::PathBuf;
 

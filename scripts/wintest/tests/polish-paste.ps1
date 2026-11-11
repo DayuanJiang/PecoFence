@@ -8,8 +8,11 @@
 #   command line takes the keyboard from nobody.
 # Part C: the selection of pasted files gives way to the user: a file the fence's filter hid is
 #   not selected later over another selection, or long after the paste.
-# Parts: run.sh --var Part=A, B or C (about 2 min each); default all.
-if (-not $Part) { $Part = 'ABC' }
+# Part D: of two pasted files that arrive one after the other, the second leaves a click on
+#   another icon in between alone (copies a 6 GB file: 12 GB free on the box). The same for an
+#   open name box is a unit test (app/tests.rs): the copy progress window keeps the keyboard.
+# Parts: run.sh --var Part=A, B, C (about 2 min each) or D (about 2 min); default all.
+if (-not $Part) { $Part = 'ABCD' }
 trap { PfTrap $_; continue }
 
 function PpClean() {
@@ -363,6 +366,14 @@ function PpClip([string[]]$paths) {
   foreach ($p in $paths) { $list.Add($p) | Out-Null }
   [Windows.Forms.Clipboard]::SetFileDropList($list)
 }
+# A file of $gb GB that takes the copy engine several seconds (no data is written to make it;
+# 2 GB took under a second on the test boxes).
+function PpBigFile($path, $gb = 6) { $f = [IO.File]::Create($path); $f.SetLength([int64]$gb * 1GB); $f.Close() }
+function PpWaitSel($fence, $like, $sec = 12) {
+  for ($k = 0; $k -lt $sec * 4; $k++) { $s = PpSel $fence; if ($s.n -eq 1 -and $s.focus -like $like) { return $s }; Start-Sleep -Milliseconds 250 }
+  return (PpSel $fence)
+}
+
 if ($Part -match 'C') {
   New-Item -ItemType Directory -Force "$PfRun\pp-src", "$PfRun\pp-filter" | Out-Null
   foreach ($n in 'pf 报告 一月.txt', 'pf 报告 二月.txt', 'pf 预算.txt') { Set-Content -LiteralPath "$PfRun\pp-filter\$n" -Value $n -Encoding ASCII }
@@ -410,6 +421,42 @@ if ($Part -match 'C') {
   $s = PpSel 'PpFilter'
   Check 'C2 a folder change long after the paste selects nothing' ($s.n -eq 0) "$($s.text); filter: $((FenceGet 'PpFilter').filter | ConvertTo-Json -Compress)"
   Pf fence delete 'PpFilter' | Out-Null
+}
+
+if ($Part -match 'D') {
+  New-Item -ItemType Directory -Force "$PfRun\pp-src" | Out-Null
+  Set-Content -LiteralPath "$PfRun\pp-src\pp 小文件.txt" -Value 'small' -Encoding ASCII
+  foreach ($n in 'pp 清单.txt', 'pp 名单.txt') { DeskFile $n | Out-Null }
+  Start-Sleep -Seconds 2
+  # The second file of a paste is on the desktop (the copy of the first is over by then). The
+  # command line is left alone while the big file is copied.
+  function PpWaitFile($name, $sec = 150) {
+    for ($k = 0; $k -lt $sec * 4; $k++) { if (Test-Path -LiteralPath "$PfDesk\$name") { return $true }; Start-Sleep -Milliseconds 250 }
+    return $false
+  }
+
+  Case 'D1 two pasted files arrive one after the other, another icon is clicked in between'
+  Pf fence create --title 'PpLate' --rect '300,460,300,300' | Out-Null
+  Pf item move (Join-Path $PfDesk 'pp 清单.txt') (Join-Path $PfDesk 'pp 名单.txt') --to PpLate | Out-Null
+  Start-Sleep -Seconds 2
+  # The big file is copied first and shows as soon as its copy starts; the small one follows
+  # when that copy is done.
+  PpBigFile "$PfRun\pp-src\pp 大文件.bin"
+  PpClip @("$PfRun\pp-src\pp 大文件.bin", "$PfRun\pp-src\pp 小文件.txt")
+  $other = PpPt 'PpLate' 'pp 清单.txt'
+  PpClickEmpty 'PpLate'
+  CtrlKey 0x56 300
+  $s1 = PpWaitSel 'PpLate' 'pp 大文件*'
+  $early = Test-Path -LiteralPath "$PfDesk\pp 小文件.txt"
+  [G]::Click($other[0], $other[1]); Start-Sleep -Milliseconds 500
+  $mine = PpSel 'PpLate'
+  Check 'D1 setup: the first file is selected, the second is still to come, then another icon is clicked' ($s1.n -eq 1 -and $s1.focus -like 'pp 大文件*' -and -not $early -and $mine.n -eq 1 -and $mine.focus -like 'pp 清单*') "first arrival: $($s1.text); second already there: $early; after the click: $($mine.text)"
+  $came = PpWaitFile 'pp 小文件.txt'
+  Start-Sleep -Milliseconds 2500
+  $s = PpSel 'PpLate'
+  $in = WaitItemFence 'pp 小文件.txt' 'PpLate' 8
+  Shot 'D1-click-kept'
+  Check 'D1 the clicked icon stays the only one selected when the second file arrives' ($came -and $in -eq 'PpLate' -and $s.n -eq 1 -and $s.focus -like 'pp 清单*') "second file is in '$in'; $($s.text)"
 }
 
 Case 'cleanup'
