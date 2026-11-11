@@ -94,6 +94,9 @@ pub struct FenceViewState {
     /// The anchor item's unfolded label, cached by (item, cell width, name) so a content redraw
     /// (hover fade, scroll glide, marquee) does not lay the text out again.
     pub(super) unfold_cache: Option<UnfoldCache>,
+    /// The last content draw kept the scrollbar's strip clear (the fence scrolled): only for
+    /// the debug line when that changes.
+    pub(super) strip_kept: bool,
     /// A tab was just torn off; the App will hand us the new window to drag.
     pub(super) detach_pending: bool,
     pub(super) detach_cancelled: bool,

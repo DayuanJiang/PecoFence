@@ -1559,6 +1559,7 @@ impl FenceViewState {
                     insert_caret_alpha: 0.0,
                     selection_inactive: 0.0,
                     items_bottom: f32::INFINITY,
+                    plates_right: f32::INFINITY,
                 };
                 rt.draw(|session| {
                     session.set_transform(&transform);
@@ -1629,6 +1630,7 @@ impl FenceViewState {
                     origin_x: 0.0,
                     origin_y: 0.0,
                     rows_bottom: f32::INFINITY,
+                    plates_right: f32::INFINITY,
                 };
                 rt.draw(|session| {
                     session.set_transform(&transform);

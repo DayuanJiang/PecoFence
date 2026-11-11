@@ -40,6 +40,9 @@ pub const DEFAULT_LABEL_LINE_H: f32 = 16.0;
 /// Horizontal breathing room inside each icon cell. A wider gutter keeps neighbouring
 /// multi-line CJK labels from visually running together in narrow panes.
 pub const ICON_LABEL_SIDE_INSET: f32 = 8.0;
+/// A fence that scrolls keeps this strip along its right edge clear of names, values and
+/// hover / selection plates (DIPs): the resting thumb sits in it, 5 to 7 DIPs from the edge.
+pub const SCROLL_STRIP: f32 = 8.0;
 /// Left edge (DIPs from the plate's edge) the texts of a fence share: the title, a note's,
 /// clock's or script's lines, the row icons of the list and details views and the captions of
 /// date groups. The first icon column starts there too (`GridMetrics`).
@@ -303,6 +306,9 @@ pub struct RowsDraw<'a> {
     /// The rows end here (surface DIPs): 「调整大小时按整行整列对齐」 leaves the height under
     /// the whole rows empty. `f32::INFINITY` = the surface's bottom.
     pub rows_bottom: f32,
+    /// Hover and selection plates end here (surface DIPs): a fence that scrolls keeps
+    /// `SCROLL_STRIP` clear for the thumb. `f32::INFINITY` = no limit.
+    pub plates_right: f32,
 }
 
 /// Pixel snapping for hairlines. The panel applies a uniform DIP→px scale, so a 1 DIP stroke
@@ -1338,6 +1344,9 @@ pub struct ContentDraw<'a> {
     /// The items end here (surface DIPs): 「调整大小时按整行整列对齐」 leaves the height under
     /// the whole rows empty. `f32::INFINITY` = the surface's bottom.
     pub items_bottom: f32,
+    /// Hover and selection plates end here (surface DIPs): a fence that scrolls keeps
+    /// `SCROLL_STRIP` clear for the thumb. `f32::INFINITY` = no limit.
+    pub plates_right: f32,
 }
 
 /// The brushes an item-state pass needs, created once per content draw. The per-item alphas
@@ -3626,7 +3635,9 @@ impl FenceChrome {
                 if alpha <= 0.0 {
                     continue;
                 }
-                let rect = Rect::from_xywh(4.0, row.y + 1.0, (width - 8.0).max(0.0), row.h - 2.0);
+                let mut rect =
+                    Rect::from_xywh(4.0, row.y + 1.0, (width - 8.0).max(0.0), row.h - 2.0);
+                rect.right = rect.right.min(rows.plates_right).max(rect.left);
                 if alpha >= 1.0 {
                     draw_item_state(
                         session,
@@ -4492,12 +4503,15 @@ impl FenceChrome {
         let base_lines = content.label_lines as f32;
         let lines = unfold.map_or(base_lines, |(_, n)| (n as f32).max(base_lines));
         let extra = (lines - base_lines) * content.line_h;
-        let rect = Rect::from_xywh(
+        let mut rect = Rect::from_xywh(
             cell.x + 2.0,
             cell.y + 2.0,
             cell.w - 4.0,
             cell.h - 4.0 + extra,
         );
+        // A cell that reaches into the scrollbar's strip: its plate ends before the thumb (the
+        // name does too: a fence that scrolls fits none wider than `ICON_LABEL_SIDE_INSET`).
+        rect.right = rect.right.min(content.plates_right).max(rect.left);
         if alpha >= 1.0 {
             draw_item_state(
                 session,

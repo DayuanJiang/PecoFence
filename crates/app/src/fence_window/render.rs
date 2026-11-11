@@ -75,6 +75,26 @@ pub(super) struct UnfoldCache {
     pub(super) lines: u32,
 }
 
+/// Where the hover and selection plates of a content `width_dip` wide end: before the
+/// scrollbar's strip in a fence that scrolls, nowhere otherwise.
+pub(super) fn plates_right(width_dip: f32, scrolls: bool) -> f32 {
+    if scrolls {
+        width_dip - pecofence_render::fence_chrome::SCROLL_STRIP
+    } else {
+        f32::INFINITY
+    }
+}
+
+/// How much earlier the columns of the list and details views end in a fence that scrolls: a
+/// row plate ends 4 DIPs before the edge, the strip is 8.
+pub(super) fn rows_strip(scrolls: bool) -> f32 {
+    if scrolls {
+        pecofence_render::fence_chrome::SCROLL_STRIP - 4.0
+    } else {
+        0.0
+    }
+}
+
 /// Applies (or removes) the DWM system backdrop for the chosen material.
 pub(super) fn apply_system_backdrop(hwnd: HWND, mode: BackdropMode, dark: bool) {
     // DWM materials fall back to a solid colour on never-activated windows (verified on 26200),
@@ -873,7 +893,17 @@ impl FenceViewState {
         self.redraw_content()
     }
 
+    /// The columns of the rows at `width_dip`. A fence that scrolls keeps the strip along its
+    /// right edge for the thumb (`SCROLL_STRIP`): the columns end that much earlier.
     pub(super) fn columns_for(&self, width_dip: f32) -> DetailColumns {
+        self.columns_at(width_dip, self.scroll_max() > 0.0)
+    }
+
+    /// `columns_for` for a caller that already knows whether the rows scroll.
+    pub(super) fn columns_at(&self, width_dip: f32, scrolls: bool) -> DetailColumns {
+        // The columns end 8 DIPs before the edge anyway (4 inside the row plate): the plate
+        // gives way to the strip, and they keep their 4 inside it.
+        let width_dip = width_dip - rows_strip(scrolls);
         match self.layout {
             ViewLayout::Details => {
                 DetailColumns::for_width_with(width_dip, self.column_widths, self.columns_visible)
@@ -1078,8 +1108,22 @@ impl FenceViewState {
             return Ok(());
         };
         let view_h = self.scroll_view_h(&layout);
-        self.scroll_y = self.scroll_y.clamp(0.0, grid.max_scroll(view_h));
+        let max_scroll = grid.max_scroll(view_h);
+        self.scroll_y = self.scroll_y.clamp(0.0, max_scroll);
         let scroll = self.scroll_y;
+        // A fence that scrolls keeps the strip along its right edge for the thumb: its plates
+        // end before the strip.
+        let scrolls = max_scroll > 0.0;
+        if scrolls != self.strip_kept {
+            self.strip_kept = scrolls;
+            tracing::debug!(
+                fence = %self.fence_id,
+                scrolls,
+                max_scroll,
+                "scrollbar strip: plates {}",
+                if scrolls { "end before it" } else { "use the whole cell" }
+            );
+        }
         // The rows in view plus one viewport above and below, and the same around where a
         // running glide ends (End, PageDown, a thumb drag, a Peek reveal).
         let target = self.scroll_target();
@@ -1218,6 +1262,7 @@ impl FenceViewState {
             insert_caret_alpha: self.caret_alpha.value_at(now),
             selection_inactive: self.selection_inactive_now(now),
             items_bottom: view_h,
+            plates_right: plates_right(width_dip, scrolls),
         };
         let theme = self
             .material_foreground()
@@ -1253,8 +1298,20 @@ impl FenceViewState {
         let width_dip = cw as f32 / scale;
         let layout = self.layout(width_dip);
         let view_h = self.scroll_view_h(&layout);
-        self.scroll_y = self.scroll_y.clamp(0.0, layout.max_scroll(view_h));
-        let cols = self.columns_for(width_dip);
+        let max_scroll = layout.max_scroll(view_h);
+        self.scroll_y = self.scroll_y.clamp(0.0, max_scroll);
+        let scrolls = max_scroll > 0.0;
+        if scrolls != self.strip_kept {
+            self.strip_kept = scrolls;
+            tracing::debug!(
+                fence = %self.fence_id,
+                scrolls,
+                max_scroll,
+                "scrollbar strip: columns and plates {}",
+                if scrolls { "end before it" } else { "use the whole width" }
+            );
+        }
+        let cols = self.columns_at(width_dip, scrolls);
         let text_w = (cols.name_w - metrics.icon - 8.0 - 4.0).max(20.0);
         let scroll = self.scroll_y;
         // The rows in view plus one viewport above and below, and the same around where a
@@ -1413,6 +1470,7 @@ impl FenceViewState {
             origin_x: self.content_x as f32 / self.scale(),
             origin_y: self.content_y as f32 / self.scale(),
             rows_bottom: metrics.header_h + view_h,
+            plates_right: plates_right(width_dip, scrolls),
         };
         let label_color = self.behavior.label_color.get();
         let theme = self.material_foreground().with_label_color(label_color);

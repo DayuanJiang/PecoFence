@@ -134,6 +134,7 @@ impl FenceWindow {
             title_renaming: false,
             rename_after_fade: None,
             unfold_cache: None,
+            strip_kept: false,
             detach_pending: false,
             detach_cancelled: false,
             remote_drag: None,
