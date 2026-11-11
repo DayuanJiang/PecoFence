@@ -31,6 +31,20 @@ mod bindings;
     unused_imports
 )]
 mod store_bindings;
+// Windows.Graphics.Capture and the D3D11 it needs, kept apart from `bindings`
+// (tools/bindgen/capture.txt).
+#[allow(
+    non_snake_case,
+    non_upper_case_globals,
+    non_camel_case_types,
+    clippy::upper_case_acronyms,
+    clippy::missing_transmute_annotations,
+    clippy::useless_transmute,
+    clippy::useless_conversion,
+    dead_code,
+    unused_imports
+)]
+mod capture_bindings;
 
 pub mod autostart;
 pub mod clipboard;
@@ -54,6 +68,7 @@ pub mod hotkey;
 pub mod http;
 pub mod job;
 pub mod layered;
+pub mod live_capture;
 pub mod live_wallpaper;
 pub mod locale;
 pub mod memstats;

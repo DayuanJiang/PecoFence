@@ -59,9 +59,6 @@ pub fn covering(live: &[(HWND, RECT)], monitor: RECT) -> Option<(HWND, RECT)> {
     })
 }
 
-/// Why [`capture`] skips a window drawn without a redirection bitmap.
-pub const NOT_REDIRECTED: &str = "the window has no redirection bitmap";
-
 /// The window's rectangle and what `read` makes of its current pixels (`width` x `height`
 /// BGRA rows, alpha undefined), read where PrintWindow drew them: a copy of a 4K window would
 /// be 33 MB. PrintWindow with PW_RENDERFULLCONTENT is the one way that gets video and web
@@ -70,9 +67,9 @@ pub const NOT_REDIRECTED: &str = "the window has no redirection bitmap";
 /// drew nothing. An error says why there are no pixels, for example when the window's thread
 /// does not answer within 3 s (a player that hangs, or one suspended while it pauses):
 /// PrintWindow waits for that thread, without limit. A window with WS_EX_NOREDIRECTIONBITMAP
-/// is not read at all ([`NOT_REDIRECTED`]): for Wallpaper Engine's scene player PrintWindow
-/// reports success with an all-black picture, or with an earlier wallpaper's (feedback #62,
-/// main #134).
+/// is read with Windows.Graphics.Capture instead ([`crate::live_capture`]): for Wallpaper
+/// Engine's scene player PrintWindow reports success with an all-black picture, or with an
+/// earlier wallpaper's (feedback #62, main #134).
 pub fn capture<T>(
     hwnd: HWND,
     read: impl FnOnce(&[u8], u32, u32) -> T,
@@ -80,7 +77,7 @@ pub fn capture<T>(
     windows_core::link!("user32.dll" "system" fn PrintWindow(hwnd: HWND, hdc: HDC, flags: u32) -> windows_core::BOOL);
     const PW_RENDERFULLCONTENT: u32 = 2;
     if crate::desktop::ex_style(hwnd) & WS_EX_NOREDIRECTIONBITMAP as u32 != 0 {
-        return Err(NOT_REDIRECTED);
+        return crate::live_capture::capture(hwnd, read);
     }
     let rect = window_rect(hwnd);
     let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
@@ -100,8 +97,9 @@ pub fn capture<T>(
         )
     };
     if answered.0 == 0 {
-        return Err("the window did not answer within 3 s");
+        return crate::live_capture::capture(hwnd, read);
     }
+    let mut read = Some(read);
     // SAFETY: GDI objects created and released here; the DIB's bits are read while selected.
     unsafe {
         let dc = CreateCompatibleDC(None);
@@ -121,13 +119,13 @@ pub fn capture<T>(
         let dib = CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS as u32, &mut bits, None, 0);
         if dib.0.is_null() || bits.is_null() {
             let _ = DeleteDC(dc);
-            return Err("no bitmap for the capture");
+            return crate::live_capture::capture(hwnd, read.take().expect("read once"));
         }
         let old = SelectObject(dc, HGDIOBJ(dib.0));
         let drawn = PrintWindow(hwnd, dc, PW_RENDERFULLCONTENT).as_bool();
         let pixels = drawn.then(|| {
             let len = w as usize * h as usize * 4;
-            read(
+            read.take().expect("read once")(
                 std::slice::from_raw_parts(bits.cast::<u8>(), len),
                 w as u32,
                 h as u32,
@@ -136,6 +134,10 @@ pub fn capture<T>(
         SelectObject(dc, old);
         let _ = DeleteObject(HGDIOBJ(dib.0));
         let _ = DeleteDC(dc);
-        Ok((rect, pixels.ok_or("PrintWindow failed")?))
+        match pixels {
+            Some(pixels) => Ok((rect, pixels)),
+            // PrintWindow gave up on this window; Windows.Graphics.Capture may still read it.
+            None => crate::live_capture::capture(hwnd, read.take().expect("read once")),
+        }
     }
 }

@@ -7,7 +7,7 @@
 use super::visuals::{MonitorRecipe, backdrop_signature, monitor_recipes};
 use super::*;
 use crate::commands::WM_APP_LIVE_WALLPAPER;
-use pecofence_platform::live_wallpaper;
+use pecofence_platform::{live_capture, live_wallpaper};
 
 /// A visible fence's backdrop catches up with the live wallpaper this often.
 pub(super) const LIVE_REFRESH: Duration = Duration::from_secs(60);
@@ -31,7 +31,7 @@ const CAPTURE_DOWNSCALE: u32 = 4;
 /// class, through a DWM thumbnail of the window it copies (feedback #55).
 const CLONE_CLASS: &str = "WPECloneView";
 /// A settled window whose captures came back empty this many times in a row draws nothing
-/// PrintWindow can read.
+/// PrintWindow or Windows.Graphics.Capture can read.
 const BLIND_AFTER: u32 = 3;
 
 impl LiveWallpaper {
@@ -61,8 +61,8 @@ pub(super) struct LiveWallpaper {
     reported: Option<isize>,
     /// Empty captures of `hwnd` in a row once it settled.
     empty: u32,
-    /// `hwnd` cannot be captured (no redirection bitmap, or `BLIND_AFTER` empty captures): the
-    /// backdrop shows a neutral colour, not an old capture or the Windows wallpaper under it.
+    /// `hwnd` cannot be captured (nothing can read the window, or `BLIND_AFTER` empty captures):
+    /// the backdrop shows a neutral colour, not an old capture or the Windows wallpaper under it.
     pub(super) blind: bool,
 }
 
@@ -149,11 +149,9 @@ fn capture_and_build(work: Vec<(MonitorRecipe, Option<isize>)>) -> Result<Built>
                     Ok((rect, image)) => Some((Some(rect), image)),
                     Err(reason) => {
                         let copied = clone_source(window).map(capture);
-                        // A clone of a window PrintWindow cannot read is as blind as it.
+                        // A clone of a window nothing can read is as blind as it.
                         let reason = match copied {
-                            Some(Err(live_wallpaper::NOT_REDIRECTED)) => {
-                                live_wallpaper::NOT_REDIRECTED
-                            }
+                            Some(Err(live_capture::UNAVAILABLE)) => live_capture::UNAVAILABLE,
                             _ => reason,
                         };
                         let copied = copied.and_then(|copied| copied.ok());
@@ -427,13 +425,13 @@ impl App {
                 return;
             }
         };
-        // A window without a redirection bitmap never shows PrintWindow anything: its monitors
-        // go blind at once, others after BLIND_AFTER empty captures, not before the window
-        // settled (a player that just started can be black). Logged once per window once it
-        // settled, and when it goes blind.
+        // A window neither PrintWindow nor Windows.Graphics.Capture can read goes blind at once,
+        // others after BLIND_AFTER empty captures, not before the window settled (a player that
+        // just started can be black). Logged once per window once it settled, and when it goes
+        // blind.
         let mut blinded = false;
         for (hwnd, reason, copied) in empty {
-            let never = reason == live_wallpaper::NOT_REDIRECTED;
+            let never = reason == live_capture::UNAVAILABLE;
             let mut report = None;
             for live in self.live.iter_mut().filter(|l| l.hwnd == hwnd) {
                 let settled = never || live.since.elapsed() >= LIVE_SETTLE;
