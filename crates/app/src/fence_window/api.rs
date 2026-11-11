@@ -879,6 +879,28 @@ impl FenceWindow {
         });
     }
 
+    /// Glides the scroll so `item` is in view, as the arrow keys do: the user's own rename may
+    /// have moved it in a sorted fence, and the selection must not sit on an icon nobody sees.
+    /// Nothing when the item is not shown here, is in view already, or the fence is rolled up.
+    pub fn reveal_item(&self, item: ItemId) {
+        self.with_view(|v| {
+            if v.rolled_up {
+                return;
+            }
+            let Some(i) = v.items.iter().position(|it| it.id == item) else {
+                return;
+            };
+            let before = v.scroll_target();
+            v.scroll_into_view(i, true);
+            tracing::debug!(
+                index = i,
+                from = before,
+                to = v.scroll_target(),
+                "renamed item kept in view"
+            );
+        });
+    }
+
     /// Items on the clipboard via 剪切: drawn at half alpha until the clipboard changes.
     pub fn set_cut_items(&self, cut: &HashSet<ItemId>) {
         self.with_view(|v| {

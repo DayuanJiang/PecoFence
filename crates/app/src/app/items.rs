@@ -300,8 +300,22 @@ impl App {
         let suffix = crate::rename::rename_hidden_suffix(&it.display_name, file_name, it.is_folder);
         let old = it.path().map(PathBuf::from);
         let new_name = format!("{name}{suffix}");
+        let portal = self.state.is_portal_item(item);
         let toast = match self.rename_item_to(item, &new_name) {
-            Ok(_) | Err(RenameError::Unsupported) => None,
+            Ok(new) => {
+                // In a sorted fence the new name may send the icon out of view: the fence
+                // follows it (a folder fence's item has a new id, made from its path).
+                let id = if portal {
+                    crate::state::portal_item_id(&new.to_string_lossy())
+                } else {
+                    item
+                };
+                for w in self.fences.values() {
+                    w.reveal_item(id);
+                }
+                None
+            }
+            Err(RenameError::Unsupported) => None,
             Err(RenameError::Denied(e)) => match old {
                 // Explorer asks for administrator permission here; the shell's own rename
                 // does the same.
