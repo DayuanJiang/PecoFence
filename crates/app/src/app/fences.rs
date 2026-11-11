@@ -945,6 +945,19 @@ impl App {
         }
     }
 
+    /// A fence just made has faded in (`Command::BeginFenceRename`): its name box opens if
+    /// the user still sees the fence. One that was hidden meanwhile (quick hide, another
+    /// virtual desktop) or that another window covers now (a Peek that ended, a window the
+    /// user went to) gets none: the box is topmost and would open over whatever is there. The
+    /// fence keeps its name; 「重命名」 in its menu edits it later.
+    pub(super) fn begin_rename_after_fade(&mut self, fence: FenceId) {
+        let seen = self.window_for(fence).is_some_and(|w| w.title_on_screen());
+        tracing::info!(%fence, seen, "new fence faded in: name box");
+        if seen {
+            self.begin_rename(fence);
+        }
+    }
+
     /// False (with a tray notice) when the layout already holds `MAX_FENCES`.
     pub(super) fn fence_room_or_notice(&self) -> bool {
         if !self.state.fence_limit_reached() {

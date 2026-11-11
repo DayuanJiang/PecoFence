@@ -1063,8 +1063,6 @@ impl FenceWindow {
         });
     }
 
-    /// The fence-title rename popup opened / closed. While it is open a hover peek stays
-    /// expanded (the popup is part of the fence); closing it restarts the close countdown.
     /// A fence just made: its name box opens when the fade-in running now has ended (the
     /// window then asks with `Command::BeginFenceRename`), so the box does not float fully
     /// opaque on a fence that is still nearly transparent. False when no fade-in runs
@@ -1079,6 +1077,33 @@ impl FenceWindow {
         fading
     }
 
+    /// Whether the user sees the start of the title row, where the name box opens: the window
+    /// is shown on this virtual desktop, no hide is under way, and what lies at that spot of
+    /// the screen is this window (a window that covers the fence, as after a Peek has ended,
+    /// would get the topmost box on top of itself).
+    pub fn title_on_screen(&self) -> bool {
+        let hwnd = self.hwnd();
+        let (resting, scale) = match self.view.borrow().as_ref() {
+            Some(v) => (
+                !v.retired && !v.off_desktop && v.vis_fade.is_none(),
+                v.scale(),
+            ),
+            None => return false,
+        };
+        if !resting || !desktop::is_visible(hwnd) {
+            return false;
+        }
+        let r = window::window_rect(hwnd);
+        // Inside the title row, where the name starts.
+        let (x, y) = (
+            r.left + (24.0 * scale) as i32,
+            r.top + (16.0 * scale) as i32,
+        );
+        desktop::window_from_point(x, y) == hwnd
+    }
+
+    /// The fence-title rename popup opened / closed. While it is open a hover peek stays
+    /// expanded (the popup is part of the fence); closing it restarts the close countdown.
     pub fn set_title_renaming(&self, on: bool) {
         self.with_view(|v| {
             if v.title_renaming != on {

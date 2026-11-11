@@ -278,6 +278,43 @@ if ($Part -match 'F') {
   Shot 'mf6-new-fence'
   Check 'MF-6 the fence is fully shown when its name box appears' ($offer -ne [IntPtr]::Zero -and $seen -ne [IntPtr]::Zero -and $d -lt 2) "the plate differs from its resting look by $d when the box shows, $ms ms after the click (0 = fully faded in)"
   PrKey 0x1B 500
+
+  Case 'follow-up: no name box over a window that covers the new fence'
+  # A window comes over the new fence while it still fades in (as when a Peek ends, or the user
+  # goes to another window): the topmost name box must not open on top of that window.
+  $note = "$PfRun\cover.txt"; Set-Content $note 'covers the new fence' -Encoding ASCII
+  $np = Start-Process notepad.exe -ArgumentList $note -PassThru
+  for ($k = 0; $k -lt 50; $k++) { Start-Sleep -Milliseconds 200; $np.Refresh(); if ($np.MainWindowHandle -ne 0) { break } }
+  $nh = [IntPtr]$np.MainWindowHandle
+  [L]::MoveWindow($nh, 20, 560, 300, 200, $true) | Out-Null
+  Start-Sleep -Milliseconds 800
+  ParkMouse
+  $spot = FreeRect 320 220 900 200
+  $x = $spot[0]; $y = $spot[1]
+  $n0 = @(PfJson fence list).Count
+  DragTo $x $y ($x + 320) ($y + 220) 12
+  $offer = [IntPtr]::Zero
+  for ($i = 0; $i -lt 40 -and $offer -eq [IntPtr]::Zero; $i++) {
+    $h = [G]::FindWindowW('PecoFence.MarqueeOffer', [NullString]::Value)
+    if ($h -ne [IntPtr]::Zero -and [G]::IsWindowVisible($h)) { $offer = $h } else { Start-Sleep -Milliseconds 100 }
+  }
+  $o = Rect $offer; $bx = $o.R - 30; $by = [int](($o.T + $o.B) / 2)
+  Glide ($bx - 50) ($by + 30) $bx $by 8 25; Start-Sleep -Milliseconds 200
+  [G]::Click($bx, $by)
+  [L]::MoveWindow($nh, $x - 30, $y - 30, 400, 300, $true) | Out-Null
+  $seen = [IntPtr]::Zero
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  while ($sw.ElapsedMilliseconds -lt 1500) {
+    $h = [G]::FindWindowW('PecoFence.Rename', [NullString]::Value)
+    if ($h -ne [IntPtr]::Zero -and [G]::IsWindowVisible($h)) { $seen = $h; break }
+  }
+  Shot 'fu-covered-new-fence'
+  $n1 = @(PfJson fence list).Count
+  Check 'follow-up: a new fence covered by a window while it fades in gets no name box' ($nh -ne [IntPtr]::Zero -and $offer -ne [IntPtr]::Zero -and $n1 -eq $n0 + 1 -and $seen -eq [IntPtr]::Zero) "fences $n0 -> $n1; name box over the window: $($seen -ne [IntPtr]::Zero) (after $($sw.ElapsedMilliseconds) ms)"
+  if ($seen -ne [IntPtr]::Zero) { PrKey 0x1B 500 }
+  Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
+  Start-Sleep -Milliseconds 800
+  Check 'follow-up: the fence stays, without a name box, when the window is gone' ((PrRenameWin) -eq [IntPtr]::Zero -and @(PfJson fence list).Count -eq $n1) "name box: $((PrRenameWin) -ne [IntPtr]::Zero)"
 }
 
 Case 'cleanup'
