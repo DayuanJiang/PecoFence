@@ -995,12 +995,17 @@ impl App {
         false
     }
 
-    /// `fence`'s window takes the keyboard (see `Command::FocusFence`). A name box that is
-    /// open now keeps it: taking the foreground from it would close it. A fence under another
+    /// `fence`'s window takes the keyboard (see `Command::FocusFence`). A name box or a note
+    /// editor that is open now keeps it: taking the foreground from it would close it. A fence under another
     /// program's window does not take it either (see `fence_in_sight`).
     pub(super) fn give_keyboard(&mut self, fence: FenceId, why: &'static str) {
         if crate::rename::active_target().is_some() {
             tracing::debug!(%fence, why, "keyboard stays with the open name box");
+            return;
+        }
+        if crate::note_edit::is_open() {
+            // The click that closed one note's editor opened another's.
+            tracing::debug!(%fence, why, "keyboard stays with the open note editor");
             return;
         }
         let Some(w) = self.window_for(fence) else {

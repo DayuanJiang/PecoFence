@@ -2781,7 +2781,9 @@ impl App {
                     w.redraw();
                 }
             }
-            Command::FocusFence(fence) => self.give_keyboard(fence, "name box closed"),
+            Command::FocusFence(fence) => {
+                self.give_keyboard(fence, "name box or note editor closed")
+            }
             Command::DeleteFence(fence) => self.delete_fence(fence),
             Command::NewFence { x, y } => self.new_fence_near(x, y),
             Command::NewNote { x, y } => self.new_note_near(x, y),
@@ -2810,6 +2812,7 @@ impl App {
             Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
             Command::ScriptRowClicked { fence, row } => self.script_row_clicked(fence, row),
             Command::EmptyActionClicked { fence } => self.smart_everything_clicked(fence),
+            Command::EndNoteEdit => crate::note_edit::end_active(true),
             Command::NoteEdited { fence, text } => self.note_edited(fence, &text),
             Command::NewFenceRect(rect) => self.offer_new_fence(rect),
             Command::MarqueeOffer(event) => self.on_marquee_offer(event),

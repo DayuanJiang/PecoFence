@@ -309,8 +309,9 @@ pub enum Command {
     },
     /// A composition surface reported `DXGI_ERROR_DEVICE_REMOVED`: rebuild the render stack.
     DeviceLost,
-    /// The name box over this fence's title closed while it had the keyboard (Enter or Esc):
-    /// the fence takes the keyboard, so the next key reaches it and not the taskbar.
+    /// The name box over this fence's title, or the editor of this note, closed while it had
+    /// the keyboard (Enter or Esc): the fence takes the keyboard, so the next key reaches it
+    /// and not the taskbar.
     FocusFence(FenceId),
     DeleteFence(FenceId),
     NewFence {
@@ -381,6 +382,9 @@ pub enum Command {
     EmptyActionClicked {
         fence: FenceId,
     },
+    /// A press in a fence window while a note editor is open: the editor saves and closes
+    /// (a tool fence takes no focus, so the editor would not notice the click).
+    EndNoteEdit,
     /// The note editor closed with this text.
     NoteEdited {
         fence: FenceId,

@@ -1,7 +1,8 @@
 //! The note editor (便签与待办): an activatable popup over a note fence's content hosting a
 //! multi-line EDIT control (the fence itself stays `WS_EX_NOACTIVATE`, as for the rename popup).
 //!
-//! Enter starts a new line. Esc, Ctrl+Enter and a click anywhere else (focus loss) save.
+//! Enter starts a new line. Esc, Ctrl+Enter and a click anywhere else (focus loss, or a
+//! press in a fence window: `Command::EndNoteEdit`) save.
 
 use crate::commands::{Command, CommandQueue};
 use pecofence_core::FenceId;
@@ -32,6 +33,11 @@ pub fn take_open() -> Option<(FenceId, String)> {
     let session = ACTIVE.with(|a| a.borrow_mut().take())?;
     let text = session.edit.text();
     Some((session.fence, text))
+}
+
+/// Whether an editor is open.
+pub fn is_open() -> bool {
+    ACTIVE.with(|a| a.borrow().is_some())
 }
 
 /// The App applied the editor's text for `fence`: forget it.
@@ -160,6 +166,15 @@ fn on_key(vk: u32) -> bool {
 pub fn end_active(commit: bool) {
     let session = ACTIVE.with(|a| a.borrow_mut().take());
     if let Some(s) = session {
+        // Closed by its own keys (Esc, Ctrl+Enter) or by a click on something that takes no
+        // focus (a clock, a script fence): the keyboard is still here and goes on to the
+        // note's fence. A click that moved the focus keeps it where it went. Read before the
+        // popup is destroyed.
+        let had_keyboard = pecofence_platform::desktop::foreground_window() == s.window.hwnd();
+        tracing::debug!(fence = %s.fence, commit, had_keyboard, "note editor closing");
+        if had_keyboard {
+            s.queue.push(Command::FocusFence(s.fence));
+        }
         if commit {
             let text = s.edit.text();
             tracing::info!(fence = %s.fence, chars = text.chars().count(), "note editor closed");

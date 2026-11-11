@@ -254,6 +254,13 @@ impl FenceWindow {
                 }
                 if is_press(message) {
                     h.queue.push(Command::EndItemSelection { except: hwnd });
+                    // A click outside an open note editor saves and closes it. The editor
+                    // itself only notices when it loses the focus, and a press on a clock or
+                    // a script fence moves no focus.
+                    if crate::note_edit::is_open() {
+                        tracing::debug!(?hwnd, message, "a press in a fence ends the note editor");
+                        h.queue.push(Command::EndNoteEdit);
+                    }
                     // A press in the fence ends the wait of an earlier Delete for its icons
                     // to go (`UserDelete`): what leaves the fence later moves no focus.
                     if let Ok(mut guard) = h.view.try_borrow_mut()
