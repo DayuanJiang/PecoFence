@@ -225,6 +225,11 @@ impl App {
             self.fileops_running = self.fileops_running.saturating_sub(1);
             self.on_fileop_done(serial, then, result);
         }
+        // A Ctrl+Z pressed while an operation was running (`undo_last`): its step is noted now.
+        if self.undo_waiting && self.fileops_running == 0 {
+            self.undo_waiting = false;
+            self.undo_last("Ctrl+Z, after the file operation");
+        }
         if any {
             // A paste's files may be in their fence now; those the folder watcher still has
             // to report count as just pasted from here, however long the copy took.

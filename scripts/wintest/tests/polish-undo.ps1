@@ -218,6 +218,19 @@ if ($Part -match 'B') {
   $pasted = (Has 'u8 外来文件.txt') -and (FenceOf 'u8 外来文件.txt') -eq 'UA'
   Undo
   Check 'Ctrl+Z after a file copied in another folder is pasted takes the copy away again' ($pasted -and -not (Has 'u8 外来文件.txt') -and (Test-Path -LiteralPath "$PfRun\u-src\u8 外来文件.txt")) "pasted into UA=$pasted; after Ctrl+Z: on the desktop=$(Has 'u8 外来文件.txt'), original still there=$(Test-Path -LiteralPath "$PfRun\u-src\u8 外来文件.txt"); $(UndoLog)"
+
+  Case 'Ctrl+Z pressed while the delete is still running'
+  $home6 = FRect 'UA'
+  DragFence 60
+  $moved = FRect 'UA'
+  $before = (@(UFiles | ForEach-Object { $_.Name }) | Sort-Object) -join ' | '
+  ClickItem 'u2 预算表 2026'
+  Chord 0x11 0x41; Start-Sleep -Milliseconds 400
+  # Delete and Ctrl+Z with no pause: the shell's delete of several items is still running.
+  [G]::Press(0x2E); Chord 0x11 0x5A
+  Start-Sleep -Milliseconds 5000
+  $after = (@(UFiles | ForEach-Object { $_.Name }) | Sort-Object) -join ' | '
+  Check 'Ctrl+Z pressed right after Delete waits for the delete and undoes it, not the fence drag before it' ($after -eq $before -and $moved -ne $home6 -and (FRect 'UA') -eq $moved) "before: $before; after Delete and Ctrl+Z: $after; start $home6, dragged $moved, now $(FRect 'UA'); $(UndoLog)"
 }
 
 if ($Part -match 'C') {

@@ -400,6 +400,8 @@ pub struct App {
     undo: Vec<undo::UndoStep>,
     /// The 「已删除栅栏」 or 「已按规则整理」 notice with 撤销, and what it undoes.
     undo_notice: Option<(crate::notice::Notice, undo::UndoNotice)>,
+    /// Ctrl+Z was pressed while a file operation was running: it runs when that has finished.
+    undo_waiting: bool,
     /// The 「新建栅栏」 / 「在此显示文件夹…」 buttons after a desktop marquee, with its rectangle.
     marquee_offer: Option<(crate::marquee_offer::MarqueeOffer, RECT)>,
     /// The welcome, what's-new and 对话框跳转 notices may show (not under a test script or
@@ -1784,6 +1786,7 @@ impl App {
             welcome: None,
             undo: Vec::new(),
             undo_notice: None,
+            undo_waiting: false,
             marquee_offer: None,
             notices: args.exit_after_ms.is_none() && args.test_script.is_none(),
             tip_drags: HashMap::new(),

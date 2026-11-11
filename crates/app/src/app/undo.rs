@@ -207,8 +207,20 @@ impl App {
         (refiled.moved, Some(id))
     }
 
-    /// Ctrl+Z: undoes the newest step.
+    /// Ctrl+Z: undoes the newest step. A file operation started here that is still running
+    /// has no step yet (it is noted when the shell reports back): the undo waits for it and
+    /// `drain_fileops` runs it then, so a Ctrl+Z right after a Delete undoes that delete and
+    /// not the step before it.
     pub(super) fn undo_last(&mut self, from: &'static str) {
+        if self.fileops_running > 0 {
+            tracing::info!(
+                from,
+                running = self.fileops_running,
+                "undo waits for the file operation in flight"
+            );
+            self.undo_waiting = true;
+            return;
+        }
         let Some(step) = self.undo.pop() else {
             tracing::info!(from, "nothing to undo");
             return;
