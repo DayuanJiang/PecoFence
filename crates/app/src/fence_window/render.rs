@@ -1113,7 +1113,12 @@ impl FenceViewState {
                 h: c.h,
                 icon_key: key,
                 icon: item.icon.as_deref(),
-                label: item.label.as_deref().unwrap_or(&item.name),
+                // The name under an open rename box is not drawn: the box holds it.
+                label: if self.renaming == Some(item.id) {
+                    ""
+                } else {
+                    item.label.as_deref().unwrap_or(&item.name)
+                },
                 hover: alphas[i].0,
                 selection: alphas[i].1,
                 pressed: pressed == Some(i) && !dragging,

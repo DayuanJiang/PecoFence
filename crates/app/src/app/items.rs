@@ -234,21 +234,23 @@ impl App {
             it.is_folder,
         );
         let dpi = monitors::dpi_for_window(w.hwnd());
-        // In the icon view the name is centred under the icon, and so is the box's text.
+        // In the icon view the name is centred under the icon and wraps: so does the box.
         let centered = self
             .state
             .fence(fence)
             .is_some_and(|f| f.view.layout == ViewLayout::Icons);
         tracing::info!(?rect, centered, "item rename box opened");
         w.set_renaming(Some(item));
+        let label_size = self.ctx.chrome.label_size();
         crate::rename::begin_item_rename(
             rect,
             dpi,
-            crate::layout::row_text_scale(self.ctx.chrome.label_size()),
+            label_size,
+            crate::layout::row_text_scale(label_size),
             item,
             current,
             select_end,
-            centered,
+            centered.then_some(pecofence_render::fence_chrome::ICON_LABEL_SIDE_INSET),
             self.queue.clone(),
             self.theme_mode,
         );

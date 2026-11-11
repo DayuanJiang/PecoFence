@@ -115,7 +115,7 @@ if ($Part -match 'B') {
   Pf item move @($PrNames | ForEach-Object { Join-Path $PfDesk $_ }) --to Box | Out-Null
   ParkMouse; Start-Sleep -Seconds 3
   $order = @(@(PfJson item list --fence Box) | ForEach-Object { $_.name })
-  $i = [array]::IndexOf($order, '04 新年活动安排与分工.txt')
+  $i = [array]::IndexOf($order, '04 新年活动安排与分工')
   $p = CellPt 'Box' $i
   $f = FenceGet 'Box'
   $pitch = $f.windowRect.w / [int]$f.fit.columns
@@ -157,7 +157,7 @@ if ($Part -match 'B') {
   $now = @(@(PfJson item list --fence Box) | ForEach-Object { $_.name })
   Check 'MC2 Enter renames the file to the typed name' ((Test-Path -LiteralPath (Join-Path $PfDesk '短名.txt')) -and (PrRenameWin) -eq [IntPtr]::Zero) "items: $($now -join ' | ')"
   # Esc keeps the old name.
-  $i = [array]::IndexOf($now, 'a1 报告.txt'); $p = CellPt 'Box' $i
+  $i = [array]::IndexOf($now, 'a1 报告'); $p = CellPt 'Box' $i
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
   PrKey 0x71 600
   [G]::Type('不要这个名字'); Start-Sleep -Milliseconds 200
