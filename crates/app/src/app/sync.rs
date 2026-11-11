@@ -257,6 +257,9 @@ impl App {
                 }
             }
         }
+        // Copies a paste is still making go into the fence pasted into, before the sync below
+        // would file them by the rules.
+        self.claim_pasted_duplicates(None);
         // Pair RENAMED_OLD/RENAMED_NEW so the item keeps its fence membership.
         let mut pending_old: Option<PathBuf> = None;
         let mut renamed = 0usize;
@@ -347,12 +350,22 @@ impl App {
             }
             let t1 = Instant::now();
             self.refresh_all();
+            // A fence drawn before the invalidation above (the one a new file was made in,
+            // `route_pending_creation`) lost the icon request it had just made, and
+            // `refresh_all` leaves a fence with the same items alone: such a fence asks again.
+            // (With animations on the layout glide's next frame did; with them off the new
+            // folder kept its loading tile for as long as its name box was open.)
+            for w in self.fences.values() {
+                w.redraw_if_pending_icons();
+            }
             tracing::debug!(
                 refresh_all_ms = t1.elapsed().as_secs_f32() * 1000.0,
                 "fs change refresh timing"
             );
             self.schedule_save();
         }
+        // Files of a paste that this batch brought in are selected in their fence.
+        self.select_pasted();
         self.push_workspace_summary();
         // A folder shown in a fence that this batch took away is looked for from now on.
         self.arm_portal_back_check();

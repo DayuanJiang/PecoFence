@@ -1,4 +1,82 @@
 use super::dnd::url_shortcut_base_name;
+use super::items::{pasted_duplicates, pasted_to_select};
+
+/// Files of one paste that arrive one after the other: a later one joins the pasted icons
+/// selected before, and nothing is selected (so nothing scrolls and no name box closes) while
+/// a name box is open in the fence or when nothing new has arrived.
+#[test]
+fn a_later_pasted_file_joins_the_selection_unless_a_name_box_is_open() {
+    let (first, second) = (
+        pecofence_core::ItemId::new_v4(),
+        pecofence_core::ItemId::new_v4(),
+    );
+    // The first arrival is selected on its own.
+    assert_eq!(pasted_to_select(&[], &[first], false), Some(vec![first]));
+    // The second joins it; the first stays selected.
+    assert_eq!(
+        pasted_to_select(&[first], &[first, second], false),
+        Some(vec![first, second])
+    );
+    // F2 on the first, then the second arrives: the paste waits.
+    assert_eq!(pasted_to_select(&[first], &[first, second], true), None);
+    assert_eq!(pasted_to_select(&[], &[first], true), None);
+    // Nothing new: nothing to select again.
+    assert_eq!(
+        pasted_to_select(&[first, second], &[second, first], false),
+        None
+    );
+    // The first was renamed meanwhile (its path no longer counts as arrived): it stays selected.
+    assert_eq!(
+        pasted_to_select(&[first], &[second], false),
+        Some(vec![first, second])
+    );
+}
+use std::collections::HashSet;
+use std::path::PathBuf;
+
+/// A paste that copies files within their own folder: only the new entries named after a
+/// copied file count as its copies, whatever language Explorer names them in.
+#[test]
+fn pasted_copies_are_the_new_entries_named_after_a_source() {
+    let set = |names: &[&str]| -> HashSet<PathBuf> {
+        names
+            .iter()
+            .map(|n| PathBuf::from(format!(r"C:\Users\me\Desktop\{n}")))
+            .collect()
+    };
+    let known = set(&["报告.txt", "Photos", "v1.2", "notes.md", "报告 - 副本.txt"]);
+    let sources: Vec<PathBuf> = set(&["报告.txt", "Photos", "v1.2"]).into_iter().collect();
+    let now = set(&[
+        "报告.txt",
+        "Photos",
+        "v1.2",
+        "notes.md",
+        "报告 - 副本.txt",
+        // The copies: another copy of the file (Explorer numbers it) and the folders' copies
+        // (a folder's copy has the words after its whole name).
+        "报告 - 副本 (2).TXT",
+        "Photos - Copy",
+        "v1.2 - Copy",
+        // Not copies: another program's download, another type, names that only start alike.
+        "download.zip",
+        "报告 - 副本.docx",
+        "报告单.txt",
+        "notes - Copy.md",
+    ]);
+    let copies = pasted_duplicates(&known, &now, &sources);
+    let names: Vec<String> = copies
+        .iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        names,
+        ["Photos - Copy", "v1.2 - Copy", "报告 - 副本 (2).TXT"]
+    );
+    // Claimed once: entries already known are not reported again.
+    let mut known = known;
+    known.extend(copies);
+    assert!(pasted_duplicates(&known, &now, &sources).is_empty());
+}
 
 #[test]
 fn url_shortcut_names_prefer_the_browser_title() {

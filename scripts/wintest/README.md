@@ -13,7 +13,8 @@ scripts/wintest/box.sh down ec2-2              # stop the box when the round is 
 `run.sh` takes a box (`--box ec2-2`, default the first free one), copies the build and the files
 in `--extra DIR` only when they changed, checks every steps file for parse errors and for
 functions that a PowerShell alias would shadow, then runs one job per steps file in pf's desktop
-session with a fresh `C:\pf\run` and fresh PecoFence data. Output:
+session with a fresh `C:\pf\run` and fresh PecoFence data; what a job creates on pf's desktop is
+removed when it ends (a job that times out leaves its files). Output:
 
 ```
 == 186-matrix: 52 passed, 1 failed (4m10s)

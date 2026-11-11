@@ -163,6 +163,8 @@ pub struct Behavior {
     pub pushed: std::cell::RefCell<Vec<Pushed>>,
     /// For each fence window with 向上展开: the room above its bottom edge and below its top
     /// edge it may open into, the fences there sliding out of its way or not (`app/push.rs`).
+    /// With `rollUp.pushNeighbors` also for every other fence that pushes: the room below its
+    /// top edge (the room above is the work area's).
     pub expand_room: std::cell::RefCell<Vec<(HWND, i32, i32)>>,
     /// The system move / size loop in progress (one at a time: it is modal).
     pub size_move: std::cell::RefCell<Option<SizeMove>>,
@@ -236,6 +238,13 @@ impl Behavior {
     }
 }
 
+/// The snapping gap (`snapping.gapPx`, DIPs) in device px at `scale`, rounded. Every place
+/// that lines fences up takes it from here: cut off in some and rounded in others, a fence
+/// moved next to another sat 1 px closer than one sized to it (a gap of 3 at 150 %).
+pub fn snap_gap_px(gap_dip: i32, scale: f32) -> i32 {
+    (gap_dip as f32 * scale).round() as i32
+}
+
 /// Queues `FenceBoundsChanged` with `hwnd`'s window rectangle as it is now, the push shift taken
 /// out in the same breath (a push pass running before the command is handled cannot skew it).
 pub(super) fn queue_bounds_changed(
@@ -297,6 +306,9 @@ pub struct ItemView {
     local_date: Option<CivilDate>,
     /// Label fitted to the cell width (computed lazily).
     label: Option<String>,
+    /// `label` was fitted to the wider box, which showed more of the name (icons view;
+    /// `text::fit_lines_wider`). Set with `label`.
+    label_wide: bool,
     /// Details columns, formatted lazily (locale date, shell type name, KB size).
     date_label: Option<String>,
     type_label: Option<String>,
@@ -312,6 +324,10 @@ pub struct ItemView {
     icon_waited: bool,
     /// Bitmap opacity 0 → 1 (167 ms linear) after an asynchronous icon arrived.
     icon_fade: Option<Tween>,
+    /// `icon` is the picture the item showed under its previous icon key (a rename changes a
+    /// per-file key, a save a by-content one) and stays up until the new one arrives: the
+    /// draw key it is uploaded under, so it is never cached under the new key's.
+    icon_stand_in: Option<String>,
 }
 
 /// Peek search marks for one fence: matching items are highlighted, every other item dims, and
@@ -338,6 +354,14 @@ impl ItemView {
     /// The icon for `px` is still to come: none yet, or only one of another size.
     fn wants_icon(&self, px: u32) -> bool {
         (self.icon.is_none() || self.icon_px != px) && !self.icon_failed
+    }
+
+    /// Bitmap-cache key of `icon` as it is drawn: the stand-in's own key while one is up.
+    fn draw_key(&self, icons: &IconCache) -> String {
+        match &self.icon_stand_in {
+            Some(key) => key.clone(),
+            None => icons.draw_key(&self.icon_key, self.icon_px),
+        }
     }
 
     /// Details "大小" text; namespace items have none.
@@ -375,6 +399,7 @@ impl ItemView {
             size,
             local_date,
             label: None,
+            label_wide: false,
             date_label: None,
             type_label: None,
             size_label: None,
@@ -383,6 +408,7 @@ impl ItemView {
             icon_failed: false,
             icon_waited: false,
             icon_fade: None,
+            icon_stand_in: None,
         }
     }
 }

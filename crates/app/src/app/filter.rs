@@ -221,6 +221,14 @@ impl App {
         if self.fence_filter(fence) == before {
             return;
         }
+        // A filter that replaces most of what the fence shows (the first letter, clearing it)
+        // cross-fades the page instead of cutting.
+        let host = self.state.host_of(fence);
+        if self.state.active_tab_of(host) == fence
+            && let Some(w) = self.fences.get(&host)
+        {
+            w.fade_next_refill();
+        }
         self.refresh_fence(fence);
         self.sync_filter_view(fence);
         let shown = self

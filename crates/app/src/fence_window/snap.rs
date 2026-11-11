@@ -24,7 +24,10 @@ pub(super) fn merge_target_at(me: HWND, also: HWND, point: (i32, i32)) -> Option
                 return false;
             }
             let r = window::window_rect(w);
-            let title_h = (36.0 * monitors::dpi_for_window(w).max(96) as f32 / 96.0) as i32;
+            let title_h = (pecofence_render::theme::TITLE_HEIGHT
+                * monitors::dpi_for_window(w).max(96) as f32
+                / 96.0)
+                .round() as i32;
             if point.0 < r.left || point.0 >= r.right || point.1 < r.top || point.1 >= r.bottom {
                 return false;
             }
@@ -79,7 +82,7 @@ pub(super) fn update_drag_feedback(
     radius_dip: f32,
 ) {
     let dpi = monitors::dpi_for_window(hwnd).max(96);
-    let gap = (behavior.snap_gap_dip.get() as f32 * dpi as f32 / 96.0).round() as i32;
+    let gap = snap_gap_px(behavior.snap_gap_dip.get(), dpi as f32 / 96.0);
     let (covering, outline) = match merge {
         Some(target) => (true, Some(window::window_rect(target))),
         None => {

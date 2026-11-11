@@ -67,8 +67,19 @@ pub(super) fn on_mouseleave(
     if let Some(v) = guard.as_mut() {
         if !inside {
             v.set_mouse_inside(false);
+            v.lift_peek_block("the pointer left the fence");
         }
-        v.hide_tip();
+        // A tip armed over a spot of the caption (the Task View glyph, a filter tag, the lock
+        // glyph) is WM_NCMOUSEMOVE's, which can come before this message when the pointer goes
+        // from the content straight onto it: it stays while the pointer is still in the window.
+        if !inside
+            || !matches!(
+                v.tip_target,
+                Some(TipTarget::Desktops | TipTarget::FilterTag | TipTarget::Lock)
+            )
+        {
+            v.hide_tip();
+        }
         let chrome_changed = std::mem::take(&mut v.up_hovered)
             | std::mem::take(&mut v.chevron_hovered)
             | v.tab_hover.take().is_some();
@@ -123,6 +134,22 @@ pub(super) fn on_lbuttondown(
         v.cancel_pending_rename();
         v.suppress_dblclk = false;
         v.hide_tip();
+        // A press where the fence would resize without its lock (an edge band inside the
+        // plate). It is remembered for the lock glyph's pulse only further down, once nothing
+        // else has taken the press: the scrollbar, a tab, a header, a tool's row and an icon
+        // all return or go on before that.
+        v.lock_press = None;
+        let on_locked_edge = v.locked && {
+            let pt = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
+            super::nc::lock_refuses(v, &window::window_rect(hwnd), pt.x, pt.y)
+        };
+        let lock_press = |leave_only: bool| {
+            let pt = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
+            on_locked_edge.then_some(LockPress {
+                at: (pt.x, pt.y),
+                leave_only,
+            })
+        };
         // A press decides the selection itself: a pending hover select must not follow it.
         window::kill_timer(hwnd, TIMER_HOVER_SELECT);
         // Mouse interaction hides the keyboard focus ring (Explorer). The
@@ -246,6 +273,8 @@ pub(super) fn on_lbuttondown(
         }
         // Other tools (a clock) take no clicks in their content: no marquee, no selection.
         if v.shows_tool() && in_content {
+            // Nothing else takes the press: on the edge band a drag is one the lock refuses.
+            v.lock_press = lock_press(false);
             drop(guard);
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
@@ -299,6 +328,16 @@ pub(super) fn on_lbuttondown(
                         mode,
                     });
                     capture = true;
+                    // On the edge band of a locked fence the rectangle begins all the same; a
+                    // drag out of the fence from there is a resize the lock refuses.
+                    v.lock_press = lock_press(true);
+                    if v.lock_press.is_some() {
+                        tracing::debug!(
+                            fence = %fence_id,
+                            "press on a locked fence's edge over empty content: a rectangle \
+                             begins; the lock glyph pulses only if the drag leaves the fence"
+                        );
+                    }
                 }
             }
         }
@@ -971,7 +1010,7 @@ pub(super) fn on_mousewheel(
         } else {
             motion::NORMAL
         };
-        v.scroll_to(v.scroll_target() - step, cap);
+        v.scroll_to_by_wheel(v.scroll_target() - step, cap);
         if v.scroll_anim.is_none() {
             // Animations off: the offset snapped, draw it now.
             if v.marquee.is_some() {

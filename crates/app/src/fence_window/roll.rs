@@ -139,6 +139,15 @@ pub(super) fn hide_with_fade(view: &ViewCell, hwnd: HWND, exit: bool, destroy: b
     animated
 }
 
+/// The shortest time between two shadow bitmaps while an edge is dragged, from what the last
+/// one cost: six times that (the shadow then takes at most a sixth of the UI thread), never
+/// under one frame and never over `SHADOW_MIN_INTERVAL_MS`. A fence of ordinary size gets a
+/// new shadow with every frame, so it stays on the plate's edge; a very large one keeps the
+/// old 40 ms.
+pub(super) fn shadow_interval_ms(cost: Duration) -> u128 {
+    (cost.as_micros() * 6 / 1000).clamp(SHADOW_FRAME_MS, SHADOW_MIN_INTERVAL_MS)
+}
+
 /// Shows a fence's shadow window just below it. Called with no view borrow held.
 pub(super) fn show_shadow(shadow: HWND, fence: HWND) {
     desktop::show_no_activate(shadow);
@@ -163,22 +172,42 @@ impl FenceViewState {
             return;
         }
         let now = Instant::now();
-        if let Some(t) = self.shadow_uploaded
-            && now.duration_since(t).as_millis() < SHADOW_MIN_INTERVAL_MS
-        {
-            // Too soon after the previous upload: let the body render at full rate and refresh
-            // the shadow with a trailing timer instead.
-            window::set_timer(self.hwnd, TIMER_SHADOW, SHADOW_MIN_INTERVAL_MS as u32);
-            return;
+        let min_interval = shadow_interval_ms(self.shadow_cost);
+        if let Some(t) = self.shadow_uploaded {
+            let since = now.duration_since(t).as_millis();
+            if since < min_interval {
+                // Too soon after the previous upload: let the body render at full rate and
+                // refresh the shadow with a trailing timer, due when the interval since that
+                // upload is over. A timer already waiting is left alone: restarted by every
+                // size step, it let the shadow fall two intervals behind an edge that kept
+                // moving.
+                if !self.shadow_timer {
+                    self.shadow_timer = true;
+                    window::set_timer(
+                        self.hwnd,
+                        TIMER_SHADOW,
+                        (min_interval - since).max(1) as u32,
+                    );
+                }
+                return;
+            }
         }
         self.update_shadow_now();
     }
 
     pub(super) fn update_shadow_now(&mut self) {
         window::kill_timer(self.hwnd, TIMER_SHADOW);
+        self.shadow_timer = false;
         let r = self.plate_rect();
+        let resized = self.shadow.body_size() != Some((r.right - r.left, r.bottom - r.top));
+        let started = Instant::now();
         self.shadow.update(r, self.dpi);
-        self.shadow_uploaded = Some(Instant::now());
+        let now = Instant::now();
+        if resized {
+            // What a new bitmap for this size costs sets how often an edge drag may ask for one.
+            self.shadow_cost = now.duration_since(started);
+        }
+        self.shadow_uploaded = Some(now);
     }
 
     /// Screen rect of the visible plate: the window, minus a title row that title on hover
@@ -259,6 +288,7 @@ impl FenceViewState {
     pub(super) fn prepare_fade_in(&mut self, entrance: bool) -> bool {
         window::kill_timer(self.hwnd, TIMER_VISIBILITY_FINISH);
         self.vis_deadline = None;
+        self.peek_faded = false;
         if !self.motion.enabled() {
             self.vis_fade = None;
             self.reset_root();
@@ -332,6 +362,7 @@ impl FenceViewState {
     pub(super) fn begin_fade_out(&mut self, exit: bool, destroy: bool) -> bool {
         window::kill_timer(self.hwnd, TIMER_VISIBILITY_FINISH);
         self.vis_deadline = None;
+        self.peek_faded = false;
         self.hide_tip();
         // A retired window must always end in `FadeOutDone`, whoever hides it (quick hide,
         // Peek) while its exit fade is still running.
@@ -383,6 +414,7 @@ impl FenceViewState {
     pub(super) fn reset_root(&mut self) {
         window::kill_timer(self.hwnd, TIMER_VISIBILITY_FINISH);
         self.vis_deadline = None;
+        self.peek_faded = false;
         let _ = self.motion.stop(&self.root, Prop::Opacity);
         let _ = self.motion.stop(&self.root, Prop::Scale);
         self.root.set_opacity(1.0);
@@ -405,6 +437,7 @@ impl FenceViewState {
         }
         window::kill_timer(self.hwnd, TIMER_VISIBILITY_FINISH);
         self.vis_deadline = None;
+        self.peek_faded = false;
         let _ = self.motion.stop(&self.root, Prop::Opacity);
         let _ = self.motion.stop(&self.root, Prop::Scale);
         self.root.set_opacity(0.0);
@@ -412,6 +445,94 @@ impl FenceViewState {
         self.shadow_alpha = Tween::at(0.0, Instant::now());
         self.shadow_fading = false;
         self.apply_shadow_alpha(Instant::now());
+    }
+
+    /// Whether the Peek may fade this window: animations on, shown, and no show / hide fade
+    /// owns the root.
+    fn peek_fade_allowed(&self) -> bool {
+        self.motion.enabled()
+            && self.vis_fade.is_none()
+            && !self.retired
+            && !self.off_desktop
+            && desktop::is_visible(self.hwnd)
+    }
+
+    /// Peek, before the fence comes over the window that hides it: transparent, its shadow
+    /// too. The fence is raised only once this has reached the screen (a raise in the same
+    /// turn showed it opaque for a frame), then `peek_fade_to(1.0)` fades it in. False: the
+    /// Peek shows it at once, as it does with animations off.
+    pub(super) fn peek_fade_prepare(&mut self) -> bool {
+        if !self.peek_fade_allowed() {
+            tracing::debug!(
+                title = %self.title,
+                animations = self.motion.enabled(),
+                fade = ?self.vis_fade,
+                "peek fade: fence left as it is"
+            );
+            return false;
+        }
+        let now = Instant::now();
+        let _ = self.motion.stop(&self.root, Prop::Opacity);
+        self.root.set_opacity(0.0);
+        self.shadow_alpha = Tween::at(0.0, now);
+        self.shadow_fading = false;
+        self.apply_shadow_alpha(now);
+        self.peek_faded = true;
+        tracing::debug!(
+            title = %self.title,
+            "peek fade: fence made transparent before its raise"
+        );
+        true
+    }
+
+    /// Fades a fence the Peek took (`peek_fade_prepare`, or `take` for one that is opaque
+    /// now and fades out as the Peek ends) to `to`, with the dimmer: 83 ms linear, no scale,
+    /// continuing from wherever a fade in flight is; the shadow's alpha follows on the frame
+    /// clock. Nothing waits for its end: the app calls `peek_fade_rest` when the Peek is over.
+    pub(super) fn peek_fade_to(&mut self, to: f32, take: bool) -> bool {
+        if take && !self.peek_faded {
+            if !self.peek_fade_allowed() {
+                return false;
+            }
+            self.peek_faded = true;
+        }
+        if !self.peek_faded {
+            return false;
+        }
+        if let Err(e) = self
+            .motion
+            .fade_to(&self.root, to, motion::FASTER, Curve::Linear)
+        {
+            tracing::warn!(error = %e, "peek fade failed; opacity set at once");
+            let _ = self.motion.stop(&self.root, Prop::Opacity);
+            self.root.set_opacity(to);
+        }
+        let now = Instant::now();
+        self.shadow_alpha
+            .retarget(to, motion::FASTER, Curve::Linear, now);
+        self.shadow_fading = true;
+        self.frames.request();
+        tracing::debug!(title = %self.title, to, "peek fade started");
+        true
+    }
+
+    /// The Peek is over (or its fade was cancelled): opaque with its shadow again, unless a
+    /// show / hide fade took the root meanwhile or the window was hidden, which rest it
+    /// themselves.
+    pub(super) fn peek_fade_rest(&mut self) {
+        if !std::mem::take(&mut self.peek_faded) {
+            return;
+        }
+        if self.vis_fade.is_some() || !desktop::is_visible(self.hwnd) {
+            tracing::debug!(
+                title = %self.title,
+                fade = ?self.vis_fade,
+                "peek fade: rest left to the window's own fade"
+            );
+            return;
+        }
+        self.reset_root();
+        tracing::debug!(title = %self.title, "peek fade: fence opaque again");
     }
 
     /// Advances the shadow's fade for one frame (see `shadow_alpha`); true while it still moves.
@@ -453,11 +574,15 @@ impl FenceViewState {
     }
 
     /// Whether floating above other windows (Peek) draws this fence differently: a fully
-    /// transparent plate shows while it floats (`plate_visible_target`), and Liquid Glass
-    /// floats at full opacity (`material_opacity`). A fence arranged like the desktop looks
-    /// the same either way.
+    /// transparent plate shows while it floats (`plate_visible_target`), Liquid Glass floats
+    /// at full opacity (`material_opacity`), and a Fluent fence in light mode that took light
+    /// text from its plate shows dark text again (`material_foreground`). A fence arranged
+    /// like the desktop looks the same either way.
     pub(super) fn floating_changes_look(&self) -> bool {
-        !self.bare() && (self.opacity <= 0.0 || (self.theme.liquid_glass && self.opacity < 1.0))
+        !self.bare()
+            && (self.opacity <= 0.0
+                || (self.theme.liquid_glass && self.opacity < 1.0)
+                || self.peek_changes_text())
     }
 
     /// Whether the plate is shown right now: always, except on a fully transparent fence,
@@ -510,8 +635,26 @@ impl FenceViewState {
         }
     }
 
+    /// The pointer is inside the window's rectangle as it is now. No hit test, so it is safe
+    /// under the view borrow (WindowFromPoint would send WM_NCHITTEST to this window).
+    pub(super) fn pointer_in_rect(&self) -> bool {
+        let pt = window::cursor_pos();
+        let r = window::window_rect(self.hwnd);
+        pt.x >= r.left && pt.x < r.right && pt.y >= r.top && pt.y < r.bottom
+    }
+
+    /// The pointer has left the fence (or the fence opens): a hover peek may start again.
+    pub(super) fn lift_peek_block(&mut self, reason: &'static str) {
+        if std::mem::take(&mut self.peek_blocked) {
+            tracing::debug!(fence = %self.fence_id, reason, "hover peek allowed again");
+        }
+    }
+
     pub(super) fn start_roll_anim(&mut self, rolled: bool) {
         self.hide_tip();
+        if !rolled {
+            self.lift_peek_block("the fence opens");
+        }
         let now = Instant::now();
         // Painted x per tab before the target state changes: the pills slide the 64 DIP the
         // item-count reserve takes (or frees) instead of jumping there.
@@ -554,6 +697,7 @@ impl FenceViewState {
             }
         });
         self.column_collapsed = rolled && to_w.is_some();
+        self.capped_h_px = None;
         let to_h = if rolled {
             self.rolled_h_px()
         } else if let Some((_, h)) = side {
@@ -569,7 +713,27 @@ impl FenceViewState {
             self.expanded_h_px = h;
             h
         } else {
-            self.expanded_h_px.max(self.title_h_px() + 40)
+            // With pushNeighbors the fences below slide down only to the bottom of the work
+            // area: this open stops where they leave room (the content scrolls), and
+            // `expanded_h_px` keeps the height the fence opens to once there is room again.
+            // A hover peek opens in full, above the fences it cannot push (#197): it is gone
+            // again when the pointer leaves.
+            let floor = self.title_h_px() + 40;
+            let full = self.expanded_h_px.max(floor);
+            let h = self
+                .kept_room_below_px()
+                .filter(|_| !self.peeking)
+                .map_or(full, |room| full.min(room.max(floor)));
+            if h < full {
+                tracing::debug!(
+                    fence = %self.fence_id,
+                    full,
+                    opens_to = h,
+                    "the fences below cannot go lower: opening to the room they leave"
+                );
+                self.capped_h_px = Some(h);
+            }
+            h
         };
         let mid_roll = self.roll_anim.is_some();
         if rolled {
@@ -605,9 +769,11 @@ impl FenceViewState {
                 Curve::Linear,
             );
         }
-        // WinUI Expander: open 333 ms decelerate, close 167 ms with the collapse curve.
+        // Open: WinUI Expander's 333 ms decelerate. Close: 167 ms eased in and out, as Liquid
+        // Glass always closed. Expander's collapse curve (1,1,0,1) is almost vertical at
+        // mid-time: a 560 px fence lost up to 288 px in one frame and read as a cut (88 px now).
         let (dur, curve) = if rolled {
-            (motion::FAST, Curve::Collapse)
+            (motion::FAST, Curve::Smooth)
         } else {
             (motion::SLOW, Curve::Decelerate)
         };

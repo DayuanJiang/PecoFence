@@ -49,9 +49,13 @@ impl FenceViewState {
             content = true;
         }
         if self.rolled_up && self.roll_anim.is_none() {
-            // Rolled: nothing is visible, and a glide must not keep moving the hidden offset.
+            // Rolled: nothing is visible. A glide caught by the roll ends on its destination
+            // at once: the fence opens where its content was heading (back to its place after
+            // a Peek search, the row a wheel notch asked for), not part of the way there.
             self.content_busy = false;
-            self.scroll_anim = None;
+            if let Some(glide) = self.scroll_anim.take() {
+                self.scroll_y = glide.target();
+            }
             content = false;
         }
         if content {
@@ -106,12 +110,45 @@ impl FrameHandle {
         self.hwnd
     }
 
+    /// One step of a dropped window's glide to its landing place (`FenceWindow::glide_to`).
+    /// The window moves with no borrow held (WM_MOVE re-enters the handler). When it has
+    /// arrived, the app hears the bounds once more: what waits for a fence at rest (the loose
+    /// icons of 像桌面一样排列, the push pass) is laid out for where it is now. Returns whether
+    /// the window moved in this frame and whether the glide goes on.
+    fn tick_glide(&self, now: Instant) -> (bool, bool) {
+        let hwnd = self.hwnd();
+        let Some((to, done)) = self
+            .view
+            .borrow()
+            .as_ref()
+            .and_then(|v| v.glide.map(|g| g.at(now)))
+        else {
+            return (false, false);
+        };
+        let r = window::window_rect(hwnd);
+        let moved = (r.left, r.top) != to;
+        if moved {
+            let _ = window::move_window_to(hwnd, to.0, to.1);
+        }
+        if done {
+            let handles = self.view.borrow_mut().as_mut().map(|v| {
+                v.glide = None;
+                (v.queue.clone(), v.behavior.clone())
+            });
+            if let Some((queue, behavior)) = handles {
+                queue_bounds_changed(&queue, &behavior, self.id, hwnd);
+            }
+        }
+        (moved, !done)
+    }
+
     /// One compositor frame: advances the roll / auto-height animation and every other client
     /// tween. Returns true while something still moves (the app then asks the frame clock for
     /// the next frame). Re-entrancy: the window is resized with no borrow held.
     pub fn on_frame(&self, now: Instant) -> bool {
         let hwnd = self.hwnd();
-        let moved = flush_window_drag(&self.view, hwnd, now, None);
+        let (glided, gliding) = self.tick_glide(now);
+        let moved = flush_window_drag(&self.view, hwnd, now, None) | glided;
         // A title drag moved the window on mouse moves since the last frame: the backdrop
         // catches up once for where it is now.
         if let Some(v) = self.view.borrow_mut().as_mut()
@@ -145,7 +182,7 @@ impl FrameHandle {
                     let (cur_w, cur_h) = window::window_rect_size(hwnd);
                     h == cur_h && width.is_none_or(|w| w == cur_w)
                 });
-            let more = v.tick(now, draw_chrome);
+            let more = v.tick(now, draw_chrome) || gliding;
             (
                 height.map(|(h, done, rolled)| (width, h, done, rolled)),
                 more,
@@ -179,6 +216,22 @@ impl FrameHandle {
                 // Rolled up after a hover peek raised it: back among the other fences.
                 if rolled && std::mem::take(&mut v.hover_raised) {
                     v.queue.push(Command::EndHoverRaise(hwnd));
+                }
+                // Nothing of the content shows from here on: a selection nobody can see is
+                // dropped, so no later key or command acts on it.
+                if rolled {
+                    let had = v.selected.len();
+                    let _ = v.end_selection();
+                    v.focus_visible = false;
+                    v.type_ahead.clear();
+                    if had > 0 {
+                        tracing::debug!(had, "roll-up landed: the hidden selection is dropped");
+                    }
+                }
+                // The title row it shrank to is no longer under the pointer (rolled up from
+                // its menu, or with the pointer over the content): nothing to wait for.
+                if rolled && v.peek_blocked && !v.pointer_in_rect() {
+                    v.lift_peek_block("the rolled fence is not under the pointer");
                 }
             }
             // The resting window gets a crop cut for its final rect (one crop + upload per

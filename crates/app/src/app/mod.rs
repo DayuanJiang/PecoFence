@@ -237,6 +237,9 @@ struct FrameRun {
     frames: u32,
     max_gap: Duration,
     max_frame: Duration,
+    /// UI-thread time of all its frames together: divided by the frames it is the mean work
+    /// per frame, which a fast machine's even frame gaps do not show.
+    work: Duration,
 }
 
 /// Runtime-only: a desktop path we expect to appear shortly (created from a fence's "新建" menu,
@@ -247,6 +250,45 @@ struct PendingRoute {
     since: Instant,
     /// Open the inline rename popup once it lands ("新建").
     rename: bool,
+}
+
+/// Runtime-only: where the icon of a `PendingRoute` lands in its fence when it was let go
+/// between the icons there (dragged out of a folder fence, its file first moves to the
+/// desktop). Kept by the route's path in `App::route_places`; goes when the route does.
+struct RoutePlace {
+    /// In front of this icon, the one the insertion line stood before; None = after the others.
+    before: Option<ItemId>,
+    /// Centre of its drag picture at the release (unscrolled content DIPs of the fence's
+    /// window): it glides in from there (`FenceWindow::set_drop_landing`).
+    from: Option<(f32, f32)>,
+}
+
+/// Runtime-only: a paste that copies files within the folder they already live in
+/// (`FileOpThen::Duplicate`). Only the shell knows the copies' names ("xxx - 副本"), so they
+/// are found as the folder's new entries (`claim_pasted_duplicates`).
+struct PasteDup {
+    /// The file operation making the copies.
+    serial: u64,
+    fence: FenceId,
+    dir: PathBuf,
+    /// The folder's entries when the paste started, plus the copies already claimed.
+    known: HashSet<PathBuf>,
+    /// The files being copied.
+    sources: Vec<PathBuf>,
+}
+
+/// Runtime-only: the files the last paste put, or is still putting, into `fence`. They are
+/// selected there once they show, as Explorer selects what it pasted (`select_pasted`).
+struct Pasted {
+    fence: FenceId,
+    paths: Vec<PathBuf>,
+    /// The pasted icons selected so far.
+    chosen: Vec<ItemId>,
+    /// The fence's selection as the paste last left it: what was selected when it started,
+    /// then `chosen`. Once the user has selected something else, the paste selects no more.
+    left: HashSet<ItemId>,
+    /// When the paste started, or the last file operation ended after that.
+    since: Instant,
 }
 
 pub struct Args {
@@ -358,6 +400,8 @@ pub struct App {
     undo: Vec<undo::UndoStep>,
     /// The 「已删除栅栏」 or 「已按规则整理」 notice with 撤销, and what it undoes.
     undo_notice: Option<(crate::notice::Notice, undo::UndoNotice)>,
+    /// Ctrl+Z was pressed while a file operation was running: it runs when that has finished.
+    undo_waiting: bool,
     /// The 「新建栅栏」 / 「在此显示文件夹…」 buttons after a desktop marquee, with its rectangle.
     marquee_offer: Option<(crate::marquee_offer::MarqueeOffer, RECT)>,
     /// The welcome, what's-new and 对话框跳转 notices may show (not under a test script or
@@ -387,10 +431,15 @@ pub struct App {
     theme_watcher: Option<DirWatcher>,
     wallpaper_override: Option<String>,
     pending_routes: Vec<PendingRoute>,
+    route_places: HashMap<PathBuf, RoutePlace>,
     /// The virtual fence a shell drop just went to, and when: the first desktop change batch
     /// within `SHELL_DROP_CLAIM_SECS` that adds shortcuts puts them into it (the shell writes
     /// some after `Drop` returned), see `on_fs_changed`.
     shell_drop_claim: Option<(FenceId, Instant)>,
+    /// Pastes still copying files within their own folder, see `PasteDup`.
+    paste_dups: Vec<PasteDup>,
+    /// What the last paste put into its fence, until it is selected there, see `Pasted`.
+    pasted: Option<Pasted>,
     /// Previous frame's timestamp while an animation runs (frame-gap diagnostics).
     frame_prev: Option<Instant>,
     /// Cadence statistics of the animation run in progress.
@@ -425,6 +474,12 @@ pub struct App {
     peek_hit: usize,
     /// Fences the search moved to another tab, with the tab each showed before.
     peek_tabs: HashMap<FenceId, FenceId>,
+    /// Frames left until the fences a window hid at the start of the Peek are raised over it
+    /// and fade in (`prepare_peek_fade`); `None` when none waits.
+    peek_raise_in: Option<u8>,
+    /// Frames left until the fences the Peek faded are opaque again, once they are back under
+    /// the windows (`end_peek_now`); `None` when none waits.
+    peek_rest_in: Option<u8>,
     /// The search list (rows, Everything's answer, a dialog waiting behind the Peek).
     search: search::SearchState,
     /// 「安装 Everything」 is running winget.
@@ -1731,6 +1786,7 @@ impl App {
             welcome: None,
             undo: Vec::new(),
             undo_notice: None,
+            undo_waiting: false,
             marquee_offer: None,
             notices: args.exit_after_ms.is_none() && args.test_script.is_none(),
             tip_drags: HashMap::new(),
@@ -1747,7 +1803,10 @@ impl App {
             theme_watcher: None,
             wallpaper_override: args.wallpaper_override.clone(),
             pending_routes: Vec::new(),
+            route_places: HashMap::new(),
             shell_drop_claim: None,
+            paste_dups: Vec::new(),
+            pasted: None,
             frame_prev: None,
             desktop_arrange_after_frames: false,
             frame_run: FrameRun::default(),
@@ -1770,6 +1829,8 @@ impl App {
             peek_hits: Vec::new(),
             peek_hit: 0,
             peek_tabs: HashMap::new(),
+            peek_raise_in: None,
+            peek_rest_in: None,
             search: Default::default(),
             everything_installing: false,
             snap_held: false,
@@ -2393,7 +2454,7 @@ impl App {
                 self.arrange_desktop_fence();
             }
             Command::LaunchItem { item, from, inside } => self.launch(item, from, inside),
-            Command::MoveItems { items, to } => self.move_items(&items, to),
+            Command::MoveItems { items, to, at } => self.move_items_at(&items, to, at),
             Command::ReorderItems {
                 fence,
                 items,
@@ -2571,6 +2632,8 @@ impl App {
                 // (a PendingRoute bypasses the rules), the originals stay where they are.
                 if let Some(desktop) = shell::user_desktop() {
                     let made = self.create_shortcuts_in(&paths, &desktop);
+                    // One step of Ctrl+Z, like a new folder: the shortcuts go again.
+                    self.note_created_for_undo(made.clone());
                     for path in made {
                         self.pending_routes.push(PendingRoute {
                             fence: to,
@@ -2648,7 +2711,9 @@ impl App {
                     }
                 }
                 if !ids.is_empty() {
-                    self.move_items_unrecorded(&ids, to);
+                    // Desktop icons pasted (after a cut) or dropped into `to`: a step of
+                    // Ctrl+Z, like icons dragged between fences.
+                    self.move_items(&ids, to);
                 }
             }
             Command::ExternalUrlDrop {
@@ -2688,6 +2753,7 @@ impl App {
                     w.redraw();
                 }
             }
+            Command::FocusFence(fence) => self.give_keyboard(fence, "name box closed"),
             Command::DeleteFence(fence) => self.delete_fence(fence),
             Command::NewFence { x, y } => self.new_fence_near(x, y),
             Command::NewNote { x, y } => self.new_note_near(x, y),
@@ -2753,6 +2819,7 @@ impl App {
                     self.schedule_save();
                 }
             }
+            Command::BeginFenceRename(fence) => self.begin_rename_after_fade(fence),
             Command::RenameItem { fence, item } => self.begin_item_rename(fence, item),
             Command::RenameItemCommit { item, name } => {
                 self.end_item_rename_visuals();

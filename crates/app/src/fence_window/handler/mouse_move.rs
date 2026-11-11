@@ -30,6 +30,8 @@ pub(super) fn on_mousemove(
         return Some(0);
     };
     v.set_mouse_inside(true);
+    // A press on a locked fence that turns into a drag: the lock glyph pulses.
+    v.note_lock_drag((pt.x, pt.y));
     if v.marquee.is_some() {
         // Pointer outside the item area: auto-scroll per frame while the
         // button is down (`marquee_autoscroll` in `tick`).
@@ -251,6 +253,7 @@ pub(super) fn on_mousemove(
                         items: ids.clone(),
                         paths: paths.clone(),
                         offsets: offsets.clone(),
+                        in_place: false,
                     })
                 });
                 // Nested message loop until the button is released.
@@ -494,6 +497,7 @@ pub(super) fn on_mousemove(
     if in_title
         && v.rolled_up
         && !v.peeking
+        && !v.peek_blocked
         && v.roll_anim.is_none()
         && behavior.hover_peek.get()
         && !behavior.click_to_expand.get()

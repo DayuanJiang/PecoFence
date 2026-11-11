@@ -43,6 +43,40 @@ impl WindowsIconPlaces {
     }
 }
 
+/// A window on its way from `from` to `to` (screen px of its top-left corner); `t` runs 0 to 1.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct WindowGlide {
+    pub(super) from: (i32, i32),
+    pub(super) to: (i32, i32),
+    pub(super) t: Tween,
+}
+
+impl WindowGlide {
+    /// Where the window is at `now`, and whether it has arrived.
+    pub(super) fn at(&self, now: Instant) -> ((i32, i32), bool) {
+        if self.t.is_done(now) {
+            return (self.to, true);
+        }
+        let p = self.t.value_at(now);
+        let along = |a: i32, b: i32| a + ((b - a) as f32 * p).round() as i32;
+        (
+            (along(self.from.0, self.to.0), along(self.from.1, self.to.1)),
+            false,
+        )
+    }
+}
+
+/// A press the lock of a locked fence refuses to turn into a move or a resize.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct LockPress {
+    /// Screen point of the press.
+    pub(super) at: (i32, i32),
+    /// The press also began a selection rectangle (an edge band over empty content, where an
+    /// unlocked fence resizes): only a drag that leaves the fence, as a resize outward would,
+    /// counts as refused. A drag inward selects icons and is no business of the lock.
+    pub(super) leave_only: bool,
+}
+
 pub struct FenceViewState {
     pub fence_id: FenceId,
     pub title: String,
@@ -88,9 +122,15 @@ pub struct FenceViewState {
     pub(super) renaming: Option<ItemId>,
     /// The fence-title rename popup is open (a hover peek stays expanded under it).
     pub(super) title_renaming: bool,
+    /// A fence just made: when its name box was asked for. The box opens when the fade-in
+    /// running then has ended (`rename_after_fade_in`).
+    pub(super) rename_after_fade: Option<Instant>,
     /// The anchor item's unfolded label, cached by (item, cell width, name) so a content redraw
     /// (hover fade, scroll glide, marquee) does not lay the text out again.
     pub(super) unfold_cache: Option<UnfoldCache>,
+    /// The last content draw kept the scrollbar's strip clear (the fence scrolled): only for
+    /// the debug line when that changes.
+    pub(super) strip_kept: bool,
     /// A tab was just torn off; the App will hand us the new window to drag.
     pub(super) detach_pending: bool,
     pub(super) detach_cancelled: bool,
@@ -137,6 +177,12 @@ pub struct FenceViewState {
     /// A Peek search holds this fence open (a hover peek that does not close until the search
     /// has no matches here any more).
     pub(super) search_expanded: bool,
+    /// Where a Peek search scrolled this fence, per tab it scrolled (it may switch tabs): the
+    /// offset before the search first moved that tab and the offset the search last put it
+    /// at. When the search ends each goes back there, unless the user scrolled it meanwhile:
+    /// the tab on show glides, a tab that is not on show gets it into `scroll_memory`. The
+    /// search is a temporary view: the tabs it switched and the fences it expanded go back too.
+    pub(super) search_scroll: HashMap<FenceId, (f32, f32)>,
     /// Fence-wide drop wash + ring alpha (83 ms in, 167 ms out).
     pub(super) drop_wash: Tween,
     /// Insertion caret alpha (83 ms) and the slot it is (still) drawn at while fading out.
@@ -148,6 +194,12 @@ pub struct FenceViewState {
     /// Layout motion: items gliding to new cells / fading in, and removed items fading out.
     pub(super) item_motion: HashMap<ItemId, ItemMotion>,
     pub(super) leaving: Vec<LeavingItem>,
+    /// The filter box changed the filter: when the next `replace_items` brings a whole new
+    /// list (a refill, not a rearrangement), it cross-fades instead of cutting.
+    pub(super) fade_next_refill: bool,
+    /// Icons of our own just let go on this fence: when, and where the centre of each one's
+    /// drag picture was (unscrolled content DIPs). The next list refresh starts them there.
+    pub(super) drop_landing: Option<(Instant, HashMap<ItemId, (f32, f32)>)>,
     /// A fade was still running when the surface was last drawn: `tick` redraws it.
     pub(super) content_busy: bool,
     pub(super) chrome_busy: bool,
@@ -216,6 +268,8 @@ pub struct FenceViewState {
     pub(super) refuses_drops: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
     pub(super) label_w: f32,
+    /// The wider box an icon's name may take (`ensure_icons_and_labels`); `label_w` without one.
+    pub(super) label_wide_w: f32,
     /// An item near the viewport was still waiting for its icon at the last content draw
     /// (`ensure_icons_and_labels`): a delivered batch then redraws this window.
     pub(super) icons_pending: bool,
@@ -235,15 +289,22 @@ pub struct FenceViewState {
     /// Portal 上一级: the folder just left, which the parent's `set_items` selects and scrolls
     /// into view (Explorer), with the focus ring if it was showing.
     pub(super) select_after_nav: Option<(ItemId, bool)>,
+    /// The user's own Delete (key or menu) of some items is under way (see `UserDelete`). When
+    /// the focused item goes with them, the item that followed it takes the focus and the
+    /// selection (`focus_after_delete`).
+    pub(super) user_delete: Option<UserDelete>,
     /// Smooth-scroll client tween (the offset is rasterised into the D2D content surface, so
     /// the surface is redrawn per frame from `tick`). Its target is where pending input
     /// accumulates: a second wheel notch retargets from the anticipated end, not from the
     /// current frame.
-    pub(super) scroll_anim: Option<Tween>,
+    pub(super) scroll_anim: Option<ScrollGlide>,
     pub(super) dpi: u32,
     pub(super) theme: Theme,
     /// Last contrast choice for a clear plate; interior mutability keeps the draw API read-only.
     pub(super) glass_dark_text: Cell<Option<bool>>,
+    /// Fluent: whether the text had the halo when it was last picked (it keeps its state near
+    /// its threshold, like the colour). Reset with `glass_dark_text`.
+    pub(super) plate_halo: Cell<bool>,
     pub(super) backdrops: Rc<BackdropSets>,
     pub(super) backdrop_crop: Option<Image>,
     /// Screen rect (left, top, width, height) `backdrop_crop` was cut for. While the height
@@ -350,6 +411,13 @@ pub struct FenceViewState {
     pub(super) rail_grow: bool,
     /// Mouse move/resize disabled (menu "锁定位置和大小").
     pub(super) locked: bool,
+    /// A left press on a locked fence where it would move or resize without the lock, and
+    /// that nothing else took (no scrollbar, icon, tab or button): a drag from there pulses
+    /// the lock glyph once (`note_lock_drag`).
+    pub(super) lock_press: Option<LockPress>,
+    /// When the lock glyph's pulse started (the lock refused a drag): its opacity dips to 0.4
+    /// and comes back within `LOCK_PULSE`.
+    pub(super) lock_pulse: Option<Instant>,
     /// 向上展开: each expansion opens upward where the fence fits above its title row, else
     /// downward (`clearance::expand_side`); the title row stays where the user put it.
     pub(super) expand_upward: bool,
@@ -411,6 +479,10 @@ pub struct FenceViewState {
     pub(super) vis_fade: Option<VisFade>,
     pub(super) vis_gen: usize,
     pub(super) vis_deadline: Option<Instant>,
+    /// The Peek fades this fence with its dimmer (`peek_fade_prepare`): the root opacity and
+    /// the shadow's alpha are the Peek's until `peek_fade_rest`, or until a show / hide fade
+    /// takes them over.
+    pub(super) peek_faded: bool,
     /// What the current whole-window fade did so far (see `FadeTrace`).
     pub(super) fade_trace: FadeTrace,
     /// `FenceWindow::retire` was called: the window is fading out for good and lives only in
@@ -436,6 +508,10 @@ pub struct FenceViewState {
     pub(super) shadow: ShadowWindow,
     /// When the shadow bitmap was last uploaded (throttle for interactive resizing).
     pub(super) shadow_uploaded: Option<Instant>,
+    /// TIMER_SHADOW is waiting to bring the shadow up to date after a throttled size step.
+    pub(super) shadow_timer: bool,
+    /// What the last shadow bitmap for a new size cost to make and present.
+    pub(super) shadow_cost: Duration,
     /// Constant alpha of the shadow window (0..=1), a client tween mirroring the root's
     /// whole-window fade: a layered HWND has no compositor property, so `tick` re-issues the
     /// cached shadow bitmap with the sampled alpha each frame while `shadow_fading`.
@@ -455,6 +531,18 @@ pub struct FenceViewState {
     /// A hover peek (or a file drag) opened it and raised it above the other fences
     /// (`Command::RaiseForHover`): the roll-up that follows puts it back.
     pub(super) hover_raised: bool,
+    /// Rolled up on request (the chevron, a title click, the menu, the CLI) with the pointer
+    /// on the fence: a hover peek must not open it again under that resting pointer. Lifted
+    /// when the pointer leaves the fence, and by any expand.
+    pub(super) peek_blocked: bool,
+    /// Open, but only as tall as the fences below leave room for (`rollUp.pushNeighbors`:
+    /// they slide down, at most to the bottom of the work area): the window's height now.
+    /// `expanded_h_px` keeps the full height, which is what is saved and what the fence opens
+    /// to again once there is room. None when the window is as tall as `expanded_h_px`.
+    pub(super) capped_h_px: Option<i32>,
+    /// Let go over another fence: the window glides from where it was dropped to the free
+    /// spot it lands on (`FenceWindow::glide_to`), ticked by the frame clock.
+    pub(super) glide: Option<WindowGlide>,
     /// The app is placing the window (`FenceWindow::place_window`, a cancelled drag put back):
     /// the rect it sets is already in the target monitor's pixels, so a WM_DPICHANGED sent
     /// inside that SetWindowPos (a move onto a monitor with another scale) must not scale it
@@ -488,6 +576,9 @@ impl FenceViewState {
         // the same physical rectangle, so geometry alone cannot validate the old crop.
         self.backdrop_rect = None;
         self.expanded_h_px = (self.expanded_h_px as f32 * new_dpi as f32 / old).round() as i32;
+        self.capped_h_px = self
+            .capped_h_px
+            .map(|h| (h as f32 * new_dpi as f32 / old).round() as i32);
         self.expanded_w_px = (self.expanded_w_px as f32 * new_dpi as f32 / old).round() as i32;
         self.reload_icons_and_labels();
         self.snap_item_motion();
@@ -566,15 +657,35 @@ impl FenceViewState {
         if self.grid() == grid && self.layout == layout {
             return false;
         }
+        // Icons / list / details picked for the tab on show: the old view fades out under the
+        // new one (the tab switch's cross-fade without its slide). A tab switch brings its own
+        // swap; icon size, label lines and spacing steps (Ctrl+wheel, a slider) stay cuts.
+        let cross_fade = self.layout != layout
+            && restore.is_none()
+            && self.outgoing.is_empty()
+            && self.content_swap_shows();
         if self.layout != layout {
             self.scroll_anim = None;
             // A genuine layout change starts at the top; a tab switch between tabs of
             // different layouts keeps the restored offset (the redraw clamps it).
             self.scroll_y = restore.unwrap_or(0.0);
             self.reset_item_fades();
+            tracing::debug!(
+                fence = %self.fence_id,
+                from = ?self.layout,
+                to = ?layout,
+                cross_fade,
+                tab_switch = restore.is_some(),
+                swapping = !self.outgoing.is_empty(),
+                "view mode changed"
+            );
         }
         self.take_grid(grid);
         self.snap_item_motion();
+        if cross_fade {
+            // After `take_grid`: the swap draws the new panel once, in the new view.
+            self.begin_content_swap(0);
+        }
         let _ = self.redraw();
         true
     }

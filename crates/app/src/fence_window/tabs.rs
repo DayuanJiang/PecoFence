@@ -324,6 +324,14 @@ impl FenceViewState {
         let _ = self.redraw_content();
     }
 
+    /// A content swap would be seen: the fence is open and at rest, on screen, animations on.
+    pub(super) fn content_swap_shows(&self) -> bool {
+        !self.rolled_up
+            && !self.height_animating()
+            && self.motion.enabled()
+            && desktop::is_visible(self.hwnd)
+    }
+
     /// Ends the content swaps at once: every outgoing panel is parked as a spare and the new
     /// panel rests at its final place. Called on completion (of the newest swap; older
     /// batches use the same durations, so they have finished by then), and by anything that
@@ -499,17 +507,25 @@ impl FenceViewState {
         // With the count and chevron hidden the strip runs on to the right padding, the same
         // end its clip uses; otherwise the next tab lands whole under a resting pointer after
         // each hover switch, and the switches run on to the last tab.
+        // A locked fence keeps the lock glyph's slot before the chevron's place clear, with
+        // the chevron hidden too.
+        let lock_w = self.deco.lock_w();
         let reserve = if self.behavior.hide_count_and_chevron.get() {
-            TAB_LEFT
+            if lock_w > 0.0 {
+                TAB_RIGHT_RESERVE + lock_w
+            } else {
+                TAB_LEFT
+            }
         } else if self.roll_target() {
             TAB_RIGHT_RESERVE
+                + lock_w
                 + pecofence_render::fence_chrome::header_count_width(
-                    width,
+                    width - lock_w,
                     self.tabs.len(),
                     self.deco.title_x(),
                 )
         } else {
-            TAB_RIGHT_RESERVE
+            TAB_RIGHT_RESERVE + lock_w
         };
         (TAB_LEFT, (width - reserve).max(TAB_LEFT))
     }
@@ -528,7 +544,13 @@ impl FenceViewState {
         }
         let scroll = self.tab_scroll.get();
         let width = self.chrome_panel.size_px().0 as f32 / self.scale();
-        let rest_right = (width - TAB_LEFT).max(end);
+        // The lock glyph shows whenever the pointer is over the fence, not only on the title
+        // row: a locked fence's strip never runs on under its slot.
+        let rest_right = if self.locked {
+            end
+        } else {
+            (width - TAB_LEFT).max(end)
+        };
         Some(StripClip {
             left: start,
             // Without a chevron (the user hid it) the strip always runs on to its place.

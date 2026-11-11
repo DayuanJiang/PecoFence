@@ -178,6 +178,30 @@ pub fn fit_lines_counted(
     (fitted, n)
 }
 
+/// [`fit_lines`] for a name that may take a wider box when that shows more of it: the fitted
+/// text and whether it is for `wide` DIPs. The wider box is taken only when the whole name fits
+/// it and the usual `width` either cuts the name or needs more lines (「README.md」 on one line
+/// in place of 「README.m / d」, twelve CJK glyphs whole in place of ten and an ellipsis). A
+/// name that fills its lines either way keeps the usual width and so the room beside it.
+pub fn fit_lines_wider(
+    text: &str,
+    format: &TextFormat,
+    width: f32,
+    wide: f32,
+    max_lines: u32,
+) -> (String, bool) {
+    let (usual, lines) = fit_lines_counted(text, format, width, max_lines);
+    if wide <= width || (usual == text && lines <= 1) {
+        return (usual, false);
+    }
+    let (wider, wide_lines) = fit_lines_counted(text, format, wide, max_lines);
+    if wider == text && (usual != text || wide_lines < lines) {
+        (wider, true)
+    } else {
+        (usual, false)
+    }
+}
+
 /// Single-line fit: the longest prefix of `text` (plus an ellipsis) whose width is at most
 /// `max_width` DIPs in `format`. Returns `text` unchanged when it fits.
 pub fn fit_width(text: &str, format: &TextFormat, max_width: f32) -> String {
@@ -221,6 +245,36 @@ pub fn measure_width(text: &str, format: &TextFormat) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The wider box is for the names it helps: one line in place of two, the whole name in
+    /// place of a cut one. Names that fill their lines either way keep the usual width.
+    #[test]
+    fn a_name_takes_the_wider_box_only_when_it_shows_more() {
+        let format = TextFormat::new("Segoe UI", 12.0)
+            .unwrap()
+            .with_word_wrapping(windows_canvas::WordWrapping::Wrap);
+        let fit = |name: &str| fit_lines_wider(name, &format, 64.0, 74.0, 2);
+        // Two lines at 64 DIPs, one at 74.
+        assert_eq!(fit("README.md"), ("README.md".to_string(), true));
+        assert_eq!(fit("项目计划书稿"), ("项目计划书稿".to_string(), true));
+        // One line already: nothing to gain.
+        assert_eq!(fit("报告"), ("报告".to_string(), false));
+        // Two whole lines either way (5 + 3 or 6 + 2 glyphs): the usual width.
+        assert_eq!(
+            fit("项目计划书稿修订"),
+            ("项目计划书稿修订".to_string(), false)
+        );
+        // Cut at 64 DIPs (ten glyphs in two lines), whole at 74 (twelve).
+        assert_eq!(
+            fit("很长的文件名甲乙丙丁戊己"),
+            ("很长的文件名甲乙丙丁戊己".to_string(), true)
+        );
+        // Cut either way: the usual width, with its ellipsis.
+        let (long, wide) = fit("很长很长的文件名甲乙丙丁戊己庚辛");
+        assert!(!wide && long.ends_with('…'), "{long}");
+        // No wider box on offer (a fence that scrolls).
+        assert!(!fit_lines_wider("README.md", &format, 64.0, 64.0, 2).1);
+    }
 
     #[test]
     fn a_label_is_shaped_once_per_box_size() {

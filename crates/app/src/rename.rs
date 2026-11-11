@@ -8,7 +8,7 @@ use pecofence_core::{FenceId, ItemId};
 use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
 };
-use pecofence_platform::{HWND, RECT, edit, monitors, msg};
+use pecofence_platform::{HWND, RECT, desktop, dwm, edit, monitors, msg, paint};
 use pecofence_render::ThemeMode;
 use std::cell::RefCell;
 
@@ -32,6 +32,42 @@ struct RenameSession {
     target: RenameTarget,
     queue: CommandQueue,
     committed: bool,
+    /// An item's box: the frame around its edit (the fence title's edit fills its popup).
+    item_box: Option<ItemBox>,
+}
+
+/// Most lines the box of an icon's name grows to: the lines a selected icon's name unfolds to
+/// (`fence_window`'s `MAX_UNFOLD_LINES`). A longer name scrolls inside the box.
+const ITEM_BOX_MAX_LINES: i32 = 6;
+/// Narrowest text area of an icon's name box in DIPs (the label of 48 px icons at the default
+/// text size), so a smaller icon size still gets a box one can type in.
+const ITEM_BOX_MIN_TEXT_DIP: f32 = 64.0;
+
+/// How far the edit of an icon's name box reaches into the frame on each side, in DIPs: the
+/// control (GDI text: whole-pixel advances, a font height rounded to a pixel) can lay a name
+/// out a pixel or two wider than the label under the icon does (DirectWrite), so a name that
+/// just fills its lines there took one line more in the box (「a1 新年活动安排与分工」 at
+/// 150 %: two lines under the icon, three in the box). Two DIPs a side are 4, 6 and 6 px at
+/// 100, 125 and 150 %. The box itself is no wider for it and the centred text stays where it
+/// was. Part S of polish-rename.ps1 compares the lines of names and boxes.
+const ITEM_BOX_SLACK_DIP: f32 = 2.0;
+
+/// Where the edit sits in an item's rename box (pixels): `pad_x` in from the left and right
+/// edges. An icon's name starts `pad_top` under the top edge and the box is as tall as its
+/// lines (`line_h` each, at most `max_lines`) plus `pad_bottom`; a row's name (`max_lines`
+/// 1) is one line centred in the box.
+#[derive(Clone, Copy, Debug)]
+struct ItemBox {
+    /// Read by the tests only, since the edit has its own inset (`edit_x`).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pad_x: i32,
+    /// Where the edit itself starts and ends: `pad_x`, less `ITEM_BOX_SLACK_DIP` for an
+    /// icon's name.
+    edit_x: i32,
+    pad_top: i32,
+    pad_bottom: i32,
+    line_h: i32,
+    max_lines: i32,
 }
 
 /// Opens (or re-targets) the rename popup over `fence_hwnd`'s title bar, or over `row` (screen
@@ -77,7 +113,7 @@ pub fn begin_inline_rename(
         RenameTarget::Fence(fence),
         current,
         None,
-        false,
+        None,
         queue,
         mode,
     );
@@ -139,49 +175,164 @@ pub fn has_reserved_char(name: &str) -> bool {
         .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
 }
 
-/// Opens the rename popup over an item's label rectangle (screen pixels). `select_end` limits
-/// the initial selection to the first N UTF-16 units (the stem); `None` selects everything.
-/// `text_scale` (`layout::row_text_scale`) makes the box and its 14 DIP text larger with the
-/// item names (Windows' text size). `centered`: an icon's name, centred under it, keeps the
-/// text centred in the box (Explorer), so a short name stays over its own column.
+/// Opens the rename popup over an item's label rectangle (screen pixels), its text in the
+/// names' own font: `font_face` at `font_dip` DIPs. `select_end` limits the initial selection
+/// to the first N UTF-16 units (the stem); `None` selects everything.
+///
+/// `wrap_inset_dip` (the label's side inset inside its cell) is given for an icon's name,
+/// centred under the icon: the box is centred too, wraps the name at the label's width like
+/// the Windows desktop's and is as tall as the name's lines, growing and shrinking while the
+/// user types. `None` is a list or details row: one line over the name column, `text_scale`
+/// (`layout::row_text_scale`) taller with Windows' text size.
 #[allow(clippy::too_many_arguments)]
 pub fn begin_item_rename(
     label_rect: RECT,
     dpi: u32,
+    font_face: &str,
+    font_dip: f32,
     text_scale: f32,
     item: ItemId,
     current: String,
     select_end: Option<usize>,
-    centered: bool,
+    wrap_inset_dip: Option<f32>,
     queue: CommandQueue,
     mode: ThemeMode,
 ) {
-    let scale = dpi.max(96) as f32 / 96.0;
-    let min_w = (96.0 * text_scale * scale) as i32;
-    let h = (item_rename_h(text_scale) * scale) as i32;
-    let mut r = label_rect;
-    if r.right - r.left < min_w {
-        let cx = (r.left + r.right) / 2;
-        r.left = cx - min_w / 2;
-        r.right = cx + min_w / 2;
-    }
-    r.bottom = r.top + h;
+    let (r, item_box) = item_box_place(label_rect, dpi, font_dip, text_scale, wrap_inset_dip);
     begin_rename_at(
         r,
         dpi,
-        14.0 * text_scale,
+        font_dip,
         RenameTarget::Item(item),
         current,
         select_end,
-        centered,
+        Some((item_box, font_face)),
         queue,
         mode,
     );
 }
 
-/// Height of the item rename box in DIPs (24 for the default 12 DIP names).
+/// Screen rectangle of an item's rename box as it opens and where its edit sits in it
+/// (`line_h` is filled in once the edit exists). See [`begin_item_rename`] for the arguments.
+fn item_box_place(
+    label_rect: RECT,
+    dpi: u32,
+    font_dip: f32,
+    text_scale: f32,
+    wrap_inset_dip: Option<f32>,
+) -> (RECT, ItemBox) {
+    let scale = dpi.max(96) as f32 / 96.0;
+    let px = |dip: f32| (dip * scale).round() as i32;
+    // Around the text: the 1 px border and 3 DIPs at the sides, the border and 1 DIP above,
+    // 1 DIP and the 2 DIP accent line below.
+    let (pad_x, pad_top, pad_bottom) = (px(3.0) + 1, px(1.0) + 1, px(3.0));
+    let mut r = label_rect;
+    let item_box = match wrap_inset_dip {
+        Some(inset) => {
+            let text_w =
+                (r.right - r.left - 2 * px(inset)).max(px(ITEM_BOX_MIN_TEXT_DIP * text_scale));
+            let w = text_w + 2 * pad_x;
+            r.left = (r.left + r.right - w) / 2;
+            r.right = r.left + w;
+            // The first text line sits where the label's first line was. One line tall until
+            // the edit says how many the name takes (`fit_item_box`).
+            r.top -= pad_top;
+            r.bottom = r.top + pad_top + px(font_dip * 4.0 / 3.0) + pad_bottom;
+            ItemBox {
+                pad_x,
+                // Never onto the 1 px border.
+                edit_x: (pad_x - px(ITEM_BOX_SLACK_DIP)).max(1),
+                pad_top,
+                pad_bottom,
+                line_h: 0,
+                max_lines: ITEM_BOX_MAX_LINES,
+            }
+        }
+        None => {
+            let min_w = (96.0 * text_scale * scale) as i32;
+            if r.right - r.left < min_w {
+                let cx = (r.left + r.right) / 2;
+                r.left = cx - min_w / 2;
+                r.right = cx + min_w / 2;
+            }
+            r.bottom = r.top + (item_rename_h(text_scale) * scale) as i32;
+            ItemBox {
+                pad_x,
+                edit_x: pad_x,
+                pad_top: 0,
+                pad_bottom: 0,
+                line_h: 0,
+                max_lines: 1,
+            }
+        }
+    };
+    (r, item_box)
+}
+
+/// Height of a row's rename box in DIPs (24 for the default 12 DIP names).
 pub fn item_rename_h(text_scale: f32) -> f32 {
     (24.0 * text_scale).round()
+}
+
+/// Sizes an icon's name box to the lines its text takes now (the popup keeps its top edge and
+/// width) and shows the text from its first line; a text with more lines than the box may
+/// show keeps the caret in view instead. Rows keep their one line.
+fn fit_item_box(window: &Window, ctl: &edit::EditControl, b: &ItemBox) {
+    if b.max_lines <= 1 {
+        return;
+    }
+    let count = ctl.line_count();
+    let lines = count.min(b.max_lines);
+    let r = window.window_rect();
+    let w = r.right - r.left;
+    let h = b.pad_top + lines * b.line_h + b.pad_bottom;
+    if h != r.bottom - r.top {
+        tracing::debug!(
+            lines = count,
+            shown = lines,
+            height = h,
+            "item rename box resized"
+        );
+        let _ = window.set_bounds(r.left, r.top, w, h);
+        ctl.set_bounds(b.edit_x, b.pad_top, w - 2 * b.edit_x, lines * b.line_h);
+        paint::invalidate(window.hwnd());
+    }
+    if count <= b.max_lines {
+        ctl.scroll_to_top();
+    } else {
+        ctl.scroll_caret();
+    }
+}
+
+/// The frame of an item's box around its edit, a Fluent text box like the filter box's: the
+/// edit's background, a 1 px border and the accent line of a focused box along the bottom.
+fn paint_item_box(hwnd: HWND, dark: bool, dpi: u32) {
+    let p = paint::Paint::begin(hwnd);
+    let px = |dip: f32| (dip * dpi.max(96) as f32 / 96.0).round() as i32;
+    let (w, h) = window::window_rect_size(hwnd);
+    let back = edit::back_color(dark);
+    let border = if dark { 0x0050_5050 } else { 0x00C8_C8C8 };
+    let all = RECT {
+        left: 0,
+        top: 0,
+        right: w,
+        bottom: h,
+    };
+    p.fill(all, back);
+    p.round_rect(all, px(4.0), back, border);
+    let accent = pecofence_platform::theme::accent_palette().map_or(0x00B8_5F00, |c| {
+        let rgb = if dark { c.light2 } else { c.dark1 };
+        u32::from_le_bytes([rgb[0], rgb[1], rgb[2], 0])
+    });
+    p.fill(
+        RECT {
+            left: px(3.0),
+            top: h - px(2.0),
+            right: w - px(3.0),
+            bottom: h,
+        },
+        accent,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -192,10 +343,13 @@ fn begin_rename_at(
     target: RenameTarget,
     current: String,
     select_end: Option<usize>,
-    centered: bool,
+    item_box: Option<(ItemBox, &str)>,
     queue: CommandQueue,
     mode: ThemeMode,
 ) {
+    // An item's box edits its name in the names' own font.
+    let font_face = item_box.map(|(_, face)| face);
+    let item_box = item_box.map(|(b, _)| b);
     end_active(false);
     CLASS.with(|c| {
         if c.borrow().is_none() {
@@ -203,16 +357,35 @@ fn begin_rename_at(
         }
     });
     let (x, y, w, h) = (r.left, r.top, r.right - r.left, r.bottom - r.top);
+    let dark = mode == ThemeMode::Dark;
+    let framed = item_box.is_some();
 
     let handler: MessageHandler = Box::new(
-        move |_hwnd: HWND, message: u32, wparam: usize, _lparam: isize| -> Option<isize> {
+        move |hwnd: HWND, message: u32, wparam: usize, _lparam: isize| -> Option<isize> {
             match message {
                 msg::WM_COMMAND if msg::hi_u16(wparam) == edit::EN_KILLFOCUS => {
                     end_active(true);
                     Some(0)
                 }
+                // The text changed: an icon's name box follows its lines.
+                msg::WM_COMMAND if framed && msg::hi_u16(wparam) == edit::EN_CHANGE => {
+                    ACTIVE.with(|a| {
+                        if let Ok(a) = a.try_borrow()
+                            && let Some(s) = a.as_ref()
+                            && let Some(b) = &s.item_box
+                        {
+                            fit_item_box(&s.window, &s.edit, b);
+                        }
+                    });
+                    Some(0)
+                }
                 edit::WM_CTLCOLOREDIT_MSG => {
                     ACTIVE.with(|a| a.borrow().as_ref().map(|s| s.edit.ctl_color(wparam)))
+                }
+                msg::WM_ERASEBKGND if framed => Some(1),
+                msg::WM_PAINT if framed => {
+                    paint_item_box(hwnd, dark, dpi);
+                    Some(0)
                 }
                 msg::WM_DESTROY => Some(0),
                 _ => None,
@@ -227,35 +400,58 @@ fn begin_rename_at(
         // popup closes as soon as it loses focus, so it never stays over another app.
         WindowBuilder::new(class)
             .title("rename")
-            .style(style::POPUP)
+            .style(style::POPUP | style::CLIPCHILDREN)
             .ex_style(style::EX_TOOLWINDOW | style::EX_TOPMOST)
             .bounds(x, y, w, h)
             .create(handler)
             .ok()
     });
     let Some(window) = created else { return };
-    let create = if centered {
-        edit::EditControl::create_centered
-    } else {
-        edit::EditControl::create
+    let ctl = match item_box {
+        // An icon's name: wraps, sized to its lines below.
+        Some(b) if b.max_lines > 1 => edit::EditControl::create_wrapping(
+            window.hwnd(),
+            w - 2 * b.edit_x,
+            h - b.pad_top - b.pad_bottom,
+            dpi,
+            font_dip,
+            &current,
+            dark,
+            on_key,
+        ),
+        _ => edit::EditControl::create(window.hwnd(), w, h, dpi, font_dip, &current, dark, on_key),
     };
-    let Ok(ctl) = create(
-        window.hwnd(),
-        w,
-        h,
-        dpi,
-        font_dip,
-        &current,
-        mode == ThemeMode::Dark,
-        on_key,
-    ) else {
+    let Ok(mut ctl) = ctl else {
         return;
     };
+    if let Some(face) = font_face {
+        ctl.set_font(face, font_dip, dpi);
+        ctl.set_margins(0);
+    }
+    let item_box = item_box.map(|b| ItemBox {
+        line_h: ctl.line_height(),
+        ..b
+    });
+    if let Some(b) = &item_box {
+        // Rounded as a Fluent text box; Windows draws the corners where it can (a GPU).
+        let _ = dwm::set_corner_preference(window.hwnd(), dwm::CornerPreference::RoundSmall);
+        if b.max_lines > 1 {
+            ctl.set_bounds(b.edit_x, b.pad_top, w - 2 * b.edit_x, b.line_h);
+            fit_item_box(&window, &ctl, b);
+        } else {
+            // A row's name: one line, centred in the box, starting where the row's text does.
+            ctl.set_bounds(b.edit_x, (h - b.line_h) / 2, w - 2 * b.edit_x, b.line_h);
+        }
+    }
     window::show_normal(window.hwnd());
     window::bring_to_front(window.hwnd());
     match select_end {
         Some(n) => ctl.focus_and_select(0, n as i32),
         None => ctl.focus_and_select_all(),
+    }
+    if let Some(b) = &item_box {
+        // The selection put the caret after the stem: the name still shows from its start.
+        fit_item_box(&window, &ctl, b);
     }
     ACTIVE.with(|a| {
         *a.borrow_mut() = Some(RenameSession {
@@ -264,6 +460,7 @@ fn begin_rename_at(
             target,
             queue,
             committed: false,
+            item_box,
         })
     });
 }
@@ -304,8 +501,13 @@ pub fn active_target() -> Option<RenameTarget> {
 
 /// Finishes the active session (if any). `commit` pushes the new title.
 pub fn end_active(commit: bool) {
-    let session = ACTIVE.with(|a| a.borrow_mut().take());
+    // `try_with`: when the app quits with a name box open, the box is destroyed while the
+    // thread-local is torn down, and its EN_KILLFOCUS comes back here (a panic at exit before).
+    let session = ACTIVE.try_with(|a| a.borrow_mut().take()).ok().flatten();
     if let Some(mut s) = session {
+        // Closed by its own keys (Enter, Esc), not by a click elsewhere: the keyboard is still
+        // here and goes on to the fence below. Read before the popup is destroyed.
+        let had_keyboard = desktop::foreground_window() == s.window.hwnd();
         if commit && !s.committed {
             s.committed = true;
             let text = s.edit.text();
@@ -314,11 +516,20 @@ pub fn end_active(commit: bool) {
                     s.queue.push(Command::RenameFence { fence, title: text })
                 }
                 RenameTarget::Item(item) => {
-                    s.queue.push(Command::RenameItemCommit { item, name: text })
+                    // The wrapping box takes pasted text as it comes: a line break is no
+                    // part of a file name.
+                    let name = text.replace(['\r', '\n'], "");
+                    s.queue.push(Command::RenameItemCommit { item, name })
                 }
             }
         } else {
             s.queue.push(Command::RedrawAll);
+        }
+        if let RenameTarget::Fence(fence) = s.target {
+            tracing::debug!(%fence, commit, had_keyboard, "fence name box closed");
+            if had_keyboard {
+                s.queue.push(Command::FocusFence(fence));
+            }
         }
         drop(s.edit);
         drop(s.window);
@@ -327,7 +538,91 @@ pub fn end_active(commit: bool) {
 
 #[cfg(test)]
 mod tests {
-    use super::{has_reserved_char, invalid_file_name, rename_hidden_suffix, rename_select_len};
+    use super::{
+        ITEM_BOX_MAX_LINES, has_reserved_char, invalid_file_name, item_box_place,
+        rename_hidden_suffix, rename_select_len,
+    };
+    use pecofence_platform::RECT;
+
+    /// An icon's name box is centred under the icon, as wide as the label's text plus its
+    /// frame (inside the cell at the default icon size), with its first line where the label's
+    /// was; a row's box keeps the name column and one line.
+    #[test]
+    fn an_icons_name_box_is_centred_and_stays_in_its_cell() {
+        // The label area of a 48 px icon's cell at 100 %: the cell's 80 px, 8 px inset.
+        let label = RECT {
+            left: 300,
+            top: 220,
+            right: 380,
+            bottom: 252,
+        };
+        let (r, b) = item_box_place(label, 96, 12.0, 1.0, Some(8.0));
+        assert_eq!(
+            (r.left, r.right),
+            (304, 376),
+            "64 px of text, 4 px frame each side"
+        );
+        assert!(r.left >= label.left && r.right <= label.right);
+        // The edit reaches into the frame (never onto the border): the name gets more room
+        // than its label had, in a box that is no wider.
+        assert!(b.edit_x >= 1 && b.edit_x < b.pad_x);
+        assert!(r.right - r.left - 2 * b.edit_x > 64);
+        assert_eq!(
+            r.top + b.pad_top,
+            label.top,
+            "first line where the label's was"
+        );
+        assert_eq!(
+            r.bottom - r.top,
+            b.pad_top + 16 + b.pad_bottom,
+            "one line to start"
+        );
+        assert_eq!(b.max_lines, ITEM_BOX_MAX_LINES);
+        // 150 %: everything scales, still centred on the cell.
+        let label = RECT {
+            left: 450,
+            top: 330,
+            right: 570,
+            bottom: 378,
+        };
+        let (r, b) = item_box_place(label, 144, 12.0, 1.0, Some(8.0));
+        assert_eq!(r.left + r.right, label.left + label.right);
+        assert_eq!(r.right - r.left, 96 + 2 * b.pad_x);
+        assert!(r.left >= label.left && r.right <= label.right);
+        // A 32 px icon's narrower cell still gets 64 px of text to type in.
+        let small = RECT {
+            left: 300,
+            top: 220,
+            right: 364,
+            bottom: 252,
+        };
+        let (r, b) = item_box_place(small, 96, 12.0, 1.0, Some(8.0));
+        assert_eq!(r.right - r.left, 64 + 2 * b.pad_x);
+        assert_eq!(r.left + r.right, small.left + small.right);
+        // A row: the name column as given, one line, 24 px high.
+        let row = RECT {
+            left: 332,
+            top: 162,
+            right: 712,
+            bottom: 190,
+        };
+        let (r, b) = item_box_place(row, 96, 12.0, 1.0, None);
+        assert_eq!((r.left, r.right, r.top, r.bottom), (332, 712, 162, 186));
+        assert_eq!(b.max_lines, 1);
+        assert_eq!(
+            b.edit_x, b.pad_x,
+            "a row's text starts where the row's does"
+        );
+        // A narrow name column still gets the 96 px minimum, centred.
+        let narrow = RECT {
+            left: 400,
+            top: 162,
+            right: 440,
+            bottom: 190,
+        };
+        let (r, _) = item_box_place(narrow, 96, 12.0, 1.0, None);
+        assert_eq!((r.left, r.right), (372, 468));
+    }
 
     #[test]
     fn names_no_file_can_have_are_invalid() {

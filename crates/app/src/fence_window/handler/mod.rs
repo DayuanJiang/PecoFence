@@ -254,6 +254,13 @@ impl FenceWindow {
                 }
                 if is_press(message) {
                     h.queue.push(Command::EndItemSelection { except: hwnd });
+                    // A press in the fence ends the wait of an earlier Delete for its icons
+                    // to go (`UserDelete`): what leaves the fence later moves no focus.
+                    if let Ok(mut guard) = h.view.try_borrow_mut()
+                        && let Some(v) = guard.as_mut()
+                    {
+                        v.forget_user_delete("a press in the fence");
+                    }
                 }
                 match message {
                     msg::WM_MOUSEACTIVATE => Some(msg::MA_NOACTIVATE),

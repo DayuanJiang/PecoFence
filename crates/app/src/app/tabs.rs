@@ -89,7 +89,7 @@ impl App {
                         (r.right - r.left, r.bottom - r.top)
                     }
                 };
-                let title_h = (36.0 * scale) as i32;
+                let title_h = (self.ctx.theme.borrow().title_height * scale).round() as i32;
                 let mut left = x - w / 2;
                 let mut top = y - title_h / 2;
                 if let Some(work) = &work {
@@ -159,7 +159,7 @@ impl App {
                 let (rw, rh) = (r.right - r.left, r.bottom - r.top);
                 let pt = window::cursor_pos();
                 let scale = monitors::dpi_for_window(new_hwnd).max(96) as f32 / 96.0;
-                let title_h = (36.0 * scale) as i32;
+                let title_h = (self.ctx.theme.borrow().title_height * scale).round() as i32;
                 let placed = RECT {
                     left: pt.x - rw / 2,
                     top: pt.y - title_h / 2,

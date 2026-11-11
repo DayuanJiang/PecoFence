@@ -134,15 +134,7 @@ fn stack(slots: &mut [Slot], enabled: bool) {
                 if !below {
                     continue;
                 }
-                // The resting gap under `a`, or under its title row when `b` rests inside `a`'s
-                // resting height (a fence saved expanded over the ones it pushes).
-                let rest_h = if b.base >= a.base + a.rest_h {
-                    a.rest_h
-                } else {
-                    a.title_h
-                };
-                let slack = (b.base - (a.base + rest_h)).clamp(0, b.gap);
-                let need = a.y + a.h + slack;
+                let need = a.y + a.h + down_slack(a, b);
                 if need > y {
                     y = need;
                     binding = Some(i);
@@ -240,6 +232,76 @@ fn rooms(slots: &[Slot]) -> Vec<(HWND, i32)> {
     rooms
 }
 
+/// The gap `b` keeps under `a` when `a` pushes it: the one it rests at, at most `b.gap`, under
+/// `a`'s resting rect, or under its title row when `b` rests inside `a`'s resting height (a
+/// fence saved expanded over the ones it pushes).
+fn down_slack(a: &Slot, b: &Slot) -> i32 {
+    let rest_h = if b.base >= a.base + a.rest_h {
+        a.rest_h
+    } else {
+        a.title_h
+    };
+    (b.base - (a.base + rest_h)).clamp(0, b.gap)
+}
+
+/// How tall each fence that pushes may be, from its resting top: down to where the fences
+/// resting under its title row, slid down as far as they can go (each at its resting gap under
+/// the next, the lowest one at the bottom of the work area; fixed ones not at all), leave room
+/// for it. `stack` stops a pushed fence at the bottom of the work area, so a
+/// fence taller than this would cover the ones it pushed. The second list: the fences with one
+/// in the user's hands under them. That one limits nothing (where it is dropped is settled
+/// then), and until it is dropped the fence above keeps the height it has: grown into the
+/// room at once, it would cover the dragged fence's place and push it aside at the drop.
+fn rooms_below(slots: &[Slot]) -> (Vec<(HWND, i32)>, Vec<HWND>) {
+    // Lowest resting place first: a fence's reach comes from the ones resting below it.
+    let mut order: Vec<usize> = (0..slots.len()).collect();
+    order.sort_by_key(|&i| std::cmp::Reverse(slots[i].base));
+    // The lowest top each fence can be pushed to.
+    let mut deepest = vec![0; slots.len()];
+    let mut rooms = Vec::new();
+    let mut waiting = Vec::new();
+    for k in 0..order.len() {
+        let j = order[k];
+        let a = &slots[j];
+        let Some((work, _, work_bottom)) = a.work else {
+            deepest[j] = a.y;
+            continue;
+        };
+        // The lowest bottom edge the fences below leave to `a`.
+        let mut reach = work_bottom;
+        let mut limited = false;
+        let mut held_below = false;
+        for &i in &order[..k] {
+            let b = &slots[i];
+            let below = b.work.map(|w| w.0) == Some(work)
+                && a.left < b.right
+                && b.left < a.right
+                && b.base >= a.base + a.title_h;
+            if below && b.role == Role::Held {
+                held_below = true;
+            } else if below {
+                reach = reach.min(deepest[i] - down_slack(a, b));
+                limited = true;
+            }
+        }
+        deepest[j] = match a.role {
+            Role::Free if !a.upward => (reach - a.rest_h).max(a.base),
+            Role::Held => a.top,
+            _ => a.base,
+        };
+        // From its resting top: a fence that is itself pushed down rises back there as it
+        // gets taller (`stack` keeps it inside the work area). Only where a fence below sets
+        // the limit: one with nothing under it opens as before.
+        if a.pushes && limited {
+            rooms.push((a.hwnd, reach - a.base));
+        }
+        if a.pushes && held_below {
+            waiting.push(a.hwnd);
+        }
+    }
+    (rooms, waiting)
+}
+
 impl App {
     /// Lays the fences out for the heights they have now: after every command batch and on
     /// every animation frame (a rectangle read per window; windows move only when their top
@@ -252,9 +314,20 @@ impl App {
     /// at rest and pushing nothing: one that lands inside another fence is then moved out of the
     /// way rather than taken for a fence that one pushes.
     pub(super) fn reflow_pushed_except(&mut self, settling: &[FenceId]) {
+        self.reflow_pushed_once(settling, true);
+    }
+
+    /// One pass; `again`: run a second one when an open fence was fitted to its room without
+    /// an animation (its neighbours are laid out for the new height in the same breath).
+    fn reflow_pushed_once(&mut self, settling: &[FenceId], again: bool) {
         let enabled = self.state.config.settings.roll_up.push_neighbors;
         if !enabled && self.ctx.behavior.pushed.borrow().is_empty() {
-            self.keep_expand_rooms(None);
+            self.keep_expand_rooms(None, &[]);
+            // Switched off while a fence was open only as far as the fences below left room:
+            // nothing holds it short now, it has its own height again.
+            for w in self.fences.values() {
+                w.fit_open_to_room(i32::MAX);
+            }
             return;
         }
         let mut dragged: Vec<HWND> = self
@@ -345,7 +418,12 @@ impl App {
             }
         }
         stack(&mut slots, enabled);
-        self.keep_expand_rooms(enabled.then(|| rooms(&slots)));
+        let (below, waiting) = if enabled {
+            rooms_below(&slots)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        self.keep_expand_rooms(enabled.then(|| rooms(&slots)), &below);
         // No borrow held: SetWindowPos runs the fences' handlers synchronously.
         let prev = std::mem::take(&mut *self.ctx.behavior.pushed.borrow_mut());
         let id_of = |hwnd: HWND| slots.iter().find(|s| s.hwnd == hwnd).map(|s| s.id);
@@ -387,6 +465,30 @@ impl App {
             }
         }
         *self.ctx.behavior.pushed.borrow_mut() = next;
+        // An open fence stays inside the room the fences below leave it (one saved open over
+        // them at a restart, a fence below that got taller), and one held short opens further
+        // when they make room, in full when none is left under it. Not while it is in the
+        // user's hands, nor while a fence under it is. A window that changed height without an
+        // animation is laid out for it at once.
+        let mut refit = false;
+        for s in slots
+            .iter()
+            .filter(|s| s.pushes && s.role != Role::Held && !waiting.contains(&s.hwnd))
+        {
+            let room = below
+                .iter()
+                .find(|(h, _)| *h == s.hwnd)
+                .map_or(i32::MAX, |&(_, room)| room);
+            if let Some(w) = self.fences.get(&s.id)
+                && w.fit_open_to_room(room)
+            {
+                refit = true;
+            }
+        }
+        if refit && again {
+            self.reflow_pushed_once(settling, false);
+            return;
+        }
         // 像桌面一样排列: the loose icons flow around the fences where the push left them. While
         // an animation pushes fences frame by frame they wait for the end of the run: arranged
         // every frame, the desktop fence was re-cut each time a sliding fence crossed a cell,
@@ -404,10 +506,14 @@ impl App {
     /// (`lifted`: the push pass's, the fences there sliding up; None: up to the next fence
     /// above) and below the top edge (to the bottom of the work area, the fences there sliding
     /// down; with pushNeighbors off, to the next fence below).
-    fn keep_expand_rooms(&self, lifted: Option<Vec<(HWND, i32)>>) {
+    /// `below`: the push pass's room below the top edge of each fence that pushes
+    /// (`rooms_below`); those fences are kept too, whether they have 向上展开 or not.
+    fn keep_expand_rooms(&self, lifted: Option<Vec<(HWND, i32)>>, below: &[(HWND, i32)]) {
         let mut rooms = Vec::new();
         for (&id, w) in &self.fences {
-            if !self.state.fence(id).is_some_and(|f| f.expand_upward) {
+            let room_below = below.iter().find(|(h, _)| *h == w.hwnd()).map(|&(_, b)| b);
+            let upward = self.state.fence(id).is_some_and(|f| f.expand_upward);
+            if !upward && room_below.is_none() {
                 continue;
             }
             let r = w.rect();
@@ -420,7 +526,7 @@ impl App {
                         .iter()
                         .find(|(h, _)| *h == w.hwnd())
                         .map_or(r.bottom - wa.top, |&(_, above)| above),
-                    wa.bottom - r.top,
+                    room_below.unwrap_or(wa.bottom - r.top),
                 ),
                 None => {
                     let others = self.other_fence_rects(id);
@@ -491,6 +597,14 @@ impl App {
                     } else {
                         rect.bottom = rect.top + h;
                     }
+                }
+                // Open only as far as the fences below leave room: the saved rect keeps the
+                // full height, which the fence opens to again once there is room.
+                if !rolled
+                    && !w.row_at_bottom()
+                    && let Some(full) = w.capped_full_height_px()
+                {
+                    rect.bottom = rect.top + full;
                 }
                 // Collapsed to its left tab column: the fence keeps the width it expands to.
                 if rolled && let Some(ew) = w.collapsed_expanded_width_px() {
@@ -623,6 +737,80 @@ mod tests {
         }
         stack(&mut s, true);
         assert_eq!(ys(&s, &[1, 2, 3]), vec![16, 462, 720]);
+    }
+
+    fn room_below(slots: &[Slot], n: u128) -> Option<i32> {
+        rooms_below(slots)
+            .0
+            .into_iter()
+            .find(|(h, _)| *h == hwnd(n))
+            .map(|(_, r)| r)
+    }
+
+    /// The fence a pushed one cannot clear (R1): Pusher's title row at 440 opens to 300 px,
+    /// Pushed (280 px) rests 12 px under the row, the work area ends at 852. Pushed can go
+    /// down to 572, so Pusher has 124 px: at that height the two sit 8 px apart and nothing
+    /// overlaps.
+    #[test]
+    fn an_open_fence_gets_the_room_the_pushed_fence_leaves() {
+        let mut s = vec![slot(1, 0, 440, TITLE, 300), slot(2, 0, 488, 280, 280)];
+        for f in &mut s {
+            f.work = Some((0, 0, 852));
+        }
+        assert_eq!(room_below(&s, 1), Some(124));
+        // The fence at the bottom of the stack has no fence under it: no limit is kept.
+        assert_eq!(room_below(&s, 2), None);
+        // Open to that room, the push fits.
+        get(&mut s, 1).h = 124;
+        stack(&mut s, true);
+        assert_eq!(ys(&s, &[1, 2]), vec![440, 572]);
+        assert_eq!(get(&mut s, 2).want, 572);
+        // On a taller screen Pushed clears the full height and nothing is held short.
+        for f in &mut s {
+            f.work = Some((0, 0, 1200));
+        }
+        assert!(room_below(&s, 1).unwrap() >= 300);
+    }
+
+    /// The chain of `a_push_the_work_area_stops_is_marked`: Lower stops 18 px short, so the
+    /// expanded fence gets 18 px less than its 438.
+    #[test]
+    fn the_room_counts_every_fence_down_the_stack() {
+        let mut s = vec![
+            slot(1, 88, 16, 438, 438),
+            slot(2, 0, 420, 250, 250),
+            slot(3, 0, 500, 150, 150),
+        ];
+        for f in &mut s {
+            f.work = Some((0, 0, 852));
+        }
+        assert_eq!(room_below(&s, 1), Some(420));
+        get(&mut s, 1).h = 420;
+        stack(&mut s, true);
+        assert_eq!(ys(&s, &[1, 2, 3]), vec![16, 444, 702]);
+    }
+
+    /// A fence in the user's hands limits nothing (it is settled where it is dropped), one that
+    /// is never pushed (向上展开) stops the fence above it, and a column at rest keeps every
+    /// height.
+    #[test]
+    fn held_and_fixed_fences_below() {
+        let mut s = vec![slot(1, 0, 100, TITLE, 300), slot(2, 0, 144, 200, 200)];
+        get(&mut s, 2).role = Role::Held;
+        assert_eq!(room_below(&s, 1), None);
+        // Until it is dropped, the fence above waits at the height it has.
+        assert_eq!(rooms_below(&s).1, vec![hwnd(1)]);
+        get(&mut s, 2).role = Role::Fixed;
+        assert_eq!(room_below(&s, 1), Some(36));
+        assert!(rooms_below(&s).1.is_empty());
+        // Three open fences 12 px apart, the last one ending at the work area's bottom.
+        let s = vec![
+            slot(1, 0, 164, 188, 188),
+            slot(2, 0, 364, 188, 188),
+            slot(3, 0, 564, 436, 436),
+        ];
+        assert!(room_below(&s, 1).unwrap() >= 188);
+        assert!(room_below(&s, 2).unwrap() >= 188);
     }
 
     #[test]

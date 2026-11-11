@@ -2320,6 +2320,12 @@ impl App {
     }
 
     fn ipc_set_bounds(&mut self, sel: &str, rect: Rect) -> IpcResult {
+        self.set_bounds_from_cli(sel, rect, false)
+    }
+
+    /// `glide_height` (`fences.fit`): a change of the height alone on an open fence glides
+    /// there, as 适应内容大小 in the fence menu does; anything else is placed at once.
+    fn set_bounds_from_cli(&mut self, sel: &str, rect: Rect, glide_height: bool) -> IpcResult {
         let id = self.resolve_fence(sel)?;
         let before = self.fence_or_err(id)?.clone();
         if let Some(host) = before.tab_host {
@@ -2357,8 +2363,34 @@ impl App {
         if rolled && self.state.fence(id).is_some_and(|f| f.expand_upward) {
             w.set_row_at_bottom(true);
         }
-        // Also ends a roll in flight, whose tween would otherwise put its own size back.
-        w.restore_geometry(full, rolled, placed.h);
+        let cur = w.rect();
+        let top = if w.row_at_bottom() {
+            cur.bottom - placed.h
+        } else {
+            cur.top
+        };
+        let height_only = !rolled
+            && !w.is_rolled()
+            && !w.rolling()
+            && full.left == cur.left
+            && full.right == cur.right
+            && full.top == top;
+        if glide_height && height_only {
+            // The window snaps by itself when it cannot animate (hidden, animations off).
+            tracing::debug!(
+                %id,
+                from_h = cur.bottom - cur.top,
+                to_h = placed.h,
+                "cli fit: the height glides"
+            );
+            w.apply_height(placed.h, true);
+        } else {
+            if glide_height {
+                tracing::debug!(%id, rolled, rolling = w.rolling(), "cli fit: placed at once");
+            }
+            // Also ends a roll in flight, whose tween would otherwise put its own size back.
+            w.restore_geometry(full, rolled, placed.h);
+        }
         self.record_bounds(id, full, rolled, placed.h, "cli");
         self.apply_auto_height(id);
         self.schedule_save();
@@ -2605,7 +2637,9 @@ impl App {
             .then(|| self.auto_snapshot())
             .flatten();
         // Portal sources / targets move real files on a worker thread; the fences update when
-        // the shell reports back. Not a step of Ctrl+Z in the fences: that undoes the user's.
+        // the shell reports back. Membership moves are no step of Ctrl+Z in the fences (that
+        // undoes the user's); a real file move is one, noted when it has finished: its record
+        // is in Windows' undo list, which Ctrl+Z in a fence hands file steps to.
         self.move_items_unrecorded(&accepted, to);
         self.push_settings_state();
         Ok(mutation(
@@ -2660,7 +2694,7 @@ impl App {
             rect.y += rect.h - report.fitting_height_px;
         }
         rect.h = report.fitting_height_px;
-        let result = self.ipc_set_bounds(&host.to_string(), rect)?;
+        let result = self.set_bounds_from_cli(&host.to_string(), rect, true)?;
         let changed = result
             .get("changed")
             .and_then(Value::as_bool)
