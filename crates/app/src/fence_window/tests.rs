@@ -1842,3 +1842,30 @@ fn shadow_keeps_up_with_a_dragged_edge_when_it_is_cheap() {
     assert_eq!(shadow_interval_ms(Duration::from_millis(40)), 40);
     assert_eq!(shadow_interval_ms(Duration::ZERO), 15);
 }
+
+/// The lock glyph pulses for a drag the lock refused, not for one that does something else: a
+/// press on a locked fence's edge band that began a selection rectangle counts only once the
+/// pointer has left the fence (a resize outward); inward it selects icons.
+#[test]
+fn lock_refuses_only_drags_that_are_not_something_else() {
+    let title = LockPress {
+        at: (500, 300),
+        leave_only: false,
+    };
+    let edge = LockPress {
+        at: (500, 300),
+        leave_only: true,
+    };
+    let threshold = (4, 4);
+    // Within the drag threshold: a click, never a refused drag.
+    assert!(!lock_drag_refused(title, (503, 302), threshold, true));
+    assert!(!lock_drag_refused(edge, (497, 300), threshold, false));
+    // A title drag is refused as soon as it is a drag, wherever the pointer is.
+    assert!(lock_drag_refused(title, (520, 300), threshold, true));
+    assert!(lock_drag_refused(title, (520, 340), threshold, false));
+    // From the edge band: inward the rectangle selects, no refusal however far it goes.
+    assert!(!lock_drag_refused(edge, (560, 320), threshold, true));
+    assert!(!lock_drag_refused(edge, (700, 500), threshold, true));
+    // Out of the fence: that is the resize the lock refused.
+    assert!(lock_drag_refused(edge, (490, 300), threshold, false));
+}

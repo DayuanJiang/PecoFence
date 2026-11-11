@@ -135,14 +135,21 @@ pub(super) fn on_lbuttondown(
         v.suppress_dblclk = false;
         v.hide_tip();
         // A press where the fence would resize without its lock (an edge band inside the
-        // plate): a drag from there pulses the lock glyph (`note_lock_drag`).
+        // plate). It is remembered for the lock glyph's pulse only further down, once nothing
+        // else has taken the press: the scrollbar, a tab, a header, a tool's row and an icon
+        // all return or go on before that.
         v.lock_press = None;
-        if v.locked {
+        let on_locked_edge = v.locked && {
             let pt = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
-            if super::nc::lock_refuses(v, &window::window_rect(hwnd), pt.x, pt.y) {
-                v.lock_press = Some((pt.x, pt.y));
-            }
-        }
+            super::nc::lock_refuses(v, &window::window_rect(hwnd), pt.x, pt.y)
+        };
+        let lock_press = |leave_only: bool| {
+            let pt = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
+            on_locked_edge.then_some(LockPress {
+                at: (pt.x, pt.y),
+                leave_only,
+            })
+        };
         // A press decides the selection itself: a pending hover select must not follow it.
         window::kill_timer(hwnd, TIMER_HOVER_SELECT);
         // Mouse interaction hides the keyboard focus ring (Explorer). The
@@ -266,6 +273,8 @@ pub(super) fn on_lbuttondown(
         }
         // Other tools (a clock) take no clicks in their content: no marquee, no selection.
         if v.shows_tool() && in_content {
+            // Nothing else takes the press: on the edge band a drag is one the lock refuses.
+            v.lock_press = lock_press(false);
             drop(guard);
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
@@ -319,6 +328,16 @@ pub(super) fn on_lbuttondown(
                         mode,
                     });
                     capture = true;
+                    // On the edge band of a locked fence the rectangle begins all the same; a
+                    // drag out of the fence from there is a resize the lock refuses.
+                    v.lock_press = lock_press(true);
+                    if v.lock_press.is_some() {
+                        tracing::debug!(
+                            fence = %fence_id,
+                            "press on a locked fence's edge over empty content: a rectangle \
+                             begins; the lock glyph pulses only if the drag leaves the fence"
+                        );
+                    }
                 }
             }
         }

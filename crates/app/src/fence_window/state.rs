@@ -66,6 +66,17 @@ impl WindowGlide {
     }
 }
 
+/// A press the lock of a locked fence refuses to turn into a move or a resize.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct LockPress {
+    /// Screen point of the press.
+    pub(super) at: (i32, i32),
+    /// The press also began a selection rectangle (an edge band over empty content, where an
+    /// unlocked fence resizes): only a drag that leaves the fence, as a resize outward would,
+    /// counts as refused. A drag inward selects icons and is no business of the lock.
+    pub(super) leave_only: bool,
+}
+
 pub struct FenceViewState {
     pub fence_id: FenceId,
     pub title: String,
@@ -399,9 +410,10 @@ pub struct FenceViewState {
     pub(super) rail_grow: bool,
     /// Mouse move/resize disabled (menu "锁定位置和大小").
     pub(super) locked: bool,
-    /// Screen point of a left press on a locked fence where it would move or resize without
-    /// the lock: a drag from there past the drag threshold pulses the lock glyph once.
-    pub(super) lock_press: Option<(i32, i32)>,
+    /// A left press on a locked fence where it would move or resize without the lock, and
+    /// that nothing else took (no scrollbar, icon, tab or button): a drag from there pulses
+    /// the lock glyph once (`note_lock_drag`).
+    pub(super) lock_press: Option<LockPress>,
     /// When the lock glyph's pulse started (the lock refused a drag): its opacity dips to 0.4
     /// and comes back within `LOCK_PULSE`.
     pub(super) lock_pulse: Option<Instant>,

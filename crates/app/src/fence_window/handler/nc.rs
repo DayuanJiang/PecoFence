@@ -362,7 +362,10 @@ pub(super) fn on_nclbuttondown(
                     // or rolls it up again (the drag handed over on a move is refused by
                     // WM_SYSCOMMAND, which pulses the lock glyph). Without it, a move past the
                     // drag threshold with the button held pulses the glyph (`note_lock_drag`).
-                    v.lock_press = (!behavior.click_to_expand.get()).then_some(start);
+                    v.lock_press = (!behavior.click_to_expand.get()).then_some(LockPress {
+                        at: start,
+                        leave_only: false,
+                    });
                     if behavior.click_to_expand.get() {
                         v.click_pending = Some(start);
                         drop(guard);

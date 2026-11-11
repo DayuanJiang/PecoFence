@@ -43,6 +43,20 @@ pub(super) fn lock_alpha(shown: f32, pulse: Option<Duration>) -> f32 {
     }
 }
 
+/// Has the drag that began with `press` on a locked fence become one the lock refuses, with
+/// the pointer now at `pt` (`inside` the fence's window or not)? Past the drag `threshold`;
+/// and, when the press also began a selection rectangle, only once the pointer is outside the
+/// fence: inward the drag selects icons, outward it can only have been meant to resize.
+pub(super) fn lock_drag_refused(
+    press: LockPress,
+    pt: (i32, i32),
+    threshold: (i32, i32),
+    inside: bool,
+) -> bool {
+    let moved = (pt.0 - press.at.0).abs() > threshold.0 || (pt.1 - press.at.1).abs() > threshold.1;
+    moved && !(press.leave_only && inside)
+}
+
 /// Title-row things whose state alpha fades (keys of the chrome [`Fades`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum ChromeKey {
@@ -593,19 +607,25 @@ impl FenceViewState {
 
     /// A press on a locked fence was remembered (`lock_press`) and the pointer is now at the
     /// screen point `pt`: past the drag threshold with the button still held, that is a drag
-    /// the lock refuses.
+    /// the lock refuses. A press that also began a selection rectangle counts only once the
+    /// pointer has left the fence.
     pub(super) fn note_lock_drag(&mut self, pt: (i32, i32)) {
-        let Some((px, py)) = self.lock_press else {
+        let Some(press) = self.lock_press else {
             return;
         };
         if !window::key_down(msg::VK_LBUTTON) {
             self.lock_press = None;
             return;
         }
-        let (tx, ty) = window::drag_threshold();
-        if (pt.0 - px).abs() > tx || (pt.1 - py).abs() > ty {
+        let r = window::window_rect(self.hwnd);
+        let inside = pt.0 >= r.left && pt.0 < r.right && pt.1 >= r.top && pt.1 < r.bottom;
+        if lock_drag_refused(press, pt, window::drag_threshold(), inside) {
             self.lock_press = None;
-            self.pulse_lock("drag on a locked fence");
+            self.pulse_lock(if press.leave_only {
+                "edge drag out of a locked fence"
+            } else {
+                "drag on a locked fence"
+            });
         }
     }
 

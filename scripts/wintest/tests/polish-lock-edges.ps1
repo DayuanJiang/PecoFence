@@ -8,7 +8,7 @@ if (-not $Part) { $Part = 'CLMS' }
 trap { PfTrap $_; continue }
 Case 'setup'
 CloseWindows
-$PlNames = @('pl 季度报告.txt', 'pl 预算表 2026.txt', 'pl 会议记录与分工安排.txt', 'pl notes.txt')
+$PlNames = @('pl 季度报告.txt', 'pl 预算表 2026.txt', 'pl 会议记录与分工安排.txt', 'pl notes.txt', 'pl 清单 a.txt', 'pl 清单 b.txt', 'pl 清单 c.txt')
 function PlClean() { foreach ($n in $PlNames) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue } }
 PlClean
 foreach ($n in $PlNames) { DeskFile $n | Out-Null }
@@ -153,6 +153,40 @@ if ($Part -match 'L') {
   $a = PlRect 'Locked reports of the quarter'
   $n2 = @(PfLogAll | Where-Object { $_ -match 'the lock refused a drag' }).Count
   Check 'UX4 an edge drag leaves the size and pulses the glyph too' ($a.L -eq $L.L -and $a.R -eq $L.R -and $n2 -eq $n1 + 1) "left $($a.L) right $($a.R); pulse lines $n1 -> $n2"
+  # From the edge band over empty content a drag into the fence draws a selection rectangle:
+  # the lock refused nothing, so no pulse.
+  PlPark
+  [G]::MoveTo($L.L + 3, $L.T + 200); Start-Sleep -Milliseconds 300
+  MDown; Start-Sleep -Milliseconds 150
+  foreach ($s in 1..8) { [G]::MoveTo($L.L + 3 + $s * 10, $L.T + 200 - $s * 4); Start-Sleep -Milliseconds 30 }
+  Start-Sleep -Milliseconds 300
+  Crop 'UX4-rectangle-from-the-edge' ($L.L - 10) ($L.T - 10) 360 260 | Out-Null
+  MUp; Start-Sleep -Milliseconds 500
+  $e1 = @(PfLogAll | Where-Object { $_ -match 'the lock refused a drag' }).Count
+  Check 'UX4 a selection rectangle drawn from the edge band does not pulse the glyph' ($e1 -eq $n2) "pulse lines $n2 -> $e1"
+  # A press on the scrollbar's outer 3 px (where an unlocked fence resizes) drags the thumb:
+  # the content scrolls, no pulse.
+  Pf fence create --title 'Bar' --rect '1000,300,120,150' | Out-Null
+  Pf item move "$PfDesk\pl 清单 a.txt" "$PfDesk\pl 清单 b.txt" "$PfDesk\pl 清单 c.txt" --to 'Bar' | Out-Null
+  Start-Sleep -Seconds 1
+  Pf fence set 'Bar' locked true | Out-Null; Start-Sleep -Milliseconds 500
+  $B = PlRect 'Bar'
+  [G]::MoveTo($B.L + 40, $B.T + 90); Start-Sleep -Milliseconds 500
+  $before = [Px]::Grab($B.L + 8, $B.T + 40, 80, 100)
+  [G]::MoveTo($B.R - 2, $B.T + 52); Start-Sleep -Milliseconds 600
+  MDown; Start-Sleep -Milliseconds 150
+  foreach ($s in 1..8) { [G]::MoveTo($B.R - 2, $B.T + 52 + $s * 5); Start-Sleep -Milliseconds 30 }
+  Start-Sleep -Milliseconds 400
+  MUp; Start-Sleep -Milliseconds 500
+  $after = [Px]::Grab($B.L + 8, $B.T + 40, 80, 100)
+  $moved = [Px]::Diff($before, $after, 0, 79, 0, 99)
+  $before.Dispose(); $after.Dispose()
+  Crop 'UX4-scrollbar-of-a-locked-fence' ($B.L - 10) ($B.T - 10) 150 180 | Out-Null
+  $e2 = @(PfLogAll | Where-Object { $_ -match 'the lock refused a drag' }).Count
+  Check 'UX4 a thumb drag from the outer 3 px of the scrollbar scrolls the locked fence' ($moved -gt 3) "content changed by $([Math]::Round($moved, 1)) (mean brightness difference)"
+  Check 'UX4 the thumb drag does not pulse the glyph' ($e2 -eq $e1) "pulse lines $e1 -> $e2"
+  Pf fence delete 'Bar' | Out-Null; Start-Sleep -Milliseconds 600
+  $n2 = $e2
   # A plain click on the title is no drag: no pulse.
   PlPark
   [G]::Click($L.L + 120, $L.T + 18); Start-Sleep -Milliseconds 500
