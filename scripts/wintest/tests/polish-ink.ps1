@@ -104,7 +104,9 @@ $PiTab1 = '周报.docx', '排期.xlsx'
 $PiTab2 = '课程.txt'
 $PiRoll = 'r1 收起.txt', 'r2 收起.txt', 'r3 收起.txt'
 $PiLoose = '散落 一.txt'
-$PiAll = $PiDocs + $PiList + $PiTab1 + $PiTab2 + $PiRoll + $PiLoose
+$PiDet = '合同 盖章版.txt', 'data 明细.csv', '说明 细线.txt'
+$PiGrp = '分组 一.txt', '分组 二.txt'
+$PiAll = $PiDocs + $PiList + $PiTab1 + $PiTab2 + $PiRoll + $PiLoose + $PiDet + $PiGrp
 function PiClean() { foreach ($n in $PiAll) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue } }
 function Win($t) { return (FenceGet $t).windowRect }
 # One reading: contrast, plate, ink, dark or light; a line in ink.tsv; the crop when asked.
@@ -211,8 +213,45 @@ if ($Part -match 'B') {
     return $m
   }
   function Delta($a, $b) { return [math]::Max([math]::Max([math]::Abs($a[0] - $b[0]), [math]::Abs($a[1] - $b[1])), [math]::Abs($a[2] - $b[2])) }
+  # A hairline against the plate beside it: the largest difference (levels of brightness, 0 to
+  # 255) between a row of a one-pixel column and the column's median row.
+  function LineDelta($tag, $x, $y, $h) {
+    $b = [Px]::Grab([int]$x, [int]$y, 1, [int]$h); $px = [Px]::Pixels($b); $b.Dispose()
+    $lum = @($px | ForEach-Object { ((($_ -shr 16) -band 255) * 299 + (($_ -shr 8) -band 255) * 587 + ($_ -band 255) * 114) / 1000 })
+    $med = @($lum | Sort-Object)[[int]($lum.Count / 2)]
+    $best = 0; $at = 0
+    for ($i = 0; $i -lt $lum.Count; $i++) { $d = [math]::Abs($lum[$i] - $med); if ($d -gt $best) { $best = $d; $at = $i } }
+    $c = $px[$at]
+    $r = [pscustomobject]@{ Delta = [math]::Round($best, 1); Text = "line $((($c -shr 16) -band 255)),$((($c -shr 8) -band 255)),$($c -band 255) at row $at, plate brightness $([math]::Round($med, 1)), difference $([math]::Round($best, 1))" }
+    "line/$tag`t$($r.Delta)`t$($r.Text)" | Add-Content "$PfShots\ink.tsv" -Encoding UTF8
+    return $r
+  }
+  # The three hairlines that the text colour decides: the details header's underline, the rule of
+  # a date group in the details view and in the icons view.
+  function Lines($tag) {
+    $d = Win '明细'; $g = Win '分组'
+    return @(
+      @('details header underline', (LineDelta "$tag/header underline" ($d.x + 5) ($d.y + 56) 22)),
+      @('date group rule, details view', (LineDelta "$tag/group rule details" ($d.x + $d.w - 20) ($d.y + 74) 22)),
+      @('date group rule, icons view', (LineDelta "$tag/group rule icons" ($g.x + $g.w - 20) ($g.y + 42) 26))
+    )
+  }
   function PartB() {
     trap { PfTrap $_; continue }
+    Pf fence create --title 明细 --rect '480,440,560,180' | Out-Null
+    Pf fence create --title 分组 --rect '1120,60,300,200' | Out-Null
+    Pf item move (Paths $PiDet) --to 明细 | Out-Null
+    Pf item move (Paths $PiGrp) --to 分组 | Out-Null
+    Pf fence set 明细 layout details | Out-Null
+    foreach ($t in '明细', '分组') { Pf fence set $t sort date | Out-Null; Pf fence set $t groupByDate true | Out-Null }
+    Start-Sleep -Seconds 1
+    # Where the colour mode and the wallpaper agree the lines are the mode's own, as before.
+    foreach ($combo in @(@('dark', 'dark'), @('light', 'light'))) {
+      Case "V1 hairlines, $($combo[0]) mode over a $($combo[1]) wallpaper"
+      Pf settings set theme $combo[0] | Out-Null; Wall $combo[1]; Park
+      Shot "B-$($combo[0])-lines-same"
+      foreach ($q in (Lines "$($combo[0])/$($combo[1])")) { Check "V1 $($combo[0]) mode over a $($combo[1]) wallpaper: the $($q[0]) shows" ($q[1].Delta -ge 10) $q[1].Text }
+    }
     foreach ($combo in @(@('dark', 'light'), @('light', 'dark'))) {
       $mode = $combo[0]; $wall = $combo[1]
       Case "V1 fills, $mode mode over a $wall wallpaper"
@@ -242,7 +281,13 @@ if ($Part -match 'B') {
       Check "V1 $mode mode over a $wall wallpaper: the selection shows while another program is in front" ((Delta $rest $inactive) -ge 6) "rest $($rest -join ','), selected $($inactive -join ','), difference $(Delta $rest $inactive)"
       $d = Win '文档'
       [G]::Click(($d.x + 300), ($d.y + 220)); Park
+      # The hairlines take the text's side too: a dark line on the light plate, a light one on
+      # the dark plate.
+      Shot "B-$mode-lines"
+      foreach ($q in (Lines "$mode/$wall")) { Check "V1 $mode mode over a $wall wallpaper: the $($q[0]) shows" ($q[1].Delta -ge 10) $q[1].Text }
     }
+    Pf fence delete 明细 | Out-Null
+    Pf fence delete 分组 | Out-Null
   }
   PartB
 }

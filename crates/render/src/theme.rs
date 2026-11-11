@@ -676,6 +676,22 @@ impl Theme {
         self
     }
 
+    /// The colour of the hairlines inside a fence (the rules of the date groups, the details
+    /// header's underline and column dividers): this mode's `stroke` where the text is the
+    /// mode's own, the other mode's where the text took the other colour for its plate. A
+    /// dark-mode fence over a light wallpaper has a light plate, where the dark mode's light
+    /// line does not show.
+    pub fn hairline(&self) -> ColorF {
+        let light_text = self.text_primary.r > 0.5;
+        if light_text == (self.mode == ThemeMode::Dark) {
+            self.stroke
+        } else if light_text {
+            Self::dark().stroke
+        } else {
+            Self::light().stroke
+        }
+    }
+
     /// What the backdrop decides about the item names: their colour and whether they get a
     /// halo. The content is redrawn when this changes.
     pub fn label_look(&self) -> (ColorF, bool) {
@@ -1185,6 +1201,29 @@ mod tests {
         assert_eq!(switches_before, 7);
         // Clear of the edge it goes off again.
         assert!(!halo(0, state));
+    }
+
+    #[test]
+    fn hairlines_follow_the_text_onto_the_other_plate() {
+        let (dark, light) = (Theme::dark(), Theme::light());
+        // The mode's own text: the mode's own line, as before.
+        assert_eq!(dark.hairline(), dark.stroke);
+        assert_eq!(light.hairline(), light.stroke);
+        let same = dark.over_acrylic(&crop_of(&dark, [19, 20, 25]), 1.0, None, None);
+        assert_eq!(same.hairline(), dark.stroke);
+        let same = light.over_acrylic(&crop_of(&light, [236, 239, 244]), 1.0, None, None);
+        assert_eq!(same.hairline(), light.stroke);
+        // Dark mode over a light wallpaper: dark text, so the light mode's dark line; the
+        // plate's own rim stays.
+        let flipped = dark.over_acrylic(&crop_of(&dark, [236, 239, 244]), 1.0, None, None);
+        assert_eq!(flipped.hairline(), light.stroke);
+        assert_eq!(flipped.stroke, dark.stroke);
+        // Light mode over a dark wallpaper: the dark mode's light line.
+        let flipped = light.over_acrylic(&crop_of(&light, [19, 20, 25]), 1.0, None, None);
+        assert_eq!(flipped.hairline(), dark.stroke);
+        // 白色 / 黑色 take the line with them, like the left tab column's lines.
+        let white = light.with_label_color(pecofence_core::LabelColor::White);
+        assert_eq!(white.hairline(), dark.stroke);
     }
 
     #[test]

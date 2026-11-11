@@ -3614,7 +3614,7 @@ impl FenceChrome {
             // Section headers scroll with the rows, under the fixed column header. The caption
             // starts where the 名称 caption does; the hairline runs from its end to the margin.
             if !rows.group_headers.is_empty() {
-                let line = session.create_solid_brush(theme.stroke)?;
+                let line = session.create_solid_brush(theme.hairline())?;
                 let text_x = cols.name_x;
                 let right = width - 8.0;
                 for (i, h) in rows.group_headers.iter().enumerate() {
@@ -3748,7 +3748,7 @@ impl FenceChrome {
         // Explorer's header), a full-width hairline underneath and the sort chevron centred at
         // the top of the sorted column.
         if header_h > 0.0 {
-            let line = session.create_solid_brush(theme.stroke)?;
+            let line = session.create_solid_brush(theme.hairline())?;
             let hair = px.hair();
             // Column dividers (grab handles for resizing) in the gutter left of each column.
             for col in [cols.date, cols.type_, cols.size].into_iter().flatten() {
@@ -3929,7 +3929,7 @@ impl FenceChrome {
             // Explorer-style hairline to the right margin. Static bands (the items glide), painted
             // first so an unfolded label may overdraw them like it overdraws the row below.
             if !content.group_headers.is_empty() {
-                let line = session.create_solid_brush(theme.stroke)?;
+                let line = session.create_solid_brush(theme.hairline())?;
                 // The same local halo the labels get over mixed wallpaper.
                 let legible = (theme.liquid_glass || theme.text_halo).then_some(&state.legible);
                 let spread = 1.0 / scale.max(1.0);
