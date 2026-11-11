@@ -370,8 +370,6 @@ pub struct App {
     fileops_running: usize,
     /// Serial of the last file operation started (`run_fileop`).
     fileop_serial: u64,
-    /// Serials of running file operations that are no step of Ctrl+Z (`without_undo_step`).
-    fileops_unrecorded: Vec<u64>,
     /// Files a shell delete is running for; another Delete leaves them out (`start_shell_delete`).
     deleting: HashSet<PathBuf>,
     /// CLI requests waiting for the UI thread (see `ipc_server.rs` / `ipc.rs`).
@@ -1770,7 +1768,6 @@ impl App {
             fileops_done: Arc::new(Mutex::new(Vec::new())),
             fileops_running: 0,
             fileop_serial: 0,
-            fileops_unrecorded: Vec::new(),
             deleting: HashSet::new(),
             ipc_pending,
             _ipc: ipc,

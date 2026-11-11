@@ -131,6 +131,20 @@ if ($Part -match 'B') {
   Undo
   Check 'the next Ctrl+Z takes the new folder away, into the Recycle Bin' (-not (Has 'New folder') -and -not (Has 'u8 新文件夹') -and (BinNames) -match 'New folder') "'New folder' there=$(Has 'New folder'); bin: $(BinNames); $(UndoLog)"
 
+  Case 'Ctrl+Z of a new folder leaves Windows'' own undo list alone'
+  ClickItem 'u1 报告'
+  [G]::Press(0x2E); Start-Sleep -Milliseconds 2500
+  $deleted = -not (Has 'u1 报告.txt')
+  FocusTitle 'UA'
+  [G]::KeyDown(0x11); [G]::KeyDown(0x10); [G]::Press(0x4E); [G]::KeyUp(0x10); [G]::KeyUp(0x11)
+  Start-Sleep -Milliseconds 2000
+  [G]::Press(0x0D); Start-Sleep -Milliseconds 1500
+  $made = Has 'New folder'
+  Undo
+  $folderGone = -not (Has 'New folder')
+  Undo
+  Check 'after Ctrl+Z took a new folder away, the next Ctrl+Z brings back the file deleted before it' ($deleted -and $made -and $folderGone -and (Has 'u1 报告.txt') -and -not (Has 'New folder')) "deleted=$deleted, folder made=$made, gone after the first Ctrl+Z=$folderGone; after the second: file there=$(Has 'u1 报告.txt'), folder there=$(Has 'New folder'); bin: $(BinNames); $(UndoLog)"
+
   Case 'Ctrl+Z after Shift+Delete'
   $home1 = FRect 'UA'
   DragFence 60
@@ -148,7 +162,7 @@ if ($Part -match 'B') {
   Undo
   Check 'the next Ctrl+Z undoes the fence drag' ((FRect 'UA') -eq $home1) "start $home1, now $(FRect 'UA'); $(UndoLog)"
 
-  Case 'a file moved by the command line is no step of Ctrl+Z'
+  Case 'a file moved by the command line is undone first, as Ctrl+Z on the desktop would'
   New-Item -ItemType Directory -Force "$PfRun\u-portal" | Out-Null
   Pf fence create --portal "$PfRun\u-portal" --title UP --rect '800,420,300,200' | Out-Null
   Start-Sleep -Seconds 1
@@ -159,9 +173,13 @@ if ($Part -match 'B') {
   Start-Sleep -Milliseconds 2500
   $inPortal = Test-Path -LiteralPath "$PfRun\u-portal\u6 发票.txt"
   Undo
-  Check 'Ctrl+Z after a command-line file move undoes the user''s fence drag, not the move' ($inPortal -and $moved -ne $home2 -and (FRect 'UA') -eq $home2 -and (Test-Path -LiteralPath "$PfRun\u-portal\u6 发票.txt")) "moved by the command line=$inPortal; start $home2, dragged $moved, after Ctrl+Z $(FRect 'UA'); still in the folder=$(Test-Path -LiteralPath "$PfRun\u-portal\u6 发票.txt"); $(UndoLog)"
+  Check 'Ctrl+Z after a command-line file move takes the file back out and leaves the fence drag' ($inPortal -and (Has 'u6 发票.txt') -and -not (Test-Path -LiteralPath "$PfRun\u-portal\u6 发票.txt") -and $moved -ne $home2 -and (FRect 'UA') -eq $moved) "moved by the command line=$inPortal; after Ctrl+Z: on the desktop=$(Has 'u6 发票.txt'), in the folder=$(Test-Path -LiteralPath "$PfRun\u-portal\u6 发票.txt"); start $home2, dragged $moved, now $(FRect 'UA'); $(UndoLog)"
+  Undo
+  Check 'the next Ctrl+Z undoes the fence drag made before the command-line move' ((FRect 'UA') -eq $home2) "start $home2, now $(FRect 'UA'); $(UndoLog)"
 
   Case 'Ctrl+Z after a rename in a folder fence'
+  Pf item move "$PfDesk\u6 发票.txt" --to UP | Out-Null
+  Start-Sleep -Milliseconds 2500
   $p = ItemPt 'UP' 'u6 发票'
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 400
   [G]::Press(0x71); Start-Sleep -Milliseconds 700

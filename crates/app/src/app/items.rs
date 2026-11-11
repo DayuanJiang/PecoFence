@@ -93,7 +93,7 @@ impl App {
         match created {
             Ok(()) => {
                 tracing::info!(path = %path.display(), %fence, "created item from fence menu");
-                self.note_created_for_undo(fence, path.clone());
+                self.note_created_for_undo(vec![path.clone()]);
                 if let Some(dir) = portal_dir {
                     // A portal has no desktop PendingRoute. Refresh it now and start the
                     // same inline editor used for a new desktop item, after this command.

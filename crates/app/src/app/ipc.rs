@@ -2637,10 +2637,10 @@ impl App {
             .then(|| self.auto_snapshot())
             .flatten();
         // Portal sources / targets move real files on a worker thread; the fences update when
-        // the shell reports back. Not a step of Ctrl+Z in the fences: that undoes the user's.
-        self.without_undo_step(|app| {
-            app.move_items_unrecorded(&accepted, to);
-        });
+        // the shell reports back. Membership moves are no step of Ctrl+Z in the fences (that
+        // undoes the user's); a real file move is one, noted when it has finished: its record
+        // is in Windows' undo list, which Ctrl+Z in a fence hands file steps to.
+        self.move_items_unrecorded(&accepted, to);
         self.push_settings_state();
         Ok(mutation(
             true,

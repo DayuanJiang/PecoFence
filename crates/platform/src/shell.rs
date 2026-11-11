@@ -1190,6 +1190,26 @@ pub fn transfer_to_folder(
     }
 }
 
+/// Moves `path` to the Recycle Bin silently and without a record in Windows' undo list
+/// (`FOFX_RECYCLEONDELETE` alone, neither `FOF_ALLOWUNDO` nor `FOFX_ADDUNDORECORD`): for a
+/// delete that is itself the undo of something. Blocks like [`transfer_to_folder`]; false when
+/// the operation was aborted.
+pub fn recycle_unrecorded(path: &Path) -> Result<bool> {
+    const FOFX_RECYCLEONDELETE: u32 = 0x0008_0000;
+    const FOF_NOERRORUI: u32 = 0x0400;
+    // SAFETY: COM calls on objects created here; the caller's thread has COM initialized.
+    unsafe {
+        let op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL as u32)?;
+        op.SetOperationFlags(
+            FOFX_RECYCLEONDELETE | FOF_NOERRORUI | (FOF_NOCONFIRMATION | FOF_SILENT) as u32,
+        )
+        .ok()?;
+        op.DeleteItem(&shell_item(path)?, None).ok()?;
+        op.PerformOperations().ok()?;
+        Ok(!op.GetAnyOperationsAborted().is_ok_and(|b| b.as_bool()))
+    }
+}
+
 /// The name `path` gets in the folder [`transfer_to_folder`] moves or copies it to.
 pub fn transferred_name(path: &Path) -> Option<std::ffi::OsString> {
     recycled_original_name(path)

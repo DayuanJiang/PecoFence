@@ -36,9 +36,11 @@ pub(super) enum UndoStep {
     },
     /// A file renamed in a fence (renamed directly, so Windows' undo list does not hold it).
     Renamed { from: PathBuf, to: PathBuf },
-    /// A folder or text file made from `fence` (made directly too): Ctrl+Z moves it to the
-    /// Recycle Bin, as Explorer's own undo of 新建 does.
-    Created { fence: FenceId, path: PathBuf },
+    /// Folders or files made from a fence (made directly too): Ctrl+Z moves them to the
+    /// Recycle Bin, as Explorer's own undo of 新建 does, without a record in Windows' undo list
+    /// (a record would be the newest one there, and the next step handed to Windows would
+    /// bring the item back instead of undoing its own operation).
+    Created { paths: Vec<PathBuf> },
     /// A file operation the shell recorded in Windows' undo list: Ctrl+Z passes the undo on.
     /// Windows undoes the newest operation of its list, which is this one unless another
     /// program's came after it, exactly as Ctrl+Z on the desktop would.
@@ -134,9 +136,11 @@ impl App {
         self.push_undo(UndoStep::Renamed { from, to });
     }
 
-    /// The user made the folder or text file `path` from `fence`.
-    pub(super) fn note_created_for_undo(&mut self, fence: FenceId, path: PathBuf) {
-        self.push_undo(UndoStep::Created { fence, path });
+    /// The user made the folders or files `paths` from a fence.
+    pub(super) fn note_created_for_undo(&mut self, paths: Vec<PathBuf>) {
+        if !paths.is_empty() {
+            self.push_undo(UndoStep::Created { paths });
+        }
     }
 
     /// A file operation the user started in a fence has finished (`what`). `recorded`: the
@@ -147,14 +151,6 @@ impl App {
         } else {
             UndoStep::Permanent { what }
         });
-    }
-
-    /// File operations started inside `f` are no step of Ctrl+Z: the command line's, and the
-    /// delete that undoes a new item.
-    pub(super) fn without_undo_step(&mut self, f: impl FnOnce(&mut Self)) {
-        let first = self.fileop_serial + 1;
-        f(self);
-        self.fileops_unrecorded.extend(first..=self.fileop_serial);
     }
 
     /// The item whose file is at `path` now: on the desktop or in a folder a fence shows.
@@ -314,13 +310,11 @@ impl App {
                     }
                 }
             }
-            UndoStep::Created { fence, path } => {
-                let owner = self
-                    .window_for(fence)
-                    .map_or_else(|| self.control.hwnd(), |w| w.hwnd());
-                tracing::info!(path = %path.display(), "new item undone: to the Recycle Bin");
-                self.without_undo_step(|app| app.start_shell_delete(vec![path], owner, false));
-                1
+            UndoStep::Created { paths } => {
+                let count = paths.len();
+                tracing::info!(count, first = ?paths.first(), "new items undone: to the Recycle Bin");
+                self.start_undo_created(paths);
+                count
             }
             UndoStep::Shell { .. } => usize::from(self.ask_windows_to_undo()),
             UndoStep::Permanent { .. } => {

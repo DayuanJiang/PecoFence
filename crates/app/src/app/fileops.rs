@@ -38,6 +38,8 @@ pub(super) enum FileOpThen {
     },
     /// 清空回收站: the bin is asked again for its icon.
     EmptyBin,
+    /// Ctrl+Z of items made from a fence (`UndoStep::Created`): they went to the Recycle Bin.
+    UndoCreated,
 }
 
 pub(super) struct FileOp {
@@ -122,6 +124,24 @@ impl App {
         if !spawned {
             self.settle_delete(&paths);
         }
+    }
+
+    /// Ctrl+Z of items made from a fence: each goes to the Recycle Bin on a worker thread,
+    /// without a record in Windows' undo list and without a dialog. One that is gone already
+    /// is left out.
+    pub(super) fn start_undo_created(&mut self, paths: Vec<PathBuf>) {
+        self.run_fileop(None, FileOpThen::UndoCreated, move |_| {
+            let mut any = false;
+            for path in &paths {
+                match shell::recycle_unrecorded(path) {
+                    Ok(done) => any |= done,
+                    Err(error) => {
+                        tracing::info!(%error, path = %path.display(), "new item not recycled")
+                    }
+                }
+            }
+            Ok(any)
+        });
     }
 
     /// 清空回收站 from the bin's menu, with Windows' confirmation and progress, on a worker
@@ -227,24 +247,17 @@ impl App {
         then: FileOpThen,
         result: std::result::Result<bool, String>,
     ) {
-        // An operation the user started in a fence that went through is a step of Ctrl+Z
-        // (`undo.rs`): noted now, when its record is in Windows' undo list.
-        let unrecorded = self
-            .fileops_unrecorded
-            .iter()
-            .position(|s| *s == serial)
-            .map(|i| self.fileops_unrecorded.swap_remove(i))
-            .is_some();
+        // An operation that went through and that the shell recorded in Windows' undo list is a
+        // step of Ctrl+Z (`undo.rs`), whoever started it (the command line's file moves too:
+        // their records sit in the same list), so the stack here and that list stay in step.
         let went_through = matches!(result, Ok(true));
-        if unrecorded || !went_through {
+        if !went_through {
             tracing::debug!(
                 serial,
-                unrecorded,
-                went_through,
-                "file operation is no step of Ctrl+Z"
+                "file operation is no step of Ctrl+Z: it did not go through"
             );
         }
-        if !unrecorded && went_through {
+        if went_through {
             match &then {
                 FileOpThen::IntoFolder { .. } => {
                     self.note_fileop_for_undo("files into a folder", true)
@@ -269,7 +282,7 @@ impl App {
                         self.note_fileop_for_undo("delete", true);
                     }
                 }
-                FileOpThen::EmptyBin => {}
+                FileOpThen::EmptyBin | FileOpThen::UndoCreated => {}
             }
         }
         match then {
@@ -377,6 +390,13 @@ impl App {
                     Ok(_) => tracing::info!(count, permanent, ms, "shell delete finished"),
                     Err(e) => tracing::warn!(error = %e, count, ms, "shell delete failed"),
                 }
+            }
+            FileOpThen::UndoCreated => {
+                match &result {
+                    Ok(done) => tracing::info!(done, "new items moved to the Recycle Bin"),
+                    Err(e) => tracing::warn!(error = %e, "undo of new items failed"),
+                }
+                shell::recycle_bin_changed();
             }
             FileOpThen::EmptyBin => {
                 match &result {
