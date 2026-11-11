@@ -248,7 +248,7 @@ impl App {
                 FileOpThen::ToDesktop { .. } => {
                     self.note_fileop_for_undo("files onto the desktop", true)
                 }
-                FileOpThen::Duplicate { .. } => self.note_fileop_for_undo("pasted copies", true),
+                FileOpThen::Duplicate => self.note_fileop_for_undo("pasted copies", true),
                 FileOpThen::Rename => self.note_fileop_for_undo("rename through the shell", true),
                 // Shift+Delete, and a delete inside the Recycle Bin, leave nothing to undo.
                 FileOpThen::Delete {
