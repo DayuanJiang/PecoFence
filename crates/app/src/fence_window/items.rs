@@ -107,6 +107,8 @@ impl FenceViewState {
     /// of the ids changed (a refill — not a rearrangement).
     pub(super) fn replace_items(&mut self, items: Vec<ItemView>) {
         let now = Instant::now();
+        // Asked for by the filter box, for this replacement only.
+        let fade_refill = std::mem::take(&mut self.fade_next_refill);
         let scale = self.scale();
         let (cw, _) = self.content_size_px();
         let width_dip = cw as f32 / scale;
@@ -195,6 +197,22 @@ impl FenceViewState {
         }
         if !animate {
             self.snap_item_motion();
+            // A whole new list from the filter box: the old page fades out under the new one
+            // (the tab switch's cross-fade without its slide) instead of a cut.
+            if fade_refill
+                && !layout_motion_applies(changed, old_len, self.items.len())
+                && !self.ole_drag
+                && self.outgoing.is_empty()
+                && self.content_swap_shows()
+            {
+                tracing::debug!(
+                    old_len,
+                    new_len = self.items.len(),
+                    changed,
+                    "filter refill cross-fades"
+                );
+                self.begin_content_swap(0);
+            }
             return;
         }
         let cells = self.cell_origins(width_dip);

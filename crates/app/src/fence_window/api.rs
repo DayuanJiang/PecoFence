@@ -161,6 +161,7 @@ impl FenceWindow {
             merge_t: Tween::at(0.0, Instant::now()),
             item_motion: HashMap::new(),
             leaving: Vec::new(),
+            fade_next_refill: false,
             content_busy: false,
             chrome_busy: false,
             mouse_inside: false,
@@ -805,6 +806,13 @@ impl FenceWindow {
         });
         // 像桌面一样排列: more or fewer icons take more or fewer cells.
         self.arrange_desktop(false);
+    }
+
+    /// The filter box changed this window's filter: if the `set_items` that follows replaces
+    /// most of the list (the first letter typed, the filter cleared), the old page fades out
+    /// under the new one instead of being cut. A change that keeps most items glides as usual.
+    pub fn fade_next_refill(&self) {
+        self.with_view(|v| v.fade_next_refill = true);
     }
 
     /// Portal navigation, before the new folder's items arrive: the page swaps like a tab

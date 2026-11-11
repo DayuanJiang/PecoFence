@@ -1,10 +1,12 @@
-# Fence polish 2026-11-12, package reflow (motion review MC3).
+# Fence polish 2026-11-12, package reflow (motion review MC3 and MC4).
 #   Part A  an edge dragged across a column boundary: the icons glide to their new cells (right
 #           edge, left edge, two boundaries in a row), and snap with Windows' animations off.
+#   Part B  a view change (icons / list / details) and a filter that replaces most of the list
+#           (first letter, cleared) cross-fade; an icon size step stays a cut; animations off cut.
 #   Part P  300 files: what one resize step and the glide frames cost (numbers, one loose bound).
-# run.sh --var Part=A | P; default A. Runs on a 1600x900 box.
+# run.sh --var Part=A | B | P; default A and B. Runs on a 1600x900 box.
 # The marker is a folder among text files: its yellow icon is found in every recorded frame.
-if (-not $Part) { $Part = 'A' }
+if (-not $Part) { $Part = 'AB' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
 Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @'
@@ -156,7 +158,7 @@ if ($Part -match 'P') { $logLevel = 'pecofence=debug,pecofence::render_timing=tr
 PfStart -Script @('sleep 3600000') -Lang 'zh-CN' -LogLevel $logLevel
 ClearFences | Out-Null
 
-if ($Part -match 'A') {
+if ($Part -match 'A|B') {
   # Fourteen text files and one folder, by name: the folder is the fifth icon, the last of the
   # first row with five columns and the first of the second row with four.
   foreach ($i in 1..15) {
@@ -219,6 +221,84 @@ if ($Part -match 'A') {
   [Anim]::Set($true); Start-Sleep -Milliseconds 800
   $logged = @(PfLogAll | Where-Object { $_ -match 'resize changed the columns' })
   Check 'A the app logs each glide, and none with animations off' ($glides -ge 10 -and $logged.Count -eq $glides) ("$glides lines before the run with animations off, $($logged.Count) after; last: " + ($logged | Select-Object -Last 1))
+}
+
+if ($Part -match 'B') {
+  # Mark, change, wait: the frames between two marks are judged against the pictures before
+  # and after (the rows under the title only: the filter box sits in the title row).
+  function BlendStep($name, $k, $want, $what) {
+    $marks = RfMarks $name
+    $t1 = 1e12
+    if ($k + 1 -lt $marks.Count) { $t1 = $marks[$k + 1] }
+    $way = ''
+    $b = [Flow]::Blend("$PfShots\rec-$name", $marks[$k], $t1, 56, 100000, [ref]$way)
+    $ok = $b[1] -ge 1
+    if (-not $want) { $ok = $b[1] -eq 0 }
+    Check $what $ok ("old and new differ by {0:F1}; blended frames {1} of {2} [{3}]" -f $b[0], $b[1], $b[2], $way)
+  }
+  Case 'B view changes'
+  Pf fence move 资料 --rect '300,140,420,400' | Out-Null; Start-Sleep -Milliseconds 900
+  $r = RfRect '资料'
+  ParkMouse 1300 760
+  RecStart 'views' -X ($r.x - 20) -Y ($r.y - 10) -W ($r.w + 40) -H ($r.h + 20) -Fps 60
+  Start-Sleep -Milliseconds 400
+  RecMark 'list'
+  Pf fence set 资料 layout list | Out-Null; Start-Sleep -Milliseconds 1000
+  RecMark 'details'
+  Pf fence set 资料 layout details | Out-Null; Start-Sleep -Milliseconds 1000
+  RecMark 'icons'
+  Pf fence set 资料 layout icons | Out-Null; Start-Sleep -Milliseconds 1000
+  RecMark 'icon size 64'
+  Pf fence set 资料 iconSize 64 | Out-Null; Start-Sleep -Milliseconds 1000
+  RecMark 'icon size 48'
+  Pf fence set 资料 iconSize 48 | Out-Null; Start-Sleep -Milliseconds 1000
+  RecStop
+  Log "views: $(Get-Content "$PfShots\rec-views\stats.txt")"
+  BlendStep 'views' 0 $true 'B icons to list: the old view fades out under the new one'
+  BlendStep 'views' 1 $true 'B list to details: cross-fade'
+  BlendStep 'views' 2 $true 'B details to icons: cross-fade'
+  # The icon size steps reload every icon, which also shows for a frame or two: ask the app.
+  $faded = @(PfLogAll | Where-Object { $_ -match 'view mode changed' -and $_ -match 'cross_fade=true' })
+  Check 'B the three view changes cross-faded, the two icon size steps did not' ($faded.Count -eq 3) ("$($faded.Count) log lines 'view mode changed ... cross_fade=true'; last: " + ($faded | Select-Object -Last 1))
+
+  Case 'B filter box of a folder fence'
+  New-Item -ItemType Directory -Force $RfPortal | Out-Null
+  for ($i = 1; $i -le 40; $i++) { Set-Content -LiteralPath ("$RfPortal\{0:d2} {1}.txt" -f $i, $RfWords[$i % 12]) 'x' }
+  Pf fence create --portal $RfPortal --title 文件夹 --rect '800,140,420,400' | Out-Null
+  Pf fence set 文件夹 sort name | Out-Null
+  Start-Sleep -Seconds 3
+  $r = RfRect '文件夹'
+  [G]::Click($r.x + $r.w - 30, $r.y + $r.h - 12); Start-Sleep -Milliseconds 300
+  Chord 0x11 0x46; Start-Sleep -Milliseconds 900
+  ParkMouse 1300 760
+  $shown0 = @(@(PfJson item list --fence 文件夹) | Where-Object { $_ -and $_.name }).Count
+  RecStart 'filter' -X ($r.x - 20) -Y ($r.y - 10) -W ($r.w + 40) -H ($r.h + 20) -Fps 60
+  Start-Sleep -Milliseconds 400
+  RecMark 'first letter'
+  [G]::Type('报'); Start-Sleep -Milliseconds 1000
+  RecMark 'second letter'
+  [G]::Type('销'); Start-Sleep -Milliseconds 1000
+  RecMark 'Esc'
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 1000
+  RecStop
+  Log "filter: $(Get-Content "$PfShots\rec-filter\stats.txt"); items in the folder fence: $shown0"
+  Check 'B the filter box changed what the fence shows' (@(PfLogAll | Where-Object { $_ -match 'filter changed' }).Count -ge 3) (@(PfLogAll | Where-Object { $_ -match 'filter changed' } | Select-Object -Last 3) -join ' | ')
+  BlendStep 'filter' 0 $true 'B first letter in the filter box (40 files to 6): cross-fade'
+  BlendStep 'filter' 2 $true 'B filter cleared with Esc (all files back): cross-fade'
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 400
+
+  Case 'B animations off'
+  [Anim]::Set($false); Start-Sleep -Milliseconds 800
+  $r = RfRect '资料'
+  RecStart 'views-noanim' -X ($r.x - 20) -Y ($r.y - 10) -W ($r.w + 40) -H ($r.h + 20) -Fps 60
+  Start-Sleep -Milliseconds 400
+  RecMark 'list'
+  Pf fence set 资料 layout list | Out-Null; Start-Sleep -Milliseconds 1000
+  RecMark 'icons'
+  Pf fence set 资料 layout icons | Out-Null; Start-Sleep -Milliseconds 1000
+  RecStop
+  BlendStep 'views-noanim' 0 $false "B Windows' animations off: the view changes at once"
+  [Anim]::Set($true); Start-Sleep -Milliseconds 800
 }
 
 if ($Part -match 'P') {

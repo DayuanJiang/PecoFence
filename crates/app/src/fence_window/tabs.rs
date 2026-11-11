@@ -324,6 +324,14 @@ impl FenceViewState {
         let _ = self.redraw_content();
     }
 
+    /// A content swap would be seen: the fence is open and at rest, on screen, animations on.
+    pub(super) fn content_swap_shows(&self) -> bool {
+        !self.rolled_up
+            && !self.height_animating()
+            && self.motion.enabled()
+            && desktop::is_visible(self.hwnd)
+    }
+
     /// Ends the content swaps at once: every outgoing panel is parked as a spare and the new
     /// panel rests at its final place. Called on completion (of the newest swap; older
     /// batches use the same durations, so they have finished by then), and by anything that
