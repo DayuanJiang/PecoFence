@@ -180,7 +180,19 @@ pub(super) fn on_keydown(
         }),
         VK_F5 => queue.push(Command::RefreshFence(v.active)),
         k if k == msg::VK_F2 => {
-            if let [item] = ids[..] {
+            // Several selected: the focused one is renamed, as in Explorer (the first of them
+            // when the focus is on none).
+            let focused = v
+                .anchor_index
+                .filter(|i| v.selected.contains(i))
+                .and_then(|i| v.items.get(i))
+                .map(|it| it.id);
+            if let Some(item) = focused.or_else(|| ids.first().copied()) {
+                tracing::debug!(
+                    selected = ids.len(),
+                    focused = focused.is_some(),
+                    "F2 rename"
+                );
                 queue.push(Command::RenameItem {
                     fence: v.active,
                     item,
