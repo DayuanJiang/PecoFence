@@ -6,6 +6,10 @@
 use crate::backdrop::MicaTint;
 use windows_canvas::ColorF;
 
+/// Title bar height in DIPs of the built-in themes ([`Theme::title_height`]); for code that
+/// has a window but no theme at hand.
+pub const TITLE_HEIGHT: f32 = 36.0;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ThemeMode {
     Light,
@@ -219,7 +223,7 @@ impl Theme {
             focus_inner: ColorF::from_rgba8(0x00, 0x00, 0x00, 0xB3),
             accent: ColorF::from_rgba8(0x60, 0xCD, 0xFF, 0xFF),
             corner_radius: 8.0,
-            title_height: 36.0,
+            title_height: TITLE_HEIGHT,
             text_halo: false,
             material: MicaTint::ACRYLIC_DARK,
             lens: Lens::BUILT_IN,
@@ -259,7 +263,7 @@ impl Theme {
             focus_inner: ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xB3),
             accent: ColorF::from_rgba8(0x00, 0x5F, 0xB8, 0xFF),
             corner_radius: 8.0,
-            title_height: 36.0,
+            title_height: TITLE_HEIGHT,
             text_halo: false,
             material: MicaTint::ACRYLIC_LIGHT,
             lens: Lens::BUILT_IN,

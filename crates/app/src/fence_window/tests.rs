@@ -1570,3 +1570,15 @@ fn corners_of_a_narrow_window_leave_the_edge_between_them() {
     let tiny = |left: i32| resize_edge_at((left, 397, 30 - left, 3), (30, 400), 6, 6, 16);
     assert_eq!(tiny(15), Some(msg::HTBOTTOM));
 }
+
+/// The snap gap is rounded the same way wherever fences are lined up: a gap of 3 DIPs at 150 %
+/// is 5 px (4.5 rounded), where a move used to cut it to 4 and a resize used 5.
+#[test]
+fn snap_gap_is_rounded_at_fractional_scales() {
+    assert_eq!(snap_gap_px(8, 1.0), 8);
+    assert_eq!(snap_gap_px(8, 1.25), 10);
+    assert_eq!(snap_gap_px(3, 1.5), 5);
+    assert_eq!(snap_gap_px(2, 1.25), 3);
+    assert_eq!(snap_gap_px(6, 1.75), 11);
+    assert_eq!(snap_gap_px(0, 1.5), 0);
+}

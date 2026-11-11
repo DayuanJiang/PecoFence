@@ -132,7 +132,7 @@ pub(super) fn flush_window_drag(
     if let Some((start, members)) = &group {
         let scale = monitors::dpi_for_window(target_hwnd).max(96) as f32 / 96.0;
         let snap = (snapping && !snap_paused()).then_some((
-            (gap_dip as f32 * scale) as i32,
+            snap_gap_px(gap_dip, scale),
             (SNAP_DIST_DIP as f32 * scale) as i32,
         ));
         let others = fence_rects_outside(target_hwnd, members);
@@ -142,7 +142,7 @@ pub(super) fn flush_window_drag(
         guides = snap_rect(
             &mut rect,
             target_hwnd,
-            (gap_dip as f32 * scale) as i32,
+            snap_gap_px(gap_dip, scale),
             (SNAP_DIST_DIP as f32 * scale) as i32,
         );
     }

@@ -236,6 +236,13 @@ impl Behavior {
     }
 }
 
+/// The snapping gap (`snapping.gapPx`, DIPs) in device px at `scale`, rounded. Every place
+/// that lines fences up takes it from here: cut off in some and rounded in others, a fence
+/// moved next to another sat 1 px closer than one sized to it (a gap of 3 at 150 %).
+pub fn snap_gap_px(gap_dip: i32, scale: f32) -> i32 {
+    (gap_dip as f32 * scale).round() as i32
+}
+
 /// Queues `FenceBoundsChanged` with `hwnd`'s window rectangle as it is now, the push shift taken
 /// out in the same breath (a push pass running before the command is handled cannot skew it).
 pub(super) fn queue_bounds_changed(

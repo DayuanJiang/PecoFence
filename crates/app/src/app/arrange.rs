@@ -100,7 +100,10 @@ impl App {
     /// The snapping gap (`snapping.gapPx`) in device px for `hwnd`'s monitor.
     pub(super) fn gap_px(&self, hwnd: HWND) -> i32 {
         let scale = monitors::dpi_for_window(hwnd).max(96) as f32 / 96.0;
-        (settings::snap_gap_dip(&self.state.config.settings.snapping) as f32 * scale).round() as i32
+        crate::fence_window::snap_gap_px(
+            settings::snap_gap_dip(&self.state.config.settings.snapping),
+            scale,
+        )
     }
 
     /// Screen rectangles of the other fence windows that are showing, and that `id` is ever

@@ -955,7 +955,7 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
     let near = behavior.snapping.get().then(|| Neighbours {
         others: &others,
         work: work.as_ref(),
-        gap: (behavior.snap_gap_dip.get() as f32 * scale).round() as i32,
+        gap: snap_gap_px(behavior.snap_gap_dip.get(), scale),
         dist: (SNAP_DIST_DIP as f32 * scale) as i32,
         align: !snap_paused(),
     });
@@ -1041,7 +1041,7 @@ pub(super) fn on_moving(
         let scale = monitors::dpi_for_window(hwnd).max(96) as f32 / 96.0;
         let snap = (behavior.snapping.get() && !snap_paused()).then(|| {
             (
-                (behavior.snap_gap_dip.get() as f32 * scale) as i32,
+                snap_gap_px(behavior.snap_gap_dip.get(), scale),
                 (SNAP_DIST_DIP as f32 * scale) as i32,
             )
         });
@@ -1068,7 +1068,7 @@ pub(super) fn on_moving(
         guides = snap_rect(
             rect,
             hwnd,
-            (behavior.snap_gap_dip.get() as f32 * scale) as i32,
+            snap_gap_px(behavior.snap_gap_dip.get(), scale),
             (SNAP_DIST_DIP as f32 * scale) as i32,
         );
     }
