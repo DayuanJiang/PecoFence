@@ -544,6 +544,14 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
                         });
                         Some(0)
                     }
+                    // The accent colour changed while the box is open: drawn again with it.
+                    msg::WM_SETTINGCHANGE
+                    | msg::WM_THEMECHANGED
+                    | msg::WM_DWMCOLORIZATIONCOLORCHANGED => {
+                        tracing::debug!(message, "search: colours may have changed, drawn again");
+                        paint::invalidate(hwnd);
+                        None
+                    }
                     msg::WM_ERASEBKGND => Some(1),
                     msg::WM_PAINT => {
                         paint_box(hwnd);
@@ -770,10 +778,22 @@ fn paint_box(hwnd: HWND) {
             Align::Right,
         );
         let line = if s.dark { 0x0040_4040 } else { 0x00E0_E0E0 };
-        let accent = if s.dark { 0x00FF_C060 } else { 0x00D7_5B2A };
+        // The Windows accent, as the fences mark the same matches with it (Dark1 on light,
+        // Light2 on dark): the matched letters and the action glyphs; the chosen tab's capsule
+        // and the highlighted row are the background tinted with it. The blue it had before
+        // when the accent cannot be read.
+        let (accent, tint, selected_back) = match pecofence_platform::theme::accent_palette() {
+            Some(c) => {
+                let rgb = if s.dark { c.light2 } else { c.dark1 };
+                let accent = u32::from_le_bytes([rgb[0], rgb[1], rgb[2], 0]);
+                let tint = mix(back, accent, if s.dark { 0.2 } else { 0.14 });
+                (accent, tint, mix(back, accent, 0.1))
+            }
+            None if s.dark => (0x00FF_C060, 0x0060_4A33, 0x0048_3A2E),
+            None => (0x00D7_5B2A, 0x00F7_E8D9, 0x00FA_EBE3),
+        };
         // The type tabs: the chosen one in an accent-tinted capsule, the keys at the right.
         let tabs_top = box_h;
-        let tint = if s.dark { 0x0060_4A33 } else { 0x00F7_E8D9 };
         // The fill under the pointer: the fences' subtle hover (WinUI's: 6 % white on dark,
         // 3.5 % black on light) at the strength its fade has reached.
         let hover_back = if s.dark {
@@ -858,7 +878,6 @@ fn paint_box(hwnd: HWND) {
             return;
         }
         let text_color = if s.dark { 0x00F0_F0F0 } else { 0x001E_1E1E };
-        let selected_back = if s.dark { 0x0048_3A2E } else { 0x00FA_EBE3 };
         let (pad, icon) = (px(ROW_PAD), px(ICON));
         let hint_w = px(56.0);
         for i in 0..s.rows.len() {
