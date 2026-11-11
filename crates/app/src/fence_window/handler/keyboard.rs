@@ -251,12 +251,15 @@ pub(super) fn on_keydown(
                 window::release_capture();
                 return Some(0);
             }
-            // A filtered fence: Esc clears the filter first.
+            // A filtered fence: Esc clears the filter first and leaves the selection, which
+            // the next Esc clears.
             if v.filter_active {
+                tracing::debug!(selected = ids.len(), "Esc: filter cleared, selection kept");
                 queue.push(Command::ClearFenceFilter(v.active));
+            } else {
+                v.selected.clear();
+                v.type_ahead.clear();
             }
-            v.selected.clear();
-            v.type_ahead.clear();
             seer::close();
             quicklook::close();
             if !h.behavior.selection.borrow().is_empty() {
