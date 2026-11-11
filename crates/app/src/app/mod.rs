@@ -458,6 +458,12 @@ pub struct App {
     peek_hit: usize,
     /// Fences the search moved to another tab, with the tab each showed before.
     peek_tabs: HashMap<FenceId, FenceId>,
+    /// Frames left until the fences a window hid at the start of the Peek are raised over it
+    /// and fade in (`prepare_peek_fade`); `None` when none waits.
+    peek_raise_in: Option<u8>,
+    /// Frames left until the fences the Peek faded are opaque again, once they are back under
+    /// the windows (`end_peek_now`); `None` when none waits.
+    peek_rest_in: Option<u8>,
     /// The search list (rows, Everything's answer, a dialog waiting behind the Peek).
     search: search::SearchState,
     /// 「安装 Everything」 is running winget.
@@ -1806,6 +1812,8 @@ impl App {
             peek_hits: Vec::new(),
             peek_hit: 0,
             peek_tabs: HashMap::new(),
+            peek_raise_in: None,
+            peek_rest_in: None,
             search: Default::default(),
             everything_installing: false,
             snap_held: false,

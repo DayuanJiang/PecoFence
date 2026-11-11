@@ -341,6 +341,7 @@ impl App {
         // Peek dimmer: a layered window, so its alpha is a client tween ticked here. The last
         // frame writes the clear alpha before the windows are torn down.
         let mut peek_done = false;
+        more |= self.tick_peek_raise();
         if let Some(p) = self.peek.as_mut() {
             more |= p.on_frame(now);
             peek_done = p.close_finished(now);
@@ -348,6 +349,7 @@ impl App {
         if peek_done {
             self.end_peek_now();
         }
+        more |= self.tick_peek_rest();
         let spent = now.elapsed();
         self.frame_run.max_frame = self.frame_run.max_frame.max(spent);
         self.frame_run.work += spent;

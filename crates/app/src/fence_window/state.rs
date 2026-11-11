@@ -463,6 +463,10 @@ pub struct FenceViewState {
     pub(super) vis_fade: Option<VisFade>,
     pub(super) vis_gen: usize,
     pub(super) vis_deadline: Option<Instant>,
+    /// The Peek fades this fence with its dimmer (`peek_fade_prepare`): the root opacity and
+    /// the shadow's alpha are the Peek's until `peek_fade_rest`, or until a show / hide fade
+    /// takes them over.
+    pub(super) peek_faded: bool,
     /// What the current whole-window fade did so far (see `FadeTrace`).
     pub(super) fade_trace: FadeTrace,
     /// `FenceWindow::retire` was called: the window is fading out for good and lives only in

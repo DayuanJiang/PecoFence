@@ -302,6 +302,7 @@ impl FenceWindow {
             vis_fade: None,
             vis_gen: 0,
             vis_deadline: None,
+            peek_faded: false,
             fade_trace: FadeTrace::default(),
             retired: false,
             off_desktop: false,
@@ -480,7 +481,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?}",
+            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={}",
             v.title,
             v.title_count,
             v.filter_active,
@@ -539,6 +540,8 @@ impl FenceWindow {
             v.rolled_up && v.shows_rolled_count(),
             // What of the filter tag fits (its box in DIPs, the text, the count, the chip).
             v.filter_tag_fit(),
+            // The Peek is fading this fence with its dimmer.
+            v.peek_faded,
         )
     }
 
@@ -2551,6 +2554,39 @@ impl FenceWindow {
             }
         });
         changes
+    }
+
+    /// Peek: another program's window hides this fence, so it is made transparent before the
+    /// Peek raises it (see `FenceViewState::peek_fade_prepare`). False: it shows at once.
+    pub fn peek_fade_prepare(&self) -> bool {
+        let mut taken = false;
+        self.with_view(|v| taken = v.peek_fade_prepare());
+        taken
+    }
+
+    /// Peek: fades this fence in, if `peek_fade_prepare` or `peek_fade_out` took it.
+    pub fn peek_fade_in(&self) {
+        self.with_view(|v| {
+            v.peek_fade_to(1.0, false);
+        });
+    }
+
+    /// The Peek ends and this fence goes back under a window: it fades out with the dimmer.
+    /// False: it stays as it is (animations off, or a show / hide fade is running).
+    pub fn peek_fade_out(&self) -> bool {
+        let mut fading = false;
+        self.with_view(|v| fading = v.peek_fade_to(0.0, true));
+        fading
+    }
+
+    /// The Peek has this fence's opacity (`peek_fade_prepare`, `peek_fade_out`).
+    pub fn peek_faded(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| v.peek_faded)
+    }
+
+    /// The Peek is over: a fence it faded is opaque again.
+    pub fn peek_fade_rest(&self) {
+        self.with_view(|v| v.peek_fade_rest());
     }
 
     /// The icon cache has new pictures for these draw keys (`IconCache::take_replaced`):

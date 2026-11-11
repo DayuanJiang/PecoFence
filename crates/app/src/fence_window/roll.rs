@@ -288,6 +288,7 @@ impl FenceViewState {
     pub(super) fn prepare_fade_in(&mut self, entrance: bool) -> bool {
         window::kill_timer(self.hwnd, TIMER_VISIBILITY_FINISH);
         self.vis_deadline = None;
+        self.peek_faded = false;
         if !self.motion.enabled() {
             self.vis_fade = None;
             self.reset_root();
@@ -361,6 +362,7 @@ impl FenceViewState {
     pub(super) fn begin_fade_out(&mut self, exit: bool, destroy: bool) -> bool {
         window::kill_timer(self.hwnd, TIMER_VISIBILITY_FINISH);
         self.vis_deadline = None;
+        self.peek_faded = false;
         self.hide_tip();
         // A retired window must always end in `FadeOutDone`, whoever hides it (quick hide,
         // Peek) while its exit fade is still running.
@@ -412,6 +414,7 @@ impl FenceViewState {
     pub(super) fn reset_root(&mut self) {
         window::kill_timer(self.hwnd, TIMER_VISIBILITY_FINISH);
         self.vis_deadline = None;
+        self.peek_faded = false;
         let _ = self.motion.stop(&self.root, Prop::Opacity);
         let _ = self.motion.stop(&self.root, Prop::Scale);
         self.root.set_opacity(1.0);
@@ -434,6 +437,7 @@ impl FenceViewState {
         }
         window::kill_timer(self.hwnd, TIMER_VISIBILITY_FINISH);
         self.vis_deadline = None;
+        self.peek_faded = false;
         let _ = self.motion.stop(&self.root, Prop::Opacity);
         let _ = self.motion.stop(&self.root, Prop::Scale);
         self.root.set_opacity(0.0);
@@ -441,6 +445,94 @@ impl FenceViewState {
         self.shadow_alpha = Tween::at(0.0, Instant::now());
         self.shadow_fading = false;
         self.apply_shadow_alpha(Instant::now());
+    }
+
+    /// Whether the Peek may fade this window: animations on, shown, and no show / hide fade
+    /// owns the root.
+    fn peek_fade_allowed(&self) -> bool {
+        self.motion.enabled()
+            && self.vis_fade.is_none()
+            && !self.retired
+            && !self.off_desktop
+            && desktop::is_visible(self.hwnd)
+    }
+
+    /// Peek, before the fence comes over the window that hides it: transparent, its shadow
+    /// too. The fence is raised only once this has reached the screen (a raise in the same
+    /// turn showed it opaque for a frame), then `peek_fade_to(1.0)` fades it in. False: the
+    /// Peek shows it at once, as it does with animations off.
+    pub(super) fn peek_fade_prepare(&mut self) -> bool {
+        if !self.peek_fade_allowed() {
+            tracing::debug!(
+                title = %self.title,
+                animations = self.motion.enabled(),
+                fade = ?self.vis_fade,
+                "peek fade: fence left as it is"
+            );
+            return false;
+        }
+        let now = Instant::now();
+        let _ = self.motion.stop(&self.root, Prop::Opacity);
+        self.root.set_opacity(0.0);
+        self.shadow_alpha = Tween::at(0.0, now);
+        self.shadow_fading = false;
+        self.apply_shadow_alpha(now);
+        self.peek_faded = true;
+        tracing::debug!(
+            title = %self.title,
+            "peek fade: fence made transparent before its raise"
+        );
+        true
+    }
+
+    /// Fades a fence the Peek took (`peek_fade_prepare`, or `take` for one that is opaque
+    /// now and fades out as the Peek ends) to `to`, with the dimmer: 83 ms linear, no scale,
+    /// continuing from wherever a fade in flight is; the shadow's alpha follows on the frame
+    /// clock. Nothing waits for its end: the app calls `peek_fade_rest` when the Peek is over.
+    pub(super) fn peek_fade_to(&mut self, to: f32, take: bool) -> bool {
+        if take && !self.peek_faded {
+            if !self.peek_fade_allowed() {
+                return false;
+            }
+            self.peek_faded = true;
+        }
+        if !self.peek_faded {
+            return false;
+        }
+        if let Err(e) = self
+            .motion
+            .fade_to(&self.root, to, motion::FASTER, Curve::Linear)
+        {
+            tracing::warn!(error = %e, "peek fade failed; opacity set at once");
+            let _ = self.motion.stop(&self.root, Prop::Opacity);
+            self.root.set_opacity(to);
+        }
+        let now = Instant::now();
+        self.shadow_alpha
+            .retarget(to, motion::FASTER, Curve::Linear, now);
+        self.shadow_fading = true;
+        self.frames.request();
+        tracing::debug!(title = %self.title, to, "peek fade started");
+        true
+    }
+
+    /// The Peek is over (or its fade was cancelled): opaque with its shadow again, unless a
+    /// show / hide fade took the root meanwhile or the window was hidden, which rest it
+    /// themselves.
+    pub(super) fn peek_fade_rest(&mut self) {
+        if !std::mem::take(&mut self.peek_faded) {
+            return;
+        }
+        if self.vis_fade.is_some() || !desktop::is_visible(self.hwnd) {
+            tracing::debug!(
+                title = %self.title,
+                fade = ?self.vis_fade,
+                "peek fade: rest left to the window's own fade"
+            );
+            return;
+        }
+        self.reset_root();
+        tracing::debug!(title = %self.title, "peek fade: fence opaque again");
     }
 
     /// Advances the shadow's fade for one frame (see `shadow_alpha`); true while it still moves.
