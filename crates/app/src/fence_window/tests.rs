@@ -858,6 +858,43 @@ fn index_state_remaps_by_item_id_across_a_refresh() {
     assert!(remap_indices(&ids, &other, &sel).is_empty());
 }
 
+/// After the user's own Delete the focus goes to the item that followed the focused one (the
+/// one before it at the end of the list), never to another item of the same Delete.
+#[test]
+fn focus_moves_to_the_neighbour_after_a_delete() {
+    let ids: Vec<ItemId> = (0..5).map(|_| ItemId::new_v4()).collect();
+    let new_of = |left: &[usize]| -> HashMap<ItemId, usize> {
+        left.iter().enumerate().map(|(n, &i)| (ids[i], n)).collect()
+    };
+    let del = |gone: &[usize]| -> HashSet<ItemId> { gone.iter().map(|&i| ids[i]).collect() };
+    // One item in the middle: the next one moves into its slot and takes the focus.
+    assert_eq!(
+        focus_after_delete(&ids, 2, &new_of(&[0, 1, 3, 4]), &del(&[2])),
+        Some(2)
+    );
+    // The last item: the one before it.
+    assert_eq!(
+        focus_after_delete(&ids, 4, &new_of(&[0, 1, 2, 3]), &del(&[4])),
+        Some(3)
+    );
+    // Three selected, the focused one leaves first: the others of the same Delete are skipped.
+    assert_eq!(
+        focus_after_delete(&ids, 2, &new_of(&[0, 1, 3, 4]), &del(&[1, 2, 3])),
+        Some(3),
+        "ids[4], now at index 3"
+    );
+    // Everything after it is being deleted too: back to the one before.
+    assert_eq!(
+        focus_after_delete(&ids, 3, &new_of(&[0, 1, 2, 4]), &del(&[3, 4])),
+        Some(2)
+    );
+    // The only item: nothing to focus.
+    assert_eq!(
+        focus_after_delete(&ids[..1], 0, &new_of(&[]), &del(&[0])),
+        None
+    );
+}
+
 /// Scroll offsets rest on whole device pixels at every common scale (round, not floor,
 /// so a thumb drag cannot drift).
 #[test]

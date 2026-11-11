@@ -111,6 +111,25 @@ pub(super) fn reflow_glides(
         .collect()
 }
 
+/// Where the keyboard focus goes when the user's own Delete took the focused item
+/// (`old[anchor]`) away: the first item after it that stays, else the last one before it
+/// (Explorer moves to the neighbour, so Delete, Delete, Delete walks down a list). `deleting`
+/// are the items of that Delete, which may leave over several refreshes.
+pub(super) fn focus_after_delete(
+    old: &[ItemId],
+    anchor: usize,
+    new: &HashMap<ItemId, usize>,
+    deleting: &HashSet<ItemId>,
+) -> Option<usize> {
+    let stays = |id: &ItemId| new.get(id).copied().filter(|_| !deleting.contains(id));
+    let after = old.get(anchor + 1..).unwrap_or(&[]);
+    let before = old.get(..anchor).unwrap_or(&[]);
+    after
+        .iter()
+        .find_map(stays)
+        .or_else(|| before.iter().rev().find_map(stays))
+}
+
 impl FenceViewState {
     /// Cell origins of the current items in unscrolled content DIPs (the basis of the layout
     /// motion): `layout(width).cell(i)` for every index.
@@ -508,11 +527,38 @@ impl FenceViewState {
             .map(|(i, it)| (it.id, i))
             .collect();
         let map = |i: usize| remap_index(old_ids, &new, i);
+        let old_anchor = self.anchor_index;
         self.selected = remap_indices(old_ids, &new, &self.selected);
         self.anchor_index = self.anchor_index.and_then(map);
         self.range_anchor = self.range_anchor.and_then(map);
         if self.anchor_index.is_none() {
             self.focus_visible = false;
+        }
+        // The user's own Delete took the focused item away: its neighbour takes the focus and
+        // the selection. The note stays while the focused item is one of them and still here
+        // (the shell deletes them one by one, or still asks).
+        if let Some((deleting, ring)) = self.user_delete.take() {
+            let was_focused = old_anchor
+                .and_then(|a| old_ids.get(a))
+                .is_some_and(|id| deleting.contains(id));
+            if self.anchor_index.is_some() {
+                if was_focused {
+                    self.user_delete = Some((deleting, ring));
+                }
+            } else if was_focused {
+                let next = old_anchor.and_then(|a| focus_after_delete(old_ids, a, &new, &deleting));
+                tracing::debug!(
+                    deleted = deleting.len(),
+                    ?old_anchor,
+                    ?next,
+                    ring,
+                    "the focused item was deleted by the user: the focus moves to its neighbour"
+                );
+                if let Some(i) = next {
+                    self.select_only(i);
+                    self.focus_visible = ring;
+                }
+            }
         }
         self.hover = self.hover.and_then(map);
         self.drop_item = self.drop_item.and_then(map);

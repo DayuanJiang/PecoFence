@@ -493,6 +493,9 @@ impl App {
     /// Delete key: the shell's own `delete` verb (Recycle Bin + its confirmation dialog);
     /// `permanent` = Shift+Delete (the shell's own 永久删除 confirmation).
     pub(super) fn delete_items(&mut self, fence: FenceId, items: &[ItemId], permanent: bool) {
+        if let Some(w) = self.window_for(fence) {
+            w.expect_user_delete(items);
+        }
         self.shell_verb_on_items(fence, items, "delete", permanent);
     }
 

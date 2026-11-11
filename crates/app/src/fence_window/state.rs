@@ -241,6 +241,10 @@ pub struct FenceViewState {
     /// Portal 上一级: the folder just left, which the parent's `set_items` selects and scrolls
     /// into view (Explorer), with the focus ring if it was showing.
     pub(super) select_after_nav: Option<(ItemId, bool)>,
+    /// The user's own Delete (key or menu) of these items is under way; the bool is the focus
+    /// ring (the Delete came from the keyboard). When the focused item goes with them, the
+    /// item that followed it takes the focus and the selection (`focus_after_delete`).
+    pub(super) user_delete: Option<(HashSet<ItemId>, bool)>,
     /// Smooth-scroll client tween (the offset is rasterised into the D2D content surface, so
     /// the surface is redrawn per frame from `tick`). Its target is where pending input
     /// accumulates: a second wheel notch retargets from the anticipated end, not from the

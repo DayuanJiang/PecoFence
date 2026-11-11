@@ -204,6 +204,7 @@ impl FenceWindow {
             scroll_memory: HashMap::new(),
             scroll_restore: None,
             select_after_nav: None,
+            user_delete: None,
             scroll_anim: None,
             dpi,
             theme,
@@ -884,6 +885,18 @@ impl FenceWindow {
             if &v.cut != cut {
                 v.cut = cut.clone();
                 let _ = v.redraw_content();
+            }
+        });
+    }
+
+    /// The user deletes these items (Delete key or the item menu): when the focused one goes
+    /// with them, the item after it takes the focus and the selection, as in Explorer. A note
+    /// the Delete key left for the same items (with the focus ring) stays.
+    pub fn expect_user_delete(&self, items: &[ItemId]) {
+        self.with_view(|v| {
+            let ids: HashSet<ItemId> = items.iter().copied().collect();
+            if v.user_delete.as_ref().is_none_or(|(d, _)| *d != ids) {
+                v.user_delete = Some((ids, false));
             }
         });
     }

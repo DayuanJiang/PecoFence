@@ -213,6 +213,8 @@ pub(super) fn on_keydown(
             if lparam & (1 << 30) != 0 {
                 tracing::debug!("delete key repeat ignored");
             } else if !ids.is_empty() {
+                // From the keyboard: the neighbour that takes the focus shows the focus ring.
+                v.user_delete = Some((ids.iter().copied().collect(), true));
                 queue.push(Command::DeleteItems {
                     fence: v.active,
                     items: ids,
