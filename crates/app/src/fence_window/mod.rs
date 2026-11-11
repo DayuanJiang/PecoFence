@@ -470,6 +470,21 @@ impl ScriptRowView {
             .collect()
     }
 
+    /// A failed run: `error` (the line that says what went wrong) in the colour of a
+    /// `color=red` row, then what the script printed until it failed, as plain rows.
+    pub fn failed(error: &str, output: &str) -> Vec<Self> {
+        let mut rows = Vec::new();
+        if !error.is_empty() {
+            rows.push(Self {
+                text: error.to_string(),
+                color: Some("red".to_string()),
+                ..Self::default()
+            });
+        }
+        rows.extend(Self::plain(output));
+        rows
+    }
+
     /// A script's output read as rows with their parameters.
     pub fn from_output(text: &str) -> Vec<Self> {
         use pecofence_core::script_output::{RowAction, ScriptLine, parse};

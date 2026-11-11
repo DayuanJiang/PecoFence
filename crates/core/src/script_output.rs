@@ -193,6 +193,19 @@ pub fn color_rgb(color: &str, dark: bool) -> Option<[u8; 3]> {
     Some(if dark { on_dark } else { light })
 }
 
+/// The line of a failed script's error text that says what went wrong: the first line with
+/// text (PowerShell, cmd and most programs start with the message; the lines after it say
+/// where), or the last one of a Python traceback, whose first line only announces it.
+pub fn error_line(stderr: &str) -> &str {
+    let mut lines = stderr.lines().map(str::trim).filter(|l| !l.is_empty());
+    let first = lines.next().unwrap_or_default();
+    if first.starts_with("Traceback (most recent call last)") {
+        lines.last().unwrap_or(first)
+    } else {
+        first
+    }
+}
+
 /// A streaming script names itself so in a comment (SwiftBar's metadata tag, or ours).
 pub fn is_streamable(source: &str) -> bool {
     source.contains("<swiftbar.type>streamable</swiftbar.type>")
@@ -208,6 +221,26 @@ mod tests {
             ScriptLine::Row(r) => r,
             ScriptLine::Separator => panic!("separator"),
         }
+    }
+
+    #[test]
+    fn error_line_says_what_went_wrong() {
+        // PowerShell: the message first, then where it happened.
+        let ps =
+            "连接服务器失败：超时\nAt C:\\x.ps1:2 char:1\n+ throw \"x\"\n    + CategoryInfo : y\n";
+        assert_eq!(error_line(ps), "连接服务器失败：超时");
+        // Python: the traceback ends with the error.
+        let py = "Traceback (most recent call last):\n  File \"x.py\", line 2, in <module>\n    int('a')\nValueError: invalid literal\n\n";
+        assert_eq!(error_line(py), "ValueError: invalid literal");
+        assert_eq!(
+            error_line("Traceback (most recent call last):"),
+            "Traceback (most recent call last):"
+        );
+        assert_eq!(
+            error_line("\n  'foo' is not recognized  \n"),
+            "'foo' is not recognized"
+        );
+        assert_eq!(error_line(" \n"), "");
     }
 
     #[test]

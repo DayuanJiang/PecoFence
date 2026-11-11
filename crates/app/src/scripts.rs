@@ -21,8 +21,12 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 pub enum Outcome {
     /// Exit code 0; what it printed (cleaned up).
     Done(String),
-    /// Another exit code; what it printed (or wrote to stderr when it printed nothing).
-    Failed { code: Option<i32>, text: String },
+    /// Another exit code; what it printed until then (`text`) and what it wrote to stderr.
+    Failed {
+        code: Option<i32>,
+        text: String,
+        error: String,
+    },
     /// Still running after [`TIMEOUT`]; stopped.
     TimedOut,
     /// The file is gone.
@@ -224,7 +228,8 @@ pub fn run(path: &Path, env: &RunEnv) -> Outcome {
     } else {
         Outcome::Failed {
             code: status.code(),
-            text: if stdout.is_empty() { stderr } else { stdout },
+            text: stdout,
+            error: stderr,
         }
     }
 }
@@ -367,7 +372,11 @@ impl Stream {
                 // A script that ends by itself leaves what it showed last.
                 let outcome = match status.and_then(|s| s.code()) {
                     Some(0) => Outcome::Done(shown),
-                    code => Outcome::Failed { code, text: stderr },
+                    code => Outcome::Failed {
+                        code,
+                        text: shown,
+                        error: stderr,
+                    },
                 };
                 on_event(StreamEvent::Ended(outcome));
             })

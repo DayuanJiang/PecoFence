@@ -165,7 +165,11 @@ impl App {
             Outcome::NotStarted(_) => "notStarted",
         });
         let output = last.and_then(|(o, _)| match o {
-            Outcome::Done(t) | Outcome::Failed { text: t, .. } => Some(t.clone()),
+            Outcome::Done(t) => Some(t.clone()),
+            // As before the two were kept apart: the error text of a run that printed nothing.
+            Outcome::Failed { text, error, .. } => {
+                Some(if text.is_empty() { error } else { text }.clone())
+            }
             _ => None,
         });
         Some(pecofence_ipc::ScriptDto {
@@ -299,12 +303,8 @@ impl App {
         // when it ran.
         let (text, status) = match outcome {
             Outcome::Done(text) => (text.clone(), Some(i18n::format("{0} 更新", &[when]))),
-            // An error's first line says what happened (PowerShell's further lines locate it).
-            Outcome::Failed { code, text } => (
-                text.lines()
-                    .find(|l| !l.trim().is_empty())
-                    .unwrap_or_default()
-                    .to_string(),
+            Outcome::Failed { code, text, .. } => (
+                text.clone(),
                 Some(i18n::format(
                     "{0} 运行出错（退出代码 {1}）",
                     &[
@@ -335,6 +335,10 @@ impl App {
         // Only a finished run's output is read as rows with actions; an error shows as text.
         let rows = match outcome {
             Outcome::Done(_) => ScriptRowView::from_output(&text),
+            // What went wrong first, then what the script printed until it failed.
+            Outcome::Failed { error, .. } => {
+                ScriptRowView::failed(pecofence_core::script_output::error_line(error), &text)
+            }
             _ => ScriptRowView::plain(&text),
         };
         ScriptView {
@@ -588,10 +592,18 @@ impl App {
                     }
                     let (lines, code) = match &outcome {
                         Outcome::Done(t) => (t.lines().count(), Some(0)),
-                        Outcome::Failed { code, text } => (text.lines().count(), *code),
+                        Outcome::Failed { code, text, .. } => (text.lines().count(), *code),
                         _ => (0, None),
                     };
                     tracing::info!(%id, outcome = outcome.kind(), ms, lines, code, "script fence run ended");
+                    if let Outcome::Failed { error, .. } = &outcome {
+                        tracing::debug!(
+                            %id,
+                            error_lines = error.lines().count(),
+                            shown = !pecofence_core::script_output::error_line(error).is_empty(),
+                            "script fence: a failed run shows its error line above its output"
+                        );
+                    }
                     self.script_runs.last.insert(id, (outcome, at));
                     shown.push(id);
                     let next = self
