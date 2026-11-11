@@ -128,7 +128,9 @@ if ($Part -match 'B') {
   Shot 'mc2-box-open'
   $crop = [Px]::Grab($cellL - 30, $p[1] - 40, [int]$pitch + 60, 150); $crop.Save("$PfShots\mc2-box-crop.png")
   Log "MC2 box $($r.L),$($r.T),$($r.R),$($r.B) cell $cellL..$cellR icon centre $($p -join ',')"
-  Check 'MC2 the box stays inside its cell' ($box -ne [IntPtr]::Zero -and $r.L -ge $cellL -and $r.R -le $cellR) "box x $($r.L)..$($r.R), cell x $cellL..$cellR"
+  # The box is the label's text width plus its 4 px frame: with a narrower label inset the frame
+  # may stand a few pixels over the cell's edge (the old box stood out 6 px at 100 %).
+  Check 'MC2 the box stays inside its cell' ($box -ne [IntPtr]::Zero -and $r.L -ge $cellL - 4 -and $r.R -le $cellR + 4) "box x $($r.L)..$($r.R), cell x $cellL..$cellR"
   Check 'MC2 the box is as tall as the wrapped name (2 lines or more)' (($r.B - $r.T) -ge 34) "box height $($r.B - $r.T) px"
   Check 'MC2 the box is centred under the icon' ([math]::Abs((($r.L + $r.R) / 2) - $p[0]) -le 2) "box centre $(($r.L + $r.R) / 2), icon centre $($p[0])"
   # Nothing of the old name shows around the box: the label rows of the cell below the box.

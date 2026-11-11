@@ -2035,6 +2035,11 @@ impl FenceChrome {
         self.label_font.borrow().size
     }
 
+    /// Font family of the labels and rows (Windows' icon title font, or the theme's).
+    pub fn label_family(&self) -> String {
+        self.label_font.borrow().family.clone()
+    }
+
     /// One label line in DIPs for the current icon-title font (16 at the default 12 px).
     pub fn label_line_h(&self) -> f32 {
         self.label_font.borrow().line_h

@@ -204,23 +204,7 @@ impl EditControl {
             if hwnd.0.is_null() {
                 return Err(Error::from_thread());
             }
-            let face = to_wide(crate::fonts::text_face());
-            let font = CreateFontW(
-                -(font_dip * dpi as f32 / 96.0).round() as i32,
-                0,
-                0,
-                0,
-                FW_NORMAL,
-                0,
-                0,
-                0,
-                DEFAULT_CHARSET as u32,
-                OUT_DEFAULT_PRECIS as u32,
-                CLIP_DEFAULT_PRECIS as u32,
-                CLEARTYPE_QUALITY as u32,
-                (DEFAULT_PITCH | FF_DONTCARE) as u32,
-                PCWSTR(face.as_ptr()),
-            );
+            let font = make_font(crate::fonts::text_face(), font_dip, dpi);
             SendMessageW(hwnd, WM_SETFONT as u32, WPARAM(font.0 as usize), LPARAM(1));
             let brush = CreateSolidBrush(COLORREF(back_color));
             let _ = SetWindowSubclass(hwnd, Some(subclass_proc), 1, on_key as usize);
@@ -263,6 +247,27 @@ impl EditControl {
                 WPARAM(start as usize),
                 LPARAM(end as isize),
             );
+        }
+    }
+
+    /// Gives the control the font `face` at `font_dip` DIPs in place of the body text face:
+    /// a box over text that is drawn in another font (an item's name). The margins follow the
+    /// new font again.
+    pub fn set_font(&mut self, face: &str, font_dip: f32, dpi: u32) {
+        // SAFETY: plain GDI and message calls; the old font goes once the control has the new.
+        unsafe {
+            let font = make_font(face, font_dip, dpi);
+            if font.0.is_null() {
+                return;
+            }
+            SendMessageW(
+                self.hwnd,
+                WM_SETFONT as u32,
+                WPARAM(font.0 as usize),
+                LPARAM(1),
+            );
+            let _ = DeleteObject(HGDIOBJ(self.font.0));
+            self.font = font;
         }
     }
 
@@ -413,6 +418,33 @@ impl EditControl {
             let _ = SetBkColor(hdc, COLORREF(self.back_color));
         }
         self.brush.0 as isize
+    }
+}
+
+/// `face` at an em height of `font_dip` DIPs for `dpi`, as the controls use it.
+///
+/// # Safety
+/// A plain GDI call; the caller owns the font and deletes it.
+unsafe fn make_font(face: &str, font_dip: f32, dpi: u32) -> HFONT {
+    let face = to_wide(face);
+    // SAFETY: the face buffer outlives the call.
+    unsafe {
+        CreateFontW(
+            -(font_dip * dpi as f32 / 96.0).round() as i32,
+            0,
+            0,
+            0,
+            FW_NORMAL,
+            0,
+            0,
+            0,
+            DEFAULT_CHARSET as u32,
+            OUT_DEFAULT_PRECIS as u32,
+            CLIP_DEFAULT_PRECIS as u32,
+            CLEARTYPE_QUALITY as u32,
+            (DEFAULT_PITCH | FF_DONTCARE) as u32,
+            PCWSTR(face.as_ptr()),
+        )
     }
 }
 

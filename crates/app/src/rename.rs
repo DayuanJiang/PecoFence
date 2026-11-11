@@ -161,9 +161,9 @@ pub fn has_reserved_char(name: &str) -> bool {
         .any(|c| matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|'))
 }
 
-/// Opens the rename popup over an item's label rectangle (screen pixels), its text `font_dip`
-/// DIPs high (the names' own size). `select_end` limits the initial selection to the first N
-/// UTF-16 units (the stem); `None` selects everything.
+/// Opens the rename popup over an item's label rectangle (screen pixels), its text in the
+/// names' own font: `font_face` at `font_dip` DIPs. `select_end` limits the initial selection
+/// to the first N UTF-16 units (the stem); `None` selects everything.
 ///
 /// `wrap_inset_dip` (the label's side inset inside its cell) is given for an icon's name,
 /// centred under the icon: the box is centred too, wraps the name at the label's width like
@@ -174,6 +174,7 @@ pub fn has_reserved_char(name: &str) -> bool {
 pub fn begin_item_rename(
     label_rect: RECT,
     dpi: u32,
+    font_face: &str,
     font_dip: f32,
     text_scale: f32,
     item: ItemId,
@@ -191,7 +192,7 @@ pub fn begin_item_rename(
         RenameTarget::Item(item),
         current,
         select_end,
-        Some(item_box),
+        Some((item_box, font_face)),
         queue,
         mode,
     );
@@ -325,10 +326,13 @@ fn begin_rename_at(
     target: RenameTarget,
     current: String,
     select_end: Option<usize>,
-    item_box: Option<ItemBox>,
+    item_box: Option<(ItemBox, &str)>,
     queue: CommandQueue,
     mode: ThemeMode,
 ) {
+    // An item's box edits its name in the names' own font.
+    let font_face = item_box.map(|(_, face)| face);
+    let item_box = item_box.map(|(b, _)| b);
     end_active(false);
     CLASS.with(|c| {
         if c.borrow().is_none() {
@@ -400,9 +404,13 @@ fn begin_rename_at(
         ),
         _ => edit::EditControl::create(window.hwnd(), w, h, dpi, font_dip, &current, dark, on_key),
     };
-    let Ok(ctl) = ctl else {
+    let Ok(mut ctl) = ctl else {
         return;
     };
+    if let Some(face) = font_face {
+        ctl.set_font(face, font_dip, dpi);
+        ctl.set_margins(0);
+    }
     let item_box = item_box.map(|b| ItemBox {
         line_h: ctl.line_height(),
         ..b
@@ -415,7 +423,6 @@ fn begin_rename_at(
             fit_item_box(&window, &ctl, b);
         } else {
             // A row's name: one line, centred in the box, starting where the row's text does.
-            ctl.set_margins(0);
             ctl.set_bounds(b.pad_x, (h - b.line_h) / 2, w - 2 * b.pad_x, b.line_h);
         }
     }
