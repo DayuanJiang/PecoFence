@@ -553,9 +553,10 @@ impl App {
         )
     }
 
-    /// Runs one of the shell's canonical verbs (`delete`, `cut`, `copy`, `properties`) on the
-    /// selection as if picked from Explorer's menu. `shift` = Shift held (permanent delete).
-    /// `delete` runs on a worker thread (see [`App::start_shell_delete`]).
+    /// Runs one of the shell's canonical verbs (`cut`, `copy`, `properties`) on the selection
+    /// as if picked from Explorer's menu, or deletes it (`delete`: the shell's file operation
+    /// on a worker thread, see [`App::start_shell_delete`]). `shift` = Shift held (permanent
+    /// delete).
     pub(super) fn shell_verb_on_items(
         &mut self,
         fence: FenceId,
@@ -604,7 +605,7 @@ impl App {
         }
     }
 
-    /// Delete key: the shell's own `delete` verb (Recycle Bin + its confirmation dialog);
+    /// Delete key: the shell's own delete (Recycle Bin + its confirmation dialog);
     /// `permanent` = Shift+Delete (the shell's own 永久删除 confirmation).
     pub(super) fn delete_items(&mut self, fence: FenceId, items: &[ItemId], permanent: bool) {
         // The fence waits only for what the shell is asked to delete (the Recycle Bin and the

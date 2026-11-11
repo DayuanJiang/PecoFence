@@ -190,13 +190,13 @@ impl ShellContextMenu {
 }
 
 impl ShellContextMenu {
-    /// Runs the shell command whose canonical verb is `verb` (`delete`, `cut`, `copy`,
-    /// `properties`) without showing a menu, the way Explorer runs Delete or Ctrl+C on its
-    /// selection: the menu is only prepared for invoking (CMF_OPTIMIZEFORINVOKE) and the verb
-    /// goes by name. Building the whole menu to look the verb up loaded every menu extension
-    /// and took up to a second per key press on a PC with many of them (feedback #108). Fails
-    /// when the items do not offer the verb. `shift` = Shift held (Shift+Delete deletes
-    /// permanently).
+    /// Runs the shell command whose canonical verb is `verb` (`cut`, `copy`, `properties`)
+    /// without showing a menu, the way Explorer runs Ctrl+C on its selection: the menu is only
+    /// prepared for invoking (CMF_OPTIMIZEFORINVOKE) and the verb goes by name. Building the
+    /// whole menu to look the verb up took up to a second per key press on a PC with many
+    /// menu extensions (feedback #108). The shell still loads every menu extension and calls
+    /// it with that flag, so Delete goes through `shell::delete_items` instead. Fails when the
+    /// items do not offer the verb. `shift` = Shift held.
     pub fn invoke_verb(&self, verb: &str, owner: HWND, pt: POINT, shift: bool) -> Result<()> {
         // SAFETY: temporary menu owned and destroyed here.
         let hmenu = unsafe { CreatePopupMenu() };

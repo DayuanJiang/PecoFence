@@ -198,6 +198,12 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   desktop's files and an installed PecoFence stay: steps remove what they create and install.
 - Files the steps need (installers, test programs) go in a folder given with `--extra`; on the box
   they are in `$PfExtra` (`C:\pf\extra`). Helper scripts of the kit itself are in `assets/`.
+- Another program's shell extension inside PecoFence: `build.sh` also builds
+  `tools/shellext-fault` into `target/wintest-shellext`, a menu handler and copy hook that writes
+  every call to `calls.log` beside the DLL and faults in the entry point named in `fault.txt`,
+  only inside pecofence.exe. `tests/shellext-fault.ps1` (`--extra target/wintest-shellext`)
+  registers it for pf alone and removes it again; copy its `ExtRegister` / `ExtArm` for another
+  test of that kind.
 - An RDP session starts with Windows' client-area animations off, so PecoFence snaps where a
   normal desktop animates: switch them on in the steps when a test is about animation.
 - pf's Explorer shows icons only, never thumbnails (IconsOnly=1): switch it off for a thumbnail

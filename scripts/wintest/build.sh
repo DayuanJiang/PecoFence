@@ -25,4 +25,9 @@ for e in pecofence pecofence-cli pecofence-watchdog; do
   cp "target/x86_64-pc-windows-msvc/$PROFILE/$e.exe" "$OUT/" || exit 2
 done
 cp third_party/webview2/WebView2Loader.x64.dll "$OUT/WebView2Loader.dll"
+# The test shell extension of tests/shellext-fault.ps1 (run.sh --extra target/wintest-shellext).
+cargo xwin build --release --target x86_64-pc-windows-msvc --manifest-path tools/shellext-fault/Cargo.toml \
+  --target-dir target/shellext-fault 2>&1 | grep -E '^error' | tail -5
+mkdir -p target/wintest-shellext
+cp target/shellext-fault/x86_64-pc-windows-msvc/release/pf_shellext_fault.dll target/wintest-shellext/ || exit 2
 echo "$PROFILE build in $OUT, pecofence.exe $(sha256sum "$OUT/pecofence.exe" | cut -c1-12)"

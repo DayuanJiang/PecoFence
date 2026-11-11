@@ -1238,6 +1238,52 @@ pub fn recycle_unrecorded(path: &Path) -> Result<bool> {
     }
 }
 
+/// Deletes `paths` as Explorer's Delete key does: to the Recycle Bin with a record in Windows'
+/// undo list, or for good with `permanent` (Shift+Delete), with Windows' own questions,
+/// progress and error boxes. Paths that are gone already are left out. Blocks like
+/// [`transfer_to_folder`]; false when the user said no or cancelled.
+///
+/// The items' `delete` verb (`shell_menu`) ends in the same file operation, but for a verb
+/// the shell first loads the menu extension of every installed program, also when no menu is
+/// shown, and a fault in one of them ended PecoFence at the press of Delete (GitHub #167,
+/// #178). The file operation itself loads none of them.
+pub fn delete_items(paths: &[PathBuf], owner: Option<HWND>, permanent: bool) -> Result<bool> {
+    const FOFX_RECYCLEONDELETE: u32 = 0x0008_0000;
+    // Ask before an item that does not fit the bin is deleted for good, as Explorer does.
+    const FOF_WANTNUKEWARNING: u32 = 0x4000;
+    // SAFETY: COM calls on objects created here; the caller's thread has COM initialized.
+    unsafe {
+        let op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL as u32)?;
+        let mut flags = FOF_WANTNUKEWARNING;
+        if !permanent {
+            flags |= FOFX_RECYCLEONDELETE | (FOF_ALLOWUNDO | FOFX_ADDUNDORECORD) as u32;
+        }
+        op.SetOperationFlags(flags).ok()?;
+        if let Some(h) = owner {
+            let _ = op.SetOwnerWindow(h);
+        }
+        let mut queued = 0;
+        for item in paths.iter().filter_map(|p| shell_item(p).ok()) {
+            op.DeleteItem(&item, None).ok()?;
+            queued += 1;
+        }
+        if queued == 0 {
+            return Err(E_FAIL.into());
+        }
+        let performed = op.PerformOperations();
+        // No in Windows' question and Cancel in its error box fail the operation too: report
+        // that as a cancel, not an error.
+        if op.GetAnyOperationsAborted().is_ok_and(|b| b.as_bool())
+            || performed == COPYENGINE_E_USER_CANCELLED
+            || performed == E_CANCELLED
+        {
+            return Ok(false);
+        }
+        performed.ok()?;
+        Ok(true)
+    }
+}
+
 /// The name `path` gets in the folder [`transfer_to_folder`] moves or copies it to.
 pub fn transferred_name(path: &Path) -> Option<std::ffi::OsString> {
     recycled_original_name(path)

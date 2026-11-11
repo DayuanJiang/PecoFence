@@ -83,12 +83,12 @@ impl App {
         });
     }
 
-    /// The shell's `delete` verb on `paths` (Recycle Bin, or permanent with Shift, with
-    /// Explorer's own dialogs) on a worker thread. It can return many seconds after the files
-    /// are gone (a full Recycle Bin, an antivirus checking each file), and on the UI thread
-    /// every fence stopped responding until then (#92). Files a delete still running was
-    /// given are left out: a second press of Delete before the first one finished started
-    /// another delete of the same files (feedback #108).
+    /// The shell's delete of `paths` (Recycle Bin, or permanent with Shift, with Explorer's
+    /// own dialogs; `shell::delete_items`) on a worker thread. It can return many seconds
+    /// after the files are gone (a full Recycle Bin, an antivirus checking each file), and on
+    /// the UI thread every fence stopped responding until then (#92). Files a delete still
+    /// running was given are left out: a second press of Delete before the first one finished
+    /// started another delete of the same files (feedback #108).
     pub(super) fn start_shell_delete(
         &mut self,
         mut paths: Vec<PathBuf>,
@@ -109,7 +109,6 @@ impl App {
             return;
         }
         self.deleting.extend(paths.iter().cloned());
-        let pt = window::cursor_pos();
         tracing::info!(count, permanent, "shell delete started");
         let recycled = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let then = FileOpThen::Delete {
@@ -120,7 +119,6 @@ impl App {
         };
         let job_paths = paths.clone();
         let spawned = self.run_fileop(Some(owner), then, move |owner| {
-            let refs: Vec<&Path> = job_paths.iter().map(|p| p.as_path()).collect();
             // The bin of the files' drive, counted before and after: only a delete that added
             // to it is in Windows' undo list.
             let bin = || {
@@ -130,8 +128,7 @@ impl App {
                     .and_then(|p| shell::recycle_bin_count_for(p))
             };
             let before = bin();
-            let done = ShellContextMenu::for_paths(&refs)
-                .and_then(|m| m.invoke_verb("delete", owner.unwrap_or_default(), pt, permanent));
+            let done = shell::delete_items(&job_paths, owner, permanent);
             let after = bin();
             let gained = matches!((before, after), (Some(b), Some(a)) if a > b);
             recycled.store(gained, std::sync::atomic::Ordering::Relaxed);
@@ -143,7 +140,7 @@ impl App {
                 "shell delete and the Recycle Bin"
             );
             // True when a file is gone: the delete was not declined in Windows' own dialog.
-            done.map(|()| job_paths.iter().any(|p| !p.exists()))
+            done.map(|_| job_paths.iter().any(|p| !p.exists()))
         });
         if !spawned {
             self.settle_delete(&paths);

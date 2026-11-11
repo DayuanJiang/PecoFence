@@ -300,7 +300,7 @@ pub enum Command {
     EndItemRename {
         commit: bool,
     },
-    /// Delete key: hand the selection to the shell's `delete` verb (Recycle Bin, confirmations).
+    /// Delete key: hand the selection to the shell's delete (Recycle Bin, confirmations).
     /// `permanent` = Shift held (Explorer's Shift+Delete skips the Recycle Bin).
     DeleteItems {
         fence: FenceId,

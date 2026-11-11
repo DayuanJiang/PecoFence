@@ -7,7 +7,8 @@
 #            setup edition turns autostart on, which Defender flags on unsigned builds)
 #   build    release or debug (the settings page over CDP needs debug)
 #   file     the steps file in tests/
-#   options  run.sh options; @installers is the folder from installers.sh (--installers)
+#   options  run.sh options; @installers is the folder from installers.sh (--installers),
+#            @shellext the folder with the test shell extension that build.sh makes
 #
 # name             min where  build   file                           options
 matrix             5   ec2    release 186-matrix.ps1
@@ -141,3 +142,5 @@ owner-settings-page 2  ec2    debug   owner-settings-host.ps1        --var Part=
 owner-settings-ui  1   ec2    debug   owner-settings-ui.ps1
 owner-editor-A     2   ec2    debug   owner-smart-editor.ps1         --var Part=A
 owner-editor-B     2   ec2    debug   owner-smart-editor.ps1         --var Part=B
+shellext-delete    2   ec2    release shellext-fault.ps1             --extra @shellext --var Part=D
+shellext-crash     2   ec2    release shellext-fault.ps1             --extra @shellext --var Part=F
