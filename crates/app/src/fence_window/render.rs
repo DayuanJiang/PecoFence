@@ -879,8 +879,8 @@ impl FenceViewState {
                 DetailColumns::for_width_with(width_dip, self.column_widths, self.columns_visible)
             }
             _ => DetailColumns {
-                name_x: 8.0,
-                name_w: (width_dip - 16.0).max(40.0),
+                name_x: DetailColumns::NAME_X,
+                name_w: (width_dip - DetailColumns::NAME_X - DetailColumns::GUTTER).max(40.0),
                 date: None,
                 type_: None,
                 size: None,

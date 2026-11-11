@@ -40,6 +40,10 @@ pub const DEFAULT_LABEL_LINE_H: f32 = 16.0;
 /// Horizontal breathing room inside each icon cell. A wider gutter keeps neighbouring
 /// multi-line CJK labels from visually running together in narrow panes.
 pub const ICON_LABEL_SIDE_INSET: f32 = 8.0;
+/// Left edge (DIPs from the plate's edge) the texts of a fence share: the title, a note's,
+/// clock's or script's lines, the row icons of the list and details views and the captions of
+/// date groups. The first icon column starts there too (`GridMetrics`).
+pub const TEXT_LEFT: f32 = 16.0;
 
 /// Titles and tab captions at the four title sizes (12 / 14 / 16 / 18 px), rebuilt when a
 /// theme names its own title font.
@@ -3592,7 +3596,7 @@ impl FenceChrome {
             // starts where the 名称 caption does; the hairline runs from its end to the margin.
             if !rows.group_headers.is_empty() {
                 let line = session.create_solid_brush(theme.stroke)?;
-                let text_x = cols.name_x + 4.0;
+                let text_x = cols.name_x;
                 let right = width - 8.0;
                 for (i, h) in rows.group_headers.iter().enumerate() {
                     if h.y + h.h <= header_h || h.y > height {
@@ -3739,8 +3743,8 @@ impl FenceChrome {
             );
             let mut captions: Vec<(f32, f32, &str, HeaderColumn, bool)> = Vec::new();
             captions.push((
-                cols.name_x + 4.0,
-                cols.name_w - 4.0,
+                cols.name_x,
+                cols.name_w,
                 pecofence_core::i18n::text("名称"),
                 HeaderColumn::Name,
                 false,
@@ -3773,7 +3777,14 @@ impl FenceChrome {
                 ));
             }
             for (index, (x, w, text, col, right)) in captions.into_iter().enumerate() {
-                let cell_rect = Rect::from_xywh(x - 4.0, 2.0, w + 8.0, header_h - 6.0);
+                // The 名称 cell still starts 8 DIPs from the edge, where its hit area does
+                // (`DetailColumns::column_at`): only its caption moved to the title's edge.
+                let left = if col == HeaderColumn::Name {
+                    x - 8.0
+                } else {
+                    x - 4.0
+                };
+                let cell_rect = Rect::from_xywh(left, 2.0, x + w + 4.0 - left, header_h - 6.0);
                 let cell = RoundedRect::uniform(cell_rect, header_control_radius(theme, cell_rect));
                 let hover = rows
                     .header_hover
@@ -3893,7 +3904,7 @@ impl FenceChrome {
         let label_dim = session.create_solid_brush(theme.text_secondary)?;
 
         let mut paint_items = || -> Result<()> {
-            // "按时间分组" section headers: secondary caption flush with the label inset, then an
+            // "按时间分组" section headers: secondary caption at the title's left edge, then an
             // Explorer-style hairline to the right margin. Static bands (the items glide), painted
             // first so an unfolded label may overdraw them like it overdraws the row below.
             if !content.group_headers.is_empty() {
@@ -3901,7 +3912,7 @@ impl FenceChrome {
                 // The same local halo the labels get over mixed wallpaper.
                 let legible = (theme.liquid_glass || theme.text_halo).then_some(&state.legible);
                 let spread = 1.0 / scale.max(1.0);
-                let text_x = ICON_LABEL_SIDE_INSET;
+                let text_x = TEXT_LEFT;
                 let right = width - 8.0;
                 for h in content.group_headers {
                     if h.y + h.h <= 0.0 || h.y > height {
@@ -4013,7 +4024,7 @@ pub struct NoteLineDraw<'a> {
 }
 
 /// Note layout in surface DIPs: the text inset from the left and right edges and from the top.
-pub const NOTE_PAD_X: f32 = 14.0;
+pub const NOTE_PAD_X: f32 = TEXT_LEFT;
 pub const NOTE_PAD_TOP: f32 = 2.0;
 /// Edge of a to-do check box and the gap after it (at the normal text size).
 pub const NOTE_BOX: f32 = 16.0;
