@@ -699,18 +699,29 @@ impl App {
     /// The user moved `items` into `to`: one step of Ctrl+Z in the fences, unless files move
     /// into a folder (Windows undoes those).
     pub(super) fn move_items(&mut self, items: &[ItemId], to: FenceId) {
+        self.move_items_at(items, to, None);
+    }
+
+    /// [`Self::move_items`] for icons dropped between the icons of a 手动 fence: they go before
+    /// display index `at` of `to` (counted before they arrived) instead of after the others.
+    pub(super) fn move_items_at(&mut self, items: &[ItemId], to: FenceId, at: Option<usize>) {
         let places = if self.state.move_target_folder(to).is_none() {
             self.state.item_places(items)
         } else {
             Vec::new()
         };
-        if self.move_items_unrecorded(items, to) > 0 {
+        if self.move_items_placed(items, to, at) > 0 {
             self.note_items_for_undo(to, places);
         }
     }
 
     /// [`Self::move_items`] without the undo step; returns how many fence entries moved.
     pub(super) fn move_items_unrecorded(&mut self, items: &[ItemId], to: FenceId) -> usize {
+        self.move_items_placed(items, to, None)
+    }
+
+    /// [`Self::move_items_at`] without the undo step; returns how many fence entries moved.
+    fn move_items_placed(&mut self, items: &[ItemId], to: FenceId, at: Option<usize>) -> usize {
         // A smart or tool fence takes nothing: refused before a folder fence's file is moved
         // out to the desktop on its way there.
         if self.state.move_target_folder(to).is_none()
@@ -750,6 +761,17 @@ impl App {
             .collect();
         let moved = self.state.move_items(&desktop_items, to);
         if moved > 0 {
+            if let Some(index) = at {
+                // Before the windows are refreshed, so the icons glide straight to that place.
+                let placed = self.state.reorder_items(to, &desktop_items, index);
+                tracing::debug!(
+                    fence = %to,
+                    index,
+                    moved,
+                    placed,
+                    "icons dropped between the icons of a fence: placed there (false: not a 手动 fence)"
+                );
+            }
             for id in affected {
                 self.refresh_fence(id);
             }

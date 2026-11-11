@@ -104,10 +104,13 @@ pub enum Command {
         from: FenceId,
         inside: bool,
     },
-    /// Move `items` into `to` (internal drag or menu).
+    /// Move `items` into `to` (internal drag or menu). `at`: dropped between the icons of a
+    /// 手动 fence, they go before that display index (counted before they arrived); None = after
+    /// the others.
     MoveItems {
         items: Vec<ItemId>,
         to: FenceId,
+        at: Option<usize>,
     },
     /// Internal drag dropped inside its own fence (手动 sort): place `items` before display
     /// index `index`.

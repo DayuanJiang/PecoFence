@@ -489,6 +489,7 @@ impl App {
                         self.queue.push(Command::MoveItems {
                             items: vec![item],
                             to,
+                            at: None,
                         });
                     }
                 }

@@ -527,7 +527,7 @@ impl App {
         }
         let file_name = |p: &Path| p.file_name().map(|n| n.to_string_lossy().into_owned());
         match cmd {
-            Command::MoveItems { items, to } => Some((
+            Command::MoveItems { items, to, .. } => Some((
                 *to,
                 items
                     .iter()

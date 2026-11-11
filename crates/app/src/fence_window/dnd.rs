@@ -29,7 +29,8 @@ pub(super) struct DropSpot {
     pub(super) tab: Option<usize>,
     /// A folder item (files go into the folder).
     pub(super) folder: Option<usize>,
-    /// Insertion index for reordering an internal drag inside its own 手动 fence.
+    /// Insertion index for an internal drag over the icons of a 手动 fence: reordering inside
+    /// its own fence, or the place icons of another fence land at.
     pub(super) insert: Option<usize>,
     /// An internal drag over its own fence — its own tab pill, or a content area that cannot
     /// reorder (sorted / portal): no-op, "not allowed" cursor, no highlight.
@@ -951,11 +952,25 @@ impl DropHandler for FenceDropHandler {
                         break 'resolve DropEffect::Move;
                     }
                     if let Some(index) = spot.insert {
-                        self.queue.push(Command::ReorderItems {
-                            fence: active,
-                            items: d.items,
-                            index,
-                        });
+                        if d.from == active {
+                            self.queue.push(Command::ReorderItems {
+                                fence: active,
+                                items: d.items,
+                                index,
+                            });
+                        } else {
+                            // Icons of another fence let go between these: they land there.
+                            tracing::debug!(
+                                index,
+                                items = d.items.len(),
+                                "icons of another fence dropped between the icons"
+                            );
+                            self.queue.push(Command::MoveItems {
+                                items: d.items,
+                                to: active,
+                                at: Some(index),
+                            });
+                        }
                         break 'resolve DropEffect::Move;
                     }
                     if to == d.from {
@@ -977,7 +992,11 @@ impl DropHandler for FenceDropHandler {
                         });
                         break 'resolve effect;
                     }
-                    self.queue.push(Command::MoveItems { items: d.items, to });
+                    self.queue.push(Command::MoveItems {
+                        items: d.items,
+                        to,
+                        at: None,
+                    });
                     DropEffect::Move
                 }
                 DropKind::Files => {
@@ -1206,12 +1225,14 @@ impl FenceViewState {
             return spot;
         }
         if let Some(d) = internal
-            && d.from == self.active
             && !self.places_freely()
         {
             match self.insertion_at(cx, cy) {
                 Some(i) => spot.insert = Some(i),
-                None => spot.self_drop = true,
+                // Its own fence takes its icons nowhere else; another fence's go after the
+                // others (a sorted fence, the title row).
+                None if d.from == self.active => spot.self_drop = true,
+                None => {}
             }
         }
         spot
@@ -1235,9 +1256,11 @@ impl FenceViewState {
                 s.tab,
                 s.folder,
                 s.insert,
+                // Icons of another fence dropped between these: the ring says which fence takes
+                // them, the caret where.
                 s.tab.is_none()
                     && s.folder.is_none()
-                    && s.insert.is_none()
+                    && (s.insert.is_none() || !self.ole_drag)
                     && !s.self_drop
                     && !self.bare(),
             ),

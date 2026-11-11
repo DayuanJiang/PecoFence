@@ -2393,7 +2393,7 @@ impl App {
                 self.arrange_desktop_fence();
             }
             Command::LaunchItem { item, from, inside } => self.launch(item, from, inside),
-            Command::MoveItems { items, to } => self.move_items(&items, to),
+            Command::MoveItems { items, to, at } => self.move_items_at(&items, to, at),
             Command::ReorderItems {
                 fence,
                 items,

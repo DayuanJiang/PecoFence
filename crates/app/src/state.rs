@@ -3989,6 +3989,33 @@ mod tests {
         assert!(!state.reorder_items(fence, &[a], 0));
     }
 
+    /// Icons of another fence dropped between the icons of a 手动 fence: moved, then placed
+    /// before the display index they were let go at (counted before they arrived), in the
+    /// order they had; the icons that were there keep their order.
+    #[test]
+    fn icons_moved_from_another_fence_land_at_the_drop_index() {
+        let mut state = test_state();
+        let (from, to) = (state.fences()[0].id, state.fences()[1].id);
+        assert_eq!(state.fence(to).unwrap().view.sort, SortMode::Manual);
+        let a1 = add_item(&mut state, from, "a1");
+        let a2 = add_item(&mut state, from, "a2");
+        add_item(&mut state, to, "b1");
+        add_item(&mut state, to, "b2");
+        add_item(&mut state, to, "b3");
+        // Without an index they go after the others.
+        assert_eq!(state.move_items(&[a1], to), 1);
+        assert_eq!(names(&state, to), ["b1", "b2", "b3", "a1"]);
+        // Between b1 and b2.
+        assert!(state.reorder_items(to, &[a1], 1));
+        assert_eq!(names(&state, to), ["b1", "a1", "b2", "b3"]);
+        // Two at once, let go before the first icon.
+        assert_eq!(state.move_items(&[a1], from), 1);
+        assert_eq!(state.move_items(&[a1, a2], to), 2);
+        assert!(state.reorder_items(to, &[a1, a2], 0));
+        assert_eq!(names(&state, to), ["a1", "a2", "b1", "b2", "b3"]);
+        assert!(names(&state, from).is_empty());
+    }
+
     /// 手动 order (feedback #125): a file that appears while its fence shows icons goes after
     /// them, whatever its name, as on the Windows desktop; the icons shown keep their places.
     /// The first pass into an empty fence (the first run) lists them by name.
