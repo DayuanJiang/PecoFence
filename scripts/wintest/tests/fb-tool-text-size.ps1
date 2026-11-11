@@ -414,7 +414,10 @@ function ClockChecks($label, $id) {
   $ch = (ContentSize $w)[1]
   $want = [math]::Round(40 * $ch / 104.0)
   Check "${label}: fence resize 360x200 gives $want DIPs" ($ct[0] -eq $want) "clock_text=$(DumpVal $w 'clock_text') content_h=$ch"
-  Pf fence resize $id --w 1300 --h 760 | Out-Null
+  # 1200 wide: the clock stays clear of the first-run fences in the right column. A fence that
+  # has fences under it opens only as far as they can go down (2026-11-12), so over that column
+  # the clock was 444 px high and its text 157.
+  Pf fence resize $id --w 1200 --h 760 | Out-Null
   Start-Sleep -Milliseconds 800
   $w = DumpOf 'Clock'
   $ct = ClockText $w
@@ -444,7 +447,9 @@ $w = DumpOf 'Clock'
 $sec = ClockText $w
 $cy = [int](DumpVal $w 'content_y')
 $ink = [TT]::InkBlocks($w.r - 11, $w.t + $cy, 9, 120, 90)
-Check 'with seconds the time gets smaller in a narrow clock, and none of it reaches the right edge' ($sec[0] -lt $noSec[0] -and -not $ink) "no seconds=$($noSec -join '/') seconds=$($sec -join '/') ink at the right edge='$ink'"
+# On a day with a long date ("Wednesday, November 11, 2026") the date is the wider line with and
+# without seconds, and the size stays: the time must not grow, and must stay inside.
+Check 'with seconds the time gets no bigger in a narrow clock, and none of it reaches the right edge' ($sec[0] -le $noSec[0] -and -not $ink) "no seconds=$($noSec -join '/') seconds=$($sec -join '/') ink at the right edge='$ink'"
 Shot 'c-seconds-narrow'
 Pf settings set tools.clockSeconds false | Out-Null
 Pf fence delete $cid | Out-Null
