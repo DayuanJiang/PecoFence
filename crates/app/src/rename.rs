@@ -58,6 +58,8 @@ const ITEM_BOX_SLACK_DIP: f32 = 2.0;
 /// 1) is one line centred in the box.
 #[derive(Clone, Copy, Debug)]
 struct ItemBox {
+    /// Read by the tests only, since the edit has its own inset (`edit_x`).
+    #[cfg_attr(not(test), allow(dead_code))]
     pad_x: i32,
     /// Where the edit itself starts and ends: `pad_x`, less `ITEM_BOX_SLACK_DIP` for an
     /// icon's name.

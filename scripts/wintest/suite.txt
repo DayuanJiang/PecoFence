@@ -91,9 +91,12 @@ send-to-upgrade    1   manual release fb-sendto-upgrade.ps1
 send-to-clip       1   manual release fb-sendto-rec.ps1
 pc-status          3   manual release fb-pr201.ps1
 # The fence polish round (2026-11-12): one steps file per group of changes.
-polish-keys        2   ec2    release polish-keys.ps1
+polish-keys        3   ec2    release polish-keys.ps1
 polish-paste-A     2   ec2    release polish-paste.ps1               --var Part=A
 polish-paste-B     2   ec2    release polish-paste.ps1               --var Part=B
+polish-paste-C     2   ec2    release polish-paste.ps1               --var Part=C
+# Part D copies a 6 GB file: the box needs 12 GB free.
+polish-paste-D     2   ec2    release polish-paste.ps1               --var Part=D
 polish-undo        2   ec2    release polish-undo.ps1
 polish-rename      1   ec2    release polish-rename.ps1
 polish-drop        2   ec2    release polish-drop.ps1
@@ -110,5 +113,5 @@ polish-lock-edges  2   ec2    release polish-lock-edges.ps1
 polish-metrics     2   ec2    release polish-metrics.ps1
 polish-quit-name   1   ec2    release polish-quit-namebox.ps1
 polish-peek        3   ec2    release polish-peek.ps1
-polish-ink-AB      3   ec2    release polish-ink.ps1                 --var Part=AB
-polish-ink-CD      3   ec2    release polish-ink.ps1                 --var Part=CD
+polish-ink-AD      3   ec2    release polish-ink.ps1                 --var Part=AD
+polish-ink-BC      4   ec2    release polish-ink.ps1                 --var Part=BC
