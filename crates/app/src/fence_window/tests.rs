@@ -815,6 +815,25 @@ fn a_dropped_icon_starts_under_its_drag_picture() {
     assert_eq!(landing_origin(200.0, 144.0, &cell), (cell.x, cell.y));
 }
 
+/// A new icon whose cell another icon is still sliding out of fades in 83 ms later; elsewhere
+/// at once. The delayed fade stays at 0 until then and takes its 167 ms from there.
+#[test]
+fn a_new_icon_waits_for_the_icon_leaving_its_cell() {
+    let now = Instant::now();
+    assert_eq!(fade_in_start(false, now), now);
+    let start = fade_in_start(true, now);
+    assert_eq!(start, now + motion::FASTER);
+    let fade = Tween::new(0.0, 1.0, motion::FAST, Curve::Linear, start);
+    assert_eq!(fade.value_at(now), 0.0);
+    assert_eq!(fade.value_at(now + Duration::from_millis(80)), 0.0);
+    assert!(!fade.is_done(now + Duration::from_millis(80)));
+    assert!(fade.value_at(now + Duration::from_millis(170)) > 0.4);
+    assert!(fade.is_done(now + motion::FASTER + motion::FAST));
+    // Cells sit on whole DIPs: the key of a cell is the same however it was computed.
+    assert_eq!(cell_key(159.999, 96.001), cell_key(160.0, 96.0));
+    assert_ne!(cell_key(160.0, 96.0), cell_key(240.0, 96.0));
+}
+
 /// Selection / focus survive a refresh by item identity: kept ids follow their items to
 /// the new slots, vanished ids drop out, an anchor whose item is gone becomes None.
 #[test]

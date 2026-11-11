@@ -46,10 +46,21 @@ pub(super) fn layout_motion_applies(changed: usize, old_len: usize, new_len: usi
 /// refresh the drop causes follows within a frame or two; anything later is another change.
 pub(super) const DROP_LANDING_MAX: Duration = Duration::from_millis(500);
 
+/// A cell origin as a map key (cells sit on whole DIPs).
+pub(super) fn cell_key(x: f32, y: f32) -> (i32, i32) {
+    (x.round() as i32, y.round() as i32)
+}
+
 /// Cell origin of an icon whose centre is at (`cx`, `cy`): where a dropped icon starts, under
 /// its drag picture.
 pub(super) fn landing_origin(cx: f32, cy: f32, cell: &CellRect) -> (f32, f32) {
     (cx - cell.w / 2.0, cy - cell.h / 2.0)
+}
+
+/// When a new icon's fade-in starts: at once, or 83 ms later when its cell is still being left
+/// (`vacated`).
+pub(super) fn fade_in_start(vacated: bool, now: Instant) -> Instant {
+    if vacated { now + motion::FASTER } else { now }
 }
 
 /// Index-keyed per-item state carried across a list refresh by item identity: `old` / `new`
@@ -113,7 +124,8 @@ impl FenceViewState {
     /// point-to-point), new items fade in (167 ms) at their cell, removed items fade out (83 ms)
     /// where they were; the first items of an empty fence fade in. Icons the user just let go on
     /// this fence (`drop_landing`) glide in from where their drag picture was instead (167 ms
-    /// decelerate), however many they are. Everything snaps when
+    /// decelerate), however many they are; a new item whose cell another one is still sliding
+    /// out of starts its fade-in 83 ms later. Everything snaps when
     /// animations are off, the fence is rolled or rolling, hidden, a drag / marquee is running,
     /// a content swap brings in a whole page (tab switch, portal navigation), or more than half
     /// of the ids changed (a refill — not a rearrangement).
@@ -236,8 +248,18 @@ impl FenceViewState {
             return;
         }
         let cells = self.cell_origins(width_dip);
+        // Cells an icon at rest slides out of in this pass: a new icon there waits for it.
+        let vacated: HashSet<(i32, i32)> = self
+            .items
+            .iter()
+            .zip(&cells)
+            .filter_map(|(n, c)| {
+                let o = old_pos.get(&n.id)?;
+                ((o.x - c.x).abs() > 0.5 || (o.y - c.y).abs() > 0.5).then(|| cell_key(o.x, o.y))
+            })
+            .collect();
         let mut motion: HashMap<ItemId, ItemMotion> = HashMap::new();
-        let mut landed = 0usize;
+        let (mut landed, mut waited) = (0usize, 0usize);
         for (n, c) in self.items.iter().zip(cells) {
             // A motion still in flight continues from where it is, not from the old slot.
             let prev = self.item_motion.remove(&n.id);
@@ -300,6 +322,12 @@ impl FenceViewState {
                     }
                 }
                 None => {
+                    // Its cell is still being left by an icon sliding away: the fade-in starts
+                    // 83 ms later, so the two names do not lie on top of each other (WinUI
+                    // staggers the add after the reposition the same way).
+                    let waits = vacated.contains(&cell_key(c.x, c.y));
+                    let start = fade_in_start(waits, now);
+                    waited += waits as usize;
                     motion.insert(
                         n.id,
                         ItemMotion {
@@ -307,14 +335,18 @@ impl FenceViewState {
                             y: Tween::at(c.y, now),
                             alpha: self
                                 .motion
-                                .tween(0.0, 1.0, motion::FAST, Curve::Linear, now),
+                                .tween(0.0, 1.0, motion::FAST, Curve::Linear, start),
                         },
                     );
                 }
             }
         }
-        if landed > 0 {
-            tracing::debug!(landed, "layout motion: icons arriving from a drop");
+        if waited > 0 || landed > 0 {
+            tracing::debug!(
+                landed,
+                waited,
+                "layout motion: icons arriving from a drop, new icons fading in 83 ms later"
+            );
         }
         // Survivors took their motions out of the old map: what is left belongs to the
         // removed items (a glide or fade-in still in flight when the item vanished).
