@@ -984,15 +984,19 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
             )
         }
     };
-    // A single title keeps room for the start of the name (two characters, the ellipsis and
-    // the chevron): at one icon column wide the title row showed only 「…」. A tab strip
-    // scrolls and a left tab column has its own width.
+    // A single title keeps room for the start of the name (two characters and the ellipsis)
+    // beside what else sits in its row (its glyphs, a smart fence's count capsule, the
+    // chevron): at one icon column wide the title row showed only 「…」. A tab strip scrolls
+    // and a left tab column has its own width.
     let title_min = if v.title_row_strip() || v.tabs_on_rail() {
         0
     } else {
-        (v.chrome
-            .lone_title_min_width(&v.title, v.style.title_size, v.deco)
-            * scale)
+        (v.chrome.lone_title_min_width(
+            &v.title,
+            v.title_count.as_deref(),
+            v.style.title_size,
+            v.deco,
+        ) * scale)
             .ceil() as i32
     };
     let columns_min = min_w;

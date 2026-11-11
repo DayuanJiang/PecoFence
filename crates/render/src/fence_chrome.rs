@@ -2473,9 +2473,17 @@ impl FenceChrome {
 
     /// The narrowest title row (DIPs) in which a single `title` still shows its first two
     /// characters before the ellipsis (the whole title when it is no longer than three), after
-    /// its glyphs and before the chevron's room. A fence sized narrower than this showed only
-    /// 「…」 for a name.
-    pub fn lone_title_min_width(&self, title: &str, size: u8, deco: TitleDeco) -> f32 {
+    /// its glyphs and before whatever sits at the right end: the chevron's room, the lock
+    /// glyph's slot of a locked fence and a smart fence's `count` capsule, as
+    /// `lone_title_place` takes them off the title. A fence sized narrower than this showed
+    /// only 「…」 for a name. (A filter tag is not counted: it comes and goes with the filter.)
+    pub fn lone_title_min_width(
+        &self,
+        title: &str,
+        count: Option<&str>,
+        size: u8,
+        deco: TitleDeco,
+    ) -> f32 {
         let shown: String = if title.chars().count() > 3 {
             title.chars().take(2).chain(std::iter::once('…')).collect()
         } else {
@@ -2486,6 +2494,31 @@ impl FenceChrome {
             + crate::text::measure_width(&shown, &self.title_format(size)).ceil()
             + 1.0
             + TITLE_RIGHT_RESERVE
+            + deco.lock_w()
+            + count.map_or(0.0, |c| self.count_capsule_w(c))
+    }
+
+    /// `deco` as a single title in a row `width` DIPs wide can show it: the lock glyph gives
+    /// way when its slot would leave the name less than its first two characters. That is a
+    /// fence sized to its narrowest and locked afterwards: the lock keeps it from being
+    /// widened, so the glyph cannot ask for room, and the name says more than the mark (the
+    /// fence still refuses drags; its menu says 「解除锁定」).
+    pub fn lone_deco_in(
+        &self,
+        title: &str,
+        count: Option<&str>,
+        size: u8,
+        width: f32,
+        deco: TitleDeco,
+    ) -> TitleDeco {
+        if deco.locked && width < self.lone_title_min_width(title, count, size, deco) {
+            TitleDeco {
+                locked: false,
+                ..deco
+            }
+        } else {
+            deco
+        }
     }
 
     /// The up button of a single folder title inside a subfolder: the square around its folder
@@ -4851,7 +4884,7 @@ mod tests {
                 },
             ),
         ] {
-            let w = chrome.lone_title_min_width(title, 1, deco);
+            let w = chrome.lone_title_min_width(title, None, 1, deco);
             let (_, fitted, _) = chrome.lone_title_place(title, None, None, 1, Left, w, deco, 0.0);
             let start: String = title.chars().take(2).collect();
             assert_eq!(fitted, format!("{start}…"), "{title} at {w}");
@@ -4860,11 +4893,78 @@ mod tests {
             assert!(cut.chars().count() < 3, "{title} at {}: {cut}", w - 8.0);
         }
         // A short name needs only its own width.
-        let w = chrome.lone_title_min_width("工作", 1, TitleDeco::default());
+        let w = chrome.lone_title_min_width("工作", None, 1, TitleDeco::default());
         let (_, fitted, _) =
             chrome.lone_title_place("工作", None, None, 1, Left, w, TitleDeco::default(), 0.0);
         assert_eq!(fitted, "工作");
         assert!(w < 16.0 + 40.0 + TITLE_RIGHT_RESERVE);
+    }
+
+    /// The narrowest width counts what sits at the right end of the title row: a smart fence's
+    /// count capsule and a locked fence's lock glyph. At that width the name still shows its
+    /// first two characters (it showed 「…」 or nothing when they were left out).
+    #[test]
+    fn the_narrowest_title_row_counts_the_capsule_and_the_lock_glyph() {
+        use pecofence_core::TitleAlign::Left;
+        let chrome = FenceChrome::new().unwrap();
+        let title = "季度报告与工作计划";
+        let start: String = title.chars().take(2).collect();
+        let plain = TitleDeco::default();
+        let locked = TitleDeco {
+            locked: true,
+            ..plain
+        };
+        let bare = chrome.lone_title_min_width(title, None, 1, plain);
+        for (count, deco) in [(Some("128"), plain), (None, locked), (Some("200+"), locked)] {
+            let w = chrome.lone_title_min_width(title, count, 1, deco);
+            assert!(w > bare, "{count:?} {deco:?}: {w} <= {bare}");
+            let (_, fitted, _) = chrome.lone_title_place(title, count, None, 1, Left, w, deco, 0.0);
+            assert_eq!(fitted, format!("{start}…"), "{count:?} {deco:?} at {w}");
+            // At the width that left them out, the name was cut to less than that.
+            let (_, cut, _) = chrome.lone_title_place(title, count, None, 1, Left, bare, deco, 0.0);
+            assert!(
+                cut.chars().count() < 3,
+                "{count:?} {deco:?} at {bare}: {cut}"
+            );
+        }
+        assert_eq!(
+            chrome.lone_title_min_width(title, None, 1, locked),
+            bare + TitleDeco::LOCK_W
+        );
+    }
+
+    /// A fence sized to its narrowest and locked afterwards cannot be widened: the lock glyph
+    /// gives way and the name keeps its two characters. With room for both the glyph stays.
+    #[test]
+    fn the_lock_glyph_gives_way_to_the_name_in_a_fence_too_narrow_for_both() {
+        use pecofence_core::TitleAlign::Left;
+        let chrome = FenceChrome::new().unwrap();
+        let title = "季度报告与工作计划";
+        let locked = TitleDeco {
+            locked: true,
+            ..TitleDeco::default()
+        };
+        let narrow = chrome.lone_title_min_width(title, None, 1, TitleDeco::default());
+        let shown = chrome.lone_deco_in(title, None, 1, narrow, locked);
+        assert!(!shown.locked);
+        let (_, fitted, _) =
+            chrome.lone_title_place(title, None, None, 1, Left, narrow, shown, 0.0);
+        assert_eq!(fitted, "季度…");
+        // One DIP short of the room for both: still the name alone.
+        let both = chrome.lone_title_min_width(title, None, 1, locked);
+        assert!(
+            !chrome
+                .lone_deco_in(title, None, 1, both - 1.0, locked)
+                .locked
+        );
+        assert!(chrome.lone_deco_in(title, None, 1, both, locked).locked);
+        assert!(chrome.lone_deco_in(title, None, 1, 300.0, locked).locked);
+        // An unlocked fence is never given a glyph.
+        assert!(
+            !chrome
+                .lone_deco_in(title, None, 1, 300.0, TitleDeco::default())
+                .locked
+        );
     }
 
     /// A locked fence keeps the lock glyph's 16 DIP slot before the chevron's box free: the

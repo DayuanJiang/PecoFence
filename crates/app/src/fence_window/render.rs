@@ -703,7 +703,7 @@ impl FenceViewState {
         let pill = self
             .pill_anim
             .map(|(x, w)| (x.value_at(now), w.value_at(now)));
-        let deco = self.deco;
+        let deco = self.laid_deco();
         // A title in the fence's own tint (标题颜色 → 跟随色调) sits on a band washed with
         // that tint: its lightness moves until it reads against the band.
         let tint = self.style.tint;

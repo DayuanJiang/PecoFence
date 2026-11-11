@@ -73,6 +73,18 @@ if ($Part -match 'C') {
   Check 'UX9 the fence stops wider than one icon column' ($w -gt 88 -and $w -lt 140) "width $w px after dragging the right edge past the left one"
   Check 'UX9 the title shows letters, not only the ellipsis' ($tall -ge 7) "title ink spans $tall rows (an ellipsis alone: 2 or 3)"
   Check 'UX9 the log says the title holds the edge' ([bool](PfWaitLog 'sizing: the width stops where the title still shows' 3)) ''
+  # Locked at its narrowest: the lock cannot widen the fence, so the lock glyph gives way and
+  # the name keeps its two characters (the glyph's slot used to take them: 「…」 again). Read
+  # where the first two characters are, clear of the slot.
+  Pf fence set '季度报告与工作计划' locked true | Out-Null; Start-Sleep -Milliseconds 600
+  [G]::MoveTo($a.L + 40, $a.T + 150); Start-Sleep -Milliseconds 600
+  $b = [Px]::Grab($a.L + 14, $a.T + 6, 30, 24)
+  $tallLocked = 0; foreach ($y in 0..23) { if ([Px]::MaxInk($b, 0, $b.Width - 1, $y, $y) -gt 60) { $tallLocked++ } }
+  $b.Dispose()
+  Crop 'UX9-narrowest-locked' ($a.L - 20) ($a.T - 10) 200 120 | Out-Null
+  Check 'UX9 locked at its narrowest, the title still shows its first characters' ($tallLocked -ge 7) "title ink spans $tallLocked rows with the pointer over the locked fence"
+  PlPark
+  Pf fence set '季度报告与工作计划' locked false | Out-Null; Start-Sleep -Milliseconds 500
   # A short name needs no more than its own width; a rolled fence keeps the same minimum.
   Pf fence rename '季度报告与工作计划' 'Docs' | Out-Null; Start-Sleep -Milliseconds 600
   $r = PlRect 'Docs'

@@ -197,7 +197,7 @@ impl FenceViewState {
                 && self.filter_tag.is_none()
             {
                 pecofence_render::fence_chrome::header_count_width(
-                    width - self.deco.lock_w(),
+                    width - self.laid_deco().lock_w(),
                     1,
                     self.deco.title_x(),
                 )
@@ -210,7 +210,7 @@ impl FenceViewState {
                 self.style.title_size,
                 self.behavior.title_align.get(),
                 width,
-                (self.deco.desktop_icon, self.deco.locked),
+                (self.deco.desktop_icon, self.laid_deco().locked),
                 reserve,
                 self.theme.title_height,
             )
@@ -241,7 +241,7 @@ impl FenceViewState {
             && self.filter_tag.is_none()
         {
             pecofence_render::fence_chrome::header_count_width(
-                width - self.deco.lock_w(),
+                width - self.laid_deco().lock_w(),
                 1,
                 self.deco.title_x(),
             )
@@ -255,7 +255,7 @@ impl FenceViewState {
             self.style.title_size,
             self.behavior.title_align.get(),
             width,
-            self.deco,
+            self.laid_deco(),
             reserve,
             self.theme.title_height,
         );
@@ -305,7 +305,7 @@ impl FenceViewState {
             return None;
         }
         // As drawn: a locked fence keeps the lock glyph's slot before the chevron.
-        let width = self.chrome_panel.size_px().0 as f32 / self.scale() - self.deco.lock_w();
+        let width = self.chrome_panel.size_px().0 as f32 / self.scale() - self.laid_deco().lock_w();
         self.chrome.filter_tag_fit(
             width,
             self.theme.title_height,
@@ -379,11 +379,29 @@ impl FenceViewState {
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
     }
 
+    /// The title-row decorations as they are laid out and drawn now: the stored ones, except
+    /// that the lock glyph of a single title gives way when the row has no room for it beside
+    /// the start of the name (`FenceChrome::lone_deco_in`: a fence sized to its narrowest and
+    /// locked afterwards). Drawing, the hit tests and the infotip all go by this.
+    pub(super) fn laid_deco(&self) -> TitleDeco {
+        if !self.deco.locked || self.title_row_strip() || self.tabs_on_rail() {
+            return self.deco;
+        }
+        let width = self.chrome_panel.size_px().0 as f32 / self.scale();
+        self.chrome.lone_deco_in(
+            &self.title,
+            self.title_count.as_deref(),
+            self.style.title_size,
+            width,
+            self.deco,
+        )
+    }
+
     /// Is the client-pixel point on the lock glyph of a locked fence (its infotip says how to
     /// unlock)? The glyph's slot before the chevron, as drawn; a fence collapsed to its left
     /// tab column shows none.
     pub(super) fn lock_glyph_at(&self, x_px: i32, y_px: i32) -> bool {
-        if !self.locked || self.bare() || self.column_collapsed {
+        if !self.laid_deco().locked || self.bare() || self.column_collapsed {
             return false;
         }
         let scale = self.scale();
