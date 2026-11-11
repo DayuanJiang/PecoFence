@@ -173,7 +173,8 @@ $pp = ItemPt 'Partly' 'pk 部分三'
 $pv = ItemPt 'Visible' 'pk 桌面可见'
 Check 'setup: the three icons are found' ($pc -and $pp -and $pv) "covered=$($pc -join ',') partly=$($pp -join ',') visible=$($pv -join ',')"
 Check 'setup: the partly hidden fence has its third icon beside the window' ($pp[0] -gt $CoverX + $CoverW + 20) "icon x=$($pp[0]) window right=$($CoverX + $CoverW)"
-[PkScan]::Start([int[]]@(($pc[0] - 8), ($pc[1] - 6), 16, 16, ($pp[0] - 8), ($pp[1] - 6), 16, 16, ($pv[0] - 8), ($pv[1] - 6), 16, 16))
+$PkPatches = [int[]]@(($pc[0] - 8), ($pc[1] - 6), 16, 16, ($pp[0] - 8), ($pp[1] - 6), 16, 16, ($pv[0] - 8), ($pv[1] - 6), 16, 16)
+[PkScan]::Start($PkPatches)
 Start-Sleep -Milliseconds 600
 $Ref = PkNow
 Shot 'pk-setup'
@@ -219,16 +220,21 @@ function PkSummary($runs) {
 if ($Part -match 'A') {
   Case 'MF-5 fade with the dimmer'
   if ($Record) {
+    # The covered fence on the white window. The sampler rests meanwhile: two readers of the
+    # screen halve each other's rate.
+    [PkScan]::Stop()
     [G]::MoveTo($CoverX + 40, $CoverY + $CoverH - 40)
-    RecStart 'MF-5' -X 100 -Y 60 -W 1240 -H 620 -Fps 30
-    Start-Sleep -Milliseconds 600
-    RecMark '窗口盖住栅栏'
+    RecStart 'MF-5' -X 150 -Y 110 -W 420 -H 310 -Fps 30
     Start-Sleep -Milliseconds 500
+    RecMark '一个窗口盖住了栅栏'
+    Start-Sleep -Milliseconds 700
     RecMark '按下速览快捷键'
-    PeekKey; Start-Sleep -Milliseconds 1200
-    RecMark '再按一次结束速览'
-    PeekKey; Start-Sleep -Milliseconds 1200
+    PeekKey; Start-Sleep -Milliseconds 800
+    RecMark '再按一次，结束速览'
+    PeekKey; Start-Sleep -Milliseconds 800
     RecStop
+    [PkScan]::Start($PkPatches)
+    Start-Sleep -Milliseconds 500
   }
   $runs = @(1..6 | ForEach-Object { PkCycle "A$_" })
   $sum = PkSummary $runs
@@ -376,7 +382,8 @@ if ($Part -match 'C') {
   foreach ($i in 1..7) { Set-Content -LiteralPath (Join-Path $PfDesk "pk 适应文件 $i.txt") -Value "fit $i" -Encoding ASCII }
   Pf fence create --title Fit --rect '300,150,340,470' | Out-Null
   $files = @(1..7 | ForEach-Object { "$PfDesk\pk 适应文件 $_.txt" })
-  Pf item move @files --to Fit | Out-Null
+  # The files are new on the desktop: PecoFence may need a moment to know them.
+  foreach ($try in 1..20) { $r = Pf item move @files --to Fit; if ($r -notmatch 'item_not_found') { break }; Start-Sleep -Milliseconds 500 }
   Start-Sleep -Seconds 1
   $h = [G]::FindWindowW('PecoFence.Fence', 'Fit')
   function PkHeights($ms) {
@@ -386,19 +393,22 @@ if ($Part -match 'C') {
     return @($seen)
   }
   $from = (Rect $h).B - (Rect $h).T
-  if ($Record) { RecStart 'MF-12' -X 260 -Y 110 -W 420 -H 550 -Fps 30; Start-Sleep -Milliseconds 500; RecMark '运行 pecofence-cli fence fit' }
-  $job = Start-Job -ScriptBlock { param($cli, $inst) $env:PECOFENCE_INSTANCE = $inst; & $cli fence fit Fit 2>&1 | Out-String } -ArgumentList "$PfApp\pecofence-cli.exe", $PfInst
-  $seen = PkHeights 1500
-  $reply = Receive-Job $job -Wait; Remove-Job $job -Force
-  if ($Record) { Start-Sleep -Milliseconds 600; RecStop }
+  ParkMouse 1400 700
+  if ($Record) { RecStart 'MF-12' -X 270 -Y 120 -W 400 -H 530 -Fps 30; Start-Sleep -Milliseconds 400; RecMark '栅栏比图标需要的高'; Start-Sleep -Milliseconds 700; RecMark '运行 pecofence-cli fence fit' }
+  # Not through Pf: the heights are read while the command runs.
+  $out = "$PfRun\pk-fit.json"
+  $proc = Start-Process "$PfApp\pecofence-cli.exe" -ArgumentList 'fence', 'fit', 'Fit' -NoNewWindow -PassThru -RedirectStandardOutput $out
+  $seen = PkHeights 1200
+  $proc.WaitForExit(5000) | Out-Null
+  $reply = Get-Content -LiteralPath $out -Raw -ErrorAction SilentlyContinue
+  if ($Record) { Start-Sleep -Milliseconds 300; RecStop }
   $to = (Rect $h).B - (Rect $h).T
   $fit = (FenceGet 'Fit')
   Log "fit: from $from to $to, heights seen: $($seen -join ' '); reply: $($reply -replace '\s+', ' ')"
-  Check 'MF-12 fit makes the fence as tall as its icons need' ($to -lt $from -and $to -eq [int]$fit.fit.fittingHeight -and [int]$fit.rect.h -eq $to) "from $from to $to, fittingHeight=$($fit.fit.fittingHeight) saved h=$($fit.rect.h)"
+  Check 'MF-12 fit makes the fence as tall as its two rows of icons need' ($to -lt $from -and [int]$fit.fit.rows -eq 2 -and $to -eq [int]$fit.fit.fittingHeight -and [int]$fit.rect.h -eq $to) "from $from to $to, rows=$($fit.fit.rows) fittingHeight=$($fit.fit.fittingHeight) saved h=$($fit.rect.h)"
   Check 'MF-12 the bottom edge glides there (at least 3 heights in between)' (@($seen | Where-Object { $_ -gt $to -and $_ -lt $from }).Count -ge 3) "heights seen: $($seen -join ' ')"
   Check 'MF-12 the reply says it changed' ($reply -match '"changed":\s*true') ($reply -replace '\s+', ' ')
   # A rolled fence: fit still sets the height it opens to, without opening it.
-  Pf fence resize Fit --height 470 2>&1 | Out-Null
   Pf fence move Fit --rect '300,150,340,470' | Out-Null; Start-Sleep -Milliseconds 600
   Pf fence roll Fit | Out-Null; Start-Sleep -Milliseconds 800
   Pf fence fit Fit | Out-Null; Start-Sleep -Milliseconds 600
