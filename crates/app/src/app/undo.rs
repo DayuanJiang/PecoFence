@@ -39,8 +39,12 @@ pub(super) enum UndoStep {
     /// Folders or files made from a fence (made directly too): Ctrl+Z moves them to the
     /// Recycle Bin, as Explorer's own undo of 新建 does, without a record in Windows' undo list
     /// (a record would be the newest one there, and the next step handed to Windows would
-    /// bring the item back instead of undoing its own operation).
-    Created { paths: Vec<PathBuf> },
+    /// bring the item back instead of undoing its own operation). Each path comes with the
+    /// item's creation time: whatever else has that name by the time of the undo (the item
+    /// was renamed, another one was made under its first name) is not it and stays.
+    Created {
+        items: Vec<(PathBuf, Option<std::time::SystemTime>)>,
+    },
     /// A file operation the shell recorded in Windows' undo list: Ctrl+Z passes the undo on.
     /// Windows undoes the newest operation of its list, which is this one unless another
     /// program's came after it, exactly as Ctrl+Z on the desktop would.
@@ -139,7 +143,14 @@ impl App {
     /// The user made the folders or files `paths` from a fence.
     pub(super) fn note_created_for_undo(&mut self, paths: Vec<PathBuf>) {
         if !paths.is_empty() {
-            self.push_undo(UndoStep::Created { paths });
+            let items = paths
+                .into_iter()
+                .map(|p| {
+                    let born = std::fs::metadata(&p).and_then(|m| m.created()).ok();
+                    (p, born)
+                })
+                .collect();
+            self.push_undo(UndoStep::Created { items });
         }
     }
 
@@ -310,10 +321,10 @@ impl App {
                     }
                 }
             }
-            UndoStep::Created { paths } => {
-                let count = paths.len();
-                tracing::info!(count, first = ?paths.first(), "new items undone: to the Recycle Bin");
-                self.start_undo_created(paths);
+            UndoStep::Created { items } => {
+                let count = items.len();
+                tracing::info!(count, first = ?items.first(), "new items undone: to the Recycle Bin");
+                self.start_undo_created(items);
                 count
             }
             UndoStep::Shell { .. } => usize::from(self.ask_windows_to_undo()),

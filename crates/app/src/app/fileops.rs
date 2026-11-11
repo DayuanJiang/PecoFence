@@ -128,11 +128,25 @@ impl App {
 
     /// Ctrl+Z of items made from a fence: each goes to the Recycle Bin on a worker thread,
     /// without a record in Windows' undo list and without a dialog. One that is gone already
-    /// is left out.
-    pub(super) fn start_undo_created(&mut self, paths: Vec<PathBuf>) {
+    /// is left out, and so is a path that holds another item now (`born`: the creation time
+    /// of the item that was made).
+    pub(super) fn start_undo_created(
+        &mut self,
+        items: Vec<(PathBuf, Option<std::time::SystemTime>)>,
+    ) {
         self.run_fileop(None, FileOpThen::UndoCreated, move |_| {
             let mut any = false;
-            for path in &paths {
+            for (path, born) in &items {
+                let now = std::fs::metadata(path).and_then(|m| m.created()).ok();
+                if born.is_none() || now != *born {
+                    tracing::info!(
+                        path = %path.display(),
+                        ?born,
+                        ?now,
+                        "new item not recycled: the item that was made is not at this path"
+                    );
+                    continue;
+                }
                 match shell::recycle_unrecorded(path) {
                     Ok(done) => any |= done,
                     Err(error) => {

@@ -147,6 +147,23 @@ if ($Part -match 'B') {
   Undo
   Check 'after Ctrl+Z took a new folder away, the next Ctrl+Z brings back the file deleted before it' ($deleted -and $made -and $folderGone -and (Has 'u1 报告.txt') -and -not (Has 'New folder')) "deleted=$deleted, folder made=$made, gone after the first Ctrl+Z=$folderGone; after the second: file there=$(Has 'u1 报告.txt'), folder there=$(Has 'New folder'); bin: $(BinNames); $(UndoLog)"
 
+  Case 'Ctrl+Z of a new folder leaves another folder that took its first name alone'
+  FocusTitle 'UA'
+  [G]::KeyDown(0x11); [G]::KeyDown(0x10); [G]::Press(0x4E); [G]::KeyUp(0x10); [G]::KeyUp(0x11)
+  Start-Sleep -Milliseconds 2000
+  [G]::Type('u8 改过名的夹'); Start-Sleep -Milliseconds 300
+  [G]::Press(0x0D); Start-Sleep -Milliseconds 1500
+  $named = (Has 'u8 改过名的夹') -and -not (Has 'New folder')
+  # Someone else makes a folder under the name the new folder had first.
+  New-Item -ItemType Directory -Force "$PfDesk\New folder" | Out-Null
+  Set-Content -LiteralPath "$PfDesk\New folder\keep.txt" -Value 'another folder' -Encoding ASCII
+  Start-Sleep -Seconds 2
+  Undo
+  Undo
+  Check 'Ctrl+Z does not delete another folder that took the new folder''s first name' ($named -and (Test-Path -LiteralPath "$PfDesk\New folder\keep.txt") -and (Has 'u8 改过名的夹')) "made and named=$named; after two Ctrl+Z: the other folder's file there=$(Test-Path -LiteralPath "$PfDesk\New folder\keep.txt"), the named folder there=$(Has 'u8 改过名的夹'); bin: $(BinNames); $(UndoLog)"
+  Remove-Item -LiteralPath "$PfDesk\New folder" -Recurse -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 1
+
   Case 'Ctrl+Z after Shift+Delete'
   $home1 = FRect 'UA'
   DragFence 60
