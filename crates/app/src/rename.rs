@@ -304,7 +304,9 @@ pub fn active_target() -> Option<RenameTarget> {
 
 /// Finishes the active session (if any). `commit` pushes the new title.
 pub fn end_active(commit: bool) {
-    let session = ACTIVE.with(|a| a.borrow_mut().take());
+    // `try_with`: when the app quits with a name box open, the box is destroyed while the
+    // thread-local is torn down, and its EN_KILLFOCUS comes back here (a panic at exit before).
+    let session = ACTIVE.try_with(|a| a.borrow_mut().take()).ok().flatten();
     if let Some(mut s) = session {
         // Closed by its own keys (Enter, Esc), not by a click elsewhere: the keyboard is still
         // here and goes on to the fence below. Read before the popup is destroyed.
