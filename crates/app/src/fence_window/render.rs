@@ -194,7 +194,14 @@ impl FenceViewState {
     /// Drops finished layout / icon motion before a content draw (a finished tween sits at its
     /// end value, so nothing changes visually) and folds the caret away once it has faded out.
     pub(super) fn prune_content_motion(&mut self, now: Instant) {
+        let sliding = !self.item_motion.is_empty();
         self.item_motion.retain(|_, m| !m.done(now));
+        if sliding && self.item_motion.is_empty() {
+            // The icons have come to rest: the one under a resting pointer may be another now
+            // (the hover was last tested while they were still drawn at their old places).
+            tracing::debug!("layout motion ended: hover refresh requested");
+            self.request_hover_refresh();
+        }
         self.leaving.retain(|l| !l.alpha.is_done(now));
         for item in &mut self.items {
             if item.icon_fade.is_some_and(|t| t.is_done(now)) {
