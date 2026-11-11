@@ -213,6 +213,7 @@ impl FenceWindow {
             dpi,
             theme,
             glass_dark_text: Cell::new(None),
+            plate_halo: Cell::new(false),
             backdrops: ctx.backdrops.borrow().clone(),
             backdrop_crop: None,
             backdrop_rect: None,
@@ -2428,6 +2429,7 @@ impl FenceWindow {
             let old_ink = v.material_foreground().label_look();
             v.backdrops = backdrops;
             v.glass_dark_text.set(None);
+            v.plate_halo.set(false);
             v.invalidate_backdrop();
             // The content only follows the backdrop through its ink (as in `on_move`).
             let result = if old_ink != v.material_foreground().label_look()
@@ -2582,6 +2584,7 @@ impl FenceWindow {
             }
             if v.theme.liquid_glass != theme.liquid_glass || v.theme.mode != theme.mode {
                 v.glass_dark_text.set(None);
+                v.plate_halo.set(false);
             }
             v.theme = theme;
             // A theme may bring its own title font: the tabs are measured again.

@@ -208,8 +208,16 @@ impl FenceViewState {
                 let opacity = self.material_opacity();
                 let tint = self.plate_tint();
                 let previous = self.glass_dark_text.get();
-                let mut foreground = self.theme.over_acrylic(image, opacity, tint, previous);
+                let previous_halo = self.plate_halo.get();
+                let mut foreground = self.theme.over_acrylic_with_previous(
+                    image,
+                    opacity,
+                    tint,
+                    previous,
+                    previous_halo,
+                );
                 let dark_text = foreground.text_primary.r < 0.5;
+                let halo = foreground.text_halo;
                 // In a Peek the fence floats over other windows, not over the wallpaper the
                 // text was picked for. Light text needs a dark plate and the windows behind may
                 // well be light, so a light-mode fence that took light text shows the mode's
@@ -217,7 +225,7 @@ impl FenceViewState {
                 if self.light_text_in_light_mode(dark_text) && self.behavior.floating.get() {
                     foreground = self.theme;
                 }
-                if previous != Some(dark_text) {
+                if previous != Some(dark_text) || previous_halo != halo {
                     let (brightness, bright_share, dark_share) =
                         self.theme.acrylic_plate_stats(image, opacity, tint);
                     tracing::debug!(
@@ -228,11 +236,13 @@ impl FenceViewState {
                         opacity,
                         ?previous,
                         dark_text,
-                        halo = foreground.text_halo,
+                        previous_halo,
+                        halo,
                         "text colour picked from the plate"
                     );
                 }
                 self.glass_dark_text.set(Some(dark_text));
+                self.plate_halo.set(halo);
                 foreground
             }
             None => self.theme,

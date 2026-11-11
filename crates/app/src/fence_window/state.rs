@@ -290,6 +290,9 @@ pub struct FenceViewState {
     pub(super) theme: Theme,
     /// Last contrast choice for a clear plate; interior mutability keeps the draw API read-only.
     pub(super) glass_dark_text: Cell<Option<bool>>,
+    /// Fluent: whether the text had the halo when it was last picked (it keeps its state near
+    /// its threshold, like the colour). Reset with `glass_dark_text`.
+    pub(super) plate_halo: Cell<bool>,
     pub(super) backdrops: Rc<BackdropSets>,
     pub(super) backdrop_crop: Option<Image>,
     /// Screen rect (left, top, width, height) `backdrop_crop` was cut for. While the height

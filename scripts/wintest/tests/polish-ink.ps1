@@ -56,6 +56,15 @@ function SplitWall() {
   $p = "$PfRun\wall-split.bmp"; $bm.Save($p, [Drawing.Imaging.ImageFormat]::Bmp); $bm.Dispose()
   [G]::SystemParametersInfoW(0x14, 0, $p, 3) | Out-Null
 }
+# Left half mid-light (a dark-mode fence takes dark text there, and a halo under it shows
+# clearly), right half dark.
+function SplitWallMid() {
+  $bm = New-Object Drawing.Bitmap 1600, 900; $gr = [Drawing.Graphics]::FromImage($bm)
+  $gr.Clear([Drawing.Color]::FromArgb(18, 20, 26))
+  $br = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(186, 189, 193)); $gr.FillRectangle($br, 0, 0, 800, 900); $br.Dispose(); $gr.Dispose()
+  $p = "$PfRun\wall-splitmid.bmp"; $bm.Save($p, [Drawing.Imaging.ImageFormat]::Bmp); $bm.Dispose()
+  [G]::SystemParametersInfoW(0x14, 0, $p, 3) | Out-Null
+}
 # Large light and dark blocks: every fence lies over both.
 function BusyWall() {
   $bm = New-Object Drawing.Bitmap 1600, 900; $gr = [Drawing.Graphics]::FromImage($bm)
@@ -83,6 +92,7 @@ function Wall($name) {
     'photo' { PhotoWall }
     'busy' { BusyWall }
     'split' { SplitWall }
+    'splitmid' { SplitWallMid }
   }
   # PecoFence looks at the wallpaper every 5 seconds.
   Start-Sleep -Seconds 8
@@ -271,8 +281,39 @@ if ($Part -match 'C') {
     $halo = @(PfLogAll | Where-Object { $_ -match 'text colour picked from the plate' -and $_ -match '文档' })
     Log "ink log lines for 文档: $($halo.Count); last: $($halo | Select-Object -Last 2)"
 
+    # ---- The halo keeps its state near its threshold. The fence comes from the mid-light half
+    # (dark text) and its right edge moves over the dark half, two pixels forward and one back
+    # at a time, like a slow hand. The halo is read under the first icon's name, which stays
+    # over the mid-light half: with it the dark name has a rim lighter than the plate.
+    Case 'V1 the halo of a fence moved slowly over an edge'
+    Wall 'splitmid'
+    Pf fence move 文档 --rect '430,60,340,240' | Out-Null; Start-Sleep -Milliseconds 900; Park
+    $m = TitleInk 'halo/start' '文档'
+    Check 'V1 halo: dark text and no halo on the mid-light half' ($m.Dark -and $m.Contrast -ge 3.9 -and $m.Rim -lt 1.3) $m.Text
+    $HaloAt = { param($tag) $c = CellPt '文档' 0; $q = InkAt $tag ($c[0] - 36) ($c[1] + 28) 72 30; $bright = $(if ($q.Dark) { $q.Rim } else { $q.Contrast }); $(if ($bright -ge 1.3) { '1' } else { '0' }) }
+    $x = 440; $seq = ''; $on = -1
+    while ($x -le 520) {
+      foreach ($step in 2, -1) {
+        $x += $step
+        Pf fence move 文档 --rect "$x,60,340,240" | Out-Null; Start-Sleep -Milliseconds 120
+        $h = & $HaloAt "halo/pass/$x"; $seq += $h
+        if ($h -eq '1' -and $on -lt 0) { $on = $x }
+      }
+    }
+    Shot 'C-halo-pass-end'
+    Check 'V1 halo: it comes on once while the fence wobbles over the edge' ((& $flips $seq) -eq 1 -and $on -gt 0) "halo at each step from x = 442 (2 px forward, 1 back): $seq; switches $(& $flips $seq); first on at x = $on"
+    # One pixel back and forth over the place where it came on.
+    $jig = ''
+    foreach ($k in 1..8) { foreach ($xx in ($on - 1), $on) { Pf fence move 文档 --rect "$xx,60,340,240" | Out-Null; Start-Sleep -Milliseconds 120; $jig += (& $HaloAt "halo/jiggle/$xx") } }
+    Check 'V1 halo: it stays while the fence moves one pixel back and forth there' ((& $flips $jig) -le 1) "halo at x = $($on - 1), $on eight times: $jig; switches $(& $flips $jig)"
+    # Back on the mid-light half it goes off again.
+    Pf fence move 文档 --rect '300,60,340,240' | Out-Null; Start-Sleep -Milliseconds 700
+    $off = & $HaloAt 'halo/back'
+    Check 'V1 halo: off again clear of the edge' ($off -eq '0') "halo $off"
+
     # The same with the mouse, recorded for the report.
     Case 'V1 a fence dragged across with the mouse'
+    Wall 'split'
     Pf fence move 文档 --rect '330,60,340,240' | Out-Null; Start-Sleep -Milliseconds 900; Park
     RecStart 'drag' -X 240 -Y 40 -W 1000 -H 290 -Fps 20
     RecMark '栅栏在浅色壁纸上'

@@ -205,6 +205,10 @@ const INK_NEUTRAL: f32 = 0.56;
 /// there gets the halo: a busy wallpaper, or light text kept near its threshold.
 const DARK_TEXT_WEAK: f32 = 0.40;
 const WEAK_PLATE_SHARE: f32 = 0.125;
+/// A fence that has the halo keeps it down to this share, so a fence resting or moving near
+/// the edge does not switch it with every pixel. One row or column of the 16 x 16 samples is
+/// 1/16 of the plate: under that, so a step of one row over a straight edge keeps the state.
+const WEAK_PLATE_KEEP: f32 = 0.06;
 
 fn luma(rgb: [f32; 3]) -> f32 {
     0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
@@ -495,6 +499,20 @@ impl Theme {
         tint: Option<ColorF>,
         previous_dark_text: Option<bool>,
     ) -> Self {
+        self.over_acrylic_with_previous(image, opacity, tint, previous_dark_text, false)
+    }
+
+    /// [`Self::over_acrylic`] for a fence that picked before: `previous_halo` is whether it
+    /// had the halo then. Like the text colour, the halo keeps its state near its threshold
+    /// (on from `WEAK_PLATE_SHARE`, off under `WEAK_PLATE_KEEP`).
+    pub fn over_acrylic_with_previous(
+        self,
+        image: &crate::Image,
+        opacity: f32,
+        tint: Option<ColorF>,
+        previous_dark_text: Option<bool>,
+        previous_halo: bool,
+    ) -> Self {
         if self.liquid_glass || image.bgra.is_empty() {
             return self;
         }
@@ -514,7 +532,12 @@ impl Theme {
             self.with_ink_of(self.ink(ThemeMode::Dark))
         };
         let weak_share = if dark_text { dark_share } else { bright_share };
-        theme.text_halo |= weak_share >= WEAK_PLATE_SHARE;
+        let needed = if previous_halo {
+            WEAK_PLATE_KEEP
+        } else {
+            WEAK_PLATE_SHARE
+        };
+        theme.text_halo |= weak_share >= needed;
         theme
     }
 
@@ -1123,6 +1146,45 @@ mod tests {
                     .text_halo
             );
         }
+    }
+
+    #[test]
+    fn fluent_halo_keeps_its_state_near_its_threshold() {
+        let dark = Theme::dark();
+        // A dark plate with `bright` of its 256 samples over a bright part of the wallpaper.
+        let plate = |bright: usize| {
+            let mut image = crate::Image::solid(16, 16, [20, 24, 40]);
+            for p in image.bgra.as_chunks_mut::<4>().0.iter_mut().take(bright) {
+                p[..3].copy_from_slice(&[240, 235, 230]);
+            }
+            let m = dark.acrylic_tint();
+            image.tint(m.color, m.luminosity_opacity, m.noise, m.chroma);
+            image
+        };
+        let halo = |bright: usize, previous: bool| {
+            let picked = dark.over_acrylic_with_previous(&plate(bright), 1.0, None, None, previous);
+            assert_eq!(picked.text_primary, dark.text_primary);
+            picked.text_halo
+        };
+        // On from an eighth of the plate (32 samples), off under 6 % (15 samples).
+        assert!(!halo(31, false) && halo(32, false));
+        assert!(halo(16, true) && !halo(15, true));
+        // A fence wobbling over the edge of a bright part, one sample row (16 samples) at a
+        // time: it switched with every step, now once.
+        let (mut state, mut switches, mut switches_before) = (false, 0, 0);
+        let mut state_before = false;
+        for bright in [16, 32, 16, 32, 16, 32, 48, 32, 16, 32] {
+            let now = halo(bright, state);
+            switches += (now != state) as u32;
+            state = now;
+            let now = halo(bright, false);
+            switches_before += (now != state_before) as u32;
+            state_before = now;
+        }
+        assert_eq!(switches, 1);
+        assert_eq!(switches_before, 7);
+        // Clear of the edge it goes off again.
+        assert!(!halo(0, state));
     }
 
     #[test]
