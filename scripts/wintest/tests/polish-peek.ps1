@@ -275,6 +275,16 @@ if ($Part -match 'A') {
   Pf settings set peek.dim true | Out-Null; Start-Sleep -Milliseconds 800
   PkCoverFront
 
+  Case 'MF-5 Liquid Glass'
+  Pf settings set themeStyle liquidGlass | Out-Null; Start-Sleep -Milliseconds 1200
+  PkCoverFront
+  $runs = @(1..3 | ForEach-Object { PkCycle "Aglass$_" })
+  $sum = PkSummary $runs
+  Check 'MF-5 Liquid Glass: the covered fence fades in and out too (a part-way frame in at least 2 of 3)' (@($runs | Where-Object { $_.openMid -ge 1 }).Count -ge 2 -and @($runs | Where-Object { $_.closeMid -ge 1 }).Count -ge 2) $sum
+  PkAfter 'Liquid Glass'
+  Pf settings set themeStyle fluent | Out-Null; Start-Sleep -Milliseconds 1200
+  PkCoverFront
+
   Case 'MF-5 animations off'
   [Anim]::Set($false); Start-Sleep -Milliseconds 800
   $runs = @(1..3 | ForEach-Object { PkCycle "Aoff$_" })
@@ -336,12 +346,15 @@ if ($Part -match 'B') {
     PeekKey; Start-Sleep -Milliseconds $gap; PeekKey
     PkAfter "opened and closed $gap ms apart"
   }
-  # 11 pressed three times quickly: it ends open, with the covered fence fully there
+  # 11 pressed three times quickly: it ends open, with the covered fence fully there. (A third
+  # press that lands just after the second one's close has finished starts a new Peek, which
+  # the window coming back to the front can end at once, in builds before this change too: then
+  # the fences must simply be at rest, which PkAfter checks.)
   foreach ($gap in 30, 70) {
     PeekKey; Start-Sleep -Milliseconds $gap; PeekKey; Start-Sleep -Milliseconds $gap; PeekKey
     Start-Sleep -Milliseconds 900
-    $v = PkNow
-    Check "B three presses $gap ms apart: the Peek is on and the covered fence shows fully" ((PkPeekOn) -and $v[0] -gt 0.9 * $Ref[0]) "peek=$(PkPeekOn) chroma=$('{0:0}' -f $v[0]) of $('{0:0}' -f $Ref[0])"
+    $v = PkNow; $on = PkPeekOn
+    Check "B three presses $gap ms apart: while the Peek is on the covered fence shows fully" (-not $on -or $v[0] -gt 0.9 * $Ref[0]) "peek=$on chroma=$('{0:0}' -f $v[0]) of $('{0:0}' -f $Ref[0])"
     if (PkPeekOn) { PeekKey } else { PkCoverFront }
     PkAfter "three presses $gap ms apart, then ended"
   }
@@ -365,6 +378,13 @@ if ($Part -match 'B') {
   [G]::Press(0x5B); Start-Sleep -Milliseconds 1500; [G]::Press(0x1B); Start-Sleep -Milliseconds 800
   if (PkPeekOn) { PeekKey; Start-Sleep -Milliseconds 400 }
   PkCoverFront; PkAfter 'ended by the Start menu'
+  # 15 opened together with the search box: the box is over the fences, the fences over the dimmer
+  Pf peek start --search pk | Out-Null; PkWaitPeek $true | Out-Null; Start-Sleep -Milliseconds 900
+  $z = @(([L]::Tops('pecofence') -split "`n") | Where-Object { $_ } | ForEach-Object { ($_ -split ' \| ')[1] })
+  $box = [array]::IndexOf($z, 'PecoFence.PeekSearch'); $dim = [array]::IndexOf($z, 'PecoFence.PeekDimmer')
+  $fz = @(0..($z.Count - 1) | Where-Object { $z[$_] -eq 'PecoFence.Fence' })
+  Check 'B opened with the search box: the box is over every fence and every fence over the dimmer' ($box -ge 0 -and $dim -ge 0 -and $fz.Count -ge 4 -and ($fz | Measure-Object -Minimum).Minimum -gt $box -and ($fz | Measure-Object -Maximum).Maximum -lt $dim) "top first: $($z -join ' > ')"
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 300; PkCoverFront; PkAfter 'opened with the search box, ended by Esc'
   # Windows' own surfaces (the desktop switcher, the task switcher, Start) span the screen but
   # hide nothing: only a program's window (the white one, Notepad) ever counted as hiding a fence.
   $by = @(PfLogAll | Where-Object { $_ -match 'fence hidden by a window' } | ForEach-Object { if ($_ -match 'class=(\S+)') { $Matches[1] } } | Sort-Object -Unique)
