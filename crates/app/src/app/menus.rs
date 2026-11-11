@@ -143,6 +143,8 @@ mod glyph {
     pub const CHEVRON_UP: char = '\u{E70E}';
     pub const CHEVRON_DOWN: char = '\u{E70D}';
     pub const RENAME: char = '\u{E8AC}';
+    /// Edit (a pencil): 编辑便签, 编辑脚本. In Segoe MDL2 Assets too.
+    pub const EDIT: char = '\u{E70F}';
     pub const FOLDER_OPEN: char = '\u{E838}';
     pub const UP: char = '\u{E74A}';
     pub const HOME: char = '\u{E80F}';
@@ -861,7 +863,7 @@ impl App {
                 false,
                 false,
             )
-            .icon(glyph::RENAME);
+            .icon(glyph::EDIT);
         } else if f.tool == Some(pecofence_core::FenceTool::Script) {
             let spec = self.state.config.scripts.get(&fence);
             let has_path = spec.is_some_and(|s| !s.path.is_empty());
@@ -909,7 +911,7 @@ impl App {
                 false,
                 !has_path,
             )
-            .icon(glyph::RENAME)
+            .icon(glyph::EDIT)
             .item(
                 CMD_FENCE_SCRIPT_FOLDER,
                 pecofence_core::i18n::text("打开脚本所在的文件夹"),
