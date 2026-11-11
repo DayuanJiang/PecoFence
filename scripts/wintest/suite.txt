@@ -98,6 +98,9 @@ polish-paste-C     2   ec2    release polish-paste.ps1               --var Part=
 # Part D copies a 6 GB file: the box needs 12 GB free.
 polish-paste-D     2   ec2    release polish-paste.ps1               --var Part=D
 polish-undo        2   ec2    release polish-undo.ps1
+polish-undo-C      1   ec2    debug   polish-undo.ps1                --var Part=C
+polish-undo-D      1   ec2    release polish-undo.ps1                --var Part=D
+polish-undo-E      1   ec2    release polish-undo.ps1                --var Part=E
 polish-rename      1   ec2    release polish-rename.ps1
 polish-drop        2   ec2    release polish-drop.ps1
 polish-reflow      2   ec2    release polish-reflow.ps1

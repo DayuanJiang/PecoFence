@@ -516,8 +516,8 @@ while ($true) {
 ## Folder portals move real files
 
 A portal fence is a live view of a folder on disk. `item move` with a portal as the source or the
-destination is therefore an Explorer file move: the file leaves or enters that folder. Undo is only
-possible through Explorer (Ctrl+Z on the desktop); layout snapshots do not cover file moves. For that
+destination is therefore an Explorer file move: the file leaves or enters that folder. Ctrl+Z on the
+desktop, or in a fence, undoes it (it is one step of both lists); layout snapshots do not cover file moves. For that
 reason `item move --glob` without `--from` never touches items shown by a portal
 (`"assignedBy": "portal"` in `item list`); name the portal with `--from <portal>` to include them. As
 a rule, always pair `--glob` with `--from`, and check `fence list` for `"kind": "portal"` before
