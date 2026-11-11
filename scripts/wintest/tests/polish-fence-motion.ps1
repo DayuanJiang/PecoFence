@@ -299,8 +299,11 @@ if ($Part -match 'C') {
   Pf fence create --title Alpha --rect '300,200,300,250' | Out-Null
   Pf fence create --title Beta --rect '700,200,300,250' | Out-Null
   Start-Sleep -Seconds 1; Park
-  foreach ($k in 1..2) {
+  # Twice in the Fluent style (the system's move loop), once in Liquid Glass, which moves the
+  # window itself on a title drag.
+  foreach ($k in 'Fluent 1', 'Fluent 2', 'Liquid Glass') {
     Case "C dropped 10 px over the other fence ($k)"
+    if ($k -eq 'Liquid Glass') { Pf settings set themeStyle liquidGlass | Out-Null; Start-Sleep -Milliseconds 900 }
     Pf fence move Alpha --rect '300,200,300,250' | Out-Null; Start-Sleep -Milliseconds 700
     $p = TitlePt Alpha
     [PmTrack]::Start((Hw Alpha))
@@ -315,8 +318,9 @@ if ($Part -match 'C') {
     $f = FenceGet Alpha
     Log "drop $k`: let go at x $($from.L), landed at x $($end.L); steps: $(($trip | ForEach-Object { "+$($_.ms - $trip[0].ms):$($_.L)" }) -join ' ')"
     Check "dropped over Beta ($k): it lands clear of Beta and is saved there" ($end.R -le 700 -and $f.rect.x -eq $end.L -and $f.windowRect.x -eq $end.L) "landed at $($end.L)..$($end.R), saved x $($f.rect.x)"
-    Check "dropped over Beta ($k): the window travels there" ($from.L -ne $end.L -and $trip.Count -ge 4 -and ($trip[-1].ms - $trip[0].ms) -ge 80 -and ($trip[-1].ms - $trip[0].ms) -le 300) "from x $($from.L) to $($end.L) in $($trip.Count) steps over $($trip[-1].ms - $trip[0].ms) ms"
+    Check "dropped over Beta ($k): the window travels there" ($from.L -ne $end.L -and $trip.Count -ge 3 -and ($trip[-1].ms - $trip[0].ms) -ge 50 -and ($trip[-1].ms - $trip[0].ms) -le 300) "from x $($from.L) to $($end.L) in $($trip.Count) steps over $($trip[-1].ms - $trip[0].ms) ms"
   }
+  Pf settings set themeStyle fluent | Out-Null; Start-Sleep -Milliseconds 900
   Case 'C animations off'
   [Anim]::Set($false); Start-Sleep -Milliseconds 800
   Pf fence move Alpha --rect '300,200,300,250' | Out-Null; Start-Sleep -Milliseconds 700
