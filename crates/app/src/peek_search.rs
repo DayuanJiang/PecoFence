@@ -6,7 +6,9 @@
 //! Ctrl+Enter opens the containing folder, Right (with the caret at the end), Ctrl+O, the menu
 //! key or Shift+F10 show the actions, Ctrl+1 to Ctrl+9 open a row directly, Esc ends the Peek.
 //! A right-click on a row highlights it and shows its actions at the pointer, as in Explorer;
-//! a right-click on the typed text gives the text box's own menu.
+//! a right-click on the typed text gives the text box's own menu. The row or type tab under
+//! the pointer gets a hover fill (it fades in and out as a fence item's), a row also the hand:
+//! a click opens it as Enter does. The highlighted row stays where the keys put it.
 //!
 //! Windows 11's look: rounded corners (by Windows, where it rounds), group headings (栅栏里,
 //! 整台电脑, 操作), a glyph on the two action rows, the Ctrl+digit of the highlighted row only,
@@ -29,9 +31,11 @@ use pecofence_platform::com::{StaGuard, StaSender, sta_channel};
 use pecofence_platform::fileinfo::{self, FileIcon};
 use pecofence_platform::paint::{self, Align, Font};
 use pecofence_platform::window::{
-    self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
+    self, ClassOptions, MessageHandler, StandardCursor, Window, WindowBuilder, WindowClass, style,
 };
-use pecofence_platform::{HWND, POINT, RECT, desktop, dwm, edit, everything, fonts, monitors, msg};
+use pecofence_platform::{
+    HWND, POINT, RECT, desktop, dwm, edit, everything, fonts, monitors, msg, sysparams,
+};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
@@ -71,6 +75,10 @@ pub(crate) fn slow_limit() -> u128 {
         SLOW_STAGE_MS
     }
 }
+/// Steps the hover fills' fades.
+const TIMER_HOVER: usize = 1;
+/// A hover fill fades in and out this long, as a fence item's (the motion tokens' fastest).
+const HOVER_FADE_MS: f32 = 83.0;
 const WA_INACTIVE: usize = 0;
 const VK_UP: u32 = 0x26;
 const VK_DOWN: u32 = 0x28;
@@ -120,6 +128,13 @@ pub struct Row {
     pub shortcut: Option<u8>,
     /// An action row's glyph (Segoe Fluent), drawn in the accent where a file has its icon.
     pub glyph: Option<&'static str>,
+}
+
+/// What the pointer can be over: a result row or a type tab (their indices).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Hover {
+    Row(usize),
+    Tab(usize),
 }
 
 thread_local! {
@@ -323,6 +338,12 @@ struct Session {
     asked: HashSet<PathBuf>,
     /// Types' icons by extension (or folder), which read no file.
     type_icons: HashMap<String, Option<FileIcon>>,
+    /// The row or tab under the pointer and how far its fill has faded in (0.0 to 1.0); the
+    /// one the pointer left and how much of its fill is still there; when the fades last moved.
+    hover: Option<Hover>,
+    hover_level: f32,
+    hover_out: Option<(Hover, f32)>,
+    hover_tick: Instant,
 }
 
 impl Session {
@@ -363,6 +384,113 @@ impl Session {
     fn row_at(&self, y: i32) -> Option<usize> {
         self.row_spans.iter().position(|&(t, b)| y >= t && y < b)
     }
+
+    /// The tab or row under client point (`x`, `y`).
+    fn target_at(&self, x: i32, y: i32) -> Option<Hover> {
+        self.tab_at(x, y)
+            .map(Hover::Tab)
+            .or_else(|| self.row_at(y).map(Hover::Row))
+    }
+
+    /// Asks for a repaint of `target`'s row, or of the tab strip (`w`: the window's width).
+    fn invalidate_target(&self, target: Hover, w: i32) {
+        let (top, bottom) = match target {
+            Hover::Row(i) => match self.row_spans.get(i) {
+                Some(&span) => span,
+                None => return,
+            },
+            Hover::Tab(_) => (self.px(HEIGHT), self.px(HEIGHT) + self.px(TABS_H)),
+        };
+        paint::invalidate_rect(
+            self.window.hwnd(),
+            RECT {
+                left: 0,
+                top,
+                right: w,
+                bottom,
+            },
+        );
+    }
+}
+
+/// `back` with `over` laid on it at `level` (0.0 nothing of it, 1.0 all of it), per channel.
+fn mix(back: u32, over: u32, level: f32) -> u32 {
+    let channel = |shift: u32| {
+        let (b, o) = (
+            ((back >> shift) & 0xFF) as f32,
+            ((over >> shift) & 0xFF) as f32,
+        );
+        ((b + (o - b) * level).round() as u32) << shift
+    };
+    channel(0) | channel(8) | channel(16)
+}
+
+/// The pointer is at client point `at` (`None`: it left the box). The row or tab under it gets
+/// the hover fill, fading in; the one it left fades out (both at once with Windows' animations
+/// off). The highlighted row is not touched.
+fn set_hover(hwnd: HWND, at: Option<(i32, i32)>) {
+    ACTIVE.with(|a| {
+        let Ok(mut a) = a.try_borrow_mut() else {
+            return;
+        };
+        let Some(s) = a.as_mut() else { return };
+        let target = at.and_then(|(x, y)| s.target_at(x, y));
+        if target == s.hover {
+            return;
+        }
+        let (w, _) = window::window_rect_size(hwnd);
+        let animate = sysparams::client_area_animation();
+        // Back on the one still fading out: on from what is left of its fill.
+        let from = s
+            .hover_out
+            .filter(|(t, _)| Some(*t) == target)
+            .map_or(0.0, |(_, level)| level);
+        let left = s.hover.map(|t| (t, s.hover_level));
+        for t in [left, s.hover_out].into_iter().flatten().map(|(t, _)| t) {
+            s.invalidate_target(t, w);
+        }
+        s.hover = target;
+        if let Some(t) = target {
+            s.invalidate_target(t, w);
+        }
+        if animate {
+            s.hover_out = left.filter(|(t, level)| *level > 0.0 && Some(*t) != target);
+            s.hover_level = from;
+            s.hover_tick = Instant::now();
+            window::set_timer(hwnd, TIMER_HOVER, 15);
+        } else {
+            s.hover_out = None;
+            s.hover_level = 1.0;
+        }
+        tracing::debug!(over = ?target, left = ?left.map(|(t, _)| t), animate, "search: the pointer is over another row or tab");
+    });
+}
+
+/// `TIMER_HOVER`: the hover fills a step further in their fades; the timer ends with them.
+fn step_hover(hwnd: HWND) {
+    ACTIVE.with(|a| {
+        let Ok(mut a) = a.try_borrow_mut() else {
+            return;
+        };
+        let Some(s) = a.as_mut() else { return };
+        let now = Instant::now();
+        let step = now.duration_since(s.hover_tick).as_secs_f32() * 1000.0 / HOVER_FADE_MS;
+        s.hover_tick = now;
+        let (w, _) = window::window_rect_size(hwnd);
+        if let Some(t) = s.hover
+            && s.hover_level < 1.0
+        {
+            s.hover_level = (s.hover_level + step).min(1.0);
+            s.invalidate_target(t, w);
+        }
+        if let Some((t, level)) = s.hover_out {
+            s.hover_out = (level > step).then_some((t, level - step));
+            s.invalidate_target(t, w);
+        }
+        if s.hover_out.is_none() && (s.hover.is_none() || s.hover_level >= 1.0) {
+            window::kill_timer(hwnd, TIMER_HOVER);
+        }
+    });
 }
 
 /// Opens the box with `text` typed in and gives it the keyboard.
@@ -420,6 +548,41 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
                     msg::WM_PAINT => {
                         paint_box(hwnd);
                         Some(0)
+                    }
+                    msg::WM_MOUSEMOVE => {
+                        set_hover(hwnd, Some((msg::lo_i16(lparam), msg::hi_i16(lparam))));
+                        window::track_mouse_leave(hwnd);
+                        Some(0)
+                    }
+                    msg::WM_MOUSELEAVE => {
+                        set_hover(hwnd, None);
+                        Some(0)
+                    }
+                    msg::WM_TIMER if wparam == TIMER_HOVER => {
+                        step_hover(hwnd);
+                        Some(0)
+                    }
+                    // The hand over a result row, which a click opens (as over a script
+                    // fence's clickable row); the arrow over a tab, as over a fence's tabs.
+                    // The text box inside asks here too and keeps its own cursor. Windows asks
+                    // before it sends the move, so the row is looked up at the pointer.
+                    msg::WM_SETCURSOR
+                        if wparam == hwnd.0 as usize
+                            && msg::lo_i16(lparam) as isize == msg::HTCLIENT =>
+                    {
+                        let pt = window::screen_to_client(hwnd, window::cursor_pos());
+                        let on_row = ACTIVE.with(|a| {
+                            a.try_borrow().is_ok_and(|a| {
+                                a.as_ref().is_some_and(|s| {
+                                    matches!(s.target_at(pt.x, pt.y), Some(Hover::Row(_)))
+                                })
+                            })
+                        });
+                        if !on_row {
+                            return None;
+                        }
+                        window::set_standard_cursor(StandardCursor::Hand);
+                        Some(1)
                     }
                     msg::WM_LBUTTONDOWN => {
                         let (x, y) = (msg::lo_i16(lparam), msg::hi_i16(lparam));
@@ -536,6 +699,10 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
             icons: HashMap::new(),
             asked: HashSet::new(),
             type_icons: HashMap::new(),
+            hover: None,
+            hover_level: 0.0,
+            hover_out: None,
+            hover_tick: Instant::now(),
         })
     });
     window::show_normal(hwnd);
@@ -607,6 +774,19 @@ fn paint_box(hwnd: HWND) {
         // The type tabs: the chosen one in an accent-tinted capsule, the keys at the right.
         let tabs_top = box_h;
         let tint = if s.dark { 0x0060_4A33 } else { 0x00F7_E8D9 };
+        // The fill under the pointer: the fences' subtle hover (WinUI's: 6 % white on dark,
+        // 3.5 % black on light) at the strength its fade has reached.
+        let hover_back = if s.dark {
+            mix(back, 0x00FF_FFFF, 15.0 / 255.0)
+        } else {
+            mix(back, 0, 9.0 / 255.0)
+        };
+        let (hover, hover_level, hover_out) = (s.hover, s.hover_level, s.hover_out);
+        let hover_of = |t: Hover| match hover_out {
+            _ if hover == Some(t) => hover_level,
+            Some((out, level)) if out == t => level,
+            _ => 0.0,
+        };
         // The key in the UI language (Strg+Tab); the tabs give up some of their padding before
         // it runs out of room (long labels at 640 DIPs).
         let hint = format!("{}+Tab", pecofence_core::i18n::text("键名\x04Ctrl"));
@@ -631,8 +811,12 @@ fn paint_box(hwnd: HWND) {
                 bottom: tabs_top + px(TABS_H - 6.0),
             };
             let on = i == s.tab;
+            let hovered = hover_of(Hover::Tab(i));
             if on {
                 p.round_rect(r, (r.bottom - r.top) / 2, tint, tint);
+            } else if hovered > 0.0 {
+                let fill = mix(back, hover_back, hovered);
+                p.round_rect(r, (r.bottom - r.top) / 2, fill, fill);
             }
             p.text(
                 r,
@@ -694,14 +878,21 @@ fn paint_box(hwnd: HWND) {
                     Align::Left,
                 );
             }
-            if s.selected == Some(i) {
+            // The highlighted row keeps its stronger fill under the pointer too.
+            let hovered = hover_of(Hover::Row(i));
+            if s.selected == Some(i) || hovered > 0.0 {
                 let r = RECT {
                     left: px(6.0),
                     top,
                     right: w - px(6.0),
                     bottom,
                 };
-                p.round_rect(r, px(4.0), selected_back, selected_back);
+                let fill = if s.selected == Some(i) {
+                    selected_back
+                } else {
+                    mix(back, hover_back, hovered)
+                };
+                p.round_rect(r, px(4.0), fill, fill);
             }
             let mid = (top + bottom) / 2;
             if let Some(path) = row.icon_path.clone() {
@@ -1083,6 +1274,12 @@ pub fn set_rows(rows: Vec<Row>, selected: Option<usize>, total: usize) {
             wanted.retain(|p| keep.contains(p));
         });
         let h = s.layout();
+        // The rows changed under a pointer at rest: the fill goes to what is under it now.
+        if s.hover.is_some() {
+            let pt = window::screen_to_client(s.window.hwnd(), window::cursor_pos());
+            s.hover = s.target_at(pt.x, pt.y);
+            s.hover_out = None;
+        }
         tracing::debug!(
             rows = s.rows.len(),
             headings = s.rows.iter().filter(|r| r.heading.is_some()).count(),
