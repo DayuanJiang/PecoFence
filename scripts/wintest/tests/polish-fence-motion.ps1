@@ -267,6 +267,28 @@ if ($Part -match 'B') {
   $f = FenceGet Pusher
   Log "after the resize by hand and a move back: saved rect $($f.rect.x),$($f.rect.y),$($f.rect.w),$($f.rect.h) rolledUp=$($f.rolledUp)"
 
+  Case 'B whole rows and a view switch'
+  # 「调整大小时保持整行整列」 on, the view switched while the fence is held short: the rows are
+  # counted for its full height, which stays saved and comes back when there is room.
+  # Pushed 14 px taller: the room (110 px) is no whole number of list rows, so rows counted from
+  # the window would change its height.
+  Pf fence move Pushed --rect '1000,488,300,294' | Out-Null; Start-Sleep -Milliseconds 900
+  Pf fence unroll Pusher | Out-Null; Start-Sleep -Milliseconds 1300
+  $room2 = $WorkB - 294 - 8 - 440
+  $h0 = (FenceGet Pusher).rect.h; $w0 = WinH Pusher
+  Pf settings set snapping.sizeToCells true | Out-Null
+  Pf fence set Pusher layout list | Out-Null; Start-Sleep -Milliseconds 900
+  $f = FenceGet Pusher
+  Check 'whole rows on, the view switched while held short: the full height is still the saved one' ($w0 -eq $room2 -and $f.rect.h -ge 250 -and (WinH Pusher) -le $room2) "window $w0 px (room $room2), after the switch $(WinH Pusher) px; saved rect h $h0, after the switch $($f.rect.h)"
+  Clean 'after the view switch' @('Pusher', 'Pushed')
+  Pf fence move Pushed --rect '600,488,300,280' | Out-Null; Start-Sleep -Milliseconds 1200
+  $f = FenceGet Pusher
+  Check 'and the fence has that height again when the fence below makes room' ((WinH Pusher) -ge 250 -and (WinH Pusher) -eq $f.rect.h) "window $(WinH Pusher) px, saved rect h $($f.rect.h)"
+  Pf settings set snapping.sizeToCells false | Out-Null
+  Pf fence set Pusher layout icons | Out-Null
+  Pf fence roll Pusher | Out-Null; Start-Sleep -Milliseconds 800
+  Pf fence move Pusher --rect '1000,440,300,300' | Out-Null
+
   Case 'B auto height'
   Pf fence set Pusher autoHeight true | Out-Null; Start-Sleep -Milliseconds 500
   Pf fence unroll Pusher | Out-Null; Start-Sleep -Milliseconds 1400

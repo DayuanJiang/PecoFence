@@ -401,8 +401,22 @@ impl App {
         }
         // Rolled fences keep their title-only height; auto-height ones get an exact row count.
         let rolled = w.is_rolled();
+        // Open only as far as the fences below leave room (`capped_full_height_px`): the window
+        // is as tall as that room and stays so. The rows are counted for the full height, the
+        // one that is saved and that the fence opens to again; taken from the window, the room's
+        // height would be saved as the fence's own.
+        let capped = (!rolled && !f.view.auto_height)
+            .then(|| w.capped_full_height_px())
+            .flatten();
+        let full = capped
+            .map(|h| {
+                let rows = ((h as f32 - steps.fixed) / steps.row).round().max(1.0);
+                (steps.fixed + rows * steps.row).round() as i32
+            })
+            // Whole rows that come out no taller than the window: the usual way below.
+            .filter(|&h| h > r.bottom - r.top);
         let mut bottom = r.bottom;
-        if !rolled && !f.view.auto_height {
+        if !rolled && !f.view.auto_height && full.is_none() {
             let h = (r.bottom - r.top) as f32;
             let rows = ((h - steps.fixed) / steps.row).round().max(1.0);
             // A fence that grows downward stops at the fence below, one that grows upward (its
@@ -413,7 +427,9 @@ impl App {
             let h = (steps.fixed + rows * steps.row).round() as i32;
             bottom = r.top + steps.height_up_to(h, &r, limit, w.row_at_bottom());
         }
-        if (left, width, bottom) == (r.left, r.right - r.left, r.bottom) {
+        if (left, width, bottom) == (r.left, r.right - r.left, r.bottom)
+            && full.is_none_or(|h| Some(h) == capped)
+        {
             return;
         }
         // A fence whose title row is at its bottom keeps that edge: the rows come and go at
@@ -432,6 +448,15 @@ impl App {
         w.set_bounds(rect);
         let expanded = if rolled {
             w.expanded_height_px()
+        } else if let Some(h) = full {
+            tracing::debug!(
+                %id,
+                window_h = rect.bottom - rect.top,
+                full_h = h,
+                "cell snap: held short by the fences below, whole rows for the full height only"
+            );
+            w.set_expanded_height_px(h);
+            h
         } else {
             let h = rect.bottom - rect.top;
             w.apply_height(h, false);
