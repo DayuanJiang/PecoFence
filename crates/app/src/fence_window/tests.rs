@@ -776,6 +776,30 @@ fn layout_motion_applies_only_to_rearrangements() {
     assert!(!layout_motion_applies(10, 10, 0));
 }
 
+/// An edge dragged from five columns to four: the fifth icon glides from the end of the first
+/// row to the start of the second, an icon already gliding continues from where it is drawn,
+/// icons more than a viewport away are left out, and a scroll offset the shorter content
+/// clamps moves the start with it (the icon starts from its place on screen).
+#[test]
+fn reflow_glides_start_where_the_icons_are_drawn() {
+    let m = GridMetrics::for_icon_size(48, 2);
+    let (old, new) = (Grid::new(m, 408.0, 300), Grid::new(m, 380.0, 300));
+    assert_eq!((old.columns, new.columns), (5, 4));
+    let in_flight = |i: usize| (i == 0).then_some((7.0, 9.0));
+    let glides = reflow_glides(&old, &new, 300, in_flight, (0.0, 0.0), 300.0);
+    let of = |g: &[(usize, (f32, f32), (f32, f32))], i: usize| g.iter().find(|x| x.0 == i).copied();
+    let (_, from, to) = of(&glides, 4).unwrap();
+    assert_eq!(from, (old.cell(4).x, old.cell(4).y));
+    assert_eq!(to, (new.cell(4).x, new.cell(4).y));
+    assert!(to.0 < from.0 && to.1 > from.1, "{from:?} -> {to:?}");
+    assert_eq!(of(&glides, 0).unwrap().1, (7.0, 9.0));
+    assert!(of(&glides, 299).is_none());
+    // Every icon listed is in or near the 300 DIP viewport before or after.
+    assert!(glides.len() < 60, "{}", glides.len());
+    let glides = reflow_glides(&old, &new, 300, |_| None, (400.0, 350.0), 300.0);
+    assert_eq!(of(&glides, 20).unwrap().1.1, old.cell(20).y - 50.0);
+}
+
 /// Selection / focus survive a refresh by item identity: kept ids follow their items to
 /// the new slots, vanished ids drop out, an anchor whose item is gone becomes None.
 #[test]

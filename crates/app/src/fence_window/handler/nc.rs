@@ -575,7 +575,9 @@ pub(super) fn on_ncrbuttonup(
 }
 
 pub(super) fn on_size(h: &HandlerCtx, hwnd: HWND, _wparam: usize, lparam: isize) -> Option<isize> {
-    let HandlerCtx { view, .. } = h;
+    let HandlerCtx {
+        view, in_size_move, ..
+    } = h;
     let started = Instant::now();
     let w = msg::lo_i16(lparam);
     let h = msg::hi_i16(lparam);
@@ -583,7 +585,7 @@ pub(super) fn on_size(h: &HandlerCtx, hwnd: HWND, _wparam: usize, lparam: isize)
     if let Some(v) = guard.as_mut() {
         // A window created during early logon may have reported 96 DPI
         // before the display settled; re-read it on every size change.
-        v.apply_dpi(monitors::dpi_for_window(hwnd));
+        let dpi_changed = v.apply_dpi(monitors::dpi_for_window(hwnd));
         v.update_backdrop();
         let crop_done = Instant::now();
         let drawn = if v.height_animating() {
@@ -593,10 +595,15 @@ pub(super) fn on_size(h: &HandlerCtx, hwnd: HWND, _wparam: usize, lparam: isize)
                 .and_then(|_| v.chrome_panel.resize(w, h))
                 .and_then(|_| v.draw_chrome_panel())
         } else {
-            // The cell grid is re-laid out for the new width: old origins
-            // would glide to the wrong places.
-            v.snap_item_motion();
-            v.layout_panels(w, h).and_then(|_| v.redraw())
+            // The cell grid is re-laid out for the new width: an edge the user drags glides
+            // the icons to their new cells when the column count changes; any other resize
+            // snaps (old origins would glide to the wrong places).
+            let old_cw = v.content_size_px().0;
+            let dragged = in_size_move.get() && !dpi_changed;
+            v.layout_panels(w, h).and_then(|_| {
+                v.reflow_items(old_cw, dragged);
+                v.redraw()
+            })
         };
         if let Err(e) = drawn {
             tracing::error!(error = %e, "fence resize/redraw failed");

@@ -64,6 +64,32 @@ pub(super) fn remap_indices(
         .collect()
 }
 
+/// The glides of an icon grid whose column count changed under a resize (`old` to `new`,
+/// `count` items): for every icon in or near the viewport, before or after, its index, where
+/// it is drawn now and the origin of its new cell, in unscrolled content DIPs. `drawn(i)` is
+/// where a glide in flight has icon `i`; an icon at rest is in its old cell. `scroll` is the
+/// offset before and after (fewer rows may clamp it): the start moves with it, so every icon
+/// starts from its place on screen. One viewport of slack above and below, as the icon
+/// loading takes; icons further away snap.
+pub(super) fn reflow_glides(
+    old: &Grid,
+    new: &Grid,
+    count: usize,
+    drawn: impl Fn(usize) -> Option<(f32, f32)>,
+    scroll: (f32, f32),
+    view_h: f32,
+) -> Vec<(usize, (f32, f32), (f32, f32))> {
+    let near = |y: f32, h: f32| y + h > scroll.1 - view_h && y < scroll.1 + 2.0 * view_h;
+    (0..count)
+        .filter_map(|i| {
+            let (o, c) = (old.cell(i), new.cell(i));
+            let (fx, fy) = drawn(i).unwrap_or((o.x, o.y));
+            let fy = fy - scroll.0 + scroll.1;
+            (near(fy, c.h) || near(c.y, c.h)).then_some((i, (fx, fy), (c.x, c.y)))
+        })
+        .collect()
+}
+
 impl FenceViewState {
     /// Cell origins of the current items in unscrolled content DIPs (the basis of the layout
     /// motion): `layout(width).cell(i)` for every index.
@@ -254,6 +280,114 @@ impl FenceViewState {
         }
         drop(icons);
         if !self.item_motion.is_empty() || !self.leaving.is_empty() {
+            self.frames.request();
+        }
+    }
+
+    /// The content panel was laid out again (WM_SIZE outside a height animation); it was
+    /// `old_cw_px` wide before. While the user drags an edge (`interactive`) and the icon grid
+    /// gains or loses a column, every icon near the viewport glides from where it is drawn to
+    /// its new cell (167 ms decelerate; one already gliding continues from its place), as a
+    /// sort or a delete glides them. A width that keeps the columns moves the cells with the
+    /// edge as before, and glides in flight ride along with their target cells. Everything
+    /// else snaps: rows (one column at any width), 像桌面一样排列, animations off, a resize
+    /// nobody drags.
+    pub(super) fn reflow_items(&mut self, old_cw_px: i32, interactive: bool) {
+        let (cw, _) = self.content_size_px();
+        if cw == old_cw_px {
+            // Only the height changed: every cell is where it was.
+            return;
+        }
+        let animate = interactive
+            && self.motion.enabled()
+            && self.row_metrics().is_none()
+            && !self.rolled_up
+            && self.roll_anim.is_none()
+            && !self.ole_drag
+            && self.marquee.is_none()
+            && desktop::is_visible(self.hwnd);
+        if !animate {
+            self.snap_item_motion();
+            return;
+        }
+        let scale = self.scale();
+        let (old, new) = (
+            self.layout(old_cw_px as f32 / scale),
+            self.layout(cw as f32 / scale),
+        );
+        let (ItemLayout::Grid(og), ItemLayout::Grid(ng)) = (&old, &new) else {
+            self.snap_item_motion();
+            return;
+        };
+        if og.has_slots() || ng.has_slots() {
+            self.snap_item_motion();
+            return;
+        }
+        self.leaving.clear();
+        if og.columns == ng.columns {
+            // Same cells, a little wider or narrower: a glide in flight ends where its cell
+            // is now, with its timing kept.
+            if !self.item_motion.is_empty() {
+                for (i, item) in self.items.iter().enumerate() {
+                    if let Some(m) = self.item_motion.get_mut(&item.id) {
+                        let c = ng.cell(i);
+                        m.x.shift(c.x - m.x.target());
+                        m.y.shift(c.y - m.y.target());
+                    }
+                }
+            }
+            return;
+        }
+        let now = Instant::now();
+        // Fewer rows may clamp the scroll offset (the redraw does it): the icons start from
+        // the same place on screen.
+        let view_h = self.scroll_view_h(&new);
+        let old_scroll = self.scroll_y;
+        let new_scroll = old_scroll.clamp(0.0, ng.max_scroll(view_h));
+        let glides = reflow_glides(
+            og,
+            ng,
+            self.items.len(),
+            |i| {
+                self.item_motion
+                    .get(&self.items[i].id)
+                    .map(|m| (m.x.value_at(now), m.y.value_at(now)))
+            },
+            (old_scroll, new_scroll),
+            view_h,
+        );
+        let mut motion: HashMap<ItemId, ItemMotion> = HashMap::new();
+        for (i, (fx, fy), (tx, ty)) in glides {
+            let id = self.items[i].id;
+            let alpha = self
+                .item_motion
+                .get(&id)
+                .map_or(Tween::at(1.0, now), |m| m.alpha);
+            if (fx - tx).abs() > 0.5 || (fy - ty).abs() > 0.5 || !alpha.is_done(now) {
+                let glide = |from: f32, to: f32| {
+                    self.motion
+                        .tween(from, to, motion::FAST, Curve::Decelerate, now)
+                };
+                motion.insert(
+                    id,
+                    ItemMotion {
+                        x: glide(fx, tx),
+                        y: glide(fy, ty),
+                        alpha,
+                    },
+                );
+            }
+        }
+        tracing::debug!(
+            from = og.columns,
+            to = ng.columns,
+            items = self.items.len(),
+            gliding = motion.len(),
+            in_flight = self.item_motion.len(),
+            "resize changed the columns: icons glide"
+        );
+        self.item_motion = motion;
+        if !self.item_motion.is_empty() {
             self.frames.request();
         }
     }
