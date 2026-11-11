@@ -1055,8 +1055,8 @@ impl App {
                                         && let Some(app) = guard.as_mut()
                                     {
                                         window::kill_timer(hwnd, TIMER_SAVE);
-                                        app.state.save_if_dirty();
                                         app.notice_save_failure();
+                                        app.state.save_if_dirty();
                                     } else {
                                         // Busy (modal loop): retry shortly instead of dropping.
                                         window::set_timer(hwnd, TIMER_SAVE, 500);
@@ -1476,7 +1476,7 @@ impl App {
                                 && let Some(app) = guard.as_mut()
                             {
                                 app.commit_open_note();
-                                app.state.save_if_dirty();
+                                app.state.save_and_wait("session end");
                                 if let Some(a) = app.anchor.borrow_mut().as_mut() {
                                     a.release_desktop_icons();
                                 }
@@ -1519,6 +1519,9 @@ impl App {
                             // (WM_QUERYENDSESSION saved and showed the icons). Staying makes
                             // Windows wait, then kill it and report a hang.
                             tracing::info!(close_app = lparam & 1 != 0, "session ending: quitting");
+                            // Windows may end the process any time from here: the line
+                            // that says why is in the file first.
+                            pecofence_core::log_file::written(pecofence_core::log_file::LINE_WAIT);
                             if cell.try_borrow_mut().is_err() {
                                 // A menu holds the App, and its loop keeps running past the
                                 // quit below: close it, then quit as 退出 does (saving first)
@@ -2182,11 +2185,11 @@ impl App {
         window::set_timer(self.control.hwnd(), TIMER_SAVE, 800);
     }
 
-    /// After a save: one that failed leaves the state dirty. The first time in a run the tray
-    /// says so, since the changes are lost at exit and only the log had the reason.
+    /// Before a save: asks whether one failed on the saver thread since the last call (its
+    /// changes are unsaved again, so the save that follows writes them). The first time in a
+    /// run the tray says so, since the changes are lost at exit and only the log had the reason.
     fn notice_save_failure(&mut self) {
-        // Saves held for a locked file are no failure (its own notice is up).
-        if !self.state.is_dirty() || self.save_failure_shown || self.state.locked_config.is_some() {
+        if !self.state.take_save_failure() || self.save_failure_shown {
             return;
         }
         let Some(t) = &self.tray else { return };
@@ -2208,10 +2211,9 @@ impl App {
         // 智能栅栏: files age out of a time window, Everything may have started or stopped,
         // and a folder without a watcher changes unseen.
         self.run_all_smart("minute");
-        if self.state.is_dirty() {
-            self.state.save_if_dirty();
-            self.notice_save_failure();
-        }
+        // Also the retry of a save that failed: nothing else saves while nothing changes.
+        self.notice_save_failure();
+        self.state.save_if_dirty();
         // Icons no window needs any more, if a change left some behind without a redraw; the
         // GPU trim then frees the released uploads.
         if self.prune_icons() {
@@ -2874,7 +2876,7 @@ impl App {
             }
             Command::Quit(reason) => {
                 tracing::info!(reason, "quitting");
-                self.state.save_if_dirty();
+                self.state.save_and_wait("quit");
                 if let Some(a) = self.anchor.borrow_mut().as_mut() {
                     a.release_desktop_icons();
                 }
@@ -2942,7 +2944,7 @@ impl App {
     pub fn shutdown(&mut self) {
         self.end_peek_now();
         self.commit_open_note();
-        self.state.save_if_dirty();
+        self.state.save_and_wait("exit");
         self.fences.clear();
         self.dying.clear();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {

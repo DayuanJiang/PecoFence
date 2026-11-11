@@ -684,7 +684,7 @@ mod tests {
         ("class", "%desktop::class_name(h)"),
         ("command", "name"), // `Command` variant name
         // shell::path_place: fixed words for the kind of place a path is on.
-        ("place", "shell::path_place(&self.store.primary_path())"),
+        ("place", "shell::path_place(&primary)"),
         ("place", "shell::path_place(path)"),
         ("place", "shell::path_place(&dir)"),
         ("place", "shell::path_place(&path)"),

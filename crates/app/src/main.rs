@@ -28,6 +28,7 @@ mod shadow;
 mod share_log;
 mod state;
 
+use pecofence_core::log_file::{self, LINE_WAIT};
 use pecofence_platform::com::OleGuard;
 use pecofence_platform::window;
 use windows_core::Result;
@@ -112,12 +113,16 @@ fn init_logging(instance: Option<&str>) {
         .and_then(|s| s.parse::<Targets>().ok())
         .unwrap_or_else(|| Targets::new().with_default(tracing::Level::INFO));
     let dir = log_dir();
+    // Both files are written on threads of their own: a line never waits for the disk on
+    // the thread that logs it (`pecofence_core::log_file`).
     let file = dir
         .as_deref()
-        .and_then(|d| start_log(d, instance, brand::LOG, brand::PREVIOUS_LOG));
+        .and_then(|d| start_log(d, instance, brand::LOG, brand::PREVIOUS_LOG))
+        .map(log_file::background);
     let share = dir
         .as_deref()
         .and_then(|d| start_log(d, instance, brand::SHARE_LOG, brand::PREVIOUS_SHARE_LOG))
+        .map(log_file::background)
         .map(share_log::ShareLayer::new);
     match file {
         Some(file) => {
@@ -160,6 +165,8 @@ fn install_panic_hook() {
         let bt = std::backtrace::Backtrace::force_capture();
         let command = pecofence_platform::hangwatch::running_command();
         tracing::error!(%location, payload, command = command.as_deref(), detail = %info, backtrace = %bt, "PANIC");
+        // The process ends when this returns: the line has to be in the file by then.
+        log_file::written(LINE_WAIT);
     }));
 }
 
@@ -189,6 +196,20 @@ fn show_running_settings(instance: Option<&str>) {
     }
     if let Ok(line) = serde_json::to_string(&request) {
         let _ = writeln!(pipe, "{line}");
+    }
+}
+
+/// How long the end of the process waits for the log's last lines to be written: the next
+/// start reads `process exiting` as a normal end (`feedback::log_ends_normally`). The disk can
+/// keep a write waiting most of a minute while Windows writes out a large file it copied.
+const LOG_EXIT_WAIT: std::time::Duration = std::time::Duration::from_secs(90);
+
+/// Waits for the log's writer threads when dropped.
+struct LogWritten;
+
+impl Drop for LogWritten {
+    fn drop(&mut self) {
+        log_file::written(LOG_EXIT_WAIT);
     }
 }
 
@@ -227,6 +248,8 @@ fn main() -> Result<()> {
     };
 
     init_logging(instance.as_deref());
+    // Lines logged before an early return below (a start that failed) are waited for.
+    let _log = LogWritten;
     install_panic_hook();
     if let Some(dir) = log_dir() {
         pecofence_platform::crashlog::install(dir, instance.as_deref().unwrap_or("main"));
@@ -264,5 +287,6 @@ fn main() -> Result<()> {
         icons_hidden = pecofence_platform::shell_icons::desktop_icons_hidden(),
         "process exiting"
     );
+    log_file::written(LOG_EXIT_WAIT);
     std::process::exit(code);
 }

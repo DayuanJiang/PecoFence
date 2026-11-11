@@ -35,6 +35,7 @@
 - After icons slide (a file deleted, a sort, a reorder), the hover highlight is on the icon under the resting pointer; it stayed on the icon that had moved away until the pointer moved.
 - Animations in a fence with thousands of files take less work: every frame went through all icons, shown or not. With 6000 files the slowest frame of a hover went from 0.8 to 0.4 ms and of a wheel scroll from 0.7 to 0.5 ms.
 - Fences keep the same gap whether one was moved or resized next to the other: with a `snapping.gapPx` that does not give whole pixels at the display scale (5 at 150 %, 2 at 125 %) the two differed by 1 px. A tab's hover fade stays with its tab when the tabs are reordered.
+- The fences keep answering while a large file is copied. Pasting a file of several GB onto the desktop stopped every fence for most of a minute (40 seconds for 6 GB on a test PC): while Windows writes such a file out, every other write to that disk waits, and PecoFence wrote its configuration and its log from the same thread that draws the fences. Both are now written in the background. Quitting, signing out, importing a configuration and `pecofence-cli` commands still wait until the configuration is on the disk.
 - Quitting PecoFence while the name box of a fence is open no longer ends with an error at exit.
 
 ## 0.3.3

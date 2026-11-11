@@ -8,6 +8,7 @@ pub mod everything;
 pub mod geometry;
 pub mod hotkey;
 pub mod i18n;
+pub mod log_file;
 pub mod matcher;
 pub mod model;
 pub mod note;
@@ -18,7 +19,7 @@ pub mod type_filter;
 pub mod updates;
 pub mod vdesk;
 
-pub use config_store::{ConfigStore, Lint, LintLevel, LoadOutcome};
+pub use config_store::{ConfigSaver, ConfigStore, Lint, LintLevel, LoadOutcome};
 pub use date_group::{CivilDate, DateBucket, date_bucket};
 pub use model::*;
 pub use rules::{Cond, Decision, ItemFacts, Rule, RuleSet, StrOp, Target, TypeCategory};

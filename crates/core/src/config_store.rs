@@ -5,6 +5,8 @@ use crate::model::{Config, ItemSourceSpec, NormGeometry, SCHEMA_VERSION};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
 
 /// Fences per layout. Enforced where fences are created (`AppState::new_fence`, the IPC create
 /// paths) as well as here, so a save can never be refused for it.
@@ -109,6 +111,7 @@ impl std::fmt::Display for SaveError {
 
 impl std::error::Error for SaveError {}
 
+#[derive(Clone)]
 pub struct ConfigStore {
     dir: PathBuf,
 }
@@ -382,6 +385,142 @@ impl ConfigStore {
             let _ = fs::remove_file(oldest);
         }
         Ok(())
+    }
+}
+
+/// Saves configurations on a thread of its own. [`ConfigStore::save`] waits until the disk
+/// has the file, and a disk busy with a large file copy answers only when the copy is over (40
+/// seconds for 6 GB on a test PC): the thread that owns the windows hands the configuration
+/// over here and goes on. Once a saver exists for a folder, only its thread writes there.
+pub struct ConfigSaver {
+    shared: Arc<SaverShared>,
+}
+
+/// What a [`ConfigSaver`] calls on its thread after every write: how long the write took and
+/// how it ended.
+pub type SaveDone = dyn Fn(Duration, &Result<(), SaveError>) + Send + Sync;
+
+struct SaverShared {
+    store: ConfigStore,
+    done: Box<SaveDone>,
+    state: Mutex<SaverState>,
+    /// A configuration was handed over, a write ended, or the saver was dropped.
+    changed: Condvar,
+}
+
+#[derive(Default)]
+struct SaverState {
+    /// The newest configuration not written yet. One handed over while it waits takes its
+    /// place: the older one is never written.
+    next: Option<Config>,
+    writing: bool,
+    /// The newest write failed, and [`ConfigSaver::take_failed`] has not been asked since.
+    failed: bool,
+    thread_started: bool,
+    dropped: bool,
+}
+
+impl ConfigSaver {
+    /// The thread starts with the first save.
+    pub fn new(store: ConfigStore, done: Box<SaveDone>) -> Self {
+        let shared = SaverShared {
+            store,
+            done,
+            state: Mutex::default(),
+            changed: Condvar::new(),
+        };
+        Self {
+            shared: Arc::new(shared),
+        }
+    }
+
+    /// Hands `cfg` over to be written and returns at once.
+    pub fn save(&self, cfg: Config) {
+        let mut state = self.shared.lock();
+        state.next = Some(cfg);
+        if !state.thread_started {
+            let shared = self.shared.clone();
+            let spawned = std::thread::Builder::new()
+                .name("pecofence-save".into())
+                .spawn(move || shared.run());
+            if spawned.is_err() {
+                // No thread to be had: written here, as before there was a saver.
+                let cfg = state.next.take();
+                state.writing = true;
+                drop(state);
+                self.shared.write(&cfg.expect("handed over above"));
+                return;
+            }
+            state.thread_started = true;
+        }
+        drop(state);
+        self.shared.changed.notify_all();
+    }
+
+    /// Waits until every configuration handed over is written, or its write has failed.
+    pub fn wait(&self) {
+        let mut state = self.shared.lock();
+        while state.next.is_some() || state.writing {
+            state = self.shared.wait(state);
+        }
+    }
+
+    /// Whether the newest finished write failed. Asked once per failure: the next call says
+    /// false until another write fails.
+    pub fn take_failed(&self) -> bool {
+        std::mem::take(&mut self.shared.lock().failed)
+    }
+}
+
+impl Drop for ConfigSaver {
+    /// The thread writes what still waits, then ends.
+    fn drop(&mut self) {
+        self.shared.lock().dropped = true;
+        self.shared.changed.notify_all();
+    }
+}
+
+impl SaverShared {
+    // A panic never happens with the lock held (it guards a few assignments), so a poisoned
+    // lock still holds a consistent state.
+    fn lock(&self) -> MutexGuard<'_, SaverState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn wait<'a>(&self, state: MutexGuard<'a, SaverState>) -> MutexGuard<'a, SaverState> {
+        self.changed
+            .wait(state)
+            .unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn run(&self) {
+        loop {
+            let mut state = self.lock();
+            let cfg = loop {
+                if let Some(cfg) = state.next.take() {
+                    state.writing = true;
+                    break cfg;
+                }
+                if state.dropped {
+                    return;
+                }
+                state = self.wait(state);
+            };
+            drop(state);
+            self.write(&cfg);
+        }
+    }
+
+    /// Writes `cfg` (the caller has set `writing`) and records how it ended.
+    fn write(&self, cfg: &Config) {
+        let started = Instant::now();
+        let result = self.store.save(cfg);
+        (self.done)(started.elapsed(), &result);
+        let mut state = self.lock();
+        state.writing = false;
+        state.failed = result.is_err();
+        drop(state);
+        self.changed.notify_all();
     }
 }
 
@@ -806,6 +945,162 @@ mod tests {
         assert!(store.primary_path().exists());
         assert!(!store.tmp_path().exists());
         assert_eq!(store.list_backups().len(), 1);
+    }
+
+    /// A saver whose `done` reports every write on the returned channel and then waits for
+    /// one message on the returned sender: the test decides when a write is over.
+    fn held_saver(
+        store: &ConfigStore,
+    ) -> (
+        ConfigSaver,
+        std::sync::mpsc::Receiver<bool>,
+        std::sync::mpsc::Sender<()>,
+    ) {
+        let (wrote_tx, wrote) = std::sync::mpsc::channel();
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let held = Mutex::new(held);
+        let done = move |_: Duration, result: &Result<(), SaveError>| {
+            wrote_tx.send(result.is_ok()).unwrap();
+            held.lock().unwrap().recv().unwrap();
+        };
+        (
+            ConfigSaver::new(store.clone(), Box::new(done)),
+            wrote,
+            release,
+        )
+    }
+
+    fn titled(title: &str) -> Config {
+        let mut c = sample();
+        c.layouts[0].fences[0].title = title.into();
+        c
+    }
+
+    fn saved_title(store: &ConfigStore) -> String {
+        store.load().into_config().layouts[0].fences[0]
+            .title
+            .clone()
+    }
+
+    #[test]
+    fn saver_writes_on_its_own_thread_and_wait_returns_after_the_write() {
+        let store = ConfigStore::new(tmpdir("saver-wait"));
+        let caller = std::thread::current().id();
+        let on_caller = Arc::new(Mutex::new(None));
+        let seen = on_caller.clone();
+        let saver = ConfigSaver::new(
+            store.clone(),
+            Box::new(move |_, result| {
+                assert!(result.is_ok());
+                *seen.lock().unwrap() = Some(std::thread::current().id() == caller);
+            }),
+        );
+        saver.wait(); // nothing handed over: returns at once
+        saver.save(titled("first"));
+        saver.wait();
+        assert_eq!(*on_caller.lock().unwrap(), Some(false));
+        assert_eq!(saved_title(&store), "first");
+        assert!(!store.tmp_path().exists());
+        assert!(!saver.take_failed());
+    }
+
+    #[test]
+    fn saver_writes_only_the_newest_of_those_handed_over_during_a_write() {
+        let store = ConfigStore::new(tmpdir("saver-newest"));
+        let (saver, wrote, release) = held_saver(&store);
+        saver.save(titled("a"));
+        assert!(wrote.recv().unwrap()); // "a" is on disk, its write not yet over
+        saver.save(titled("b"));
+        saver.save(titled("c"));
+        saver.save(titled("d"));
+        assert_eq!(saved_title(&store), "a");
+        release.send(()).unwrap();
+        assert!(wrote.recv().unwrap());
+        assert_eq!(saved_title(&store), "d");
+        release.send(()).unwrap();
+        saver.wait();
+        // Two writes in all: "b" and "c" were never written.
+        assert!(wrote.try_recv().is_err());
+        // "a" was rotated to config.bak by the write of "d".
+        let bak = ConfigStore::parse_file(&store.bak_path()).unwrap();
+        assert_eq!(bak.layouts[0].fences[0].title, "a");
+    }
+
+    #[test]
+    fn saver_wait_holds_the_caller_until_the_write_is_over() {
+        let store = ConfigStore::new(tmpdir("saver-holds"));
+        let (saver, wrote, release) = held_saver(&store);
+        saver.save(titled("a"));
+        assert!(wrote.recv().unwrap());
+        saver.save(titled("b"));
+        let waited = Arc::new(Mutex::new(false));
+        std::thread::scope(|scope| {
+            let flag = waited.clone();
+            let saver = &saver;
+            scope.spawn(move || {
+                saver.wait();
+                *flag.lock().unwrap() = true;
+            });
+            std::thread::sleep(Duration::from_millis(200));
+            assert!(!*waited.lock().unwrap(), "wait returned during a write");
+            release.send(()).unwrap(); // "a" over, "b" starts
+            assert!(wrote.recv().unwrap());
+            std::thread::sleep(Duration::from_millis(200));
+            assert!(!*waited.lock().unwrap(), "wait returned before the newest");
+            release.send(()).unwrap();
+        });
+        assert!(*waited.lock().unwrap());
+        assert_eq!(saved_title(&store), "b");
+    }
+
+    #[test]
+    fn saver_reports_a_failed_write_once_and_a_later_good_write_clears_it() {
+        let dir = tmpdir("saver-failed");
+        // A file where the config folder should be: the save fails at "create folder".
+        let blocker = dir.join("in-the-way");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&blocker, "x").unwrap();
+        let store = ConfigStore::new(blocker.join("config"));
+        let steps = Arc::new(Mutex::new(Vec::new()));
+        let seen = steps.clone();
+        let saver = ConfigSaver::new(
+            store.clone(),
+            Box::new(move |_, result| {
+                seen.lock()
+                    .unwrap()
+                    .push(result.as_ref().err().map(|e| e.step));
+            }),
+        );
+        saver.save(titled("a"));
+        saver.wait();
+        assert!(saver.take_failed());
+        assert!(!saver.take_failed());
+        // An unreported failure followed by a good write: the disk is current, nothing to say.
+        saver.save(titled("b"));
+        saver.wait();
+        fs::remove_file(&blocker).unwrap();
+        saver.save(titled("c"));
+        saver.wait();
+        assert!(!saver.take_failed());
+        assert_eq!(saved_title(&store), "c");
+        assert_eq!(
+            *steps.lock().unwrap(),
+            [Some("create folder"), Some("create folder"), None]
+        );
+    }
+
+    #[test]
+    fn dropped_saver_still_writes_what_waits() {
+        let store = ConfigStore::new(tmpdir("saver-dropped"));
+        let (saver, wrote, release) = held_saver(&store);
+        saver.save(titled("a"));
+        assert!(wrote.recv().unwrap());
+        saver.save(titled("b"));
+        drop(saver);
+        release.send(()).unwrap();
+        assert!(wrote.recv().unwrap());
+        assert_eq!(saved_title(&store), "b");
+        release.send(()).unwrap();
     }
 
     #[test]
