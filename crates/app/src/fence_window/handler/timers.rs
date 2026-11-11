@@ -133,7 +133,7 @@ pub(super) fn on_timer_scroll_repeat(
     // pages and keep moving after the button is released.
     let pt = window::screen_to_client(hwnd, window::cursor_pos());
     let target = v.scroll_target();
-    let row_step = v.scroll_extent().0.row_step();
+    let row_step = v.scroll_dims().row_step;
     match v.scrollbar_hit_for(pt.x, pt.y, target) {
         Some((hit, g)) if hit == side => {
             let step = scroll_step_for(hit, g.view_h, row_step);

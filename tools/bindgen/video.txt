@@ -1,0 +1,41 @@
+--out crates/platform/src/video_bindings.rs
+--flat --dead-code
+
+// Native video for script fences (`video.rs`): a Media Foundation media engine in frame-server
+// mode that draws into a Direct3D texture, which Direct2D then paints (the texture and the
+// device context come from the render stack's own device).
+--filter
+    MFStartup
+    MFCreateAttributes
+    MFCreateDXGIDeviceManager
+    IMFDXGIDeviceManager
+    IMFAttributes
+    IMFMediaEngine
+    IMFMediaEngineNotify
+    IMFMediaEngineClassFactory
+    MFARGB
+    MFVideoNormalizedRect
+    MF_MEDIA_ENGINE_EVENT
+    MF_VERSION
+    MFSTARTUP_FULL
+    ID3D11Texture2D
+    ID3D11Device
+    ID3D10Multithread
+    D3D11_TEXTURE2D_DESC
+    D3D11_USAGE_DEFAULT
+    D3D11_BIND_RENDER_TARGET
+    D3D11_BIND_SHADER_RESOURCE
+    DXGI_FORMAT_B8G8R8A8_UNORM
+    DXGI_SAMPLE_DESC
+    IDXGISurface
+    ID2D1DeviceContext
+    ID2D1Bitmap1
+    ID2D1RenderTarget
+    D2D1_BITMAP_PROPERTIES1
+    D2D1_BITMAP_OPTIONS_NONE
+    D2D1_PIXEL_FORMAT
+    D2D1_ALPHA_MODE_IGNORE
+    D2D_RECT_F
+    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR
+    CoCreateInstance
+    CLSCTX_INPROC_SERVER

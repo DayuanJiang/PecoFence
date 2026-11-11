@@ -47,7 +47,7 @@ Check 'the fence menu has New note and New tool (in Add to desktop)' ($texts -ma
 Check 'no old New clock / New script fence items' ($texts -notmatch 'New clock' -and $texts -notmatch 'New script fence') $texts
 $sub = ToolSubmenu $h
 $subTexts = if ($sub) { MenuTexts $sub } else { '' }
-Check 'New tool lists Clock, the three examples and Your own script' ($subTexts -match '^Clock \| Weather \| GitHub repository activity \| PC status \| Your own script') $subTexts
+Check 'New tool lists Clock, the four examples and Your own script' ($subTexts -match '^Clock \| Weather \| GitHub repository activity \| PC status \| Media player \| Your own script') $subTexts
 Check 'no To-dos (todo.txt) example' ($subTexts -notmatch 'todo') $subTexts
 Shot 't01-submenu'
 if ($sub) { MenuPick '^Clock$' $sub | Out-Null }
@@ -86,7 +86,7 @@ $ok = PfSettings
 Check 'settings open over CDP' $ok
 PageClick 'nav a[data-page=tools]'; Start-Sleep -Milliseconds 600
 $rows = Js "[...document.querySelectorAll('#page-tools .card.child .t')].map(t => t.textContent).join(' / ')"
-Check 'the list: notes, clock, weather, GitHub, PC status, own script' ($rows -eq 'Notes and to-dos / Clock / Weather / GitHub repository activity / PC status / Your own script') $rows
+Check 'the list: notes, clock, weather, GitHub, PC status, media player, own script' ($rows -eq 'Notes and to-dos / Clock / Weather / GitHub repository activity / PC status / Media player / Your own script') $rows
 Check 'one switch on the page' ((Js "document.querySelectorAll('#page-tools .toggle').length") -eq 1)
 $clock = Js "(() => { const b = document.getElementById('newClock'); return { disabled: b.disabled, text: b.textContent }; })()"
 Check 'with a clock, its button is greyed: On the desktop' ($clock.disabled -and $clock.text -eq 'On the desktop') ($clock | ConvertTo-Json -Compress)
@@ -98,6 +98,14 @@ if ($st.Count) {
   $g = PfJson fence get $st[0].id
   $s = if ($g.fence) { $g.fence.script } else { $g.script }
   Check 'PC status keeps running and prints its rows' ($s.running -and "$($s.output)" -match 'CPU') "running=$($s.running) output=$(("$($s.output)" -split "`n")[0])"
+}
+PageClick '#addMedia'; Start-Sleep -Seconds 8
+$mp = @(ToolFences 'script' | Where-Object { $_.title -eq 'Media Player' })
+Check 'Add on Media player makes its script fence, named by its header' ($mp.Count -eq 1) ((ToolFences 'script' | ForEach-Object { $_.title }) -join ', ')
+if ($mp.Count) {
+  $g = PfJson fence get $mp[0].id
+  $s = if ($g.fence) { $g.fence.script } else { $g.script }
+  Check 'the media player keeps running and shows its Browse... button' ($s.running -and "$($s.output)" -match 'Browse\.\.\.') "running=$($s.running) output=$(("$($s.output)" -split "`n")[0..3] -join ' / ')"
 }
 PageClick '#newNote'
 $ed = WaitWin 'PecoFence.NoteEdit' 10

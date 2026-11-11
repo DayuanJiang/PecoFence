@@ -16,6 +16,12 @@ pub mod mods {
 
 pub const VK_SPACE: u32 = crate::bindings::VK_SPACE as u32;
 
+/// The media keys of keyboards (also sent by many mice, headsets and remote controls).
+pub const VK_MEDIA_NEXT_TRACK: u32 = 0xB0;
+pub const VK_MEDIA_PREV_TRACK: u32 = 0xB1;
+pub const VK_MEDIA_STOP: u32 = 0xB2;
+pub const VK_MEDIA_PLAY_PAUSE: u32 = 0xB3;
+
 /// Registers `id` on `hwnd`. Returns false when the combination is taken by another process
 /// (the caller should tell the user or pick a fallback).
 pub fn register(hwnd: HWND, id: i32, modifiers: u32, vk: u32) -> bool {

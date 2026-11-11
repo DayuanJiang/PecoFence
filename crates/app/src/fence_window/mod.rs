@@ -411,6 +411,42 @@ pub struct ScriptRowView {
     pub clickable: bool,
     /// A click opens a URL or a file (an arrow shows on hover).
     pub opens: bool,
+    /// A double-click has an action of its own (`dblaction=`).
+    pub dbl: bool,
+    /// A picture (`image=`) in place of text, and how tall it is at most (DIPs).
+    pub image: Option<String>,
+    pub image_height: f32,
+    /// The row plays a video (`video=`), `image_height` tall at most: the fence's own player
+    /// draws it ([`FenceWindow::set_script_video`]). False for a hidden row.
+    pub video: bool,
+    /// `hidden=true`: nothing is drawn and the row takes no room.
+    pub hidden: bool,
+    /// `pane=<key>`: the rows above this one stay in place, the rows below scroll (a new key
+    /// brings them back to their top).
+    pub pane: Option<String>,
+    /// `follow=<key>`: the row after this one is kept in the middle of the scrolling rows, each
+    /// time the key changes.
+    pub follow: Option<String>,
+    /// A row of cells side by side (a `::` line): the fields above are not used then.
+    pub cells: Vec<ScriptCellView>,
+}
+
+/// One cell of a row of cells: a button (clickable), a slider (`slider`) or text.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ScriptCellView {
+    pub text: String,
+    pub color: Option<String>,
+    pub tip: Option<String>,
+    pub clickable: bool,
+    /// The slider's position, 0 to 1.
+    pub slider: Option<f32>,
+    pub width: Option<f32>,
+    pub align: f32,
+    pub checked: bool,
+    pub bold: bool,
+    pub gap: Option<f32>,
+    pub dbl: bool,
+    pub checkbox: Option<bool>,
 }
 
 impl ScriptRowView {
@@ -434,15 +470,45 @@ impl ScriptRowView {
                     separator: true,
                     ..Self::default()
                 },
+                ScriptLine::Cells(cells) => Self {
+                    cells: cells
+                        .into_iter()
+                        .map(|c| ScriptCellView {
+                            tip: c.tooltip.clone().or_else(|| c.target().map(str::to_string)),
+                            clickable: c.clickable(),
+                            text: c.text,
+                            color: c.color,
+                            slider: c.slider,
+                            width: c.width,
+                            align: c.align,
+                            checked: c.checked,
+                            bold: c.bold,
+                            gap: c.gap,
+                            dbl: c.dbl_action.is_some(),
+                            checkbox: c.checkbox,
+                        })
+                        .collect(),
+                    ..Self::default()
+                },
                 ScriptLine::Row(r) => Self {
                     tip: r.tooltip.clone().or_else(|| r.target().map(str::to_string)),
                     clickable: r.clickable(),
                     opens: matches!(r.action, Some(RowAction::Href(_) | RowAction::Open(_))),
+                    dbl: r.dbl_action.is_some(),
+                    image: r.image.clone(),
+                    video: r.video.is_some() && !r.hidden,
+                    hidden: r.hidden,
+                    pane: r.pane.clone(),
+                    follow: r.follow.clone(),
+                    image_height: r
+                        .height
+                        .unwrap_or(if r.video.is_some() { 180.0 } else { 96.0 }),
                     text: r.text,
                     separator: false,
                     todo: r.todo,
                     color: r.color,
                     icon: r.icon,
+                    cells: Vec::new(),
                 },
             })
             .collect()

@@ -103,7 +103,8 @@ Windows/DPI combinations before release.
 | `site` | Static product website, built by `scripts/build-site.py` (see [WEBSITE.md](WEBSITE.md)) |
 
 Regenerate Win32 bindings with `cargo run -p tool_bindgen`. The definitions in
-`tools/bindgen` generate platform, Composition and GPU-glass bindings.
+`tools/bindgen` generate platform, Composition, GPU-glass, Store and video (Media Foundation)
+bindings.
 
 `vendor/windows-composition` carries the small upstream wrapper patch needed by
 the renderer, and `vendor/windows-canvas` adds `TextFormat::with_locale` so fence

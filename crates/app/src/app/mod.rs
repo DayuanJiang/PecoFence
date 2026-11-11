@@ -70,6 +70,7 @@ mod items;
 mod keyfocus;
 mod live_wallpaper;
 mod lnk_targets;
+mod media_keys;
 mod menu_frames;
 mod menus;
 mod motion;
@@ -90,6 +91,7 @@ mod tools;
 mod undo;
 mod updates;
 mod vdesktops;
+mod video;
 mod visuals;
 mod wallpaper_refresh;
 mod welcome;
@@ -179,6 +181,8 @@ const TIMER_TMP_SETTLE: usize = 65;
 const TIMER_THEMES: usize = 66;
 /// 脚本栅栏: a script run ended (`WM_APP_SCRIPT_DONE`); retried while the App is borrowed.
 const TIMER_SCRIPT_DONE: usize = 67;
+/// 脚本栅栏: the video players take their new pictures (repeating; see `tick_videos`).
+const TIMER_VIDEO: usize = 120;
 /// Search box: the typing pause before Everything is asked is over.
 const TIMER_EVERYTHING: usize = 68;
 /// 搜索整台电脑: Everything was installed or started; the settings card asks again.
@@ -955,6 +959,15 @@ impl App {
                             crate::dialog_jump::on_hotkey();
                             Some(0)
                         }
+                        // The keyboard's media keys, taken while a script fence asks for them.
+                        msg::WM_HOTKEY if media_keys::ID_RANGE.contains(&(wparam as i32)) => {
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.media_key_pressed(wparam as i32);
+                            }
+                            Some(0)
+                        }
                         msg::WM_HOTKEY if wparam as i32 == HOTKEY_WINDOWS_DESKTOP => {
                             if let Ok(mut guard) = cell.try_borrow_mut()
                                 && let Some(app) = guard.as_mut()
@@ -1126,6 +1139,14 @@ impl App {
                                         && let Some(app) = guard.as_mut()
                                     {
                                         app.ipc_events_tick();
+                                    }
+                                }
+                                TIMER_VIDEO => {
+                                    // Repeating: a tick that finds the App busy is skipped.
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.tick_videos();
                                     }
                                 }
                                 TIMER_ICONS => {
@@ -2714,7 +2735,14 @@ impl App {
             Command::NewScript { x, y } => self.new_script_near(x, y, None),
             Command::EditNote { fence } => self.edit_note(fence),
             Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
-            Command::ScriptRowClicked { fence, row } => self.script_row_clicked(fence, row),
+            Command::ScriptRowClicked {
+                fence,
+                row,
+                cell,
+                fraction,
+                dragging,
+                double,
+            } => self.script_row_clicked(fence, row, cell, fraction, dragging, double),
             Command::NoteEdited { fence, text } => self.note_edited(fence, &text),
             Command::NewFenceRect(rect) => self.offer_new_fence(rect),
             Command::MarqueeOffer(event) => self.on_marquee_offer(event),

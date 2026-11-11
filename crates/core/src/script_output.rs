@@ -4,17 +4,27 @@
 //! and set its colour, icon and tooltip. `---` is a separator. A row whose text starts with
 //! `[ ]` or `[x]` is drawn as a to-do. A line without parameters is plain text, so scripts
 //! written before this format show as they did.
+//!
+//! A line that starts with `::` is a row of cells side by side, `:: cell :: cell :: cell`, each
+//! cell written like a row (`text | key=value`): a cell with an action is a button (a glyph
+//! alone makes an icon button, `tooltip=` names it), a cell with `slider=0.4` is a horizontal
+//! slider that takes the rest of the width, any other cell is text. A click or drag on a slider
+//! hands the script its action with the position, `action=seek` giving `seek:0.37`.
 
 use crate::note::{NoteLine, parse_line};
 
 /// One line of the output.
-#[derive(Clone, Debug, PartialEq, Eq)]
+// A few dozen lines at most are held at a time: no need to box the row.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ScriptLine {
     Separator,
     Row(ScriptRow),
+    /// `:: cell :: cell`: rows side by side (buttons, sliders, text).
+    Cells(Vec<ScriptRow>),
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ScriptRow {
     pub text: String,
     /// `[ ]` (false) or `[x]` (true) before the text.
@@ -27,6 +37,88 @@ pub struct ScriptRow {
     pub action: Option<RowAction>,
     /// `refresh=true`: run the script again after the click (and after the action).
     pub refresh: bool,
+    /// `slider=0.4` (0 to 1): the cell is a slider at this position. A click or drag on it runs
+    /// its `action=` with `:position` added.
+    pub slider: Option<f32>,
+    /// `width=44`: a cell of a row of cells is this many DIPs wide (at the normal text size),
+    /// so cells of different rows line up.
+    pub width: Option<f32>,
+    /// `align=right` (1.0) or `align=center` (0.5): where the text sits in a cell wider than it.
+    pub align: f32,
+    /// `checked=true`: a button of a row of cells that is on (shuffle on, playing): drawn
+    /// pressed in.
+    pub checked: bool,
+    /// `bold=true`: a cell of a row of cells in bold.
+    pub bold: bool,
+    /// `checkbox=true` or `checkbox=false`: a cell of a row of cells that starts with a check box,
+    /// ticked or not, as a to-do has (a click on the cell is a click on the box).
+    pub checkbox: Option<bool>,
+    /// `gap=4`: the space after a cell of a row of cells, in DIPs at the normal text size, in
+    /// place of the usual one between buttons (`gap=0` sets words side by side).
+    pub gap: Option<f32>,
+    /// `dblaction=name`: a double-click on the row (or cell) hands the script this action, as
+    /// `action=` does for a click. The first click of the double-click already sent `action=`.
+    pub dbl_action: Option<String>,
+    /// `image=C:\\cover.jpg`: a row that shows this picture, centred, at most `height=` DIPs tall
+    /// (96 by default) and as wide as the fence.
+    pub image: Option<String>,
+    /// `height=96`: how tall an `image=` (or a `video=`) is at most, in DIPs.
+    pub height: Option<f32>,
+    /// `video=C:\clip.mp4`: a row that plays this video itself (picture and sound), centred, at
+    /// most `height=` DIPs tall (180 by default) and as wide as the fence. PecoFence decodes it
+    /// on the graphics card; the script drives it with `play=`, `volume=`, `speed=` and `seek=`,
+    /// and is told how it goes on its standard input (`video:` lines, see [`VideoControl`]).
+    pub video: Option<String>,
+    /// `play=false` pauses the video (`true`, the default, plays it).
+    pub play: Option<bool>,
+    /// `volume=0.8` (0 to 1) sets the video's sound level.
+    pub volume: Option<f32>,
+    /// `speed=1.5` (0.25 to 4) sets the video's playback speed (1, the default, is normal).
+    pub speed: Option<f32>,
+    /// `seek=12.5` (seconds) moves the video there. It is done once for each new `seekid=`
+    /// (a number the script changes for each move, so that going to the same place twice works).
+    pub seek: Option<f64>,
+    pub seek_id: Option<u32>,
+    /// `mediakeys=true`: while this row is shown, the script takes the keyboard's media keys (play
+    /// and pause, next, previous, stop) and is sent `mediakey:<name>` lines for them.
+    pub media_keys: bool,
+    /// `hidden=true`: the row is not drawn and takes no room; its parameters still count (a video
+    /// that plays on, with its sound, while the script shows something else; the media keys).
+    pub hidden: bool,
+    /// `pane=<key>` (on a `hidden=true` row): the rows above it stay in place and the rows below
+    /// it scroll under them. While the key stays the same the scroll position is kept; a new key
+    /// (another page of a list, another tab) brings the rows back to their top.
+    pub pane: Option<String>,
+    /// `follow=<key>` (on a `hidden=true` row): the row right after it is kept in the middle of
+    /// the scrolling rows, each time the key changes (the line of a song being sung), unless the
+    /// user scrolled by hand a few seconds ago.
+    pub follow: Option<String>,
+}
+
+/// What a `video=` row asks of the player, taken from its parameters.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VideoControl {
+    pub path: String,
+    pub playing: bool,
+    /// 0 to 1.
+    pub volume: f32,
+    /// 0.25 to 4; 1 is the normal speed.
+    pub speed: f32,
+    /// A move to do: `(seconds, id)`.
+    pub seek: Option<(f64, u32)>,
+}
+
+impl ScriptRow {
+    /// The video this row plays and how, None for a row without `video=`.
+    pub fn video_control(&self) -> Option<VideoControl> {
+        Some(VideoControl {
+            path: self.video.clone()?,
+            playing: self.play.unwrap_or(true),
+            volume: self.volume.unwrap_or(1.0),
+            speed: self.speed.unwrap_or(1.0),
+            seek: self.seek.map(|s| (s, self.seek_id.unwrap_or(0))),
+        })
+    }
 }
 
 /// What a click on a row does.
@@ -70,6 +162,54 @@ fn parse_one(line: &str) -> ScriptLine {
     if line.trim() == "---" {
         return ScriptLine::Separator;
     }
+    if is_cells_line(line) {
+        let cells: Vec<ScriptRow> = split_cells(&line.trim_start()[2..])
+            .into_iter()
+            .filter(|c| !c.trim().is_empty())
+            .map(|c| parse_row(c.trim()))
+            .collect();
+        return ScriptLine::Cells(cells);
+    }
+    ScriptLine::Row(parse_row(line))
+}
+
+/// A line of cells: `::` alone or followed by a space or tab, so that text such as the IPv6
+/// address `::1` stays text.
+pub fn is_cells_line(line: &str) -> bool {
+    line.trim_start()
+        .strip_prefix("::")
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with([' ', '\t']))
+}
+
+/// The cells of a `::` line: split at each `::` that is not inside a quoted value (a quote
+/// opens right after `=`, so an apostrophe in a text is only a letter).
+fn split_cells(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut quote: Option<char> = None;
+    let mut prev = ' ';
+    let mut chars = text.char_indices().peekable();
+    while let Some((at, c)) = chars.next() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) => {}
+            None if (c == '"' || c == '\'') && prev == '=' => quote = Some(c),
+            None if c == ':' && matches!(chars.peek(), Some((_, ':'))) => {
+                out.push(&text[start..at]);
+                chars.next();
+                start = at + 2;
+                prev = ' ';
+                continue;
+            }
+            None => {}
+        }
+        prev = c;
+    }
+    out.push(&text[start..]);
+    out
+}
+
+fn parse_row(line: &str) -> ScriptRow {
     // The parameters start at the first `|` whose rest is all key=value pairs, so the text
     // may hold a `|` itself; `a | b` without any key=value stays text.
     let (text, params) = line
@@ -106,15 +246,62 @@ fn parse_one(line: &str) -> ScriptLine {
         get("action").map(RowAction::Script)
     };
     let truthy = |v: Option<String>| v.is_some_and(|v| v.eq_ignore_ascii_case("true"));
-    ScriptLine::Row(ScriptRow {
+    ScriptRow {
         text,
         todo,
         color: get("color").filter(|c| !c.is_empty()),
         icon: get("icon").filter(|c| !c.is_empty()),
-        tooltip: get("tooltip").filter(|c| !c.is_empty()),
+        // `\n` (a backslash and an n) breaks the line: a script prints one line per row.
+        tooltip: get("tooltip")
+            .filter(|c| !c.is_empty())
+            .map(|t| t.replace("\\n", "\n")),
         action,
         refresh: truthy(get("refresh")),
-    })
+        slider: get("slider")
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite())
+            .map(|v| v.clamp(0.0, 1.0)),
+        width: get("width")
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .map(|v| v.min(1000.0)),
+        checked: truthy(get("checked")),
+        bold: truthy(get("bold")),
+        checkbox: get("checkbox").map(|v| v.eq_ignore_ascii_case("true")),
+        dbl_action: get("dblaction").filter(|a| !a.is_empty()),
+        image: get("image").filter(|p| !p.is_empty()),
+        video: get("video").filter(|p| !p.is_empty()),
+        play: get("play").map(|v| !v.eq_ignore_ascii_case("false")),
+        volume: get("volume")
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite())
+            .map(|v| v.clamp(0.0, 1.0)),
+        speed: get("speed")
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite())
+            .map(|v| v.clamp(0.25, 4.0)),
+        seek: get("seek")
+            .and_then(|v| v.parse::<f64>().ok())
+            .filter(|v| v.is_finite() && *v >= 0.0),
+        seek_id: get("seekid").and_then(|v| v.parse::<u32>().ok()),
+        media_keys: truthy(get("mediakeys")),
+        hidden: truthy(get("hidden")),
+        pane: get("pane").filter(|k| !k.is_empty()),
+        follow: get("follow").filter(|k| !k.is_empty()),
+        height: get("height")
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .map(|v| v.min(1000.0)),
+        gap: get("gap")
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| v.is_finite() && *v >= 0.0)
+            .map(|v| v.min(1000.0)),
+        align: match get("align").map(|a| a.to_ascii_lowercase()).as_deref() {
+            Some("right") => 1.0,
+            Some("center") => 0.5,
+            _ => 0.0,
+        },
+    }
 }
 
 /// `key=value` pairs separated by spaces; a value may be quoted with `"` or `'`. None when
@@ -199,6 +386,19 @@ pub fn is_streamable(source: &str) -> bool {
         || source.contains("<pecofence.type>streamable</pecofence.type>")
 }
 
+/// The title a script asks for its fence in a comment of its header
+/// (`<pecofence.title>Media Player</pecofence.title>`): what a fence made from it is called
+/// instead of the file name. None for no tag, an empty one or one of more than one line.
+pub fn script_title(source: &str) -> Option<String> {
+    const OPEN: &str = "<pecofence.title>";
+    const CLOSE: &str = "</pecofence.title>";
+    let start = source.find(OPEN)? + OPEN.len();
+    let len = source[start..].find(CLOSE)?;
+    let title = source[start..start + len].trim();
+    (!title.is_empty() && !title.contains(['\n', '\r']) && title.chars().count() <= 80)
+        .then(|| title.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -206,7 +406,7 @@ mod tests {
     fn row(line: &str) -> ScriptRow {
         match parse_one(line) {
             ScriptLine::Row(r) => r,
-            ScriptLine::Separator => panic!("separator"),
+            _ => panic!("not a row"),
         }
     }
 
@@ -267,12 +467,183 @@ mod tests {
     }
 
     #[test]
+    fn cells_side_by_side() {
+        let ScriptLine::Cells(cells) = parse_one(
+            ":: ⏮ | action=prev tooltip=\"Previous track\" :: ▶ | action=play :: 0:42 | color=gray",
+        ) else {
+            panic!("cells");
+        };
+        assert_eq!(cells.len(), 3);
+        assert_eq!(cells[0].text, "⏮");
+        assert_eq!(cells[0].tooltip.as_deref(), Some("Previous track"));
+        assert_eq!(cells[1].action, Some(RowAction::Script("play".into())));
+        assert!(!cells[2].clickable());
+        // A `::` inside a quoted value, an apostrophe in a text and empty cells.
+        let ScriptLine::Cells(cells) =
+            parse_one(":: Don't :: B | tooltip='a :: b' action=x ::  :: ")
+        else {
+            panic!("cells");
+        };
+        assert_eq!(cells.len(), 2);
+        assert_eq!(cells[0].text, "Don't");
+        assert_eq!(cells[1].tooltip.as_deref(), Some("a :: b"));
+        // The line of a text that only holds a colon is no row of cells.
+        assert!(matches!(parse_one("a :: b"), ScriptLine::Row(_)));
+    }
+
+    #[test]
+    fn sliders() {
+        let ScriptLine::Cells(cells) =
+            parse_one(":: 🔊 | action=mute :: | slider=0.25 action=volume")
+        else {
+            panic!("cells");
+        };
+        assert_eq!(cells[0].slider, None);
+        assert_eq!(cells[1].slider, Some(0.25));
+        assert_eq!(cells[1].action, Some(RowAction::Script("volume".into())));
+        assert_eq!(row("x | slider=3").slider, Some(1.0));
+        assert_eq!(row("x | slider=-1").slider, Some(0.0));
+        assert_eq!(row("x | slider=abc").slider, None);
+    }
+
+    #[test]
+    fn cell_width_and_alignment() {
+        let r = row("27% | width=44 align=right");
+        assert_eq!((r.width, r.align), (Some(44.0), 1.0));
+        let r = row("x | width=-3 align=center");
+        assert_eq!((r.width, r.align), (None, 0.5));
+        let r = row("x | align=up");
+        assert_eq!((r.width, r.align), (None, 0.0));
+        assert!(row("x | checked=true").checked);
+        assert!(!row("x | checked=false").checked);
+        let r = row("word | bold=true gap=4");
+        assert!(r.bold);
+        assert_eq!(r.gap, Some(4.0));
+        assert_eq!(row("x | gap=-1").gap, None);
+        assert!(!row("x").bold);
+        assert_eq!(row("Online | checkbox=true").checkbox, Some(true));
+        assert_eq!(row("Online | checkbox=false").checkbox, Some(false));
+        assert_eq!(row("Online").checkbox, None);
+        let r = row("Song | action=sel:3 dblaction=playitem:3");
+        assert_eq!(r.action, Some(RowAction::Script("sel:3".into())));
+        assert_eq!(r.dbl_action.as_deref(), Some("playitem:3"));
+        assert_eq!(row("x | dblaction=").dbl_action, None);
+    }
+
+    #[test]
+    fn tooltips_break_lines_at_backslash_n() {
+        let r = row("x | action=a tooltip=\"Next track\\nSong - Title.mp3\"");
+        assert_eq!(r.tooltip.as_deref(), Some("Next track\nSong - Title.mp3"));
+        assert_eq!(row("x | tooltip=plain").tooltip.as_deref(), Some("plain"));
+    }
+
+    #[test]
+    fn rows_that_take_the_media_keys() {
+        let hidden = row(" | hidden=true mediakeys=true");
+        assert!(hidden.hidden && hidden.media_keys);
+        assert!(!row("Now playing | mediakeys=true").hidden);
+        assert!(row("Now playing | mediakeys=true").media_keys);
+        assert!(!row("Now playing | mediakeys=false").media_keys);
+        assert!(!row("Now playing").media_keys);
+    }
+
+    #[test]
+    fn rows_that_split_the_pinned_part_from_the_scrolling_one() {
+        let r = row(" | pane=playlist:50 hidden=true");
+        assert_eq!(r.pane.as_deref(), Some("playlist:50"));
+        assert!(r.hidden && r.follow.is_none());
+        let r = row(" | follow=12 hidden=true");
+        assert_eq!(r.follow.as_deref(), Some("12"));
+        assert_eq!(row("x | pane=").pane, None, "an empty key is no key");
+        assert_eq!(row("Plain row").pane, None);
+    }
+
+    #[test]
+    fn video_rows_and_their_controls() {
+        let r =
+            row(" | video=\"C:\\My Videos\\clip.mp4\" height=200 volume=0.5 seek=12.5 seekid=3");
+        assert_eq!(r.video.as_deref(), Some("C:\\My Videos\\clip.mp4"));
+        assert_eq!(r.height, Some(200.0));
+        let control = r.video_control().unwrap();
+        assert!(control.playing, "plays unless told to pause");
+        assert_eq!(control.volume, 0.5);
+        assert_eq!(control.speed, 1.0, "normal speed unless told otherwise");
+        assert_eq!(
+            row(" | video=a.mp4 speed=1.75")
+                .video_control()
+                .unwrap()
+                .speed,
+            1.75
+        );
+        assert_eq!(
+            row(" | video=a.mp4 speed=9").video_control().unwrap().speed,
+            4.0
+        );
+        assert_eq!(
+            row(" | video=a.mp4 speed=0").video_control().unwrap().speed,
+            0.25
+        );
+        assert_eq!(control.seek, Some((12.5, 3)));
+        let paused = row(" | video=a.mp4 play=false volume=7")
+            .video_control()
+            .unwrap();
+        assert!(!paused.playing);
+        assert_eq!(paused.volume, 1.0, "a volume above 1 is held at 1");
+        assert_eq!(paused.seek, None);
+        // A seek without an id is one more move with id 0; a negative or odd one is ignored.
+        assert_eq!(
+            row(" | video=a.mp4 seek=4").video_control().unwrap().seek,
+            Some((4.0, 0))
+        );
+        assert_eq!(
+            row(" | video=a.mp4 seek=-4").video_control().unwrap().seek,
+            None
+        );
+        assert_eq!(row("text | image=a.jpg").video_control(), None);
+    }
+
+    #[test]
+    fn images_and_the_prefix_of_cells() {
+        let r = row(" | image=\"C:\\My Music\\cover.jpg\" height=120");
+        assert_eq!(r.text, "");
+        assert_eq!(r.image.as_deref(), Some("C:\\My Music\\cover.jpg"));
+        assert_eq!(r.height, Some(120.0));
+        assert_eq!(row("x | height=0").height, None);
+        assert_eq!(row("x").image, None);
+        // Only `::` followed by a space (or alone) makes a row of cells.
+        assert!(is_cells_line(":: a | action=x"));
+        assert!(is_cells_line("  ::\ta"));
+        assert!(!is_cells_line("::1"));
+        assert!(!is_cells_line("::ffff:192.168.0.1 | copy=x"));
+        assert!(matches!(parse_one("::1  localhost"), ScriptLine::Row(_)));
+    }
+
+    #[test]
     fn colours() {
         assert_eq!(color_rgb("#102030", false), Some([0x10, 0x20, 0x30]));
         assert_eq!(color_rgb("RED", false), Some([0xC4, 0x2B, 0x1C]));
         assert_ne!(color_rgb("red", true), color_rgb("red", false));
         assert_eq!(color_rgb("#12", false), None);
         assert_eq!(color_rgb("chartreuse", false), None);
+    }
+
+    #[test]
+    fn a_script_names_its_fence() {
+        assert_eq!(
+            script_title("# <pecofence.title>Media Player</pecofence.title>\n# more").as_deref(),
+            Some("Media Player")
+        );
+        assert_eq!(
+            script_title("// <pecofence.title>  Spaces  </pecofence.title>").as_deref(),
+            Some("Spaces")
+        );
+        assert_eq!(script_title("# no tag"), None);
+        assert_eq!(script_title("# <pecofence.title></pecofence.title>"), None);
+        assert_eq!(script_title("# <pecofence.title>never closed"), None);
+        assert_eq!(
+            script_title("<pecofence.title>two\nlines</pecofence.title>"),
+            None
+        );
     }
 
     #[test]

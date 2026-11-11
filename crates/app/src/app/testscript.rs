@@ -15,6 +15,8 @@
 //! roll <title> | unroll <title>
 //! activate <title>           switch to a tab through the native command path
 //! housekeeping               run the same periodic maintenance as the one-minute timer
+//! media-key <name>           a media key press (`playpause`, `next`, `prev`, `stop`) as the
+//!                            window receives it (`WM_HOTKEY`), for the script fence that has the keys
 //! open-settings | close-settings  the settings window (as the tray opens it / its close box)
 //! monitors <id>@<x>,<y>,<w>,<h>@<dpi> …  debug-only: these monitors (work areas in physical
 //!                            px) stand in for the connected ones, then a display change
@@ -257,6 +259,16 @@ impl App {
                     window::post_message(self.control.hwnd(), display_change, 0, 0);
                 }
                 ["housekeeping"] => self.housekeeping(),
+                ["media-key", name] => {
+                    if let Some(id) = super::media_keys::id_for(name) {
+                        window::post_message(
+                            self.control.hwnd(),
+                            pecofence_platform::msg::WM_HOTKEY,
+                            id as usize,
+                            0,
+                        );
+                    }
+                }
                 ["open-settings"] => self.open_settings(),
                 ["close-settings"] => {
                     // The close box's path: WM_DESTROY closes the controller, WindowGone
