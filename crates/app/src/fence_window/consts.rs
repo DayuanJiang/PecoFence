@@ -139,6 +139,10 @@ pub(super) const TAB_DETACH_DIP: f32 = 28.0;
 /// WinUI ScrollBarVerticalThumbMinHeight.
 pub(super) const SCROLLBAR_THUMB_MIN: f32 = 30.0;
 
+/// The lock glyph's pulse when the lock refuses a drag: opacity 1 to `LOCK_PULSE_LOW` and back.
+pub(super) const LOCK_PULSE: Duration = Duration::from_millis(250);
+pub(super) const LOCK_PULSE_LOW: f32 = 0.4;
+
 /// Scale of a fence at the start of its entrance / end of its exit (Fluent Direct Entrance).
 pub(super) const ENTRANCE_SCALE: f32 = 0.97;
 /// Distance (DIPs) the incoming tab content slides from the side of the new tab. Fluent

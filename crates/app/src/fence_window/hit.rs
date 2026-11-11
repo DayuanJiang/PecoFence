@@ -196,7 +196,11 @@ impl FenceViewState {
                 && !self.behavior.hide_count_and_chevron.get()
                 && self.filter_tag.is_none()
             {
-                pecofence_render::fence_chrome::header_count_width(width, 1, self.deco.title_x())
+                pecofence_render::fence_chrome::header_count_width(
+                    width - self.deco.lock_w(),
+                    1,
+                    self.deco.title_x(),
+                )
             } else {
                 0.0
             };
@@ -206,7 +210,7 @@ impl FenceViewState {
                 self.style.title_size,
                 self.behavior.title_align.get(),
                 width,
-                self.deco.desktop_icon,
+                (self.deco.desktop_icon, self.deco.locked),
                 reserve,
                 self.theme.title_height,
             )
@@ -236,7 +240,11 @@ impl FenceViewState {
             && self.title_count.is_none()
             && self.filter_tag.is_none()
         {
-            pecofence_render::fence_chrome::header_count_width(width, 1, self.deco.title_x())
+            pecofence_render::fence_chrome::header_count_width(
+                width - self.deco.lock_w(),
+                1,
+                self.deco.title_x(),
+            )
         } else {
             0.0
         };
@@ -296,7 +304,8 @@ impl FenceViewState {
         if self.title_row_strip() || self.tabs_on_rail() || self.bare() {
             return None;
         }
-        let width = self.chrome_panel.size_px().0 as f32 / self.scale();
+        // As drawn: a locked fence keeps the lock glyph's slot before the chevron.
+        let width = self.chrome_panel.size_px().0 as f32 / self.scale() - self.deco.lock_w();
         self.chrome.filter_tag_fit(
             width,
             self.theme.title_height,
@@ -365,6 +374,29 @@ impl FenceViewState {
             TitleDeco::rail_chevron_box(self.rail_w(), h_px as f32 / scale, rows_end)
         } else {
             TitleDeco::chevron_box(w_px as f32 / scale, self.theme.title_height)
+        };
+        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
+        x >= r.left && x < r.right && y >= r.top && y < r.bottom
+    }
+
+    /// Is the client-pixel point on the lock glyph of a locked fence (its infotip says how to
+    /// unlock)? The glyph's slot before the chevron, as drawn; a fence collapsed to its left
+    /// tab column shows none.
+    pub(super) fn lock_glyph_at(&self, x_px: i32, y_px: i32) -> bool {
+        if !self.locked || self.bare() || self.column_collapsed {
+            return false;
+        }
+        let scale = self.scale();
+        let (w_px, h_px) = self.chrome_panel.size_px();
+        let r = if self.tabs_on_rail() {
+            let rows_end = self
+                .tab_rects()
+                .iter()
+                .map(|(y, h)| y + h)
+                .fold(0.0, f32::max);
+            TitleDeco::rail_lock_box(self.rail_w(), h_px as f32 / scale, rows_end)
+        } else {
+            TitleDeco::lock_box(w_px as f32 / scale, self.theme.title_height)
         };
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         x >= r.left && x < r.right && y >= r.top && y < r.bottom

@@ -363,6 +363,12 @@ pub struct FenceViewState {
     pub(super) rail_grow: bool,
     /// Mouse move/resize disabled (menu "锁定位置和大小").
     pub(super) locked: bool,
+    /// Screen point of a left press on a locked fence where it would move or resize without
+    /// the lock: a drag from there past the drag threshold pulses the lock glyph once.
+    pub(super) lock_press: Option<(i32, i32)>,
+    /// When the lock glyph's pulse started (the lock refused a drag): its opacity dips to 0.4
+    /// and comes back within `LOCK_PULSE`.
+    pub(super) lock_pulse: Option<Instant>,
     /// 向上展开: each expansion opens upward where the fence fits above its title row, else
     /// downward (`clearance::expand_side`); the title row stays where the user put it.
     pub(super) expand_upward: bool,

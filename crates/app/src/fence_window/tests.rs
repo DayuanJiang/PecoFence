@@ -1582,3 +1582,20 @@ fn snap_gap_is_rounded_at_fractional_scales() {
     assert_eq!(snap_gap_px(6, 1.75), 11);
     assert_eq!(snap_gap_px(0, 1.5), 0);
 }
+
+/// The lock glyph follows its hover fade, except while the lock has just refused a drag: then
+/// it shows at full strength, dips to 0.4 halfway through the 250 ms pulse and comes back.
+#[test]
+fn lock_glyph_pulses_once_when_the_lock_refuses_a_drag() {
+    let ms = |n: u64| Some(Duration::from_millis(n));
+    assert_eq!(lock_alpha(0.0, None), 0.0);
+    assert_eq!(lock_alpha(0.7, None), 0.7);
+    // The pulse wins over a hover fade that has not finished.
+    assert!((lock_alpha(0.2, ms(0)) - 1.0).abs() < 1e-4);
+    assert!((lock_alpha(1.0, ms(125)) - LOCK_PULSE_LOW).abs() < 1e-3);
+    assert!(lock_alpha(1.0, ms(60)) < 1.0 && lock_alpha(1.0, ms(60)) > LOCK_PULSE_LOW);
+    assert!(lock_alpha(1.0, ms(200)) > lock_alpha(1.0, ms(125)));
+    // Over: back on the hover fade.
+    assert_eq!(lock_alpha(1.0, ms(250)), 1.0);
+    assert_eq!(lock_alpha(0.0, ms(400)), 0.0);
+}

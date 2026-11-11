@@ -30,6 +30,8 @@ pub(super) fn on_mousemove(
         return Some(0);
     };
     v.set_mouse_inside(true);
+    // A press on a locked fence that turns into a drag: the lock glyph pulses.
+    v.note_lock_drag((pt.x, pt.y));
     if v.marquee.is_some() {
         // Pointer outside the item area: auto-scroll per frame while the
         // button is down (`marquee_autoscroll` in `tick`).

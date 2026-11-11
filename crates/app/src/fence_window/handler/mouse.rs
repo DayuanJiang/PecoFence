@@ -68,7 +68,17 @@ pub(super) fn on_mouseleave(
         if !inside {
             v.set_mouse_inside(false);
         }
-        v.hide_tip();
+        // A tip armed over a spot of the caption (the Task View glyph, a filter tag, the lock
+        // glyph) is WM_NCMOUSEMOVE's, which can come before this message when the pointer goes
+        // from the content straight onto it: it stays while the pointer is still in the window.
+        if !inside
+            || !matches!(
+                v.tip_target,
+                Some(TipTarget::Desktops | TipTarget::FilterTag | TipTarget::Lock)
+            )
+        {
+            v.hide_tip();
+        }
         let chrome_changed = std::mem::take(&mut v.up_hovered)
             | std::mem::take(&mut v.chevron_hovered)
             | v.tab_hover.take().is_some();
@@ -123,6 +133,15 @@ pub(super) fn on_lbuttondown(
         v.cancel_pending_rename();
         v.suppress_dblclk = false;
         v.hide_tip();
+        // A press where the fence would resize without its lock (an edge band inside the
+        // plate): a drag from there pulses the lock glyph (`note_lock_drag`).
+        v.lock_press = None;
+        if v.locked {
+            let pt = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
+            if super::nc::lock_refuses(v, &window::window_rect(hwnd), pt.x, pt.y) {
+                v.lock_press = Some((pt.x, pt.y));
+            }
+        }
         // A press decides the selection itself: a pending hover select must not follow it.
         window::kill_timer(hwnd, TIMER_HOVER_SELECT);
         // Mouse interaction hides the keyboard focus ring (Explorer). The

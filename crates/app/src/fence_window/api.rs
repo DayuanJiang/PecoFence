@@ -270,6 +270,8 @@ impl FenceWindow {
             auto_height,
             rail_grow: false,
             locked: false,
+            lock_press: None,
+            lock_pulse: None,
             expand_upward,
             row_bottom,
             anim_upward: row_bottom,
@@ -1379,6 +1381,7 @@ impl FenceWindow {
                 up_button,
                 search_glyph,
                 desktop_icon: v.deco.desktop_icon,
+                locked: v.deco.locked,
             };
             let changed = v.deco != deco || v.navigate_folders != navigate_folders;
             let portal_changed = v.is_portal != is_portal || v.portal_missing != folder_missing;
@@ -1834,8 +1837,20 @@ impl FenceWindow {
         self.with_view(|v| v.auto_height = on);
     }
 
+    /// 锁定位置和大小 on or off. A locked fence keeps the lock glyph's slot before the chevron
+    /// free (the glyph shows while the pointer is over the fence), so the title row is laid out
+    /// again.
     pub fn set_locked(&self, on: bool) {
-        self.with_view(|v| v.locked = on);
+        self.with_view(|v| {
+            if v.locked == on {
+                return;
+            }
+            v.locked = on;
+            v.deco.locked = on;
+            v.lock_press = None;
+            v.lock_pulse = None;
+            let _ = v.redraw_chrome_only();
+        });
     }
 
     /// 向上展开 on or off. Nothing moves: the next expansion picks its side by the new setting.

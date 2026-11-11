@@ -173,6 +173,24 @@ pub(super) fn hit_code(v: &FenceViewState, rect: &RECT, x: i32, y: i32, locked: 
     }
 }
 
+/// A press at the screen point (`x`, `y`) of a locked fence lands where the fence would move
+/// or resize without the lock: a drag from there is one the lock refuses (`lock_press`).
+pub(super) fn lock_refuses(v: &FenceViewState, rect: &RECT, x: i32, y: i32) -> bool {
+    v.locked
+        && matches!(
+            hit_code(v, rect, x, y, false),
+            msg::HTCAPTION
+                | msg::HTLEFT
+                | msg::HTRIGHT
+                | msg::HTTOP
+                | msg::HTBOTTOM
+                | msg::HTTOPLEFT
+                | msg::HTTOPRIGHT
+                | msg::HTBOTTOMLEFT
+                | msg::HTBOTTOMRIGHT
+        )
+}
+
 pub(super) fn on_ncmousemove(
     h: &HandlerCtx,
     hwnd: HWND,
@@ -190,6 +208,8 @@ pub(super) fn on_ncmousemove(
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
         v.set_mouse_inside(true);
+        // A title press on a locked fence that turns into a drag: the lock glyph pulses.
+        v.note_lock_drag((msg::lo_i16(lparam), msg::hi_i16(lparam)));
         // Beside a left tab column the column is the title bar (the only caption area there).
         let top = window::window_rect(hwnd).top;
         let is_title = wparam as isize == msg::HTCAPTION
@@ -210,6 +230,8 @@ pub(super) fn on_ncmousemove(
         );
         let tip = if v.desktop_glyph_at(pt.x, pt.y) {
             Some(TipTarget::Desktops)
+        } else if v.lock_glyph_at(pt.x, pt.y) {
+            Some(TipTarget::Lock)
         } else {
             v.cut_filter_tag_at(pt.x, pt.y)
                 .then_some(TipTarget::FilterTag)
@@ -284,7 +306,7 @@ pub(super) fn on_ncmouseleave(
         // (WM_MOUSEMOVE decides over the client area).
         if matches!(
             v.tip_target,
-            Some(TipTarget::Desktops | TipTarget::FilterTag)
+            Some(TipTarget::Desktops | TipTarget::FilterTag | TipTarget::Lock)
         ) {
             v.hide_tip();
         }
@@ -336,7 +358,9 @@ pub(super) fn on_nclbuttondown(
                 if v.locked {
                     // No drag, but with 「单击标题时展开」 a click on the title still expands it,
                     // or rolls it up again (the drag handed over on a move is refused by
-                    // WM_SYSCOMMAND).
+                    // WM_SYSCOMMAND, which pulses the lock glyph). Without it, a move past the
+                    // drag threshold with the button held pulses the glyph (`note_lock_drag`).
+                    v.lock_press = (!behavior.click_to_expand.get()).then_some(start);
                     if behavior.click_to_expand.get() {
                         v.click_pending = Some(start);
                         drop(guard);
@@ -879,6 +903,12 @@ pub(super) fn on_syscommand(
         .and_then(|g| g.as_ref().map(|v| v.locked))
         .unwrap_or(false);
     if locked && (cmd == msg::SC_MOVE || cmd == msg::SC_SIZE) {
+        // Refused: the lock glyph pulses so the fence reads as locked, not as stuck.
+        if let Ok(mut guard) = view.try_borrow_mut()
+            && let Some(v) = guard.as_mut()
+        {
+            v.pulse_lock("move or size command on a locked fence");
+        }
         return Some(0);
     }
     if cmd == msg::SC_MOVE || cmd == msg::SC_SIZE {

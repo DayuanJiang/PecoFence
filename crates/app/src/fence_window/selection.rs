@@ -510,7 +510,8 @@ impl FenceViewState {
             return;
         }
         self.mouse_inside = inside;
-        if self.title_on_hover() || self.is_clear() {
+        // A locked fence shows its lock glyph while the pointer is over it.
+        if self.title_on_hover() || self.is_clear() || self.locked {
             let _ = self.redraw_chrome_only();
         }
         if self.behavior.hide_inactive_scrollbar.get() {

@@ -23,6 +23,8 @@ pub(super) enum TipTarget {
     ScriptRow(usize),
     /// A filter tag too narrow for all of the filter.
     FilterTag,
+    /// The lock glyph of a locked fence: how to unlock it.
+    Lock,
 }
 
 /// TME_HOVER rectangle test: has the pointer left the `rect` (SPI_GETMOUSEHOVERWIDTH x
@@ -139,6 +141,9 @@ impl FenceViewState {
             }
             TipTarget::Up => Some(pecofence_core::i18n::text("向上").to_string()),
             TipTarget::Desktops => self.desktop_tip.clone(),
+            TipTarget::Lock => {
+                Some(pecofence_core::i18n::text("已锁定位置和大小，右键可解除锁定").to_string())
+            }
             // The whole filter: the type, the text and the count.
             TipTarget::FilterTag => self.filter_tag.as_ref().map(|(kind, text, count)| {
                 [kind, text, count]

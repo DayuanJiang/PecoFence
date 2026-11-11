@@ -87,6 +87,7 @@
   "合并到…": "Merge into",
   "适应内容大小": "Fit to content",
   "锁定位置和大小": "Lock position and size",
+  "已锁定位置和大小，右键可解除锁定": "Position and size are locked. Right-click to unlock.",
   "解除锁定": "Unlock position and size",
   "栅栏选项…": "Fence options…",
   "删除栅栏": "Delete fence",

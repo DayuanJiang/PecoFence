@@ -398,7 +398,14 @@ pub struct TitleDeco {
     /// Searches and Outlook's Search Folders show it) and is no button.
     pub search_glyph: bool,
     pub desktop_icon: bool,
+    /// 锁定位置和大小: the lock glyph's slot before the chevron's box is kept free
+    /// ([`TitleDeco::LOCK_W`]); an unlocked fence gives its title that room.
+    pub locked: bool,
 }
+
+/// Lock (Segoe Fluent E72E): the glyph of a fence whose position and size are locked, shown
+/// before the chevron while the pointer is over the fence.
+pub const LOCK_GLYPH: &str = "\u{E72E}";
 
 /// Interaction state of the title row, sampled per draw: fade alphas (0..=1) from the app's
 /// client tweens plus the instant pressed flags (WinUI swaps pressed brushes at KeyTime 0).
@@ -427,6 +434,9 @@ pub struct TitleState {
     pub plate_clear: f32,
     /// A tab strip too wide for its room scrolls: where its pills are cut. None = it fits.
     pub strip_clip: Option<StripClip>,
+    /// The lock glyph of a locked fence: shown while the pointer is over the fence (83 ms),
+    /// dipping once when the lock refuses a drag.
+    pub lock: f32,
 }
 
 /// The visible span of a scrolled tab strip (DIPs). An end with more pills behind it fades out
@@ -573,6 +583,39 @@ impl TitleDeco {
             (height - Self::CHEVRON_W - gap).max(rows_end + gap),
             Self::CHEVRON_W,
             Self::CHEVRON_W,
+        )
+    }
+
+    /// Room the lock glyph takes before the chevron's box (DIPs): a 12 DIP glyph in a 16 DIP
+    /// slot.
+    pub const LOCK_W: f32 = 16.0;
+
+    /// Room kept free before the chevron's box for the lock glyph: none unless locked.
+    pub fn lock_w(&self) -> f32 {
+        if self.locked { Self::LOCK_W } else { 0.0 }
+    }
+
+    /// The lock glyph's slot (DIPs) in the title row of a fence `width` wide: right before the
+    /// chevron's box. The app's infotip uses the same box.
+    pub fn lock_box(width: f32, title_h: f32) -> Rect {
+        let chevron = Self::chevron_box(width, title_h);
+        Rect::from_xywh(
+            chevron.left - Self::LOCK_W,
+            chevron.top,
+            Self::LOCK_W,
+            chevron.height(),
+        )
+    }
+
+    /// The lock glyph's slot in a left tab column: right before the column's chevron
+    /// ([`TitleDeco::rail_chevron_box`]), in the room under the tabs.
+    pub fn rail_lock_box(rail_w: f32, height: f32, rows_end: f32) -> Rect {
+        let chevron = Self::rail_chevron_box(rail_w, height, rows_end);
+        Rect::from_xywh(
+            (chevron.left - Self::LOCK_W).max(0.0),
+            chevron.top,
+            Self::LOCK_W,
+            chevron.height(),
         )
     }
 
@@ -2387,12 +2430,16 @@ impl FenceChrome {
             16.0
         };
         let glyph_w = deco.glyphs_w();
+        // A locked fence keeps the lock glyph's slot before the chevron: what sits at the right
+        // end (the capsule, the tag) is laid out in a row that much narrower.
+        let lock_w = deco.lock_w();
         // A smart fence's count is a capsule at the right end, before the chevron.
         let tag_w = tag
-            .and_then(|t| self.filter_tag_fit(width, 0.0, t, count))
+            .and_then(|t| self.filter_tag_fit(width - lock_w, 0.0, t, count))
             .map_or(0.0, |f| f.rect.width() + 6.0);
         let end = width
             - TITLE_RIGHT_RESERVE
+            - lock_w
             - reserve
             - tag_w
             - count.map_or(0.0, |c| self.count_capsule_w(c));
@@ -2429,7 +2476,7 @@ impl FenceChrome {
         size: u8,
         align: pecofence_core::TitleAlign,
         width: f32,
-        desktop_icon: bool,
+        (desktop_icon, locked): (bool, bool),
         reserve: f32,
         title_h: f32,
     ) -> Rect {
@@ -2438,6 +2485,7 @@ impl FenceChrome {
             up_button: true,
             search_glyph: false,
             desktop_icon,
+            locked,
         };
         let (x, _, _) = self.lone_title_place(title, None, tag, size, align, width, deco, reserve);
         glyph_up_square(x + 8.0, title_h)
@@ -2653,11 +2701,20 @@ impl FenceChrome {
             // hover like the title row's chevron. A collapsed column has none (a tab click
             // expands it): the chevron turns as it fades out with the collapse, and back in
             // as the fence expands.
+            let rows_end = tabs.iter().map(|t| t.x + t.w).fold(0.0, f32::max);
+            // 锁定位置和大小: the lock glyph before the chevron, gone with it once the fence is
+            // collapsed to the column (no room under the last tab there).
+            if deco.locked {
+                let box_r = TitleDeco::rail_lock_box(style.tab_rail, height, rows_end);
+                let lock_a = state.lock * (1.0 - roll_t.clamp(0.0, 1.0));
+                self.draw_lock(
+                    session, &backdrop, theme, scale, opacity, style.tint, box_r, lock_a,
+                )?;
+            }
             if style.hide_count_and_chevron {
                 return Ok(());
             }
             let chevron_a = rail_chevron_alpha(state.hover, roll_t);
-            let rows_end = tabs.iter().map(|t| t.x + t.w).fold(0.0, f32::max);
             let box_r = TitleDeco::rail_chevron_box(style.tab_rail, height, rows_end);
             return self.draw_chevron(
                 session, &backdrop, theme, scale, opacity, style.tint, box_r, "\u{E76B}",
@@ -2669,13 +2726,16 @@ impl FenceChrome {
             return Ok(());
         }
         // Title text; leave room for the roll-up chevron on the right, ellipsize the rest.
+        // A locked fence keeps the lock glyph's slot before the chevron: the count, a smart
+        // fence's capsule and a filter tag are laid out in a row that much narrower.
+        let lock_w = deco.lock_w();
         let title_width = crate::text::measure_width(title, &self.title_format(style.title_size))
-            .min((width - deco.title_x() - TITLE_RIGHT_RESERVE).max(1.0));
+            .min((width - deco.title_x() - TITLE_RIGHT_RESERVE - lock_w).max(1.0));
         let sample_x = aligned_x(
             style.title_align,
             width,
             deco.title_x(),
-            width - TITLE_RIGHT_RESERVE,
+            width - TITLE_RIGHT_RESERVE - lock_w,
             title_width,
         );
         let foreground = header_foreground(
@@ -2707,7 +2767,7 @@ impl FenceChrome {
         let caption = caption.filter(|_| !style.hide_count_and_chevron);
         let count_a = state.count.clamp(0.0, 1.0) * title_a;
         let count_w = if caption.is_some() && (rolled_up || count_a > 0.0) {
-            header_count_width(width, tabs.len(), deco.title_x())
+            header_count_width(width - lock_w, tabs.len(), deco.title_x())
         } else {
             0.0
         };
@@ -3029,7 +3089,7 @@ impl FenceChrome {
                     theme,
                     &foreground,
                     count,
-                    width,
+                    width - lock_w,
                     title_h,
                     title_a,
                     chip_legible,
@@ -3040,7 +3100,7 @@ impl FenceChrome {
                     session,
                     theme,
                     &foreground,
-                    width,
+                    width - lock_w,
                     title_h,
                     tag,
                     title_count,
@@ -3054,7 +3114,7 @@ impl FenceChrome {
             && let Some(caption) = caption
         {
             let count_rect = Rect::from_xywh(
-                width - TitleDeco::CHEVRON_W - TitleDeco::CHEVRON_RIGHT_MARGIN - count_w,
+                width - TitleDeco::CHEVRON_W - TitleDeco::CHEVRON_RIGHT_MARGIN - lock_w - count_w,
                 0.0,
                 count_w - 4.0,
                 title_h,
@@ -3076,6 +3136,15 @@ impl FenceChrome {
             );
         }
 
+        // 锁定位置和大小: the lock glyph in its slot before the chevron's box.
+        if deco.locked {
+            let box_r = TitleDeco::lock_box(width, title_h);
+            let lock_a = state.lock * title_a;
+            self.draw_lock(
+                session, &backdrop, theme, scale, opacity, style.tint, box_r, lock_a,
+            )?;
+        }
+
         // Chevron (Segoe Fluent Icons ChevronUp E70E, turned 180° by the roll progress so it
         // points down once rolled — WinUI Expander rotates its chevron with the height) in a
         // 32×32 button box: revealed with the title-row hover (83 ms), always visible while
@@ -3095,6 +3164,30 @@ impl FenceChrome {
             session, &backdrop, theme, scale, opacity, style.tint, box_r, "\u{E70E}", chevron_a,
             state, roll_t,
         )
+    }
+
+    /// The lock glyph of a locked fence in its slot `box_r` at opacity `alpha`, in the
+    /// secondary text colour of what lies behind it.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_lock(
+        &self,
+        session: &DrawingSession<'_>,
+        backdrop: &Backdrop<'_>,
+        theme: &Theme,
+        scale: f32,
+        opacity: f32,
+        tint: Option<ColorF>,
+        box_r: Rect,
+        alpha: f32,
+    ) -> Result<()> {
+        if alpha <= 0.0 {
+            return Ok(());
+        }
+        let foreground = header_foreground(backdrop, theme, 8, box_r, scale, opacity, tint);
+        let ink =
+            session.create_solid_brush(with_alpha(foreground.text_secondary, alpha.min(1.0)))?;
+        session.draw_text(LOCK_GLYPH, &self.glyph_format, &box_r, &ink);
+        Ok(())
     }
 
     /// The roll chevron (`glyph`, turned 180° by the roll progress `roll_t`) in its 32×32
@@ -4618,12 +4711,14 @@ mod tests {
             up_button: false,
             search_glyph: false,
             desktop_icon: true,
+            locked: false,
         };
         assert_eq!(both.title_x(), 16.0 + 2.0 * TitleDeco::ICON_W);
         let glyph = chrome.lone_desktop_box("2026", None, None, 1, Left, 300.0, both, 0.0, 36.0);
         assert_eq!(glyph.left, 16.0 + TitleDeco::ICON_W - 2.0);
         let alone = TitleDeco {
             desktop_icon: true,
+            locked: false,
             ..TitleDeco::default()
         };
         let glyph = chrome.lone_desktop_box("2026", None, None, 1, Left, 300.0, alone, 0.0, 36.0);
@@ -4632,7 +4727,7 @@ mod tests {
             (14.0, 16.0 + TitleDeco::ICON_W)
         );
         // The lone up button keeps its glyph's place with the Task View glyph after it.
-        let up = chrome.lone_up_box("2026", None, 1, Left, 300.0, true, 0.0, 36.0);
+        let up = chrome.lone_up_box("2026", None, 1, Left, 300.0, (true, false), 0.0, 36.0);
         assert_eq!(up.left, 14.0);
     }
 
@@ -4732,6 +4827,59 @@ mod tests {
         assert!(w < 16.0 + 40.0 + TITLE_RIGHT_RESERVE);
     }
 
+    /// A locked fence keeps the lock glyph's 16 DIP slot before the chevron's box free: the
+    /// title, a smart fence's capsule and a filter tag end that much earlier; an unlocked fence
+    /// gives its title the room.
+    #[test]
+    fn a_locked_fence_keeps_the_lock_glyphs_slot_before_the_chevron() {
+        use pecofence_core::TitleAlign::Left;
+        let chrome = FenceChrome::new().unwrap();
+        let chevron = TitleDeco::chevron_box(300.0, 36.0);
+        let slot = TitleDeco::lock_box(300.0, 36.0);
+        assert_eq!(
+            (slot.right, slot.width()),
+            (chevron.left, TitleDeco::LOCK_W)
+        );
+        assert_eq!((slot.top, slot.bottom), (chevron.top, chevron.bottom));
+        let locked = TitleDeco {
+            locked: true,
+            ..TitleDeco::default()
+        };
+        assert_eq!(TitleDeco::default().lock_w(), 0.0);
+        assert_eq!(locked.lock_w(), TitleDeco::LOCK_W);
+        let long = "A long title that does not fit the row of this fence at all";
+        let (x, _, free_w) =
+            chrome.lone_title_place(long, None, None, 1, Left, 300.0, TitleDeco::default(), 0.0);
+        let (lx, _, locked_w) =
+            chrome.lone_title_place(long, None, None, 1, Left, 300.0, locked, 0.0);
+        assert_eq!(x, lx);
+        assert_eq!(locked_w, free_w - TitleDeco::LOCK_W);
+        assert!(
+            lx + locked_w <= slot.left,
+            "{lx} + {locked_w} > {}",
+            slot.left
+        );
+        // With a filter tag: the title ends before the tag, the tag before the slot.
+        let tag = ("", "pdf", "3 / 31");
+        let tag_r = chrome
+            .filter_tag_fit(300.0 - TitleDeco::LOCK_W, 36.0, tag, None)
+            .unwrap()
+            .rect;
+        assert!(tag_r.right <= slot.left);
+        let (tx, _, tagged_w) =
+            chrome.lone_title_place(long, None, Some(tag), 1, Left, 300.0, locked, 0.0);
+        assert!(
+            tx + tagged_w <= tag_r.left,
+            "{tx} + {tagged_w} > {}",
+            tag_r.left
+        );
+        // The column's lock glyph sits before the column's chevron.
+        let rail_chevron = TitleDeco::rail_chevron_box(120.0, 300.0, 100.0);
+        let rail_slot = TitleDeco::rail_lock_box(120.0, 300.0, 100.0);
+        assert_eq!(rail_slot.right, rail_chevron.left);
+        assert_eq!(rail_slot.top, rail_chevron.top);
+    }
+
     #[test]
     fn a_lone_folder_titles_up_button_is_its_glyph() {
         use pecofence_core::TitleAlign::{Left, Right};
@@ -4742,21 +4890,40 @@ mod tests {
             up_button: true,
             search_glyph: false,
             desktop_icon: false,
+            locked: false,
         };
         assert_eq!(up.title_x(), 16.0 + TitleDeco::ICON_W);
-        let left = chrome.lone_up_box("2026", None, 1, Left, 300.0, false, 0.0, 36.0);
+        let left = chrome.lone_up_box("2026", None, 1, Left, 300.0, (false, false), 0.0, 36.0);
         assert_eq!(
             (left.left, left.top, left.right, left.bottom),
             (14.0, 8.0, 34.0, 28.0)
         );
         // It moves with the title, which keeps clear of the rolled count.
-        let right = chrome.lone_up_box("2026", None, 1, Right, 300.0, false, ROLLED_COUNT_W, 36.0);
+        let right = chrome.lone_up_box(
+            "2026",
+            None,
+            1,
+            Right,
+            300.0,
+            (false, false),
+            ROLLED_COUNT_W,
+            36.0,
+        );
         assert!(right.left > left.left);
         assert!(right.right <= 300.0 - TITLE_RIGHT_RESERVE - ROLLED_COUNT_W);
         // And of a filter tag, as drawn (one layout for both).
         let tag = ("", "pdf", "3 / 31");
         let tag_r = chrome.filter_tag_fit(300.0, 36.0, tag, None).unwrap().rect;
-        let tagged = chrome.lone_up_box("2026", Some(tag), 1, Right, 300.0, false, 0.0, 36.0);
+        let tagged = chrome.lone_up_box(
+            "2026",
+            Some(tag),
+            1,
+            Right,
+            300.0,
+            (false, false),
+            0.0,
+            36.0,
+        );
         assert!(tagged.right <= tag_r.left, "{tagged:?} {tag_r:?}");
         // With the glyph hidden, the button stays at the far left.
         let hidden = TitleDeco {
@@ -4764,6 +4931,7 @@ mod tests {
             up_button: true,
             search_glyph: false,
             desktop_icon: false,
+            locked: false,
         };
         assert!(hidden.up_at_left());
         assert_eq!(hidden.title_x(), 16.0 + TitleDeco::UP_W);

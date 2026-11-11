@@ -30,6 +30,19 @@ pub(super) fn column_sort(c: DetailColumn) -> SortMode {
     }
 }
 
+/// Opacity of the lock glyph: its hover fade `shown` (0..=1), or the pulse `since` its start
+/// when the lock has just refused a drag: full strength dipping to `LOCK_PULSE_LOW` halfway
+/// and back, whatever the hover fade is doing.
+pub(super) fn lock_alpha(shown: f32, pulse: Option<Duration>) -> f32 {
+    match pulse {
+        Some(since) if since < LOCK_PULSE => {
+            let t = since.as_secs_f32() / LOCK_PULSE.as_secs_f32();
+            1.0 - (1.0 - LOCK_PULSE_LOW) * (std::f32::consts::PI * t).sin()
+        }
+        _ => shown,
+    }
+}
+
 /// Title-row things whose state alpha fades (keys of the chrome [`Fades`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(super) enum ChromeKey {
@@ -41,6 +54,8 @@ pub(super) enum ChromeKey {
     Chevron,
     /// Rolled item count.
     Count,
+    /// The lock glyph of a locked fence: shown while the pointer is over the fence.
+    Lock,
     Tab(usize),
     /// A tab head with files dragged over it (drop-target look).
     TabDrop(usize),
@@ -322,6 +337,17 @@ impl FenceViewState {
             now,
         );
         f.set(animate, ChromeKey::Count, rolled as u8 as f32, now);
+        f.set(
+            animate,
+            ChromeKey::Lock,
+            (self.locked && self.mouse_inside) as u8 as f32,
+            now,
+        );
+        let pulse = self.lock_pulse.map(|t| now.saturating_duration_since(t));
+        let lock = lock_alpha(f.value(&ChromeKey::Lock, now), pulse);
+        if pulse.is_some_and(|since| since >= LOCK_PULSE) {
+            self.lock_pulse = None;
+        }
         let ntabs = if self.tabs.len() > 1 {
             self.tabs.len()
         } else {
@@ -354,6 +380,45 @@ impl FenceViewState {
             plate_top,
             plate_clear,
             strip_clip: self.tab_strip_clip(),
+            lock,
+        }
+    }
+
+    /// The lock refused a drag (a title or edge drag of a locked fence): the lock glyph
+    /// pulses once so the fence reads as locked, not as stuck. With animations off there is
+    /// no pulse; the glyph itself still shows under the pointer.
+    pub(super) fn pulse_lock(&mut self, why: &'static str) {
+        let pulsing = self.lock_pulse.is_some();
+        let animate = self.motion.enabled();
+        tracing::debug!(
+            fence = %self.fence_id,
+            why,
+            pulsing,
+            animate,
+            "the lock refused a drag: lock glyph pulse"
+        );
+        if pulsing || !animate {
+            return;
+        }
+        self.lock_pulse = Some(Instant::now());
+        let _ = self.redraw_chrome_only();
+    }
+
+    /// A press on a locked fence was remembered (`lock_press`) and the pointer is now at the
+    /// screen point `pt`: past the drag threshold with the button still held, that is a drag
+    /// the lock refuses.
+    pub(super) fn note_lock_drag(&mut self, pt: (i32, i32)) {
+        let Some((px, py)) = self.lock_press else {
+            return;
+        };
+        if !window::key_down(msg::VK_LBUTTON) {
+            self.lock_press = None;
+            return;
+        }
+        let (tx, ty) = window::drag_threshold();
+        if (pt.0 - px).abs() > tx || (pt.1 - py).abs() > ty {
+            self.lock_press = None;
+            self.pulse_lock("drag on a locked fence");
         }
     }
 
@@ -533,7 +598,8 @@ impl FenceViewState {
             || self.pill_anim.is_some()
             || !self.merge_t.is_done(now)
             || !self.tab_slide.is_empty()
-            || self.tab_settle.is_some();
+            || self.tab_settle.is_some()
+            || self.lock_pulse.is_some();
         if self.chrome_busy {
             self.frames.request();
         }
