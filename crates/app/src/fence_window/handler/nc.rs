@@ -249,6 +249,7 @@ pub(super) fn on_ncmousemove(
         }
         if v.rolled_up
             && !v.peeking
+            && !v.peek_blocked
             && v.roll_anim.is_none()
             && behavior.hover_peek.get()
             && !behavior.click_to_expand.get()
@@ -301,6 +302,7 @@ pub(super) fn on_ncmouseleave(
         }
         if !inside {
             v.set_mouse_inside(false);
+            v.lift_peek_block("the pointer left the title row");
         }
         // Off the Task View glyph's or the filter tag's caption spot: its infotip goes
         // (WM_MOUSEMOVE decides over the client area).

@@ -191,6 +191,11 @@ impl FrameHandle {
                         tracing::debug!(had, "roll-up landed: the hidden selection is dropped");
                     }
                 }
+                // The title row it shrank to is no longer under the pointer (rolled up from
+                // its menu, or with the pointer over the content): nothing to wait for.
+                if rolled && v.peek_blocked && !v.pointer_in_rect() {
+                    v.lift_peek_block("the rolled fence is not under the pointer");
+                }
             }
             // The resting window gets a crop cut for its final rect (one crop + upload per
             // animation, in the pass that redraws everything anyway).

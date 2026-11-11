@@ -328,6 +328,7 @@ impl FenceWindow {
             plate_alpha: 1.0,
             peeking: false,
             hover_raised: false,
+            peek_blocked: false,
             placing: false,
             behavior: ctx.behavior.clone(),
         };
@@ -1685,6 +1686,17 @@ impl FenceWindow {
             }
             if !rolled && v.expanded_h_px <= v.title_h_px() {
                 v.expanded_h_px = v.title_h_px() + (200.0 * v.scale()) as i32;
+            }
+            // Rolled up under the pointer (a click on the chevron or the title, the menu, the
+            // CLI): the window shrinks to its title row there, and Windows then reports the
+            // resting pointer as a move on it. That must not start a hover peek.
+            if rolled {
+                v.peek_blocked = v.pointer_in_rect();
+                tracing::debug!(
+                    fence = %v.fence_id,
+                    blocked = v.peek_blocked,
+                    "rolled up on request: hover peek waits until the pointer has left"
+                );
             }
             v.start_roll_anim(rolled);
         });

@@ -67,6 +67,7 @@ pub(super) fn on_mouseleave(
     if let Some(v) = guard.as_mut() {
         if !inside {
             v.set_mouse_inside(false);
+            v.lift_peek_block("the pointer left the fence");
         }
         // A tip armed over a spot of the caption (the Task View glyph, a filter tag, the lock
         // glyph) is WM_NCMOUSEMOVE's, which can come before this message when the pointer goes

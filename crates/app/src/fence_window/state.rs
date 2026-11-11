@@ -488,6 +488,10 @@ pub struct FenceViewState {
     /// A hover peek (or a file drag) opened it and raised it above the other fences
     /// (`Command::RaiseForHover`): the roll-up that follows puts it back.
     pub(super) hover_raised: bool,
+    /// Rolled up on request (the chevron, a title click, the menu, the CLI) with the pointer
+    /// on the fence: a hover peek must not open it again under that resting pointer. Lifted
+    /// when the pointer leaves the fence, and by any expand.
+    pub(super) peek_blocked: bool,
     /// The app is placing the window (`FenceWindow::place_window`, a cancelled drag put back):
     /// the rect it sets is already in the target monitor's pixels, so a WM_DPICHANGED sent
     /// inside that SetWindowPos (a move onto a monitor with another scale) must not scale it

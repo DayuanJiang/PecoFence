@@ -539,8 +539,26 @@ impl FenceViewState {
         }
     }
 
+    /// The pointer is inside the window's rectangle as it is now. No hit test, so it is safe
+    /// under the view borrow (WindowFromPoint would send WM_NCHITTEST to this window).
+    pub(super) fn pointer_in_rect(&self) -> bool {
+        let pt = window::cursor_pos();
+        let r = window::window_rect(self.hwnd);
+        pt.x >= r.left && pt.x < r.right && pt.y >= r.top && pt.y < r.bottom
+    }
+
+    /// The pointer has left the fence (or the fence opens): a hover peek may start again.
+    pub(super) fn lift_peek_block(&mut self, reason: &'static str) {
+        if std::mem::take(&mut self.peek_blocked) {
+            tracing::debug!(fence = %self.fence_id, reason, "hover peek allowed again");
+        }
+    }
+
     pub(super) fn start_roll_anim(&mut self, rolled: bool) {
         self.hide_tip();
+        if !rolled {
+            self.lift_peek_block("the fence opens");
+        }
         let now = Instant::now();
         // Painted x per tab before the target state changes: the pills slide the 64 DIP the
         // item-count reserve takes (or frees) instead of jumping there.

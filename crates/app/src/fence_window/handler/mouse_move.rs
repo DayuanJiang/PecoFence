@@ -497,6 +497,7 @@ pub(super) fn on_mousemove(
     if in_title
         && v.rolled_up
         && !v.peeking
+        && !v.peek_blocked
         && v.roll_anim.is_none()
         && behavior.hover_peek.get()
         && !behavior.click_to_expand.get()
