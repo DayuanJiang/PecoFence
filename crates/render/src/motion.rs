@@ -649,7 +649,9 @@ mod tests {
         assert!((f.value(&1, mid + ms(100)) - 0.25).abs() < 1e-3);
         f.release_unless(false, mid + ms(100), |_| false);
         assert_eq!(f.value(&2, mid + ms(100)), 0.0);
-        assert!(!f.busy(mid + ms(100)));
+        // Keys already on their way out keep their fade, as with `set`.
+        assert!((f.value(&1, mid + ms(100)) - 0.25).abs() < 1e-3);
+        assert!(!f.busy(mid + ms(200)));
     }
 
     #[test]
