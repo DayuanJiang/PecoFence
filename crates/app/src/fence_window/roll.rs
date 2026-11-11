@@ -601,6 +601,7 @@ impl FenceViewState {
             }
         });
         self.column_collapsed = rolled && to_w.is_some();
+        self.capped_h_px = None;
         let to_h = if rolled {
             self.rolled_h_px()
         } else if let Some((_, h)) = side {
@@ -616,7 +617,27 @@ impl FenceViewState {
             self.expanded_h_px = h;
             h
         } else {
-            self.expanded_h_px.max(self.title_h_px() + 40)
+            // With pushNeighbors the fences below slide down only to the bottom of the work
+            // area: this open stops where they leave room (the content scrolls), and
+            // `expanded_h_px` keeps the height the fence opens to once there is room again.
+            // A hover peek opens in full, above the fences it cannot push (#197): it is gone
+            // again when the pointer leaves.
+            let floor = self.title_h_px() + 40;
+            let full = self.expanded_h_px.max(floor);
+            let h = self
+                .kept_room_below_px()
+                .filter(|_| !self.peeking)
+                .map_or(full, |room| full.min(room.max(floor)));
+            if h < full {
+                tracing::debug!(
+                    fence = %self.fence_id,
+                    full,
+                    opens_to = h,
+                    "the fences below cannot go lower: opening to the room they leave"
+                );
+                self.capped_h_px = Some(h);
+            }
+            h
         };
         let mid_roll = self.roll_anim.is_some();
         if rolled {

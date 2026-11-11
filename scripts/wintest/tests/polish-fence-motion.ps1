@@ -2,9 +2,13 @@
 #   A  a fence rolled up by a click stays rolled under the resting pointer (the hover peek waits
 #      until the pointer has left), by the chevron, a double-click on the title, the fence menu
 #      and with 单击标题时展开
+#   B  an open fence stops where the fences it pushes can go no lower (the push overlap open
+#      since 0.3.1): by click and CLI, with one and two fences below, auto height, a restart;
+#      a hover peek still opens in full above them (#197)
 # Default: all parts. Runs on a 1600x900 box at 100 %.
-if (-not $Part) { $Part = 'A' }
+if (-not $Part) { $Part = 'AB' }
 trap { PfTrap $_; continue }
+. C:\pf\kit\pixels.ps1
 
 # Every size of one window, about every 2 ms: "ms left top right bottom" per change.
 Add-Type -TypeDefinition @'
@@ -139,6 +143,142 @@ if ($Part -match 'A') {
   Pf settings set rollUp.clickToExpand false | Out-Null
   Park
   Pf fence delete Roll1 | Out-Null
+}
+
+if ($Part -match 'B') {
+  # ---- an open fence stops where the fences it pushes can go no lower
+  function Ov($p, $q) { return [math]::Max(0, [math]::Min($p.B, $q.B) - [math]::Max($p.T, $q.T)) }
+  function State($names) { return (($names | ForEach-Object { $r = Win $_; "$_ $($r.T)..$($r.B)" }) -join ', ') }
+  # The stack is clean: no two of the fences overlap and none ends under the work area.
+  function Clean($what, $names) {
+    $bad = @()
+    for ($i = 0; $i -lt $names.Count; $i++) {
+      $p = Win $names[$i]
+      if ($p.B -gt $WorkB) { $bad += "$($names[$i]) ends at $($p.B), under the work area ($WorkB)" }
+      for ($j = $i + 1; $j -lt $names.Count; $j++) {
+        $o = Ov $p (Win $names[$j])
+        if ($o -gt 0) { $bad += "$($names[$i]) and $($names[$j]) overlap by $o px" }
+      }
+    }
+    Check "$what`: no fence covers another, all above the taskbar" ($bad.Count -eq 0) "$(State $names); $($bad -join '; ')"
+  }
+  # Pusher's title row at 440 opens to 300 px; Pushed (280 px) rests 12 px under the row, so it
+  # can go down 84 px to the taskbar: 124 px of room for Pusher.
+  Pf fence create --title Pusher --rect '1000,440,300,300' | Out-Null
+  Pf item move "$PfDesk\预算表.xlsx" "$PfDesk\发票.pdf" "$PfDesk\a.txt" "$PfDesk\合同.docx" "$PfDesk\清单.txt" "$PfDesk\日程.txt" --to Pusher | Out-Null
+  Pf fence roll Pusher | Out-Null; Start-Sleep -Milliseconds 900
+  Pf fence create --title Pushed --rect '1000,488,300,280' | Out-Null
+  Pf item move "$PfDesk\读书笔记.md" "$PfDesk\旅行计划.txt" --to Pushed | Out-Null
+  Start-Sleep -Seconds 1; Park
+  $room = $WorkB - 280 - 8 - 440
+
+  Case 'B opened by a click'
+  $p = ChevronPt Pusher; [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 1300; Park
+  Shot 'B-click-open'
+  Clean 'opened by a click' @('Pusher', 'Pushed')
+  $f = FenceGet Pusher
+  Check 'opened by a click: Pusher is as tall as the room, its saved height stays' ((WinH Pusher) -eq $room -and $f.rect.h -eq 300 -and -not $f.rolledUp) "window $(WinH Pusher) px (room $room), saved rect h $($f.rect.h), rolledUp=$($f.rolledUp)"
+  # The rest of the icons scroll: the wheel moves the content.
+  $w = Win Pusher
+  $before = [Px]::Grab($w.L + 8, $w.T + 40, 280, 70)
+  Wheel ($w.L + 150) ($w.T + 80) -2; Start-Sleep -Milliseconds 700
+  $after = [Px]::Grab($w.L + 8, $w.T + 40, 280, 70)
+  $moved = [Px]::Diff($before, $after, 0, 279, 0, 69)
+  Check 'opened by a click: the icons that do not fit scroll' ($moved -gt 2) "mean brightness change of the content after two wheel notches: $([math]::Round($moved, 1))"
+  $p = ChevronPt Pusher; [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 900; Park
+  $q = Win Pushed
+  Check 'rolled up again: Pushed is back at its place' ($q.T -eq 488) (State @('Pusher', 'Pushed'))
+
+  Case 'B opened by the CLI'
+  Pf fence unroll Pusher | Out-Null; Start-Sleep -Milliseconds 1300
+  Clean 'opened by the CLI' @('Pusher', 'Pushed')
+  Check 'opened by the CLI: as tall as the room, saved height kept' ((WinH Pusher) -eq $room -and (FenceGet Pusher).rect.h -eq 300) "window $(WinH Pusher) px, saved rect h $((FenceGet Pusher).rect.h)"
+
+  Case 'B a move keeps the full height'
+  # Dragged by its title to a place with nothing under it: it opens in full there.
+  $p = TitlePt Pusher
+  DragTo $p[0] $p[1] ($p[0] - 500) ($p[1] - 300) 16
+  Start-Sleep -Milliseconds 900; Park
+  $f = FenceGet Pusher
+  Check 'moved to a place with room: the fence is its full height again' ((WinH Pusher) -eq 300 -and $f.rect.h -eq 300) "window $(WinH Pusher) px, saved rect h $($f.rect.h), at $($f.windowRect.x),$($f.windowRect.y)"
+  Pf fence roll Pusher | Out-Null; Start-Sleep -Milliseconds 700
+  Pf fence move Pusher --rect '1000,440,300,300' | Out-Null; Start-Sleep -Milliseconds 900
+
+  Case 'B the fence below makes room'
+  Pf fence unroll Pusher | Out-Null; Start-Sleep -Milliseconds 1300
+  $held = WinH Pusher
+  Pf fence move Pushed --rect '600,488,300,280' | Out-Null; Start-Sleep -Milliseconds 1200
+  Check 'the fence below is moved away: the open fence grows to its full height' ($held -eq $room -and (WinH Pusher) -eq 300) "held at $held px, then $(WinH Pusher) px"
+  Pf fence roll Pusher | Out-Null; Start-Sleep -Milliseconds 800
+  Pf fence move Pushed --rect '1000,488,300,280' | Out-Null; Start-Sleep -Milliseconds 900
+
+  Case 'B a restart'
+  Pf fence unroll Pusher | Out-Null; Start-Sleep -Milliseconds 1500
+  PfQuit; PfStart -Script @('sleep 3600000'); Start-Sleep -Seconds 2
+  Clean 'saved open, after a restart' @('Pusher', 'Pushed')
+  $f = FenceGet Pusher
+  Check 'after a restart: as tall as the room, saved height kept' ((WinH Pusher) -eq $room -and $f.rect.h -eq 300) "window $(WinH Pusher) px, saved rect h $($f.rect.h)"
+  Pf fence roll Pusher | Out-Null; Start-Sleep -Milliseconds 800
+
+  Case 'B a hover peek opens in full, on top'
+  Park
+  HoverTitle Pusher; Start-Sleep -Milliseconds 1300
+  $w = Win Pusher; $q = Win Pushed
+  $top = [PmTrack]::TitleAt($q.L + 150, $q.T + 10)
+  Shot 'B-hover-peek'
+  Check 'a hover peek still opens in full, above the fence it cannot push' ((WinH Pusher) -eq 300 -and $top -eq 'Pusher') "Pusher $($w.T)..$($w.B), Pushed $($q.T)..$($q.B), on top at Pushed's title: '$top'"
+  Park; Start-Sleep -Milliseconds 1200
+  Check 'the hover peek closed: Pushed is back at its place' ((Win Pushed).T -eq 488 -and (WinH Pusher) -le $TitleH + 2) (State @('Pusher', 'Pushed'))
+
+  Case 'B a hover peek kept open by a click'
+  # The chevron of a fence that is hover-peeking keeps it open: from then on it rests among the
+  # others, so it gets as short as the room.
+  HoverTitle Pusher; Start-Sleep -Milliseconds 1300
+  $p = ChevronPt Pusher; [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 1300; Park
+  Clean 'a hover peek kept open by a click' @('Pusher', 'Pushed')
+  $f = FenceGet Pusher
+  Check 'a hover peek kept open by a click: as tall as the room, saved height kept' ((WinH Pusher) -eq $room -and $f.rect.h -eq 300 -and -not $f.rolledUp) "window $(WinH Pusher) px, saved rect h $($f.rect.h), rolledUp=$($f.rolledUp)"
+
+  Case 'B a new height by hand'
+  # The bottom edge dragged: the height the drag ends with is the user's own and is saved (here
+  # the smallest a fence can be made by hand, one row of icons); the window still stops at the
+  # room.
+  $w = Win Pusher
+  DragTo ($w.L + 150) ($w.B - 2) ($w.L + 150) ($w.B - 42) 10
+  Start-Sleep -Milliseconds 900; Park
+  $f = FenceGet Pusher
+  Check 'the bottom edge dragged: the height it ended with is saved' ($f.rect.h -lt 300 -and $f.rect.h -ge (WinH Pusher) -and (WinH Pusher) -le $room) "window $(WinH Pusher) px, saved rect h $($f.rect.h)"
+  Clean 'after the bottom edge was dragged' @('Pusher', 'Pushed')
+  Pf fence roll Pusher | Out-Null; Start-Sleep -Milliseconds 800
+  Pf fence move Pusher --rect '1000,440,300,300' | Out-Null; Start-Sleep -Milliseconds 900
+  $f = FenceGet Pusher
+  Log "after the resize by hand and a move back: saved rect $($f.rect.x),$($f.rect.y),$($f.rect.w),$($f.rect.h) rolledUp=$($f.rolledUp)"
+
+  Case 'B auto height'
+  Pf fence set Pusher autoHeight true | Out-Null; Start-Sleep -Milliseconds 500
+  Pf fence unroll Pusher | Out-Null; Start-Sleep -Milliseconds 1400
+  Clean 'auto height, opened by the CLI' @('Pusher', 'Pushed')
+  Check 'auto height: open, at least its title row and 40 px' ((WinH Pusher) -ge $TitleH + 40 -and -not (FenceGet Pusher).rolledUp) "window $(WinH Pusher) px"
+  Pf fence roll Pusher | Out-Null; Start-Sleep -Milliseconds 800
+  Pf fence set Pusher autoHeight false | Out-Null
+  Pf fence delete Pusher | Out-Null; Pf fence delete Pushed | Out-Null; Start-Sleep -Milliseconds 600
+
+  Case 'B two fences below'
+  # Top's row at 300; Mid (150 px) 12 px under it, Low (280 px) 12 px under Mid. Low can go down
+  # to 572, Mid to 414: 106 px of room for Top.
+  Pf fence create --title Top --rect '1000,300,300,300' | Out-Null
+  Pf item move "$PfDesk\预算表.xlsx" "$PfDesk\发票.pdf" "$PfDesk\a.txt" "$PfDesk\合同.docx" --to Top | Out-Null
+  Pf fence roll Top | Out-Null; Start-Sleep -Milliseconds 900
+  Pf fence create --title Mid --rect '1000,348,300,150' | Out-Null
+  Pf fence create --title Low --rect '1000,510,300,280' | Out-Null
+  Start-Sleep -Seconds 1; Park
+  $p = ChevronPt Top; [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 1300; Park
+  Shot 'B-two-below'
+  Clean 'two fences below, opened by a click' @('Top', 'Mid', 'Low')
+  Check 'two fences below: Top is as tall as the room they leave' ((WinH Top) -eq ($WorkB - 280 - 8 - 150 - 8 - 300) -and (FenceGet Top).rect.h -eq 300) "window $(WinH Top) px, saved rect h $((FenceGet Top).rect.h)"
+  $p = ChevronPt Top; [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 900; Park
+  Check 'two fences below: rolled up again, both are back' ((Win Mid).T -eq 348 -and (Win Low).T -eq 510) (State @('Top', 'Mid', 'Low'))
+  Pf fence delete Top | Out-Null; Pf fence delete Mid | Out-Null; Pf fence delete Low | Out-Null; Start-Sleep -Milliseconds 600
 }
 
 Case 'cleanup'

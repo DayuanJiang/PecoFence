@@ -160,7 +160,11 @@ impl App {
         }
         w.set_bounds(rect);
         // Made shorter to fit a spot (`clearance::pull_apart`): the height it opens to as well.
-        if !rolled && w.expanded_height_px() != rect.bottom - rect.top {
+        // One that is open only as far as the fences below leave room keeps its full height.
+        if !rolled
+            && w.capped_full_height_px().is_none()
+            && w.expanded_height_px() != rect.bottom - rect.top
+        {
             w.apply_height(rect.bottom - rect.top, false);
         }
         let expanded = if rolled {

@@ -492,6 +492,11 @@ pub struct FenceViewState {
     /// on the fence: a hover peek must not open it again under that resting pointer. Lifted
     /// when the pointer leaves the fence, and by any expand.
     pub(super) peek_blocked: bool,
+    /// Open, but only as tall as the fences below leave room for (`rollUp.pushNeighbors`:
+    /// they slide down, at most to the bottom of the work area): the window's height now.
+    /// `expanded_h_px` keeps the full height, which is what is saved and what the fence opens
+    /// to again once there is room. None when the window is as tall as `expanded_h_px`.
+    pub(super) capped_h_px: Option<i32>,
     /// The app is placing the window (`FenceWindow::place_window`, a cancelled drag put back):
     /// the rect it sets is already in the target monitor's pixels, so a WM_DPICHANGED sent
     /// inside that SetWindowPos (a move onto a monitor with another scale) must not scale it
@@ -525,6 +530,9 @@ impl FenceViewState {
         // the same physical rectangle, so geometry alone cannot validate the old crop.
         self.backdrop_rect = None;
         self.expanded_h_px = (self.expanded_h_px as f32 * new_dpi as f32 / old).round() as i32;
+        self.capped_h_px = self
+            .capped_h_px
+            .map(|h| (h as f32 * new_dpi as f32 / old).round() as i32);
         self.expanded_w_px = (self.expanded_w_px as f32 * new_dpi as f32 / old).round() as i32;
         self.reload_icons_and_labels();
         self.snap_item_motion();

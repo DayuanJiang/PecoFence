@@ -329,6 +329,7 @@ impl FenceWindow {
             peeking: false,
             hover_raised: false,
             peek_blocked: false,
+            capped_h_px: None,
             placing: false,
             behavior: ctx.behavior.clone(),
         };
@@ -725,6 +726,7 @@ impl FenceWindow {
             }
             v.rolled_up = rolled;
             v.expanded_h_px = expanded_h;
+            v.capped_h_px = None;
             v.expanded_w_px = rect.right - rect.left;
             v.column_collapsed = rolled && v.tabs_on_rail();
             v.rail_dip = v.measure_rail_w();
@@ -2182,6 +2184,7 @@ impl FenceWindow {
             match guard.as_mut() {
                 Some(v) => {
                     v.expanded_h_px = height_px;
+                    v.capped_h_px = None;
                     (animate && v.start_height_anim(height_px), v.row_bottom)
                 }
                 None => (false, false),
@@ -2194,6 +2197,77 @@ impl FenceWindow {
             self.set_bounds(r);
         }
         r
+    }
+
+    /// The full height (device px) of a fence that is open only as far as the fences below
+    /// leave room (`capped_h_px`); None when the window is as tall as the fence.
+    pub fn capped_full_height_px(&self) -> Option<i32> {
+        let guard = self.view.try_borrow().ok()?;
+        let v = guard.as_ref()?;
+        v.capped_h_px
+            .map(|_| v.expanded_h_px.max(v.title_h_px() + 40))
+    }
+
+    /// `rollUp.pushNeighbors`: keeps an open fence of a set height inside `room_px`, the room
+    /// below its top edge that the fences it pushes leave it (`app/push.rs`). One taller than
+    /// that gets shorter (never under its title row plus 40 px; the content scrolls), and one
+    /// held short this way gets taller again as the room grows, up to its full height. The
+    /// height it is saved with stays. Rolled, animating and auto-height fences are left alone
+    /// (auto height fits the room by itself), and so is a hover peek, which opens in full
+    /// above the fences it cannot push. True when the window was resized without an
+    /// animation. The borrow is released before SetWindowPos because WM_SIZE re-enters the
+    /// handler.
+    pub fn fit_open_to_room(&self, room_px: i32) -> bool {
+        if self.is_desktop_arranged() {
+            return false;
+        }
+        let (target, animated) = {
+            let mut guard = self.view.borrow_mut();
+            let Some(v) = guard.as_mut() else {
+                return false;
+            };
+            if v.retired
+                || v.auto_height
+                || v.rolled_up
+                || v.peeking
+                || v.row_bottom
+                || v.height_animating()
+            {
+                return false;
+            }
+            let floor = v.title_h_px() + 40;
+            let full = v.expanded_h_px.max(floor);
+            let target = full.min(room_px.max(floor));
+            let cur = window::window_rect_size(v.hwnd).1;
+            let capped = (target < full).then_some(target);
+            if cur == target {
+                v.capped_h_px = capped;
+                return false;
+            }
+            // Only a fence over its room gets shorter, and only one held short gets taller.
+            let shrink = cur > target && capped.is_some();
+            let grow = cur < target && v.capped_h_px.is_some();
+            if !shrink && !grow {
+                return false;
+            }
+            tracing::debug!(
+                fence = %v.fence_id,
+                from = cur,
+                to = target,
+                full,
+                room = room_px,
+                "open fence fitted to the room the fences below leave"
+            );
+            v.capped_h_px = capped;
+            (target, v.start_height_anim(target))
+        };
+        if animated {
+            return false;
+        }
+        let mut r = self.window.window_rect();
+        r.bottom = r.top + target;
+        self.set_bounds(r);
+        true
     }
 
     /// Screen rectangle of an item's label, for the rename popup.

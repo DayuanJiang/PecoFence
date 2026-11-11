@@ -668,7 +668,15 @@ impl FenceViewState {
             let (above, below) = if self.expand_upward {
                 self.expand_rooms_px()
             } else {
-                (i32::MAX, i32::MAX)
+                // With pushNeighbors: as far as the fences below can slide down. A hover peek
+                // opens in full, above the fences it cannot push.
+                let floor = self.title_h_px() + 40;
+                (
+                    i32::MAX,
+                    self.kept_room_below_px()
+                        .filter(|_| !self.peeking)
+                        .map_or(i32::MAX, |room| room.max(floor)),
+                )
             };
             let (top, bottom) = if self.row_bottom {
                 let top = rect.bottom.saturating_sub(above);
@@ -700,6 +708,19 @@ impl FenceViewState {
                     (rect.bottom - m.work_area.top, m.work_area.bottom - rect.top)
                 })
         })
+    }
+
+    /// Room (device px) below the window's top edge that the App's push pass kept for it: with
+    /// `rollUp.pushNeighbors`, down to where the fences below it, slid as far as they can go,
+    /// leave room. None when the pass keeps none (pushNeighbors off, a fence in the user's
+    /// hands): the fence then opens as tall as it is saved.
+    pub(super) fn kept_room_below_px(&self) -> Option<i32> {
+        self.behavior
+            .expand_room
+            .borrow()
+            .iter()
+            .find(|(hwnd, ..)| *hwnd == self.hwnd)
+            .map(|&(_, _, below)| below)
     }
 
     /// Test hook: the screen point over the first item whose name contains `name` (a drop onto

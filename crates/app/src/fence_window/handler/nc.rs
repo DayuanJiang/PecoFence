@@ -843,7 +843,13 @@ pub(super) fn on_exitsizemove(
                 // Record the user's height, but never a transient
                 // mid-animation one (it would be persisted as expanded_h).
                 if !v.rolled_up && !v.height_animating() {
-                    v.expanded_h_px = rect.bottom - rect.top;
+                    // Open only as far as the fences below leave room (`capped_h_px`): a move
+                    // keeps the full height; a new height is the user's own.
+                    let h = rect.bottom - rect.top;
+                    if v.capped_h_px != Some(h) {
+                        v.expanded_h_px = h;
+                        v.capped_h_px = None;
+                    }
                 }
                 // A clock logs the text size the resize ended with.
                 if v.clock.is_some() && !v.rolled_up {

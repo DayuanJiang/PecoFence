@@ -163,6 +163,8 @@ pub struct Behavior {
     pub pushed: std::cell::RefCell<Vec<Pushed>>,
     /// For each fence window with 向上展开: the room above its bottom edge and below its top
     /// edge it may open into, the fences there sliding out of its way or not (`app/push.rs`).
+    /// With `rollUp.pushNeighbors` also for every other fence that pushes: the room below its
+    /// top edge (the room above is the work area's).
     pub expand_room: std::cell::RefCell<Vec<(HWND, i32, i32)>>,
     /// The system move / size loop in progress (one at a time: it is modal).
     pub size_move: std::cell::RefCell<Option<SizeMove>>,
