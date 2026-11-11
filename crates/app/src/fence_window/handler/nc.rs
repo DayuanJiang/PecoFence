@@ -847,6 +847,14 @@ pub(super) fn on_exitsizemove(
                 if v.clock.is_some() && !v.rolled_up {
                     let _ = v.redraw_clock();
                 }
+                if !moved {
+                    tracing::debug!(
+                        fence = %fence_id,
+                        shadow_cost_us = v.shadow_cost.as_micros() as u64,
+                        shadow_interval_ms = shadow_interval_ms(v.shadow_cost) as u64,
+                        "size loop ended: how often the shadow followed the dragged edge"
+                    );
+                }
                 v.peeking
             }
             None => false,

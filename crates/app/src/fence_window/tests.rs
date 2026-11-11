@@ -1599,3 +1599,17 @@ fn lock_glyph_pulses_once_when_the_lock_refuses_a_drag() {
     assert_eq!(lock_alpha(1.0, ms(250)), 1.0);
     assert_eq!(lock_alpha(0.0, ms(400)), 0.0);
 }
+
+/// While an edge is dragged the shadow gets a new bitmap as often as its cost allows: every
+/// frame for a cheap one, the old 40 ms for a very large fence, never more than a sixth of the
+/// time.
+#[test]
+fn shadow_keeps_up_with_a_dragged_edge_when_it_is_cheap() {
+    let us = Duration::from_micros;
+    assert_eq!(shadow_interval_ms(us(300)), 15);
+    assert_eq!(shadow_interval_ms(us(2_500)), 15);
+    assert_eq!(shadow_interval_ms(us(4_000)), 24);
+    assert_eq!(shadow_interval_ms(us(7_000)), 40);
+    assert_eq!(shadow_interval_ms(Duration::from_millis(40)), 40);
+    assert_eq!(shadow_interval_ms(Duration::ZERO), 15);
+}

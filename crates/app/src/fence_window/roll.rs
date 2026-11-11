@@ -139,6 +139,15 @@ pub(super) fn hide_with_fade(view: &ViewCell, hwnd: HWND, exit: bool, destroy: b
     animated
 }
 
+/// The shortest time between two shadow bitmaps while an edge is dragged, from what the last
+/// one cost: six times that (the shadow then takes at most a sixth of the UI thread), never
+/// under one frame and never over `SHADOW_MIN_INTERVAL_MS`. A fence of ordinary size gets a
+/// new shadow with every frame, so it stays on the plate's edge; a very large one keeps the
+/// old 40 ms.
+pub(super) fn shadow_interval_ms(cost: Duration) -> u128 {
+    (cost.as_micros() * 6 / 1000).clamp(SHADOW_FRAME_MS, SHADOW_MIN_INTERVAL_MS)
+}
+
 /// Shows a fence's shadow window just below it. Called with no view borrow held.
 pub(super) fn show_shadow(shadow: HWND, fence: HWND) {
     desktop::show_no_activate(shadow);
@@ -163,22 +172,42 @@ impl FenceViewState {
             return;
         }
         let now = Instant::now();
-        if let Some(t) = self.shadow_uploaded
-            && now.duration_since(t).as_millis() < SHADOW_MIN_INTERVAL_MS
-        {
-            // Too soon after the previous upload: let the body render at full rate and refresh
-            // the shadow with a trailing timer instead.
-            window::set_timer(self.hwnd, TIMER_SHADOW, SHADOW_MIN_INTERVAL_MS as u32);
-            return;
+        let min_interval = shadow_interval_ms(self.shadow_cost);
+        if let Some(t) = self.shadow_uploaded {
+            let since = now.duration_since(t).as_millis();
+            if since < min_interval {
+                // Too soon after the previous upload: let the body render at full rate and
+                // refresh the shadow with a trailing timer, due when the interval since that
+                // upload is over. A timer already waiting is left alone: restarted by every
+                // size step, it let the shadow fall two intervals behind an edge that kept
+                // moving.
+                if !self.shadow_timer {
+                    self.shadow_timer = true;
+                    window::set_timer(
+                        self.hwnd,
+                        TIMER_SHADOW,
+                        (min_interval - since).max(1) as u32,
+                    );
+                }
+                return;
+            }
         }
         self.update_shadow_now();
     }
 
     pub(super) fn update_shadow_now(&mut self) {
         window::kill_timer(self.hwnd, TIMER_SHADOW);
+        self.shadow_timer = false;
         let r = self.plate_rect();
+        let resized = self.shadow.body_size() != Some((r.right - r.left, r.bottom - r.top));
+        let started = Instant::now();
         self.shadow.update(r, self.dpi);
-        self.shadow_uploaded = Some(Instant::now());
+        let now = Instant::now();
+        if resized {
+            // What a new bitmap for this size costs sets how often an edge drag may ask for one.
+            self.shadow_cost = now.duration_since(started);
+        }
+        self.shadow_uploaded = Some(now);
     }
 
     /// Screen rect of the visible plate: the window, minus a title row that title on hover

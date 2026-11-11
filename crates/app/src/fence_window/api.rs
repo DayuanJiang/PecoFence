@@ -314,6 +314,9 @@ impl FenceWindow {
             hwnd,
             shadow,
             shadow_uploaded: None,
+            shadow_timer: false,
+            // Until measured: the old fixed interval.
+            shadow_cost: Duration::from_millis(SHADOW_MIN_INTERVAL_MS as u64),
             shadow_alpha: Tween::at(1.0, Instant::now()),
             shadow_fading: false,
             title_reveal: Tween::at(1.0, Instant::now()),

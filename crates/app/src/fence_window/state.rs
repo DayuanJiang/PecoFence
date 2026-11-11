@@ -455,6 +455,10 @@ pub struct FenceViewState {
     pub(super) shadow: ShadowWindow,
     /// When the shadow bitmap was last uploaded (throttle for interactive resizing).
     pub(super) shadow_uploaded: Option<Instant>,
+    /// TIMER_SHADOW is waiting to bring the shadow up to date after a throttled size step.
+    pub(super) shadow_timer: bool,
+    /// What the last shadow bitmap for a new size cost to make and present.
+    pub(super) shadow_cost: Duration,
     /// Constant alpha of the shadow window (0..=1), a client tween mirroring the root's
     /// whole-window fade: a layered HWND has no compositor property, so `tick` re-issues the
     /// cached shadow bitmap with the sampled alpha each frame while `shadow_fading`.

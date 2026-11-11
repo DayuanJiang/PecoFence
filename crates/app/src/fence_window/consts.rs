@@ -99,6 +99,9 @@ pub const SC_MOVE_CAPTION: usize = 0xF012;
 /// final geometry. Animated (frame-clock) resizes bypass the throttle so the shadow stays
 /// attached to the plate like a DWM shadow.
 pub(super) const SHADOW_MIN_INTERVAL_MS: u128 = 40;
+/// The shortest interval between two of those uploads: one frame at 60 Hz, for a shadow that
+/// is cheap to make (`shadow_interval_ms`).
+pub(super) const SHADOW_FRAME_MS: u128 = 15;
 /// Hover-peek closes this long after the pointer left (no Fluent reference value).
 pub(super) const PEEK_CLOSE_MS: u32 = 400;
 pub(super) const SNAP_DIST_DIP: i32 = 10;
