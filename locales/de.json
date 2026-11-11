@@ -509,6 +509,7 @@
   "已删除栅栏“{0}”": "Bereich „{0}“ gelöscht",
   "点「撤销」，或在栅栏上按 Ctrl+Z，就能把它找回来。": "Klicken Sie auf „Rückgängig“ oder drücken Sie in einem Bereich Strg+Z, um ihn zurückzuholen.",
   "点「撤销」，或在栅栏上按 Ctrl+Z，就能把它们放回原处。": "Klicken Sie auf „Rückgängig“ oder drücken Sie in einem Bereich Strg+Z, um sie zurückzulegen.",
+  "永久删除的文件无法撤销。": "Endgültiges Löschen kann nicht rückgängig gemacht werden.",
   "撤销": "Rückgängig",
   "其中的 {0} 个图标会回到“{1}”栅栏，文件本身不受影响。": "Die enthaltenen Symbole ({0}) kommen zurück in den Bereich „{1}“. Die Dateien selbst bleiben unverändert.",
   "指向它的 {0} 条规则也会一并删除。": "Auch die zugehörigen Regeln ({0}) werden gelöscht.",

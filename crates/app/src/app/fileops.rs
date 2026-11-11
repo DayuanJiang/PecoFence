@@ -114,9 +114,10 @@ impl App {
         let job_paths = paths.clone();
         let spawned = self.run_fileop(Some(owner), then, move |owner| {
             let refs: Vec<&Path> = job_paths.iter().map(|p| p.as_path()).collect();
+            // True when a file is gone: the delete was not declined in Windows' own dialog.
             ShellContextMenu::for_paths(&refs)
                 .and_then(|m| m.invoke_verb("delete", owner.unwrap_or_default(), pt, permanent))
-                .map(|()| true)
+                .map(|()| job_paths.iter().any(|p| !p.exists()))
         });
         if !spawned {
             self.settle_delete(&paths);
@@ -196,7 +197,7 @@ impl App {
         }
     }
 
-    fn toast(&self, text: String) {
+    pub(super) fn toast(&self, text: String) {
         if let Some(t) = &self.tray {
             t.show_info("PecoFence", &text, true);
         }
@@ -222,6 +223,51 @@ impl App {
         then: FileOpThen,
         result: std::result::Result<bool, String>,
     ) {
+        // An operation the user started in a fence that went through is a step of Ctrl+Z
+        // (`undo.rs`): noted now, when its record is in Windows' undo list.
+        let unrecorded = self
+            .fileops_unrecorded
+            .iter()
+            .position(|s| *s == serial)
+            .map(|i| self.fileops_unrecorded.swap_remove(i))
+            .is_some();
+        let went_through = matches!(result, Ok(true));
+        if unrecorded || !went_through {
+            tracing::debug!(
+                serial,
+                unrecorded,
+                went_through,
+                "file operation is no step of Ctrl+Z"
+            );
+        }
+        if !unrecorded && went_through {
+            match &then {
+                FileOpThen::IntoFolder { .. } => {
+                    self.note_fileop_for_undo("files into a folder", true)
+                }
+                FileOpThen::ToDesktop { .. } => {
+                    self.note_fileop_for_undo("files onto the desktop", true)
+                }
+                FileOpThen::Duplicate { .. } => self.note_fileop_for_undo("pasted copies", true),
+                FileOpThen::Rename => self.note_fileop_for_undo("rename through the shell", true),
+                // Shift+Delete, and a delete inside the Recycle Bin, leave nothing to undo.
+                FileOpThen::Delete {
+                    paths, permanent, ..
+                } => {
+                    let lost = *permanent
+                        || paths.iter().any(|p| {
+                            p.components()
+                                .any(|c| c.as_os_str().eq_ignore_ascii_case("$Recycle.Bin"))
+                        });
+                    if lost {
+                        self.note_fileop_for_undo("permanent delete", false);
+                    } else {
+                        self.note_fileop_for_undo("delete", true);
+                    }
+                }
+                FileOpThen::EmptyBin => {}
+            }
+        }
         match then {
             FileOpThen::IntoFolder {
                 dest,

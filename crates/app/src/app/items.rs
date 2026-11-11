@@ -93,6 +93,7 @@ impl App {
         match created {
             Ok(()) => {
                 tracing::info!(path = %path.display(), %fence, "created item from fence menu");
+                self.note_created_for_undo(fence, path.clone());
                 if let Some(dir) = portal_dir {
                     // A portal has no desktop PendingRoute. Refresh it now and start the
                     // same inline editor used for a new desktop item, after this command.
@@ -315,6 +316,11 @@ impl App {
                 };
                 for w in self.fences.values() {
                     w.reveal_item(id);
+                }
+                // One step of Ctrl+Z in the fences, unless the name on disk stayed the same
+                // ("note" to "note.").
+                if let Some(old) = old.filter(|old| *old != new) {
+                    self.note_rename_for_undo(old, new);
                 }
                 None
             }

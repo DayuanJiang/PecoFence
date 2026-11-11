@@ -532,6 +532,7 @@
   "已删除栅栏“{0}”": "Riquadro «{0}» eliminato",
   "点「撤销」，或在栅栏上按 Ctrl+Z，就能把它找回来。": "Fai clic su Annulla, o premi Ctrl+Z su un riquadro, per recuperarlo.",
   "点「撤销」，或在栅栏上按 Ctrl+Z，就能把它们放回原处。": "Fai clic su Annulla, o premi Ctrl+Z su un riquadro, per rimetterli a posto.",
+  "永久删除的文件无法撤销。": "L'eliminazione definitiva non può essere annullata.",
   "撤销": "Annulla",
   "其中的 {0} 个图标会回到“{1}”栅栏，文件本身不受影响。": "Le icone al suo interno ({0}) torneranno nel riquadro «{1}». I file non verranno modificati.",
   "指向它的 {0} 条规则也会一并删除。": "Verranno eliminate anche le {0} regole che puntano a questo riquadro.",

@@ -1,11 +1,15 @@
-//! Ctrl+Z in a fence, as on the desktop: undoes the last fence move or resize, icons moved
-//! between fences, a fence deleted from its menu, or a 「立即应用」 of the sorting rules.
-//! File operations (a deleted file, a
-//! file moved into a folder) stay with Windows' own undo. A short stack in memory, gone at
-//! restart and when the whole layout is replaced (import, backup, snapshot restore).
+//! Ctrl+Z in a fence, as on the desktop: undoes the newest thing the user did in the fences.
+//! Put back here: a fence move or resize, icons moved between fences, a fence deleted from
+//! its menu, a 「立即应用」 of the sorting rules, a rename made in a fence, a folder or text
+//! file made from a fence. File operations the shell recorded in Windows' own undo list (a
+//! delete to the Recycle Bin, files moved or copied into a folder or onto the desktop, a
+//! paste) are handed to Windows: Ctrl+Z runs the desktop view's undo command. Layout steps and
+//! file steps share one stack, newest first. A short stack in memory, gone at restart and
+//! when the whole layout is replaced (import, backup, snapshot restore).
 
 use super::*;
 use crate::state::DeletedFence;
+use items::RenameError;
 
 /// Steps kept; the oldest go first.
 const UNDO_KEPT: usize = 20;
@@ -30,6 +34,18 @@ pub(super) enum UndoStep {
         id: u64,
         places: Vec<(FenceId, Vec<(FenceId, pecofence_core::ItemRef)>)>,
     },
+    /// A file renamed in a fence (renamed directly, so Windows' undo list does not hold it).
+    Renamed { from: PathBuf, to: PathBuf },
+    /// A folder or text file made from `fence` (made directly too): Ctrl+Z moves it to the
+    /// Recycle Bin, as Explorer's own undo of 新建 does.
+    Created { fence: FenceId, path: PathBuf },
+    /// A file operation the shell recorded in Windows' undo list: Ctrl+Z passes the undo on.
+    /// Windows undoes the newest operation of its list, which is this one unless another
+    /// program's came after it, exactly as Ctrl+Z on the desktop would.
+    Shell { what: &'static str },
+    /// A file operation nothing can undo (a permanent delete): Ctrl+Z says so and stops there,
+    /// rather than put back an older step the user did not mean.
+    Permanent { what: &'static str },
 }
 
 /// What the notice's 撤销 undoes.
@@ -51,6 +67,9 @@ impl UndoStep {
             Self::Items { .. } => "items",
             Self::Deleted(_) => "deleted fence",
             Self::Refiled { .. } => "rules applied",
+            Self::Renamed { .. } => "rename",
+            Self::Created { .. } => "new item",
+            Self::Shell { what } | Self::Permanent { what } => what,
         }
     }
 }
@@ -108,6 +127,58 @@ impl App {
 
     pub(super) fn note_deleted_for_undo(&mut self, deleted: DeletedFence) {
         self.push_undo(UndoStep::Deleted(Box::new(deleted)));
+    }
+
+    /// The user renamed a file in a fence, `from` to `to`.
+    pub(super) fn note_rename_for_undo(&mut self, from: PathBuf, to: PathBuf) {
+        self.push_undo(UndoStep::Renamed { from, to });
+    }
+
+    /// The user made the folder or text file `path` from `fence`.
+    pub(super) fn note_created_for_undo(&mut self, fence: FenceId, path: PathBuf) {
+        self.push_undo(UndoStep::Created { fence, path });
+    }
+
+    /// A file operation the user started in a fence has finished (`what`). `recorded`: the
+    /// shell put it in Windows' undo list; false for one nothing can undo.
+    pub(super) fn note_fileop_for_undo(&mut self, what: &'static str, recorded: bool) {
+        self.push_undo(if recorded {
+            UndoStep::Shell { what }
+        } else {
+            UndoStep::Permanent { what }
+        });
+    }
+
+    /// File operations started inside `f` are no step of Ctrl+Z: the command line's, and the
+    /// delete that undoes a new item.
+    pub(super) fn without_undo_step(&mut self, f: impl FnOnce(&mut Self)) {
+        let first = self.fileop_serial + 1;
+        f(self);
+        self.fileops_unrecorded.extend(first..=self.fileop_serial);
+    }
+
+    /// The item whose file is at `path` now: on the desktop or in a folder a fence shows.
+    fn item_at(&self, path: &Path) -> Option<ItemId> {
+        self.state.live_item_by_path(path).or_else(|| {
+            let id = crate::state::portal_item_id(&path.to_string_lossy());
+            self.state.is_portal_item(id).then_some(id)
+        })
+    }
+
+    /// Passes Ctrl+Z on to Windows (see [`UndoStep::Shell`]). The fences follow through the
+    /// folder watchers once Windows has put the files back.
+    fn ask_windows_to_undo(&self) -> bool {
+        let view = self
+            .anchor
+            .borrow()
+            .as_ref()
+            .and_then(|a| desktop::resolve_icon_host(a.generation))
+            .map(|h| h.def_view);
+        let asked = view.is_some_and(pecofence_platform::shell_icons::undo_last_file_operation);
+        if !asked {
+            tracing::warn!(?view, "Windows' undo not asked: no desktop view");
+        }
+        asked
     }
 
     /// 「立即应用」 (settings page, tray menu, 快速添加): sorts the desktop by the rules and notes
@@ -220,6 +291,41 @@ impl App {
                     self.undo_notice = None;
                 }
                 n
+            }
+            UndoStep::Renamed { from, to } => {
+                let name = from.file_name().map(|n| n.to_string_lossy().into_owned());
+                match (self.item_at(&to), name) {
+                    (Some(item), Some(name)) => match self.rename_item_to(item, &name) {
+                        Ok(_) => 1,
+                        Err(error) => {
+                            tracing::warn!(?error, to = %to.display(), "rename not undone");
+                            if error == RenameError::Exists {
+                                self.toast(
+                                    pecofence_core::i18n::text("此文件夹中已有同名项目。")
+                                        .to_string(),
+                                );
+                            }
+                            0
+                        }
+                    },
+                    _ => {
+                        tracing::info!(to = %to.display(), "rename not undone: no such item any more");
+                        0
+                    }
+                }
+            }
+            UndoStep::Created { fence, path } => {
+                let owner = self
+                    .window_for(fence)
+                    .map_or_else(|| self.control.hwnd(), |w| w.hwnd());
+                tracing::info!(path = %path.display(), "new item undone: to the Recycle Bin");
+                self.without_undo_step(|app| app.start_shell_delete(vec![path], owner, false));
+                1
+            }
+            UndoStep::Shell { .. } => usize::from(self.ask_windows_to_undo()),
+            UndoStep::Permanent { .. } => {
+                self.toast(pecofence_core::i18n::text("永久删除的文件无法撤销。").to_string());
+                0
             }
         };
         tracing::info!(kind, from, done, left = self.undo.len(), "undone");

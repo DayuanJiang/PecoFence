@@ -509,6 +509,7 @@
   "已删除栅栏“{0}”": "Grupo «{0}» eliminado",
   "点「撤销」，或在栅栏上按 Ctrl+Z，就能把它找回来。": "Haz clic en Deshacer, o pulsa Ctrl+Z en un grupo, para recuperarlo.",
   "点「撤销」，或在栅栏上按 Ctrl+Z，就能把它们放回原处。": "Haz clic en Deshacer, o pulsa Ctrl+Z en un grupo, para devolverlos a su sitio.",
+  "永久删除的文件无法撤销。": "La eliminación permanente no se puede deshacer.",
   "撤销": "Deshacer",
   "其中的 {0} 个图标会回到“{1}”栅栏，文件本身不受影响。": "Sus iconos ({0}) volverán al grupo «{1}». Los archivos no se verán afectados.",
   "指向它的 {0} 条规则也会一并删除。": "También se eliminarán las reglas que lo usan como destino ({0}).",
