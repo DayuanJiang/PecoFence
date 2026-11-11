@@ -88,6 +88,9 @@ pub struct FenceViewState {
     pub(super) renaming: Option<ItemId>,
     /// The fence-title rename popup is open (a hover peek stays expanded under it).
     pub(super) title_renaming: bool,
+    /// A fence just made: when its name box was asked for. The box opens when the fade-in
+    /// running then has ended (`rename_after_fade_in`).
+    pub(super) rename_after_fade: Option<Instant>,
     /// The anchor item's unfolded label, cached by (item, cell width, name) so a content redraw
     /// (hover fade, scroll glide, marquee) does not lay the text out again.
     pub(super) unfold_cache: Option<UnfoldCache>,

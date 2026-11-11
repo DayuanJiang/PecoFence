@@ -2784,6 +2784,7 @@ impl App {
                     self.schedule_save();
                 }
             }
+            Command::BeginFenceRename(fence) => self.begin_rename(fence),
             Command::RenameItem { fence, item } => self.begin_item_rename(fence, item),
             Command::RenameItemCommit { item, name } => {
                 self.end_item_rename_visuals();

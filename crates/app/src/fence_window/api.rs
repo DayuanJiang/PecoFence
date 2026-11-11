@@ -132,6 +132,7 @@ impl FenceWindow {
             rbutton_press: None,
             renaming: None,
             title_renaming: false,
+            rename_after_fade: None,
             unfold_cache: None,
             detach_pending: false,
             detach_cancelled: false,
@@ -1018,6 +1019,20 @@ impl FenceWindow {
 
     /// The fence-title rename popup opened / closed. While it is open a hover peek stays
     /// expanded (the popup is part of the fence); closing it restarts the close countdown.
+    /// A fence just made: its name box opens when the fade-in running now has ended (the
+    /// window then asks with `Command::BeginFenceRename`), so the box does not float fully
+    /// opaque on a fence that is still nearly transparent. False when no fade-in runs
+    /// (animations off, a batch the compositor refused): the caller opens the box at once.
+    pub fn rename_after_fade_in(&self) -> bool {
+        let mut guard = self.view.borrow_mut();
+        let Some(v) = guard.as_mut() else {
+            return false;
+        };
+        let fading = v.vis_fade == Some(VisFade::Showing);
+        v.rename_after_fade = fading.then(Instant::now);
+        fading
+    }
+
     pub fn set_title_renaming(&self, on: bool) {
         self.with_view(|v| {
             if v.title_renaming != on {

@@ -932,7 +932,15 @@ impl App {
     /// A fence made from a menu: its title opens for editing, as Explorer's 新建文件夹 does.
     pub(super) fn create_fence_with_rename(&mut self, rect: RECT) {
         if let Some(id) = self.create_fence_at(rect, None) {
-            self.begin_rename(id);
+            // The name box opens once the fence has faded in (at once without a fade).
+            let after_fade = self
+                .fences
+                .get(&id)
+                .is_some_and(|w| w.rename_after_fade_in());
+            tracing::debug!(fence = %id, after_fade, "new fence: name box");
+            if !after_fade {
+                self.begin_rename(id);
+            }
             self.offer_roll_tip();
         }
     }

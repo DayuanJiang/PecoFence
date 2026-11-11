@@ -277,6 +277,9 @@ pub enum Command {
         fence: FenceId,
         title: String,
     },
+    /// A fence just made has faded in: its title opens for editing
+    /// (`FenceWindow::rename_after_fade_in`).
+    BeginFenceRename(FenceId),
     /// F2 / menu on a single selected item: open the inline rename popup.
     RenameItem {
         fence: FenceId,
