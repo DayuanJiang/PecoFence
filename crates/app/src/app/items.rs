@@ -546,8 +546,9 @@ impl App {
 
     /// Ctrl+V / 粘贴: the clipboard's files land in `fence` — desktop items change membership,
     /// foreign files move / copy to the desktop (or the portal's folder) first. Pasting copies
-    /// into the folder they already live in makes Explorer's "xxx - 副本" duplicates (routed by
-    /// the rules, since their names are only known to the shell).
+    /// into the folder they already live in makes Explorer's "xxx - 副本" duplicates, which go
+    /// into `fence` too (`claim_pasted_duplicates`). What was pasted is selected there
+    /// (`select_pasted`).
     pub(super) fn paste_into(&mut self, fence: FenceId) {
         // A note (便签) holds no files: Ctrl+V on it does nothing.
         if self
@@ -570,17 +571,59 @@ impl App {
             });
             if all_here {
                 let owner = self.window_for(fence).map(|w| w.hwnd());
+                let known = dir_entries(dest);
+                let running = self.fileops_running;
                 self.start_fileop(FileOp {
-                    paths,
+                    paths: paths.clone(),
                     dest: dest.clone(),
                     copy: true,
                     rename_on_collision: true,
                     owner,
                     then: FileOpThen::Duplicate,
                 });
+                if self.fileops_running > running {
+                    // The copies go into the fence pasted into, whatever the rules say (as a
+                    // drop into it does), and are selected there.
+                    tracing::debug!(%fence, files = paths.len(), dir = %dest.display(), "paste copies files within their folder");
+                    self.paste_dups.push(PasteDup {
+                        serial: self.fileop_serial,
+                        fence,
+                        dir: dest.clone(),
+                        known,
+                        sources: paths,
+                    });
+                    self.pasted = Some(Pasted {
+                        fence,
+                        paths: Vec::new(),
+                        selected: 0,
+                        since: Instant::now(),
+                    });
+                }
                 return;
             }
         }
+        // Where the pasted files will be: in a folder fence's folder, else on the desktop
+        // (files already there stay where they are and only change fence).
+        let portal = self.state.portal_path(fence).is_some();
+        let desktops = [shell::user_desktop(), shell::public_desktop()];
+        let expected: Vec<PathBuf> = paths
+            .iter()
+            .filter_map(|p| {
+                let on_desktop = !portal
+                    && p.parent()
+                        .is_some_and(|par| desktops.iter().flatten().any(|d| d == par));
+                if on_desktop {
+                    return Some(p.clone());
+                }
+                Some(dest.as_ref()?.join(shell::transferred_name(p)?))
+            })
+            .collect();
+        self.pasted = Some(Pasted {
+            fence,
+            paths: expected,
+            selected: 0,
+            since: Instant::now(),
+        });
         let running = self.fileops_running;
         self.handle(Command::ExternalDrop {
             paths,
@@ -591,6 +634,7 @@ impl App {
                 TransferMode::Copy
             },
         });
+        self.select_pasted();
         if cut {
             if self.fileops_running > running {
                 // Foreign files are still being moved by a worker: emptied when it succeeds,
@@ -602,6 +646,84 @@ impl App {
             } else {
                 self.finish_cut_paste();
             }
+        }
+    }
+
+    /// Copies that pastes still running have made so far go into the fence pasted into: a
+    /// route for each (it bypasses the rules) and a place in the selection to come. Called
+    /// before a desktop sync, so a copy never shows in the fence the rules would pick, and
+    /// when the paste `done` has finished, which forgets that paste.
+    pub(super) fn claim_pasted_duplicates(&mut self, done: Option<u64>) {
+        let mut dups = std::mem::take(&mut self.paste_dups);
+        for d in &mut dups {
+            let landed = pasted_duplicates(&d.known, &dir_entries(&d.dir), &d.sources);
+            if landed.is_empty() {
+                continue;
+            }
+            let fence = d.fence;
+            let virtual_fence = self.state.portal_path(fence).is_none();
+            tracing::info!(%fence, copies = landed.len(), virtual_fence, "pasted copies found");
+            for path in landed {
+                d.known.insert(path.clone());
+                if virtual_fence && !self.pending_routes.iter().any(|r| r.path == path) {
+                    self.pending_routes.push(PendingRoute {
+                        fence,
+                        path: path.clone(),
+                        since: Instant::now(),
+                        rename: false,
+                    });
+                }
+                if let Some(p) = self.pasted.as_mut().filter(|p| p.fence == fence) {
+                    p.paths.push(path);
+                }
+            }
+        }
+        if let Some(serial) = done {
+            dups.retain(|d| d.serial != serial);
+        }
+        self.paste_dups = dups;
+    }
+
+    /// Selects what the last paste put into its fence, as far as it shows there by now, with
+    /// the first of them as the keyboard cursor (Explorer selects what it pasted). Runs again
+    /// when more of it has arrived; forgotten once everything is selected or it took too long.
+    pub(super) fn select_pasted(&mut self) {
+        let Some(p) = self.pasted.as_ref() else {
+            return;
+        };
+        let fence = p.fence;
+        let copying = self.paste_dups.iter().any(|d| d.fence == fence);
+        let keys: Vec<ItemKey> = p
+            .paths
+            .iter()
+            .map(|path| ItemKey::from_path(&path.to_string_lossy()))
+            .collect();
+        let ids: Vec<ItemId> = self
+            .state
+            .fence(fence)
+            .map(|f| {
+                self.state
+                    .items_of(f)
+                    .into_iter()
+                    .filter(|it| keys.contains(&it.key))
+                    .map(|it| it.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut selected = p.selected;
+        if ids.len() > selected
+            && let Some(w) = self.window_for(fence)
+            && w.active_fence() == fence
+        {
+            selected = w.select_items(&ids);
+            tracing::debug!(%fence, pasted = keys.len(), arrived = ids.len(), selected, "pasted files selected");
+        }
+        let expired =
+            self.fileops_running == 0 && p.since.elapsed().as_secs() > PENDING_CREATION_SECS;
+        if (!copying && selected >= keys.len()) || expired {
+            self.pasted = None;
+        } else if let Some(p) = self.pasted.as_mut() {
+            p.selected = selected;
         }
     }
 
@@ -779,6 +901,53 @@ impl App {
         }
         moved
     }
+}
+
+/// The entries directly in `dir` (before and after a paste that copies within it).
+fn dir_entries(dir: &Path) -> HashSet<PathBuf> {
+    std::fs::read_dir(dir)
+        .map(|rd| rd.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default()
+}
+
+/// The copies a paste of `sources` has made in their own folder so far: the entries of `now`
+/// that `known` does not hold and whose name is a source's name with a space and more added
+/// to its stem ("报告 - 副本.txt", "报告 - Copy (2).txt" for 报告.txt) or, as for a folder, to
+/// the whole name ("v1.2 - Copy"), so a file another program puts into the folder meanwhile
+/// is not taken for one. Sorted by path.
+pub(super) fn pasted_duplicates(
+    known: &HashSet<PathBuf>,
+    now: &HashSet<PathBuf>,
+    sources: &[PathBuf],
+) -> Vec<PathBuf> {
+    let lower = |s: Option<&std::ffi::OsStr>| s.map(|s| s.to_string_lossy().to_lowercase());
+    // Per source: its name and its stem, each with the space a copy's name goes on with, and
+    // its extension.
+    let names: Vec<(String, String, Option<String>)> = sources
+        .iter()
+        .filter_map(|p| {
+            Some((
+                lower(p.file_name())? + " ",
+                lower(p.file_stem())? + " ",
+                lower(p.extension()),
+            ))
+        })
+        .collect();
+    let mut copies: Vec<PathBuf> = now
+        .difference(known)
+        .filter(|p| {
+            let (Some(name), Some(stem)) = (lower(p.file_name()), lower(p.file_stem())) else {
+                return false;
+            };
+            let ext = lower(p.extension());
+            names.iter().any(|(full, s, e)| {
+                name.starts_with(full.as_str()) || (*e == ext && stem.starts_with(s.as_str()))
+            })
+        })
+        .cloned()
+        .collect();
+    copies.sort();
+    copies
 }
 
 /// The folder that double-clicking the item at `path` opens: the item itself, or the folder a

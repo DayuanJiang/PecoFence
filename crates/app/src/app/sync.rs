@@ -257,6 +257,9 @@ impl App {
                 }
             }
         }
+        // Copies a paste is still making go into the fence pasted into, before the sync below
+        // would file them by the rules.
+        self.claim_pasted_duplicates(None);
         // Pair RENAMED_OLD/RENAMED_NEW so the item keeps its fence membership.
         let mut pending_old: Option<PathBuf> = None;
         let mut renamed = 0usize;
@@ -353,6 +356,8 @@ impl App {
             );
             self.schedule_save();
         }
+        // Files of a paste that this batch brought in are selected in their fence.
+        self.select_pasted();
         self.push_workspace_summary();
         // A folder shown in a fence that this batch took away is looked for from now on.
         self.arm_portal_back_check();

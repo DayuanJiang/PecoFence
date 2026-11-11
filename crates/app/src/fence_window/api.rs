@@ -2190,6 +2190,34 @@ impl FenceWindow {
         handler::focus_session(&self.view, self.hwnd());
     }
 
+    /// Selects exactly the icons of `items` that are shown (what a paste just put here, as
+    /// Explorer selects what it pasted): the first of them becomes the keyboard cursor and is
+    /// scrolled into view. Returns how many are selected.
+    pub fn select_items(&self, items: &[ItemId]) -> usize {
+        let mut count = 0;
+        self.with_view(|v| {
+            let found: Vec<usize> = v
+                .items
+                .iter()
+                .enumerate()
+                .filter(|(_, it)| items.contains(&it.id))
+                .map(|(i, _)| i)
+                .collect();
+            count = found.len();
+            let Some(&first) = found.first() else {
+                return;
+            };
+            v.selected = found.into_iter().collect();
+            v.anchor_index = Some(first);
+            v.range_anchor = Some(first);
+            if !v.rolled_up {
+                v.scroll_into_view(first, true);
+                let _ = v.redraw_content();
+            }
+        });
+        count
+    }
+
     /// A press on the desktop or in another fence: the items lose their selection, as icons
     /// on the Windows desktop do.
     pub fn end_item_selection(&self) {

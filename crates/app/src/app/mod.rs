@@ -249,6 +249,30 @@ struct PendingRoute {
     rename: bool,
 }
 
+/// Runtime-only: a paste that copies files within the folder they already live in
+/// (`FileOpThen::Duplicate`). Only the shell knows the copies' names ("xxx - 副本"), so they
+/// are found as the folder's new entries (`claim_pasted_duplicates`).
+struct PasteDup {
+    /// The file operation making the copies.
+    serial: u64,
+    fence: FenceId,
+    dir: PathBuf,
+    /// The folder's entries when the paste started, plus the copies already claimed.
+    known: HashSet<PathBuf>,
+    /// The files being copied.
+    sources: Vec<PathBuf>,
+}
+
+/// Runtime-only: the files the last paste put, or is still putting, into `fence`. They are
+/// selected there once they show, as Explorer selects what it pasted (`select_pasted`).
+struct Pasted {
+    fence: FenceId,
+    paths: Vec<PathBuf>,
+    /// How many of them the last `select_pasted` selected.
+    selected: usize,
+    since: Instant,
+}
+
 pub struct Args {
     pub light: bool,
     pub dark: bool,
@@ -391,6 +415,10 @@ pub struct App {
     /// within `SHELL_DROP_CLAIM_SECS` that adds shortcuts puts them into it (the shell writes
     /// some after `Drop` returned), see `on_fs_changed`.
     shell_drop_claim: Option<(FenceId, Instant)>,
+    /// Pastes still copying files within their own folder, see `PasteDup`.
+    paste_dups: Vec<PasteDup>,
+    /// What the last paste put into its fence, until it is selected there, see `Pasted`.
+    pasted: Option<Pasted>,
     /// Previous frame's timestamp while an animation runs (frame-gap diagnostics).
     frame_prev: Option<Instant>,
     /// Cadence statistics of the animation run in progress.
@@ -1748,6 +1776,8 @@ impl App {
             wallpaper_override: args.wallpaper_override.clone(),
             pending_routes: Vec::new(),
             shell_drop_claim: None,
+            paste_dups: Vec::new(),
+            pasted: None,
             frame_prev: None,
             desktop_arrange_after_frames: false,
             frame_run: FrameRun::default(),

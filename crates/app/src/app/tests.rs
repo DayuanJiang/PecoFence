@@ -1,4 +1,51 @@
 use super::dnd::url_shortcut_base_name;
+use super::items::pasted_duplicates;
+use std::collections::HashSet;
+use std::path::PathBuf;
+
+/// A paste that copies files within their own folder: only the new entries named after a
+/// copied file count as its copies, whatever language Explorer names them in.
+#[test]
+fn pasted_copies_are_the_new_entries_named_after_a_source() {
+    let set = |names: &[&str]| -> HashSet<PathBuf> {
+        names
+            .iter()
+            .map(|n| PathBuf::from(format!(r"C:\Users\me\Desktop\{n}")))
+            .collect()
+    };
+    let known = set(&["报告.txt", "Photos", "v1.2", "notes.md", "报告 - 副本.txt"]);
+    let sources: Vec<PathBuf> = set(&["报告.txt", "Photos", "v1.2"]).into_iter().collect();
+    let now = set(&[
+        "报告.txt",
+        "Photos",
+        "v1.2",
+        "notes.md",
+        "报告 - 副本.txt",
+        // The copies: another copy of the file (Explorer numbers it) and the folders' copies
+        // (a folder's copy has the words after its whole name).
+        "报告 - 副本 (2).TXT",
+        "Photos - Copy",
+        "v1.2 - Copy",
+        // Not copies: another program's download, another type, names that only start alike.
+        "download.zip",
+        "报告 - 副本.docx",
+        "报告单.txt",
+        "notes - Copy.md",
+    ]);
+    let copies = pasted_duplicates(&known, &now, &sources);
+    let names: Vec<String> = copies
+        .iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(
+        names,
+        ["Photos - Copy", "v1.2 - Copy", "报告 - 副本 (2).TXT"]
+    );
+    // Claimed once: entries already known are not reported again.
+    let mut known = known;
+    known.extend(copies);
+    assert!(pasted_duplicates(&known, &now, &sources).is_empty());
+}
 
 #[test]
 fn url_shortcut_names_prefer_the_browser_title() {

@@ -185,9 +185,14 @@ impl App {
             .lock()
             .map(|mut d| d.drain(..).collect())
             .unwrap_or_default();
+        let any = !done.is_empty();
         for (serial, then, result) in done {
             self.fileops_running = self.fileops_running.saturating_sub(1);
             self.on_fileop_done(serial, then, result);
+        }
+        if any {
+            // A paste's files may be in their fence now.
+            self.select_pasted();
         }
     }
 
@@ -285,6 +290,19 @@ impl App {
                             "粘贴失败：{0}",
                             std::slice::from_ref(e),
                         ));
+                    }
+                }
+                // The copies made (also by a paste cancelled halfway) go into the fence pasted
+                // into: routes for the desktop ones, taken at once so they never show where
+                // the rules would put them.
+                let routes = self.pending_routes.len();
+                self.claim_pasted_duplicates(Some(serial));
+                if self.pending_routes.len() > routes {
+                    let report = self.sync_desktop_if_available("paste");
+                    self.route_pending_creation();
+                    if report.changed() {
+                        self.refresh_all();
+                        self.schedule_save();
                     }
                 }
                 self.refresh_portals();
