@@ -156,6 +156,7 @@ impl FenceWindow {
             search: None,
             search_dim: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             search_expanded: false,
+            search_scroll: None,
             drop_wash: Tween::at(0.0, Instant::now()),
             caret_alpha: Tween::at(0.0, Instant::now()),
             caret_shown: None,
@@ -977,12 +978,42 @@ impl FenceWindow {
                 v.search_expanded = false;
                 v.resume_peek_close();
             }
+            if v.search.is_none()
+                && let Some((tab, from, put)) = v.search_scroll.take()
+            {
+                // The search is over: back to where the fence was. Not when another tab shows
+                // now (its own offset came back with it) or the user scrolled meanwhile.
+                let offset = v.scroll_target();
+                let back = tab == v.active && (offset - put).abs() < 0.5;
+                tracing::debug!(
+                    fence = %v.active,
+                    from,
+                    put,
+                    offset,
+                    back,
+                    "peek search ended: a fence it scrolled goes back to where it was, or keeps the user's place"
+                );
+                if back {
+                    v.scroll_to(from, motion::SLOW);
+                }
+            }
             if v.rolled_up {
                 return;
             }
             let current = current.and_then(|id| v.items.iter().position(|it| it.id == id));
             if let Some(i) = current {
+                let before = v.scroll_target();
                 v.scroll_into_view(i, true);
+                let put = v.scroll_target();
+                if put != before {
+                    // The offset to go back to is the one from before the search's first
+                    // scroll of this tab.
+                    let from = match v.search_scroll {
+                        Some((tab, from, _)) if tab == v.active => from,
+                        _ => before,
+                    };
+                    v.search_scroll = Some((v.active, from, put));
+                }
             }
             v.tip_keyboard_focus(current);
             let _ = v.redraw_content();

@@ -5,6 +5,8 @@
 #   P  work per animation frame with 60 and with 6000 files (numbers into the job log)
 #   F  the fills of the icon under the pointer and of selected icons show, go and are there
 #      for icons that scroll into view (the per-frame sync touches only the icons that are on)
+#   N  a Peek search scrolls a fence to its match; when it ends the fence goes back to where
+#      it was, unless the user scrolled it during the search
 #   R  recordings of the wheel for a before/after animation (no checks)
 # The scroll offset is read from the app itself: the test script logs a `dump` on every timer
 # tick (`pace 10`), each with the fence's `scroll=`; a frame is 16.7 ms, a tick 10 to 16 ms.
@@ -344,6 +346,64 @@ function PartF() {
   PfQuit
 }
 
+# A Peek search for $text (the desktop in front first), and the end of it.
+function PsSearch($text) {
+  DeskClick | Out-Null
+  PeekKey; Start-Sleep -Milliseconds 800
+  [G]::Type($text); Start-Sleep -Milliseconds 1200
+}
+function PsEndSearch() {
+  for ($i = 0; $i -lt 3 -and [M]::BoxText() -ne $null; $i++) { [G]::Press(0x1B); Start-Sleep -Milliseconds 400 }
+  Start-Sleep -Milliseconds 800
+}
+
+# A Peek search scrolls a fence to its match; when the search ends the fence goes back to where
+# it was (as the tabs it switched and the fences it expanded do), unless the user scrolled it.
+function PartN() {
+  trap { PfTrap $_; continue }
+  PfStart -Script (PsDumpScript 9000 120) -Lang 'zh-CN'
+  $r = PsFence 60
+  $cx = $r.x + 140; $cy = $r.y + 180
+  [G]::MoveTo($cx, $cy); Start-Sleep -Milliseconds 300
+  [CW]::Wheel(-1); Start-Sleep -Milliseconds 3000
+  $from = PsNow
+  Start-Sleep -Milliseconds 300
+  $row = PsEnd (PsSamples $PsTitle $from)
+  Check 'N the fence rests one row down before the search' ($row -ge 60 -and $row -le 140) "offset $row"
+
+  Case 'N1 the search ends: back to where the fence was'
+  PsSearch 'ps0058'
+  $box = [M]::BoxText()
+  $found = PsEnd (PsSamples $PsTitle $from)
+  PsEndSearch
+  $after = PsEnd (PsSamples $PsTitle $from)
+  Log "N1 box='$box' offset during the search $found, after it $after"
+  Check 'N1 the search scrolled the fence to its match' ($box -eq 'ps0058' -and $found -gt 5 * $row) "box='$box' offset $found"
+  Check 'N1 after the search the fence is back where it was' ($after -eq $row) "offset $after, before the search $row"
+
+  Case 'N2 the user scrolled during the search: that place stays'
+  PsSearch 'ps0058'
+  [G]::MoveTo($cx, $cy); Start-Sleep -Milliseconds 200
+  [CW]::Wheel(2); Start-Sleep -Milliseconds 700
+  $moved = PsEnd (PsSamples $PsTitle $from)
+  PsEndSearch
+  $kept = PsEnd (PsSamples $PsTitle $from)
+  Log "N2 offset after two notches up during the search $moved, after the search $kept"
+  Check 'N2 the wheel moved the fence during the search' ($moved -eq $found - 2 * $row) "offset $moved"
+  Check 'N2 the fence keeps the place the user scrolled to' ($kept -eq $moved) "offset $kept"
+
+  Case 'N3 the next search goes back to the place the user chose'
+  PsSearch 'ps0046'
+  $third = PsEnd (PsSamples $PsTitle $from)
+  PsEndSearch
+  $still = PsEnd (PsSamples $PsTitle $from)
+  Log "N3 offset during the third search $third, after it $still"
+  Check 'N3 the search scrolled the fence again' ($third -ne $kept) "offset $third"
+  Check 'N3 after it the fence is back at the place the user scrolled to' ($still -eq $kept) "offset $still, before the search $kept"
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 500
+  PfQuit
+}
+
 function PartR() {
   trap { PfTrap $_; continue }
   . C:\pf\kit\rec.ps1
@@ -374,6 +434,7 @@ $PsTitle = '很多文件'
 if ($Part -match 'W') { PartW }
 if ($Part -match 'P') { PartP }
 if ($Part -match 'F') { PartF }
+if ($Part -match 'N') { PartN }
 if ($Part -match 'R') { PartR }
 Case 'cleanup'
 [Anim]::Set($AnimWas)
