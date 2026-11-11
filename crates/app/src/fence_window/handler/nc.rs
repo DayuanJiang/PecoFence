@@ -689,6 +689,7 @@ pub(super) fn on_entersizemove(
         ..
     } = h;
     in_size_move.set(true);
+    TITLE_MIN_LOGGED.set(false);
     // The user owns the rect now: an auto-height settle must not fight it.
     if let Ok(mut guard) = view.try_borrow_mut()
         && let Some(v) = guard.as_mut()
@@ -887,6 +888,12 @@ pub(super) fn on_syscommand(
     None
 }
 
+thread_local! {
+    /// The size loop in progress has logged that the title's minimum width holds the edge
+    /// (WM_SIZING comes with every mouse move).
+    static TITLE_MIN_LOGGED: Cell<bool> = const { Cell::new(false) };
+}
+
 pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize) -> Option<isize> {
     let HandlerCtx { view, behavior, .. } = h;
     // 「调整大小时按整行整列对齐」 (snapping.sizeToCells, Fences' "sized to even multiples of
@@ -928,6 +935,19 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
             )
         }
     };
+    // A single title keeps room for the start of the name (two characters, the ellipsis and
+    // the chevron): at one icon column wide the title row showed only 「…」. A tab strip
+    // scrolls and a left tab column has its own width.
+    let title_min = if v.title_row_strip() || v.tabs_on_rail() {
+        0
+    } else {
+        (v.chrome
+            .lone_title_min_width(&v.title, v.style.title_size, v.deco)
+            * scale)
+            .ceil() as i32
+    };
+    let columns_min = min_w;
+    let min_w = min_w.max(title_min);
     // "按时间分组" interleaves header bands with the rows: no whole-row rhythm to keep.
     let grouped = v.group_by_date && {
         let (cw, _) = v.content_size_px();
@@ -945,6 +965,17 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
     drop(guard);
     // SAFETY: lParam is the RECT* being sized for this message.
     let rect = unsafe { &mut *(lparam as *mut RECT) };
+    // Once per size loop: the title's minimum, not the icon column's, holds the edge.
+    let asked_w = rect.right - rect.left;
+    if title_min > columns_min && asked_w < title_min && !TITLE_MIN_LOGGED.replace(true) {
+        tracing::debug!(
+            fence = %h.fence_id,
+            asked_w,
+            columns_min,
+            title_min,
+            "sizing: the width stops where the title still shows the start of its name"
+        );
+    }
     let others = if behavior.snapping.get() {
         other_fence_rects(hwnd)
     } else {

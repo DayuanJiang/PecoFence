@@ -2402,6 +2402,23 @@ impl FenceChrome {
         (aligned_x(align, width, start, end, unit_w), fitted, title_w)
     }
 
+    /// The narrowest title row (DIPs) in which a single `title` still shows its first two
+    /// characters before the ellipsis (the whole title when it is no longer than three), after
+    /// its glyphs and before the chevron's room. A fence sized narrower than this showed only
+    /// 「…」 for a name.
+    pub fn lone_title_min_width(&self, title: &str, size: u8, deco: TitleDeco) -> f32 {
+        let shown: String = if title.chars().count() > 3 {
+            title.chars().take(2).chain(std::iter::once('…')).collect()
+        } else {
+            title.to_string()
+        };
+        // One DIP of slack: the fit compares the measured width with the room it is given.
+        deco.title_x()
+            + crate::text::measure_width(&shown, &self.title_format(size)).ceil()
+            + 1.0
+            + TITLE_RIGHT_RESERVE
+    }
+
     /// The up button of a single folder title inside a subfolder: the square around its folder
     /// glyph, which moves with the title's alignment. The app hit-tests the same box.
     #[allow(clippy::too_many_arguments)]
@@ -4680,6 +4697,39 @@ mod tests {
             with_capsule.rect.left >= TAG_LEFT_LIMIT && !with_capsule.kind,
             "{with_capsule:?}"
         );
+    }
+
+    /// At the minimum width a fence may be sized to, the title shows the start of its name:
+    /// two characters and the ellipsis, never the ellipsis alone; a narrower row loses them.
+    #[test]
+    fn the_narrowest_title_row_still_shows_two_characters() {
+        use pecofence_core::TitleAlign::Left;
+        let chrome = FenceChrome::new().unwrap();
+        for (title, deco) in [
+            ("Files and documents", TitleDeco::default()),
+            ("学习资料与工作文档", TitleDeco::default()),
+            (
+                "下载的文件夹",
+                TitleDeco {
+                    folder_icon: true,
+                    ..TitleDeco::default()
+                },
+            ),
+        ] {
+            let w = chrome.lone_title_min_width(title, 1, deco);
+            let (_, fitted, _) = chrome.lone_title_place(title, None, None, 1, Left, w, deco, 0.0);
+            let start: String = title.chars().take(2).collect();
+            assert_eq!(fitted, format!("{start}…"), "{title} at {w}");
+            let (_, cut, _) =
+                chrome.lone_title_place(title, None, None, 1, Left, w - 8.0, deco, 0.0);
+            assert!(cut.chars().count() < 3, "{title} at {}: {cut}", w - 8.0);
+        }
+        // A short name needs only its own width.
+        let w = chrome.lone_title_min_width("工作", 1, TitleDeco::default());
+        let (_, fitted, _) =
+            chrome.lone_title_place("工作", None, None, 1, Left, w, TitleDeco::default(), 0.0);
+        assert_eq!(fitted, "工作");
+        assert!(w < 16.0 + 40.0 + TITLE_RIGHT_RESERVE);
     }
 
     #[test]
