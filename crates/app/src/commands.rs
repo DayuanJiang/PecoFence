@@ -363,6 +363,14 @@ pub enum Command {
     ScriptRowClicked {
         fence: FenceId,
         row: usize,
+        /// The cell of a row of cells (0 for a plain row).
+        cell: usize,
+        /// Where a slider was pressed or dragged to, 0 to 1.
+        fraction: Option<f32>,
+        /// Sent while a slider is dragged: only a script that keeps running gets these.
+        dragging: bool,
+        /// The second click of a double-click: the row's `dblaction=` runs.
+        double: bool,
     },
     /// The note editor closed with this text.
     NoteEdited {

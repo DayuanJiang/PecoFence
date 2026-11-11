@@ -239,7 +239,13 @@ pub(super) fn on_lbuttondown(
             return Some(0);
         }
         if let Some(cmd) = v.note_press(x, y).or_else(|| v.script_press(x, y)) {
+            let capture = v.slider_drag.is_some() || v.script_pressed.is_some();
+            // The pressed look shows at once, before the script answers.
+            let _ = v.redraw_content();
             drop(guard);
+            if capture {
+                window::set_capture(hwnd);
+            }
             queue.push(cmd);
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
@@ -339,6 +345,25 @@ pub(super) fn on_lbuttonup(
     let fence_id = h.fence_id;
     let x = msg::lo_i16(lparam);
     let y = msg::hi_i16(lparam);
+    // A slider or button of a script fence let go: the slider's last position.
+    let slider_up = view
+        .borrow_mut()
+        .as_mut()
+        .filter(|v| v.slider_drag.is_some() || v.script_pressed.is_some())
+        .map(|v| {
+            v.script_pressed = None;
+            v.slider_drag_end(x as i32)
+        });
+    if let Some(cmd) = slider_up {
+        window::release_capture();
+        if let Some(cmd) = cmd {
+            queue.push(cmd);
+        }
+        if let Some(v) = view.borrow_mut().as_mut() {
+            let _ = v.redraw_content();
+        }
+        return Some(0);
+    }
     let release = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
     flush_window_drag(view, hwnd, Instant::now(), Some((release.x, release.y)));
     let remote = view.borrow_mut().as_mut().and_then(|v| {
@@ -575,6 +600,10 @@ pub(super) fn on_capturechanged(
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
         v.drag = None;
+        v.slider_drag = None;
+        if v.script_pressed.take().is_some() {
+            let _ = v.redraw_content();
+        }
         v.click_pending = None;
         v.rbutton_press = None;
         v.clear_pressed();
@@ -667,8 +696,21 @@ pub(super) fn on_lbuttondblclk(
             queue.push(cmd);
             return Some(0);
         }
-        // A script row acts once per double-click: a link opens one tab.
+        // A script row acts once per double-click (a link opens one tab), unless it has a
+        // `dblaction=`; a button or slider of a row of cells is pressed again.
         if v.script_row_at(x, y).is_some() {
+            let cmd = v.script_double_click(x, y);
+            let capture = v.slider_drag.is_some() || v.script_pressed.is_some();
+            if cmd.is_some() {
+                let _ = v.redraw_content();
+            }
+            drop(guard);
+            if capture {
+                window::set_capture(hwnd);
+            }
+            if let Some(cmd) = cmd {
+                queue.push(cmd);
+            }
             return Some(0);
         }
         // The folder glyph at a portal's root opens Explorer once per double-click.
@@ -955,17 +997,18 @@ pub(super) fn on_mousewheel(
         // and are applied 1:1 on the next frame with no glide, like
         // DirectManipulation tracking the fingers; easing each ~5 DIP
         // message would leave the content a glide behind the finger.
-        let (layout, view_h) = v.scroll_extent();
+        let dims = v.scroll_dims();
         let step = wheel_step_dip(
             behavior.wheel_lines.get(),
             delta as f32 / msg::WHEEL_DELTA as f32,
-            layout.row_step(),
-            view_h,
-            matches!(layout, ItemLayout::Grid(_)),
+            dims.row_step,
+            dims.view_h,
+            dims.grid,
         );
         if step == 0.0 {
             return Some(0);
         }
+        v.note_user_scroll();
         let cap = if delta.abs() < msg::WHEEL_DELTA {
             Duration::ZERO
         } else {

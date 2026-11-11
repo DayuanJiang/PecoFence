@@ -1,5 +1,6 @@
 //! Popup menus (tray, item, fence, details header) and their command ids.
 
+use super::tools::TOOL_MENU_ENTRIES;
 use super::*;
 use crate::layout::ICON_SIZE_PRESETS;
 
@@ -16,7 +17,8 @@ const CMD_PEEK: u32 = 10;
 const CMD_WINDOWS_DESKTOP: u32 = 15;
 /// 新建便签 (tray menu; only while 小工具 is on).
 const CMD_NEW_NOTE: u32 = 16;
-/// The tray's 新建小工具 submenu: 20..=24 (see `App::new_tool_submenu`).
+/// The tray's 新建小工具 submenu: 20 and the `TOOL_MENU_ENTRIES` - 1 ids after it (see
+/// `App::new_tool_submenu`).
 const CMD_NEW_TOOL: u32 = 20;
 /// Tray 「在桌面显示文件夹」 entries: 11..=14 (see `App::show_folder_submenu`).
 const CMD_SHOW_FOLDER: u32 = 11;
@@ -56,10 +58,15 @@ const CMD_FENCE_NEW_NOTE: u32 = 307;
 const CMD_FENCE_EDIT_NOTE: u32 = 308;
 /// 显示秒 in a clock's fence menu.
 const CMD_FENCE_CLOCK_SECONDS: u32 = 515;
-/// The fence menu's 新建小工具 submenu: 520..=524.
+/// The fence menu's 新建小工具 submenu: 520 and the `TOOL_MENU_ENTRIES` - 1 ids after it.
 const CMD_FENCE_NEW_TOOL: u32 = 520;
 /// The fence menu's 新建智能栅栏… (the editor for a new fence) and a smart fence's 编辑条件….
 const CMD_FENCE_NEW_SMART: u32 = 530;
+// Each 新建小工具 submenu (a script example more is an id more) stays clear of the next command.
+const _: () = assert!(
+    CMD_NEW_TOOL + TOOL_MENU_ENTRIES <= CMD_NEW_SMART
+        && CMD_FENCE_NEW_TOOL + TOOL_MENU_ENTRIES <= CMD_FENCE_NEW_SMART
+);
 const CMD_FENCE_SMART_EDIT: u32 = 546;
 /// 筛选… / 清除筛选 in the menu of a folder fence or a smart fence.
 const CMD_FENCE_FILTER: u32 = 540;
@@ -344,7 +351,7 @@ impl App {
             CMD_PEEK => self.queue.push(Command::TogglePeek),
             CMD_NEW_FENCE => self.queue.push(Command::NewFence { x, y: y - 300 }),
             CMD_NEW_NOTE => self.queue.push(Command::NewNote { x, y: y - 300 }),
-            c if (CMD_NEW_TOOL..CMD_NEW_TOOL + 5).contains(&c) => {
+            c if (CMD_NEW_TOOL..CMD_NEW_TOOL + TOOL_MENU_ENTRIES).contains(&c) => {
                 self.new_tool_command(c - CMD_NEW_TOOL, x, y - 300)
             }
             c if (CMD_SHOW_FOLDER..CMD_SHOW_FOLDER + 4).contains(&c) => {
@@ -1440,7 +1447,7 @@ impl App {
                 self.create_fence_with_rename(rect);
             }
             CMD_FENCE_NEW_NOTE => self.queue.push(Command::NewNote { x, y }),
-            c if (CMD_FENCE_NEW_TOOL..CMD_FENCE_NEW_TOOL + 5).contains(&c) => {
+            c if (CMD_FENCE_NEW_TOOL..CMD_FENCE_NEW_TOOL + TOOL_MENU_ENTRIES).contains(&c) => {
                 self.new_tool_command(c - CMD_FENCE_NEW_TOOL, x, y)
             }
             CMD_FENCE_CLOCK_SECONDS => {

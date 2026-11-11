@@ -832,21 +832,243 @@ impl FenceViewState {
         });
     }
 
-    /// 脚本栅栏: the script's output lines and the footer in place of items.
+    /// 脚本栅栏: the key of the decoded picture of an `image=` row, decoding the file when it is
+    /// new (or changed): at most as tall as `height_dip` and, to keep memory small, no bigger
+    /// than twice that on screen. The last few pictures are kept.
+    fn script_image_key(&mut self, path: &str, height_dip: f32, scale: f32) -> String {
+        const KEPT: usize = 3;
+        let bound = ((height_dip * scale).ceil() as u32 * 2).clamp(64, 1024);
+        let stamp = std::fs::metadata(path)
+            .ok()
+            .and_then(|m| Some((m.modified().ok()?, m.len())))
+            .and_then(|(t, len)| {
+                Some((t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs(), len))
+            })
+            .unwrap_or_default();
+        let key = format!("scriptimg:{path}|{}|{}|{bound}", stamp.0, stamp.1);
+        if self.script_images.iter().any(|(k, _)| *k == key) {
+            return key;
+        }
+        let decoded =
+            pecofence_platform::wallpaper::decode_scaled(std::path::Path::new(path), bound, bound)
+                .map(|d| Image {
+                    width: d.width,
+                    height: d.height,
+                    bgra: d.bgra,
+                })
+                .map_err(|e| tracing::warn!(error = %e, path, "script fence picture not decoded"))
+                .ok();
+        self.script_images.push((key.clone(), decoded));
+        while self.script_images.len() > KEPT {
+            let (old, _) = self.script_images.remove(0);
+            self.bitmaps.borrow_mut().remove(&old);
+        }
+        key
+    }
+
+    /// 脚本栅栏: the script's output lines and the footer in place of items, scrolled as the
+    /// view's offset says. A second drawing follows when the first one had to move the offset
+    /// (the rows shrank under it, a followed line went to its place at once).
     pub(super) fn redraw_script(&mut self) -> Result<()> {
-        let Some(script) = self.script.clone() else {
-            return Ok(());
+        for _ in 0..2 {
+            let Some((band, follow)) = self.draw_script_rows()? else {
+                return Ok(());
+            };
+            if !self.settle_script_scroll(band, follow) {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// 脚本栅栏: what a drawing of the rows leaves to do about the offset. The offset the rows
+    /// outgrew goes back inside them, and a followed row (`follow=`) whose key changed is
+    /// brought to the middle of the band: by a glide, at once when the pane is a new one, and
+    /// not at all while the user's own scrolling is recent. True when the offset moved at once.
+    fn settle_script_scroll(
+        &mut self,
+        band: pecofence_render::fence_chrome::ScriptBand,
+        follow: Option<(f32, f32)>,
+    ) -> bool {
+        let max = (band.content - band.height).max(0.0);
+        let mut moved = false;
+        if self.scroll_y > max + 0.01 {
+            self.scroll_anim = None;
+            self.scroll_y = max;
+            moved = true;
+        }
+        let key = self
+            .script
+            .as_ref()
+            .and_then(|s| s.rows.iter().find_map(|r| r.follow.clone()));
+        if key == self.script_scroll.follow {
+            return moved;
+        }
+        self.script_scroll.follow = key.clone();
+        let (Some(_), Some((top, height))) = (key, follow) else {
+            return moved;
         };
-        use pecofence_render::fence_chrome::ScriptRowDraw;
+        let target = (top + height / 2.0 - band.height / 2.0).clamp(0.0, max);
+        if std::mem::take(&mut self.script_scroll.follow_now) {
+            let target = snap_offset(target, self.scale()).clamp(0.0, max);
+            self.scroll_anim = None;
+            if (target - self.scroll_y).abs() > 0.01 {
+                self.scroll_y = target;
+                moved = true;
+            }
+        } else if !self
+            .script_scroll
+            .user_at
+            .is_some_and(|at| at.elapsed() < SCRIPT_FOLLOW_PAUSE)
+        {
+            self.scroll_to_with(target, motion::SLOW, false);
+        }
+        moved
+    }
+
+    /// 脚本栅栏: draws the rows once. Returns the band that scrolls and the place of the
+    /// followed row in it (None: nothing was drawn).
+    fn draw_script_rows(
+        &mut self,
+    ) -> Result<
+        Option<(
+            pecofence_render::fence_chrome::ScriptBand,
+            Option<(f32, f32)>,
+        )>,
+    > {
+        let Some(script) = self.script.clone() else {
+            return Ok(None);
+        };
+        use pecofence_render::fence_chrome::{
+            ScriptBand, ScriptCellDraw, ScriptImageDraw, ScriptRowDraw, ScriptScroll,
+            ScriptVideoDraw, ScrollbarDraw,
+        };
+        // Another page of a list, another tab: the rows go back to their top.
+        let pane = script.rows.iter().find_map(|r| r.pane.clone());
+        if pane != self.script_scroll.pane {
+            self.script_scroll.pane = pane;
+            self.script_scroll.follow = None;
+            self.script_scroll.follow_now = true;
+            self.script_scroll.user_at = None;
+            self.scroll_anim = None;
+            self.scroll_y = 0.0;
+        }
+        let pinned_rows = script
+            .rows
+            .iter()
+            .position(|r| r.pane.is_some())
+            .unwrap_or(0);
+        let follow_row = script
+            .rows
+            .iter()
+            .position(|r| r.follow.is_some())
+            .map(|i| i + 1)
+            .filter(|&i| i < script.rows.len());
+        // The scrollbar, as the view's tweens have it now; its thumb is placed once the rows
+        // say how tall they are.
+        self.sync_scrollbar_alpha();
+        let now = Instant::now();
+        let (bar_alpha, bar_width, bar_parts) = (
+            self.sb_alpha.value_at(now),
+            self.sb_width.value_at(now),
+            self.sb_parts.value_at(now),
+        );
+        let arrow_hover = [
+            self.sb_arrow_fades.value(&ScrollHit::ArrowUp, now),
+            self.sb_arrow_fades.value(&ScrollHit::ArrowDown, now),
+        ];
+        let held = |h: ScrollHit| self.page_repeat == Some(h) && self.sb_pointer == Some(h);
+        let arrow_pressed = [held(ScrollHit::ArrowUp), held(ScrollHit::ArrowDown)];
+        let bar = move |band: ScriptBand| {
+            let max = (band.content - band.height).max(0.0);
+            if max <= 0.0 || bar_alpha <= 0.0 {
+                return None;
+            }
+            let (track_top, track_h) = scrollbar_track(band.top, band.height);
+            let thumb_h = scrollbar_thumb_h(track_h, band.height, band.content);
+            Some(ScrollbarDraw {
+                thumb_y: track_top + (track_h - thumb_h) * (band.offset.clamp(0.0, max) / max),
+                thumb_h,
+                width: bar_width,
+                alpha: bar_alpha,
+                parts: bar_parts,
+                band_top: band.top,
+                band_h: band.height,
+                arrow_hover,
+                arrow_pressed,
+            })
+        };
+        let scroll = ScriptScroll {
+            pinned_rows,
+            offset: self.scroll_y,
+            follow_row,
+            bar: &bar,
+        };
         let scale = self.scale();
+        // The pictures first: decoding changes `self`, and the rows then borrow what it decoded.
+        let image_keys: Vec<Option<String>> = script
+            .rows
+            .iter()
+            .map(|r| {
+                r.image
+                    .as_deref()
+                    .map(|path| self.script_image_key(path, r.image_height, scale))
+            })
+            .collect();
+        // The video's player stays borrowed for the whole draw: its picture is read from it.
+        let video_player = self.script_video.clone();
+        let video_guard = video_player.as_ref().map(|p| p.borrow());
         let theme = self
             .material_foreground()
             .with_label_color(self.behavior.label_color.get());
         let dark = matches!(theme.mode, pecofence_render::ThemeMode::Dark);
+        let color_of = |c: &Option<String>| {
+            c.as_deref()
+                .and_then(|c| pecofence_core::script_output::color_rgb(c, dark))
+                .map(|[cr, cg, cb]| ColorF::from_rgba8(cr, cg, cb, 0xFF))
+        };
+        let cells: Vec<Vec<ScriptCellDraw<'_>>> = script
+            .rows
+            .iter()
+            .map(|r| {
+                r.cells
+                    .iter()
+                    .map(|c| ScriptCellDraw {
+                        text: &c.text,
+                        color: color_of(&c.color),
+                        clickable: c.clickable,
+                        slider: c.slider,
+                        width: c.width,
+                        align: c.align,
+                        checked: c.checked,
+                        bold: c.bold,
+                        gap: c.gap,
+                        checkbox: c.checkbox,
+                    })
+                    .collect()
+            })
+            .collect();
         let rows: Vec<ScriptRowDraw<'_>> = script
             .rows
             .iter()
-            .map(|r| ScriptRowDraw {
+            .zip(&cells)
+            .zip(&image_keys)
+            .map(|((r, cells), key)| ScriptRowDraw {
+                cells,
+                image: key.as_deref().and_then(|key| {
+                    let (_, image) = self.script_images.iter().find(|(k, _)| k == key)?;
+                    Some(ScriptImageDraw {
+                        key,
+                        image: image.as_ref()?,
+                        height: r.image_height,
+                    })
+                }),
+                // One video row at most: the first one is the player's.
+                video: (r.video && first_video(&script.rows, r)).then(|| ScriptVideoDraw {
+                    frame: video_guard.as_ref().and_then(|p| p.frame()),
+                    height: r.image_height,
+                }),
+                hidden: r.hidden,
                 text: &r.text,
                 separator: r.separator,
                 todo: r.todo,
@@ -861,18 +1083,20 @@ impl FenceViewState {
             })
             .collect();
         let chrome = self.chrome.clone();
+        let bitmaps = self.bitmaps.clone();
         let hint = if script.quiet {
             ""
         } else {
             pecofence_core::i18n::text("脚本没有输出文字")
         };
         let hover = self.script_hover;
+        let pressed = self.script_pressed;
         let text_size = self.text_size;
-        let mut hits = Vec::new();
+        let mut drawn = None;
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
-                hits = chrome.draw_script(
+                drawn = Some(chrome.draw_script(
                     session,
                     &theme,
                     scale,
@@ -881,17 +1105,28 @@ impl FenceViewState {
                     text_size,
                     &rows,
                     hover,
+                    pressed,
+                    &bitmaps,
                     hint,
                     &script.footer,
-                )?;
+                    &scroll,
+                )?);
                 Ok(())
             })?;
         self.note_draw_result(ok);
-        self.script_rows = hits
+        let Some(drawn) = drawn else {
+            return Ok(None);
+        };
+        self.script_rows = drawn
+            .hits
             .into_iter()
-            .map(|(row, r)| (row, [r.left, r.top, r.right, r.bottom]))
+            .map(|(row, cell, r)| (row, cell, [r.left, r.top, r.right, r.bottom]))
             .collect();
-        Ok(())
+        self.script_scroll.band_top = drawn.band.top;
+        self.script_scroll.band_h = drawn.band.height;
+        self.script_scroll.content_h = drawn.band.content;
+        self.script_scroll.row_step = drawn.row_step;
+        Ok(Some((drawn.band, drawn.follow)))
     }
 
     /// 便签与待办: the note's lines in place of items.
@@ -1370,6 +1605,14 @@ impl FenceViewState {
         self.note_content_fades(now);
         Ok(())
     }
+}
+
+/// Only the first `video=` row of a script's output shows the player's picture (the App plays
+/// that one).
+fn first_video(rows: &[ScriptRowView], row: &ScriptRowView) -> bool {
+    rows.iter()
+        .find(|r| r.video)
+        .is_some_and(|first| std::ptr::eq(first, row))
 }
 
 /// Localised caption of a "按时间分组" section (literal keys keep `check-locales.py` honest).

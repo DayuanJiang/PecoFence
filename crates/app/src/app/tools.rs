@@ -9,6 +9,10 @@ use pecofence_core::{FenceTool, ScriptSpec};
 use std::collections::HashMap;
 use std::time::Instant;
 
+/// The entries of 新建小工具 (tray and fence menus): 时钟, each script example, 用自己的脚本….
+/// The menus reserve this many command ids.
+pub(super) const TOOL_MENU_ENTRIES: u32 = 2 + crate::scripts::Example::ALL.len() as u32;
+
 /// 脚本栅栏 at run time (nothing of it is saved): each fence's last result and when it came,
 /// the fences whose script is running (with the script it runs), when each is next due, a
 /// click that came while its script ran, and the streaming scripts that keep running.
@@ -21,8 +25,17 @@ pub(super) struct ScriptRuns {
     pending: HashMap<FenceId, std::collections::VecDeque<Option<String>>>,
     /// Streaming scripts: the script, the start's number (a late end of an earlier start is
     /// not this one's) and the process.
-    streams: HashMap<FenceId, (String, u64, crate::scripts::Stream)>,
+    pub(super) streams: HashMap<FenceId, (String, u64, crate::scripts::Stream)>,
     next_stream: u64,
+    /// The native players of the fences' `video=` rows (`video.rs`).
+    pub(super) videos: HashMap<FenceId, super::video::ScriptVideo>,
+    /// The file of each fence's video that could not be started: not tried again until the
+    /// script's output changes the file or drops the row.
+    pub(super) video_refused: HashMap<FenceId, String>,
+    /// How often the video timer fires now (0: it is not armed).
+    pub(super) video_tick_ms: u32,
+    /// The media keys taken for a script fence (`media_keys.rs`).
+    pub(super) media: super::media_keys::MediaKeys,
     tx: std::sync::mpsc::Sender<ScriptMsg>,
     rx: std::sync::mpsc::Receiver<ScriptMsg>,
 }
@@ -47,6 +60,18 @@ enum ScriptMsg {
     Refresh(FenceId),
 }
 
+impl ScriptRuns {
+    /// Fence `id`'s last result and when it came.
+    pub(super) fn last_of(&self, id: FenceId) -> Option<&(Outcome, i64)> {
+        self.last.get(&id)
+    }
+
+    /// The fence's script printed something that shows (not an error or a timeout).
+    pub(super) fn has_output(&self, id: FenceId) -> bool {
+        matches!(self.last.get(&id), Some((Outcome::Done(_), _)))
+    }
+}
+
 impl Default for ScriptRuns {
     fn default() -> Self {
         let (tx, rx) = std::sync::mpsc::channel();
@@ -57,6 +82,10 @@ impl Default for ScriptRuns {
             pending: HashMap::new(),
             streams: HashMap::new(),
             next_stream: 0,
+            videos: HashMap::new(),
+            video_refused: HashMap::new(),
+            video_tick_ms: 0,
+            media: Default::default(),
             tx,
             rx,
         }
@@ -115,9 +144,13 @@ impl App {
         let default_title = match &tool {
             NewTool::Note(_) => pecofence_core::i18n::text("便签").to_string(),
             NewTool::Clock => pecofence_core::i18n::text("时钟").to_string(),
-            NewTool::Script(path) => std::path::Path::new(path)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
+            // The title the script asks for, else its file name.
+            NewTool::Script(path) => crate::scripts::title_of(std::path::Path::new(path))
+                .or_else(|| {
+                    std::path::Path::new(path)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                })
                 .unwrap_or_else(|| pecofence_core::i18n::text("脚本").to_string()),
         };
         let title = title
@@ -200,8 +233,8 @@ impl App {
         self.create_tool_fence(NewTool::Clock, None, None, x, y);
     }
 
-    /// 新建小工具 (tray and fence menu), command ids `base`..`base + 5`: 时钟 (while the
-    /// desktop has none), the script examples, then 用自己的脚本….
+    /// 新建小工具 (tray and fence menu), command ids `base`..`base + TOOL_MENU_ENTRIES`: 时钟 (while
+    /// the desktop has none), the script examples, then 用自己的脚本….
     pub(super) fn new_tool_submenu(&self, base: u32) -> PopupMenu {
         use crate::scripts::Example;
         let menu = PopupMenu::new();
@@ -252,6 +285,13 @@ impl App {
         w.set_note(self.state.note_text(shown).map(str::to_string));
         let seconds = self.state.config.settings.tools.clock_seconds;
         w.set_clock((tool == Some(FenceTool::Clock)).then_some(seconds));
+        w.set_script_video(
+            self.script_runs
+                .videos
+                .get(&shown)
+                .filter(|_| tool == Some(FenceTool::Script))
+                .map(|v| v.player().clone()),
+        );
         w.set_script((tool == Some(FenceTool::Script)).then(|| self.script_view(shown)));
     }
 
@@ -521,6 +561,7 @@ impl App {
                 "light"
             },
             fence: id.to_string(),
+            language: pecofence_core::i18n::language().tag(),
         }
     }
 
@@ -552,11 +593,28 @@ impl App {
                 tracing::info!(%id, tool_on = on, "script fence stream ended by PecoFence");
             }
         }
+        // A video lives while its fence is a script fence of the tools that are on.
+        let orphans: Vec<FenceId> = self
+            .script_runs
+            .videos
+            .keys()
+            .chain(self.script_runs.video_refused.keys())
+            .copied()
+            .filter(|id| self.video_orphaned(*id))
+            .collect();
+        for id in orphans {
+            self.drop_video(id);
+            self.script_runs.video_refused.remove(&id);
+        }
+        self.sync_media_keys();
     }
 
     /// Takes the finished script runs and the streaming scripts' blocks and shows them.
     pub(super) fn drain_scripts(&mut self) {
         let mut shown: Vec<FenceId> = Vec::new();
+        // The fences whose video row is looked at once the whole drain is in (a script's screen
+        // comes line by line, each a message).
+        let mut synced: Vec<FenceId> = Vec::new();
         while let Ok(msg) = self.script_runs.rx.try_recv() {
             match msg {
                 ScriptMsg::Ran {
@@ -585,6 +643,7 @@ impl App {
                     };
                     tracing::info!(%id, outcome = outcome.kind(), ms, lines, code, "script fence run ended");
                     self.script_runs.last.insert(id, (outcome, at));
+                    synced.push(id);
                     shown.push(id);
                     let next = self
                         .script_runs
@@ -613,10 +672,14 @@ impl App {
                     match event {
                         crate::scripts::StreamEvent::Block(text) => {
                             self.script_runs.last.insert(id, (Outcome::Done(text), at));
+                            synced.push(id);
                         }
                         crate::scripts::StreamEvent::Ended(outcome) => {
                             tracing::info!(%id, outcome = outcome.kind(), "script fence stream ended");
                             self.script_runs.streams.remove(&id);
+                            // Nobody drives the video any more: it stops with its script.
+                            self.drop_video(id);
+                            synced.retain(|f| *f != id);
                             let minutes = self
                                 .state
                                 .config
@@ -637,23 +700,54 @@ impl App {
                 ScriptMsg::Refresh(id) => self.refresh_script(id),
             }
         }
+        synced.sort();
+        synced.dedup();
+        for id in synced {
+            self.sync_video(id);
+        }
         shown.sort();
         shown.dedup();
         for id in shown {
             self.push_tool_view(self.state.host_of(id));
         }
+        self.sync_media_keys();
     }
 
-    /// A click on row `index` of script fence `fence`: what its parameters ask for.
-    pub(super) fn script_row_clicked(&mut self, fence: FenceId, index: usize) {
+    /// A click on row `index` of script fence `fence` (on its cell `cell` when the row is a row
+    /// of cells): what its parameters ask for. A slider's `fraction` (0 to 1) is added to its
+    /// action; `dragging` clicks (a slider held and moved) go to a script that keeps running
+    /// only.
+    pub(super) fn script_row_clicked(
+        &mut self,
+        fence: FenceId,
+        index: usize,
+        cell: usize,
+        fraction: Option<f32>,
+        dragging: bool,
+        double: bool,
+    ) {
         use pecofence_core::script_output::{RowAction, ScriptLine, parse};
         let Some((Outcome::Done(text), at)) = self.script_runs.last.get(&fence).cloned() else {
             return;
         };
-        let Some(ScriptLine::Row(row)) = parse(&text).into_iter().nth(index) else {
-            return;
+        let mut row = match parse(&text).into_iter().nth(index) {
+            Some(ScriptLine::Row(row)) => row,
+            Some(ScriptLine::Cells(cells)) => match cells.into_iter().nth(cell) {
+                Some(row) => row,
+                None => return,
+            },
+            _ => return,
         };
-        if !row.clickable() {
+        if double {
+            // The second click of a double-click runs the row's `dblaction=` and nothing else.
+            let Some(action) = row.dbl_action.take() else {
+                return;
+            };
+            row.action = Some(RowAction::Script(action));
+            row.refresh = false;
+            row.todo = None;
+        }
+        if !row.clickable() || (dragging && !self.script_runs.streams.contains_key(&fence)) {
             return;
         }
         let dir = self.state.config.scripts.get(&fence).and_then(|s| {
@@ -669,7 +763,11 @@ impl App {
             Some(RowAction::Script(_)) => "action",
             None => "refresh",
         };
-        tracing::info!(%fence, index, what = kind, refresh = row.refresh, "script row clicked");
+        if dragging {
+            tracing::debug!(%fence, index, cell, ?fraction, "script slider dragged");
+        } else {
+            tracing::info!(%fence, index, cell, what = kind, refresh = row.refresh, "script row clicked");
+        }
         let owner = self.window_for(fence).map(|w| w.hwnd());
         let mut refresh = row.refresh;
         match row.action {
@@ -728,10 +826,15 @@ impl App {
                 let copied = pecofence_platform::clipboard::set_text(self.control.hwnd(), &text);
                 tracing::info!(%fence, copied, "script row: text copied");
                 if let Some(w) = self.window_for(fence) {
-                    w.show_script_copy_result(index, copied);
+                    w.show_script_copy_result(index, cell, copied);
                 }
             }
             Some(RowAction::Script(action)) => {
+                // A slider hands its position over after the action: `seek:0.3700`.
+                let action = match (row.slider, fraction) {
+                    (Some(_), Some(f)) => format!("{action}:{f:.4}"),
+                    _ => action,
+                };
                 // A to-do ticks at once; the script's next output has the final say.
                 if row.todo.is_some()
                     && let Some(flipped) = pecofence_core::note::toggle(&text, index)
@@ -781,7 +884,8 @@ impl App {
     }
 
     /// 脚本栅栏 example `kind`: writes its script into the configuration's `scripts` folder
-    /// (kept when it is there already) and makes a fence for it.
+    /// (kept when it is there already: an unedited copy of an earlier version gets the current
+    /// one when it runs, see `scripts::update_old_example`) and makes a fence for it.
     pub(super) fn new_script_example_of(&mut self, kind: crate::scripts::Example, x: i32, y: i32) {
         let Some(dir) = self
             .state
@@ -798,8 +902,8 @@ impl App {
                 pecofence_core::i18n::Language::SimplifiedChinese
                     | pecofence_core::i18n::Language::TraditionalChinese
             );
-            let text = crate::scripts::example_file_text(kind, chinese);
-            let written = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, text));
+            let written = std::fs::create_dir_all(&dir)
+                .and_then(|_| crate::scripts::write_example(&path, kind, chinese));
             if let Err(e) = written {
                 tracing::warn!(error = %e, example = kind.name(), "writing the example failed");
                 return;
@@ -811,6 +915,8 @@ impl App {
             crate::scripts::Example::Weather => (280.0, 160.0),
             crate::scripts::Example::GitHub => (360.0, 300.0),
             crate::scripts::Example::Status => (280.0, 300.0),
+            // The player, with the picture of a video above its title.
+            crate::scripts::Example::MediaPlayer => (380.0, 680.0),
         };
         let rect = self.place_new_fence_dip(w, h, x, y, None);
         let script = NewTool::Script(path.to_string_lossy().to_string());

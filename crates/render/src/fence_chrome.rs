@@ -58,7 +58,11 @@ struct TitleFonts {
 /// arrow) that grow with them.
 struct ToolText {
     body: TextFormat,
+    /// The same, bold (a cell of a row of cells).
+    bold: TextFormat,
     glyph: TextFormat,
+    /// A button's icon glyph of a row of cells (Segoe Fluent Icons), from the left.
+    icon: TextFormat,
     /// The size over the normal 14 DIPs: check boxes, gaps and the arrow scale by it.
     k: f32,
 }
@@ -1835,6 +1839,7 @@ impl FenceChrome {
             let k = size / TOOL_TEXT_SIZES[1];
             Ok(ToolText {
                 body: Self::build_tool_format(font_text(), size, FontWeight::NORMAL, true)?,
+                bold: Self::build_tool_format(font_text(), size, FontWeight(700), true)?,
                 glyph: TextFormat::with_locale(
                     crate::theme::font_icons(),
                     12.0 * k,
@@ -1843,6 +1848,15 @@ impl FenceChrome {
                 )?
                 .with_alignment(TextAlignment::Center)
                 .with_paragraph_alignment(ParagraphAlignment::Center)
+                .with_word_wrapping(WordWrapping::NoWrap),
+                icon: TextFormat::with_locale(
+                    crate::theme::font_icons(),
+                    16.0 * k,
+                    FontWeight::NORMAL,
+                    locale,
+                )?
+                .with_alignment(TextAlignment::Leading)
+                .with_paragraph_alignment(ParagraphAlignment::Top)
                 .with_word_wrapping(WordWrapping::NoWrap),
                 k,
             })
@@ -3920,6 +3934,16 @@ const SCRIPT_ROW_PAD_Y: f32 = 3.0;
 const SCRIPT_SEPARATOR_H: f32 = 11.0;
 /// Room for the arrow of a row that opens something (at the normal text size).
 const SCRIPT_ARROW_W: f32 = 18.0;
+/// A button of a row of cells: its plate reaches this far past its glyph, and the next cell
+/// starts this far past the plate.
+const SCRIPT_CELL_PAD_X: f32 = 7.0;
+const SCRIPT_CELL_GAP: f32 = 2.0;
+/// A slider is never narrower than this.
+const SCRIPT_SLIDER_MIN_W: f32 = 48.0;
+/// A slider's thumb is `2 * SCRIPT_SLIDER_INSET` DIPs wide; its position 0 and 1 are this far
+/// from the ends of the slider's area, which is where a click turns into a position.
+pub const SCRIPT_SLIDER_INSET: f32 = 7.0;
+const SCRIPT_SLIDER_TRACK_H: f32 = 4.0;
 /// 时钟与日期 in a new clock (240 × 140 DIPs, so 104 DIPs under its title row): the time and
 /// date sizes in DIPs. A clock of another size scales them (`FenceChrome::clock_text_sizes`).
 const CLOCK_TIME_DIP: f32 = 40.0;
@@ -3942,6 +3966,106 @@ pub struct ScriptRowDraw<'a> {
     pub clickable: bool,
     /// A click opens a URL or file: an arrow on hover.
     pub opens: bool,
+    /// A row of cells side by side (a `::` line); the other fields are not used then.
+    pub cells: &'a [ScriptCellDraw<'a>],
+    /// A picture in place of text (an `image=` row).
+    pub image: Option<ScriptImageDraw<'a>>,
+    /// A playing video in place of text (a `video=` row).
+    pub video: Option<ScriptVideoDraw<'a>>,
+    /// `hidden=true`: not drawn, no room taken.
+    pub hidden: bool,
+}
+
+/// The video of a `video=` row: the latest picture its player has (none while it loads, or
+/// while the fence is hidden and nothing is taken) and the height it is drawn at most (DIPs).
+pub struct ScriptVideoDraw<'a> {
+    pub frame: Option<&'a pecofence_platform::video::VideoFrame>,
+    pub height: f32,
+}
+
+/// The picture of an `image=` row: its decoded pixels, their cache key and the height (DIPs) it
+/// is drawn at most.
+pub struct ScriptImageDraw<'a> {
+    pub key: &'a str,
+    pub image: &'a crate::backdrop::Image,
+    pub height: f32,
+}
+
+/// One cell of a row of cells: a button (clickable), a slider (`slider` is its position, 0 to
+/// 1) or text.
+pub struct ScriptCellDraw<'a> {
+    pub text: &'a str,
+    pub color: Option<ColorF>,
+    pub clickable: bool,
+    pub slider: Option<f32>,
+    /// A fixed width in DIPs at the normal text size, and where the text sits in it (0 left,
+    /// 0.5 centre, 1 right).
+    pub width: Option<f32>,
+    pub align: f32,
+    /// A button that is on: its plate stays filled with the accent colour.
+    pub checked: bool,
+    /// Drawn in bold.
+    pub bold: bool,
+    /// A check box before the text, ticked or not.
+    pub checkbox: Option<bool>,
+    /// The space after the cell in DIPs at the normal text size; None: the usual one.
+    pub gap: Option<f32>,
+}
+
+/// A cell that holds only characters of Unicode's private use area is an icon of the Segoe
+/// Fluent Icons font (`\uE768` is Play), drawn in that font and a little larger than the text.
+fn is_icon_text(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(|c| ('\u{E000}'..='\u{F8FF}').contains(&c))
+}
+
+/// What a hit-test finds in a script fence: the row, the cell in it (0 for a plain row) and
+/// the area (surface DIPs).
+pub type ScriptHit = (usize, usize, Rect);
+
+/// A script fence whose rows do not fit scrolls them under the rows it pins. Pinned rows are
+/// given up (everything scrolls) when they leave the others less room than this (DIPs).
+pub const SCRIPT_PIN_MIN_BAND: f32 = 110.0;
+
+/// The part of a script fence that scrolls, in surface DIPs: where it starts (under the pinned
+/// rows), how tall it is, how tall its rows are altogether, and how far they are scrolled.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ScriptBand {
+    pub top: f32,
+    pub height: f32,
+    pub content: f32,
+    pub offset: f32,
+}
+
+/// How [`FenceChrome::draw_script`] scrolls the rows.
+pub struct ScriptScroll<'a> {
+    /// The rows before this one stay in place; the others scroll under them (0: all scroll).
+    pub pinned_rows: usize,
+    /// How far (DIPs) the scrolling rows are moved up.
+    pub offset: f32,
+    /// The row whose place in the scrolling rows is reported back ([`ScriptDrawn::follow`]).
+    pub follow_row: Option<usize>,
+    /// The scrollbar to draw over the band, None when there is none (the rows fit, or the bar
+    /// is faded out).
+    pub bar: &'a dyn Fn(ScriptBand) -> Option<ScrollbarDraw>,
+}
+
+/// What [`FenceChrome::draw_script`] drew.
+pub struct ScriptDrawn {
+    /// The clickable rows and cells, and their areas (only the part that shows).
+    pub hits: Vec<ScriptHit>,
+    /// The scrolling part, as drawn.
+    pub band: ScriptBand,
+    /// A wheel notch and an arrow of the scrollbar move the rows by this much (DIPs): a line.
+    pub row_step: f32,
+    /// The top and the height of the followed row in the band's rows (the offset not taken
+    /// off), None when no row is followed.
+    pub follow: Option<(f32, f32)>,
+}
+
+/// Whether a row `h` tall at `y` shows: a pinned row always does, a row of the band when it
+/// meets the band (`band_top` to `bottom`).
+fn script_row_in_view(in_band: bool, band_top: f32, bottom: f32, y: f32, h: f32) -> bool {
+    !in_band || (y + h + SCRIPT_ROW_PAD_Y > band_top && y - SCRIPT_ROW_PAD_Y < bottom)
 }
 
 impl FenceChrome {
@@ -4043,7 +4167,7 @@ impl FenceChrome {
                 None
             };
             if let Some(done) = line.todo {
-                boxes.push((i, todo.draw(tt, session, px, y, line_h, done)));
+                boxes.push((i, todo.draw(tt, session, px, (NOTE_PAD_X, y), line_h, done)));
             }
             let brush = if line.todo == Some(true) {
                 &secondary
@@ -4075,7 +4199,11 @@ impl FenceChrome {
     /// `---` a hairline. The row under the pointer (`hover`) gets a plate when it is
     /// clickable, and an arrow when it opens something. `footer` sits at the bottom and the
     /// rows stop above it, as in [`Self::draw_note`]. Returns each clickable row's index and
-    /// plate (surface DIPs).
+    /// plate (surface DIPs), and how the rows scroll.
+    ///
+    /// The rows scroll up by `scroll.offset` DIPs; the first `scroll.pinned_rows` stay where
+    /// they are, and the others scroll under them. A fence too short for the pinned rows to
+    /// leave [`SCRIPT_PIN_MIN_BAND`] DIPs to the others scrolls everything instead.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_script(
         &self,
@@ -4086,10 +4214,55 @@ impl FenceChrome {
         height: f32,
         text_size: u8,
         rows: &[ScriptRowDraw<'_>],
-        hover: Option<usize>,
+        hover: Option<(usize, usize)>,
+        pressed: Option<(usize, usize)>,
+        bitmaps: &RefCell<crate::bitmaps::BitmapCache>,
         hint: &str,
         footer: &str,
-    ) -> Result<Vec<(usize, Rect)>> {
+        scroll: &ScriptScroll<'_>,
+    ) -> Result<ScriptDrawn> {
+        let draw = |pinned_rows: usize| {
+            self.draw_script_pass(
+                session,
+                theme,
+                scale,
+                (width, height),
+                text_size,
+                rows,
+                (hover, pressed),
+                bitmaps,
+                (hint, footer),
+                pinned_rows,
+                scroll,
+            )
+        };
+        let drawn = draw(scroll.pinned_rows)?;
+        if scroll.pinned_rows > 0 && drawn.band.top > 0.0 && drawn.band.height < SCRIPT_PIN_MIN_BAND
+        {
+            return draw(0);
+        }
+        Ok(drawn)
+    }
+
+    /// One drawing of [`Self::draw_script`] with `pinned_rows` rows held in place.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_script_pass(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        scale: f32,
+        size: (f32, f32),
+        text_size: u8,
+        rows: &[ScriptRowDraw<'_>],
+        pointer: (Option<(usize, usize)>, Option<(usize, usize)>),
+        bitmaps: &RefCell<crate::bitmaps::BitmapCache>,
+        texts: (&str, &str),
+        pinned_rows: usize,
+        scroll: &ScriptScroll<'_>,
+    ) -> Result<ScriptDrawn> {
+        let (width, height) = size;
+        let (hover, pressed) = pointer;
+        let (hint, footer) = texts;
         session.clear(ColorF::TRANSPARENT);
         let tt = self.tool_text(text_size);
         let primary = session.create_solid_brush(theme.text_primary)?;
@@ -4105,8 +4278,19 @@ impl FenceChrome {
         } else {
             height
         };
+        let line_h = TextLayout::new("Ag", &tt.body, w, f32::MAX)?
+            .metrics()
+            .height;
+        let row_step = line_h + 2.0 * SCRIPT_ROW_PAD_Y;
         if rows.iter().all(|r| {
-            !r.separator && r.text.trim().is_empty() && r.todo.is_none() && r.icon.is_none()
+            r.hidden
+                || !r.separator
+                    && r.image.is_none()
+                    && r.video.is_none()
+                    && r.cells.is_empty()
+                    && r.text.trim().is_empty()
+                    && r.todo.is_none()
+                    && r.icon.is_none()
         }) {
             session.draw_text(
                 hint,
@@ -4119,11 +4303,18 @@ impl FenceChrome {
                 ),
                 &secondary,
             );
-            return Ok(Vec::new());
+            return Ok(ScriptDrawn {
+                hits: Vec::new(),
+                band: ScriptBand {
+                    top: 0.0,
+                    height,
+                    content: 0.0,
+                    offset: 0.0,
+                },
+                row_step,
+                follow: None,
+            });
         }
-        let line_h = TextLayout::new("Ag", &tt.body, w, f32::MAX)?
-            .metrics()
-            .height;
         let px = Px::new(scale);
         let plate = session.create_solid_brush(with_alpha(theme.text_primary, 0.07))?;
         let rule = session.create_solid_brush(with_alpha(theme.text_primary, 0.14))?;
@@ -4132,15 +4323,142 @@ impl FenceChrome {
         let arrow_w = (SCRIPT_ARROW_W * tt.k).round();
         let glyph_w = (14.0 * tt.k).round();
         let mut hits = Vec::new();
-        let mut y = NOTE_PAD_TOP + SCRIPT_ROW_PAD_Y;
+        // The rows before `pinned` stay in place; from there on, the band scrolls: `y` is where
+        // the next row goes on the surface (the offset already taken off), `band_top` where the
+        // band starts, and the clip keeps its rows out of the pinned ones and of the footer.
+        let pinned = pinned_rows.min(rows.len());
+        let offset = scroll.offset.max(0.0);
+        let mut in_band = pinned == 0;
+        let mut band_top = 0.0f32;
+        let mut pinned_hits = 0usize;
+        let mut y = NOTE_PAD_TOP + SCRIPT_ROW_PAD_Y - if in_band { offset } else { 0.0 };
+        let mut band_clip = if in_band {
+            Some(pecofence_platform::d2d::push_axis_aligned_clip(
+                session.raw(),
+                0.0,
+                0.0,
+                width,
+                height,
+            )?)
+        } else {
+            None
+        };
+        // The row to report the place of: where it starts, until the row after it begins.
+        let mut follow_open: Option<f32> = None;
+        let mut follow = None;
         for (i, row) in rows.iter().enumerate() {
-            if y >= height {
-                break;
+            if let Some(start) = follow_open.take() {
+                follow = Some((start - SCRIPT_ROW_PAD_Y + offset - band_top, y - start));
+            }
+            if !in_band && i == pinned {
+                band_top = (y - SCRIPT_ROW_PAD_Y).max(0.0);
+                if band_top > 0.0 && height - band_top < SCRIPT_PIN_MIN_BAND {
+                    // Too little room for the rows left: `draw_script` draws again with
+                    // everything scrolling, so these are not drawn for nothing.
+                    return Ok(ScriptDrawn {
+                        hits: Vec::new(),
+                        band: ScriptBand {
+                            top: band_top,
+                            height: (height - band_top).max(0.0),
+                            content: 0.0,
+                            offset: 0.0,
+                        },
+                        row_step,
+                        follow: None,
+                    });
+                }
+                pinned_hits = hits.len();
+                in_band = true;
+                y = band_top + SCRIPT_ROW_PAD_Y - offset;
+                band_clip = Some(pecofence_platform::d2d::push_axis_aligned_clip(
+                    session.raw(),
+                    0.0,
+                    band_top,
+                    width,
+                    height.max(band_top),
+                )?);
+            }
+            if scroll.follow_row == Some(i) && !row.hidden {
+                follow_open = Some(y);
             }
             if row.separator {
-                let line_y = px.snap(y - SCRIPT_ROW_PAD_Y + separator_h / 2.0);
-                session.fill_rect(&Rect::from_xywh(NOTE_PAD_X, line_y, w, px.hair()), &rule);
+                if script_row_in_view(in_band, band_top, height, y, separator_h) {
+                    let line_y = px.snap(y - SCRIPT_ROW_PAD_Y + separator_h / 2.0);
+                    session.fill_rect(&Rect::from_xywh(NOTE_PAD_X, line_y, w, px.hair()), &rule);
+                }
                 y += separator_h;
+                continue;
+            }
+            if row.hidden {
+                continue;
+            }
+            if let Some(video) = &row.video {
+                // Centred, in the video's own ratio (16:9 until a picture says otherwise), as
+                // tall as asked but never wider than the fence.
+                let area_w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+                let ratio = video
+                    .frame
+                    .map_or(16.0 / 9.0, |f| f.width as f32 / f.height.max(1) as f32);
+                let mut h = video.height.max(8.0);
+                let mut w = h * ratio;
+                if w > area_w {
+                    w = area_w;
+                    h = w / ratio;
+                }
+                if script_row_in_view(in_band, band_top, height, y, h) {
+                    let x = NOTE_PAD_X + (area_w - w) / 2.0;
+                    let area = Rect::from_xywh(x, y, w, h);
+                    match video.frame {
+                        Some(frame) => {
+                            if let Err(error) = frame.draw(session.raw(), [x, y, x + w, y + h]) {
+                                tracing::warn!(%error, "video picture not drawn");
+                            }
+                        }
+                        // Nothing to show yet: a plate keeps the row's place.
+                        None => session.fill_rounded_rect(&RoundedRect::uniform(area, 4.0), &plate),
+                    }
+                    if row.clickable {
+                        hits.push((i, 0, area));
+                    }
+                }
+                y += h + 2.0 * SCRIPT_ROW_PAD_Y;
+                continue;
+            }
+            if let Some(picture) = &row.image {
+                // Centred, as tall as asked but never wider than the fence, in its own ratio.
+                let area_w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+                let ratio = picture.image.width as f32 / picture.image.height.max(1) as f32;
+                let mut h = picture.height.max(8.0);
+                let mut w = h * ratio;
+                if w > area_w {
+                    w = area_w;
+                    h = w / ratio;
+                }
+                if script_row_in_view(in_band, band_top, height, y, h)
+                    && let Ok(bitmap) =
+                        bitmaps
+                            .borrow_mut()
+                            .get_or_upload(session, picture.key, picture.image)
+                {
+                    let x = NOTE_PAD_X + (area_w - w) / 2.0;
+                    session.draw_bitmap(&bitmap, &Rect::from_xywh(x, y, w, h), 1.0);
+                }
+                y += h + 2.0 * SCRIPT_ROW_PAD_Y;
+                continue;
+            }
+            if !row.cells.is_empty() {
+                let h = self.draw_script_cells(
+                    session,
+                    theme,
+                    tt,
+                    px,
+                    (width, line_h),
+                    (i, y),
+                    row.cells,
+                    (hover, pressed),
+                    &mut hits,
+                )?;
+                y += h + 2.0 * SCRIPT_ROW_PAD_Y;
                 continue;
             }
             let mut x = NOTE_PAD_X;
@@ -4159,37 +4477,22 @@ impl FenceChrome {
             let text = if row.text.is_empty() { " " } else { row.text };
             let layout = TextLayout::new(text, &tt.body, text_w, f32::MAX)?;
             let h = layout.metrics().height.max(line_h);
-            // A row that runs past the footer's top shows only its lines that fit whole.
-            let _clip = if has_footer && y + h > height {
-                let fit = layout
-                    .hit_test_point(Vector2::new(0.0, height - y))
-                    .bounds
-                    .top;
-                if fit <= 0.0 {
-                    break;
-                }
-                Some(pecofence_platform::d2d::push_axis_aligned_clip(
-                    session.raw(),
-                    0.0,
-                    y,
-                    width,
-                    y + fit,
-                )?)
-            } else {
-                None
-            };
+            if !script_row_in_view(in_band, band_top, height, y, h) {
+                y += h + 2.0 * SCRIPT_ROW_PAD_Y;
+                continue;
+            }
             let plate_rect = Rect::from_xywh(
                 NOTE_PAD_X - SCRIPT_ROW_PAD_X,
                 y - SCRIPT_ROW_PAD_Y,
                 w + 2.0 * SCRIPT_ROW_PAD_X,
                 h + 2.0 * SCRIPT_ROW_PAD_Y,
             );
-            let hovered = row.clickable && hover == Some(i);
+            let hovered = row.clickable && hover == Some((i, 0));
             if hovered {
                 session.fill_rounded_rect(&RoundedRect::uniform(plate_rect, 4.0), &plate);
             }
             if let Some(done) = row.todo {
-                todo.draw(tt, session, px, y, line_h, done);
+                todo.draw(tt, session, px, (NOTE_PAD_X, y), line_h, done);
             }
             if let Some(icon) = &icon {
                 session.draw_text_layout_color(Vector2::new(x, y), icon, &primary);
@@ -4213,11 +4516,234 @@ impl FenceChrome {
                 );
             }
             if row.clickable {
-                hits.push((i, plate_rect));
+                hits.push((i, 0, plate_rect));
             }
             y += h + 2.0 * SCRIPT_ROW_PAD_Y;
         }
-        Ok(hits)
+        if let Some(start) = follow_open.take() {
+            follow = Some((start - SCRIPT_ROW_PAD_Y + offset - band_top, y - start));
+        }
+        // Nothing after the pinned rows: an empty band under them.
+        let content = if in_band {
+            (y + offset - band_top).max(0.0)
+        } else {
+            band_top = (y - SCRIPT_ROW_PAD_Y).max(0.0);
+            pinned_hits = hits.len();
+            0.0
+        };
+        // What the band shows may be clicked: the part of a plate under the pinned rows or the
+        // footer may not.
+        let mut clickable: Vec<ScriptHit> = hits.drain(..pinned_hits).collect();
+        for (row, cell, r) in hits {
+            let (top, bottom) = (r.top.max(band_top), r.bottom.min(height));
+            if bottom > top {
+                clickable.push((row, cell, Rect { top, bottom, ..r }));
+            }
+        }
+        let band = ScriptBand {
+            top: band_top,
+            height: (height - band_top).max(0.0),
+            content,
+            offset,
+        };
+        // The bar is drawn over the rows, outside their clip.
+        drop(band_clip);
+        if let Some(bar) = (scroll.bar)(band) {
+            draw_scrollbar(session, theme, &self.sort_glyph_format, width, bar)?;
+        }
+        Ok(ScriptDrawn {
+            hits: clickable,
+            band,
+            row_step,
+            follow,
+        })
+    }
+
+    /// A row of cells side by side from the left: buttons and text take their own width, the
+    /// sliders share what is left (at least [`SCRIPT_SLIDER_MIN_W`]). A row without sliders
+    /// goes on to a new line when the next cell does not fit the width; with sliders the cells
+    /// past the right edge are not drawn. `size` is the fence width and the line height, `at`
+    /// the row's index and top. Adds each clickable cell's area to `hits`; returns the row's
+    /// height.
+    #[allow(clippy::too_many_arguments)]
+    fn draw_script_cells(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        tt: &ToolText,
+        px: Px,
+        size: (f32, f32),
+        at: (usize, f32),
+        cells: &[ScriptCellDraw<'_>],
+        pointer: (Option<(usize, usize)>, Option<(usize, usize)>),
+        hits: &mut Vec<ScriptHit>,
+    ) -> Result<f32> {
+        let (width, line_h) = size;
+        let (row, top) = at;
+        let mut y = top;
+        let mut lines = 1usize;
+        let primary = session.create_solid_brush(theme.text_primary)?;
+        let (hover, pressed) = pointer;
+        let plate = session.create_solid_brush(with_alpha(theme.text_primary, 0.07))?;
+        let plate_down = session.create_solid_brush(with_alpha(theme.text_primary, 0.18))?;
+        let on = session.create_solid_brush(with_alpha(theme.accent, 0.30))?;
+        let on_hot = session.create_solid_brush(with_alpha(theme.accent, 0.42))?;
+        let track = session.create_solid_brush(with_alpha(theme.text_primary, 0.22))?;
+        let accent = session.create_solid_brush(theme.accent)?;
+        let todo = TodoBrushes::new(session, theme)?;
+        let pad = (SCRIPT_CELL_PAD_X * tt.k).round();
+        let step = 2.0 * pad + SCRIPT_CELL_GAP;
+        // Natural width of every cell that is not a slider.
+        let mut layouts = Vec::with_capacity(cells.len());
+        let mut fixed = 0.0;
+        let mut sliders = 0usize;
+        for cell in cells {
+            if cell.slider.is_some() {
+                sliders += 1;
+                layouts.push(None);
+                continue;
+            }
+            let text = if cell.text.is_empty() { " " } else { cell.text };
+            let format = if cell.bold {
+                &tt.bold
+            } else if is_icon_text(text) {
+                &tt.icon
+            } else {
+                &tt.body
+            };
+            let layout = TextLayout::new(text, format, f32::MAX, f32::MAX)?;
+            let room = if cell.checkbox.is_some() {
+                tt.todo_room()
+            } else {
+                0.0
+            };
+            fixed += room
+                + cell
+                    .width
+                    .map_or(layout.metrics().width_including_trailing_whitespace, |w| {
+                        (w * tt.k).round()
+                    });
+            layouts.push(Some(layout));
+        }
+        let area = width - 2.0 * NOTE_PAD_X;
+        // The space after a cell: the usual one, or the cell's own (`gap=`).
+        let gap_after = |cell: &ScriptCellDraw<'_>| cell.gap.map_or(step, |g| (g * tt.k).round());
+        let gaps: f32 = cells
+            .iter()
+            .take(cells.len().saturating_sub(1))
+            .map(gap_after)
+            .sum();
+        let slider_w = if sliders == 0 {
+            0.0
+        } else {
+            ((area - fixed - gaps) / sliders as f32)
+                .max(SCRIPT_SLIDER_MIN_W)
+                .floor()
+        };
+        let wrap = sliders == 0;
+        let mut x = NOTE_PAD_X;
+        for (c, cell) in cells.iter().enumerate() {
+            if !wrap && x >= width - NOTE_PAD_X {
+                break;
+            }
+            let hovered = cell.clickable && hover == Some((row, c));
+            let own = match cell.color {
+                Some(color) => Some(session.create_solid_brush(color)?),
+                None => None,
+            };
+            if let Some(value) = cell.slider {
+                let hit = Rect::from_xywh(
+                    x,
+                    y - SCRIPT_ROW_PAD_Y,
+                    slider_w,
+                    line_h + 2.0 * SCRIPT_ROW_PAD_Y,
+                );
+                let span = (slider_w - 2.0 * SCRIPT_SLIDER_INSET).max(1.0);
+                let mid = y + line_h / 2.0;
+                let left = x + SCRIPT_SLIDER_INSET;
+                let thumb_x = left + span * value;
+                let half = SCRIPT_SLIDER_TRACK_H / 2.0;
+                let bar = |w: f32| {
+                    RoundedRect::uniform(
+                        Rect::from_xywh(left, mid - half, w, SCRIPT_SLIDER_TRACK_H),
+                        half,
+                    )
+                };
+                session.fill_rounded_rect(&bar(span), &track);
+                if thumb_x > left {
+                    session
+                        .fill_rounded_rect(&bar(thumb_x - left), own.as_ref().unwrap_or(&accent));
+                }
+                // The thumb grows a little under the pointer.
+                let r = if hovered {
+                    SCRIPT_SLIDER_INSET
+                } else {
+                    SCRIPT_SLIDER_INSET - 1.5
+                };
+                session.fill_rounded_rect(
+                    &RoundedRect::uniform(
+                        Rect::from_xywh(thumb_x - r, mid - r, 2.0 * r, 2.0 * r),
+                        r,
+                    ),
+                    &primary,
+                );
+                if cell.clickable {
+                    hits.push((row, c, hit));
+                }
+                x += slider_w + gap_after(cell);
+                continue;
+            }
+            let Some(layout) = &layouts[c] else {
+                continue;
+            };
+            let text_w = layout.metrics().width_including_trailing_whitespace;
+            // A check box takes room before the text.
+            let room = if cell.checkbox.is_some() {
+                tt.todo_room()
+            } else {
+                0.0
+            };
+            let w = room + cell.width.map_or(text_w, |w| (w * tt.k).round());
+            if wrap && x > NOTE_PAD_X && x + w > width - NOTE_PAD_X {
+                x = NOTE_PAD_X;
+                y += line_h + 2.0 * SCRIPT_ROW_PAD_Y;
+                lines += 1;
+            }
+            let text_x = x + room + (w - room - text_w).max(0.0) * cell.align;
+            if cell.clickable {
+                let plate_rect = Rect::from_xywh(
+                    x - pad,
+                    y - SCRIPT_ROW_PAD_Y,
+                    w + 2.0 * pad,
+                    line_h + 2.0 * SCRIPT_ROW_PAD_Y,
+                );
+                // A button that is on keeps an accent plate; one held down is darker still.
+                let down = pressed == Some((row, c));
+                let brush = match (cell.checked, down, hovered) {
+                    (true, true, _) | (true, _, true) => Some(&on_hot),
+                    (true, ..) => Some(&on),
+                    (false, true, _) => Some(&plate_down),
+                    (false, _, true) => Some(&plate),
+                    _ => None,
+                };
+                if let Some(brush) = brush {
+                    session.fill_rounded_rect(&RoundedRect::uniform(plate_rect, 4.0), brush);
+                }
+                hits.push((row, c, plate_rect));
+            }
+            if let Some(done) = cell.checkbox {
+                todo.draw(tt, session, px, (x, y), line_h, done);
+            }
+            // An icon is centred on the line (it is taller than the text).
+            let top = y + (line_h - layout.metrics().height) / 2.0;
+            session.draw_text_layout_color(
+                Vector2::new(text_x, if is_icon_text(cell.text) { top } else { y }),
+                layout,
+                own.as_ref().unwrap_or(&primary),
+            );
+            x += w + gap_after(cell);
+        }
+        Ok(lines as f32 * line_h + (lines - 1) as f32 * 2.0 * SCRIPT_ROW_PAD_Y)
     }
 }
 
@@ -4240,20 +4766,21 @@ impl TodoBrushes {
         })
     }
 
-    /// The box of a to-do whose first line is at `y` (`line_h` tall), sized for the text
-    /// `tt`; returns its rect.
+    /// The box of a to-do whose first line is at `at` = (left, top) (`line_h` tall), sized for
+    /// the text `tt`; returns its rect.
     fn draw(
         &self,
         tt: &ToolText,
         session: &DrawingSession<'_>,
         px: Px,
-        y: f32,
+        at: (f32, f32),
         line_h: f32,
         done: bool,
     ) -> Rect {
+        let (x, y) = at;
         let edge = tt.box_edge();
         let top = px.snap(y + (line_h - edge) / 2.0);
-        let r = Rect::from_xywh(px.snap(NOTE_PAD_X), top, edge, edge);
+        let r = Rect::from_xywh(px.snap(x), top, edge, edge);
         if done {
             session.fill_rounded_rect(&RoundedRect::uniform(r, 4.0), &self.accent);
             session.draw_text(CHECK_GLYPH, &tt.glyph, &r, &self.check);
@@ -4472,6 +4999,137 @@ mod tests {
         for align in [Left, Center, Right] {
             assert_eq!(aligned_x(align, 300.0, 16.0, 260.0, 400.0), 16.0);
         }
+    }
+
+    /// A plain row of a script fence, clickable or not.
+    fn script_row(text: &str, clickable: bool) -> ScriptRowDraw<'_> {
+        ScriptRowDraw {
+            text,
+            separator: false,
+            todo: None,
+            color: None,
+            icon: None,
+            clickable,
+            opens: false,
+            cells: &[],
+            image: None,
+            video: None,
+            hidden: false,
+        }
+    }
+
+    /// What `draw_script` leaves of 3 pinned rows and 40 scrolling ones in a fence `height` DIPs
+    /// tall, scrolled by `offset`; the scrollbar callback is told the band too.
+    fn script_drawn(
+        height: f32,
+        offset: f32,
+        pinned_rows: usize,
+        follow_row: Option<usize>,
+    ) -> (ScriptDrawn, Option<ScriptBand>) {
+        let _ole = pecofence_platform::com::OleGuard::init().unwrap();
+        let gpu = windows_canvas::GpuDevice::new_or_warp().unwrap();
+        let target = gpu.create_render_target(320, height as u32).unwrap();
+        let chrome = FenceChrome::new().unwrap();
+        let theme = Theme::dark();
+        let names: Vec<String> = (0..43).map(|i| format!("Row {i}")).collect();
+        let mut rows: Vec<ScriptRowDraw<'_>> = names.iter().map(|n| script_row(n, true)).collect();
+        // The hidden row that splits them: index 3.
+        rows[3].hidden = true;
+        let bitmaps = RefCell::new(crate::bitmaps::BitmapCache::new());
+        let seen = std::cell::Cell::new(None);
+        let bar = |band: ScriptBand| {
+            seen.set(Some(band));
+            None
+        };
+        let scroll = ScriptScroll {
+            pinned_rows,
+            offset,
+            follow_row,
+            bar: &bar,
+        };
+        let mut drawn = None;
+        target
+            .draw(|s| {
+                drawn = Some(chrome.draw_script(
+                    s, &theme, 1.0, 320.0, height, 1, &rows, None, None, &bitmaps, "", "", &scroll,
+                )?);
+                Ok(())
+            })
+            .unwrap();
+        (drawn.unwrap(), seen.get())
+    }
+
+    #[test]
+    fn a_script_fence_scrolls_its_rows_under_the_pinned_ones() {
+        let (still, seen) = script_drawn(300.0, 0.0, 3, None);
+        let band = still.band;
+        assert_eq!(seen, Some(band), "the bar is asked for the band drawn");
+        assert!(
+            band.top > 40.0 && band.top < 120.0,
+            "3 rows pinned: {band:?}"
+        );
+        assert_eq!(band.top + band.height, 300.0);
+        assert!(band.content > band.height, "40 rows do not fit: {band:?}");
+        // Only what shows can be clicked: the pinned rows, then the band's first rows.
+        let rows_at = |d: &ScriptDrawn| d.hits.iter().map(|h| h.0).collect::<Vec<_>>();
+        let top_rows = rows_at(&still);
+        assert_eq!(&top_rows[..3], &[0, 1, 2]);
+        assert!(
+            top_rows.contains(&4) && !top_rows.contains(&42),
+            "{top_rows:?}"
+        );
+        for (_, _, r) in &still.hits {
+            assert!(r.bottom <= 300.0, "nothing past the fence's bottom");
+        }
+        // Scrolled by 200: the pinned rows are where they were, the band's rows moved up.
+        let (moved, _) = script_drawn(300.0, 200.0, 3, None);
+        assert_eq!(moved.band.top, band.top);
+        assert_eq!(
+            moved.band.content, band.content,
+            "the rows' height is the same"
+        );
+        let first_pinned = |d: &ScriptDrawn| d.hits.iter().find(|h| h.0 == 0).map(|h| h.2.top);
+        assert_eq!(first_pinned(&moved), first_pinned(&still));
+        let moved_rows = rows_at(&moved);
+        assert!(
+            !moved_rows.contains(&4),
+            "row 4 scrolled out: {moved_rows:?}"
+        );
+        assert!(moved_rows.len() > 3);
+        for (row, _, r) in moved.hits.iter().filter(|h| h.0 >= 3) {
+            assert!(
+                r.top >= band.top - 0.01,
+                "row {row} under the pinned rows: {r:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_script_fence_too_short_for_its_pinned_rows_scrolls_everything() {
+        let (drawn, _) = script_drawn(140.0, 0.0, 3, None);
+        assert_eq!(drawn.band.top, 0.0, "{:?}", drawn.band);
+        assert_eq!(drawn.band.height, 140.0);
+        // Without a pane, the first row scrolls like the others.
+        let (plain, _) = script_drawn(300.0, 0.0, 0, None);
+        assert_eq!(plain.band.top, 0.0);
+        let (scrolled, _) = script_drawn(300.0, 60.0, 0, None);
+        let top_of = |d: &ScriptDrawn| d.hits.iter().find(|h| h.0 == 0).map(|h| h.2.top);
+        assert!(top_of(&plain).is_some());
+        assert!(top_of(&scrolled).is_none(), "row 0 is 60 DIPs out of sight");
+    }
+
+    #[test]
+    fn a_script_fence_tells_where_the_followed_row_is() {
+        let (drawn, _) = script_drawn(300.0, 0.0, 3, Some(20));
+        let (top, height) = drawn.follow.expect("row 20 is drawn");
+        assert!(height > 10.0, "{height}");
+        // The 17th row of the band (rows 4 to 20), one row's pitch each.
+        let pitch = drawn.row_step;
+        assert!((top - 16.0 * pitch).abs() < 2.0, "{top} {pitch}");
+        // Where the band is scrolled makes no difference: the place is in its rows.
+        let (scrolled, _) = script_drawn(300.0, 120.0, 3, Some(20));
+        assert!((scrolled.follow.unwrap().0 - top).abs() < 0.01);
+        assert_eq!(script_drawn(300.0, 0.0, 3, None).0.follow, None);
     }
 
     #[test]

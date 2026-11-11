@@ -31,6 +31,21 @@ mod bindings;
     unused_imports
 )]
 mod store_bindings;
+// Media Foundation's media engine, Direct3D 11 and Direct2D for `video.rs`
+// (tools/bindgen/video.txt).
+#[allow(
+    non_snake_case,
+    non_upper_case_globals,
+    non_camel_case_types,
+    clippy::upper_case_acronyms,
+    clippy::missing_transmute_annotations,
+    clippy::useless_transmute,
+    clippy::too_many_arguments,
+    clippy::useless_conversion,
+    dead_code,
+    unused_imports
+)]
+mod video_bindings;
 
 pub mod autostart;
 pub mod clipboard;
@@ -74,6 +89,7 @@ pub mod sysparams;
 pub mod theme;
 pub mod tooltip;
 pub mod tray;
+pub mod video;
 pub mod wallpaper;
 pub mod watcher;
 pub mod wide;

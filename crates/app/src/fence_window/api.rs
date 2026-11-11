@@ -187,6 +187,12 @@ impl FenceWindow {
             script: None,
             script_rows: Vec::new(),
             script_hover: None,
+            slider_drag: None,
+            script_pressed: None,
+            script_scroll: ScriptScrollState::default(),
+            quiet_glide: false,
+            script_images: Vec::new(),
+            script_video: None,
             portal_missing: false,
             empty_override: None,
             title_count: None,
@@ -514,7 +520,12 @@ impl FenceWindow {
             v.clock_text.0,
             v.clock_text.1,
             dump_rects(&v.note_boxes),
-            dump_rects(&v.script_rows),
+            dump_rects(
+                &v.script_rows
+                    .iter()
+                    .map(|&(row, cell, r)| (row * 100 + cell, r))
+                    .collect::<Vec<_>>()
+            ),
             v.off_desktop,
             v.desktop_tip,
             v.filter_tag,
@@ -1411,10 +1422,10 @@ impl FenceWindow {
     }
 
     /// A script's copy action uses a short, non-activating tip beside the pointer.
-    pub fn show_script_copy_result(&self, index: usize, copied: bool) {
+    pub fn show_script_copy_result(&self, index: usize, cell: usize, copied: bool) {
         self.with_view(|v| {
             v.hide_tip();
-            v.tip_target = Some(TipTarget::ScriptRow(index));
+            v.tip_target = Some(TipTarget::ScriptRow(index, cell));
             let text = if copied {
                 pecofence_core::i18n::text("已复制")
             } else {
@@ -1450,9 +1461,54 @@ impl FenceWindow {
                 if script.is_none() {
                     v.script_rows.clear();
                     v.script_hover = None;
+                    v.slider_drag = None;
+                    v.script_pressed = None;
+                    v.script_scroll = ScriptScrollState::default();
                 }
                 v.script = script;
                 let _ = v.redraw();
+            }
+        });
+    }
+
+    /// 脚本栅栏: the player whose picture the `video=` row of the script shown is drawn from.
+    pub fn set_script_video(
+        &self,
+        player: Option<Rc<RefCell<pecofence_platform::video::VideoPlayer>>>,
+    ) {
+        self.with_view(|v| {
+            let same = match (&v.script_video, &player) {
+                (Some(a), Some(b)) => Rc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            };
+            if !same {
+                v.script_video = player;
+                if v.script.is_some() {
+                    let _ = v.redraw_content();
+                }
+            }
+        });
+    }
+
+    /// The fence's `video=` row is in view: its window shows, not rolled up, and the script fence
+    /// is the tab on top. While it is not, no picture is taken from the player (the sound goes
+    /// on).
+    pub fn shows_video(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| {
+            v.script_video.is_some()
+                && v.script
+                    .as_ref()
+                    .is_some_and(|s| s.rows.iter().any(|r| r.video))
+                && !v.roll_target()
+        }) && self.window.is_visible()
+    }
+
+    /// Draws the script's rows again with the player's newest picture.
+    pub fn redraw_video(&self) {
+        self.with_view(|v| {
+            if v.script.is_some() && v.script_video.is_some() {
+                let _ = v.redraw_content();
             }
         });
     }

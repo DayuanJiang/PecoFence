@@ -207,6 +207,18 @@ impl RenderStack {
         ))
     }
 
+    /// The Direct3D 11 device the fences draw with, for what shares textures with Direct2D (the
+    /// video players of script fences). It is replaced after a device loss: see
+    /// [`Self::generation`].
+    pub fn d3d_device(&self) -> windows_core::IUnknown {
+        self.gpu.borrow().device.d3d_device().clone().into()
+    }
+
+    /// Counts the device rebuilds (0 at start): what was made with an earlier device is stale.
+    pub fn generation(&self) -> u32 {
+        self.gpu.borrow().generation
+    }
+
     /// The current composition graphics device (allocates drawing surfaces).
     pub fn graphics(&self) -> CompositionGraphicsDevice {
         self.gpu.borrow().graphics.clone()

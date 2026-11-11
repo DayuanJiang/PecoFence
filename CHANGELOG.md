@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Script fences scroll: a fence whose rows do not fit now has the mouse wheel and the usual scrollbar on its right edge, where it used to cut them off. A script marks what stays in place and what scrolls with a hidden row, `| pane=<key> hidden=true` (the rows above it stay, the rows below scroll, and a new key brings them back to the top), and keeps a row in the middle with `| follow=<key> hidden=true` (the row after it, each time the key changes, unless the user scrolled by hand a few seconds ago). A streaming script's screen may now have 300 lines (40 before). Media Player: the lyrics are all listed under the buttons and follow the line being sung, a bigger fence shows more of them, and the Playlist and Radios tabs show pages of 50 instead of 14 and 11, scrolled under their buttons.
+- Media Player: a **Radios** tab beside Playlist plays free internet radios from Radio Browser (api.radio-browser.info, an open directory that needs no key and no payment; no paid or licensed directory such as SHOUTcast or TuneIn is used). Five buttons list the popular radios, the radios by country or by genre, the favorites, or a search by name; a double-click plays a radio, Previous and Next go to the radio before and after it, and the favorites are kept in the fence's settings. Only MP3 and AAC streams the directory found alive are listed. Nothing is asked of the internet until a button of the tab is clicked, and counting a listen with the directory is off (`$CountListens`).
+
 ## 0.3.3
 
 - PecoFence checks for a new version by itself (installer and ZIP editions, about a minute after start and then once a day): a card in the corner says so once per version, with the first line of that version's notes, 「更新」 and 「查看新功能」 (the ZIP edition: 「去下载」), and the tray menu offers 「更新到 …」 until it is installed; 「自动检查更新」 on Settings › 关于 turns it off. Before, a new version showed only when you clicked 「检查更新」 there. The Store edition is updated by the Store.
