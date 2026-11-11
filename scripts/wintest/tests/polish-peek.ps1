@@ -3,9 +3,10 @@
 # the dimmer (83 ms) instead of popping up in one frame, and fades out with it when the Peek
 # ends; a fence on visible desktop, or one only partly hidden, keeps its look the whole time.
 # However the Peek ends, every fence is opaque, shown and at rest afterwards.
+# MF-12: `pecofence-cli fence fit` glides to the new height like 适应内容大小 in the fence menu.
 # Parts (run.sh --var Part=...): A the fade (dimmer on and off, animations off), B every way a
-# Peek ends. Default: both. Record=1 also records the clip for the report.
-if (-not $Part) { $Part = 'AB' }
+# Peek ends, C the CLI fit. Default: all. Record=1 also records the clips for the report.
+if (-not $Part) { $Part = 'ABC' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
 . C:\pf\kit\vdesk.ps1
@@ -368,6 +369,45 @@ if ($Part -match 'B') {
 
 [PkScan]::Stop()
 PkCover-Close
+
+if ($Part -match 'C') {
+  Case 'MF-12 the command line fit glides'
+  ClearFences | Out-Null
+  foreach ($i in 1..7) { Set-Content -LiteralPath (Join-Path $PfDesk "pk 适应文件 $i.txt") -Value "fit $i" -Encoding ASCII }
+  Pf fence create --title Fit --rect '300,150,340,470' | Out-Null
+  $files = @(1..7 | ForEach-Object { "$PfDesk\pk 适应文件 $_.txt" })
+  Pf item move @files --to Fit | Out-Null
+  Start-Sleep -Seconds 1
+  $h = [G]::FindWindowW('PecoFence.Fence', 'Fit')
+  function PkHeights($ms) {
+    $seen = New-Object System.Collections.Generic.List[int]
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($sw.ElapsedMilliseconds -lt $ms) { $r = Rect $h; $v = $r.B - $r.T; if ($seen.Count -eq 0 -or $seen[$seen.Count - 1] -ne $v) { $seen.Add($v) }; Start-Sleep -Milliseconds 4 }
+    return @($seen)
+  }
+  $from = (Rect $h).B - (Rect $h).T
+  if ($Record) { RecStart 'MF-12' -X 260 -Y 110 -W 420 -H 550 -Fps 30; Start-Sleep -Milliseconds 500; RecMark '运行 pecofence-cli fence fit' }
+  $job = Start-Job -ScriptBlock { param($cli, $inst) $env:PECOFENCE_INSTANCE = $inst; & $cli fence fit Fit 2>&1 | Out-String } -ArgumentList "$PfApp\pecofence-cli.exe", $PfInst
+  $seen = PkHeights 1500
+  $reply = Receive-Job $job -Wait; Remove-Job $job -Force
+  if ($Record) { Start-Sleep -Milliseconds 600; RecStop }
+  $to = (Rect $h).B - (Rect $h).T
+  $fit = (FenceGet 'Fit')
+  Log "fit: from $from to $to, heights seen: $($seen -join ' '); reply: $($reply -replace '\s+', ' ')"
+  Check 'MF-12 fit makes the fence as tall as its icons need' ($to -lt $from -and $to -eq [int]$fit.fit.fittingHeight -and [int]$fit.rect.h -eq $to) "from $from to $to, fittingHeight=$($fit.fit.fittingHeight) saved h=$($fit.rect.h)"
+  Check 'MF-12 the bottom edge glides there (at least 3 heights in between)' (@($seen | Where-Object { $_ -gt $to -and $_ -lt $from }).Count -ge 3) "heights seen: $($seen -join ' ')"
+  Check 'MF-12 the reply says it changed' ($reply -match '"changed":\s*true') ($reply -replace '\s+', ' ')
+  # A rolled fence: fit still sets the height it opens to, without opening it.
+  Pf fence resize Fit --height 470 2>&1 | Out-Null
+  Pf fence move Fit --rect '300,150,340,470' | Out-Null; Start-Sleep -Milliseconds 600
+  Pf fence roll Fit | Out-Null; Start-Sleep -Milliseconds 800
+  Pf fence fit Fit | Out-Null; Start-Sleep -Milliseconds 600
+  $f = FenceGet 'Fit'
+  Check 'MF-12 fit on a rolled fence keeps it rolled and sets the height it opens to' ($f.rolledUp -and [int]$f.rect.h -eq $to) "rolled=$($f.rolledUp) saved h=$($f.rect.h) window h=$($f.windowRect.h)"
+  Pf fence unroll Fit | Out-Null; Start-Sleep -Milliseconds 900
+  $r = Rect $h
+  Check 'MF-12 it then opens to that height' (($r.B - $r.T) -eq $to) "window h=$($r.B - $r.T)"
+}
 
 Case 'cleanup'
 [Anim]::Set($AnimWas)
