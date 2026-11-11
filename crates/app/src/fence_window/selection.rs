@@ -129,6 +129,19 @@ pub(super) enum CursorMode {
     FocusOnly,
 }
 
+/// Keys that act on the items of a fence (its selection or its keyboard cursor): the arrows,
+/// Home / End, PageUp / PageDown, Enter, F2, Delete, and Ctrl with A, C, D, X or Space. A
+/// rolled-up fence ignores them; Tab, Ctrl+Tab, Ctrl+Z, Ctrl+V, Ctrl+F, F5 and Esc stay.
+pub(super) fn acts_on_items(vk: u32, ctrl: bool) -> bool {
+    // 0x21..=0x28: PageUp, PageDown, End, Home, Left, Up, Right, Down.
+    matches!(vk, 0x21..=0x28)
+        || vk == msg::VK_RETURN
+        || vk == msg::VK_F2
+        || vk == msg::VK_DELETE
+        // A, C, D, X, Space.
+        || (ctrl && matches!(vk, 0x41 | 0x43 | 0x44 | 0x58 | 0x20))
+}
+
 pub(super) fn cursor_mode(shift: bool, ctrl: bool) -> CursorMode {
     if shift {
         CursorMode::Extend

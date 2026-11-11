@@ -72,6 +72,17 @@ pub(super) fn on_keydown(
     let mut release = false;
     let shift = window::key_down(msg::VK_SHIFT);
     let ctrl = window::key_down(msg::VK_CONTROL);
+    // A rolled-up fence (from the moment it starts to roll up) shows none of its items: a key
+    // must not act on a selection nobody can see (Delete sent a hidden file to the Recycle Bin).
+    if v.roll_target() && acts_on_items(wparam as u32, ctrl) {
+        tracing::debug!(
+            vk = wparam as u32,
+            ctrl,
+            selected = ids.len(),
+            "key ignored: the fence is rolled up, its items are hidden"
+        );
+        return Some(0);
+    }
     const VK_BACK: u32 = 0x08;
     const VK_TAB: u32 = 0x09;
     const VK_PRIOR: u32 = 0x21;
@@ -310,7 +321,8 @@ pub(super) fn on_syskeydown(
     let v = guard.as_mut()?;
     if vk == msg::VK_RETURN {
         let ids = v.selected_ids();
-        if !ids.is_empty() {
+        // Not for the hidden items of a rolled-up fence (see `acts_on_items`).
+        if !ids.is_empty() && !v.roll_target() {
             queue.push(Command::ItemProperties {
                 fence: v.active,
                 items: ids,
@@ -349,7 +361,8 @@ pub(super) fn on_contextmenu(
         return Some(0);
     };
     let ids = v.selected_ids();
-    if ids.is_empty() {
+    // A rolled-up fence shows no items: the Menu key opens the fence menu there.
+    if ids.is_empty() || v.roll_target() {
         // Background menu at the content's top-left.
         let win = window::window_rect(hwnd);
         let pad = (8.0 * v.scale()) as i32;

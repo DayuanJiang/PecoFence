@@ -910,6 +910,38 @@ fn folder_drop_filter_rejects_self_parent_and_ancestors() {
     );
 }
 
+/// A rolled-up fence ignores the keys that act on its (hidden) items and keeps the others.
+#[test]
+fn rolled_fence_ignores_only_the_item_keys() {
+    // Arrows, Home, End, PageUp, PageDown, Enter, F2, Delete: with or without Ctrl.
+    for vk in [0x25, 0x26, 0x27, 0x28, 0x24, 0x23, 0x21, 0x22] {
+        assert!(acts_on_items(vk, false), "{vk:#x}");
+        assert!(acts_on_items(vk, true), "{vk:#x} with Ctrl");
+    }
+    for vk in [msg::VK_RETURN, msg::VK_F2, msg::VK_DELETE] {
+        assert!(acts_on_items(vk, false), "{vk:#x}");
+    }
+    // Ctrl+A, Ctrl+C, Ctrl+D, Ctrl+X, Ctrl+Space; the bare letters are type-ahead.
+    for vk in [0x41, 0x43, 0x44, 0x58, 0x20] {
+        assert!(acts_on_items(vk, true), "Ctrl+{vk:#x}");
+        assert!(!acts_on_items(vk, false), "{vk:#x}");
+    }
+    // Tab, Ctrl+Tab, Ctrl+Z, Ctrl+V, Ctrl+F, Ctrl+N, F5, Esc, Backspace stay.
+    for (vk, ctrl) in [
+        (0x09, false),
+        (0x09, true),
+        (0x5A, true),
+        (0x56, true),
+        (0x46, true),
+        (0x4E, true),
+        (0x74, false),
+        (msg::VK_ESCAPE, false),
+        (0x08, false),
+    ] {
+        assert!(!acts_on_items(vk, ctrl), "{vk:#x} ctrl={ctrl}");
+    }
+}
+
 #[test]
 fn cursor_mode_and_tip_delay_tables() {
     assert_eq!(cursor_mode(false, false), CursorMode::Select);

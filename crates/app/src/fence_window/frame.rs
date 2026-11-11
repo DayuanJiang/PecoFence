@@ -180,6 +180,17 @@ impl FrameHandle {
                 if rolled && std::mem::take(&mut v.hover_raised) {
                     v.queue.push(Command::EndHoverRaise(hwnd));
                 }
+                // Nothing of the content shows from here on: a selection nobody can see is
+                // dropped, so no later key or command acts on it.
+                if rolled {
+                    let had = v.selected.len();
+                    let _ = v.end_selection();
+                    v.focus_visible = false;
+                    v.type_ahead.clear();
+                    if had > 0 {
+                        tracing::debug!(had, "roll-up landed: the hidden selection is dropped");
+                    }
+                }
             }
             // The resting window gets a crop cut for its final rect (one crop + upload per
             // animation, in the pass that redraws everything anyway).
