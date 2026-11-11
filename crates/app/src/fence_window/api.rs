@@ -2190,6 +2190,14 @@ impl FenceWindow {
         handler::focus_session(&self.view, self.hwnd());
     }
 
+    /// The window takes the keyboard as a click on it would, with the selection left as it is
+    /// (its title's name box closed, or the fence beside it was deleted from its menu). Returns
+    /// whether it is the foreground window now. Call with no borrow of the view held.
+    pub fn take_keyboard(&self) -> bool {
+        handler::focus_session(&self.view, self.hwnd());
+        desktop::foreground_window() == self.hwnd()
+    }
+
     /// Selects exactly the icons of `items` that are shown (what a paste just put here, as
     /// Explorer selects what it pasted): the first of them becomes the keyboard cursor and is
     /// scrolled into view. Returns how many are selected.

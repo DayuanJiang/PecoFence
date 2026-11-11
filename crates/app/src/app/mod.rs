@@ -2718,6 +2718,7 @@ impl App {
                     w.redraw();
                 }
             }
+            Command::FocusFence(fence) => self.give_keyboard(fence, "name box closed"),
             Command::DeleteFence(fence) => self.delete_fence(fence),
             Command::NewFence { x, y } => self.new_fence_near(x, y),
             Command::NewNote { x, y } => self.new_note_near(x, y),

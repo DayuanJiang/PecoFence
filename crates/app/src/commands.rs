@@ -303,6 +303,9 @@ pub enum Command {
     },
     /// A composition surface reported `DXGI_ERROR_DEVICE_REMOVED`: rebuild the render stack.
     DeviceLost,
+    /// The name box over this fence's title closed while it had the keyboard (Enter or Esc):
+    /// the fence takes the keyboard, so the next key reaches it and not the taskbar.
+    FocusFence(FenceId),
     DeleteFence(FenceId),
     NewFence {
         x: i32,

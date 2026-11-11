@@ -8,7 +8,7 @@ use pecofence_core::{FenceId, ItemId};
 use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
 };
-use pecofence_platform::{HWND, RECT, edit, monitors, msg};
+use pecofence_platform::{HWND, RECT, desktop, edit, monitors, msg};
 use pecofence_render::ThemeMode;
 use std::cell::RefCell;
 
@@ -306,6 +306,9 @@ pub fn active_target() -> Option<RenameTarget> {
 pub fn end_active(commit: bool) {
     let session = ACTIVE.with(|a| a.borrow_mut().take());
     if let Some(mut s) = session {
+        // Closed by its own keys (Enter, Esc), not by a click elsewhere: the keyboard is still
+        // here and goes on to the fence below. Read before the popup is destroyed.
+        let had_keyboard = desktop::foreground_window() == s.window.hwnd();
         if commit && !s.committed {
             s.committed = true;
             let text = s.edit.text();
@@ -319,6 +322,12 @@ pub fn end_active(commit: bool) {
             }
         } else {
             s.queue.push(Command::RedrawAll);
+        }
+        if let RenameTarget::Fence(fence) = s.target {
+            tracing::debug!(%fence, commit, had_keyboard, "fence name box closed");
+            if had_keyboard {
+                s.queue.push(Command::FocusFence(fence));
+            }
         }
         drop(s.edit);
         drop(s.window);

@@ -949,6 +949,48 @@ impl App {
         false
     }
 
+    /// `fence`'s window takes the keyboard (see `Command::FocusFence`). A name box that is
+    /// open now keeps it: taking the foreground from it would close it. A fence under another
+    /// program's window does not take it either (see `fence_in_sight`).
+    pub(super) fn give_keyboard(&mut self, fence: FenceId, why: &'static str) {
+        if crate::rename::active_target().is_some() {
+            tracing::debug!(%fence, why, "keyboard stays with the open name box");
+            return;
+        }
+        let Some(w) = self.window_for(fence) else {
+            return;
+        };
+        if !fence_in_sight(w) {
+            tracing::debug!(%fence, why, "keyboard stays: another window covers the fence");
+            return;
+        }
+        let got = w.take_keyboard();
+        tracing::debug!(%fence, why, got, "fence takes the keyboard");
+    }
+
+    /// The fence window nearest to `gone` (the rect of a window that was just deleted) takes
+    /// the keyboard, so the Ctrl+Z the delete notice suggests reaches PecoFence at once
+    /// instead of the taskbar or the desktop. 「桌面」 arranged like the desktop spans the
+    /// screen, so it comes after every fence with a plate.
+    fn keyboard_to_nearest_fence(&mut self, gone: RECT) {
+        let centre = |r: &RECT| ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+        let (gx, gy) = centre(&gone);
+        let nearest = self
+            .fences
+            .iter()
+            .filter(|(_, w)| desktop::is_visible(w.hwnd()) && fence_in_sight(w))
+            .min_by_key(|(_, w)| {
+                let (x, y) = centre(&w.rect());
+                let far = i64::from(x - gx).pow(2) + i64::from(y - gy).pow(2);
+                (w.is_desktop_arranged(), far)
+            })
+            .map(|(id, _)| *id);
+        match nearest {
+            Some(id) => self.give_keyboard(id, "fence deleted from its menu"),
+            None => tracing::debug!("no fence left to take the keyboard after the delete"),
+        }
+    }
+
     /// The fence menu's 删除栅栏: asks first when icons or rules would go with the fence.
     pub(super) fn delete_fence_from_menu(&mut self, fence: FenceId) {
         if let Some(prompt) = self.delete_fence_prompt(fence) {
@@ -975,12 +1017,17 @@ impl App {
         } else {
             tracing::info!("no room for the snapshot before a fence delete");
         }
+        // Where its window is, before the window goes (a tab's window stays).
+        let gone = self.window_for(fence).map(|w| w.rect());
         let Some(deleted) = self.state.delete_fence_keeping(fence) else {
             return;
         };
         self.note_deleted_for_undo(deleted);
         self.after_fence_deleted(fence);
         self.offer_undo_delete(fence, &title);
+        if let Some(gone) = gone {
+            self.keyboard_to_nearest_fence(gone);
+        }
     }
 
     /// What deleting `fence` takes with it, as a question; None when nothing would be lost (no
@@ -1255,6 +1302,17 @@ pub(super) fn fence_limit_text() -> String {
         "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。",
         &[pecofence_core::config_store::MAX_FENCES.to_string()],
     )
+}
+
+/// The fence shows at the middle of its title row: no other program's window lies over it
+/// there. A name box can float over such a window (a fence made from the tray menu or the
+/// settings page while a program covers the desktop). The fence under it stays out of the
+/// keyboard's way: taking the foreground would bring it up over that program.
+fn fence_in_sight(w: &FenceWindow) -> bool {
+    let r = w.rect();
+    let dpi = monitors::dpi_for_window(w.hwnd()).max(96) as i32;
+    let at = desktop::window_from_point((r.left + r.right) / 2, r.top + 12 * dpi / 96);
+    desktop::root_ancestor(at) == w.hwnd()
 }
 
 /// Whether Ctrl+wheel changes the icon size. A locked fence keeps its size: a stray Ctrl+wheel

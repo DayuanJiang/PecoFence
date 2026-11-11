@@ -1,9 +1,13 @@
-# Fence polish 2026-11-12, package paste (reviews: interaction UX2, code C8).
+# Fence polish 2026-11-12, package paste (reviews: interaction UX2 and UX8, code C8).
 # Part A: what is pasted into a fence lands in that fence and is selected there, as Explorer
 #   puts a copy beside its original and selects it: a copy made beside its original (Ctrl+V in
 #   the same fence, in another fence, the menu's 粘贴, with a rule that would file it elsewhere,
 #   two files at once), a cut, a file from another folder, a folder fence.
-if (-not $Part) { $Part = 'A' }
+# Part B: the keyboard after the name box over a fence's title closes (Enter, Esc, a new fence,
+#   the menu's 重命名, a click on another window) and after 删除栅栏 from the fence menu; the
+#   command line takes the keyboard from nobody.
+# Parts: run.sh --var Part=A (about 2 min) or Part=B (about 2 min); default both.
+if (-not $Part) { $Part = 'AB' }
 trap { PfTrap $_; continue }
 
 function PpClean() {
@@ -53,6 +57,22 @@ function PpCheckCopy($tag, $copy, $fence) {
   $c = PpCopied
   Check "$tag Ctrl+C right after the paste takes the copy" ($c -eq $copy) "clipboard: '$c'"
 }
+function PpTitles() { return ((@(PfJson fence list) | Where-Object { $_ -and $_.id -and $_.kind -ne 'inbox' } | ForEach-Object { $_.title }) -join ' | ') }
+# The fence nearest to a rect's centre among the fences left (「桌面」 only when no other is left).
+function PpNearest($rect) {
+  $cx = $rect.x + $rect.w / 2; $cy = $rect.y + $rect.h / 2
+  $best = $null; $bd = [double]::MaxValue
+  $all = @(@(PfJson fence list) | Where-Object { $_ -and $_.id -and $_.windowRect })
+  $plates = @($all | Where-Object { $_.kind -ne 'inbox' })
+  if ($plates.Count -gt 0) { $all = $plates }
+  foreach ($f in $all) {
+    $w = $f.windowRect
+    $d = [math]::Pow($w.x + $w.w / 2 - $cx, 2) + [math]::Pow($w.y + $w.h / 2 - $cy, 2)
+    if ($d -lt $bd) { $bd = $d; $best = $f.title }
+  }
+  return $best
+}
+
 Case 'setup'
 CloseWindows
 PpClean
@@ -70,6 +90,7 @@ Pf item move @($PpFiles | ForEach-Object { Join-Path $PfDesk $_ }) --to Alpha | 
 Pf item move (Join-Path $PfDesk 'pp 发票.txt') (Join-Path $PfDesk 'pp 行程单.txt') --to Bravo | Out-Null
 Start-Sleep -Seconds 2
 $Inbox = (@(PfJson fence list) | Where-Object { $_ -and $_.kind -eq 'inbox' } | Select-Object -First 1).title
+Log "fences: $(PpTitles); inbox '$Inbox'"
 
 if ($Part -match 'A') {
   Case 'A1 a copy pasted into the same fence'
@@ -198,6 +219,140 @@ if ($Part -match 'A') {
   Shot 'A8-folder-fence'
   Pf fence delete 'PpFolder' | Out-Null
   Start-Sleep -Milliseconds 800
+}
+
+if ($Part -match 'B') {
+  # A Notepad window to click on and to hold the keyboard.
+  $np = Start-Process notepad -PassThru
+  Start-Sleep -Seconds 2
+  $nph = [IntPtr]::Zero
+  for ($k = 0; $k -lt 20 -and $nph -eq [IntPtr]::Zero; $k++) { $nph = (Get-Process -Id $np.Id -ErrorAction SilentlyContinue).MainWindowHandle; Start-Sleep -Milliseconds 300 }
+  if ($nph -eq [IntPtr]::Zero) { $nph = (Get-Process notepad | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1).MainWindowHandle }
+  [L]::MoveWindow($nph, 1050, 60, 480, 300, $true) | Out-Null
+  Start-Sleep -Milliseconds 500
+  function PpMarquee() {
+    $r = FreeRect 320 240 1040 420
+    [G]::MoveTo($r[0], $r[1]); Start-Sleep -Milliseconds 200; MDown; Start-Sleep -Milliseconds 200
+    Glide $r[0] $r[1] $r[2] $r[3] 14 30
+    Start-Sleep -Milliseconds 300; MUp; Start-Sleep -Milliseconds 700
+    $off = [G]::FindWindowW('PecoFence.MarqueeOffer', [NullString]::Value)
+    return (Rect $off)
+  }
+  function PpNewFenceByMouse() {
+    $or = PpMarquee
+    [G]::Click($or.R - 40, [int](($or.T + $or.B) / 2))
+    return (WaitWin 'PecoFence.Rename' 6)
+  }
+
+  Case 'B1 a new fence, named with Enter'
+  $box = PpNewFenceByMouse
+  Check 'B1 the name box opens on the new fence' ($box -ne [IntPtr]::Zero) "box=$box fg=$(Fg)"
+  [G]::Type('新栅栏甲'); Start-Sleep -Milliseconds 300; [G]::Press(0x0D); Start-Sleep -Milliseconds 900
+  $fg = Fg
+  Shot 'B1-named'
+  Check 'B1 the new fence has the keyboard after Enter' ($fg -eq "PecoFence.Fence '新栅栏甲'") "foreground: $fg"
+  # The next key goes to it: a file on the clipboard is pasted into the new fence.
+  New-Item -ItemType Directory -Force "$PfRun\pp-src" | Out-Null
+  Set-Content -LiteralPath "$PfRun\pp-src\pp 新栅栏里的文件.txt" -Value 'pasted' -Encoding ASCII
+  $list = New-Object System.Collections.Specialized.StringCollection
+  $list.Add("$PfRun\pp-src\pp 新栅栏里的文件.txt") | Out-Null
+  [Windows.Forms.Clipboard]::SetFileDropList($list)
+  CtrlKey 0x56 900
+  Check 'B1 Ctrl+V right after naming pastes into the new fence' ((WaitItemFence 'pp 新栅栏里的文件.txt' '新栅栏甲' 6) -eq '新栅栏甲') "the file is in '$(ItemFence 'pp 新栅栏里的文件.txt')'; foreground: $(Fg)"
+
+  Case 'B2 a new fence, Esc at the name'
+  $had = @(PpTitles) -split ' \| '
+  $box = PpNewFenceByMouse
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 900
+  $new = @((PpTitles) -split ' \| ' | Where-Object { $had -notcontains $_ })[0]
+  $fg = Fg
+  Check 'B2 the new fence has the keyboard after Esc' ($new -and $fg -eq "PecoFence.Fence '$new'") "foreground: $fg; new fence '$new'"
+
+  Case 'B3 the menu''s rename'
+  foreach ($key in @(@(0x0D, 'Enter'), @(0x1B, 'Esc'))) {
+    [G]::Click(1290, 200); Start-Sleep -Milliseconds 500   # Notepad has the keyboard first
+    $w = (FenceGet 'Bravo').windowRect
+    [G]::RClick($w.x + 120, $w.y + 18)
+    $m = MenuWin 5
+    MenuPick '^重命名' $m | Out-Null
+    $box = WaitWin 'PecoFence.Rename' 6
+    Start-Sleep -Milliseconds 300
+    [G]::Press($key[0]); Start-Sleep -Milliseconds 900
+    $fg = Fg
+    Check "B3 Bravo has the keyboard after $($key[1]) in its name box" ($box -ne [IntPtr]::Zero -and $fg -eq "PecoFence.Fence 'Bravo'") "foreground: $fg; box=$box"
+  }
+
+  Case 'B4 the name box closed by a click on another window'
+  $w = (FenceGet 'Bravo').windowRect
+  [G]::RClick($w.x + 120, $w.y + 18)
+  $m = MenuWin 5
+  MenuPick '^重命名' $m | Out-Null
+  $box = WaitWin 'PecoFence.Rename' 6
+  [G]::Type('Bravo2'); Start-Sleep -Milliseconds 300
+  [G]::Click(1290, 200); Start-Sleep -Milliseconds 900
+  $fg = Fg
+  Check 'B4 the clicked window keeps the keyboard and the name is taken' ($fg -match '^Notepad' -and (PfFence 'Bravo2')) "foreground: $fg; fences: $(PpTitles)"
+  Pf fence rename 'Bravo2' 'Bravo' | Out-Null
+  Start-Sleep -Milliseconds 500
+
+  Case 'B5 an empty fence deleted from its menu'
+  $t = '新栅栏甲'
+  Pf item move "$PfDesk\pp 新栅栏里的文件.txt" --to Alpha | Out-Null
+  Start-Sleep -Milliseconds 600
+  $gone = (FenceGet $t).windowRect
+  [G]::RClick($gone.x + 100, $gone.y + 18)
+  $m = MenuWin 5
+  MenuPick '^删除栅栏' $m | Out-Null
+  Start-Sleep -Milliseconds 1200
+  $near = PpNearest $gone
+  $fg = Fg
+  Shot 'B5-deleted-empty'
+  Check 'B5 the nearest fence has the keyboard after the delete' ($fg -eq "PecoFence.Fence '$near'") "foreground: $fg; nearest fence '$near'; fences: $(PpTitles)"
+  CtrlKey 0x5A 1200
+  Check 'B5 Ctrl+Z right after brings the fence back' ([bool](PfFence $t)) "fences: $(PpTitles)"
+
+  Case 'B6 a fence with icons deleted from its menu'
+  $gone = (FenceGet 'Bravo').windowRect
+  [G]::RClick($gone.x + 120, $gone.y + 18)
+  $m = MenuWin 5
+  MenuPick '^删除栅栏' $m | Out-Null
+  Start-Sleep -Milliseconds 1000
+  [G]::Press(0x59); Start-Sleep -Milliseconds 1300   # Y in the question
+  $near = PpNearest $gone
+  $fg = Fg
+  Shot 'B6-deleted-with-icons'
+  Check 'B6 the nearest fence has the keyboard after the delete' (-not (PfFence 'Bravo') -and $fg -eq "PecoFence.Fence '$near'") "foreground: $fg; nearest fence '$near'; fences: $(PpTitles)"
+  CtrlKey 0x5A 1500
+  Check 'B6 Ctrl+Z right after brings the fence and its icons back' ((PfFence 'Bravo') -and (ItemFence 'pp 发票.txt') -eq 'Bravo') "fences: $(PpTitles); pp 发票.txt is in '$(ItemFence 'pp 发票.txt')'"
+
+  Case 'B8 a name box over a fence that another window covers'
+  # As when a fence is made from the tray menu while a program covers the desktop: the name box
+  # floats over that program, and the fence under it must not come up over it.
+  $had = @(@(PfJson fence list) | Where-Object { $_ -and $_.id } | ForEach-Object { "$($_.id)" })
+  $box = PpNewFenceByMouse
+  $w = (@(PfJson fence list) | Where-Object { $_ -and $_.id -and $had -notcontains "$($_.id)" } | Select-Object -First 1).windowRect
+  [L]::MoveWindow($nph, $w.x - 40, $w.y - 40, $w.w + 80, $w.h + 80, $true) | Out-Null
+  Start-Sleep -Milliseconds 600
+  $fgBox = Fg
+  [G]::Type('被盖住的栅栏'); Start-Sleep -Milliseconds 300; [G]::Press(0x0D); Start-Sleep -Milliseconds 900
+  $fg = Fg
+  $top = [W]::RootClassAt($w.x + [int]($w.w / 2), $w.y + [int]($w.h / 2))
+  Shot 'B8-covered'
+  Check 'B8 the covering window stays on top and the fence does not take the keyboard' ($fgBox -match '^PecoFence\.Rename' -and [bool](PfFence '被盖住的栅栏') -and $fg -notmatch '^PecoFence\.Fence' -and $top -eq 'Notepad') "name box up: $fgBox; after Enter: foreground $fg, window at the fence's centre: $top; fences: $(PpTitles)"
+  [L]::MoveWindow($nph, 1050, 60, 480, 300, $true) | Out-Null
+  Start-Sleep -Milliseconds 500
+
+  Case 'B7 the command line leaves the keyboard where it is'
+  [G]::Click(1290, 200); Start-Sleep -Milliseconds 600
+  $fg0 = Fg
+  Pf fence create --title 'PpCli' --rect '300,460,240,200' | Out-Null; Start-Sleep -Milliseconds 700
+  $fg1 = Fg
+  Pf fence rename 'PpCli' 'PpCli2' | Out-Null; Start-Sleep -Milliseconds 700
+  $fg2 = Fg
+  Pf fence delete 'PpCli2' | Out-Null; Start-Sleep -Milliseconds 900
+  $fg3 = Fg
+  Check 'B7 create, rename and delete from the command line leave Notepad in front' ($fg0 -match '^Notepad' -and $fg1 -eq $fg0 -and $fg2 -eq $fg0 -and $fg3 -eq $fg0) "before: $fg0; after create: $fg1; after rename: $fg2; after delete: $fg3"
+  Stop-Process -Id $np.Id -Force -ErrorAction SilentlyContinue
 }
 
 Case 'cleanup'
