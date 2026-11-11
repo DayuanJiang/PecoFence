@@ -719,12 +719,7 @@ impl App {
                         known,
                         sources: paths,
                     });
-                    self.pasted = Some(Pasted {
-                        fence,
-                        paths: Vec::new(),
-                        selected: 0,
-                        since: Instant::now(),
-                    });
+                    self.pasted = Some(self.paste_started(fence, Vec::new()));
                 }
                 return;
             }
@@ -745,12 +740,7 @@ impl App {
                 Some(dest.as_ref()?.join(shell::transferred_name(p)?))
             })
             .collect();
-        self.pasted = Some(Pasted {
-            fence,
-            paths: expected,
-            selected: 0,
-            since: Instant::now(),
-        });
+        self.pasted = Some(self.paste_started(fence, expected));
         let running = self.fileops_running;
         self.handle(Command::ExternalDrop {
             paths,
@@ -811,14 +801,55 @@ impl App {
         self.paste_dups = dups;
     }
 
+    /// The record of a paste into `fence` that starts now and will bring `paths`: it notes
+    /// what the fence has selected, so `select_pasted` can tell whether the user selected
+    /// something else since.
+    fn paste_started(&self, fence: FenceId, paths: Vec<PathBuf>) -> Pasted {
+        let left = self
+            .window_for(fence)
+            .filter(|w| w.active_fence() == fence)
+            .map(|w| w.selected_items().into_iter().collect())
+            .unwrap_or_default();
+        Pasted {
+            fence,
+            paths,
+            chosen: Vec::new(),
+            left,
+            since: Instant::now(),
+        }
+    }
+
     /// Selects what the last paste put into its fence, as far as it shows there by now, with
     /// the first of them as the keyboard cursor (Explorer selects what it pasted). Runs again
-    /// when more of it has arrived; forgotten once everything is selected or it took too long.
+    /// when more of it has arrived, and adds that to the selection only while the selection is
+    /// still what the paste left: once the user has selected something else, or the paste is
+    /// too long ago, the rest arrives unselected. Forgotten once everything is selected.
     pub(super) fn select_pasted(&mut self) {
         let Some(p) = self.pasted.as_ref() else {
             return;
         };
         let fence = p.fence;
+        // Checked before anything is selected: a file that shows only now (it was hidden by
+        // the fence's filter, or it never came) is not "what I just pasted" any more.
+        if self.fileops_running == 0 && p.since.elapsed().as_secs() > PENDING_CREATION_SECS {
+            tracing::debug!(%fence, "pasted files are no longer selected: the paste is too long ago");
+            self.pasted = None;
+            return;
+        }
+        let Some(w) = self.window_for(fence).filter(|w| w.active_fence() == fence) else {
+            return;
+        };
+        let now: HashSet<ItemId> = w.selected_items().into_iter().collect();
+        if now != p.left {
+            tracing::debug!(
+                %fence,
+                selected = now.len(),
+                left = p.left.len(),
+                "pasted files are no longer selected: the selection changed since the paste"
+            );
+            self.pasted = None;
+            return;
+        }
         let copying = self.paste_dups.iter().any(|d| d.fence == fence);
         let keys: Vec<ItemKey> = p
             .paths
@@ -837,20 +868,32 @@ impl App {
                     .collect()
             })
             .unwrap_or_default();
-        let mut selected = p.selected;
-        if ids.len() > selected
-            && let Some(w) = self.window_for(fence)
-            && w.active_fence() == fence
-        {
-            selected = w.select_items(&ids);
-            tracing::debug!(%fence, pasted = keys.len(), arrived = ids.len(), selected, "pasted files selected");
+        // The pasted icons selected before stay selected, the new arrivals join them.
+        let mut chosen = p.chosen.clone();
+        if ids.iter().any(|id| !chosen.contains(id)) {
+            let mut want = chosen.clone();
+            want.extend(ids.iter().copied().filter(|id| !chosen.contains(id)));
+            let got = w.select_items(&want);
+            tracing::debug!(
+                %fence,
+                pasted = keys.len(),
+                arrived = ids.len(),
+                selected = got.len(),
+                "pasted files selected"
+            );
+            // None of them shows (the fence's filter hides them): the selection is untouched.
+            if !got.is_empty() {
+                chosen = got;
+            }
         }
-        let expired =
-            self.fileops_running == 0 && p.since.elapsed().as_secs() > PENDING_CREATION_SECS;
-        if (!copying && selected >= keys.len()) || expired {
+        let done = !copying && ids.len() >= keys.len() && ids.iter().all(|id| chosen.contains(id));
+        if done {
             self.pasted = None;
-        } else if let Some(p) = self.pasted.as_mut() {
-            p.selected = selected;
+        } else if let Some(p) = self.pasted.as_mut()
+            && p.chosen != chosen
+        {
+            p.left = chosen.iter().copied().collect();
+            p.chosen = chosen;
         }
     }
 

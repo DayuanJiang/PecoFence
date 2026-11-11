@@ -192,7 +192,11 @@ impl App {
             self.on_fileop_done(serial, then, result);
         }
         if any {
-            // A paste's files may be in their fence now.
+            // A paste's files may be in their fence now; those the folder watcher still has
+            // to report count as just pasted from here, however long the copy took.
+            if let Some(p) = self.pasted.as_mut() {
+                p.since = Instant::now();
+            }
             self.select_pasted();
         }
     }

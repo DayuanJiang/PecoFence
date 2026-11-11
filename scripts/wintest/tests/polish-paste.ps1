@@ -6,14 +6,16 @@
 # Part B: the keyboard after the name box over a fence's title closes (Enter, Esc, a new fence,
 #   the menu's 重命名, a click on another window) and after 删除栅栏 from the fence menu; the
 #   command line takes the keyboard from nobody.
-# Parts: run.sh --var Part=A (about 2 min) or Part=B (about 2 min); default both.
-if (-not $Part) { $Part = 'AB' }
+# Part C: the selection of pasted files gives way to the user: a file the fence's filter hid is
+#   not selected later over another selection, or long after the paste.
+# Parts: run.sh --var Part=A, B or C (about 2 min each); default all.
+if (-not $Part) { $Part = 'ABC' }
 trap { PfTrap $_; continue }
 
 function PpClean() {
   Get-ChildItem -LiteralPath $PfDesk -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'pp *' } |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-  Remove-Item -Recurse -Force "$PfRun\pp-src", "$PfRun\pp-folder" -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force "$PfRun\pp-src", "$PfRun\pp-folder", "$PfRun\pp-filter" -ErrorAction SilentlyContinue
 }
 function CtrlKey($vk, $ms = 500) { Chord 0x11 $vk; Start-Sleep -Milliseconds $ms }
 # What the fence's dump line says about the selection: how many icons, and the keyboard cursor.
@@ -353,6 +355,61 @@ if ($Part -match 'B') {
   $fg3 = Fg
   Check 'B7 create, rename and delete from the command line leave Notepad in front' ($fg0 -match '^Notepad' -and $fg1 -eq $fg0 -and $fg2 -eq $fg0 -and $fg3 -eq $fg0) "before: $fg0; after create: $fg1; after rename: $fg2; after delete: $fg3"
   Stop-Process -Id $np.Id -Force -ErrorAction SilentlyContinue
+}
+
+# The clipboard holds these files, in this order (as copied in another folder).
+function PpClip([string[]]$paths) {
+  $list = New-Object System.Collections.Specialized.StringCollection
+  foreach ($p in $paths) { $list.Add($p) | Out-Null }
+  [Windows.Forms.Clipboard]::SetFileDropList($list)
+}
+if ($Part -match 'C') {
+  New-Item -ItemType Directory -Force "$PfRun\pp-src", "$PfRun\pp-filter" | Out-Null
+  foreach ($n in 'pf 报告 一月.txt', 'pf 报告 二月.txt', 'pf 预算.txt') { Set-Content -LiteralPath "$PfRun\pp-filter\$n" -Value $n -Encoding ASCII }
+  foreach ($n in 'pp 合同 原件.txt', 'pp 发票 原件.txt') { Set-Content -LiteralPath "$PfRun\pp-src\$n" -Value $n -Encoding ASCII }
+  Pf fence create --portal "$PfRun\pp-filter" --title 'PpFilter' --rect '300,460,300,220' | Out-Null
+  Start-Sleep -Seconds 2
+  # The folder fence shows only the 报告 files (Ctrl+F, the text, Enter keeps the filter).
+  function PpFilterOn() {
+    $p = CellPt 'PpFilter' 0; [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 400
+    Chord 0x11 0x46; Start-Sleep -Milliseconds 800
+    [G]::Type('报告'); Start-Sleep -Milliseconds 900
+    [G]::Press(0x0D); Start-Sleep -Milliseconds 900
+    return (FenceGet 'PpFilter').filter
+  }
+
+  Case 'C1 a pasted file the filter hides, then another icon selected'
+  $f = PpFilterOn
+  PpClip @("$PfRun\pp-src\pp 合同 原件.txt")
+  PpClickEmpty 'PpFilter'
+  CtrlKey 0x56 1500
+  $f2 = (FenceGet 'PpFilter').filter
+  Check 'C1 setup: the file is pasted into the folder and the filter hides it' ($f.shown -eq 2 -and $f2.shown -eq 2 -and (Test-Path -LiteralPath "$PfRun\pp-filter\pp 合同 原件.txt")) "filter before: $($f | ConvertTo-Json -Compress); after the paste: $($f2 | ConvertTo-Json -Compress)"
+  $p = CellPt 'PpFilter' 0; [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
+  $mine = (PpSel 'PpFilter').focus
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 900   # the first Esc clears the filter and keeps the selection
+  # The folder changes: the pasted file shows by now, and the user's selection must stay.
+  Set-Content -LiteralPath "$PfRun\pp-filter\pf 新来的.txt" -Value 'new' -Encoding ASCII
+  Start-Sleep -Milliseconds 2000
+  $s = PpSel 'PpFilter'
+  $shown = [int](DumpVal (DumpOf 'PpFilter' 3) 'items')
+  Shot 'C1-own-selection-kept'
+  Check 'C1 the icon selected after the paste stays selected when the folder changes' ($mine -and $s.n -eq 1 -and $s.focus -eq $mine -and $shown -ge 5) "selected '$mine' before; now $($s.text); icons shown: $shown"
+
+  Case 'C2 a pasted file the filter hides, shown a long time later'
+  $f = PpFilterOn
+  PpClip @("$PfRun\pp-src\pp 发票 原件.txt")
+  PpClickEmpty 'PpFilter'
+  CtrlKey 0x56 1500
+  $s0 = PpSel 'PpFilter'
+  Check 'C2 setup: pasted, hidden by the filter, nothing selected' ((Test-Path -LiteralPath "$PfRun\pp-filter\pp 发票 原件.txt") -and $s0.n -eq 0) "$($s0.text); filter: $((FenceGet 'PpFilter').filter | ConvertTo-Json -Compress)"
+  Start-Sleep -Seconds 17   # longer than a paste counts as just done (15 s)
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 900
+  Set-Content -LiteralPath "$PfRun\pp-filter\pf 更晚来的.txt" -Value 'later' -Encoding ASCII
+  Start-Sleep -Milliseconds 2000
+  $s = PpSel 'PpFilter'
+  Check 'C2 a folder change long after the paste selects nothing' ($s.n -eq 0) "$($s.text); filter: $((FenceGet 'PpFilter').filter | ConvertTo-Json -Compress)"
+  Pf fence delete 'PpFilter' | Out-Null
 }
 
 Case 'cleanup'

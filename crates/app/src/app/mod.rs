@@ -282,8 +282,12 @@ struct PasteDup {
 struct Pasted {
     fence: FenceId,
     paths: Vec<PathBuf>,
-    /// How many of them the last `select_pasted` selected.
-    selected: usize,
+    /// The pasted icons selected so far.
+    chosen: Vec<ItemId>,
+    /// The fence's selection as the paste last left it: what was selected when it started,
+    /// then `chosen`. Once the user has selected something else, the paste selects no more.
+    left: HashSet<ItemId>,
+    /// When the paste started, or the last file operation ended after that.
     since: Instant,
 }
 
