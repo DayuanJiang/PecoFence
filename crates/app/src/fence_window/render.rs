@@ -669,9 +669,14 @@ impl FenceViewState {
             .pill_anim
             .map(|(x, w)| (x.value_at(now), w.value_at(now)));
         let deco = self.deco;
-        // A title in the fence's own tint (标题颜色 → 跟随染色) sits on a band washed with
+        // A title in the fence's own tint (标题颜色 → 跟随色调) sits on a band washed with
         // that tint: its lightness moves until it reads against the band.
-        let (tint, band) = (self.style.tint, self.title_band_color());
+        let tint = self.style.tint;
+        let follows = |c: Option<ColorF>| c.is_some() && c == tint;
+        let band = (follows(self.style.title_color)
+            || self.tabs.iter().any(|t| follows(t.title_color)))
+        .then(|| self.title_band_color())
+        .flatten();
         let light_text = theme.text_primary.r > 0.5;
         let on_band = move |color: Option<ColorF>| match (color, tint, band) {
             (Some(c), Some(tint), Some(band)) if c == tint => {
