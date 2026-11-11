@@ -177,11 +177,12 @@ pub struct FenceViewState {
     /// A Peek search holds this fence open (a hover peek that does not close until the search
     /// has no matches here any more).
     pub(super) search_expanded: bool,
-    /// Where a Peek search scrolled this fence: the tab shown, the offset before the search
-    /// first moved it and the offset the search last put it at. When the search ends the
-    /// fence glides back there, unless the user scrolled it meanwhile. The search is a
-    /// temporary view: the tabs it switched and the fences it expanded go back too.
-    pub(super) search_scroll: Option<(FenceId, f32, f32)>,
+    /// Where a Peek search scrolled this fence, per tab it scrolled (it may switch tabs): the
+    /// offset before the search first moved that tab and the offset the search last put it
+    /// at. When the search ends each goes back there, unless the user scrolled it meanwhile:
+    /// the tab on show glides, a tab that is not on show gets it into `scroll_memory`. The
+    /// search is a temporary view: the tabs it switched and the fences it expanded go back too.
+    pub(super) search_scroll: HashMap<FenceId, (f32, f32)>,
     /// Fence-wide drop wash + ring alpha (83 ms in, 167 ms out).
     pub(super) drop_wash: Tween,
     /// Insertion caret alpha (83 ms) and the slot it is (still) drawn at while fading out.

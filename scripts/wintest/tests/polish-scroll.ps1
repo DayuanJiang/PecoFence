@@ -17,7 +17,7 @@ trap { PfTrap $_; continue }
 Add-Type -Namespace PfPolish -Name Clock -MemberDefinition '[DllImport("kernel32.dll")] public static extern void GetSystemTimePreciseAsFileTime(out long ft);'
 # Now, in ms (UTC file time), on the scale of the app log's timestamps.
 function PsNow() { $ft = [long]0; [PfPolish.Clock]::GetSystemTimePreciseAsFileTime([ref]$ft); return $ft / 10000.0 }
-function PsClean() { Get-ChildItem $PfDesk -Filter 'ps*.txt' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue }
+function PsClean() { Get-ChildItem $PfDesk -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'ps*.txt' -or $_.Name -like 'pt*.txt' } | Remove-Item -Force -ErrorAction SilentlyContinue }
 function PsFiles($n) {
   $words = '季度报告', '年度预算', '工作计划', '会议记录', '新年活动安排与分工', '文件整理', '图片素材', '报销单', '发票', '合同', '项目进度', '说明'
   for ($i = 1; $i -le $n; $i++) { Set-Content -LiteralPath (Join-Path $PfDesk ("ps{0:d4} {1}.txt" -f $i, $words[$i % 12])) 'x' }
@@ -437,6 +437,55 @@ function PartN() {
   Check 'N4 left without a match, the fence rolled back up during the search' ($shut.rolled -eq $true) "rolled $($shut.rolled)"
   Check 'N4 after the search the rolled fence has its place from before the search' ($after.rolled -eq $true -and $after.scroll -eq $base) "offset $($after.scroll), before the search $base"
   Check 'N4 opened again, the fence shows where it was before the search' ($opened.rolled -eq $false -and $opened.scroll -eq $base) "offset $($opened.scroll), before the search $base"
+
+  Case 'N5 a search that scrolls one tab, switches to another and scrolls that too'
+  $words = '年度预算', '工作计划', '会议记录', '新年活动安排与分工'
+  for ($i = 1; $i -le 40; $i++) { Set-Content -LiteralPath (Join-Path $PfDesk ("pt{0:d4} {1}.txt" -f $i, $words[$i % 4])) 'x' }
+  Pf fence create --title $PsTitle2 --rect '700,120,360,330' | Out-Null
+  # The new files reach the app a moment after they are made: move them once all 40 are known.
+  for ($k = 0; $k -lt 20 -and @(@(PfJson item list) | Where-Object { $_ -and $_.fileName -like 'pt*.txt' }).Count -lt 40; $k++) { Start-Sleep -Milliseconds 300 }
+  Pf item move --glob 'pt*.txt' --to $PsTitle2 | Out-Null
+  Pf fence set $PsTitle2 sort name | Out-Null
+  Start-Sleep -Milliseconds 800
+  Pf fence merge $PsTitle2 --into $PsTitle | Out-Null; Start-Sleep -Milliseconds 1500
+  # The tab merged last (40 files) is on show: one row down in it. Then over to the first tab
+  # (60 files, Ctrl+Tab with the keyboard in the fence) and two rows down there.
+  function PsOtherTab() { [G]::Click($r.x + 45, $r.y + 90); Start-Sleep -Milliseconds 300; Chord 0x11 0x09; Start-Sleep -Milliseconds 900; [G]::MoveTo($cx, $cy); Start-Sleep -Milliseconds 200 }
+  [G]::MoveTo($cx, $cy); Start-Sleep -Milliseconds 300
+  [CW]::Wheel(40); Start-Sleep -Milliseconds 600; [CW]::Wheel(-1); Start-Sleep -Milliseconds 700
+  $second = PsState $hw
+  PsOtherTab
+  [CW]::Wheel(40); Start-Sleep -Milliseconds 600; [CW]::Wheel(-2); Start-Sleep -Milliseconds 800
+  $first = PsState $hw
+  # 'p' finds files in both tabs (the first tab scrolls to its first file); 'pt0040' is the last
+  # file of the second tab: the search switches to it and scrolls it to the end.
+  PsSearch 'pt0040'
+  $during = PsState $hw
+  PsEndSearch
+  $back = PsState $hw
+  PsOtherTab
+  $other = PsState $hw
+  Log "N5 second tab ($($second.items) files) at $($second.scroll), first tab ($($first.items) files) at $($first.scroll); during the search $($during.items) files at $($during.scroll); after it $($back.items) files at $($back.scroll); the other tab $($other.items) files at $($other.scroll)"
+  Check 'N5 two tabs, each at its own place before the search' ($second.items -eq 40 -and $second.scroll -eq $row -and $first.items -eq 60 -and $first.scroll -eq 2 * $row) "second tab $($second.items) files at $($second.scroll), first tab $($first.items) files at $($first.scroll)"
+  Check 'N5 the search switched to the second tab and scrolled it to its match' ($during.items -eq 40 -and $during.scroll -gt 3 * $row) "$($during.items) files at $($during.scroll)"
+  Check 'N5 after the search the first tab is on show again, where it was' ($back.items -eq 60 -and $back.scroll -eq $first.scroll) "$($back.items) files at $($back.scroll), before the search $($first.scroll)"
+  Check 'N5 the second tab is back where it was too' ($other.items -eq 40 -and $other.scroll -eq $second.scroll) "$($other.items) files at $($other.scroll), before the search $($second.scroll)"
+
+  Case 'N6 the user scrolled the tab the search switched to: that place stays'
+  PsOtherTab
+  $firstAgain = PsState $hw
+  PsSearch 'pt0040'
+  [G]::MoveTo($cx, $cy); Start-Sleep -Milliseconds 200
+  [CW]::Wheel(2); Start-Sleep -Milliseconds 700
+  $moved = PsState $hw
+  PsEndSearch
+  $back = PsState $hw
+  PsOtherTab
+  $other = PsState $hw
+  Log "N6 first tab at $($firstAgain.scroll); the user scrolled the second tab to $($moved.scroll) during the search; after it $($back.items) files at $($back.scroll); the second tab at $($other.scroll)"
+  Check 'N6 the wheel moved the second tab during the search' ($moved.items -eq 40 -and $moved.scroll -eq $during.scroll - 2 * $row) "$($moved.items) files at $($moved.scroll)"
+  Check 'N6 the first tab is back where it was' ($back.items -eq 60 -and $back.scroll -eq $firstAgain.scroll -and $firstAgain.scroll -eq 2 * $row) "$($back.items) files at $($back.scroll), before the search $($firstAgain.scroll)"
+  Check 'N6 the second tab keeps the place the user scrolled to' ($other.items -eq 40 -and $other.scroll -eq $moved.scroll) "$($other.items) files at $($other.scroll)"
   [G]::Press(0x1B); Start-Sleep -Milliseconds 500
   PfQuit
 }
@@ -482,6 +531,7 @@ CloseWindows
 PsClean
 $AnimWas = [Anim]::Get(); [Anim]::Set($true)
 $PsTitle = '很多文件'
+$PsTitle2 = '第二组'
 if ($Part -match 'W') { PartW }
 if ($Part -match 'P') { PartP }
 if ($Part -match 'F') { PartF }

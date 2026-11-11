@@ -571,6 +571,18 @@ fn scroll_duration_is_capped_per_input() {
     assert!(t.is_done(t0));
 }
 
+/// After a Peek search a place it scrolled goes back to where it was; a place the user
+/// scrolled to during the search stays.
+#[test]
+fn a_place_the_search_scrolled_goes_back_unless_the_user_moved_it() {
+    assert_eq!(after_search_offset(1162.0, 96.0, 1162.0), 96.0);
+    assert_eq!(after_search_offset(1162.2, 96.0, 1162.0), 96.0);
+    assert_eq!(after_search_offset(970.0, 96.0, 1162.0), 970.0);
+    assert_eq!(after_search_offset(0.0, 96.0, 1162.0), 0.0);
+    // The search scrolled to where the fence already was before an earlier scroll of it.
+    assert_eq!(after_search_offset(96.0, 96.0, 96.0), 96.0);
+}
+
 /// The rows a draw looks at, found by bisection, are the cells a look at every item finds.
 #[test]
 fn band_range_holds_exactly_the_cells_that_cross_the_band() {

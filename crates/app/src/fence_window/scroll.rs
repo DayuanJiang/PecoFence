@@ -154,6 +154,17 @@ impl ScrollGlide {
     }
 }
 
+/// Where a place a Peek search scrolled rests once the search is over: `from`, where it was
+/// before the search first moved it, unless `offset` is no longer where the search `put` it
+/// (the user scrolled it since: that place stays).
+pub(super) fn after_search_offset(offset: f32, from: f32, put: f32) -> f32 {
+    if (offset - put).abs() < 0.5 {
+        from
+    } else {
+        offset
+    }
+}
+
 /// Marquee auto-scroll speed (DIP/s) for a pointer `overshoot_dip` outside the item area.
 pub(super) fn marquee_scroll_speed(overshoot_dip: f32) -> f32 {
     (overshoot_dip.abs() * MARQUEE_SCROLL_GAIN).clamp(MARQUEE_SCROLL_MIN, MARQUEE_SCROLL_MAX)

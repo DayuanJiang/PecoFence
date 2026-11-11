@@ -156,7 +156,7 @@ impl FenceWindow {
             search: None,
             search_dim: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             search_expanded: false,
-            search_scroll: None,
+            search_scroll: HashMap::new(),
             drop_wash: Tween::at(0.0, Instant::now()),
             caret_alpha: Tween::at(0.0, Instant::now()),
             caret_shown: None,
@@ -1033,29 +1033,48 @@ impl FenceWindow {
                 v.search_expanded = false;
                 v.resume_peek_close();
             }
-            if v.search.is_none()
-                && let Some((tab, from, put)) = v.search_scroll.take()
-            {
-                // The search is over: back to where the fence was. Not when another tab shows
-                // now (its own offset came back with it) or the user scrolled meanwhile.
-                let offset = v.scroll_target();
-                let back = tab == v.active && (offset - put).abs() < 0.5;
-                tracing::debug!(
-                    fence = %v.active,
-                    from,
-                    put,
-                    offset,
-                    back,
-                    "peek search ended: a fence it scrolled goes back to where it was, or keeps the user's place"
-                );
-                if back && v.rolled_up && v.roll_anim.is_none() {
-                    // Rolled up again (further typing left it without a match): nothing to
-                    // glide, and `scroll_to` leaves a hidden offset alone. Written back, so
-                    // the fence opens where it was before the search.
-                    v.scroll_anim = None;
-                    v.scroll_y = from.clamp(0.0, v.scroll_max());
-                } else if back {
-                    v.scroll_to(from, motion::SLOW);
+            if v.search.is_none() {
+                // The search is over: every tab it scrolled goes back to where it was, unless
+                // the user scrolled it meanwhile (that place stays). The app has put back the
+                // tab that was on show before, so a tab the search switched to is not on show
+                // any more and its place lives in `scroll_memory`.
+                for (tab, (from, put)) in std::mem::take(&mut v.search_scroll) {
+                    let shown = tab == v.active;
+                    let offset = if shown {
+                        Some(v.scroll_target())
+                    } else {
+                        v.scroll_memory.get(&tab).copied()
+                    };
+                    // None: the tab left this window during the search.
+                    let Some(offset) = offset else {
+                        continue;
+                    };
+                    let rest = after_search_offset(offset, from, put);
+                    let hidden = v.rolled_up && v.roll_anim.is_none();
+                    tracing::debug!(
+                        fence = %tab,
+                        from,
+                        put,
+                        offset,
+                        rest,
+                        shown,
+                        hidden,
+                        "peek search ended: a place it scrolled goes back to where it was, or keeps the user's place"
+                    );
+                    if rest == offset {
+                        continue;
+                    }
+                    if !shown {
+                        v.scroll_memory.insert(tab, rest);
+                    } else if hidden {
+                        // Rolled up again (further typing left it without a match): nothing
+                        // to glide, and `scroll_to` leaves a hidden offset alone. Written
+                        // back, so the fence opens where it was before the search.
+                        v.scroll_anim = None;
+                        v.scroll_y = rest.clamp(0.0, v.scroll_max());
+                    } else {
+                        v.scroll_to(rest, motion::SLOW);
+                    }
                 }
             }
             if v.rolled_up {
@@ -1069,11 +1088,11 @@ impl FenceWindow {
                 if put != before {
                     // The offset to go back to is the one from before the search's first
                     // scroll of this tab.
-                    let from = match v.search_scroll {
-                        Some((tab, from, _)) if tab == v.active => from,
-                        _ => before,
-                    };
-                    v.search_scroll = Some((v.active, from, put));
+                    let from = v
+                        .search_scroll
+                        .get(&v.active)
+                        .map_or(before, |&(from, _)| from);
+                    v.search_scroll.insert(v.active, (from, put));
                 }
             }
             v.tip_keyboard_focus(current);
