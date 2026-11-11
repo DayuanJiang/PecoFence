@@ -769,9 +769,11 @@ impl FenceViewState {
                 Curve::Linear,
             );
         }
-        // WinUI Expander: open 333 ms decelerate, close 167 ms with the collapse curve.
+        // Open: WinUI Expander's 333 ms decelerate. Close: 167 ms eased in and out, as Liquid
+        // Glass always closed. Expander's collapse curve (1,1,0,1) is almost vertical at
+        // mid-time: a 560 px fence lost up to 288 px in one frame and read as a cut (88 px now).
         let (dur, curve) = if rolled {
-            (motion::FAST, Curve::Collapse)
+            (motion::FAST, Curve::Smooth)
         } else {
             (motion::SLOW, Curve::Decelerate)
         };

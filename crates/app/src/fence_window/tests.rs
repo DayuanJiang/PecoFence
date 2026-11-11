@@ -817,7 +817,7 @@ fn roll_target_leads_the_committed_state() {
     assert!(!roll_target_of(None, false));
     let t0 = Instant::now();
     let mut roll_t = Tween::at(0.0, t0);
-    roll_t.retarget(1.0, motion::FAST, Curve::Collapse, t0);
+    roll_t.retarget(1.0, motion::FAST, Curve::Smooth, t0);
     let mid = roll_t.value_at(t0 + Duration::from_millis(80));
     assert!(mid > 0.0 && mid < 1.0, "{mid}");
     assert_eq!(roll_t.value_at(t0 + motion::FAST), 1.0);
