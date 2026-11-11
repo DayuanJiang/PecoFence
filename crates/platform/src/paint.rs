@@ -56,14 +56,66 @@ pub struct Paint {
     hwnd: HWND,
     ps: PAINTSTRUCT,
     hdc: HDC,
+    /// `begin_buffered`: the window's DC, the memory bitmap `hdc` draws to and its size.
+    buffer: Option<(HDC, HGDIOBJ, i32, i32)>,
 }
+
+windows_core::link!("gdi32.dll" "system" fn CreateCompatibleBitmap(hdc: HDC, w: i32, h: i32) -> *mut core::ffi::c_void);
+windows_core::link!("gdi32.dll" "system" fn BitBlt(dst: HDC, x: i32, y: i32, w: i32, h: i32, src: HDC, sx: i32, sy: i32, rop: u32) -> windows_core::BOOL);
+const SRCCOPY: u32 = 0x00CC_0020;
 
 impl Paint {
     pub fn begin(hwnd: HWND) -> Self {
         let mut ps = PAINTSTRUCT::default();
         // SAFETY: `ps` lives in the returned value until `EndPaint` in drop.
         let hdc = unsafe { BeginPaint(hwnd, &mut ps) };
-        Self { hwnd, ps, hdc }
+        Self {
+            hwnd,
+            ps,
+            hdc,
+            buffer: None,
+        }
+    }
+
+    /// Like [`Self::begin`], but everything is drawn to a memory bitmap of the client area that
+    /// reaches the window in one step on drop: no half-drawn frame is ever on screen (a list
+    /// whose rows take long to draw, a fill that changes every frame). Without the memory for
+    /// the bitmap it draws straight to the window.
+    pub fn begin_buffered(hwnd: HWND) -> Self {
+        let mut p = Self::begin(hwnd);
+        let mut rc = RECT::default();
+        // SAFETY: plain GDI calls; the bitmap is selected out and deleted in drop, the memory
+        // DC is deleted there too.
+        unsafe {
+            let _ = GetClientRect(hwnd, &mut rc);
+            let mem = CreateCompatibleDC(Some(p.hdc));
+            let bitmap = HGDIOBJ(CreateCompatibleBitmap(
+                p.hdc,
+                rc.right.max(1),
+                rc.bottom.max(1),
+            ));
+            if mem.0.is_null() || bitmap.0.is_null() {
+                let _ = DeleteObject(bitmap);
+                let _ = DeleteDC(mem);
+                return p;
+            }
+            SelectObject(mem, bitmap);
+            p.buffer = Some((p.hdc, bitmap, rc.right, rc.bottom));
+            p.hdc = mem;
+        }
+        p
+    }
+
+    /// A buffered paint that drew nothing (its owner was busy): the window keeps what it shows.
+    pub fn keep_window(&mut self) {
+        if let Some((window, bitmap, _, _)) = self.buffer.take() {
+            // SAFETY: the memory DC and its bitmap are ours; deleting the DC frees the bitmap.
+            unsafe {
+                let _ = DeleteDC(self.hdc);
+                let _ = DeleteObject(bitmap);
+            }
+            self.hdc = window;
+        }
     }
 
     /// Fills `r` with `color` (COLORREF 0x00BBGGRR).
@@ -173,8 +225,15 @@ impl Paint {
 
 impl Drop for Paint {
     fn drop(&mut self) {
-        // SAFETY: ends the paint begun in `begin` with the same structure.
+        // SAFETY: ends the paint begun in `begin` with the same structure; a buffered paint
+        // copies its bitmap to the window first (deleting the memory DC frees the bitmap for
+        // deletion).
         unsafe {
+            if let Some((window, bitmap, w, h)) = self.buffer.take() {
+                let _ = BitBlt(window, 0, 0, w, h, self.hdc, 0, 0, SRCCOPY);
+                let _ = DeleteDC(self.hdc);
+                let _ = DeleteObject(bitmap);
+            }
             let _ = EndPaint(self.hwnd, &self.ps);
         }
     }

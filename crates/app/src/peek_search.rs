@@ -555,12 +555,16 @@ fn paint_box(hwnd: HWND) {
     let started = Instant::now();
     // The rows' icons apart from the rest (text, its layout and the fonts' fallback).
     let mut icons_time = std::time::Duration::ZERO;
-    let p = paint::Paint::begin(hwnd);
+    // Into a memory bitmap, shown in one step: the first list of a Windows session takes over
+    // a tenth of a second to draw (the fonts are cold), and its rows appeared one by one.
+    let mut p = paint::Paint::begin_buffered(hwnd);
+    let mut drawn = false;
     ACTIVE.with(|a| {
         let Ok(mut a) = a.try_borrow_mut() else {
             return;
         };
         let Some(s) = a.as_mut() else { return };
+        drawn = true;
         let (w, h) = window::window_rect_size(hwnd);
         let px = |dip: f32| (dip * s.dpi as f32 / 96.0).round() as i32;
         let back = s.edit.back_color();
@@ -837,6 +841,9 @@ fn paint_box(hwnd: HWND) {
             Align::Right,
         );
     });
+    if !drawn {
+        p.keep_window();
+    }
     drop(p);
     let text_time = started.elapsed().saturating_sub(icons_time);
     log_stage("paint_text", text_time);
