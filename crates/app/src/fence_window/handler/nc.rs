@@ -80,11 +80,17 @@ pub(super) fn on_nchittest(
     let Some(v) = guard.as_ref() else {
         return Some(msg::HTCLIENT);
     };
+    Some(hit_code(v, &window::window_rect(hwnd), x, y, v.locked))
+}
+
+/// What WM_NCHITTEST answers for the screen point (`x`, `y`) of the fence at `rect`. `locked` is
+/// the fence's lock (no resize edges, the title only takes clicks); it is a parameter so that a
+/// press on a locked fence can ask what the point would do without the lock (`lock_refuses`).
+pub(super) fn hit_code(v: &FenceViewState, rect: &RECT, x: i32, y: i32, locked: bool) -> isize {
     let scale = v.scale();
     let border = (RESIZE_BORDER_DIP * scale).round() as i32;
     // Beside a left tab column there is no title row: the column is the title bar.
     let title_h = if v.tabs_on_rail() { 0 } else { v.title_h_px() };
-    let rect = window::window_rect(hwnd);
     let left = x - rect.left;
     let top = y - rect.top;
     let right = rect.right - x;
@@ -92,11 +98,11 @@ pub(super) fn on_nchittest(
     let w = rect.right - rect.left;
     let h = rect.bottom - rect.top;
     if left < 0 || top < 0 || left >= w || top >= h {
-        return Some(msg::HTNOWHERE);
+        return msg::HTNOWHERE;
     }
     // 像桌面一样排列: no title row or resize edges; the icons take every click.
     if v.bare() {
-        return Some(msg::HTCLIENT);
+        return msg::HTCLIENT;
     }
     let rolled = v.rolled_up;
     // Tab headers and the title bar's buttons take clicks (switch / drag out,
@@ -114,30 +120,30 @@ pub(super) fn on_nchittest(
         top < title_h && left >= border && right > border
     };
     if on_control && clear_of_edges {
-        return Some(msg::HTCLIENT);
+        return msg::HTCLIENT;
     }
-    if v.locked {
+    if locked {
         // Locked: no resize edges; the title still takes clicks/menus.
-        return Some(if top < title_h || in_rail {
+        return if top < title_h || in_rail {
             msg::HTCAPTION
         } else {
             msg::HTCLIENT
-        });
+        };
     }
     if rolled && v.tabs_on_rail() {
         // Collapsed to the column: it only moves.
-        return Some(msg::HTCAPTION);
+        return msg::HTCAPTION;
     }
     if rolled {
         // Title-only (Fences): only the width resizes; the rest of the strip,
         // corners included, moves the window.
-        return Some(if left < border {
+        return if left < border {
             msg::HTLEFT
         } else if right <= border {
             msg::HTRIGHT
         } else {
             msg::HTCAPTION
-        });
+        };
     }
     // The overlay scrollbar's 12 DIP strip lies under the right resize border: while the
     // content scrolls, the bar takes the pointer in the content area and the border keeps only
@@ -153,24 +159,18 @@ pub(super) fn on_nchittest(
     } else {
         border
     };
-    let code = match (
-        left < border,
-        right <= right_border,
-        top < border,
-        bottom <= border,
+    let corner = (RESIZE_CORNER_DIP * scale).round() as i32;
+    match resize_edge_at(
+        (left, top, right, bottom),
+        (w, h),
+        border,
+        right_border,
+        corner,
     ) {
-        (true, _, true, _) => msg::HTTOPLEFT,
-        (_, true, true, _) => msg::HTTOPRIGHT,
-        (true, _, _, true) => msg::HTBOTTOMLEFT,
-        (_, true, _, true) => msg::HTBOTTOMRIGHT,
-        (true, _, _, _) => msg::HTLEFT,
-        (_, true, _, _) => msg::HTRIGHT,
-        (_, _, true, _) => msg::HTTOP,
-        (_, _, _, true) => msg::HTBOTTOM,
-        _ if top < title_h || in_rail => msg::HTCAPTION,
-        _ => msg::HTCLIENT,
-    };
-    Some(code)
+        Some(code) => code,
+        None if top < title_h || in_rail => msg::HTCAPTION,
+        None => msg::HTCLIENT,
+    }
 }
 
 pub(super) fn on_ncmousemove(

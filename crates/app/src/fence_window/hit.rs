@@ -15,6 +15,50 @@ pub(super) fn bounded_auto_height(desired: i32, title_height: i32, top: i32, bot
     desired.min(bottom.saturating_sub(top).max(title_height + 1))
 }
 
+/// The resize hit code of a point `inside` (px from the window's left, top, right and bottom
+/// edges) of a window `size` px large, or None off the resize edges. An edge is `border` px
+/// deep (`right_border` on the right, thinner beside a scrollbar). A corner is the part of an
+/// edge within `corner` px of the adjacent edge, as DefWindowProc gives a normal window, so the
+/// diagonal cursor answers along 16 DIPs of each edge and not only in the 6 x 6 square where
+/// two edges cross. On a small window a corner takes at most a third of the edge.
+pub(super) fn resize_edge_at(
+    inside: (i32, i32, i32, i32),
+    size: (i32, i32),
+    border: i32,
+    right_border: i32,
+    corner: i32,
+) -> Option<isize> {
+    let (left, top, right, bottom) = inside;
+    let (on_left, on_right) = (left < border, right <= right_border);
+    let (on_top, on_bottom) = (top < border, bottom <= border);
+    let (reach_x, reach_y) = (
+        corner.min(size.0 / 3).max(border),
+        corner.min(size.1 / 3).max(border),
+    );
+    let (near_left, near_right) = (left < reach_x, right <= reach_x);
+    let (near_top, near_bottom) = (top < reach_y, bottom <= reach_y);
+    let code = if (on_left && near_top) || (on_top && near_left) {
+        msg::HTTOPLEFT
+    } else if (on_right && near_top) || (on_top && near_right) {
+        msg::HTTOPRIGHT
+    } else if (on_left && near_bottom) || (on_bottom && near_left) {
+        msg::HTBOTTOMLEFT
+    } else if (on_right && near_bottom) || (on_bottom && near_right) {
+        msg::HTBOTTOMRIGHT
+    } else if on_left {
+        msg::HTLEFT
+    } else if on_right {
+        msg::HTRIGHT
+    } else if on_top {
+        msg::HTTOP
+    } else if on_bottom {
+        msg::HTBOTTOM
+    } else {
+        return None;
+    };
+    Some(code)
+}
+
 impl FenceViewState {
     /// Is the client-pixel point on item `index`'s label text (not its icon)? Never in an
     /// icon grid without labels, whose label rect has no height.

@@ -3,6 +3,9 @@
 use super::*;
 
 pub(super) const RESIZE_BORDER_DIP: f32 = 6.0;
+/// How far along an edge its corner reaches (the diagonal resize): a normal window's corner
+/// answers for about this much of each edge.
+pub(super) const RESIZE_CORNER_DIP: f32 = 16.0;
 /// Opacity of the items a Peek search does not match.
 pub(super) const SEARCH_DIM_ALPHA: f32 = 0.15;
 /// Selection-fill strength of the Peek search matches other than the current one (which is

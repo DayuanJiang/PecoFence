@@ -1516,3 +1516,57 @@ fn hover_switches_only_to_another_tab() {
     assert_eq!(hover_switch_target(Some(5), 0, 3, true, false), None);
     assert_eq!(hover_switch_target(None, 0, 3, true, false), None);
 }
+
+/// A 300 x 400 px window at 100 %: 6 px edges, corners that reach 16 px along each edge.
+fn edge(left: i32, top: i32) -> Option<isize> {
+    resize_edge_at((left, top, 300 - left, 400 - top), (300, 400), 6, 6, 16)
+}
+
+/// The diagonal resize answers along 16 px of both edges of a corner, as a normal window's
+/// does, not only in the 6 x 6 square where the two edges cross.
+#[test]
+fn corners_reach_sixteen_px_along_each_edge() {
+    // Bottom edge, walking in from the right corner (`right` = 300 - x, corner while <= 16).
+    assert_eq!(edge(297, 397), Some(msg::HTBOTTOMRIGHT));
+    assert_eq!(edge(290, 397), Some(msg::HTBOTTOMRIGHT));
+    assert_eq!(edge(284, 397), Some(msg::HTBOTTOMRIGHT));
+    assert_eq!(edge(283, 397), Some(msg::HTBOTTOM));
+    // Right edge, walking up from the bottom corner.
+    assert_eq!(edge(297, 384), Some(msg::HTBOTTOMRIGHT));
+    assert_eq!(edge(297, 383), Some(msg::HTRIGHT));
+    // The other three corners.
+    assert_eq!(edge(2, 15), Some(msg::HTTOPLEFT));
+    assert_eq!(edge(15, 2), Some(msg::HTTOPLEFT));
+    assert_eq!(edge(2, 16), Some(msg::HTLEFT));
+    assert_eq!(edge(16, 2), Some(msg::HTTOP));
+    assert_eq!(edge(297, 10), Some(msg::HTTOPRIGHT));
+    assert_eq!(edge(10, 397), Some(msg::HTBOTTOMLEFT));
+    // Inside the corner's square but off both edges: no resize.
+    assert_eq!(edge(290, 390), None);
+    assert_eq!(edge(150, 200), None);
+}
+
+/// Beside a scrollbar the right edge is 3 px deep: the bar keeps its strip right down to the
+/// bottom edge, whose own depth still gives the corner.
+#[test]
+fn corner_beside_a_scrollbar_keeps_the_bars_strip() {
+    let at = |left: i32, top: i32| {
+        resize_edge_at((left, top, 300 - left, 400 - top), (300, 400), 6, 3, 16)
+    };
+    assert_eq!(at(295, 390), None);
+    assert_eq!(at(298, 390), Some(msg::HTBOTTOMRIGHT));
+    assert_eq!(at(298, 300), Some(msg::HTRIGHT));
+    assert_eq!(at(295, 396), Some(msg::HTBOTTOMRIGHT));
+}
+
+/// A corner takes at most a third of a short edge, so a one-column fence keeps a straight
+/// bottom edge between its corners.
+#[test]
+fn corners_of_a_narrow_window_leave_the_edge_between_them() {
+    let at = |left: i32| resize_edge_at((left, 397, 80 - left, 3), (80, 400), 6, 6, 16);
+    assert_eq!(at(10), Some(msg::HTBOTTOMLEFT));
+    assert_eq!(at(40), Some(msg::HTBOTTOM));
+    assert_eq!(at(70), Some(msg::HTBOTTOMRIGHT));
+    let tiny = |left: i32| resize_edge_at((left, 397, 30 - left, 3), (30, 400), 6, 6, 16);
+    assert_eq!(tiny(15), Some(msg::HTBOTTOM));
+}
