@@ -1159,15 +1159,15 @@ impl FenceWindow {
                 }
             }
             if !same_set {
-                // Per-id state of tabs that left goes with them; index-keyed hover fades
-                // would otherwise replay on whichever neighbour inherited the index.
+                // Per-id state of tabs that left goes with them, their hover fades too.
                 let ids: Vec<FenceId> = v.tabs.iter().map(|t| t.id).collect();
                 v.tab_slide.retain(|(id, _)| ids.contains(id));
                 if v.tab_settle.is_some_and(|(id, _)| !ids.contains(&id)) {
                     v.tab_settle = None;
                 }
-                v.chrome_fades.prune(now, |k| {
-                    !matches!(k, ChromeKey::Tab(_) | ChromeKey::TabDrop(_))
+                v.chrome_fades.prune(now, |k| match k {
+                    ChromeKey::Tab(id) | ChromeKey::TabDrop(id) => ids.contains(id),
+                    _ => true,
                 });
                 // Closed / merged / detached tabs take their remembered offsets with them.
                 v.scroll_memory.retain(|id, _| ids.contains(id));

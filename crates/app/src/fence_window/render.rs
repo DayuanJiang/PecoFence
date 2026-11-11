@@ -56,9 +56,10 @@ pub(super) enum ChromeKey {
     Count,
     /// The lock glyph of a locked fence: shown while the pointer is over the fence.
     Lock,
-    Tab(usize),
+    /// A tab pill under the pointer, by the tab's id: a reorder moves the fade with its pill.
+    Tab(FenceId),
     /// A tab head with files dragged over it (drop-target look).
-    TabDrop(usize),
+    TabDrop(FenceId),
     /// A tab that just joined the strip (merge, re-attach): 1 → 0 is its fade-in remainder,
     /// so the pill draws at alpha `1 - value` (Fluent Fade In, 83 ms linear).
     TabNew(FenceId),
@@ -354,15 +355,16 @@ impl FenceViewState {
             0
         };
         for i in 0..ntabs {
+            let id = self.tabs[i].id;
             f.set(
                 animate,
-                ChromeKey::Tab(i),
+                ChromeKey::Tab(id),
                 (self.tab_hover == Some(i)) as u8 as f32,
                 now,
             );
             f.set(
                 animate,
-                ChromeKey::TabDrop(i),
+                ChromeKey::TabDrop(id),
                 (self.drop_tab == Some(i)) as u8 as f32,
                 now,
             );
@@ -544,10 +546,10 @@ impl FenceViewState {
                 up_button: i == active && t.up_button,
                 desktop_icon: t.desktop_icon,
                 active: i == active,
-                hover: self.chrome_fades.value(&ChromeKey::Tab(i), now),
+                hover: self.chrome_fades.value(&ChromeKey::Tab(t.id), now),
                 pressed: pressed_tab == Some(i),
                 color: t.color.map(|c| ColorF::from_rgba8(c[0], c[1], c[2], 0xFF)),
-                drop_target: self.chrome_fades.value(&ChromeKey::TabDrop(i), now),
+                drop_target: self.chrome_fades.value(&ChromeKey::TabDrop(t.id), now),
                 dragging: dragging == Some(i),
                 alpha: (1.0 - self.chrome_fades.value(&ChromeKey::TabNew(t.id), now))
                     * self.tab_search_alpha(t.id),
@@ -582,10 +584,10 @@ impl FenceViewState {
         self.note_draw_result(ok);
         let inset = (state.plate_top * scale).round() as i32;
         self.sync_plate_shape(inset, 1.0 - state.plate_clear);
-        let ntabs = self.tabs.len();
         self.chrome_fades.prune(now, |k| match k {
-            ChromeKey::Tab(i) | ChromeKey::TabDrop(i) => *i < ntabs,
-            ChromeKey::TabNew(id) => self.tabs.iter().any(|t| t.id == *id),
+            ChromeKey::Tab(id) | ChromeKey::TabDrop(id) | ChromeKey::TabNew(id) => {
+                self.tabs.iter().any(|t| t.id == *id)
+            }
             _ => true,
         });
         self.tab_slide.retain(|(_, t)| !t.is_done(now));
