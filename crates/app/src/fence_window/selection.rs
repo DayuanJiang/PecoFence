@@ -371,13 +371,21 @@ impl FenceViewState {
     /// cursor logic then re-runs from the message loop instead of being duplicated here.
     /// `PostMessage` is asynchronous, so this is safe under the borrow and from `tick`
     /// (`hide_tip` is not: TTM_TRACKACTIVATE is a SendMessage). Skipped while a gesture owns
-    /// the pointer, as those branches track the offset themselves.
+    /// the pointer, as those branches track the offset themselves, and while Windows' size or
+    /// move loop runs: that loop reads a posted WM_MOUSEMOVE as a pointer position on the
+    /// screen, so a refresh posted when icons finished gliding after a column change made the
+    /// held edge jump to another width and back, about five times a second.
     pub(super) fn request_hover_refresh(&self) {
         if !self.mouse_inside
             || self.marquee.is_some()
             || self.drag.is_some()
             || self.ole_drag
             || self.scrollbar_pressed()
+            || self
+                .behavior
+                .size_move
+                .try_borrow()
+                .map_or(true, |s| s.is_some())
         {
             return;
         }

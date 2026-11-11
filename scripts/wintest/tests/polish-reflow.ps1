@@ -212,6 +212,27 @@ if ($Part -match 'A') {
   RecStop
   Check 'A slow drag recorded' $true (Get-Content "$PfShots\rec-edge-demo\stats.txt")
 
+  Case 'A the edge held after a column change'
+  # The pointer rests with the button down after the icons glided: the window keeps its width.
+  # (A hover refresh posted when the glide ended was read by Windows' size loop as a pointer
+  # position: the held edge jumped to another width and back about five times a second.)
+  Pf fence move 资料 --rect '300,140,420,560' | Out-Null; Start-Sleep -Milliseconds 900
+  $r = RfRect '资料'
+  $ex = $r.x + $r.w - 2; $ey = $r.y + 300
+  $hw = [G]::FindWindowW('PecoFence.Fence', '资料')
+  # From inside the fence onto its edge, so the fence knows the pointer is over it.
+  [G]::MoveTo($r.x + 200, $ey); Start-Sleep -Milliseconds 300
+  Glide ($r.x + 200) $ey $ex $ey 10 20
+  Start-Sleep -Milliseconds 300
+  MDown; Start-Sleep -Milliseconds 250
+  Glide $ex $ey ($ex - 100) $ey 10 25
+  Start-Sleep -Milliseconds 150
+  $seen = New-Object Collections.ArrayList; $sw = [Diagnostics.Stopwatch]::StartNew()
+  while ($sw.ElapsedMilliseconds -lt 1500) { $q = Rect $hw; [void]$seen.Add($q.R - $q.L); Start-Sleep -Milliseconds 4 }
+  MUp; Start-Sleep -Milliseconds 500
+  $widths = @($seen | Sort-Object -Unique)
+  Check 'A the edge held still after a column change: the window keeps one width' ($widths.Count -eq 1) "widths seen in 1.5 s: $($widths -join ', ')"
+
   Case 'A animations off'
   $glides = @(PfLogAll | Where-Object { $_ -match 'resize changed the columns' }).Count
   [Anim]::Set($false); Start-Sleep -Milliseconds 800
