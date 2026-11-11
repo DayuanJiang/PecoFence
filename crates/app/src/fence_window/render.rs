@@ -208,8 +208,15 @@ impl FenceViewState {
                 let opacity = self.material_opacity();
                 let tint = self.plate_tint();
                 let previous = self.glass_dark_text.get();
-                let foreground = self.theme.over_acrylic(image, opacity, tint, previous);
+                let mut foreground = self.theme.over_acrylic(image, opacity, tint, previous);
                 let dark_text = foreground.text_primary.r < 0.5;
+                // In a Peek the fence floats over other windows, not over the wallpaper the
+                // text was picked for. Light text needs a dark plate and the windows behind may
+                // well be light, so a light-mode fence that took light text shows the mode's
+                // dark text meanwhile, as it always did. Dark text reads over either.
+                if self.light_text_in_light_mode(dark_text) && self.behavior.floating.get() {
+                    foreground = self.theme;
+                }
                 if previous != Some(dark_text) {
                     let (brightness, bright_share, dark_share) =
                         self.theme.acrylic_plate_stats(image, opacity, tint);
@@ -230,6 +237,24 @@ impl FenceViewState {
             }
             None => self.theme,
         }
+    }
+
+    /// Fluent in light mode with `dark_text` picked: whether the plate made the fence take
+    /// light text.
+    fn light_text_in_light_mode(&self, dark_text: bool) -> bool {
+        !dark_text && self.theme.mode == pecofence_render::ThemeMode::Light
+    }
+
+    /// Whether a Peek changes this fence's text: a Fluent fence in light mode whose plate made
+    /// it take light text (as `material_foreground` last picked it).
+    pub(super) fn peek_changes_text(&self) -> bool {
+        !self.theme.liquid_glass
+            && !self.is_clear()
+            && self.backdrop_crop.is_some()
+            && self
+                .glass_dark_text
+                .get()
+                .is_some_and(|dark| self.light_text_in_light_mode(dark))
     }
 
     /// The tint washed over the whole plate (a tint for the title row alone leaves the plate

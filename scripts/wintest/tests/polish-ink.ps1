@@ -5,8 +5,8 @@
 # V6: a title in the fence's own tint reads on the band washed with that tint.
 # Parts (run.sh --var Part=...): A contrast of every kind of text, both modes over five
 # wallpapers; B hover and selection fills on the flipped text; C a fence moved from a light to
-# a dark part, a wallpaper change, 白色 / 黑色, loose icons, the tinted title. Default: all.
-if (-not $Part) { $Part = 'ABC' }
+# a dark part, a wallpaper change, 白色 / 黑色, loose icons, the tinted title; D a Peek over a white window. Default: all.
+if (-not $Part) { $Part = 'ABCD' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
 
@@ -107,7 +107,7 @@ function InkAt($tag, $x, $y, $w, $h, [switch]$Save) {
   "$tag`t$($p[0])`t$($p[1])`t$($p[2])`t$($p[3])`t$($p[4])" | Add-Content "$PfShots\ink.tsv" -Encoding UTF8
   $inv = [Globalization.CultureInfo]::InvariantCulture
   $rim = [double]::Parse($p[4], $inv)
-  return [pscustomobject]@{ Contrast = [double]::Parse($p[0], $inv); Plate = $p[1]; Ink = $p[2]; Dark = ($p[3] -eq 'dark'); Halo = ($rim -ge 1.25)
+  return [pscustomobject]@{ Contrast = [double]::Parse($p[0], $inv); Plate = $p[1]; Ink = $p[2]; Dark = ($p[3] -eq 'dark'); Halo = ($rim -ge 1.25); Rim = $rim
     Text = "$($p[0]) : 1, plate $($p[1]), text $($p[2]), halo $(if ($rim -ge 1.25) { "yes ($($p[4]) : 1)" } else { 'no' })" }
 }
 # Where each kind of text is, from the fences' own rects, and the contrast it needs: 3.9 : 1 for
@@ -127,7 +127,9 @@ function Regions() {
     @('script rows', ($s.x + 14), ($s.y + 42), 220, 60, 3.9)
   )
 }
-function Reads($m, $need) { return ($m.Contrast -ge $need -or ($m.Halo -and $m.Contrast -ge 2.6)) }
+# The farther of the two sides counts as the text (a light halo around dark text on a mid plate
+# is farther from the plate than the text itself).
+function Reads($m, $need) { return ([math]::Max($m.Contrast, $m.Rim) -ge $need -or ($m.Halo -and $m.Contrast -ge 2.6)) }
 function Park() { ParkMouse 1540 780; Start-Sleep -Milliseconds 500 }
 
 Case 'setup'
@@ -349,6 +351,41 @@ if ($Part -match 'C') {
     Pf fence set 文档 tint null | Out-Null
   }
   PartC
+}
+
+if ($Part -match 'D') {
+  # ---- V1 in a Peek: the fence floats over other windows, not over the wallpaper its text was
+  # picked for. Light text in light mode goes back to dark for the Peek (the windows behind may
+  # be light); dark text reads over either.
+  function PartD() {
+    trap { PfTrap $_; continue }
+    Pf fence set 文档 titleColor theme | Out-Null
+    Pf fence set 文档 tint null | Out-Null
+    Pf settings set labelColor auto | Out-Null
+    foreach ($combo in @(@('light', 'dark'), @('dark', 'light'))) {
+      $mode = $combo[0]; $wall = $combo[1]
+      Case "V1 Peek over a white window, $mode mode over a $wall wallpaper"
+      Pf settings set theme $mode | Out-Null; Wall $wall; Park
+      $had = @(Get-Process notepad -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+      Start-Process notepad; Start-Sleep -Seconds 2
+      $np = @(Get-Process notepad -ErrorAction SilentlyContinue | Where-Object { $had -notcontains $_.Id })
+      foreach ($q in $np) { if ($q.MainWindowHandle -ne [IntPtr]::Zero) { [L]::MoveWindow($q.MainWindowHandle, 0, 0, 1600, 852, $true) | Out-Null } }
+      Start-Sleep -Milliseconds 900
+      PeekKey; Start-Sleep -Milliseconds 1500
+      $w = Win '文档'; $c = CellPt '文档' 0
+      $t = InkAt "peek/$mode/$wall/title" ($w.x + 12) ($w.y + 8) 120 22
+      $n = InkAt "peek/$mode/$wall/icon name" ($c[0] - 36) ($c[1] + 28) 72 30
+      Shot "D-$mode-peek"
+      Check "V1 Peek, $mode mode over a $wall wallpaper: the title reads over a white window" (Reads $t 3.9) $t.Text
+      Check "V1 Peek, $mode mode over a $wall wallpaper: the names read over a white window" (Reads $n 3.9) $n.Text
+      PeekKey; Start-Sleep -Milliseconds 800
+      foreach ($q in $np) { Stop-Process -Id $q.Id -Force -ErrorAction SilentlyContinue }
+      Start-Sleep -Milliseconds 900; Park
+      $t = InkAt "after the peek/$mode/$wall/title" ($w.x + 12) ($w.y + 8) 120 22
+      Check "V1 Peek, $mode mode over a $wall wallpaper: after the Peek the title reads on the wallpaper again" (Reads $t 3.9) $t.Text
+    }
+  }
+  PartD
 }
 
 Case 'cleanup'
