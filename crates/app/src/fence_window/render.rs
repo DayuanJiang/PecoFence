@@ -202,8 +202,40 @@ impl FenceViewState {
                     .set(Some(foreground.text_primary.r < 0.5));
                 foreground
             }
-            _ => self.theme,
+            Some(image) => {
+                // Fluent: the see-through plate is as bright as the wallpaper behind it,
+                // whatever the colour mode, so the ink is picked from the plate as drawn.
+                let opacity = self.material_opacity();
+                let tint = self.plate_tint();
+                let previous = self.glass_dark_text.get();
+                let foreground = self.theme.over_acrylic(image, opacity, tint, previous);
+                let dark_text = foreground.text_primary.r < 0.5;
+                if previous != Some(dark_text) {
+                    let (brightness, bright_share, dark_share) =
+                        self.theme.acrylic_plate_stats(image, opacity, tint);
+                    tracing::debug!(
+                        fence = %self.title,
+                        brightness,
+                        bright_share,
+                        dark_share,
+                        opacity,
+                        ?previous,
+                        dark_text,
+                        halo = foreground.text_halo,
+                        "text colour picked from the plate"
+                    );
+                }
+                self.glass_dark_text.set(Some(dark_text));
+                foreground
+            }
+            None => self.theme,
         }
+    }
+
+    /// The tint washed over the whole plate (a tint for the title row alone leaves the plate
+    /// under the item names as it is).
+    fn plate_tint(&self) -> Option<ColorF> {
+        self.style.tint.filter(|_| !self.style.tint_title_only)
     }
 
     /// Drops the per-item fades: the view now shows a different list (tab switch, layout
@@ -787,9 +819,9 @@ impl FenceViewState {
     /// The window moved: re-crops the backdrop for where it is now and redraws what shows it.
     pub(super) fn refresh_backdrop(&mut self) {
         self.backdrop_stale = false;
-        let old_ink = self.material_foreground().text_primary;
+        let old_ink = self.material_foreground().label_look();
         if self.update_backdrop() {
-            if old_ink != self.material_foreground().text_primary
+            if old_ink != self.material_foreground().label_look()
                 || (self.theme.liquid_glass && self.row_metrics().is_some())
             {
                 // Moving clear glass across a light/dark boundary also changes the icon labels.
@@ -1044,10 +1076,10 @@ impl FenceViewState {
         };
         use pecofence_render::fence_chrome::ScriptRowDraw;
         let scale = self.scale();
-        let theme = self
-            .material_foreground()
-            .with_label_color(self.behavior.label_color.get());
-        let dark = matches!(theme.mode, pecofence_render::ThemeMode::Dark);
+        let picked = self.material_foreground();
+        // Colour names take the shade for the plate they are on: light text means a dark one.
+        let dark = picked.text_primary.r > 0.5;
+        let theme = picked.with_label_color(self.behavior.label_color.get());
         let rows: Vec<ScriptRowDraw<'_>> = script
             .rows
             .iter()

@@ -1318,7 +1318,7 @@ pub fn rail_chevron_alpha(hover: f32, roll_t: f32) -> f32 {
 /// opacity setting (外观 → 更透明 / 更厚实) scales it.
 pub const GLASS_OPACITY: f32 = 0.55;
 
-fn glass_alpha(opacity: f32) -> f32 {
+pub(crate) fn glass_alpha(opacity: f32) -> f32 {
     (GLASS_OPACITY * opacity).clamp(0.1, 1.0)
 }
 
@@ -2242,7 +2242,7 @@ impl FenceChrome {
             COUNT_CAPSULE_H,
         );
         // ControlFillColorSecondary-like: a faint wash of the text colour.
-        let wash = if theme.mode == crate::theme::ThemeMode::Dark {
+        let wash = if foreground.text_secondary.r > 0.5 {
             ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0x1A)
         } else {
             ColorF::from_rgba8(0, 0, 0, 0x0F)
@@ -3307,7 +3307,8 @@ impl FenceChrome {
         state: TitleState,
     ) -> Result<()> {
         let px = Px::new(scale);
-        let dark = theme.mode == crate::theme::ThemeMode::Dark;
+        // Hairlines in the text's colour: the plate is dark where the text is light.
+        let dark = theme.text_primary.r > 0.5;
         let line = |alpha: f32| {
             if dark {
                 ColorF::new(1.0, 1.0, 1.0, alpha)

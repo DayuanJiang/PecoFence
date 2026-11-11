@@ -2039,9 +2039,9 @@ impl FenceWindow {
     pub fn set_style(&self, style: FenceStyle) {
         self.with_view(|v| {
             if v.style != style {
-                let previous_ink = v.material_foreground().text_primary;
+                let previous_ink = v.material_foreground().label_look();
                 v.style = style;
-                if previous_ink != v.material_foreground().text_primary {
+                if previous_ink != v.material_foreground().label_look() {
                     let _ = v.redraw();
                 } else {
                     let _ = v.redraw_chrome_only();
@@ -2360,12 +2360,12 @@ impl FenceWindow {
     /// animations or icon resources.
     pub fn set_backdrops(&self, backdrops: Rc<BackdropSets>) {
         self.with_view(|v| {
-            let old_ink = v.material_foreground().text_primary;
+            let old_ink = v.material_foreground().label_look();
             v.backdrops = backdrops;
             v.glass_dark_text.set(None);
             v.invalidate_backdrop();
             // The content only follows the backdrop through its ink (as in `on_move`).
-            let result = if old_ink != v.material_foreground().text_primary
+            let result = if old_ink != v.material_foreground().label_look()
                 || (v.theme.liquid_glass && v.row_metrics().is_some())
             {
                 v.redraw()
