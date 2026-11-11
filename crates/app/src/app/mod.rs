@@ -2629,6 +2629,8 @@ impl App {
                 // (a PendingRoute bypasses the rules), the originals stay where they are.
                 if let Some(desktop) = shell::user_desktop() {
                     let made = self.create_shortcuts_in(&paths, &desktop);
+                    // One step of Ctrl+Z, like a new folder: the shortcuts go again.
+                    self.note_created_for_undo(made.clone());
                     for path in made {
                         self.pending_routes.push(PendingRoute {
                             fence: to,

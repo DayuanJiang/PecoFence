@@ -4,13 +4,15 @@
 # undo, which PecoFence asks for); a Shift+Delete stops Ctrl+Z instead of letting it undo an
 # older layout step; fence moves and icon moves made before stay undoable, newest first.
 # Parts (run.sh --var Part=...): A rename, delete, drop into a folder, paste; B new folder,
-# permanent delete, the command line's file moves. Default: both.
+# permanent delete, the command line's file moves; C a shortcut made by a drop (a debug build:
+# the drop comes from a test-script line). Default: A and B.
 if (-not $Part) { $Part = 'AB' }
 trap { PfTrap $_; continue }
 
 function UFiles() { return @(Get-ChildItem $PfDesk -Filter 'u? *' -ErrorAction SilentlyContinue) }
 function UClean() {
   UFiles | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+  Get-ChildItem $PfDesk -Filter 'u8link*' -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
   foreach ($n in 'New folder', 'New folder (2)') { if (Test-Path -LiteralPath "$PfDesk\$n") { Remove-Item -LiteralPath "$PfDesk\$n" -Recurse -Force -ErrorAction SilentlyContinue } }
 }
 function FRect($t) { $f = PfFence $t; if ($f) { $w = $f.windowRect; return "$($w.x),$($w.y),$($w.w),$($w.h)" }; return 'gone' }
@@ -199,6 +201,25 @@ if ($Part -match 'B') {
   $pasted = (Has 'u8 外来文件.txt') -and (FenceOf 'u8 外来文件.txt') -eq 'UA'
   Undo
   Check 'Ctrl+Z after a file copied in another folder is pasted takes the copy away again' ($pasted -and -not (Has 'u8 外来文件.txt') -and (Test-Path -LiteralPath "$PfRun\u-src\u8 外来文件.txt")) "pasted into UA=$pasted; after Ctrl+Z: on the desktop=$(Has 'u8 外来文件.txt'), original still there=$(Test-Path -LiteralPath "$PfRun\u-src\u8 外来文件.txt"); $(UndoLog)"
+}
+
+if ($Part -match 'C') {
+  Case 'Ctrl+Z after a shortcut is made by a drop'
+  New-Item -ItemType Directory -Force "$PfRun\u-src" | Out-Null
+  Set-Content -LiteralPath "$PfRun\u-src\u8link.txt" -Value 'the file the shortcut points to' -Encoding ASCII
+  # A drop that allows only a shortcut, 14 s after the start (what an Alt-drag from Explorer does).
+  PfStart -Script @('sleep 14000', "drop-files UB 1 $PfRun\u-src\u8link.txt allowed=link", 'sleep 3600000')
+  $home5 = FRect 'UA'
+  DragFence 60
+  $moved = FRect 'UA'
+  $lnk = $null
+  foreach ($k in 1..40) { $lnk = Get-ChildItem $PfDesk -Filter 'u8link*.lnk' -ErrorAction SilentlyContinue | Select-Object -First 1; if ($lnk) { break }; Start-Sleep -Milliseconds 500 }
+  Start-Sleep -Milliseconds 1500
+  $made = if ($lnk) { $lnk.Name } else { '(none)' }
+  Undo
+  Check 'Ctrl+Z after a shortcut is made by a drop takes the shortcut away and leaves the fence drag' ($lnk -and -not (Test-Path -LiteralPath $lnk.FullName) -and $moved -ne $home5 -and (FRect 'UA') -eq $moved) "shortcut made: $made; after Ctrl+Z: still there=$(if ($lnk) { Test-Path -LiteralPath $lnk.FullName }); start $home5, dragged $moved, now $(FRect 'UA'); $(UndoLog)"
+  Undo
+  Check 'the next Ctrl+Z undoes the fence drag made before the drop' ((FRect 'UA') -eq $home5) "start $home5, now $(FRect 'UA'); $(UndoLog)"
 }
 
 Case 'cleanup'
