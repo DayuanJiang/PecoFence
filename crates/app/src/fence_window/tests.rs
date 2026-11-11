@@ -1076,6 +1076,17 @@ fn index_state_remaps_by_item_id_across_a_refresh() {
     assert!(remap_indices(&ids, &other, &sel).is_empty());
 }
 
+/// A fence waits for the icons of the user's own Delete to go for `USER_DELETE_WAIT` only: a
+/// delete nobody reported as refused must not hand the selection to a neighbour much later.
+#[test]
+fn the_wait_for_a_delete_runs_out() {
+    let d = UserDelete::new(HashSet::new(), true);
+    assert!(!d.expired(d.since));
+    assert!(!d.expired(d.since + USER_DELETE_WAIT));
+    assert!(d.expired(d.since + USER_DELETE_WAIT + Duration::from_millis(1)));
+    assert_eq!(USER_DELETE_WAIT, Duration::from_secs(10));
+}
+
 /// After the user's own Delete the focus goes to the item that followed the focused one (the
 /// one before it at the end of the list), never to another item of the same Delete.
 #[test]

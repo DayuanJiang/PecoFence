@@ -113,6 +113,35 @@ pub(super) fn reflow_glides(
         .collect()
 }
 
+/// The user's own Delete (the key or the item menu) of these items is under way: when the
+/// focused one goes with them, its neighbour takes the focus (`focus_after_delete`). The note
+/// must not outlive that Delete, or an icon that leaves the fence another way later (dragged to
+/// another fence, moved by a rule, removed by another program) would hand the selection to its
+/// neighbour, and one more Delete would remove that one. So it is dropped when the app says the
+/// delete was refused, cancelled or failed (`FenceWindow::settle_user_delete`), by the next
+/// press or key in the fence, and by itself `USER_DELETE_WAIT` after it was made.
+pub(super) struct UserDelete {
+    pub(super) ids: HashSet<ItemId>,
+    /// The Delete came from the keyboard: the neighbour that takes the focus shows the ring.
+    pub(super) ring: bool,
+    /// When the Delete was pressed, or when the app said its files are gone.
+    pub(super) since: Instant,
+}
+
+impl UserDelete {
+    pub(super) fn new(ids: HashSet<ItemId>, ring: bool) -> Self {
+        Self {
+            ids,
+            ring,
+            since: Instant::now(),
+        }
+    }
+
+    pub(super) fn expired(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.since) > USER_DELETE_WAIT
+    }
+}
+
 /// Where the keyboard focus goes when the user's own Delete took the focused item
 /// (`old[anchor]`) away: the first item after it that stays, else the last one before it
 /// (Explorer moves to the neighbour, so Delete, Delete, Delete walks down a list). `deleting`
@@ -535,6 +564,13 @@ impl FenceViewState {
         }
     }
 
+    /// Drops the note of the user's own Delete (see `UserDelete`); `why` goes to the log.
+    pub(super) fn forget_user_delete(&mut self, why: &'static str) {
+        if let Some(d) = self.user_delete.take() {
+            tracing::debug!(items = d.ids.len(), why, "user delete: the note is dropped");
+        }
+    }
+
     /// Carries every index-keyed item state (selection, focus / range anchors, hover, drop
     /// target, press, drag source, marquee base) from the list `old_ids` describes to the
     /// current `self.items` by identity. Vanished items simply drop out; the focus ring hides
@@ -557,26 +593,32 @@ impl FenceViewState {
         // The user's own Delete took the focused item away: its neighbour takes the focus and
         // the selection. The note stays while the focused item is one of them and still here
         // (the shell deletes them one by one, or still asks).
-        if let Some((deleting, ring)) = self.user_delete.take() {
+        if let Some(d) = self.user_delete.take() {
             let was_focused = old_anchor
                 .and_then(|a| old_ids.get(a))
-                .is_some_and(|id| deleting.contains(id));
-            if self.anchor_index.is_some() {
+                .is_some_and(|id| d.ids.contains(id));
+            if d.expired(Instant::now()) {
+                tracing::debug!(
+                    items = d.ids.len(),
+                    was_focused,
+                    "user delete: the note is too old, no focus moves"
+                );
+            } else if self.anchor_index.is_some() {
                 if was_focused {
-                    self.user_delete = Some((deleting, ring));
+                    self.user_delete = Some(d);
                 }
             } else if was_focused {
-                let next = old_anchor.and_then(|a| focus_after_delete(old_ids, a, &new, &deleting));
+                let next = old_anchor.and_then(|a| focus_after_delete(old_ids, a, &new, &d.ids));
                 tracing::debug!(
-                    deleted = deleting.len(),
+                    deleted = d.ids.len(),
                     ?old_anchor,
                     ?next,
-                    ring,
+                    ring = d.ring,
                     "the focused item was deleted by the user: the focus moves to its neighbour"
                 );
                 if let Some(i) = next {
                     self.select_only(i);
-                    self.focus_visible = ring;
+                    self.focus_visible = d.ring;
                 }
             }
         }

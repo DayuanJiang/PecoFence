@@ -606,10 +606,21 @@ impl App {
     /// Delete key: the shell's own `delete` verb (Recycle Bin + its confirmation dialog);
     /// `permanent` = Shift+Delete (the shell's own 永久删除 confirmation).
     pub(super) fn delete_items(&mut self, fence: FenceId, items: &[ItemId], permanent: bool) {
+        // The fence waits only for what the shell is asked to delete (the Recycle Bin and the
+        // other special icons stay), and not at all when nothing is.
+        let real: Vec<ItemId> = items
+            .iter()
+            .copied()
+            .filter(|id| self.state.item(*id).is_none_or(|it| !it.is_namespace()))
+            .collect();
         if let Some(w) = self.window_for(fence) {
-            w.expect_user_delete(items);
+            w.expect_user_delete(&real);
         }
-        self.shell_verb_on_items(fence, items, "delete", permanent);
+        if !self.shell_verb_on_items(fence, items, "delete", permanent)
+            && let Some(w) = self.window_for(fence)
+        {
+            w.settle_user_delete(false);
+        }
     }
 
     /// Alt+Enter / 属性: the shell's `properties` verb (multi-select gives one combined sheet).

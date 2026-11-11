@@ -72,6 +72,12 @@ pub(super) fn on_keydown(
     let mut release = false;
     let shift = window::key_down(msg::VK_SHIFT);
     let ctrl = window::key_down(msg::VK_CONTROL);
+    // Any other key ends the wait of an earlier Delete for its icons to go (`UserDelete`);
+    // Shift, Ctrl and Alt alone may be the start of the next Delete, whose repeats count too.
+    let deletes = vk == msg::VK_DELETE || (vk == VK_D && ctrl && !shift);
+    if !deletes && !matches!(vk, msg::VK_SHIFT | msg::VK_CONTROL | msg::VK_MENU) {
+        v.forget_user_delete("another key was pressed");
+    }
     // A rolled-up fence (from the moment it starts to roll up) shows none of its items: a key
     // must not act on a selection nobody can see (Delete sent a hidden file to the Recycle Bin).
     if v.roll_target() && acts_on_items(wparam as u32, ctrl) {
@@ -226,7 +232,7 @@ pub(super) fn on_keydown(
                 tracing::debug!("delete key repeat ignored");
             } else if !ids.is_empty() {
                 // From the keyboard: the neighbour that takes the focus shows the focus ring.
-                v.user_delete = Some((ids.iter().copied().collect(), true));
+                v.user_delete = Some(UserDelete::new(ids.iter().copied().collect(), true));
                 queue.push(Command::DeleteItems {
                     fence: v.active,
                     items: ids,

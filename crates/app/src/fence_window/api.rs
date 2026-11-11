@@ -958,13 +958,31 @@ impl FenceWindow {
     }
 
     /// The user deletes these items (Delete key or the item menu): when the focused one goes
-    /// with them, the item after it takes the focus and the selection, as in Explorer. A note
-    /// the Delete key left for the same items (with the focus ring) stays.
+    /// with them, the item after it takes the focus and the selection, as in Explorer. The
+    /// focus ring of a note the Delete key just left for them (and maybe for more: the app
+    /// passes only what can be deleted) stays.
     pub fn expect_user_delete(&self, items: &[ItemId]) {
         self.with_view(|v| {
             let ids: HashSet<ItemId> = items.iter().copied().collect();
-            if v.user_delete.as_ref().is_none_or(|(d, _)| *d != ids) {
-                v.user_delete = Some((ids, false));
+            let ring = v
+                .user_delete
+                .as_ref()
+                .is_some_and(|d| d.ring && ids.is_subset(&d.ids));
+            v.user_delete = Some(UserDelete::new(ids, ring));
+        });
+    }
+
+    /// The app says how the user's Delete went. `gone`: files were deleted, their icons leave
+    /// with the next refresh, and the note's wait counts from now (Windows' question may have
+    /// been open for a while). Else the delete was refused, cancelled in Windows' question or
+    /// failed, or nothing of it can be deleted: the note is dropped, so an icon that leaves
+    /// the fence another way later does not hand the selection to its neighbour.
+    pub fn settle_user_delete(&self, gone: bool) {
+        self.with_view(|v| {
+            if !gone {
+                v.forget_user_delete("the delete was refused, cancelled or failed");
+            } else if let Some(d) = v.user_delete.as_mut() {
+                d.since = Instant::now();
             }
         });
     }

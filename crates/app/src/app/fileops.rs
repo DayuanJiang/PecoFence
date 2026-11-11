@@ -361,6 +361,12 @@ impl App {
                 started,
             } => {
                 self.settle_delete(&paths);
+                // The fences hear how it went: a delete that removed nothing (declined in
+                // Windows' question, failed) must not leave one waiting for its icons to go.
+                let gone = matches!(result, Ok(true));
+                for w in self.fences.values() {
+                    w.settle_user_delete(gone);
+                }
                 let count = paths.len();
                 let ms = crate::share_log::millis(started.elapsed());
                 match &result {

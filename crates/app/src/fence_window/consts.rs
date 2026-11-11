@@ -81,6 +81,9 @@ pub(super) const DRAG_SCROLL_MAX: f32 = 720.0;
 pub(super) const DRAG_SCROLL_ARM: Duration = Duration::from_millis(50);
 /// Explorer / ListView type-to-select: the typed prefix resets after this pause.
 pub(super) const TYPE_AHEAD_TIMEOUT: Duration = Duration::from_millis(1000);
+/// How long a fence waits for the icons of the user's own Delete to go (`UserDelete`): the shell
+/// deletes within a second or two once Windows' question, if any, is answered.
+pub(super) const USER_DELETE_WAIT: Duration = Duration::from_secs(10);
 /// Pointer within this many DIPs of the right edge counts as "on the scrollbar".
 pub(super) const SCROLLBAR_HOT_DIP: f32 = 12.0;
 /// Right resize border left beside a shown scrollbar (the expanded thumb ends 3 DIP from the

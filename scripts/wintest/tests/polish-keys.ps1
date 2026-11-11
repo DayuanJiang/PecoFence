@@ -7,9 +7,12 @@
 #   F  F2 with several icons selected renames the focused one (UX10)
 #   E  Esc in a filtered folder fence clears the filter first, the selection on the next press (S4)
 #   V  a rename that sorts the icon out of view: the fence scrolls to it (C9)
+#   N  a Delete that removes nothing (No in Windows' question, the Recycle Bin icon) leaves no
+#      wait behind: the icon's neighbour takes no selection when the icon leaves later; a Yes
+#      still selects the icon that followed (follow-up to C7)
 # Parts: run.sh --var Part=RD ... (default: all). --var Rec=1 also records each part with rec.ps1
 # (for before / after animations). Runs on a 1600x900 box at 100 %.
-if (-not $Part) { $Part = 'RDHFEV' }
+if (-not $Part) { $Part = 'RDHFEVN' }
 # An error inside a part's block becomes a failed check and the next line runs.
 trap { PfTrap $_; continue }
 if ($Rec) { . C:\pf\kit\rec.ps1 }
@@ -306,6 +309,101 @@ if ($Part -match 'V') {
   Check 'V the renamed icon is still selected' ((PkSelOf $w) -eq '1' -and (PkFocusOf $w) -like 'pk zz*') "selected=$(PkSelOf $w) focused=[$(PkFocusOf $w)]"
   # 18 icons in rows of six: the last row starts 200 px down, the fence shows 204 px.
   Check 'V the fence scrolled to the renamed icon' ($scroll -ge 90) "scroll=$scroll"
+}
+
+if ($Part -match 'N') {
+  # A Delete that removes nothing (No in Windows' question, an icon that cannot be deleted)
+  # must not leave the fence waiting: when that icon leaves the fence another way later, its
+  # neighbour takes no selection (one more Delete would remove the neighbour).
+  # Windows' question of a delete (a dialog of the PecoFence process), zero when none shows.
+  function PkQuestion($sec = 6) {
+    for ($i = 0; $i -lt $sec * 5; $i++) {
+      $d = @([W]::Tops('#32770') | Where-Object { [W]::ProcOf($_) -eq 'pecofence' -and [W]::Title($_) -match 'Delete' }) | Select-Object -First 1
+      if ($d) { return $d }
+      Start-Sleep -Milliseconds 200
+    }
+    return [IntPtr]::Zero
+  }
+  # Answers it with the key given (N or Y; Esc when N did not close it); true when it closed.
+  function PkAnswer($d, $vk) {
+    if ($d -eq [IntPtr]::Zero) { return $false }
+    [G]::Press($vk); Start-Sleep -Milliseconds 800
+    if ([G]::IsWindowVisible($d)) { [G]::Press(0x1B); Start-Sleep -Milliseconds 800 }
+    return (-not [G]::IsWindowVisible($d))
+  }
+  # Shift+Delete from the keyboard, or Delete in the item menu with Shift held, on the icon at $p.
+  function PkAskDelete($p, $menu) {
+    if ($menu) {
+      [G]::RClick($p[0], $p[1])
+      $m = MenuWin 8
+      [G]::KeyDown(0x10); Start-Sleep -Milliseconds 100
+      MenuPick '^Delete' $m | Out-Null
+      Start-Sleep -Milliseconds 400; [G]::KeyUp(0x10)
+    } else {
+      [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 600
+      ParkMouse
+      Chord 0x10 0x2E
+    }
+    return (PkQuestion)
+  }
+  $nn = @('pk n1 合同.txt', 'pk n2 报价单.txt', 'pk n3 会议记录.txt', 'pk n4 清单.txt', 'pk n5 发票.txt')
+  New-Item -ItemType Directory -Force $PkDir | Out-Null
+  foreach ($n in $nn) { Set-Content -LiteralPath (Join-Path $PkDir $n) -Value 'x' -Encoding ASCII }
+  foreach ($kind in 'fence', 'folder fence') {
+    ClearFences | Out-Null
+    if ($kind -eq 'fence') { PkFence 'PkN' '300,200,520,170' $nn; $dir = $PfDesk }
+    else { Pf fence create --portal $PkDir --title 'PkN' --rect '300,200,520,170' | Out-Null; Start-Sleep -Seconds 3; $dir = $PkDir }
+    Pf fence create --title 'PkO' --rect '300,440,300,150' | Out-Null
+    Start-Sleep -Milliseconds 800
+    foreach ($menu in $false, $true) {
+      $how = if ($menu) { 'Delete in the item menu' } else { 'Shift+Delete' }
+      Case "N $kind, $how, answered No"
+      $q = PkAskDelete (CellPt 'PkN' 1) $menu
+      $closed = PkAnswer $q 0x4E
+      Start-Sleep -Milliseconds 1200
+      ParkMouse
+      $w = DumpOf 'PkN'
+      $name = PkFocusOf $w
+      # The focused icon's file (a name is shown with or without its .txt).
+      $file = if ($name) { @((Join-Path $dir $name), (Join-Path $dir "$name.txt")) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1 } else { $null }
+      Check "N $kind, ${how}: Windows asked, No keeps the file and its selection" ($q -ne [IntPtr]::Zero -and $closed -and $file -and (PkSelOf $w) -eq '1') "question=$q closed=$closed focused=[$name] selected=$(PkSelOf $w) file=[$file]"
+      # The icon leaves the fence another way: moved to another fence, or removed by a program.
+      $left = if ($kind -eq 'fence' -and -not $menu) { 'moved to another fence' } else { 'removed by another program' }
+      if ($file -and $left -like 'moved*') { Pf item move $file --to PkO | Out-Null }
+      elseif ($file) { Remove-Item -LiteralPath $file -Force }
+      Start-Sleep -Milliseconds 2000
+      $w = DumpOf 'PkN'
+      Check "N $kind, ${how}: the icon is $left later, its neighbour takes no selection" ((PkSelOf $w) -eq '0') "selected=$(PkSelOf $w) focused=[$(PkFocusOf $w)] items=$(DumpVal $w 'items')"
+    }
+  }
+
+  Case 'N an icon that cannot be deleted'
+  # The Recycle Bin in a fence: Delete does nothing; moved to another fence later, the icon
+  # beside it takes no selection.
+  ClearFences | Out-Null
+  PkFence 'PkN' '300,200,520,170' @('pk n6 备忘.txt', 'pk n7 草稿.txt')
+  Pf fence create --title 'PkO' --rect '300,440,300,150' | Out-Null
+  Pf item move 'Recycle Bin' --to PkN | Out-Null
+  Start-Sleep -Seconds 2
+  # A fence sorted by name shows the Recycle Bin before the files.
+  $p = CellPt 'PkN' 0
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 600
+  ParkMouse
+  [G]::Press(0x2E); Start-Sleep -Milliseconds 1500
+  $w = DumpOf 'PkN'
+  Check 'N Delete on the Recycle Bin icon does nothing' ((PkSelOf $w) -eq '1' -and (PkFocusOf $w) -eq 'Recycle Bin' -and (PkQuestion 1) -eq [IntPtr]::Zero) "selected=$(PkSelOf $w) focused=[$(PkFocusOf $w)]"
+  Pf item move 'Recycle Bin' --to PkO | Out-Null
+  Start-Sleep -Milliseconds 2000
+  $w = DumpOf 'PkN'
+  Check 'N the Recycle Bin icon is moved to another fence later: its neighbour takes no selection' ((PkSelOf $w) -eq '0') "selected=$(PkSelOf $w) focused=[$(PkFocusOf $w)] items=$(DumpVal $w 'items')"
+
+  Case 'N Shift+Delete answered with Yes'
+  # The wait survives Windows' question: the icon that followed takes the selection.
+  $q = PkAskDelete (CellPt 'PkN' 0) $false
+  $closed = PkAnswer $q 0x59
+  Start-Sleep -Milliseconds 2500
+  $w = DumpOf 'PkN'
+  Check 'N answered Yes: the file is gone and the icon that followed is selected' ($q -ne [IntPtr]::Zero -and $closed -and -not (Test-Path -LiteralPath (Join-Path $PfDesk 'pk n6 备忘.txt')) -and (PkSelOf $w) -eq '1' -and (PkFocusOf $w) -like 'pk n7*') "question=$q closed=$closed selected=$(PkSelOf $w) focused=[$(PkFocusOf $w)]"
 }
 
 Case 'cleanup'
