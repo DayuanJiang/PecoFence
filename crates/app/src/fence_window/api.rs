@@ -187,6 +187,11 @@ impl FenceWindow {
             script: None,
             script_rows: Vec::new(),
             script_hover: None,
+            slider_drag: None,
+            script_pressed: None,
+            script_scroll: ScriptScrollState::default(),
+            quiet_glide: false,
+            script_images: Vec::new(),
             portal_missing: false,
             empty_override: None,
             title_count: None,
@@ -514,7 +519,12 @@ impl FenceWindow {
             v.clock_text.0,
             v.clock_text.1,
             dump_rects(&v.note_boxes),
-            dump_rects(&v.script_rows),
+            dump_rects(
+                &v.script_rows
+                    .iter()
+                    .map(|&(row, cell, r)| (row * 100 + cell, r))
+                    .collect::<Vec<_>>()
+            ),
             v.off_desktop,
             v.desktop_tip,
             v.filter_tag,
@@ -1411,10 +1421,10 @@ impl FenceWindow {
     }
 
     /// A script's copy action uses a short, non-activating tip beside the pointer.
-    pub fn show_script_copy_result(&self, index: usize, copied: bool) {
+    pub fn show_script_copy_result(&self, index: usize, cell: usize, copied: bool) {
         self.with_view(|v| {
             v.hide_tip();
-            v.tip_target = Some(TipTarget::ScriptRow(index));
+            v.tip_target = Some(TipTarget::ScriptRow(index, cell));
             let text = if copied {
                 pecofence_core::i18n::text("已复制")
             } else {
@@ -1450,6 +1460,9 @@ impl FenceWindow {
                 if script.is_none() {
                     v.script_rows.clear();
                     v.script_hover = None;
+                    v.slider_drag = None;
+                    v.script_pressed = None;
+                    v.script_scroll = ScriptScrollState::default();
                 }
                 v.script = script;
                 let _ = v.redraw();

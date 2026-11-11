@@ -656,6 +656,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn decode_scaled_reads_a_png_and_keeps_its_ratio() {
+        // 4 x 2 pixels: red, green, blue, white over a black row.
+        const PNG: [u8; 75] = [
+            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 4, 0, 0, 0, 2,
+            8, 2, 0, 0, 0, 240, 202, 234, 52, 0, 0, 0, 18, 73, 68, 65, 84, 120, 156, 99, 248, 207,
+            192, 192, 0, 198, 64, 192, 128, 12, 0, 107, 174, 5, 251, 35, 11, 8, 247, 0, 0, 0, 0,
+            73, 69, 78, 68, 174, 66, 96, 130,
+        ];
+        let _com = crate::com::StaGuard::init().unwrap();
+        let path = std::env::temp_dir().join(format!("pf-decode-{}.png", std::process::id()));
+        std::fs::write(&path, PNG).unwrap();
+        let whole = decode_scaled(&path, 64, 64).unwrap();
+        assert_eq!((whole.width, whole.height), (4, 2));
+        // Opaque BGRA: the first pixel is red.
+        assert_eq!(&whole.bgra[..4], &[0, 0, 255, 255]);
+        // Never enlarged, scaled down within the box with the same ratio.
+        let small = decode_scaled(&path, 2, 2).unwrap();
+        assert_eq!((small.width, small.height), (2, 1));
+        assert!(
+            decode_scaled(
+                std::path::Path::new(
+                    r"C:
+o\such.png"
+                ),
+                8,
+                8
+            )
+            .is_err()
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn registry_watcher_delivers_a_real_value_change() {
         use std::{sync::mpsc, time::Duration};
         use windows_sys::Win32::System::Registry as registry;

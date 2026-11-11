@@ -12,7 +12,12 @@ pub const TIMEOUT: Duration = Duration::from_secs(10);
 /// What is kept of the output: enough for a fence, small enough for the UI thread.
 const MAX_BYTES: usize = 16 * 1024;
 const MAX_LINES: usize = 40;
+/// A streaming script's screen: the fence scrolls what does not fit, so it may be a long list
+/// or a whole song's lyrics.
+const STREAM_MAX_LINES: usize = 300;
 const MAX_LINE_CHARS: usize = 300;
+/// A row of cells (a `::` line) holds several rows' worth of parameters.
+const MAX_CELL_LINE_CHARS: usize = 2000;
 /// CREATE_NO_WINDOW: no console flashes up on the desktop.
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -113,6 +118,9 @@ pub struct RunEnv {
     pub theme: &'static str,
     /// `PECOFENCE_FENCE`: the fence's id.
     pub fence: String,
+    /// `PECOFENCE_LANGUAGE`: PecoFence's display language (`en`, `zh-CN`, `zh-TW`, `ja`, `ko`,
+    /// `de`, `fr`, `es`, `pt-BR`, `ru` or `it`).
+    pub language: &'static str,
 }
 
 /// Starts `path` in its own folder without a window, its output piped (and its input when
@@ -136,6 +144,7 @@ fn spawn(path: &Path, env: &RunEnv, stdin: bool) -> Result<std::process::Child, 
             .env("PECOFENCE_DATA", &env.data_dir)
             .env("PECOFENCE_THEME", env.theme)
             .env("PECOFENCE_FENCE", &env.fence)
+            .env("PECOFENCE_LANGUAGE", env.language)
             // A streaming Python script's lines would wait in its buffer otherwise.
             .env("PYTHONUNBUFFERED", "1");
         if let Some(dir) = path.parent() {
@@ -256,8 +265,18 @@ pub fn is_streamable(path: &Path) -> bool {
     pecofence_core::script_output::is_streamable(&String::from_utf8_lossy(&head[..n]))
 }
 
+/// The title a script asks for in its header (`<pecofence.title>`), when it does.
+pub fn title_of(path: &Path) -> Option<String> {
+    let mut head = vec![0u8; 8 * 1024];
+    let n = std::fs::File::open(path)
+        .and_then(|mut f| f.read(&mut head))
+        .unwrap_or(0);
+    pecofence_core::script_output::script_title(&String::from_utf8_lossy(&head[..n]))
+}
+
 /// What a streaming script shows, line by line, as SwiftBar does: every line is added at
-/// once; after a `~~~` line the next line starts a new screen. The newest [`MAX_LINES`] stay.
+/// once; after a `~~~` line the next line starts a new screen. The newest [`STREAM_MAX_LINES`]
+/// stay.
 #[derive(Default)]
 struct Screen {
     lines: std::collections::VecDeque<String>,
@@ -265,24 +284,24 @@ struct Screen {
 }
 
 impl Screen {
-    /// Takes one printed line; the text to show when it changed the screen.
-    fn push(&mut self, line: &str) -> Option<String> {
+    /// Takes one printed line; whether it changed the screen.
+    fn push(&mut self, line: &str) -> bool {
         if line.trim() == "~~~" {
             self.reset = true;
-            return None;
+            return false;
         }
         if std::mem::take(&mut self.reset) {
             self.lines.clear();
         }
         self.lines.push_back(line.to_string());
-        while self.lines.len() > MAX_LINES {
+        while self.lines.len() > STREAM_MAX_LINES {
             self.lines.pop_front();
         }
-        Some(self.text())
+        true
     }
 
     fn text(&self) -> String {
-        clean(&Vec::from(self.lines.clone()).join("\n"))
+        clean_to(&Vec::from(self.lines.clone()).join("\n"), STREAM_MAX_LINES)
     }
 }
 
@@ -356,9 +375,14 @@ impl Stream {
                             Ok(_) => {}
                         }
                         let text = decode(&line);
-                        if let Some(now) = screen.push(text.trim_end_matches(['\r', '\n'])) {
-                            shown = now.clone();
-                            on_event(StreamEvent::Block(now));
+                        // The lines of a screen that came together are shown together: what
+                        // the pipe already holds is read before the screen is passed on, so
+                        // a long one does not appear a line at a time.
+                        if screen.push(text.trim_end_matches(['\r', '\n']))
+                            && reader.buffer().is_empty()
+                        {
+                            shown = screen.text();
+                            on_event(StreamEvent::Block(shown.clone()));
                         }
                     }
                 }
@@ -487,13 +511,23 @@ fn decode(bytes: &[u8]) -> String {
 /// Line breaks as `\n`, colour codes and trailing spaces gone, at most [`MAX_LINES`] lines of
 /// [`MAX_LINE_CHARS`], no empty lines at either end.
 pub fn clean(text: &str) -> String {
+    clean_to(text, MAX_LINES)
+}
+
+/// [`clean`] keeping `max_lines` lines at most.
+fn clean_to(text: &str, max_lines: usize) -> String {
     let text = text.trim_start_matches('\u{feff}');
     let mut lines: Vec<String> = text
         .split('\n')
         .map(|l| {
             let l = strip_escapes(l.trim_end_matches('\r'));
             let l = l.trim_end();
-            l.chars().take(MAX_LINE_CHARS).collect()
+            let limit = if pecofence_core::script_output::is_cells_line(l) {
+                MAX_CELL_LINE_CHARS
+            } else {
+                MAX_LINE_CHARS
+            };
+            l.chars().take(limit).collect()
         })
         .collect();
     while lines.last().is_some_and(|l| l.is_empty()) {
@@ -504,7 +538,7 @@ pub fn clean(text: &str) -> String {
         .position(|l| !l.is_empty())
         .unwrap_or(lines.len());
     lines.drain(..first);
-    lines.truncate(MAX_LINES);
+    lines.truncate(max_lines);
     lines.join("\n")
 }
 
@@ -529,7 +563,8 @@ fn strip_escapes(line: &str) -> String {
     out
 }
 
-/// The script fence examples besides the weather, as (Chinese, English) texts.
+/// The script fence examples besides the weather, as (Chinese, English) texts. The clipboard history
+/// is the same script in every language: it has its own texts.
 pub fn example(kind: Example, chinese: bool) -> &'static str {
     match (kind, chinese) {
         (Example::Weather, c) => weather_example(c),
@@ -537,6 +572,7 @@ pub fn example(kind: Example, chinese: bool) -> &'static str {
         (Example::GitHub, false) => include_str!("../assets/scripts/github.en.ps1"),
         (Example::Status, true) => include_str!("../assets/scripts/status.zh.ps1"),
         (Example::Status, false) => include_str!("../assets/scripts/status.en.ps1"),
+        (Example::ClipboardHistory, _) => include_str!("../assets/scripts/clipboard-history.ps1"),
     }
 }
 
@@ -570,26 +606,102 @@ const OLD_EXAMPLES: [(&str, Example, bool); 2] = [
     ),
 ];
 
+/// The record of the examples PecoFence wrote, in their folder: for each file, the example and
+/// language it holds and the fingerprint of the text written. A copy that still has that
+/// fingerprint was not edited, so it can get the example of a later PecoFence (the clipboard history
+/// changes from one version to the next).
+const EXAMPLES_RECORD: &str = "examples.json";
+
+/// An example as PecoFence wrote it (an entry of [`EXAMPLES_RECORD`]).
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+struct WrittenExample {
+    /// [`Example::name`].
+    example: String,
+    chinese: bool,
+    /// [`fingerprint`] of the text written.
+    fingerprint: String,
+}
+
+/// FNV-1a (64 bits) of a script without its BOM and with LF line ends: the same whatever an
+/// editor did to the line ends, and from one build of PecoFence to the next.
+fn fingerprint(text: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in unify_lines(text).bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// The record of the folder of `script`; empty when there is none (or it cannot be read).
+fn read_examples_record(script: &Path) -> std::collections::BTreeMap<String, WrittenExample> {
+    script
+        .parent()
+        .and_then(|dir| std::fs::read_to_string(dir.join(EXAMPLES_RECORD)).ok())
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+/// Notes in the record that `path` holds example `kind` as `text`.
+fn note_written_example(path: &Path, kind: Example, chinese: bool, text: &str) {
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        return;
+    };
+    let mut record = read_examples_record(path);
+    record.insert(
+        name.to_string_lossy().to_string(),
+        WrittenExample {
+            example: kind.name().to_string(),
+            chinese,
+            fingerprint: fingerprint(text),
+        },
+    );
+    let written = serde_json::to_string_pretty(&record)
+        .map_err(std::io::Error::other)
+        .and_then(|json| std::fs::write(dir.join(EXAMPLES_RECORD), json));
+    if let Err(e) = written {
+        tracing::warn!(error = %e, "recording the example script failed");
+    }
+}
+
+/// Writes example `kind` to `path` and notes it in the record (for its later updates).
+pub fn write_example(path: &Path, kind: Example, chinese: bool) -> std::io::Result<()> {
+    let text = example_file_text(kind, chinese);
+    std::fs::write(path, &text)?;
+    note_written_example(path, kind, chinese, &text);
+    Ok(())
+}
+
+/// The example (and language) a script file is to be replaced with: an earlier version's example
+/// that nobody edited. A file PecoFence recorded is compared with its record; an older one with
+/// the texts of [`OLD_EXAMPLES`].
+fn outdated_example(path: &Path) -> Option<(Example, bool)> {
+    let name = path.file_name()?.to_string_lossy().to_string();
+    if let Some(written) = read_examples_record(path).remove(&name) {
+        let kind = Example::parse(&written.example)?;
+        let unedited = fingerprint(&std::fs::read_to_string(path).ok()?) == written.fingerprint;
+        let current = fingerprint(example(kind, written.chinese));
+        return (unedited && current != written.fingerprint).then_some((kind, written.chinese));
+    }
+    // Only small files can be one of the old texts (a script fence may run a large .exe).
+    if std::fs::metadata(path).map_or(true, |m| m.len() > 16 * 1024) {
+        return None;
+    }
+    let now = unify_lines(&std::fs::read_to_string(path).ok()?);
+    OLD_EXAMPLES
+        .iter()
+        .find(|(old, _, _)| unify_lines(old) == now)
+        .map(|&(_, kind, chinese)| (kind, chinese))
+}
+
 /// A script file that still holds an earlier version's example unchanged gets the current one,
 /// so a fence made from an old example shows its fixes; an edited copy stays as it is. True
 /// when the file was replaced.
 pub fn update_old_example(path: &Path) -> bool {
-    // Only small files can be an example (a script fence may run a large .exe).
-    let small = std::fs::metadata(path).is_ok_and(|m| m.len() <= 16 * 1024);
-    if !small {
-        return false;
-    }
-    let Ok(now) = std::fs::read_to_string(path) else {
+    let Some((kind, chinese)) = outdated_example(path) else {
         return false;
     };
-    let now = unify_lines(&now);
-    let Some(&(_, kind, chinese)) = OLD_EXAMPLES
-        .iter()
-        .find(|(old, _, _)| unify_lines(old) == now)
-    else {
-        return false;
-    };
-    match std::fs::write(path, example_file_text(kind, chinese)) {
+    match write_example(path, kind, chinese) {
         Ok(()) => {
             tracing::info!(
                 example = kind.name(),
@@ -614,10 +726,18 @@ pub enum Example {
     GitHub,
     /// The computer's state every 2 seconds (a streaming script): colours, copy, run.
     Status,
+    /// The history of the clipboard: texts and pictures, with blur and auto-delete (a streaming
+    /// script; see `extras/clipboard-history`).
+    ClipboardHistory,
 }
 
 impl Example {
-    pub const ALL: [Self; 3] = [Self::Weather, Self::GitHub, Self::Status];
+    pub const ALL: [Self; 4] = [
+        Self::Weather,
+        Self::GitHub,
+        Self::Status,
+        Self::ClipboardHistory,
+    ];
 
     /// The example a settings page button names (`name()`).
     pub fn parse(name: &str) -> Option<Self> {
@@ -630,6 +750,7 @@ impl Example {
             Self::Weather => pecofence_core::i18n::text("天气"),
             Self::GitHub => pecofence_core::i18n::text("GitHub 仓库动态"),
             Self::Status => pecofence_core::i18n::text("电脑状态"),
+            Self::ClipboardHistory => pecofence_core::i18n::text("剪贴板历史"),
         }
     }
 
@@ -639,6 +760,7 @@ impl Example {
             Self::Weather => pecofence_core::i18n::text("天气.ps1"),
             Self::GitHub => pecofence_core::i18n::text("GitHub 动态.ps1"),
             Self::Status => pecofence_core::i18n::text("电脑状态.ps1"),
+            Self::ClipboardHistory => pecofence_core::i18n::text("剪贴板历史.ps1"),
         }
     }
 
@@ -648,6 +770,7 @@ impl Example {
             Self::Weather => "weather",
             Self::GitHub => "github",
             Self::Status => "status",
+            Self::ClipboardHistory => "clipboard",
         }
     }
 }
@@ -692,6 +815,52 @@ mod tests {
     }
 
     #[test]
+    fn the_clipboard_history_example_is_a_streaming_script_with_its_title() {
+        assert_eq!(Example::parse("clipboard"), Some(Example::ClipboardHistory));
+        for chinese in [true, false] {
+            let text = example_file_text(Example::ClipboardHistory, chinese);
+            // The BOM Windows PowerShell 5.1 needs, and the script's own header comments.
+            assert!(text.starts_with('\u{feff}'));
+            assert!(text.contains("<pecofence.type>streamable</pecofence.type>"));
+            assert!(text.contains("<pecofence.title>Clipboard History</pecofence.title>"));
+            assert!(!text.contains("\r\r"));
+        }
+    }
+
+    #[test]
+    fn a_recorded_example_follows_pecofence_until_it_is_edited() {
+        let dir = std::env::temp_dir().join(format!("pf-recorded-example-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("clipboard-history.ps1");
+        // Written by this build: up to date, nothing to do.
+        write_example(&path, Example::ClipboardHistory, false).unwrap();
+        assert!(!update_old_example(&path));
+        // As an earlier build wrote it (another text, recorded): the current one replaces it,
+        // whatever an editor did to its line ends.
+        let earlier =
+            "\u{feff}# <pecofence.type>streamable</pecofence.type>\r\n'an earlier player'\r\n";
+        std::fs::write(&path, earlier).unwrap();
+        note_written_example(&path, Example::ClipboardHistory, false, earlier);
+        std::fs::write(&path, earlier.replace("\r\n", "\n")).unwrap();
+        assert!(update_old_example(&path));
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            example_file_text(Example::ClipboardHistory, false)
+        );
+        assert!(!update_old_example(&path));
+        // An edited copy (an API key put in) stays as it is.
+        std::fs::write(&path, earlier).unwrap();
+        note_written_example(&path, Example::ClipboardHistory, false, earlier);
+        let edited = earlier.replace("earlier", "edited");
+        std::fs::write(&path, &edited).unwrap();
+        assert!(!update_old_example(&path));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
+        // A file the record does not name is left to the old texts.
+        assert!(!update_old_example(&dir.join("mine.ps1")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn an_unedited_old_example_gets_the_current_one() {
         let dir = std::env::temp_dir().join(format!("pf-old-example-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -718,24 +887,27 @@ mod tests {
     #[test]
     fn a_stream_screen_follows_swiftbar() {
         let mut s = Screen::default();
-        assert_eq!(s.push("a").as_deref(), Some("a"));
-        assert_eq!(s.push("b").as_deref(), Some("a\nb"));
+        assert!(s.push("a"));
+        assert!(s.push("b"));
+        assert_eq!(s.text(), "a\nb");
         // `~~~` changes nothing until the next line, which starts a new screen.
-        assert_eq!(s.push("~~~"), None);
-        assert_eq!(s.push("c").as_deref(), Some("c"));
+        assert!(!s.push("~~~"));
+        assert_eq!(s.text(), "a\nb");
+        assert!(s.push("c"));
+        assert_eq!(s.text(), "c");
         // SwiftBar's way, `~~~` before each block, works the same.
         s.push("~~~");
         s.push("d");
-        assert_eq!(s.push("e").as_deref(), Some("d\ne"));
+        s.push("e");
+        assert_eq!(s.text(), "d\ne");
         // A log that never prints `~~~` shows its newest lines.
         let mut log = Screen::default();
-        let mut last = None;
-        for i in 0..100 {
-            last = log.push(&format!("line {i}"));
+        for i in 0..STREAM_MAX_LINES + 60 {
+            log.push(&format!("line {i}"));
         }
-        let last = last.unwrap();
-        assert_eq!(last.lines().count(), MAX_LINES);
-        assert!(last.ends_with("line 99"));
+        let last = log.text();
+        assert_eq!(last.lines().count(), STREAM_MAX_LINES);
+        assert!(last.ends_with(&format!("line {}", STREAM_MAX_LINES + 59)));
     }
 
     #[test]
@@ -745,9 +917,17 @@ mod tests {
             "+18°C 多云"
         );
         assert_eq!(clean("a\r\n\r\nb\r\n"), "a\n\nb");
-        let many: String = (0..100).map(|i| format!("{i}\n")).collect();
+        let many: String = (0..MAX_LINES + 60).map(|i| format!("{i}\n")).collect();
+        assert_eq!(
+            clean_to(&many, STREAM_MAX_LINES).lines().count(),
+            MAX_LINES + 60
+        );
         assert_eq!(clean(&many).lines().count(), MAX_LINES);
         assert_eq!(clean(&"x".repeat(1000)).chars().count(), MAX_LINE_CHARS);
+        // A row of cells keeps its tail: cut in the middle of a cell, it would show as text.
+        let cells = format!(":: {}", "a | action=x :: ".repeat(40));
+        assert!(cells.chars().count() > MAX_LINE_CHARS);
+        assert_eq!(clean(&cells), cells.trim_end());
     }
 
     #[test]

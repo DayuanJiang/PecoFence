@@ -391,7 +391,9 @@ names by pinyin. Files and folders opened from the search box are counted in `co
   `PYTHONIOENCODING=utf-8`. PecoFence itself does not go online for this: the script does.
   The 添加 buttons in Settings › 小工具 (and 新建小工具 in the tray and fence menus) write ready
   examples into the configuration folder's `scripts` folder: 天气 (weather), GitHub 仓库动态 (a
-  repository's newest issues and pull requests) and 电脑状态 (a streaming script).
+  repository's newest issues and pull requests), 电脑状态 (a streaming script) and 剪贴板历史 (the
+  clipboard history described in `extras/clipboard-history`: texts and pictures copied, also a
+  streaming script).
 
 ```powershell
 pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent`n[ ] Call Anna"
@@ -430,7 +432,8 @@ A row has one action: with several, the first of `href`, `open`, `run`, `copy`, 
 |---|---|
 | `color=` | the text colour: `red`, `green`, `orange` (or `amber`), `yellow`, `blue`, `purple`, `gray` (or `grey`) or `#rrggbb`. The named colours are Windows' status colours and get a lighter shade in the dark theme; `#rrggbb` is used as written |
 | `icon=` | text drawn before the row, such as an emoji |
-| `tooltip=` | shown while the pointer rests on a clickable row; without it the tooltip shows the URL, path, program or text to copy |
+| `tooltip=` | shown while the pointer rests on a clickable row (`\n` in it starts a new line); without it the tooltip shows the URL, path, program or text to copy |
+| `hidden=true` | the row is not drawn and takes no room; its other parameters still count (`pane=` and `follow=` below) |
 
 A clickable row gets a light plate under the pointer and the hand cursor; a row with `href=` or
 `open=` also shows a small arrow on the right. A click on a to-do with `action=` ticks or unticks
@@ -448,6 +451,7 @@ Every run gets these environment variables:
 | `PECOFENCE_DATA` | a folder of this fence's own for what the script keeps: `<config folder>\scripts-data\<fence id>` (`pecofence-cli paths` shows the config folder). PecoFence creates it |
 | `PECOFENCE_THEME` | `light` or `dark`, PecoFence's theme |
 | `PECOFENCE_FENCE` | the fence's id |
+| `PECOFENCE_LANGUAGE` | PecoFence's display language: `en`, `zh-CN`, `zh-TW`, `ja`, `ko`, `de`, `fr`, `es`, `pt-BR`, `ru` or `it` |
 
 A to-do list kept in a text file and ticked from the fence (Windows PowerShell 5.1 reads a script
 without a BOM in the ANSI code page: save a script that contains non-ASCII text, such as emoji or
@@ -469,6 +473,65 @@ for ($i = 0; $i -lt $lines.Count; $i++) { "$($lines[$i]) | action=toggle:$i" }
 'PecoFence on GitHub | href=https://github.com/DayuanJiang/PecoFence color=blue'
 ```
 
+### Rows of cells
+
+A line that is `::` alone or followed by a space or a tab is a row of cells side by side (so text
+such as the IPv6 address `::1` stays text). Cells are separated by `::` outside a quoted value, and
+each one is written like a row: `text | key=value ...`. A row of cells may be 2000 characters long.
+
+```
+:: 0:42 | color=gray width=36 :: | slider=0.25 action=seek tooltip="Position" :: 3:15 | color=gray
+:: <U+E892> | action=prev tooltip="Previous" :: <U+E768> | action=play tooltip="Play" checked=true
+```
+
+| Cell parameter | Effect |
+|---|---|
+| `action=`, `run=`, `open=`, `href=`, `copy=` | the cell is a button, with a plate under the pointer and its own `tooltip=` |
+| a text of Segoe Fluent Icons characters only (private use area, such as U+E768) | drawn as an icon, a little larger than the text |
+| `slider=0.4` (0 to 1) | a horizontal slider that takes the width the other cells leave; a click or a drag runs its `action=` with the position after a colon (`seek:0.37`), about every 80 ms while it is dragged for a streaming script |
+| `checked=true` | the button is drawn pressed in (a function that is on) |
+| `checkbox=true` / `checkbox=false` | a check box, ticked or not, before the text; a click on the cell is a click on the box |
+| `width=44`, `align=left\|center\|right` | a fixed width in DIPs and the place of the text in it, so the cells of two rows line up |
+| `fill=true` | the cell takes the width the other cells leave, as a slider does (several sliders and filling cells share it), so the cells after it stay against the right edge of the fence, whatever its width; a text ends with an ellipsis where it does not fit, a picture stays at its own ratio. A row with one does not go on to a new line |
+| `under=true` | the cell goes under the cell before it, in the same column (two small buttons one above the other); the column is as wide as its widest cell and the row as tall as its tallest column |
+| `gap=4` | the space after the cell, in DIPs (`gap=0` sets the pieces of a word side by side) |
+| `bold=true` | bold text |
+| `image=C:\path\p.png` with `height=80` and `width=250` | a picture in the cell, as tall as `height=` DIPs at most (96 by default) and as wide as `width=` (its own ratio without one), in its own ratio; a click on it is a click on the cell (`action=`). The line takes the height of its tallest picture and the other cells sit in the middle of it, so a picture can have buttons at its right |
+| `dblaction=<value>` | a double-click sends this action (the first click of the double-click already sent `action=`); also on a plain row |
+
+A row without sliders or `fill=true` cells goes on to a new line when the next cell does not fit; in a row with them,
+the cells past the right edge are not drawn.
+
+### Scrolling
+
+Rows that do not fit the fence scroll: the mouse wheel moves them, and the overlay scrollbar on the
+right edge (the arrows and the thumb work as in any fence) shows where they are. Two hidden rows
+(`hidden=true`) shape it:
+
+| Parameter | Effect |
+|---|---|
+| `pane=<key>` | the rows above this one stay in place, the rows below it scroll under them (the tabs and buttons of a list, the player's controls above its lyrics). While the key stays the same, the scrolling is kept across the script's outputs; a new key (another page of a list, another tab) brings the rows back to their top. A fence too short to leave about 110 DIPs to the scrolling rows scrolls everything instead. Without a `pane=` row, all the rows scroll |
+| `follow=<key>` | the row right after this one is brought to the middle of the scrolling rows each time the key changes (the line of a song being sung), by a short glide, at once the first time after a new `pane=` key. A user who scrolled by hand less than 6 seconds ago keeps what they see |
+
+```powershell
+'Songs | color=gray'
+' | pane=songs:page1 hidden=true'
+1..100 | ForEach-Object { "Song $_ | action=play:$_" }
+```
+
+### Pictures
+
+A row with `image=C:\path\cover.jpg` shows that picture, centred, in its own ratio, at most
+`height=` DIPs tall (96 by default) and never wider than the fence. It is decoded with WIC at no
+more than twice the size it is drawn, once per file (a file that changes, by its modification time
+or its size, is read again), and the last 40 pictures are kept. A file that cannot be decoded
+draws nothing. The path is written in the line, so it must fit in its 300 characters.
+
+### Fence title
+
+A comment `<pecofence.title>Clipboard History</pecofence.title>` within the first 8 KB of the script is
+the title a fence made from it gets, instead of the file name. A fence that exists keeps its title.
+
 ### Streaming scripts
 
 A script that names itself streamable in a comment within the first 8 KB of the file,
@@ -477,7 +540,9 @@ works too), keeps running: the 10-second limit does not apply. Every line it pri
 added below what the fence shows. A line `~~~` marks a new screen: the next line printed replaces
 everything the fence showed, and the lines after it are added below again. So a script may print
 `~~~` before each new block, as SwiftBar scripts do, or after it; the old block stays until the
-next line arrives. The fence keeps the newest 40 lines. Python streaming scripts get
+next line arrives. The fence keeps the newest 300 lines (a fence that is shorter than that
+scrolls, see *Scrolling*). Lines that reach the fence together, a screen printed in one write,
+show together. Python streaming scripts get
 `PYTHONUNBUFFERED=1`, so their lines arrive as they are printed.
 
 A click on a row with `action=` sends the value as one line to the script's standard input

@@ -149,7 +149,78 @@ pub(super) fn snap_offset(v: f32, scale: f32) -> f32 {
     (v * scale).round() / scale
 }
 
+/// 脚本栅栏: how the rows of a script fence scroll, as its last drawing left them (content DIPs).
+/// The offset itself is the view's `scroll_y`, so the wheel, the scrollbar and the glide are the
+/// ones of every fence.
+#[derive(Debug, Default)]
+pub(super) struct ScriptScrollState {
+    /// Where the scrolling rows start (under the pinned ones), how tall that band is, and how
+    /// tall its rows are altogether.
+    pub(super) band_top: f32,
+    pub(super) band_h: f32,
+    pub(super) content_h: f32,
+    /// A wheel notch scrolls this many lines' worth: one line (DIPs).
+    pub(super) row_step: f32,
+    /// The `pane=` key of the rows last drawn: another key brings the band back to its top.
+    pub(super) pane: Option<String>,
+    /// The `follow=` key of the rows last drawn: another key brings the followed row to the
+    /// middle of the band.
+    pub(super) follow: Option<String>,
+    /// The followed row goes to its place at once (a new pane), not by a glide.
+    pub(super) follow_now: bool,
+    /// When the user last scrolled by hand: the followed row is left alone for a while.
+    pub(super) user_at: Option<Instant>,
+}
+
+/// The user's own scrolling keeps the followed row from taking the rows back for this long.
+pub(super) const SCRIPT_FOLLOW_PAUSE: Duration = Duration::from_secs(6);
+
+/// What scrolls in a fence: the size of its content and of the band it scrolls in.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ScrollDims {
+    pub(super) content_h: f32,
+    /// Height (DIPs) of the viewport the content scrolls in, and of the band the bar spans.
+    pub(super) view_h: f32,
+    pub(super) band_h: f32,
+    /// Where the band starts (a details header, rows pinned by a script).
+    pub(super) band_top: f32,
+    /// One wheel notch's line, one arrow click.
+    pub(super) row_step: f32,
+    /// The icon grid (one grid row per wheel notch).
+    pub(super) grid: bool,
+}
+
 impl FenceViewState {
+    /// What scrolls here: the rows of a script fence, else the items' layout.
+    pub(super) fn scroll_dims(&self) -> ScrollDims {
+        if self.script.is_some() {
+            let s = &self.script_scroll;
+            return ScrollDims {
+                content_h: s.content_h,
+                view_h: s.band_h,
+                band_h: s.band_h,
+                band_top: s.band_top,
+                row_step: s.row_step.max(1.0),
+                grid: false,
+            };
+        }
+        let (layout, view_h) = self.scroll_extent();
+        ScrollDims {
+            content_h: layout.content_height(),
+            view_h,
+            band_h: self.band_h(&layout),
+            band_top: layout.fixed_top(),
+            row_step: layout.row_step(),
+            grid: matches!(layout, ItemLayout::Grid(_)),
+        }
+    }
+
+    /// The user scrolled by hand: a script's followed row waits a few seconds before it takes
+    /// the rows back.
+    pub(super) fn note_user_scroll(&mut self) {
+        self.script_scroll.user_at = Some(Instant::now());
+    }
+
     /// Scrollable layout and viewport height (DIPs) of the content panel (`scroll_view_h`).
     pub(super) fn scroll_extent(&self) -> (ItemLayout, f32) {
         let (cw, _) = self.content_size_px();
@@ -190,8 +261,8 @@ impl FenceViewState {
     }
 
     pub(super) fn scroll_max(&self) -> f32 {
-        let (layout, view_h) = self.scroll_extent();
-        layout.max_scroll(view_h)
+        let d = self.scroll_dims();
+        (d.content_h - d.view_h).max(0.0)
     }
 
     /// Where the scroll offset is heading: the glide's destination while one runs, else the
@@ -207,6 +278,12 @@ impl FenceViewState {
     /// frame clock still coalesces a 120 Hz stream into one redraw per compositor frame. With
     /// animations off the offset snaps at once and `scroll_anim` stays None (callers redraw).
     pub(super) fn scroll_to(&mut self, target: f32, cap: Duration) {
+        self.scroll_to_with(target, cap, true);
+    }
+
+    /// [`Self::scroll_to`]; `activity` false leaves the scrollbar as it is (a script follows a
+    /// line by itself: its bar must not light up for it).
+    pub(super) fn scroll_to_with(&mut self, target: f32, cap: Duration, activity: bool) {
         if self.rolled_up && self.roll_anim.is_none() {
             // Nothing to scroll: the content is hidden and must reappear where it was.
             return;
@@ -221,7 +298,10 @@ impl FenceViewState {
         let dist = (target - self.scroll_y).abs();
         // Every scroll input counts as activity, including one pinned at an end: WinUI shows
         // the indicator on any wheel notch, so a hidden bar reappears even at the boundary.
-        self.note_scroll_activity();
+        if activity {
+            self.note_scroll_activity();
+        }
+        self.quiet_glide = !activity;
         if !self.motion.enabled() {
             self.scroll_anim = None;
             if dist > 0.0 {
@@ -315,16 +395,19 @@ impl FenceViewState {
         if self.rolled_up {
             return None;
         }
-        let (layout, view_h) = self.scroll_extent();
-        let max_scroll = layout.max_scroll(view_h);
+        let ScrollDims {
+            content_h,
+            view_h,
+            band_h,
+            band_top,
+            ..
+        } = self.scroll_dims();
+        let max_scroll = (content_h - view_h).max(0.0);
         if max_scroll <= 0.0 {
             return None;
         }
         // The bar spans the whole band, the empty height under the whole rows included.
-        let band_top = layout.fixed_top();
-        let band_h = self.band_h(&layout);
         let (track_top, track_h) = scrollbar_track(band_top, band_h);
-        let content_h = layout.content_height();
         let thumb_h = scrollbar_thumb_h(track_h, view_h, content_h);
         let thumb_y =
             track_top + (track_h - thumb_h) * (scroll_y.clamp(0.0, max_scroll) / max_scroll);
@@ -538,6 +621,7 @@ impl FenceViewState {
             ScrollHit::Thumb => {
                 // A glide in flight would fight the thumb: stop it.
                 self.scroll_anim = None;
+                self.note_user_scroll();
                 self.snap_scroll();
                 self.scroll_drag = Some(ScrollDrag {
                     start_y_px: y_px,
@@ -552,7 +636,8 @@ impl FenceViewState {
             | ScrollHit::TrackBelow
             | ScrollHit::ArrowUp
             | ScrollHit::ArrowDown => {
-                let step = scroll_step_for(hit, g.view_h, self.scroll_extent().0.row_step());
+                let step = scroll_step_for(hit, g.view_h, self.scroll_dims().row_step);
+                self.note_user_scroll();
                 self.scroll_to(self.scroll_target() + step, motion::SLOW);
                 self.page_repeat = Some(hit);
                 self.set_scrollbar_pointer(Some(hit));
