@@ -238,6 +238,24 @@ impl FenceViewState {
         self.style.tint.filter(|_| !self.style.tint_title_only)
     }
 
+    /// The colour of the band the title and tabs sit on: the plate with the tint wash. None
+    /// for a fully transparent fence, whose title sits on the wallpaper.
+    fn title_band_color(&self) -> Option<ColorF> {
+        if self.is_clear() {
+            return None;
+        }
+        let tint = self.style.tint;
+        Some(match &self.backdrop_crop {
+            Some(image) if !image.bgra.is_empty() => {
+                self.theme.plate_color(image, self.material_opacity(), tint)
+            }
+            _ => {
+                let solid = self.theme.solid_fill;
+                tint.map_or(solid, |t| pecofence_render::theme::lerp(solid, t, 0.22))
+            }
+        })
+    }
+
     /// Drops the per-item fades: the view now shows a different list (tab switch, layout
     /// change), so nothing should cross-fade from the old one.
     pub(super) fn reset_item_fades(&mut self) {
@@ -651,10 +669,21 @@ impl FenceViewState {
             .pill_anim
             .map(|(x, w)| (x.value_at(now), w.value_at(now)));
         let deco = self.deco;
+        // A title in the fence's own tint (标题颜色 → 跟随染色) sits on a band washed with
+        // that tint: its lightness moves until it reads against the band.
+        let (tint, band) = (self.style.tint, self.title_band_color());
+        let light_text = theme.text_primary.r > 0.5;
+        let on_band = move |color: Option<ColorF>| match (color, tint, band) {
+            (Some(c), Some(tint), Some(band)) if c == tint => {
+                Some(pecofence_render::theme::legible_on(c, band, light_text))
+            }
+            _ => color,
+        };
         let style = FenceStyle {
             title_align: self.behavior.title_align.get(),
             tab_rail: self.rail_w(),
             hide_count_and_chevron: self.behavior.hide_count_and_chevron.get(),
+            title_color: on_band(self.style.title_color),
             ..self.style
         };
         let pressed_tab = match self.pressed {
@@ -673,7 +702,7 @@ impl FenceViewState {
                 w: *w,
                 title: &t.title,
                 title_size: t.title_size,
-                title_color: t.title_color,
+                title_color: on_band(t.title_color),
                 folder_icon: t.folder_icon,
                 up_button: i == active && t.up_button,
                 desktop_icon: t.desktop_icon,

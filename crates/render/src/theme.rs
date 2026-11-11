@@ -230,6 +230,45 @@ fn sample_grid(image: &crate::Image) -> impl Iterator<Item = &[u8]> {
     })
 }
 
+/// `ink` with its lightness moved towards white or black, keeping the hue, as little as it
+/// takes to reach a contrast of 3 : 1 against `band` (WCAG's figure for large text): towards
+/// white first with `prefer_lighter` (the text around it is light), the other way when that
+/// end cannot reach it. Unchanged when it already has that contrast.
+pub fn legible_on(ink: ColorF, band: ColorF, prefer_lighter: bool) -> ColorF {
+    let linear = |c: f32| {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let relative = |c: ColorF| luma([linear(c.r), linear(c.g), linear(c.b)]);
+    let band_l = relative(band);
+    let reaches = |c: &ColorF| {
+        let l = relative(*c);
+        (l.max(band_l) + 0.05) / (l.min(band_l) + 0.05) >= 3.0
+    };
+    let towards = |end: f32| {
+        (0..=20)
+            .map(|step| {
+                let t = step as f32 / 20.0;
+                ColorF::new(
+                    ink.r + (end - ink.r) * t,
+                    ink.g + (end - ink.g) * t,
+                    ink.b + (end - ink.b) * t,
+                    ink.a,
+                )
+            })
+            .find(reaches)
+    };
+    let (first, second) = if prefer_lighter {
+        (1.0, 0.0)
+    } else {
+        (0.0, 1.0)
+    };
+    towards(first).or_else(|| towards(second)).unwrap_or(ink)
+}
+
 impl Theme {
     pub const fn dark() -> Self {
         Self {
@@ -1084,6 +1123,41 @@ mod tests {
                     .text_halo
             );
         }
+    }
+
+    #[test]
+    fn a_title_in_the_tint_moves_its_lightness_until_it_reads_on_the_band() {
+        let linear = |c: f32| {
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let relative = |c: ColorF| luma([linear(c.r), linear(c.g), linear(c.b)]);
+        let contrast = |a: ColorF, b: ColorF| {
+            let (la, lb) = (relative(a), relative(b));
+            (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+        };
+        // Measured on 0.3.3: tint #3b82f6 as the title colour on its own band, 1.1 : 1.
+        let tint = ColorF::from_rgba8(0x3B, 0x82, 0xF6, 0xFF);
+        let band = ColorF::from_rgba8(109, 126, 150, 0xFF);
+        assert!(contrast(tint, band) < 1.3);
+        let lifted = legible_on(tint, band, true);
+        assert!(contrast(lifted, band) >= 3.0);
+        // Still the tint's hue: blue over green over red, and no further than needed.
+        assert!(lifted.b > lifted.g && lifted.g > lifted.r);
+        assert!(contrast(lifted, band) < 3.6);
+        assert_eq!(lifted.a, tint.a);
+        // Towards black on request, and when white cannot reach it on a bright band.
+        let lowered = legible_on(tint, band, false);
+        assert!(contrast(lowered, band) >= 3.0 && relative(lowered) < relative(band));
+        let bright = ColorF::from_rgba8(225, 232, 245, 0xFF);
+        let on_bright = legible_on(tint, bright, true);
+        assert!(contrast(on_bright, bright) >= 3.0 && relative(on_bright) < relative(bright));
+        // A title that already reads stays as chosen.
+        let dark_band = ColorF::from_rgba8(30, 36, 52, 0xFF);
+        assert_eq!(legible_on(tint, dark_band, true), tint);
     }
 
     #[test]

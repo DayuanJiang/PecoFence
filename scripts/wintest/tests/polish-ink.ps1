@@ -1,10 +1,11 @@
-# Fence polish 2026-11-12, package ink (visual review V1).
+# Fence polish 2026-11-12, package ink (visual review V1 and V6).
 # V1: in the Fluent style with 文字颜色 = 自动 the text of a fence takes its colour from the plate
 #     it is drawn on (the wallpaper shows through it), so it reads in dark mode over a light
 #     wallpaper and in light mode over a dark one; a fence over light and dark gets the halo.
+# V6: a title in the fence's own tint reads on the band washed with that tint.
 # Parts (run.sh --var Part=...): A contrast of every kind of text, both modes over five
 # wallpapers; B hover and selection fills on the flipped text; C a fence moved from a light to
-# a dark part, a wallpaper change, 白色 / 黑色, loose icons. Default: all.
+# a dark part, a wallpaper change, 白色 / 黑色, loose icons, the tinted title. Default: all.
 if (-not $Part) { $Part = 'ABC' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
@@ -327,6 +328,25 @@ if ($Part -match 'C') {
     Check 'V1 loose icons keep white names on a light wallpaper' $white "icon at $($p -join ',')"
     Pf fence set inbox desktopLayout false | Out-Null
 
+    # ---- V6: a title in the fence's own tint on the band washed with that tint.
+    Case 'V6 tinted title'
+    SolidWall 128 128 128 grey; Start-Sleep -Seconds 8
+    Pf fence set 文档 tint '"#3b82f6"' | Out-Null
+    Pf fence set 文档 titleColor tint | Out-Null
+    foreach ($mode in 'dark', 'light') {
+      Pf settings set theme $mode | Out-Null
+      foreach ($only in 'true', 'false') {
+        Pf fence set 文档 tintTitleOnly $only | Out-Null; Start-Sleep -Milliseconds 1500; Park
+        $m = TitleInk "tinted title/$mode/title only $only" '文档'
+        $w = Win '文档'
+        Crop "V6-$mode-titleonly-$only" $w.x $w.y 340 60 | Out-Null
+        $rgb = @($m.Ink -split ',' | ForEach-Object { [int]$_ })
+        Check "V6 $mode mode, tint on the title row only = ${only}: the title reads on its band" ($m.Contrast -ge 2.9) $m.Text
+        Check "V6 $mode mode, tint on the title row only = ${only}: the title is still blue" ($rgb[2] -gt $rgb[0]) "title colour $($m.Ink)"
+      }
+    }
+    Pf fence set 文档 titleColor theme | Out-Null
+    Pf fence set 文档 tint null | Out-Null
   }
   PartC
 }
