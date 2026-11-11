@@ -121,3 +121,4 @@ polish-quit-name   1   ec2    release polish-quit-namebox.ps1
 polish-peek        3   ec2    release polish-peek.ps1
 polish-ink-AD      3   ec2    release polish-ink.ps1                 --var Part=AD
 polish-ink-BC      4   ec2    release polish-ink.ps1                 --var Part=BC
+polish-tool-place  2   ec2    release polish-tool-place.ps1

@@ -1301,6 +1301,91 @@ impl App {
         at(left, top)
     }
 
+    /// A place for a new fence of `w_dip` x `h_dip` that the window `win` does not cover (the
+    /// settings window, whose page made the fence): on the window's monitor, beside the window
+    /// on the side with more room, level with its top. When a fence is there or the work area
+    /// ends before it, the spots one gap apart from that one are compared (from a gap inside
+    /// the work area's left and top edges, as the scan of `place_new_fence_dip`): off every
+    /// fence first, then the one the window covers least, then the nearest. None when the
+    /// window covers half or more of every spot (it is maximized).
+    pub(super) fn place_clear_of(&self, w_dip: f32, h_dip: f32, win: RECT) -> Option<RECT> {
+        let work = self.work_area_at((win.left + win.right) / 2, (win.top + win.bottom) / 2)?;
+        let scale = work.scale();
+        let (w, h) = ((w_dip * scale) as i32, (h_dip * scale) as i32);
+        let gap = ((12.0 * scale) as i32).max(1);
+        let right_side = work.right - win.right >= win.left - work.left;
+        let (want_left, want_top) = if right_side {
+            (win.right + gap, win.top)
+        } else {
+            (win.left - gap - w, win.top)
+        };
+        let fences: Vec<RECT> = self.fences.values().map(|f| f.footprint_rect()).collect();
+        // (on a fence, px the window covers, px from the wanted spot): the smallest wins.
+        let mut best: Option<((bool, i64, i32), RECT)> = None;
+        let (first_left, first_top) = (work.left + gap, work.top + gap);
+        let mut top = first_top + (want_top - first_top).rem_euclid(gap);
+        while top + h <= work.bottom {
+            let mut left = first_left + (want_left - first_left).rem_euclid(gap);
+            while left + w <= work.right {
+                let (right, bottom) = (left + w, top + h);
+                let covered = i64::from((right.min(win.right) - left.max(win.left)).max(0))
+                    * i64::from((bottom.min(win.bottom) - top.max(win.top)).max(0));
+                if covered * 2 < i64::from(w) * i64::from(h) {
+                    // A whole gap to every fence.
+                    let on_fence = fences.iter().any(|o| {
+                        left < o.right + gap
+                            && right > o.left - gap
+                            && top < o.bottom + gap
+                            && bottom > o.top - gap
+                    });
+                    let far = (left - want_left).abs() + (top - want_top).abs();
+                    let key = (on_fence, covered, far);
+                    if best.is_none_or(|(b, _)| key < b) {
+                        let rect = RECT {
+                            left,
+                            top,
+                            right,
+                            bottom,
+                        };
+                        best = Some((key, rect));
+                    }
+                }
+                left += gap;
+            }
+            top += gap;
+        }
+        let window = (win.left, win.top, win.right, win.bottom);
+        let work = (work.left, work.top, work.right, work.bottom);
+        let Some(((on_fence, covered, far), r)) = best else {
+            tracing::info!(
+                ?window,
+                ?work,
+                size = ?(w, h),
+                "new fence from the settings page: no spot its window leaves mostly clear, placed as from a menu"
+            );
+            return None;
+        };
+        let reason = match (on_fence, covered, far) {
+            (false, 0, 0) => "beside the window",
+            (false, 0, _) => "the nearest free spot the window leaves clear",
+            (false, ..) => "no free spot clear of the window: the one it covers least",
+            (true, ..) => "no spot off the fences: the one the window covers least",
+        };
+        tracing::info!(
+            ?window,
+            ?work,
+            size = ?(w, h),
+            fences = fences.len(),
+            wanted = ?(want_left, want_top),
+            side = if right_side { "right" } else { "left" },
+            rect = ?(r.left, r.top, r.right, r.bottom),
+            covered_px = covered,
+            reason,
+            "new fence from the settings page placed clear of its window"
+        );
+        Some(r)
+    }
+
     /// Rolls up an open fence and expands a rolled one. A roll still in flight counts as the
     /// state it rolls to (`is_rolled`), so a click during it turns it round.
     pub(super) fn toggle_roll(&mut self, fence: FenceId) {

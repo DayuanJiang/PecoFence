@@ -790,14 +790,19 @@ impl App {
                         .get("example")
                         .and_then(|e| e.as_str())
                         .and_then(crate::scripts::Example::parse);
-                    // Beside the middle of the primary monitor's work area; the placement
-                    // looks for a free spot from there.
+                    // Clear of this window, which would cover it (`place_new_tool`). Only a
+                    // maximized window leaves no such spot: then beside the middle of the
+                    // primary monitor's work area, where a free spot is looked for.
                     let at = self
                         .state
                         .work_areas
                         .first()
                         .map(|w| ((w.left + w.right) / 2, (w.top + w.bottom) / 2));
                     if let Some((x, y)) = at {
+                        self.tool_clear_of = self
+                            .settings
+                            .as_ref()
+                            .map(|h| window::window_rect(h.hwnd()));
                         match name {
                             "newNote" => self.new_note_near(x, y),
                             "newClock" => self.new_clock_near(x, y),
@@ -807,6 +812,7 @@ impl App {
                                 None => tracing::warn!("unknown script example on the page"),
                             },
                         }
+                        self.tool_clear_of = None;
                     }
                 }
                 Some(name @ ("editSmart" | "refreshSmart")) => {

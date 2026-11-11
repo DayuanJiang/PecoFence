@@ -111,7 +111,7 @@ impl App {
             FenceTool::Clock => (240.0, 140.0),
             FenceTool::Script => (280.0, 160.0),
         };
-        let rect = rect.unwrap_or_else(|| self.place_new_fence_dip(w, h, x, y, None));
+        let rect = rect.unwrap_or_else(|| self.place_new_tool(w, h, x, y));
         let default_title = match &tool {
             NewTool::Note(_) => pecofence_core::i18n::text("便签").to_string(),
             NewTool::Clock => pecofence_core::i18n::text("时钟").to_string(),
@@ -142,6 +142,14 @@ impl App {
             self.start_script(id);
         }
         Some(id)
+    }
+
+    /// Where a new tool fence of `w` x `h` DIPs goes: a free spot near (`x`, `y`), or, made
+    /// from the settings page, a spot its window does not cover (`place_clear_of`).
+    fn place_new_tool(&self, w: f32, h: f32, x: i32, y: i32) -> RECT {
+        self.tool_clear_of
+            .and_then(|win| self.place_clear_of(w, h, win))
+            .unwrap_or_else(|| self.place_new_fence_dip(w, h, x, y, None))
     }
 
     /// 脚本栅栏 for `fence get` / `fence list`: the script and its last run.
@@ -812,7 +820,7 @@ impl App {
             crate::scripts::Example::GitHub => (360.0, 300.0),
             crate::scripts::Example::Status => (280.0, 300.0),
         };
-        let rect = self.place_new_fence_dip(w, h, x, y, None);
+        let rect = self.place_new_tool(w, h, x, y);
         let script = NewTool::Script(path.to_string_lossy().to_string());
         self.create_tool_fence(script, None, Some(rect), x, y);
     }

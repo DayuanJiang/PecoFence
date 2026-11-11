@@ -389,6 +389,9 @@ pub struct App {
     settings_focus_fence: Option<FenceId>,
     /// Page to show once the settings page reports `ready` (the what's-new notice).
     settings_focus_page: Option<(&'static str, Option<&'static str>)>,
+    /// The settings window's rectangle while its page makes a tool fence, which is placed
+    /// clear of it (`place_new_tool`); None for a tool from a menu or the CLI.
+    tool_clear_of: Option<RECT>,
     /// The 「反馈」 form on 「关于」: pending focus and the crash offer (see `feedback.rs`).
     feedback: feedback::FeedbackState,
     updates: updates::Updates,
@@ -1804,6 +1807,7 @@ impl App {
             settings: None,
             settings_focus_fence: None,
             settings_focus_page: None,
+            tool_clear_of: None,
             feedback: Default::default(),
             updates: Default::default(),
             rating,
