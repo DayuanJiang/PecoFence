@@ -327,9 +327,25 @@ impl App {
         } else {
             FENCE_ROWS_WITH_EVERYTHING.min(max_rows)
         };
-        let in_fences: Vec<usize> = (0..self.peek_hits.len())
-            .filter(|&i| self.state.item(self.peek_hits[i].2).is_some())
+        // One row per file. A file that several fences show (a folder fence and a smart fence
+        // over one folder) keeps its best-ranked hit: among equal matches the one in the
+        // leftmost fence, then the topmost, then the first tab (the order of `peek_hits`).
+        // The fences still mark every copy.
+        let hits: Vec<(usize, Option<String>)> = (0..self.peek_hits.len())
+            .filter_map(|i| {
+                let it = self.state.item(self.peek_hits[i].2)?;
+                Some((i, it.path().map(|p| p.to_lowercase())))
+            })
             .collect();
+        let copies = hits.len();
+        let in_fences = one_per_path(hits);
+        if in_fences.len() < copies {
+            tracing::debug!(
+                hits = copies,
+                listed = in_fences.len(),
+                "search: files that several fences show are listed once"
+            );
+        }
         self.search.total =
             in_fences.len() + (self.search.everything_total as usize).saturating_sub(skipped);
         let mut rows: Vec<RowKind> = in_fences
@@ -405,14 +421,30 @@ impl App {
                         continue;
                     };
                     let path = it.key.as_path().map(PathBuf::from);
+                    // The fence this row opens the file from; a file more fences show says so.
+                    let title = self
+                        .state
+                        .fence(tab)
+                        .map(|f| f.title.clone())
+                        .unwrap_or_default();
+                    let shown_in = it.path().map(|p| p.to_lowercase()).map_or(1, |p| {
+                        self.peek_hits
+                            .iter()
+                            .filter_map(|(_, _, other)| self.state.item(*other)?.path())
+                            .filter(|other| other.to_lowercase() == p)
+                            .count()
+                    });
                     Row {
                         name: it.display_name.clone(),
                         marks: self.search.fence_marks.get(*h).cloned().unwrap_or_default(),
-                        detail: self
-                            .state
-                            .fence(tab)
-                            .map(|f| f.title.clone())
-                            .unwrap_or_default(),
+                        detail: if shown_in > 1 {
+                            pecofence_core::i18n::format(
+                                "{0} 等 {1} 个栅栏",
+                                &[title, shown_in.to_string()],
+                            )
+                        } else {
+                            title
+                        },
                         exact_icon: path.as_deref().is_some_and(shell::is_on_fixed_drive),
                         icon_path: path,
                         is_folder: it.is_folder,
@@ -784,6 +816,16 @@ impl App {
     }
 }
 
+/// Of the fence hits (index and lower-case path, best-ranked first) the ones the list shows:
+/// the first of those that share a path; hits without a path (system items) all stay.
+fn one_per_path(hits: Vec<(usize, Option<String>)>) -> Vec<usize> {
+    let mut seen = std::collections::HashSet::new();
+    hits.into_iter()
+        .filter(|(_, path)| path.as_ref().is_none_or(|p| seen.insert(p.clone())))
+        .map(|(i, _)| i)
+        .collect()
+}
+
 /// Explorer with `path` selected in its folder.
 fn open_containing_folder(path: &Path) {
     // `/select,"<path>"`: quoted as a whole.
@@ -822,4 +864,25 @@ fn with_type_words(text: String) -> String {
         return text;
     }
     format!("{text} {}", type_filter::everything_words(&types))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A file two fences show is listed once, from its best-ranked hit; other files and
+    /// system items (no path) keep their rows and their order.
+    #[test]
+    fn a_file_in_two_fences_is_listed_once() {
+        let hit = |i: usize, path: Option<&str>| (i, path.map(str::to_string));
+        let hits = vec![
+            hit(0, Some(r"c:\users\pf\desktop\报告 草稿.docx")),
+            hit(1, None),
+            hit(2, Some(r"c:\users\pf\desktop\季度报告 q3.xlsx")),
+            hit(3, Some(r"c:\users\pf\desktop\报告 草稿.docx")),
+            hit(4, None),
+            hit(5, Some(r"c:\users\pf\desktop\季度报告 q3.xlsx")),
+        ];
+        assert_eq!(one_per_path(hits), vec![0, 1, 2, 4]);
+    }
 }

@@ -966,5 +966,6 @@
   "去下载": "Télécharger",
   "查看新功能": "Nouveautés",
   "自动检查更新": "Rechercher automatiquement les mises à jour",
-  "每天检查一次有没有新版本，有新版本时提醒一次": "Cherche une nouvelle version une fois par jour et vous prévient une fois quand il y en a une"
+  "每天检查一次有没有新版本，有新版本时提醒一次": "Cherche une nouvelle version une fois par jour et vous prévient une fois quand il y en a une",
+  "{0} 等 {1} 个栅栏": "{0} (dans {1} groupes)"
 }
