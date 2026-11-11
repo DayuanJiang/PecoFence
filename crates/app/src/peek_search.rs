@@ -1067,14 +1067,16 @@ pub fn rows_shown_for_change() {
     }
 }
 
-/// 「↵ 打开   Ctrl+Enter 打开所在文件夹   → 更多操作」 in the UI language (the key names as the
-/// actions menu writes them).
+/// 「Enter 打开   Ctrl+Enter 打开所在文件夹   → 更多操作」 in the UI language (the key names as the
+/// actions menu writes them; Enter by its name, as the other keys: the ↵ sign came out of a
+/// fallback font about 5 px high).
 fn bar_keys() -> String {
+    let enter = pecofence_core::i18n::text("键名\x04Enter");
     let open = pecofence_core::i18n::text("打开");
     let folder = pecofence_core::i18n::text("打开所在文件夹\tCtrl+Enter");
     let (folder, folder_key) = folder.split_once('\t').unwrap_or((folder, "Ctrl+Enter"));
     let more = pecofence_core::i18n::text("更多操作");
-    format!("↵ {open}      {folder_key} {folder}      → {more}")
+    format!("{enter} {open}      {folder_key} {folder}      → {more}")
 }
 
 /// A name too long for its row whose matched letters lie past what fits: its start gives way
@@ -1409,6 +1411,13 @@ pub fn close() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The bottom bar names the Enter key in letters, like the keys beside it.
+    #[test]
+    fn the_bar_writes_enter_by_name() {
+        assert!(bar_keys().starts_with("Enter 打开 "), "{}", bar_keys());
+        assert!(!bar_keys().contains('↵'));
+    }
 
     /// Each drive gets a thread of its own (a spin-up holds only its rows); the log names the
     /// drive, never the file.
