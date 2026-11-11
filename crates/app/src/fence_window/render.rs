@@ -1267,22 +1267,39 @@ impl FenceViewState {
         let Some(seconds) = self.clock else {
             return Ok(());
         };
-        let (time, date) = pecofence_platform::fileinfo::clock_texts(seconds);
+        let (time, date, short_date) = pecofence_platform::fileinfo::clock_texts(seconds);
         let theme = self
             .material_foreground()
             .with_label_color(self.behavior.label_color.get());
         let chrome = self.chrome.clone();
         let mut sizes = self.clock_text;
         let mut area = (0.0, 0.0);
+        let mut date_shown = self.clock_date;
+        let mut date_text = String::new();
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
                 area = (wd, hd);
-                sizes = chrome.draw_clock(session, &theme, wd, hd, &time, &date)?;
+                let (shown, which) = chrome.clock_date(wd, hd, &time, &date, &short_date);
+                date_shown = which;
+                date_text = shown.to_string();
+                sizes = chrome.draw_clock(session, &theme, wd, hd, &time, &date, shown)?;
                 Ok(())
             })?;
         self.note_draw_result(ok);
         self.clock_text = sizes;
+        if date_shown != self.clock_date {
+            tracing::debug!(
+                fence = %self.active,
+                area_w = area.0.round(),
+                date_dip = sizes.1,
+                date = date_shown,
+                text = %date_text,
+                from = self.clock_date,
+                "clock date: the form that fits the width on one line"
+            );
+            self.clock_date = date_shown;
+        }
         // Once per size the user ends up with: not on every step of a resize drag (the end of
         // the drag draws the clock again).
         if sizes != self.clock_text_logged && self.behavior.size_move.borrow().is_none() {

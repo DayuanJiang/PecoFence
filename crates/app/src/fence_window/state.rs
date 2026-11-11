@@ -243,6 +243,9 @@ pub struct FenceViewState {
     /// The clock's time and date text sizes (DIPs) as last drawn, and as last logged.
     pub(super) clock_text: (f32, f32),
     pub(super) clock_text_logged: (f32, f32),
+    /// The clock's date line as last drawn: "long", "short" (no year, the short weekday) or
+    /// "none", by what fits the width.
+    pub(super) clock_date: &'static str,
     /// 文字大小 of a note or script fence: 0 small, 1 normal, 2 large, 3 extra large.
     pub(super) text_size: u8,
     /// 脚本栅栏: the fence shown is a script fence with this output and footer.

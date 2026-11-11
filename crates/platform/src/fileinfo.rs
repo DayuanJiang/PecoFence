@@ -168,13 +168,15 @@ pub fn format_local_time(unix: i64) -> String {
 
 /// 时钟与日期: the local time as Windows' region format writes it (12 or 24 hours; `seconds`
 /// adds them) and the region's long date, with the weekday after it when the long date has
-/// none ("2026年11月4日 星期三", "Wednesday, November 4, 2026"), in the user's time zone.
-pub fn clock_texts(seconds: bool) -> (String, String) {
+/// none ("2026年11月4日 星期三", "Wednesday, November 4, 2026"), in the user's time zone. The
+/// third text is the date for a clock too narrow for that line: the region's month and day
+/// with the short weekday where the long date has it ("11月4日 周三", "Wed, Nov 4").
+pub fn clock_texts(seconds: bool) -> (String, String, String) {
     let unix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64);
     let Some(st) = local_system_time(unix) else {
-        return (String::new(), String::new());
+        return (String::new(), String::new(), String::new());
     };
     const DATE_LONGDATE: u32 = 2;
     let mut buf = [0u16; 96];
@@ -219,12 +221,44 @@ pub fn clock_texts(seconds: bool) -> (String, String) {
     };
     let long = date(DATE_LONGDATE, None);
     let weekday = date(0, Some("dddd"));
+    // The region's own picture of a month and day ("M月d日", "MMMM d"), with the short month
+    // name (GetDateFormatEx refuses its DATE_MONTHDAY flag).
+    let month_day = {
+        windows_core::link!("kernel32.dll" "system" fn GetLocaleInfoEx(locale: PCWSTR, lctype: u32, data: PWSTR, len: i32) -> i32);
+        const LOCALE_SMONTHDAY: u32 = 0x78;
+        let mut picture = [0u16; 80];
+        // SAFETY: the buffer is live and its length is passed.
+        let n = unsafe {
+            GetLocaleInfoEx(
+                PCWSTR::null(),
+                LOCALE_SMONTHDAY,
+                PWSTR(picture.as_mut_ptr()),
+                picture.len() as i32,
+            )
+        };
+        let picture = text(n, &picture).replace("MMMM", "MMM");
+        if picture.is_empty() {
+            String::new()
+        } else {
+            date(0, Some(&picture))
+        }
+    };
+    let short_day = date(0, Some("ddd"));
+    let short = match long.strip_prefix(weekday.as_str()) {
+        // The long date starts with the weekday: the short one too, with what follows it
+        // there (", " in English, a space in French).
+        Some(rest) if !weekday.is_empty() && !month_day.is_empty() => {
+            let sep: String = rest.chars().take_while(|c| !c.is_alphanumeric()).collect();
+            format!("{short_day}{sep}{month_day}")
+        }
+        _ => format!("{month_day} {short_day}").trim().to_string(),
+    };
     let line = if weekday.is_empty() || long.contains(&weekday) {
         long
     } else {
         format!("{long} {weekday}")
     };
-    (time, line)
+    (time, line, short)
 }
 
 /// Unix seconds → "short date + time without seconds" in the user's locale and time zone

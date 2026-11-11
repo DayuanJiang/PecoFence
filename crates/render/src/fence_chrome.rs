@@ -4482,8 +4482,37 @@ impl FenceChrome {
         (time, date)
     }
 
-    /// 时钟与日期: `time` large at the top left, `date` under it in the secondary colour, at
-    /// the sizes [`Self::clock_text_sizes`] gives for the area. Returns those sizes.
+    /// 时钟与日期: the date line a clock area `width` × `height` DIPs has room for on one
+    /// line at the size [`Self::clock_text_sizes`] gives: `long`, else `short` (no year, the
+    /// short weekday), else none. Without a short date the long one stays. The second value
+    /// names the choice for the log.
+    pub fn clock_date<'a>(
+        &self,
+        width: f32,
+        height: f32,
+        time: &str,
+        long: &'a str,
+        short: &'a str,
+    ) -> (&'a str, &'static str) {
+        let (_, date_dip) = self.clock_text_sizes(width, height, time, long);
+        let w = (width - 2.0 * CLOCK_FIT_PAD_X).max(1.0);
+        let fits = |text: &str| {
+            crate::text::measure_width(text, &self.clock_date_format) * date_dip / CLOCK_DATE_DIP
+                <= w
+        };
+        if short.is_empty() || fits(long) {
+            (long, "long")
+        } else if fits(short) {
+            (short, "short")
+        } else {
+            ("", "none")
+        }
+    }
+
+    /// 时钟与日期: `time` large at the top left, `shown_date` (see [`Self::clock_date`])
+    /// under it in the secondary colour, at the sizes [`Self::clock_text_sizes`] gives for the
+    /// area and the long `date`. Returns those sizes.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_clock(
         &self,
         session: &DrawingSession<'_>,
@@ -4492,6 +4521,7 @@ impl FenceChrome {
         height: f32,
         time: &str,
         date: &str,
+        shown_date: &str,
     ) -> Result<(f32, f32)> {
         session.clear(ColorF::TRANSPARENT);
         let (time_dip, date_dip) = self.clock_text_sizes(width, height, time, date);
@@ -4531,7 +4561,7 @@ impl FenceChrome {
         session.draw_text_layout(Vector2::new(NOTE_PAD_X, 0.0), &layout, &primary);
         let top = time_h + 2.0 * time_dip / CLOCK_TIME_DIP;
         session.draw_text(
-            date,
+            shown_date,
             &fonts.date_format,
             &Rect::from_xywh(NOTE_PAD_X, top, w, (height - top).max(0.0)),
             &secondary,
