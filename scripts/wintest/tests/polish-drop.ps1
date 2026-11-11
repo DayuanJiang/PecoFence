@@ -261,7 +261,10 @@ if ($Part -match 'I') {
 
 if ($Part -match 'T') {
   Case 'UX6 setup'
-  Pf settings set language en | Out-Null
+  # English, so the text can be read back; --var TLang=zh-CN only for pictures (the checks
+  # then fail).
+  if (-not $TLang) { $TLang = 'en' }
+  Pf settings set language $TLang | Out-Null
   Layout
   New-Item -ItemType Directory -Force (Join-Path $PfDesk 'pd Archive') | Out-Null
   Start-Sleep -Seconds 2
@@ -286,6 +289,14 @@ if ($Part -match 'T') {
   Shot 't-over-folder'
   [G]::Press(0x1B); Start-Sleep -Milliseconds 300; MUp; Start-Sleep -Milliseconds 600
   Check 'UX6 over a folder icon it names the folder' ($t2 -match 'Move to\s+pd Archive') "read: '$t2'"
+
+  Case 'UX6 a reorder inside its own fence'
+  $from = CellPt 'Alpha' 0; $to = CellPt 'Alpha' 5
+  Hold $from[0] $from[1] $to[0] $to[1] 1200
+  $t5 = BadgeText $to[0] $to[1] 't-reorder'
+  Shot 't-reorder'
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 300; MUp; Start-Sleep -Milliseconds 600
+  Check 'UX6 a reorder inside its own fence does not say "Move to" that fence' ($t5 -notmatch 'Move to') "read: '$t5'"
 
   Case 'UX6 over a tab'
   Pf fence create --title Charlie --rect '1080,120,300,200' | Out-Null

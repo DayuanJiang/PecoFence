@@ -622,9 +622,18 @@ impl FenceDropHandler {
                 .map(|t| t.title.clone())
                 .unwrap_or_else(|| v.title.clone())
         };
+        // A reorder inside its own fence takes the icons nowhere else: the badge alone, without
+        // "移动到 <this fence>".
+        let reorder =
+            spot.insert.is_some() && internal.as_ref().is_some_and(|d| d.from == v.active);
+        let description = if reorder {
+            (DropImage::Move, "", String::new())
+        } else {
+            drop_description(effect, insert)
+        };
         Feedback {
             effect,
-            description: Some(drop_description(effect, insert)),
+            description: Some(description),
             hwnd: v.hwnd,
         }
     }
