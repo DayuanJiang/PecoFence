@@ -373,6 +373,34 @@ pub fn recycle_bin_has_items_now(wait: std::time::Duration) -> Option<bool> {
     None
 }
 
+/// How many items the Recycle Bin of `path`'s drive holds. None when that drive has no bin
+/// to count (a network share, a USB stick: not a fixed drive with a letter) or does not
+/// answer. Counts every item (slow for a bin of tens of thousands): call it off the UI thread.
+pub fn recycle_bin_count_for(path: &Path) -> Option<i64> {
+    let text = path.to_string_lossy();
+    let text = text.strip_prefix(r"\\?\").unwrap_or(&text);
+    let mut chars = text.chars();
+    let letter = chars.next().filter(char::is_ascii_alphabetic)?;
+    if chars.next() != Some(':') {
+        return None;
+    }
+    let root = to_wide(&format!("{letter}:\\"));
+    // SAFETY: the string is NUL-terminated and outlives the calls; `info` is a live struct
+    // with `cbSize` set.
+    unsafe {
+        if GetDriveTypeW(PCWSTR(root.as_ptr())) != DRIVE_FIXED as u32 {
+            return None;
+        }
+        let mut info = SHQUERYRBINFO {
+            cbSize: size_of::<SHQUERYRBINFO>() as u32,
+            ..Default::default()
+        };
+        SHQueryRecycleBinW(PCWSTR(root.as_ptr()), &mut info)
+            .is_ok()
+            .then_some(info.i64NumItems)
+    }
+}
+
 /// Empties the Recycle Bin of every drive, with Windows' own confirmation, progress and sound.
 /// Blocks until it is done: call it off the UI thread.
 pub fn empty_recycle_bin(owner: Option<HWND>) -> Result<bool> {

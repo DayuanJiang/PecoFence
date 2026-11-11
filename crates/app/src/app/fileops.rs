@@ -31,10 +31,13 @@ pub(super) enum FileOpThen {
     /// The folder watcher pairs the rename, so the item keeps its fence.
     Rename,
     /// The shell's own delete of `paths`; the folder watchers take the items away.
+    /// `recycled`: set by the worker when the Recycle Bin gained items, so the delete can be
+    /// undone (a USB stick, a network folder and 「不将文件移到回收站」 delete for good).
     Delete {
         paths: Vec<PathBuf>,
         permanent: bool,
         started: Instant,
+        recycled: Arc<std::sync::atomic::AtomicBool>,
     },
     /// 清空回收站: the bin is asked again for its icon.
     EmptyBin,
@@ -108,18 +111,39 @@ impl App {
         self.deleting.extend(paths.iter().cloned());
         let pt = window::cursor_pos();
         tracing::info!(count, permanent, "shell delete started");
+        let recycled = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let then = FileOpThen::Delete {
             paths: paths.clone(),
             permanent,
             started: Instant::now(),
+            recycled: recycled.clone(),
         };
         let job_paths = paths.clone();
         let spawned = self.run_fileop(Some(owner), then, move |owner| {
             let refs: Vec<&Path> = job_paths.iter().map(|p| p.as_path()).collect();
+            // The bin of the files' drive, counted before and after: only a delete that added
+            // to it is in Windows' undo list.
+            let bin = || {
+                (!permanent)
+                    .then(|| job_paths.first())
+                    .flatten()
+                    .and_then(|p| shell::recycle_bin_count_for(p))
+            };
+            let before = bin();
+            let done = ShellContextMenu::for_paths(&refs)
+                .and_then(|m| m.invoke_verb("delete", owner.unwrap_or_default(), pt, permanent));
+            let after = bin();
+            let gained = matches!((before, after), (Some(b), Some(a)) if a > b);
+            recycled.store(gained, std::sync::atomic::Ordering::Relaxed);
+            tracing::debug!(
+                ?before,
+                ?after,
+                gained,
+                permanent,
+                "shell delete and the Recycle Bin"
+            );
             // True when a file is gone: the delete was not declined in Windows' own dialog.
-            ShellContextMenu::for_paths(&refs)
-                .and_then(|m| m.invoke_verb("delete", owner.unwrap_or_default(), pt, permanent))
-                .map(|()| job_paths.iter().any(|p| !p.exists()))
+            done.map(|()| job_paths.iter().any(|p| !p.exists()))
         });
         if !spawned {
             self.settle_delete(&paths);
@@ -286,15 +310,15 @@ impl App {
                 }
                 FileOpThen::Duplicate => self.note_fileop_for_undo("pasted copies", true),
                 FileOpThen::Rename => self.note_fileop_for_undo("rename through the shell", true),
-                // Shift+Delete, and a delete inside the Recycle Bin, leave nothing to undo.
+                // Shift+Delete, and a delete that put nothing into the Recycle Bin (a drive
+                // without one, the bin switched off, a delete inside the bin), leave nothing
+                // to undo.
                 FileOpThen::Delete {
-                    paths, permanent, ..
+                    permanent,
+                    recycled,
+                    ..
                 } => {
-                    let lost = *permanent
-                        || paths.iter().any(|p| {
-                            p.components()
-                                .any(|c| c.as_os_str().eq_ignore_ascii_case("$Recycle.Bin"))
-                        });
+                    let lost = *permanent || !recycled.load(std::sync::atomic::Ordering::Relaxed);
                     if lost {
                         self.note_fileop_for_undo("permanent delete", false);
                     } else {
@@ -395,6 +419,7 @@ impl App {
                 paths,
                 permanent,
                 started,
+                ..
             } => {
                 self.settle_delete(&paths);
                 // The fences hear how it went: a delete that removed nothing (declined in

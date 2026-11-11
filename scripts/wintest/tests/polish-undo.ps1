@@ -5,7 +5,10 @@
 # older layout step; fence moves and icon moves made before stay undoable, newest first.
 # Parts (run.sh --var Part=...): A rename, delete, drop into a folder, paste; B new folder,
 # permanent delete, the command line's file moves; C a shortcut made by a drop (a debug build:
-# the drop comes from a test-script line). Default: A and B.
+# the drop comes from a test-script line); D a Delete with the Recycle Bin switched off (it
+# sets pf's 「不将文件移到回收站」 for the length of the case); E a Ctrl+Z pressed while the
+# delete is still running (it depends on the moment, so it tries up to four times). Default:
+# A and B.
 if (-not $Part) { $Part = 'AB' }
 trap { PfTrap $_; continue }
 
@@ -22,6 +25,8 @@ function Has($name) { return (Test-Path -LiteralPath "$PfDesk\$name") }
 function FocusTitle($t) { $w = (PfFence $t).windowRect; [G]::Click($w.x + 40, $w.y + 14); Start-Sleep -Milliseconds 500 }
 # Ctrl+Z on fence UA; Windows' own undo needs a moment to put a file back.
 function Undo() { FocusTitle 'UA'; Chord 0x11 0x5A; Start-Sleep -Milliseconds 2500 }
+# Ctrl+Shift+N, with a pause between the keys as a hand leaves.
+function NewFolderKeys() { [G]::KeyDown(0x11); Start-Sleep -Milliseconds 40; [G]::KeyDown(0x10); Start-Sleep -Milliseconds 40; [G]::Press(0x4E); Start-Sleep -Milliseconds 40; [G]::KeyUp(0x10); [G]::KeyUp(0x11) }
 function ClickItem($name) { $p = ItemPt 'UA' $name; [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 400 }
 # A title drag of UA: the layout step that Ctrl+Z must not undo before the newer file step.
 function DragFence($dx) {
@@ -33,6 +38,9 @@ function UndoLog() { return ((@(PfLogAll | Where-Object { $_ -match 'undo step n
 
 Case 'setup'
 CloseWindows
+# A notice an earlier job left on screen can hold the keyboard: clear PecoFence's notices first.
+. C:\pf\kit\vdesk.ps1
+ClearPfNotices
 UClean
 Clear-RecycleBin -Force -ErrorAction SilentlyContinue
 PfStart
@@ -123,7 +131,7 @@ if ($Part -match 'A') {
 if ($Part -match 'B') {
   Case 'Ctrl+Z after a new folder'
   FocusTitle 'UA'
-  [G]::KeyDown(0x11); [G]::KeyDown(0x10); [G]::Press(0x4E); [G]::KeyUp(0x10); [G]::KeyUp(0x11)
+  NewFolderKeys
   Start-Sleep -Milliseconds 2000
   [G]::Type('u8 新文件夹'); Start-Sleep -Milliseconds 300
   [G]::Press(0x0D); Start-Sleep -Milliseconds 1500
@@ -138,7 +146,7 @@ if ($Part -match 'B') {
   [G]::Press(0x2E); Start-Sleep -Milliseconds 2500
   $deleted = -not (Has 'u1 报告.txt')
   FocusTitle 'UA'
-  [G]::KeyDown(0x11); [G]::KeyDown(0x10); [G]::Press(0x4E); [G]::KeyUp(0x10); [G]::KeyUp(0x11)
+  NewFolderKeys
   Start-Sleep -Milliseconds 2000
   [G]::Press(0x0D); Start-Sleep -Milliseconds 1500
   $made = Has 'New folder'
@@ -148,8 +156,11 @@ if ($Part -match 'B') {
   Check 'after Ctrl+Z took a new folder away, the next Ctrl+Z brings back the file deleted before it' ($deleted -and $made -and $folderGone -and (Has 'u1 报告.txt') -and -not (Has 'New folder')) "deleted=$deleted, folder made=$made, gone after the first Ctrl+Z=$folderGone; after the second: file there=$(Has 'u1 报告.txt'), folder there=$(Has 'New folder'); bin: $(BinNames); $(UndoLog)"
 
   Case 'Ctrl+Z of a new folder leaves another folder that took its first name alone'
+  # Whatever the case before left under the name a new folder gets goes first.
+  foreach ($n in 'New folder', 'New folder (2)') { if (Has $n) { Remove-Item -LiteralPath "$PfDesk\$n" -Recurse -Force -ErrorAction SilentlyContinue } }
+  Start-Sleep -Seconds 2
   FocusTitle 'UA'
-  [G]::KeyDown(0x11); [G]::KeyDown(0x10); [G]::Press(0x4E); [G]::KeyUp(0x10); [G]::KeyUp(0x11)
+  NewFolderKeys
   Start-Sleep -Milliseconds 2000
   [G]::Type('u8 改过名的夹'); Start-Sleep -Milliseconds 300
   [G]::Press(0x0D); Start-Sleep -Milliseconds 1500
@@ -219,18 +230,6 @@ if ($Part -match 'B') {
   Undo
   Check 'Ctrl+Z after a file copied in another folder is pasted takes the copy away again' ($pasted -and -not (Has 'u8 外来文件.txt') -and (Test-Path -LiteralPath "$PfRun\u-src\u8 外来文件.txt")) "pasted into UA=$pasted; after Ctrl+Z: on the desktop=$(Has 'u8 外来文件.txt'), original still there=$(Test-Path -LiteralPath "$PfRun\u-src\u8 外来文件.txt"); $(UndoLog)"
 
-  Case 'Ctrl+Z pressed while the delete is still running'
-  $home6 = FRect 'UA'
-  DragFence 60
-  $moved = FRect 'UA'
-  $before = (@(UFiles | ForEach-Object { $_.Name }) | Sort-Object) -join ' | '
-  ClickItem 'u2 预算表 2026'
-  Chord 0x11 0x41; Start-Sleep -Milliseconds 400
-  # Delete and Ctrl+Z with no pause: the shell's delete of several items is still running.
-  [G]::Press(0x2E); Chord 0x11 0x5A
-  Start-Sleep -Milliseconds 5000
-  $after = (@(UFiles | ForEach-Object { $_.Name }) | Sort-Object) -join ' | '
-  Check 'Ctrl+Z pressed right after Delete waits for the delete and undoes it, not the fence drag before it' ($after -eq $before -and $moved -ne $home6 -and (FRect 'UA') -eq $moved) "before: $before; after Delete and Ctrl+Z: $after; start $home6, dragged $moved, now $(FRect 'UA'); $(UndoLog)"
 }
 
 if ($Part -match 'C') {
@@ -250,6 +249,65 @@ if ($Part -match 'C') {
   Check 'Ctrl+Z after a shortcut is made by a drop takes the shortcut away and leaves the fence drag' ($lnk -and -not (Test-Path -LiteralPath $lnk.FullName) -and $moved -ne $home5 -and (FRect 'UA') -eq $moved) "shortcut made: $made; after Ctrl+Z: still there=$(if ($lnk) { Test-Path -LiteralPath $lnk.FullName }); start $home5, dragged $moved, now $(FRect 'UA'); $(UndoLog)"
   Undo
   Check 'the next Ctrl+Z undoes the fence drag made before the drop' ((FRect 'UA') -eq $home5) "start $home5, now $(FRect 'UA'); $(UndoLog)"
+}
+
+if ($Part -match 'D') {
+  Case 'Ctrl+Z after a Delete that bypassed the Recycle Bin'
+  # 「不将文件移到回收站。移除文件后立即将其删除」 of the Recycle Bin's properties, for pf's C: drive.
+  $guid = ((Get-Volume -DriveLetter C).UniqueId -replace '^.*(\{[0-9a-fA-F-]+\}).*$', '$1')
+  $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\BitBucket\Volume\$guid"
+  $madeKey = -not (Test-Path $key)
+  if ($madeKey) { New-Item -Path $key -Force | Out-Null }
+  $was = (Get-ItemProperty -Path $key -Name NukeOnDelete -ErrorAction SilentlyContinue).NukeOnDelete
+  Set-ItemProperty -Path $key -Name NukeOnDelete -Value 1 -Type DWord
+  # A fresh PecoFence reads the setting with its first delete.
+  PfStart
+  $home7 = FRect 'UA'
+  DragFence 60
+  $moved = FRect 'UA'
+  ClickItem 'u4 照片说明文档'
+  [G]::Press(0x2E); Start-Sleep -Milliseconds 1500
+  $box = @([W]::Tops('#32770'))
+  if ($box.Count -gt 0) { Log "confirm: $([W]::Statics($box[0]))"; ClickButton $box[0] '^&?Yes' | Out-Null }
+  Start-Sleep -Milliseconds 2500
+  $gone = -not (Has 'u4 照片说明文档.txt')
+  $inBin = (BinNames) -match 'u4 照片说明文档'
+  Undo
+  $said = @(PfLogAll | Where-Object { $_ -match 'undone' -and $_ -match 'permanent delete' }).Count
+  # The setting goes back before anything else.
+  if ($madeKey) { Remove-Item -Path $key -Force -ErrorAction SilentlyContinue }
+  elseif ($null -eq $was) { Remove-ItemProperty -Path $key -Name NukeOnDelete -ErrorAction SilentlyContinue }
+  else { Set-ItemProperty -Path $key -Name NukeOnDelete -Value $was -Type DWord }
+  Check 'a Delete that bypassed the Recycle Bin stops Ctrl+Z instead of being handed to Windows' ($gone -and -not $inBin -and $said -ge 1 -and $moved -ne $home7 -and (FRect 'UA') -eq $moved) "deleted=$gone, in the bin=$inBin, key $guid (made here=$madeKey, was=$was); start $home7, dragged $moved, after Ctrl+Z $(FRect 'UA'); $(UndoLog)"
+  Undo
+  Check 'the next Ctrl+Z undoes the fence drag made before that Delete' ((FRect 'UA') -eq $home7) "start $home7, now $(FRect 'UA'); $(UndoLog)"
+}
+
+if ($Part -match 'E') {
+  Case 'Ctrl+Z pressed while the delete is still running'
+  $home6 = FRect 'UA'
+  DragFence 60
+  $moved = FRect 'UA'
+  $before = (@(UFiles | ForEach-Object { $_.Name }) | Sort-Object) -join ' | '
+  function UndoLines() { return @(PfLogAll | Where-Object { $_ -match 'undone|undo waits|nothing to undo' -and $_ -notmatch '<omitted>' }).Count }
+  # Windows' delete can hold the keyboard for the moment it runs, and the Ctrl+Z then never
+  # reaches the fence: such a try proves nothing, so the files are put back and it is tried again.
+  $reached = $false
+  $tries = 0
+  foreach ($try in 1..4) {
+    $tries = $try
+    ClickItem 'u2 预算表 2026'
+    Chord 0x11 0x41; Start-Sleep -Milliseconds 400
+    $n0 = UndoLines
+    # Delete and Ctrl+Z with no pause: the shell's delete of several items is still running.
+    [G]::Press(0x2E); Chord 0x11 0x5A
+    Start-Sleep -Milliseconds 1200
+    if ((UndoLines) -gt $n0) { $reached = $true; break }
+    Undo
+  }
+  Start-Sleep -Milliseconds 4000
+  $after = (@(UFiles | ForEach-Object { $_.Name }) | Sort-Object) -join ' | '
+  Check 'Ctrl+Z pressed right after Delete waits for the delete and undoes it, not the fence drag before it' ($reached -and $after -eq $before -and $moved -ne $home6 -and (FRect 'UA') -eq $moved) "tries=$tries, Ctrl+Z reached the fence=$reached; before: $before; after Delete and Ctrl+Z: $after; start $home6, dragged $moved, now $(FRect 'UA'); $(UndoLog)"
 }
 
 Case 'cleanup'
