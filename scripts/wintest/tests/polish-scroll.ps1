@@ -422,6 +422,20 @@ function PartR() {
     Start-Sleep -Milliseconds 300
     RecStop
   }
+  # A Peek search that scrolls the fence to its match, then the end of the search. The fence
+  # stands at the left, clear of the search box.
+  [CW]::Wheel(40); Start-Sleep -Milliseconds 900
+  Pf fence move $PsTitle --rect '40,120,360,330' | Out-Null; Start-Sleep -Milliseconds 800
+  RecStart 'search' -X 30 -Y 110 -W 380 -H 350 -Fps 60
+  Start-Sleep -Milliseconds 500
+  RecMark '打开速览，输入 ps0058 搜索'
+  PsSearch 'ps0058'
+  Start-Sleep -Milliseconds 500
+  RecMark '按 Esc 结束搜索'
+  PsEndSearch
+  Start-Sleep -Milliseconds 700
+  RecStop
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 500
   Check 'R recorded' $true (Get-Content "$PfShots\rec-wheel10\stats.txt")
   PfQuit
 }
