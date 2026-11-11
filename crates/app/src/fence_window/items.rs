@@ -27,6 +27,8 @@ pub(super) struct LeavingItem {
     pub(super) icon_key: String,
     pub(super) icon: Option<Rc<Image>>,
     pub(super) label: String,
+    /// The label was fitted to the wider box (`ItemView::label_wide`).
+    pub(super) label_wide: bool,
     pub(super) date: String,
     pub(super) type_: String,
     pub(super) size: String,
@@ -190,6 +192,7 @@ impl FenceViewState {
                     n.icon_waited = o.icon_waited;
                     n.icon_stand_in = o.icon_stand_in;
                     n.label = o.label;
+                    n.label_wide = o.label_wide;
                     n.icon_failed = o.icon_failed;
                     n.type_label = o.type_label;
                     if o.mtime == n.mtime {
@@ -407,6 +410,7 @@ impl FenceViewState {
                 h: c.h,
                 icon_key: o.draw_key(&icons),
                 icon: o.icon,
+                label_wide: o.label.is_some() && o.label_wide,
                 label: o.label.unwrap_or(o.name),
                 date: o.date_label.unwrap_or_default(),
                 type_: o.type_label.unwrap_or_default(),

@@ -228,6 +228,8 @@ pub struct FenceViewState {
     pub(super) refuses_drops: bool,
     /// Width the cached labels were fitted for; a change invalidates them.
     pub(super) label_w: f32,
+    /// The wider box an icon's name may take (`ensure_icons_and_labels`); `label_w` without one.
+    pub(super) label_wide_w: f32,
     /// An item near the viewport was still waiting for its icon at the last content draw
     /// (`ensure_icons_and_labels`): a delivered batch then redraws this window.
     pub(super) icons_pending: bool,

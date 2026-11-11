@@ -304,6 +304,9 @@ pub struct ItemView {
     local_date: Option<CivilDate>,
     /// Label fitted to the cell width (computed lazily).
     label: Option<String>,
+    /// `label` was fitted to the wider box, which showed more of the name (icons view;
+    /// `text::fit_lines_wider`). Set with `label`.
+    label_wide: bool,
     /// Details columns, formatted lazily (locale date, shell type name, KB size).
     date_label: Option<String>,
     type_label: Option<String>,
@@ -394,6 +397,7 @@ impl ItemView {
             size,
             local_date,
             label: None,
+            label_wide: false,
             date_label: None,
             type_label: None,
             size_label: None,

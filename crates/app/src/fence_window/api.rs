@@ -198,6 +198,7 @@ impl FenceWindow {
             filter_tag: None,
             refuses_drops: false,
             label_w: 0.0,
+            label_wide_w: 0.0,
             icons_pending: false,
             hover: None,
             title_hover: false,

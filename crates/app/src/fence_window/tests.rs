@@ -3,13 +3,15 @@ use crate::drag_guides::GuideLine;
 
 /// A fence that scrolls keeps the strip along its right edge for the thumb: plates end 8 DIPs
 /// before the edge and the rows' columns stay 4 inside their plate; a fence that shows
-/// everything uses its whole width.
+/// everything uses its whole width. An icon's name keeps 8 DIPs beside it, 3 in the wider box.
 #[test]
 fn a_scrolling_fence_keeps_the_scrollbar_strip_clear() {
     assert_eq!(render::plates_right(300.0, false), f32::INFINITY);
     assert_eq!(render::plates_right(300.0, true), 292.0);
     assert_eq!(render::rows_strip(false), 0.0);
     assert_eq!(render::rows_strip(true), 4.0);
+    assert_eq!(render::label_inset(false), 8.0);
+    assert_eq!(render::label_inset(true), 3.0);
 }
 
 /// A 600 px fence grabbed 500 px from its left edge on a 200 % monitor is dragged onto a 100 %

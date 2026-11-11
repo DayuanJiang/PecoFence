@@ -66,10 +66,10 @@ pub(super) enum ChromeKey {
 }
 
 /// The selected anchor's unfolded label: `text` is the full name fitted to `MAX_UNFOLD_LINES`
-/// at `cell_w`, `lines` how many lines it takes (measured once, when the cache fills).
+/// at `label_w`, `lines` how many lines it takes (measured once, when the cache fills).
 pub(super) struct UnfoldCache {
     pub(super) id: ItemId,
-    pub(super) cell_w: f32,
+    pub(super) label_w: f32,
     pub(super) name: String,
     pub(super) text: String,
     pub(super) lines: u32,
@@ -82,6 +82,16 @@ pub(super) fn plates_right(width_dip: f32, scrolls: bool) -> f32 {
         width_dip - pecofence_render::fence_chrome::SCROLL_STRIP
     } else {
         f32::INFINITY
+    }
+}
+
+/// Room on each side of an icon's name inside its cell: the usual one, or the smaller one of
+/// a name that was fitted to the wider box.
+pub(super) fn label_inset(wide: bool) -> f32 {
+    if wide {
+        pecofence_render::fence_chrome::ICON_LABEL_SIDE_INSET_WIDE
+    } else {
+        pecofence_render::fence_chrome::ICON_LABEL_SIDE_INSET
     }
 }
 
@@ -770,14 +780,22 @@ impl FenceViewState {
         Ok(())
     }
 
-    /// `label_w` is the width the label must fit: the cell width for icons, the name column's
-    /// text width for rows. Changing it drops every fitted label. Icons are asked for the items
-    /// `near` the viewport only; the others get theirs when they scroll in (a crowded fence
-    /// would otherwise extract every thumbnail at startup).
-    pub(super) fn ensure_icons_and_labels(&mut self, label_w: f32, near: impl Fn(usize) -> bool) {
+    /// `label_w` is the width the label must fit: the cell width less the room beside the name
+    /// for icons, the name column's text width for rows. `wide_w` is the wider box an icon's
+    /// name may take when that shows more of it (`text::fit_lines_wider`), `label_w` again
+    /// where there is none. Changing either drops every fitted label. Icons are asked for the
+    /// items `near` the viewport only; the others get theirs when they scroll in (a crowded
+    /// fence would otherwise extract every thumbnail at startup).
+    pub(super) fn ensure_icons_and_labels(
+        &mut self,
+        label_w: f32,
+        wide_w: f32,
+        near: impl Fn(usize) -> bool,
+    ) {
         let icon_px = (self.icon_dip() * self.scale()).round() as u32;
-        if (self.label_w - label_w).abs() > 0.5 {
+        if (self.label_w - label_w).abs() > 0.5 || (self.label_wide_w - wide_w).abs() > 0.5 {
             self.label_w = label_w;
+            self.label_wide_w = wide_w;
             for item in &mut self.items {
                 item.label = None;
             }
@@ -826,23 +844,28 @@ impl FenceViewState {
                 }
             }
             if item.label.is_none() {
-                item.label = Some(match self.layout {
+                let (label, wide) = match self.layout {
                     // No lines to fit into. The full name counts as not shortened, so the
                     // selected item never unfolds.
-                    ViewLayout::Icons if self.label_lines == 0 => item.name.clone(),
-                    ViewLayout::Icons => pecofence_render::text::fit_lines(
+                    ViewLayout::Icons if self.label_lines == 0 => (item.name.clone(), false),
+                    ViewLayout::Icons => pecofence_render::text::fit_lines_wider(
                         &item.name,
                         &self.chrome.label_format(),
-                        (label_w - pecofence_render::fence_chrome::ICON_LABEL_SIDE_INSET * 2.0)
-                            .max(1.0),
+                        label_w.max(1.0),
+                        wide_w.max(1.0),
                         self.label_lines as u32,
                     ),
-                    _ => pecofence_render::text::fit_width(
-                        &item.name,
-                        &self.chrome.row_format(),
-                        label_w,
+                    _ => (
+                        pecofence_render::text::fit_width(
+                            &item.name,
+                            &self.chrome.row_format(),
+                            label_w,
+                        ),
+                        false,
                     ),
-                });
+                };
+                item.label = Some(label);
+                item.label_wide = wide;
             }
             if details {
                 if item.date_label.is_none() {
@@ -918,26 +941,26 @@ impl FenceViewState {
         }
     }
 
-    /// Fills `unfold_cache` for item `i` at `cell_w` unless it already holds that entry: one
+    /// Fills `unfold_cache` for item `i` at `label_w` unless it already holds that entry: one
     /// DirectWrite layout pass per anchor / width / name change instead of one per redraw.
-    pub(super) fn refresh_unfold_cache(&mut self, i: usize, cell_w: f32) {
+    pub(super) fn refresh_unfold_cache(&mut self, i: usize, label_w: f32) {
         let it = &self.items[i];
         let fresh = self
             .unfold_cache
             .as_ref()
-            .is_some_and(|c| c.id == it.id && c.cell_w == cell_w && c.name == it.name);
+            .is_some_and(|c| c.id == it.id && c.label_w == label_w && c.name == it.name);
         if fresh {
             return;
         }
         let (text, lines) = pecofence_render::text::fit_lines_counted(
             &it.name,
             &self.chrome.label_format(),
-            (cell_w - pecofence_render::fence_chrome::ICON_LABEL_SIDE_INSET * 2.0).max(1.0),
+            label_w.max(1.0),
             MAX_UNFOLD_LINES,
         );
         self.unfold_cache = Some(UnfoldCache {
             id: it.id,
-            cell_w,
+            label_w,
             name: it.name.clone(),
             text,
             lines,
@@ -1111,16 +1134,24 @@ impl FenceViewState {
         let max_scroll = grid.max_scroll(view_h);
         self.scroll_y = self.scroll_y.clamp(0.0, max_scroll);
         let scroll = self.scroll_y;
-        // A fence that scrolls keeps the strip along its right edge for the thumb: its plates
-        // end before the strip.
+        // A fence that scrolls keeps the strip along its right edge for the thumb: no name
+        // takes the wider box there and the plates end before the strip.
         let scrolls = max_scroll > 0.0;
+        let label_w = grid.metrics.cell_w - 2.0 * label_inset(false);
+        let wide_w = if scrolls {
+            label_w
+        } else {
+            grid.metrics.cell_w - 2.0 * label_inset(true)
+        };
         if scrolls != self.strip_kept {
             self.strip_kept = scrolls;
             tracing::debug!(
                 fence = %self.fence_id,
                 scrolls,
                 max_scroll,
-                "scrollbar strip: plates {}",
+                label_w,
+                wide_w,
+                "scrollbar strip: names and plates {}",
                 if scrolls { "end before it" } else { "use the whole cell" }
             );
         }
@@ -1128,7 +1159,7 @@ impl FenceViewState {
         // running glide ends (End, PageDown, a thumb drag, a Peek reveal).
         let target = self.scroll_target();
         let near = |y: f32, h: f32, at: f32| y + h > at - view_h && y < at + 2.0 * view_h;
-        self.ensure_icons_and_labels(grid.metrics.cell_w, |i| {
+        self.ensure_icons_and_labels(label_w, wide_w, |i| {
             let c = grid.cell(i);
             near(c.y, c.h, scroll) || near(c.y, c.h, target)
         });
@@ -1157,7 +1188,7 @@ impl FenceViewState {
             it.label.as_deref().unwrap_or(&it.name) != it.name
         });
         if let Some(i) = shortened {
-            self.refresh_unfold_cache(i, grid.metrics.cell_w);
+            self.refresh_unfold_cache(i, label_w);
         }
         // 像桌面一样排列: a selected shortened name needs room below its cell in the shape.
         self.sync_desktop_shape(false);
@@ -1213,6 +1244,7 @@ impl FenceViewState {
                 alpha: l.alpha.value_at(now),
                 icon_alpha: 1.0,
                 full_label: None,
+                label_inset: label_inset(l.label_wide),
             })
             .collect();
         cells.extend(placed.iter().zip(&keys).map(|(&(i, x, y, alpha), key)| {
@@ -1241,6 +1273,7 @@ impl FenceViewState {
                 alpha: alpha * alphas[i].3,
                 icon_alpha: item.icon_fade.map_or(1.0, |t| t.value_at(now)),
                 full_label: if unfold == Some(i) { full } else { None },
+                label_inset: label_inset(item.label_wide),
             }
         }));
         let group_headers = group_header_draws(&layout, scroll, 0.0);
@@ -1318,7 +1351,7 @@ impl FenceViewState {
         // running glide ends (as in `redraw_content`).
         let target = self.scroll_target();
         let near = |y: f32, h: f32, at: f32| y + h > at - view_h && y < at + 2.0 * view_h;
-        self.ensure_icons_and_labels(text_w, |i| {
+        self.ensure_icons_and_labels(text_w, text_w, |i| {
             let c = layout.cell(i);
             near(c.y, c.h, scroll) || near(c.y, c.h, target)
         });

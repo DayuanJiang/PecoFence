@@ -40,6 +40,12 @@ pub const DEFAULT_LABEL_LINE_H: f32 = 16.0;
 /// Horizontal breathing room inside each icon cell. A wider gutter keeps neighbouring
 /// multi-line CJK labels from visually running together in narrow panes.
 pub const ICON_LABEL_SIDE_INSET: f32 = 8.0;
+/// The room a name keeps when the wider box shows more of it (`text::fit_lines_wider`): the
+/// whole name where the usual box cuts it, or one line in place of two (「README.md」, six
+/// 12 px CJK glyphs). 74 DIPs in the 80 DIP cell of 48 px icons, a little more than the 71 px
+/// the Windows desktop gives a name on its 76 px grid; the hover and selection plate is inset
+/// 2 DIPs, so the name stays 1 DIP inside it.
+pub const ICON_LABEL_SIDE_INSET_WIDE: f32 = 3.0;
 /// A fence that scrolls keeps this strip along its right edge clear of names, values and
 /// hover / selection plates (DIPs): the resting thumb sits in it, 5 to 7 DIPs from the edge.
 pub const SCROLL_STRIP: f32 = 8.0;
@@ -185,6 +191,9 @@ pub struct ItemCell<'a> {
     /// The selected / focused item's full name (Windows desktop: the focused icon's label
     /// unfolds past the two-line limit, overlapping the row below). Painted last.
     pub full_label: Option<(&'a str, u32)>,
+    /// Room on each side of the name inside the cell, the one it was fitted with
+    /// (`ICON_LABEL_SIDE_INSET`, or `ICON_LABEL_SIDE_INSET_WIDE`).
+    pub label_inset: f32,
 }
 
 /// Which details column a header caption / sort indicator refers to.
@@ -4549,9 +4558,9 @@ impl FenceChrome {
             return Ok(());
         }
         let label_rect = Rect::from_xywh(
-            cell.x + ICON_LABEL_SIDE_INSET,
+            cell.x + cell.label_inset,
             icon_y + content.icon_size + content.label_gap,
-            (cell.w - ICON_LABEL_SIDE_INSET * 2.0).max(1.0),
+            (cell.w - cell.label_inset * 2.0).max(1.0),
             content.line_h * lines,
         );
         let text = unfold.map_or(cell.label, |(t, _)| t);
@@ -5045,6 +5054,22 @@ mod tests {
         // Intermediate widths stay between the two end positions.
         let mid = ScrollbarDraw::thumb_x(w, 4.0);
         assert!(mid < rest && mid > wide);
+    }
+
+    /// The wider box holds six 12 px CJK glyphs and stays inside the plate; in a fence that
+    /// scrolls, names and plates end at the strip the resting thumb sits in.
+    #[test]
+    fn the_wider_name_box_and_the_scrollbar_strip() {
+        // 48 px icons: an 80 DIP cell, 74 for a name that needs it, 76 for the plate.
+        assert_eq!(80.0 - 2.0 * ICON_LABEL_SIDE_INSET_WIDE, 74.0);
+        // The resting thumb sits inside the strip, 7 DIPs from the edge.
+        let w = 240.0;
+        let thumb = ScrollbarDraw::thumb_x(w, ScrollbarDraw::REST_WIDTH);
+        assert_eq!(thumb, w - SCROLL_STRIP + 1.0);
+        // The last column's cell ends at the fence's edge: its name, in the usual box, ends
+        // where the strip starts.
+        assert_eq!(w - ICON_LABEL_SIDE_INSET, w - SCROLL_STRIP);
+        assert_eq!(NOTE_PAD_X, TEXT_LEFT);
     }
 
     #[test]

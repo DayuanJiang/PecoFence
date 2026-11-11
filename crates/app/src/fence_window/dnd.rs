@@ -1540,6 +1540,7 @@ impl FenceViewState {
                             alpha: 1.0,
                             icon_alpha: 1.0,
                             full_label: None,
+                            label_inset: super::render::label_inset(item.label_wide),
                         }
                     })
                     .collect();
