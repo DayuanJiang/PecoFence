@@ -151,6 +151,9 @@ pub struct FenceViewState {
     /// The filter box changed the filter: when the next `replace_items` brings a whole new
     /// list (a refill, not a rearrangement), it cross-fades instead of cutting.
     pub(super) fade_next_refill: bool,
+    /// Icons of our own just let go on this fence: when, and where the centre of each one's
+    /// drag picture was (unscrolled content DIPs). The next list refresh starts them there.
+    pub(super) drop_landing: Option<(Instant, HashMap<ItemId, (f32, f32)>)>,
     /// A fade was still running when the surface was last drawn: `tick` redraws it.
     pub(super) content_busy: bool,
     pub(super) chrome_busy: bool,

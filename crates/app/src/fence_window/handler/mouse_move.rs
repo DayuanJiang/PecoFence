@@ -251,6 +251,7 @@ pub(super) fn on_mousemove(
                         items: ids.clone(),
                         paths: paths.clone(),
                         offsets: offsets.clone(),
+                        in_place: false,
                     })
                 });
                 // Nested message loop until the button is released.

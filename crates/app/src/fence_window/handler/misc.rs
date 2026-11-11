@@ -26,8 +26,17 @@ pub(super) fn on_getdragimage(
         }
     };
     match image {
-        // SAFETY: lparam is the SHDRAGIMAGE* of this DI_GETDRAGIMAGE message.
-        Some(img) => Some(unsafe { dragdrop::answer_drag_image(lparam, &img) } as isize),
+        Some(img) => {
+            // SAFETY: lparam is the SHDRAGIMAGE* of this DI_GETDRAGIMAGE message.
+            let answered = unsafe { dragdrop::answer_drag_image(lparam, &img) };
+            // The drop then knows each icon's picture is at its own place (`note_drop_landing`).
+            INTERNAL_DRAG.with(|d| {
+                if let Some(d) = d.borrow_mut().as_mut() {
+                    d.in_place = answered;
+                }
+            });
+            Some(answered as isize)
+        }
         None => Some(0),
     }
 }

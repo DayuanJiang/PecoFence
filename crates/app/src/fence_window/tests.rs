@@ -800,6 +800,21 @@ fn reflow_glides_start_where_the_icons_are_drawn() {
     assert_eq!(of(&glides, 20).unwrap().1.1, old.cell(20).y - 50.0);
 }
 
+/// A dropped icon starts with its centre where its drag picture's was, and glides from there.
+#[test]
+fn a_dropped_icon_starts_under_its_drag_picture() {
+    let cell = CellRect {
+        x: 160.0,
+        y: 96.0,
+        w: 80.0,
+        h: 96.0,
+    };
+    // Let go with its centre at (300, 400): the cell origin is half a cell up and left.
+    assert_eq!(landing_origin(300.0, 400.0, &cell), (260.0, 352.0));
+    // Let go exactly over its cell: no distance to cover.
+    assert_eq!(landing_origin(200.0, 144.0, &cell), (cell.x, cell.y));
+}
+
 /// Selection / focus survive a refresh by item identity: kept ids follow their items to
 /// the new slots, vanished ids drop out, an anchor whose item is gone becomes None.
 #[test]

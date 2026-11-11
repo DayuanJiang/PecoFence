@@ -16,6 +16,9 @@ pub(super) struct InternalDrag {
     /// Each item's centre less the press point (screen px): where the icons land when they
     /// are dropped on a 「桌面」 that places them freely (自由摆放).
     pub(super) offsets: Vec<(ItemId, (i32, i32))>,
+    /// The drag picture is the icons themselves, each at its own place (`render_drag_image`
+    /// answered); false = the shell's stack with the count badge, under the pointer.
+    pub(super) in_place: bool,
 }
 
 thread_local! {
@@ -626,6 +629,16 @@ impl FenceDropHandler {
         }
     }
 
+    /// Tells the fence shown where each icon of an internal drag was let go on it
+    /// (`FenceViewState::note_drop_landing`).
+    fn note_landing(&self, d: &InternalDrag, pt: DragPoint) {
+        if let Ok(mut guard) = self.view.try_borrow_mut()
+            && let Some(v) = guard.as_mut()
+        {
+            v.note_drop_landing(d, pt.x, pt.y);
+        }
+    }
+
     /// Writes the badge onto the data object when it changed (no borrow held: the source may
     /// live on this thread).
     pub(super) fn describe(&mut self, description: Option<(DropImage, &'static str, String)>) {
@@ -937,6 +950,7 @@ impl DropHandler for FenceDropHandler {
                     if free {
                         // 自由摆放: dropped on the icons of 「桌面」 (its own or another fence's
                         // icons): they stay where they land, beside the icons that are there.
+                        self.note_landing(&d, pt);
                         let at = DesktopDrop {
                             cursor: (pt.x, pt.y),
                             centres: d
@@ -952,6 +966,7 @@ impl DropHandler for FenceDropHandler {
                         break 'resolve DropEffect::Move;
                     }
                     if let Some(index) = spot.insert {
+                        self.note_landing(&d, pt);
                         if d.from == active {
                             self.queue.push(Command::ReorderItems {
                                 fence: active,
@@ -991,6 +1006,9 @@ impl DropHandler for FenceDropHandler {
                             mode,
                         });
                         break 'resolve effect;
+                    }
+                    if to == active {
+                        self.note_landing(&d, pt);
                     }
                     self.queue.push(Command::MoveItems {
                         items: d.items,
@@ -1128,6 +1146,38 @@ impl FenceViewState {
             Some(t) if t.id != self.active => t.folder.clone(),
             _ => self.portal_folder.clone(),
         }
+    }
+
+    /// Icons of our own were let go on this fence at screen point (sx, sy): remembers where the
+    /// centre of each one's drag picture was (unscrolled content DIPs), so the list refresh the
+    /// drop causes starts them there (`replace_items`) and they arrive from the pointer. The
+    /// shell's stack picture (more icons than the in-place one shows) sits under the pointer.
+    pub(super) fn note_drop_landing(&mut self, d: &InternalDrag, sx: i32, sy: i32) {
+        if !self.motion.enabled() || self.rolled_up {
+            return;
+        }
+        let r = window::window_rect(self.hwnd);
+        let scale = self.scale();
+        let (cw, _) = self.content_size_px();
+        let fixed = self.layout(cw as f32 / scale).fixed_top();
+        let from: HashMap<ItemId, (f32, f32)> = d
+            .offsets
+            .iter()
+            .map(|(id, (dx, dy))| {
+                let (dx, dy) = if d.in_place { (*dx, *dy) } else { (0, 0) };
+                let x = (sx + dx - r.left - self.content_x) as f32 / scale;
+                let y = (sy + dy - r.top - self.content_y) as f32 / scale - fixed + self.scroll_y;
+                (*id, (x, y))
+            })
+            .collect();
+        tracing::debug!(
+            icons = from.len(),
+            in_place = d.in_place,
+            x = sx,
+            y = sy,
+            "drop landing noted: the icons start where they were let go"
+        );
+        self.drop_landing = Some((Instant::now(), from));
     }
 
     /// Insertion index for reordering at a client-pixel point: only in a 手动-sorted virtual

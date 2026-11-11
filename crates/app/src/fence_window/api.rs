@@ -162,6 +162,7 @@ impl FenceWindow {
             item_motion: HashMap::new(),
             leaving: Vec::new(),
             fade_next_refill: false,
+            drop_landing: None,
             content_busy: false,
             chrome_busy: false,
             mouse_inside: false,

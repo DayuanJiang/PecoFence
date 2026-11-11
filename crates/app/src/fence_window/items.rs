@@ -42,6 +42,16 @@ pub(super) fn layout_motion_applies(changed: usize, old_len: usize, new_len: usi
     old_len == 0 || changed * 2 <= old_len.max(new_len)
 }
 
+/// How long after a drop its icons still count as "just let go here" (`drop_landing`): the
+/// refresh the drop causes follows within a frame or two; anything later is another change.
+pub(super) const DROP_LANDING_MAX: Duration = Duration::from_millis(500);
+
+/// Cell origin of an icon whose centre is at (`cx`, `cy`): where a dropped icon starts, under
+/// its drag picture.
+pub(super) fn landing_origin(cx: f32, cy: f32, cell: &CellRect) -> (f32, f32) {
+    (cx - cell.w / 2.0, cy - cell.h / 2.0)
+}
+
 /// Index-keyed per-item state carried across a list refresh by item identity: `old` / `new`
 /// are the ids before and after, `index` an index into `old`. Items that vanished map to None
 /// (Explorer / ListView keep selection and focus by item, not by slot, across sorts, drops,
@@ -101,7 +111,9 @@ impl FenceViewState {
     /// Replaces the item list with layout motion (WinUI Reorder / AddDelete theme transitions):
     /// items present before and after glide from their old cell to the new one (250 ms
     /// point-to-point), new items fade in (167 ms) at their cell, removed items fade out (83 ms)
-    /// where they were; the first items of an empty fence fade in. Everything snaps when
+    /// where they were; the first items of an empty fence fade in. Icons the user just let go on
+    /// this fence (`drop_landing`) glide in from where their drag picture was instead (167 ms
+    /// decelerate), however many they are. Everything snaps when
     /// animations are off, the fence is rolled or rolling, hidden, a drag / marquee is running,
     /// a content swap brings in a whole page (tab switch, portal navigation), or more than half
     /// of the ids changed (a refill — not a rearrangement).
@@ -165,10 +177,18 @@ impl FenceViewState {
             self.search_dim.prune(now, |k| !old.contains_key(k));
         }
         self.remap_item_state(&old_ids);
+        // Icons of our own let go on this fence a moment ago (`note_drop_landing`): the user
+        // put them here, however many, so they never make the change a refill.
+        let landing: HashMap<ItemId, (f32, f32)> = self
+            .drop_landing
+            .take()
+            .filter(|(at, _)| animate && at.elapsed() < DROP_LANDING_MAX)
+            .map(|(_, from)| from)
+            .unwrap_or_default();
         let added = self
             .items
             .iter()
-            .filter(|n| !old_pos.contains_key(&n.id))
+            .filter(|n| !old_pos.contains_key(&n.id) && !landing.contains_key(&n.id))
             .count();
         let changed = old.len() + added;
         let animate = animate && layout_motion_applies(changed, old_len, self.items.len());
@@ -217,9 +237,40 @@ impl FenceViewState {
         }
         let cells = self.cell_origins(width_dip);
         let mut motion: HashMap<ItemId, ItemMotion> = HashMap::new();
+        let mut landed = 0usize;
         for (n, c) in self.items.iter().zip(cells) {
             // A motion still in flight continues from where it is, not from the old slot.
             let prev = self.item_motion.remove(&n.id);
+            if let Some(&(lx, ly)) = landing.get(&n.id) {
+                // Let go here by the user: it arrives from where its drag picture was, at
+                // full strength (167 ms decelerate, WinUI's drop-to-rest).
+                let (fx, fy) = landing_origin(lx, ly, &c);
+                // The first few say where from and where to (a drop of hundreds stays short).
+                if landed < DRAG_IMAGE_MAX_ITEMS {
+                    tracing::debug!(
+                        name = %n.name,
+                        from_x = lx.round(),
+                        from_y = ly.round(),
+                        to_x = (c.x + c.w / 2.0).round(),
+                        to_y = (c.y + c.h / 2.0).round(),
+                        "dropped icon glides from where it was let go to its cell"
+                    );
+                }
+                landed += 1;
+                motion.insert(
+                    n.id,
+                    ItemMotion {
+                        x: self
+                            .motion
+                            .tween(fx, c.x, motion::FAST, Curve::Decelerate, now),
+                        y: self
+                            .motion
+                            .tween(fy, c.y, motion::FAST, Curve::Decelerate, now),
+                        alpha: Tween::at(1.0, now),
+                    },
+                );
+                continue;
+            }
             match old_pos.get(&n.id) {
                 Some(o) => {
                     let (fx, fy) =
@@ -261,6 +312,9 @@ impl FenceViewState {
                     );
                 }
             }
+        }
+        if landed > 0 {
+            tracing::debug!(landed, "layout motion: icons arriving from a drop");
         }
         // Survivors took their motions out of the old map: what is left belongs to the
         // removed items (a glide or fade-in still in flight when the item vanished).
