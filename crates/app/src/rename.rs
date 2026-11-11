@@ -43,6 +43,15 @@ const ITEM_BOX_MAX_LINES: i32 = 6;
 /// text size), so a smaller icon size still gets a box one can type in.
 const ITEM_BOX_MIN_TEXT_DIP: f32 = 64.0;
 
+/// How far the edit of an icon's name box reaches into the frame on each side, in DIPs: the
+/// control (GDI text: whole-pixel advances, a font height rounded to a pixel) can lay a name
+/// out a pixel or two wider than the label under the icon does (DirectWrite), so a name that
+/// just fills its lines there took one line more in the box (「a1 新年活动安排与分工」 at
+/// 150 %: two lines under the icon, three in the box). Two DIPs a side are 4, 6 and 6 px at
+/// 100, 125 and 150 %. The box itself is no wider for it and the centred text stays where it
+/// was. Part S of polish-rename.ps1 compares the lines of names and boxes.
+const ITEM_BOX_SLACK_DIP: f32 = 2.0;
+
 /// Where the edit sits in an item's rename box (pixels): `pad_x` in from the left and right
 /// edges. An icon's name starts `pad_top` under the top edge and the box is as tall as its
 /// lines (`line_h` each, at most `max_lines`) plus `pad_bottom`; a row's name (`max_lines`
@@ -50,6 +59,9 @@ const ITEM_BOX_MIN_TEXT_DIP: f32 = 64.0;
 #[derive(Clone, Copy, Debug)]
 struct ItemBox {
     pad_x: i32,
+    /// Where the edit itself starts and ends: `pad_x`, less `ITEM_BOX_SLACK_DIP` for an
+    /// icon's name.
+    edit_x: i32,
     pad_top: i32,
     pad_bottom: i32,
     line_h: i32,
@@ -226,6 +238,8 @@ fn item_box_place(
             r.bottom = r.top + pad_top + px(font_dip * 4.0 / 3.0) + pad_bottom;
             ItemBox {
                 pad_x,
+                // Never onto the 1 px border.
+                edit_x: (pad_x - px(ITEM_BOX_SLACK_DIP)).max(1),
                 pad_top,
                 pad_bottom,
                 line_h: 0,
@@ -242,6 +256,7 @@ fn item_box_place(
             r.bottom = r.top + (item_rename_h(text_scale) * scale) as i32;
             ItemBox {
                 pad_x,
+                edit_x: pad_x,
                 pad_top: 0,
                 pad_bottom: 0,
                 line_h: 0,
@@ -277,7 +292,7 @@ fn fit_item_box(window: &Window, ctl: &edit::EditControl, b: &ItemBox) {
             "item rename box resized"
         );
         let _ = window.set_bounds(r.left, r.top, w, h);
-        ctl.set_bounds(b.pad_x, b.pad_top, w - 2 * b.pad_x, lines * b.line_h);
+        ctl.set_bounds(b.edit_x, b.pad_top, w - 2 * b.edit_x, lines * b.line_h);
         paint::invalidate(window.hwnd());
     }
     if count <= b.max_lines {
@@ -394,7 +409,7 @@ fn begin_rename_at(
         // An icon's name: wraps, sized to its lines below.
         Some(b) if b.max_lines > 1 => edit::EditControl::create_wrapping(
             window.hwnd(),
-            w - 2 * b.pad_x,
+            w - 2 * b.edit_x,
             h - b.pad_top - b.pad_bottom,
             dpi,
             font_dip,
@@ -419,11 +434,11 @@ fn begin_rename_at(
         // Rounded as a Fluent text box; Windows draws the corners where it can (a GPU).
         let _ = dwm::set_corner_preference(window.hwnd(), dwm::CornerPreference::RoundSmall);
         if b.max_lines > 1 {
-            ctl.set_bounds(b.pad_x, b.pad_top, w - 2 * b.pad_x, b.line_h);
+            ctl.set_bounds(b.edit_x, b.pad_top, w - 2 * b.edit_x, b.line_h);
             fit_item_box(&window, &ctl, b);
         } else {
             // A row's name: one line, centred in the box, starting where the row's text does.
-            ctl.set_bounds(b.pad_x, (h - b.line_h) / 2, w - 2 * b.pad_x, b.line_h);
+            ctl.set_bounds(b.edit_x, (h - b.line_h) / 2, w - 2 * b.edit_x, b.line_h);
         }
     }
     window::show_normal(window.hwnd());
@@ -546,6 +561,10 @@ mod tests {
             "64 px of text, 4 px frame each side"
         );
         assert!(r.left >= label.left && r.right <= label.right);
+        // The edit reaches into the frame (never onto the border): the name gets more room
+        // than its label had, in a box that is no wider.
+        assert!(b.edit_x >= 1 && b.edit_x < b.pad_x);
+        assert!(r.right - r.left - 2 * b.edit_x > 64);
         assert_eq!(
             r.top + b.pad_top,
             label.top,
@@ -588,6 +607,10 @@ mod tests {
         let (r, b) = item_box_place(row, 96, 12.0, 1.0, None);
         assert_eq!((r.left, r.right, r.top, r.bottom), (332, 712, 162, 186));
         assert_eq!(b.max_lines, 1);
+        assert_eq!(
+            b.edit_x, b.pad_x,
+            "a row's text starts where the row's does"
+        );
         // A narrow name column still gets the 96 px minimum, centred.
         let narrow = RECT {
             left: 400,

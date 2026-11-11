@@ -5,10 +5,12 @@
 #   B  the item rename box (MC2 / V3): inside the cell, as tall as the wrapped name, the name
 #      under it hidden, grows and shrinks while typing, Enter / Ctrl+Enter / Esc, list rows
 #   F  the name box of a fence just made waits for the fence's fade-in (MF-6 b)
+#   S  the box never shows more lines than the name under the icon (also at 125 / 150 %: run
+#      it in a scaled RDP session with --var Part=S --var Zoom=150; its points are scaled)
 #   W  the box is as wide as the name is drawn: a name fitted to the wider box (one line
 #      in place of two) gets a box that wide, others and a fence that scrolls the usual one
 # Default: all parts.
-if (-not $Part) { $Part = 'IBFW' }
+if (-not $Part) { $Part = 'IBFWS' }
 trap { PfTrap $_; continue }
 $PrNames = @('a1 报告.txt', 'b2 预算表.txt', '04 新年活动安排与分工.txt', 'd4 设计稿 v3 final.txt', 'e5 合同扫描件.txt')
 function PrClean() {
@@ -239,9 +241,59 @@ if ($Part -match 'W') {
   $box = PrWaitRename; $r = Rect $box
   $lines = PrEdit $box 0xBA
   Shot 'fu-scrolling-box'
-  Check 'follow-up: in a fence that scrolls the same name gets the usual box, on two lines' ($box -ne [IntPtr]::Zero -and [bool]$f.fit.overflow -and $i -lt 5 -and ($r.R - $r.L) -le 74 -and $lines -eq 2) "fence scrolls: $($f.fit.overflow); name '$($order[$i])' at index $i; box $($r.R - $r.L) x $($r.B - $r.T) px, lines $lines"
+  # (Two lines as a name there; the box may fit it on one: its edit has a little slack.)
+  Check 'follow-up: in a fence that scrolls the same name gets the usual box, no wider one' ($box -ne [IntPtr]::Zero -and [bool]$f.fit.overflow -and $i -lt 5 -and ($r.R - $r.L) -le 74 -and $lines -ge 1 -and $lines -le 2) "fence scrolls: $($f.fit.overflow); name '$($order[$i])' at index $i; box $($r.R - $r.L) x $($r.B - $r.T) px, lines $lines"
   PrKey 0x1B 600
   Pf fence delete Scrolls | Out-Null
+  Start-Sleep -Milliseconds 800
+}
+
+if ($Part -match 'S') {
+  Case 'follow-up: the box never shows more lines than the name'
+  # Names whose lines are nearly full under the icon: the edit control (GDI) lays text out a
+  # little wider than the label (DirectWrite), most at 150 %.
+  $Zf = if ($Zoom) { ([double]$Zoom) / 100.0 } else { 1.0 }
+  Log "LINES zoom var '$Zoom' -> factor $Zf"
+  $sNames = @('a1 新年活动安排与分工.txt', '04 新年活动安排与分工.txt', 'd4 设计稿 v3 final.txt', 'README.md', '2026-11-11 会议记录 v2.txt',
+    'Quarterly report 2026 final v3.txt', '项目计划书 第二版 修订.txt', 'IMG_20261111_083000.txt', 'budget_FY27_rev-B.txt', 'mmmm wwww MMMM.txt')
+  foreach ($n in $sNames) { DeskFile $n | Out-Null }
+  Start-Sleep -Seconds 2
+  $fw = [int](800 * $Zf); $fh = [int](260 * $Zf); $fx = [int](300 * $Zf); $fy = [int](120 * $Zf)
+  Pf fence create --title Lines --rect "$fx,$fy,$fw,$fh" | Out-Null
+  Pf item move @($sNames | ForEach-Object { Join-Path $PfDesk $_ }) --to Lines | Out-Null
+  ParkMouse; Start-Sleep -Seconds 3
+  $f = FenceGet 'Lines'; $wr = $f.windowRect
+  $order = @(@(PfJson item list --fence Lines) | ForEach-Object { $_.name })
+  $cols = [int]$f.fit.columns; $pitch = $wr.w / $cols
+  $lh = [int](16 * $Zf); $worse = @(); $seen = 0
+  for ($i = 0; $i -lt [math]::Min($order.Count, $cols); $i++) {
+    $cx = [int]($wr.x + $i * $pitch + $pitch / 2); $cy = [int]($wr.y + 76 * $Zf)
+    [G]::Click($cx, $cy); Start-Sleep -Milliseconds 500
+    ParkMouse; Start-Sleep -Milliseconds 400
+    # Lines of the name as drawn (the selected icon shows its whole name): label line slots with ink.
+    $top = [int]($wr.y + 104 * $Zf)
+    $b = [Px]::Grab([int]($cx - $pitch / 2 + 2), $top, [int]$pitch - 4, 6 * $lh)
+    $nameLines = 0
+    # A line of text inks a third of its slot's rows or more; the plate's bottom edge only one or two.
+    foreach ($k in 0..5) {
+      $rows = 0
+      foreach ($y in ($k * $lh + 1)..(($k + 1) * $lh - 2)) { if ([Px]::MaxInk($b, 0, $b.Width - 1, $y, $y) -ge 50) { $rows++ } }
+      if ($rows * 3 -ge $lh) { $nameLines = $k + 1 }
+    }
+    if ($order[$i] -match '^a1 ') { Shot 'fu-lines-name-selected' }
+    PrKey 0x71 700
+    $box = PrWaitRename
+    $boxLines = if ($box -ne [IntPtr]::Zero) { PrEdit $box 0xBA } else { -1 }
+    if ($order[$i] -match '^a1 ') { Shot 'fu-lines-name-box' }
+    $r = Rect $box
+    Log "LINES '$($order[$i])': name $nameLines, box $boxLines (box $($r.R - $r.L) x $($r.B - $r.T) px)"
+    if ($box -ne [IntPtr]::Zero) { $seen++ }
+    if ($boxLines -gt $nameLines -or $boxLines -lt 1) { $worse += "'$($order[$i])' name $nameLines box $boxLines" }
+    PrKey 0x1B 500
+  }
+  Shot 'fu-lines'
+  Check "follow-up: no rename box has more lines than its name (scale $([int]($Zf * 100)) %)" ($seen -ge 8 -and $worse.Count -eq 0) "boxes opened: $seen of $($order.Count); more lines in the box: $(if ($worse.Count) { $worse -join '; ' } else { 'none' })"
+  Pf fence delete Lines | Out-Null
   Start-Sleep -Milliseconds 800
 }
 
