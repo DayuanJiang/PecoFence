@@ -56,7 +56,9 @@ impl FenceViewState {
         }
         if content {
             if glide_done {
-                self.note_scroll_activity();
+                if !std::mem::take(&mut self.quiet_glide) {
+                    self.note_scroll_activity();
+                }
                 self.request_hover_refresh();
             }
             if self.marquee.is_some() {

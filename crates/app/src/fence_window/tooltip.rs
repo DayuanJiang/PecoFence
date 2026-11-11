@@ -19,8 +19,8 @@ pub(super) enum TipTarget {
     Up,
     /// The Task View glyph of a single title: the desktops the fence shows on.
     Desktops,
-    /// A script fence's clickable row.
-    ScriptRow(usize),
+    /// A script fence's clickable row and cell (cell 0 for a plain row).
+    ScriptRow(usize, usize),
     /// A filter tag too narrow for all of the filter.
     FilterTag,
 }
@@ -148,7 +148,13 @@ impl FenceViewState {
                     .collect::<Vec<_>>()
                     .join("  ")
             }),
-            TipTarget::ScriptRow(i) => self.script.as_ref()?.rows.get(i)?.tip.clone(),
+            TipTarget::ScriptRow(i, c) => {
+                let row = self.script.as_ref()?.rows.get(i)?;
+                match row.cells.get(c) {
+                    Some(cell) => cell.tip.clone(),
+                    None => row.tip.clone(),
+                }
+            }
             TipTarget::Tab(i) => {
                 let t = self.tabs.get(i)?;
                 let fits = if self.tabs_on_rail() {

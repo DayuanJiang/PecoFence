@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Script fence output grows: a line that starts with `::` is a row of cells side by side (buttons, icon buttons from Segoe Fluent Icons, check boxes, sliders, text, with `width=`, `align=`, `gap=`, `checked=`, `bold=`, `dblaction=`), `image=` shows a picture, and `PECOFENCE_LANGUAGE` tells a script PecoFence's language. Script fences scroll: a fence whose rows do not fit now has the mouse wheel and the usual scrollbar on its right edge, where it used to cut them off. A script marks what stays in place and what scrolls with a hidden row, `| pane=<key> hidden=true` (the rows above it stay, the rows below scroll, and a new key brings them back to the top), and keeps a row in the middle with `| follow=<key> hidden=true`. A streaming script's screen may have 300 lines (40 before). See docs/CLI.md.
+- Clipboard History: a new script example (Settings → Tools) that lists what is copied on Windows, texts, lists of files and pictures, one line per entry with a pin and a trash button at its right (pinned entries stay at the top and are kept when PecoFence restarts). A **Show entries** box blurs every entry (to protect passwords while streaming), **Reveal on click** (while the entries are shown) blurs them until one is clicked, **Delete all** empties the list and **Purge entries in:** does it after a number of minutes. A cell of a row of cells may now hold a picture (`image=`), which lets a script put buttons beside it. What a program asks not to be kept (password managers) is left out, and nothing is saved: the entries live in memory.
+
 ## 0.3.3
 
 - PecoFence checks for a new version by itself (installer and ZIP editions, about a minute after start and then once a day): a card in the corner says so once per version, with the first line of that version's notes, 「更新」 and 「查看新功能」 (the ZIP edition: 「去下载」), and the tray menu offers 「更新到 …」 until it is installed; 「自动检查更新」 on Settings › 关于 turns it off. Before, a new version showed only when you clicked 「检查更新」 there. The Store edition is updated by the Store.

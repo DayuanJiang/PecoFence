@@ -314,7 +314,7 @@ async function runTests() {
     }
     assert(!doc.getElementById('noteCount') && !doc.getElementById('newScriptExample'), 'The count line or 添加示例… is still there');
     const titles = [...page.querySelectorAll('.card.child .t')].map(t => t.textContent).join(' / ');
-    assert(titles === '便签与待办 / 时钟 / 天气 / GitHub 仓库动态 / 电脑状态 / 用自己的脚本', 'Rows: ' + titles);
+    assert(titles === '便签与待办 / 时钟 / 天气 / GitHub 仓库动态 / 电脑状态 / 剪贴板历史 / 用自己的脚本', 'Rows: ' + titles);
     const before = frame.contentWindow.testMessages.length;
     doc.querySelector('[data-bind="tools.enabled"]').click();
     const patch = frame.contentWindow.testMessages.slice(before).find(m => m.type === 'patchSettings');

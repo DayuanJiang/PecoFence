@@ -30,6 +30,15 @@ pub(super) fn on_mousemove(
         return Some(0);
     };
     v.set_mouse_inside(true);
+    // A held slider of a script fence follows the pointer, wherever it goes.
+    if v.slider_drag.is_some() {
+        let cmd = v.slider_drag_move(x as i32);
+        drop(guard);
+        if let Some(cmd) = cmd {
+            queue.push(cmd);
+        }
+        return Some(0);
+    }
     if v.marquee.is_some() {
         // Pointer outside the item area: auto-scroll per frame while the
         // button is down (`marquee_autoscroll` in `tick`).
@@ -70,6 +79,7 @@ pub(super) fn on_mousemove(
                 v.dismiss_rename_for_scroll();
             }
             v.scroll_y = next;
+            v.note_user_scroll();
         }
         // Keep the hot zone current so a release with the pointer off
         // the bar starts the contract delay at once.
@@ -456,7 +466,7 @@ pub(super) fn on_mousemove(
     let script_changed = std::mem::replace(&mut v.script_hover, script_row) != script_row;
     let tip = v
         .tip_target_at(x, y, hit.filter(|_| behavior.info_tips.get()))
-        .or(script_row.map(TipTarget::ScriptRow));
+        .or(script_row.map(|(row, cell)| TipTarget::ScriptRow(row, cell)));
     v.update_tip_target(tip, x, y);
     let header = if divider.is_some() || on_control {
         None
