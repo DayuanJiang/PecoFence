@@ -323,6 +323,11 @@ impl App {
         let enabled = self.state.config.settings.roll_up.push_neighbors;
         if !enabled && self.ctx.behavior.pushed.borrow().is_empty() {
             self.keep_expand_rooms(None, &[]);
+            // Switched off while a fence was open only as far as the fences below left room:
+            // nothing holds it short now, it has its own height again.
+            for w in self.fences.values() {
+                w.fit_open_to_room(i32::MAX);
+            }
             return;
         }
         let mut dragged: Vec<HWND> = self

@@ -289,6 +289,20 @@ if ($Part -match 'B') {
   Pf fence roll Pusher | Out-Null; Start-Sleep -Milliseconds 800
   Pf fence move Pusher --rect '1000,440,300,300' | Out-Null
 
+  Case 'B pushing switched off'
+  # Pushed already sits at the taskbar, so nothing is pushed while Pusher is held short. With
+  # 「展开时把下面的栅栏推开」 switched off nothing holds it short: it has its own height again.
+  Pf fence move Pushed --rect "1000,$($WorkB - 280),300,280" | Out-Null; Start-Sleep -Milliseconds 900
+  Pf fence unroll Pusher | Out-Null; Start-Sleep -Milliseconds 1300
+  $held = WinH Pusher; $q = Win Pushed
+  Pf settings set rollUp.pushNeighbors false | Out-Null; Start-Sleep -Milliseconds 1200
+  Check 'pushing switched off: the fence held short has its own height again' ($held -eq ($WorkB - 280 - 8 - 440) -and $q.T -eq ($WorkB - 280) -and (WinH Pusher) -eq 300) "held at $held px with Pushed at $($q.T) (not pushed), then $(WinH Pusher) px"
+  Pf settings set rollUp.pushNeighbors true | Out-Null; Start-Sleep -Milliseconds 1200
+  Check 'pushing switched on again: it stops at the room again' ((WinH Pusher) -eq $held -and (FenceGet Pusher).rect.h -eq 300) "window $(WinH Pusher) px, saved rect h $((FenceGet Pusher).rect.h)"
+  Clean 'pushing on again' @('Pusher', 'Pushed')
+  Pf fence roll Pusher | Out-Null; Start-Sleep -Milliseconds 800
+  Pf fence move Pushed --rect '1000,488,300,280' | Out-Null; Start-Sleep -Milliseconds 900
+
   Case 'B auto height'
   Pf fence set Pusher autoHeight true | Out-Null; Start-Sleep -Milliseconds 500
   Pf fence unroll Pusher | Out-Null; Start-Sleep -Milliseconds 1400
