@@ -58,6 +58,7 @@ const CODE_TEXT_FIELDS: &[&str] = &[
     "memory",
     "method",
     "mode",
+    "module",
     "module_owner",
     "new",
     "old",
@@ -710,6 +711,8 @@ mod tests {
         ("memory", "%m.summary()"),     // MemoryStats::summary: numbers only
         ("method", "method"),           // IPC method name
         ("mode", "?mode"),              // ThemeMode enum
+        ("module", "%file"),            // shell_menu::LoadWatch: file name of a loaded DLL
+        ("module", "module"),           // feedback: file name of the DLL a crash line names
         ("module_owner", "owner"),      // crashlog: windows / pecofence / other
         ("new", "?resolved"),           // Option<IconHost>: HWNDs + kind enum
         ("new", "?after"),              // store::StartupState enum

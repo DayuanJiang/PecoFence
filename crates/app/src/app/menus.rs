@@ -647,6 +647,7 @@ impl App {
         menu.separator();
         // Explorer's own menu (send to / copy / delete / pin / extensions …) appended below ours.
         let paths = self.shell_paths_of(items);
+        let _loads = pecofence_platform::shell_menu::LoadWatch::new("ItemMenu");
         let mut shell_menu =
             ShellContextMenu::for_paths(&paths.iter().map(|p| p.as_path()).collect::<Vec<_>>())
                 .ok();

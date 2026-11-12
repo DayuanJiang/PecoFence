@@ -315,6 +315,7 @@ pub fn prewarm(path: std::path::PathBuf, after: Duration) {
                 return;
             }
             let _sta = crate::com::OleGuard::init();
+            let _loads = LoadWatch::new("Prewarm");
             let started = Instant::now();
             let before = loaded_modules();
             let built = (|| -> Result<u32> {
@@ -351,6 +352,48 @@ pub fn prewarm(path: std::path::PathBuf, after: Duration) {
         });
     if let Err(e) = spawned {
         tracing::warn!(error = %e, "shell menu prewarm thread failed to start");
+    }
+}
+
+/// Says in the log which modules of other programs an operation brought into this process:
+/// `shell extension loaded module=RarExt64.dll by=ItemMenu`, once per module per run. Made
+/// before the operation (an item menu, a launch, a cut or copy), it reports when dropped.
+/// Every feedback log then tells which extensions that PC has and what loads them.
+pub struct LoadWatch {
+    by: &'static str,
+    before: Vec<HMODULE>,
+}
+
+impl LoadWatch {
+    pub fn new(by: &'static str) -> Self {
+        Self {
+            by,
+            before: loaded_modules(),
+        }
+    }
+}
+
+impl Drop for LoadWatch {
+    fn drop(&mut self) {
+        static LOGGED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        let by = self.by;
+        for module in loaded_modules() {
+            if self.before.contains(&module) {
+                continue;
+            }
+            let path = crate::crashlog::module_path(Some(module));
+            if crate::crashlog::module_owner(&path) != "other" {
+                continue;
+            }
+            let file = path.rsplit(['\\', '/']).next().unwrap_or(&path).to_string();
+            let mut logged = LOGGED.lock().unwrap_or_else(|e| e.into_inner());
+            if logged.iter().any(|l| l.eq_ignore_ascii_case(&file)) {
+                continue;
+            }
+            logged.push(file.clone());
+            drop(logged);
+            tracing::info!(module = %file, by, "shell extension loaded");
+        }
     }
 }
 

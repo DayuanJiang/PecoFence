@@ -833,6 +833,7 @@ impl App {
                 false,
                 false,
             );
+        let _loads = pecofence_platform::shell_menu::LoadWatch::new("SearchMenu");
         let mut shell_menu = match ShellContextMenu::for_paths(&[path.as_path()]) {
             Ok(sm) => Some(sm),
             Err(e) => {

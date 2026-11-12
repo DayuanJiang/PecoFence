@@ -590,6 +590,11 @@ impl App {
         }
         let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
         let started = Instant::now();
+        let _loads = pecofence_platform::shell_menu::LoadWatch::new(match verb {
+            "cut" => "Cut",
+            "copy" => "Copy",
+            _ => "Properties",
+        });
         let result = ShellContextMenu::for_paths(&refs)
             .and_then(|m| m.invoke_verb(verb, owner, window::cursor_pos(), shift));
         let ms = crate::share_log::millis(started.elapsed());
@@ -945,6 +950,7 @@ impl App {
             self.note_opened(item);
             return;
         }
+        let _loads = pecofence_platform::shell_menu::LoadWatch::new("Launch");
         match shell::shell_execute(&path, None, None) {
             Ok(()) => {
                 self.note_opened(item);

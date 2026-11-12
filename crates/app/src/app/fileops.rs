@@ -128,6 +128,7 @@ impl App {
                     .and_then(|p| shell::recycle_bin_count_for(p))
             };
             let before = bin();
+            let _loads = pecofence_platform::shell_menu::LoadWatch::new("Delete");
             let done = shell::delete_items(&job_paths, owner, permanent);
             let after = bin();
             let gained = matches!((before, after), (Some(b), Some(a)) if a > b);

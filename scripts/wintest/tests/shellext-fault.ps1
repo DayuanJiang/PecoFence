@@ -12,9 +12,11 @@
 #      second of that line, the watchdog starts PecoFence again and the layout is as before
 #   O  a crash in PecoFence's own code (the test script's `crash` line) is left to Windows
 #      Error Reporting as before: Windows records it, the process ends when that is done
+#   L  the log says once per run which operation loaded the extension, and the log a user
+#      sends with a report keeps the DLL's name
 # Parts: run.sh --var Part=D ... (default: all). About 4 minutes.
 $PfAllowLogErrors = $true
-if (-not $Part) { $Part = 'DFO' }
+if (-not $Part) { $Part = 'LDFO' }
 trap { PfTrap $_; continue }
 
 Add-Type @'
@@ -152,6 +154,32 @@ Remove-Item $Stamp -ErrorAction SilentlyContinue
 $dll = Test-Path "$PfExtra\pf_shellext_fault.dll"
 Check 'the test extension is on the box' $dll 'C:\pf\extra\pf_shellext_fault.dll: build.sh makes it, run.sh brings it with --extra target/wintest-shellext'
 if ($dll) { ExtRegister }
+
+if ($dll -and $Part -match 'L') {
+  Case 'L the log names the extension'
+  DeskFile 'sx l1 文件.txt' | Out-Null
+  PfStart
+  Pf settings set featureTips false | Out-Null
+  ClearFences | Out-Null
+  # The background build of the item menu, two seconds after the start, loads it first;
+  # without that build the right-click below does.
+  $null = PfWaitLog 'shell menu (pre|not pre)warmed' 20
+  SxFence 'SxL' '300,200,520,170' @('sx l2 报告.txt', 'sx l3 预算.txt')
+  $p = CellPt 'SxL' 0
+  [G]::RClick($p[0], $p[1])
+  $m = MenuWin 8
+  CloseMenus
+  [G]::RClick($p[0], $p[1])
+  $m = MenuWin 8
+  CloseMenus
+  Start-Sleep -Milliseconds 500
+  $lines = @(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -match 'shell extension loaded' -and $_ -match 'pf_shellext_fault' })
+  Check 'L the log says once which operation loaded the extension' ($lines.Count -eq 1 -and $lines[0] -match ' by="?(Prewarm|ItemMenu)"?') "lines: $($lines.Count); $(if ($lines.Count) { if ($lines[0] -match '(shell extension loaded.*)$') { $Matches[1] } })"
+  $shared = @(Get-Content (ShareLog) -Encoding UTF8 | Where-Object { $_ -match 'shell extension loaded' })
+  Check 'L the log sent with a report keeps the DLL''s name' ($shared.Count -eq 1 -and $shared[0] -match 'module=pf_shellext_fault\.dll by=(Prewarm|ItemMenu)') "shareable log: $(if ($shared.Count) { if ($shared[0] -match '(shell extension loaded.*)$') { $Matches[1] } })"
+  PfQuit
+  SxClean
+}
 
 if ($dll -and $Part -match 'D') {
   Case 'D Delete with a menu extension that faults'
