@@ -712,7 +712,7 @@
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE70D;</span><div><div class="t" id="rollExpandTitle">收起的栅栏怎么展开</div><div class="s">停在上面展开的栅栏，鼠标移开后自动收起；单击标题展开的，再单击标题收起；不管选哪种，双击标题或点折叠箭头都能展开和收起</div></div></div>
           <select id="rollExpand" aria-labelledby="rollExpandTitle"><option value="hover">鼠标停在上面时</option><option value="click">单击标题时</option><option value="double">只在双击标题或点箭头时</option></select></div>
-        <div class="card child" id="hoverSpeedCard"><div class="l"><div><div class="t" id="hoverSpeedTitle">展开快慢</div><div class="s">鼠标停多久栅栏才展开，悬停切换第一个标签页也等这么久；“默认”跟随 Windows 的鼠标悬停时间</div></div></div>
+        <div class="card child" id="hoverSpeedCard"><div class="l"><div><div class="t" id="hoverSpeedTitle">展开快慢</div><div class="s">鼠标停多久栅栏才展开，悬停切换第一个标签页也等这么久；刚展开或切换过一个之后，接着移到的下一个马上跟上；“默认”跟随 Windows 的鼠标悬停时间</div></div></div>
           <select data-bind="rollUp.hoverSpeed" aria-labelledby="hoverSpeedTitle"><option value="fast">快</option><option value="normal">默认</option><option value="slow">慢</option></select></div>
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE74B;</span><div><div class="t">展开时把下面的栅栏推开</div><div class="s">收起后它们会回到原位</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.pushNeighbors"></div></div>

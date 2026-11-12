@@ -1822,6 +1822,8 @@ impl App {
                 size_move: std::cell::RefCell::new(None),
                 defer_backdrop: std::cell::Cell::new(false),
                 frame_positions: std::cell::RefCell::new(None),
+                roll_quick: std::cell::Cell::new(false),
+                roll_title_left: std::cell::Cell::new(None),
                 frame_landings: std::cell::RefCell::new(Vec::new()),
             }),
         });

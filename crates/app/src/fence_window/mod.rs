@@ -201,6 +201,12 @@ pub struct Behavior {
     /// Height animations whose last step is in `frame_positions`, with the rolled state they
     /// end in: they land (`FrameHandle::land`) once the batch is applied.
     pub frame_landings: std::cell::RefCell<Vec<(HWND, Option<bool>)>>,
+    /// A rolled fence expanded under the pointer: the next rolled fence the pointer comes to
+    /// waits `TAB_HOVER_NEXT_MS` only (as the tabs of a strip do after a hover switch).
+    pub roll_quick: std::cell::Cell<bool>,
+    /// When the pointer left the title of a rolled or hover-expanded fence while `roll_quick`
+    /// (`TAB_HOVER_NEXT_KEEP` later the full wait is back).
+    pub roll_title_left: std::cell::Cell<Option<Instant>>,
 }
 
 /// A fence window the push pass moved down (or up, out of the way of a fence that expands
@@ -252,6 +258,43 @@ impl Behavior {
     /// the tab under a resting pointer is switched to.
     pub fn hover_open_ms(&self) -> u32 {
         self.hover_speed.get().delay_ms(Tooltip::hover_delay_ms())
+    }
+
+    /// Keeps the short wait of rolled fences while the pointer is on the title of a rolled or
+    /// hover-expanded fence (`on_title`) and for `TAB_HOVER_NEXT_KEEP` after it left one.
+    pub fn note_rolled_title_pointer(&self, on_title: bool) {
+        if !self.roll_quick.get() {
+            return;
+        }
+        match (on_title, self.roll_title_left.get()) {
+            (true, Some(left)) => {
+                self.roll_title_left.set(None);
+                if left.elapsed() > TAB_HOVER_NEXT_KEEP {
+                    tracing::debug!(
+                        "hover expand: off the rolled titles too long, the full wait again"
+                    );
+                    self.roll_quick.set(false);
+                }
+            }
+            (false, None) => self.roll_title_left.set(Some(Instant::now())),
+            _ => {}
+        }
+    }
+
+    /// The wait before the rolled fence the pointer came to expands: the hover delay of
+    /// 「展开快慢」, or the short wait once a hover has expanded a rolled fence.
+    pub fn peek_open_wait_ms(&self) -> u32 {
+        self.note_rolled_title_pointer(true);
+        let quick = self.roll_quick.get();
+        let ms = tab_hover_wait_ms(self.hover_open_ms(), quick);
+        tracing::debug!(ms, quick, "hover expand armed");
+        ms
+    }
+
+    /// A rolled fence expanded under the pointer: the next ones wait the short time.
+    pub fn rolled_fence_hover_expanded(&self) {
+        self.roll_quick.set(true);
+        self.roll_title_left.set(None);
     }
 
     /// Inside the app's frame: notes `pos` for the frame's batch and returns true. A second

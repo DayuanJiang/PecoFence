@@ -964,3 +964,258 @@ if ($Part -eq 'ACT2') { PartACT2 }
 if ($Part -eq 'WIN') { PartWIN }
 # What an interrupted run of this file left on the desktop and in the Recycle Bin.
 if ($Part -eq 'CLEAN') { Case 'cleanup'; LtClean; LtBinClean; Check 'the test files are gone from the desktop and the Recycle Bin' (@(Get-ChildItem "$PfDesk\L4 *" -ErrorAction SilentlyContinue).Count -eq 0 -and (BinNames) -notmatch '(^|, )L4 ') "bin: $(BinNames)" }
+
+# ---------------------------------------------------------------------------------------------
+# Second round. SRCH: the Peek's search box at the first letter, with the app's own log times.
+# ROLL: a row of rolled fences under the pointer. MORE: what the first round did not measure.
+function LogLines($pos, $utc, $regex) { return ((LogRel $pos $utc ('^(?!.*\] live ).*(' + $regex + ')')) -join ' ; ') }
+# The ms after the input of the first log line matching $regex in LogLines' text (-1: none).
+function LogAt($text, $regex) { foreach ($l in ($text -split ' ; ')) { if ($l -match "^\+(-?\d+) .*($regex)") { return [int]$Matches[1] } }; return -1 }
+function PeekOff() { [G]::Press(0x1B); Start-Sleep -Milliseconds 300; [G]::Press(0x1B); Start-Sleep -Milliseconds 600; if (([W]::Tops('PecoFence.PeekDimmer')).Count -gt 0) { PeekKey; Start-Sleep -Milliseconds 600 } }
+
+function PartSRCH {
+  trap { PfTrap $_; continue }
+  Case 'SRCH setup'
+  [Lat]::Tol = 1
+  CloseWindows
+  $script:AnimWas = [Anim]::Get(); [Anim]::Set($true)
+  LtClean
+  PfStart -Script @('sleep 3600000')
+  Start-Sleep -Seconds 2
+  ClearFences
+  $links = L4Links 12
+  $TI = 'L4 图标'
+  Pf fence create --title $TI --rect '300,160,640,330' | Out-Null
+  WaitL4 12
+  Pf item move @links --to $TI | Out-Null
+  Start-Sleep -Seconds 2
+  ParkMouse 1300 860
+  # Where the box comes (and the first search of a run, whose fonts are cold).
+  PeekKey; Start-Sleep -Milliseconds 900
+  [G]::Type('l'); Start-Sleep -Milliseconds 1200
+  $sb = [G]::FindWindowW('PecoFence.PeekSearch', [NullString]::Value)
+  $br = Rect $sb; Log "search box $sb at $($br.L),$($br.T),$($br.R),$($br.B)"
+  PeekOff
+  Check 'SRCH the search box opened' ($br.R -gt $br.L) "box $($br.L),$($br.T),$($br.R),$($br.B)"
+
+  Case 'SRCH the first letter typed in a Peek'
+  $drawn = @(); $shows = @(); $notes = @()
+  foreach ($k in 1..7) {
+    PeekKey; Start-Sleep -Milliseconds 900
+    [Lat]::Region($br.L, $br.T, [math]::Min(700, $br.R - $br.L), 320)
+    # The key is sent a little after a screen refresh, at another point of the refresh each run.
+    Start-Sleep -Milliseconds (4 * $k)
+    $pos = LogPos
+    $r = LatWatch 800 $null { [G]::Type('l') }
+    $m = After $r 0
+    Add1 'srch1' $m
+    Start-Sleep -Milliseconds 200
+    $t = LogLines $pos $r.utc 'peek key kept|search box|search list laid out|slow command'
+    $drawn += (LogAt $t 'drawn once'); $shows += (LogAt $t 'search box: shows')
+    if ($k -le 2) { $notes += $t }
+    $r = LatWatch 600 $null { [G]::Type('4') }
+    Add1 'srch2' (After $r 0)
+    PeekOff
+  }
+  foreach ($k in 1..3) {
+    PeekKey; Start-Sleep -Milliseconds 900
+    [Lat]::Region(312, 210, 596, 200)
+    $r = LatWatch 600 $null { [G]::Type('l') }
+    Add1 'srchf' (After $r 0)
+    PeekOff
+  }
+  Row 'the first letter typed in a Peek (matches marked in the fence)' 'Peek open' 'srchf'
+  Row 'the first letter typed in a Peek (search box, results)' 'Peek open' 'srch1' "log: box drawn at +$($drawn -join ' ') ms, first visible alpha at +$($shows -join ' ') ms | $($notes[0])"
+  Row 'the second letter typed in a Peek (results)' 'Peek open' 'srch2'
+  $f = @($script:Ms['srch1'] | ForEach-Object { $_.first })
+  # A new window is on screen two refreshes after the key on these boxes (0.3.3: 63 to 65 ms; its
+  # 34 ms are the marks in the fence its box covered). With the fade started by a timer it was three.
+  Check 'SRCH the search box is on screen two refreshes after the first letter, as in 0.3.3 (75 ms at most, 6 of 7 runs)' (@($f | Where-Object { $_ -ge 0 -and $_ -le 75 }).Count -ge 6) "first: $($f -join ' ') ms; the log has the box drawn at +$($drawn -join ' ') ms and visible at +$($shows -join ' ') ms"
+  LtEnd
+}
+
+if ($Part -eq 'SRCH') { PartSRCH }
+
+# Four rolled fences side by side: 0..3. The point on a title, the region below it.
+$RlX = 200, 520, 840, 1160
+function RlTitle($k) { return @(($RlX[$k] + 120), 218) }
+function RlRegion($k) { [Lat]::Region($RlX[$k] + 20, 244, 200, 190) }
+function RlSetup() {
+  [Lat]::Tol = 1
+  CloseWindows
+  $script:AnimWas = [Anim]::Get(); [Anim]::Set($true)
+  LtClean
+  PfStart -Script @('sleep 3600000')
+  Start-Sleep -Seconds 2
+  ClearFences
+  Pf settings set rollUp.hoverSpeed normal | Out-Null
+  $links = L4Links 12
+  WaitL4 12
+  foreach ($k in 0..3) {
+    $t = "L4 收起 $($k + 1)"
+    Pf fence create --title $t --rect "$($RlX[$k]),200,300,240" | Out-Null
+    $a = @($links[(3 * $k)..(3 * $k + 2)]); Pf item move @a --to $t | Out-Null
+  }
+  Start-Sleep -Seconds 2
+  foreach ($k in 0..3) { $t = "L4 收起 $($k + 1)"; Pf fence roll $t | Out-Null }
+  ParkMouse 1300 860; Start-Sleep -Milliseconds 1500
+}
+# The pointer jumps onto the title of fence $k; the watch of the region below that title.
+function RlHover($k, $ms = 1000) {
+  RlRegion $k
+  $p = RlTitle $k
+  $pos = LogPos
+  $r = LatWatch $ms @(0, $p[0], $p[1])
+  $m = After $r 0
+  Start-Sleep -Milliseconds 150
+  $m.log = LogLines $pos $r.utc 'hover expand'
+  Log "hover rolled fence ${k}: first=$($m.first) done=$($m.done) | $($m.log)"
+  return $m
+}
+function RlRest() { ParkMouse 1300 860; Start-Sleep -Milliseconds 1500 }
+
+function PartROLL {
+  trap { PfTrap $_; continue }
+  Case 'ROLL setup: four rolled fences in a row'
+  RlSetup
+  $rolled = @(0..3 | ForEach-Object { (FenceGet "L4 收起 $($_ + 1)").rolledUp }) -join ' '
+  Check 'ROLL four rolled fences' ($rolled -eq 'True True True True') "rolled: $rolled"
+
+  Case 'ROLL the first rolled fence, and the next one after it'
+  $log = ''
+  foreach ($k in 1..5) {
+    RlRest
+    $a = (2 * $k) % 4; $b = ($a + 1) % 4
+    $m = RlHover $a; Add1 'roll1' $m
+    Start-Sleep -Milliseconds 200
+    $m = RlHover $b; Add1 'roll2' $m
+    if ($k -eq 1) { $log = $m.log }
+  }
+  Row 'a rolled fence under the pointer (expands)' 'the first one, 展开快慢 默认' 'roll1'
+  Row 'the next rolled fence after one expanded under the pointer' 'four rolled fences in a row' 'roll2' $log
+  $f = @($script:Ms['roll2'] | ForEach-Object { $_.first })
+  Check 'ROLL after a rolled fence expanded under the pointer, the next one starts to expand within 200 ms (默认)' ((Worst $f) -le 200 -and (Med $f) -gt 0) "first: $($f -join ' ') ms"
+
+  Case 'ROLL what ends the short wait, and what must not change'
+  RlRest
+  $null = RlHover 0
+  RlRest
+  $m = RlHover 1
+  Check 'ROLL after 1.8 s off the rolled titles the next one waits the full time again' ($m.first -ge 360) "first=$($m.first)"
+  RlRest
+  $null = RlHover 0
+  # A click in the fence that has just expanded (a press on the bare desktop is not seen by the fences).
+  [G]::Click($RlX[0] + 200, 400); Start-Sleep -Milliseconds 200
+  $m = RlHover 2
+  Check 'ROLL after a click in a fence the next rolled fence waits the full time again' ($m.first -ge 360) "first=$($m.first)"
+  RlRest
+  # From outside, across a rolled title in 60 ms: nothing expands.
+  RlRegion 1
+  $p = RlTitle 1
+  $r = LatWatch 900 @(0, $p[0], 150, 20, $p[0], 190, 40, $p[0], 218, 100, $p[0], 260, 120, $p[0], 400, 140, 1300, 860)
+  $m = After $r 0
+  Check 'ROLL a pointer that crosses a rolled title in 60 ms expands nothing' ($m.first -lt 0) "first=$($m.first)"
+  # The roll-up after the pointer left keeps its wait.
+  RlRest
+  $null = RlHover 0
+  RlRegion 0
+  $r = LatWatch 1300 @(0, 1300, 860)
+  # From the first change of 1000 pixels: a few pixels of the title's hover fade lie in the region.
+  $m = After $r 0 1000
+  LatRow 'the pointer leaves an expanded fence (rolls up)' 'after a hover expand' $m.first $m.done $r.per ''
+  Check 'ROLL the fence rolls up 400 ms after the pointer left, as before' ($m.first -ge 360 -and $m.first -le 560) "first=$($m.first) done=$($m.done)"
+
+  if ($Rec) {
+    Case "ROLL sweep recorded ($Rec)"
+    . C:\pf\kit\rec.ps1
+    RlRest
+    $moves = New-Object 'Collections.Generic.List[int]'
+    $t = 0
+    foreach ($k in 0..3) {
+      $p = RlTitle $k
+      if ($k -gt 0) { $q = RlTitle ($k - 1); foreach ($s in 1..6) { $moves.Add($t + 10 * $s); $moves.Add([int]($q[0] + ($p[0] - $q[0]) * $s / 6)); $moves.Add(218) }; $t += 60 }
+      else { $moves.Add(0); $moves.Add($p[0]); $moves.Add($p[1]) }
+      $t += $(if ($k -eq 0) { 800 } else { 300 })
+    }
+    $t += 700
+    RecStart "ROLL-$Rec" -X 180 -Y 170 -W 1300 -H 290 -Fps 30
+    RecMark '鼠标先停在第一个收起的栅栏上，再依次移到后面三个上，每个停 0.3 秒'
+    Start-Sleep -Milliseconds 300
+    [Lat]::Play($moves.ToArray(), $t)
+    RecMark '停下'
+    Start-Sleep -Milliseconds 500
+    RecStop
+    Check "ROLL recorded the sweep ($Rec)" $true ''
+  }
+  LtEnd
+}
+
+# FILL: what the first draws after a hover and after a click show of the fill (the app's log).
+function FillLines($pos, $utc) {
+  $out = @()
+  foreach ($l in @(LogRel $pos $utc 'fill drawn')) {
+    if ($l -match '^\+(-?\d+) fill drawn hover=([\d.]+) selection=([\d.]+) next_refresh=Some\(\(([\d.]+), ([\d.]+)\)\)') {
+      $out += , @([int]$Matches[1], [double]$Matches[2], [double]$Matches[3], [double]$Matches[4], [double]$Matches[5])
+    }
+  }
+  return , $out
+}
+# From the fill lines of one input: the first draw (ms, level), the first draw with a visible
+# fill (ms) and the refresh that shows it (ms after the input). $col: 1 hover, 2 selection.
+function FillSum($lines, $col, $from = 0) {
+  $o = @{ first = -1; level = -1; visible = -1; onscreen = -1; refresh = 0 }
+  foreach ($l in $lines) {
+    if ($l[0] -lt $from) { continue }
+    if ($o.first -lt 0) { $o.first = $l[0]; $o.level = $l[$col] }
+    if ($l[$col] -gt 0.001) { $o.visible = $l[0]; $o.onscreen = [int]($l[0] + $l[3]); $o.refresh = $l[4]; break }
+  }
+  return $o
+}
+function PartFILL {
+  trap { PfTrap $_; continue }
+  Case 'FILL setup'
+  [Lat]::Tol = 1
+  CloseWindows
+  $script:AnimWas = [Anim]::Get(); [Anim]::Set($true)
+  LtClean
+  PfStart -Script @('sleep 3600000')
+  Start-Sleep -Seconds 2
+  ClearFences
+  $links = L4Links 12
+  $TI = 'L4 图标'
+  Pf fence create --title $TI --rect '300,160,640,330' | Out-Null
+  WaitL4 12
+  Pf item move @links --to $TI | Out-Null
+  Start-Sleep -Seconds 2
+  Check 'FILL a fence with 12 icons' (@(PfJson item list --fence $TI | Where-Object { $_ -and $_.fileName }).Count -eq 12) ''
+
+  Case 'FILL the hover fill and the selection fill in the first draws after the input'
+  $hl = @(); $hv = @(); $hs = @(); $sl = @(); $sv = @(); $ss = @(); $hgrab = @(); $sgrab = @(); $refresh = 0
+  foreach ($k in 1..8) {
+    ParkMouse 1300 820; Start-Sleep -Milliseconds 500
+    $p = CellPt $TI $k; CellBox $p
+    Start-Sleep -Milliseconds (4 * $k)
+    $pos = LogPos
+    $r = LatWatch 300 @(0, $p[0], $p[1])
+    $hgrab += (After $r 0).first
+    Start-Sleep -Milliseconds 100
+    $s = FillSum (FillLines $pos $r.utc) 1
+    $hl += $s.level; $hv += $s.visible; $hs += $s.onscreen; if ($s.refresh) { $refresh = $s.refresh }
+    Start-Sleep -Milliseconds (3 * $k)
+    $pos = LogPos
+    $r = LatWatch 300 $null { MDown } { MUp } 40
+    $sgrab += (After $r 0).first
+    Start-Sleep -Milliseconds 100
+    $s = FillSum (FillLines $pos $r.utc) 2
+    $sl += $s.level; $sv += $s.visible; $ss += $s.onscreen
+    $null = DeskClick 1300 780
+  }
+  LatRow 'hover fill: the first draw after the pointer came, the first draw with a visible fill, the refresh that shows it' 'app log, 8 runs' "$(Med $hv) (worst $(Worst $hv))" "$(Med $hs) (worst $(Worst $hs))" $refresh "level of the first draw: $($hl -join ' ') | first visible draw at +$($hv -join ' ') ms | on screen at +$($hs -join ' ') ms | screen grabs: $($hgrab -join ' ')"
+  LatRow 'selection fill: the first draw after the press, the first draw with a visible fill, the refresh that shows it' 'app log, 8 runs' "$(Med $sv) (worst $(Worst $sv))" "$(Med $ss) (worst $(Worst $ss))" $refresh "level of the first draw: $($sl -join ' ') | first visible draw at +$($sv -join ' ') ms | on screen at +$($ss -join ' ') ms | screen grabs: $($sgrab -join ' ')"
+  Check 'FILL the first draw after the pointer came shows the hover fill' (@($hl | Where-Object { $_ -gt 0.001 }).Count -ge 7) "level of the first draw: $($hl -join ' '); first visible draw at +$($hv -join ' ') ms"
+  Check 'FILL the first draw after the press shows the selection fill' (@($sl | Where-Object { $_ -gt 0.001 }).Count -ge 7) "level of the first draw: $($sl -join ' '); first visible draw at +$($sv -join ' ') ms"
+  LtEnd
+}
+
+if ($Part -eq 'ROLL') { PartROLL }
+if ($Part -eq 'FILL') { PartFILL }

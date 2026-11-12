@@ -269,8 +269,9 @@ pub(super) fn on_ncmousemove(
             && !menu_open.get()
             && !peek_armed.replace(true)
         {
-            window::set_timer(hwnd, TIMER_PEEK_OPEN, behavior.hover_open_ms());
+            window::set_timer(hwnd, TIMER_PEEK_OPEN, behavior.peek_open_wait_ms());
         }
+        behavior.note_rolled_title_pointer(v.rolled_up || v.peeking);
         if v.peeking {
             window::kill_timer(hwnd, TIMER_PEEK_CLOSE);
         }
@@ -334,6 +335,9 @@ pub(super) fn on_ncmouseleave(
         // message can come after the WM_MOUSEMOVE there, which already counted the row as
         // hovered, and clearing it hid the chevron until the pointer moved again.
         let c = window::screen_to_client(hwnd, pt);
+        if (v.rolled_up || v.peeking) && !(inside && v.title_row_at(c.x, c.y)) {
+            h.behavior.note_rolled_title_pointer(false);
+        }
         if v.title_hover && !(inside && v.title_row_at(c.x, c.y)) {
             v.title_hover = false;
             let _ = v.redraw_chrome_only();
@@ -363,6 +367,7 @@ pub(super) fn on_nclbuttondown(
     // loop (SC_MOVE caption press or SC_SIZE edge press alike).
     window::kill_timer(hwnd, TIMER_PEEK_OPEN);
     peek_armed.set(false);
+    behavior.roll_quick.set(false);
     if let Some(v) = view.borrow_mut().as_mut() {
         v.suppress_dblclk = false;
         v.hide_tip();
@@ -581,6 +586,7 @@ pub(super) fn on_ncrbuttondown(
     _lparam: isize,
 ) -> Option<isize> {
     h.ncrbutton_press.set(true);
+    h.behavior.roll_quick.set(false);
     None
 }
 

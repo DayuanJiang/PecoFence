@@ -81,6 +81,9 @@ pub(super) fn on_mouseleave(
     if let Some(v) = guard.as_mut() {
         if !inside {
             v.set_mouse_inside(false);
+            if v.rolled_up || v.peeking {
+                h.behavior.note_rolled_title_pointer(false);
+            }
             v.lift_peek_block("the pointer left the fence");
             // The pointer went away from the point of its last move: a move back to that very
             // point is a move again and arms the tip. (A menu that opened under a resting
@@ -166,8 +169,10 @@ pub(super) fn on_lbuttondown(
         v.cancel_pending_rename();
         v.suppress_dblclk = false;
         v.hide_tip();
-        // A press ends the short wait of hover switches that follow each other.
+        // A press ends the short wait of hover switches that follow each other, and of rolled
+        // fences that expand one after the other.
         v.tab_hover_quick = false;
+        h.behavior.roll_quick.set(false);
         // A press where the fence would resize without its lock (an edge band inside the
         // plate). It is remembered for the lock glyph's pulse only further down, once nothing
         // else has taken the press: the scrollbar, a tab, a header, a tool's row and an icon
@@ -841,6 +846,7 @@ pub(super) fn on_rbuttondown(
         if let Some(v) = view.borrow_mut().as_mut() {
             v.rbutton_press = Some((msg::lo_i16(lparam), msg::hi_i16(lparam)));
             v.tab_hover_quick = false;
+            h.behavior.roll_quick.set(false);
         }
         window::set_capture(hwnd);
         return Some(0);
