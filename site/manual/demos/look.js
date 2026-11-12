@@ -1,6 +1,6 @@
 // 4.1 主题、透明度和颜色: 常规 → 主题风格 Liquid Glass (all fences switch), 栅栏菜单 → 栅栏选项…
-// (settings jump to 栅栏 with the fence selected), 色调 绿 → 只给标题栏上色, 标题字号 大,
-// 不透明度 全透明 (bare icons and title; the default glass fades in under the pointer).
+// (settings jump to 栅栏 with the fence selected), 色调 绿 → 只给标题栏上色, wheel down to the end of
+// 外观, 标题字号 大, 不透明度 全透明 (bare icons and title; the default glass fades in under the pointer).
 (() => {
     'use strict';
     const { E, ramp, lerp, pathAt, spans, spanFade, inside, el, put, show, text, local, icon, fence, menu, drawMenu,
@@ -13,9 +13,10 @@
 
     // ---- timeline ----
     const THEME_AT = 1.05;                          // Liquid Glass tile
-    const RCLICK = 2.75, MENU = { x: 598, y: 78, a: 2.8, b: 3.5 };
+    const RCLICK = 2.75, MENU = { x: 598, y: 72, a: 2.8, b: 3.5 };
     const OPTIONS_AT = 3.5;                         // 栅栏选项… → 栅栏 page
     const TINT_AT = 4.55, TOP_AT = 5.45;            // 色调 绿, 只给标题栏上色
+    const SCROLL = [6.3, 6.7], SCROLL_PX = 80;      // wheel: 标题字号 comes into view, next to the pointer
     const SIZE_CLICK = 7.0, SIZE_AT = 7.6;          // 标题字号 → 大
     const OPA_CLICK = 8.3, OPA_AT = 8.85;           // 不透明度 → 全透明
 
@@ -61,6 +62,7 @@
         const count = el('span', 'set-s', picker.n, T('{0} 个栅栏').replace('{0}', '4'));
         Object.assign(count.style, { right: '10px', top: '5px', color: '#8a8a8a' });
         SM.drawInput(SM.input(SM.card(f, { ic: '\uE8AC', t: '栅栏名称', textW: 160 }), '', 140), '工作', false, 0);
+        SM.drawToggle(SM.toggle(SM.card(f, { ic: '\uE745', t: '自动高度', s: '高度跟随内容行数，内容增减时平滑过渡', textW: 200 })), false);
         SM.h3(f, '外观');
         r.opa = SM.select(SM.card(f, { ic: '\uE744', t: '不透明度', s: '默认：透出桌面。更厚实：多一层底色。全透明：鼠标悬停时才显示玻璃。', textW: 190 }), '默认', 100);
         const tint = SM.card(f, { ic: '\uE790', t: '色调', s: '给玻璃染上一层颜色，标签页的色条随之变化', textW: 118 });
@@ -73,11 +75,13 @@
         r.topTog = SM.toggle(r.topCard);
         SM.select(SM.card(f, { ic: '\uE8D2', t: '标题颜色', s: '要跟随色调，请先选一种色调', textW: 190 }), '跟随主题', 100);
         r.size = SM.select(SM.card(f, { ic: '\uE8E9', t: '标题字号', s: '栅栏标题和标签页文字的大小', textW: 190 }), '标准', 100);
+        SM.select(SM.card(f, { ic: '\uE737', t: '显示标题栏', s: '鼠标悬停时显示：平时收起标题行，指针移到栅栏上才出现', textW: f.cardW - 34 - 120 - 24 }),
+            '跟随常规设置', 120);
 
         // the fence menu (menus.rs show_fence_menu; 标签页 is there because other fences exist)
         r.menu = menu(S, ['收起', '重命名…', '-', { t: '视图', sub: 1 }, { t: '排序方式', sub: 1 }, { t: '新建', sub: 1 },
-            { t: '粘贴', key: 'Ctrl+V' }, { t: '标签页', sub: 1 }, '-', '锁定位置和大小', '栅栏选项…', '删除栅栏', '-',
-            { t: '添加到桌面', sub: 1 }], 196);
+            { t: '粘贴', key: 'Ctrl+V', dis: 1 }, { t: '标签页', sub: 1 }, '-', '适应内容大小', '锁定位置和大小', '栅栏选项…',
+            '删除栅栏', '-', { t: '添加到桌面', sub: 1 }], 196);
         r.menu.n.style.zIndex = 3;
         r.opaPop = SM.popup(S, OPACITY, 100);
         r.sizePop = SM.popup(S, SIZES, 100);
@@ -94,12 +98,14 @@
         page: t >= OPTIONS_AT + .05 ? 'fences' : 'general',
         tint: t >= TINT_AT + .02,
         top: t >= TOP_AT + .02,
+        scroll: SCROLL_PX * ramp(t, SCROLL[0], SCROLL[1], E.out),
         size: t >= SIZE_AT + .02 ? '大' : '标准',
         opacity: t >= OPA_AT + .02 ? '全透明' : '默认',
     });
 
     function layout(r, s) {
         r.topCard.on = s.tint;
+        r.fen.scroll = s.scroll;
         SM.stack(r.gen);
         SM.stack(r.fen);
         show(r.dot, s.tint);
@@ -130,11 +136,11 @@
         PATH = [
             [0, 420, 380], [0.3, 420, 380],
             [0.9, tile.x, tile.y], [1.4, tile.x, tile.y],           // Liquid Glass
-            [1.9, tile.x, tile.y], [2.6, 596, 76], [2.85, 596, 76], // right-click the fence title
+            [1.9, tile.x, tile.y], [2.6, 596, 70], [2.85, 596, 70], // right-click the fence title
             [3.3, opt.x, opt.y], [3.6, opt.x, opt.y],               // 栅栏选项…
             [4.4, green.x, green.y], [4.7, green.x, green.y],       // 色调 绿
-            [5.3, tog.x, tog.y], [6.4, tog.x, tog.y],               // 只给标题栏上色
-            [6.9, size.x, size.y], [7.05, size.x, size.y],          // 标题字号
+            [5.3, tog.x, tog.y], [6.72, tog.x, tog.y],              // 只给标题栏上色, then wheel down
+            [6.94, size.x, size.y], [7.05, size.x, size.y],         // 标题字号
             [7.45, big.x, big.y], [7.7, big.x, big.y],
             [8.2, opa.x, opa.y], [8.35, opa.x, opa.y],              // 不透明度
             [8.7, bare.x, bare.y], [9.0, bare.x, bare.y],
@@ -143,7 +149,8 @@
         ];
         CLICKS = [{ t: THEME_AT }, { t: RCLICK, right: true }, { t: OPTIONS_AT }, { t: TINT_AT }, { t: TOP_AT },
             { t: SIZE_CLICK }, { t: SIZE_AT }, { t: OPA_CLICK }, { t: OPA_AT }];
-        CHIPS = [[2.45, 2.95, '右键标题栏', 548, 36, 'abs'], [9.75, 10.8, '移上去']];
+        CHIPS = [[2.45, 2.95, '右键标题栏', 548, 36, 'abs'], [SCROLL[0], SCROLL[1] + .1, '向下滚动', -96, 14],
+            [9.75, 10.8, '移上去']];
         layout(r, st(0));
     }
 
