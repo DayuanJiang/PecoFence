@@ -61,7 +61,8 @@ fn send_to_key_fence(message: u32, wparam: usize, lparam: isize) -> bool {
 }
 
 /// Focus went from a Peek window to `other`. A fence (click inside its content), another
-/// dimmer, the rename popup or the search box keeps the peek; anything else ends it.
+/// dimmer, the rename popup, the note editor's popup (a click into a note to write in it) or
+/// the search box keeps the peek; anything else ends it.
 pub fn keeps_peek(other: HWND) -> bool {
     if other.0.is_null() {
         return true;
@@ -70,6 +71,7 @@ pub fn keeps_peek(other: HWND) -> bool {
     cls == anchor::FENCE_CLASS
         || cls == PEEK_CLASS
         || cls == "PecoFence.Rename"
+        || cls == crate::note_edit::NOTE_EDIT_CLASS
         || cls == crate::peek_search::SEARCH_CLASS
 }
 

@@ -19,7 +19,8 @@ use pecofence_platform::{HWND, RECT, edit, msg};
 use pecofence_render::ThemeMode;
 use std::cell::{Cell, RefCell};
 
-const NOTE_EDIT_CLASS: &str = "PecoFence.NoteEdit";
+/// The class of the editor's invisible popup, which has the keyboard while a note is edited.
+pub const NOTE_EDIT_CLASS: &str = "PecoFence.NoteEdit";
 /// The control's side margins in DIPs: the note's own text inset, so the control wraps its
 /// lines about where the note does (the input method's window keeps to the control's width).
 const MARGIN_DIP: f32 = pecofence_render::fence_chrome::NOTE_PAD_X;
