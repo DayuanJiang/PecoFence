@@ -655,6 +655,38 @@ fn a_content_draw_looks_at_the_two_bands_only_whatever_the_item_count() {
     assert!(near(8000, 96_000.0) < 60, "{} items", near(8000, 96_000.0));
 }
 
+/// A list change moves the icons within one viewport of the visible part (at the offset or
+/// where a running glide ends); the ones further away take their places at once.
+#[test]
+fn a_list_change_moves_only_the_icons_near_the_viewport() {
+    // A viewport of 300 DIPs scrolled to 1000, cells 96 tall.
+    let at = |y: f32| near_viewport(y, 96.0, 300.0, [1000.0, 1000.0]);
+    assert!(at(1000.0), "in view");
+    assert!(at(700.0 - 95.0), "ends inside the viewport above");
+    assert!(!at(700.0 - 96.0), "ends where the viewport above begins");
+    assert!(at(1599.0), "starts inside the viewport below");
+    assert!(!at(1600.0), "starts where the viewport below ends");
+    assert!(!at(0.0) && !at(50_000.0));
+    // End was pressed: the glide ends at 50 000, and the icons there move too.
+    let gliding = |y: f32| near_viewport(y, 96.0, 300.0, [1000.0, 50_000.0]);
+    assert!(gliding(1000.0) && gliding(50_100.0));
+    assert!(!gliding(25_000.0));
+    // How many glides a new first file starts in a grid of 4 columns: the same in a folder of
+    // 8000 files as in one of 80 (every icon moves one cell on).
+    let moving = |count: usize| {
+        let grid = ItemLayout::Grid(Grid::new(GridMetrics::for_icon_size(48, 2), 360.0, count));
+        (0..count - 1)
+            .filter(|&i| {
+                let (old, new) = (grid.cell(i), grid.cell(i + 1));
+                near_viewport(old.y, old.h, 300.0, [0.0, 0.0])
+                    || near_viewport(new.y, new.h, 300.0, [0.0, 0.0])
+            })
+            .count()
+    };
+    assert_eq!(moving(8000), moving(80));
+    assert!(moving(8000) < 40, "{} glides", moving(8000));
+}
+
 /// Content shift per 60 Hz frame for a wheel turned `n` notches `gap_ms` apart (96 DIP per
 /// notch, the 250 ms wheel cap), until the glide has ended. `carry` false restarts the
 /// decelerate curve at every notch, as before `ScrollGlide::notch`.

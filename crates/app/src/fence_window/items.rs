@@ -73,6 +73,15 @@ pub(super) fn cell_key(x: f32, y: f32) -> (i32, i32) {
     (x.round() as i32, y.round() as i32)
 }
 
+/// Whether a cell at `y`, `h` tall (content DIPs), lies within one viewport of the visible
+/// part, at the scroll offset or where a running glide of it ends (`offsets`): what a list
+/// change moves. A cell further away is not seen before its glide would have ended.
+pub(super) fn near_viewport(y: f32, h: f32, view_h: f32, offsets: [f32; 2]) -> bool {
+    offsets
+        .iter()
+        .any(|at| y + h > at - view_h && y < at + 2.0 * view_h)
+}
+
 /// Cell origin of an icon whose centre is at (`cx`, `cy`): where a dropped icon starts, under
 /// its drag picture.
 pub(super) fn landing_origin(cx: f32, cy: f32, cell: &CellRect) -> (f32, f32) {
@@ -570,6 +579,14 @@ impl FenceViewState {
                 }
             }
         }
+        // Only what can be seen moving gets a motion: the icons that stand, or will stand,
+        // within one viewport of the visible part (as `regroup` and a column change take it).
+        // The others take their places at once. One new file at the top of a folder of 8000
+        // used to start 8000 glides, and every frame of them looked at all 8000 icons.
+        let (_, view_h) = self.scroll_extent();
+        let offsets = [self.scroll_y, self.scroll_target()];
+        let near = |y: f32, h: f32| near_viewport(y, h, view_h, offsets);
+        let mut far = 0usize;
         let mut motion: HashMap<ItemId, ItemMotion> = HashMap::new();
         let (mut landed, mut waited) = (0usize, 0usize);
         let wait_for_icon = self.motion.enabled();
@@ -611,7 +628,11 @@ impl FenceViewState {
                     let (fx, fy) =
                         prev.map_or((o.x, o.y), |m| (m.x.value_at(now), m.y.value_at(now)));
                     let alpha = prev.map_or(Tween::at(1.0, now), |m| m.alpha);
-                    if (fx - c.x).abs() > 0.5 || (fy - c.y).abs() > 0.5 || !alpha.is_done(now) {
+                    let moves =
+                        (fx - c.x).abs() > 0.5 || (fy - c.y).abs() > 0.5 || !alpha.is_done(now);
+                    if moves && !(near(fy, c.h) || near(c.y, c.h)) {
+                        far += 1;
+                    } else if moves {
                         motion.insert(
                             n.id,
                             ItemMotion {
@@ -634,6 +655,7 @@ impl FenceViewState {
                         );
                     }
                 }
+                None if !near(c.y, c.h) => far += 1,
                 None => {
                     // Its cell is still being left by an icon sliding away: the fade-in starts
                     // 83 ms later, so the two names do not lie on top of each other (WinUI
@@ -667,6 +689,13 @@ impl FenceViewState {
                 "layout motion: icons arriving from a drop, new icons fading in 83 ms later"
             );
         }
+        if far > 0 {
+            tracing::debug!(
+                moving = motion.len(),
+                far,
+                "layout motion: the icons out of sight take their places at once"
+            );
+        }
         // Survivors took their motions out of the old map: what is left belongs to the
         // removed items (a glide or fade-in still in flight when the item vanished).
         let stale = std::mem::replace(&mut self.item_motion, motion);
@@ -681,7 +710,8 @@ impl FenceViewState {
             let m = stale.get(&id);
             let (x, y) = m.map_or((c.x, c.y), |m| (m.x.value_at(now), m.y.value_at(now)));
             let a0 = m.map_or(1.0, |m| m.alpha.value_at(now)).clamp(0.0, 1.0);
-            if a0 <= 0.01 {
+            // One that left out of sight has no fade to show.
+            if a0 <= 0.01 || !near(y, c.h) {
                 continue;
             }
             self.leaving.push(LeavingItem {
