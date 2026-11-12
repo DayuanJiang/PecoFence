@@ -337,6 +337,19 @@ pub fn links(text: &str) -> Vec<(usize, usize)> {
 /// counted as `\n`).
 pub type EditState = (String, usize, usize);
 
+/// `text` cut in two at `units` UTF-16 units; None when that is past its end or inside a
+/// character.
+fn split_at_units(text: &str, units: usize) -> Option<(&str, &str)> {
+    let mut seen = 0;
+    for (i, c) in text.char_indices() {
+        if seen >= units {
+            return (seen == units).then(|| text.split_at(i));
+        }
+        seen += c.len_utf16();
+    }
+    (seen == units).then_some((text, ""))
+}
+
 /// The undo history of one editing session of a note: the states Ctrl+Z goes back through
 /// and Ctrl+Y forward again. A run of typing (or of deleting) is one step; a space typed after
 /// a word starts the next step, and so does everything else: a paste, a cut, a check box
@@ -368,20 +381,27 @@ impl EditHistory {
     pub fn record(&mut self, before: &EditState, text: &str) {
         let (old, new) = (before.0.chars().count(), text.chars().count());
         let bare_caret = before.1 == before.2;
-        let run = if bare_caret && new == old + 1 {
-            // The one character that went in: where the two texts first differ.
-            let typed = text
-                .chars()
-                .zip(before.0.chars().chain(std::iter::once('\0')))
-                .find(|(a, b)| a != b)
-                .map(|(a, _)| a);
-            Some(Run::Typing {
-                space: typed.is_some_and(char::is_whitespace),
-            })
-        } else if bare_caret && new + 1 == old {
-            Some(Run::Deleting)
-        } else {
-            None
+        // The text before and after the caret: typing puts one character between the two,
+        // Backspace takes the last one of the first, Delete the first one of the second. A
+        // change of that length anywhere else (a check box `[]` ticked to `[x]`) is a step of
+        // its own.
+        let at_caret = split_at_units(&before.0, before.1).filter(|_| bare_caret);
+        let run = match at_caret {
+            Some((head, tail)) if new == old + 1 => {
+                (text.starts_with(head) && text.ends_with(tail)).then(|| Run::Typing {
+                    space: text[head.len()..]
+                        .chars()
+                        .next()
+                        .is_some_and(char::is_whitespace),
+                })
+            }
+            Some((head, tail)) if new + 1 == old => {
+                let backspace =
+                    text.ends_with(tail) && head.starts_with(&text[..text.len() - tail.len()]);
+                let delete = text.starts_with(head) && tail.ends_with(&text[head.len()..]);
+                (backspace || delete).then_some(Run::Deleting)
+            }
+            _ => None,
         };
         let goes_on = match (self.run, run) {
             // A space after a word ends the step: the next word goes with its space.
@@ -515,6 +535,35 @@ mod tests {
         type_in(&mut history, &mut state, "x");
         assert_eq!(history.depth().1, 0);
         assert!(history.redo(state.clone()).is_none());
+    }
+
+    #[test]
+    fn a_check_box_ticked_is_a_step_of_its_own_also_when_the_text_grows_by_one() {
+        // `[]` ticked becomes `[x]`: one character more, as if typed. It was taken for the
+        // next letter of the word before it, and Ctrl+Z took the tick and the word back.
+        let mut history = EditHistory::default();
+        let mut state: EditState = ("[] mil".into(), 6, 6);
+        type_in(&mut history, &mut state, "k");
+        history.record(&state, "[x] milk");
+        let ticked: EditState = ("[x] milk".into(), 8, 8);
+        assert_eq!(
+            history.undo(ticked.clone()).map(|s| s.0).as_deref(),
+            Some("[] milk")
+        );
+        // Unticked again (one character fewer) after Backspace: a step of its own too.
+        let mut history = EditHistory::default();
+        history.record(&("[x] milk".into(), 8, 8), "[x] mil");
+        history.record(&("[x] mil".into(), 7, 7), "[] mil");
+        let now: EditState = ("[] mil".into(), 6, 6);
+        assert_eq!(history.undo(now).map(|s| s.0).as_deref(), Some("[x] mil"));
+        // Typing in the middle of a text, Backspace and Delete still make runs.
+        let mut history = EditHistory::default();
+        history.record(&("ab".into(), 1, 1), "axb");
+        history.record(&("axb".into(), 2, 2), "axyb");
+        history.record(&("axyb".into(), 3, 3), "axb");
+        history.record(&("axb".into(), 2, 2), "ab");
+        history.record(&("ab".into(), 1, 1), "a");
+        assert_eq!(history.depth(), (2, 0));
     }
 
     #[test]
