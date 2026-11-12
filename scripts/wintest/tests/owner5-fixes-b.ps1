@@ -399,6 +399,7 @@ public static class O5Th {
   Pf settings set language zh-CN | Out-Null
   CloseNotice | Out-Null
   Pf settings set tools.everything true | Out-Null
+  Pf settings set peek.doubleCtrl true | Out-Null
   Start-Sleep -Seconds 2
   # The time between the two log lines of an opening by double Ctrl: the box is asked for,
   # and its hint is set (the hint asks whether Everything runs).
