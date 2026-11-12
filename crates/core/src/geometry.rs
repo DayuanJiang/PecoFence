@@ -81,7 +81,10 @@ impl PxRect {
     }
 }
 
-/// Picks the anchor by which edges the fence is closest to.
+/// Picks the anchor by which edges the fence is closest to. A fence that reaches to within
+/// `EDGE_GAP_MAX_DIP` of both ends of an axis (a column as tall as the screen, a fence cut to
+/// fit) hangs from its nearer edge, the left or top one when they are equal: held by the
+/// middle it would float in the middle of a longer work area.
 fn pick_anchor(x: f32, y: f32, w: f32, h: f32, work_w: f32, work_h: f32) -> Anchor {
     let left = x;
     let right = work_w - (x + w);
@@ -89,14 +92,14 @@ fn pick_anchor(x: f32, y: f32, w: f32, h: f32, work_w: f32, work_h: f32) -> Anch
     let bottom = work_h - (y + h);
     let hcenter = (x + w / 2.0 - work_w / 2.0).abs();
     let vcenter = (y + h / 2.0 - work_h / 2.0).abs();
-    let h_side = if hcenter < left.min(right) * 0.5 {
+    let h_side = if hcenter < left.min(right) * 0.5 && left.min(right) > EDGE_GAP_MAX_DIP {
         0 // centre
     } else if left <= right {
         1
     } else {
         2
     };
-    let v_side = if vcenter < top.min(bottom) * 0.5 {
+    let v_side = if vcenter < top.min(bottom) * 0.5 && top.min(bottom) > EDGE_GAP_MAX_DIP {
         0
     } else if top <= bottom {
         1
@@ -468,6 +471,25 @@ mod tests {
         assert_eq!((r[0].top, r[0].right), (8, 1920 - 8));
     }
 
+    /// The first-run column with its tall third fence: cut to fit at 150 %, the group reaches
+    /// from 8 DIPs under the top to 8 above the taskbar. On the next, taller work area it hangs
+    /// from the top (held by the middle it stood 85 px down at 125 %).
+    #[test]
+    fn a_column_as_tall_as_the_work_area_hangs_from_the_top_on_a_taller_one() {
+        let at100 = work(96, 1600, 852);
+        let mut fences = vec![
+            fence_at(&at100, 1352, 8, 240, 150),
+            fence_at(&at100, 1352, 166, 240, 150),
+            fence_at(&at100, 1104, 8, 240, 822),
+        ];
+        let r = carry_to(&mut fences, &work(144, 1600, 828));
+        assert_eq!((r[0].top, r[2].top, r[2].bottom), (12, 12, 816));
+        let r = carry_to(&mut fences, &work(120, 1600, 840));
+        assert_eq!((r[0].top, r[1].top - r[0].bottom, r[2].top), (10, 10, 10));
+        let r = carry_to(&mut fences, &work(96, 1920, 1032));
+        assert_eq!((r[0].top, r[1].top - r[0].bottom, r[2].top), (8, 8, 8));
+    }
+
     /// Two fences side by side left of the middle: on a narrower work area the right one was
     /// placed by the middle and ended 101 DIPs from its neighbour one change later.
     #[test]
@@ -523,6 +545,10 @@ mod tests {
         let r = denormalize(&tall, &small);
         assert_eq!((r.top, r.bottom), (8, 664));
         assert_eq!(r.width(), 240);
+        // Saved there and shown on a taller screen next, it hangs from the top, not the middle.
+        let cut = normalize(r, &small);
+        assert_eq!(cut.anchor, Anchor::RightTop);
+        assert_eq!(denormalize(&cut, &work(96, 1920, 1032)).top, 8);
         // 150 %: 8 DIPs are 12 px.
         let r = denormalize(&tall, &work(144, 1600, 828));
         assert_eq!((r.top, r.bottom), (12, 816));
