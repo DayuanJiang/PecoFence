@@ -656,6 +656,7 @@
   "添加待办": "Ajouter une tâche",
   "时钟": "Horloge",
   "显示秒": "Afficher les secondes",
+  "不显示秒": "Masquer les secondes",
   "{0} · 正在运行…": "{0} · Exécution en cours…",
   "{0} 分钟": "{0} minutes",
   "{0} 小时": "{0} heures",

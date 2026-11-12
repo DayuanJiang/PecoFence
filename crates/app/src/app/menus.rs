@@ -1023,13 +1023,15 @@ impl App {
             )
             .icon(glyph::FOLDER_OPEN);
         } else if f.tool == Some(pecofence_core::FenceTool::Clock) {
-            menu.item(
-                CMD_FENCE_CLOCK_SECONDS,
-                pecofence_core::i18n::text("显示秒"),
-                self.state.config.settings.tools.clock_seconds,
-                false,
-            )
-            .icon(glyph::CLOCK);
+            // An entry with an icon shows no check mark: like 锁定位置和大小, it names what a
+            // click does now.
+            let label = if self.state.config.settings.tools.clock_seconds {
+                pecofence_core::i18n::text("不显示秒")
+            } else {
+                pecofence_core::i18n::text("显示秒")
+            };
+            menu.item(CMD_FENCE_CLOCK_SECONDS, label, false, false)
+                .icon(glyph::CLOCK);
         } else {
             let view_menu = PopupMenu::new();
             view_menu
