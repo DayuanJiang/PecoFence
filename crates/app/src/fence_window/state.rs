@@ -714,6 +714,26 @@ impl FenceViewState {
         }
         self.take_grid(grid);
         self.snap_item_motion();
+        // The view or the cell size changed under a selection (not a tab switch, which brings
+        // its own offset): the focused file, else the first selected one, stays on screen, as
+        // in Explorer. A view change started at the top and left it out of sight.
+        if restore.is_none()
+            && let Some(i) = self
+                .anchor_index
+                .filter(|i| self.selected.contains(i))
+                .or_else(|| self.selected.iter().min().copied())
+                .filter(|i| *i < self.items.len())
+        {
+            let before = self.scroll_y;
+            self.scroll_into_view(i, false);
+            tracing::debug!(
+                fence = %self.fence_id,
+                item = i,
+                from = before,
+                to = self.scroll_y,
+                "view changed: the selected item is kept in view"
+            );
+        }
         if cross_fade {
             // After `take_grid`: the swap draws the new panel once, in the new view.
             self.begin_content_swap(0);
