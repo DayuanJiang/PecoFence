@@ -1012,8 +1012,12 @@ pub(super) fn press_in_note_editor(h: &HandlerCtx, message: u32, lparam: isize) 
         msg::WM_LBUTTONDOWN | msg::WM_LBUTTONDBLCLK | msg::WM_RBUTTONDOWN | WM_RBUTTONDBLCLK
     ) && h.view.try_borrow().is_ok_and(|view| {
         view.as_ref().is_some_and(|v| {
+            // The note's own scroll bar belongs to the editor: a press on it scrolls, and
+            // the edit goes on (the keyboard never left the editor's hidden text box).
             let (x, y) = (msg::lo_i16(lparam), msg::hi_i16(lparam));
-            v.note_edit.is_some() && v.in_note_text(x, y) && !alt_press_on_todo(v, message, x, y)
+            v.note_edit.is_some()
+                && ((v.in_note_text(x, y) && !alt_press_on_todo(v, message, x, y))
+                    || v.scrollbar_hit(x, y).is_some())
         })
     })
 }
