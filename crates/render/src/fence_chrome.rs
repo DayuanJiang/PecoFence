@@ -5054,9 +5054,10 @@ impl FenceChrome {
     /// `height` DIPs showing `time` and `date`. A new clock's area shows them at 40 and 14;
     /// another area scales both by its height, at most as far as the wider of the two lines
     /// still fits the width, from 0.6 to 4 times (the date never under 11). The time size is
-    /// whole DIPs, so the text keeps its size while the strings change by a digit. A size the
-    /// width sets is rounded down: rounded up, the line the width was fitted to would be a
-    /// hair too wide, and a long date that has room would give way to the short one.
+    /// whole DIPs, so the text keeps its size while the strings change by a digit, and never
+    /// more than the width has room for: rounded up past that, the line the width was fitted
+    /// to would be a hair too wide, and a long date that has room would give way to the short
+    /// one.
     pub fn clock_text_sizes(&self, width: f32, height: f32, time: &str, date: &str) -> (f32, f32) {
         let w = (width - 2.0 * CLOCK_FIT_PAD_X).max(1.0);
         let need = crate::text::measure_width(time, &self.clock_time_format)
@@ -5066,13 +5067,10 @@ impl FenceChrome {
         let k = by_height
             .min(by_width)
             .clamp(CLOCK_SCALE_MIN, CLOCK_SCALE_MAX);
-        let time = if by_width < by_height {
-            (CLOCK_TIME_DIP * k)
-                .floor()
-                .max((CLOCK_TIME_DIP * CLOCK_SCALE_MIN).round())
-        } else {
-            (CLOCK_TIME_DIP * k).round()
-        };
+        let time = (CLOCK_TIME_DIP * k)
+            .round()
+            .min((CLOCK_TIME_DIP * by_width).floor())
+            .max((CLOCK_TIME_DIP * CLOCK_SCALE_MIN).round());
         let date = (CLOCK_DATE_DIP * time / CLOCK_TIME_DIP).max(CLOCK_DATE_MIN_DIP);
         (time, date)
     }
@@ -5928,6 +5926,32 @@ mod tests {
         // where the strip starts.
         assert_eq!(w - ICON_LABEL_SIDE_INSET, w - SCROLL_STRIP);
         assert_eq!(NOTE_PAD_X, TEXT_LEFT);
+    }
+
+    /// A clock keeps the date form its width has room for at every height (a size is never
+    /// rounded up past the width), and a time too wide for a narrow clock at the smallest
+    /// size gives way to the one without seconds.
+    #[test]
+    fn a_clock_keeps_its_date_at_every_height_and_leaves_out_seconds_that_do_not_fit() {
+        let chrome = FenceChrome::new().unwrap();
+        let (time, long, short) = ("5:10", "2026年11月12日 星期四", "11月12日 周四");
+        for h in 104..=520 {
+            let got = chrome.clock_date(240.0, h as f32, time, long, short);
+            assert_eq!(got, (long, "long"), "content height {h}");
+        }
+        assert_eq!(
+            chrome.clock_time(86.0, 114.0, "5:09:59", "5:09", long),
+            ("5:09", "short")
+        );
+        assert_eq!(
+            chrome.clock_time(240.0, 104.0, "5:09:59", "5:09", long),
+            ("5:09:59", "full")
+        );
+        // Without seconds there is nothing to leave out.
+        assert_eq!(
+            chrome.clock_time(86.0, 114.0, "5:09", "", long),
+            ("5:09", "full")
+        );
     }
 
     /// A note's text measured for scrolling and for its editor: every line on screen has a
