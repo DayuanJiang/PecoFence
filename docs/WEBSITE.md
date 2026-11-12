@@ -184,10 +184,10 @@ fence titles ellipsize like the app. A few demo texts follow the page language i
 search lesson types `hyjl` (the pinyin initials of 会议记录) on the Chinese pages and the
 start of the translated 会议记录 elsewhere, so that word must appear unchanged inside the
 translated file names that contain it; the clocks and script fence footers of the tools
-lessons show `10:24 AM` in English. A script fence is titled with its file's name, so the
-demos derive those titles from the translated file names (`天气.ps1`, `GitHub 动态.ps1`,
-`电脑状态.ps1` without `.ps1`), and the row titles of the 小工具 page (`天气`, `电脑状态`) take
-the app's catalog text. What the example scripts print is not translated like other demo
+lessons show `10:24 AM` in English. The fence of an example script is titled as its menu
+line reads (`天气`, `GitHub 仓库动态`, `电脑状态`: the app's catalog text, like the row titles of
+the 小工具 page), and its footer names the script file (`天气.ps1`, `GitHub 动态.ps1`,
+`电脑状态.ps1`, translated as the app translates them). What the example scripts print is not translated like other demo
 text: the app writes the Chinese examples for both Chinese languages and the English ones
 for every other language (`crates/app/src/scripts.rs`, `example`), so the weather lines,
 「刷新」 and the rows of 电脑状态 stay Simplified Chinese on the zh-TW page
