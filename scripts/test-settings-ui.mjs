@@ -3364,7 +3364,7 @@ async function runTests() {
     assert(!doc.getElementById('nrTarget').disabled && !sel.closest('.picker').hidden, 'With a fence again the lists stay off');
     doc = await reset();
   });
-  await test('A failed update check makes its card taller: what is under it glides down', async () => {
+  await test('The update card: its title glides when a check\'s status line comes under it, and what is under a failed check\'s taller card glides down', async () => {
     doc = await reset();
     assert(await motionReady(), 'The page never allowed transitions');
     const w = win(), was = frame.style.width;
@@ -3376,6 +3376,13 @@ async function runTests() {
       assert(height > 0, 'The update card does not show while the check runs');
       const gliding = () => doc.getAnimations().filter(a => a.effect.target === next && !a.animationName).length;
       assert(await until(() => !doc.getAnimations().length), 'The page never came to rest');
+      // At rest the card has its title alone; the status line of a check moves the title up.
+      const title = card.querySelector('.t'), rising = () => doc.getAnimations().filter(a => a.effect.target === title && !a.animationName && !a.transitionProperty).length;
+      w.testUpdate({ state: 'idle', version: '', edition: 'installer', hasSetup: true });
+      assert(await until(() => !doc.getAnimations().length), 'The card never came to rest');
+      w.testUpdate({ state: 'checking', version: '', edition: 'installer', hasSetup: true });
+      assert(rising() === 1, 'A click on 检查更新: the title jumps up to make room for the status line');
+      assert(await until(() => !doc.getAnimations().length), 'The card never came to rest');
       w.testUpdate({ state: 'checkFailed', version: '', edition: 'installer', hasSetup: true });
       assert(card.offsetHeight > height, 'The failed check no longer needs a second line (the test needs another width)');
       assert(gliding() === 1, 'The card grew by ' + (card.offsetHeight - height) + ' px and the card under it jumped');

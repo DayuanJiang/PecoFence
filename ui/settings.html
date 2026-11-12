@@ -2684,7 +2684,7 @@
   let update = null;
   const renderUpdate = () => {
     const card = document.getElementById('updateCard');
-    const was = card.offsetHeight;
+    const was = card.offsetHeight, title = card.querySelector('.t'), titleTop = title.getBoundingClientRect().top;
     card.hidden = !update;
     document.getElementById('updateAutoCard').hidden = !update;
     if (!update) return;
@@ -2712,9 +2712,16 @@
     button.onclick = () => send({ type: 'action', name: action });
     // An answer that needs another line (a failed check) makes the card taller: what stands
     // under it glides down by as much instead of jumping.
-    const grew = was && card.offsetParent ? card.offsetHeight - was : 0;
-    if (grew && document.documentElement.classList.contains('ready') && !matchMedia('(prefers-reduced-motion: reduce)').matches)
-      for (let el = card.nextElementSibling; el; el = el.nextElementSibling) el.animate([{ transform: `translateY(${-grew}px)` }, { transform: 'none' }], { duration: motion('--fast'), easing: motion('--point-to-point') });
+    if (!was || !card.offsetParent || !document.documentElement.classList.contains('ready') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const grew = card.offsetHeight - was, glide = { duration: motion('--fast'), easing: motion('--point-to-point') };
+    if (grew) for (let el = card.nextElementSibling; el; el = el.nextElementSibling) el.animate([{ transform: `translateY(${-grew}px)` }, { transform: 'none' }], glide);
+    // The status line that comes under the title (at rest the card has the title alone)
+    // moves the title up by half a line: the title glides there and the status fades in.
+    const rose = titleTop - title.getBoundingClientRect().top;
+    if (rose) {
+      title.animate([{ transform: `translateY(${rose}px)` }, { transform: 'none' }], glide);
+      status.animate([{ opacity: 0 }, { opacity: 1 }], { duration: motion('--fast') });
+    }
   };
   // Store edition: Windows keeps the startup switch. The states only the user (in Windows'
   // Startup settings) or an administrator can change get a line saying so; a click on the

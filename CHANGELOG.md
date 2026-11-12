@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Settings › 关于: a click on 「检查更新」 no longer makes the card's title jump. At rest the card shows 「更新」 alone; 「正在检查更新…」 then came under it and the title jumped up by half a line. The title now glides there and the status line fades in.
 - Settings: an open drop-down list is never wider than the window. A fence with a very long name (up to 120 characters) made the lists of 栅栏 and of a rule's 「目标栅栏」 wider than the window, shifted to the left and cut at the right; the name now wraps inside the list.
 - Settings › 整理规则: with no fence at all, the 「目标栅栏」 list of a rule is greyed out. It opened as an empty list.
 - Settings: a description that wraps no longer leaves one character alone on its last line (整理规则 read 「…都不符合的放进“桌面”栅」 and then 「栏」 at the window's default size; in Japanese two descriptions on 常规 ended with a two-character line).
