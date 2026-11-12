@@ -322,11 +322,16 @@ fn paint_box(hwnd: HWND) {
             p.text(r, &label, &s.count_font, accent_text, paint::Align::Center);
             x = r.right + s.px(4.0);
         }
+        // The count takes the room its text needs: 「Elemente: 128」 is wider than 「128 项」,
+        // and cut short it lost its number.
+        let count_w = s
+            .px(COUNT_W)
+            .max(p.text_width(&s.count, &s.count_font) + s.px(8.0));
         // The suggestion needs more room at the right than the count.
         let right = if s.suggest.is_some() {
             s.px(SUGGEST_W + CLEAR_W + 4.0)
         } else {
-            s.px(COUNT_W + CLEAR_W + 4.0)
+            count_w + s.px(CLEAR_W + 4.0)
         };
         let ew = (w - x - right).max(s.px(30.0));
         if (x, ew) != s.edit_at.get() {
@@ -344,7 +349,7 @@ fn paint_box(hwnd: HWND) {
                 paint::Align::Right,
             ),
             None => p.text(
-                row(w - s.px(COUNT_W + CLEAR_W + 2.0), w - s.px(CLEAR_W + 2.0)),
+                row(w - count_w - s.px(CLEAR_W + 2.0), w - s.px(CLEAR_W + 2.0)),
                 &s.count,
                 &s.count_font,
                 dim,
