@@ -2004,17 +2004,36 @@ impl App {
         } else if let Some(moved) = &app.state.unreadable_moved_to
             && let Some(t) = &app.tray
         {
-            t.show_info(
-                "PecoFence",
-                &pecofence_core::i18n::format(
+            let name = |p: &Path| {
+                p.file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            };
+            // A file of a newer PecoFence is whole: the guess is only made for that one. A
+            // damaged file gets the plain facts: what shows now, and where the file went.
+            let newer = app.state.load_failures.iter().any(|(what, _, e)| {
+                *what == "config.json" && e.to_string().starts_with("unsupported schemaVersion")
+            });
+            let text = match &app.state.recovered_from {
+                _ if newer => pecofence_core::i18n::format(
                     "无法读取配置文件（可能是较新版本的 PecoFence 写入的），原文件已改名为 {0}。",
-                    &[moved
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default()],
+                    &[name(moved)],
                 ),
-                true,
+                Some(from) => pecofence_core::i18n::format(
+                    "配置文件读不出来，现在用的是备份 {1}。读不出来的文件还在配置文件夹里，已改名为 {0}。",
+                    &[name(moved), name(from)],
+                ),
+                None => pecofence_core::i18n::format(
+                    "配置文件读不出来，也没有可用的备份，现在是默认的栅栏。读不出来的文件还在配置文件夹里，已改名为 {0}。",
+                    &[name(moved)],
+                ),
+            };
+            tracing::info!(
+                newer,
+                from_backup = app.state.recovered_from.is_some(),
+                "notice: config.json unreadable"
             );
+            t.show_info("PecoFence", &text, true);
         }
         // Desktop folder moved since last run? Re-point the item records before syncing, or
         // every item would be orphaned and re-routed by the rules.

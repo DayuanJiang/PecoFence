@@ -1395,7 +1395,22 @@ impl App {
     }
 
     /// `config.export`: the complete configuration as pretty JSON at an absolute path.
+    /// While another program holds the configuration files open, the fences on show are a
+    /// stand-in that is never saved: an import would be gone once the files are read, and an
+    /// export would write the stand-in.
+    fn config_unlocked(&self) -> std::result::Result<(), IpcError> {
+        match &self.state.locked_config {
+            Some(path) => Err(unsupported(format!(
+                "{} is held open by another program; PecoFence shows a stand-in until it can read it",
+                path.display()
+            ))
+            .hint("Try again once the tray notice says the configuration was read")),
+            None => Ok(()),
+        }
+    }
+
     fn ipc_config_export(&mut self, path: &str) -> IpcResult {
+        self.config_unlocked()?;
         let target = absolute_path(path)?;
         if target.is_dir() {
             return Err(IpcError::new(
@@ -1458,6 +1473,7 @@ impl App {
         key: &str,
         origin: super::settings::ConfigSource,
     ) -> IpcResult {
+        self.config_unlocked()?;
         let cfg = pecofence_core::ConfigStore::parse_file(source).map_err(|e| {
             IpcError::new(
                 ErrorCode::ValidationFailed,

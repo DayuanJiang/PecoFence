@@ -127,6 +127,24 @@ fn snapshot_limit_text() -> String {
     )
 }
 
+/// A restore or an import that did not run: the snapshot of the layout it replaces had no
+/// room. Says so, where [`snapshot_limit_text`] only speaks of the snapshot.
+fn not_done_for_snapshot_limit_text() -> String {
+    pecofence_core::i18n::format(
+        "快照已达上限（{0} 个），无法先保存当前布局，所以什么都没有改。请删除不需要的快照后再试。",
+        &[pecofence_core::MAX_SNAPSHOTS.to_string()],
+    )
+}
+
+/// While another program holds the configuration files open, the fences on show are a
+/// stand-in that is never saved: an import would be gone once the files are read, and an
+/// export would write the stand-in.
+pub(super) fn config_locked_text() -> &'static str {
+    pecofence_core::i18n::text(
+        "配置文件正被其他程序占用，现在不能导入、导出或恢复备份。等 PecoFence 读到配置文件后再试。",
+    )
+}
+
 /// The names of the top-level settings that differ (`hideRealIcons,quickHide`): field names of
 /// `Settings`, never their values (a path, a hotkey).
 fn changed_settings(old: &pecofence_core::Settings, new: &pecofence_core::Settings) -> String {
@@ -234,6 +252,11 @@ impl App {
     }
 
     pub(super) fn export_config(&mut self) {
+        if self.state.locked_config.is_some() {
+            tracing::info!("export refused: the configuration files are locked");
+            self.settings_error(config_locked_text());
+            return;
+        }
         let owner = self.settings.as_ref().map(|h| h.hwnd());
         let name = format!(
             "pecofence-{}.json",
@@ -354,12 +377,17 @@ impl App {
     }
 
     pub(super) fn restore_from_file(&mut self, path: &std::path::Path, source: ConfigSource) {
+        if self.state.locked_config.is_some() {
+            tracing::info!("import or backup restore refused: the configuration files are locked");
+            self.settings_error(config_locked_text());
+            return;
+        }
         match pecofence_core::ConfigStore::parse_file(path) {
             Ok(cfg) => {
                 // Keep a snapshot of what we are replacing so the step can be undone; a list
                 // full of the user's own snapshots has no room for it, so nothing is replaced.
                 if !snapshot_room(&mut self.state.config.snapshots, None) {
-                    self.settings_error(&snapshot_limit_text());
+                    self.settings_error(&not_done_for_snapshot_limit_text());
                     return;
                 }
                 let undo = self.state.save_snapshot(source.before());
@@ -1015,7 +1043,7 @@ impl App {
                         // a list full of the user's own snapshots has no room for it, so
                         // nothing is restored.
                         if !snapshot_room(&mut self.state.config.snapshots, Some(id)) {
-                            self.settings_error(&snapshot_limit_text());
+                            self.settings_error(&not_done_for_snapshot_limit_text());
                             return;
                         }
                         self.state.restore_snapshot_with_backup(
