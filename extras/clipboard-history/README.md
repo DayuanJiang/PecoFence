@@ -42,8 +42,9 @@ the trash button, or **Unpin**, lets it go.
   at most (`$MaxEntries`, not counting the pinned ones); the oldest go first. Copying again what is already in the list brings that
   entry back to the top.
 - What a program asks not to be kept (password managers set the clipboard formats
-  `ExcludeClipboardContentFromMonitorProcessing` or `CanIncludeInClipboardHistory` = 0) is left
-  out, as Windows' own history leaves it out.
+  `ExcludeClipboardContentFromMonitorProcessing` or `CanIncludeInClipboardHistory` = 0, older
+  ones `Clipboard Viewer Ignore`) is left out, as Windows' own history leaves it out. A program
+  that sets none of them is not recognised: what it copies is listed like any other text.
 - Texts and lists of files are kept in memory only and are gone when PecoFence ends, except the
   pinned ones, which are written as plain text to `pinned.json` in the fence's data folder
   (`<config folder>\scripts-data\<fence id>`).

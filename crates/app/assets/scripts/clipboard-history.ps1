@@ -26,7 +26,8 @@
 #
 # Texts, lists of files and pictures come in. What a program marks as not to be kept (the password
 # managers do: the clipboard formats "ExcludeClipboardContentFromMonitorProcessing" and
-# "CanIncludeInClipboardHistory" = 0) is left out, as Windows' own history leaves it out.
+# "CanIncludeInClipboardHistory" = 0, and the older "Clipboard Viewer Ignore") is left out, as
+# Windows' own history leaves it out.
 #
 # Nothing leaves this computer. The entries are kept in memory only, except the pinned ones, which
 # are written to pinned.json in the fence's own folder ($env:PECOFENCE_DATA) so that they are still
@@ -393,6 +394,8 @@ function Read-Clipboard {
   if ($null -eq $data) { return $null }
   # What a program asks not to be kept (password managers).
   if ($data.GetDataPresent('ExcludeClipboardContentFromMonitorProcessing')) { return $null }
+  # The older mark of the same wish (KeePass and others set it besides the two of Windows).
+  if ($data.GetDataPresent('Clipboard Viewer Ignore')) { return $null }
   if ($data.GetDataPresent('CanIncludeInClipboardHistory')) {
     try {
       $flag = $data.GetData('CanIncludeInClipboardHistory')

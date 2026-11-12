@@ -151,6 +151,10 @@ if ($Part -eq 'A') {
   $fb = ClipFormats
   Start-Sleep -Seconds 2
   Check 'CanIncludeInClipboardHistory = 0: the text is left out' ($fb -match 'CanIncludeInClipboardHistory' -and (ChOut) -notmatch 'SECRETBRAVO') "formats=$fb"
+  ClipWith 'SECRETDELTA' @{ 'Clipboard Viewer Ignore' = [byte[]](0) }
+  $fd = ClipFormats
+  Start-Sleep -Seconds 2
+  Check 'Clipboard Viewer Ignore (the older mark): the text is left out' ($fd -match 'Clipboard Viewer Ignore' -and (ChOut) -notmatch 'SECRETDELTA') "formats=$fd"
   ClipWith 'ALLOWEDCHARLIE' @{ 'CanIncludeInClipboardHistory' = [byte[]](1, 0, 0, 0) }
   Check 'CanIncludeInClipboardHistory = 1: the text is listed' (ChWait 'ALLOWEDCHARLIE') ((ChLines) -join ' / ')
   $data = ChData
