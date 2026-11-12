@@ -1560,9 +1560,21 @@ impl AppState {
                 // place it as they place a new file. Where that is the fence it is in, it
                 // stands in its cell again.
                 if returned && in_fence.contains(&id) && !self.placed_by_user(id) {
-                    let (decision, _) = self.route_decision(entry);
+                    let (decision, facts) = self.route_decision(entry);
                     let from = self.config.fence_of_item(self.layout, id);
-                    if let Some((fence, by)) = self.target_fence(decision)
+                    let target = self.target_fence(decision);
+                    // The decision is logged as a new file's is (what the rules saw, which
+                    // rule matched, where the file goes), also when the file keeps its fence:
+                    // a shortcut made again under the name of one deleted before left no
+                    // line that said why it stood where it stood.
+                    self.log_route(
+                        "returned file",
+                        facts.as_ref(),
+                        decision,
+                        target.as_ref(),
+                        &mut logged,
+                    );
+                    if let Some((fence, by)) = target
                         && from != Some(fence)
                         && self.config.assign(self.layout, id, fence, by).is_some()
                     {
