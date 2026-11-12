@@ -266,7 +266,8 @@ if ($Part -eq 'E') {
 
 if ($Part -eq 'F') {
   # A loose icon is selected while the keyboard is in another program (a faint box). A click
-  # on the bare desktop ends the selection: the box turned bright (the accent look) for the
+  # beside another loose icon (inside its place, off its picture and name: empty desktop to
+  # the user) ends the selection: the box turned bright (the accent look) for the
   # two frames of its fade-out before it was gone.
   Case 'A selection that ends on a click on the desktop does not flash'
   UxStart
@@ -279,11 +280,11 @@ if ($Part -eq 'F') {
   [L]::MoveWindow($np, 900, 420, 520, 300, $true) | Out-Null
   Start-Sleep -Milliseconds 800
   $c = UxCorner (UxCell '图.fpx')
-  $spot = FreeSpot 420 620
+  $o = UxCorner (UxCell '季度预算.fpx'); $spot = @(($o[0] + 76), ($o[1] + 4))
   [G]::MoveTo($spot[0], $spot[1]); Start-Sleep -Milliseconds 600
   $g = FenceGet inbox
   Check 'setup: the icon is selected and Notepad has the keyboard' ((Fg) -match 'Notepad' -and (UxCell '图.fpx') -eq '8,3') "foreground: $(Fg); cell $(UxCell '图.fpx')"
-  if ($Rec) { RecStart 'rec-flash' -X ($c[0] - 60) -Y ($c[1] - 40) -W 200 -H 180 -Fps 30; RecMark '点一下桌面空白处'; Start-Sleep -Milliseconds 400 }
+  if ($Rec) { RecStart 'rec-flash' -X ($c[0] - 60) -Y ($c[1] - 40) -W 200 -H 180 -Fps 30; RecMark '点一下另一个图标旁边的空白处'; Start-Sleep -Milliseconds 400 }
   # The cell as often as the screen can be read, with the click after the first read.
   [Px]::Burst($c[0], $c[1], 80, 96, 600, 1)
   if ($Rec) { RecStop }

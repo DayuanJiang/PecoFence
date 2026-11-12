@@ -506,6 +506,11 @@ impl<K: Hash + Eq + Copy> Fades<K> {
         }
     }
 
+    /// True when no key is on or fading out (every key rests at 0).
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
     /// True while any fade is still moving (the caller keeps requesting frames).
     pub fn busy(&self, now: Instant) -> bool {
         self.map.values().any(|t| !t.is_done(now))
