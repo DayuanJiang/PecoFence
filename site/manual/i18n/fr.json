@@ -976,7 +976,7 @@
   "停在上面展开的栅栏，鼠标移开后自动收起；单击标题展开的，再单击标题收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "Les groupes développés au survol se replient quand le pointeur s’en va ; ceux développés d’un clic sur le titre, au clic suivant sur le titre. Quel que soit le choix, un double-clic sur le titre ou un clic sur la flèche de repli développe et replie",
   "鼠标停在上面时": "Au survol",
   "展开快慢": "Vitesse de déploiement",
-  "鼠标停多久栅栏才展开，悬停切换第一个标签页也等这么久；“默认”跟随 Windows 的鼠标悬停时间": "Durée pendant laquelle le pointeur reste sur un groupe replié avant qu’il se déploie ; le premier changement d’onglet au survol attend le même délai ; Par défaut suit le délai de survol de la souris de Windows",
+  "鼠标停多久栅栏才展开，悬停切换第一个标签页也等这么久；刚展开或切换过一个之后，接着移到的下一个马上跟上；“默认”跟随 Windows 的鼠标悬停时间": "Durée pendant laquelle le pointeur reste sur un groupe replié avant qu’il se déploie ; le premier changement d’onglet au survol attend le même délai ; juste après une ouverture ou un changement, le suivant sur lequel vous passez suit aussitôt ; Par défaut suit le délai de survol de la souris de Windows",
   "展开时把下面的栅栏推开": "Pousser vers le bas les groupes situés en dessous",
   "收起后它们会回到原位": "Ils reprennent leur place quand le groupe se replie",
   "鼠标悬停时才显示标题栏": "Afficher le titre uniquement au survol",
