@@ -999,6 +999,8 @@ impl FenceViewState {
         let mut started = false;
         let mut pending = false;
         let mut icons = self.icons.borrow_mut();
+        // For this pass only: the shell is asked once per extension, and again next time.
+        let mut type_names = fileinfo::TypeNames::default();
         for (i, item) in self.items.iter_mut().enumerate() {
             if item.wants_icon(icon_px) && near(i) {
                 let icon_only = item.icon_only || (rows && item.is_folder);
@@ -1063,8 +1065,11 @@ impl FenceViewState {
                     item.date_label = Some(item.date_text());
                 }
                 if item.type_label.is_none() {
-                    item.type_label =
-                        Some(fileinfo::type_name(&item.path, item.is_folder).unwrap_or_default());
+                    item.type_label = Some(
+                        type_names
+                            .get(&item.path, item.is_folder)
+                            .unwrap_or_default(),
+                    );
                 }
                 if item.size_label.is_none() {
                     item.size_label = Some(item.size_text());

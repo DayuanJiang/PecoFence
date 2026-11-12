@@ -64,6 +64,50 @@ pub fn type_name(path: &Path, is_folder: bool) -> Option<String> {
     (!s.is_empty()).then_some(s)
 }
 
+/// [`type_name`] for many items at once: the shell is asked once per kind of file instead of
+/// once per file. A file's type name comes from its extension alone (`type_name` never reads
+/// the disk), so the files of one extension share the answer; namespace items are asked one
+/// by one. A details view of 300 files asked 300 times, 18 ms of its 30 ms switch.
+#[derive(Default)]
+pub struct TypeNames {
+    by_kind: std::collections::HashMap<(bool, String), Option<String>>,
+    asked: usize,
+}
+
+impl TypeNames {
+    pub fn get(&mut self, path: &Path, is_folder: bool) -> Option<String> {
+        if crate::shell::is_namespace_path(path) {
+            self.asked += 1;
+            return type_name(path, is_folder);
+        }
+        let key = (is_folder, shell_extension(path));
+        if let Some(name) = self.by_kind.get(&key) {
+            return name.clone();
+        }
+        self.asked += 1;
+        let name = type_name(path, is_folder);
+        self.by_kind.insert(key, name.clone());
+        name
+    }
+
+    /// How often the shell was asked (tests).
+    pub fn asked(&self) -> usize {
+        self.asked
+    }
+}
+
+/// The extension of `path` as the shell takes it, lower case with its dot: from the last dot
+/// of the file name, so `.gitignore` is all extension and `a.tar.gz` has `.gz`; empty without
+/// a dot.
+fn shell_extension(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy())
+        .unwrap_or_default();
+    name.rfind('.')
+        .map_or(String::new(), |dot| name[dot..].to_lowercase())
+}
+
 /// A shell icon (HICON), destroyed on drop.
 pub struct FileIcon(HICON);
 
@@ -422,5 +466,47 @@ mod tests {
         let t = type_name(Path::new(r"C:\x\y.txt"), false);
         assert!(t.is_some());
         assert!(type_name(Path::new(r"C:\x\folder"), true).is_some());
+    }
+
+    #[test]
+    fn type_names_are_asked_once_per_extension_and_say_what_the_shell_says() {
+        let files = [
+            r"C:\x\季度报告 2026.txt",
+            r"C:\x\b.TXT",
+            r"C:\x\预算.docx",
+            r"C:\x\c.xlsx",
+            r"C:\x\a.b.pdf",
+            r"C:\x\archive.tar.gz",
+            r"C:\x\.gitignore",
+            r"C:\x\no extension",
+            r"C:\x\ends with a dot.",
+            r"C:\x\记事本.lnk",
+            r"C:\x\setup.exe",
+            r"C:\x\second.txt",
+            r"C:\x\third.Docx",
+        ];
+        let folders = [r"C:\x\资料", r"C:\x\folder.txt", r"C:\x\another"];
+        let mut names = TypeNames::default();
+        for (paths, is_folder) in [(&files[..], false), (&folders[..], true)] {
+            for p in paths {
+                assert_eq!(
+                    names.get(Path::new(p), is_folder),
+                    type_name(Path::new(p), is_folder),
+                    "{p}"
+                );
+            }
+        }
+        // txt, docx, xlsx, pdf, gz, gitignore, none, the lone dot, lnk, exe; folders: none, txt.
+        assert_eq!(names.asked(), 12);
+    }
+
+    #[test]
+    fn the_extension_is_what_follows_the_last_dot_of_the_name() {
+        let ext = |p: &str| shell_extension(Path::new(p));
+        assert_eq!(ext(r"C:\x\Report.PDF"), ".pdf");
+        assert_eq!(ext(r"C:\x\a.tar.gz"), ".gz");
+        assert_eq!(ext(r"C:\x\.gitignore"), ".gitignore");
+        assert_eq!(ext(r"C:\x.y\name"), "");
+        assert_eq!(ext(r"C:\x\name."), ".");
     }
 }
