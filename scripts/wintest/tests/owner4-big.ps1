@@ -565,7 +565,7 @@ function PartB() {
     if ($l.Count -gt 0) { $sorts += [double]$l[0].Groups[1].Value }
     [G]::Press(0x1B); BgQuiet (BgNow) 900 8000
   }
-  Check 'B3 a letter typed into the filter of 4000 files lists the folder once (before: three times, each with its sort)' ((BgMedian $lists) -eq 1) "listings per letter $($lists -join ', '); UI thread $(@($busy | ForEach-Object { [math]::Round($_, 1) }) -join ', ') ms"
+  Check 'B3 a letter typed into the filter of 4000 files lists the folder once and keeps the fence under 28 ms (before: listed and matched three times, 39 to 47 ms)' ((BgMedian $lists) -eq 1 -and (BgMedian $busy) -lt 28) "listings per letter $($lists -join ', '); UI thread $(@($busy | ForEach-Object { [math]::Round($_, 1) }) -join ', ') ms"
   $sm = BgMedian $sorts
   Check 'B3 the name sort of 4000 files takes under 12 ms' ($sm -ge 0 -and $sm -lt 12) "sort $($sorts -join ', ') ms"
   PfQuit
