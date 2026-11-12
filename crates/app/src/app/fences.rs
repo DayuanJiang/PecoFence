@@ -1025,6 +1025,7 @@ impl App {
     /// A fence made from a menu: its title opens for editing, as Explorer's 新建文件夹 does.
     pub(super) fn create_fence_with_rename(&mut self, rect: RECT) {
         if let Some(id) = self.create_fence_at(rect, None) {
+            self.note_new_fence_for_undo(id);
             // The name box opens once the fence has faded in (at once without a fade).
             let after_fade = self
                 .fences
@@ -1091,7 +1092,7 @@ impl App {
     /// the keyboard, so the Ctrl+Z the delete notice suggests reaches PecoFence at once
     /// instead of the taskbar or the desktop. 「桌面」 arranged like the desktop spans the
     /// screen, so it comes after every fence with a plate.
-    fn keyboard_to_nearest_fence(&mut self, gone: RECT) {
+    pub(super) fn keyboard_to_nearest_fence(&mut self, gone: RECT) {
         let centre = |r: &RECT| ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
         let (gx, gy) = centre(&gone);
         let nearest = self
@@ -1153,7 +1154,7 @@ impl App {
     /// What deleting `fence` takes with it, as a question; None when nothing would be lost (no
     /// icons of its own, no rule pointing at it). A folder portal's items are the folder's
     /// files and stay on disk, so only its rules count.
-    fn delete_fence_prompt(&self, fence: FenceId) -> Option<String> {
+    pub(super) fn delete_fence_prompt(&self, fence: FenceId) -> Option<String> {
         use pecofence_core::i18n;
         let f = self.state.fence(fence)?;
         let icons = if f.kind == FenceKind::FolderPortal {

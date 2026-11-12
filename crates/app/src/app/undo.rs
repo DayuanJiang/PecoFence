@@ -32,6 +32,9 @@ pub(super) enum UndoStep {
     /// A fence sent away from the current virtual desktop (its menu, Settings): the desktops
     /// its window showed on before (empty: every desktop).
     Desktops { fence: FenceId, before: Vec<String> },
+    /// A fence made by hand (the rectangle's button, a fence's or the tray's menu): Ctrl+Z
+    /// takes it away again while nothing would go with it (no icons, no rule, no note text).
+    NewFence(FenceId),
     /// Icons 「立即应用」 sorted: where each was, grouped by the fence it went to.
     Refiled {
         id: u64,
@@ -92,6 +95,7 @@ impl UndoStep {
             Self::Items { .. } => "items",
             Self::Deleted(_) => "deleted fence",
             Self::Desktops { .. } => "virtual desktops",
+            Self::NewFence(_) => "new fence",
             Self::Refiled { .. } => "rules applied",
             Self::Renamed { .. } => "rename",
             Self::Created { .. } => "new item",
@@ -224,6 +228,12 @@ impl App {
 
     pub(super) fn note_deleted_for_undo(&mut self, deleted: DeletedFence) {
         self.push_undo(UndoStep::Deleted(Box::new(deleted)));
+    }
+
+    /// The user made `fence` by hand. Without a step of its own, Ctrl+Z right after it undid
+    /// whatever came before (an older move of another fence).
+    pub(super) fn note_new_fence_for_undo(&mut self, fence: FenceId) {
+        self.push_undo(UndoStep::NewFence(fence));
     }
 
     /// The user renamed a file in a fence, `from` to `to`.
@@ -391,6 +401,21 @@ impl App {
                     self.push_settings_state();
                 }
                 usize::from(back)
+            }
+            UndoStep::NewFence(fence) => {
+                // Still there and still empty: it goes as it came. With icons, a rule or a
+                // note's text in it by now the step is spent; 删除栅栏 in its menu asks.
+                let empty =
+                    self.state.fence(fence).is_some() && self.delete_fence_prompt(fence).is_none();
+                tracing::info!(%fence, empty, "new fence undone");
+                if empty {
+                    let gone = self.window_for(fence).map(|w| w.rect());
+                    self.delete_fence(fence);
+                    if let Some(gone) = gone {
+                        self.keyboard_to_nearest_fence(gone);
+                    }
+                }
+                usize::from(empty)
             }
             UndoStep::Refiled { id, places } => {
                 let mut n = 0;

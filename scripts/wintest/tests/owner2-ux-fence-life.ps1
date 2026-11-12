@@ -1,9 +1,9 @@
 # Owner round 2026-11-12, UI / UX / motion hunt, package ux-fence-life: the life of a fence as a
 # window. Parts (run.sh --var Part=...): D the icons of 「桌面」 keep their cells while a deleted
 # fence's icons come back (FL-1), N the name box of a fence (FL-2), K 停靠到屏幕顶部 glides
-# (FL-5), O the 「新建栅栏」 buttons fade at the click (FL-6), X exit and start without an empty
-# desktop in between (FL-3, FL-4). Default: all parts. Runs on a 1600x900 box at 100 %.
-if (-not $Part) { $Part = 'DNKOX' }
+# (FL-5), U Ctrl+Z after a new fence (FL-13), X a start without an empty desktop (FL-3).
+# Default: all parts. Runs on a 1600x900 box at 100 %.
+if (-not $Part) { $Part = 'DNKUX' }
 trap { PfTrap $_; continue }
 Case 'setup'
 CloseWindows
@@ -127,6 +127,103 @@ if ($Part -match 'K') {
   Check 'FL-5 the fence ends rolled up at the top edge' ($end.T -eq 0 -and ($end.B - $end.T) -lt 60) "top $($end.T), height $($end.B - $end.T)"
   Check 'FL-5 it passes places in between on its way' ($between -ge 3) "tops seen: $($tops -join ' ') ($between between $startTop and 0)"
   Pf fence delete '抽屉' | Out-Null
+}
+
+if ($Part -match 'U') {
+  # ---- FL-13: Ctrl+Z right after a new fence takes that fence away again. It had no undo step
+  # of its own, so Ctrl+Z undid what came before it (here: put another fence back).
+  Case 'FL-13 undo a new fence'
+  ClearFences
+  Pf fence create --title '旧的' --rect '300,420,300,200' | Out-Null
+  Start-Sleep -Seconds 1
+  FlPark
+  $o = FlRect '旧的'
+  DragTo ($o.L + 150) ($o.T + 14) ($o.L + 210) ($o.T + 94) 10
+  $moved = FlRect '旧的'
+  FlPark
+  $p = FreeRect 320 200 760 120
+  $x0 = $p[0]; $y0 = $p[1]
+  [G]::MoveTo($x0, $y0); Start-Sleep -Milliseconds 200
+  MDown; Start-Sleep -Milliseconds 150
+  foreach ($s in 1..12) { [G]::MoveTo($x0 + $s * 25, $y0 + $s * 15); Start-Sleep -Milliseconds 30 }
+  Start-Sleep -Milliseconds 300
+  MUp
+  $offer = WaitWin 'PecoFence.MarqueeOffer' 3
+  Start-Sleep -Milliseconds 500
+  $or = Rect $offer
+  # 「＋ 新建栅栏」 is the right one of the two buttons.
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  [G]::Click($or.R - 50, [int](($or.T + $or.B) / 2))
+  $boxMs = -1
+  while ($sw.ElapsedMilliseconds -lt 3000) { $bx = [G]::FindWindowW('PecoFence.Rename', 'rename'); if ($bx -ne [IntPtr]::Zero -and [G]::IsWindowVisible($bx)) { $boxMs = $sw.ElapsedMilliseconds; break }; Start-Sleep -Milliseconds 5 }
+  Start-Sleep -Milliseconds 500
+  # Esc: the fence keeps the name 新栅栏 and takes the keyboard.
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 800
+  $made = (FlWin '新栅栏') -ne [IntPtr]::Zero
+  $fg = Fg
+  Chord 0x11 0x5A
+  Start-Sleep -Milliseconds 1200
+  $after = FlRect '旧的'
+  Check 'FL-13 the rectangle made a fence and it has the keyboard' ($made -and $fg -match '新栅栏') "made=$made fg=$fg"
+  Check 'FL-13 Ctrl+Z takes the new fence away' ((FlWin '新栅栏') -eq [IntPtr]::Zero) "新栅栏 still there: $((FlWin '新栅栏') -ne [IntPtr]::Zero)"
+  Check 'FL-13 the fence moved before it stays where it was put' ($moved.L -ne $o.L -and $after.L -eq $moved.L -and $after.T -eq $moved.T) "started at $($o.L),$($o.T), dragged to $($moved.L),$($moved.T), after Ctrl+Z at $($after.L),$($after.T)"
+  FlPark
+}
+
+if ($Part -match 'X') {
+  # ---- FL-3: at a start the Windows desktop icons go while the fences fade in. They used to
+  # go about 0.1 s before the first fence showed: an empty desktop in between.
+  Case 'FL-3 start without an empty desktop'
+  PfFresh
+  Pf settings set language zh-CN | Out-Null
+  Start-Sleep -Seconds 3
+  # A first-run fence at the right that holds shortcuts, and the second cell of Windows' own
+  # icon column at the left (the Recycle Bin's, the first, also shows in 「桌面」).
+  $prog = (@(PfJson fence list) | Where-Object { $_ -and $_.title -eq '程序' } | Select-Object -First 1)
+  $fr = FlRect '程序'
+  Check 'FL-3 the first run made the 程序 fence with icons in it' ($fr.R -gt $fr.L -and $prog.itemCount -ge 2) "rect $($fr.L),$($fr.T),$($fr.R),$($fr.B) items $($prog.itemCount)"
+  PfQuit
+  for ($i = 0; $i -lt 40 -and -not [W]::IconsVisible(); $i++) { Start-Sleep -Milliseconds 100 }
+  Start-Sleep -Milliseconds 1500
+  FlPark
+  # One strip across the screen per sample (a grab costs about 25 ms whatever its size): the
+  # rows of the Windows icon's cell, which are the rows of the fence's first icon names. Ink
+  # is how far a pixel is from the wallpaper's grey: the Windows icon's white name at the
+  # left, the fence's plate and names at the right.
+  $sy = 104; $sh = 60; $fx = $fr.L + 10
+  $b0 = [Px]::Grab(0, $sy, 1600, $sh); $w0 = [Px]::MaxInk($b0, 8, 80, 0, $sh - 1); $f0 = [Px]::MaxInk($b0, $fx, $fx + 200, 0, $sh - 1); $b0.Dispose()
+  Start-Process "$PfApp\pecofence.exe" -ArgumentList '--portable', '--test-script', "$PfRun\script.txt" -WorkingDirectory $PfApp
+  # Every sample: ms, ink of the Windows icon, ink of the fence. (No recording meanwhile.)
+  $samples = New-Object System.Collections.Generic.List[object]
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  while ($sw.ElapsedMilliseconds -lt 3000) {
+    $t = $sw.ElapsedMilliseconds
+    $bs = [Px]::Grab(0, $sy, 1600, $sh)
+    $samples.Add(@($t, [Px]::MaxInk($bs, 8, 80, 0, $sh - 1), [Px]::MaxInk($bs, $fx, $fx + 200, 0, $sh - 1)))
+    $bs.Dispose()
+  }
+  WaitWin 'PecoFence.Control' 20 -Hidden | Out-Null
+  # Empty: from the first sample without the Windows icon to the first one with the fence.
+  $gone = @($samples | Where-Object { $_[1] -lt 25 } | Select-Object -First 1)
+  $came = @($samples | Where-Object { $_[2] -ge 25 } | Select-Object -First 1)
+  $tGone = -1; if ($gone.Count) { $tGone = $gone[0][0] }
+  $tCame = -1; if ($came.Count) { $tCame = $came[0][0] }
+  $emptyMs = $tCame - $tGone
+  Log ("FL-3 samples: " + ((@($samples | Where-Object { $_[0] -lt 900 }) | ForEach-Object { "$($_[0]):$($_[1])/$($_[2])" }) -join ' '))
+  Check 'FL-3 the Windows icon showed before the start and went, the fence came' ($w0 -ge 40 -and $f0 -lt 25 -and $tGone -gt 0 -and $tCame -gt 0) "ink before: icon $w0, fence $f0; Windows icon gone at $tGone ms, fence there at $tCame ms ($($samples.Count) samples)"
+  Check 'FL-3 the desktop is not empty in between' ($emptyMs -le 40) "the fence shows $emptyMs ms after the Windows icon went (negative: before it went)"
+  Check 'FL-3 the Windows desktop icons are hidden after the start' (-not [W]::IconsVisible()) "visible=$([W]::IconsVisible())"
+  Check 'FL-3 the log says when they went' ([bool](PfWaitLog 'start: Windows desktop icons hidden as the fences come in' 5)) ''
+  # The same start once more for the report.
+  PfQuit
+  for ($i = 0; $i -lt 40 -and -not [W]::IconsVisible(); $i++) { Start-Sleep -Milliseconds 100 }
+  Start-Sleep -Milliseconds 1500
+  RecStart 'fl3-start' -X 0 -Y 0 -W 1600 -H 420 -Fps 30
+  RecMark '启动 PecoFence'
+  Start-Process "$PfApp\pecofence.exe" -ArgumentList '--portable', '--test-script', "$PfRun\script.txt" -WorkingDirectory $PfApp
+  Start-Sleep -Milliseconds 3500
+  RecStop
+  WaitWin 'PecoFence.Control' 20 -Hidden | Out-Null
 }
 
 Case 'cleanup'
