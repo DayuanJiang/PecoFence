@@ -77,6 +77,7 @@
 - Settings › 栅栏: the colour swatches of 「色调」 and 「标签页颜色」 stay on one line beside their text at the default window size, in every language. They dropped under the text there (the row fitted only from a 1024 px wide window on), so the same control looked different from 「图标着色」 on 常规.
 - Settings › 常规 › 主题风格: 「Liquid Glass · 液态玻璃」 fits on one line at the default window size; it wrapped with 「璃」 alone on a second line. In a narrower window, and in languages with a longer caption, the caption breaks after the dot.
 - Settings at its smallest window size (720 x 480): the navigation had a vertical and a horizontal scrollbar in the wide default style, the search box was cut off, and in Russian and German the page names on two or three lines ran into each other. The seven pages now fit without a scrollbar in Chinese and German (the fence count under them hides at that height), Russian scrolls with the thin scrollbar and rows at full height, and a long search text no longer runs under the magnifier at any window size.
+- Settings: placeholders and small grey text are easier to read. The feedback box's placeholder was the browser's default grey (2.56 : 1 in dark mode), every placeholder in light mode was 3.4 : 1, and the fence count, the 「0 / 5000」 counter and the rule numbers were 3.1 to 3.3 : 1 in light mode. Placeholders and 「未设置」 in a shortcut box now use the secondary text colour and the small grey text is darker in light mode: everything a user reads is at least 4.5 : 1.
 
 ## 0.3.3
 

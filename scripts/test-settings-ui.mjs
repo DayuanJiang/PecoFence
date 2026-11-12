@@ -2707,6 +2707,39 @@ async function runTests() {
     doc = await reset();
   });
 
+  await test('Placeholders and small grey text have a contrast of at least 4.5 : 1 in both modes', async () => {
+    const parse = text => { const n = text.match(/[\d.]+/g).map(Number); return { r: n[0], g: n[1], b: n[2], a: n.length > 3 ? n[3] : 1 }; };
+    const over = (top, under) => ({ r: top.r * top.a + under.r * (1 - top.a), g: top.g * top.a + under.g * (1 - top.a), b: top.b * top.a + under.b * (1 - top.a), a: 1 });
+    const lum = c => { const [r, g, b] = [c.r, c.g, c.b].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+    // What is behind an element: its ancestors' fills over each other, down to the sheet.
+    const behind = el => {
+      const fills = [];
+      for (let e = el; e; e = e.parentElement) { const c = parse(win().getComputedStyle(e).backgroundColor); if (c.a > 0) fills.push(c); if (c.a === 1) break; }
+      return fills.reverse().reduce((under, top) => over(top, under), { r: 0, g: 0, b: 0, a: 1 });
+    };
+    const ratio = (el, pseudo) => {
+      const back = behind(el), text = over(parse(win().getComputedStyle(el, pseudo).color), back);
+      return (Math.max(lum(text), lum(back)) + .05) / (Math.min(lum(text), lum(back)) + .05);
+    };
+    for (const mode of ['dark', 'light']) {
+      doc = await reset();
+      doc.querySelector('[data-bind=theme]').value = mode; doc.querySelector('[data-bind=theme]').dispatchEvent(new (win().Event)('change', { bubbles: true })); await settle();
+      for (const page of ['general', 'fences', 'rules', 'layout', 'about']) {
+        doc.querySelector(`[data-page=${page}]`).click();
+        if (page === 'rules') doc.getElementById('nrPanel').open = true;
+        const texts = [...[...doc.querySelectorAll('nav input, main .page.on input[placeholder], main .page.on textarea[placeholder]')].map(el => [el, '::placeholder', el.placeholder]),
+          ...[...doc.querySelectorAll('#workspaceSummary, main .page.on .picker-count, main .page.on .fb-count, main .page.on .hotkey-box .prompt')].map(el => [el, undefined, el.textContent]),
+          ...[...doc.querySelectorAll('main .page.on #ruleList .rule')].map(el => [el, '::before', 'rule number'])];
+        for (const [el, pseudo, name] of texts) {
+          if (!el.getClientRects().length) continue;
+          const value = ratio(el, pseudo);
+          assert(value >= 4.5, `${mode} ${page}: "${name}" is ${value.toFixed(2)} : 1`);
+        }
+      }
+    }
+    doc = await reset();
+  });
+
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
   window.testResults = { passed, failed };

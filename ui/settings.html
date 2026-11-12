@@ -38,7 +38,7 @@
     --chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='m2.5 4.25 3.5 3.5 3.5-3.5' fill='none' stroke='%23cfcfcf' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   }
   :root.light { color-scheme: light;
-    --text: #1b1b1b; --text2: #5d5d5d; --text3: #8a8a8a; --text-disabled: #a0a0a0;
+    --text: #1b1b1b; --text2: #5d5d5d; --text3: #6e6e6e; --text-disabled: #a0a0a0;
     --sheet: #f3f3f3; --card: #fbfbfb; --card-stroke: #0000000f; --line: #0000000f;
     --control: #ffffffb3; --control-hover: #f9f9f980; --control-pressed: #f9f9f94d; --control-disabled: #f9f9f94d;
     --control-stroke: #0000000f; --control-stroke-bottom: #00000029; --control-strong: #8a8a8a;
@@ -212,7 +212,7 @@
   textarea { display: block; min-height: 96px; height: 96px; padding: 6px 11px; resize: vertical; border-radius: var(--r-control); background: var(--control);
     border: 1px solid var(--control-stroke); border-bottom-color: var(--control-stroke-bottom); font-size: 14px; line-height: 20px; user-select: text; }
   input[type=text]:focus, input[type=time]:focus, input[type=number]:focus, input[type=email]:focus, textarea:focus { outline: none; border-bottom: 2px solid var(--accent); background-color: var(--card); }
-  input::placeholder { color: var(--text3); }
+  input::placeholder, textarea::placeholder { color: var(--text2); }
   button { padding: 0 12px; min-width: 96px; }
   button:active, select:active { background-color: var(--control-pressed); color: var(--text2); }
   button:disabled, select:disabled { color: var(--text-disabled); background-color: var(--control-disabled); border-color: var(--control-stroke); }
@@ -230,7 +230,7 @@
   .hotkey-box { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 200px; padding: 0 10px 0 4px; }
   .hotkey-box .keys { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
   .hotkey-box kbd { font: 600 12px/22px "Segoe UI Variable Text", "Segoe UI", var(--font-cjk), sans-serif; min-width: 26px; padding: 0 7px; border-radius: 3px; text-align: center; color: var(--on-accent); background: var(--accent); }
-  .hotkey-box .prompt { padding: 0 7px; color: var(--text3); }
+  .hotkey-box .prompt { padding: 0 7px; color: var(--text2); }
   .hotkey-box .ic { font-size: 14px; color: var(--text2); }
   .hotkey-box.recording, .hotkey-box.recording:hover { background-color: var(--card); border-bottom: 2px solid var(--accent); }
   .hotkey-box.recording .ic { visibility: hidden; }
