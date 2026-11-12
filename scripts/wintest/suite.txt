@@ -151,3 +151,7 @@ shellext-own-crash 1   ec2    release shellext-fault.ps1             --extra @sh
 shellext-load      1   ec2    release shellext-fault.ps1             --extra @shellext --var Part=A
 shellext-hang      2   ec2    release shellext-fault.ps1             --extra @shellext --var Part=H
 shellext-stall     2   ec2    debug   shellext-fault.ps1             --extra @shellext --var Part=S
+owner-script-rows  2   ec2    release owner-script-rows.ps1          --extra crates/app/assets/scripts
+owner-hover-tabs   2   ec2    release owner-small.ps1                --var Part=HT
+owner-right-drag   2   ec2    release owner-small.ps1                --var Part=RD
+owner-drop-effect  3   manual release owner-small.ps1                --var Part=DDT
