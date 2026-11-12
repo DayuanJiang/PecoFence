@@ -77,6 +77,9 @@ pub(super) enum ChromeKey {
     /// A tab that just joined the strip (merge, re-attach): 1 → 0 is its fade-in remainder,
     /// so the pill draws at alpha `1 - value` (Fluent Fade In, 83 ms linear).
     TabNew(FenceId),
+    /// A lone title that just changed with the folder shown: 1 → 0 is the remainder of the
+    /// fade-in of its name and glyph, in step with the icons' cross-fade.
+    TitleSwap,
 }
 
 /// The selected anchor's unfolded label: `text` is the full name fitted to `MAX_UNFOLD_LINES`
@@ -580,6 +583,7 @@ impl FenceViewState {
             merge_hint: self.merge_t.value_at(now),
             plate_top,
             plate_clear,
+            swap: f.value(&ChromeKey::TitleSwap, now),
             strip_clip: self.tab_strip_clip(),
             lock,
         }

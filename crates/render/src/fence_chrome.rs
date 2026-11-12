@@ -458,6 +458,10 @@ pub struct TitleState {
     /// The lock glyph of a locked fence: shown while the pointer is over the fence (83 ms),
     /// dipping once when the lock refuses a drag.
     pub lock: f32,
+    /// A lone title's name and glyph just changed with the folder shown (into a subfolder,
+    /// back up): 1 → 0 is the remainder of their fade-in, so they draw at alpha `1 - swap`
+    /// while the icons cross-fade (83 ms linear), instead of cutting a frame ahead of them.
+    pub swap: f32,
 }
 
 /// The visible span of a scrolled tab strip (DIPs). An end with more pills behind it fades out
@@ -3167,6 +3171,12 @@ impl FenceChrome {
                 pop_strip_fade(session, brush);
             }
         } else {
+            // The name and glyph of a fence that just went to another folder fade in.
+            let swap_a = title_a * (1.0 - state.swap.clamp(0.0, 1.0));
+            if state.swap > 0.0 {
+                text.set_color(with_alpha(title_ink, swap_a));
+                secondary.set_color(with_alpha(foreground.text_secondary, swap_a));
+            }
             if deco.up_at_left() {
                 // Up (Segoe Fluent E74A) in a 28×28 box: transparent at rest, SubtleFill
                 // fading in on hover, SubtleFillColorTertiary + tertiary glyph while pressed.
@@ -3231,7 +3241,7 @@ impl FenceChrome {
             }
             let fx = legible
                 .as_ref()
-                .map(|l| l.fx(theme, title_ink, title_a, false));
+                .map(|l| l.fx(theme, title_ink, swap_a, false));
             self.draw_caption(
                 session,
                 &fitted,
@@ -3240,6 +3250,11 @@ impl FenceChrome {
                 &text,
                 fx,
             );
+            if state.swap > 0.0 {
+                // The chevron and the lock after this use the same brushes at full strength.
+                text.set_color(with_alpha(title_ink, title_a));
+                secondary.set_color(with_alpha(foreground.text_secondary, title_a));
+            }
             // The capsule's and the tag's texts get a halo as the title does, and on Liquid
             // Glass too (their washes are faint over a bright or busy wallpaper).
             let chip_legible = if legible.is_none() && theme.liquid_glass {
