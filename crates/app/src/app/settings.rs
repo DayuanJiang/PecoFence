@@ -118,6 +118,8 @@ pub(super) struct SettingsKept {
     /// The snapshot the page deleted last and its place in the list, for the notice's 撤销.
     /// Gone when the window closes.
     pub deleted_snapshot: Option<(usize, pecofence_core::Snapshot)>,
+    /// The 「恢复快照前」 snapshot of the page's last restore, for the notice's 撤销.
+    pub restore_undo: Option<uuid::Uuid>,
 }
 
 fn snapshot_limit_text() -> String {
@@ -223,7 +225,7 @@ impl App {
             new_settings.autostart = old_settings.autostart;
         }
         self.sync_desktop_if_available("config adopted");
-        self.relayout_from_state();
+        self.relayout_from_state_gliding();
         // The file's portals need enumerating; runtime state of the replaced ones is pruned.
         self.refresh_portals();
         // Re-apply the settings through the diff path so the anchor / Run-key side effects
@@ -374,6 +376,21 @@ impl App {
                 &[e.to_string()],
             )),
         }
+    }
+
+    /// After the page restored a snapshot's layouts (or took the restore back): the windows
+    /// follow, and the page lists the snapshots as they are now.
+    fn show_restored_layout(&mut self) {
+        self.end_peek_now();
+        // Files that came to the desktop after the snapshot are in none of its fences: they
+        // are filed now, not at the next desktop change.
+        self.sync_desktop_if_available("snapshot restored");
+        self.relayout_from_state_gliding();
+        // Portals restored with the snapshot need enumerating; stale runtime state of the
+        // replaced ones is pruned on the way.
+        self.refresh_portals();
+        self.schedule_save();
+        self.push_settings_state();
     }
 
     pub(super) fn restore_from_file(&mut self, path: &std::path::Path, source: ConfigSource) {
@@ -1046,21 +1063,35 @@ impl App {
                             self.settings_error(&not_done_for_snapshot_limit_text());
                             return;
                         }
-                        self.state.restore_snapshot_with_backup(
+                        let before = self.state.restore_snapshot_with_backup(
                             id,
                             pecofence_core::i18n::text("恢复快照前"),
                         );
-                        self.end_peek_now();
-                        // Files that came to the desktop after the snapshot are in none of
-                        // its fences: they are filed now, not at the next desktop change.
-                        self.sync_desktop_if_available("snapshot restored");
-                        self.relayout_from_state();
-                        // Portals restored with the snapshot need enumerating; stale
-                        // runtime state of the replaced ones is pruned on the way.
-                        self.refresh_portals();
-                        self.schedule_save();
-                        self.push_settings_state();
-                        self.settings_toast(pecofence_core::i18n::text("已恢复快照"));
+                        self.show_restored_layout();
+                        // The notice offers 撤销 for a few seconds, as after a delete: the
+                        // layout from before is in the snapshot just taken.
+                        self.settings_kept.restore_undo = before;
+                        if let Some(h) = &self.settings {
+                            h.post_json(
+                                &serde_json::json!({
+                                    "type": "toast",
+                                    "text": pecofence_core::i18n::text("已恢复快照"),
+                                    "undo": "undoRestoreSnapshot",
+                                })
+                                .to_string(),
+                            );
+                        }
+                    }
+                }
+                // 撤销 on the restore notice: the layout from before the restore comes back
+                // and the 「恢复快照前」 snapshot that held it goes, its work done.
+                Some("undoRestoreSnapshot") => {
+                    if let Some(before) = self.settings_kept.restore_undo.take()
+                        && self.state.restore_snapshot(before)
+                    {
+                        self.state.delete_snapshot(before);
+                        tracing::info!("snapshot restore undone from the page's notice");
+                        self.show_restored_layout();
                     }
                 }
                 Some("deleteSnapshot") => {

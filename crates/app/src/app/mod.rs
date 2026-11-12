@@ -3024,6 +3024,7 @@ impl App {
                         self.settings_kept.closed_at = Some(at);
                     }
                     self.settings_kept.deleted_snapshot = None;
+                    self.settings_kept.restore_undo = None;
                     self.settings = None;
                     self.set_settings_ring(None);
                     self.resume_hotkeys();
