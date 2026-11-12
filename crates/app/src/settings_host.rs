@@ -287,6 +287,15 @@ impl SettingsHost {
             let _ = settings.set_default_context_menus_enabled(false);
             let _ = settings.set_status_bar_enabled(false);
             let _ = settings.set_zoom_control_enabled(false);
+            // The browser's own keys are not the window's: F5 reloaded the page (back on 常规,
+            // a half-typed rule gone), F12 opened DevTools, F3, F7, Ctrl+J and Ctrl+U opened
+            // browser UI. The page still gets every key (Ctrl+F for 查找设置).
+            let _ = settings.set_browser_accelerator_keys_enabled(false);
+            // DevTools stay for a debug build that a test drives over the debugging port.
+            let dev_tools = cfg!(debug_assertions)
+                && pecofence_core::brand::var("PECOFENCE_WEBVIEW_ARGS").is_ok();
+            let _ = settings.set_dev_tools_enabled(dev_tools);
+            tracing::debug!(dev_tools, "settings: browser keys off");
         }
 
         let mut registrations = Vec::new();
