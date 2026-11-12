@@ -1142,10 +1142,48 @@ impl App {
 
     /// A click on a to-do's check box.
     pub(super) fn toggle_note_line(&mut self, fence: FenceId, line: usize) {
+        // While the note is edited the tick goes into the editor's text (Ctrl+Z takes it
+        // back); the note gets it when the editor closes.
+        if crate::note_edit::open_for() == Some(fence) {
+            crate::note_edit::toggle_line(fence, line);
+            return;
+        }
         if self.state.toggle_note_line(fence, line) {
             self.push_note(fence);
             self.schedule_save();
         }
+    }
+
+    /// A click on a web address in a note: it opens in the default browser. Only what
+    /// `note::links` finds there is opened, an `http://` or `https://` address, as a script
+    /// fence's `href=` row opens without its header line: a note starts no program and opens
+    /// no file.
+    pub(super) fn open_note_link(&mut self, fence: FenceId, line: usize, start: usize) {
+        use pecofence_core::note::{self, NoteLine};
+        let address = self.state.note_text(fence).and_then(|text| {
+            let shown = match *note::lines(text).get(line)? {
+                NoteLine::Todo { text, .. } | NoteLine::Text(text) => text,
+            };
+            let wide: Vec<u16> = shown.encode_utf16().collect();
+            let (from, to) = note::links(shown).into_iter().find(|l| l.0 == start)?;
+            Some(String::from_utf16_lossy(&wide[from..to]))
+        });
+        let Some(address) = address.filter(|a| pecofence_core::script_output::is_web_address(a))
+        else {
+            tracing::info!(%fence, line, start, "note link not opened: no web address there");
+            return;
+        };
+        let owner = self.window_for(fence).map(|w| w.hwnd());
+        let opened = shell::shell_execute(std::path::Path::new(&address), None, owner);
+        // The address itself stays out of the log: it is the user's.
+        tracing::info!(
+            %fence,
+            line,
+            chars = address.len(),
+            https = address.to_ascii_lowercase().starts_with("https://"),
+            ok = opened.is_ok(),
+            "note link opened in the browser"
+        );
     }
 
     /// The editor closed: its text replaces the note's (line breaks stored as `\n`).

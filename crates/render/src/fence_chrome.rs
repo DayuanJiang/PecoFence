@@ -1071,6 +1071,17 @@ fn header_foreground(
         ..
     } = backdrop
     {
+        // A fully transparent fence (its captions have the halo; on Liquid Glass nothing
+        // else sets it) in a theme file whose glass has a tint of its own: the header keeps
+        // the fence's own pick, the wallpaper while the plate is hidden and the plate while
+        // it shows, as the content does. The sample under a control is of the tinted glass,
+        // which is not drawn while the plate is hidden: an ink picked from it was white on a
+        // white wallpaper in dark mode. The built-in glass has no tint, so its sample is the
+        // wallpaper itself and each control goes on picking its own ink.
+        let tinted = theme.material.color.a > 0.0 || theme.material.luminosity_opacity > 0.0;
+        if theme.text_halo && tinted {
+            return *theme;
+        }
         // A fixed 「文字颜色」 keeps its text; the sample still keeps the lens warm.
         return material
             .borrow_mut()
@@ -2459,9 +2470,13 @@ impl FenceChrome {
         legible: Option<&Legible>,
     ) -> Result<()> {
         let r = self.count_capsule_box(count, width, title_h);
-        // ControlFillColorSecondary-like: a faint wash of the text colour.
+        // The capsule is the number's ground. Under a light number it is a dark wash, so the
+        // number reads on a plate of any brightness: the light wash it was made the ground
+        // lighter still (2.1 : 1 over the Windows 11 wallpaper in dark mode). Under a dark
+        // number it stays the faint dark wash (ControlFillColorSecondary-like): dark text has
+        // contrast to spare on every plate that takes it.
         let wash = if foreground.text_secondary.r > 0.5 {
-            ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0x1A)
+            ColorF::from_rgba8(0, 0, 0, 0x38)
         } else {
             ColorF::from_rgba8(0, 0, 0, 0x0F)
         };
@@ -4449,6 +4464,15 @@ pub struct NoteEditDraw<'a> {
     pub selection: &'a [(usize, usize, usize, bool)],
 }
 
+/// What [`FenceChrome::draw_note`] drew that takes the pointer, in surface DIPs: each to-do's
+/// line index with its check box, and each web address (its line and its start in the line's
+/// text, UTF-16 units) with one box per line on screen it runs over.
+#[derive(Default)]
+pub struct NoteDrawn {
+    pub boxes: Vec<(usize, Rect)>,
+    pub links: Vec<(usize, usize, Rect)>,
+}
+
 /// One line of a note laid out: its wrapped text, where the text starts, its top from the
 /// first line's top (before any scrolling) and its height.
 struct NoteRow {
@@ -4674,8 +4698,10 @@ impl FenceChrome {
     /// colour and the lines stop above it. The lines are moved up by `scroll` DIPs (a note
     /// taller than its fence), with the overlay `scrollbar` at the right. While the note is
     /// being edited, `edit` adds the selection and the caret; nothing else changes. `hot` is
-    /// the line whose check box is under the pointer (true: held). Returns each to-do's line
-    /// index with its check box (surface DIPs) for hit-testing.
+    /// the line whose check box is under the pointer (true: held). A web address
+    /// (`pecofence_core::note::links`) is drawn as a link, in the accent ink, the one at
+    /// `link_hot` (line, start) underlined; while the note is edited it is plain text.
+    /// Returns the check boxes and the links for hit-testing.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_note(
         &self,
@@ -4692,11 +4718,16 @@ impl FenceChrome {
         scrollbar: Option<ScrollbarDraw>,
         edit: Option<&NoteEditDraw<'_>>,
         hot: Option<(usize, bool)>,
-    ) -> Result<Vec<(usize, Rect)>> {
+        link_hot: Option<(usize, usize)>,
+    ) -> Result<NoteDrawn> {
         session.clear(ColorF::TRANSPARENT);
         let tt = self.tool_text(text_size);
         let primary = session.create_solid_brush(theme.text_primary)?;
         let secondary = session.create_solid_brush(theme.text_secondary)?;
+        // A link in a done to-do is dimmed as the line's text is.
+        let link = session.create_solid_brush(theme.link_ink())?;
+        let link_dim =
+            session.create_solid_brush(with_alpha(theme.link_ink(), theme.text_secondary.a))?;
         let halo = tool_halo(session, theme, scale)?;
         let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
         let height = match footer.filter(|f| !f.is_empty()) {
@@ -4730,7 +4761,7 @@ impl FenceChrome {
             // A note that is being edited shows its hint until the first character, with
             // the caret before it.
             if edit.is_none() {
-                return Ok(Vec::new());
+                return Ok(NoteDrawn::default());
             }
         }
         let (rows, line_h) = self.note_rows(width, text_size, lines)?;
@@ -4743,6 +4774,7 @@ impl FenceChrome {
             _ => None,
         };
         let mut boxes = Vec::new();
+        let mut links = Vec::new();
         for (i, (line, row)) in lines.iter().zip(&rows).enumerate() {
             let y = NOTE_PAD_TOP + row.y - scroll;
             if y >= height {
@@ -4810,6 +4842,33 @@ impl FenceChrome {
             if let Some((halo, down)) = &halo {
                 session.draw_text_layout(Vector2::new(row.x, y + down), &row.layout, halo);
             }
+            // After the halo, which stays the fence text's: the links take their ink.
+            if edit.is_none() {
+                for (from, to) in pecofence_core::note::links(line.text) {
+                    let (start, count) = (from as u32, (to - from) as u32);
+                    let ink = if line.todo == Some(true) {
+                        &link_dim
+                    } else {
+                        &link
+                    };
+                    row.layout.set_range_brush(start, count, ink);
+                    if link_hot == Some((i, from)) {
+                        row.layout.set_range_underline(start, count);
+                    }
+                    for r in layout_selection(&row.layout, from, to, len) {
+                        links.push((
+                            i,
+                            from,
+                            Rect::from_xywh(
+                                row.x + r.left,
+                                y + r.top,
+                                r.right - r.left,
+                                r.bottom - r.top,
+                            ),
+                        ));
+                    }
+                }
+            }
             session.draw_text_layout(Vector2::new(row.x, y), &row.layout, brush);
             if let Some((_, at)) = edit.and_then(|e| e.caret).filter(|c| c.0 == i) {
                 let (cx, top, h) = layout_caret(&row.layout, at, len);
@@ -4822,7 +4881,7 @@ impl FenceChrome {
         if let Some(bar) = scrollbar {
             draw_scrollbar(session, theme, &self.sort_glyph_format, width, bar)?;
         }
-        Ok(boxes)
+        Ok(NoteDrawn { boxes, links })
     }
 }
 
@@ -5011,7 +5070,8 @@ impl FenceChrome {
         Ok(ToolTextExtent {
             tops,
             line_step: line_h + 2.0 * SCRIPT_ROW_PAD_Y,
-            height: NOTE_PAD_TOP + SCRIPT_ROW_PAD_Y + bottom + below,
+            // Under the last row's text, the room its plate takes.
+            height: NOTE_PAD_TOP + bottom + SCRIPT_ROW_PAD_Y + below,
         })
     }
 
@@ -5085,7 +5145,9 @@ impl FenceChrome {
         let glyph_w = (14.0 * tt.k).round();
         let mut hits = Vec::new();
         for (i, (row, at)) in rows.iter().zip(&laid).enumerate() {
-            let y = NOTE_PAD_TOP + SCRIPT_ROW_PAD_Y + at.y - scroll;
+            // The first row's text stands where a note's first line does: the two fences
+            // side by side start their text on one line (the row stood 3 DIPs lower).
+            let y = NOTE_PAD_TOP + at.y - scroll;
             if y >= height {
                 break;
             }
@@ -5118,11 +5180,14 @@ impl FenceChrome {
             } else {
                 None
             };
+            // The first row's plate starts at the content's top edge, a DIP under where the
+            // others' would: its round corners stay whole.
+            let plate_top = (y - SCRIPT_ROW_PAD_Y).max(-scroll);
             let plate_rect = Rect::from_xywh(
                 NOTE_PAD_X - SCRIPT_ROW_PAD_X,
-                y - SCRIPT_ROW_PAD_Y,
+                plate_top,
                 w + 2.0 * SCRIPT_ROW_PAD_X,
-                h + 2.0 * SCRIPT_ROW_PAD_Y,
+                y + h + SCRIPT_ROW_PAD_Y - plate_top,
             );
             // How far this row's plate has faded in.
             let hot = if row.clickable {

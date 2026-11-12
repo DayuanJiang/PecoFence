@@ -2318,6 +2318,33 @@ windows_core::imp::interface_hierarchy!(
     IDWriteTextFormat
 );
 impl IDWriteTextLayout {
+    // PecoFence addition: SetUnderline and SetDrawingEffect.
+    pub(crate) unsafe fn SetUnderline(
+        &self,
+        hasunderline: bool,
+        textrange: DWRITE_TEXT_RANGE,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetUnderline)(
+                windows_core::Interface::as_raw(self),
+                hasunderline.into(),
+                textrange,
+            )
+        }
+    }
+    pub(crate) unsafe fn SetDrawingEffect(
+        &self,
+        drawingeffect: *mut core::ffi::c_void,
+        textrange: DWRITE_TEXT_RANGE,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetDrawingEffect)(
+                windows_core::Interface::as_raw(self),
+                drawingeffect,
+                textrange,
+            )
+        }
+    }
     pub(crate) unsafe fn SetMaxWidth(&self, maxwidth: f32) -> windows_core::HRESULT {
         unsafe {
             (windows_core::Interface::vtable(self).SetMaxWidth)(
@@ -2398,6 +2425,13 @@ impl IDWriteTextLayout {
         }
     }
 }
+// PecoFence addition.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct DWRITE_TEXT_RANGE {
+    pub startPosition: u32,
+    pub length: u32,
+}
 #[repr(C)]
 pub struct IDWriteTextLayout_Vtbl {
     pub base__: IDWriteTextFormat_Vtbl,
@@ -2411,9 +2445,17 @@ pub struct IDWriteTextLayout_Vtbl {
     SetFontStyle: usize,
     SetFontStretch: usize,
     SetFontSize: usize,
-    SetUnderline: usize,
+    pub SetUnderline: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        windows_core::BOOL,
+        DWRITE_TEXT_RANGE,
+    ) -> windows_core::HRESULT,
     SetStrikethrough: usize,
-    SetDrawingEffect: usize,
+    pub SetDrawingEffect: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+        DWRITE_TEXT_RANGE,
+    ) -> windows_core::HRESULT,
     SetInlineObject: usize,
     SetTypography: usize,
     SetLocaleName: usize,

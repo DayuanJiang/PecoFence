@@ -25,10 +25,16 @@ pub(super) fn on_setcursor(
         window::set_standard_cursor(StandardCursor::SizeWE);
         return Some(1);
     }
+    // A web address in a note that is not being edited: the hand, as over a link.
+    if v.note_link_at(pt.x, pt.y).is_some() {
+        drop(guard);
+        window::set_standard_cursor(StandardCursor::Hand);
+        return Some(1);
+    }
     // A note's text: the text cursor, also before the click that starts the editing (it
-    // says that a click here writes). A check box of a note at rest keeps the arrow.
-    if v.in_note_text(pt.x, pt.y) && (v.note_edit.is_some() || v.note_box_at(pt.x, pt.y).is_none())
-    {
+    // says that a click here writes). A check box keeps the arrow, also while the note is
+    // edited: a click ticks it.
+    if v.in_note_text(pt.x, pt.y) && v.note_box_at(pt.x, pt.y).is_none() {
         drop(guard);
         window::set_standard_cursor(StandardCursor::IBeam);
         return Some(1);
@@ -103,6 +109,7 @@ pub(super) fn on_mouseleave(
         let content_changed = v.header_hover.take().is_some()
             | v.script_hover.take().is_some()
             | v.note_box_hover.take().is_some()
+            | v.note_link_hover.take().is_some()
             | v.hover_empty_action(None);
         // Onto the caption part of the title row (a gap between tabs): still the row, as in
         // WM_NCMOUSELEAVE; this message can come after the WM_NCMOUSEMOVE there.
@@ -537,6 +544,7 @@ pub(super) fn on_lbuttonup(
             PressTarget::Item(_)
             | PressTarget::Header(_)
             | PressTarget::NoteBox(_)
+            | PressTarget::NoteLink(..)
             | PressTarget::ScriptRow(_),
             _,
         )) => {
@@ -560,6 +568,11 @@ pub(super) fn on_lbuttonup(
             PressTarget::NoteBox(line) => queue.push(Command::ToggleNoteLine {
                 fence: v.active,
                 line,
+            }),
+            PressTarget::NoteLink(line, start) => queue.push(Command::OpenNoteLink {
+                fence: v.active,
+                line,
+                start,
             }),
             PressTarget::ScriptRow(row) => queue.push(Command::ScriptRowClicked {
                 fence: v.active,
@@ -985,6 +998,13 @@ pub(super) fn note_edit_mouse(
     let v = guard.as_mut()?;
     v.note_edit.as_ref()?;
     let fence = v.active;
+    // A check box stays a check box while the note is edited: the usual press takes it (the
+    // pressed look, the tick on release), and the editor stays open.
+    if matches!(message, msg::WM_LBUTTONDOWN | msg::WM_LBUTTONDBLCLK)
+        && v.note_box_at(x, y).is_some()
+    {
+        return None;
+    }
     match message {
         msg::WM_LBUTTONDOWN | msg::WM_LBUTTONDBLCLK if v.in_note_text(x, y) => {
             let offset = v.note_offset_at(x, y)?;

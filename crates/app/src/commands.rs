@@ -383,6 +383,13 @@ pub enum Command {
         fence: FenceId,
         line: usize,
     },
+    /// A click on a web address in a note's text (not while it is edited): its line and its
+    /// start in the line's text (UTF-16 units).
+    OpenNoteLink {
+        fence: FenceId,
+        line: usize,
+        start: usize,
+    },
     /// 脚本栅栏: a click on a clickable row of the script's output.
     ScriptRowClicked {
         fence: FenceId,

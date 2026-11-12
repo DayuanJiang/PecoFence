@@ -95,6 +95,9 @@ pub struct Theme {
     /// A theme file's halo and shadow for text drawn straight over wallpaper: for dark text
     /// (the light mode's values) and for light text (the dark mode's), see [`Self::text_fx`].
     pub text_fx: [TextFx; 2],
+    /// The colour of the plate the text was last picked for (`with_quiet_text_on`): a link
+    /// in the text is read against it ([`Self::link_ink`]). None where nothing was picked.
+    pub plate: Option<ColorF>,
 }
 
 /// The halo and soft shadow a theme file gives text over bare wallpaper (None = built in: the
@@ -221,6 +224,27 @@ const WEAK_PLATE_SHARE: f32 = 0.125;
 /// the edge does not switch it with every pixel. One row or column of the 16 x 16 samples is
 /// 1/16 of the plate: under that, so a step of one row over a straight edge keeps the state.
 const WEAK_PLATE_KEEP: f32 = 0.06;
+/// Secondary text (resting tabs, a clock's date, the details header, footers, counts, done
+/// to-dos) follows the plate like primary text: where its own strength gives less than
+/// `SECONDARY_BAR` : 1 against the plate (4.5 : 1, WCAG's figure for small text and what
+/// Windows' own secondary text keeps on Mica), it moves towards the primary text (its alpha,
+/// and its colour in a theme file whose secondary text has one of its own) as far as the bar
+/// needs, at most `SECONDARY_REACH` of the way, so it never reads as primary text. On a
+/// plate of middle brightness that end is reached first; the halo of a weak plate covers the
+/// rest, as for primary text. Tertiary text (the count of a rolled fence, the chevron) the
+/// same with 3 : 1, WCAG's figure for large text and the parts of a control.
+const SECONDARY_BAR: f32 = 4.5;
+const SECONDARY_REACH: f32 = 0.6;
+const TERTIARY_BAR: f32 = 3.0;
+const TERTIARY_REACH: f32 = 0.45;
+/// The way is gone in this many steps: a fence dragged over a wallpaper draws its content
+/// again only when a step changes ([`Theme::label_look`]).
+const QUIET_TEXT_STEPS: u8 = 6;
+/// A link in the text keeps as much of the accent's hue as it can: on a plate where the
+/// accent gives less than `LINK_BAR` : 1 (3.9 : 1, what names and rows need) it moves towards
+/// the text's colour, at most `LINK_REACH` of the way.
+const LINK_BAR: f32 = 3.9;
+const LINK_REACH: f32 = 0.7;
 
 fn luma(rgb: [f32; 3]) -> f32 {
     0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
@@ -231,6 +255,41 @@ fn luma(rgb: [f32; 3]) -> f32 {
 /// (47,160,210) has under 3 : 1, on the grey of the same mean 3.4 : 1.
 fn brightness(rgb: [f32; 3]) -> f32 {
     luma(rgb.map(|c| c * c)).sqrt()
+}
+
+/// WCAG relative luminance of an sRGB colour.
+fn relative_luminance(rgb: [f32; 3]) -> f32 {
+    luma(rgb.map(|c| {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    }))
+}
+
+/// WCAG contrast of `ink`, drawn at its alpha, against the `plate` under it.
+fn contrast_over(ink: ColorF, plate: [f32; 3]) -> f32 {
+    let over = [ink.r, ink.g, ink.b];
+    let text = relative_luminance([0, 1, 2].map(|i| plate[i] + (over[i] - plate[i]) * ink.a));
+    let plate = relative_luminance(plate);
+    (text.max(plate) + 0.05) / (text.min(plate) + 0.05)
+}
+
+/// `ink` moved towards `primary` (colour and alpha) as little as gives `bar` : 1 against
+/// `plate`, at most `reach` of the way.
+fn quiet_ink(ink: ColorF, primary: ColorF, plate: [f32; 3], bar: f32, reach: f32) -> ColorF {
+    let at = |step: u8| {
+        lerp(
+            ink,
+            primary,
+            reach * f32::from(step) / f32::from(QUIET_TEXT_STEPS),
+        )
+    };
+    (0..=QUIET_TEXT_STEPS)
+        .map(at)
+        .find(|c| contrast_over(*c, plate) >= bar)
+        .unwrap_or_else(|| at(QUIET_TEXT_STEPS))
 }
 
 /// Up to 16 x 16 pixels (BGRA) spread evenly over `image`.
@@ -324,6 +383,7 @@ impl Theme {
             label_color: pecofence_core::LabelColor::Auto,
             title_text: None,
             text_fx: [TextFx::NONE; 2],
+            plate: None,
         }
     }
 
@@ -365,6 +425,7 @@ impl Theme {
             label_color: pecofence_core::LabelColor::Auto,
             title_text: None,
             text_fx: [TextFx::NONE; 2],
+            plate: None,
         }
     }
 
@@ -475,6 +536,7 @@ impl Theme {
             self.ink(ThemeMode::Dark)
         };
         self.with_ink_of(foreground)
+            .with_quiet_text_on(self.plate_color(image, opacity, tint))
     }
 
     /// A fully transparent plate (外观 → 全透明) while it is hidden: the captions sit on the
@@ -502,6 +564,7 @@ impl Theme {
             self.ink(ThemeMode::Dark)
         };
         self.with_ink_of(foreground)
+            .with_quiet_text_on(self.wallpaper_color(image))
     }
 
     /// A fully transparent plate (外观 → 全透明) while its plate shows (the pointer over the
@@ -527,6 +590,7 @@ impl Theme {
             self.ink(ThemeMode::Dark)
         };
         self.with_ink_of(foreground)
+            .with_quiet_text_on(self.plate_color(image, 1.0, tint))
     }
 
     /// Fluent with 「文字颜色」 自动: the plate is see-through and takes its brightness from the
@@ -583,7 +647,7 @@ impl Theme {
             WEAK_PLATE_SHARE
         };
         theme.text_halo |= weak_share >= needed;
-        theme
+        theme.with_quiet_text_on(self.plate_color(image, opacity, tint))
     }
 
     /// What [`Self::over_acrylic`] decides from: the mean brightness (0..=1) of the Fluent
@@ -670,6 +734,43 @@ impl Theme {
         }
     }
 
+    /// The secondary and tertiary text for `plate`, the colour under the text (see
+    /// `SECONDARY_BAR`): each as strong as its bar needs there, within its reach.
+    fn with_quiet_text_on(mut self, plate: ColorF) -> Self {
+        self.plate = Some(plate);
+        let plate = [plate.r, plate.g, plate.b];
+        let primary = self.text_primary;
+        self.text_secondary = quiet_ink(
+            self.text_secondary,
+            primary,
+            plate,
+            SECONDARY_BAR,
+            SECONDARY_REACH,
+        );
+        self.text_tertiary = quiet_ink(
+            self.text_tertiary,
+            primary,
+            plate,
+            TERTIARY_BAR,
+            TERTIARY_REACH,
+        );
+        self
+    }
+
+    /// The mean colour of the wallpaper under `image`, this fence's backdrop crop.
+    fn wallpaper_color(&self, image: &crate::Image) -> ColorF {
+        let (mut sum, mut count) = ([0.0f32; 3], 0);
+        for p in sample_grid(image) {
+            let wallpaper = self.wallpaper_under([p[2], p[1], p[0]].map(|c| c as f32 / 255.0));
+            for (s, c) in sum.iter_mut().zip(wallpaper) {
+                *s += c;
+            }
+            count += 1;
+        }
+        let n = count.max(1) as f32;
+        ColorF::new(sum[0] / n, sum[1] / n, sum[2] / n, 1.0)
+    }
+
     /// The mean brightness (0..=1) of the wallpaper under `image`, this fence's backdrop crop.
     pub fn wallpaper_brightness(&self, image: &crate::Image) -> f32 {
         let (mut sum, mut count) = (0.0, 0);
@@ -753,16 +854,48 @@ impl Theme {
         }
     }
 
-    /// What the backdrop decides about the item names: their colour and whether they get a
-    /// halo. The content is redrawn when this changes.
-    pub fn label_look(&self) -> (ColorF, bool) {
-        (self.text_primary, self.text_halo)
+    /// What the backdrop decides about the content's text: the names' colour, whether they
+    /// get a halo, and the secondary text's colour (a date, a footer, a done to-do). The content
+    /// is redrawn when this changes.
+    pub fn label_look(&self) -> (ColorF, bool, ColorF) {
+        (self.text_primary, self.text_halo, self.text_secondary)
     }
 
     /// The colour of a fence title or tab caption without a 「标题颜色」 of its own: the theme
     /// file's title colour, else `fallback` (the primary or, for a resting tab, secondary text).
     pub fn title_ink(&self, fallback: ColorF) -> ColorF {
         self.title_text.unwrap_or(fallback)
+    }
+
+    /// The ink of a link in the text (a web address in a note): the accent in the shade that
+    /// goes with the text as it was picked for the plate, the light shade beside light text
+    /// and the dark one beside dark text. On a plate of middle brightness the accent reads
+    /// worse than the text around it (the light shade 2.2 : 1 on a mid grey, where white has
+    /// 3.9 : 1): there it moves towards the text's colour, as secondary text does.
+    pub fn link_ink(&self) -> ColorF {
+        let light_text = self.text_primary.r > 0.5;
+        let accent = if light_text == (self.mode == ThemeMode::Dark) {
+            self.accent
+        } else {
+            match self.other_accent {
+                Some([r, g, b]) => ColorF::from_rgba8(r, g, b, 0xFF),
+                None if light_text => Self::dark().accent,
+                None => Self::light().accent,
+            }
+        };
+        match self.plate {
+            Some(plate) => quiet_ink(
+                accent,
+                ColorF {
+                    a: 1.0,
+                    ..self.text_primary
+                },
+                [plate.r, plate.g, plate.b],
+                LINK_BAR,
+                LINK_REACH,
+            ),
+            None => accent,
+        }
     }
 
     /// The theme file's halo and shadow for text in `ink`: dark text takes the light mode's,
@@ -1159,6 +1292,92 @@ mod tests {
                 assert!((got * 255.0 - want).abs() < 4.0, "{c:?} against {plate:?}");
             }
         }
+    }
+
+    #[test]
+    fn secondary_text_is_raised_to_its_bar_on_the_plate_and_stays_under_primary() {
+        let against = |theme: &Theme, ink: ColorF, wallpaper: [u8; 3]| {
+            let plate = theme.plate_color(&crop_of(theme, wallpaper), 1.0, None);
+            contrast_over(ink, [plate.r, plate.g, plate.b])
+        };
+        for theme in [Theme::dark(), Theme::light()] {
+            for grey in (0..=255).step_by(5) {
+                let wallpaper = [grey as u8; 3];
+                let picked = theme.over_acrylic(&crop_of(&theme, wallpaper), 1.0, None, None);
+                let (first, second, third) = (
+                    picked.text_primary,
+                    picked.text_secondary,
+                    picked.text_tertiary,
+                );
+                // The text's own colour mode decides what each started from.
+                let own = if first.r > 0.5 {
+                    Theme::dark()
+                } else {
+                    Theme::light()
+                };
+                let most = |ink: ColorF, reach: f32| ink.a + (first.a - ink.a) * reach;
+                let (most2, most3) = (
+                    most(own.text_secondary, SECONDARY_REACH),
+                    most(own.text_tertiary, TERTIARY_REACH),
+                );
+                // Never as strong as primary text, never weaker than the style's own.
+                assert!(own.text_secondary.a <= second.a && second.a <= most2 + 1e-4);
+                assert!(own.text_tertiary.a <= third.a && third.a <= most3 + 1e-4);
+                assert!(third.a < second.a && second.a < first.a - 0.05, "{grey}");
+                // At its bar, or as strong as its reach allows.
+                let c2 = against(&theme, second, wallpaper);
+                assert!(
+                    c2 >= SECONDARY_BAR || second.a >= most2 - 1e-4,
+                    "{grey}: {c2} at {}",
+                    second.a
+                );
+                let c3 = against(&theme, third, wallpaper);
+                assert!(c3 >= TERTIARY_BAR || third.a >= most3 - 1e-4);
+            }
+        }
+        // A dark or a light plate leaves the style's own secondary text as it is.
+        let dark = Theme::dark();
+        let on_dark = dark.over_acrylic(&crop_of(&dark, [20, 20, 24]), 1.0, None, None);
+        assert_eq!(on_dark.text_secondary, dark.text_secondary);
+        assert_eq!(on_dark.text_tertiary, dark.text_tertiary);
+        // Dark mode over a mid-bright wallpaper (white text kept, 3.1 : 1 before): raised.
+        let on_mid = dark.over_acrylic(&crop_of(&dark, [120, 150, 170]), 1.0, None, None);
+        assert!(on_mid.text_primary.r > 0.9, "light text on the mid plate");
+        assert!(on_mid.text_secondary.a > dark.text_secondary.a + 0.05);
+        // Liquid Glass and a fully transparent fence go by the same rule.
+        let glass = Theme::light().with_liquid_glass();
+        let image = crate::Image::solid(16, 16, [128, 128, 128]);
+        let picked = glass.over_glass(&image);
+        assert!(picked.text_secondary.a > glass.text_secondary.a.min(0.94));
+        for picked in [
+            dark.over_bare_wallpaper(&crop_of(&dark, [120, 150, 170]), None),
+            dark.over_clear_plate(&crop_of(&dark, [120, 150, 170]), None, None),
+        ] {
+            // Whichever text the pick took: stronger than that text's own secondary.
+            let own = if picked.text_primary.r > 0.5 {
+                Theme::dark()
+            } else {
+                Theme::light()
+            };
+            assert!(picked.text_secondary.a > own.text_secondary.a + 0.01);
+            assert!(picked.text_secondary.a < picked.text_primary.a - 0.05);
+        }
+        // A link keeps the accent where that reads and moves towards the text where not.
+        assert_eq!(on_dark.link_ink(), dark.accent);
+        let link = on_mid.link_ink();
+        let plate = on_mid.plate.unwrap();
+        let plate = [plate.r, plate.g, plate.b];
+        assert!(contrast_over(link, plate) > contrast_over(dark.accent, plate) + 0.5);
+        assert!(link.b > link.r + 0.1, "still blue: {link:?}");
+        // A theme file's secondary text in a colour of its own moves towards its primary
+        // text: an opaque brown on a plate of middle brightness stayed at 2.1 : 1.
+        let brown = ColorF::from_rgba8(0x6B, 0x4A, 0x2E, 0xFF);
+        let deep = ColorF::from_rgba8(0x3B, 0x24, 0x12, 0xFF);
+        let plate = [152.0 / 255.0, 129.0 / 255.0, 89.0 / 255.0];
+        let moved = quiet_ink(brown, deep, plate, SECONDARY_BAR, SECONDARY_REACH);
+        assert!(contrast_over(brown, plate) < 2.3);
+        assert!(contrast_over(moved, plate) > 3.0);
+        assert!(moved.r < brown.r && moved.r > deep.r);
     }
 
     #[test]

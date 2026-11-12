@@ -271,6 +271,30 @@ impl TextLayout {
         }
     }
 
+    /// Draws the `length` UTF-16 units from `start` with `brush` in place of the brush the
+    /// layout is drawn with (a link in running text). The brush must come from the session
+    /// the layout is drawn in. PecoFence addition.
+    pub fn set_range_brush(&self, start: u32, length: u32, brush: &impl Paint) {
+        let range = DWRITE_TEXT_RANGE {
+            startPosition: start,
+            length,
+        };
+        unsafe {
+            _ = self
+                .raw
+                .SetDrawingEffect(windows_core::Interface::as_raw(brush.as_raw_brush()), range);
+        }
+    }
+
+    /// Underlines the `length` UTF-16 units from `start`. PecoFence addition.
+    pub fn set_range_underline(&self, start: u32, length: u32) {
+        let range = DWRITE_TEXT_RANGE {
+            startPosition: start,
+            length,
+        };
+        unsafe { _ = self.raw.SetUnderline(true, range) };
+    }
+
     /// Returns the underlying `IDWriteTextLayout`.
     pub fn raw(&self) -> &IDWriteTextLayout {
         &self.raw
