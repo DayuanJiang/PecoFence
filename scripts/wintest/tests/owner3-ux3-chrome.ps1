@@ -67,6 +67,18 @@ function PartG() {
   Check 'G the guide fades out (frames that show it part-way)' ($part -ge 1) "$part of $($vals.Count) frames part-way; brightness per frame: $(($vals | Select-Object -First 40) -join ' ')"
   Start-Sleep -Milliseconds 600
 
+  # While the pointer keeps moving the fade still runs (it is ticked on the frame clock; a
+  # window timer waits behind mouse moves): 300 ms of moves along the level top, then the line
+  # is at full strength in the first picture taken.
+  Pf fence move 右边 --rect '700,460,300,200' | Out-Null; Start-Sleep -Milliseconds 700
+  [G]::MoveTo(850, 478); Start-Sleep -Milliseconds 250; MDown; Start-Sleep -Milliseconds 150
+  Glide 850 478 800 262 12 25; Start-Sleep -Milliseconds 300
+  $sw = [Diagnostics.Stopwatch]::StartNew(); $moves = 0
+  while ($sw.ElapsedMilliseconds -lt 300) { [G]::MoveTo(800 + ($moves % 30), 220); $moves++ }
+  $b = [Px]::Grab(606, 200, 28, 1); $moving = (MeanRgb $b)[0]; $b.Dispose()
+  Check 'G the guide reaches full strength while the pointer keeps moving' ($moving -ge 235) "brightness $moving right after $moves moves in 300 ms (243 at full strength, 128 without the line)"
+  MUp; Start-Sleep -Milliseconds 700
+
   # The same drag for the report: in, held, let go.
   Pf fence move 右边 --rect '700,460,300,200' | Out-Null; Start-Sleep -Milliseconds 700
   RecStart 'G-guides' -X 280 -Y 150 -W 760 -H 380 -Fps 30
