@@ -41,13 +41,17 @@ public static class Px {
     return m;
   }
   // Centre x of the accent marker (a saturated run 12 to 30 px long) in rows y0..y1, the lowest
-  // such row winning; -1 when none.
-  public static double Marker(Bitmap b, int y0, int y1) { return Marker(Pixels(b), b.Width, b.Height, y0, y1); }
-  public static double Marker(int[] px, int w, int h, int y0, int y1) {
+  // such row winning; -1 when none. `sat`: how far apart a pixel's channels are at least (70:
+  // the accent itself; 40 also takes the pale shade the marker has on a plate of middle
+  // brightness, where it moves towards the text's colour).
+  public static double Marker(Bitmap b, int y0, int y1) { return Marker(Pixels(b), b.Width, b.Height, y0, y1, 70); }
+  public static double Marker(Bitmap b, int y0, int y1, int sat) { return Marker(Pixels(b), b.Width, b.Height, y0, y1, sat); }
+  public static double Marker(int[] px, int w, int h, int y0, int y1) { return Marker(px, w, h, y0, y1, 70); }
+  public static double Marker(int[] px, int w, int h, int y0, int y1, int sat) {
     for (int y = Math.Min(h - 1, y1); y >= Math.Max(0, y0); y--) {
       int run = 0;
       for (int x = 0; x <= w; x++) {
-        bool s = x < w && Sat(px[y * w + x]) >= 70;
+        bool s = x < w && Sat(px[y * w + x]) >= sat;
         if (s) { run++; continue; }
         if (run >= 12 && run <= 30) return x - run / 2.0 - 0.5;
         run = 0;
