@@ -1006,5 +1006,13 @@
   "右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里恢复。上次因其他程序的 {0} 出错而关闭。": "Menu delle icone senza voci di Windows; il menu dell’area di notifica le riattiva. Errore in {0}.",
   "恢复右键菜单里的 Windows 菜单项": "Riattiva le voci di Windows nei menu delle icone",
   "剪切\tCtrl+X": "Taglia\tCtrl+X",
-  "复制\tCtrl+C": "Copia\tCtrl+C"
+  "复制\tCtrl+C": "Copia\tCtrl+C",
+  "Liquid Glass 换成了半透明玻璃": "Liquid Glass ora è un vetro traslucido",
+  "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取 {0} 的壁纸画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。": "I riquadri ora sono una lastra di vetro traslucido e lo sfondo si vede attraverso. Windows non lascia leggere ad altri programmi l’immagine dello sfondo di {0}, quindi il vetro trasparente con la sua rifrazione non si può creare. Lo stile Fluent non ha bisogno dell’immagine dello sfondo.",
+  "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取这种动态壁纸的画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。": "I riquadri ora sono una lastra di vetro traslucido e lo sfondo si vede attraverso. Windows non lascia leggere ad altri programmi l’immagine di questo tipo di sfondo animato, quindi il vetro trasparente con la sua rifrazione non si può creare. Lo stile Fluent non ha bisogno dell’immagine dello sfondo.",
+  "改用 Fluent": "Passa a Fluent",
+  "保留 Liquid Glass": "Tieni Liquid Glass",
+  "{0} 的壁纸画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "L’immagine dello sfondo di {0} non si può leggere, quindi i riquadri Liquid Glass per ora sono un vetro traslucido senza rifrazione. Tornano normali quando lo sfondo animato viene chiuso; Fluent non è interessato",
+  "这种动态壁纸的画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "L’immagine di questo tipo di sfondo animato non si può leggere, quindi i riquadri Liquid Glass per ora sono un vetro traslucido senza rifrazione. Tornano normali quando lo sfondo animato viene chiuso; Fluent non è interessato",
+  "动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”": "Mentre uno sfondo animato è in riproduzione, Liquid Glass è un vetro smerigliato fatto con un’immagine fissa dello sfondo. Per far vedere lo sfondo stesso, imposta l’opacità su «Più trasparente» nella pagina «Riquadri»"
 }

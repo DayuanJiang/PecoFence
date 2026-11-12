@@ -1006,5 +1006,13 @@
   "右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里恢复。上次因其他程序的 {0} 出错而关闭。": "Windows-Einträge in Symbolmenüs sind aus; das Taskleistenmenü schaltet sie wieder ein. Absturz in {0}.",
   "恢复右键菜单里的 Windows 菜单项": "Windows-Einträge in Symbolmenüs wieder einschalten",
   "剪切\tCtrl+X": "Ausschneiden\tStrg+X",
-  "复制\tCtrl+C": "Kopieren\tStrg+C"
+  "复制\tCtrl+C": "Kopieren\tStrg+C",
+  "Liquid Glass 换成了半透明玻璃": "Liquid Glass ist jetzt halbdurchsichtiges Glas",
+  "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取 {0} 的壁纸画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。": "Die Bereiche sind jetzt eine halbdurchsichtige Glasscheibe, durch die das Hintergrundbild scheint. Windows lässt andere Programme das Bild des Hintergrunds von {0} nicht lesen, deshalb lässt sich das klare Glas mit seiner Lichtbrechung nicht erzeugen. Der Fluent-Stil braucht das Bild des Hintergrunds nicht.",
+  "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取这种动态壁纸的画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。": "Die Bereiche sind jetzt eine halbdurchsichtige Glasscheibe, durch die das Hintergrundbild scheint. Windows lässt andere Programme das Bild eines solchen Live-Hintergrunds nicht lesen, deshalb lässt sich das klare Glas mit seiner Lichtbrechung nicht erzeugen. Der Fluent-Stil braucht das Bild des Hintergrunds nicht.",
+  "改用 Fluent": "Fluent nehmen",
+  "保留 Liquid Glass": "Liquid Glass behalten",
+  "{0} 的壁纸画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "Das Bild des Hintergrunds von {0} lässt sich nicht lesen, deshalb sind Liquid-Glass-Bereiche im Moment halbdurchsichtiges Glas ohne Lichtbrechung. Wenn der Live-Hintergrund beendet ist, sehen sie wieder aus wie sonst; Fluent ist nicht betroffen",
+  "这种动态壁纸的画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "Das Bild eines solchen Live-Hintergrunds lässt sich nicht lesen, deshalb sind Liquid-Glass-Bereiche im Moment halbdurchsichtiges Glas ohne Lichtbrechung. Wenn der Live-Hintergrund beendet ist, sehen sie wieder aus wie sonst; Fluent ist nicht betroffen",
+  "动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”": "Während ein Live-Hintergrund läuft, ist Liquid Glass Milchglas aus einem Standbild des Hintergrunds. Soll der Hintergrund selbst durchscheinen, stell auf der Seite „Bereiche“ die Deckkraft auf „Transparenter“"
 }

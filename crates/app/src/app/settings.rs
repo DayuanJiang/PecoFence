@@ -705,6 +705,12 @@ impl App {
             "themeMode": if self.theme_mode == ThemeMode::Dark { "dark" } else { "light" },
             // The style the fences show, which a custom theme's base decides.
             "styleInUse": if self.ctx.theme.borrow().liquid_glass { "liquidGlass" } else { "fluent" },
+            // Liquid Glass over a live wallpaper: the line under 主题风格 says how the fences
+            // look and why (`readable`: a frosted capture; else a see-through pane).
+            "liveWallpaper": self.live_wallpaper_note().map(|note| serde_json::json!({
+                "readable": !note.unreadable,
+                "player": note.player,
+            })),
             "customThemes": custom_theme_names(&self.state),
             "customThemeError": self.custom_theme_error,
             "accent": accent,

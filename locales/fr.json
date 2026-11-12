@@ -1006,5 +1006,13 @@
   "右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里恢复。上次因其他程序的 {0} 出错而关闭。": "Menus d’icônes sans entrées Windows ; le menu de la zone de notification les réactive. Plantage dans {0}.",
   "恢复右键菜单里的 Windows 菜单项": "Réactiver les entrées Windows dans les menus d’icônes",
   "剪切\tCtrl+X": "Couper\tCtrl+X",
-  "复制\tCtrl+C": "Copier\tCtrl+C"
+  "复制\tCtrl+C": "Copier\tCtrl+C",
+  "Liquid Glass 换成了半透明玻璃": "Liquid Glass est maintenant un verre translucide",
+  "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取 {0} 的壁纸画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。": "Les groupes sont maintenant une plaque de verre translucide, et le fond d’écran se voit à travers. Windows ne laisse pas les autres programmes lire l’image du fond d’écran de {0}, donc le verre clair et sa réfraction ne peuvent pas être produits. Le style Fluent n’a pas besoin de l’image du fond d’écran.",
+  "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取这种动态壁纸的画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。": "Les groupes sont maintenant une plaque de verre translucide, et le fond d’écran se voit à travers. Windows ne laisse pas les autres programmes lire l’image de ce type de fond d’écran animé, donc le verre clair et sa réfraction ne peuvent pas être produits. Le style Fluent n’a pas besoin de l’image du fond d’écran.",
+  "改用 Fluent": "Passer à Fluent",
+  "保留 Liquid Glass": "Garder Liquid Glass",
+  "{0} 的壁纸画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "L’image du fond d’écran de {0} ne peut pas être lue, donc les groupes Liquid Glass sont pour l’instant un verre translucide sans réfraction. Ils reviennent à la normale quand le fond d’écran animé est fermé ; Fluent n’est pas concerné",
+  "这种动态壁纸的画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "L’image de ce type de fond d’écran animé ne peut pas être lue, donc les groupes Liquid Glass sont pour l’instant un verre translucide sans réfraction. Ils reviennent à la normale quand le fond d’écran animé est fermé ; Fluent n’est pas concerné",
+  "动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”": "Pendant qu’un fond d’écran animé est lu, Liquid Glass est un verre dépoli fait d’une image fixe du fond d’écran. Pour laisser voir le fond d’écran lui-même, réglez l’opacité sur « Plus transparent » dans la page « Groupes »"
 }

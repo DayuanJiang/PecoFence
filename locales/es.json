@@ -1006,5 +1006,13 @@
   "右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里恢复。上次因其他程序的 {0} 出错而关闭。": "Menús de iconos sin entradas de Windows; el menú de la bandeja las reactiva. Error de otro programa: {0}.",
   "恢复右键菜单里的 Windows 菜单项": "Volver a activar las entradas de Windows en los menús de los iconos",
   "剪切\tCtrl+X": "Cortar\tCtrl+X",
-  "复制\tCtrl+C": "Copiar\tCtrl+C"
+  "复制\tCtrl+C": "Copiar\tCtrl+C",
+  "Liquid Glass 换成了半透明玻璃": "Liquid Glass ahora es un cristal translúcido",
+  "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取 {0} 的壁纸画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。": "Los grupos son ahora un cristal translúcido y el fondo de pantalla se ve a través. Windows no deja que otros programas lean la imagen del fondo de {0}, así que no se puede crear el cristal transparente con su refracción. El estilo Fluent no necesita la imagen del fondo.",
+  "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取这种动态壁纸的画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。": "Los grupos son ahora un cristal translúcido y el fondo de pantalla se ve a través. Windows no deja que otros programas lean la imagen de este tipo de fondo animado, así que no se puede crear el cristal transparente con su refracción. El estilo Fluent no necesita la imagen del fondo.",
+  "改用 Fluent": "Usar Fluent",
+  "保留 Liquid Glass": "Seguir con Liquid Glass",
+  "{0} 的壁纸画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "La imagen del fondo de {0} no se puede leer, así que los grupos Liquid Glass son por ahora un cristal translúcido sin refracción. Vuelven a la normalidad al cerrar el fondo animado; Fluent no se ve afectado",
+  "这种动态壁纸的画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "La imagen de este tipo de fondo animado no se puede leer, así que los grupos Liquid Glass son por ahora un cristal translúcido sin refracción. Vuelven a la normalidad al cerrar el fondo animado; Fluent no se ve afectado",
+  "动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”": "Mientras se reproduce un fondo animado, Liquid Glass es un cristal esmerilado hecho con una imagen fija del fondo. Para que se vea el propio fondo, pon la opacidad en Más transparente en la página Grupos"
 }

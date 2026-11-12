@@ -1006,5 +1006,13 @@
   "右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里恢复。上次因其他程序的 {0} 出错而关闭。": "Menus dos ícones sem entradas do Windows; o menu da bandeja as reativa. Erro de outro programa: {0}.",
   "恢复右键菜单里的 Windows 菜单项": "Reativar as entradas do Windows nos menus dos ícones",
   "剪切\tCtrl+X": "Recortar\tCtrl+X",
-  "复制\tCtrl+C": "Copiar\tCtrl+C"
+  "复制\tCtrl+C": "Copiar\tCtrl+C",
+  "Liquid Glass 换成了半透明玻璃": "O Liquid Glass agora é um vidro translúcido",
+  "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取 {0} 的壁纸画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。": "Os grupos agora são um vidro translúcido, e a tela de fundo aparece através dele. O Windows não deixa outros programas lerem a imagem da tela de fundo do {0}, então o vidro transparente com sua refração não pode ser criado. O estilo Fluent não precisa da imagem da tela de fundo.",
+  "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取这种动态壁纸的画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。": "Os grupos agora são um vidro translúcido, e a tela de fundo aparece através dele. O Windows não deixa outros programas lerem a imagem desse tipo de tela de fundo animada, então o vidro transparente com sua refração não pode ser criado. O estilo Fluent não precisa da imagem da tela de fundo.",
+  "改用 Fluent": "Usar o Fluent",
+  "保留 Liquid Glass": "Manter o Liquid Glass",
+  "{0} 的壁纸画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "A imagem da tela de fundo do {0} não pode ser lida, então os grupos Liquid Glass são por enquanto um vidro translúcido sem refração. Eles voltam ao normal quando a tela de fundo animada é fechada; o Fluent não é afetado",
+  "这种动态壁纸的画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "A imagem desse tipo de tela de fundo animada não pode ser lida, então os grupos Liquid Glass são por enquanto um vidro translúcido sem refração. Eles voltam ao normal quando a tela de fundo animada é fechada; o Fluent não é afetado",
+  "动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”": "Enquanto uma tela de fundo animada é reproduzida, o Liquid Glass é um vidro fosco feito de uma imagem parada da tela de fundo. Para ver a própria tela de fundo através dele, defina a opacidade como Mais transparente na página Grupos"
 }

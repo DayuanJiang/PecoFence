@@ -1246,6 +1246,38 @@ async function runTests() {
     assert(current().settings.customTheme === null && error.hidden, 'A built-in tile did not clear the theme and its error');
     assert(styleRadio(doc, 'fluent').checked, 'The built-in style is not checked again');
   });
+  await test('Liquid Glass over a live wallpaper: one line under 主题风格 says how the fences look and why', async () => {
+    doc = await reset();
+    const note = () => doc.getElementById('liveWallpaperNote');
+    const host = async live => { current().liveWallpaper = live; frame.contentWindow.testRefresh(); await settle(); };
+    assert(note().hidden && !note().textContent, 'The line shows without a live wallpaper');
+    // Fluent has its plate either way: no line.
+    await host({ readable: false, player: 'Wallpaper Engine' });
+    assert(note().hidden, 'Fluent shows the line');
+    styleRadio(doc, 'liquidGlass').click(); await settle();
+    frame.contentWindow.testRefresh(); await settle();
+    // A player whose picture cannot be read, with a name and without one.
+    assert(!note().hidden && note().textContent.startsWith('Wallpaper Engine 的壁纸画面读不到，Liquid Glass 栅栏现在是半透明玻璃'), 'No line for an unreadable live wallpaper: ' + note().textContent);
+    assert(note().getBoundingClientRect().left === doc.getElementById('desktopPreview').getBoundingClientRect().left, 'The line does not start under the tiles');
+    await host({ readable: false, player: null });
+    assert(note().textContent.startsWith('这种动态壁纸的画面读不到'), 'A player without a name: ' + note().textContent);
+    // One that can be read: frosted, and 更透明 lets the wallpaper through.
+    await host({ readable: true, player: 'Lively Wallpaper' });
+    assert(note().textContent.includes('磨砂玻璃') && note().textContent.endsWith('把不透明度改成“更透明”'), 'The readable case: ' + note().textContent);
+    // In the page's language.
+    await host({ readable: false, player: 'Wallpaper Engine' });
+    change(doc, 'language', 'en'); await settle();
+    assert(note().textContent.startsWith('The picture of the Wallpaper Engine wallpaper cannot be read'), 'Not translated: ' + note().textContent);
+    change(doc, 'language', 'zh-CN'); await settle();
+    // The player ends, or the style goes to Fluent: the line goes.
+    await host(null);
+    assert(note().hidden && !note().textContent, 'The line stays after the live wallpaper ended');
+    await host({ readable: false, player: 'Wallpaper Engine' });
+    assert(!note().hidden, 'The line does not come back with the player');
+    styleRadio(doc, 'fluent').click(); await settle();
+    frame.contentWindow.testRefresh(); await settle();
+    assert(note().hidden, 'The line stays in Fluent');
+  });
   await test('The theme buttons ask the host for the folder and the guide', async () => {
     doc.getElementById('openThemes').click(); doc.getElementById('themeGuide').click(); await settle();
     const names = frame.contentWindow.testMessages.filter(m => m.type === 'action').map(m => m.name);

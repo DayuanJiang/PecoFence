@@ -1273,6 +1273,7 @@ impl App {
             self.resettle_live_wallpapers();
         }
         self.capture_live_wallpapers(LIVE_REFRESH);
+        self.tell_live_wallpaper();
     }
 
     /// Wallpaper-only refresh: reuse a recent desktop's pixels and preserve icon/geometry

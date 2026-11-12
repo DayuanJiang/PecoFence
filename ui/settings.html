@@ -334,6 +334,7 @@
   .style-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; padding-left: 40px; }
   .theme-files { display: flex; flex-direction: column; gap: 6px; padding-left: 40px; } .theme-files[hidden] { display: none; }
   .theme-files .actions { justify-content: flex-start; }
+  .card .s.style-note { padding-left: 40px; } .card .s.style-note[hidden] { display: none; }
   .tile { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 6px 6px 10px; border-radius: 6px;
     border: 1px solid var(--control-stroke); background: var(--control); }
   .tile:hover { background: var(--control-hover); }
@@ -671,6 +672,7 @@
             <span class="shot" aria-hidden="true"><span class="mini-fence"><span class="preview-title">工作空间</span><span class="mini-items"><span class="file-icon folder ic">&#xE8B7;</span><span class="file-icon ic">&#xE8A5;</span><span class="file-icon sheet ic">&#xE9F9;</span></span></span></span>
             <span class="cap">自定义 · 主题文件</span></label>
         </div>
+        <div class="s style-note" id="liveWallpaperNote" aria-live="polite" hidden></div>
         <div class="theme-files" id="customThemeRow" hidden>
           <div class="actions"><select id="customTheme" aria-label="主题文件"></select><button id="openThemes">打开主题文件夹</button><button id="themeGuide">写法说明</button></div>
           <div class="s" id="customThemeHelp"></div>
@@ -1156,6 +1158,16 @@
     // A custom theme's base style comes with the host's next state.
     const glass = settings.customTheme ? state.styleInUse === 'liquidGlass' : settings.themeStyle === 'liquidGlass';
     document.documentElement.classList.toggle('liquid-glass', glass);
+    // Liquid Glass over a live wallpaper (the host's `liveWallpaper`): how the fences look
+    // there and why. A wallpaper whose picture cannot be read gives a see-through pane, one
+    // that can be read a frosted still picture.
+    const live = glass ? state.liveWallpaper : null, note = document.getElementById('liveWallpaperNote');
+    note.hidden = !live;
+    note.textContent = !live ? '' : live.readable
+      ? t("动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”")
+      : live.player
+        ? tf("{0} 的壁纸画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响", live.player)
+        : t("这种动态壁纸的画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响");
     preview.classList.toggle('chameleon', !!settings.icons.chameleon);
     preview.style.setProperty('--preview-icon-size', previewIconPx(settings.iconSize || 48) + 'px');
     preview.style.setProperty('--preview-tint', settings.icons.tintRgb ? '#' + rgbToHex(settings.icons.tintRgb) : 'transparent');

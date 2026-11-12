@@ -15,6 +15,12 @@
 //!   tip (a first-start tip, the 收起 card), which comes back afterwards, and the 收起 card
 //!   waits until the name box of the fence just made has closed.
 //!
+//! - Liquid Glass over a live wallpaper whose picture cannot be read (Wallpaper Engine's scene
+//!   wallpapers): one card says what the fences look like and why, with 「改用 Fluent」 and
+//!   「保留 Liquid Glass」, once per player (`live_wallpaper::offer_live_wallpaper_card`). It
+//!   waits while another card is up, and an offer takes its place like a tip's; it then comes
+//!   back at a later wallpaper check.
+//!
 //! None of them shows under a test script or `--exit-after`. What was shown is kept in
 //! `notices.json` beside config.json.
 
@@ -44,6 +50,9 @@ struct Saved {
     /// offered once more a day later.
     update_card_unseen: String,
     update_card_unseen_at: i64,
+    /// The live wallpaper players whose card was answered, closed or timed out
+    /// (`LiveNote::key`): it does not come again for them.
+    live_wallpaper_told: Vec<String>,
 }
 
 /// What the update card did for which version (kept in `notices.json`; the app keeps a copy
@@ -98,6 +107,13 @@ pub(super) enum Welcome {
         fence: String,
         already: bool,
     },
+    /// Liquid Glass fences are see-through panes: the picture of the live wallpaper played by
+    /// `player` (None: one without a known name) cannot be read. `key` is what
+    /// `notices.json` remembers the player by.
+    LiveWallpaper {
+        player: Option<&'static str>,
+        key: String,
+    },
 }
 
 /// What the roll-up tip waits for after a fence was made with its name box
@@ -143,6 +159,11 @@ impl App {
             unseen: saved.update_card_unseen,
             unseen_at: saved.update_card_unseen_at,
         }
+    }
+
+    /// The players the live wallpaper card was answered for.
+    pub(super) fn load_live_card_told(&self) -> Vec<String> {
+        self.load_notices().live_wallpaper_told
     }
 
     pub(super) fn save_update_card_record(&self, record: &UpdateCardRecord) {
@@ -337,6 +358,20 @@ impl App {
                 },
                 text("打开整理规则"),
             ),
+            Welcome::LiveWallpaper { player, .. } => (
+                text("Liquid Glass 换成了半透明玻璃").to_string(),
+                match player {
+                    Some(name) => format(
+                        "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取 {0} 的壁纸画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。",
+                        &[name.to_string()],
+                    ),
+                    None => text(
+                        "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取这种动态壁纸的画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。",
+                    )
+                    .to_string(),
+                },
+                text("改用 Fluent"),
+            ),
             Welcome::Tip(i) => {
                 let i = *i;
                 let tips = self.tips();
@@ -440,7 +475,10 @@ impl App {
         let Some((notice, which)) = self.welcome.as_ref() else {
             return;
         };
-        if matches!(which, Welcome::FolderTip { .. } | Welcome::RuleTip { .. }) {
+        if matches!(
+            which,
+            Welcome::FolderTip { .. } | Welcome::RuleTip { .. } | Welcome::LiveWallpaper { .. }
+        ) {
             return;
         }
         let Some((title, body, action)) = self.welcome_texts(which) else {
@@ -459,9 +497,13 @@ impl App {
             return;
         };
         let kind = welcome_kind(&which);
-        // The two offers can be turned down; the roll-up tip only informs.
-        let secondary = matches!(which, Welcome::FolderTip { .. } | Welcome::RuleTip { .. })
-            .then(|| text("不用"));
+        // The two offers can be turned down; the roll-up tip only informs. The live wallpaper
+        // card names both looks.
+        let secondary = match which {
+            Welcome::FolderTip { .. } | Welcome::RuleTip { .. } => Some(text("不用")),
+            Welcome::LiveWallpaper { .. } => Some(text("保留 Liquid Glass")),
+            _ => None,
+        };
         let locale = crate::notice::locale();
         // The card whose button brought this one up takes the new texts where it stands: the
         // old card went and the new one faded in from nothing, a blink at the same place. (A
@@ -511,6 +553,15 @@ impl App {
     /// The welcome notice `which` was clicked, closed or timed out.
     pub(super) fn on_welcome_notice(&mut self, which: Welcome, event: crate::notice::NoticeEvent) {
         tracing::info!(notice = %welcome_kind(&which), ?event, "welcome notice answered");
+        if let Welcome::LiveWallpaper { key, .. } = &which {
+            // Whatever the answer (a button, ×, the timeout): not again for this player.
+            let mut saved = self.load_notices();
+            if !saved.live_wallpaper_told.contains(key) {
+                saved.live_wallpaper_told.push(key.clone());
+                self.save_notices(&saved);
+            }
+            self.live_card_told = Some(saved.live_wallpaper_told);
+        }
         if event != crate::notice::NoticeEvent::Action {
             return;
         }
@@ -546,6 +597,13 @@ impl App {
             Welcome::RuleTip { fence, ext, .. } => {
                 self.add_ext_rule(fence, &ext, self.control.hwnd())
             }
+            Welcome::LiveWallpaper { .. } => {
+                // As the Fluent tile of the settings page does: a theme file goes too.
+                let mut new = self.state.config.settings.clone();
+                new.theme_style = pecofence_core::ThemeStyle::Fluent;
+                new.custom_theme = None;
+                self.apply_settings(new, "live wallpaper card");
+            }
         }
     }
 
@@ -565,7 +623,13 @@ impl App {
             && self.notices
             && on
             && !others
-            && matches!(self.welcome, Some((_, Welcome::RollTip | Welcome::Tip(_))))
+            && matches!(
+                self.welcome,
+                Some((
+                    _,
+                    Welcome::RollTip | Welcome::Tip(_) | Welcome::LiveWallpaper { .. }
+                ))
+            )
             && let Some((notice, tip)) = self.welcome.take()
         {
             tracing::info!(
@@ -574,7 +638,10 @@ impl App {
                 "feature offer takes the place of a tip, which comes back later"
             );
             notice.leave();
-            self.displaced_tip = Some(tip);
+            // The live wallpaper card comes back by itself at a later wallpaper check.
+            if !matches!(tip, Welcome::LiveWallpaper { .. }) {
+                self.displaced_tip = Some(tip);
+            }
         }
         let other_card = self.notice_showing();
         let allowed = self.notices && on && !other_card;
@@ -836,5 +903,6 @@ fn welcome_kind(which: &Welcome) -> String {
         Welcome::FolderTip { .. } => "FolderTip".into(),
         Welcome::RuleTip { count, .. } => format!("RuleTip(count={count})"),
         Welcome::RuleAdded { already, .. } => format!("RuleAdded(already={already})"),
+        Welcome::LiveWallpaper { key, .. } => format!("LiveWallpaper({key})"),
     }
 }

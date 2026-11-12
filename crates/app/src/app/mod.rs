@@ -572,6 +572,12 @@ pub struct App {
     live_capture: Option<live_wallpaper::LiveCapture>,
     /// The worker of a given-up capture that has not returned yet (one at most).
     live_abandoned: Option<std::thread::JoinHandle<()>>,
+    /// The card that says why Liquid Glass fences are frosted panes over a live wallpaper
+    /// (`offer_live_wallpaper_card`): the players it was answered for (`notices.json`, read
+    /// once), why it last did not show, and what the settings page was last told.
+    live_card_told: Option<Vec<String>>,
+    live_card_waits: &'static str,
+    live_told_page: Option<(bool, Option<&'static str>)>,
     /// The hotkey currently registered (None = registration failed or Peek disabled).
     peek_hotkey: Option<Hotkey>,
     /// The combination the last `sync_peek_hotkey` tried to register (the user's choice), so a
@@ -2049,6 +2055,9 @@ impl App {
             live: Vec::new(),
             live_capture: None,
             live_abandoned: None,
+            live_card_told: None,
+            live_card_waits: "",
+            live_told_page: None,
         };
         app.state.current_desktop = App::read_current_desktop();
         // Watch the wallpaper settings, virtual-desktop state and Explorer's copies of the
