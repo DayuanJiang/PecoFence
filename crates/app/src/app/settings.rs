@@ -494,7 +494,11 @@ impl App {
         self.query_store_startup();
         if let Some(h) = &self.settings {
             window::show_normal(h.hwnd());
-            window::bring_to_front(h.hwnd());
+            // Asked for by the command line or a second start, the app did not get the last
+            // input and Windows refused a plain request: the window stayed behind the one in
+            // front (its taskbar button flashed).
+            let front = window::claim_foreground(h.hwnd());
+            tracing::info!(front, "settings: the open window is asked to the front");
             return;
         }
         // The window's frame first: the browser and the page take 0.4 s and more.
