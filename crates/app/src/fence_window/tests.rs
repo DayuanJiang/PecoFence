@@ -1292,6 +1292,36 @@ fn scrollbar_reserves_arrow_buttons_and_min_thumb() {
     assert_eq!(scroll_step_for(ScrollHit::Thumb, 200.0, 76.0), 0.0);
 }
 
+/// The bar ends before the window's rounded corner would cut it: its half-circle end, 6 DIPs
+/// in radius and touching the right edge, must lie inside the corner's circle.
+#[test]
+fn scrollbar_band_stays_inside_the_rounded_corners() {
+    // Below a 36 DIP title row, a band of 200 DIPs down to the window's bottom edge.
+    assert_eq!(scrollbar_band(0.0, 200.0, 36.0, 16.0), (0.0, 190.0));
+    assert_eq!(scrollbar_band(0.0, 200.0, 36.0, 8.0), (0.0, 198.0));
+    assert_eq!(scrollbar_band(0.0, 200.0, 36.0, 6.0), (0.0, 200.0));
+    assert_eq!(scrollbar_band(0.0, 200.0, 36.0, 0.0), (0.0, 200.0));
+    // A details header above the band changes nothing at the bottom.
+    assert_eq!(scrollbar_band(28.0, 172.0, 64.0, 16.0), (28.0, 162.0));
+    // Tabs in a column on the left: the band starts at the window's top edge, under its
+    // top-right corner.
+    assert_eq!(scrollbar_band(0.0, 200.0, 0.0, 16.0), (10.0, 180.0));
+    // A theme file's large radius under a title row: only what the row does not cover.
+    assert_eq!(scrollbar_band(0.0, 200.0, 36.0, 32.0), (0.0, 174.0));
+    assert_eq!(scrollbar_band(0.0, 200.0, 20.0, 32.0), (6.0, 168.0));
+    // Never an empty band.
+    assert_eq!(scrollbar_band(0.0, 12.0, 0.0, 16.0).1, 1.0);
+    for radius in [8.0f32, 12.0, 16.0, 24.0, 32.0] {
+        let (width, height) = (300.0f32, 236.0f32);
+        let (top, h) = scrollbar_band(0.0, 200.0, 36.0, radius);
+        // Centre of the bar's lower end against the centre of the bottom-right corner.
+        let (ex, ey) = (width - 6.0, 36.0 + top + h - 6.0);
+        let (cx, cy) = (width - radius, height - radius);
+        let reach = ((ex - cx).powi(2) + (ey - cy).max(0.0).powi(2)).sqrt() + 6.0;
+        assert!(reach <= radius + 0.01, "radius {radius}: reach {reach}");
+    }
+}
+
 /// Dragging the thumb by the free track length must scroll exactly to the end (the inverse
 /// of the thumb placement in `scrollbar_geometry`).
 #[test]

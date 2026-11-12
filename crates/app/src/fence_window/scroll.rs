@@ -220,6 +220,18 @@ pub(super) fn scrollbar_track(fixed_top: f32, view_h: f32) -> (f32, f32) {
     (fixed_top + button, (view_h - 2.0 * button).max(1.0))
 }
 
+/// The bar's band (`band_top`, `band_h`) kept inside the window's rounded corners. The bar is
+/// 12 DIPs wide at the right edge and ends in half circles, which fit under a corner of
+/// `radius` when the bar stops `radius - 6` DIPs before the window's edge: 10 in Liquid Glass
+/// (its corner cut the lower arrow before), 2 in Fluent, 0 for a radius up to 6. `above` is
+/// how far the band starts below the window's top edge: the title row, or nothing with the
+/// tabs in a column on the left.
+pub(super) fn scrollbar_band(band_top: f32, band_h: f32, above: f32, radius: f32) -> (f32, f32) {
+    let inset = (radius - pecofence_render::fence_chrome::ScrollbarDraw::BAR_W / 2.0).max(0.0);
+    let top = (inset - above).max(0.0);
+    (band_top + top, (band_h - top - inset).max(1.0))
+}
+
 /// Thumb length for a viewport `view_h` over `content_h` on a `track_h` track.
 pub(super) fn scrollbar_thumb_h(track_h: f32, view_h: f32, content_h: f32) -> f32 {
     (track_h * view_h / content_h)
@@ -540,9 +552,15 @@ impl FenceViewState {
         if max_scroll <= 0.0 {
             return None;
         }
-        // The bar spans the whole band, the empty height under the whole rows included.
+        // The bar spans the whole band, the empty height under the whole rows included, less
+        // what the window's rounded corners would cut.
         let band_top = layout.fixed_top();
-        let band_h = self.band_h(layout);
+        let (band_top, band_h) = scrollbar_band(
+            band_top,
+            self.band_h(layout),
+            self.content_y as f32 / self.scale() + band_top,
+            self.theme.corner_radius,
+        );
         let (track_top, track_h) = scrollbar_track(band_top, band_h);
         let content_h = layout.content_height();
         let thumb_h = scrollbar_thumb_h(track_h, view_h, content_h);

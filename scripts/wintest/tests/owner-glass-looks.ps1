@@ -1,4 +1,4 @@
-# Owner round 2026-11-12, package glass-looks: looks found on a PC with a GPU.
+# Owner round 2026-11-12, package glass-looks: three looks found on a PC with a GPU.
 # Parts (run.sh --var Part=...):
 #   R  a name box takes the colour of the text it replaces and a field that fits it: an item's
 #      box and the fence's title box, both colour modes over a light and a dark wallpaper, both
@@ -6,9 +6,11 @@
 #      light plate and the box was a dark block. The note editor is only read and logged.
 #   H  Liquid Glass with dark text (a bright plate): the hover fill shows, and a selected item
 #      still looks different from a hovered one. Its white fill showed nothing on a bright plate.
-# Default: all. The box draws Liquid Glass without a GPU, so H reads the same fills here;
-# how they look through the real lens is checked on a PC with a GPU.
-if (-not $Part) { $Part = 'RH' }
+#   S  the expanded scrollbar ends before the fence's rounded corner (Liquid Glass: 16 DIPs;
+#      its lower arrow was cut by the corner).
+# Default: all. The box draws Liquid Glass without a GPU, so H and S read the same fills and
+# geometry here; how they look through the real lens is checked on a PC with a GPU.
+if (-not $Part) { $Part = 'RHS' }
 trap { PfTrap $_; continue }
 
 Add-Type -ReferencedAssemblies System.Drawing @'
@@ -44,6 +46,15 @@ public static class GLook {
     int fl = Lum(field), far = -1, text = field, caret = ~field & 0xFFFFFF;
     foreach (int p in px) { int c = p & 0xFFFFFF; if (c == caret) continue; int d = Math.Abs(Lum(c) - fl); if (d > far) { far = d; text = c; } }
     return Rgb(field) + "|" + Rgb(text) + "|" + fl + "|" + Lum(text);
+  }
+  // The lowest row (0 = top) where two crops differ by more than `thr` levels of brightness in
+  // any pixel, or -1.
+  public static int LastChangedRow(Bitmap a, Bitmap b, int thr) {
+    var pa = Px(a); var pb = Px(b); int w = a.Width;
+    for (int y = a.Height - 1; y >= 0; y--)
+      for (int x = 0; x < w; x++)
+        if (Math.Abs(Lum(pa[y * w + x]) - Lum(pb[y * w + x])) > thr) return y;
+    return -1;
   }
 }
 '@
@@ -234,6 +245,35 @@ if ($Part -match 'H') {
   GlHover light light
   GlHover dark light
   GlHover dark dark
+}
+
+if ($Part -match 'S') {
+  # The lowest row the expanded bar draws on, counted from the window's bottom edge: the rows
+  # of the fence's bottom right corner that change when the pointer rests on the strip.
+  function GlBarEnd($style, $need) {
+    trap { PfTrap $_; continue }
+    Case "scrollbar end: $style style"
+    Pf settings set themeStyle $style | Out-Null
+    # Dark mode over a light wallpaper: the bar's dark track shows clearly on the light plate.
+    Pf settings set theme dark | Out-Null
+    GlWallpaper 'light'
+    Start-Sleep -Milliseconds 1500; GlPark
+    Start-Sleep -Seconds 3
+    $w = GlWin '滚动'
+    $x = $w.x + $w.w - 16; $y = $w.y + $w.h - 60
+    $rest = [Px]::Grab($x, $y, 16, 60)
+    [G]::MoveTo(($w.x + $w.w - 6), ($w.y + 110)); Start-Sleep -Milliseconds 1500
+    $wide = [Px]::Grab($x, $y, 16, 60)
+    Crop "S-$style-corner" ($w.x + $w.w - 60) ($w.y + $w.h - 80) 70 90 | Out-Null
+    $row = [GLook]::LastChangedRow($rest, $wide, 4)
+    $gap = 59 - $row
+    $rest.Dispose(); $wide.Dispose()
+    "bar/$style`tlowest row of the bar $gap px above the fence's last row" | Add-Content "$PfShots\boxes.tsv" -Encoding UTF8
+    Check "$style style: the expanded scrollbar ends $need px or more above the fence's bottom edge" ($row -ge 0 -and $gap -ge $need) "the bar's lowest row is $gap px above the fence's last row (corner radius $(if ($style -eq 'fluent') { 8 } else { 16 }) px)"
+    GlPark
+  }
+  GlBarEnd liquidGlass 9
+  GlBarEnd fluent 2
 }
 
 Case 'cleanup'
