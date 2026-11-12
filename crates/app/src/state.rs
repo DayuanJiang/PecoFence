@@ -3166,6 +3166,8 @@ impl AppState {
         let inbox = self.inbox_id();
         let layout = self.layout;
         let mut fence = d.fence;
+        // Deleted while it showed another folder: it comes back at its own, in its own view.
+        fence.show_own_view();
         let in_inbox = |state: &Self, item: ItemId| {
             state.config.items.contains_key(&item)
                 && state.config.fence_of_item(layout, item) == inbox

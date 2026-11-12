@@ -3,6 +3,7 @@
 #                   is under the pointer, F2 renames it, F2 on a title renames the fence (#184)
 #   --var Part=TD   a to-do in a note without typing the box (feedback #141)
 #   --var Part=FV   a folder fence remembers view and sort order per folder (feedback #131)
+#   --var Part=FVS  the same on the Settings page, which shows the folder on show (a debug build)
 trap { PfTrap $_; continue }
 if (-not $Part) { $Part = 'HS' }
 
@@ -229,5 +230,56 @@ Check 'after a restart inside the subfolder the fence starts at its own folder i
 Check 'the subfolder still opens in its own view' ($v7 -eq 'details/date/False/window=details') "view=$v7"
 
 Case 'FV cleanup'
+PfQuit
+}
+
+if ($Part -eq 'FVS') {
+# The Settings > 栅栏 page beside a folder fence: 视图 and 排序方式 show and change the folder
+# on show. A debug build (build.sh --debug, run.sh --bin target/wintest-bin-debug): the page is
+# read over CDP.
+Case 'FVS setup'
+Check 'a debug build (the page is reached over CDP)' $PfDebugBuild
+$root = "$PfRun\资料"
+New-Item -ItemType Directory -Force "$root\照片合集" | Out-Null
+foreach ($n in '说明.txt', '预算表.txt') { Set-Content -LiteralPath "$root\$n" 'x' }
+foreach ($n in '海边.txt', '山上的日出.txt') { Set-Content -LiteralPath "$root\照片合集\$n" 'x' }
+$env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'
+PfStart -Lang zh-CN
+Start-Sleep -Seconds 3
+ClearFences
+$r = PfJson fence create --portal $root --title '资料' --rect '60,120,360,260'
+$fid = "$($r.fence.id)"
+Pf fence set $fid layout list | Out-Null
+Pf fence set $fid sort name | Out-Null
+Check 'settings open over CDP' (PfSettings)
+# A <select> of the page set as a pick from its list does.
+function FvsSet($q, $value) {
+  $s = $q | ConvertTo-Json; $v = $value | ConvertTo-Json
+  Js "(() => { const e = document.querySelector($s); e.value = $v; e.dispatchEvent(new Event('change', { bubbles: true })); return true; })()" | Out-Null
+  Start-Sleep -Milliseconds 700
+}
+PageClick 'nav a[data-page=fences]'; Start-Sleep -Milliseconds 500
+FvsSet '#fenceSel' $fid
+function FvsPage() { return "$(Js "document.getElementById('fenceLayout').value")/$(Js "document.getElementById('fenceSort').value")" }
+$own = JsWait "document.getElementById('fenceLayout').value === 'list' && document.getElementById('fenceSort').value === 'name'" 8
+Check 'the page shows the fence''s own view and order' $own "page=$(FvsPage)"
+
+Case 'FVS the page follows the folder on show'
+Pf fence open-folder $fid '照片合集' | Out-Null; Start-Sleep -Milliseconds 1200
+FvsSet '#fenceLayout' 'details'
+FvsSet '#fenceSort' 'date'
+Start-Sleep -Milliseconds 800
+$f = FenceGet $fid
+Check 'a change on the page reaches the subfolder on show' ($f.layout -eq 'details' -and $f.sort -eq 'date') "fence: $($f.layout)/$($f.sort) page=$(FvsPage)"
+Pf fence up $fid | Out-Null
+$up = JsWait "document.getElementById('fenceLayout').value === 'list' && document.getElementById('fenceSort').value === 'name'" 8
+$f = FenceGet $fid
+Shot 'fvs-1-after-up'
+Check 'one level up the page shows the fence''s own view and order again' ($up -and $f.layout -eq 'list' -and $f.sort -eq 'name') "page=$(FvsPage) fence: $($f.layout)/$($f.sort)"
+Pf fence open-folder $fid '照片合集' | Out-Null
+$sub = JsWait "document.getElementById('fenceLayout').value === 'details' && document.getElementById('fenceSort').value === 'date'" 8
+Check 'back in the subfolder the page shows what was chosen there' $sub "page=$(FvsPage)"
+
+Case 'FVS cleanup'
 PfQuit
 }
