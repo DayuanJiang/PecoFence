@@ -2,7 +2,7 @@
 
 use crate::bindings::*;
 use crate::wide::to_wide;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use windows_core::{Error, PCSTR, PCWSTR, Result};
@@ -143,6 +143,13 @@ pub fn destroy_icon(icon: HICON) {
     }
 }
 
+/// A hidden icon that came back for a notification stays at least this long: the end of an
+/// earlier notification is reported right after the next one went up.
+const LOAN_MIN: Duration = Duration::from_secs(1);
+/// And at most this long, when Windows never reports the notification's end (it does not for
+/// one it keeps back, as during 请勿打扰).
+const LOAN_MAX_MS: u32 = 30_000;
+
 /// A notification-area icon; removed on drop. Keeps what it was added with, so it can be
 /// added again when Explorer restarts.
 pub struct TrayIcon {
@@ -151,6 +158,13 @@ pub struct TrayIcon {
     callback_message: u32,
     icon: HICON,
     tip: String,
+    /// False keeps the icon out of the notification area ([`Self::set_wanted`]).
+    wanted: Cell<bool>,
+    /// Since when an unwanted icon is in the notification area for a notification.
+    lent: Cell<Option<Instant>>,
+    /// Timer on `hwnd` that ends such a loan after [`LOAN_MAX_MS`]; its owner calls
+    /// [`Self::end_loan`] then.
+    loan_timer: usize,
 }
 
 impl TrayIcon {
@@ -164,13 +178,46 @@ impl TrayIcon {
             callback_message,
             icon,
             tip: tip.to_string(),
+            wanted: Cell::new(true),
+            lent: Cell::new(None),
+            loan_timer: 0,
         }
     }
 
-    /// Adds the icon to the notification area. Call it again on `TaskbarCreated`: a restarted
-    /// Explorer starts without anyone's icons. Already present (the message also comes on
-    /// other occasions) counts as success.
+    /// The timer of `hwnd` that ends the stay of an unwanted icon (see [`Self::end_loan`]).
+    pub fn with_loan_timer(mut self, timer: usize) -> Self {
+        self.loan_timer = timer;
+        self
+    }
+
+    /// The user wants the icon in the notification area or not. Not wanted, it is taken out
+    /// now and [`Self::show`] adds nothing; a notification still brings it for as long as it
+    /// shows ([`Self::show_info`]). Wanted, it is added now.
+    pub fn set_wanted(&self, wanted: bool) -> Result<()> {
+        self.wanted.set(wanted);
+        self.lent.set(None);
+        crate::window::kill_timer(self.hwnd, self.loan_timer);
+        if wanted {
+            self.add()
+        } else {
+            self.remove();
+            Ok(())
+        }
+    }
+
+    /// Adds the icon to the notification area, unless the user does not want it there. Call it
+    /// again on `TaskbarCreated`: a restarted Explorer starts without anyone's icons. Already
+    /// present (the message also comes on other occasions) counts as success.
     pub fn show(&self) -> Result<()> {
+        if !self.wanted.get() {
+            // A new taskbar has neither the lent icon nor its notification.
+            self.lent.set(None);
+            return Ok(());
+        }
+        self.add()
+    }
+
+    fn add(&self) -> Result<()> {
         let mut data = NOTIFYICONDATAW {
             cbSize: size_of::<NOTIFYICONDATAW>() as u32,
             hWnd: self.hwnd,
@@ -195,8 +242,18 @@ impl TrayIcon {
         Ok(())
     }
 
-    /// Shows a toast/balloon notification.
+    /// Shows a toast/balloon notification. Windows shows one only for an icon that is in the
+    /// notification area, so an unwanted icon is added for as long as the notification shows:
+    /// until [`Self::balloon_gone`] or [`Self::end_loan`].
     pub fn show_info(&self, title: &str, text: &str, warning: bool) {
+        if !self.wanted.get() {
+            if let Err(e) = self.add() {
+                tracing::debug!(error = %e, "hidden tray icon not added for a notification");
+            }
+            self.lent.set(Some(Instant::now()));
+            crate::window::set_timer(self.hwnd, self.loan_timer, LOAN_MAX_MS);
+            tracing::debug!("hidden tray icon shown while a notification is up");
+        }
         let mut data = NOTIFYICONDATAW {
             cbSize: size_of::<NOTIFYICONDATAW>() as u32,
             hWnd: self.hwnd,
@@ -216,10 +273,25 @@ impl TrayIcon {
             let _ = Shell_NotifyIconW(NIM_MODIFY as u32, &data);
         }
     }
-}
 
-impl Drop for TrayIcon {
-    fn drop(&mut self) {
+    /// Windows reported that a notification went away (timed out, closed or clicked): an icon
+    /// that was only there for it leaves again.
+    pub fn balloon_gone(&self) {
+        if self.lent.get().is_some_and(|at| at.elapsed() >= LOAN_MIN) {
+            self.end_loan();
+        }
+    }
+
+    /// Takes an icon that was only there for a notification out again.
+    pub fn end_loan(&self) {
+        crate::window::kill_timer(self.hwnd, self.loan_timer);
+        if self.lent.take().is_some() && !self.wanted.get() {
+            tracing::debug!("hidden tray icon taken out again after its notification");
+            self.remove();
+        }
+    }
+
+    fn remove(&self) {
         let data = NOTIFYICONDATAW {
             cbSize: size_of::<NOTIFYICONDATAW>() as u32,
             hWnd: self.hwnd,
@@ -230,6 +302,12 @@ impl Drop for TrayIcon {
         unsafe {
             let _ = Shell_NotifyIconW(NIM_DELETE as u32, &data);
         }
+    }
+}
+
+impl Drop for TrayIcon {
+    fn drop(&mut self) {
+        self.remove();
     }
 }
 

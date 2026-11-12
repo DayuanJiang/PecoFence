@@ -201,6 +201,11 @@ pub struct Settings {
     /// one request to GitHub's latest release; a new version is announced once.
     #[serde(default = "default_true")]
     pub auto_check_updates: bool,
+    /// 显示托盘图标: PecoFence's icon in the taskbar's notification area. Off keeps it out,
+    /// except for the seconds a notification of PecoFence shows and while the item menus
+    /// wait to get their Windows part back after a crash (the entry is in the icon's menu).
+    #[serde(default = "default_true")]
+    pub show_tray_icon: bool,
     /// Unused (see [`UNUSED_SETTINGS`]).
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(skip))]
@@ -437,6 +442,7 @@ impl Default for Settings {
             per_desktop_fences: false,
             feature_tips: true,
             auto_check_updates: true,
+            show_tray_icon: true,
             show_real_icons_when_fences_hidden: false,
             snapping: SnappingSettings::default(),
             zorder: ZOrderSetting::InsertAboveHost,
@@ -2787,7 +2793,9 @@ mod tests {
         assert!(obj.remove("featureTips").is_some());
         assert!(obj.remove("hideInboxWhenIconsShown").is_some());
         assert!(obj.remove("keepIconsHidden").is_some());
+        assert!(obj.remove("showTrayIcon").is_some());
         let legacy: Settings = serde_json::from_value(json).unwrap();
+        assert!(legacy.show_tray_icon);
         assert!(legacy.offer_new_fence);
         assert!(legacy.feature_tips);
         assert!(!legacy.hide_inbox_when_icons_shown);

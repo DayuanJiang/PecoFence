@@ -390,6 +390,10 @@ impl App {
                 after_crash = menu_crash,
                 "item menus are built without the Windows part"
             );
+            // The way back is in the tray menu: the icon shows until it was taken.
+            if !self.state.config.settings.show_tray_icon {
+                self.apply_tray_wanted("item menus are without the Windows part");
+            }
         }
         if !crashed {
             return;
@@ -449,6 +453,9 @@ impl App {
         }
         self.feedback.windows_menu_off = false;
         tracing::info!("the Windows part of item menus turned back on from the tray menu");
+        if !self.state.config.settings.show_tray_icon {
+            self.apply_tray_wanted("the Windows part of item menus is back");
+        }
     }
 
     /// A tray balloon was clicked; only the crash offer reacts to it.

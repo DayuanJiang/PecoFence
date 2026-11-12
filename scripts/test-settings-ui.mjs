@@ -14,7 +14,7 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN',
-    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
+    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, showTrayIcon: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
@@ -1321,6 +1321,33 @@ async function runTests() {
     tips.click(); await settle();
     assert(current().settings.featureTips === false, 'Feature tips switch did not post');
     tips.click(); await settle();
+  });
+  await test('显示托盘图标: the switch, the 退出 card while it is off, and the search', async () => {
+    doc = await reset();
+    const tray = doc.querySelector('[data-bind=showTrayIcon]'), quit = doc.getElementById('quitCard');
+    const heading = (() => { let h = tray.closest('.group'); while (h && h.tagName !== 'H3') h = h.previousElementSibling; return h && h.textContent; })();
+    assert(heading === '桌面与启动', 'The switch is not under 桌面与启动: ' + heading);
+    assert(tray.getAttribute('aria-checked') === 'true' && quit.hidden, 'On by default, without the 退出 card: ' + tray.getAttribute('aria-checked') + ' ' + quit.hidden);
+    tray.click(); await settle();
+    assert(current().settings.showTrayIcon === false, 'The switch did not post');
+    assert(!quit.hidden && quit.querySelector('.t').textContent === '退出 PecoFence', 'No 退出 card while the icon is hidden');
+    doc.getElementById('quitApp').click();
+    const last = frame.contentWindow.testMessages.at(-1);
+    assert(last.type === 'action' && last.name === 'quit', '退出 did not ask the host to quit: ' + JSON.stringify(last));
+    tray.click(); await settle();
+    assert(current().settings.showTrayIcon === true && quit.hidden, 'Switched on again, the 退出 card stays');
+    const box = doc.getElementById('settingsSearch');
+    const esc = () => box.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+    const find = word => {
+      box.value = word; box.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true }));
+      return [...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent);
+    };
+    for (const word of ['托盘', 'tray', '通知区域', '任务栏图标']) assert(find(word).includes('显示托盘图标'), word + ' does not find the switch: ' + find(word).join(' | '));
+    esc();
+    change(doc, 'language', 'en'); await settle();
+    for (const word of ['tray', 'notification area', 'systray']) assert(find(word).includes('Show tray icon'), word + ' does not find the switch: ' + find(word).join(' | '));
+    esc();
+    change(doc, 'language', 'zh-CN'); await settle();
   });
   await test('收起的栅栏怎么展开 is one list for hover, click and double-click', async () => {
     const list = doc.getElementById('rollExpand');

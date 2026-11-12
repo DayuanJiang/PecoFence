@@ -1327,6 +1327,9 @@ impl App {
                     self.set_windows_desktop_hotkey_from_page(h);
                 }
                 Some("repairIcons") => self.set_desktop_icons_hidden(false),
+                // 「退出 PecoFence」 under 「显示托盘图标」: the tray menu's entry, for when the
+                // icon is hidden.
+                Some("quit") => self.queue.push(Command::Quit("settings page")),
                 Some("hideDesktopIcons") => self.set_desktop_icons_hidden(true),
                 Some("rateInStore") => self.open_store_rating(),
                 Some("openManual") => self.open_manual(),
@@ -1563,6 +1566,7 @@ impl App {
                 );
             }
         }
+        let tray_changed = new.show_tray_icon != old.show_tray_icon;
         let per_desktop_changed = new.per_desktop_fences != old.per_desktop_fences;
         if per_desktop_changed {
             tracing::info!(
@@ -1603,6 +1607,9 @@ impl App {
         if per_desktop_changed {
             // New fences follow the current desktop from now on: it is followed while on.
             self.apply_desktop_visibility("per-desktop fences switched");
+        }
+        if tray_changed {
+            self.apply_tray_wanted("setting switched");
         }
         self.push_settings_state();
     }

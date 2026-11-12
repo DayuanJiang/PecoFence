@@ -151,6 +151,9 @@ const TIMER_PREWARM_FINISH: usize = 56;
 /// `TaskbarCreated`): try again.
 const TIMER_TRAY_RETRY: usize = 57;
 const TRAY_RETRY_MS: u32 = 2_000;
+/// With 「显示托盘图标」 off the icon came back for a notification: the longest it stays when
+/// Windows does not say that the notification went away.
+const TIMER_TRAY_LOAN: usize = 133;
 /// WM_ENDSESSION(FALSE) arrived while the App was borrowed: hide the icons again shortly.
 const TIMER_SHUTDOWN_CANCELLED: usize = 58;
 /// A theme, accent or system settings change arrived while the App was borrowed: apply it
@@ -1114,12 +1117,14 @@ impl App {
                                 && let Some(app) = guard.as_mut()
                             {
                                 app.on_balloon_click();
+                                app.tray_balloon_gone();
                             } else if (ev.event == tray::TRAY_EVENT_BALLOONTIMEOUT
                                 || ev.event == tray::TRAY_EVENT_BALLOONHIDE)
                                 && let Ok(mut guard) = cell.try_borrow_mut()
                                 && let Some(app) = guard.as_mut()
                             {
                                 app.on_balloon_gone();
+                                app.tray_balloon_gone();
                             }
                             Some(0)
                         }
@@ -1441,6 +1446,14 @@ impl App {
                                         app.on_system_settings_changed();
                                     } else {
                                         window::set_timer(hwnd, TIMER_SYSTEM_SETTINGS_RETRY, 250);
+                                    }
+                                }
+                                TIMER_TRAY_LOAN => {
+                                    if let Ok(guard) = cell.try_borrow()
+                                        && let Some(t) =
+                                            guard.as_ref().and_then(|a| a.tray.as_ref())
+                                    {
+                                        t.end_loan();
                                     }
                                 }
                                 TIMER_TRAY_RETRY => {
@@ -1857,11 +1870,17 @@ impl App {
             tray_px,
             &tray_icon_image(tray_px, theme.accent_rgb8(), theme_mode == ThemeMode::Dark),
         )
-        .map(|icon| TrayIcon::new(control.hwnd(), TRAY_ID, WM_APP_TRAY, icon, "PecoFence"))
+        .map(|icon| {
+            TrayIcon::new(control.hwnd(), TRAY_ID, WM_APP_TRAY, icon, "PecoFence")
+                .with_loan_timer(TIMER_TRAY_LOAN)
+        })
         .map_err(|e| tracing::warn!(error = %e, "tray icon image failed"))
         .ok();
+        // 「显示托盘图标」 off: the icon is made all the same, for the notifications.
+        let tray_wanted = state.config.settings.show_tray_icon;
+        tracing::info!(shown = tray_wanted, "tray icon at start, by the setting");
         if let Some(t) = &tray
-            && let Err(e) = t.show()
+            && let Err(e) = t.set_wanted(tray_wanted)
         {
             // At logon the taskbar may not exist yet; TaskbarCreated or the retry adds it.
             tracing::warn!(error = %e, "tray icon not added yet; retrying");
@@ -3232,7 +3251,41 @@ impl App {
                 .ok();
     }
 
-    /// (Re)adds the notification icon; false while the taskbar does not take it.
+    /// Whether the icon belongs in the notification area now: 「显示托盘图标」, and whatever it
+    /// says while the item menus are without their Windows part, because the entry that
+    /// brings that part back is in the icon's menu and the notice after the crash says so.
+    fn tray_wanted(&self) -> bool {
+        self.state.config.settings.show_tray_icon || self.windows_menu_off()
+    }
+
+    /// Adds or removes the icon after the setting, or what else decides, changed.
+    pub(super) fn apply_tray_wanted(&self, why: &'static str) {
+        let Some(t) = &self.tray else {
+            return;
+        };
+        let wanted = self.tray_wanted();
+        tracing::info!(
+            shown = wanted,
+            setting = self.state.config.settings.show_tray_icon,
+            menus_wait = self.windows_menu_off(),
+            why,
+            "tray icon shown or hidden"
+        );
+        if let Err(e) = t.set_wanted(wanted) {
+            tracing::warn!(error = %e, "tray icon not added yet; retrying");
+            window::set_timer(self.control.hwnd(), TIMER_TRAY_RETRY, TRAY_RETRY_MS);
+        }
+    }
+
+    /// A notification went away: an icon that was only there for it leaves again.
+    fn tray_balloon_gone(&self) {
+        if let Some(t) = &self.tray {
+            t.balloon_gone();
+        }
+    }
+
+    /// (Re)adds the notification icon, unless 「显示托盘图标」 keeps it out; false while the
+    /// taskbar does not take it.
     fn show_tray(&self) -> bool {
         let Some(t) = &self.tray else {
             return true;
