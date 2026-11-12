@@ -8,6 +8,8 @@
 #   C  both fail: the automatic check stays quiet; the button's check says so, names the site's
 #      address and offers the download page
 #   D  GitHub answers: the site is not asked
+#   E  GitHub answers but the Store notes file of the UI language cannot be read there (French:
+#      the feed has none): the card's line comes from the site's copy
 # English UI (the card is read by OCR). Debug build (test delays, the settings page over CDP).
 function NoticeWin() { $n = [G]::FindWindowW('PecoFence.Notice', [NullString]::Value); if ($n -ne [IntPtr]::Zero -and [G]::IsWindowVisible($n)) { return $n }; return [IntPtr]::Zero }
 function Lines($re) { return @(PfLogAll | Where-Object { $_ -match $re -and $_ -notmatch 'omitted' } | Sort-Object -Unique) }
@@ -108,6 +110,16 @@ Start-Sleep -Milliseconds 800
 $t = CardText 'card-github'
 Check 'GitHub answers: the card''s line is the Store notes'' and the site''s file is not asked' ($card -and $t -match 'Typing Chinese in the Peek search' -and $t -notmatch 'From the site' -and (SiteHits) -eq $before -and (Since 'asking the site').Count -eq 0) "ocr: $t | site hits $before -> $(SiteHits)"
 CloseNotice | Out-Null
+
+Case 'E: the Store notes cannot be read from GitHub, the site has the line'
+Again 8721 8721 '4000,600000,600000,600000' 'fr'
+$card = WaitLine 'update card shown' 25
+Start-Sleep -Milliseconds 800
+$t = CardText 'card-fr'
+$from = "$(Since 'update: Store notes not read from GitHub; the line of the site.s copy')"
+Check 'French (no Store notes file in the feed): the card''s line comes from the site''s copy' ($card -and $from -match 'found=true' -and $t -match 'Depuis le site') "ocr: $t | $from"
+CloseNotice | Out-Null
+Pf settings set language en | Out-Null
 
 Case 'cleanup'
 PfQuit

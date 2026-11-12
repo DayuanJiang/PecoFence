@@ -205,8 +205,8 @@ fn site_copy(site: &str, base: &str, ui_language: &str) -> std::result::Result<R
 
 /// The latest release: from GitHub's API, or from the site's copy when the API gives no good
 /// answer in time. For a newer one from GitHub also the first point of its Store notes in the
-/// UI language `ui_language` (one more request, only then; a failure only loses that line);
-/// the site's copy holds that line itself.
+/// UI language `ui_language` (one more request, only then: GitHub's raw file, or the site's
+/// copy of the same version when that file cannot be read; a failure only loses that line).
 fn check(test_instance: bool, ui_language: &str) -> std::result::Result<Done, String> {
     let (url, base, site) = source(test_instance);
     let started = Instant::now();
@@ -251,9 +251,24 @@ fn check(test_instance: bool, ui_language: &str) -> std::result::Result<Done, St
                     "update: Store notes read"
                 );
             }
-            Err(e) => {
-                tracing::info!(error = %e, "update: Store notes not read; the card says something general")
-            }
+            // GitHub's raw files are out of reach on many networks that reach its API: the
+            // site's copy holds the same line while it is of the same version.
+            Err(e) => match site_copy(&site, &base, ui_language) {
+                Ok(copy) if copy.version == release.version => {
+                    release.store_line = copy.store_line;
+                    tracing::info!(
+                        error = %e,
+                        found = release.store_line.is_some(),
+                        "update: Store notes not read from GitHub; the line of the site's copy"
+                    );
+                }
+                Ok(copy) => {
+                    tracing::info!(error = %e, site_version = %copy.version, "update: Store notes not read, the site's copy is of another version; the card says something general")
+                }
+                Err(second) => {
+                    tracing::info!(error = %e, site = %second, "update: Store notes not read; the card says something general")
+                }
+            },
         },
     }
     Ok(Done::Checked(Some(release)))

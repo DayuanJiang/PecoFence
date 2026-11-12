@@ -1,8 +1,9 @@
 # A local release feed for tests/update-check.ps1 and tests/owner2-update.ps1 on
 # http://127.0.0.1:<Port>/: GitHub's releases/latest answer for -Tag (the test passes one patch
 # above the build), that tag's Store notes for zh-CN and en-US (other languages answer 404), and
-# the website's copy of the release at /update.json (its lines for en and zh-CN say "from the
-# site", so a test can tell the two sources apart). Its setup file is not served (404), so an
+# the website's copy of the release at /update.json (its lines for en, zh-CN and fr say "from
+# the site", so a test can tell the two sources apart; fr has no Store notes here, only that
+# line). Its setup file is not served (404), so an
 # update stops at the download. Requests go to C:\pf\run\feed.log.
 # -Hang: a server that takes connections and never answers (a network that swallows the request).
 param([int]$Port = 8721, [string]$Tag = 'v0.3.3', [switch]$Hang)
@@ -14,7 +15,7 @@ $notes = @{
   'en-US' = '{"label":"en-US","releaseNotes":"What''s new:\n\u00b7 Typing Chinese in the Peek search no longer stutters.\n\u00b7 PecoFence checks for new versions by itself."}'
 }
 # The website's update.json (scripts/build-site.py writes the real one).
-$site = '{"version":"' + $Tag.TrimStart('v') + '","setup":true,"page":"https://pecofence.jiang.jp/#download","notes":{"en":"From the site: typing Chinese in the Peek search no longer stutters.","zh-CN":"\u6765\u81ea\u7f51\u7ad9\uff1a\u901f\u89c8\u641c\u7d22\u91cc\u8f93\u5165\u4e2d\u6587\u4e0d\u518d\u5361\u987f\u3002"}}'
+$site = '{"version":"' + $Tag.TrimStart('v') + '","setup":true,"page":"https://pecofence.jiang.jp/#download","notes":{"en":"From the site: typing Chinese in the Peek search no longer stutters.","fr":"Depuis le site : la saisie ne saccade plus.","zh-CN":"\u6765\u81ea\u7f51\u7ad9\uff1a\u901f\u89c8\u641c\u7d22\u91cc\u8f93\u5165\u4e2d\u6587\u4e0d\u518d\u5361\u987f\u3002"}}'
 $l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse('127.0.0.1'), $Port)
 $l.Start()
 "$(Get-Date -Format HH:mm:ss.fff) listening $base$(if ($Hang) { ' (never answers)' })" | Add-Content C:\pf\run\feed.log
