@@ -115,7 +115,7 @@
         put(r.ask, ASK_BOX.x, ASK_BOX.y);
 
         r.card = notice(S, { title: T('已删除栅栏“{0}”').replace('{0}', T('工作')),
-            text: '点「撤销」，或在栅栏上按 Ctrl+Z，就能把它找回来。', button: '撤销' });
+            text: '点“撤销”，或在栅栏上按 Ctrl+Z，就能把它找回来。', button: '撤销' });
         r.keys = el('div', 'keys', S);
         r.ptr = pointer(S);
         taskbar(root);
