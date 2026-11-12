@@ -209,6 +209,7 @@
 - The right-click menu of an icon has an icon on each of PecoFence's own entries (「打开」, 「打开文件所在位置」, 「重命名」, 「删除」, 「移动到栅栏」, 「以后把 … 文件都放到这里」, 「移出栅栏」), as every entry of the fence menu and the tray menu has. They were text only.
 - The buttons of a notice card show pressed while the mouse button is held on them (the accent button gets paler, as a Windows 11 button does, the plain button and × get the pressed fill). They only had a hover look.
 - A name no file can have: the reason shows under the name box. After Enter on a name with \ / : * ? " < > | the box stayed open and the reason came as a Windows notification at the corner of the screen, far from the box, and not at all with notifications off. It is now a tip right under the name box and goes when the text changes.
+- Peek search: the menu of a result (→ or a right-click) has icons on 「打开」, 「打开所在文件夹」 and 「复制路径」, the same as the right-click menu of an icon in a fence.
 
 ## 0.3.3
 

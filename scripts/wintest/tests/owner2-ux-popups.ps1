@@ -64,7 +64,7 @@ function UpPartN() {
   # as fast as the screen allows while the button is clicked.
   $r = Rect $n2
   [G]::MoveTo($r.R - 60, $r.B - 30); Start-Sleep -Milliseconds 500
-  # The button while the mouse button is held on it: darker than under the resting pointer.
+  # The button while the mouse button is held on it: another shade than under the resting pointer.
   # (Its left part, clear of the label; the press is let go off the card, so nothing is clicked.)
   $g = [Px]::Grab($r.R - 130, $r.B - 34, 4, 4); $hov = $g.GetPixel(1, 1); $g.Dispose()
   MDown; Start-Sleep -Milliseconds 250
@@ -351,6 +351,27 @@ function UpPartM() {
   Check 'the icon menu has its seven own entries' ($rows.Count -eq 7) "rows=$($rows.Count): $(($rows | ForEach-Object { $_.text }) -join ' | ')"
   Check 'each of them has an icon' ($rows.Count -gt 0 -and $bare.Count -eq 0) "ink pixels in the icon column: $($ink -join ', ')"
   CloseMenus
+  # The menu of a Peek search result (Right arrow on the highlighted row): its three own entries.
+  [G]::MoveTo(900, 700); Start-Sleep -Milliseconds 300
+  PeekKey; UpWaitPeek $true | Out-Null; Start-Sleep -Milliseconds 800
+  [G]::Type('bao'); Start-Sleep -Milliseconds 1000
+  [G]::Press(0x27); Start-Sleep -Milliseconds 1500
+  $m = MenuWin 4
+  $mr = Rect $m
+  Crop 'm-search-row-menu' ($mr.L - 20) ($mr.T - 20) ($mr.R - $mr.L + 40) 140 | Out-Null
+  $rows = @(MenuRows $m | Where-Object { $_.text -match '^(打开|打开所在文件夹|复制路径)' })
+  $bare = @(); $ink = @()
+  foreach ($r in $rows) {
+    $b = [Px]::Grab($r.L, $r.T, 28, $r.B - $r.T)
+    $bg = UpLum $b.GetPixel(1, 1); $n = 0
+    for ($x = 2; $x -lt 28; $x++) { for ($y = 2; $y -lt $b.Height - 2; $y++) { if ([Math]::Abs((UpLum $b.GetPixel($x, $y)) - $bg) -gt 60) { $n++ } } }
+    $b.Dispose()
+    $ink += "$($r.text -replace '\t.*', ''):$n"
+    if ($n -lt 8) { $bare += $r.text }
+  }
+  Check 'the menu of a search result has an icon on its three own entries' ($rows.Count -eq 3 -and $bare.Count -eq 0) "rows=$($rows.Count); ink pixels in the icon column: $($ink -join ', ')"
+  CloseMenus
+  [G]::Press(0x1B); UpWaitPeek $false | Out-Null; Start-Sleep -Milliseconds 400
   PfQuit
   UpClean
 }

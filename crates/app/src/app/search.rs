@@ -818,8 +818,10 @@ impl App {
                 let p = window::cursor_pos();
                 (p.x, p.y)
             });
+        // The same glyphs as the icon menu in a fence.
         let menu = PopupMenu::new();
         menu.item(CMD_OPEN, pecofence_core::i18n::text("打开"), false, false)
+            .icon(super::menus::glyph::OPEN)
             .default_item(CMD_OPEN)
             .item(
                 CMD_OPEN_FOLDER,
@@ -827,12 +829,14 @@ impl App {
                 false,
                 false,
             )
+            .icon(super::menus::glyph::FOLDER_OPEN)
             .item(
                 CMD_COPY_PATH,
                 pecofence_core::i18n::text("复制路径"),
                 false,
                 false,
-            );
+            )
+            .icon(super::menus::glyph::COPY);
         let _loads = pecofence_platform::shell_menu::LoadWatch::new("SearchMenu");
         // Not after a crash in a menu extension (see `App::windows_menu_off`).
         let bound =

@@ -146,7 +146,7 @@ const _: () = assert!(
 /// Segoe Fluent Icons glyphs beside the tray, fence and icon menu items (`PopupMenu::icon`).
 /// Check items keep their check mark (an item bitmap would take its place), so the lock is a
 /// pair of commands like 收起 / 展开. Outline glyphs only: filled badges outweigh the rest.
-mod glyph {
+pub(super) mod glyph {
     pub const CHEVRON_UP: char = '\u{E70E}';
     pub const CHEVRON_DOWN: char = '\u{E70D}';
     pub const RENAME: char = '\u{E8AC}';
@@ -191,6 +191,8 @@ mod glyph {
     pub const CLEAR: char = '\u{E894}';
     pub const MOVE_TO: char = '\u{E8B5}';
     pub const REMOVE: char = '\u{E738}';
+    /// Copy: 复制路径 in the menu of a Peek search result.
+    pub const COPY: char = '\u{E8C8}';
     pub const VIEW: char = '\u{E890}';
     /// Hide (Fluent ED1A). Segoe MDL2 Assets has no crossed-out eye, so Windows 10 shows RedEye.
     pub fn hide() -> char {
@@ -249,6 +251,7 @@ mod glyph {
             CLEAR,
             MOVE_TO,
             REMOVE,
+            COPY,
             VIEW,
             hide(),
             TASK_VIEW,
