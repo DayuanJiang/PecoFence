@@ -289,6 +289,12 @@ Start-Sleep -Milliseconds 800
 PeekKey
 Start-Sleep -Milliseconds 1200
 $on0 = PeekOn
+# A check box in the Peek: a click ticks it and the Peek stays.
+$peekBox = (Rects (DumpOf '便签') 'note_boxes')[1]
+$tick0 = NoteText $nid
+[G]::Click($c[0] + [int](($peekBox[0] + $peekBox[2]) / 2), $c[1] + [int](($peekBox[1] + $peekBox[3]) / 2)); Start-Sleep -Milliseconds 800
+$tick1 = NoteText $nid
+Check 'a click on a check box during the Peek ticks it and keeps the Peek' ($tick1 -ne $tick0 -and (PeekOn)) "note before: $(OneLine $tick0); after: $(OneLine $tick1); peek=$(PeekOn)"
 [G]::Click($c[0] + 60, $c[1] + 12); Start-Sleep -Milliseconds 900
 $on1 = PeekOn; $ed1 = EditorOpen
 [G]::Type('速览'); Start-Sleep -Milliseconds 500
@@ -547,5 +553,7 @@ Pf fence delete $sid | Out-Null
 }
 
 Case 'cleanup'
-Set-Culture zh-CN
+# The boxes' own culture.
+Set-Culture en-US
+[UX]::Intl()
 [Anim]::Set($Anim0)

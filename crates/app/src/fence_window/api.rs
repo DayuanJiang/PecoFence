@@ -1807,19 +1807,21 @@ impl FenceWindow {
 
     /// 时钟与日期: the system time, the time zone or the region's time format changed. A clock
     /// shown here draws the new time now and ticks at the new boundaries; true when it did.
+    /// These broadcasts are sent, not posted: one that arrives while the view is in use
+    /// leaves the clock to its own next tick.
     pub fn clock_changed(&self) -> bool {
-        let mut drawn = false;
-        self.with_view(|v| {
-            if v.clock.is_none() {
-                return;
-            }
-            v.arm_clock();
-            if !v.rolled_up && !v.retired && pecofence_platform::desktop::is_visible(v.hwnd) {
-                let _ = v.redraw_content();
-                drawn = true;
-            }
-        });
-        drawn
+        let Ok(mut guard) = self.view.try_borrow_mut() else {
+            return false;
+        };
+        let Some(v) = guard.as_mut().filter(|v| v.clock.is_some()) else {
+            return false;
+        };
+        v.arm_clock();
+        let shows = !v.rolled_up && !v.retired && pecofence_platform::desktop::is_visible(v.hwnd);
+        if shows {
+            let _ = v.redraw_content();
+        }
+        shows
     }
 
     /// 脚本栅栏: the fence being shown is a script fence showing `script`; None = it shows items.
