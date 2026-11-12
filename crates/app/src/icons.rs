@@ -96,6 +96,46 @@ struct Request {
     /// shell would hand back, so it is asked again later. Cleared for the last retry, which
     /// takes whatever the shell hands back.
     wait_until_free: bool,
+    /// The file has an icon of its own (as `wait_until_free` at first, but it stays): a generic
+    /// picture for it is worth a line in the log, and a shortcut is then read by hand.
+    own_icon: bool,
+}
+
+/// Says in the log that an icon came back empty, blank or generic, at info level once per file
+/// type and reason (a desktop of shortcuts would say it per file), at debug level after that:
+/// the type, where the file is and its attributes, and for a shortcut the same of its target.
+/// Never the path. `from_shortcut`: the picture was then read out of the shortcut itself.
+fn note_dull(path: &Path, reason: &'static str, error: Option<i32>, from_shortcut: bool) {
+    static SEEN: OnceLock<Mutex<HashSet<(String, &'static str)>>> = OnceLock::new();
+    let ext = shell::log_ext(path);
+    let first = SEEN
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert((ext.clone(), reason));
+    tracing::debug!(path = %path.display(), reason, from_shortcut, first, "icon came back empty, blank or generic");
+    if !first {
+        return;
+    }
+    let target = (ext == "lnk")
+        .then(|| shell::shortcut_target_expanded(path))
+        .flatten();
+    let target_ext = target.as_deref().map(shell::log_ext);
+    let target_place = target.as_deref().map(shell::path_place);
+    let error = error.map(|e| format!("{:#010x}", e as u32));
+    tracing::info!(
+        file_ext = ext.as_str(),
+        reason,
+        from_shortcut,
+        place = shell::path_place(path),
+        attrs = shell::file_attributes(path),
+        error = error.as_deref(),
+        target_ext = target_ext.as_deref(),
+        target_place = target_place.as_deref(),
+        target_attrs = target.as_deref().map(shell::file_attributes),
+        target_there = target.as_deref().map(Path::exists),
+        "icon is not the file's own picture"
+    );
 }
 
 /// An extraction in flight (or waiting for a retry), with how often it has failed so far.
@@ -235,6 +275,25 @@ impl IconCache {
                         };
                         let (image, error) = match shown {
                             Ok(mut img) => {
+                                // The shell hands back a blank or generic picture without an
+                                // error when it could not read the icon. For a file with an
+                                // icon of its own that is worth a line, and a shortcut is read
+                                // by hand: the icon it names, else its target's.
+                                let dull = shell::dull_icon(&img)
+                                    .filter(|reason| req.own_icon || *reason == "blank");
+                                if let Some(reason) = dull {
+                                    let lnk = req
+                                        .path
+                                        .extension()
+                                        .is_some_and(|e| e.eq_ignore_ascii_case("lnk"));
+                                    let own = (lnk && req.icon_only)
+                                        .then(|| shell::shortcut_icon(&req.path, req.size_px))
+                                        .flatten();
+                                    note_dull(&req.path, reason, None, own.is_some());
+                                    if let Some(own) = own {
+                                        img = own;
+                                    }
+                                }
                                 if let Some(arrow) = req.link_arrow
                                     && shell::is_link(&req.path)
                                 {
@@ -380,6 +439,9 @@ impl IconCache {
                 wait_until_free: icon_only
                     && matches!(key, IconKey::ByContent { .. })
                     && !shell::is_namespace_path(path),
+                own_icon: icon_only
+                    && matches!(key, IconKey::ByContent { .. })
+                    && !shell::is_namespace_path(path),
             };
             self.send(&req);
             self.pending.insert(
@@ -448,7 +510,10 @@ impl IconCache {
                         self.stats.smaller += 1;
                     }
                 }
-                None => self.stats.failed += 1,
+                None => {
+                    self.stats.failed += 1;
+                    note_dull(&f.req.path, "failed", r.error, false);
+                }
             }
             // Thumbnails are not asked again; folders are, though their requests ask for a
             // preview of the contents.

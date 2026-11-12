@@ -77,3 +77,58 @@ if ($Part -match 'A') {
   Check 'a snapshot of the file brings no script' ($line -match 'snapshot_scripts=[1-9]') $line
   PfQuit
 }
+
+if ($Part -match 'B') {
+  Case 'HD-2 setup'
+  CloseWindows
+  # Shortcuts in a folder of their own, shown by a folder fence in name order.
+  # WScript.Shell saves a shortcut only under a path in the system code page: each is made
+  # under an ASCII name and moved to its Chinese name. Attribute letters as `attrib` has them:
+  # O offline (0x1000), P pinned (0x80000), U unpinned (0x100000), what a OneDrive folder gives.
+  $Work = "$PfRun\hd2"; $Dir = "$Work\图标 探针"; $Gone = "$Work\gone"
+  New-Item -ItemType Directory -Force $Dir, $Gone | Out-Null
+  Copy-Item C:\Windows\regedit.exe "$Gone\app.exe"
+  Copy-Item C:\Windows\regedit.exe "$Work\offline-target.exe"
+  $ws = New-Object -ComObject WScript.Shell
+  function Lnk($name, $target, $icon, $attr) {
+    $tmp = "$Work\tmp.lnk"
+    $s = $ws.CreateShortcut($tmp); $s.TargetPath = $target; if ($icon) { $s.IconLocation = $icon }; $s.Save()
+    if ($attr) { & attrib.exe $attr $tmp | Out-Null }
+    Move-Item -LiteralPath $tmp -Destination "$Dir\$name.lnk"
+  }
+  Lnk 'a 正常' 'C:\Windows\regedit.exe' $null $null
+  Lnk 'b 目标没了' "$Gone\app.exe" $null $null
+  Lnk 'c 目标没了 自带图标' "$Gone\app.exe" 'C:\Windows\System32\shell32.dll,43' $null
+  Lnk 'd 快捷方式离线' 'C:\Windows\regedit.exe' $null '+O'
+  Lnk 'e 快捷方式固定' 'C:\Windows\regedit.exe' $null '+P'
+  Lnk 'f 快捷方式未固定' 'C:\Windows\regedit.exe' $null '+U'
+  Lnk 'g 目标离线' "$Work\offline-target.exe" $null $null
+  Remove-Item -Recurse -Force $Gone
+  & attrib.exe +O "$Work\offline-target.exe" | Out-Null
+  Log ("attributes: " + ((Get-ChildItem -LiteralPath $Dir | ForEach-Object { "$($_.Name.Substring(0, 1))=0x{0:x}" -f [int]$_.Attributes }) -join ' ') + " target=0x{0:x}" -f [int](Get-Item "$Work\offline-target.exe").Attributes)
+  PfStart -Lang en
+  Start-Sleep -Seconds 2
+  Pf fence create --portal $Dir --title 'Probe' --rect '420,140,640,240' | Out-Null
+  Start-Sleep -Seconds 8
+  Shot 'hd2-probe'
+
+  Case 'HD-2 a shortcut file with the offline attribute keeps its icon'
+  $pa = ItemAt 'Probe' 'a 正常'; $pd = ItemAt 'Probe' 'd 快捷方式离线'
+  $ca = Crop 'hd2-icon-normal' ($pa[0] - 24) ($pa[1] - 24) 48 48
+  $cd = Crop 'hd2-icon-offline' ($pd[0] - 24) ($pd[1] - 24) 48 48
+  $diff = [Px]::Diff($ca, $cd, 0, 47, 0, 47)
+  Check 'it shows the same picture as a shortcut to the same program without the attribute' ($diff -lt 3) ("mean brightness difference {0:n1} of 255 (the white page against the program icon is about 60)" -f $diff)
+  Crop 'hd2-fence' 420 140 640 150 | Out-Null
+
+  Case 'HD-2 the log says why an icon is not the file''s own'
+  $log = (Get-Content (PfLogPath) -Encoding UTF8) -join "`n"
+  @([regex]::Matches($log, '[^\n]*icon came back empty, blank or generic[^\n]*') | ForEach-Object { $_.Value }) | ForEach-Object { Log "per file: $_" }
+  $info = @([regex]::Matches($log, '[^\n]*icon is not the file''s own picture[^\n]*') | ForEach-Object { $_.Value })
+  Check 'the offline shortcut: one info line with the type, the reason, its attributes and that the shortcut was read' (@($info | Where-Object { $_ -match 'file_ext="lnk" reason="generic" from_shortcut=true' -and $_ -match 'attrs=4128' -and $_ -match 'target_there=true' }).Count -eq 1) ($info -join ' // ')
+  Check 'the shortcut whose target is gone: one info line that says the target is not there' (@($info | Where-Object { $_ -match 'file_ext="lnk" reason="generic_program" from_shortcut=false' -and $_ -match 'target_ext="exe"' -and $_ -match 'target_there=false' }).Count -eq 1) ($info -join ' // ')
+  Check 'one line per type and reason, however many files' ($info.Count -eq 2) "$($info.Count) lines"
+  $share = if (Test-Path (ShareLog)) { (Get-Content (ShareLog) -Encoding UTF8) -join "`n" } else { '' }
+  $sl = @([regex]::Matches($share, '[^\n]*icon is not the file''s own picture[^\n]*') | ForEach-Object { $_.Value }) -join ' // '
+  Check 'the shareable log keeps the type, the reason and the place, and no path' ($sl -match 'file_ext=lnk reason=generic from_shortcut=true place=fixed' -and $sl -match 'target_ext=exe' -and $sl -notmatch '探针|pf\\run|hd2') $sl
+  PfQuit
+}

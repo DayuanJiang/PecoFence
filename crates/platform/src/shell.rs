@@ -1006,11 +1006,139 @@ pub fn add_link_overlay(image: &mut ShellImage, size_px: u32) {
 
 /// The icon file and index of the shell's shortcut arrow.
 fn link_overlay_source() -> Option<(PathBuf, i32)> {
+    stock_icon_source(SIID_LINK)
+}
+
+/// `SIID_DOCNOASSOC` and `SIID_APPLICATION` (shellapi.h): the white page of a file without an
+/// icon, and the window of a program without one.
+const SIID_DOCNOASSOC: i32 = 0;
+const SIID_APPLICATION: i32 = 2;
+
+/// Why `image`, a picture the shell handed back for a file, is no picture of the file: `blank`
+/// (every pixel transparent), `generic` (the white page of a file without an icon) or
+/// `generic_program` (the window of a program without one). The shell hands the last two back
+/// without an error when it could not read the file's icon. None for any other picture. The
+/// two stock pictures are extracted once per size on each worker thread.
+pub fn dull_icon(image: &ShellImage) -> Option<&'static str> {
+    if image.bgra.as_chunks::<4>().0.iter().all(|p| p[3] == 0) {
+        return Some("blank");
+    }
+    thread_local! {
+        static STOCK: std::cell::RefCell<std::collections::HashMap<(i32, u32), Option<ShellImage>>> =
+            Default::default();
+    }
+    let size_px = image.width.max(image.height);
+    STOCK.with_borrow_mut(|stock| {
+        [
+            (SIID_DOCNOASSOC, "generic"),
+            (SIID_APPLICATION, "generic_program"),
+        ]
+        .into_iter()
+        .find(|(siid, _)| {
+            stock
+                .entry((*siid, size_px))
+                .or_insert_with(|| {
+                    let (file, index) = stock_icon_source(*siid)?;
+                    icon_file_image(&file, index, size_px)
+                })
+                .as_ref()
+                .is_some_and(|s| same_picture(image, s))
+        })
+        .map(|(_, reason)| reason)
+    })
+}
+
+/// The two images show one picture: the same size, and channels no further apart than two
+/// extractions of one icon are (2 levels on average).
+fn same_picture(a: &ShellImage, b: &ShellImage) -> bool {
+    a.width == b.width
+        && a.height == b.height
+        && a.bgra.len() == b.bgra.len()
+        && a.bgra
+            .iter()
+            .zip(&b.bgra)
+            .map(|(x, y)| u64::from(x.abs_diff(*y)))
+            .sum::<u64>()
+            <= a.bgra.len() as u64 * 2
+}
+
+/// File attributes that say reading the file fetches it first: offline storage, or a cloud file
+/// that is not on this disk (`FILE_ATTRIBUTE_OFFLINE`, `RECALL_ON_OPEN`, `RECALL_ON_DATA_ACCESS`).
+const ATTRS_NOT_HERE: u32 = 0x1000 | 0x4_0000 | 0x40_0000;
+
+/// The file attributes of `path` (of a link itself, not of what it points to); 0 when they
+/// cannot be read.
+pub fn file_attributes(path: &Path) -> u32 {
+    std::fs::symlink_metadata(path).map_or(0, |m| m.file_attributes())
+}
+
+/// The extension of `path` for the log: in lower case when it is 1 to 10 ASCII letters and
+/// digits (`lnk`, `exe`), `other` for any other (it could say anything), `none` without one.
+pub fn log_ext(path: &Path) -> String {
+    match path.extension().map(|e| e.to_string_lossy().to_lowercase()) {
+        None => "none".to_string(),
+        Some(e) if (1..=10).contains(&e.len()) && e.bytes().all(|b| b.is_ascii_alphanumeric()) => e,
+        Some(_) => "other".to_string(),
+    }
+}
+
+/// `text` with its `%NAME%` environment variables filled in; one that is not set stays as
+/// written.
+fn expand_env(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find('%') {
+        let after = &rest[start + 1..];
+        let Some(end) = after.find('%') else { break };
+        out.push_str(&rest[..start]);
+        match std::env::var(&after[..end]) {
+            Ok(value) => out.push_str(&value),
+            Err(_) => {
+                out.push('%');
+                out.push_str(&after[..end]);
+                out.push('%');
+            }
+        }
+        rest = &after[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The icon of shortcut `path` read out of the shortcut itself, for when the shell hands back a
+/// blank or generic picture for it: the icon the shortcut names (its icon location), else the
+/// icon of its target. None when neither file is on this disk (gone, offline, a cloud file that
+/// would have to be fetched) or when the target's icon is blank or generic too.
+pub fn shortcut_icon(path: &Path, size_px: u32) -> Option<ShellImage> {
+    let link = load_shortcut(path)?;
+    let here = |p: &Path| p.is_absolute() && p.exists() && file_attributes(p) & ATTRS_NOT_HERE == 0;
+    let mut buf = [0u16; 1024];
+    let mut index = 0i32;
+    // SAFETY: the buffer is sized and NUL-terminated.
+    let named =
+        unsafe { link.GetIconLocation(PWSTR(buf.as_mut_ptr()), buf.len() as i32, &mut index) }
+            .is_ok()
+            .then(|| PathBuf::from(expand_env(&crate::wide::from_wide(&buf))))
+            .filter(|file| here(file));
+    if let Some(image) = named.and_then(|file| icon_file_image(&file, index, size_px)) {
+        return Some(image);
+    }
+    let target = PathBuf::from(shortcut_path(&link, 0)?);
+    if !here(&target) {
+        return None;
+    }
+    shell_image(&target, size_px, true)
+        .ok()
+        .filter(|image| dull_icon(image).is_none())
+}
+
+/// The icon file and index of one of the shell's stock icons.
+fn stock_icon_source(siid: i32) -> Option<(PathBuf, i32)> {
     // SAFETY: plain-data struct; all-zero is a valid value.
     let mut info: StockIconInfo = unsafe { std::mem::zeroed() };
     info.size = size_of::<StockIconInfo>() as u32;
     // SAFETY: `info` is a live out-struct of the declared size.
-    unsafe { SHGetStockIconInfo(SIID_LINK, SHGSI_ICONLOCATION, &mut info) }
+    unsafe { SHGetStockIconInfo(siid, SHGSI_ICONLOCATION, &mut info) }
         .ok()
         .ok()?;
     let len = info.path.iter().position(|&c| c == 0).unwrap_or(0);
