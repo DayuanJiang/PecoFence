@@ -245,16 +245,17 @@
   button[aria-pressed=true]:disabled { background: var(--control-disabled); color: var(--text-disabled); border-color: var(--control-stroke); }
 
   /* Theme style tiles double as the live preview of the icon settings below them. */
-  .style-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; padding-left: 40px; }
+  .style-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; padding-left: 40px; }
   .theme-files { display: flex; flex-direction: column; gap: 6px; padding-left: 40px; } .theme-files[hidden] { display: none; }
   .theme-files .actions { justify-content: flex-start; }
-  .tile { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 8px 8px 10px; border-radius: 6px;
+  .tile { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 6px 6px 10px; border-radius: 6px;
     border: 1px solid var(--control-stroke); background: var(--control); }
   .tile:hover { background: var(--control-hover); }
   .tile:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   .tile:has(input:focus-visible) { outline: 2px solid var(--text); outline-offset: 1px; }
   .tile input { position: absolute; opacity: 0; pointer-events: none; }
-  .tile .cap { display: flex; align-items: center; gap: 8px; padding: 0 2px; }
+  /* A caption that needs two lines breaks at a space (after the dot), never inside a word. */
+  .tile .cap { display: flex; align-items: center; gap: 5px; word-break: keep-all; overflow-wrap: anywhere; }
   .tile .cap::before { content: ""; width: 16px; height: 16px; flex: none; border-radius: 50%; border: 1px solid var(--control-strong); background: var(--control-alt); transition: border-width .12s; }
   .tile:has(input:checked) .cap::before { border: 5px solid var(--accent); background: var(--on-accent); }
   .shot { position: relative; height: 112px; border-radius: 4px; overflow: hidden; display: grid; place-items: center;

@@ -2676,6 +2676,20 @@ async function runTests() {
     doc = await reset();
   });
 
+  await test('主题风格: a tile caption that wraps breaks after the dot, never inside the Chinese name', async () => {
+    doc = await reset();
+    try {
+      const text = [...doc.querySelector('.tile-glass .cap').childNodes].find(n => n.nodeType === 3);
+      const lineOf = i => { const r = doc.createRange(); r.setStart(text, i); r.setEnd(text, i + 1); return Math.round(r.getBoundingClientRect().top); };
+      const at = text.nodeValue.indexOf('液态玻璃');
+      assert(at > 0, 'Caption changed: ' + text.nodeValue);
+      for (let width = 720; width <= 1000; width += 10) {
+        frame.style.width = width + 'px'; await settle();
+        assert(lineOf(at) === lineOf(at + 3), width + ' px: 液态玻璃 is split over two lines');
+      }
+    } finally { frame.style.width = ''; }
+  });
+
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
   window.testResults = { passed, failed };

@@ -75,6 +75,7 @@
 - 「查找设置」: the result that Enter opens has an accent tint; in light mode it was #fafafa on #fbfbfb (1.01 : 1) and could not be told from the other rows. Saved snapshots, daily backups and your rules are no longer listed as if they were settings (「快照」 listed every snapshot by name). Words that found nothing now find their setting: 帮助, 教程 (使用手册), 关于, 版本号, 命令行, CLI, 终端 (让 AI 助手整理桌面), 撤销, 恢复布局 (把当前布局存为快照), dark and light in a Chinese interface, and the text on a card's buttons, in all eleven languages.
 - Settings by keyboard: the navigation is one Tab stop. Tab went through 「查找设置」 and all seven pages before it reached the page's first control, the arrow keys did nothing in the navigation, and after Enter on a page six more Tabs were needed. Now Up, Down, Home and End move between the pages, Enter or Space shows one, and the next Tab is in that page.
 - Settings › 栅栏: the colour swatches of 「色调」 and 「标签页颜色」 stay on one line beside their text at the default window size, in every language. They dropped under the text there (the row fitted only from a 1024 px wide window on), so the same control looked different from 「图标着色」 on 常规.
+- Settings › 常规 › 主题风格: 「Liquid Glass · 液态玻璃」 fits on one line at the default window size; it wrapped with 「璃」 alone on a second line. In a narrower window, and in languages with a longer caption, the caption breaks after the dot.
 
 ## 0.3.3
 
