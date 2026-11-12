@@ -15,6 +15,9 @@ const REPLY_TAG: usize = 0x5053_0000;
 /// Pause after a change in a watched folder before the search runs again: Everything indexes
 /// the change first (it follows the drive's change journal, usually within a second).
 const SOON_MS: u32 = 1_000;
+/// The same pause while Everything does not run: PecoFence reads the folder itself, so there is
+/// no index to wait for, only the burst of events one saved file makes.
+const SOON_NO_INDEX_MS: u32 = 250;
 /// A second run after a change, for an Everything that took longer to see it.
 const AGAIN_MS: u32 = 4_000;
 /// Everything answers one search at a time (a new one cancels the one before): the next
@@ -844,7 +847,8 @@ impl App {
         self.run_smart_soon(ids, "its own watcher");
     }
 
-    /// Fences `hit` run again after `SOON_MS`, and once more `AGAIN_MS` later. A timer that is
+    /// Fences `hit` run again after `SOON_MS` (`SOON_NO_INDEX_MS` without Everything), and once
+    /// more `AGAIN_MS` later. A timer that is
     /// already set is left as it is, so a folder that keeps changing (a long download) still
     /// gets its runs.
     fn run_smart_soon(&mut self, hit: Vec<FenceId>, by: &str) {
@@ -852,12 +856,24 @@ impl App {
             return;
         }
         let armed = !self.smart.soon.is_empty();
-        tracing::debug!(fences = hit.len(), by, armed, "smart fence folders changed");
         self.smart.soon.extend(hit);
         self.smart.again = true;
-        if !armed {
-            window::set_timer(self.control.hwnd(), TIMER_SMART_SOON, SOON_MS);
+        if armed {
+            tracing::debug!(by, "smart fence folders changed; their run is already due");
+            return;
         }
+        let pause = if everything::find().is_some() {
+            SOON_MS
+        } else {
+            SOON_NO_INDEX_MS
+        };
+        tracing::debug!(
+            fences = self.smart.soon.len(),
+            by,
+            pause,
+            "smart fence folders changed"
+        );
+        window::set_timer(self.control.hwnd(), TIMER_SMART_SOON, pause);
     }
 
     /// `TIMER_SMART_SOON`: runs the fences a folder change named, once more a few seconds later.

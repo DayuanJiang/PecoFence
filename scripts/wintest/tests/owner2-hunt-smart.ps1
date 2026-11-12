@@ -87,3 +87,30 @@ function PartB {
   Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
 }
 if ($Part -match 'B') { PartB }
+
+function PartD {
+  trap { PfTrap $_; continue }
+  Case 'D: without Everything a new file shows soon'
+  CloseWindows
+  HsFiles
+  EvStop | Out-Null
+  PfStart -Lang en -Script (DumpScript 500 20)
+  ClearFences
+  Pf fence create --title 'Reports' --smart-folder $HsDir --rect '60,60,440,220' | Out-Null
+  Check 'D the folder is read without Everything' (WaitSmart 'Reports' { $s.source -eq 'folder' -and $s.shown -eq 3 } 15) (SmartLine 'Reports')
+  Start-Sleep -Seconds 6
+  # The app's own times: from the watcher's first event to the changed results.
+  $t = { param($l) [datetime]::Parse(($l -split ' ')[0]).ToUniversalTime() }
+  $t0 = (Get-Date).ToUniversalTime().AddMilliseconds(-50)
+  Set-Content -LiteralPath "$HsDir\刚保存的文件.txt" -Value 'new'
+  $shown = WaitSmart 'Reports' { $s.shown -eq 4 } 10
+  Start-Sleep -Milliseconds 300
+  $log = @(PfLogAll | Where-Object { $_ -match '^\d{4}-\d\d-\d\dT' -and (& $t $_) -ge $t0 })
+  $ev = @($log | Where-Object { $_ -match 'smart fence folders changed' }) | Select-Object -First 1
+  $done = @($log | Where-Object { $_ -match 'smart fence results changed.*count=4' }) | Select-Object -First 1
+  $ms = if ($ev -and $done) { [int]((& $t $done) - (& $t $ev)).TotalMilliseconds } else { -1 }
+  Check 'D the new file shows within 600 ms of the folder change' ($shown -and $ms -ge 0 -and $ms -le 600) "from the watcher's event to the results: $ms ms; $(SmartLine 'Reports')"
+  PfQuit
+  Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
+}
+if ($Part -match 'D') { PartD }
