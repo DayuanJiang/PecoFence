@@ -680,6 +680,9 @@ impl App {
             "free placement: icons dropped"
         );
         self.state.set_desktop_cells(inbox, &cells);
+        if own && let Some(w) = self.fences.get(&inbox) {
+            w.note_hand_move(at);
+        }
         // The window takes the new cells first, so icons that come from another fence land in
         // them rather than in the first free ones.
         self.arrange_desktop_fence();

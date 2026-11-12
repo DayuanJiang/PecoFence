@@ -5,6 +5,7 @@
 #   run.sh --var Part=D ...                            tooltips fade
 #   run.sh --var Part=E ...                            the icons of a deleted fence
 #   run.sh --var Part=F ...                            a selection that ends does not flash
+#   run.sh --var Part=G ...                            a sort of the freely placed desktop
 #   run.sh --var Part=P ...                            Windows' own tip, recorded for comparison (no check of PecoFence)
 #   --var Rec=1 also records the clips of the report (rec-*).
 # Real mouse and keys, zh-CN, a new configuration (「桌面」 arranged like the desktop, 自由摆放).
@@ -295,6 +296,50 @@ if ($Part -eq 'F') {
   Check 'setup: the click ended the selection' ($final -gt 0.3) "the cell against the selected icon: $('{0:N2}' -f $final) at the end"
   Check 'no read shows the box brighter than before the click' ($max -le $final + 1.5) "largest change against the selected icon $('{0:N2}' -f $max), at the end $('{0:N2}' -f $final); reads (ms:change): $(($reads | Select-Object -First 10 | ForEach-Object { '{0}:{1:N1}' -f $_[0], $_[1] }) -join ' ')"
   CloseWindows
+  UxEnd
+}
+
+if ($Part -eq 'G') {
+  # 排序方式 on the freely placed 「桌面」 lines the icons up down the first columns again. They
+  # stood in the new cells in the next frame; a sort inside a fence glides (250 ms).
+  Case 'A sort of the freely placed desktop glides the icons into line'
+  UxStart
+  $p = UxPt '图.fpx'; DragTo $p[0] $p[1] 644 322 20; Start-Sleep -Seconds 1
+  $p = UxPt 'b.fpx'; DragTo $p[0] $p[1] 404 514 20; Start-Sleep -Seconds 1
+  ParkMouse 1100 700
+  Check 'setup: two icons stand away from the first column' ((UxCell '图.fpx') -eq '8,3' -and (UxCell 'b.fpx') -eq '5,5') "$(UxAll)"
+  if ($Rec) { RecStart 'rec-sort' -X 0 -Y 0 -W 760 -H 620 -Fps 30; RecMark '把「桌面」按名称排序'; Start-Sleep -Milliseconds 400 }
+  # The desktop right of the first column, read as often as the screen can be read while the
+  # sort runs (the command line returns too late for that, so it runs beside the reads): the
+  # two icons leave their places; on their way they show elsewhere in it.
+  Start-Process "$PfApp\pecofence-cli.exe" -ArgumentList 'fence set inbox sort name' -WindowStyle Hidden | Out-Null
+  [Px]::Burst(88, 0, 640, 620, 1500, 0)
+  $n = [Px]::Frames.Count
+  $reads = @(for ($i = 1; $i -lt $n; $i++) { , @([Px]::Times[$i], [Px]::Diff([Px]::Frames[0], [Px]::Frames[$i], 0, 639, 0, 619)) })
+  $final = $reads[-1][1]
+  $onWay = @($reads | Where-Object { $final -gt 0.05 -and $_[1] -gt 1.2 * $final })
+  $changed = @($reads | Where-Object { $_[1] -gt 0.02 }) | Select-Object -First 9
+  if ($Rec) { RecStop }
+  $line = @(PfLogAll | Where-Object { $_ -match 'desktop cells placed again: icons glide to their new cells' }) | Select-Object -Last 1
+  Check 'after the sort the two icons stand in the first column' ((UxCell '图.fpx') -match '^0,' -and (UxCell 'b.fpx') -match '^0,') "$(UxAll)"
+  Check 'the log says the icons glide to their new cells' ($line -match 'gliding=[2-9]') "$line"
+  Check 'the icons are seen on their way' ($onWay.Count -ge 1) "$($onWay.Count) of $($reads.Count) reads show more than the two empty places (end: $('{0:N2}' -f $final)); first reads that changed (ms:change): $(($changed | ForEach-Object { '{0}:{1:N2}' -f $_[0], $_[1] }) -join ' ')"
+  Start-Sleep -Milliseconds 600
+  $was = [W]::RootClassAt(644, 322)
+  Check 'afterwards the places they left are bare desktop' ($was -ne 'PecoFence.Fence') "window at the place 图.fpx left: $was"
+
+  # A fence comes to stand on loose icons: they move to free places beside it, and glide there.
+  Case 'Loose icons glide out from under a fence that comes to stand on them'
+  $before = UxAll
+  $lines = @(PfLogAll | Where-Object { $_ -match 'desktop cells placed again: icons glide to their new cells' }).Count
+  Pf fence create --title '盖住图标' --rect '4,4,170,200' | Out-Null
+  $moved = UxWait { (UxAll) -ne $before } 5
+  Start-Sleep -Milliseconds 800
+  $after = @(PfLogAll | Where-Object { $_ -match 'desktop cells placed again: icons glide to their new cells' })
+  Shot 'G-fence-on-icons'
+  Check 'the icons under the new fence took other places' ($moved) "before: $before ; after: $(UxAll)"
+  Check 'the log says they glide there' ($after.Count -gt $lines) "$($after | Select-Object -Last 1)"
+  Pf fence delete '盖住图标' | Out-Null
   UxEnd
 }
 

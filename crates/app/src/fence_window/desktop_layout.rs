@@ -340,6 +340,74 @@ impl FenceViewState {
         Some((rect, changed))
     }
 
+    /// Each icon's cell as placed last, by id (empty for a normal fence).
+    pub(super) fn desktop_slots_by_id(&self) -> HashMap<ItemId, CellRect> {
+        if !self.bare() {
+            return HashMap::new();
+        }
+        self.items
+            .iter()
+            .zip(&self.desktop_slots)
+            .map(|(it, slot)| (it.id, *slot))
+            .collect()
+    }
+
+    /// 像桌面一样排列: the cells were placed again for icons that were here before (`before`
+    /// has their cells): a sort of the freely placed 「桌面」 lines them up, a fence came to
+    /// stand on some, the work area got smaller. Each icon whose cell moved glides there from
+    /// where it is drawn (250 ms point-to-point, as a sort inside a fence); they used to
+    /// stand in the new cells in the next frame. A list that changed has its glides already
+    /// (`replace_items` places the cells itself, so nothing moves here), and cells of another
+    /// size (an icon size step, another scale) snap. Returns whether any icon glides.
+    pub(super) fn glide_to_new_slots(&mut self, before: &HashMap<ItemId, CellRect>) -> bool {
+        if before.is_empty()
+            || !self.motion.enabled()
+            || self.rolled_up
+            || !desktop::is_visible(self.hwnd)
+        {
+            return false;
+        }
+        let now = Instant::now();
+        let mut gliding = 0usize;
+        for (it, c) in self.items.iter().zip(&self.desktop_slots) {
+            let Some(o) = before
+                .get(&it.id)
+                .filter(|_| !self.hand_moved.contains(&it.id))
+            else {
+                continue;
+            };
+            let same_size = (o.w - c.w).abs() < 0.5 && (o.h - c.h).abs() < 0.5;
+            let moved = (o.x - c.x).abs() > 0.5 || (o.y - c.y).abs() > 0.5;
+            if !same_size || !moved {
+                continue;
+            }
+            let prev = self.item_motion.get(&it.id);
+            let (fx, fy) = prev.map_or((o.x, o.y), |m| (m.x.value_at(now), m.y.value_at(now)));
+            let alpha = prev.map_or(Tween::at(1.0, now), |m| m.alpha);
+            let glide = |from: f32, to: f32| {
+                self.motion
+                    .tween(from, to, motion::NORMAL, Curve::PointToPoint, now)
+            };
+            let m = super::items::ItemMotion {
+                x: glide(fx, c.x),
+                y: glide(fy, c.y),
+                alpha,
+            };
+            self.item_motion.insert(it.id, m);
+            gliding += 1;
+        }
+        if gliding > 0 {
+            tracing::debug!(
+                fence = %self.fence_id,
+                gliding,
+                items = self.items.len(),
+                "desktop cells placed again: icons glide to their new cells"
+            );
+            self.frames.request();
+        }
+        gliding > 0
+    }
+
     /// 自由摆放: the cells (screen px) of the items from their saved cells, plus one free cell
     /// for a drop. Cells that changed (a new icon, one moved off a fence or into a smaller
     /// work area) go to the app to be saved.

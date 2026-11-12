@@ -282,6 +282,7 @@ impl FenceWindow {
             tip_anchor: (0, 0),
             tip_armed: false,
             tip_move_at: None,
+            hand_moved: Vec::new(),
             cut: HashSet::new(),
             wheel_zoom_accum: 0,
             wheel_tab_accum: 0,
@@ -2517,6 +2518,12 @@ impl FenceWindow {
     }
 
     /// 自由摆放: icons of this 「桌面」 were moved by hand and let go at `at`; their new cells are
+    /// about to be placed (see `FenceViewState::hand_moved`).
+    pub fn note_hand_move(&self, at: &DesktopDrop) {
+        self.with_view(|v| v.hand_moved = at.centres.iter().map(|c| c.0).collect());
+    }
+
+    /// 自由摆放: icons of this 「桌面」 were moved by hand and let go at `at`; their new cells are
     /// placed. They settle into them from where they were let go
     /// (`FenceViewState::land_moved_icons`).
     pub fn land_moved_icons(&self, at: &DesktopDrop) {
@@ -2533,7 +2540,15 @@ impl FenceWindow {
     fn arrange_desktop(&self, force: bool) {
         let hwnd = self.hwnd();
         let mut placed = None;
-        self.with_view(|v| placed = v.arrange_desktop());
+        self.with_view(|v| {
+            let before = v.desktop_slots_by_id();
+            placed = v.arrange_desktop();
+            // The same icons in other cells glide there; the window then reaches to where
+            // they come from (the second placing takes their ways in).
+            if matches!(placed, Some((_, true))) && v.glide_to_new_slots(&before) {
+                placed = v.arrange_desktop().map(|(rect, _)| (rect, true));
+            }
+        });
         let mut relayout = force;
         if let Some((rect, changed)) = placed {
             relayout |= changed;

@@ -439,6 +439,10 @@ pub struct FenceViewState {
     /// pointer. A tip that a click, a key or the wheel hid comes back only when the pointer
     /// really moves.
     pub(super) tip_move_at: Option<(i32, i32)>,
+    /// 自由摆放: the icons the user is moving by hand right now. The placing of their new
+    /// cells leaves them out of its glide (`glide_to_new_slots`): they arrive from where they
+    /// were let go (`land_moved_icons`), not from their old cells.
+    pub(super) hand_moved: Vec<ItemId>,
     /// Items on the clipboard via 剪切 (drawn at half alpha like Explorer).
     pub(super) cut: HashSet<ItemId>,
     /// Ctrl+wheel accumulator (touchpads deliver fractional notches).

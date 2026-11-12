@@ -1284,6 +1284,7 @@ impl FenceViewState {
     /// list does not change, so `replace_items` never sees this move. Returns whether any
     /// icon glides.
     pub(super) fn land_moved_icons(&mut self, centres: &[(ItemId, (i32, i32))]) -> bool {
+        self.hand_moved.clear();
         if !self.motion.enabled() || self.rolled_up || !desktop::is_visible(self.hwnd) {
             return false;
         }
@@ -1303,6 +1304,9 @@ impl FenceViewState {
             let y = (sy - r.top - self.content_y) as f32 / scale - fixed + self.scroll_y;
             let (fx, fy) = super::items::landing_origin(x, y, &c);
             if (fx - c.x).abs() <= 0.5 && (fy - c.y).abs() <= 0.5 {
+                // Let go right on its cell: no way to go (and none from its old cell, which
+                // the placing of the new cells started).
+                self.item_motion.remove(id);
                 continue;
             }
             let glide = |from: f32, to: f32| {
