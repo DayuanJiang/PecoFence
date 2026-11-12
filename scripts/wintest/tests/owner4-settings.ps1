@@ -27,7 +27,7 @@
 #   N  the fonts the page's text is drawn with, and which icons got their stand-in
 # The rows go to shots\openings.tsv (the notes of the round have table.py for them). The one
 # bound: the median of part A's `drawn` (the app's log) is at most $Bound ms (default 900: 669 ms
-# before the change and 650 ms after it on an EC2 box, 758 ms the worst of ten).
+# before the change and 637 ms after it on an EC2 box, 758 and 728 ms the worst of ten).
 if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'FAE' }
 if (-not (Get-Variable N -ErrorAction SilentlyContinue)) { $N = 10 }
 if (-not (Get-Variable Bound -ErrorAction SilentlyContinue)) { $Bound = 900 }
