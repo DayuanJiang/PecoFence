@@ -120,6 +120,7 @@ impl App {
         if mode == TransferMode::Link {
             let made = self.create_shortcuts_in(&paths, &dest);
             tracing::info!(count = made.len(), dest = %dest.display(), "shortcuts placed into folder");
+            self.note_created_for_undo(made);
             self.refresh_portals();
             return;
         }
@@ -219,6 +220,7 @@ impl App {
         match written {
             Ok(()) => {
                 tracing::info!(path = %path.display(), %to, "internet shortcut created from a link drop");
+                self.note_created_for_undo(vec![path.clone()]);
                 if !on_desktop {
                     // Not a desktop item: the portals showing that folder list it.
                     self.refresh_portals();

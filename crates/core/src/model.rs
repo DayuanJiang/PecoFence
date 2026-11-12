@@ -464,8 +464,9 @@ pub enum ThemeStyle {
     LiquidGlass,
 }
 
-/// Item name colour (「文字颜色」). Auto: Liquid Glass picks dark or light text from the
-/// wallpaper under each fence, Fluent follows the colour mode. The halo pairs with the text.
+/// Item name colour (「文字颜色」). Auto: each fence picks dark or light text from the
+/// wallpaper under it, in Liquid Glass and in Fluent (a Fluent fence starts from the colour
+/// mode's text and changes only where that would not read). The halo pairs with the text.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]

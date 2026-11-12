@@ -18,7 +18,7 @@ portal folders.
    tell the user `pecofence-cli snapshot restore <id>` undoes the layout. Snapshots hold layouts only
    (fences, geometry, membership), never settings, rules or files.
 2. **Portals are real folders.** A fence with `"kind": "portal"` shows a folder on disk; `item move`
-   into or out of it moves the real files (undo only via Explorer). Run such a move with `--dry-run`
+   into or out of it moves the real files (undo with Ctrl+Z on the desktop or in a fence). Run such a move with `--dry-run`
    first and show the user the `fileMove` entries and their `destination`. Pair `--glob` with `--from`.
 3. **Address by id.** After `fence list`, use ids (or a unique prefix of 6+ hex digits), not titles.
    The desktop fence is always `inbox`, whatever its localised title (Desktop, 桌面, ...).

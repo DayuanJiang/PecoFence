@@ -93,6 +93,7 @@ impl App {
         match created {
             Ok(()) => {
                 tracing::info!(path = %path.display(), %fence, "created item from fence menu");
+                self.note_created_for_undo(vec![path.clone()]);
                 if let Some(dir) = portal_dir {
                     // A portal has no desktop PendingRoute. Refresh it now and start the
                     // same inline editor used for a new desktop item, after this command.
@@ -144,8 +145,57 @@ impl App {
                 }
                 None => true,
             });
+        // The places kept for routes that just landed (`RoutePlace`), and none for a route
+        // that is gone (expired; a failed or cancelled move takes its own away).
+        let mut places: HashMap<ItemId, RoutePlace> = HashMap::new();
+        let arrived: Vec<PathBuf> = self
+            .route_places
+            .keys()
+            .filter(|p| self.state.item_id_for_path(p).is_some())
+            .cloned()
+            .collect();
+        for path in arrived {
+            if let (Some(id), Some(place)) = (
+                self.state.item_id_for_path(&path),
+                self.route_places.remove(&path),
+            ) {
+                places.insert(id, place);
+            }
+        }
+        self.route_places
+            .retain(|p, _| self.pending_routes.iter().any(|r| r.path == *p));
         for (id, fence, rename) in landed {
-            self.move_items_unrecorded(&[id], fence);
+            // Let go between the icons of the fence: in front of the icon the line stood
+            // before, wherever that icon is by now (after the others when it is gone), and
+            // gliding in from where it was let go.
+            let place = places.remove(&id);
+            let at = place.as_ref().and_then(|p| p.before).and_then(|anchor| {
+                self.state
+                    .fence(fence)
+                    .and_then(|f| self.state.items_of(f).iter().position(|it| it.id == anchor))
+            });
+            if let Some(place) = &place {
+                tracing::debug!(
+                    %fence,
+                    anchor = place.before.is_some(),
+                    at = ?at,
+                    glide = place.from.is_some(),
+                    "routed icon lands where it was let go"
+                );
+                if let (Some(from), Some(w)) = (place.from, self.window_for(fence)) {
+                    w.set_drop_landing(id, from);
+                }
+            }
+            let moved = self.move_items_placed(&[id], fence, at);
+            // Already in this fence when it came back (the rules filed it here, or the fence
+            // still knew it from before): nothing moved, only its place changes.
+            if moved == 0
+                && let Some(index) = at
+                && self.state.reorder_items(fence, &[id], index)
+            {
+                self.refresh_fence(fence);
+                self.schedule_save();
+            }
             if rename {
                 // The rules may have filed the item here already: then nothing moved, the
                 // window does not list it yet, and the label the edit box needs has no rect.
@@ -156,7 +206,12 @@ impl App {
     }
 
     /// Moves portal items out to the real desktop and routes them into `to` once they appear.
-    pub(super) fn move_portal_items_to_desktop(&mut self, items: &[ItemId], to: FenceId) {
+    pub(super) fn move_portal_items_to_desktop(
+        &mut self,
+        items: &[ItemId],
+        to: FenceId,
+        at: Option<usize>,
+    ) {
         let Some(desktop) = shell::user_desktop() else {
             return;
         };
@@ -184,6 +239,40 @@ impl App {
                 rename: false,
             });
         }
+        // Dragged onto the fence: once its file is on the desktop each icon lands in front of
+        // the icon the insertion line stood before (`at`, a display index of `to` now) and
+        // glides in from where it was let go, as an icon of a virtual fence does at once.
+        let before = at.and_then(|i| {
+            self.state
+                .fence(to)
+                .and_then(|f| self.state.items_of(f).get(i).map(|it| it.id))
+        });
+        let mut let_go = self
+            .window_for(to)
+            .map(|w| w.take_drop_landing())
+            .unwrap_or_default();
+        for id in items {
+            let from = let_go.remove(id);
+            let path = self
+                .state
+                .item(*id)
+                .and_then(|it| it.path().map(PathBuf::from))
+                .and_then(|p| p.file_name().map(|n| desktop.join(n)));
+            if let Some(path) = path
+                && routed.contains(&path)
+                && (before.is_some() || from.is_some())
+            {
+                self.route_places.insert(path, RoutePlace { before, from });
+            }
+        }
+        tracing::debug!(
+            fence = %to,
+            routed = routed.len(),
+            at = ?at,
+            anchor = before.is_some(),
+            places = self.route_places.len(),
+            "files leave a folder fence for the desktop: where their icons will land is kept with the routes"
+        );
         let owner = self.window_for(to).map(|w| w.hwnd());
         // Worker thread; a cancelled / failed move withdraws only our own routes (other
         // fences' 新建 claims / drop routes stay queued) — see `on_fileop_done`.
@@ -234,21 +323,26 @@ impl App {
             it.is_folder,
         );
         let dpi = monitors::dpi_for_window(w.hwnd());
-        // In the icon view the name is centred under the icon, and so is the box's text.
+        // In the icon view the name is centred under the icon and wraps: so does the box.
         let centered = self
             .state
             .fence(fence)
             .is_some_and(|f| f.view.layout == ViewLayout::Icons);
-        tracing::info!(?rect, centered, "item rename box opened");
+        // As wide as the name is drawn: a name fitted to the wider box keeps it in the box.
+        let inset = w.item_label_inset(item);
+        tracing::info!(?rect, centered, inset, "item rename box opened");
         w.set_renaming(Some(item));
+        let label_size = self.ctx.chrome.label_size();
         crate::rename::begin_item_rename(
             rect,
             dpi,
-            crate::layout::row_text_scale(self.ctx.chrome.label_size()),
+            &self.ctx.chrome.label_family(),
+            label_size,
+            crate::layout::row_text_scale(label_size),
             item,
             current,
             select_end,
-            centered,
+            centered.then_some(inset),
             self.queue.clone(),
             self.theme_mode,
         );
@@ -300,8 +394,27 @@ impl App {
         let suffix = crate::rename::rename_hidden_suffix(&it.display_name, file_name, it.is_folder);
         let old = it.path().map(PathBuf::from);
         let new_name = format!("{name}{suffix}");
+        let portal = self.state.is_portal_item(item);
         let toast = match self.rename_item_to(item, &new_name) {
-            Ok(_) | Err(RenameError::Unsupported) => None,
+            Ok(new) => {
+                // In a sorted fence the new name may send the icon out of view: the fence
+                // follows it (a folder fence's item has a new id, made from its path).
+                let id = if portal {
+                    crate::state::portal_item_id(&new.to_string_lossy())
+                } else {
+                    item
+                };
+                for w in self.fences.values() {
+                    w.reveal_item(id);
+                }
+                // One step of Ctrl+Z in the fences, unless the name on disk stayed the same
+                // ("note" to "note.").
+                if let Some(old) = old.filter(|old| *old != new) {
+                    self.note_rename_for_undo(old, new);
+                }
+                None
+            }
+            Err(RenameError::Unsupported) => None,
             Err(RenameError::Denied(e)) => match old {
                 // Explorer asks for administrator permission here; the shell's own rename
                 // does the same.
@@ -493,7 +606,21 @@ impl App {
     /// Delete key: the shell's own `delete` verb (Recycle Bin + its confirmation dialog);
     /// `permanent` = Shift+Delete (the shell's own 永久删除 confirmation).
     pub(super) fn delete_items(&mut self, fence: FenceId, items: &[ItemId], permanent: bool) {
-        self.shell_verb_on_items(fence, items, "delete", permanent);
+        // The fence waits only for what the shell is asked to delete (the Recycle Bin and the
+        // other special icons stay), and not at all when nothing is.
+        let real: Vec<ItemId> = items
+            .iter()
+            .copied()
+            .filter(|id| self.state.item(*id).is_none_or(|it| !it.is_namespace()))
+            .collect();
+        if let Some(w) = self.window_for(fence) {
+            w.expect_user_delete(&real);
+        }
+        if !self.shell_verb_on_items(fence, items, "delete", permanent)
+            && let Some(w) = self.window_for(fence)
+        {
+            w.settle_user_delete(false);
+        }
     }
 
     /// Alt+Enter / 属性: the shell's `properties` verb (multi-select gives one combined sheet).
@@ -546,8 +673,9 @@ impl App {
 
     /// Ctrl+V / 粘贴: the clipboard's files land in `fence` — desktop items change membership,
     /// foreign files move / copy to the desktop (or the portal's folder) first. Pasting copies
-    /// into the folder they already live in makes Explorer's "xxx - 副本" duplicates (routed by
-    /// the rules, since their names are only known to the shell).
+    /// into the folder they already live in makes Explorer's "xxx - 副本" duplicates, which go
+    /// into `fence` too (`claim_pasted_duplicates`). What was pasted is selected there
+    /// (`select_pasted`).
     pub(super) fn paste_into(&mut self, fence: FenceId) {
         // A note (便签) holds no files: Ctrl+V on it does nothing.
         if self
@@ -570,17 +698,49 @@ impl App {
             });
             if all_here {
                 let owner = self.window_for(fence).map(|w| w.hwnd());
+                let known = dir_entries(dest);
+                let running = self.fileops_running;
                 self.start_fileop(FileOp {
-                    paths,
+                    paths: paths.clone(),
                     dest: dest.clone(),
                     copy: true,
                     rename_on_collision: true,
                     owner,
                     then: FileOpThen::Duplicate,
                 });
+                if self.fileops_running > running {
+                    // The copies go into the fence pasted into, whatever the rules say (as a
+                    // drop into it does), and are selected there.
+                    tracing::debug!(%fence, files = paths.len(), dir = %dest.display(), "paste copies files within their folder");
+                    self.paste_dups.push(PasteDup {
+                        serial: self.fileop_serial,
+                        fence,
+                        dir: dest.clone(),
+                        known,
+                        sources: paths,
+                    });
+                    self.pasted = Some(self.paste_started(fence, Vec::new()));
+                }
                 return;
             }
         }
+        // Where the pasted files will be: in a folder fence's folder, else on the desktop
+        // (files already there stay where they are and only change fence).
+        let portal = self.state.portal_path(fence).is_some();
+        let desktops = [shell::user_desktop(), shell::public_desktop()];
+        let expected: Vec<PathBuf> = paths
+            .iter()
+            .filter_map(|p| {
+                let on_desktop = !portal
+                    && p.parent()
+                        .is_some_and(|par| desktops.iter().flatten().any(|d| d == par));
+                if on_desktop {
+                    return Some(p.clone());
+                }
+                Some(dest.as_ref()?.join(shell::transferred_name(p)?))
+            })
+            .collect();
+        self.pasted = Some(self.paste_started(fence, expected));
         let running = self.fileops_running;
         self.handle(Command::ExternalDrop {
             paths,
@@ -591,6 +751,7 @@ impl App {
                 TransferMode::Copy
             },
         });
+        self.select_pasted();
         if cut {
             if self.fileops_running > running {
                 // Foreign files are still being moved by a worker: emptied when it succeeds,
@@ -602,6 +763,138 @@ impl App {
             } else {
                 self.finish_cut_paste();
             }
+        }
+    }
+
+    /// Copies that pastes still running have made so far go into the fence pasted into: a
+    /// route for each (it bypasses the rules) and a place in the selection to come. Called
+    /// before a desktop sync, so a copy never shows in the fence the rules would pick, and
+    /// when the paste `done` has finished, which forgets that paste.
+    pub(super) fn claim_pasted_duplicates(&mut self, done: Option<u64>) {
+        let mut dups = std::mem::take(&mut self.paste_dups);
+        for d in &mut dups {
+            let landed = pasted_duplicates(&d.known, &dir_entries(&d.dir), &d.sources);
+            if landed.is_empty() {
+                continue;
+            }
+            let fence = d.fence;
+            let virtual_fence = self.state.portal_path(fence).is_none();
+            tracing::info!(%fence, copies = landed.len(), virtual_fence, "pasted copies found");
+            for path in landed {
+                d.known.insert(path.clone());
+                if virtual_fence && !self.pending_routes.iter().any(|r| r.path == path) {
+                    self.pending_routes.push(PendingRoute {
+                        fence,
+                        path: path.clone(),
+                        since: Instant::now(),
+                        rename: false,
+                    });
+                }
+                if let Some(p) = self.pasted.as_mut().filter(|p| p.fence == fence) {
+                    p.paths.push(path);
+                }
+            }
+        }
+        if let Some(serial) = done {
+            dups.retain(|d| d.serial != serial);
+        }
+        self.paste_dups = dups;
+    }
+
+    /// The record of a paste into `fence` that starts now and will bring `paths`: it notes
+    /// what the fence has selected, so `select_pasted` can tell whether the user selected
+    /// something else since.
+    fn paste_started(&self, fence: FenceId, paths: Vec<PathBuf>) -> Pasted {
+        let left = self
+            .window_for(fence)
+            .filter(|w| w.active_fence() == fence)
+            .map(|w| w.selected_items().into_iter().collect())
+            .unwrap_or_default();
+        Pasted {
+            fence,
+            paths,
+            chosen: Vec::new(),
+            left,
+            since: Instant::now(),
+        }
+    }
+
+    /// Selects what the last paste put into its fence, as far as it shows there by now, with
+    /// the first of them as the keyboard cursor (Explorer selects what it pasted). Runs again
+    /// when more of it has arrived, and adds that to the selection only while the selection is
+    /// still what the paste left: once the user has selected something else, or the paste is
+    /// too long ago, the rest arrives unselected. Forgotten once everything is selected.
+    pub(super) fn select_pasted(&mut self) {
+        let Some(p) = self.pasted.as_ref() else {
+            return;
+        };
+        let fence = p.fence;
+        // Checked before anything is selected: a file that shows only now (it was hidden by
+        // the fence's filter, or it never came) is not "what I just pasted" any more.
+        if self.fileops_running == 0 && p.since.elapsed().as_secs() > PENDING_CREATION_SECS {
+            tracing::debug!(%fence, "pasted files are no longer selected: the paste is too long ago");
+            self.pasted = None;
+            return;
+        }
+        let Some(w) = self.window_for(fence).filter(|w| w.active_fence() == fence) else {
+            return;
+        };
+        let now: HashSet<ItemId> = w.selected_items().into_iter().collect();
+        if now != p.left {
+            tracing::debug!(
+                %fence,
+                selected = now.len(),
+                left = p.left.len(),
+                "pasted files are no longer selected: the selection changed since the paste"
+            );
+            self.pasted = None;
+            return;
+        }
+        let copying = self.paste_dups.iter().any(|d| d.fence == fence);
+        let keys: Vec<ItemKey> = p
+            .paths
+            .iter()
+            .map(|path| ItemKey::from_path(&path.to_string_lossy()))
+            .collect();
+        let ids: Vec<ItemId> = self
+            .state
+            .fence(fence)
+            .map(|f| {
+                self.state
+                    .items_of(f)
+                    .into_iter()
+                    .filter(|it| keys.contains(&it.key))
+                    .map(|it| it.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut chosen = p.chosen.clone();
+        let renaming = w.renaming_item().is_some();
+        if renaming {
+            tracing::debug!(%fence, arrived = ids.len(), "pasted files wait: a name box is open in the fence");
+        }
+        if let Some(want) = pasted_to_select(&chosen, &ids, renaming) {
+            let got = w.select_items(&want);
+            tracing::debug!(
+                %fence,
+                pasted = keys.len(),
+                arrived = ids.len(),
+                selected = got.len(),
+                "pasted files selected"
+            );
+            // None of them shows (the fence's filter hides them): the selection is untouched.
+            if !got.is_empty() {
+                chosen = got;
+            }
+        }
+        let done = !copying && ids.len() >= keys.len() && ids.iter().all(|id| chosen.contains(id));
+        if done {
+            self.pasted = None;
+        } else if let Some(p) = self.pasted.as_mut()
+            && p.chosen != chosen
+        {
+            p.left = chosen.iter().copied().collect();
+            p.chosen = chosen;
         }
     }
 
@@ -699,18 +992,29 @@ impl App {
     /// The user moved `items` into `to`: one step of Ctrl+Z in the fences, unless files move
     /// into a folder (Windows undoes those).
     pub(super) fn move_items(&mut self, items: &[ItemId], to: FenceId) {
+        self.move_items_at(items, to, None);
+    }
+
+    /// [`Self::move_items`] for icons dropped between the icons of a 手动 fence: they go before
+    /// display index `at` of `to` (counted before they arrived) instead of after the others.
+    pub(super) fn move_items_at(&mut self, items: &[ItemId], to: FenceId, at: Option<usize>) {
         let places = if self.state.move_target_folder(to).is_none() {
             self.state.item_places(items)
         } else {
             Vec::new()
         };
-        if self.move_items_unrecorded(items, to) > 0 {
+        if self.move_items_placed(items, to, at) > 0 {
             self.note_items_for_undo(to, places);
         }
     }
 
     /// [`Self::move_items`] without the undo step; returns how many fence entries moved.
     pub(super) fn move_items_unrecorded(&mut self, items: &[ItemId], to: FenceId) -> usize {
+        self.move_items_placed(items, to, None)
+    }
+
+    /// [`Self::move_items_at`] without the undo step; returns how many fence entries moved.
+    fn move_items_placed(&mut self, items: &[ItemId], to: FenceId, at: Option<usize>) -> usize {
         // A smart or tool fence takes nothing: refused before a folder fence's file is moved
         // out to the desktop on its way there.
         if self.state.move_target_folder(to).is_none()
@@ -736,7 +1040,7 @@ impl App {
             .copied()
             .partition(|id| self.state.is_portal_item(*id));
         if !portal_items.is_empty() {
-            self.move_portal_items_to_desktop(&portal_items, to);
+            self.move_portal_items_to_desktop(&portal_items, to, at);
         }
         if desktop_items.is_empty() {
             return 0;
@@ -750,6 +1054,17 @@ impl App {
             .collect();
         let moved = self.state.move_items(&desktop_items, to);
         if moved > 0 {
+            if let Some(index) = at {
+                // Before the windows are refreshed, so the icons glide straight to that place.
+                let placed = self.state.reorder_items(to, &desktop_items, index);
+                tracing::debug!(
+                    fence = %to,
+                    index,
+                    moved,
+                    placed,
+                    "icons dropped between the icons of a fence: placed there (false: not a 手动 fence)"
+                );
+            }
             for id in affected {
                 self.refresh_fence(id);
             }
@@ -757,6 +1072,70 @@ impl App {
         }
         moved
     }
+}
+
+/// The icons a paste selects now: the pasted ones it selected before (`chosen`) plus those
+/// that have `arrived` since. None when nothing new has arrived, and while a name box is open
+/// in the fence (F2 on a file that arrived earlier): selecting scrolls, and a scroll closes
+/// the box with whatever is typed so far, so the paste waits for the next change of the files.
+pub(super) fn pasted_to_select(
+    chosen: &[ItemId],
+    arrived: &[ItemId],
+    renaming: bool,
+) -> Option<Vec<ItemId>> {
+    if renaming || arrived.iter().all(|id| chosen.contains(id)) {
+        return None;
+    }
+    let mut want = chosen.to_vec();
+    want.extend(arrived.iter().copied().filter(|id| !chosen.contains(id)));
+    Some(want)
+}
+
+/// The entries directly in `dir` (before and after a paste that copies within it).
+fn dir_entries(dir: &Path) -> HashSet<PathBuf> {
+    std::fs::read_dir(dir)
+        .map(|rd| rd.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default()
+}
+
+/// The copies a paste of `sources` has made in their own folder so far: the entries of `now`
+/// that `known` does not hold and whose name is a source's name with a space and more added
+/// to its stem ("报告 - 副本.txt", "报告 - Copy (2).txt" for 报告.txt) or, as for a folder, to
+/// the whole name ("v1.2 - Copy"), so a file another program puts into the folder meanwhile
+/// is not taken for one. Sorted by path.
+pub(super) fn pasted_duplicates(
+    known: &HashSet<PathBuf>,
+    now: &HashSet<PathBuf>,
+    sources: &[PathBuf],
+) -> Vec<PathBuf> {
+    let lower = |s: Option<&std::ffi::OsStr>| s.map(|s| s.to_string_lossy().to_lowercase());
+    // Per source: its name and its stem, each with the space a copy's name goes on with, and
+    // its extension.
+    let names: Vec<(String, String, Option<String>)> = sources
+        .iter()
+        .filter_map(|p| {
+            Some((
+                lower(p.file_name())? + " ",
+                lower(p.file_stem())? + " ",
+                lower(p.extension()),
+            ))
+        })
+        .collect();
+    let mut copies: Vec<PathBuf> = now
+        .difference(known)
+        .filter(|p| {
+            let (Some(name), Some(stem)) = (lower(p.file_name()), lower(p.file_stem())) else {
+                return false;
+            };
+            let ext = lower(p.extension());
+            names.iter().any(|(full, s, e)| {
+                name.starts_with(full.as_str()) || (*e == ext && stem.starts_with(s.as_str()))
+            })
+        })
+        .cloned()
+        .collect();
+    copies.sort();
+    copies
 }
 
 /// The folder that double-clicking the item at `path` opens: the item itself, or the folder a

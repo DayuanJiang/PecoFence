@@ -4,9 +4,10 @@ use crate::anchor::{self, AnchorCell, DesktopAnchor, ShowDesktopBehavior, ZMode}
 use crate::commands::{
     Command, CommandQueue, TransferMode, WM_APP_COMMAND, WM_APP_DIALOG_OFFER,
     WM_APP_EVERYTHING_SETUP, WM_APP_FRAME, WM_APP_FS_CHANGED, WM_APP_LIVE_WALLPAPER,
-    WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SCRIPT_DONE, WM_APP_SHELL_CHANGED,
-    WM_APP_SMART_FS, WM_APP_SMART_READ, WM_APP_STARTUP_BACKDROPS, WM_APP_STARTUP_TASK,
-    WM_APP_THEMES_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER, WM_APP_WALLPAPER_READ,
+    WM_APP_PEEK_FOCUSED, WM_APP_PREWARM_DONE, WM_APP_SAVE_FAILED, WM_APP_SCRIPT_DONE,
+    WM_APP_SHELL_CHANGED, WM_APP_SMART_FS, WM_APP_SMART_READ, WM_APP_STARTUP_BACKDROPS,
+    WM_APP_STARTUP_TASK, WM_APP_THEMES_CHANGED, WM_APP_TRAY, WM_APP_WALLPAPER,
+    WM_APP_WALLPAPER_READ,
 };
 use crate::fence_window::{
     BackdropMode, BackdropSets, Behavior, FenceContext, FenceWindow, ItemView, SearchMarks, TabView,
@@ -237,6 +238,9 @@ struct FrameRun {
     frames: u32,
     max_gap: Duration,
     max_frame: Duration,
+    /// UI-thread time of all its frames together: divided by the frames it is the mean work
+    /// per frame, which a fast machine's even frame gaps do not show.
+    work: Duration,
 }
 
 /// Runtime-only: a desktop path we expect to appear shortly (created from a fence's "新建" menu,
@@ -247,6 +251,45 @@ struct PendingRoute {
     since: Instant,
     /// Open the inline rename popup once it lands ("新建").
     rename: bool,
+}
+
+/// Runtime-only: where the icon of a `PendingRoute` lands in its fence when it was let go
+/// between the icons there (dragged out of a folder fence, its file first moves to the
+/// desktop). Kept by the route's path in `App::route_places`; goes when the route does.
+struct RoutePlace {
+    /// In front of this icon, the one the insertion line stood before; None = after the others.
+    before: Option<ItemId>,
+    /// Centre of its drag picture at the release (unscrolled content DIPs of the fence's
+    /// window): it glides in from there (`FenceWindow::set_drop_landing`).
+    from: Option<(f32, f32)>,
+}
+
+/// Runtime-only: a paste that copies files within the folder they already live in
+/// (`FileOpThen::Duplicate`). Only the shell knows the copies' names ("xxx - 副本"), so they
+/// are found as the folder's new entries (`claim_pasted_duplicates`).
+struct PasteDup {
+    /// The file operation making the copies.
+    serial: u64,
+    fence: FenceId,
+    dir: PathBuf,
+    /// The folder's entries when the paste started, plus the copies already claimed.
+    known: HashSet<PathBuf>,
+    /// The files being copied.
+    sources: Vec<PathBuf>,
+}
+
+/// Runtime-only: the files the last paste put, or is still putting, into `fence`. They are
+/// selected there once they show, as Explorer selects what it pasted (`select_pasted`).
+struct Pasted {
+    fence: FenceId,
+    paths: Vec<PathBuf>,
+    /// The pasted icons selected so far.
+    chosen: Vec<ItemId>,
+    /// The fence's selection as the paste last left it: what was selected when it started,
+    /// then `chosen`. Once the user has selected something else, the paste selects no more.
+    left: HashSet<ItemId>,
+    /// When the paste started, or the last file operation ended after that.
+    since: Instant,
 }
 
 pub struct Args {
@@ -358,6 +401,8 @@ pub struct App {
     undo: Vec<undo::UndoStep>,
     /// The 「已删除栅栏」 or 「已按规则整理」 notice with 撤销, and what it undoes.
     undo_notice: Option<(crate::notice::Notice, undo::UndoNotice)>,
+    /// Ctrl+Z was pressed while a file operation was running: it runs when that has finished.
+    undo_waiting: bool,
     /// The 「新建栅栏」 / 「在此显示文件夹…」 buttons after a desktop marquee, with its rectangle.
     marquee_offer: Option<(crate::marquee_offer::MarqueeOffer, RECT)>,
     /// The welcome, what's-new and 对话框跳转 notices may show (not under a test script or
@@ -387,10 +432,15 @@ pub struct App {
     theme_watcher: Option<DirWatcher>,
     wallpaper_override: Option<String>,
     pending_routes: Vec<PendingRoute>,
+    route_places: HashMap<PathBuf, RoutePlace>,
     /// The virtual fence a shell drop just went to, and when: the first desktop change batch
     /// within `SHELL_DROP_CLAIM_SECS` that adds shortcuts puts them into it (the shell writes
     /// some after `Drop` returned), see `on_fs_changed`.
     shell_drop_claim: Option<(FenceId, Instant)>,
+    /// Pastes still copying files within their own folder, see `PasteDup`.
+    paste_dups: Vec<PasteDup>,
+    /// What the last paste put into its fence, until it is selected there, see `Pasted`.
+    pasted: Option<Pasted>,
     /// Previous frame's timestamp while an animation runs (frame-gap diagnostics).
     frame_prev: Option<Instant>,
     /// Cadence statistics of the animation run in progress.
@@ -425,6 +475,12 @@ pub struct App {
     peek_hit: usize,
     /// Fences the search moved to another tab, with the tab each showed before.
     peek_tabs: HashMap<FenceId, FenceId>,
+    /// Frames left until the fences a window hid at the start of the Peek are raised over it
+    /// and fade in (`prepare_peek_fade`); `None` when none waits.
+    peek_raise_in: Option<u8>,
+    /// Frames left until the fences the Peek faded are opaque again, once they are back under
+    /// the windows (`end_peek_now`); `None` when none waits.
+    peek_rest_in: Option<u8>,
     /// The search list (rows, Everything's answer, a dialog waiting behind the Peek).
     search: search::SearchState,
     /// 「安装 Everything」 is running winget.
@@ -784,6 +840,9 @@ impl App {
             let last_desktop_id = Cell::new(wallpaper::desktop_id());
             let desktops_differ = desktops_differ.clone();
             let session_anchor = session_anchor.clone();
+            // Waits for the saver thread when a menu or dialog holds the App at the end of
+            // the session (WM_QUERYENDSESSION).
+            let save_waiter = state.save_waiter();
             let queue = queue.clone();
             // Asks which virtual desktop a foreground window is on (see WM_APP_WALLPAPER);
             // started the first time desktops keep different pictures.
@@ -867,6 +926,16 @@ impl App {
                         }
                         WM_APP_SCRIPT_DONE => {
                             window::set_timer(hwnd, TIMER_SCRIPT_DONE, 1);
+                            Some(0)
+                        }
+                        WM_APP_SAVE_FAILED => {
+                            // While a menu or dialog holds the App, the next save takes
+                            // the failure.
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.notice_save_failure();
+                            }
                             Some(0)
                         }
                         WM_APP_EVERYTHING_SETUP => {
@@ -1000,8 +1069,8 @@ impl App {
                                         && let Some(app) = guard.as_mut()
                                     {
                                         window::kill_timer(hwnd, TIMER_SAVE);
-                                        app.state.save_if_dirty();
                                         app.notice_save_failure();
+                                        app.state.save_if_dirty();
                                     } else {
                                         // Busy (modal loop): retry shortly instead of dropping.
                                         window::set_timer(hwnd, TIMER_SAVE, 500);
@@ -1421,16 +1490,22 @@ impl App {
                                 && let Some(app) = guard.as_mut()
                             {
                                 app.commit_open_note();
-                                app.state.save_if_dirty();
+                                app.state.save_and_wait("session end");
                                 if let Some(a) = app.anchor.borrow_mut().as_mut() {
                                     a.release_desktop_icons();
                                 }
-                            } else if let Some(anchor) = session_anchor.get()
-                                && let Ok(mut guard) = anchor.try_borrow_mut()
-                                && let Some(a) = guard.as_mut()
-                            {
+                            } else {
                                 // The session may end before the menu or dialog returns.
-                                a.release_desktop_icons();
+                                if let Some(anchor) = session_anchor.get()
+                                    && let Ok(mut guard) = anchor.try_borrow_mut()
+                                    && let Some(a) = guard.as_mut()
+                                {
+                                    a.release_desktop_icons();
+                                }
+                                // What changed before the menu opened went to the saver
+                                // thread then (every menu saves first): the files are
+                                // written before Windows is told to go on.
+                                save_waiter.wait();
                             }
                             Some(1)
                         }
@@ -1464,6 +1539,9 @@ impl App {
                             // (WM_QUERYENDSESSION saved and showed the icons). Staying makes
                             // Windows wait, then kill it and report a hang.
                             tracing::info!(close_app = lparam & 1 != 0, "session ending: quitting");
+                            // Windows may end the process any time from here: the line
+                            // that says why is in the file first.
+                            pecofence_core::log_file::written(pecofence_core::log_file::LINE_WAIT);
                             if cell.try_borrow_mut().is_err() {
                                 // A menu holds the App, and its loop keeps running past the
                                 // quit below: close it, then quit as 退出 does (saving first)
@@ -1525,6 +1603,7 @@ impl App {
         // The Recycle Bin is asked on a worker; a new answer means listing the desktop again.
         shell::notify_recycle_bin_changes(control.hwnd(), WM_APP_FS_CHANGED);
         pecofence_platform::hangwatch::start(control.hwnd());
+        crate::state::wake_on_save_failure(control.hwnd());
         // Before any item menu can be built: see `prepare_handler_cache`.
         pecofence_platform::shell_menu::prepare_handler_cache();
 
@@ -1731,6 +1810,7 @@ impl App {
             welcome: None,
             undo: Vec::new(),
             undo_notice: None,
+            undo_waiting: false,
             marquee_offer: None,
             notices: args.exit_after_ms.is_none() && args.test_script.is_none(),
             tip_drags: HashMap::new(),
@@ -1747,7 +1827,10 @@ impl App {
             theme_watcher: None,
             wallpaper_override: args.wallpaper_override.clone(),
             pending_routes: Vec::new(),
+            route_places: HashMap::new(),
             shell_drop_claim: None,
+            paste_dups: Vec::new(),
+            pasted: None,
             frame_prev: None,
             desktop_arrange_after_frames: false,
             frame_run: FrameRun::default(),
@@ -1770,6 +1853,8 @@ impl App {
             peek_hits: Vec::new(),
             peek_hit: 0,
             peek_tabs: HashMap::new(),
+            peek_raise_in: None,
+            peek_rest_in: None,
             search: Default::default(),
             everything_installing: false,
             snap_held: false,
@@ -2121,11 +2206,12 @@ impl App {
         window::set_timer(self.control.hwnd(), TIMER_SAVE, 800);
     }
 
-    /// After a save: one that failed leaves the state dirty. The first time in a run the tray
-    /// says so, since the changes are lost at exit and only the log had the reason.
+    /// Asks whether a save failed on the saver thread since the last call: when one fails
+    /// (`WM_APP_SAVE_FAILED`) and before every save, which then writes its changes again. The
+    /// first time in a run the tray says so, since the changes are lost at exit and only the
+    /// log had the reason.
     fn notice_save_failure(&mut self) {
-        // Saves held for a locked file are no failure (its own notice is up).
-        if !self.state.is_dirty() || self.save_failure_shown || self.state.locked_config.is_some() {
+        if !self.state.take_save_failure() || self.save_failure_shown {
             return;
         }
         let Some(t) = &self.tray else { return };
@@ -2147,10 +2233,9 @@ impl App {
         // 智能栅栏: files age out of a time window, Everything may have started or stopped,
         // and a folder without a watcher changes unseen.
         self.run_all_smart("minute");
-        if self.state.is_dirty() {
-            self.state.save_if_dirty();
-            self.notice_save_failure();
-        }
+        // Also the retry of a save that failed: nothing else saves while nothing changes.
+        self.notice_save_failure();
+        self.state.save_if_dirty();
         // Icons no window needs any more, if a change left some behind without a redraw; the
         // GPU trim then frees the released uploads.
         if self.prune_icons() {
@@ -2393,7 +2478,7 @@ impl App {
                 self.arrange_desktop_fence();
             }
             Command::LaunchItem { item, from, inside } => self.launch(item, from, inside),
-            Command::MoveItems { items, to } => self.move_items(&items, to),
+            Command::MoveItems { items, to, at } => self.move_items_at(&items, to, at),
             Command::ReorderItems {
                 fence,
                 items,
@@ -2571,6 +2656,8 @@ impl App {
                 // (a PendingRoute bypasses the rules), the originals stay where they are.
                 if let Some(desktop) = shell::user_desktop() {
                     let made = self.create_shortcuts_in(&paths, &desktop);
+                    // One step of Ctrl+Z, like a new folder: the shortcuts go again.
+                    self.note_created_for_undo(made.clone());
                     for path in made {
                         self.pending_routes.push(PendingRoute {
                             fence: to,
@@ -2648,7 +2735,9 @@ impl App {
                     }
                 }
                 if !ids.is_empty() {
-                    self.move_items_unrecorded(&ids, to);
+                    // Desktop icons pasted (after a cut) or dropped into `to`: a step of
+                    // Ctrl+Z, like icons dragged between fences.
+                    self.move_items(&ids, to);
                 }
             }
             Command::ExternalUrlDrop {
@@ -2688,6 +2777,7 @@ impl App {
                     w.redraw();
                 }
             }
+            Command::FocusFence(fence) => self.give_keyboard(fence, "name box closed"),
             Command::DeleteFence(fence) => self.delete_fence(fence),
             Command::NewFence { x, y } => self.new_fence_near(x, y),
             Command::NewNote { x, y } => self.new_note_near(x, y),
@@ -2753,6 +2843,7 @@ impl App {
                     self.schedule_save();
                 }
             }
+            Command::BeginFenceRename(fence) => self.begin_rename_after_fade(fence),
             Command::RenameItem { fence, item } => self.begin_item_rename(fence, item),
             Command::RenameItemCommit { item, name } => {
                 self.end_item_rename_visuals();
@@ -2807,7 +2898,7 @@ impl App {
             }
             Command::Quit(reason) => {
                 tracing::info!(reason, "quitting");
-                self.state.save_if_dirty();
+                self.state.save_and_wait("quit");
                 if let Some(a) = self.anchor.borrow_mut().as_mut() {
                     a.release_desktop_icons();
                 }
@@ -2875,7 +2966,7 @@ impl App {
     pub fn shutdown(&mut self) {
         self.end_peek_now();
         self.commit_open_note();
-        self.state.save_if_dirty();
+        self.state.save_and_wait("exit");
         self.fences.clear();
         self.dying.clear();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {

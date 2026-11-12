@@ -35,11 +35,10 @@ impl App {
                 let selection = self.marquee_selection(rect);
                 self.set_fence_selection(selection);
                 if self.marquee_draws_band {
-                    self.show_marquee_band(rect);
+                    self.show_marquee_band(rect, crate::marquee_band::DRAWN);
                 }
             }
             MarqueeEvent::Released(rect) => {
-                self.hide_marquee_band();
                 // 像桌面一样排列: icons the rectangle selected count as touched (no new-fence
                 // offer for them, as for selected Windows icons).
                 let mut banded = false;
@@ -74,6 +73,19 @@ impl App {
                         self.offer_new_fence(rect);
                     }
                 }
+                // The rectangle stays, fainter, while the buttons are offered: it is what they
+                // refer to. It goes with them (`on_marquee_offer`).
+                let offered = self.marquee_offer.is_some();
+                if offered && self.marquee_draws_band {
+                    self.show_marquee_band(rect, crate::marquee_band::OFFERED);
+                } else {
+                    self.hide_marquee_band();
+                }
+                tracing::debug!(
+                    offered,
+                    band = self.marquee_draws_band,
+                    "desktop marquee released: the rectangle stays with the offer"
+                );
             }
             MarqueeEvent::Cancelled => {
                 self.hide_marquee_band();
@@ -103,6 +115,11 @@ impl App {
         let Some((_offer, rect)) = self.marquee_offer.take() else {
             return;
         };
+        // The rectangle that stayed with the buttons goes with them, unless a new rectangle
+        // is being drawn already (its band is on screen now).
+        if self.marquee_base.is_none() {
+            self.hide_marquee_band();
+        }
         tracing::info!(?event, ?rect, "marquee offer answered");
         match event {
             OfferEvent::NewFence => self.create_fence_with_rename(rect),
@@ -142,7 +159,7 @@ impl App {
         selected > 0
     }
 
-    fn show_marquee_band(&mut self, rect: RECT) {
+    fn show_marquee_band(&mut self, rect: RECT, strength: u8) {
         if self.marquee_band.is_none() {
             match crate::marquee_band::MarqueeBand::create() {
                 Ok(band) => self.marquee_band = Some(band),
@@ -162,7 +179,7 @@ impl App {
         let dpi = monitors::monitor_from_point(rect.left, rect.top);
         let dpi = monitors::query(dpi).map_or(monitors::system_dpi(), |m| m.dpi);
         if let Some(band) = self.marquee_band.as_mut() {
-            band.show(rect, dpi, host);
+            band.show(rect, dpi, host, strength);
         }
     }
 

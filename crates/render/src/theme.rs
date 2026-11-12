@@ -6,6 +6,10 @@
 use crate::backdrop::MicaTint;
 use windows_canvas::ColorF;
 
+/// Title bar height in DIPs of the built-in themes ([`Theme::title_height`]); for code that
+/// has a window but no theme at hand.
+pub const TITLE_HEIGHT: f32 = 36.0;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ThemeMode {
     Light,
@@ -190,6 +194,85 @@ impl Ink {
     }
 }
 
+/// Plate brightness (0..=1) above which dark text is picked: a fence that already has dark
+/// text keeps it down to `INK_KEEP_DARK`, one with light text keeps that up to
+/// `INK_KEEP_LIGHT`, and one that has not picked yet switches at `INK_NEUTRAL`.
+const INK_KEEP_DARK: f32 = 0.50;
+const INK_KEEP_LIGHT: f32 = 0.62;
+const INK_NEUTRAL: f32 = 0.56;
+/// Fluent: light text is weak (under about 3.3 : 1) on a plate brighter than `INK_NEUTRAL`,
+/// dark text on one darker than this. A fence with at least `WEAK_PLATE_SHARE` of its plate
+/// there gets the halo: a busy wallpaper, or light text kept near its threshold.
+const DARK_TEXT_WEAK: f32 = 0.40;
+const WEAK_PLATE_SHARE: f32 = 0.125;
+/// A fence that has the halo keeps it down to this share, so a fence resting or moving near
+/// the edge does not switch it with every pixel. One row or column of the 16 x 16 samples is
+/// 1/16 of the plate: under that, so a step of one row over a straight edge keeps the state.
+const WEAK_PLATE_KEEP: f32 = 0.06;
+
+fn luma(rgb: [f32; 3]) -> f32 {
+    0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
+}
+
+/// How bright a colour looks, on the scale of a grey's value (a grey gives its own value). A
+/// plain weighted mean rates a saturated blue or cyan darker than it is: white text on
+/// (47,160,210) has under 3 : 1, on the grey of the same mean 3.4 : 1.
+fn brightness(rgb: [f32; 3]) -> f32 {
+    luma(rgb.map(|c| c * c)).sqrt()
+}
+
+/// Up to 16 x 16 pixels (BGRA) spread evenly over `image`.
+fn sample_grid(image: &crate::Image) -> impl Iterator<Item = &[u8]> {
+    let (cols, rows) = (image.width.min(16), image.height.min(16));
+    (0..rows).flat_map(move |row| {
+        (0..cols).map(move |col| {
+            let x = ((2 * col + 1) * image.width / (2 * cols)).min(image.width - 1);
+            let y = ((2 * row + 1) * image.height / (2 * rows)).min(image.height - 1);
+            let i = ((y * image.width + x) * 4) as usize;
+            &image.bgra[i..i + 4]
+        })
+    })
+}
+
+/// `ink` with its lightness moved towards white or black, keeping the hue, as little as it
+/// takes to reach a contrast of 3 : 1 against `band` (WCAG's figure for large text): towards
+/// white first with `prefer_lighter` (the text around it is light), the other way when that
+/// end cannot reach it. Unchanged when it already has that contrast.
+pub fn legible_on(ink: ColorF, band: ColorF, prefer_lighter: bool) -> ColorF {
+    let linear = |c: f32| {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let relative = |c: ColorF| luma([linear(c.r), linear(c.g), linear(c.b)]);
+    let band_l = relative(band);
+    let reaches = |c: &ColorF| {
+        let l = relative(*c);
+        (l.max(band_l) + 0.05) / (l.min(band_l) + 0.05) >= 3.0
+    };
+    let towards = |end: f32| {
+        (0..=20)
+            .map(|step| {
+                let t = step as f32 / 20.0;
+                ColorF::new(
+                    ink.r + (end - ink.r) * t,
+                    ink.g + (end - ink.g) * t,
+                    ink.b + (end - ink.b) * t,
+                    ink.a,
+                )
+            })
+            .find(reaches)
+    };
+    let (first, second) = if prefer_lighter {
+        (1.0, 0.0)
+    } else {
+        (0.0, 1.0)
+    };
+    towards(first).or_else(|| towards(second)).unwrap_or(ink)
+}
+
 impl Theme {
     pub const fn dark() -> Self {
         Self {
@@ -219,7 +302,7 @@ impl Theme {
             focus_inner: ColorF::from_rgba8(0x00, 0x00, 0x00, 0xB3),
             accent: ColorF::from_rgba8(0x60, 0xCD, 0xFF, 0xFF),
             corner_radius: 8.0,
-            title_height: 36.0,
+            title_height: TITLE_HEIGHT,
             text_halo: false,
             material: MicaTint::ACRYLIC_DARK,
             lens: Lens::BUILT_IN,
@@ -259,7 +342,7 @@ impl Theme {
             focus_inner: ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xB3),
             accent: ColorF::from_rgba8(0x00, 0x5F, 0xB8, 0xFF),
             corner_radius: 8.0,
-            title_height: 36.0,
+            title_height: TITLE_HEIGHT,
             text_halo: false,
             material: MicaTint::ACRYLIC_LIGHT,
             lens: Lens::BUILT_IN,
@@ -401,6 +484,141 @@ impl Theme {
         self.with_ink_of(foreground)
     }
 
+    /// Fluent with 「文字颜色」 自动: the plate is see-through and takes its brightness from the
+    /// wallpaper, not from the colour mode, so the text and control-feedback tokens are picked
+    /// from the plate as it is drawn over `image` (this fence's crop of the blurred, tinted
+    /// wallpaper), with Liquid Glass's thresholds and hysteresis. A fence that has not picked
+    /// yet starts from the colour mode's own ink, which therefore stays near the threshold.
+    /// The plate, rim, accent and mode stay. Where part of the plate is too bright for light
+    /// text or too dark for dark text (a busy wallpaper, light text kept near its threshold)
+    /// the text also gets the halo.
+    pub fn over_acrylic(
+        self,
+        image: &crate::Image,
+        opacity: f32,
+        tint: Option<ColorF>,
+        previous_dark_text: Option<bool>,
+    ) -> Self {
+        self.over_acrylic_with_previous(image, opacity, tint, previous_dark_text, false)
+    }
+
+    /// [`Self::over_acrylic`] for a fence that picked before: `previous_halo` is whether it
+    /// had the halo then. Like the text colour, the halo keeps its state near its threshold
+    /// (on from `WEAK_PLATE_SHARE`, off under `WEAK_PLATE_KEEP`).
+    pub fn over_acrylic_with_previous(
+        self,
+        image: &crate::Image,
+        opacity: f32,
+        tint: Option<ColorF>,
+        previous_dark_text: Option<bool>,
+        previous_halo: bool,
+    ) -> Self {
+        if self.liquid_glass || image.bgra.is_empty() {
+            return self;
+        }
+        let (brightness, bright_share, dark_share) = self.acrylic_plate_stats(image, opacity, tint);
+        let mode_dark_text = self.mode == ThemeMode::Light;
+        let threshold = if previous_dark_text.unwrap_or(mode_dark_text) {
+            INK_KEEP_DARK
+        } else {
+            INK_KEEP_LIGHT
+        };
+        let dark_text = brightness > threshold;
+        let mut theme = if dark_text == mode_dark_text {
+            self
+        } else if dark_text {
+            self.with_ink_of(self.ink(ThemeMode::Light))
+        } else {
+            self.with_ink_of(self.ink(ThemeMode::Dark))
+        };
+        let weak_share = if dark_text { dark_share } else { bright_share };
+        let needed = if previous_halo {
+            WEAK_PLATE_KEEP
+        } else {
+            WEAK_PLATE_SHARE
+        };
+        theme.text_halo |= weak_share >= needed;
+        theme
+    }
+
+    /// What [`Self::over_acrylic`] decides from: the mean brightness (0..=1) of the Fluent
+    /// plate over `image`, the share of it too bright for light text and the share too dark
+    /// for dark text.
+    pub fn acrylic_plate_stats(
+        &self,
+        image: &crate::Image,
+        opacity: f32,
+        tint: Option<ColorF>,
+    ) -> (f32, f32, f32) {
+        let (mut sum, mut bright, mut dim, mut count) = (0.0, 0, 0, 0);
+        for p in sample_grid(image) {
+            let plate =
+                self.plate_over([p[2], p[1], p[0]].map(|c| c as f32 / 255.0), opacity, tint);
+            let value = brightness(plate);
+            sum += value;
+            bright += (value > INK_NEUTRAL) as u32;
+            dim += (value < DARK_TEXT_WEAK) as u32;
+            count += 1;
+        }
+        let n = count.max(1) as f32;
+        (sum / n, bright as f32 / n, dim as f32 / n)
+    }
+
+    /// The mean colour of the plate over `image`, this fence's wallpaper crop (see
+    /// [`Self::plate_over`]): what a title or an item name is read against.
+    pub fn plate_color(&self, image: &crate::Image, opacity: f32, tint: Option<ColorF>) -> ColorF {
+        let (mut sum, mut count) = ([0.0f32; 3], 0);
+        for p in sample_grid(image) {
+            for (s, c) in sum.iter_mut().zip([p[2], p[1], p[0]]) {
+                *s += c as f32 / 255.0;
+            }
+            count += 1;
+        }
+        let n = count.max(1) as f32;
+        // Every step of the recipe is a straight blend, so the mean plate is the plate of the
+        // mean crop.
+        let [r, g, b] = self.plate_over(sum.map(|s| s / n), opacity, tint);
+        ColorF::new(r, g, b, 1.0)
+    }
+
+    /// The colour of the plate where the wallpaper crop has colour `crop`, composed as
+    /// `fence_chrome::draw_plate` draws it. Fluent (`Backdrop::Glass`): the crop at
+    /// `glass_alpha` over the real wallpaper showing through the window, which is the crop
+    /// with the material's recipe ([`crate::Image::tint`]) undone. Liquid Glass's material
+    /// leaves the wallpaper as it is. Then the glass layer, the opacity veil and the tint wash.
+    fn plate_over(&self, crop: [f32; 3], opacity: f32, tint: Option<ColorF>) -> [f32; 3] {
+        let material = self.material;
+        let a = material.color.a.clamp(0.0, 1.0);
+        let lo = material.luminosity_opacity.clamp(0.0, 1.0);
+        let tint_rgb = [material.color.r, material.color.g, material.color.b];
+        // A nearly flat material keeps too little of the wallpaper to work it out again.
+        let wallpaper = if a < 0.9 && lo < 0.9 {
+            let x = [0, 1, 2].map(|i| (crop[i] - tint_rgb[i] * a) / (1.0 - a));
+            let (lum_x, chroma) = (luma(x), material.chroma.clamp(0.1, 1.5));
+            let lum = (lum_x - luma(tint_rgb) * lo) / (1.0 - lo);
+            x.map(|c| (lum + (c - lum_x) / chroma).clamp(0.0, 1.0))
+        } else {
+            crop
+        };
+        let glass = crate::fence_chrome::glass_alpha(opacity);
+        let mut plate = [0, 1, 2].map(|i| wallpaper[i] + (crop[i] - wallpaper[i]) * glass);
+        let mut layer = self.glass_layer_fill;
+        layer.a *= opacity.min(1.0);
+        for overlay in [
+            Some(layer),
+            Some(self.opacity_veil(opacity)),
+            tint.map(|c| ColorF { a: 0.22, ..c }),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            for (p, o) in plate.iter_mut().zip([overlay.r, overlay.g, overlay.b]) {
+                *p += (o - *p) * overlay.a;
+            }
+        }
+        plate
+    }
+
     /// Whether dark text reads better over `image` once the plate's own layers (glass layer,
     /// opacity veil, tint wash) are composited over it.
     fn prefers_dark_text(
@@ -412,16 +630,9 @@ impl Theme {
     ) -> bool {
         let mut sum = 0.0;
         let mut count = 0;
-        let (cols, rows) = (image.width.min(16), image.height.min(16));
-        for row in 0..rows {
-            for col in 0..cols {
-                let x = ((2 * col + 1) * image.width / (2 * cols)).min(image.width - 1);
-                let y = ((2 * row + 1) * image.height / (2 * rows)).min(image.height - 1);
-                let i = ((y * image.width + x) * 4) as usize;
-                let p = &image.bgra[i..i + 4];
-                sum += (0.2126 * p[2] as f32 + 0.7152 * p[1] as f32 + 0.0722 * p[0] as f32) / 255.0;
-                count += 1;
-            }
+        for p in sample_grid(image) {
+            sum += (0.2126 * p[2] as f32 + 0.7152 * p[1] as f32 + 0.0722 * p[0] as f32) / 255.0;
+            count += 1;
         }
         let luminance = |c: ColorF| 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
         let mut brightness = sum / count.max(1) as f32;
@@ -438,9 +649,9 @@ impl Theme {
             brightness += (luminance(overlay) - brightness) * overlay.a;
         }
         let threshold = match previous_dark_text {
-            Some(true) => 0.50,
-            Some(false) => 0.62,
-            None => 0.56,
+            Some(true) => INK_KEEP_DARK,
+            Some(false) => INK_KEEP_LIGHT,
+            None => INK_NEUTRAL,
         };
         brightness > threshold
     }
@@ -463,6 +674,28 @@ impl Theme {
         self.text_tertiary = ink.text_tertiary;
         self.title_text = None;
         self
+    }
+
+    /// The colour of the hairlines inside a fence (the rules of the date groups, the details
+    /// header's underline and column dividers): this mode's `stroke` where the text is the
+    /// mode's own, the other mode's where the text took the other colour for its plate. A
+    /// dark-mode fence over a light wallpaper has a light plate, where the dark mode's light
+    /// line does not show.
+    pub fn hairline(&self) -> ColorF {
+        let light_text = self.text_primary.r > 0.5;
+        if light_text == (self.mode == ThemeMode::Dark) {
+            self.stroke
+        } else if light_text {
+            Self::dark().stroke
+        } else {
+            Self::light().stroke
+        }
+    }
+
+    /// What the backdrop decides about the item names: their colour and whether they get a
+    /// halo. The content is redrawn when this changes.
+    pub fn label_look(&self) -> (ColorF, bool) {
+        (self.text_primary, self.text_halo)
     }
 
     /// The colour of a fence title or tab caption without a 「标题颜色」 of its own: the theme
@@ -747,6 +980,285 @@ mod tests {
         // The documented default accent reproduces today's literals exactly.
         let d = Theme::dark().with_accent([0x60, 0xCD, 0xFF]);
         assert_eq!(d.selection_fill, Theme::dark().selection_fill);
+    }
+
+    /// A fence's crop of a plain wallpaper, as the backdrop pipeline hands it to a fence of
+    /// `theme` (blurred, which leaves a plain colour alone, then tinted).
+    fn crop_of(theme: &Theme, wallpaper: [u8; 3]) -> crate::Image {
+        let mut image = crate::Image::solid(32, 24, wallpaper);
+        let m = theme.acrylic_tint();
+        image.tint(m.color, m.luminosity_opacity, m.noise, m.chroma);
+        image
+    }
+
+    #[test]
+    fn fluent_plate_colour_is_the_one_measured_on_screen() {
+        // Read from screenshots of 0.3.3: dark mode over a plain (236,239,244) wallpaper shows
+        // a (220,222,225) plate, light mode over (19,20,25) a (97,98,102) one.
+        for (theme, wallpaper, plate) in [
+            (Theme::dark(), [236, 239, 244], [220.0, 222.0, 225.0]),
+            (Theme::light(), [19, 20, 25], [97.0, 98.0, 102.0]),
+        ] {
+            let c = theme.plate_color(&crop_of(&theme, wallpaper), 1.0, None);
+            for (got, want) in [c.r, c.g, c.b].into_iter().zip(plate) {
+                assert!((got * 255.0 - want).abs() < 4.0, "{c:?} against {plate:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn fluent_text_follows_the_plate_where_the_mode_s_ink_does_not_read() {
+        let (dark, light) = (Theme::dark(), Theme::light());
+        let over = |theme: Theme, wallpaper: [u8; 3]| {
+            theme.over_acrylic(&crop_of(&theme, wallpaper), 1.0, None, None)
+        };
+        // Dark mode over a light wallpaper: dark text and the light set's feedback, on the
+        // same plate, accent and mode.
+        let flipped = over(dark, [236, 239, 244]);
+        assert!(flipped.text_primary.r < 0.2 && flipped.text_secondary.r < 0.2);
+        assert_eq!(flipped.subtle_hover, light.subtle_hover);
+        assert_eq!(flipped.control_strong, light.control_strong);
+        assert_eq!(flipped.mode, ThemeMode::Dark);
+        assert_eq!(flipped.glass_layer_fill, dark.glass_layer_fill);
+        assert_eq!(flipped.selection_fill, dark.selection_fill);
+        assert_eq!(flipped.acrylic_tint(), dark.acrylic_tint());
+        assert!(!flipped.text_halo);
+        // Light mode over a dark wallpaper: light text.
+        let flipped = over(light, [19, 20, 25]);
+        assert!(flipped.text_primary.r > 0.9);
+        assert_eq!(flipped.subtle_hover, dark.subtle_hover);
+        assert_eq!(flipped.glass_layer_fill, light.glass_layer_fill);
+        // Where the mode's own ink reads, nothing changes: matching wallpapers and the middle
+        // greys, which each mode's plate pulls to its own side.
+        for wallpaper in [[19, 20, 25], [128, 128, 128]] {
+            let same = over(dark, wallpaper);
+            assert_eq!(same.text_primary, dark.text_primary);
+            assert_eq!(same.subtle_hover, dark.subtle_hover);
+        }
+        for wallpaper in [[236, 239, 244], [128, 128, 128]] {
+            let same = over(light, wallpaper);
+            assert_eq!(same.text_primary, light.text_primary);
+            assert_eq!(same.subtle_hover, light.subtle_hover);
+        }
+        // A thicker plate (更厚实) is the mode's own veil: its ink reads again.
+        let veiled = dark.over_acrylic(&crop_of(&dark, [236, 239, 244]), 1.8, None, None);
+        assert_eq!(veiled.text_primary, dark.text_primary);
+        // A dark tint over the whole plate does the same.
+        let navy = Some(ColorF::from_rgba8(0x10, 0x18, 0x40, 0xFF));
+        let mid = crop_of(&dark, [190, 190, 190]);
+        assert!(dark.over_acrylic(&mid, 1.0, None, None).text_primary.r < 0.2);
+        assert_eq!(
+            dark.over_acrylic(&mid, 1.0, navy, None).text_primary,
+            dark.text_primary
+        );
+        // Liquid Glass picks through `over_glass`; no wallpaper, no pick.
+        let glass = dark.with_liquid_glass();
+        let bright = crop_of(&dark, [236, 239, 244]);
+        assert_eq!(
+            glass.over_acrylic(&bright, 1.0, None, None).text_primary,
+            glass.text_primary
+        );
+        assert_eq!(
+            dark.over_acrylic(&crate::Image::default(), 1.0, None, None)
+                .text_primary,
+            dark.text_primary
+        );
+    }
+
+    #[test]
+    fn a_saturated_plate_counts_as_bright_as_it_looks() {
+        for gray in [0.0, 0.2, 0.56, 1.0] {
+            assert!((brightness([gray; 3]) - gray).abs() < 1e-5);
+        }
+        // Dark mode over a clear blue wallpaper: the plate is (51,162,209), where white text has
+        // 2.8 : 1. Its weighted mean stays under the neutral threshold, its brightness does not.
+        let dark = Theme::dark();
+        let image = crop_of(&dark, [40, 170, 225]);
+        let c = dark.plate_color(&image, 1.0, None);
+        assert!(luma([c.r, c.g, c.b]) < INK_NEUTRAL);
+        let (plate, too_bright, _) = dark.acrylic_plate_stats(&image, 1.0, None);
+        assert!(INK_NEUTRAL < plate && plate < INK_KEEP_LIGHT, "{plate}");
+        assert_eq!(too_bright, 1.0);
+        // The fence keeps the mode's light text (it has not crossed the keep threshold) and
+        // gets the halo, as light text over such a plate always has in Liquid Glass.
+        let picked = dark.over_acrylic(&image, 1.0, None, None);
+        assert_eq!(picked.text_primary, dark.text_primary);
+        assert!(picked.text_halo);
+    }
+
+    #[test]
+    fn fluent_text_keeps_its_colour_near_the_threshold() {
+        let dark = Theme::dark();
+        let stats = |gray: u8| dark.acrylic_plate_stats(&crop_of(&dark, [gray; 3]), 1.0, None);
+        // Light text kept above the neutral threshold is weak there: it has the halo.
+        assert!(stats(150).0 > INK_NEUTRAL);
+        for gray in [150, 160] {
+            let kept = dark.over_acrylic(&crop_of(&dark, [gray; 3]), 1.0, None, None);
+            assert!(kept.text_primary.r > 0.9 && kept.text_halo);
+        }
+        // Two plates between the two keep thresholds.
+        let (low, high) = (stats(150).0, stats(160).0);
+        assert!(INK_KEEP_DARK < low && high < INK_KEEP_LIGHT, "{low} {high}");
+        let pick = |gray: u8, previous: Option<bool>| {
+            dark.over_acrylic(&crop_of(&dark, [gray; 3]), 1.0, None, previous)
+                .text_primary
+                .r
+                < 0.5
+        };
+        // Not picked yet: the mode's light text stays. Light stays light, dark stays dark.
+        for gray in [150, 160] {
+            assert!(!pick(gray, None));
+            assert!(!pick(gray, Some(false)));
+            assert!(pick(gray, Some(true)));
+        }
+        // Clear of the band both switch.
+        assert!(pick(200, Some(false)));
+        assert!(!pick(100, Some(true)));
+        // Light mode starts from its dark text.
+        let light = Theme::light();
+        let mid = crop_of(&light, [80; 3]);
+        let (brightness, _, _) = light.acrylic_plate_stats(&mid, 1.0, None);
+        assert!(INK_KEEP_DARK < brightness && brightness < INK_NEUTRAL);
+        let kept = light.over_acrylic(&mid, 1.0, None, None);
+        assert_eq!(kept.text_primary, light.text_primary);
+        // Dark text still reads well there: no halo.
+        assert!(!kept.text_halo);
+    }
+
+    #[test]
+    fn fluent_text_gets_the_halo_on_a_plate_that_is_light_and_dark() {
+        let dark = Theme::dark();
+        // A quarter of the fence over a bright part of the wallpaper, the rest over a dark one.
+        let mut image = crate::Image::solid(32, 24, [20, 24, 40]);
+        for row in 0..6 {
+            for col in 0..32 {
+                let i = (row * 32 + col) * 4;
+                image.bgra[i..i + 3].copy_from_slice(&[240, 235, 230]);
+            }
+        }
+        let m = dark.acrylic_tint();
+        image.tint(m.color, m.luminosity_opacity, m.noise, m.chroma);
+        let (_, bright_share, _) = dark.acrylic_plate_stats(&image, 1.0, None);
+        assert!((bright_share - 0.25).abs() < 0.07, "{bright_share}");
+        let busy = dark.over_acrylic(&image, 1.0, None, None);
+        assert_eq!(busy.text_primary, dark.text_primary);
+        assert!(busy.text_halo);
+        // The same with dark text on a mostly bright plate.
+        let mut image = crate::Image::solid(32, 24, [240, 235, 230]);
+        for row in 0..6 {
+            for col in 0..32 {
+                let i = (row * 32 + col) * 4;
+                image.bgra[i..i + 3].copy_from_slice(&[40, 24, 20]);
+            }
+        }
+        image.tint(m.color, m.luminosity_opacity, m.noise, m.chroma);
+        let busy = dark.over_acrylic(&image, 1.0, None, None);
+        assert!(busy.text_primary.r < 0.2 && busy.text_halo);
+        // A plain wallpaper where the picked text reads needs none.
+        for gray in [20, 128, 236] {
+            assert!(
+                !dark
+                    .over_acrylic(&crop_of(&dark, [gray; 3]), 1.0, None, None)
+                    .text_halo
+            );
+        }
+    }
+
+    #[test]
+    fn fluent_halo_keeps_its_state_near_its_threshold() {
+        let dark = Theme::dark();
+        // A dark plate with `bright` of its 256 samples over a bright part of the wallpaper.
+        let plate = |bright: usize| {
+            let mut image = crate::Image::solid(16, 16, [20, 24, 40]);
+            for p in image.bgra.as_chunks_mut::<4>().0.iter_mut().take(bright) {
+                p[..3].copy_from_slice(&[240, 235, 230]);
+            }
+            let m = dark.acrylic_tint();
+            image.tint(m.color, m.luminosity_opacity, m.noise, m.chroma);
+            image
+        };
+        let halo = |bright: usize, previous: bool| {
+            let picked = dark.over_acrylic_with_previous(&plate(bright), 1.0, None, None, previous);
+            assert_eq!(picked.text_primary, dark.text_primary);
+            picked.text_halo
+        };
+        // On from an eighth of the plate (32 samples), off under 6 % (15 samples).
+        assert!(!halo(31, false) && halo(32, false));
+        assert!(halo(16, true) && !halo(15, true));
+        // A fence wobbling over the edge of a bright part, one sample row (16 samples) at a
+        // time: it switched with every step, now once.
+        let (mut state, mut switches, mut switches_before) = (false, 0, 0);
+        let mut state_before = false;
+        for bright in [16, 32, 16, 32, 16, 32, 48, 32, 16, 32] {
+            let now = halo(bright, state);
+            switches += (now != state) as u32;
+            state = now;
+            let now = halo(bright, false);
+            switches_before += (now != state_before) as u32;
+            state_before = now;
+        }
+        assert_eq!(switches, 1);
+        assert_eq!(switches_before, 7);
+        // Clear of the edge it goes off again.
+        assert!(!halo(0, state));
+    }
+
+    #[test]
+    fn hairlines_follow_the_text_onto_the_other_plate() {
+        let (dark, light) = (Theme::dark(), Theme::light());
+        // The mode's own text: the mode's own line, as before.
+        assert_eq!(dark.hairline(), dark.stroke);
+        assert_eq!(light.hairline(), light.stroke);
+        let same = dark.over_acrylic(&crop_of(&dark, [19, 20, 25]), 1.0, None, None);
+        assert_eq!(same.hairline(), dark.stroke);
+        let same = light.over_acrylic(&crop_of(&light, [236, 239, 244]), 1.0, None, None);
+        assert_eq!(same.hairline(), light.stroke);
+        // Dark mode over a light wallpaper: dark text, so the light mode's dark line; the
+        // plate's own rim stays.
+        let flipped = dark.over_acrylic(&crop_of(&dark, [236, 239, 244]), 1.0, None, None);
+        assert_eq!(flipped.hairline(), light.stroke);
+        assert_eq!(flipped.stroke, dark.stroke);
+        // Light mode over a dark wallpaper: the dark mode's light line.
+        let flipped = light.over_acrylic(&crop_of(&light, [19, 20, 25]), 1.0, None, None);
+        assert_eq!(flipped.hairline(), dark.stroke);
+        // 白色 / 黑色 take the line with them, like the left tab column's lines.
+        let white = light.with_label_color(pecofence_core::LabelColor::White);
+        assert_eq!(white.hairline(), dark.stroke);
+    }
+
+    #[test]
+    fn a_title_in_the_tint_moves_its_lightness_until_it_reads_on_the_band() {
+        let linear = |c: f32| {
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let relative = |c: ColorF| luma([linear(c.r), linear(c.g), linear(c.b)]);
+        let contrast = |a: ColorF, b: ColorF| {
+            let (la, lb) = (relative(a), relative(b));
+            (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+        };
+        // Measured on 0.3.3: tint #3b82f6 as the title colour on its own band, 1.1 : 1.
+        let tint = ColorF::from_rgba8(0x3B, 0x82, 0xF6, 0xFF);
+        let band = ColorF::from_rgba8(109, 126, 150, 0xFF);
+        assert!(contrast(tint, band) < 1.3);
+        let lifted = legible_on(tint, band, true);
+        assert!(contrast(lifted, band) >= 3.0);
+        // Still the tint's hue: blue over green over red, and no further than needed.
+        assert!(lifted.b > lifted.g && lifted.g > lifted.r);
+        assert!(contrast(lifted, band) < 3.6);
+        assert_eq!(lifted.a, tint.a);
+        // Towards black on request, and when white cannot reach it on a bright band.
+        let lowered = legible_on(tint, band, false);
+        assert!(contrast(lowered, band) >= 3.0 && relative(lowered) < relative(band));
+        let bright = ColorF::from_rgba8(225, 232, 245, 0xFF);
+        let on_bright = legible_on(tint, bright, true);
+        assert!(contrast(on_bright, bright) >= 3.0 && relative(on_bright) < relative(bright));
+        // A title that already reads stays as chosen.
+        let dark_band = ColorF::from_rgba8(30, 36, 52, 0xFF);
+        assert_eq!(legible_on(tint, dark_band, true), tint);
     }
 
     #[test]

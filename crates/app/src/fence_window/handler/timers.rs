@@ -381,11 +381,15 @@ pub(super) fn on_timer_shadow(
     _lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, .. } = h;
-    window::kill_timer(hwnd, TIMER_SHADOW);
-    if let Ok(mut guard) = view.try_borrow_mut()
-        && let Some(v) = guard.as_mut()
-    {
-        v.update_shadow_now();
+    match view.try_borrow_mut() {
+        // The view is busy: the timer stays and comes again. (`update_shadow` arms it once per
+        // wait and counts on it to fire, so it must not be dropped here.)
+        Err(_) => {}
+        Ok(mut guard) => match guard.as_mut() {
+            // Ends the timer.
+            Some(v) => v.update_shadow_now(),
+            None => window::kill_timer(hwnd, TIMER_SHADOW),
+        },
     }
     Some(0)
 }
