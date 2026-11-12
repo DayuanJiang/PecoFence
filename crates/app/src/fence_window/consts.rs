@@ -45,6 +45,13 @@ pub(super) const TIMER_CONTENT_FINISH: usize = 44;
 /// The pointer rests on another tab with `rollUp.switchTabOnHover` on: switch to it after the
 /// hover delay.
 pub(super) const TIMER_TAB_HOVER: usize = 45;
+/// Once a hover has switched a tab, the next tab the pointer comes to in the same strip is
+/// switched to after this wait instead of the hover delay (Windows shows the next tooltip after
+/// a fifth of the hover time and a menu bar opens the next menu at once). Long enough that a
+/// pointer sweeping to a far tab does not show every tab on its way.
+pub(super) const TAB_HOVER_NEXT_MS: u32 = 50;
+/// The short wait ends when the pointer has been off the tabs this long, or a button is pressed.
+pub(super) const TAB_HOVER_NEXT_KEEP: Duration = Duration::from_secs(1);
 /// Polls the right button during a title drag in the system move loop: the loop sends
 /// WM_MOVING only while the pointer moves, so a right click on a resting pointer went unseen.
 pub(super) const TIMER_MOVE_RBUTTON: usize = 46;

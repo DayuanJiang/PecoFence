@@ -470,6 +470,12 @@ pub struct FenceViewState {
     pub(super) wheel_tab_accum: i32,
     /// The tab TIMER_TAB_HOVER will switch to while the pointer stays on it.
     pub(super) tab_hover_switch: Option<usize>,
+    /// A hover switched a tab of this strip: the next tabs wait `TAB_HOVER_NEXT_MS` only.
+    pub(super) tab_hover_quick: bool,
+    /// When the pointer left the tabs while `tab_hover_quick` (`TAB_HOVER_NEXT_KEEP`).
+    pub(super) tab_strip_left: Option<Instant>,
+    /// The hover switch on its way followed another: its content is placed without the swap.
+    pub(super) tab_swap_at_once: bool,
     /// Fence height follows the item grid (FenceView.auto_height).
     pub(super) auto_height: bool,
     /// The left tab column appeared or grew (a tab joined, a caption changed, 标签栏位置): the

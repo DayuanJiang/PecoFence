@@ -95,6 +95,16 @@ pub(super) fn hover_switch_target(
     hovered.filter(|&i| enabled && !renaming && n > 1 && i < n && i != active)
 }
 
+/// The wait before the hover switch: the hover delay of 「展开快慢」 (`full`), or the short wait
+/// once a hover has switched a tab of the strip (`quick`).
+pub(super) fn tab_hover_wait_ms(full: u32, quick: bool) -> u32 {
+    if quick {
+        TAB_HOVER_NEXT_MS.min(full)
+    } else {
+        full
+    }
+}
+
 /// What a cancelled drag (Esc / right button) needs done once the borrow is released.
 pub(super) enum DragCancel {
     /// A tab drag along the strip: the order was restored in place.
@@ -256,6 +266,25 @@ pub(super) fn scroll_to_show(scroll: f32, x: f32, w: f32, room: f32, max: f32) -
 }
 
 impl FenceViewState {
+    /// Keeps the short hover wait while the pointer is on the tabs (`on_tab`) and for
+    /// `TAB_HOVER_NEXT_KEEP` after it left them.
+    pub(super) fn note_tab_strip_pointer(&mut self, on_tab: bool) {
+        if !self.tab_hover_quick {
+            return;
+        }
+        match (on_tab, self.tab_strip_left) {
+            (true, Some(left)) => {
+                self.tab_strip_left = None;
+                if left.elapsed() > TAB_HOVER_NEXT_KEEP {
+                    tracing::debug!("tab hover: off the tabs too long, the full wait again");
+                    self.tab_hover_quick = false;
+                }
+            }
+            (false, None) => self.tab_strip_left = Some(Instant::now()),
+            _ => {}
+        }
+    }
+
     /// Tab switch, Fluent Direct Exit / Entrance for a content swap: the old content stays on
     /// its panel and fades out (83 ms linear) while a second panel — which every later redraw
     /// addresses — fades in (83 ms) and slides 24 DIP from the side of the new tab (167 ms

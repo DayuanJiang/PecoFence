@@ -293,6 +293,9 @@ impl FenceWindow {
             wheel_zoom_accum: 0,
             wheel_tab_accum: 0,
             tab_hover_switch: None,
+            tab_hover_quick: false,
+            tab_strip_left: None,
+            tab_swap_at_once: false,
             auto_height,
             rail_grow: false,
             locked: false,
@@ -1482,6 +1485,7 @@ impl FenceWindow {
                 }
             }
             if active_changed {
+                let at_once = std::mem::take(&mut v.tab_swap_at_once);
                 v.selected.clear();
                 v.anchor_index = None;
                 v.range_anchor = None;
@@ -1501,7 +1505,12 @@ impl FenceWindow {
                 // A real switch between two existing tabs (click, Ctrl+Tab) — not creation,
                 // merge, detach or closing the active tab — gets the content swap and the pill
                 // glide. Rolled / animating fences and animations-off snap as before.
-                if let (Some(o), Some(n)) = (old_idx, new_idx)
+                if at_once {
+                    // A hover switch that follows another: the page and the pill stand at
+                    // once, and a swap still on its way ends.
+                    v.finish_content_swap_now();
+                    v.pill_anim = None;
+                } else if let (Some(o), Some(n)) = (old_idx, new_idx)
                     && o != n
                     && !v.rolled_up
                     && !v.height_animating()
