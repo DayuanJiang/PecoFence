@@ -147,6 +147,8 @@ pub(super) struct SmartState {
     /// Fences to run again when `TIMER_SMART_SOON` fires, and whether a second run follows.
     soon: HashSet<FenceId>,
     again: bool,
+    /// Why those runs are due, for the log (`run_smart`'s `why`).
+    soon_why: &'static str,
     /// The editor's search to count (`PREVIEW`) and the number of the page's request, and the
     /// number of the request the run in progress counts.
     preview: Option<(SmartSpec, u64)>,
@@ -181,6 +183,7 @@ impl Default for SmartState {
             changed: Arc::new(Mutex::new(HashSet::new())),
             soon: HashSet::new(),
             again: false,
+            soon_why: "folder changed",
             preview: None,
             preview_sent: 0,
             preview_total: 0,
@@ -939,6 +942,11 @@ impl App {
         let armed = !self.smart.soon.is_empty();
         self.smart.soon.extend(hit);
         self.smart.again = true;
+        self.smart.soon_why = if by == "everything started" {
+            "everything catching up"
+        } else {
+            "folder changed"
+        };
         if armed {
             tracing::debug!(by, "smart fence folders changed; their run is already due");
             return;
@@ -961,7 +969,7 @@ impl App {
     pub(super) fn run_soon_smart(&mut self) {
         let ids: Vec<FenceId> = self.smart.soon.iter().copied().collect();
         for id in &ids {
-            self.run_smart(*id, "folder changed");
+            self.run_smart(*id, self.smart.soon_why);
         }
         if std::mem::take(&mut self.smart.again) {
             window::set_timer(self.control.hwnd(), TIMER_SMART_SOON, AGAIN_MS);
@@ -1085,6 +1093,17 @@ impl App {
                 "smart fences waiting for Everything search again"
             );
         }
+        // An Everything that has just started answers from the index it saved when it last
+        // ran; what changed on the drive while it was not running comes in from the change
+        // journal a moment later. The first search, sent the moment the index is read, misses
+        // those files (a .psd made while Everything was stopped: 0 files, and the next search
+        // came with the minute's refresh 48 s later). The fences search once more after
+        // `SOON_MS` and again `AGAIN_MS` later, as after a change in a watched folder.
+        tracing::debug!(
+            fences = waiting.len(),
+            "smart fences search again in a moment: Everything catches up with the drive's changes"
+        );
+        self.run_smart_soon(waiting.clone(), "everything started");
         for id in waiting {
             // Until the answer is in the fence says 「正在搜索…」, no longer that it needs
             // Everything.
