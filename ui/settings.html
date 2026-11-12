@@ -70,11 +70,11 @@
   :focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
   .app { display: grid; grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }
 
-  nav { padding: 12px 8px 16px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+  nav { padding: 12px 8px 16px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; overflow-x: hidden; }
   .brand { display: flex; align-items: center; gap: 12px; padding: 8px 12px 20px; }
   .brand-mark { width: 24px; height: 24px; flex: none; color: var(--brand); }
   .brand-name { font-size: 15px; line-height: 20px; font-weight: 600; }
-  nav a { display: flex; align-items: center; gap: 16px; min-height: 36px; padding: 8px 12px; border-radius: var(--r-control); color: var(--text); text-decoration: none; position: relative; }
+  nav a { display: flex; flex: none; align-items: center; gap: 16px; min-height: 36px; padding: 8px 12px; border-radius: var(--r-control); color: var(--text); text-decoration: none; position: relative; }
   nav a .ic { font-size: 16px; width: 16px; flex: none; text-align: center; }
   nav a:hover, nav a.sel { background: var(--subtle); }
   nav a:active { background: var(--subtle-pressed); color: var(--text2); }
@@ -82,7 +82,7 @@
   /* 查找设置: the box under the brand; its list floats over the page (the nav scrolls, so the
      list is fixed to the window and placed under the box). */
   .nav-search { position: relative; margin: 0 4px 12px; }
-  .nav-search input { width: 100%; min-width: 0; padding-right: 32px; }
+  .nav-search input[type=text] { width: 100%; min-width: 0; padding-right: 32px; }
   .nav-search .ic { position: absolute; right: 10px; top: 8px; font-size: 14px; color: var(--text2); pointer-events: none; }
   .search-list { position: fixed; z-index: 60; width: 380px; max-width: calc(100vw - 24px); max-height: min(470px, calc(100vh - 80px)); overflow: auto; padding: 4px;
     border-radius: var(--r-card); background: var(--card); border: 1px solid var(--card-stroke); box-shadow: 0 8px 24px #00000033; }
@@ -407,6 +407,8 @@
     nav a { gap: 12px; padding: 8px 10px; } .brand { padding-left: 10px; }
     .newrule { grid-template-columns: minmax(0, 1fr); }
   }
+  /* The smallest window (441 px inside): the seven pages fit without a scrollbar. */
+  @media (max-height: 520px) { .brand { padding-bottom: 8px; } .nav-footer { display: none; } }
   @media (max-width: 540px) {
     .app { grid-template-columns: 56px minmax(0, 1fr); } nav { padding: 12px 6px; }
     .brand { justify-content: center; padding: 8px 0 16px; }

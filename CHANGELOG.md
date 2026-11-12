@@ -76,6 +76,7 @@
 - Settings by keyboard: the navigation is one Tab stop. Tab went through 「查找设置」 and all seven pages before it reached the page's first control, the arrow keys did nothing in the navigation, and after Enter on a page six more Tabs were needed. Now Up, Down, Home and End move between the pages, Enter or Space shows one, and the next Tab is in that page.
 - Settings › 栅栏: the colour swatches of 「色调」 and 「标签页颜色」 stay on one line beside their text at the default window size, in every language. They dropped under the text there (the row fitted only from a 1024 px wide window on), so the same control looked different from 「图标着色」 on 常规.
 - Settings › 常规 › 主题风格: 「Liquid Glass · 液态玻璃」 fits on one line at the default window size; it wrapped with 「璃」 alone on a second line. In a narrower window, and in languages with a longer caption, the caption breaks after the dot.
+- Settings at its smallest window size (720 x 480): the navigation had a vertical and a horizontal scrollbar in the wide default style, the search box was cut off, and in Russian and German the page names on two or three lines ran into each other. The seven pages now fit without a scrollbar in Chinese and German (the fence count under them hides at that height), Russian scrolls with the thin scrollbar and rows at full height, and a long search text no longer runs under the magnifier at any window size.
 
 ## 0.3.3
 

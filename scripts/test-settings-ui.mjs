@@ -2690,6 +2690,23 @@ async function runTests() {
     } finally { frame.style.width = ''; }
   });
 
+  await test('The nav at the smallest window size: no sideways scrolling, the search box fits, long page names keep their height', async () => {
+    doc = await reset();
+    frame.style.width = '704px'; frame.style.height = '441px';
+    try {
+      for (const language of ['zh-CN', 'de', 'ru', 'fr']) {
+        change(doc, 'language', language); await settle();
+        const nav = doc.querySelector('nav'), box = doc.getElementById('settingsSearch');
+        assert(win().getComputedStyle(nav).overflowX === 'hidden' && nav.scrollWidth <= nav.clientWidth, language + ': the nav scrolls sideways');
+        assert(box.getBoundingClientRect().right <= nav.getBoundingClientRect().left + nav.clientWidth, language + ': the search box is cut');
+        assert(win().getComputedStyle(box).paddingRight === '32px', language + ': the text runs under the magnifier');
+        for (const a of nav.querySelectorAll('a')) assert(a.scrollHeight <= a.clientHeight, language + ': ' + a.textContent.trim() + ' is squeezed');
+        if (language === 'zh-CN') assert(nav.scrollHeight <= nav.clientHeight, 'zh-CN: the nav needs a scrollbar (' + nav.scrollHeight + ' in ' + nav.clientHeight + ')');
+      }
+    } finally { frame.style.width = ''; frame.style.height = ''; }
+    doc = await reset();
+  });
+
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
   window.testResults = { passed, failed };
