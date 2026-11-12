@@ -2740,6 +2740,39 @@ async function runTests() {
     doc = await reset();
   });
 
+  await test('Rule editor: the chosen condition type is shown whole in every language and the check boxes stand in columns', async () => {
+    doc = await reset();
+    frame.style.width = '944px';
+    try {
+      rulesPage(doc);
+      const kind = doc.getElementById('nrKind'), pen = doc.createElement('canvas').getContext('2d');
+      for (const language of ['zh-CN', 'ja', 'en', 'de', 'ru', 'it']) {
+        change(doc, 'language', language); await settle();
+        rulesPage(doc);
+        for (const option of kind.options) {
+          change(doc, 'nrKind', option.value);
+          pen.font = win().getComputedStyle(kind).font;
+          const need = pen.measureText(option.text).width + 11 + 32, has = kind.getBoundingClientRect().width;
+          assert(has >= need - 1, `${language}: "${option.text}" needs ${Math.round(need)} px and has ${Math.round(has)}`);
+          assert(kind.getBoundingClientRect().right <= kind.closest('.c-main').getBoundingClientRect().right + 1, language + ': the type list leaves its box');
+        }
+        for (const [value, id] of [['type', 'nrCats'], ['weekday', 'nrWeek']]) {
+          change(doc, 'nrKind', value);
+          const boxes = [...doc.querySelectorAll('#' + id + ' label')].map(l => l.getBoundingClientRect()), area = doc.getElementById(id).getBoundingClientRect();
+          const lefts = [...new Set(boxes.map(b => Math.round(b.left)))], firstRow = boxes.filter(b => Math.round(b.top) === Math.round(boxes[0].top)).map(b => Math.round(b.left));
+          assert(lefts.every(x => firstRow.includes(x)), `${language} ${id}: the check boxes are not in columns: ${lefts} / ${firstRow}`);
+          boxes.forEach((b, i) => {
+            assert(b.right <= area.right + 1, `${language} ${id}: a caption leaves the box`);
+            const next = boxes[i + 1];
+            assert(!next || Math.round(next.top) !== Math.round(b.top) || b.right <= next.left, `${language} ${id}: two captions overlap`);
+          });
+        }
+        change(doc, 'nrKind', 'type');
+      }
+    } finally { frame.style.width = ''; }
+    doc = await reset();
+  });
+
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
   window.testResults = { passed, failed };

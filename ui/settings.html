@@ -338,8 +338,9 @@
   .cond-list-h + .cond > .c-and { display: none; }
   .c-box { display: flex; align-items: flex-start; gap: 8px; padding: 10px 8px 10px 12px; border-radius: var(--r-card); background: var(--subtle); border: 1px solid var(--card-stroke); }
   .c-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; }
-  .c-main > .c-kind-l { flex: 0 1 240px; display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--text2); font-size: 12px; line-height: 16px; }
-  .c-kind-l > select { width: 100%; min-width: 0; color: var(--text); }
+  /* The type list is as wide as its choice (at least 240 px); the value moves below a long one. */
+  .c-main > .c-kind-l { flex: 0 1 auto; display: flex; min-width: min(240px, 100%); max-width: 100%; flex-direction: column; gap: 6px; color: var(--text2); font-size: 12px; line-height: 16px; }
+  .c-kind-l > select { field-sizing: content; width: auto; min-width: 0; max-width: 100%; color: var(--text); }
   .c-val { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .c-cap { color: var(--text2); font-size: 12px; line-height: 16px; }
   .c-val label { display: flex; min-width: 0; }
@@ -348,6 +349,10 @@
   .c-val > .cats, .c-none { padding-top: 6px; }
   .c-fixed { padding-top: 6px; }
   .c-val .cats label { white-space: nowrap; } .c-val .cats input[type=number] { width: 104px; }
+  /* 文件类型 and 星期几: check boxes in columns as wide as the longest caption (see checkColumns). */
+  .c-val > .c-cats, .c-val > .c-week { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--check-col, 96px)), 1fr)); gap: 8px 12px; }
+  .c-val > .c-week { --check-col: var(--week-col, 72px); }
+  .c-val.wide { flex-basis: 100%; }
   .c-none, .c-fixed .s { color: var(--text2); font-size: 12px; line-height: 16px; }
   .c-fixed { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
   /* A box without its ✕ keeps the room for it, so every box lays out the same way. */
@@ -2194,6 +2199,14 @@
       default: return v.value !== '' && quoteFor(v.value) !== null; // name tests, shortcut target
     }
   }
+  // The width of a check box column: the longest caption of the page language, with its box.
+  function checkColumns() {
+    const pen = document.createElement('canvas').getContext('2d');
+    pen.font = getComputedStyle(document.body).font;
+    for (const [name, labels] of [['--check-col', CATS()], ['--week-col', WEEKDAYS()]]) {
+      document.documentElement.style.setProperty(name, Math.ceil(Math.max(...labels.map(l => pen.measureText(l[1]).width))) + 28 + 'px');
+    }
+  }
   function fillChecks(block) {
     const cats = block.querySelector('.c-cats'), week = block.querySelector('.c-week');
     if (!cats.children.length) cats.innerHTML = CATS().map(([k, l]) => `<label><input type="checkbox" value="${k}">${l}</label>`).join('');
@@ -2247,6 +2260,7 @@
     updateDel(panel);
   };
   const WEEKDAYS = () => [['0',t("周一")],['1',t("周二")],['2',t("周三")],['3',t("周四")],['4',t("周五")],['5',t("周六")],['6',t("周日")]];
+  checkColumns();
   function updateKind(block = document.getElementById('nrCond')) {
     if (block.cond) return;
     const k = block.querySelector('.c-kind').value;
@@ -2254,6 +2268,8 @@
     const noValue = ['type','folders','files','plain','time','weekday','size','idle'];
     show('c-value', !noValue.includes(k));
     show('c-cats', k === 'type'); show('c-time', k === 'time'); show('c-week', k === 'weekday'); show('c-size', k === 'size'); show('c-idle', k === 'idle');
+    // Check boxes take the whole row under the type list, so they stand in more columns.
+    block.querySelector('.c-val').classList.toggle('wide', k === 'type' || k === 'weekday');
     show('c-none', ['folders','files','plain'].includes(k));
     const ph = { ext: 'png, jpg', contains: t("示例\x04截图"), notContains: t("示例\x04备份"), startsWith: 'IMG_', endsWith: '_final', exact: 'todo.txt, notes.md', glob: '*.png', target: 'steam' };
     block.querySelector('.c-text').placeholder = ph[k] || '';
@@ -3120,6 +3136,7 @@
           });
         }
         relabelConds();
+        checkColumns();
         switchLabels();
         document.getElementById('iconTint').setAttribute('aria-label', t("图标着色"));
         document.getElementById('iconTintStrength').setAttribute('aria-label', t("图标着色强度"));
