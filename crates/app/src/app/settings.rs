@@ -356,15 +356,39 @@ impl App {
             pecofence_core::LoadOutcome::Recovered(..) => "daily backup",
             pecofence_core::LoadOutcome::Fresh(_) => "new: files unusable",
         };
+        // What the tray says: the user's file was read, or (it opened but could not be used,
+        // and was kept aside) what shows in its place, as at a start with such a file.
+        let told = match &outcome {
+            pecofence_core::LoadOutcome::Recovered(_, from) if report.moved_to.is_some() => {
+                Some(pecofence_core::i18n::format(
+                    "配置文件读不出来，现在用的是备份 {0}。原来的文件已改名，仍在配置文件夹里。",
+                    &[from
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default()],
+                ))
+            }
+            pecofence_core::LoadOutcome::Fresh(_) if report.moved_to.is_some() => Some(
+                pecofence_core::i18n::text(
+                    "配置文件读不出来，也没有可用的备份，现在是默认的栅栏。原来的文件已改名，仍在配置文件夹里。",
+                )
+                .to_string(),
+            ),
+            _ => None,
+        };
         tracing::info!(
             source,
             tries = self.config_lock_tries,
             moved_aside = report.moved_to.is_some(),
+            told_unreadable = told.is_some(),
             "config files readable again; loaded"
         );
         self.adopt_config(outcome.into_config(), ConfigSource::Unlocked);
         if let Some(t) = &self.tray {
-            t.show_info("PecoFence", ConfigSource::Unlocked.done(), false);
+            match &told {
+                Some(text) => t.show_info("PecoFence", text, true),
+                None => t.show_info("PecoFence", ConfigSource::Unlocked.done(), false),
+            }
         }
     }
 

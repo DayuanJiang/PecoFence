@@ -7,6 +7,7 @@
 #   run.sh --var Part=X ...   a configuration without a 桌面 fence gets one
 #   run.sh --var Part=R ...   a rule cannot point to a smart fence
 #   run.sh --var Part=K ...   config locked at start: import and export say they cannot run
+#   run.sh --var Part=U ...   locked at start and unreadable once the lock goes: the notice says so
 #   run.sh --var Part=D ...   the notice of an unreadable configuration names the backup in use
 #   run.sh --var Part=B ...   no "cannot save" when only the day's backup copy fails
 #   run.sh --var Part=G ...   a snapshot restore glides the fences that moved (recorded)
@@ -15,7 +16,7 @@
 #   run.sh --bin target/wintest-bin-debug --var Part=P ...   the settings page (CDP): the notice
 #                             after a restore has 撤销; no smart fence among a rule's targets
 # Without --var every part but P runs (about 4 minutes).
-if (-not $Part) { $Part = 'SINLXRKDBGFZ' }
+if (-not $Part) { $Part = 'SINLXRKUDBGFZ' }
 $HrCfg = "$PfApp\config\config.json"
 function HrClean() { Get-ChildItem -LiteralPath $PfDesk -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'hr2-*' } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }
 function HrUtf8($path, $text) { [IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding($false))) }
@@ -143,6 +144,28 @@ if ($Part -match 'K') {
   Check 'the configuration is read once the lock goes' ([bool](PfWaitLog 'config files readable again' 15))
   $e2 = Pf config export "$PfRun\hr2-after.json"
   Check 'export works again' (Test-Path "$PfRun\hr2-after.json") ($e2 -replace '\s+', ' ')
+  PfQuit
+}
+
+if ($Part -match 'U') {
+  Case 'U locked at start, and damaged when the lock goes'
+  HrFresh
+  Pf fence create --title '我的栅栏' --rect '420,120,300,200' | Out-Null
+  Start-Sleep -Seconds 3
+  Pf fence create --title '后来的栅栏' --rect '760,120,300,200' | Out-Null
+  Start-Sleep -Seconds 3
+  PfQuit
+  $PfAllowLogErrors = $true
+  $lock = [IO.File]::Open($HrCfg, 'Open', 'ReadWrite', 'None')
+  PfStart -Lang ''
+  Check 'the app holds its saves' ([bool](PfWaitLog 'saves held until it can be read' 20))
+  # The program that held the file leaves it cut in half.
+  $lock.SetLength([long]($lock.Length / 2))
+  $lock.Close()
+  $line = PfWaitLog 'config files readable again' 15
+  Start-Sleep -Milliseconds 1500
+  Crop 'U-notice' 1200 640 400 215 | Out-Null
+  Check 'the notice says the file could not be used and which backup shows (not: your fences are back)' ($line -match 'told_unreadable=true') "$line"
   PfQuit
 }
 
