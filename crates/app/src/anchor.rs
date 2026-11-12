@@ -1985,8 +1985,9 @@ impl DesktopAnchor {
         self.icons.left_hidden = false;
     }
 
-    /// Starts `pecofence-watchdog.exe` (next to our exe) so a crash still restores the icons.
-    fn spawn_watchdog(&mut self) {
+    /// Starts `pecofence-watchdog.exe` (next to our exe): after a crash it starts PecoFence
+    /// again, and it shows the icons PecoFence hid when no PecoFence runs afterwards.
+    pub fn spawn_watchdog(&mut self) {
         // One per run: it checks the marker when we exit, whatever happened before.
         if !self.icons.watchdogs.is_empty() {
             return;

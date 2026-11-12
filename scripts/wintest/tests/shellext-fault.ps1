@@ -12,7 +12,8 @@
 #      file pastes into a folder fence
 #   F  a fault while the item menu is built (the shell loads every menu extension for it): the
 #      crash line and the next start's notice name the DLL, the process is gone within half a
-#      second of that line, the watchdog starts PecoFence again and the layout is as before
+#      second of that line, the watchdog starts PecoFence again within a second of the click
+#      without Windows' own icons showing in between, and the layout is as before
 #   M  after that crash the item menus leave out Windows' part: the notice says so, the same
 #      right-click shows PecoFence's entries with the extension still set to fault, the next
 #      start builds no menu in the background, and the tray menu's entry brings it back
@@ -373,6 +374,9 @@ if ($dll -and $Part -match 'F') {
   $crashMs = if ($crashLine) { [int]((LogTime $crashLine) - $t0).TotalMilliseconds } else { -1 }
   Check 'F the crash line names the extension as another program''s file' ($crashLine -match ' at=pf_shellext_fault\.dll\+0x' -and $crashLine -match 'module_owner="?other') "crash line $crashMs ms after the click: $(if ($crashLine -match '(code=.*?) dump=') { $Matches[1] })"
   Check 'F the process ends with the exception''s code and the watchdog starts PecoFence again' ($w['code'] -eq 'C0000005' -and $restarted -and [int]$w['fences'] -ge 0) "after the click: exit $($w['exit']) ms (code $($w['code'])), new process $($w['born']) ms, its first fence $($w['fences']) ms"
+  # The watchdog starts PecoFence first, and that run takes over the hidden icons: Windows'
+  # own icons do not show in between (they did for 0.3 s), and the fences are back sooner.
+  Check 'F the fences are back within a second of the click, and Windows'' own icons never show in between' ([int]$w['icons'] -lt 0 -and [int]$w['fences'] -ge 0 -and [int]$w['fences'] -lt 1000) "first fence $($w['fences']) ms after the click; Windows' icons seen at $($w['icons']) ms (-1 = never)"
   # Left to Windows Error Reporting, the dead process stayed 1 to 2 s on this box (about 50 s
   # on the PC of GitHub #167).
   $dead = [int]$w['exit'] - $crashMs

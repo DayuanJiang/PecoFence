@@ -2084,6 +2084,11 @@ impl App {
             if a.stale_marker_present() && !pecofence_platform::shell_icons::desktop_icons_hidden()
             {
                 a.forget_stale_marker();
+            } else if a.stale_marker_present() && args.restarted_after_crash.is_some() {
+                // The watchdog started this run first and left the icons hidden for it.
+                tracing::info!(
+                    "icons-hidden marker of the crashed run found: taking the icons over"
+                );
             } else if a.stale_marker_present() {
                 tracing::warn!(
                     "stale icons-hidden marker found: previous run did not restore icons"
@@ -2106,6 +2111,9 @@ impl App {
             } else {
                 a.show_kept_desktop_icons();
             }
+            // The watchdog also starts PecoFence again after a crash: it runs whether the
+            // Windows icons are hidden or not.
+            a.spawn_watchdog();
         }
         // Portable/development runs do not change login startup. Normal releases
         // adopt the renamed entry while keeping an existing working PecoFence copy.
