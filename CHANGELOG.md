@@ -241,6 +241,7 @@
 - A tab pulled out of its fence is under the pointer from the first frame. The new fence faded in like any new fence, so for a frame the tab was nowhere: gone from the strip, not yet drawn, while the white outline of the landing place already showed. The fence in the hand now stands at full strength at once.
 - A notice that has to leave the screen corner because a fence stands there keeps its distance from the fences around it. It took the nearest free place, which could be level with one fence's lower edge and 1 px above the next fence. It now takes the nearest place a margin away from every fence, and where the free room is smaller than that it stands in the middle of the room.
 - The name box of a centred or right-aligned fence title, and of a tab that shows a folder or Task View glyph, opens on the name too. These three still got the old box: a plain white rectangle at the left end of the title row, in a 14 px regular font, far from a centred or right-aligned name and over the first tab. A centred title's box is now centred on the name and a right-aligned title's box ends where the name ends; the text keeps that alignment while you type, so the name stays where it stood. A tab's box starts at its caption, after the glyph.
+- A change of the display scale sets each fence's scale once. Every fence took the new scale, then the old one again, then the new one, within a few milliseconds, and dropped all its icon pictures and fitted names each time.
 
 ## 0.3.3
 

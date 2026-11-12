@@ -624,8 +624,12 @@ pub(super) fn on_size(h: &HandlerCtx, hwnd: HWND, _wparam: usize, lparam: isize)
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
         // A window created during early logon may have reported 96 DPI
-        // before the display settled; re-read it on every size change.
-        let dpi_changed = v.apply_dpi(monitors::dpi_for_window(hwnd));
+        // before the display settled; re-read it on every size change. Not while the app
+        // places the window: it has set the scale of the monitor the window goes to
+        // (`restore_geometry`), and Windows reports the old one for the window until the
+        // WM_DPICHANGED that follows. Taking it here set the scale three times for one scale
+        // change (new, old, new), dropping every icon and label each time.
+        let dpi_changed = !v.placing && v.apply_dpi(monitors::dpi_for_window(hwnd));
         v.note_edge_top();
         v.update_backdrop();
         let crop_done = Instant::now();
