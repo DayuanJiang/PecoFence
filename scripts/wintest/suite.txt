@@ -208,3 +208,8 @@ o3-keys            4   ec2    release owner3-ux3-keys.ps1
 o3-looks           4   ec2    release owner3-ux3-looks.ps1           --extra ui/themes --var Look=fluent-dark-bright,glass-light-dark
 o3-icons3          2   ec2    release owner3-ux3-icons3.ps1          --var Part=F
 o3-windows         4   vm     debug   owner3-ux3-windows.ps1
+# Owner round, the night of 2026-11-12: latency of everyday actions (each part holds one bound).
+o4-latency-next    2   ec2    release owner4-latency.ps1             --var Part=NEXT
+o4-latency-roll    2   ec2    release owner4-latency.ps1             --var Part=ROLL
+o4-latency-fill    1   ec2    release owner4-latency.ps1             --var Part=FILL
+o4-latency-search  1   ec2    release owner4-latency.ps1             --var Part=SRCH
