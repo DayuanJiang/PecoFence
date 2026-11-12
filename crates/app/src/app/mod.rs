@@ -513,6 +513,11 @@ pub struct App {
     /// Frames left until the fences the Peek faded are opaque again, once they are back under
     /// the windows (`end_peek_now`); `None` when none waits.
     peek_rest_in: Option<u8>,
+    /// The desktop window or the fence that had the keyboard when the Peek opened, and, once
+    /// the user closed the Peek, the same window while it waits to get the keyboard back
+    /// (`end_peek_now`).
+    peek_from: Option<HWND>,
+    peek_back: Option<HWND>,
     /// The search list (rows, Everything's answer, a dialog waiting behind the Peek).
     search: search::SearchState,
     /// 「安装 Everything」 is running winget.
@@ -1938,6 +1943,8 @@ impl App {
             peek_tabs: HashMap::new(),
             peek_raise_in: None,
             peek_rest_in: None,
+            peek_from: None,
+            peek_back: None,
             search: Default::default(),
             everything_installing: false,
             snap_held: false,
