@@ -17,6 +17,8 @@
 #   T  settings page: after a click on a colour swatch the element under the pointer has no
 #      `title` again (the browser would show its own tip)
 #   C  a double-click on 「下一条」 of the first-start tips goes on by one tip, not by two
+#   E  the empty search box opens at once while Everything is busy (a box with Everything:
+#      ec2-7; not among the default parts)
 # S, D, P and T drive the settings page over CDP: run them on a debug build.
 # Runs on a 1600x900 box at 100 %.
 if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'SDPKLGTC' }
@@ -375,6 +377,64 @@ function O5SwatchTip() {
   PfQuit
 }
 
+# ---- E: the empty search box while Everything does not answer
+function O5EverythingBusy() {
+  trap { PfTrap $_; continue }
+  Case 'E the empty search box while Everything is busy'
+  Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class O5Th {
+  [DllImport("kernel32.dll")] static extern IntPtr OpenThread(uint access, bool inherit, uint tid);
+  [DllImport("kernel32.dll")] static extern uint SuspendThread(IntPtr h);
+  [DllImport("kernel32.dll")] static extern uint ResumeThread(IntPtr h);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+  public static IntPtr Suspend(uint tid) { var h = OpenThread(2, false, tid); if (h != IntPtr.Zero) SuspendThread(h); return h; }
+  public static void Resume(IntPtr h) { if (h != IntPtr.Zero) { ResumeThread(h); CloseHandle(h); } }
+}
+'@
+  $evRan = EvRunning
+  if (-not (EvStart)) { Check 'Everything runs (the case needs it)' $false "installed=$(EvInstalled)"; return }
+  PfFresh
+  Start-Sleep -Seconds 3
+  Pf settings set language zh-CN | Out-Null
+  CloseNotice | Out-Null
+  Pf settings set tools.everything true | Out-Null
+  Start-Sleep -Seconds 2
+  # The time between the two log lines of an opening by double Ctrl: the box is asked for,
+  # and its hint is set (the hint asks whether Everything runs).
+  function CueMs($since) {
+    $lines = O5LogSince $since
+    $a = @($lines | Where-Object { $_ -match 'search box opened by double Ctrl' }) | Select-Object -Last 1
+    $b = @($lines | Where-Object { $_ -match 'search: the empty box shows its hint' }) | Select-Object -Last 1
+    if (-not $a -or -not $b) { return -1 }
+    return [int]([datetime]::Parse($b.Substring(0, 27)) - [datetime]::Parse($a.Substring(0, 27))).TotalMilliseconds
+  }
+  $ev = [EvW]::FindWindowW('EVERYTHING_TASKBAR_NOTIFICATION', $null)
+  $tid = [Th]::UiThread($ev)
+  DeskClick 1500 820 | Out-Null
+  $stamp = O5Now; Start-Sleep -Milliseconds 1100
+  DoubleCtrl; Start-Sleep -Milliseconds 2500
+  $free = CueMs $stamp
+  for ($i = 0; $i -lt 3 -and [M]::BoxText() -ne $null; $i++) { [G]::Press(0x1B); Start-Sleep -Milliseconds 400 }
+  Start-Sleep -Seconds 1
+  # Everything stops answering for four seconds.
+  $h = [O5Th]::Suspend($tid)
+  try {
+    Start-Sleep -Milliseconds 300
+    $stamp = O5Now; Start-Sleep -Milliseconds 1100
+    DoubleCtrl; Start-Sleep -Milliseconds 2500
+  } finally {
+    [O5Th]::Resume($h)
+  }
+  $busy = CueMs $stamp
+  Check 'E setup: Everything was stopped and the box opened both times' ($h -ne [IntPtr]::Zero -and $free -ge 0 -and $busy -ge 0) "thread handle=$h; ms from the key to the hint: Everything answering $free, not answering $busy"
+  Check 'E the empty box does not wait for an Everything that does not answer' ($busy -ge 0 -and $busy -lt 300) "ms from the key to the hint: Everything answering $free, not answering $busy"
+  for ($i = 0; $i -lt 3 -and [M]::BoxText() -ne $null; $i++) { [G]::Press(0x1B); Start-Sleep -Milliseconds 400 }
+  Pf settings set tools.everything false | Out-Null
+  PfQuit
+  if (-not $evRan) { EvStop | Out-Null }
+}
+
 # ---- C: a double-click on a card's button
 function O5CardDouble() {
   trap { PfTrap $_; continue }
@@ -418,6 +478,7 @@ if ($Part -match 'L') { O5LinkTip }
 if ($Part -match 'G') { O5HoverGroup }
 if ($Part -match 'T') { O5SwatchTip }
 if ($Part -match 'C') { O5CardDouble }
+if ($Part -match 'E') { O5EverythingBusy }
 
 Case 'cleanup'
 if (PfAlive) { PfQuit }

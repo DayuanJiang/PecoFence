@@ -121,9 +121,11 @@ impl App {
     }
 
     /// The empty box says what can be typed: the whole computer too when that search is on and
-    /// Everything is running.
+    /// Everything is running. Asked without a message to Everything (`everything::running`):
+    /// `find` waits for its answer, up to a second while Everything is busy, and the box
+    /// opened that much later.
     pub(super) fn show_search_cue(&self) {
-        let whole_pc = self.state.config.settings.tools.everything && everything::find().is_some();
+        let whole_pc = self.state.config.settings.tools.everything && everything::running();
         tracing::debug!(whole_pc, "search: the empty box shows its hint");
         crate::peek_search::set_cue(whole_pc);
     }
