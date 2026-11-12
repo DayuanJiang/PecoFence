@@ -2101,6 +2101,19 @@
     const fallback = list.id === 'ruleList' ? 'nrName' : 'snapName';
     (control || document.getElementById(fallback))?.focus({ preventScroll: true });
   }
+  // A list that is drawn again shows what changed: a row that stood elsewhere glides from there
+  // to its place (167 ms, the fences' point-to-point curve), a row that was not there fades in.
+  // rowTops(list) before the list is rebuilt, glideRows(list, tops) after. Nothing moves the
+  // first time, on a page that is not shown, while transitions are off, or with animations off.
+  const rowTops = list => new Map([...list.querySelectorAll('[data-row-id]')].map(el => [el.dataset.rowId, el.offsetTop]));
+  function glideRows(list, tops) {
+    if (!tops.size || !list.offsetParent || !document.documentElement.classList.contains('ready') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    list.querySelectorAll('[data-row-id]').forEach(el => {
+      const was = tops.get(el.dataset.rowId), dy = was === undefined ? 0 : was - el.offsetTop;
+      if (was === undefined) el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 167 });
+      else if (dy) el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 167, easing: 'cubic-bezier(.55, .55, 0, 1)' });
+    });
+  }
   const openRuleForm = () => { document.getElementById('nrPanel').open = true; };
   // The listed rule open for editing: its row shows `form` (kept across re-renders, so a state
   // refresh does not lose what was typed) until Save, Cancel or Esc. One at a time: the other
@@ -2138,7 +2151,7 @@
       return;
     }
     ruleRows = rows;
-    const focus = focusBookmark(list);
+    const focus = focusBookmark(list), tops = rowTops(list);
     const typing = editing && editing.form.contains(document.activeElement) ? document.activeElement : null;
     list.innerHTML = '';
     if (!rulesShown) { rulesShown = true; if (!rules.length) openRuleForm(); }
@@ -2200,6 +2213,7 @@
       list.appendChild(div);
     });
     if (typing) typing.focus({ preventScroll: true }); else restoreFocus(list, focus);
+    glideRows(list, tops);
     fillTargets(document.getElementById('nrTarget'));
     fillChecks(document.getElementById('nrCond'));
   }
@@ -2502,7 +2516,7 @@
   document.getElementById('swapDo').onclick = () => { const a = document.getElementById('swapA').value, b = document.getElementById('swapB').value; if (a && b && a !== b) send({ type: 'action', name: 'swapMonitors', a, b }); else toast(t("请选择两个不同的显示器"), true); };
   function renderLayout() {
     const sl = document.getElementById('snapList');
-    const focus = focusBookmark(sl);
+    const focus = focusBookmark(sl), tops = rowTops(sl);
     const snaps = state.snapshots || [];
     sl.innerHTML = snaps.length ? '' : `<div class="card"><div class="s">${esc(t("尚无快照"))}</div></div>`;
     snaps.slice().reverse().forEach(sn => {
@@ -2518,6 +2532,7 @@
       sl.appendChild(div);
     });
     restoreFocus(sl, focus);
+    glideRows(sl, tops);
     const mons = state.monitors || [];
     document.getElementById('swapHeading').style.display = mons.length >= 2 ? '' : 'none';
     document.getElementById('swapCard').style.display = mons.length >= 2 ? '' : 'none';

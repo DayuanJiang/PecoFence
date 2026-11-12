@@ -3096,6 +3096,33 @@ async function runTests() {
     assert(moving().some(line => line.includes('::after') && line.endsWith('transform')), 'A switch no longer slides after a change of fence');
     doc = await reset();
   });
+  // Rows gliding or fading in after their list was drawn again: "row id, first keyframe".
+  const glides = () => doc.getAnimations().filter(a => !a.transitionProperty && !a.animationName && a.effect.target.dataset.rowId).map(a => {
+    const from = a.effect.getKeyframes()[0];
+    return a.effect.target.dataset.rowId + ' ' + (from.transform && from.transform !== 'none' ? (from.transform.includes('(-') ? 'from above' : 'from below') : 'fades in');
+  }).sort().join(', ');
+  await test('A rule moved, deleted or put back: the rows glide to their places and a new row fades in', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    doc.querySelector('[data-page=rules]').click();
+    const row = id => doc.querySelector(`#ruleList [data-row-id=${id}]`);
+    assert(glides() === '', 'Rows move on the first look at the page: ' + glides());
+    row('rule-a').querySelector('[data-act=down]').click();
+    assert(glides() === 'rule-a from above, rule-b from below', '下移: ' + (glides() || 'nothing moves'));
+    await settle();
+    row('rule-b').querySelector('[data-act=del]').click();
+    assert(glides() === 'rule-a from below', '删除: ' + (glides() || 'nothing moves'));
+    await settle();
+    doc.getElementById('toastUndo').click();
+    assert(glides() === 'rule-a from above, rule-b fades in', '撤销: ' + (glides() || 'nothing moves'));
+    assert(await until(() => glides() === ''), 'The rows never came to rest: ' + glides());
+    // A snapshot saved: it comes in at the top and the older one glides down.
+    doc.querySelector('[data-page=layout]').click();
+    current().snapshots.push({ id: 'snapshot-b', name: '整理之后', date: '2026-11-12', fenceCount: 4 });
+    frame.contentWindow.testRefresh();
+    assert(glides() === 'snapshot-a from above, snapshot-b fades in', 'A new snapshot: ' + (glides() || 'nothing moves'));
+    doc = await reset();
+  });
 
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
