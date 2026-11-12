@@ -450,12 +450,17 @@ Pf fence unroll Beta | Out-Null
 # The card shows while one of the two hovers it times is on: a rolled fence that expands on hover,
 # or 「鼠标悬停时切换标签页」 (on in a new install).
 Case 'U18 Expand speed on the settings page, with On hover or Switch tabs on hover'
+# The settings window reopens on the page and at the scroll position it was closed with, for as
+# long as the app runs: a fresh start opens it on the first page, and each round scrolls to
+# the top before it looks for the heading.
+PfStart -Script (DumpScript 250 25)
 foreach ($mode in 'hover', 'click', 'click-tabs') {
   Pf settings set rollUp.clickToExpand ($mode -ne 'hover').ToString().ToLower() | Out-Null
   Pf settings set rollUp.switchTabOnHover ($mode -ne 'click').ToString().ToLower() | Out-Null
   Pf settings open-ui | Out-Null
   $sw = WaitWin 'PecoFence.Settings' 20; Start-Sleep -Seconds 3
   $sr = Rect $sw; $o = ClientOrigin $sw
+  Wheel ($o.X + 700) ($o.Y + 400) 40; Start-Sleep -Milliseconds 700
   $txt = ''
   for ($i = 0; $i -lt 10 -and $txt -notmatch 'How rolled-up fences expand'; $i++) {
     Wheel ($o.X + 700) ($o.Y + 400) -3; Start-Sleep -Milliseconds 700
