@@ -3177,6 +3177,21 @@ async function runTests() {
     assert(await until(() => !bar.classList.contains('on')), 'A notice that nobody points at stays');
     doc = await reset();
   });
+  await test('Smart fence editor: when a row is added or removed, the rows under it glide and the new row fades in', async () => {
+    doc = await openEditor('fence=new');
+    assert(await motionReady(), 'The editor never allowed transitions');
+    // "row index, where it comes from" for every row that is moving.
+    const rowGlides = () => doc.getAnimations().filter(a => !a.transitionProperty && !a.animationName && a.effect.target.classList.contains('se-row')).map(a => {
+      const from = a.effect.getKeyframes()[0];
+      return rowsOf(doc).indexOf(a.effect.target) + (from.transform && from.transform !== 'none' ? (from.transform.includes('(-') ? ' from above' : ' from below') : ' fades in');
+    }).sort().join(', ');
+    rowsOf(doc)[0].querySelector('.se-plus').click();
+    assert(kindsOf(doc) === 'where,name,name' && rowGlides() === '1 fades in, 2 from above', 'A row added: ' + (rowGlides() || 'nothing moves'));
+    assert(await until(() => rowGlides() === ''), 'The rows never came to rest');
+    rowsOf(doc)[1].querySelector('.se-minus').click();
+    assert(kindsOf(doc) === 'where,name' && rowGlides() === '1 from below', 'A row removed: ' + (rowGlides() || 'nothing moves'));
+    doc = await reset();
+  });
 
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
