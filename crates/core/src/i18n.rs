@@ -421,8 +421,8 @@ mod tests {
     /// 4 lines of about 36 Latin or 18 Chinese, Japanese or Korean characters (measured on
     /// 2026-11-12), the rest is cut, and the end of a sentence is often the part that says
     /// what to do. The texts are found in the app's sources: every catalog key in a function
-    /// that calls `show_info(`. Not checked where the sources are not beside the test (the
-    /// test boxes run the built tests only).
+    /// that calls `show_info(` or `.toast(`. Not checked where the sources are not beside the
+    /// test (the test boxes run the built tests only).
     #[test]
     fn every_notification_fits_the_banner() {
         fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
@@ -467,7 +467,9 @@ mod tests {
         let mut sources = std::collections::BTreeSet::new();
         for file in &files {
             let code = std::fs::read_to_string(file).unwrap();
-            for (call, _) in code.match_indices("show_info(") {
+            // `toast` is the app's own short way to the same notification.
+            let calls = code.match_indices("show_info(");
+            for (call, _) in calls.chain(code.match_indices(".toast(")) {
                 // From the start of the function around the call to a little after it.
                 let from = code[..call]
                     .rfind("\n    fn ")
