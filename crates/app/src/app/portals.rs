@@ -256,9 +256,7 @@ impl App {
         if let Some(id) = self.state.new_portal_fence(&folder, rect) {
             tracing::info!(folder = %folder.display(), place = shell::path_place(&folder), %id, drawn, ?rect, "folder portal created");
             self.resync_windows();
-            if let Some(w) = self.fences.get(&id) {
-                w.show(true);
-            }
+            self.show_new_fence(id);
             self.schedule_save();
             self.offer_roll_tip();
         }

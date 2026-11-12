@@ -223,9 +223,7 @@ impl App {
             .unwrap_or_else(|| pecofence_core::i18n::text("智能栅栏").to_string());
         let id = self.state.new_smart_fence(&title, rect, spec)?;
         self.resync_windows();
-        if let Some(w) = self.fences.get(&id) {
-            w.show(true);
-        }
+        self.show_new_fence(id);
         self.ensure_smart_watchers();
         self.run_smart(id, "created");
         self.schedule_save();

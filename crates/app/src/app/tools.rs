@@ -142,9 +142,7 @@ impl App {
             self.state.mark_dirty();
         }
         self.resync_windows();
-        if let Some(w) = self.fences.get(&id) {
-            w.show(true);
-        }
+        self.show_new_fence(id);
         self.schedule_save();
         if kind == FenceTool::Script {
             self.start_script(id);

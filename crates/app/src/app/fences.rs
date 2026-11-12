@@ -160,8 +160,21 @@ impl App {
             a.reanchor("windows resynced");
         }
         let mut shown = false;
-        for w in self.fences.values() {
+        for (id, w) in &self.fences {
             if !before.contains(&w.hwnd()) {
+                // The fences are hidden (a double-click on the desktop, 「隐藏所有栅栏」,
+                // 「临时显示 Windows 桌面」): a window that comes meanwhile waits with them. It
+                // used to show alone (a fence with 「为空时自动隐藏」 that got a file, say). A
+                // fence the user makes shows them all (`show_new_fence`).
+                let held = self
+                    .anchor
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|a| a.quick_hides(w.hwnd(), self.windows_desktop));
+                if held {
+                    tracing::debug!(fence = %id, "new window while the fences are hidden: it stays hidden with them");
+                    continue;
+                }
                 w.show(true);
                 shown = true;
             }
@@ -173,6 +186,25 @@ impl App {
         // 「桌面」 fence may use.
         self.arrange_desktop_fence();
         self.push_settings_state();
+    }
+
+    /// Shows a fence the user just made (tray menu, a box drawn on the desktop, the command
+    /// line, a new note, tool, folder or smart fence). When the fences are hidden, they all
+    /// come back with it: the new one used to show alone, with the tray menu still offering
+    /// 「显示所有栅栏」.
+    pub(super) fn show_new_fence(&mut self, id: FenceId) {
+        let hidden = self
+            .anchor
+            .borrow()
+            .as_ref()
+            .is_some_and(|a| a.fences_hidden());
+        if let Some(w) = self.fences.get(&id) {
+            w.show(true);
+        }
+        if hidden {
+            tracing::info!(fence = %id, "a fence was made while the fences were hidden: they all show again");
+            self.toggle_all_fences("a fence was made");
+        }
     }
 
     pub(super) fn refresh_fence(&mut self, id: FenceId) {
@@ -1015,9 +1047,7 @@ impl App {
         }
         let id = self.state.new_fence(title, rect)?;
         self.resync_windows();
-        if let Some(w) = self.fences.get(&id) {
-            w.show(true);
-        }
+        self.show_new_fence(id);
         self.schedule_save();
         Some(id)
     }
