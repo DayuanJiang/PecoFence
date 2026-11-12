@@ -113,6 +113,17 @@ pub(super) fn is_auto_snapshot(name: &str) -> bool {
         .contains(&name)
 }
 
+/// The name the page shows for a snapshot. The command line's safety snapshots are saved as
+/// `auto-cli-<time>` (scripts read that name): the page calls them 「命令行操作前」, as it names
+/// its own automatic ones, and the time is the row's date already.
+pub(super) fn snapshot_label(name: &str) -> &str {
+    if name.starts_with(super::ipc::AUTO_SNAPSHOT_PREFIX) {
+        pecofence_core::i18n::text("命令行操作前")
+    } else {
+        name
+    }
+}
+
 /// What the settings window leaves for the next one of this run.
 #[derive(Default)]
 pub(super) struct SettingsKept {
@@ -578,7 +589,7 @@ impl App {
             .map(|s| {
                 serde_json::json!({
                     "id": s.id,
-                    "name": s.name,
+                    "name": snapshot_label(&s.name),
                     "ts": s.ts,
                     "date": pecofence_platform::fileinfo::format_local_datetime(s.ts),
                     "fenceCount": super::ipc::snapshot_dto(s, &self.state.work_areas).fence_count,
@@ -1150,7 +1161,7 @@ impl App {
                         if let Some(h) = &self.settings {
                             let text = pecofence_core::i18n::format(
                                 "已删除快照“{0}”",
-                                std::slice::from_ref(&gone.name),
+                                &[snapshot_label(&gone.name).to_string()],
                             );
                             let undo = "restoreDeletedSnapshot";
                             h.post_json(

@@ -125,6 +125,7 @@
   "恢复快照前": "Prima del ripristino dell’istantanea",
   "自动保存": "Salvata automaticamente",
   "删除栅栏前": "Prima dell’eliminazione del riquadro",
+  "命令行操作前": "Prima di una modifica da riga di comando",
   "导入配置前": "Prima dell’importazione",
   "恢复备份前": "Prima del ripristino del backup",
   "导出 PecoFence 配置": "Esporta la configurazione di PecoFence",

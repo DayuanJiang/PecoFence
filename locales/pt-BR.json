@@ -124,6 +124,7 @@
   "恢复快照前": "Antes de restaurar o instantâneo",
   "自动保存": "Salvo automaticamente",
   "删除栅栏前": "Antes de excluir o grupo",
+  "命令行操作前": "Antes de uma alteração pela linha de comando",
   "导出 PecoFence 配置": "Exportar configuração do PecoFence",
   "导入 PecoFence 配置": "Importar configuração do PecoFence",
   "JSON 文件 (*.json)": "Arquivos JSON (*.json)",

@@ -126,6 +126,7 @@
   "恢复快照前": "Before snapshot restore",
   "自动保存": "Saved automatically",
   "删除栅栏前": "Before fence delete",
+  "命令行操作前": "Before command-line change",
   "导入配置前": "Before import",
   "恢复备份前": "Before backup restore",
   "导出 PecoFence 配置": "Export PecoFence configuration",

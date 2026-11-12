@@ -1041,6 +1041,16 @@ mod ipc {
     }
 
     #[test]
+    fn the_page_names_the_command_lines_safety_snapshots() {
+        use super::super::settings::snapshot_label;
+        assert_eq!(
+            snapshot_label("auto-cli-2026-11-12 04:45:20"),
+            pecofence_core::i18n::text("命令行操作前")
+        );
+        assert_eq!(snapshot_label("我的布局"), "我的布局");
+    }
+
+    #[test]
     fn page_auto_snapshots_make_room_from_automatic_ones_only() {
         use super::super::settings::snapshot_room;
         let before_restore = pecofence_core::i18n::text("恢复快照前");
