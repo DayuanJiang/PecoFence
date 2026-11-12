@@ -234,6 +234,7 @@
 - Tabs at the left (「标签栏位置」 → 「左侧」): a column too short for its tabs scrolls. When the fence could not grow for the column (another fence right under it, or a fence made short by hand), the rows were squeezed without limit: seven tabs in a fence 150 px tall got rows of 13 px, the names ran into each other and the lines between them went through the text. The rows now stay at least 24 px tall, and a column that still cannot hold them scrolls just far enough to show the current tab whole, with the wheel, Ctrl+Tab and a click, as the tab strip at the top does.
 - The text of a note, a clock and a script fence gets the thin outline wherever the fence's title and item names get it: on a fully transparent fence, and on a Fluent fence over a wallpaper with light and dark parts. It had none, so a line could vanish where the wallpaper has the colour of the text.
 - Liquid Glass with 「更厚实」: the name of the current tab reads on its pill. In dark mode over a light wallpaper the plate is dark and the pill, whose lens shows the wallpaper through it, is light; the name was white as on the plate around it (2.2 : 1). It now takes the colour that suits the pill (7.5 : 1).
+- A rolled-up fence shows more of a long title. The count at its right (「3 项」) kept a box of 64 px for a text of 22 px, so the title ended 53 px before it. A left-aligned title now runs on to about 16 px before the count.
 
 ## 0.3.3
 

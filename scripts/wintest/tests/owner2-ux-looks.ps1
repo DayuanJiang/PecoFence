@@ -13,8 +13,11 @@
 #   G  Liquid Glass, dark mode, 不透明度 更厚实, a light wallpaper: the shown tab's caption reads
 #      on its pill. The pill's lens shows the light wallpaper through the dark veil, and the
 #      caption picked for the veil was white on it (2.0 : 1).
+#   C  a rolled fence with a long title: the title runs on to the count (「3 项」) and leaves
+#      about 16 px before it. It was cut 40 px earlier: the count kept a 64 px box for a text
+#      of 22 px.
 # Default: all.
-if (-not $Part) { $Part = 'TRHG' }
+if (-not $Part) { $Part = 'TRHGC' }
 trap { PfTrap $_; continue }
 
 Add-Type -ReferencedAssemblies System.Drawing @'
@@ -46,6 +49,27 @@ public static class UlInk {
     double rhi = Math.Max(rim, lum[plate]), rlo = Math.Min(rim, lum[plate]);
     return string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0:F2}|{1}|{2}|{3}|{4:F2}",
       (hi + 0.05) / (lo + 0.05), Rgb(px[plate]), Rgb(px[ink]), dark ? "dark" : "light", (rhi + 0.05) / (rlo + 0.05));
+  }
+  // A crop of one line of text in two parts (a title, then a count): the widest run of columns
+  // without ink between the first and the last column with ink. "gap|start of the gap|first|last".
+  public static string Gap(Bitmap b) {
+    var d = b.LockBits(new Rectangle(0, 0, b.Width, b.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+    var px = new int[b.Width * b.Height]; Marshal.Copy(d.Scan0, px, 0, px.Length); b.UnlockBits(d);
+    var lum = new double[px.Length];
+    for (int i = 0; i < px.Length; i++) lum[i] = Lum(px[i]);
+    var sorted = (double[])lum.Clone(); Array.Sort(sorted);
+    double med = sorted[sorted.Length / 2];
+    var ink = new bool[b.Width];
+    for (int x = 0; x < b.Width; x++)
+      for (int y = 0; y < b.Height; y++)
+        if (Math.Abs(lum[y * b.Width + x] - med) > 0.18) { ink[x] = true; break; }
+    int first = Array.IndexOf(ink, true), last = Array.LastIndexOf(ink, true), best = 0, at = -1, run = 0;
+    for (int x = first; x >= 0 && x <= last; x++) {
+      if (ink[x]) { run = 0; continue; }
+      run++;
+      if (run > best) { best = run; at = x - run + 1; }
+    }
+    return best + "|" + at + "|" + first + "|" + last;
   }
 }
 '@
@@ -197,6 +221,34 @@ if ($Part -match 'G') {
   Check 'G a resting tab keeps its light caption on the dark plate' ((-not $m2.Dark) -and $m2.Contrast -ge 2.6) "$($m2.Text)"
   foreach ($t in '工作', '学习', '娱乐与游戏') { Pf fence delete $t | Out-Null }
   Pf settings set themeStyle fluent | Out-Null
+  Start-Sleep -Milliseconds 800
+}
+
+if ($Part -match 'C') {
+  Case 'C: a rolled fence with a long title'
+  Pf settings set customTheme null | Out-Null
+  Pf settings set themeStyle fluent | Out-Null
+  Pf settings set theme light | Out-Null
+  UlWall 236 239 243 light
+  $long = '收起的栅栏 标题很长很长用来看省略号的位置'
+  Pf fence create --title $long --rect '920,520,340,160' | Out-Null
+  Pf item move @($UlFiles | ForEach-Object { Join-Path $PfDesk $_ }) --to $long | Out-Null
+  Pf fence roll $long | Out-Null
+  Start-Sleep -Seconds 2
+  UlPark
+  $w = (FenceGet $long).windowRect
+  # The title row from the title's start to just before the chevron: title, gap, count.
+  $b = Crop 'C-rolled-title' ($w.x + 12) ($w.y + 8) ($w.w - 12 - 40) 22
+  $g = [UlInk]::Gap($b) -split '\|'; $b.Dispose()
+  Shot 'C-rolled'
+  Check 'C the title ends 12 to 34 px before the count' ([int]$g[0] -ge 12 -and [int]$g[0] -le 34) "gap $($g[0]) px from x=$([int]$g[1] + 12) in a fence $($w.w) px wide (ink from $([int]$g[2] + 12) to $([int]$g[3] + 12))"
+  # A short title is untouched, and so is the count's place.
+  Pf fence rename $long 短标题 | Out-Null; Start-Sleep -Seconds 1
+  $b = Crop 'C-rolled-short' ($w.x + 12) ($w.y + 8) ($w.w - 12 - 40) 22
+  $g2 = [UlInk]::Gap($b) -split '\|'; $b.Dispose()
+  Check 'C the count stays where it was' ([int]$g2[3] -eq [int]$g[3]) "last ink at x=$([int]$g2[3] + 12) with the short title, x=$([int]$g[3] + 12) with the long one"
+  Pf item move @($UlFiles | ForEach-Object { Join-Path $PfDesk $_ }) --to 文档 | Out-Null
+  Pf fence delete 短标题 | Out-Null
   Start-Sleep -Milliseconds 800
 }
 

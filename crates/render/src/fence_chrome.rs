@@ -3035,8 +3035,22 @@ impl FenceChrome {
         // The title's ellipsis point moves with the caption fade instead of stepping when
         // the fade ends: the reserve is the caption's width scaled by its alpha (held at the
         // full width while rolling up, so the caption never fades in over the title).
+        // The count is right-aligned in its box (`ROLLED_COUNT_W`, room for 「128 items」). A
+        // left-aligned title runs on to 12 DIPs before the count's text: beside 「3 项」 it was
+        // cut 40 DIPs early. Centred and right-aligned titles keep the whole box, which the
+        // app places their glyphs with (`header_count_width`).
+        let count_room = match caption {
+            Some(text)
+                if count_w > 0.0
+                    && tabs.len() <= 1
+                    && matches!(style.title_align, pecofence_core::TitleAlign::Left) =>
+            {
+                (crate::text::measure_width(text, &self.count_format) + 4.0 + 12.0).min(count_w)
+            }
+            _ => count_w,
+        };
         let title_reserve = if caption.is_some() {
-            count_w * count_a.max(if rolled_up { 1.0 } else { 0.0 })
+            count_room * count_a.max(if rolled_up { 1.0 } else { 0.0 })
         } else {
             0.0
         };
