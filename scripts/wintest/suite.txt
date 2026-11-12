@@ -227,3 +227,7 @@ o5-fixes-a         4   ec2    release owner5-fixes-a.ps1
 o5-fixes-b         5   ec2    debug   owner5-fixes-b.ps1
 # 显示托盘图标 (GitHub #209, feedback #145): the switch, and what stays in reach without the icon.
 o6-tray            3   ec2    debug   owner6-tray.ps1
+# Liquid Glass over a live wallpaper whose picture cannot be read (feedback #134 and four more):
+# the see-through pane and the card, then the line on the settings page.
+o6-livewall        4   ec2    release owner6-livewall.ps1
+o6-livewall-page   3   ec2    debug   owner6-livewall.ps1            --var Part=P
