@@ -367,10 +367,11 @@ impl SettingsHost {
     pub fn show_frame(&self) {
         let hwnd = self.window.hwnd();
         window::show_normal(hwnd);
-        window::bring_to_front(hwnd);
+        // Also when the command line asked for it while another program is in front.
+        let front = window::claim_foreground(hwnd);
         paint::update_now(hwnd);
         let ms = self.opened.elapsed().as_millis() as u64;
-        tracing::info!(kind = ?self.kind, ms, "settings: window frame shown, the page follows");
+        tracing::info!(kind = ?self.kind, ms, front, "settings: window frame shown, the page follows");
     }
 
     /// Creates the WebView2 controller in the window and loads the page. Page messages are
