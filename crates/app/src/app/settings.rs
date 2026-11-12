@@ -1023,6 +1023,9 @@ impl App {
                             pecofence_core::i18n::text("恢复快照前"),
                         );
                         self.end_peek_now();
+                        // Files that came to the desktop after the snapshot are in none of
+                        // its fences: they are filed now, not at the next desktop change.
+                        self.sync_desktop_if_available("snapshot restored");
                         self.relayout_from_state();
                         // Portals restored with the snapshot need enumerating; stale
                         // runtime state of the replaced ones is pruned on the way.
