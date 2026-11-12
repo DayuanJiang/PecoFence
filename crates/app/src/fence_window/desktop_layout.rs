@@ -309,12 +309,21 @@ impl FenceViewState {
         } else {
             &shapes[..]
         };
-        let rect = RECT {
+        let mut rect = RECT {
             left: area.work.left,
             top: area.work.top,
             right: used.iter().map(|r| r.right).max()? + edge,
             bottom: used.iter().map(|r| r.bottom).max()? + edge,
         };
+        // Icons on their way and icons fading out are drawn outside the cells of the list (an
+        // icon that leaves the last column, say): the window reaches to them until they are
+        // at rest. It shrank to the cells at once, which cut such an icon off in one frame.
+        for r in self.desktop_motion_rects() {
+            let right = rect.left + ((r.x + r.w) * scale).ceil() as i32;
+            let bottom = rect.top + ((r.y + r.h) * scale).ceil() as i32;
+            rect.right = rect.right.max(right.min(area.work.right));
+            rect.bottom = rect.bottom.max(bottom.min(area.work.bottom));
+        }
         let slots: Vec<CellRect> = cells
             .iter()
             .map(|r| CellRect {
@@ -329,6 +338,74 @@ impl FenceViewState {
             || std::mem::take(&mut self.desktop_slots_moved);
         self.desktop_slots = slots;
         Some((rect, changed))
+    }
+
+    /// Each icon's cell as placed last, by id (empty for a normal fence).
+    pub(super) fn desktop_slots_by_id(&self) -> HashMap<ItemId, CellRect> {
+        if !self.bare() {
+            return HashMap::new();
+        }
+        self.items
+            .iter()
+            .zip(&self.desktop_slots)
+            .map(|(it, slot)| (it.id, *slot))
+            .collect()
+    }
+
+    /// 像桌面一样排列: the cells were placed again for icons that were here before (`before`
+    /// has their cells): a sort of the freely placed 「桌面」 lines them up, a fence came to
+    /// stand on some, the work area got smaller. Each icon whose cell moved glides there from
+    /// where it is drawn (250 ms point-to-point, as a sort inside a fence); they used to
+    /// stand in the new cells in the next frame. A list that changed has its glides already
+    /// (`replace_items` places the cells itself, so nothing moves here), and cells of another
+    /// size (an icon size step, another scale) snap. Returns whether any icon glides.
+    pub(super) fn glide_to_new_slots(&mut self, before: &HashMap<ItemId, CellRect>) -> bool {
+        if before.is_empty()
+            || !self.motion.enabled()
+            || self.rolled_up
+            || !desktop::is_visible(self.hwnd)
+        {
+            return false;
+        }
+        let now = Instant::now();
+        let mut gliding = 0usize;
+        for (it, c) in self.items.iter().zip(&self.desktop_slots) {
+            let Some(o) = before
+                .get(&it.id)
+                .filter(|_| !self.hand_moved.contains(&it.id))
+            else {
+                continue;
+            };
+            let same_size = (o.w - c.w).abs() < 0.5 && (o.h - c.h).abs() < 0.5;
+            let moved = (o.x - c.x).abs() > 0.5 || (o.y - c.y).abs() > 0.5;
+            if !same_size || !moved {
+                continue;
+            }
+            let prev = self.item_motion.get(&it.id);
+            let (fx, fy) = prev.map_or((o.x, o.y), |m| (m.x.value_at(now), m.y.value_at(now)));
+            let alpha = prev.map_or(Tween::at(1.0, now), |m| m.alpha);
+            let glide = |from: f32, to: f32| {
+                self.motion
+                    .tween(from, to, motion::NORMAL, Curve::PointToPoint, now)
+            };
+            let m = super::items::ItemMotion {
+                x: glide(fx, c.x),
+                y: glide(fy, c.y),
+                alpha,
+            };
+            self.item_motion.insert(it.id, m);
+            gliding += 1;
+        }
+        if gliding > 0 {
+            tracing::debug!(
+                fence = %self.fence_id,
+                gliding,
+                items = self.items.len(),
+                "desktop cells placed again: icons glide to their new cells"
+            );
+            self.frames.request();
+        }
+        gliding > 0
     }
 
     /// 自由摆放: the cells (screen px) of the items from their saved cells, plus one free cell
@@ -583,13 +660,19 @@ impl FenceViewState {
     }
 
     /// The window's shape (window px): the icon cells, plus room under the selected icon for
-    /// its full name; clicks anywhere else reach the desktop.
+    /// its full name; clicks anywhere else reach the desktop. While icons move or leave, the
+    /// shape also holds what is drawn outside the cells: the way of each icon that glides to
+    /// its cell (from where it is drawn now), and the place of each icon that fades out. The
+    /// shape used to be the new cells alone, so a loose icon that left was cut off in one
+    /// frame and an icon on its way showed only where it crossed a cell.
+    /// `prune_content_motion` asks for the shape again when they have come to rest.
     fn desktop_shape(&self) -> Vec<RECT> {
         let scale = self.scale();
         let px = |v: f32| (v * scale).round() as i32;
         let unfolded = self.desktop_unfolded();
         let line_h = self.grid_metrics().line_h;
-        self.desktop_slots
+        let mut shape: Vec<RECT> = self
+            .desktop_slots
             .iter()
             .take(self.items.len())
             .enumerate()
@@ -605,7 +688,42 @@ impl FenceViewState {
                     bottom: px(c.y + c.h) + room,
                 }
             })
-            .collect()
+            .collect();
+        shape.extend(self.desktop_motion_rects().iter().map(|r| RECT {
+            left: px(r.x),
+            top: px(r.y),
+            right: px(r.x + r.w),
+            bottom: px(r.y + r.h),
+        }));
+        shape
+    }
+
+    /// What is drawn outside the cells while icons move or leave (content DIPs): the way of
+    /// each icon that glides, from where its glide began to its cell, and the place of each
+    /// icon that fades out. The window and its shape hold them until the icons are at rest.
+    fn desktop_motion_rects(&self) -> Vec<CellRect> {
+        let m = self.grid_metrics();
+        let mut out: Vec<CellRect> = self
+            .item_motion
+            .values()
+            .map(|t| {
+                let (x0, x1) = (t.x.origin(), t.x.target());
+                let (y0, y1) = (t.y.origin(), t.y.target());
+                CellRect {
+                    x: x0.min(x1),
+                    y: y0.min(y1),
+                    w: (x0 - x1).abs() + m.cell_w,
+                    h: (y0 - y1).abs() + m.cell_h,
+                }
+            })
+            .collect();
+        out.extend(self.leaving.iter().map(|l| CellRect {
+            x: l.x,
+            y: l.y,
+            w: l.w,
+            h: l.h,
+        }));
+        out
     }
 
     /// Gives the window its shape when the cells or the selected icon changed (`force`: the

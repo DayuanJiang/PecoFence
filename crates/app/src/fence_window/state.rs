@@ -298,6 +298,9 @@ pub struct FenceViewState {
     /// The pointer is over that row.
     pub(super) empty_action_hover: bool,
     pub(super) title_count: Option<String>,
+    /// What the count capsule's infotip says (`FenceWindow::set_count_tip`): a count with a
+    /// "+" shows the newest files only, and this says of how many. None: no infotip.
+    pub(super) count_tip: Option<String>,
     /// 筛选: the fence is filtered right now (Esc clears it).
     pub(super) filter_active: bool,
     /// 筛选: the tag of a filtered single title once its box closed: the type (「类型：PDF」, or
@@ -442,6 +445,10 @@ pub struct FenceViewState {
     /// pointer. A tip that a click, a key or the wheel hid comes back only when the pointer
     /// really moves.
     pub(super) tip_move_at: Option<(i32, i32)>,
+    /// 自由摆放: the icons the user is moving by hand right now. The placing of their new
+    /// cells leaves them out of its glide (`glide_to_new_slots`): they arrive from where they
+    /// were let go (`land_moved_icons`), not from their old cells.
+    pub(super) hand_moved: Vec<ItemId>,
     /// Items on the clipboard via 剪切 (drawn at half alpha like Explorer).
     pub(super) cut: HashSet<ItemId>,
     /// Ctrl+wheel accumulator (touchpads deliver fractional notches).
@@ -575,6 +582,10 @@ pub struct FenceViewState {
     /// and the shadow follow them (`sync_plate_shape`).
     pub(super) plate_inset_px: i32,
     pub(super) plate_alpha: f32,
+    /// The window's top edge lies on the top edge of its monitor's work area (docked to the
+    /// top, or dragged there): the top corners of the plate and of its shadow are square
+    /// there and round again when the fence leaves (`sync_edge_top`).
+    pub(super) edge_top: bool,
     /// Temporarily expanded by hovering a rolled fence (state stays "rolled" for persistence).
     pub(super) peeking: bool,
     /// A hover peek (or a file drag) opened it and raised it above the other fences

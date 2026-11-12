@@ -160,8 +160,21 @@ impl App {
             a.reanchor("windows resynced");
         }
         let mut shown = false;
-        for w in self.fences.values() {
+        for (id, w) in &self.fences {
             if !before.contains(&w.hwnd()) {
+                // The fences are hidden (a double-click on the desktop, 「隐藏所有栅栏」,
+                // 「临时显示 Windows 桌面」): a window that comes meanwhile waits with them. It
+                // used to show alone (a fence with 「为空时自动隐藏」 that got a file, say). A
+                // fence the user makes shows them all (`show_new_fence`).
+                let held = self
+                    .anchor
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|a| a.quick_hides(w.hwnd(), self.windows_desktop));
+                if held {
+                    tracing::debug!(fence = %id, "new window while the fences are hidden: it stays hidden with them");
+                    continue;
+                }
                 w.show(true);
                 shown = true;
             }
@@ -173,6 +186,25 @@ impl App {
         // 「桌面」 fence may use.
         self.arrange_desktop_fence();
         self.push_settings_state();
+    }
+
+    /// Shows a fence the user just made (tray menu, a box drawn on the desktop, the command
+    /// line, a new note, tool, folder or smart fence). When the fences are hidden, they all
+    /// come back with it: the new one used to show alone, with the tray menu still offering
+    /// 「显示所有栅栏」.
+    pub(super) fn show_new_fence(&mut self, id: FenceId) {
+        let hidden = self
+            .anchor
+            .borrow()
+            .as_ref()
+            .is_some_and(|a| a.fences_hidden());
+        if let Some(w) = self.fences.get(&id) {
+            w.show(true);
+        }
+        if hidden {
+            tracing::info!(fence = %id, "a fence was made while the fences were hidden: they all show again");
+            self.toggle_all_fences("a fence was made");
+        }
     }
 
     pub(super) fn refresh_fence(&mut self, id: FenceId) {
@@ -720,8 +752,25 @@ impl App {
             return;
         }
         self.end_peek_now();
+        self.end_rename_before_hide(reason);
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.toggle_fences_hidden_by(reason);
+        }
+    }
+
+    /// The fences are about to hide by a menu, a shortcut or the command line (no click took
+    /// the keyboard away): an open name box of an icon or a fence ends first and keeps what
+    /// was typed, as a click elsewhere ends it. The box stayed alone on the wallpaper where
+    /// the icon had been, and Enter there still renamed the file.
+    pub(super) fn end_rename_before_hide(&mut self, reason: &'static str) {
+        let hidden = self
+            .anchor
+            .borrow()
+            .as_ref()
+            .is_some_and(|a| a.fences_hidden());
+        if !hidden && crate::rename::active_target().is_some() {
+            tracing::debug!(reason, "the fences hide: the open name box ends first");
+            crate::rename::end_active(true);
         }
     }
 
@@ -1015,9 +1064,7 @@ impl App {
         }
         let id = self.state.new_fence(title, rect)?;
         self.resync_windows();
-        if let Some(w) = self.fences.get(&id) {
-            w.show(true);
-        }
+        self.show_new_fence(id);
         self.schedule_save();
         Some(id)
     }
@@ -1035,7 +1082,7 @@ impl App {
             if !after_fade {
                 self.begin_rename(id);
             }
-            self.offer_roll_tip();
+            self.offer_roll_tip_after_name(after_fade);
         }
     }
 
@@ -1050,6 +1097,7 @@ impl App {
         if seen {
             self.begin_rename(fence);
         }
+        self.roll_tip_after_fade();
     }
 
     /// False (with a tray notice) when the layout already holds `MAX_FENCES`.
@@ -1140,6 +1188,7 @@ impl App {
         }
         // Where its window is, before the window goes (a tab's window stays).
         let gone = self.window_for(fence).map(|w| w.rect());
+        self.note_icons_return_to_desktop(fence);
         let Some(deleted) = self.state.delete_fence_keeping(fence) else {
             return;
         };
@@ -1208,9 +1257,52 @@ impl App {
 
     /// Deletes a fence (or a tab); a deleted host's next tab takes its place and keeps the rest.
     pub(super) fn delete_fence(&mut self, fence: FenceId) {
+        self.note_icons_return_to_desktop(fence);
         if self.state.delete_fence(fence) {
             self.after_fence_deleted(fence);
         }
+    }
+
+    /// `fence` is about to be deleted and its icons go back to 「桌面」. Arranged like the
+    /// desktop, 「桌面」 lets them arrive from where they stood in the fence, as an icon dropped
+    /// on the desktop arrives from the pointer (`FenceWindow::note_desktop_landing`). They
+    /// used to fade in at their places while the fence faded out somewhere else, and nothing
+    /// on screen said that these were the fence's icons. An icon that is not in view in the
+    /// fence (scrolled away, rolled up, another tab) starts from the middle of its window.
+    fn note_icons_return_to_desktop(&self, fence: FenceId) {
+        let (Some(f), Some(inbox)) = (self.state.fence(fence), self.state.inbox_id()) else {
+            return;
+        };
+        let (Some(from), Some(to)) = (self.window_for(fence), self.fences.get(&inbox)) else {
+            return;
+        };
+        if fence == inbox || !f.holds_items() || f.items.is_empty() || !to.is_desktop_arranged() {
+            return;
+        }
+        let r = from.rect();
+        let middle = ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+        // The middle of an icon's cell is about 12 px above its name.
+        let centres: Vec<(ItemId, (i32, i32))> = f
+            .items
+            .iter()
+            .map(|rec| {
+                let at = from
+                    .item_label_rect(rec.item_id)
+                    .filter(|l| l.left >= r.left && l.right <= r.right)
+                    .filter(|l| l.top >= r.top && l.bottom <= r.bottom)
+                    .map_or(middle, |l| ((l.left + l.right) / 2, l.top - 12));
+                (rec.item_id, at)
+            })
+            .collect();
+        tracing::debug!(
+            %fence,
+            icons = centres.len(),
+            "fence deleted: its icons arrive at the desktop from where they stood"
+        );
+        to.note_desktop_landing(&crate::commands::DesktopDrop {
+            cursor: middle,
+            centres,
+        });
     }
 
     fn after_fence_deleted(&mut self, fence: FenceId) {

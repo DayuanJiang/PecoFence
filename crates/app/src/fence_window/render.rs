@@ -460,7 +460,18 @@ impl FenceViewState {
             tracing::debug!("layout motion ended: hover refresh requested");
             self.request_hover_refresh();
         }
+        let leaving = !self.leaving.is_empty();
         self.leaving.retain(|l| !l.alpha.is_done(now));
+        if self.bare()
+            && ((sliding && self.item_motion.is_empty()) || (leaving && self.leaving.is_empty()))
+        {
+            // 像桌面一样排列: the window's shape held the way of the gliding icons and the
+            // places of the leaving ones (`desktop_shape`); now it is the cells again.
+            tracing::debug!("desktop icons at rest: the window takes the shape of its cells");
+            self.sync_desktop_shape(true);
+            // And its size, which reached to them (`arrange_desktop`).
+            self.queue.push(Command::DesktopIconsAtRest);
+        }
         for item in &mut self.items {
             if item.icon_fade.is_some_and(|t| t.is_done(now)) {
                 item.icon_fade = None;
@@ -647,6 +658,7 @@ impl FenceViewState {
             merge_hint: self.merge_t.value_at(now),
             plate_top,
             plate_clear,
+            edge_top: self.edge_top && !self.theme.liquid_glass,
             swap: f.value(&ChromeKey::TitleSwap, now),
             strip_clip: self.tab_strip_clip(),
             lock,
@@ -1029,14 +1041,56 @@ impl FenceViewState {
     /// starts at the plate top: a title row folded away by title on hover is cut off too.
     pub(super) fn update_shape_clip(&self, w: i32, h: i32) -> Result<()> {
         let inset = self.plate_inset_px.clamp(0, (h - 1).max(0));
+        // Square top corners at the screen edge: the rounded clip starts above the window.
+        let up = self.square_top_px();
         self.motion.clip_rounded_at(
             &self.root,
-            inset as f32,
+            (inset - up) as f32,
             w as f32,
-            (h - inset) as f32,
+            (h - inset + up) as f32,
             self.theme.corner_radius * self.scale(),
         )?;
         Ok(())
+    }
+
+    /// How far above the plate its rounded shape starts, in px: the corner radius while the
+    /// plate's top edge lies on the screen edge (square top corners), else 0. Liquid Glass
+    /// keeps its round corners: its lens and bezel are one rounded shape.
+    pub(super) fn square_top_px(&self) -> i32 {
+        if self.edge_top && self.plate_inset_px == 0 && !self.theme.liquid_glass {
+            (self.theme.corner_radius * self.scale()).ceil() as i32
+        } else {
+            0
+        }
+    }
+
+    /// Is the window's top edge on the top edge of its monitor's work area?
+    fn at_edge_top(&self) -> bool {
+        let r = self.behavior.frame_rect(self.hwnd);
+        monitors::query(monitors::monitor_from_point((r.left + r.right) / 2, r.top))
+            .is_some_and(|m| r.top <= m.work_area.top)
+    }
+
+    /// Before a draw for a new size: notes whether the top edge lies on the screen edge.
+    pub(super) fn note_edge_top(&mut self) {
+        self.edge_top = self.at_edge_top();
+    }
+
+    /// After a move: a fence that reached the top edge of the screen gets square top corners
+    /// (plate, rim and shadow), one that left it its round ones.
+    pub(super) fn sync_edge_top(&mut self) {
+        let at_edge = self.at_edge_top();
+        if at_edge == self.edge_top {
+            return;
+        }
+        self.edge_top = at_edge;
+        tracing::debug!(fence = %self.fence_id, at_edge, "top corners follow the screen edge");
+        let (w, h) = self.chrome_panel.size_px();
+        if let Err(error) = self.update_shape_clip(w, h) {
+            tracing::warn!(%error, "plate clip update failed");
+        }
+        let _ = self.redraw_chrome_only();
+        self.update_shadow_now();
     }
 
     /// `label_w` is the width the label must fit: the cell width less the room beside the name

@@ -223,9 +223,7 @@ impl App {
             .unwrap_or_else(|| pecofence_core::i18n::text("智能栅栏").to_string());
         let id = self.state.new_smart_fence(&title, rect, spec)?;
         self.resync_windows();
-        if let Some(w) = self.fences.get(&id) {
-            w.show(true);
-        }
+        self.show_new_fence(id);
         self.ensure_smart_watchers();
         self.run_smart(id, "created");
         self.schedule_save();
@@ -869,6 +867,26 @@ impl App {
         }
     }
 
+    /// The pointer came onto `fence`. A searched folder that was renamed or moved away keeps
+    /// its watcher running (the handle follows the folder) and the watcher reports nothing of
+    /// it, so a smart fence showed the files of a folder no longer at its path until the
+    /// once-a-minute search (a double-click on one failed). Looked at now, as a folder fence
+    /// is (`portal_pointer_in`): the search runs again at once. One file-system call per
+    /// searched folder on a fixed drive.
+    pub(super) fn smart_pointer_in(&mut self, fence: FenceId) {
+        let moved = self.smart.watchers.iter().any(|((id, dir), (_, w))| {
+            *id == fence && shell::is_on_fixed_drive(dir) && !w.still_at(dir)
+        });
+        if !moved {
+            return;
+        }
+        tracing::info!(%fence, "smart fence: a searched folder is no longer at its path; noticed as the pointer came onto it");
+        self.smart
+            .watchers
+            .retain(|(id, dir), (_, w)| *id != fence || w.still_at(dir));
+        self.run_smart(fence, "a searched folder is no longer at its path");
+    }
+
     /// A watcher batch named `dirs` (`all`: it overflowed): the smart fences with a folder that
     /// holds one of them run again shortly.
     pub(super) fn smart_folders_changed(&mut self, dirs: &[PathBuf], all: bool) {
@@ -1191,6 +1209,22 @@ impl App {
         }
     }
 
+    /// What the infotip of smart fence `f`'s count says when the count ends with a "+": how
+    /// many files the fence shows (the newest, up to its limit) and how many the search found.
+    /// None when the fence shows all it found, is filtered, or is no smart fence.
+    pub(super) fn smart_count_tip(&self, f: &pecofence_core::Fence) -> Option<String> {
+        let spec = f.smart.as_ref()?;
+        let run = self.smart.runs.get(&f.id)?;
+        let found =
+            matches!(run.source, SmartSource::Everything | SmartSource::Folder) && !run.missing;
+        (found && run.total > spec.limit && self.fence_filter(f.id).is_none()).then(|| {
+            pecofence_core::i18n::format(
+                "显示最新的 {0} 个，共找到 {1} 个",
+                &[self.item_views(f).len().to_string(), run.total.to_string()],
+            )
+        })
+    }
+
     /// Smart fence `id`'s empty-state text, the label of the row under it that starts or
     /// installs Everything (only while the fence waits for Everything) and the count after
     /// its name: the files it shows (after a filter), with a "+" when the limit cut the
@@ -1216,12 +1250,12 @@ impl App {
         let empty = Some(match source {
             SmartSource::Waiting => pecofence_core::i18n::text("正在搜索…"),
             // A folder search waits for Everything only for its Everything syntax.
-            SmartSource::NeedsEverything if !spec.folders.is_empty() => pecofence_core::i18n::text(
-                "这个栅栏用了 Everything 语法，需要先打开 Everything：右键这个栅栏可以启动或安装它。",
-            ),
-            SmartSource::NeedsEverything => pecofence_core::i18n::text(
-                "要搜索整台电脑，需要先打开 Everything：右键这个栅栏可以启动或安装它。",
-            ),
+            SmartSource::NeedsEverything if !spec.folders.is_empty() => {
+                pecofence_core::i18n::text("这个栅栏用了 Everything 语法，需要先打开 Everything。")
+            }
+            SmartSource::NeedsEverything => {
+                pecofence_core::i18n::text("要搜索整台电脑，需要先打开 Everything。")
+            }
             // What a folder fence says when its folder is gone.
             SmartSource::Everything | SmartSource::Folder if run.is_some_and(|r| r.missing) => {
                 pecofence_core::i18n::text("找不到此文件夹。")

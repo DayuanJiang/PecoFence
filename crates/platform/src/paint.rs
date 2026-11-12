@@ -254,3 +254,12 @@ pub fn invalidate(hwnd: HWND) {
         let _ = InvalidateRect(Some(hwnd), None, true);
     }
 }
+
+/// Repaints what was invalidated before this returns (`WM_PAINT` is sent, not queued).
+pub fn update_now(hwnd: HWND) {
+    windows_core::link!("user32.dll" "system" fn UpdateWindow(hwnd: HWND) -> windows_core::BOOL);
+    // SAFETY: plain FFI call; the window's paint handler runs inside it.
+    unsafe {
+        let _ = UpdateWindow(hwnd);
+    }
+}

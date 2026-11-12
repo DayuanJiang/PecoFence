@@ -266,15 +266,10 @@ impl FenceViewState {
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
     }
 
-    /// Is the single title drawn cut short (it ends in an ellipsis)? Its infotip then shows the
-    /// whole title, as a cut tab caption's does. Never for a tab strip, a left tab column (the
-    /// tabs have their own infotips) or the desktop fence without a title row.
-    pub(super) fn lone_title_cut(&self) -> bool {
-        if self.title_row_strip() || self.tabs_on_rail() || self.bare() {
-            return false;
-        }
+    /// The row a single title is laid out in, as drawn (see `desktop_glyph_at`): its width in
+    /// DIPs and the rolled count's room at the right.
+    fn lone_title_row(&self) -> (f32, f32) {
         let width = self.chrome_panel.size_px().0 as f32 / self.scale();
-        // As drawn (see `desktop_glyph_at`): the rolled count's room at the right.
         let reserve = if self.roll_target()
             && !self.behavior.hide_count_and_chevron.get()
             && self.title_count.is_none()
@@ -289,6 +284,35 @@ impl FenceViewState {
         } else {
             0.0
         };
+        (width, reserve)
+    }
+
+    /// A centred or right-aligned single title as drawn (DIPs): where its text starts and
+    /// ends, and the room it is aligned in. Its name box takes that room.
+    pub(super) fn lone_title_text_span(&self) -> (f32, f32, (f32, f32)) {
+        let (width, reserve) = self.lone_title_row();
+        let deco = self.laid_deco();
+        let (x, w, room_w) = self.chrome.lone_title_text_span(
+            &self.title,
+            self.title_count.as_deref(),
+            self.filter_tag_ref(),
+            self.style.title_size,
+            self.behavior.title_align.get(),
+            width,
+            deco,
+            reserve,
+        );
+        (x, x + w, (deco.title_x(), deco.title_x() + room_w))
+    }
+
+    /// Is the single title drawn cut short (it ends in an ellipsis)? Its infotip then shows the
+    /// whole title, as a cut tab caption's does. Never for a tab strip, a left tab column (the
+    /// tabs have their own infotips) or the desktop fence without a title row.
+    pub(super) fn lone_title_cut(&self) -> bool {
+        if self.title_row_strip() || self.tabs_on_rail() || self.bare() {
+            return false;
+        }
+        let (width, reserve) = self.lone_title_row();
         self.chrome.lone_title_cut(
             &self.title,
             self.title_count.as_deref(),
@@ -447,6 +471,24 @@ impl FenceViewState {
         } else {
             TitleDeco::lock_box(w_px as f32 / scale, self.theme.title_height)
         };
+        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
+        x >= r.left && x < r.right && y >= r.top && y < r.bottom
+    }
+
+    /// Is the client-pixel point on the count capsule of a smart fence's single title, as drawn
+    /// (its infotip says of how many files the fence shows the newest)?
+    pub(super) fn count_capsule_at(&self, x_px: i32, y_px: i32) -> bool {
+        let Some(count) = self.title_count.as_deref() else {
+            return false;
+        };
+        if self.title_row_strip() || self.tabs_on_rail() || self.bare() || self.column_collapsed {
+            return false;
+        }
+        let scale = self.scale();
+        let width = self.chrome_panel.size_px().0 as f32 / scale - self.laid_deco().lock_w();
+        let r = self
+            .chrome
+            .count_capsule_box(count, width, self.theme.title_height);
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
     }

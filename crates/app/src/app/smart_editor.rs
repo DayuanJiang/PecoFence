@@ -161,6 +161,7 @@ impl App {
                     tracing::info!(ms, "smart fence editor: page drawn, window shown");
                 }
             }
+            Some("modeDrawn") => ed.host.theme_drawn(),
             Some("editorDirty") => {
                 ed.dirty = v.get("dirty").and_then(|d| d.as_bool()).unwrap_or(false);
                 tracing::debug!(dirty = ed.dirty, "smart fence editor: unsaved changes");

@@ -143,8 +143,8 @@ pub enum Command {
     PortalForward(FenceId),
     /// A click on a folder fence's title glyph at its root folder: Explorer opens the folder.
     OpenPortalFolder(FenceId),
-    /// The pointer came onto a fence that shows a folder: a folder that was renamed or deleted
-    /// since is noticed now, before a click on one of its icons.
+    /// The pointer came onto a fence: a folder it shows, or a folder a smart fence searches,
+    /// that was renamed or deleted since is noticed now, before a click on one of its icons.
     PortalPointerIn(FenceId),
     /// Tab / Shift+Tab in fence window `from`: the keyboard moves to the next / previous
     /// fence in reading order. A null `from` is the Peek's first Tab or arrow key, which no
@@ -208,6 +208,9 @@ pub enum Command {
     DesktopCellsPlaced {
         fence: FenceId,
     },
+    /// 像桌面一样排列: the icons of 「桌面」 that glided or faded out are at rest; its window,
+    /// which reached to them meanwhile, fits its cells again.
+    DesktopIconsAtRest,
     /// Files dropped from Explorer onto a fence with the effect the drop reported (Explorer's
     /// modifier table: Ctrl copy, Alt / Ctrl+Shift shortcut, otherwise move).
     ExternalDrop {

@@ -1480,6 +1480,12 @@ impl DesktopAnchor {
         true
     }
 
+    /// The fences the running Peek made visible although they are hidden (隐藏所有栅栏): they
+    /// are hidden again when it ends.
+    pub fn peek_shown_fences(&self) -> Vec<HWND> {
+        self.peek_shown.clone()
+    }
+
     /// Peek (Fences Win+Space): float every fence into the topmost band above `over` (the
     /// dimmer windows, if any) and pause anchoring; `false` restores the desktop z-band.
     pub fn set_peek(&mut self, on: bool, over: &[HWND]) {

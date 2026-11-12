@@ -1,6 +1,7 @@
 // 5.1 布局快照和备份: tray → 设置… → 布局与备份, name and save a snapshot, drag two fences
 // elsewhere (snapping as snap.rs does), then 恢复: the fences jump back (relayout_from_state sets
-// the saved bounds directly) and the list gains the automatic 「恢复快照前」 snapshot. 「桌面」 is
+// the saved bounds directly), the page's notice 「已恢复快照」 offers 撤销 for 6 s, and the list
+// gains the automatic 「恢复快照前」 snapshot, marked 「自动保存」 after its date and count. 「桌面」 is
 // as a new installation shows it: loose icons from the top-left corner, no fence around them
 // (snapping and guides leave it out).
 (() => {
@@ -119,13 +120,23 @@
         r.empty = SM.card(pg, { s: '尚无快照', h: 34, indent: 22, textW: 200 });
         r.empty.s.style.top = '10px';
         const now = SM.dateTime(NOW, new Date(2026, 9, 6, 10, 24));
-        const snapRow = (name, gap) => {
-            const b = SM.card(pg, { t: name, s: `${now} · ${T('{0} 个栅栏').replace('{0}', '3')}`, h: 40, indent: 22, textW: 140, gap });
+        // a snapshot the app saved by itself says so after its date and count (「… · 自动保存」);
+        // this narrow window has no room for it there, so it stands on the line below, where
+        // the page's own row would wrap
+        const snapRow = (name, gap, auto) => {
+            const b = SM.card(pg, { t: name, s: `${now} · ${T('{0} 个栅栏').replace('{0}', '3')}`, h: auto ? 52 : 40, indent: 22, textW: 140, gap });
+            if (auto) {
+                const lines = [b.s.textContent, T('自动保存')];
+                b.s.textContent = '';
+                for (const l of lines) Object.assign(el('div', null, b.s, l).style, { position: 'static', overflow: 'hidden', textOverflow: 'ellipsis' });
+                b.t.style.top = '6px';
+                b.s.style.top = '21px';
+            }
             b.restore = SM.button(b, '恢复', 46, { right: 36 });
             b.del = SM.iconButton(b, 'del', { right: 10 });
             return b;
         };
-        r.before = snapRow(T('恢复快照前'), 1);
+        r.before = snapRow(T('恢复快照前'), 1, true);
         r.before.n.style.borderRadius = '0';
         r.saved = snapRow('整理好了', 3);
         [r.empty, r.saved].forEach(b => { b.n.style.borderRadius = '0 0 4px 4px'; });
@@ -242,7 +253,8 @@
         SM.drawInput(r.name, s.name, s.focus, t);
         SM.drawButton(r.save, p, t >= SAVE_AT - .08 && t < SAVE_AT + .02);
         for (const b of [r.saved, r.before]) SM.drawButton(b.restore, p, b === r.saved && t >= RESTORE_AT - .08 && t < RESTORE_AT + .02);
-        SM.drawToast(r.w, t, [[SAVE_AT + .05, T('已保存快照'), TOAST], [RESTORE_AT + .05, T('已恢复快照'), TOAST]]);
+        // the notice of a restore has 撤销 and stays 6 s
+        SM.drawToast(r.w, t, [[SAVE_AT + .05, T('已保存快照'), TOAST], [RESTORE_AT + .05, T('已恢复快照'), 6, T('撤销')]]);
 
         drawPointer(r.ptr, t, p, { clicks: CLICKS, presses: PRESSES, chips: CHIPS, at });
     }

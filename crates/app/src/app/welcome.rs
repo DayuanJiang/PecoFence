@@ -11,7 +11,8 @@
 //!   would help right then: 收起 once the user's new fence makes four fences besides 「桌面」;
 //!   在桌面显示此文件夹 when a folder in a fence is opened for the third time; a rule after
 //!   three files of one extension were dragged into one fence in a run. A card that cannot show
-//!   (another card is up) waits for the next such moment.
+//!   (another card is up) waits for the next such moment; the two offers take the place of the
+//!   收起 card, and that card waits until the name box of the fence just made has closed.
 //!
 //! None of them shows under a test script or `--exit-after`. What was shown is kept in
 //! `notices.json` beside config.json.
@@ -96,6 +97,18 @@ pub(super) enum Welcome {
         fence: String,
         already: bool,
     },
+}
+
+/// What the roll-up tip waits for after a fence was made with its name box
+/// (`App::roll_tip_waits`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum RollTipWait {
+    #[default]
+    No,
+    /// The fence fades in; its name box opens after that.
+    Fade,
+    /// The name box is open.
+    NameBox,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -417,6 +430,26 @@ impl App {
         }
     }
 
+    /// The display language changed: the card on screen takes its texts again. It stayed in
+    /// the old language (an English tip under fences named in Chinese) until its button was
+    /// pressed. A card with two buttons keeps its texts: `set_content` knows one button.
+    pub(super) fn retext_welcome_card(&mut self) {
+        let Some((notice, which)) = self.welcome.as_ref() else {
+            return;
+        };
+        if matches!(which, Welcome::FolderTip { .. } | Welcome::RuleTip { .. }) {
+            return;
+        }
+        let Some((title, body, action)) = self.welcome_texts(which) else {
+            return;
+        };
+        let taken = notice
+            .set_content(&title, &body, action, crate::notice::locale())
+            .map_err(|error| tracing::warn!(%error, "card did not take the new language"))
+            .is_ok();
+        tracing::info!(notice = %welcome_kind(which), taken, "card on screen in the new language");
+    }
+
     pub(super) fn show_welcome(&mut self, which: Welcome) {
         use pecofence_core::i18n::text;
         let Some((title, body, action)) = self.welcome_texts(&which) else {
@@ -514,8 +547,20 @@ impl App {
     }
 
     /// 功能提示 may show a card now: switched on, not a test run, no other card on screen.
-    fn feature_tip_allowed(&self, what: &'static str) -> bool {
+    /// An offer for what the user just did (the rule, the folder) takes the place of the
+    /// roll-up tip, which only informs: the offer's moment may not come again (three files of
+    /// one kind are dragged into a new fence right after it was made, while its tip is up).
+    fn feature_tip_allowed(&mut self, what: &'static str) -> bool {
         let on = self.state.config.settings.feature_tips;
+        if what != "roll"
+            && self.notices
+            && on
+            && matches!(self.welcome, Some((_, Welcome::RollTip)))
+            && let Some((notice, _)) = self.welcome.take()
+        {
+            tracing::info!(what, "feature tip takes the place of the roll-up tip");
+            notice.leave();
+        }
         let other_card = self.notice_showing();
         let allowed = self.notices && on && !other_card;
         tracing::info!(
@@ -527,6 +572,49 @@ impl App {
             "feature tip due"
         );
         allowed
+    }
+
+    /// After a fence was made with its name box (`create_fence_with_rename`): the roll-up tip
+    /// comes when the name has been typed. A card that came up beside the box the moment the
+    /// fence appeared took the eye off the name. `after_fade`: the box opens once the fence
+    /// has faded in.
+    pub(super) fn offer_roll_tip_after_name(&mut self, after_fade: bool) {
+        self.roll_tip_waits = if after_fade {
+            RollTipWait::Fade
+        } else if crate::rename::active_target().is_some() {
+            RollTipWait::NameBox
+        } else {
+            RollTipWait::No
+        };
+        tracing::debug!(waits = ?self.roll_tip_waits, "roll tip after a new fence");
+        if self.roll_tip_waits == RollTipWait::No {
+            self.offer_roll_tip();
+        }
+    }
+
+    /// The new fence has faded in and its name box is open, or it got none (see
+    /// `begin_rename_after_fade`): the roll-up tip goes on waiting for the box, or shows.
+    pub(super) fn roll_tip_after_fade(&mut self) {
+        if self.roll_tip_waits != RollTipWait::Fade {
+            return;
+        }
+        if crate::rename::active_target().is_some() {
+            self.roll_tip_waits = RollTipWait::NameBox;
+        } else {
+            self.roll_tip_waits = RollTipWait::No;
+            tracing::debug!("roll tip: the new fence got no name box");
+            self.offer_roll_tip();
+        }
+    }
+
+    /// A name box may have closed (`Command::RenameFence`, or `Command::RedrawAll` for Esc):
+    /// the roll-up tip that waited for it shows.
+    pub(super) fn roll_tip_after_name_box(&mut self) {
+        if self.roll_tip_waits == RollTipWait::NameBox && crate::rename::active_target().is_none() {
+            self.roll_tip_waits = RollTipWait::No;
+            tracing::debug!("roll tip: the name box of the new fence closed");
+            self.offer_roll_tip();
+        }
     }
 
     /// After the user made a fence: the roll-up tip once there are [`ROLL_TIP_FENCES`].

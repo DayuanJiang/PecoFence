@@ -5,6 +5,15 @@ use super::*;
 use pecofence_core::hotkey::{FALLBACKS, PRESETS, Problem};
 
 /// The reasons `end_peek` gets when the keyboard or the foreground left the Peek's windows.
+/// The reasons of `end_peek` with which the user closed the Peek and opened nothing: the
+/// keyboard goes back to the desktop or the fence that had it when the Peek opened.
+const PEEK_CLOSED_BY_USER: [&str; 5] = [
+    "Esc pressed",
+    "Esc pressed in the search box",
+    "Ctrl pressed twice",
+    "hotkey or tray menu",
+    "dimmer clicked",
+];
 const PEEK_FOCUS_LOST: [&str; 3] = [
     "another window came to the front",
     "dimmer lost the focus",
@@ -331,6 +340,7 @@ impl App {
                 // that were fading out fade back in on the next frame (any still held first
                 // come over their window then).
                 p.reopen(now);
+                self.peek_from = self.peek_back.take();
                 self.peek_raise_in = Some(0);
                 window::set_timer(self.control.hwnd(), TIMER_PEEK_RAISE, PEEK_RAISE_LIMIT_MS);
                 self.ctx.frames.request();
@@ -343,6 +353,17 @@ impl App {
             return;
         }
         self.note_search_dialog();
+        // The desktop or a fence has the keyboard now: it gets it back when the user closes
+        // the Peek (`end_peek`).
+        let front = desktop::foreground_window();
+        let ours = self.fences.values().any(|w| w.hwnd() == front)
+            || self
+                .anchor
+                .borrow()
+                .as_ref()
+                .is_some_and(|a| a.is_desktop_window(front));
+        self.peek_from = ours.then_some(front);
+        self.peek_back = None;
         let dim = self.state.config.settings.peek.dim;
         let overlay = match PeekOverlay::show(
             &self.peek_class,
@@ -486,28 +507,36 @@ impl App {
         }
     }
 
-    /// The Peek starts to end: the fences that go back under a window fade out with the dimmer.
-    /// Fences still held (never raised) stay as they are. Returns whether any fades.
+    /// The Peek starts to end: the fences that go back under a window fade out with the dimmer,
+    /// and so do the fences it showed although they are hidden (隐藏所有栅栏): they faded only
+    /// after the dimmer was gone, a second motion. Fences still held (never raised) stay as
+    /// they are. Returns whether any fades.
     fn begin_peek_fade_out(&mut self) -> bool {
         self.peek_raise_in = None;
         // The anchor is asked first and let go: the fades below touch windows.
-        let covered: Vec<HWND> = match self.anchor.borrow().as_ref() {
-            Some(a) => a
-                .covered_fences()
-                .into_iter()
-                .filter(|f| !a.is_peek_held(*f))
-                .collect(),
+        let (covered, hidden_again): (Vec<HWND>, Vec<HWND>) = match self.anchor.borrow().as_ref() {
+            Some(a) => (
+                a.covered_fences()
+                    .into_iter()
+                    .filter(|f| !a.is_peek_held(*f))
+                    .collect(),
+                a.peek_shown_fences(),
+            ),
             None => return false,
         };
         let fading = self
             .fences
             .values()
-            .filter(|w| covered.contains(&w.hwnd()) && w.peek_fade_out())
+            .filter(|w| {
+                (covered.contains(&w.hwnd()) || hidden_again.contains(&w.hwnd()))
+                    && w.peek_fade_out()
+            })
             .count();
         tracing::debug!(
             covered = covered.len(),
+            hidden_again = hidden_again.len(),
             fading,
-            "peek ending: fences that go back under a window fade out"
+            "peek ending: fences that go back under a window or are hidden again fade out"
         );
         fading > 0
     }
@@ -750,6 +779,11 @@ impl App {
             }
         }
         tracing::info!(reason, "peek ending");
+        // Closed by the user with nothing opened: the keyboard goes back where it was.
+        self.peek_back = self
+            .peek_from
+            .take()
+            .filter(|_| PEEK_CLOSED_BY_USER.contains(&reason));
         if !self.ctx.motion.enabled() {
             self.end_peek_now();
             return;
@@ -812,12 +846,36 @@ impl App {
         let anchored = Instant::now();
         // Dropping the windows destroys them (after the fences left the topmost band).
         self.peek = None;
+        self.peek_from = None;
+        // A Peek opened from the desktop (or a fence) and closed by the user: the keyboard
+        // goes back there. With the dimmer gone Windows gave it to the next window in line,
+        // the taskbar, and the arrow keys moved through the taskbar's buttons.
+        if let Some(back) = self.peek_back.take() {
+            let front = desktop::foreground_window();
+            let taskbar = front.0.is_null() || desktop::class_name(front) == "Shell_TrayWnd";
+            let given = taskbar && window::claim_foreground(back);
+            tracing::debug!(
+                taskbar,
+                given,
+                "peek ended: the keyboard goes back to where it was"
+            );
+        }
+        // The dimmer had the keyboard and passed the keys on to a fence (Tab, the arrows), so
+        // that fence gets no WM_KILLFOCUS now: its focus ring goes with the Peek. It stayed on
+        // an icon while the keys went to the window that came to the front.
+        let front = desktop::foreground_window();
+        let rings = self
+            .fences
+            .values()
+            .filter(|w| w.hwnd() != front && w.keyboard_left())
+            .count();
         let ms = crate::share_log::millis;
         tracing::debug!(
             search_ms = ms(searched - started),
             redraw_ms = ms(redrawn - searched),
             zorder_ms = ms(anchored - redrawn),
             dimmer_ms = ms(anchored.elapsed()),
+            rings,
             "peek ended"
         );
     }

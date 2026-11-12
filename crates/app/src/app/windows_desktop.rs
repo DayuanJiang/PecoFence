@@ -13,6 +13,9 @@ impl App {
             return;
         }
         self.end_peek_now();
+        if on {
+            self.end_rename_before_hide(reason);
+        }
         let mut guard = self.anchor.borrow_mut();
         let Some(a) = guard.as_mut() else {
             return;
@@ -22,10 +25,31 @@ impl App {
         // hands it to the App (`MarqueeEvent::DoubleClickInWindowsDesktop`).
         a.windows_desktop = on;
         if on {
-            a.set_fences_hidden(true, true, "windows desktop");
             // Only the icons PecoFence hid: icons hidden in Explorer itself stay hidden.
+            let hidden = pecofence_platform::shell_icons::desktop_icons_hidden();
             a.restore_desktop_icons();
+            // File Explorer shows its icons about a third of a second after it is asked, and
+            // the fences had faded out by then: the desktop was empty in between, as at 退出
+            // (see `Command::Quit`). The fences stay until the icons are about to show.
+            let holds = hidden
+                && !pecofence_platform::shell_icons::desktop_icons_hidden()
+                && self.ctx.motion.enabled();
+            tracing::debug!(
+                holds,
+                "windows desktop: the fences wait for File Explorer's icons"
+            );
+            if holds {
+                window::set_timer(
+                    self.control.hwnd(),
+                    TIMER_WINDOWS_DESKTOP_FADE,
+                    ICONS_BACK_HOLD_MS,
+                );
+            } else {
+                a.set_fences_hidden(true, true, "windows desktop");
+            }
         } else {
+            // Switched off again before the fences went: they stay.
+            window::kill_timer(self.control.hwnd(), TIMER_WINDOWS_DESKTOP_FADE);
             // The icons go first, so they never show together with the fences. Explorer can be
             // too busy to answer for a moment (once seen right after the tray menu): try again
             // soon rather than at the next 2 s check.
@@ -38,6 +62,17 @@ impl App {
             a.set_fences_hidden(false, true, "windows desktop");
         }
         tracing::info!(on, reason, "windows desktop");
+    }
+
+    /// `TIMER_WINDOWS_DESKTOP_FADE`: File Explorer's icons are about to show, the fences fade
+    /// out now, unless 「临时显示 Windows 桌面」 went off again meanwhile.
+    pub(super) fn hide_fences_for_windows_desktop(&mut self) {
+        if !self.windows_desktop {
+            return;
+        }
+        if let Some(a) = self.anchor.borrow_mut().as_mut() {
+            a.set_fences_hidden(true, true, "windows desktop");
+        }
     }
 
     /// Registers / drops the shortcut to match the settings. While a chosen one is taken,

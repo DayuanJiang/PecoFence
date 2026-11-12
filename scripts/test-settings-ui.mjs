@@ -2757,6 +2757,30 @@ async function runTests() {
     } finally { frame.style.width = ''; }
   });
 
+  await test('A card description that wraps does not leave a few characters alone on its last line', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=layout]').click(); await settle();
+    const text = doc.getElementById('cfgExport').closest('.card').querySelector('.s');
+    // The width of each line of the description.
+    const lines = () => {
+      const range = doc.createRange(); range.selectNodeContents(text);
+      const rows = [];
+      for (const box of range.getClientRects()) {
+        const last = rows[rows.length - 1];
+        if (last && Math.abs(last.top - box.top) < 4) last.right = Math.max(last.right, box.right);
+        else rows.push({ top: box.top, left: box.left, right: box.right });
+      }
+      return rows.map(row => row.right - row.left);
+    };
+    try {
+      for (let width = 720; width <= 1000; width += 20) {
+        frame.style.width = width + 'px'; await settle();
+        const rows = lines(), room = text.getBoundingClientRect().width;
+        assert(rows.length < 2 || rows[rows.length - 1] > 0.3 * room, width + ' px: the last line of the 导出 / 导入 description is ' + Math.round(rows[rows.length - 1]) + ' px of ' + Math.round(room));
+      }
+    } finally { frame.style.width = ''; }
+  });
+
   await test('The nav at the smallest window size: no sideways scrolling, the search box fits, long page names keep their height', async () => {
     doc = await reset();
     frame.style.width = '704px'; frame.style.height = '441px';
@@ -3285,6 +3309,179 @@ async function runTests() {
     ew().testHoldCount = false;
     ew().testReceive(ew().testHeld.at(-1));
     assert(shade() === 1 && !w.querySelector('.se-count').classList.contains('busy'), 'The new number is dim');
+    doc = await reset();
+  });
+  await test('The navigation follows the window\'s width between 740 and 900 px, and its fold to icons glides', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const was = frame.style.width;
+    try {
+      const nav = doc.querySelector('nav'), width = () => nav.getBoundingClientRect().width;
+      const card = () => doc.querySelector('.page.on .card').getBoundingClientRect().left;
+      let last = null, worst = 0, worstAt = 0;
+      for (let w = 960; w >= 548; w -= 8) {
+        frame.style.width = w + 'px'; await settle();
+        const now = [width(), card()];
+        const step = last ? Math.max(Math.abs(now[0] - last[0]), Math.abs(now[1] - last[1])) : 0;
+        if (step > worst) { worst = step; worstAt = w; }
+        last = now;
+      }
+      assert(worst <= 5, 'Between two window widths 8 px apart the navigation or the cards\' left edge moves by ' + worst + ' px (at ' + worstAt + ' px)');
+      frame.style.width = '900px'; await settle();
+      assert(width() === 240, 'At 900 px the navigation is ' + width() + ' px wide');
+      frame.style.width = '740px'; await settle();
+      assert(width() === 172, 'At 740 px the navigation is ' + width() + ' px wide');
+      const glide = () => doc.getAnimations().filter(a => a.effect.target === nav).map(a => a.effect.getComputedTiming().duration).join();
+      frame.style.width = '544px'; await settle();
+      frame.style.width = '536px'; await settle();
+      assert(glide() === '167', 'Folding to icons: the navigation\'s width glides for ' + (glide() || 'no time') + ' ms');
+      assert(await until(() => glide() === '') && width() === 56, 'Folded, the navigation is ' + width() + ' px wide');
+      frame.style.width = '544px'; await settle();
+      assert(glide() === '167', 'Opening again: the navigation\'s width glides for ' + (glide() || 'no time') + ' ms');
+      assert(await until(() => glide() === '') && width() === 172 && !doc.querySelector('.app').classList.contains('folding'), 'Open again, the navigation is ' + width() + ' px wide');
+    } finally { frame.style.width = was; }
+    doc = await reset();
+  });
+  await test('Empty lists say what to do, the fence picker goes with the last fence, and a long fence name ends before the arrow', async () => {
+    doc = await reset();
+    const w = win();
+    w.testState.rules.list = []; w.testState.snapshots = []; w.testState.backups = []; w.testRefresh(); await settle();
+    const rules = doc.getElementById('ruleList').textContent, snaps = doc.getElementById('snapList').textContent, backups = doc.getElementById('backupList').textContent;
+    assert(backups.includes('尚无每日备份') && backups.includes('7'), 'No daily backups: the list says only: ' + backups);
+    assert(rules.includes('尚未添加规则') && rules.includes('快速添加') && rules.includes('新建规则'), 'No rules: the list says only: ' + rules);
+    assert(snaps.includes('尚无快照') && snaps.includes('保存快照'), 'No snapshots: the list says only: ' + snaps);
+    doc.querySelector('[data-page=fences]').click();
+    w.testState.fences[0].title = '二〇二六年第四季度项目资料与设计稿归档（请勿删除，等待审核通过后再整理）ABCDEFGHIJKLMNOPQRSTUVWXYZ'; w.testRefresh(); await settle();
+    const sel = doc.getElementById('fenceSel'), count = doc.getElementById('fenceBadge'), box = sel.getBoundingClientRect();
+    assert(box.width <= 460, 'A long fence name makes the picker ' + Math.round(box.width) + ' px wide');
+    assert(count.getBoundingClientRect().top < box.bottom, 'The number of fences wrapped under the picker');
+    assert(!w.CSS.supports('appearance: base-select') || w.getComputedStyle(sel).overflowClipMargin.includes('content-box'), 'The name runs under the arrow of the list: ' + w.getComputedStyle(sel).overflowClipMargin);
+    assert(!w.CSS.supports('appearance: base-select') || w.getComputedStyle(sel.options[0]).whiteSpace === 'normal', 'A name longer than the window cannot wrap in the open list');
+    w.testState.fences = []; w.testRefresh(); await settle();
+    assert(!sel.offsetParent && !count.offsetParent, 'With no fence the empty picker is still there');
+    assert(doc.getElementById('fenceEmpty').offsetParent, 'With no fence nothing says how to make one');
+    assert(doc.getElementById('nrTarget').disabled, 'With no fence the empty 目标栅栏 list of a new rule still opens');
+    w.testState.fences = [{ id: 'f1', title: '工作', kind: 'user' }]; w.testRefresh(); await settle();
+    assert(!doc.getElementById('nrTarget').disabled && !sel.closest('.picker').hidden, 'With a fence again the lists stay off');
+    doc = await reset();
+  });
+  await test('The update card: its title glides when a check\'s status line comes under it, and what is under a failed check\'s taller card glides down', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const w = win(), was = frame.style.width;
+    try {
+      frame.style.width = '944px';
+      doc.querySelector('[data-page=about]').click(); await settle();
+      w.testUpdate({ state: 'checking', version: '', edition: 'installer', hasSetup: true }); await settle();
+      const card = doc.getElementById('updateCard'), next = doc.getElementById('updateAutoCard'), height = card.offsetHeight;
+      assert(height > 0, 'The update card does not show while the check runs');
+      const gliding = () => doc.getAnimations().filter(a => a.effect.target === next && !a.animationName).length;
+      assert(await until(() => !doc.getAnimations().length), 'The page never came to rest');
+      // At rest the card has its title alone; the status line of a check moves the title up.
+      const title = card.querySelector('.t'), rising = () => doc.getAnimations().filter(a => a.effect.target === title && !a.animationName && !a.transitionProperty).length;
+      w.testUpdate({ state: 'idle', version: '', edition: 'installer', hasSetup: true });
+      assert(await until(() => !doc.getAnimations().length), 'The card never came to rest');
+      w.testUpdate({ state: 'checking', version: '', edition: 'installer', hasSetup: true });
+      assert(rising() === 1, 'A click on 检查更新: the title jumps up to make room for the status line');
+      assert(await until(() => !doc.getAnimations().length), 'The card never came to rest');
+      w.testUpdate({ state: 'checkFailed', version: '', edition: 'installer', hasSetup: true });
+      assert(card.offsetHeight > height, 'The failed check no longer needs a second line (the test needs another width)');
+      assert(gliding() === 1, 'The card grew by ' + (card.offsetHeight - height) + ' px and the card under it jumped');
+    } finally { frame.style.width = was; }
+    doc = await reset();
+  });
+  await test('The selected page, the rows of 查找设置, a list\'s options and a text box have a look under the pointer and pressed', async () => {
+    doc = await reset();
+    const selectors = [];
+    const walk = rules => { for (const rule of rules) { if (rule.cssRules?.length) walk(rule.cssRules); if (rule.selectorText) selectors.push(rule.selectorText); } };
+    walk(doc.styleSheets[0].cssRules);
+    const has = text => selectors.some(s => s.includes(text));
+    for (const wanted of ['nav a.sel:hover', 'nav a.sel:active', '.search-list [role="option"]:active', '.search-list [role="option"][aria-selected="true"]:hover', '.search-list [role="option"][aria-selected="true"]:active',
+      'select option:active', 'select option:checked:hover', 'select option:checked:active', 'textarea):where(:enabled):hover'])
+      assert(has(wanted), 'No rule for ' + wanted);
+    doc = await reset();
+  });
+  await test('Smart fence editor: the line that says how many files were found leaves no character alone on its second line', async () => {
+    const was = frame.style.width;
+    try {
+      frame.style.width = '640px';
+      doc = await openEditor('fence=new');
+      const text = [...doc.querySelectorAll('#seWindow .se-count > div *')].flatMap(el => [...el.childNodes]).find(n => n.nodeType === 3 && n.data.trim().length > 6);
+      assert(text, 'The count shows no text');
+      const range = doc.createRange(), lines = [];
+      for (let i = 0, last = null; i < text.length; i++) {
+        range.setStart(text, i); range.setEnd(text, i + 1);
+        const top = Math.round(range.getBoundingClientRect().top);
+        if (top !== last) { lines.push(''); last = top; }
+        lines[lines.length - 1] += text.data[i];
+      }
+      assert(lines.length === 1 || lines.at(-1).length >= 3, 'In a 640 px window the text breaks as: ' + lines.join(' / '));
+    } finally { frame.style.width = was; }
+    doc = await reset();
+  });
+  await test('No description on a page ends with one character alone on its last line', async () => {
+    doc = await reset();
+    const was = frame.style.width;
+    try {
+      frame.style.width = '944px'; await settle();
+      doc.querySelectorAll('details').forEach(d => { d.open = true; });
+      const alone = [];
+      for (const page of doc.querySelectorAll('.page')) {
+        doc.querySelector(`nav a[data-page=${page.id.replace('page-', '')}]`).click();
+        for (const el of page.querySelectorAll('.card .s, .card .t')) {
+          const text = el.firstChild;
+          if (!el.offsetParent || el.children.length || !text || text.nodeType !== 3 || text.length < 8) continue;
+          const range = doc.createRange(), lines = [];
+          for (let i = 0, last = null; i < text.length; i++) {
+            range.setStart(text, i); range.setEnd(text, i + 1);
+            const top = Math.round(range.getBoundingClientRect().top);
+            if (top !== last) { lines.push(''); last = top; }
+            lines[lines.length - 1] += text.data[i];
+          }
+          if (lines.length > 1 && lines.at(-1).trim().length < 2) alone.push(lines.at(-2).slice(-8) + ' / ' + lines.at(-1));
+        }
+      }
+      assert(!alone.length, alone.length + ' descriptions end with one character alone: ' + alone.join(' | '));
+    } finally { frame.style.width = was; }
+    doc = await reset();
+  });
+  await test('The notice at the bottom comes in decelerating and leaves accelerating', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const bar = doc.getElementById('toast');
+    const curve = () => doc.getAnimations().filter(a => a.effect.target === bar && a.transitionProperty === 'transform').map(a => a.effect.getComputedTiming().easing).join();
+    win().testHost({ type: 'toast', text: '已保存快照' });
+    assert(curve() === 'cubic-bezier(0, 0, 0, 1)', 'Coming in, the notice moves on ' + (curve() || 'no curve'));
+    assert(await until(() => curve() === ''), 'The notice never came to rest');
+    bar.classList.remove('on');
+    assert(curve() === 'cubic-bezier(1, 0, 1, 1)', 'Leaving, the notice moves on ' + (curve() || 'no curve'));
+    doc = await reset();
+  });
+  await test('Every transition and animation of the page takes one of the app\'s four times', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const root = win().getComputedStyle(doc.documentElement);
+    const times = ['--faster', '--fast', '--normal', '--slow'].map(name => root.getPropertyValue(name).trim()).join();
+    assert(times === '83ms,167ms,250ms,333ms', 'The four times of the motion language are ' + times);
+    // No declaration names a time of its own (0s is a switch at the end of a wait).
+    const own = [];
+    const walk = rules => {
+      for (const rule of rules) {
+        if (rule.cssRules?.length) walk(rule.cssRules);
+        for (const property of rule.style ? ['transition', 'animation'] : []) {
+          const value = rule.style.getPropertyValue(property);
+          const literal = (value.replace(/var\([^)]*\)|cubic-bezier\([^)]*\)/g, '').match(/[\d.]+m?s\b/g) || []).filter(time => parseFloat(time) !== 0);
+          if (literal.length) own.push((rule.selectorText || '') + ' { ' + property + ': ' + value + ' }');
+        }
+      }
+    };
+    walk(doc.styleSheets[0].cssRules);
+    assert(!own.length, own.length + ' declarations with a time of their own: ' + own.slice(0, 3).join(' | '));
+    // What runs: a switch slides and a hovered button fades in the app's times.
+    const toggle = doc.querySelector('[data-bind=autostart]');
+    toggle.click();
+    const ran = [...new Set(doc.getAnimations().map(a => Math.round(a.effect.getComputedTiming().duration)))];
+    assert(ran.includes(167) && ran.every(ms => [83, 167, 250, 333].includes(ms)), 'After a click on a switch, motion of ' + (ran.join(', ') || 'no time') + ' ms runs');
     doc = await reset();
   });
 

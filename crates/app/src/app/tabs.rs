@@ -173,6 +173,10 @@ impl App {
                     bottom: pt.y - title_h / 2 + rh,
                 };
                 w.set_bounds(placed);
+                // It is the thing in the hand: at full strength in its first frame. With the
+                // entrance fade the tab was nowhere for a frame (gone from the strip, the new
+                // window still at opacity 0) while the landing outline already showed.
+                w.show_at_once();
                 // Keep capture on the original HWND. For a departing host this is
                 // also the moving HWND; the handler's logical identity stays valid.
                 if let Some(source_w) = self.fences.get(&change.source_host) {

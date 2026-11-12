@@ -90,7 +90,11 @@ pub(super) fn on_mouseleave(
             || !matches!(
                 v.tip_target,
                 Some(
-                    TipTarget::Desktops | TipTarget::FilterTag | TipTarget::Lock | TipTarget::Title
+                    TipTarget::Desktops
+                        | TipTarget::FilterTag
+                        | TipTarget::Lock
+                        | TipTarget::Title
+                        | TipTarget::Count
                 )
             )
         {

@@ -1,13 +1,14 @@
 // 4.7 每个虚拟桌面一套栅栏 (lesson id vdesk): two Windows virtual desktops, 工作 and 游戏. The fence
 // menu's 在哪个虚拟桌面显示 lists them by their Task View names (vdesktops.rs); picking 游戏 hides
-// the fence on the current desktop and a notification says where it went. Win+Ctrl+→ slides to
+// the fence on the current desktop and PecoFence's card says where it went, with 撤销 (undo.rs
+// offer_undo_desktops). Win+Ctrl+→ slides to
 // the other desktop (Windows moves the whole desktop sideways and shows the desktop's name above
 // the taskbar): there the fence shows with the Task View glyph before its title, the fence that
 // belongs to 工作 does not, and a fence without a desktop of its own shows on both.
 (() => {
     'use strict';
     const { SW, SH, E, ramp, pathAt, el, put, show, text, local, icon, fence, menu, drawMenu, rowY, pointer,
-        drawPointer, drawChip, drawKeys, taskbar, loopFade, T } = PM;
+        drawPointer, drawChip, drawKeys, notice, drawNotice, taskbar, loopFade, T } = PM;
 
     const D = 10.4;
     const G0 = { x: 130, y: 40, w: 246, h: 124, title: '游戏',
@@ -18,7 +19,7 @@
         items: [['url', '项目主页'], ['exe', '截图工具'], ['url', '在线文档']] };
 
     const RC = 1.1, SUB_AT = 1.95, PICK = 2.85, SENT = 2.88;       // right-click, submenu, 游戏 picked
-    const NOTE_AT = 3.15, NOTE_END = 8.6;
+    const NOTE_AT = 3.15, NOTE_END = 4.4;                          // the card, until the desktop is switched
     const GO = 5.0, BACK = 7.7, SLIDE = .35;                       // Win+Ctrl+→ and Win+Ctrl+←
     // the keys leave before Windows shows the desktop's name in the same place
     const KEYS = [{ a: GO - .5, b: GO + .15, keys: ['Win', 'Ctrl', '→'], down: GO - .08 },
@@ -70,17 +71,8 @@
 
         r.menu = menu(S, MENU_ITEMS, 196);
         r.sub = menu(S, [{ t: '所有虚拟桌面', check: 1 }, '-', T('{0}（当前）').replace('{0}', T('工作')), '游戏'], 128);
-        r.toast = el('div', 'wtoast', S);
-        const head = el('div', 'wtoast-head', r.toast);
-        const mark = el('img', null, head);
-        mark.src = 'assets/mark.svg';
-        mark.alt = '';
-        el('span', null, head, 'PecoFence');
-        const body = el('div', 'wtoast-body', r.toast);
-        el('div', 'wtoast-info', body, 'i');
-        const words = el('div', null, body);
-        el('b', null, words, 'PecoFence');
-        el('p', null, words, T('栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。').replace('{0}', T('游戏')).replace('{1}', T('游戏')));
+        r.card = notice(S, { title: T('“{0}”现在只在“{1}”上显示').replace('{0}', T('游戏')).replace('{1}', T('游戏')),
+            text: '切换到那个虚拟桌面就能看到它；点“撤销”让它回到这个桌面。', button: '撤销' });
         r.name = el('div', 'vd-name', S);
         r.note = el('div', 'chip', S);
         r.keys = el('div', 'keys', S);
@@ -126,11 +118,8 @@
         if (t >= SUB_AT && t < MENU.b) r.menu.rows.find(o => o.t === '在哪个虚拟桌面显示').r.classList.add('hot');
         drawMenu(r.sub, t, SUB.x, SUB.y, SUB.a, SUB.b, p);
 
-        // Windows' notification, above the right end of the taskbar
-        if (show(r.toast, t >= NOTE_AT && t < NOTE_END + .2)) {
-            const o = ramp(t, NOTE_AT, NOTE_AT + .2) * (1 - ramp(t, NOTE_END, NOTE_END + .2, E.lin));
-            put(r.toast, SW - 12 - r.toast.offsetWidth + 24 * (1 - ramp(t, NOTE_AT, NOTE_AT + .2)), SH - 28 - 10 - r.toast.offsetHeight, o);
-        }
+        // PecoFence's card with 撤销, above the right end of the taskbar
+        drawNotice(r.card, t, NOTE_AT, NOTE_END, p);
         // the name of the desktop just switched to, above the middle of the taskbar
         const shown = [[GO + SLIDE + .08, GO + SLIDE + 1.6, '游戏'], [BACK + SLIDE + .08, BACK + SLIDE + 1.6, '工作']]
             .find(([a, b]) => t >= a && t < b + .2);

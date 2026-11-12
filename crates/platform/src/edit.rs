@@ -11,6 +11,7 @@ pub const WM_CTLCOLOREDIT_MSG: u32 = WM_CTLCOLOREDIT as u32;
 
 // Not in the generated bindings (winuser.h).
 const ES_CENTER: i32 = 0x0001;
+const ES_RIGHT: i32 = 0x0002;
 const ES_MULTILINE: i32 = 0x0004;
 const ES_AUTOVSCROLL: i32 = 0x0040;
 const ES_WANTRETURN: i32 = 0x1000;
@@ -105,6 +106,32 @@ impl EditControl {
             dark,
             on_key,
             ES_AUTOHSCROLL | ES_CENTER,
+        )
+    }
+
+    /// Like [`Self::create`] with the text at the right end of the box: the name box of a
+    /// right-aligned fence title.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_right(
+        parent: HWND,
+        width: i32,
+        height: i32,
+        dpi: u32,
+        font_dip: f32,
+        text: &str,
+        dark: bool,
+        on_key: KeyHandler,
+    ) -> Result<Self> {
+        Self::create_styled(
+            parent,
+            width,
+            height,
+            dpi,
+            font_dip,
+            text,
+            dark,
+            on_key,
+            ES_AUTOHSCROLL | ES_RIGHT,
         )
     }
 

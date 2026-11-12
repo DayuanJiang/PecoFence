@@ -564,8 +564,14 @@ impl FenceViewState {
         self.win_active = on;
         let to = if on { 0.0 } else { 1.0 };
         let now = Instant::now();
+        tracing::debug!(
+            fence = %self.fence_id,
+            on,
+            selected = self.selected.len(),
+            "fence active state changed: selection colour"
+        );
         if self.selected.is_empty() || !self.motion.enabled() {
-            self.selection_inactive = Tween::at(to, now);
+            self.snap_selection_colour(to, now);
         } else {
             self.selection_inactive
                 .retarget(to, motion::FAST, Curve::Linear, now);
@@ -596,8 +602,37 @@ impl FenceViewState {
             || !self.selection_inactive.is_done(now)
             || self.selection_inactive.target() != 0.0;
         self.win_active = true;
-        self.selection_inactive = Tween::at(0.0, now);
+        self.snap_selection_colour(0.0, now);
         changed && !self.selected.is_empty() && !self.rolled_up
+    }
+
+    /// The selection takes the colour `to` (0 accent, 1 neutral) without a cross-fade. A
+    /// selection that was just ended is still on screen while it fades out (83 ms): it keeps
+    /// the colour it had, and the new colour comes when it is gone. A click on the desktop
+    /// ended the selection of a fence without the keyboard and made the fence active in the
+    /// same moment: the fading grey box turned accent, a bright flash of two frames.
+    fn snap_selection_colour(&mut self, to: f32, now: Instant) {
+        let from = self.selection_inactive.value_at(now);
+        let leaving =
+            self.selected.is_empty() && self.motion.enabled() && !self.item_sel.is_empty();
+        self.selection_inactive = if leaving && (from - to).abs() > 0.01 {
+            tracing::debug!(
+                fence = %self.fence_id,
+                from,
+                to,
+                "selection colour waits for the ended selection to fade out"
+            );
+            // Starts when the fade-out is over and is done a moment later.
+            Tween::new(
+                from,
+                to,
+                Duration::from_millis(1),
+                Curve::Linear,
+                now + motion::FASTER,
+            )
+        } else {
+            Tween::at(to, now)
+        };
     }
 
     /// Tracks the mouse entering / leaving the window as a whole; redraws the chrome when the

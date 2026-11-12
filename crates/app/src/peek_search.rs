@@ -92,6 +92,11 @@ const HOVER_FADE_MS: f32 = 83.0;
 /// (83 ms each, as the Peek's dimmer).
 const TIMER_FADE: usize = 3;
 const BOX_FADE_MS: f32 = 83.0;
+/// Steps the window's height to the height of a new list.
+const TIMER_GLIDE: usize = 4;
+/// The window takes this long to reach a new list's height (the motion tokens' fastest, as
+/// the fades around it), slowing down as it arrives.
+const GLIDE_MS: f32 = 83.0;
 const WA_INACTIVE: usize = 0;
 const VK_UP: u32 = 0x26;
 const VK_DOWN: u32 = 0x28;
@@ -399,6 +404,10 @@ struct Session {
     alpha: f32,
     alpha_to: f32,
     alpha_tick: Instant,
+    /// The height the rows ask for (`layout`): the window has it at rest and glides to it.
+    list_h: i32,
+    /// The window is on its way to `list_h`: the height it left and when (`step_glide`).
+    glide: Option<(i32, Instant)>,
 }
 
 impl Session {
@@ -858,6 +867,10 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
                         step_fade(hwnd);
                         Some(0)
                     }
+                    msg::WM_TIMER if wparam == TIMER_GLIDE => {
+                        step_glide(hwnd);
+                        Some(0)
+                    }
                     // The hand over a result row, which a click opens (as over a script
                     // fence's clickable row); the arrow over a tab, as over a fence's tabs.
                     // The text box inside asks here too and keeps its own cursor. Windows asks
@@ -1037,6 +1050,8 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
             alpha: 0.0,
             alpha_to: 0.0,
             alpha_tick: Instant::now(),
+            list_h: h,
+            glide: None,
         })
     });
     window::show_normal(hwnd);
@@ -1424,13 +1439,30 @@ fn paint_box(hwnd: HWND) {
             );
         }
         // The bottom bar: what the keys do, and how many results in all (more than shown).
-        let y0 = h - px(BAR_H);
+        // It ends the list, under the last row. While the window is on its way to a shorter
+        // list's height the bar is at its final place and the window's edge comes up to it;
+        // on the way to a longer list it stays at the window's edge, over the rows the edge
+        // has not reached yet, so the box ends with its bar in every frame.
+        let bar_bottom = h.min(s.list_h);
+        let y0 = bar_bottom - px(BAR_H);
+        let edge = 1.max(px(1.0));
+        if bar_bottom < s.list_h {
+            p.fill(
+                RECT {
+                    left: edge,
+                    top: y0,
+                    right: w - edge,
+                    bottom: bar_bottom - edge,
+                },
+                back,
+            );
+        }
         p.fill(
             RECT {
                 left: 0,
                 top: y0,
                 right: w,
-                bottom: y0 + 1.max(px(1.0)),
+                bottom: y0 + edge,
             },
             line,
         );
@@ -1438,7 +1470,7 @@ fn paint_box(hwnd: HWND) {
             left: pad,
             top: y0,
             right: w - pad,
-            bottom: h,
+            bottom: bar_bottom,
         };
         // Ctrl+Enter and the actions need a file: the two action rows and system items (此电脑)
         // have none, and the keys do nothing there.
@@ -1755,6 +1787,7 @@ pub fn set_rows(rows: Vec<Row>, selected: Option<usize>, total: usize, scroll: O
             wanted.retain(|p| keep.contains(p));
         });
         let h = s.layout();
+        s.list_h = h;
         // The rows changed under a pointer at rest: the fill goes to what is under it now.
         if s.hover.is_some() {
             let pt = window::screen_to_client(s.window.hwnd(), window::cursor_pos());
@@ -1776,18 +1809,100 @@ pub fn set_rows(rows: Vec<Row>, selected: Option<usize>, total: usize, scroll: O
             tab = tab_label(s.tab),
             "search list laid out"
         );
-        Some((s.window.hwnd(), s.x, s.y, s.w, h))
+        Some((s.window.hwnd(), s.x, s.y, s.w, h, s.revealed))
     });
-    if let Some((hwnd, x, y, w, h)) = resize {
-        let (_, now) = window::window_rect_size(hwnd);
-        if now != h {
-            ACTIVE.with(|a| {
-                if let Some(s) = a.borrow().as_ref() {
-                    let _ = s.window.set_bounds(x, y, w, h);
-                }
-            });
+    let Some((hwnd, x, y, w, h, revealed)) = resize else {
+        return;
+    };
+    let (_, now) = window::window_rect_size(hwnd);
+    paint::invalidate(hwnd);
+    if now == h {
+        // A glide on its way elsewhere ends where it is.
+        ACTIVE.with(|a| {
+            if let Some(s) = a.borrow_mut().as_mut() {
+                s.glide = None;
+            }
+        });
+        return;
+    }
+    if !revealed {
+        // Not on screen yet: it takes its size before its first paint.
+        ACTIVE.with(|a| {
+            if let Some(s) = a.borrow().as_ref() {
+                let _ = s.window.set_bounds(x, y, w, h);
+            }
+        });
+        return;
+    }
+    let animate = sysparams::client_area_animation();
+    let shrinks = h < now;
+    tracing::debug!(
+        from = now,
+        to = h,
+        animate,
+        "search box: new rows drawn at once, the window's height follows"
+    );
+    if shrinks {
+        // The new rows now, in the window as it is, and its size from the next timer beat on:
+        // Windows shows a new size a frame before what is painted after it, so a window made
+        // shorter first showed the old rows, cut off, for a frame.
+        paint::update_now(hwnd);
+    }
+    // A longer list starts a frame into its glide, in this same turn: its first rows show as
+    // early as they did when the window took the whole height in one step.
+    let head_start = std::time::Duration::from_millis(if shrinks { 0 } else { 16 });
+    let started = Instant::now();
+    ACTIVE.with(|a| {
+        if let Some(s) = a.borrow_mut().as_mut() {
+            s.glide = Some((now, started.checked_sub(head_start).unwrap_or(started)));
         }
-        paint::invalidate(hwnd);
+    });
+    window::set_timer(hwnd, TIMER_GLIDE, 15);
+    if !shrinks {
+        step_glide_with(hwnd, animate);
+    }
+}
+
+/// `TIMER_GLIDE`: the window a step closer to the height of its list.
+fn step_glide(hwnd: HWND) {
+    step_glide_with(hwnd, sysparams::client_area_animation());
+}
+
+/// One step of the window's height towards `list_h` (the whole way when `animate` is off).
+/// A window that grew is painted before this returns: the rows it uncovers show with it.
+fn step_glide_with(hwnd: HWND, animate: bool) {
+    let step = ACTIVE.with(|a| {
+        let mut a = a.try_borrow_mut().ok()?;
+        let s = a.as_mut().filter(|s| s.window.hwnd() == hwnd)?;
+        let (from, started) = s.glide?;
+        let t = if animate {
+            (started.elapsed().as_secs_f32() * 1000.0 / GLIDE_MS).min(1.0)
+        } else {
+            1.0
+        };
+        let eased = pecofence_render::motion::ease(pecofence_render::motion::Curve::Decelerate, t);
+        let h = if t >= 1.0 {
+            s.glide = None;
+            s.list_h
+        } else {
+            from + ((s.list_h - from) as f32 * eased).round() as i32
+        };
+        let (_, now) = window::window_rect_size(hwnd);
+        let _ = s.window.set_bounds(s.x, s.y, s.w, h);
+        tracing::trace!(from, to = s.list_h, h, t, "search box: height step");
+        Some((t >= 1.0, h > now))
+    });
+    let Some((done, grew)) = step else {
+        window::kill_timer(hwnd, TIMER_GLIDE);
+        return;
+    };
+    if done {
+        window::kill_timer(hwnd, TIMER_GLIDE);
+        tracing::debug!("search box: the window has its list's height");
+    }
+    paint::invalidate(hwnd);
+    if grew {
+        paint::update_now(hwnd);
     }
 }
 

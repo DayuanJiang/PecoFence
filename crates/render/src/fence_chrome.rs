@@ -459,10 +459,14 @@ pub struct TitleState {
     /// The lock glyph of a locked fence: shown while the pointer is over the fence (83 ms),
     /// dipping once when the lock refuses a drag.
     pub lock: f32,
-    /// A lone title's name and glyph just changed with the folder shown (into a subfolder,
-    /// back up): 1 → 0 is the remainder of their fade-in, so they draw at alpha `1 - swap`
-    /// while the icons cross-fade (83 ms linear), instead of cutting a frame ahead of them.
+    /// The title's name and glyph (a lone title's, or the shown tab's) just changed with the
+    /// folder shown (into a subfolder, back up): 1 → 0 is the remainder of their fade-in, so
+    /// they draw at alpha `1 - swap` while the icons cross-fade (83 ms linear), instead of
+    /// cutting a frame ahead of them.
     pub swap: f32,
+    /// The plate's top edge lies on the screen edge (a fence docked to the top): its top
+    /// corners are square there, as a drawer's are at the edge it hangs from.
+    pub edge_top: bool,
 }
 
 /// The visible span of a scrolled tab strip (DIPs). An end with more pills behind it fades out
@@ -920,8 +924,8 @@ fn tab_glyph_centre(caption_x: f32) -> f32 {
 
 /// Where captions start in a left tab column row: after the colour dot when any tab has a
 /// colour, and after the folder and Task View glyphs when any tab has them, so the names stay
-/// aligned.
-fn rail_text_left(colored: bool, folders: bool, desktops: bool) -> f32 {
+/// aligned. Counted from the row's left edge; the name box of a row opens there.
+pub fn rail_text_left(colored: bool, folders: bool, desktops: bool) -> f32 {
     (if colored { 24.0 } else { 10.0 }) + tab_glyphs_w(folders, desktops)
 }
 
@@ -1119,9 +1123,22 @@ fn draw_plate(
     pill_a: f32,
     hover: f32,
     style: FenceStyle,
+    square_top: bool,
 ) -> Result<()> {
     let px = Px::new(scale);
     let plate_top = outer.top;
+    // The rounded shape of the fills and the rim. With square top corners it starts one radius
+    // above the plate, where the surface cuts it off: the sides run straight up to the edge.
+    let shape = if square_top {
+        Rect::from_xywh(
+            outer.left,
+            outer.top - radius,
+            outer.width(),
+            outer.height() + radius,
+        )
+    } else {
+        outer
+    };
     // The crop is anchored at the window's top left and may cover more than the surface (size
     // animation): the surface clips it, and the compositor clip cuts it at a folded top.
     let crop_rect = |crop: &BackdropCrop<'_>| {
@@ -1159,7 +1176,7 @@ fn draw_plate(
                     Theme::light().solid_fill
                 };
                 let fill = session.create_solid_brush(with_alpha(fallback, plate_a))?;
-                session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &fill);
+                session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &fill);
             } else {
                 let mut c = theme.glass_layer_fill;
                 c.a *= opacity.min(1.0) * plate_a;
@@ -1220,17 +1237,17 @@ fn draw_plate(
         }
         Backdrop::SystemMaterial => {
             let layer = session.create_solid_brush(with_alpha(theme.layer_fill, plate_a))?;
-            session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &layer);
+            session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &layer);
         }
         _ => {
             let fill = session.create_solid_brush(with_alpha(theme.solid_fill, plate_a))?;
-            session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &fill);
+            session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &fill);
         }
     }
 
     if opacity > 1.0 {
         let veil = session.create_solid_brush(with_alpha(theme.opacity_veil(opacity), plate_a))?;
-        session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &veil);
+        session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &veil);
     }
     if let Some(mut tint) = style.tint {
         // Per-fence colour: a translucent wash so the glass still reads as glass.
@@ -1249,7 +1266,7 @@ fn draw_plate(
                     GradientStop::new(edge + soft, ColorF::TRANSPARENT),
                 ],
             )?;
-            session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &wash);
+            session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &wash);
         } else if style.tint_title_only {
             // Only the title row (what of it the fold leaves): the plate's rounded top
             // corners, a straight bottom edge where the icons start.
@@ -1266,11 +1283,11 @@ fn draw_plate(
                         GradientStop::new((edge + soft).min(1.0), ColorF::TRANSPARENT),
                     ],
                 )?;
-                session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &wash);
+                session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &wash);
             }
         } else {
             let wash = session.create_solid_brush(tint)?;
-            session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &wash);
+            session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &wash);
         }
     }
 
@@ -1290,11 +1307,11 @@ fn draw_plate(
                 GradientStop::new(1.0, with_alpha(theme.glass_rim_bottom, 0.12 * plate_a)),
             ],
         )?;
-        session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &sheen);
+        session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &sheen);
     }
 
     // A single 1 px rim, lit from the upper left and snapped to device pixels at every DPI.
-    let rim_rect = px.ring(outer, radius);
+    let rim_rect = px.ring(shape, radius);
     if sampled_material && theme.liquid_glass {
         // The GPU material lights its own rim (kube's specular ring).
         if !matches!(backdrop, Backdrop::GpuGlass { .. }) {
@@ -2383,6 +2400,22 @@ impl FenceChrome {
         }
     }
 
+    /// Where the caption's text starts in a tab pill `w` DIPs wide, counted from the pill's
+    /// left edge, as drawn: after its glyphs, centred in its room. The name box opens there.
+    pub fn tab_caption_text_x(
+        &self,
+        theme: &Theme,
+        w: f32,
+        title: &str,
+        size: u8,
+        glyphs: (bool, bool),
+        badge: Option<&str>,
+    ) -> f32 {
+        let c = self.tab_caption(theme, w, title, size, glyphs, badge);
+        let text_w = crate::text::measure_width(&c.fitted, &self.tab_format(size)).min(c.w);
+        c.x + (c.w - text_w) * 0.5
+    }
+
     /// The up button of a folder tab's pill at `x`, `w` wide, in a title-row strip: the square
     /// around its folder glyph, as drawn. The app hit-tests the same box.
     pub fn tab_up_box(
@@ -2409,6 +2442,19 @@ impl FenceChrome {
         crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0 + 8.0
     }
 
+    /// Where a smart fence's count capsule lies in a title row `width` x `title_h` (DIPs; the
+    /// width without a lock glyph's slot), as drawn: the pointer over it gets its infotip.
+    pub fn count_capsule_box(&self, count: &str, width: f32, title_h: f32) -> Rect {
+        let w = crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0;
+        let right = TitleDeco::chevron_box(width, title_h).left - 2.0;
+        Rect::from_xywh(
+            right - w,
+            ((title_h - COUNT_CAPSULE_H) * 0.5).round(),
+            w,
+            COUNT_CAPSULE_H,
+        )
+    }
+
     /// 智能栅栏: the count as a grey capsule right before the chevron's place, so it never reads
     /// as part of the name (mail apps show a folder's count the same way).
     #[allow(clippy::too_many_arguments)]
@@ -2423,14 +2469,7 @@ impl FenceChrome {
         alpha: f32,
         legible: Option<&Legible>,
     ) -> Result<()> {
-        let w = crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0;
-        let right = TitleDeco::chevron_box(width, title_h).left - 2.0;
-        let r = Rect::from_xywh(
-            right - w,
-            ((title_h - COUNT_CAPSULE_H) * 0.5).round(),
-            w,
-            COUNT_CAPSULE_H,
-        );
+        let r = self.count_capsule_box(count, width, title_h);
         // The capsule is the number's ground. Under a light number it is a dark wash, so the
         // number reads on a plate of any brightness: the light wash it was made the ground
         // lighter still (2.1 : 1 over the Windows 11 wallpaper in dark mode). Under a dark
@@ -2765,6 +2804,27 @@ impl FenceChrome {
         Rect::from_xywh(x - 2.0, 0.0, 20.0, title_h)
     }
 
+    /// Where the text of a single title laid out with `deco` stands, as drawn, for its name
+    /// box: its left edge, its width as shown, and the width of the room it is aligned in
+    /// (which starts at `deco.title_x()`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn lone_title_text_span(
+        &self,
+        title: &str,
+        count: Option<&str>,
+        tag: Option<(&str, &str, &str)>,
+        size: u8,
+        align: pecofence_core::TitleAlign,
+        width: f32,
+        deco: TitleDeco,
+        reserve: f32,
+    ) -> (f32, f32, f32) {
+        let (x, fitted, room_w) =
+            self.lone_title_place(title, count, tag, size, align, width, deco, reserve);
+        let text_w = crate::text::measure_width(&fitted, &self.title_format(size)).min(room_w);
+        (x + deco.glyphs_w(), text_w, room_w)
+    }
+
     /// Is a single title laid out with `deco` drawn cut short (it ends in an ellipsis)? Its
     /// infotip then shows all of it, as a cut tab caption's does.
     #[allow(clippy::too_many_arguments)]
@@ -2889,6 +2949,7 @@ impl FenceChrome {
                 pill_a,
                 state.hover,
                 style,
+                state.edge_top && plate_top <= 0.0,
             )?;
         }
 
@@ -3243,8 +3304,15 @@ impl FenceChrome {
                         })
                     })
                 };
-                let brush = session.create_solid_brush(with_alpha(color, ta))?;
-                let fx = legible.as_ref().map(|l| l.fx(theme, color, ta, false));
+                // The shown tab's caption and glyph fade in after its folder changed; the
+                // pill and the marker stay.
+                let ca = if tab.active {
+                    ta * (1.0 - state.swap.clamp(0.0, 1.0))
+                } else {
+                    ta
+                };
+                let brush = session.create_solid_brush(with_alpha(color, ca))?;
+                let fx = legible.as_ref().map(|l| l.fx(theme, color, ca, false));
                 if tab.desktop_icon {
                     let slot =
                         Rect::from_xywh(caption_x - TAB_ICON_W - 2.0, 0.0, TAB_ICON_W, title_h);
@@ -3265,7 +3333,7 @@ impl FenceChrome {
                             } else {
                                 color
                             },
-                            ta,
+                            ca,
                         ))?;
                         session.draw_text("\u{E74A}", &self.title_glyph_format, &slot, &ink);
                     } else {
@@ -3785,8 +3853,14 @@ impl FenceChrome {
             }
             // The shown tab's semibold caption cross-fades to the others' regular weight as the
             // fence collapses to the column.
+            // After its folder changed the shown tab's caption fades in, as in the title row.
+            let ca = if tab.active {
+                ta * (1.0 - state.swap.clamp(0.0, 1.0))
+            } else {
+                ta
+            };
             for (strong, a) in [(true, sel), (false, 1.0 - sel)] {
-                let a = a * ta;
+                let a = a * ca;
                 if a <= 0.0 {
                     continue;
                 }

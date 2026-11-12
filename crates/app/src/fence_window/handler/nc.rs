@@ -239,6 +239,8 @@ pub(super) fn on_ncmousemove(
             Some(TipTarget::Lock)
         } else if v.cut_filter_tag_at(pt.x, pt.y) {
             Some(TipTarget::FilterTag)
+        } else if v.count_tip.is_some() && v.count_capsule_at(pt.x, pt.y) {
+            Some(TipTarget::Count)
         } else {
             // A title cut short with an ellipsis: the caption shows all of it, as a cut tab
             // caption does. A rolled-up fence that the resting pointer is about to expand
@@ -318,7 +320,13 @@ pub(super) fn on_ncmouseleave(
         // (WM_MOUSEMOVE decides over the client area).
         if matches!(
             v.tip_target,
-            Some(TipTarget::Desktops | TipTarget::FilterTag | TipTarget::Lock | TipTarget::Title)
+            Some(
+                TipTarget::Desktops
+                    | TipTarget::FilterTag
+                    | TipTarget::Lock
+                    | TipTarget::Title
+                    | TipTarget::Count
+            )
         ) {
             v.hide_tip();
         }
@@ -624,8 +632,13 @@ pub(super) fn on_size(h: &HandlerCtx, hwnd: HWND, _wparam: usize, lparam: isize)
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
         // A window created during early logon may have reported 96 DPI
-        // before the display settled; re-read it on every size change.
-        let dpi_changed = v.apply_dpi(monitors::dpi_for_window(hwnd));
+        // before the display settled; re-read it on every size change. Not while the app
+        // places the window: it has set the scale of the monitor the window goes to
+        // (`restore_geometry`), and Windows reports the old one for the window until the
+        // WM_DPICHANGED that follows. Taking it here set the scale three times for one scale
+        // change (new, old, new), dropping every icon and label each time.
+        let dpi_changed = !v.placing && v.apply_dpi(monitors::dpi_for_window(hwnd));
+        v.note_edge_top();
         v.update_backdrop();
         let crop_done = Instant::now();
         let drawn = if v.height_animating() {
@@ -706,6 +719,7 @@ pub(super) fn on_move(
         } else {
             v.refresh_backdrop();
         }
+        v.sync_edge_top();
         v.update_shadow();
     }
     Some(0)

@@ -54,6 +54,7 @@ impl App {
         let action = action.filter(|_| !filtered);
         // The count belongs to a single title; in a tab strip the tab shows the name only.
         let count = count.filter(|_| active == host && self.state.tabs_of(host).len() <= 1);
+        w.set_count_tip(count.as_ref().and_then(|_| self.smart_count_tip(f)));
         w.set_status_view(empty, action, count);
         w.set_filtered(filtered);
         // The tag's count follows what the fence shows (files come and go).
@@ -255,9 +256,7 @@ impl App {
         if let Some(id) = self.state.new_portal_fence(&folder, rect) {
             tracing::info!(folder = %folder.display(), place = shell::path_place(&folder), %id, drawn, ?rect, "folder portal created");
             self.resync_windows();
-            if let Some(w) = self.fences.get(&id) {
-                w.show(true);
-            }
+            self.show_new_fence(id);
             self.schedule_save();
             self.offer_roll_tip();
         }

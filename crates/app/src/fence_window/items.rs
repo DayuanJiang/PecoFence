@@ -624,6 +624,12 @@ impl FenceViewState {
             // Only the height changed: every cell is where it was.
             return;
         }
+        if self.bare() {
+            // 像桌面一样排列: the window reaches to the last column in use, and the cells
+            // stand where they are from the work area's corner at any width. Glides and
+            // fades in flight go on (an icon that left the last column took them all away).
+            return;
+        }
         let animate = interactive
             && self.motion.enabled()
             && self.row_metrics().is_none()

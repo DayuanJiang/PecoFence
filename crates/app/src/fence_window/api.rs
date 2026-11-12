@@ -209,6 +209,7 @@ impl FenceWindow {
             empty_action: None,
             empty_action_hover: false,
             title_count: None,
+            count_tip: None,
             filter_active: false,
             filter_tag: None,
             refuses_drops: false,
@@ -283,6 +284,7 @@ impl FenceWindow {
             tip_anchor: (0, 0),
             tip_armed: false,
             tip_move_at: None,
+            hand_moved: Vec::new(),
             cut: HashSet::new(),
             wheel_zoom_accum: 0,
             wheel_tab_accum: 0,
@@ -345,6 +347,7 @@ impl FenceWindow {
             plate_reveal: Tween::at(1.0, Instant::now()),
             plate_inset_px: 0,
             plate_alpha: 1.0,
+            edge_top: false,
             peeking: false,
             hover_raised: false,
             peek_blocked: false,
@@ -412,6 +415,18 @@ impl FenceWindow {
     /// ago: new, torn off, new portal) adds the Fluent 0.97 → 1 scale. No-op when visible.
     pub fn show(&self, entrance: bool) {
         show_with_fade(&self.view, self.hwnd(), entrance);
+    }
+
+    /// Ends a fade-in at once: the window (and its shadow) stand at full strength now. For a
+    /// window the user already holds (a tab torn off by a drag).
+    pub fn show_at_once(&self) {
+        self.with_view(|v| {
+            if v.vis_fade == Some(VisFade::Showing) {
+                v.vis_fade = None;
+                v.reset_root();
+                tracing::debug!(title = %v.title, "fade in ended at once: the window is in the hand");
+            }
+        });
     }
 
     /// 在哪个虚拟桌面显示: `tip` names the desktops of a window that shows on some of them only
@@ -524,7 +539,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={}",
+            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={}",
             v.title,
             v.title_count,
             v.filter_active,
@@ -540,6 +555,7 @@ impl FenceWindow {
             v.anchor_index
                 .and_then(|i| v.items.get(i))
                 .map(|it| &it.name),
+            v.focus_visible,
             desktop::is_visible(v.shadow.hwnd()),
             v.shadow.alpha(),
             v.layout,
@@ -952,15 +968,18 @@ impl FenceWindow {
                 && desktop::is_visible(v.hwnd)
             {
                 v.begin_content_swap(dir);
-                // The title names the folder shown: with a single title its name and glyph
-                // fade in while the icons cross-fade (a tab keeps its pill as it is).
-                if v.tabs.len() <= 1 {
-                    let now = Instant::now();
-                    v.chrome_fades.snap(ChromeKey::TitleSwap, 1.0, now);
-                    v.chrome_fades.set(true, ChromeKey::TitleSwap, 0.0, now);
-                    v.frames.request();
-                    tracing::debug!(dir, "folder navigation: the title fades in with the icons");
-                }
+                // The title names the folder shown: its name and glyph fade in while the
+                // icons cross-fade (a single title, or the shown tab's caption: the tab keeps
+                // its pill as it is).
+                let now = Instant::now();
+                v.chrome_fades.snap(ChromeKey::TitleSwap, 1.0, now);
+                v.chrome_fades.set(true, ChromeKey::TitleSwap, 0.0, now);
+                v.frames.request();
+                tracing::debug!(
+                    dir,
+                    tabs = v.tabs.len(),
+                    "folder navigation: the title fades in with the icons"
+                );
             }
         });
     }
@@ -1351,6 +1370,7 @@ impl FenceWindow {
                 .zip(v.tab_draw_xs(now))
                 .collect();
             let old_ids: Vec<FenceId> = v.tabs.iter().map(|t| t.id).collect();
+            let old_widths: Vec<f32> = v.tab_rects().iter().map(|(_, w)| *w).collect();
             let had_strip = v.tabs.len() > 1;
             // A new window gets its tabs here for the first time: what it was saved with.
             let first = v.tabs.is_empty();
@@ -1381,6 +1401,21 @@ impl FenceWindow {
                         d.grab_dx += v.tab_scroll.get() - strip_scroll;
                     }
                     v.sync_tab_slides(&prev, now);
+                    // The same tabs in the same order and a pill got wider (a rename, a folder
+                    // tab that went into a folder with a longer name): the pill is drawn at
+                    // its new width at once, so the neighbour that slid away from it lay over
+                    // the end of the new name for the first frames. The strip then stands at
+                    // its new places at once; pills that only got narrower still slide.
+                    let grew = same_set
+                        && old_ids.iter().eq(v.tabs.iter().map(|t| &t.id))
+                        && v.tab_rects()
+                            .iter()
+                            .zip(&old_widths)
+                            .any(|((_, w), old)| *w > *old + 0.5);
+                    if grew {
+                        tracing::debug!("a tab got wider: the strip stands at its new places");
+                        v.tab_slide.clear();
+                    }
                 } else if !same_set {
                     v.tab_slide.clear();
                     v.tab_settle = None;
@@ -1662,6 +1697,17 @@ impl FenceWindow {
             let _ = v.redraw_chrome_only();
             if v.items.is_empty() && !v.rolled_up {
                 let _ = v.redraw_content();
+            }
+        });
+    }
+
+    /// The infotip of a smart fence's count capsule (None: the capsule has none). A count such
+    /// as 「200+」 did not say what the plus stands for.
+    pub fn set_count_tip(&self, tip: Option<String>) {
+        self.with_view(|v| {
+            if v.count_tip != tip {
+                tracing::debug!(title = %v.title, tip = tip.is_some(), "count capsule: infotip set");
+                v.count_tip = tip;
             }
         });
     }
@@ -2482,16 +2528,48 @@ impl FenceWindow {
         self.with_view(|v| v.note_landing_at(&at.centres));
     }
 
+    /// 自由摆放: icons of this 「桌面」 were moved by hand and let go at `at`; their new cells are
+    /// about to be placed (see `FenceViewState::hand_moved`).
+    pub fn note_hand_move(&self, at: &DesktopDrop) {
+        self.with_view(|v| v.hand_moved = at.centres.iter().map(|c| c.0).collect());
+    }
+
+    /// 自由摆放: icons of this 「桌面」 were moved by hand and let go at `at`; their new cells are
+    /// placed. They settle into them from where they were let go
+    /// (`FenceViewState::land_moved_icons`).
+    pub fn land_moved_icons(&self, at: &DesktopDrop) {
+        self.with_view(|v| {
+            if v.land_moved_icons(&at.centres) {
+                v.sync_desktop_shape(true);
+                let _ = v.redraw_content();
+            }
+        });
+    }
+
     /// Re-places the desktop cells (items added or removed, area changed) and fits the window
     /// to them; `force` relayouts even when nothing moved (the look changed).
     fn arrange_desktop(&self, force: bool) {
         let hwnd = self.hwnd();
         let mut placed = None;
-        self.with_view(|v| placed = v.arrange_desktop());
+        self.with_view(|v| {
+            let before = v.desktop_slots_by_id();
+            placed = v.arrange_desktop();
+            // The same icons in other cells glide there; the window then reaches to where
+            // they come from (the second placing takes their ways in).
+            if matches!(placed, Some((_, true))) && v.glide_to_new_slots(&before) {
+                placed = v.arrange_desktop().map(|(rect, _)| (rect, true));
+            }
+        });
         let mut relayout = force;
         if let Some((rect, changed)) = placed {
             relayout |= changed;
-            if rect != window::window_rect(hwnd) {
+            let old = window::window_rect(hwnd);
+            if rect != old {
+                if (rect.left, rect.top) != (old.left, old.top) {
+                    // The cells are measured from the window's corner: motion in flight was
+                    // computed for the old one.
+                    self.with_view(|v| v.snap_item_motion());
+                }
                 self.place_window(rect);
                 relayout = true;
             }
@@ -2658,41 +2736,69 @@ impl FenceWindow {
     }
 
     /// The title of `fence` as it is drawn, for its name box (`rename::begin_inline_rename`):
-    /// where its text starts, its row's height, its size and its font. A lone title aligned
-    /// left, or a tab in the title row (its caption is centred in its pill). None for a
-    /// centred or right-aligned lone title, a tab with a glyph and the left tab column: their
-    /// box keeps its own place.
+    /// where its text starts, its row's height, its size and its font. A lone title (centred
+    /// or right-aligned: with the room it is aligned in, which its box takes) or a tab in the
+    /// title row (its caption is centred in its pill, after its glyphs), or a row of the left
+    /// tab column (`x` then counts from the row's left edge, `rail_row_screen_rect`).
     pub fn title_text_place(&self, fence: FenceId) -> Option<crate::rename::TitlePlace> {
         const SIZES: [f32; 4] = [12.0, 14.0, 16.0, 18.0];
         let guard = self.view.borrow();
         let v = guard.as_ref()?;
-        if v.bare() || v.tabs_on_rail() {
+        if v.bare() {
             return None;
         }
         let (face, weight) = v.chrome.title_font();
-        let (x, size) = if v.tabs.len() > 1 {
+        let px = |dip: f32| (dip * v.scale()).round() as i32;
+        if v.tabs_on_rail() {
+            // A row of the left tab column, as drawn: the caption after the colour dot and
+            // the glyphs any tab has, semibold for the shown tab of an expanded fence.
             let i = v.tabs.iter().position(|t| t.id == fence)?;
-            // A glyph before the caption (a portal's folder, Task View) moves it off centre.
-            if v.tabs[i].folder_icon || v.tabs[i].desktop_icon {
-                return None;
-            }
+            let (_, h) = *v.tab_rects().get(i)?;
+            let x = pecofence_render::fence_chrome::rail_text_left(
+                v.tabs.iter().any(|t| t.color.is_some()),
+                v.tabs.iter().any(|t| t.folder_icon),
+                v.tabs.iter().any(|t| t.desktop_icon),
+            );
+            let shown = fence == v.active && !v.column_collapsed;
+            return Some(crate::rename::TitlePlace {
+                x: px(x),
+                row_h: px(h),
+                font_dip: SIZES[usize::from(v.tabs[i].title_size.min(3))],
+                face,
+                weight: if shown { weight } else { 400 },
+                aligned: None,
+            });
+        }
+        let align = v.behavior.title_align.get();
+        let (x, size, aligned) = if v.tabs.len() > 1 {
+            let i = v.tabs.iter().position(|t| t.id == fence)?;
+            let t = &v.tabs[i];
             let (x, w) = *v.tab_rects().get(i)?;
-            let size = v.tabs[i].title_size.min(3);
-            let caption =
-                pecofence_render::text::measure_width(&v.tabs[i].title, &v.chrome.tab_format(size));
-            // The pill is the caption and 8 DIPs at each side, or wider (48 at least).
-            (x + ((w - caption) / 2.0).max(8.0), size)
-        } else if v.behavior.title_align.get() == pecofence_core::TitleAlign::Left {
-            (v.deco.title_x(), v.style.title_size.min(3))
+            let size = t.title_size.min(3);
+            // As drawn: centred in the pill, after a glyph (a portal's folder, Task View).
+            let dx = v.chrome.tab_caption_text_x(
+                &v.theme,
+                w,
+                &t.title,
+                size,
+                (t.folder_icon, t.desktop_icon),
+                v.tab_badge(t.id).as_deref(),
+            );
+            (x + dx, size, None)
+        } else if align == pecofence_core::TitleAlign::Left {
+            (v.deco.title_x(), v.style.title_size.min(3), None)
         } else {
-            return None;
+            let (x, end, (from, to)) = v.lone_title_text_span();
+            let aligned = Some((align, px(end), (px(from), px(to))));
+            (x, v.style.title_size.min(3), aligned)
         };
         Some(crate::rename::TitlePlace {
-            x: (x * v.scale()).round() as i32,
+            x: px(x),
             row_h: v.title_h_px(),
             font_dip: SIZES[usize::from(size)],
             face,
             weight,
+            aligned,
         })
     }
 
@@ -2813,6 +2919,20 @@ impl FenceWindow {
     pub fn take_keyboard(&self) -> bool {
         handler::focus_session(&self.view, self.hwnd());
         desktop::foreground_window() == self.hwnd()
+    }
+
+    /// The keys stopped coming here without a focus message (the Peek ended, whose dimmer
+    /// passed them on): the focus ring goes, as at `WM_KILLFOCUS`; the selection stays.
+    /// Returns whether a ring showed.
+    pub fn keyboard_left(&self) -> bool {
+        let mut ring = false;
+        self.with_view(|v| {
+            ring = std::mem::take(&mut v.focus_visible);
+            if ring && !v.rolled_up {
+                let _ = v.redraw_content();
+            }
+        });
+        ring
     }
 
     /// The icons selected now, in the order shown.

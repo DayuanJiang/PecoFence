@@ -662,9 +662,12 @@ impl FenceDropHandler {
                 .unwrap_or_else(|| v.title.clone())
         };
         // A reorder inside its own fence takes the icons nowhere else: the badge alone, without
-        // "移动到 <this fence>".
-        let reorder =
-            spot.insert.is_some() && internal.as_ref().is_some_and(|d| d.from == v.active);
+        // "移动到 <this fence>". So does a loose icon moved to another place of the freely
+        // placed 「桌面」 (no insertion mark there): it read 「移动到 桌面」 on the desktop it
+        // was on already.
+        let own = internal.as_ref().is_some_and(|d| d.from == v.active);
+        let own_place = v.places_freely() && spot.folder.is_none() && spot.tab.is_none();
+        let reorder = own && (spot.insert.is_some() || own_place);
         let description = if reorder {
             (DropImage::Move, "", String::new())
         } else {
@@ -1272,6 +1275,61 @@ impl FenceViewState {
             "drop landing noted for icons let go on the bare desktop"
         );
         self.drop_landing = Some((Instant::now(), from));
+    }
+
+    /// 自由摆放: icons of this 「桌面」 itself were moved by hand; `centres` are their centres on
+    /// screen when let go, and their new cells are placed already. Each one glides from there
+    /// into its cell (167 ms decelerate, as an icon dropped into a fence arrives): it used to
+    /// stand in the cell in the next frame, up to half a cell from where it was let go. The
+    /// list does not change, so `replace_items` never sees this move. Returns whether any
+    /// icon glides.
+    pub(super) fn land_moved_icons(&mut self, centres: &[(ItemId, (i32, i32))]) -> bool {
+        self.hand_moved.clear();
+        if !self.motion.enabled() || self.rolled_up || !desktop::is_visible(self.hwnd) {
+            return false;
+        }
+        let r = window::window_rect(self.hwnd);
+        let scale = self.scale();
+        let (cw, _) = self.content_size_px();
+        let layout = self.layout(cw as f32 / scale);
+        let fixed = layout.fixed_top();
+        let now = Instant::now();
+        let mut gliding = 0usize;
+        for (id, (sx, sy)) in centres {
+            let Some(i) = self.items.iter().position(|it| it.id == *id) else {
+                continue;
+            };
+            let c = layout.cell(i);
+            let x = (sx - r.left - self.content_x) as f32 / scale;
+            let y = (sy - r.top - self.content_y) as f32 / scale - fixed + self.scroll_y;
+            let (fx, fy) = super::items::landing_origin(x, y, &c);
+            if (fx - c.x).abs() <= 0.5 && (fy - c.y).abs() <= 0.5 {
+                // Let go right on its cell: no way to go (and none from its old cell, which
+                // the placing of the new cells started).
+                self.item_motion.remove(id);
+                continue;
+            }
+            let glide = |from: f32, to: f32| {
+                self.motion
+                    .tween(from, to, motion::FAST, Curve::Decelerate, now)
+            };
+            let m = super::items::ItemMotion {
+                x: glide(fx, c.x),
+                y: glide(fy, c.y),
+                alpha: Tween::at(1.0, now),
+            };
+            self.item_motion.insert(*id, m);
+            gliding += 1;
+        }
+        tracing::debug!(
+            icons = centres.len(),
+            gliding,
+            "free placement: icons moved by hand settle into their cells from where they were let go"
+        );
+        if gliding > 0 {
+            self.frames.request();
+        }
+        gliding > 0
     }
 
     /// Insertion index for reordering at a client-pixel point: only in a 手动-sorted virtual

@@ -215,6 +215,15 @@ const TIMER_CONFIG_LOCKED: usize = 77;
 /// The start hides the Windows desktop icons half way through the fences' fade-in (one shot;
 /// it stays armed while the App is borrowed). See `hide_icons_as_fences_come`.
 const TIMER_START_ICONS: usize = 75;
+/// 退出: the fences start to fade out once File Explorer's icons are about to show (one shot;
+/// it stays armed while the App is borrowed). See `Command::Quit`.
+const TIMER_QUIT_FADE: usize = 86;
+/// 「临时显示 Windows 桌面」: the same wait before the fences fade out (one shot; it stays
+/// armed while the App is borrowed). See `set_windows_desktop`.
+const TIMER_WINDOWS_DESKTOP_FADE: usize = 87;
+/// How long the fences stay after File Explorer was asked for its icons, at 退出 and for
+/// 「临时显示 Windows 桌面」.
+const ICONS_BACK_HOLD_MS: u32 = 400;
 const CONFIG_LOCKED_RETRY_MS: u32 = 2_000;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
@@ -419,6 +428,8 @@ pub struct App {
     /// A welcome card whose button was just clicked, while the app acts on it: a card that
     /// the answer brings up takes its place where it stands (`show_welcome`).
     answered_card: Option<crate::notice::Notice>,
+    /// The roll-up tip waits for the name box of the fence just made (see `welcome.rs`).
+    roll_tip_waits: welcome::RollTipWait,
     /// The 「已删除栅栏」 or 「已按规则整理」 notice with 撤销, and what it undoes.
     undo_notice: Option<(crate::notice::Notice, undo::UndoNotice)>,
     /// Ctrl+Z was pressed while a file operation was running: it runs when that has finished.
@@ -506,6 +517,11 @@ pub struct App {
     /// Frames left until the fences the Peek faded are opaque again, once they are back under
     /// the windows (`end_peek_now`); `None` when none waits.
     peek_rest_in: Option<u8>,
+    /// The desktop window or the fence that had the keyboard when the Peek opened, and, once
+    /// the user closed the Peek, the same window while it waits to get the keyboard back
+    /// (`end_peek_now`).
+    peek_from: Option<HWND>,
+    peek_back: Option<HWND>,
     /// The search list (rows, Everything's answer, a dialog waiting behind the Peek).
     search: search::SearchState,
     /// 「安装 Everything」 is running winget.
@@ -1130,6 +1146,22 @@ impl App {
                                         app.hide_icons_after_start();
                                     }
                                 }
+                                TIMER_QUIT_FADE => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        window::kill_timer(hwnd, TIMER_QUIT_FADE);
+                                        app.fade_out_and_quit("after the hold");
+                                    }
+                                }
+                                TIMER_WINDOWS_DESKTOP_FADE => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        window::kill_timer(hwnd, TIMER_WINDOWS_DESKTOP_FADE);
+                                        app.hide_fences_for_windows_desktop();
+                                    }
+                                }
                                 TIMER_IDLE_TRIM => {
                                     if let Ok(mut guard) = cell.try_borrow_mut()
                                         && let Some(app) = guard.as_mut()
@@ -1704,6 +1736,8 @@ impl App {
                 );
             }))
         };
+        // The drag feedback's fades run on the frame clock too.
+        let feedback_frames = frames.clone();
         let ctx = Rc::new(FenceContext {
             stack: stack.clone(),
             motion,
@@ -1767,12 +1801,12 @@ impl App {
                 ),
                 info_tips: std::cell::Cell::new(pecofence_platform::shell_icons::show_info_tips()),
                 drop_preview: std::cell::RefCell::new(
-                    crate::drop_preview::DropPreview::create()
+                    crate::drop_preview::DropPreview::create(feedback_frames.clone())
                         .map_err(|e| tracing::warn!(error = %e, "drop preview unavailable"))
                         .ok(),
                 ),
                 drag_guides: std::cell::RefCell::new(
-                    crate::drag_guides::DragGuides::create()
+                    crate::drag_guides::DragGuides::create(feedback_frames)
                         .map_err(|e| tracing::warn!(error = %e, "drag guides unavailable"))
                         .ok(),
                 ),
@@ -1872,6 +1906,7 @@ impl App {
             welcome: None,
             undo: Vec::new(),
             answered_card: None,
+            roll_tip_waits: Default::default(),
             undo_notice: None,
             undo_waiting: false,
             marquee_offer: None,
@@ -1920,6 +1955,8 @@ impl App {
             peek_tabs: HashMap::new(),
             peek_raise_in: None,
             peek_rest_in: None,
+            peek_from: None,
+            peek_back: None,
             search: Default::default(),
             everything_installing: false,
             snap_held: false,
@@ -2612,7 +2649,10 @@ impl App {
             Command::PortalForward(fence) => self.portal_forward(fence),
             Command::FocusNextFence { from, back } => self.focus_next_fence(from, back),
             Command::OpenPortalFolder(fence) => self.open_portal_folder(fence, "title glyph"),
-            Command::PortalPointerIn(fence) => self.portal_pointer_in(fence),
+            Command::PortalPointerIn(fence) => {
+                self.portal_pointer_in(fence);
+                self.smart_pointer_in(fence);
+            }
             Command::SwitchTab { host, tab } => self.switch_tab(host, tab),
             Command::SetColumnWidths { fence, widths } => {
                 self.state.set_column_widths(fence, widths);
@@ -2717,6 +2757,7 @@ impl App {
                     self.arrange_desktop_fence();
                 }
             }
+            Command::DesktopIconsAtRest => self.arrange_desktop_fence(),
             Command::MoveItemsToInbox { items, at } => {
                 // Dropped on the bare desktop: back to the inbox, as 「移出栅栏」 in the item
                 // menu does. The rules sent a shortcut straight back to 「程序」, so it could
@@ -2892,6 +2933,7 @@ impl App {
                 if let Some(w) = self.window_for(fence) {
                     w.redraw();
                 }
+                self.roll_tip_after_name_box();
             }
             Command::FocusFence(fence) => {
                 self.give_keyboard(fence, "name box or note editor closed")
@@ -3062,31 +3104,35 @@ impl App {
                 for w in self.fences.values() {
                     w.redraw();
                 }
+                self.roll_tip_after_name_box();
             }
             Command::Quit(reason) => {
                 tracing::info!(reason, "quitting");
                 self.state.save_and_wait("quit");
+                let hidden = pecofence_platform::shell_icons::desktop_icons_hidden();
                 if let Some(a) = self.anchor.borrow_mut().as_mut() {
                     a.release_desktop_icons();
                 }
-                // 退出 in the tray menu, or for an update: the fences fade out (167 ms) while
-                // Explorer brings its icons back, and the program ends when they have gone.
-                // They were cut off in one frame. The end of a Windows session does not wait,
-                // and with animations off (or no fence on screen) nothing fades.
-                let fading = reason != "session end"
-                    && self.fences.values().fold(false, |any, w| w.retire() | any);
+                // File Explorer shows its icons about a third of a second after it was asked
+                // (343 ms with Windows' animations on, measured with 45 icons), and the fences
+                // had gone after 167 ms: the desktop was empty in between. The fences stay for
+                // `ICONS_BACK_HOLD_MS` first, so that their fade ends after the icons are back.
+                let icons_coming =
+                    hidden && !pecofence_platform::shell_icons::desktop_icons_hidden();
+                let holds = icons_coming
+                    && reason != "session end"
+                    && self.ctx.motion.enabled()
+                    && !self.fences.is_empty();
                 tracing::debug!(
                     reason,
-                    fading,
-                    fences = self.fences.len(),
-                    "quit: the fences fade out first"
+                    icons_coming,
+                    holds,
+                    "quit: the fences wait for File Explorer's icons"
                 );
-                if fading {
-                    let fade = pecofence_render::motion::FAST.as_millis() as u32;
-                    // Two frames more, so the last step of the fade is on screen.
-                    window::quit_after(fade + 33);
+                if holds {
+                    window::set_timer(self.control.hwnd(), TIMER_QUIT_FADE, ICONS_BACK_HOLD_MS);
                 } else {
-                    window::post_quit(0);
+                    self.fade_out_and_quit(reason);
                 }
             }
             Command::SettingsActivated => self.query_store_startup(),

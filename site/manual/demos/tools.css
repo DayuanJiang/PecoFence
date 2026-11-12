@@ -344,6 +344,8 @@
 .sx-rows { left: 8px; right: 8px; top: 0; bottom: 28px; overflow: hidden }
 .sx-row { left: 0; right: 0; top: 0; height: 21px }
 .sx-plate { inset: 0; border-radius: 4px; background: rgba(27, 33, 51, .07) }
+/* while the mouse button is held on the row the plate is lighter; the row acts on the release */
+.sx-plate.down { background: rgba(27, 33, 51, .035) }
 .sx-sep { left: 6px; right: 6px; top: 0; height: 1px; background: rgba(27, 33, 51, .14) }
 .sx-ic { left: 6px; top: 3px; width: 16px; font-size: 11.5px; line-height: 15px; text-align: center }
 

@@ -372,6 +372,11 @@ impl Tween {
         self.to
     }
 
+    /// The value it started from.
+    pub fn origin(&self) -> f32 {
+        self.from
+    }
+
     fn progress(&self, now: Instant) -> f32 {
         if self.dur.is_zero() {
             return 1.0;
@@ -499,6 +504,11 @@ impl<K: Hash + Eq + Copy> Fades<K> {
         if let Some(t) = self.map.remove(old) {
             self.map.insert(new, t);
         }
+    }
+
+    /// True when no key is on or fading out (every key rests at 0).
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
     }
 
     /// True while any fade is still moving (the caller keeps requesting frames).

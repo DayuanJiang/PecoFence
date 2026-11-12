@@ -404,8 +404,11 @@ impl App {
             .to_string()
         } else if let Some(module) = other_programs_module(log).filter(|_| menu_crash) {
             tracing::info!(module, "the crash was inside another program's module");
+            // What the user can do comes first, the file last. Windows' banner shows 4 lines
+            // of about 36 Latin or 18 Chinese characters and cuts the rest: keep every
+            // language inside that with a 24-character file name (`i18n` tests the length).
             pecofence_core::i18n::format(
-                "PecoFence 上次在生成右键菜单时因 {0} 出错而关闭，这个文件属于其他程序。图标右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里重新打开。点击这里报告问题。",
+                "右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里恢复。上次因其他程序的 {0} 出错而关闭。",
                 &[module.to_string()],
             )
         } else if let Some(module) = other_programs_module(log) {
