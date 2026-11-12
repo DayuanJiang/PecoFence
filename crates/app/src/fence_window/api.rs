@@ -2516,6 +2516,18 @@ impl FenceWindow {
         self.with_view(|v| v.note_landing_at(&at.centres));
     }
 
+    /// 自由摆放: icons of this 「桌面」 were moved by hand and let go at `at`; their new cells are
+    /// placed. They settle into them from where they were let go
+    /// (`FenceViewState::land_moved_icons`).
+    pub fn land_moved_icons(&self, at: &DesktopDrop) {
+        self.with_view(|v| {
+            if v.land_moved_icons(&at.centres) {
+                v.sync_desktop_shape(true);
+                let _ = v.redraw_content();
+            }
+        });
+    }
+
     /// Re-places the desktop cells (items added or removed, area changed) and fits the window
     /// to them; `force` relayouts even when nothing moved (the look changed).
     fn arrange_desktop(&self, force: bool) {

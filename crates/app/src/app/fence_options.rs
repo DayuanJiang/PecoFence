@@ -690,6 +690,9 @@ impl App {
                 w.note_desktop_landing(at);
             }
             self.move_items(items, inbox);
+        } else if let Some(w) = self.fences.get(&inbox) {
+            // Its own icons, moved by hand: they settle into the new cells from the pointer.
+            w.land_moved_icons(at);
         }
         self.schedule_save();
         true
