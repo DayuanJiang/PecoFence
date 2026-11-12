@@ -199,7 +199,9 @@ impl FenceViewState {
     /// glides them (250 ms point-to-point). They used to jump there in one frame: the list
     /// that follows (`replace_items`) measured its "old" cells with the new grouping already
     /// set, so it found nothing to move. That list continues these glides to the new order.
-    /// Snaps under the conditions `replace_items` snaps under.
+    /// More than `REORDER_FADE_OVER` icons of which most move cross-fade instead (the list
+    /// that follows then snaps under the fade). Snaps under the conditions `replace_items`
+    /// snaps under.
     pub(super) fn regroup(&mut self, on: bool) {
         let animate = self.motion.enabled()
             && !self.rolled_up
@@ -224,6 +226,27 @@ impl FenceViewState {
         }
         let now = Instant::now();
         let (layout, view_h) = self.scroll_extent();
+        // Many icons of which most change places: they cross-fade, as a sort change of that
+        // size does (`reorder_cross_fades`). Gliding sent them all through each other.
+        let moving = (old.iter().enumerate())
+            .filter(|(i, o)| {
+                let c = layout.cell(*i);
+                (o.x - c.x).abs() > 0.5 || (o.y - c.y).abs() > 0.5
+            })
+            .count();
+        if self.desktop.is_none()
+            && self.content_swap_shows()
+            && reorder_cross_fades(moving, self.items.len())
+        {
+            tracing::debug!(
+                on,
+                items = self.items.len(),
+                moving,
+                "group by date changed: the content cross-fades"
+            );
+            self.begin_content_swap(0);
+            return;
+        }
         let scroll = self.scroll_y;
         // One viewport of slack above and below, as a column change takes; the rest snaps.
         let near = |y: f32, h: f32| y + h > scroll - view_h && y < scroll + 2.0 * view_h;
