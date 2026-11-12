@@ -326,9 +326,12 @@ keeps `hoverPeek` on with it, so a file dragged onto a rolled title still expand
 leaves the double-click and the chevron; default hover), `rollUp.hoverSpeed` (the page's 「展开快慢」:
 how long the pointer or a dragged file rests on a rolled fence before it expands, and how long
 the pointer rests on a tab before `rollUp.switchTabOnHover` switches to it, `fast` 150 ms,
-`normal` Windows' mouse hover time (400 ms unless changed), `slow` 1 s; default `normal`; after
-one such switch the next tabs of the strip follow the pointer after 50 ms, until the pointer
-has been off the tabs for a second or a mouse button is pressed),
+`normal` Windows' mouse hover time (400 ms unless changed), `slow` 1 s; default `normal`; that
+is the wait of the first one: after one rolled fence has expanded under the pointer, the next
+rolled fence the pointer comes to within a second expands after 50 ms, and after one tab
+switch the next tabs of the strip follow the pointer after 50 ms; the full wait is back when
+the pointer has been off the rolled titles, or the tabs, for a second or a mouse button was
+pressed),
 `rollUp.pushNeighbors` (an expanded fence pushes the
 fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was;
 when they reach the bottom of the work area, a fence opened by a click or by the command line opens
