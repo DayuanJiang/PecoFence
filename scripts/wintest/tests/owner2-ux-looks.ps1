@@ -16,8 +16,11 @@
 #   C  a rolled fence with a long title: the title runs on to the count (「3 项」) and leaves
 #      about 16 px before it. It was cut 40 px earlier: the count kept a 64 px box for a text
 #      of 22 px.
+#   S  a change of 不透明度 picks the text colour afresh. Dark mode over the Windows 11
+#      wallpaper: a note with 更厚实 has white text on its dark plate; switched to 默认 or to
+#      全透明 it kept that white text on the light plate or wallpaper (1.75 : 1) for good.
 # Default: all.
-if (-not $Part) { $Part = 'TRHGC' }
+if (-not $Part) { $Part = 'TRHGCS' }
 trap { PfTrap $_; continue }
 
 Add-Type -ReferencedAssemblies System.Drawing @'
@@ -222,6 +225,35 @@ if ($Part -match 'G') {
   foreach ($t in '工作', '学习', '娱乐与游戏') { Pf fence delete $t | Out-Null }
   Pf settings set themeStyle fluent | Out-Null
   Start-Sleep -Milliseconds 800
+}
+
+if ($Part -match 'S') {
+  Case 'S: the text colour after a change of the opacity'
+  Pf settings set customTheme null | Out-Null
+  Pf settings set themeStyle fluent | Out-Null
+  Pf settings set theme dark | Out-Null
+  # The wallpaper Windows 11 ships with (light blue with the darker bloom): the plate of 默认
+  # is light over it, near the brightness where the text colour changes.
+  $img = 'C:\Windows\Web\Wallpaper\Windows\img0.jpg'
+  if (Test-Path $img) {
+    [G]::SystemParametersInfoW(0x14, 0, $img, 3) | Out-Null; Start-Sleep -Seconds 8
+    Pf fence move 便签 --rect '728,16,280,170' | Out-Null
+    Start-Sleep -Seconds 1
+    UlPark
+    $n = (FenceGet '便签').windowRect
+    foreach ($to in 'default', 'transparent') {
+      Pf fence set 便签 opacity solid | Out-Null; Start-Sleep -Seconds 3
+      $before = UlRead "S/solid before $to" ($n.x + 14) ($n.y + 38) 100 18
+      Pf fence set 便签 opacity $to | Out-Null; Start-Sleep -Seconds 3
+      $m = UlRead "S/$to" ($n.x + 14) ($n.y + 38) 100 18
+      Shot "S-solid-to-$to"
+      Check "S from 更厚实 to ${to}: the note text reads" ($m.Contrast -ge 3.9) "$($m.Text) (needs 3.9 : 1); with 更厚实 it was $($before.Text)"
+    }
+    Pf fence set 便签 opacity default | Out-Null
+    Pf fence move 便签 --rect '600,100,280,150' | Out-Null
+  } else {
+    Log 'S skipped: no Windows 11 wallpaper on this box'
+  }
 }
 
 if ($Part -match 'C') {

@@ -2304,6 +2304,11 @@ impl FenceWindow {
             if v.backdrop_override != backdrop || (v.opacity - opacity).abs() > f32::EPSILON {
                 v.backdrop_override = backdrop;
                 v.opacity = opacity;
+                // The text colour is picked afresh for the new plate. The choice it keeps
+                // near its threshold is for a plate that moves over the wallpaper: carried
+                // over a change of 不透明度, a note in dark mode kept the white text of
+                // 更厚实 on the light plate of 默认 or 全透明.
+                v.forget_text_choice("opacity");
                 apply_system_backdrop(
                     v.hwnd,
                     v.backdrop_mode(),
@@ -2330,6 +2335,10 @@ impl FenceWindow {
         self.with_view(|v| {
             if v.style != style {
                 let previous_ink = v.material_foreground().label_look();
+                // A new 色调 changes the plate too: the text colour is picked afresh.
+                if v.style.tint != style.tint || v.style.tint_title_only != style.tint_title_only {
+                    v.forget_text_choice("tint");
+                }
                 v.style = style;
                 if previous_ink != v.material_foreground().label_look() {
                     let _ = v.redraw();

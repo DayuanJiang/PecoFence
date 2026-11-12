@@ -182,6 +182,21 @@ impl FenceViewState {
         }
     }
 
+    /// Drops the text colour choices kept for this plate (`material_foreground` keeps the last
+    /// one near its threshold): the plate itself changed (`what`), so the next pick starts
+    /// from the neutral threshold.
+    pub(super) fn forget_text_choice(&self, what: &str) {
+        tracing::debug!(
+            fence = %self.title,
+            what,
+            dark_text = ?self.glass_dark_text.get(),
+            "text colour choice dropped: the plate changed"
+        );
+        self.glass_dark_text.set(None);
+        self.bare_dark_text.set(None);
+        self.plate_halo.set(false);
+    }
+
     /// Adapt content to the clear plate instead of darkening the whole wallpaper.
     pub(super) fn material_foreground(&self) -> Theme {
         if self.theme.liquid_glass && self.gpu_glass.borrow().failed() {
