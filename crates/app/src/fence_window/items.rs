@@ -199,8 +199,8 @@ impl FenceViewState {
     /// glides them (250 ms point-to-point). They used to jump there in one frame: the list
     /// that follows (`replace_items`) measured its "old" cells with the new grouping already
     /// set, so it found nothing to move. That list continues these glides to the new order.
-    /// More than `REORDER_FADE_OVER` icons of which most move cross-fade instead (the list
-    /// that follows then snaps under the fade). Snaps under the conditions `replace_items`
+    /// More than `REORDER_FADE_OVER` icons of which most go to another column or further than
+    /// a row cross-fade instead (the list that follows then snaps under the fade). Snaps under the conditions `replace_items`
     /// snaps under.
     pub(super) fn regroup(&mut self, on: bool) {
         let animate = self.motion.enabled()
@@ -226,22 +226,24 @@ impl FenceViewState {
         }
         let now = Instant::now();
         let (layout, view_h) = self.scroll_extent();
-        // Many icons of which most change places: they cross-fade, as a sort change of that
-        // size does (`reorder_cross_fades`). Gliding sent them all through each other.
-        let moving = (old.iter().enumerate())
+        // Many icons of which most go to another column or further than a row: they
+        // cross-fade, as a sort change of that size does (`reorder_cross_fades`). Gliding
+        // sent them all through each other. Icons that only move down by a caption's height
+        // (every file is of one day) still glide, however many they are.
+        let far = (old.iter().enumerate())
             .filter(|(i, o)| {
                 let c = layout.cell(*i);
-                (o.x - c.x).abs() > 0.5 || (o.y - c.y).abs() > 0.5
+                (o.x - c.x).abs() > c.w / 2.0 || (o.y - c.y).abs() > c.h
             })
             .count();
         if self.desktop.is_none()
             && self.content_swap_shows()
-            && reorder_cross_fades(moving, self.items.len())
+            && reorder_cross_fades(far, self.items.len())
         {
             tracing::debug!(
                 on,
                 items = self.items.len(),
-                moving,
+                far,
                 "group by date changed: the content cross-fades"
             );
             self.begin_content_swap(0);
