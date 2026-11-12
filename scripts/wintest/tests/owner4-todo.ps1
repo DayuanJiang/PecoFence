@@ -345,6 +345,30 @@ Check 'held at the bottom edge, the note scrolls to its end under the dragged to
 Check 'released there, the first to-do is the last of the twelve' ($after -eq $want) "note: $(OneLine $after)"
 Check 'the note stays scrolled to its end after the drop' ($scrollEnd -ge 150) "scroll after the drop: $scrollEnd"
 
+Case 'S1b the wheel during a drag: the line stays under the pointer'
+$w = Fresh $nid $T3; $c = CRect $w
+Wheel ($c[0] + 150) ($c[1] + 50) 12; Start-Sleep -Milliseconds 1200
+ParkMouse 900 700
+$w = DumpOf '便签'; $boxes = Rects $w 'note_boxes'
+$from = TodoPt $c $boxes 0; $to = TodoPt $c $boxes 1
+[G]::MoveTo($from[0], $from[1]); Start-Sleep -Milliseconds 300
+MDown; Start-Sleep -Milliseconds 200
+Glide $from[0] $from[1] ($from[0] + 6) $to[1] 8 30
+Start-Sleep -Milliseconds 400
+# Two notches down with the pointer at rest; the button stays held and the pointer does not move.
+Wheel ($from[0] + 6) $to[1] (-2); Start-Sleep -Milliseconds 1200
+$wWheel = DumpOf '便签'
+$scrollWheel = [double](DumpVal $wWheel 'scroll')
+FCrop 's1b-wheel-while-dragging' $w
+# The lifted line is the one drawn under the pointer: a check box is at the pointer's height.
+$py = $to[1] - $c[1]
+$near = 999; foreach ($b in (Rects $wWheel 'note_boxes').Values) { $d = [math]::Abs((($b[1] + $b[3]) / 2) - $py); if ($d -lt $near) { $near = $d } }
+MUp; Start-Sleep -Milliseconds 1200
+$after = NoteText $nid
+$idx = [array]::IndexOf(@($after -split "`n"), '[ ] 第01条')
+Check 'the wheel scrolls the note while the to-do is held, and the held line stays at the pointer' ($scrollWheel -ge 60 -and $near -le 3) "scroll after two notches: $scrollWheel; the nearest check box is $near px from the pointer's height"
+Check 'released without another move, the to-do lands where it was held: several lines down, not beside its old place' ($idx -ge 4) "the first to-do is now line $($idx + 1) of 12; note: $(OneLine $after)"
+
 Case 'S2 Esc at the edge puts the line back and the note where it was scrolled'
 $w = Fresh $nid $T3; $c = CRect $w
 # The note is still scrolled to its end: back to the top first.

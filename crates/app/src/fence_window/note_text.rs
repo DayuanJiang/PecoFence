@@ -59,12 +59,11 @@ pub(super) struct TodoDrag {
     /// The pointer is outside the fence: the line shows back in its place, and a release
     /// there leaves it there.
     pub(super) outside: bool,
-    /// The pointer's y minus the line's top at the press, and the pointer's y now (content
-    /// DIPs before scrolling).
+    /// The pointer's y minus the line's top at the press (DIPs).
     pub(super) grab_dy: f32,
-    pub(super) pointer_y: f32,
-    /// The pointer's client y now: the note scrolls while it is near the top or bottom edge
-    /// of what the fence shows, and the line stays under it.
+    /// The pointer's client y now. Its place in the note's text is worked out from the
+    /// scroll offset whenever it is needed (`lifted_todo`), so the line stays under the
+    /// pointer whatever scrolls the note: the edge scroll, the wheel, a key.
     pub(super) client_y: i32,
     /// Where the note was scrolled to at the press: a drag that is taken back goes there.
     pub(super) scroll_from: f32,
@@ -91,10 +90,12 @@ fn shown_at(j: usize, from: usize, to: usize) -> usize {
 
 impl FenceViewState {
     /// The dragged to-do once it is lifted: its line in the note's text, the line it is
-    /// shown at, the pointer's y and the pointer's y minus the line's top at the press.
+    /// shown at, the pointer's y in the text as the note is scrolled now (content DIPs
+    /// before scrolling) and the pointer's y minus the line's top at the press.
     fn lifted_todo(&self) -> Option<(usize, usize, f32, f32)> {
         let d = self.todo_drag.as_ref().filter(|d| d.moved && !d.outside)?;
-        Some((d.from, d.to, d.pointer_y, d.grab_dy))
+        let pointer = (d.client_y - self.content_y) as f32 / self.scale() + self.scroll_y;
+        Some((d.from, d.to, pointer, d.grab_dy))
     }
 
     /// The note's text as it is shown: while a to-do is dragged, with that line at the
@@ -264,7 +265,6 @@ impl FenceViewState {
             moved: false,
             outside: false,
             grab_dy,
-            pointer_y: 0.0,
             client_y: y,
             scroll_from: self.scroll_target(),
             auto: None,
@@ -300,11 +300,9 @@ impl FenceViewState {
         let (w, h) = self.chrome_panel.size_px();
         let outside = x < -far || y < -far || x >= w + far || y >= h + far;
         let prev = (outside != was_outside).then(|| self.note_line_tops(now).0);
-        let pointer_y = (y - self.content_y) as f32 / self.scale() + self.scroll_y;
         if let Some(d) = self.todo_drag.as_mut() {
             d.moved = true;
             d.outside = outside;
-            d.pointer_y = pointer_y;
             d.client_y = y;
             d.editor_closing = false;
         }
@@ -334,11 +332,6 @@ impl FenceViewState {
     /// move crosses several lines at once. Called before the note is drawn and before the
     /// line is dropped.
     pub(super) fn reorder_dragged_todo(&mut self, now: Instant) {
-        // The note may have scrolled under a pointer that rests (the edge scroll, the wheel).
-        let (content_y, scale, scroll) = (self.content_y, self.scale(), self.scroll_y);
-        if let Some(d) = self.todo_drag.as_mut() {
-            d.pointer_y = (d.client_y - content_y) as f32 / scale + scroll;
-        }
         let Some((from, shown_to, pointer, grab)) = self.lifted_todo() else {
             return;
         };

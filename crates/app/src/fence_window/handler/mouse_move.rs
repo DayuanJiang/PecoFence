@@ -5,7 +5,7 @@ use super::*;
 pub(super) fn on_mousemove(
     h: &HandlerCtx,
     hwnd: HWND,
-    wparam: usize,
+    _wparam: usize,
     lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx {
@@ -401,8 +401,10 @@ pub(super) fn on_mousemove(
     }
     // A press in a note: on a to-do it becomes a drag once the pointer leaves the drag
     // threshold, and the line follows the pointer.
-    if v.todo_drag.is_some() && wparam & msg::MK_LBUTTON as usize == 0 {
-        // The release went elsewhere (the capture was lost meanwhile).
+    if v.todo_drag.is_some() && !window::key_down(msg::VK_LBUTTON) {
+        // The release went elsewhere (the capture was lost meanwhile). The button itself is
+        // asked: the move the app sends itself after a scroll, for the hover under a pointer
+        // at rest, carries no button.
         tracing::debug!("to-do press: the button is up without a release here");
         let _ = v.end_todo_drag(false);
     }
