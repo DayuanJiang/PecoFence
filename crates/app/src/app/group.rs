@@ -4,7 +4,7 @@
 //! white ring, like the other drag feedback; a title drag of one of them moves them all
 //! (`fence_window::group`). A marquee that touches no fence and selects no Windows icon still
 //! offers a new fence or a folder fence there (two small buttons at its corner, see
-//! `marquee_offer.rs`), unless 「在桌面空白处拖出矩形时显示“新建栅栏”按钮」 is off.
+//! `marquee_offer.rs`), unless 「在桌面空白处拖出矩形时显示「新建栅栏」按钮」 is off.
 
 use super::*;
 use crate::anchor::{MARQUEE_MIN_PX, MarqueeEvent};
