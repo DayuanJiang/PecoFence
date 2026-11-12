@@ -1473,6 +1473,25 @@ mod tests {
         let mid_plate = [0.55, 0.55, 0.55];
         let towards = quiet_ink(dark.accent, black, mid_plate, 21.0, LINK_REACH);
         assert!(contrast_over(towards, mid_plate) > contrast_over(dark.accent, mid_plate));
+        // A theme file without an accent of its own: the selected icon keeps the user's
+        // accent where the text took the other mode's ink (it was the default blue there).
+        let plain = crate::CustomTheme::parse(r##"{ "base": "fluent" }"##).unwrap();
+        let (green, pale_green) = ([0x10, 0x7C, 0x10], [0x6C, 0xCB, 0x5F]);
+        let themed = plain.apply(
+            Theme::light()
+                .with_accent(green)
+                .with_other_accent(pale_green),
+        );
+        let on_night = themed.over_acrylic(&crop_of(&themed, [19, 20, 25]), 1.0, None, None);
+        assert!(
+            on_night.text_primary.r > 0.5,
+            "light text on the dark plate"
+        );
+        let fill = on_night.selection_fill;
+        assert!(
+            fill.g > fill.b + 0.1 && fill.g > fill.r + 0.1,
+            "the user's green, not the default blue: {fill:?}"
+        );
         // A theme file's secondary text in a colour of its own moves towards its primary
         // text: an opaque brown on a plate of middle brightness stayed at 2.1 : 1.
         let brown = ColorF::from_rgba8(0x6B, 0x4A, 0x2E, 0xFF);

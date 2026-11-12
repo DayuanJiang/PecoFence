@@ -148,6 +148,15 @@ impl CustomTheme {
             if theme.liquid_glass {
                 variant = variant.with_liquid_glass();
             }
+            // The other mode's ink (the text changes to it over a wallpaper of the other
+            // brightness) carries the user's accent in that mode's shade, as it does without
+            // a theme file: the selected icon there was the default blue. A file with an
+            // accent of its own sets that below.
+            if mode != theme.mode
+                && let Some(rgb) = theme.other_accent
+            {
+                variant = variant.with_accent(rgb);
+            }
             self.with_values(variant)
         });
         out.custom_inks = Some(variants.map(|v| Ink::of(&v)));
