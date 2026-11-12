@@ -223,10 +223,14 @@
   button:disabled, select:disabled { color: var(--text-disabled); background-color: var(--control-disabled); border-color: var(--control-stroke); }
   button.accent { background: var(--accent); color: var(--on-accent); border-color: transparent; }
   button.accent:hover { background: var(--accent-hover); }
+  /* Pressed, as in WinUI: the accent at 80 % under dimmed text. */
+  button.accent:active, button[aria-pressed=true]:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 80%, transparent); color: color-mix(in srgb, var(--on-accent) 60%, transparent); }
   .iconbtn { width: 32px; min-width: 0; padding: 0; background: transparent; border-color: transparent; font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-size: 16px; }
   .iconbtn:hover { background: var(--subtle); }
+  .iconbtn:active { background: var(--subtle-pressed); }
   .iconbtn:disabled { background: transparent; border-color: transparent; }
   .iconbtn[data-act=del]:hover { color: var(--error); background: var(--error-bg); }
+  .iconbtn[data-act=del]:active { background: color-mix(in srgb, var(--error-bg) 60%, transparent); }
 
   /* Peek shortcut: key caps in a box that records the next combination (styled as a focused
      text box meanwhile); the quick choices are toggle buttons. */
@@ -256,6 +260,7 @@
   .tile { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 6px 6px 10px; border-radius: 6px;
     border: 1px solid var(--control-stroke); background: var(--control); }
   .tile:hover { background: var(--control-hover); }
+  .tile:active { background: var(--control-pressed); }
   .tile:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   .tile:has(input:focus-visible) { outline: 2px solid var(--text); outline-offset: 1px; }
   .tile input { position: absolute; opacity: 0; pointer-events: none; }
@@ -293,6 +298,8 @@
   .card:has(> .swatches) > .l { flex-basis: 160px; }
   .swatch { width: 28px; height: 28px; min-width: 0; padding: 0; border-radius: 50%; position: relative; background: var(--swatch); border: 1px solid #00000026; }
   .swatch:hover { background: var(--swatch); filter: brightness(1.08); }
+  /* Pressed (by the mouse or by Space): darker, and it keeps its colour. */
+  .swatch:active { background: var(--swatch); filter: brightness(.88); }
   .swatch.none { background: var(--control); border-color: var(--control-strong); }
   .swatch.none::after { content: ""; position: absolute; left: 50%; top: 4px; bottom: 4px; width: 1.5px; margin-left: -.75px; background: var(--text2); transform: rotate(45deg); }
   .swatch.custom:not(.set), .swatch.custom:not(.set):hover { background: conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
@@ -317,6 +324,7 @@
   details.card > summary { display: flex; align-items: center; gap: 16px; min-height: 66px; padding: 12px 16px; list-style: none; border-radius: inherit; }
   details.card > summary::-webkit-details-marker { display: none; }
   details.card > summary:hover { background: var(--subtle); }
+  details.card > summary:active { background: var(--subtle-pressed); }
   details.card > summary .chev { font-size: 12px; color: var(--text2); transition: transform .15s; }
   details.card[open] > summary { border-bottom: 1px solid var(--line); border-radius: var(--r-card) var(--r-card) 0 0; }
   details.card[open] > summary .chev { transform: rotate(180deg); }
