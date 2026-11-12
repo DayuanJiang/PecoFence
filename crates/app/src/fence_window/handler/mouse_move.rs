@@ -29,7 +29,9 @@ pub(super) fn on_mousemove(
     let Some(v) = guard.as_mut() else {
         return Some(0);
     };
-    if !v.mouse_inside && v.is_portal && !v.portal_missing {
+    // Every fence but a folder fence already known to be gone: a smart fence's searched
+    // folders are looked at too (the app knows which fence has any).
+    if !v.mouse_inside && !(v.is_portal && v.portal_missing) {
         queue.push(Command::PortalPointerIn(v.active));
     }
     v.set_mouse_inside(true);

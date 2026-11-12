@@ -7,8 +7,11 @@
 #                             fences fade with the dimmer, not after it
 #   run.sh --var Part=C ...   a smart fence's count with a plus (「3+」): the pointer resting on it
 #                             says of how many files the fence shows the newest
+#   run.sh --var Part=R ...   a smart fence whose searched folder was renamed: the pointer coming
+#                             onto the fence makes it look again at once (it kept the old files
+#                             for up to a minute)
 # Without --var every part runs.
-if (-not $Part) { $Part = 'SHC' }
+if (-not $Part) { $Part = 'SHCR' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
 $U3Files = @('报告.txt', '宝贝计划.txt', '报价单 客户甲.txt', '报销单 10月.txt', '预算表 2026.xlsx', '年度报告 2025 董事会审阅版（含附录）.pdf', '备忘 周会.md', '笔记 读书.txt')
@@ -242,6 +245,31 @@ function U3PartC() {
   Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
 }
 
+function U3PartR() {
+  trap { PfTrap $_; continue }
+  Case 'a smart fence whose folder was renamed'
+  $dir = "$PfDocs\智能栅栏改名检查"; $moved = "$PfDocs\智能栅栏改名检查 旧"
+  Remove-Item -Recurse -Force $dir, $moved -ErrorAction SilentlyContinue
+  foreach ($i in 1..5) { AgedFile $dir "合同 第 $i 份.txt" $i | Out-Null }
+  PfStart -Lang 'zh-CN'
+  Pf settings set featureTips false | Out-Null
+  ClearFences
+  Pf fence create --title '合同' --smart-folder $dir --rect '500,300,360,240' | Out-Null
+  Check 'the fence shows the five files' (WaitSmart '合同' { $s.shown -eq 5 } 15) (SmartLine '合同')
+  [G]::MoveTo(200, 800); Start-Sleep -Milliseconds 500
+  Rename-Item -LiteralPath $dir -NewName (Split-Path $moved -Leaf)
+  Start-Sleep -Milliseconds 1500
+  Log "after the rename, pointer away: $(SmartLine '合同')"
+  # The pointer comes onto the fence, as before a double-click on one of its icons.
+  [G]::MoveTo(640, 480); Start-Sleep -Milliseconds 200; [G]::MoveTo(650, 470)
+  Check 'the pointer on the fence: its files are gone within 4 s' (WaitSmart '合同' { $s.shown -eq 0 } 4) (SmartLine '合同')
+  $f = @(@(PfJson fence list) | Where-Object { $_ -and $_.title -eq '合同' })[0]
+  Crop 'R-renamed' ($f.windowRect.x - 10) ($f.windowRect.y - 10) 380 260 | Out-Null
+  PfQuit
+  Remove-Item -Recurse -Force $dir, $moved -ErrorAction SilentlyContinue
+}
+
 if ($Part -match 'S') { U3PartS }
 if ($Part -match 'H') { U3PartH }
 if ($Part -match 'C') { U3PartC }
+if ($Part -match 'R') { U3PartR }

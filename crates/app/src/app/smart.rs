@@ -869,6 +869,26 @@ impl App {
         }
     }
 
+    /// The pointer came onto `fence`. A searched folder that was renamed or moved away keeps
+    /// its watcher running (the handle follows the folder) and the watcher reports nothing of
+    /// it, so a smart fence showed the files of a folder no longer at its path until the
+    /// once-a-minute search (a double-click on one failed). Looked at now, as a folder fence
+    /// is (`portal_pointer_in`): the search runs again at once. One file-system call per
+    /// searched folder on a fixed drive.
+    pub(super) fn smart_pointer_in(&mut self, fence: FenceId) {
+        let moved = self.smart.watchers.iter().any(|((id, dir), (_, w))| {
+            *id == fence && shell::is_on_fixed_drive(dir) && !w.still_at(dir)
+        });
+        if !moved {
+            return;
+        }
+        tracing::info!(%fence, "smart fence: a searched folder is no longer at its path; noticed as the pointer came onto it");
+        self.smart
+            .watchers
+            .retain(|(id, dir), (_, w)| *id != fence || w.still_at(dir));
+        self.run_smart(fence, "a searched folder is no longer at its path");
+    }
+
     /// A watcher batch named `dirs` (`all`: it overflowed): the smart fences with a folder that
     /// holds one of them run again shortly.
     pub(super) fn smart_folders_changed(&mut self, dirs: &[PathBuf], all: bool) {
