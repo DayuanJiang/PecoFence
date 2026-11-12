@@ -977,6 +977,49 @@ mod tests {
         }
     }
 
+    /// A backdrop sample as a fence gets it: `rgb` with the theme's material recipe applied.
+    fn backdrop_sample(theme: &Theme, rgb: [u8; 3]) -> crate::Image {
+        let mut image = crate::Image::solid(30, 30, rgb);
+        let tint = theme.acrylic_tint();
+        image.tint(tint.color, tint.luminosity_opacity, 0.0, tint.chroma);
+        image
+    }
+
+    #[test]
+    fn hidden_clear_plate_picks_ink_from_the_wallpaper_not_from_the_plate() {
+        // A theme file with a dark plate in dark mode (the example 暖色) over a white
+        // wallpaper: light ink suits the plate, dark ink the wallpaper the text sits on
+        // while the plate is hidden.
+        let mut warm = Theme::dark();
+        warm.material.color = ColorF::from_rgba8(0x3A, 0x24, 0x14, 0xD9);
+        let white = backdrop_sample(&warm, [255; 3]);
+        assert!(warm.wallpaper_brightness(&white) > 0.9);
+        assert!(warm.over_clear_plate(&white, None, None).text_primary.r > 0.5);
+        let bare = warm.over_bare_wallpaper(&white, None);
+        assert!(bare.text_primary.r < 0.5, "dark ink on the white wallpaper");
+        assert!(bare.text_halo);
+        // Light mode over a dark wallpaper: light ink on the wallpaper.
+        let light = Theme::light();
+        let dark = backdrop_sample(&light, [90, 92, 93]);
+        assert!(light.over_bare_wallpaper(&dark, None).text_primary.r > 0.5);
+        // The built-in styles over a plain bright or dark wallpaper agree with the plate.
+        for base in [
+            Theme::dark(),
+            Theme::light(),
+            Theme::dark().with_liquid_glass(),
+            Theme::light().with_liquid_glass(),
+        ] {
+            let bright = backdrop_sample(&base, [235; 3]);
+            let dim = backdrop_sample(&base, [20; 3]);
+            assert!(base.over_bare_wallpaper(&bright, None).text_primary.r < 0.5);
+            assert!(base.over_bare_wallpaper(&dim, None).text_primary.r > 0.5);
+        }
+        // Near the threshold the last choice stays.
+        let mid = backdrop_sample(&light, [150; 3]);
+        assert!(light.over_bare_wallpaper(&mid, Some(true)).text_primary.r < 0.5);
+        assert!(light.over_bare_wallpaper(&mid, Some(false)).text_primary.r > 0.5);
+    }
+
     #[test]
     fn clear_glass_adapts_ink_without_darkening_the_background() {
         let base = Theme::dark().with_liquid_glass().with_accent([5, 90, 160]);
