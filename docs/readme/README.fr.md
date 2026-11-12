@@ -170,7 +170,7 @@ La version Microsoft Store est signée par Microsoft, se met à jour automatique
 <details>
 <summary><strong>Configuration requise, réglages et quelques remarques utiles</strong></summary>
 
-- Windows 10 22H2, ou Windows 11 22H2 ou version ultérieure. Microsoft Edge WebView2 Runtime est nécessaire pour les Paramètres. Windows 11 l'inclut ; sous Windows 10, installez-le depuis Microsoft si les Paramètres ne s'ouvrent pas.
+- Windows 10 1809 ou version ultérieure (version Microsoft Store : 2004 ou ultérieure), ou Windows 11 22H2 ou version ultérieure. Microsoft Edge WebView2 Runtime est nécessaire pour les Paramètres. Windows 11 l'inclut ; sous Windows 10, installez-le depuis Microsoft si les Paramètres ne s'ouvrent pas.
 - Au premier lancement, PecoFence crée les groupes Applications, Dossiers, Fichiers et documents et Bureau dans la langue de votre choix. Les icônes du Bureau Windows réapparaissent quand vous quittez.
 - La configuration est enregistrée dans `%APPDATA%\PecoFence\config.json`. Lancez l’application avec `--portable` pour la garder dans un dossier `config` à côté de l’exécutable.
 - Le ZIP et le programme d’installation ne sont pas signés. Si Windows SmartScreen s’affiche au premier lancement, choisissez **Informations complémentaires → Exécuter quand même**.

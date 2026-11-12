@@ -89,7 +89,7 @@
   "download.button": "Scarica lo ZIP portatile",
   "download.first_run": "Al primo avvio vengono creati quattro riquadri nella tua lingua: Programmi, Cartelle, File e documenti e Desktop. Le icone del desktop ricompaiono quando esci.",
   "download.requirements_heading": "Prima di iniziare",
-  "download.req1": "Windows 10 22H2 o Windows 11, x64.",
+  "download.req1": "Windows 10 1809 o versioni successive, oppure Windows 11, x64.",
   "download.req2": "Microsoft Edge WebView2 Runtime per la finestra delle Impostazioni. È già incluso in Windows 11; su Windows 10 potrebbe essere necessario installarlo.",
   "download.req3": "Tieni <code>WebView2Loader.dll</code> e <code>pecofence-watchdog.exe</code> nella stessa cartella dell’app.",
   "download.req4": "Le versioni portatili non sono firmate. Se al primo avvio compare Windows SmartScreen, scegli Ulteriori informazioni e poi Esegui comunque. L’installazione da Microsoft Store o tramite winget evita l’avviso.",

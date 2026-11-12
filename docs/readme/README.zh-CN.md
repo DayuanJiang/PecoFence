@@ -158,7 +158,7 @@ Microsoft Store 版由微软签名，自动更新，不会出现 SmartScreen 提
 <details>
 <summary><strong>系统要求、配置位置与使用说明</strong></summary>
 
-- 支持 Windows 10 22H2，以及 Windows 11 22H2 及以上版本。设置面板需要 Microsoft Edge WebView2 Runtime，Windows 11 已自带，Windows 10 如打不开设置请从微软官网安装。
+- 支持 Windows 10 1809 及以上版本（Microsoft Store 版需要 2004 及以上），以及 Windows 11 22H2 及以上版本。设置面板需要 Microsoft Edge WebView2 Runtime，Windows 11 已自带，Windows 10 如打不开设置请从微软官网安装。
 - 首次运行会按所选语言创建“程序”“文件夹”“文件与文档”和“桌面”四个栅栏。退出程序时，Windows 桌面图标会恢复显示。
 - 配置保存在 `%APPDATA%\PecoFence\config.json`。用 `--portable` 启动，可改为保存在程序旁的 `config` 文件夹。
 - 便携版和安装包都没有代码签名。首次运行若出现 Windows SmartScreen 提示，点击**更多信息 → 仍要运行**。

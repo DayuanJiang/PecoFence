@@ -158,7 +158,7 @@ Microsoft Store 버전은 Microsoft가 서명하고 자동으로 업데이트되
 <details>
 <summary><strong>요구 사항, 설정 위치, 알아 두면 좋은 점</strong></summary>
 
-- Windows 10 22H2 또는 Windows 11 22H2 이상에서 동작합니다. 설정 화면에는 Microsoft Edge WebView2 Runtime이 필요합니다. Windows 11에는 포함되어 있고, Windows 10에서 설정이 열리지 않으면 Microsoft 사이트에서 설치하세요.
+- Windows 10 1809 이상(Microsoft Store 버전은 2004 이상) 또는 Windows 11 22H2 이상에서 동작합니다. 설정 화면에는 Microsoft Edge WebView2 Runtime이 필요합니다. Windows 11에는 포함되어 있고, Windows 10에서 설정이 열리지 않으면 Microsoft 사이트에서 설치하세요.
 - 처음 실행하면 선택한 언어로 “프로그램”, “폴더”, “파일 및 문서”, “바탕 화면” 펜스가 만들어집니다. 종료하면 Windows 바탕 화면 아이콘이 다시 표시됩니다.
 - 설정은 `%APPDATA%\PecoFence\config.json`에 저장됩니다. `--portable`로 실행하면 실행 파일 옆의 `config` 폴더에 보관합니다.
 - 포터블 빌드와 설치 프로그램은 코드 서명이 되어 있지 않습니다. 첫 실행 때 Windows SmartScreen이 나타나면 **추가 정보 → 실행**을 선택하세요.

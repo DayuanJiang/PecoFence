@@ -155,7 +155,7 @@ Microsoft Store 版は Microsoft によって署名され、自動で更新さ�
 <details>
 <summary><strong>動作環境、設定ファイルの場所、知っておきたいこと</strong></summary>
 
-- Windows 10 22H2、または Windows 11 22H2 以降が対象です。設定画面には Microsoft Edge WebView2 Runtime が必要です。Windows 11 には標準で含まれていますが、Windows 10 で設定が開かない場合は Microsoft のサイトからインストールしてください。
+- Windows 10 1809 以降（Microsoft Store 版は 2004 以降）、または Windows 11 22H2 以降が対象です。設定画面には Microsoft Edge WebView2 Runtime が必要です。Windows 11 には標準で含まれていますが、Windows 10 で設定が開かない場合は Microsoft のサイトからインストールしてください。
 - 初回起動時に、選択した言語で「アプリ」「フォルダー」「ファイルとドキュメント」「デスクトップ」の 4 つのフェンスが作成されます。終了すると、Windows のデスクトップアイコンは元どおり表示されます。
 - 設定は `%APPDATA%\PecoFence\config.json` に保存されます。`--portable` を付けて起動すると、実行ファイルの隣にある `config` フォルダーに保存されます。
 - ポータブル版とインストーラーはコード署名されていません。初回起動時に Windows SmartScreen が表示された場合は**詳細情報 → 実行**を選んでください。

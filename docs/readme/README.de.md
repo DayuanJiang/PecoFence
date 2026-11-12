@@ -170,7 +170,7 @@ Die Microsoft-Store-Version ist von Microsoft signiert, aktualisiert sich automa
 <details>
 <summary><strong>Systemvoraussetzungen, Konfiguration und ein paar nützliche Hinweise</strong></summary>
 
-- Windows 10 22H2 oder Windows 11 22H2 oder neuer. Für die Einstellungen wird die Microsoft Edge WebView2 Runtime benötigt. Windows 11 bringt sie mit; unter Windows 10 installiere sie von Microsoft, falls sich die Einstellungen nicht öffnen.
+- Windows 10 1809 oder neuer (Microsoft-Store-Version: 2004 oder neuer) oder Windows 11 22H2 oder neuer. Für die Einstellungen wird die Microsoft Edge WebView2 Runtime benötigt. Windows 11 bringt sie mit; unter Windows 10 installiere sie von Microsoft, falls sich die Einstellungen nicht öffnen.
 - Beim ersten Start werden die Bereiche „Programme“, „Ordner“, „Dateien und Dokumente“ und „Desktop“ in der gewählten Sprache angelegt. Beim Beenden erscheinen die Windows-Desktopsymbole wieder.
 - Die Konfiguration liegt in `%APPDATA%\PecoFence\config.json`. Mit `--portable` gestartet, bleibt sie in einem Ordner `config` neben der ausführbaren Datei.
 - ZIP und Installer sind nicht signiert. Fragt Windows SmartScreen beim ersten Start nach, wähle **Weitere Informationen → Trotzdem ausführen**.

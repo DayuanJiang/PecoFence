@@ -168,7 +168,7 @@ The Microsoft Store edition is signed by Microsoft, updates automatically and ne
 <details>
 <summary><strong>Requirements, configuration and a few useful notes</strong></summary>
 
-- Windows 10 22H2, or Windows 11 22H2 or later. Settings needs the Microsoft Edge WebView2 Runtime. Windows 11 includes it; on Windows 10 install it from Microsoft if Settings does not open.
+- Windows 10 1809 or later (the Microsoft Store edition: 2004 or later), or Windows 11 22H2 or later. Settings needs the Microsoft Edge WebView2 Runtime. Windows 11 includes it; on Windows 10 install it from Microsoft if Settings does not open.
 - The first launch creates four fences in your selected language: Programs, Folders, Files and documents, and Desktop. Windows desktop icons are restored when you exit.
 - Configuration lives in `%APPDATA%\PecoFence\config.json`. Launch with `--portable` to keep it in a `config` folder beside the executable.
 - The ZIP and the installer are unsigned. If Windows SmartScreen appears on first launch, choose **More info → Run anyway**.
