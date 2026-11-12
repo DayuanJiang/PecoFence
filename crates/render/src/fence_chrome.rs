@@ -1067,6 +1067,17 @@ fn header_foreground(
         ..
     } = backdrop
     {
+        // A fully transparent fence (its captions have the halo; on Liquid Glass nothing
+        // else sets it) in a theme file whose glass has a tint of its own: the header keeps
+        // the fence's own pick, the wallpaper while the plate is hidden and the plate while
+        // it shows, as the content does. The sample under a control is of the tinted glass,
+        // which is not drawn while the plate is hidden: an ink picked from it was white on a
+        // white wallpaper in dark mode. The built-in glass has no tint, so its sample is the
+        // wallpaper itself and each control goes on picking its own ink.
+        let tinted = theme.material.color.a > 0.0 || theme.material.luminosity_opacity > 0.0;
+        if theme.text_halo && tinted {
+            return *theme;
+        }
         // A fixed 「文字颜色」 keeps its text; the sample still keeps the lens warm.
         return material
             .borrow_mut()
