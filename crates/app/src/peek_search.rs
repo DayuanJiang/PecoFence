@@ -973,6 +973,27 @@ fn paint_box(hwnd: HWND) {
                 line,
             );
         }
+        // An outline, as the filter box and the rename box have: with the dimming off the
+        // box had no edge over a white window (nor on Windows 10, where nothing rounds or
+        // shades it).
+        let border = if s.dark { 0x0050_5050 } else { 0x00C8_C8C8 };
+        let t = 1.max(px(1.0));
+        for (left, top, right, bottom) in [
+            (0, 0, w, t),
+            (0, h - t, w, h),
+            (0, 0, t, h),
+            (w - t, 0, w, h),
+        ] {
+            p.fill(
+                RECT {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                },
+                border,
+            );
+        }
         if s.rows.is_empty() {
             return;
         }
