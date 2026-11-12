@@ -512,6 +512,47 @@ cell takes no `icon=`, and a text that starts with `[ ]` or `[x]` loses that mar
 A row without sliders or `fill=true` cells goes on to a new line when the next cell does not fit; in a row with them,
 the cells past the right edge are not drawn.
 
+A whole streaming script with three buttons, a slider, two check boxes and a list that scrolls
+under them (save it as UTF-8 with a BOM). Each click arrives as a line on the standard input: the
+script changes its state and prints the screen again.
+
+```powershell
+# <pecofence.type>streamable</pecofence.type>
+$playing = $false; $pos = 0.3; $shuffle = $true; $loop = $false; $now = 3
+$in = New-Object IO.StreamReader([Console]::OpenStandardInput())
+$read = $in.ReadLineAsync()
+function Show {
+  $play = if ($playing) { [string][char]0xE769 } else { [string][char]0xE768 }   # Pause, Play
+  $rows = @(
+    ":: $([char]0xE892) | action=prev tooltip=""Previous"" :: $play | action=play tooltip=""Play or pause"" checked=$("$playing".ToLower()) :: $([char]0xE893) | action=next tooltip=""Next"" :: Song $now | color=gray",
+    ":: 1:15 | color=gray width=40 :: | slider=$pos action=seek :: 4:02 | color=gray width=40 align=right",
+    ":: Shuffle | checkbox=$("$shuffle".ToLower()) action=shuffle :: Repeat one | checkbox=$("$loop".ToLower()) action=loop",
+    '---',
+    ' | pane=songs hidden=true')
+  1..40 | ForEach-Object { $rows += "Song $_ | action=song:$_$(if ($_ -eq $now) { ' color=blue' })" }
+  Write-Output ("~~~`n" + ($rows -join "`n"))
+}
+Show
+while ($true) {
+  if ($read.IsCompleted) {
+    $line = $read.Result; if ($null -eq $line) { break }   # the fence is gone
+    $read = $in.ReadLineAsync()
+    $name, $value = $line -split ':', 2
+    switch ($name) {
+      'play' { $playing = -not $playing }
+      'seek' { $pos = [double]$value }
+      'shuffle' { $shuffle = -not $shuffle }
+      'loop' { $loop = -not $loop }
+      'next' { $now++ }
+      'prev' { $now-- }
+      'song' { $now = [int]$value }
+    }
+    Show
+  }
+  Start-Sleep -Milliseconds 60
+}
+```
+
 ### Scrolling
 
 Rows that do not fit the fence scroll: the mouse wheel moves them, and the overlay scrollbar on the
