@@ -406,6 +406,24 @@ fn hover_select_follows_the_desktop() {
     assert_eq!(anchor, Some(1));
 }
 
+/// Hover select reaches the fence under the pointer while another fence or Explorer's desktop
+/// has the keyboard; another program in front keeps it (#184).
+#[test]
+fn hover_select_takes_the_keyboard_only_from_the_desktop() {
+    for class in [anchor::FENCE_CLASS, "Progman", "WorkerW"] {
+        assert!(handler::desktop_surface_class(class), "{class}");
+    }
+    for class in [
+        "Notepad",
+        "CabinetWClass",
+        "PecoFence.Rename",
+        "PecoFence.NoteEdit",
+        "",
+    ] {
+        assert!(!handler::desktop_surface_class(class), "{class}");
+    }
+}
+
 /// Real file paths stay ours; Outlook mail, a Start-menu app (its `CF_HDROP` holds a
 /// known-folder-relative "path") and other shell-only items go to the shell; our own fences'
 /// drags and browser links keep their paths.

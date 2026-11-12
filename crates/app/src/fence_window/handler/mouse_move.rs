@@ -512,9 +512,10 @@ pub(super) fn on_mousemove(
     };
     let (item_changed, title_changed) = v.set_hover(hit, in_title);
     // Explorer's single-click open: resting on an item selects it after the hover time;
-    // moving onto another item restarts the wait.
-    if item_changed && behavior.single_click.get() {
-        if hit.is_some() {
+    // moving onto another item restarts the wait. A rest on the title row (a tab, a button of
+    // the row) gives the fence the keyboard after the same wait.
+    if (item_changed || title_changed) && behavior.single_click.get() {
+        if hit.is_some() || in_title {
             window::set_timer(hwnd, TIMER_HOVER_SELECT, Tooltip::hover_delay_ms());
         } else {
             window::kill_timer(hwnd, TIMER_HOVER_SELECT);

@@ -316,24 +316,33 @@ pub(super) fn on_timer_tab_hover(
 }
 
 // Explorer's single-click open: the pointer rested on an item for the hover time, so it is
-// selected as on the desktop (Ctrl toggles it, Shift selects the range from the anchor). Like
-// the desktop, only while the fence is the active window, and not while a button is held, a
-// gesture runs or a rename is open.
+// selected as on the desktop (Ctrl toggles it, Shift selects the range from the anchor). The
+// fences and Explorer's desktop are one desktop to the user: the fence under the pointer
+// selects while it, another fence or the desktop has the keyboard, and takes the keyboard as a
+// press on the item would, so F2 renames what the pointer selected (#184). Resting on the
+// title row takes the keyboard the same way, for F2 there (the fence's name box). Another
+// program in front keeps the keyboard, as it does over the desktop. Not while a button is
+// held, a gesture runs, a rename is open or a note is edited.
 pub(super) fn on_timer_hover_select(
     h: &HandlerCtx,
     hwnd: HWND,
     _wparam: usize,
     _lparam: isize,
 ) -> Option<isize> {
-    let HandlerCtx { view, behavior, .. } = h;
+    let HandlerCtx {
+        view,
+        behavior,
+        queue,
+        ..
+    } = h;
     window::kill_timer(hwnd, TIMER_HOVER_SELECT);
+    // Some: this fence takes the keyboard from another fence or the desktop; true when an
+    // item was selected for it (the selection in the other fences then ends, as on a press).
+    let mut take = None;
     if let Ok(mut guard) = view.try_borrow_mut()
         && let Some(v) = guard.as_mut()
-        && let Some(i) = v.hover
         && behavior.single_click.get()
-        && v.win_active
         && !v.retired
-        && !v.rolled_up
         && v.pressed.is_none()
         && v.drag.is_none()
         && v.marquee.is_none()
@@ -341,17 +350,42 @@ pub(super) fn on_timer_hover_select(
         && !window::key_down(msg::VK_LBUTTON)
         && crate::rename::active_target().is_none()
     {
-        let changed = hover_item(
-            &mut v.selected,
-            &mut v.range_anchor,
-            i,
-            window::key_down(msg::VK_SHIFT),
-            window::key_down(msg::VK_CONTROL),
-        );
-        v.anchor_index = Some(i);
-        if changed {
-            let _ = v.redraw_content();
+        let elsewhere = !v.win_active && !crate::note_edit::is_open() && keyboard_on_desktop();
+        if let Some(i) = v.hover
+            && !v.rolled_up
+            && (v.win_active || elsewhere)
+        {
+            let changed = hover_item(
+                &mut v.selected,
+                &mut v.range_anchor,
+                i,
+                window::key_down(msg::VK_SHIFT),
+                window::key_down(msg::VK_CONTROL),
+            );
+            v.anchor_index = Some(i);
+            let woke = elsewhere && v.activate_by_pointer();
+            if changed || woke {
+                let _ = v.redraw_content();
+            }
+            take = elsewhere.then_some(true);
+        } else if v.hover.is_none() && v.title_hover && elsewhere {
+            take = Some(false);
         }
+    }
+    // No borrow held: taking the foreground re-enters the window procedure.
+    if let Some(item) = take {
+        if item {
+            queue.push(Command::EndItemSelection { except: hwnd });
+        }
+        // From Explorer's desktop a plain request is refused (a timer is no input of ours).
+        let got = window::claim_foreground(hwnd);
+        tracing::debug!(
+            fence = %h.fence_id,
+            item,
+            got,
+            "hover select: the fence under the pointer takes the keyboard"
+        );
+        focus_session(view, hwnd);
     }
     Some(0)
 }

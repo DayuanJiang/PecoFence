@@ -78,6 +78,18 @@ pub(super) fn on_keydown(
     if !deletes && !matches!(vk, msg::VK_SHIFT | msg::VK_CONTROL | msg::VK_MENU) {
         v.forget_user_delete("another key was pressed");
     }
+    // F2 while the pointer is on the title row and no icon is selected (none to see, in a
+    // rolled-up fence): the name box of the fence, or of the tab under the pointer (#184).
+    if vk == msg::VK_F2 && v.title_hover && (ids.is_empty() || v.roll_target()) {
+        let pt = window::screen_to_client(hwnd, window::cursor_pos());
+        let fence = v
+            .tab_at(pt.x, pt.y)
+            .and_then(|i| v.tabs.get(i))
+            .map_or(v.active, |t| t.id);
+        tracing::debug!(%fence, rolled = v.roll_target(), "F2 on the title row: fence name box");
+        queue.push(Command::EditFenceName(fence));
+        return Some(0);
+    }
     // A rolled-up fence (from the moment it starts to roll up) shows none of its items: a key
     // must not act on a selection nobody can see (Delete sent a hidden file to the Recycle Bin).
     if v.roll_target() && acts_on_items(wparam as u32, ctrl) {

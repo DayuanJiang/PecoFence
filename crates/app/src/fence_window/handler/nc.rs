@@ -218,6 +218,11 @@ pub(super) fn on_ncmousemove(
         if title {
             let _ = v.redraw_chrome_only();
         }
+        // Explorer's single-click open: a rest on the title gives the fence the keyboard after
+        // the hover time (`on_timer_hover_select`), so F2 there reaches it.
+        if title && is_title && behavior.single_click.get() {
+            window::set_timer(hwnd, TIMER_HOVER_SELECT, Tooltip::hover_delay_ms());
+        }
         // The Task View glyph of a single title lies on the caption: its infotip (the desktops
         // the fence shows on) is armed here, as is a cut filter tag's (the whole filter);
         // elsewhere on the caption no infotip shows.

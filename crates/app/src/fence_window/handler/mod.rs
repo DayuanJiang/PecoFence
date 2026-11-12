@@ -42,6 +42,18 @@ pub(super) fn focus_session(view: &RefCell<Option<FenceViewState>>, hwnd: HWND) 
     }
 }
 
+/// The keyboard is with one of the fences or with Explorer's desktop: one desktop to the user,
+/// so a rest of the pointer in single-click mode may move it to the fence under the pointer.
+pub(super) fn keyboard_on_desktop() -> bool {
+    let front = desktop::root_ancestor(desktop::foreground_window());
+    desktop_surface_class(&desktop::class_name(front))
+}
+
+/// A fence's window class or one of Explorer's desktop windows.
+pub(in crate::fence_window) fn desktop_surface_class(class: &str) -> bool {
+    matches!(class, anchor::FENCE_CLASS | "Progman" | "WorkerW")
+}
+
 /// Opens `ids` as Enter does: a lone folder in a fence that navigates folders opens in place,
 /// anything else is launched.
 pub(super) fn open_items(v: &FenceViewState, queue: &CommandQueue, ids: Vec<ItemId>) {
