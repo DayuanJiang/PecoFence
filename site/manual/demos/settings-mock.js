@@ -96,8 +96,7 @@
             it.style.top = (58 + i * 28) + 'px';
             el('span', 'set-ic', it, glyph);
             const t = el('span', 'set-nav-t', it, T(label));
-            const pill = el('div', 'set-nav-pill', it);
-            w.nav[key] = { n: it, pill, y: 58 + i * 28 };
+            w.nav[key] = { n: it, y: 58 + i * 28 };
             return t;
         });
         // a label starts 6 + 32 px from the nav's left and ends 6 px before its item (6 px inset)
@@ -135,7 +134,6 @@
         for (const [k, item] of Object.entries(w.nav)) {
             const sel = k === key;
             item.n.classList.toggle('sel', sel);
-            item.pill.style.opacity = sel ? 1 : 0;
             const r = { x: w.x + 6, y: w.y + TITLE_H + item.y, w: w.navW - 12, h: 26 };
             item.n.classList.toggle('hot', !!p && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h);
         }
