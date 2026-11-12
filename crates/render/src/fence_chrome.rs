@@ -1791,9 +1791,22 @@ impl FenceChrome {
     /// `text` laid out with `format` in `rect`, shaped for an earlier frame when it was drawn
     /// in a box of the same size.
     fn layout(&self, text: &str, format: &TextFormat, rect: &Rect) -> Result<TextLayout> {
+        self.layout_in(text, format, rect.width(), rect.height())
+    }
+
+    /// [`Self::layout`] for a box given by its width and height. The rows of a script fence
+    /// are all laid out at every frame of a scroll (their heights place the ones in view): the
+    /// layouts of the frame before are used again.
+    fn layout_in(
+        &self,
+        text: &str,
+        format: &TextFormat,
+        width: f32,
+        height: f32,
+    ) -> Result<TextLayout> {
         match self.text_layouts.try_borrow_mut() {
-            Ok(mut layouts) => layouts.get(text, format, rect.width(), rect.height()),
-            Err(_) => TextLayout::new(text, format, rect.width(), rect.height()),
+            Ok(mut layouts) => layouts.get(text, format, width, height),
+            Err(_) => TextLayout::new(text, format, width, height),
         }
     }
 
@@ -4617,7 +4630,7 @@ impl FenceChrome {
                 x += tt.todo_room();
             }
             let icon = match row.icon {
-                Some(icon) => Some(TextLayout::new(icon, &tt.body, w, f32::MAX)?),
+                Some(icon) => Some(self.layout_in(icon, &tt.body, w, f32::MAX)?),
                 None => None,
             };
             let text_x = x + icon.as_ref().map_or(0.0, |l| {
@@ -4626,7 +4639,7 @@ impl FenceChrome {
             let arrow = if row.opens { arrow_w } else { 0.0 };
             let text_w = (width - text_x - NOTE_PAD_X - arrow).max(1.0);
             let text = if row.text.is_empty() { " " } else { row.text };
-            let layout = TextLayout::new(text, &tt.body, text_w, f32::MAX)?;
+            let layout = self.layout_in(text, &tt.body, text_w, f32::MAX)?;
             let h = layout.metrics().height.max(line_h);
             if !script_row_in_view(in_band, band_top, height, y, h) {
                 y += h + 2.0 * SCRIPT_ROW_PAD_Y;
@@ -4771,7 +4784,7 @@ impl FenceChrome {
             } else {
                 &tt.body
             };
-            let layout = TextLayout::new(text, format, f32::MAX, f32::MAX)?;
+            let layout = self.layout_in(text, format, f32::MAX, f32::MAX)?;
             let room = if cell.checkbox.is_some() {
                 tt.todo_room()
             } else {
@@ -4964,7 +4977,7 @@ impl FenceChrome {
             let layout = if cell.fill {
                 let format = if cell.bold { &tt.bold } else { &tt.body };
                 let shown = self.fit_width(cell.text, format, (w - room).max(1.0));
-                fitted = TextLayout::new(
+                fitted = self.layout_in(
                     if shown.is_empty() { " " } else { &shown },
                     format,
                     f32::MAX,
