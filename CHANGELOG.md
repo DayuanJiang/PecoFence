@@ -206,6 +206,7 @@
 - A second 「删除栅栏」 puts its own name on the undo card. While the card of an earlier delete (or of 「立即应用」) was still up, up to 30 seconds, the next delete showed nothing: the card kept the older fence's name and its 「撤销」 brought back the older fence. The card now takes the newer text where it stands and 「撤销」 undoes the newest step; Ctrl+Z still reaches the older ones after it.
 - A fence title that is cut short shows all of it in a tooltip, and the arrow at its right says what a click does (「收起」 / 「展开」). A title too long for its fence ended in 「…」 and nothing showed the rest, although a cut tab caption and a cut icon name have a tooltip; the arrow had only its hover box. A rolled-up fence that opens under the resting pointer shows no title tooltip.
 - Peek search: the search box appears whole and fades with the dimmed background. On the first search after signing in to Windows the text field stood alone for about 0.2 s, a white strip with the typed letter, before the box around it and the list were drawn; and the box appeared and vanished in one frame while the background faded. The box now stays invisible until it has been drawn, fades in over 83 ms, and fades out with the background when the search ends. With Windows' animations off it shows and goes at once.
+- The right-click menu of an icon has an icon on each of PecoFence's own entries (「打开」, 「打开文件所在位置」, 「重命名」, 「删除」, 「移动到栅栏」, 「以后把 … 文件都放到这里」, 「移出栅栏」), as every entry of the fence menu and the tray menu has. They were text only.
 
 ## 0.3.3
 

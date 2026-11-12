@@ -143,7 +143,7 @@ const _: () = assert!(
         && CMD_FENCE_VD_BASE + VD_MENU_MAX as u32 <= CMD_TAB_ATTACH_BASE
 );
 
-/// Segoe Fluent Icons glyphs beside the main tray and fence menu items (`PopupMenu::icon`).
+/// Segoe Fluent Icons glyphs beside the tray, fence and icon menu items (`PopupMenu::icon`).
 /// Check items keep their check mark (an item bitmap would take its place), so the lock is a
 /// pair of commands like 收起 / 展开. Outline glyphs only: filled badges outweigh the rest.
 mod glyph {
@@ -185,6 +185,12 @@ mod glyph {
     pub const FIT: char = '\u{E9A6}';
     pub const UNLOCK: char = '\u{E785}';
     pub const DELETE: char = '\u{E74D}';
+    /// The icon menu's own entries: OpenInNewWindow (打开), Clear (清空回收站), Import (移动到栅栏:
+    /// an arrow into a tray), Remove (移出栅栏). All four are in Segoe MDL2 Assets too.
+    pub const OPEN: char = '\u{E8A7}';
+    pub const CLEAR: char = '\u{E894}';
+    pub const MOVE_TO: char = '\u{E8B5}';
+    pub const REMOVE: char = '\u{E738}';
     pub const VIEW: char = '\u{E890}';
     /// Hide (Fluent ED1A). Segoe MDL2 Assets has no crossed-out eye, so Windows 10 shows RedEye.
     pub fn hide() -> char {
@@ -239,6 +245,10 @@ mod glyph {
             FIT,
             UNLOCK,
             DELETE,
+            OPEN,
+            CLEAR,
+            MOVE_TO,
+            REMOVE,
             VIEW,
             hide(),
             TASK_VIEW,
@@ -595,12 +605,14 @@ impl App {
                 .and_then(|it| it.path())
                 .is_some_and(|p| shell::is_recycle_bin_path(Path::new(p)))
         );
+        // PecoFence's own entries have a glyph each, as in the fence menu and the tray menu.
         menu.item(
             CMD_ITEM_OPEN,
             pecofence_core::i18n::text("打开\tEnter"),
             false,
             false,
         )
+        .icon(glyph::OPEN)
         .default_item(CMD_ITEM_OPEN);
         if single_bin {
             // A bin too big to answer quickly is taken for full.
@@ -610,7 +622,8 @@ impl App {
                 pecofence_core::i18n::text("清空回收站"),
                 false,
                 !full,
-            );
+            )
+            .icon(glyph::CLEAR);
         }
         menu.item(
             CMD_ITEM_LOCATION,
@@ -618,18 +631,21 @@ impl App {
             false,
             items.len() != 1 || single_namespace,
         )
+        .icon(glyph::FOLDER_OPEN)
         .item(
             CMD_ITEM_RENAME,
             pecofence_core::i18n::text("重命名\tF2"),
             false,
             items.len() != 1 || single_namespace,
         )
+        .icon(glyph::RENAME)
         .item(
             CMD_ITEM_DELETE,
             pecofence_core::i18n::text("删除\tDelete"),
             false,
             single_namespace,
         )
+        .icon(glyph::DELETE)
         .separator();
         if self.single_folder_of(items).is_some() {
             menu.item(
@@ -637,7 +653,8 @@ impl App {
                 pecofence_core::i18n::text("在桌面显示此文件夹"),
                 false,
                 false,
-            );
+            )
+            .icon(glyph::FOLDER);
         }
         // A smart fence's results are files where they are: they have no fence to move to,
         // and 移出 would move the real file to the desktop (open, rename, delete, properties
@@ -674,14 +691,16 @@ impl App {
             for (id, title, disabled) in &targets {
                 move_menu.item(*id, title, false, *disabled);
             }
-            menu.submenu(pecofence_core::i18n::text("移动到栅栏"), move_menu);
+            menu.submenu(pecofence_core::i18n::text("移动到栅栏"), move_menu)
+                .icon(glyph::MOVE_TO);
             if let Some(ext) = self.ext_rule_offer(fence, items) {
                 menu.item(
                     CMD_ITEM_EXT_RULE,
                     &pecofence_core::i18n::format("以后把 {0} 文件都放到这里", &[ext]),
                     false,
                     false,
-                );
+                )
+                .icon(glyph::BROOM);
             }
             menu.item(
                 CMD_ITEM_TO_INBOX,
@@ -692,7 +711,8 @@ impl App {
                 },
                 false,
                 inbox == Some(fence),
-            );
+            )
+            .icon(glyph::REMOVE);
         }
         if self
             .window_for(fence)
@@ -716,7 +736,8 @@ impl App {
                     pecofence_core::i18n::text("栅栏选项…"),
                     false,
                     false,
-                );
+                )
+                .icon(glyph::SETTING);
         }
         menu.separator();
         // Explorer's own menu (send to / copy / delete / pin / extensions …) appended below ours.
