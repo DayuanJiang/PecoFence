@@ -32,9 +32,9 @@ pub(super) fn on_setcursor(
         return Some(1);
     }
     // A note's text: the text cursor, also before the click that starts the editing (it
-    // says that a click here writes). A check box of a note at rest keeps the arrow.
-    if v.in_note_text(pt.x, pt.y) && (v.note_edit.is_some() || v.note_box_at(pt.x, pt.y).is_none())
-    {
+    // says that a click here writes). A check box keeps the arrow, also while the note is
+    // edited: a click ticks it.
+    if v.in_note_text(pt.x, pt.y) && v.note_box_at(pt.x, pt.y).is_none() {
         drop(guard);
         window::set_standard_cursor(StandardCursor::IBeam);
         return Some(1);

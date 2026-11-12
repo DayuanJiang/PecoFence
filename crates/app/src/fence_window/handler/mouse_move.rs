@@ -502,9 +502,9 @@ pub(super) fn on_mousemove(
     } else {
         v.script_row_at(x, y)
     };
-    // A note's check box under the pointer lights up (not while the note is edited: the
-    // pointer places the caret then).
-    let note_box = if sb_hot || on_control || v.note_edit.is_some() {
+    // A note's check box under the pointer lights up, also while the note is edited: a
+    // click ticks it then too.
+    let note_box = if sb_hot || on_control {
         None
     } else {
         v.note_box_at(x, y)
