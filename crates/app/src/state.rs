@@ -183,6 +183,12 @@ fn saver_for(store: &ConfigStore) -> ConfigSaver {
                 tracing::info!(ms, "config saved; the disk kept the save waiting")
             }
             Ok(()) => tracing::debug!(ms, path = %primary.display(), "config saved"),
+            // config.json holds every change: no "cannot save" notice for the backup copy.
+            Err(e) if e.config_written() => tracing::warn!(
+                error = %e.error,
+                ms,
+                "config saved; the daily backup copy could not be written"
+            ),
             // Where config.json and its temp file really are: one inside the Store
             // package's copy of %APPDATA% and one outside would explain a refused rename.
             Err(e) => {
