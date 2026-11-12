@@ -118,7 +118,9 @@ function Round($name, $ctl) {
     for ($k = $word.Length; $k -gt 1; $k--) {
       $w = Waited $ctl { [G]::Press(0x08) }; $out += "Backspace $w ms '$([M]::BoxText())'"; $worst = [math]::Max($worst, $w)
     }
-    if ($c -eq '季' -or $c -eq '的') { Shot "$name-$c" }
+    # Named with the letters typed: the box's tar stops at a Chinese file name and the job's
+    # shots do not come back ("the results archive is incomplete").
+    if ($c -eq '季' -or $c -eq '的') { Shot "$name-$keys" }
     $w = Waited $ctl { [G]::Press(0x08) }; $out += "Backspace $w ms ''"; $worst = [math]::Max($worst, $w)
   }
   Log "$name per keystroke: $($out -join '; ')"
