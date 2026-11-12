@@ -13,6 +13,9 @@ impl App {
             return;
         }
         self.end_peek_now();
+        if on {
+            self.end_rename_before_hide(reason);
+        }
         let mut guard = self.anchor.borrow_mut();
         let Some(a) = guard.as_mut() else {
             return;

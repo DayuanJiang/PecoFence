@@ -752,8 +752,25 @@ impl App {
             return;
         }
         self.end_peek_now();
+        self.end_rename_before_hide(reason);
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.toggle_fences_hidden_by(reason);
+        }
+    }
+
+    /// The fences are about to hide by a menu, a shortcut or the command line (no click took
+    /// the keyboard away): an open name box of an icon or a fence ends first and keeps what
+    /// was typed, as a click elsewhere ends it. The box stayed alone on the wallpaper where
+    /// the icon had been, and Enter there still renamed the file.
+    pub(super) fn end_rename_before_hide(&mut self, reason: &'static str) {
+        let hidden = self
+            .anchor
+            .borrow()
+            .as_ref()
+            .is_some_and(|a| a.fences_hidden());
+        if !hidden && crate::rename::active_target().is_some() {
+            tracing::debug!(reason, "the fences hide: the open name box ends first");
+            crate::rename::end_active(true);
         }
     }
 
