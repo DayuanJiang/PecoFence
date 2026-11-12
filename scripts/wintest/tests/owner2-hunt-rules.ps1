@@ -205,6 +205,16 @@ if ($Part -match 'G') {
   Check 'the fence that moved glides to its saved place' ($glide.Count -ge 1) "log lines: $($glide.Count)"
   $f = PfFence '工作资料'
   Check 'it ends at the saved place' ($f.windowRect.x -eq 420 -and $f.windowRect.y -eq 120) "$($f.windowRect.x),$($f.windowRect.y)"
+  # With Windows' animations off the fence is at its place at once.
+  [Anim]::Set($false)
+  Start-Sleep -Seconds 1
+  Pf fence move '工作资料' --x 700 --y 520 | Out-Null
+  Start-Sleep -Seconds 1
+  Pf snapshot restore (HrSnap '整理之前').id | Out-Null
+  Start-Sleep -Milliseconds 150
+  $f = PfFence '工作资料'
+  $glide2 = @(PfLogAll | Where-Object { $_ -match 'restored fence glides to its saved place' })
+  Check 'animations off: no glide, the fence is at its saved place at once' ($glide2.Count -eq $glide.Count -and $f.windowRect.x -eq 420 -and $f.windowRect.y -eq 120) "glides $($glide.Count) -> $($glide2.Count); at $($f.windowRect.x),$($f.windowRect.y)"
   [Anim]::Set($anim0)
   PfQuit
 }
