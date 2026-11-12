@@ -3342,6 +3342,17 @@ async function runTests() {
     } finally { frame.style.width = was; }
     doc = await reset();
   });
+  await test('The selected page, the rows of 查找设置, a list\'s options and a text box have a look under the pointer and pressed', async () => {
+    doc = await reset();
+    const selectors = [];
+    const walk = rules => { for (const rule of rules) { if (rule.cssRules?.length) walk(rule.cssRules); if (rule.selectorText) selectors.push(rule.selectorText); } };
+    walk(doc.styleSheets[0].cssRules);
+    const has = text => selectors.some(s => s.includes(text));
+    for (const wanted of ['nav a.sel:hover', 'nav a.sel:active', '.search-list [role="option"]:active', '.search-list [role="option"][aria-selected="true"]:hover', '.search-list [role="option"][aria-selected="true"]:active',
+      'select option:active', 'select option:checked:hover', 'select option:checked:active', 'textarea):where(:enabled):hover'])
+      assert(has(wanted), 'No rule for ' + wanted);
+    doc = await reset();
+  });
   await test('Every transition and animation of the page takes one of the app\'s four times', async () => {
     doc = await reset();
     assert(await motionReady(), 'The page never allowed transitions');

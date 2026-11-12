@@ -29,6 +29,7 @@
     --control-stroke: #ffffff12; --control-stroke-bottom: #ffffff0a; --control-strong: #9a9a9a;
     --control-alt: #0000001a; --control-alt-hover: #ffffff0b; --thumb: #454545; --tip: #2c2c2c; --tip-stroke: #ffffff17;
     --subtle: #ffffff0f; --subtle-pressed: #ffffff0a; --scroll-thumb: #ffffff5c; --chosen: color-mix(in srgb, var(--accent) 14%, var(--card));
+    --chosen-hover: color-mix(in srgb, var(--accent) 20%, var(--card)); --chosen-pressed: color-mix(in srgb, var(--accent) 9%, var(--card));
     --accent: #60cdff; --accent-hover: #60cdffe6; --on-accent: #000000;
     --ok: #6ccb5f; --ok-bg: #393d1b; --error: #ff99a4; --error-bg: #442726; --caution: #fce100; --caution-bg: #433519;
     --shadow: 0 8px 16px #00000042; --brand: #8098f2;
@@ -94,6 +95,9 @@
      colour, so that any Windows accent reads on the tint). The weight stays, so a long page name
      wraps the same way whether or not its row is selected. */
   nav a.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); color: color-mix(in srgb, var(--accent) 70%, var(--text)); }
+  /* The selected row answers the pointer too: a stronger tint under it, a weaker one pressed. */
+  nav a.sel:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+  nav a.sel:active { background: color-mix(in srgb, var(--accent) 9%, transparent); }
   /* 查找设置: the box under the brand; its list floats over the page (the nav scrolls, so the
      list is fixed to the window and placed under the box). */
   .nav-search { position: relative; margin: 0 4px 12px; }
@@ -107,7 +111,10 @@
   @starting-style { .search-list:not([hidden]) { opacity: 0; transform: translateY(-8px); } }
   .search-list [role=option] { padding: 8px 10px; border-radius: var(--r-control); cursor: default; }
   .search-list [role=option]:hover { background: var(--subtle); }
+  .search-list [role=option]:active { background: var(--subtle-pressed); }
   .search-list [role=option][aria-selected=true] { background: var(--chosen); }
+  .search-list [role=option][aria-selected=true]:hover { background: var(--chosen-hover); }
+  .search-list [role=option][aria-selected=true]:active { background: var(--chosen-pressed); }
   .search-list b { display: block; font-weight: 400; font-size: 14px; line-height: 20px; color: var(--text); }
   .search-list small { display: block; color: var(--text2); font-size: 12px; line-height: 16px; }
   .search-list mark { background: none; color: var(--accent); font-weight: 600; }
@@ -249,12 +256,16 @@
     select option { display: flex; align-items: center; min-height: 36px; padding: 0 11px; border-radius: 4px; background: transparent; white-space: nowrap; cursor: default; }
     select option::checkmark { display: none; }
     select option:hover, select option:focus { background: var(--subtle); }
+    select option:active { background: var(--subtle-pressed); }
     select option:checked { background: var(--chosen); font-weight: 600; }
+    select option:checked:hover { background: var(--chosen-hover); }
+    select option:checked:active { background: var(--chosen-pressed); }
     select option:disabled { color: var(--text-disabled); background: transparent; }
   }
   input[type=text], input[type=time], input[type=number], input[type=email] { padding: 0 11px; min-width: 160px; user-select: text; }
   textarea { display: block; min-height: 96px; height: 96px; padding: 6px 11px; resize: vertical; border-radius: var(--r-control); background: var(--control);
     border: 1px solid var(--control-stroke); border-bottom-color: var(--control-stroke-bottom); font-size: 14px; line-height: 20px; user-select: text; }
+  :is(input[type=text], input[type=time], input[type=number], input[type=email], textarea):where(:enabled):hover { background-color: var(--control-hover); }
   input[type=text]:focus, input[type=time]:focus, input[type=number]:focus, input[type=email]:focus, textarea:focus { outline: none; border-bottom: 2px solid var(--accent); background-color: var(--card); }
   input::placeholder, textarea::placeholder { color: var(--text2); }
   button { padding: 0 12px; min-width: 96px; }
