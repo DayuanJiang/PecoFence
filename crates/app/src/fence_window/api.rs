@@ -783,6 +783,9 @@ impl FenceWindow {
         let hwnd = self.hwnd();
         let deferred = self.view.borrow_mut().as_mut().is_some_and(|v| {
             v.height_anim = None;
+            // The height glide an icon size step waited for is over: its "selection back in
+            // view" does not wait for some later glide.
+            v.reveal_after_height = false;
             v.glide = None;
             let moves_only = (cur.left, cur.top) != (r.left, r.top)
                 && cur.right - cur.left == r.right - r.left
