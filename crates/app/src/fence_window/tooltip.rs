@@ -135,11 +135,18 @@ impl FenceViewState {
     /// full caption, the portal up button "向上" (at the root, where its glyph opens the folder,
     /// 在资源管理器中打开文件夹).
     pub(super) fn tip_text(&self) -> Option<String> {
+        // Both tips of the title's folder glyph end with the path of the folder shown: the
+        // title is one name (the fence's own at the root, a subfolder's below it) and says
+        // neither which folder that is nor how deep the fence has gone.
+        let with_folder = |text: &str| match &self.portal_folder {
+            Some(dir) => format!("{text}\n{}", dir.display()),
+            None => text.to_string(),
+        };
         match self.tip_target? {
-            TipTarget::Up if self.glyph_opens_folder() => {
-                Some(pecofence_core::i18n::text("在资源管理器中打开文件夹").to_string())
-            }
-            TipTarget::Up => Some(pecofence_core::i18n::text("向上").to_string()),
+            TipTarget::Up if self.glyph_opens_folder() => Some(with_folder(
+                pecofence_core::i18n::text("在资源管理器中打开文件夹"),
+            )),
+            TipTarget::Up => Some(with_folder(pecofence_core::i18n::text("向上"))),
             TipTarget::Desktops => self.desktop_tip.clone(),
             TipTarget::Lock => {
                 Some(pecofence_core::i18n::text("已锁定位置和大小，右键可解除锁定").to_string())
