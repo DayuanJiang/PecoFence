@@ -1729,12 +1729,14 @@ impl FenceViewState {
         let count = self.items.len();
         let rows_near = |at: f32| band_range(&layout, count, at - view_h, at + 2.0 * view_h);
         let (here, there) = (rows_near(scroll), rows_near(target));
+        let draw_started = Instant::now();
         self.ensure_icons_and_labels(label_w, wide_w, |i| {
             (here.contains(&i) || there.contains(&i)) && {
                 let c = grid.cell(i);
                 near(c.y, c.h, scroll) || near(c.y, c.h, target)
             }
         });
+        let labels_spent = draw_started.elapsed();
 
         let now = Instant::now();
         self.prune_content_motion(now);
@@ -1755,6 +1757,7 @@ impl FenceViewState {
                 (y + c.h >= 0.0 && y <= view_h).then_some((i, x, y, alpha))
             })
             .collect();
+        let placed_count = placed.len();
         let alphas = self.item_alphas(now, placed.iter().map(|&(i, ..)| i));
         let dragging = self.ole_drag;
         let cut = self.cut.clone();
@@ -1892,7 +1895,30 @@ impl FenceViewState {
             })?;
         self.note_draw_result(ok);
         self.note_content_fades(now);
+        self.log_content_draw(draw_started, labels_spent, now, placed_count);
         Ok(())
+    }
+
+    /// One line per content draw: how many items the fence has, how many were drawn, and
+    /// what the time went to (names and icon requests, the per-item states, the drawing).
+    fn log_content_draw(
+        &self,
+        started: Instant,
+        labels: Duration,
+        prepared: Instant,
+        drawn: usize,
+    ) {
+        let ms = |d: Duration| (d.as_secs_f64() * 100_000.0).round() / 100.0;
+        tracing::debug!(
+            fence = %self.active,
+            items = self.items.len(),
+            drawn,
+            scroll = self.scroll_y.round(),
+            ms = ms(started.elapsed()),
+            labels_ms = ms(labels),
+            draw_ms = ms(prepared.elapsed()),
+            "content draw"
+        );
     }
 
     /// List / Details: rows below an optional fixed header.
@@ -1928,12 +1954,14 @@ impl FenceViewState {
         let count = self.items.len();
         let rows_near = |at: f32| band_range(&layout, count, at - view_h, at + 2.0 * view_h);
         let (here, there) = (rows_near(scroll), rows_near(target));
+        let draw_started = Instant::now();
         self.ensure_icons_and_labels(text_w, text_w, |i| {
             (here.contains(&i) || there.contains(&i)) && {
                 let c = layout.cell(i);
                 near(c.y, c.h, scroll) || near(c.y, c.h, target)
             }
         });
+        let labels_spent = draw_started.elapsed();
 
         let now = Instant::now();
         self.prune_content_motion(now);
@@ -1955,6 +1983,7 @@ impl FenceViewState {
                     .then_some((i, y, alpha))
             })
             .collect();
+        let placed_count = placed.len();
         let alphas = self.item_alphas(now, placed.iter().map(|&(i, ..)| i));
         let dragging = self.ole_drag;
         let cut = self.cut.clone();
@@ -2127,6 +2156,7 @@ impl FenceViewState {
             })?;
         self.note_draw_result(ok);
         self.note_content_fades(now);
+        self.log_content_draw(draw_started, labels_spent, now, placed_count);
         Ok(())
     }
 }

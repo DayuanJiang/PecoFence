@@ -980,6 +980,11 @@ pub fn post_quit(code: i32) {
     unsafe { PostQuitMessage(code) };
 }
 
+thread_local! {
+    /// How many window messages are being handled inside one another on this thread.
+    static MESSAGE_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // SAFETY: GWLP_USERDATA holds either null or a `Box<State>` we installed. The handler is
     // an `Rc<dyn Fn>` cloned before the call, so re-entrant messages (and even destruction of
@@ -995,7 +1000,19 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
         if !state.is_null() {
             let handler = (*state).handler.clone();
+            // How long the outermost message kept the thread: what a user waits for.
+            let depth = MESSAGE_DEPTH.with(|d| d.replace(d.get() + 1));
+            let started = std::time::Instant::now();
             handled = handler(hwnd, msg, wparam.0, lparam.0);
+            MESSAGE_DEPTH.with(|d| d.set(depth));
+            let spent = started.elapsed();
+            if depth == 0 && spent >= std::time::Duration::from_millis(4) {
+                tracing::debug!(
+                    ms = (spent.as_secs_f64() * 10000.0).round() / 10.0,
+                    message = format_args!("{msg:#06x}"),
+                    "slow message"
+                );
+            }
         }
 
         if msg == WM_NCDESTROY as u32 {
