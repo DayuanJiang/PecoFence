@@ -2136,12 +2136,15 @@
     (control || document.getElementById(fallback))?.focus({ preventScroll: true });
   }
   // A list that is drawn again shows what changed: a row that stood elsewhere glides from there
-  // to its place (167 ms, the fences' point-to-point curve), a row that was not there fades in.
+  // to its place (167 ms, the fences' point-to-point curve), a row that was not there fades in,
+  // and what stands under the list glides by as much as the list grew or shrank (or the rows
+  // on their way would lie over it).
   // rowTops(list) before the list changes, glideRows(list, tops) after. Nothing moves the first
   // time, on a page that is not shown, while transitions are off, or with animations off.
   // A list that is rebuilt knows its rows by data-row-id; the smart fence editor keeps its row
   // elements and passes them as they are (rows '.se-row', key = the element).
-  const rowTops = (list, rows = '[data-row-id]', key = el => el.dataset.rowId) => new Map([...list.querySelectorAll(rows)].map(el => [key(el), el.offsetTop]));
+  const rowTops = (list, rows = '[data-row-id]', key = el => el.dataset.rowId) =>
+    Object.assign(new Map([...list.querySelectorAll(rows)].map(el => [key(el), el.offsetTop])), { height: list.offsetHeight });
   function glideRows(list, tops, rows = '[data-row-id]', key = el => el.dataset.rowId) {
     if (!tops.size || !list.offsetParent || !document.documentElement.classList.contains('ready') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     list.querySelectorAll(rows).forEach(el => {
@@ -2149,6 +2152,8 @@
       if (was === undefined) el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 167 });
       else if (dy) el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 167, easing: 'cubic-bezier(.55, .55, 0, 1)' });
     });
+    const grew = list.offsetHeight - tops.height;
+    if (grew) for (let el = list.nextElementSibling; el; el = el.nextElementSibling) el.animate([{ transform: `translateY(${-grew}px)` }, { transform: 'none' }], { duration: 167, easing: 'cubic-bezier(.55, .55, 0, 1)' });
   }
   const openRuleForm = () => { document.getElementById('nrPanel').open = true; };
   // The listed rule open for editing: its row shows `form` (kept across re-renders, so a state

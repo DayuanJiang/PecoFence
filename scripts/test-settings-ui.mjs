@@ -3112,6 +3112,9 @@ async function runTests() {
     await settle();
     row('rule-b').querySelector('[data-act=del]').click();
     assert(glides() === 'rule-a from below', '删除: ' + (glides() || 'nothing moves'));
+    // What stands under the list comes up with it (the rows on their way would lie over it).
+    const under = doc.getAnimations().filter(a => !a.transitionProperty && !a.animationName && a.effect.target.id === 'nrPanel').map(a => a.effect.getKeyframes()[0].transform);
+    assert(under.length === 1 && /^translateY\(\d/.test(under[0]), '删除: 「新建规则」 under the list does not glide up: ' + under.join());
     await settle();
     doc.getElementById('toastUndo').click();
     assert(glides() === 'rule-a from above, rule-b fades in', '撤销: ' + (glides() || 'nothing moves'));
