@@ -824,7 +824,7 @@
         <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M27 8H14a6 6 0 0 0-6 6v13M37 8h13a6 6 0 0 1 6 6v13M8 37v13a6 6 0 0 0 6 6h13M56 37v13a6 6 0 0 1-6 6H37" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><rect x="22" y="22" width="8" height="8" rx="2" fill="currentColor"/><rect x="35" y="22" width="8" height="8" rx="2" fill="currentColor" opacity=".65"/><rect x="22" y="35" width="8" height="8" rx="2" fill="currentColor" opacity=".65"/><rect x="35" y="35" width="8" height="8" rx="2" fill="currentColor"/></svg>
         <div><div class="name">PecoFence <span id="ver"></span></div><div class="s">开源的 Windows 桌面整理工具</div><div class="s">Apache 2.0 许可证</div><div class="s" id="memDetail">—</div></div>
       </div>
-      <div class="card" id="updateCard" hidden><div class="l"><span class="ic">&#xE895;</span><div><div class="t">更新</div><div class="s" id="updateStatus"></div></div></div><button id="updateAction"></button></div>
+      <div class="card" id="updateCard" hidden><div class="l"><span class="ic">&#xE895;</span><div><div class="t">更新</div><div class="s" id="updateStatus"></div></div></div><div class="actions"><button id="updateSite" hidden>打开下载页</button><button id="updateAction"></button></div></div>
       <div class="card" id="updateAutoCard" hidden><div class="l"><span class="ic">&#xE823;</span><div><div class="t">自动检查更新</div><div class="s">每天检查一次有没有新版本，有新版本时提醒一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="autoCheckUpdates"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE897;</span><div><div class="t">使用手册</div><div class="s">每个功能都有动画演示</div></div></div><button id="openManual">打开</button></div>
       <div class="card"><div class="l"><span class="ic">&#xE734;</span><div><div class="t">喜欢 PecoFence 吗？</div><div class="s">你的支持能让更多人发现它。</div></div></div>
@@ -2515,7 +2515,8 @@
   document.getElementById('themeGuide').onclick = () => send({ type: 'action', name: 'openThemeGuide' });
   document.getElementById('repairIcons').onclick = () => send({ type: 'action', name: 'repairIcons' });
 
-  // 关于 → 更新: an installed copy downloads and runs the new setup, a ZIP opens the release page.
+  // 关于 → 更新: an installed copy downloads and runs the new setup, a ZIP opens the release page
+  // (the site's download section when the release was read from the site's copy).
   let update = null;
   const renderUpdate = () => {
     const card = document.getElementById('updateCard');
@@ -2530,9 +2531,13 @@
       : s === 'upToDate' ? t("已是最新版本")
       : s === 'available' ? (install ? tf("有新版本 {0}。安装时 PecoFence 会先退出，装好后自动重新打开。", version) : tf("有新版本 {0}", version))
       : s === 'downloading' ? t("正在下载新版本…")
-      : s === 'checkFailed' ? t("检查更新失败，请稍后再试")
-      : s === 'downloadFailed' ? t("下载失败，请稍后再试")
+      : s === 'checkFailed' ? t("没能连上 GitHub 和 PecoFence 网站，检查不了更新。请稍后再试，或到 pecofence.jiang.jp 下载最新版本。")
+      : s === 'downloadFailed' ? t("没能下载新版本。请稍后再试，或到 pecofence.jiang.jp 下载最新版本。")
       : '';
+    // A failed check or download: the site's download page is one click away.
+    const site = document.getElementById('updateSite');
+    site.hidden = s !== 'checkFailed' && s !== 'downloadFailed';
+    site.onclick = () => send({ type: 'action', name: 'openDownloadPage' });
     const button = document.getElementById('updateAction');
     const offered = s === 'available' || s === 'downloading';
     const action = !offered ? 'checkUpdate' : install ? 'installUpdate' : 'openReleasePage';

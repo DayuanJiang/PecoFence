@@ -79,7 +79,8 @@ the installed program files and shortcuts, and removes the startup entry only wh
 it points to this installed executable. Configuration, backups, logs and files you
 added to the installation folder are kept.
 
-**Settings > About > Check for updates** asks GitHub for the latest release. To
+**Settings > About > Check for updates** asks GitHub for the latest release, and the
+PecoFence website's copy of it when GitHub gives no answer within 8 seconds. To
 install it, PecoFence downloads the new setup and runs it; PecoFence closes meanwhile
 and opens again when setup is done. You can
 also run a newer setup from the Releases page yourself.

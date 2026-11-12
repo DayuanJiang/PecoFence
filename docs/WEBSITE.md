@@ -89,6 +89,18 @@ Open `dist/site/index.html` in a browser. `--base http://localhost:8000` rewrite
 canonical URLs for a local server, and `--strict` fails on any language file whose
 keys differ from `en.json` (the deployment workflow uses it).
 
+The build also writes `update.json`, the app's second source for its update check: the app asks
+GitHub's API for the latest release and, without an answer within 8 seconds, this file
+(`parse_site_update` in `crates/core/src/updates.rs`). It holds the version of the latest
+published release, whether that release has a setup, the site's download page, and per language
+the first point of the Store notes of that tag (the line of the app's update card). This is the
+one step that needs the network: the release comes from GitHub's API (with `GITHUB_TOKEN` or
+`GH_TOKEN` when set, which lifts the limit of 60 requests an hour) and the notes from the tag's
+`docs/store/v2-i18n` files. It never takes the version from the checkout, so the file names a
+version only once its installers exist. When GitHub cannot be read the build prints a warning and
+writes no file; with `--strict` it fails, because a deployment replaces the whole site and would
+remove the file. [RELEASING.md](RELEASING.md) says how the file follows a release.
+
 ## Publishing
 
 The site is served by **Cloudflare Pages** from the project `pecofence`
@@ -110,7 +122,8 @@ any other branch name creates a preview URL.
 ### Deploy from GitHub
 
 `.github/workflows/website.yml` runs the same two steps on every push to `main` that
-touches the site. It needs two repository secrets: `CLOUDFLARE_API_TOKEN`, a token with
+touches the site, and when the release workflow starts it after publishing a release (so
+`update.json` names the new version). It needs two repository secrets: `CLOUDFLARE_API_TOKEN`, a token with
 **Account → Cloudflare Pages → Edit**, and `CLOUDFLARE_ACCOUNT_ID`. After deploying it runs
 `scripts/indexnow.py`, which submits every sitemap URL to IndexNow so Bing and Yandex recrawl
 the changed pages; a failure there does not fail the deployment.

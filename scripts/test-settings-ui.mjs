@@ -2024,13 +2024,13 @@ async function runTests() {
     assert(status.textContent === '有新版本 0.1.4' && button.textContent === '打开下载页', 'ZIP card wrong: ' + status.textContent);
     button.click(); assert(lastAction() === 'openReleasePage', 'Release page not requested');
     await show({ ...installer, state: 'downloadFailed', version: null });
-    assert(status.textContent === '下载失败，请稍后再试' && button.textContent === '检查更新', 'Download failure wrong');
+    assert(status.textContent === '没能下载新版本。请稍后再试，或到 pecofence.jiang.jp 下载最新版本。' && button.textContent === '检查更新', 'Download failure wrong');
     await show({ ...installer, state: 'checkFailed', version: null });
-    assert(status.textContent === '检查更新失败，请稍后再试' && button.textContent === '检查更新', 'Check failure wrong');
+    assert(status.textContent === '没能连上 GitHub 和 PecoFence 网站，检查不了更新。请稍后再试，或到 pecofence.jiang.jp 下载最新版本。' && button.textContent === '检查更新', 'Check failure wrong');
     frame.contentWindow.testRefresh(); await settle();
-    assert(status.textContent === '检查更新失败，请稍后再试', 'State refresh lost the update card');
+    assert(status.textContent === '没能连上 GitHub 和 PecoFence 网站，检查不了更新。请稍后再试，或到 pecofence.jiang.jp 下载最新版本。', 'State refresh lost the update card');
     change(doc, 'language', 'en'); await settle();
-    assert(status.textContent === "Couldn't check for updates. Try again later." && button.textContent === 'Check for updates', 'English card wrong: ' + status.textContent);
+    assert(status.textContent === "Couldn't reach GitHub or the PecoFence website to check for updates. Try again later, or get the latest version from pecofence.jiang.jp." && button.textContent === 'Check for updates', 'English card wrong: ' + status.textContent);
   });
 
   await test('Feedback page shows what will be sent and posts the report', async () => {

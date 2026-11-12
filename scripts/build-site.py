@@ -3,17 +3,21 @@
 Renders site/template.html and site/404.html once per language in site/i18n/, and beside it that
 language's animated manual (site/manual, scripts/manual_i18n.py) with the same header
 and footer (site/partials). Copies site/assets and the localized README hero images,
-and writes CNAME, robots.txt and sitemap.xml for GitHub Pages. No dependencies beyond
-the standard library.
+and writes CNAME, robots.txt and sitemap.xml for GitHub Pages, and update.json, the app's
+second source for its update check, from the latest published release on GitHub (the one step
+that needs the network). No dependencies beyond the standard library.
 """
 import argparse
 import datetime
 import hashlib
 import html
 import json
+import os
 import re
 import shutil
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -41,6 +45,50 @@ OG_LOCALES = {
     "de": "de_DE", "fr": "fr_FR", "es": "es_ES", "pt-BR": "pt_BR", "ru": "ru_RU",
     "it": "it_IT",
 }
+
+
+def fetch(url):
+    """A text file from GitHub; the API gets GITHUB_TOKEN when it is set (Actions: no rate limit)."""
+    headers = {"User-Agent": "pecofence-site-build"}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token and url.startswith("https://api.github.com/"):
+        headers["Authorization"] = f"Bearer {token}"
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
+        return response.read().decode("utf-8")
+
+
+def latest_release(repository, languages, origin):
+    """update.json: what the app asks when GitHub's API gives it no answer (`parse_site_update`
+    in crates/core/src/updates.rs). It is built from the latest *published* release, read from
+    GitHub now, never from this checkout's version: a version shows up here only once its
+    installers exist. `notes` holds the first point of that tag's Store notes per language (the
+    line of the app's update card); the app builds the setup's address and the page itself."""
+    name = repository.removeprefix("https://github.com/")
+    release = json.loads(fetch(f"https://api.github.com/repos/{name}/releases/latest"))
+    tag = release["tag_name"]
+    version = tag.removeprefix("v")
+    assets = {asset["name"] for asset in release["assets"]}
+    if f"pecofence-v{version}-x64-portable.zip" not in assets:
+        raise ValueError(f"release {tag} has no portable ZIP")
+    notes = {}
+    for language in languages:
+        code = language["code"]
+        # The Store notes name English en-US.
+        url = (f"https://raw.githubusercontent.com/{name}/{tag}/docs/store/v2-i18n/"
+               f"{'en-US' if code == 'en' else code}.json")
+        try:
+            text = json.loads(fetch(url))["releaseNotes"]
+        except urllib.error.HTTPError as error:
+            if error.code != 404:
+                raise
+            continue  # no Store notes in this language: the card says something general
+        # The first line after the heading, without its bullet (`store_notes_line` in the app).
+        points = (line.strip().lstrip("·•・-*").strip() for line in text.splitlines()[1:])
+        line = next((point for point in points if point), "")
+        if line:
+            notes[code] = line
+    return {"version": version, "setup": f"pecofence-v{version}-x64-setup.exe" in assets,
+            "page": f"{origin}/#download", "notes": notes}
 
 
 def render(template, values, strings):
@@ -262,6 +310,16 @@ def main():
                 problems.append(f"manual/i18n/{code}.json: {missing} untranslated strings (shown in Chinese)")
         manual_i18n.build(out / directory / "manual", code, data, manual_i18n.fill(parts))
         urls.append(f"{origin}/{directory}manual/")
+
+    # The app's second source for its update check. A deployment replaces the whole site, so
+    # --strict fails without it rather than publish a site that lost the file.
+    try:
+        update = latest_release(repository, languages, origin)
+        (out / "update.json").write_text(
+            json.dumps(update, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
+        print(f"update.json: version {update['version']}, lines for {len(update['notes'])} languages")
+    except (OSError, ValueError, KeyError) as error:
+        problems.append(f"update.json not written, the latest release could not be read from GitHub: {error}")
 
     (out / "CNAME").write_text(config["domain"] + "\n", encoding="utf-8")
     (out / ".nojekyll").write_text("", encoding="utf-8")

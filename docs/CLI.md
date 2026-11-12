@@ -295,7 +295,8 @@ shows two small buttons at its bottom-right corner, 「新建栅栏」 and 「�
 default on), `featureTips` (「功能提示」: one-time cards in the corner when a
 feature would help, such as rolling up fences once there are many, showing a folder opened often on
 the desktop, or a rule for files of one type dragged into one fence; each shows once; default on),
-`autoCheckUpdates` (「自动检查更新」, installer and ZIP editions: a check of GitHub's latest release
+`autoCheckUpdates` (「自动检查更新」, installer and ZIP editions: a check of GitHub's latest release,
+or of the website's copy of it when GitHub gives no answer,
 about a minute after start and then once a day, and a card once per new version; default on),
 `autostart`, `peek.enabled`, `peek.doubleCtrl` (`true` makes
 Peek open by pressing Ctrl twice quickly, with its search box, instead of the shortcut, which stays

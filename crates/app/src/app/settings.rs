@@ -1075,7 +1075,10 @@ impl App {
                     self.on_feedback_action(name, &v);
                 }
                 Some("pageError") => log_page_error(&v),
-                Some(name @ ("checkUpdate" | "installUpdate" | "openReleasePage")) => {
+                Some(
+                    name @ ("checkUpdate" | "installUpdate" | "openReleasePage"
+                    | "openDownloadPage"),
+                ) => {
                     self.on_update_action(name);
                 }
                 Some("setPeekHotkey") => {
