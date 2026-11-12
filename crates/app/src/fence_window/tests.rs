@@ -1215,9 +1215,10 @@ fn a_window_glide_keeps_its_own_time_and_curve_from_its_first_frame() {
         glide.at(first + Duration::from_millis(251)),
         ((100, 0), true)
     );
-    // Point to point: half way at half time (decelerating it would be past 80).
+    // Point to point (0.55, 0.55, 0, 1): 92 of the way at half time. The landing glide's
+    // decelerating 167 ms would be at 98 by then.
     let ((x, _), _) = glide.at(first + Duration::from_millis(125));
-    assert!((40..=60).contains(&x), "half way at half time: {x}");
+    assert!((90..=94).contains(&x), "at half time: {x}");
 }
 
 #[test]
