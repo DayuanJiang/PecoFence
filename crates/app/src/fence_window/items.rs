@@ -268,7 +268,10 @@ impl FenceViewState {
             && !self.rolled_up
             && self.roll_anim.is_none()
             && !self.ole_drag
-            && self.marquee.is_none()
+            // A rubber band that has not moved yet is a plain press: the click on an empty
+            // part of the fence that confirms a new name must not make the renamed icon jump
+            // to its new place.
+            && self.marquee.as_ref().is_none_or(|m| m.cur == m.start)
             && self.outgoing.is_empty()
             && desktop::is_visible(self.hwnd);
         let old_pos: HashMap<ItemId, CellRect> = if animate {
