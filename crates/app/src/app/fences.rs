@@ -605,6 +605,18 @@ impl App {
                     && (a.mon_left, a.mon_top, a.mon_right, a.mon_bottom)
                         == (b.mon_left, b.mon_top, b.mon_right, b.mon_bottom)
             });
+        // A monitor that kept its place has another scale: the icons the fences ask for now
+        // are asked again in a few seconds (`IconCache::recheck_after_scale_change`).
+        let scale_changed = fresh.iter().any(|a| {
+            self.state
+                .work_areas
+                .iter()
+                .any(|b| a.device_path == b.device_path && a.dpi != b.dpi)
+        });
+        if scale_changed {
+            tracing::debug!("display scale changed: icons extracted now are asked again later");
+            self.ctx.icons.borrow_mut().recheck_after_scale_change();
+        }
         self.state.work_areas = fresh;
         let layouts = self.state.config.layouts.len();
         self.state.ensure_layout();

@@ -78,13 +78,14 @@ public static class Px {
   public static List<Bitmap> Frames = new List<Bitmap>();
   public static List<long> Times = new List<long>();
   // Frames of a region for `ms` ms; action 1 clicks where the pointer is after the first frame,
-  // 2 presses the left button only.
+  // 2 presses the left button only, 3 lets it go (the end of a drag that is being held).
   public static void Burst(int x, int y, int w, int h, int ms, int action) {
     foreach (var f in Frames) f.Dispose();
     Frames.Clear(); Times.Clear();
     var sw = Stopwatch.StartNew();
     Frames.Add(Grab(x, y, w, h)); Times.Add(0);
-    if (action >= 1) mouse_event(2, 0, 0, 0, UIntPtr.Zero);
+    if (action == 3) mouse_event(4, 0, 0, 0, UIntPtr.Zero);
+    else if (action >= 1) mouse_event(2, 0, 0, 0, UIntPtr.Zero);
     if (action == 1) { System.Threading.Thread.Sleep(30); mouse_event(4, 0, 0, 0, UIntPtr.Zero); }
     while (sw.ElapsedMilliseconds < ms) { Frames.Add(Grab(x, y, w, h)); Times.Add(sw.ElapsedMilliseconds); }
   }
