@@ -221,6 +221,21 @@ const WEAK_PLATE_SHARE: f32 = 0.125;
 /// the edge does not switch it with every pixel. One row or column of the 16 x 16 samples is
 /// 1/16 of the plate: under that, so a step of one row over a straight edge keeps the state.
 const WEAK_PLATE_KEEP: f32 = 0.06;
+/// Secondary text (resting tabs, a clock's date, the details header, footers, counts, done
+/// to-dos) follows the plate like primary text: where its own strength gives less than
+/// `SECONDARY_BAR` : 1 against the plate (4.5 : 1, WCAG's figure for small text and what
+/// Windows' own secondary text keeps on Mica), its alpha is raised as far as the bar needs, at
+/// most to `SECONDARY_CAP` of the primary text's alpha, so it never reads as primary text. On a
+/// plate of middle brightness the cap is reached first; the halo of a weak plate covers the
+/// rest, as for primary text. Tertiary text (the count of a rolled fence, the chevron) the
+/// same with 3 : 1, WCAG's figure for large text and the parts of a control.
+const SECONDARY_BAR: f32 = 4.5;
+const SECONDARY_CAP: f32 = 0.9;
+const TERTIARY_BAR: f32 = 3.0;
+const TERTIARY_CAP: f32 = 0.75;
+/// The alpha is raised in steps of this size: a fence dragged over a wallpaper draws its
+/// content again only when a step changes ([`Theme::label_look`]).
+const QUIET_TEXT_STEP: f32 = 0.04;
 
 fn luma(rgb: [f32; 3]) -> f32 {
     0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
@@ -231,6 +246,34 @@ fn luma(rgb: [f32; 3]) -> f32 {
 /// (47,160,210) has under 3 : 1, on the grey of the same mean 3.4 : 1.
 fn brightness(rgb: [f32; 3]) -> f32 {
     luma(rgb.map(|c| c * c)).sqrt()
+}
+
+/// WCAG relative luminance of an sRGB colour.
+fn relative_luminance(rgb: [f32; 3]) -> f32 {
+    luma(rgb.map(|c| {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    }))
+}
+
+/// WCAG contrast of `ink`, drawn at alpha `a`, against the `plate` under it.
+fn contrast_over(ink: ColorF, a: f32, plate: [f32; 3]) -> f32 {
+    let over = [ink.r, ink.g, ink.b];
+    let text = relative_luminance([0, 1, 2].map(|i| plate[i] + (over[i] - plate[i]) * a));
+    let plate = relative_luminance(plate);
+    (text.max(plate) + 0.05) / (text.min(plate) + 0.05)
+}
+
+/// `ink` at the least alpha, from its own up to `cap`, that gives `bar` : 1 against `plate`.
+fn quiet_ink(ink: ColorF, plate: [f32; 3], bar: f32, cap: f32) -> ColorF {
+    let mut a = ink.a;
+    while a < cap && contrast_over(ink, a, plate) < bar {
+        a = (a + QUIET_TEXT_STEP).min(cap);
+    }
+    ColorF { a, ..ink }
 }
 
 /// Up to 16 x 16 pixels (BGRA) spread evenly over `image`.
@@ -475,6 +518,7 @@ impl Theme {
             self.ink(ThemeMode::Dark)
         };
         self.with_ink_of(foreground)
+            .with_quiet_text_on(self.plate_color(image, opacity, tint))
     }
 
     /// A fully transparent plate (外观 → 全透明) while it is hidden: the captions sit on the
@@ -502,6 +546,7 @@ impl Theme {
             self.ink(ThemeMode::Dark)
         };
         self.with_ink_of(foreground)
+            .with_quiet_text_on(self.wallpaper_color(image))
     }
 
     /// A fully transparent plate (外观 → 全透明) while its plate shows (the pointer over the
@@ -527,6 +572,7 @@ impl Theme {
             self.ink(ThemeMode::Dark)
         };
         self.with_ink_of(foreground)
+            .with_quiet_text_on(self.plate_color(image, 1.0, tint))
     }
 
     /// Fluent with 「文字颜色」 自动: the plate is see-through and takes its brightness from the
@@ -583,7 +629,7 @@ impl Theme {
             WEAK_PLATE_SHARE
         };
         theme.text_halo |= weak_share >= needed;
-        theme
+        theme.with_quiet_text_on(self.plate_color(image, opacity, tint))
     }
 
     /// What [`Self::over_acrylic`] decides from: the mean brightness (0..=1) of the Fluent
@@ -670,6 +716,35 @@ impl Theme {
         }
     }
 
+    /// The secondary and tertiary text for `plate`, the colour under the text (see
+    /// `SECONDARY_BAR`): each as strong as its bar needs there, within its cap.
+    fn with_quiet_text_on(mut self, plate: ColorF) -> Self {
+        let plate = [plate.r, plate.g, plate.b];
+        let top = self.text_primary.a;
+        self.text_secondary = quiet_ink(
+            self.text_secondary,
+            plate,
+            SECONDARY_BAR,
+            top * SECONDARY_CAP,
+        );
+        self.text_tertiary = quiet_ink(self.text_tertiary, plate, TERTIARY_BAR, top * TERTIARY_CAP);
+        self
+    }
+
+    /// The mean colour of the wallpaper under `image`, this fence's backdrop crop.
+    fn wallpaper_color(&self, image: &crate::Image) -> ColorF {
+        let (mut sum, mut count) = ([0.0f32; 3], 0);
+        for p in sample_grid(image) {
+            let wallpaper = self.wallpaper_under([p[2], p[1], p[0]].map(|c| c as f32 / 255.0));
+            for (s, c) in sum.iter_mut().zip(wallpaper) {
+                *s += c;
+            }
+            count += 1;
+        }
+        let n = count.max(1) as f32;
+        ColorF::new(sum[0] / n, sum[1] / n, sum[2] / n, 1.0)
+    }
+
     /// The mean brightness (0..=1) of the wallpaper under `image`, this fence's backdrop crop.
     pub fn wallpaper_brightness(&self, image: &crate::Image) -> f32 {
         let (mut sum, mut count) = (0.0, 0);
@@ -753,10 +828,11 @@ impl Theme {
         }
     }
 
-    /// What the backdrop decides about the item names: their colour and whether they get a
-    /// halo. The content is redrawn when this changes.
-    pub fn label_look(&self) -> (ColorF, bool) {
-        (self.text_primary, self.text_halo)
+    /// What the backdrop decides about the content's text: the names' colour, whether they
+    /// get a halo, and the secondary text's colour (a date, a footer, a done to-do). The content
+    /// is redrawn when this changes.
+    pub fn label_look(&self) -> (ColorF, bool, ColorF) {
+        (self.text_primary, self.text_halo, self.text_secondary)
     }
 
     /// The colour of a fence title or tab caption without a 「标题颜色」 of its own: the theme
@@ -1158,6 +1234,61 @@ mod tests {
             for (got, want) in [c.r, c.g, c.b].into_iter().zip(plate) {
                 assert!((got * 255.0 - want).abs() < 4.0, "{c:?} against {plate:?}");
             }
+        }
+    }
+
+    #[test]
+    fn secondary_text_is_raised_to_its_bar_on_the_plate_and_stays_under_primary() {
+        let against = |theme: &Theme, ink: ColorF, wallpaper: [u8; 3]| {
+            let plate = theme.plate_color(&crop_of(theme, wallpaper), 1.0, None);
+            contrast_over(ink, ink.a, [plate.r, plate.g, plate.b])
+        };
+        for theme in [Theme::dark(), Theme::light()] {
+            for grey in (0..=255).step_by(5) {
+                let wallpaper = [grey as u8; 3];
+                let picked = theme.over_acrylic(&crop_of(&theme, wallpaper), 1.0, None, None);
+                let (first, second, third) = (
+                    picked.text_primary,
+                    picked.text_secondary,
+                    picked.text_tertiary,
+                );
+                // Never as strong as primary text, never weaker than the style's own.
+                assert!(third.a <= second.a && second.a <= first.a * SECONDARY_CAP + 1e-4);
+                assert!(third.a <= first.a * TERTIARY_CAP + 1e-4, "{grey}");
+                // At its bar, or as strong as the cap allows.
+                let c2 = against(&theme, second, wallpaper);
+                assert!(
+                    c2 >= SECONDARY_BAR || second.a >= first.a * SECONDARY_CAP - 1e-4,
+                    "{grey}: {c2} at {}",
+                    second.a
+                );
+                let c3 = against(&theme, third, wallpaper);
+                assert!(c3 >= TERTIARY_BAR || third.a >= first.a * TERTIARY_CAP - 1e-4);
+            }
+        }
+        // A dark or a light plate leaves the style's own secondary text as it is.
+        let dark = Theme::dark();
+        let on_dark = dark.over_acrylic(&crop_of(&dark, [20, 20, 24]), 1.0, None, None);
+        assert_eq!(on_dark.text_secondary, dark.text_secondary);
+        assert_eq!(on_dark.text_tertiary, dark.text_tertiary);
+        // Dark mode over a mid-bright wallpaper (white text kept, 3.1 : 1 before): raised.
+        let on_mid = dark.over_acrylic(&crop_of(&dark, [120, 150, 170]), 1.0, None, None);
+        assert!(on_mid.text_primary.r > 0.9, "light text on the mid plate");
+        assert!(on_mid.text_secondary.a > dark.text_secondary.a + 0.05);
+        // Liquid Glass and a fully transparent fence go by the same rule.
+        let glass = Theme::light().with_liquid_glass();
+        let image = crate::Image::solid(16, 16, [128, 128, 128]);
+        for picked in [
+            glass.over_glass(&image),
+            dark.over_bare_wallpaper(&crop_of(&dark, [120, 150, 170]), None),
+            dark.over_clear_plate(&crop_of(&dark, [120, 150, 170]), None, None),
+        ] {
+            assert!(picked.text_secondary.a <= picked.text_primary.a * SECONDARY_CAP + 0.05);
+            assert!(
+                picked.text_secondary.a >= 0.85,
+                "{:?}",
+                picked.text_secondary
+            );
         }
     }
 

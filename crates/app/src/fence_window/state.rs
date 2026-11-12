@@ -344,7 +344,7 @@ pub struct FenceViewState {
     /// The text colour and halo the content was last drawn with (`Theme::label_look`): a
     /// fully transparent fence draws its content again when its plate comes or goes and the
     /// pick changes (`redraw_chrome_only`).
-    pub(super) content_look: Cell<Option<(ColorF, bool)>>,
+    pub(super) content_look: Cell<Option<(ColorF, bool, ColorF)>>,
     pub(super) backdrops: Rc<BackdropSets>,
     pub(super) backdrop_crop: Option<Image>,
     /// Screen rect (left, top, width, height) `backdrop_crop` was cut for. While the height
