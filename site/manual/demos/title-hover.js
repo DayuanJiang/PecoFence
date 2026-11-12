@@ -25,8 +25,8 @@
     const DESKTOP = [
         { ic: '\uE7E8', t: '随 Windows 启动', on: true },
         { ic: '\uE8A9', t: 'Windows 桌面图标', s: '桌面项目只显示在栅栏里，没有归类的放进“桌面”栅栏；回收站等系统图标也在“桌面”栅栏里', v: '隐藏，项目放在栅栏里', o: { gap: 1 } },
-        { t: '关闭 PecoFence 时保持 Windows 桌面图标隐藏', s: '登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”', on: false, o: { indent: 22 } },
-        { ic: '\uE8B3', t: '在桌面空白处拖出矩形时显示“新建栅栏”按钮', s: '矩形没有碰到任何栅栏时，在它的右下角显示“新建栅栏”和“在此显示文件夹…”两个小按钮，不点的话几秒后消失；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏', on: true },
+        { t: '退出 PecoFence 时保持 Windows 桌面图标隐藏', s: '打开后，退出或注销时图标保持隐藏，下次登录不会闪现。PecoFence 没有运行时桌面上没有图标；要恢复，右键桌面选“查看”→“显示桌面图标”', on: false, o: { indent: 22 } },
+        { ic: '\uE8B3', t: '在桌面空白处拖出矩形时显示“新建栅栏”按钮', s: '在矩形右下角显示“新建栅栏”和“在此显示文件夹…”，几秒后消失。关闭后拖出矩形只用来框选', on: true },
         { ic: '\uE7C4', t: '每个虚拟桌面各用一套栅栏', s: '打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改', on: false },
         { ic: '\uE82F', t: '功能提示', s: '用得上某个功能时提示一次，例如栅栏多了可以收起、常开的文件夹可以放到桌面上。每条只出现一次', on: true },
     ];
@@ -89,7 +89,7 @@
         const strength = SM.card(g, { t: '图标着色强度', h: 32, indent: 22, textW: 120 });
         SM.select(strength, '中', sw);
         strength.n.style.opacity = .55;
-        toggleCard(g, { ic: '\uE793', t: '图标融入背景（Chameleon）', s: '降低图标饱和度和不透明度，让桌面看起来更清爽', on: false });
+        toggleCard(g, { ic: '\uE793', t: '图标融入背景', s: '降低图标饱和度和不透明度，让桌面看起来更清爽', on: false });
         toggleCard(g, { ic: '\uE71B', t: '显示快捷方式箭头', s: '和 Windows 桌面一样，在快捷方式图标的左下角显示小箭头', on: true });
 
         SM.h3(g, '桌面与启动');
@@ -135,7 +135,7 @@
         SM.drawInput(SM.input(SM.card(f, { ic: '', t: '栅栏名称', textW: 160 }), '', 140), '程序', false, 0);
         toggleCard(f, { ic: '', t: '自动高度', s: '高度跟随内容行数，内容增减时平滑过渡', on: false });
         SM.h3(f, '外观');
-        SM.select(SM.card(f, { ic: '', t: '不透明度', s: '默认：透出桌面。更厚实：多一层底色。全透明：鼠标悬停时才显示玻璃。', textW: 190 }), '默认', 100);
+        SM.select(SM.card(f, { ic: '', t: '不透明度', s: '全透明：鼠标悬停时才显示玻璃。更透明：底色更淡。更厚实：多一层底色。', textW: 190 }), '默认', 100);
         const tint = SM.card(f, { ic: '', t: '色调', s: '给玻璃染上一层颜色，标签页的色条随之变化', textW: 88 });
         SWATCHES.forEach((hex, i) => {
             const c = SM.ctrl(tint, 'set-sw' + (hex ? '' : ' none on'), 15, 15, { right: 10 + (SWATCHES.length - 1 - i) * 19.5, label: null });
@@ -144,7 +144,7 @@
         // 只给标题栏上色 shows only with a tint, 标签页颜色 only with tabs
         SM.select(SM.card(f, { ic: '', t: '标题颜色', s: '要跟随色调，请先选一种色调', textW: 190 }), '跟随主题', 100);
         SM.select(SM.card(f, { ic: '', t: '标题字号', s: '栅栏标题和标签页文字的大小', textW: 190 }), '标准', 100);
-        const mode = SM.select(SM.card(f, { ic: '', t: '显示标题栏', s: '鼠标悬停时显示：平时收起标题行，指针移到栅栏上才出现',
+        const mode = SM.select(SM.card(f, { ic: '', t: '显示标题栏', s: '鼠标悬停时显示：平时隐藏标题栏，鼠标移到栅栏上才出现',
             textW: f.cardW - 34 - 120 - 24 }), OPTIONS[0], 120);
         f.contentH = SM.stack(f) + FEN_MORE;
         return { f, mode };
