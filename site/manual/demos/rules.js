@@ -75,9 +75,9 @@
         w.foot.textContent = T('{0} 个栅栏 · {1} 个项目').replace('{0}', '5').replace('{1}', '23');
         const pg = r.pg = SM.page(w, 'rules');
         SM.header(pg, '整理规则');
-        const auto = SM.card(pg, { ic: '\uE8CB', t: '新项目出现在桌面时自动归类', s: '先看快捷方式目标规则，再按列表顺序匹配；都不符合的放进“桌面”栅栏', textW: 240 });
+        const auto = SM.card(pg, { ic: '\uE8CB', t: '新项目出现在桌面时自动归类', s: '条件是“快捷方式目标包含”的规则先匹配，其余按列表顺序；都不符合的放进“桌面”栅栏', textW: 240 });
         SM.drawToggle(SM.toggle(auto), true);
-        const unmatched = SM.card(pg, { ic: '\uE718', t: '没有命中规则的项目', s: '应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏', textW: 240 });
+        const unmatched = SM.card(pg, { ic: '\uE718', t: '不符合任何规则的项目', s: '应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏', textW: 240 });
         SM.select(unmatched, '回到“桌面”栅栏', 104);
         const apply = SM.card(pg, { ic: '\uE8AB', t: '立即对桌面上的全部项目应用规则', s: '手动放进栅栏的项目保持原位', textW: 240 });
         r.apply = SM.button(apply, '立即应用', 64);
@@ -181,7 +181,7 @@
         r.kindPop = SM.popup(S, KINDS, 196, 8);
         r.targetPop = SM.popup(S, FENCES, 147);
         r.card = notice(S, { title: T('已按规则整理 {0} 个项目').replace('{0}', '1'),
-            text: T('点「撤销」，或在栅栏上按 Ctrl+Z，就能把它们放回原处。'), button: T('撤销') });
+            text: T('点“撤销”，或在栅栏上按 Ctrl+Z，就能把它们放回原处。'), button: T('撤销') });
         r.ptr = pointer(S);
         taskbar(root);
 
