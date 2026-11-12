@@ -2567,6 +2567,27 @@ async function runTests() {
     doc = await reset();
   });
 
+  // The settings window review of 2026-11-12.
+  await test('Drop-down lists: the open list is styled by the page, a closed list keeps the system keys, scrollbars are thin', async () => {
+    doc = await reset();
+    if (!win().CSS.supports('appearance', 'base-select')) return;
+    const align = doc.querySelector('[data-bind=titleAlign]'), css = el => win().getComputedStyle(el);
+    assert(css(align).appearance === 'base-select', 'The list is not styled by the page');
+    assert(css(align.options[0]).minHeight === '36px', 'Rows of an open list are not 36 px: ' + css(align.options[0]).minHeight);
+    assert(css(doc.getElementById('iconTint')).display === 'none', 'A hidden list shows');
+    assert(align.getBoundingClientRect().height === 32 && align.getBoundingClientRect().width === 160, 'The closed box changed size');
+    align.focus();
+    press(align, 'ArrowDown'); assert(align.value === 'center', 'Arrow down on a closed list: ' + align.value);
+    press(align, 'End'); assert(align.value === 'right', 'End on a closed list: ' + align.value);
+    press(align, 'ArrowDown'); assert(align.value === 'right', 'Arrow down past the last choice: ' + align.value);
+    press(align, 'ArrowUp'); press(align, 'Home'); assert(align.value === 'left', 'Home on a closed list: ' + align.value);
+    assert(win().testMessages.at(-1).settings.titleAlign === 'left' && win().testMessages.filter(m => m.type === 'patchSettings').length === 4, 'Each key that changed the choice saves once');
+    press(align, 'ArrowDown', 40, { altKey: true }); assert(align.value === 'left', 'Alt+Down belongs to the list (it opens it)');
+    for (const sel of ['nav', '.search-list', 'textarea', '.fb-preview']) {
+      assert(win().getComputedStyle(doc.querySelector(sel), '::-webkit-scrollbar').width === '12px', sel + ' has the default scrollbar');
+    }
+  });
+
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
   window.testResults = { passed, failed };
