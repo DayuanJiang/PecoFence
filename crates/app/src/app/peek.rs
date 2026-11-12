@@ -486,28 +486,36 @@ impl App {
         }
     }
 
-    /// The Peek starts to end: the fences that go back under a window fade out with the dimmer.
-    /// Fences still held (never raised) stay as they are. Returns whether any fades.
+    /// The Peek starts to end: the fences that go back under a window fade out with the dimmer,
+    /// and so do the fences it showed although they are hidden (隐藏所有栅栏): they faded only
+    /// after the dimmer was gone, a second motion. Fences still held (never raised) stay as
+    /// they are. Returns whether any fades.
     fn begin_peek_fade_out(&mut self) -> bool {
         self.peek_raise_in = None;
         // The anchor is asked first and let go: the fades below touch windows.
-        let covered: Vec<HWND> = match self.anchor.borrow().as_ref() {
-            Some(a) => a
-                .covered_fences()
-                .into_iter()
-                .filter(|f| !a.is_peek_held(*f))
-                .collect(),
+        let (covered, hidden_again): (Vec<HWND>, Vec<HWND>) = match self.anchor.borrow().as_ref() {
+            Some(a) => (
+                a.covered_fences()
+                    .into_iter()
+                    .filter(|f| !a.is_peek_held(*f))
+                    .collect(),
+                a.peek_shown_fences(),
+            ),
             None => return false,
         };
         let fading = self
             .fences
             .values()
-            .filter(|w| covered.contains(&w.hwnd()) && w.peek_fade_out())
+            .filter(|w| {
+                (covered.contains(&w.hwnd()) || hidden_again.contains(&w.hwnd()))
+                    && w.peek_fade_out()
+            })
             .count();
         tracing::debug!(
             covered = covered.len(),
+            hidden_again = hidden_again.len(),
             fading,
-            "peek ending: fences that go back under a window fade out"
+            "peek ending: fences that go back under a window or are hidden again fade out"
         );
         fading > 0
     }
