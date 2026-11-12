@@ -59,23 +59,44 @@ if ($Part -match 'A') {
   CloseMenus; CloseWindows
 
   Case 'HD-1 import and scripts'
-  $S = "$PfRun\hd1-script.cmd"; Set-Content $S -Value '@echo hello' -Encoding ASCII
+  $SMark = "$PfRun\hd1-script-ran.txt"
+  $S = "$PfRun\hd1-script.cmd"; Set-Content $S -Value "@echo ran>> `"$SMark`"`r`n@echo hello" -Encoding ASCII
   $base = "$PfRun\hd1-base.json"; Pf config export $base | Out-Null
-  Pf fence create --script $S --title 'Runner' --rect '420,440,300,160' | Out-Null; Start-Sleep -Seconds 2
+  Pf fence create --script $S --title 'Runner' --rect '420,440,300,160' | Out-Null
+  for ($i = 0; $i -lt 20 -and -not (Test-Path $SMark); $i++) { Start-Sleep -Milliseconds 500 }
+  Check 'the script fence runs its script' (Test-Path $SMark) ''
+  # Someone's file with a script fence and the 小工具 switch off.
+  $withScript = "$PfRun\hd1-with-script.json"; Pf config export $withScript | Out-Null
+  $off = ([IO.File]::ReadAllText($withScript)) -replace '("tools":\s*\{\s*"enabled":\s*)true', '${1}false'
+  [IO.File]::WriteAllText("$PfRun\hd1-off.json", $off)
+  Check 'that file has the script and the switch off' ($off -match 'hd1-script' -and $off -match '"tools":\s*\{\s*"enabled":\s*false') ''
+  # A file without scripts, imported while a script fence of one's own is there.
   Pf config import $base | Out-Null; Start-Sleep -Seconds 3
   Check 'a file without scripts leaves the 小工具 switch on' ((Tools).enabled -eq $true) ((Tools) | ConvertTo-Json -Compress)
-  # The undo snapshot of that import keeps the Runner fence and its script: an export holds both.
+  # The undo snapshot of that import keeps the Runner fence and its script, and no layout shows
+  # the fence any more: an export of this is a file whose script comes only with a snapshot.
   Pf settings set tools.enabled true | Out-Null
+  $undo = @(Snaps | Sort-Object { [long]$_.ts } -Descending)[0]
   $withSnap = "$PfRun\hd1-snap.json"; Pf config export $withSnap | Out-Null
-  $j = [IO.File]::ReadAllText($withSnap)
-  $off = $j -replace '("tools":\s*\{\s*"enabled":\s*)true', '${1}false'
-  [IO.File]::WriteAllText("$PfRun\hd1-off.json", $off)
-  Check 'the file to import has a script, a snapshot with a script, and the switch off' ($off -match 'hd1-script' -and $off -match '"tools":\s*\{\s*"enabled":\s*false') ''
+  Check 'the exported file names the script and holds the snapshot' (([IO.File]::ReadAllText($withSnap)) -match 'hd1-script' -and ([IO.File]::ReadAllText($withSnap)).Contains("$($undo.id)")) "snapshot '$($undo.name)' $($undo.id)"
+
+  Case 'HD-1 another computer imports the two files'
+  PfFresh
+  Start-Sleep -Seconds 3
+  Pf config import $withSnap | Out-Null; Start-Sleep -Seconds 3
+  Remove-Item $SMark -ErrorAction SilentlyContinue
+  Pf snapshot restore "$($undo.id)" | Out-Null; Start-Sleep -Seconds 2
+  # The switch off and on again: script fences start at once (else with the next minute).
+  Pf settings set tools.enabled false | Out-Null; Start-Sleep -Seconds 1
+  Pf settings set tools.enabled true | Out-Null; Start-Sleep -Seconds 6
+  $back = @(PfJson fence list | Where-Object { $_ -and $_.title -eq 'Runner' }).Count
+  Check 'the snapshot that came with the file brings its fence back, and no script runs' ($back -eq 1 -and -not (Test-Path $SMark)) "Runner fences=$back, script ran=$(Test-Path $SMark)"
+  $line = [regex]::Match((LogText), '.*imported script fences held off[^\n]*snapshot_scripts=[1-9][^\n]*').Value
+  Check 'log: the scripts that came only with the snapshot were dropped' ($line -ne '') $line
   $rep = PfJson config import "$PfRun\hd1-off.json"; Start-Sleep -Seconds 3
   Check 'the CLI reply says how many scripts wait' ($rep.scriptsHeld -eq 1) ($rep | ConvertTo-Json -Compress)
   $line = [regex]::Match((LogText), '.*imported script fences held off[^\n]*switch_was_on=false[^\n]*').Value
   Check 'the switch off in the file: its scripts are held and the import says so' ($line -ne '' -and (Tools).enabled -eq $false) $line
-  Check 'a snapshot of the file brings no script' ($line -match 'snapshot_scripts=[1-9]') $line
   PfQuit
 }
 

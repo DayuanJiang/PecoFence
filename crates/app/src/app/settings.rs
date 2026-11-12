@@ -154,19 +154,31 @@ impl App {
         self.end_peek_now();
         let old_settings = self.state.config.settings.clone();
         let imported = matches!(source, ConfigSource::Import);
-        // The scripts the file itself brings (the user's own stay in the configuration for the
-        // undo snapshot and are counted apart).
-        let file_scripts = cfg.scripts.values().filter(|s| !s.path.is_empty()).count();
         // A snapshot of an imported file brings its fences, never scripts: restoring it later
-        // would start them with no word of warning.
+        // would start them with no word of warning. That goes for the scripts a snapshot keeps
+        // itself and for those the file lists for fences that are in none of its layouts (only
+        // a snapshot can show them).
         let snapshot_scripts: usize = if imported {
-            cfg.snapshots
+            let shown: std::collections::HashSet<FenceId> = cfg
+                .layouts
+                .iter()
+                .flat_map(|l| &l.fences)
+                .map(|f| f.id)
+                .collect();
+            let listed = cfg.scripts.len();
+            cfg.scripts.retain(|id, _| shown.contains(id));
+            let kept: usize = cfg
+                .snapshots
                 .iter_mut()
                 .map(|s| std::mem::take(&mut s.scripts).len())
-                .sum()
+                .sum();
+            listed - cfg.scripts.len() + kept
         } else {
             0
         };
+        // The scripts the file itself brings (the user's own stay in the configuration for the
+        // undo snapshot and are counted apart).
+        let file_scripts = cfg.scripts.values().filter(|s| !s.path.is_empty()).count();
         self.state.replace_config(cfg);
         if let Some(desk) = shell::user_desktop() {
             self.state.migrate_desktop_path(&desk);
