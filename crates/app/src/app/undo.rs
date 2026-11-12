@@ -169,6 +169,21 @@ impl App {
         });
     }
 
+    /// `fence`, a window of its own until now, was merged into another from the tab menu's
+    /// 合并到…: Ctrl+Z splits it out again where it stood (`before`, its expanded rect).
+    pub(super) fn note_menu_merge_for_undo(
+        &mut self,
+        fence: FenceId,
+        tabs: &[FenceId],
+        before: RECT,
+    ) {
+        self.push_undo(UndoStep::Merged {
+            fence,
+            tabs: tabs.to_vec(),
+            before,
+        });
+    }
+
     /// A tab left its window (`change`), by a drag (`from_drag`) or from the tab menu.
     pub(super) fn note_split_for_undo(
         &mut self,

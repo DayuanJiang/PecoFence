@@ -1416,6 +1416,10 @@ impl App {
                 // The merged window's tabs in their order (attach_tab adds them in storage
                 // order, which may interleave them with the target's tabs).
                 let moved = self.state.tabs_of(fence);
+                // Where a window of its own stood: Ctrl+Z puts it back there.
+                let before = (self.state.host_of(fence) == fence)
+                    .then(|| self.state.fence(fence).map(|f| self.state.fence_px_rect(f)))
+                    .flatten();
                 if let Some(target) = self.state.host_fences().get(idx).map(|o| o.id)
                     && self.state.attach_tab(fence, target)
                 {
@@ -1427,6 +1431,20 @@ impl App {
                     self.apply_fence_view(target);
                     if let Some(w) = self.fences.get(&target) {
                         self.queue.push(Command::RaiseFence(w.hwnd()));
+                    }
+                    if let Some(px) = before {
+                        self.note_menu_merge_for_undo(
+                            fence,
+                            &moved,
+                            RECT {
+                                left: px.left,
+                                top: px.top,
+                                right: px.right,
+                                bottom: px.bottom,
+                            },
+                        );
+                        // Its window had the keyboard and is gone (as after a merge by drag).
+                        self.give_keyboard(target, "a fence merged into it");
                     }
                     self.schedule_save();
                 }

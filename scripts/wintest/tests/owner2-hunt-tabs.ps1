@@ -64,6 +64,19 @@ function PartA() {
   Chord 0x11 0x5A; Start-Sleep -Milliseconds 900
   Check 'one more Ctrl+Z finds nothing left of the two drags' ((LastLog 'undo: undone|nothing to undo') -match 'nothing to undo') (LastLog 'undo: undone|nothing to undo')
   Shot 'A2-split-undone'
+  # The tab menu's 合并到…: one step as well.
+  $s = DumpOf '独立'
+  [G]::RClick((Sx $s 150), (TitleY $s)); $m = MenuWin 4
+  $q = MenuPoint $m '标签页'; [G]::MoveTo($q[0], $q[1]); Start-Sleep -Milliseconds 800
+  $sub = @([W]::Tops('#32768')) | Where-Object { $_ -ne $m } | Select-Object -First 1
+  $q = MenuPoint $sub '合并到'; [G]::MoveTo($q[0], $q[1]); Start-Sleep -Milliseconds 800
+  $third = @([W]::Tops('#32768')) | Where-Object { $_ -ne $m -and $_ -ne $sub } | Select-Object -First 1
+  MenuPick '^工作$' $third | Out-Null; Start-Sleep -Milliseconds 1000
+  Check 'the tab menu''s 合并到… merges 独立 into 工作' ((HostOf '独立') -eq $work) "host of 独立=$(HostOf '独立')"
+  Chord 0x11 0x5A; Start-Sleep -Milliseconds 1200
+  $f = FenceGet '独立'
+  Check 'Ctrl+Z takes that merge back too, to where 独立 stood' (-not $f.tabHost -and (RectText $f) -eq '700,60,300,200') "host=$($f.tabHost) rect=$(RectText $f); $(LastLog 'undo: undone|nothing to undo')"
+  CloseMenus
   PfQuit
 }
 
