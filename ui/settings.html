@@ -3379,8 +3379,12 @@
       // Another colour mode or accent lands in one frame: the cards and the text change at
       // once, so the controls must not fade behind them (drawnSoon allows transitions again).
       const root = document.documentElement;
-      if (root.classList.contains('light') !== (m.themeMode === 'light') || (m.accent && root.style.getPropertyValue('--accent') !== m.accent)) root.classList.remove('ready');
+      const modeChanged = root.classList.contains('light') !== (m.themeMode === 'light');
+      if (modeChanged || (m.accent && root.style.getPropertyValue('--accent') !== m.accent)) root.classList.remove('ready');
       document.documentElement.classList.toggle('light', m.themeMode === 'light');
+      // The host holds the title bar's change until this report, which goes out in the frame
+      // that draws the new colours: the title bar and the page change together.
+      if (modeChanged) requestAnimationFrame(() => send({ type: 'modeDrawn' }));
       if (m.accent) {
         document.documentElement.style.setProperty('--accent', m.accent);
         document.documentElement.style.setProperty('--accent-hover', m.accent + 'E6');

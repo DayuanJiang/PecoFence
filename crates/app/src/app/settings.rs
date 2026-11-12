@@ -895,6 +895,12 @@ impl App {
                     tracing::info!(ms, "settings: page drawn, window shown");
                 }
             }
+            // The page draws the colour mode it was just sent: the title bar changes with it.
+            Some("modeDrawn") => {
+                if let Some(h) = &self.settings {
+                    h.theme_drawn();
+                }
+            }
             // The page shown and how far it is scrolled, kept for the next open in this run.
             Some("view") => {
                 if let Some(page) = v.get("page").and_then(|p| p.as_str()) {

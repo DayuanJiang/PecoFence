@@ -85,12 +85,22 @@ struct HostState {
     webview: Option<WebView>,
     /// Where the window stood when it closed and its scale there (`SettingsHost::closed_at`).
     closed_at: Option<(RECT, f32)>,
+    /// The colour mode the title bar shows.
+    mode: ThemeMode,
+    /// A colour mode (and whether Mica is on) the title bar takes when the page says it draws
+    /// it (`SettingsHost::theme_drawn`), or after `THEME_FALLBACK_MS`.
+    pending_theme: Option<(ThemeMode, bool)>,
 }
 
 /// `WM_TIMER` id of the host window: shows a window whose page never said `drawn`.
 const SHOW_TIMER: usize = 1;
 /// How long after `ready` a window shows anyway (a script error must not keep it hidden).
 const SHOW_FALLBACK_MS: u32 = 500;
+/// `WM_TIMER` id of the host window: the title bar takes a colour mode whose page never said
+/// `modeDrawn`.
+const THEME_TIMER: usize = 2;
+/// How long the title bar waits for the page before it changes anyway.
+const THEME_FALLBACK_MS: u32 = 250;
 
 pub struct SettingsHost {
     window: Window,
@@ -138,6 +148,8 @@ impl SettingsHost {
             controller: None,
             webview: None,
             closed_at: None,
+            mode,
+            pending_theme: None,
         }));
 
         let mons = monitors::enumerate();
@@ -245,6 +257,19 @@ impl SettingsHost {
                                 );
                                 window::show_normal(hwnd);
                                 window::bring_to_front(hwnd);
+                            }
+                            Some(0)
+                        }
+                        msg::WM_TIMER if wparam == THEME_TIMER => {
+                            window::kill_timer(hwnd, THEME_TIMER);
+                            let pending = state.borrow_mut().pending_theme.take();
+                            if let Some((mode, mica)) = pending {
+                                tracing::debug!(
+                                    ?kind,
+                                    ?mode,
+                                    "settings: the page did not say it draws the new colour mode, title bar changed anyway"
+                                );
+                                apply_theme(hwnd, &state, mode, mica);
                             }
                             Some(0)
                         }
@@ -487,12 +512,37 @@ impl SettingsHost {
 
     /// Re-themes the caption and the page background after a light/dark switch. The sheet is
     /// the same for both materials: an opaque window has nothing for Liquid Glass to refract.
+    /// A window that is showing its page waits with the title bar until the page says it draws
+    /// the new colours (`theme_drawn`): set at once, the title bar was a frame or two ahead of
+    /// the page, which gets the mode in a message and needs a frame to draw it.
     pub fn set_theme(&self, mode: ThemeMode, _liquid_glass: bool) {
-        let _ = dwm::set_immersive_dark_mode(self.window.hwnd(), matches!(mode, ThemeMode::Dark));
-        dwm::repaint_title_bar(self.window.hwnd());
-        apply_caption(self.window.hwnd(), mode, self.mica);
-        if let Some(c) = self.state.borrow().controller.as_ref() {
-            let _ = c.set_default_background_color(page_background(mode, self.mica));
+        let hwnd = self.window.hwnd();
+        let shown = self.state.borrow().mode;
+        if self.ready && shown != mode && desktop::is_visible(hwnd) {
+            tracing::debug!(
+                ?mode,
+                "settings: the title bar waits for the page's new colour mode"
+            );
+            self.state.borrow_mut().pending_theme = Some((mode, self.mica));
+            window::set_timer(hwnd, THEME_TIMER, THEME_FALLBACK_MS);
+            return;
+        }
+        window::kill_timer(hwnd, THEME_TIMER);
+        self.state.borrow_mut().pending_theme = None;
+        apply_theme(hwnd, &self.state, mode, self.mica);
+    }
+
+    /// The page says it draws the colour mode it was sent (`modeDrawn`): the title bar follows.
+    pub fn theme_drawn(&self) {
+        let hwnd = self.window.hwnd();
+        let pending = self.state.borrow_mut().pending_theme.take();
+        if let Some((mode, mica)) = pending {
+            window::kill_timer(hwnd, THEME_TIMER);
+            tracing::debug!(
+                ?mode,
+                "settings: the page draws the new colour mode, title bar changed"
+            );
+            apply_theme(hwnd, &self.state, mode, mica);
         }
     }
 
@@ -520,6 +570,18 @@ impl SettingsHost {
             let _ = c.close();
         }
         drop(self.window);
+    }
+}
+
+/// The title bar and the browser's own background take `mode`. The state is not borrowed
+/// while the title bar is repainted (that sends the window messages whose handling reads it).
+fn apply_theme(hwnd: HWND, state: &Rc<RefCell<HostState>>, mode: ThemeMode, mica: bool) {
+    state.borrow_mut().mode = mode;
+    let _ = dwm::set_immersive_dark_mode(hwnd, matches!(mode, ThemeMode::Dark));
+    dwm::repaint_title_bar(hwnd);
+    apply_caption(hwnd, mode, mica);
+    if let Some(c) = state.borrow().controller.as_ref() {
+        let _ = c.set_default_background_color(page_background(mode, mica));
     }
 }
 
