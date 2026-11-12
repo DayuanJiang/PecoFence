@@ -3311,6 +3311,37 @@ async function runTests() {
     assert(shade() === 1 && !w.querySelector('.se-count').classList.contains('busy'), 'The new number is dim');
     doc = await reset();
   });
+  await test('The navigation follows the window\'s width between 740 and 900 px, and its fold to icons glides', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const was = frame.style.width;
+    try {
+      const nav = doc.querySelector('nav'), width = () => nav.getBoundingClientRect().width;
+      const card = () => doc.querySelector('.page.on .card').getBoundingClientRect().left;
+      let last = null, worst = 0, worstAt = 0;
+      for (let w = 960; w >= 548; w -= 8) {
+        frame.style.width = w + 'px'; await settle();
+        const now = [width(), card()];
+        const step = last ? Math.max(Math.abs(now[0] - last[0]), Math.abs(now[1] - last[1])) : 0;
+        if (step > worst) { worst = step; worstAt = w; }
+        last = now;
+      }
+      assert(worst <= 5, 'Between two window widths 8 px apart the navigation or the cards\' left edge moves by ' + worst + ' px (at ' + worstAt + ' px)');
+      frame.style.width = '900px'; await settle();
+      assert(width() === 240, 'At 900 px the navigation is ' + width() + ' px wide');
+      frame.style.width = '740px'; await settle();
+      assert(width() === 172, 'At 740 px the navigation is ' + width() + ' px wide');
+      const glide = () => doc.getAnimations().filter(a => a.effect.target === nav).map(a => a.effect.getComputedTiming().duration).join();
+      frame.style.width = '544px'; await settle();
+      frame.style.width = '536px'; await settle();
+      assert(glide() === '167', 'Folding to icons: the navigation\'s width glides for ' + (glide() || 'no time') + ' ms');
+      assert(await until(() => glide() === '') && width() === 56, 'Folded, the navigation is ' + width() + ' px wide');
+      frame.style.width = '544px'; await settle();
+      assert(glide() === '167', 'Opening again: the navigation\'s width glides for ' + (glide() || 'no time') + ' ms');
+      assert(await until(() => glide() === '') && width() === 172 && !doc.querySelector('.app').classList.contains('folding'), 'Open again, the navigation is ' + width() + ' px wide');
+    } finally { frame.style.width = was; }
+    doc = await reset();
+  });
   await test('Every transition and animation of the page takes one of the app\'s four times', async () => {
     doc = await reset();
     assert(await motionReady(), 'The page never allowed transitions');

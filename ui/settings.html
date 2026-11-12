@@ -72,13 +72,21 @@
   :root:not(.ready) *, :root:not(.ready) *::before, :root:not(.ready) *::after { transition: none !important; }
   .ic { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-weight: 400; font-style: normal; }
   :focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
-  .app { display: grid; grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }
+  /* A window between 740 and 900 px wide: the navigation (172 to 240 px), its rows and the
+     page's margins follow the window's width, so nothing jumps while the window is dragged
+     narrower or wider. --room is how far the window is over 740 px, up to 160. */
+  :root { --room: clamp(0px, 100vw - 740px, 160px); }
+  .app { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }
 
-  nav { padding: 12px 8px 16px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; overflow-x: hidden; }
-  .brand { display: flex; align-items: center; gap: 12px; padding: 8px 12px 20px; }
+  nav { width: calc(172px + var(--room) * .425); padding: 12px 8px 16px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; overflow-x: hidden; }
+  /* Under 541 px the navigation folds to its icons: that one step glides (see "fold"). What
+     is in it stands as it will at the end meanwhile, so the names neither wrap nor slide. */
+  .app.folding nav > * { width: var(--nav-inner); align-self: flex-start; }
+  .app.folding nav > .nav-search { width: calc(var(--nav-inner) - 8px); }
+  .brand { display: flex; align-items: center; gap: 12px; padding: 8px 12px 20px calc(10px + var(--room) * .0125); }
   .brand-mark { width: 24px; height: 24px; flex: none; color: var(--brand); }
   .brand-name { font-size: 15px; line-height: 20px; font-weight: 600; }
-  nav a { display: flex; flex: none; align-items: center; gap: 16px; min-height: 36px; padding: 8px 12px; border-radius: var(--r-control); color: var(--text); text-decoration: none; position: relative; }
+  nav a { display: flex; flex: none; align-items: center; gap: calc(12px + var(--room) * .025); min-height: 36px; padding: 8px calc(10px + var(--room) * .0125); border-radius: var(--r-control); color: var(--text); text-decoration: none; position: relative; }
   nav a .ic { font-size: 16px; width: 16px; flex: none; text-align: center; }
   nav a:hover { background: var(--subtle); }
   nav a:active { background: var(--subtle-pressed); color: var(--text2); }
@@ -112,7 +120,7 @@
   .nav-footer { margin-top: auto; padding: 16px 12px 0; color: var(--text3); font-size: 12px; line-height: 16px; }
   .nav-footer p { margin: 0; }
 
-  main { min-width: 0; padding: 24px 40px 40px 32px; overflow-y: auto; scrollbar-gutter: stable; }
+  main { min-width: 0; padding: calc(20px + var(--room) * .025) calc(24px + var(--room) * .1) calc(32px + var(--room) * .05) calc(20px + var(--room) * .075); overflow-y: auto; scrollbar-gutter: stable; }
   main > section { max-width: 1000px; margin: 0 auto; }
   /* One thin scrollbar for everything that scrolls. */
   :is(main, nav, .search-list, textarea, .fb-preview, .se-rows)::-webkit-scrollbar { width: 12px; height: 12px; }
@@ -451,18 +459,13 @@
   .infobar.on.undo { pointer-events: auto; } .infobar button { flex: none; min-width: 72px; margin: -6px -4px -6px 4px; }
   .infobar:not(.on) button { visibility: hidden; transition: visibility 0s var(--fast); }
 
-  @media (max-width: 900px) {
-    .app { grid-template-columns: 200px minmax(0, 1fr); } main { padding: 20px 24px 32px 20px; }
-  }
   @media (max-width: 740px) {
-    .app { grid-template-columns: 172px minmax(0, 1fr); }
-    nav a { gap: 12px; padding: 8px 10px; } .brand { padding-left: 10px; }
     .newrule { grid-template-columns: minmax(0, 1fr); }
   }
   /* The smallest window (441 px inside): the seven pages fit without a scrollbar. */
   @media (max-height: 520px) { .brand { padding-bottom: 8px; } .nav-footer { display: none; } }
   @media (max-width: 540px) {
-    .app { grid-template-columns: 56px minmax(0, 1fr); } nav { padding: 12px 6px; }
+    nav { width: 56px; padding: 12px 6px; }
     .brand { justify-content: center; padding: 8px 0 16px; }
     .brand-name, .nav-text, .nav-footer, .nav-search { display: none; } nav a { justify-content: center; padding: 8px 0; }
     main { padding: 16px 12px 24px; } .card { padding: 12px; } .card.child, .rows > .card { padding-left: 12px; }
@@ -1550,6 +1553,17 @@
   // A time (a number of ms) or a curve of the app's motion language: the page's CSS variables
   // (--faster, --fast, --normal, --slow; --decelerate, --accelerate, --point-to-point).
   const motion = name => { const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return v.endsWith('ms') ? parseFloat(v) : v; };
+  // "fold": at 540 px the navigation folds to its icons, or opens again. That one step glides
+  // (between 740 and 900 px the width follows the window by itself): from the width it had on
+  // the other side of the step to the one it has now, over what is in it at its final width.
+  matchMedia('(max-width: 540px)').addEventListener('change', e => {
+    if (!document.documentElement.classList.contains('ready') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const app = document.querySelector('.app'), nav = app.querySelector('nav'), css = getComputedStyle(nav);
+    nav.style.setProperty('--nav-inner', nav.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight) + 'px');
+    app.classList.add('folding');
+    nav.animate([{ width: (e.matches ? 172 : 56) + 'px' }, { width: nav.offsetWidth + 'px' }], { duration: motion('--fast'), easing: motion('--point-to-point') })
+      .finished.then(() => app.classList.remove('folding'), () => {});
+  });
   const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
   const set = (obj, path, v) => { const ks = path.split('.'); let o = obj; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]]; o[ks[ks.length - 1]] = v; };
   // Shows or hides a card that depends on another setting, with a motion (the .reveal rules).
