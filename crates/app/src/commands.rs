@@ -460,6 +460,8 @@ pub enum Command {
     PeekSearchType(String),
     /// The Peek search box text changed.
     PeekSearchChanged,
+    /// The box of a search that ended has faded out: it can be dropped.
+    PeekSearchFaded,
     /// Up / Down in the search box: highlight the previous (-1) or next (+1) match.
     PeekSearchStep(i32),
     /// PageUp / PageDown in the search box: highlight the row this many pages up (-1) or down

@@ -3009,6 +3009,7 @@ impl App {
             Command::PeekDragEnded { elsewhere: false } => self.peek_drag(false),
             Command::PeekSearchType(text) => self.peek_search_type(&text),
             Command::PeekSearchChanged => self.update_peek_search(),
+            Command::PeekSearchFaded => crate::peek_search::drop_faded(),
             Command::PeekSearchStep(step) => self.step_search_row(step),
             Command::PeekSearchPage(pages) => self.page_search_row(pages),
             Command::PeekSearchScroll(rows) => self.scroll_search_rows(rows),

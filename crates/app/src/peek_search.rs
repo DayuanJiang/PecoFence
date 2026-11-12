@@ -88,6 +88,10 @@ const TIMER_HOVER: usize = 1;
 const TIMER_TIP: usize = 2;
 /// A hover fill fades in and out this long, as a fence item's (the motion tokens' fastest).
 const HOVER_FADE_MS: f32 = 83.0;
+/// Steps the box's own fade: in once it is drawn for the first time, out when the search ends
+/// (83 ms each, as the Peek's dimmer).
+const TIMER_FADE: usize = 3;
+const BOX_FADE_MS: f32 = 83.0;
 const WA_INACTIVE: usize = 0;
 const VK_UP: u32 = 0x26;
 const VK_DOWN: u32 = 0x28;
@@ -168,6 +172,8 @@ pub struct ListScroll {
 
 thread_local! {
     static ACTIVE: RefCell<Option<Session>> = const { RefCell::new(None) };
+    /// The box of the search that just ended, while it fades out.
+    static LEAVING: RefCell<Option<Session>> = const { RefCell::new(None) };
     static CLASS: RefCell<Option<WindowClass>> = const { RefCell::new(None) };
     static ICON_WORKER: IconWorker = IconWorker::new();
     /// When the box's text changed and the rows for it are not shown yet.
@@ -386,6 +392,13 @@ struct Session {
     hover_tick: Instant,
     /// The tip with a whole-computer row's full path (made when first needed).
     tip: Option<Tooltip>,
+    /// The box has been drawn once and shows (it opens invisible: before its first paint only
+    /// the text field would show, a bare white strip).
+    revealed: bool,
+    /// How opaque the window is (0.0 to 1.0), where its fade is heading and when it last moved.
+    alpha: f32,
+    alpha_to: f32,
+    alpha_tick: Instant,
 }
 
 impl Session {
@@ -636,6 +649,78 @@ fn step_hover(hwnd: HWND) {
     });
 }
 
+/// The box has been drawn: it shows from now on, fading in over [`BOX_FADE_MS`] (at once with
+/// Windows' animations off). Only the first paint of a box does anything here.
+fn reveal(hwnd: HWND) {
+    ACTIVE.with(|a| {
+        let Ok(mut a) = a.try_borrow_mut() else {
+            return;
+        };
+        let Some(s) = a.as_mut() else { return };
+        if std::mem::replace(&mut s.revealed, true) {
+            return;
+        }
+        let animate = sysparams::client_area_animation();
+        tracing::debug!(animate, "search box: drawn once, it shows");
+        s.alpha_to = 1.0;
+        if animate {
+            s.alpha_tick = Instant::now();
+            window::set_timer(hwnd, TIMER_FADE, 15);
+        } else {
+            s.alpha = 1.0;
+            window::set_layered_alpha(hwnd, 255);
+        }
+    });
+}
+
+/// `TIMER_FADE`: the box a step further in its fade, the open one's fade in or the fade out
+/// of the one a search left behind. The timer ends with the fade; a box that has faded out is
+/// hidden, and the app is asked to drop it.
+fn step_fade(hwnd: HWND) {
+    let step = |s: &mut Session| -> bool {
+        let now = Instant::now();
+        let d = now.duration_since(s.alpha_tick).as_secs_f32() * 1000.0 / BOX_FADE_MS;
+        s.alpha_tick = now;
+        s.alpha = if s.alpha_to > s.alpha {
+            (s.alpha + d).min(s.alpha_to)
+        } else {
+            (s.alpha - d).max(s.alpha_to)
+        };
+        window::set_layered_alpha(hwnd, (s.alpha * 255.0).round() as u8);
+        s.alpha == s.alpha_to
+    };
+    let open = ACTIVE.with(|a| {
+        let Ok(mut a) = a.try_borrow_mut() else {
+            return None;
+        };
+        let s = a.as_mut().filter(|s| s.window.hwnd() == hwnd)?;
+        Some(step(s))
+    });
+    let left = match open {
+        Some(_) => None,
+        None => LEAVING.with(|l| {
+            let mut l = l.try_borrow_mut().ok()?;
+            let s = l.as_mut().filter(|s| s.window.hwnd() == hwnd)?;
+            Some((step(s), s.queue.clone()))
+        }),
+    };
+    match (open, left) {
+        (Some(false), _) | (None, Some((false, _))) => {}
+        (None, Some((true, queue))) => {
+            window::kill_timer(hwnd, TIMER_FADE);
+            desktop::hide_window(hwnd);
+            // The app drops it: a window cannot be destroyed from its own timer message.
+            queue.push(Command::PeekSearchFaded);
+        }
+        _ => window::kill_timer(hwnd, TIMER_FADE),
+    }
+}
+
+/// The box that faded out is dropped (the app calls this for [`Command::PeekSearchFaded`]).
+pub fn drop_faded() {
+    drop(LEAVING.with(|l| l.borrow_mut().take_if(|s| s.alpha <= 0.0)));
+}
+
 /// Whether a box `w` x `h` at (`x`, `y`) covers any of `avoid`.
 fn covers(x: i32, y: i32, w: i32, h: i32, avoid: &[RECT]) -> bool {
     avoid
@@ -677,6 +762,8 @@ fn place(home: (i32, i32), w: i32, h: i32, wa: RECT, avoid: &[RECT], gap: i32) -
 /// sight (screen pixels); the box opens beside them when its usual place would cover one.
 pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
     close();
+    // A box still fading out, or hidden since its fade: gone before this one is made.
+    drop(LEAVING.with(|l| l.borrow_mut().take()));
     CLASS.with(|c| {
         if c.borrow().is_none() {
             *c.borrow_mut() = WindowClass::register(SEARCH_CLASS, ClassOptions::default()).ok();
@@ -765,6 +852,10 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
                     }
                     msg::WM_TIMER if wparam == TIMER_TIP => {
                         show_path_tip(hwnd);
+                        Some(0)
+                    }
+                    msg::WM_TIMER if wparam == TIMER_FADE => {
+                        step_fade(hwnd);
                         Some(0)
                     }
                     // The hand over a result row, which a click opens (as over a script
@@ -871,12 +962,14 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
         WindowBuilder::new(class)
             .title("PecoFence search")
             .style(style::POPUP | style::CLIPCHILDREN)
-            .ex_style(style::EX_TOOLWINDOW | style::EX_TOPMOST)
+            .ex_style(style::EX_TOOLWINDOW | style::EX_TOPMOST | style::EX_LAYERED)
             .bounds(x, y, w, h)
             .create(handler)
             .ok()
     });
     let Some(window) = created else { return };
+    // Invisible until it has been drawn once (`reveal`): it takes the keyboard meanwhile.
+    window::set_layered_alpha(window.hwnd(), 0);
     let _ = dwm::set_corner_preference(window.hwnd(), dwm::CornerPreference::Round);
     // The typed text starts where the rows' names start, the magnifier sits over their icons.
     let edit_x = px(ROW_PAD) + px(ICON) + px(12.0);
@@ -940,6 +1033,10 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
             hover_out: None,
             hover_tick: Instant::now(),
             tip: None,
+            revealed: false,
+            alpha: 0.0,
+            alpha_to: 0.0,
+            alpha_tick: Instant::now(),
         })
     });
     window::show_normal(hwnd);
@@ -1370,6 +1467,9 @@ fn paint_box(hwnd: HWND) {
         p.keep_window();
     }
     drop(p);
+    if drawn {
+        reveal(hwnd);
+    }
     let text_time = started.elapsed().saturating_sub(icons_time);
     log_stage("paint_text", text_time);
     log_stage("paint_icons", icons_time);
@@ -1787,7 +1887,23 @@ pub fn close() {
         w.wanted.lock().unwrap_or_else(|e| e.into_inner()).clear();
         w.done.lock().unwrap_or_else(|e| e.into_inner()).clear();
     });
-    if let Some(s) = session {
+    let Some(mut s) = session else { return };
+    let hwnd = s.window.hwnd();
+    window::kill_timer(hwnd, TIMER_HOVER);
+    window::kill_timer(hwnd, TIMER_TIP);
+    if let Some(tip) = s.tip.as_mut() {
+        tip.hide();
+    }
+    // The box fades out with the dimmer (it takes nothing more: no session is open). One that
+    // never showed, and any with Windows' animations off, goes at once.
+    let fades = s.revealed && sysparams::client_area_animation();
+    tracing::debug!(fades, "search box closed");
+    if fades {
+        s.alpha_to = 0.0;
+        s.alpha_tick = Instant::now();
+        window::set_timer(hwnd, TIMER_FADE, 15);
+        drop(LEAVING.with(|l| l.borrow_mut().replace(s)));
+    } else {
         drop(s.edit);
         drop(s.window);
     }
