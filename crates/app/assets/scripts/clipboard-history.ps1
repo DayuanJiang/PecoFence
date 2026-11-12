@@ -261,12 +261,13 @@ function Row([string]$text, [string]$params = '') {
 # A cell of a row of cells: `text | parameters`. A text that starts with [ ] or [x] would be a
 # to-do, so a zero width space goes before the bracket.
 function Cell([string]$text, [string]$params = '') {
-  $clean = ($text -replace '[\r\n]+', ' ' -replace '\|', [string][char]0x00A6 -replace '::', ': :').Trim()
+  $clean = ($text -replace '[\r\n]+', ' ' -replace '\|', [string][char]0x00A6 -replace ':(?=:)', ': ').Trim()
   if ($clean.StartsWith('[')) { $clean = [string][char]0x200B + $clean }
   if ($params) { "$clean | $params" } else { $clean }
 }
 
-function Tip([string]$text) { ($text -replace '"', "'" -replace '\|', [string][char]0x00A6 -replace '::', ': :' -replace "`r?`n", '\n') }
+# A colon followed by another gets a space after it (also three or more in a row): `::` would end the cell.
+function Tip([string]$text) { ($text -replace '"', "'" -replace '\|', [string][char]0x00A6 -replace ':(?=:)', ': ' -replace "`r?`n", '\n') }
 
 function Format-Flag([bool]$value) { if ($value) { 'true' } else { 'false' } }
 
@@ -481,10 +482,19 @@ function Initialize-TextEntry($entry) {
   if ($entry.Kind -eq 'files') {
     $first = Split-Path -Leaf $entry.Paths[0]
     $line = if ($entry.Paths.Count -gt 1) { "$first (+$($entry.Paths.Count - 1))" } else { $entry.Paths[0] }
+    $source = @($entry.Paths | Select-Object -First 20) -join '; '
   } else {
     $line = $entry.Text
     $entry.Chars = $entry.Text.Length
+    $source = $entry.Text.TrimStart()
   }
+  # What the row and its tooltip show, worked out once here: the screen is built again four times
+  # a second while the purge counts down, and a text may be 200000 characters long.
+  if ($source.Length -gt 4000) { $source = $source.Substring(0, 4000) }
+  $shown = ($source -replace '\s+', ' ').Trim()
+  if ($shown.Length -gt 300) { $shown = $shown.Substring(0, 300) }
+  $entry.Line = $shown
+  $entry.Preview = if ($entry.Text.Length -gt 300) { $entry.Text.Substring(0, 300) + [char]0x2026 } else { $entry.Text }
   $entry.Blur = Join-Path $ImageDir "$($entry.Id).b.png"
   $entry.BlurHeight = Save-TextBlur (Get-OneLine $line) $entry.Blur
 }
@@ -663,12 +673,7 @@ function Get-Screen {
     } elseif ($hidden) {
       Cell '' "image=""$($entry.Blur)"" height=$([int]$entry.BlurHeight) fill=true action=$action tooltip=""$(Tip "$label`n$when`n$hint")"""
     } else {
-      $source = if ($entry.Kind -eq 'files') { $entry.Paths -join '; ' } else { $entry.Text }
-      $line = ($source -replace '\s+', ' ').Trim()
-      if ($line.Length -gt 300) { $line = $line.Substring(0, 300) }
-      $preview = $entry.Text
-      if ($preview.Length -gt 300) { $preview = $preview.Substring(0, 300) + [char]0x2026 }
-      Cell $line "fill=true action=$action tooltip=""$(Tip "$preview`n`n$when - $hint")"""
+      Cell $entry.Line "fill=true action=$action tooltip=""$(Tip "$($entry.Preview)`n`n$when - $hint")"""
     }
     # Against the right edge, in a column: the trash, and the pin under it.
     $pinText = if ($entry.Pinned) { $T.unpin } else { $T.pin }
