@@ -2,7 +2,8 @@
 //! it in the upper middle of the pointer's screen. The fences dim every icon that does not
 //! match and highlight the matches (`App::update_peek_search`); a list under the box shows the
 //! best matches, the fences' first and then what Everything finds on the whole computer, as
-//! Listary's launcher does. Up / Down (or Ctrl+N / Ctrl+P) move through the list, Enter opens,
+//! Listary's launcher does. Up / Down (or Ctrl+N / Ctrl+P) move through the list, which scrolls
+//! when it has more results than rows (the wheel, PageUp / PageDown, Home / End too), Enter opens,
 //! Ctrl+Enter opens the containing folder, Right (with the caret at the end), Ctrl+O, the menu
 //! key or Shift+F10 show the actions, Ctrl+1 to Ctrl+9 open a row directly, Esc ends the Peek.
 //! A right-click on a row highlights it and shows its actions at the pointer, as in Explorer;
@@ -89,6 +90,10 @@ const WA_INACTIVE: usize = 0;
 const VK_UP: u32 = 0x26;
 const VK_DOWN: u32 = 0x28;
 const VK_RIGHT: u32 = 0x27;
+const VK_PRIOR: u32 = 0x21;
+const VK_NEXT: u32 = 0x22;
+const VK_END: u32 = 0x23;
+const VK_HOME: u32 = 0x24;
 /// Search in Segoe Fluent Icons / Segoe MDL2 Assets.
 const GLYPH: &str = "\u{E721}";
 
@@ -140,6 +145,18 @@ pub struct Row {
 enum Hover {
     Row(usize),
     Tab(usize),
+}
+
+/// A list with more results than it shows: where the rows shown are in them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ListScroll {
+    /// Index of the first result shown, how many are shown and how many there are.
+    pub first: usize,
+    pub shown: usize,
+    pub of: usize,
+    /// Group headings of the results in all: the list keeps room for them, so it keeps its
+    /// height when one scrolls out.
+    pub headings: usize,
 }
 
 thread_local! {
@@ -334,6 +351,11 @@ struct Session {
     total: usize,
     /// Top and bottom (client pixels) of each row, from the last layout.
     row_spans: Vec<(i32, i32)>,
+    /// The list scrolls (more results than rows), top and bottom of its result rows (the
+    /// thumb's track), and wheel movement not yet a whole row.
+    scroll: Option<ListScroll>,
+    list_span: (i32, i32),
+    wheel: i32,
     /// The type tab: 0 全部, else `type_filter::TABS[tab - 1]`; and each tab's left and right
     /// (client pixels) as last drawn.
     tab: usize,
@@ -366,8 +388,20 @@ impl Session {
             return y;
         }
         y += self.px(LIST_GAP);
+        // A list that scrolls keeps the height of its results: the rows shown and every
+        // heading they have, also while one of the headings is scrolled out.
+        let results_end = self.scroll.map_or(y, |sc| {
+            y + self.px(ROW_H) * sc.shown as i32 + self.px(HEADING_H) * sc.headings as i32
+        });
+        self.list_span = (y, results_end);
+        let mut results_done = false;
         let mut spans = Vec::with_capacity(self.rows.len());
         for row in &self.rows {
+            // The action rows come under the results.
+            if row.glyph.is_some() && !results_done {
+                results_done = true;
+                y = y.max(results_end);
+            }
             if row.heading.is_some() {
                 y += self.px(HEADING_H);
             }
@@ -376,6 +410,9 @@ impl Session {
             spans.push((top, y));
         }
         self.row_spans = spans;
+        if !results_done {
+            y = y.max(results_end);
+        }
         y + self.px(LIST_GAP * 2.0) + self.px(BAR_H)
     }
 
@@ -390,6 +427,11 @@ impl Session {
 
     fn row_at(&self, y: i32) -> Option<usize> {
         self.row_spans.iter().position(|&(t, b)| y >= t && y < b)
+    }
+
+    /// The highlight is on the first row of the whole list.
+    fn on_first_row(&self) -> bool {
+        self.selected == Some(0) && self.scroll.is_none_or(|sc| sc.first == 0)
     }
 
     /// The tab or row under client point (`x`, `y`).
@@ -715,6 +757,25 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
                         }
                         Some(0)
                     }
+                    // The wheel scrolls a list that has more results than rows, three rows a
+                    // notch (a touchpad's small steps add up). Over the text box it comes here
+                    // too: the box passes it on.
+                    msg::WM_MOUSEWHEEL => {
+                        let delta = msg::hi_u16(wparam) as u16 as i16 as i32;
+                        let rows = ACTIVE.with(|a| {
+                            let mut a = a.try_borrow_mut().ok()?;
+                            let s = a.as_mut()?;
+                            s.scroll?;
+                            s.wheel += delta;
+                            let rows = s.wheel / (msg::WHEEL_DELTA / 3);
+                            s.wheel -= rows * (msg::WHEEL_DELTA / 3);
+                            (rows != 0).then_some(rows)
+                        });
+                        if let Some(rows) = rows {
+                            queue.push(Command::PeekSearchScroll(-rows));
+                        }
+                        Some(0)
+                    }
                     WM_ROW_ICON => {
                         take_row_icons(hwnd);
                         Some(0)
@@ -800,6 +861,9 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
             selected: None,
             total: 0,
             row_spans: Vec::new(),
+            scroll: None,
+            list_span: (0, 0),
+            wheel: 0,
             tab: 0,
             tab_spans: Vec::new(),
             icons: HashMap::new(),
@@ -1159,6 +1223,29 @@ fn paint_box(hwnd: HWND) {
                 );
             }
         }
+        // More results than rows: a thumb at the right edge, where the rows shown are in them
+        // (the fences' resting scrollbar: a thin pill, no track).
+        if let Some(sc) = s.scroll {
+            let (top, bottom) = s.list_span;
+            let track = bottom - top;
+            let thumb = (track * sc.shown as i32 / sc.of.max(1) as i32)
+                .max(px(16.0))
+                .min(track);
+            let steps = sc.of.saturating_sub(sc.shown).max(1) as i32;
+            let y = top + (track - thumb) * (sc.first as i32).min(steps) / steps;
+            let color = if s.dark { 0x00A3_A3A3 } else { 0x008B_8B8B };
+            p.round_rect(
+                RECT {
+                    left: w - px(5.0),
+                    top: y,
+                    right: w - px(2.0),
+                    bottom: y + thumb,
+                },
+                px(1.5),
+                color,
+                color,
+            );
+        }
         // The bottom bar: what the keys do, and how many results in all (more than shown).
         let y0 = h - px(BAR_H);
         p.fill(
@@ -1327,6 +1414,30 @@ fn on_key(vk: u32) -> bool {
         k if k == msg::VK_ESCAPE => Command::EndPeek("Esc pressed in the search box"),
         VK_UP => Command::PeekSearchStep(-1),
         VK_DOWN => Command::PeekSearchStep(1),
+        VK_PRIOR => Command::PeekSearchPage(-1),
+        VK_NEXT => Command::PeekSearchPage(1),
+        // Home / End: the first / last row of the list. Ctrl+Home / Ctrl+End always; without
+        // Ctrl the text box comes first: Home moves the caret while the highlight is on the
+        // first row, End moves it unless it already is at the end of the text. Shift+Home /
+        // Shift+End select text.
+        VK_HOME | VK_END => {
+            let home = vk == VK_HOME;
+            let list = ACTIVE.with(|a| {
+                a.borrow().as_ref().is_some_and(|s| {
+                    !s.rows.is_empty()
+                        && (ctrl
+                            || if home {
+                                !s.on_first_row()
+                            } else {
+                                s.edit.caret_at_end()
+                            })
+                })
+            });
+            if !list || window::key_down(msg::VK_SHIFT) {
+                return false;
+            }
+            Command::PeekSearchPage(if home { i32::MIN } else { i32::MAX })
+        }
         0x50 if ctrl => Command::PeekSearchStep(-1),
         0x4E if ctrl => Command::PeekSearchStep(1),
         0x4F if ctrl => Command::PeekSearchActions,
@@ -1446,12 +1557,14 @@ pub fn set_status(text: &str) {
 }
 
 /// Replaces the list under the box and the highlighted row; the window grows or shrinks to fit.
-pub fn set_rows(rows: Vec<Row>, selected: Option<usize>, total: usize) {
+/// `scroll`: the rows are a part of a longer list (a thumb shows where).
+pub fn set_rows(rows: Vec<Row>, selected: Option<usize>, total: usize, scroll: Option<ListScroll>) {
     let resize = ACTIVE.with(|a| {
         let mut a = a.borrow_mut();
         let s = a.as_mut()?;
         s.rows = rows;
         s.total = total;
+        s.scroll = scroll;
         s.selected = selected.filter(|&i| i < s.rows.len());
         // Icons of rows that went away are dropped, and the worker skips them if not read yet.
         let keep: HashSet<PathBuf> = s.rows.iter().filter_map(|r| r.icon_path.clone()).collect();
@@ -1477,6 +1590,8 @@ pub fn set_rows(rows: Vec<Row>, selected: Option<usize>, total: usize) {
             action_glyphs = s.rows.iter().filter(|r| r.glyph.is_some()).count(),
             selected = ?s.selected,
             total,
+            first = scroll.map_or(0, |sc| sc.first),
+            of = scroll.map_or(s.rows.len(), |sc| sc.of),
             bar = !s.rows.is_empty(),
             tab = tab_label(s.tab),
             "search list laid out"

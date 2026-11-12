@@ -12,10 +12,9 @@ use pecofence_platform::{clipboard, dialogs, everything};
 use std::ops::Range;
 use std::os::windows::process::CommandExt;
 
-/// Rows of the list (Ctrl+1 .. Ctrl+9 reach them all).
+/// Result rows the list shows at once (Ctrl+1 .. Ctrl+9 reach them all); with more results
+/// it scrolls.
 const MAX_ROWS: usize = 9;
-/// Fence rows kept when Everything has results too.
-const FENCE_ROWS_WITH_EVERYTHING: usize = 5;
 /// Everything results asked for; they are ranked again here.
 const EVERYTHING_MAX: u32 = 60;
 /// Typing pause before Everything is asked.
@@ -45,8 +44,16 @@ pub(super) enum RowKind {
 
 #[derive(Default)]
 pub(super) struct SearchState {
+    /// Every row of the list: the fences' matches, Everything's results, the action rows.
     pub rows: Vec<RowKind>,
     pub sel: usize,
+    /// The first result row the box shows (the list scrolls when there are more than fit),
+    /// and how many it shows at once.
+    pub top: usize,
+    pub window: usize,
+    /// `rows` indices of the rows in the box, top down: the results shown, then the action
+    /// rows, which stay under them.
+    pub shown: Vec<usize>,
     /// Highlight ranges of each `peek_hits` entry in its shown name.
     pub fence_marks: Vec<Vec<Range<usize>>>,
     /// Everything's last answer for the current text, and how many it found in all.
@@ -330,11 +337,6 @@ impl App {
         let max_rows = crate::peek_search::row_room(headings)
             .saturating_sub(2 * usize::from(show_all))
             .clamp(1, MAX_ROWS);
-        let fence_room = if files.is_empty() {
-            max_rows
-        } else {
-            FENCE_ROWS_WITH_EVERYTHING.min(max_rows)
-        };
         // One row per file. A file that several fences show (a folder fence and a smart fence
         // over one folder) keeps its best-ranked hit: among equal matches the one in the
         // leftmost fence, then the topmost, then the first tab (the order of `peek_hits`).
@@ -356,16 +358,13 @@ impl App {
         }
         self.search.total =
             in_fences.len() + (self.search.everything_total as usize).saturating_sub(skipped);
-        let mut rows: Vec<RowKind> = in_fences
-            .into_iter()
-            .take(fence_room)
-            .map(RowKind::Fence)
-            .collect();
-        let room = max_rows - rows.len();
-        rows.extend(files.into_iter().take(room).map(|f| RowKind::File {
+        // Every result is a row: the box shows `max_rows` of them and scrolls.
+        let mut rows: Vec<RowKind> = in_fences.into_iter().map(RowKind::Fence).collect();
+        rows.extend(files.into_iter().map(|f| RowKind::File {
             path: f.3,
             is_folder: f.4,
         }));
+        self.search.window = max_rows;
         if show_all {
             rows.push(RowKind::ShowAll);
             rows.push(RowKind::ToDesktop);
@@ -379,7 +378,34 @@ impl App {
             })
             .unwrap_or(0);
         self.search.rows = rows;
+        self.reveal_search_row();
         self.show_search_rows();
+    }
+
+    /// How many of the rows are results (the action rows come after them).
+    fn search_results(&self) -> usize {
+        self.search
+            .rows
+            .iter()
+            .position(|r| matches!(r, RowKind::ShowAll | RowKind::ToDesktop))
+            .unwrap_or(self.search.rows.len())
+    }
+
+    /// Scrolls the list just far enough for the highlighted row to show.
+    fn reveal_search_row(&mut self) {
+        let (results, window) = (self.search_results(), self.search.window);
+        let top = scroll_top(self.search.top, self.search.sel, results, window);
+        if top != self.search.top {
+            tracing::debug!(
+                from = self.search.top,
+                top,
+                sel = self.search.sel,
+                results,
+                window,
+                "search list scrolled to the highlighted row"
+            );
+            self.search.top = top;
+        }
     }
 
     /// Puts the list in the box and the fence highlight on the selected fence row.
@@ -391,9 +417,22 @@ impl App {
         let query = crate::peek_search::query().unwrap_or_default();
         let searching = !query.trim().is_empty();
         self.show_peek_hits(searching);
-        let mut rows = Vec::with_capacity(self.search.rows.len());
+        // The results from `top` on, as many as fit, then the action rows.
+        let results = self.search_results();
+        let window = self.search.window.max(1);
+        let top = self.search.top.min(results.saturating_sub(window));
+        self.search.shown = (top..results.min(top + window))
+            .chain(results..self.search.rows.len())
+            .collect();
+        let mut rows = Vec::with_capacity(self.search.shown.len());
         let mut last_group = None;
-        for (i, kind) in self.search.rows.iter().enumerate() {
+        for (i, kind) in self
+            .search
+            .shown
+            .iter()
+            .map(|&r| &self.search.rows[r])
+            .enumerate()
+        {
             // Every group under its heading, the two action rows too.
             let group = match kind {
                 RowKind::Fence(_) => 0,
@@ -515,18 +554,66 @@ impl App {
             };
             rows.push(row);
         }
-        let selected = (!rows.is_empty()).then_some(self.search.sel);
-        crate::peek_search::set_rows(rows, selected, self.search.total);
+        // None while the highlighted row is scrolled out of sight (the wheel).
+        let selected = self.search.shown.iter().position(|&r| r == self.search.sel);
+        // More results than fit: where the rows shown are in them, and how many headings the
+        // results have in all (the list keeps their room, so its height stays while it scrolls).
+        let scroll = (results > window).then(|| crate::peek_search::ListScroll {
+            first: top,
+            shown: window,
+            of: results,
+            headings: usize::from(matches!(self.search.rows.first(), Some(RowKind::Fence(_))))
+                + usize::from(
+                    self.search.rows[..results]
+                        .iter()
+                        .any(|r| matches!(r, RowKind::File { .. })),
+                ),
+        });
+        crate::peek_search::set_rows(rows, selected, self.search.total, scroll);
     }
 
-    /// Up / Down (Ctrl+P / Ctrl+N) in the box: the previous / next row, wrapping around.
+    /// Up / Down (Ctrl+P / Ctrl+N) in the box: the previous / next row; the list scrolls with
+    /// it, and from the last row Down goes back to the first (Up from the first to the last).
     pub(super) fn step_search_row(&mut self, step: i32) {
         let n = self.search.rows.len() as i32;
         if n == 0 {
             return;
         }
         self.search.sel = (self.search.sel as i32 + step).rem_euclid(n) as usize;
+        self.reveal_search_row();
         self.show_search_rows();
+    }
+
+    /// PageUp / PageDown: the row a page (the rows shown) up or down, stopping at the first
+    /// and the last row; Home / End (`i32::MIN` / `i32::MAX`) go to those.
+    pub(super) fn page_search_row(&mut self, pages: i32) {
+        let Some(last) = self.search.rows.len().checked_sub(1) else {
+            return;
+        };
+        let by = pages as i64 * self.search.window.max(1) as i64;
+        self.search.sel = (self.search.sel as i64 + by).clamp(0, last as i64) as usize;
+        tracing::debug!(pages, sel = self.search.sel, "search list: page key");
+        self.reveal_search_row();
+        self.show_search_rows();
+    }
+
+    /// The wheel over the list: scrolls it by `rows` rows (down is positive). The highlighted
+    /// row stays the same one, also when it scrolls out of sight.
+    pub(super) fn scroll_search_rows(&mut self, rows: i32) {
+        let max_top = self
+            .search_results()
+            .saturating_sub(self.search.window.max(1));
+        let top = (self.search.top as i64 + rows as i64).clamp(0, max_top as i64) as usize;
+        tracing::debug!(
+            from = self.search.top,
+            top,
+            max_top,
+            "search list scrolled by the wheel"
+        );
+        if top != self.search.top {
+            self.search.top = top;
+            self.show_search_rows();
+        }
     }
 
     /// The path behind a row (`None` for a namespace item or the show-all row).
@@ -567,6 +654,7 @@ impl App {
                 .search
                 .sel
                 .min(self.search.rows.len().saturating_sub(1));
+            self.reveal_search_row();
             self.show_search_rows();
             return;
         }
@@ -680,17 +768,17 @@ impl App {
         }
     }
 
-    /// A right-click on row `index` (`x`, `y`: screen pixels): the row is highlighted and its
-    /// actions open at the pointer, as in Explorer.
-    pub(super) fn search_row_menu(&mut self, index: usize, x: i32, y: i32) {
-        if index >= self.search.rows.len() {
+    /// A right-click on the box's row `shown` (`x`, `y`: screen pixels): the row is highlighted
+    /// and its actions open at the pointer, as in Explorer.
+    pub(super) fn search_row_menu(&mut self, shown: usize, x: i32, y: i32) {
+        let Some(&index) = self.search.shown.get(shown) else {
             tracing::info!(
-                row = index,
-                rows = self.search.rows.len(),
+                row = shown,
+                rows = self.search.shown.len(),
                 "search: right-click on a row that is gone, no menu"
             );
             return;
-        }
+        };
         self.search.sel = index;
         self.show_search_rows();
         self.show_search_actions(Some((x, y)));
@@ -834,6 +922,23 @@ fn one_per_path(hits: Vec<(usize, Option<String>)>) -> Vec<usize> {
         .collect()
 }
 
+/// The first result row to show so that row `sel` is in sight: `top` when it already is (or
+/// when `sel` is an action row, which always shows), else moved just far enough. Never past
+/// the place where the last `window` results fill the list.
+fn scroll_top(top: usize, sel: usize, results: usize, window: usize) -> usize {
+    let window = window.max(1);
+    let top = top.min(results.saturating_sub(window));
+    if sel >= results {
+        top
+    } else if sel < top {
+        sel
+    } else if sel >= top + window {
+        sel + 1 - window
+    } else {
+        top
+    }
+}
+
 /// Explorer with `path` selected in its folder.
 fn open_containing_folder(path: &Path) {
     // `/select,"<path>"`: quoted as a whole.
@@ -892,5 +997,27 @@ mod tests {
             hit(5, Some(r"c:\users\pf\desktop\季度报告 q3.xlsx")),
         ];
         assert_eq!(one_per_path(hits), vec![0, 1, 2, 4]);
+    }
+
+    /// The list scrolls just far enough for the highlighted row, and an action row (after the
+    /// results) leaves it where it is.
+    #[test]
+    fn the_list_scrolls_to_the_highlighted_row() {
+        // 18 results, nine shown.
+        assert_eq!(scroll_top(0, 0, 18, 9), 0);
+        assert_eq!(scroll_top(0, 8, 18, 9), 0);
+        assert_eq!(scroll_top(0, 9, 18, 9), 1);
+        assert_eq!(scroll_top(1, 17, 18, 9), 9);
+        assert_eq!(scroll_top(9, 12, 18, 9), 9);
+        assert_eq!(scroll_top(9, 3, 18, 9), 3);
+        // Down from the last row wraps to the first.
+        assert_eq!(scroll_top(9, 0, 18, 9), 0);
+        // An action row (index 18 or 19) shows whatever the scroll is.
+        assert_eq!(scroll_top(4, 19, 18, 9), 4);
+        // Fewer results than the list holds, or a list that got shorter: back to the top.
+        assert_eq!(scroll_top(0, 3, 5, 9), 0);
+        assert_eq!(scroll_top(9, 2, 5, 9), 0);
+        assert_eq!(scroll_top(9, 11, 12, 9), 3);
+        assert_eq!(scroll_top(0, 0, 0, 0), 0);
     }
 }

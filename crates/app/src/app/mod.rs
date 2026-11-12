@@ -2901,8 +2901,15 @@ impl App {
             Command::PeekSearchType(text) => self.peek_search_type(&text),
             Command::PeekSearchChanged => self.update_peek_search(),
             Command::PeekSearchStep(step) => self.step_search_row(step),
+            Command::PeekSearchPage(pages) => self.page_search_row(pages),
+            Command::PeekSearchScroll(rows) => self.scroll_search_rows(rows),
             Command::PeekSearchOpen => self.open_search_row(self.search.sel),
-            Command::PeekSearchOpenRow(row) => self.open_search_row(row),
+            // The box counts the rows it shows.
+            Command::PeekSearchOpenRow(row) => {
+                if let Some(&index) = self.search.shown.get(row) {
+                    self.open_search_row(index);
+                }
+            }
             Command::PeekSearchOpenFolder => self.open_search_row_folder(),
             Command::PeekSearchActions => self.show_search_actions(None),
             Command::PeekSearchRowMenu { row, x, y } => self.search_row_menu(row, x, y),

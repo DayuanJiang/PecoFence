@@ -456,6 +456,11 @@ pub enum Command {
     PeekSearchChanged,
     /// Up / Down in the search box: highlight the previous (-1) or next (+1) match.
     PeekSearchStep(i32),
+    /// PageUp / PageDown in the search box: highlight the row this many pages up (-1) or down
+    /// (+1), stopping at the ends; `i32::MIN` / `i32::MAX`: the first / last row (Home / End).
+    PeekSearchPage(i32),
+    /// The wheel over the search list: scroll it by this many rows (down is positive).
+    PeekSearchScroll(i32),
     /// Enter in the search box: open the highlighted match.
     PeekSearchOpen,
     /// A click on a row of the search list, or its Ctrl+digit: open that row.
