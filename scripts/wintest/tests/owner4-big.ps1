@@ -47,8 +47,9 @@ function BgFolder($name, $n, [switch]$Plain) {
   $words = @('会议记录', '年度预算表', '设计稿 第二版', '合同扫描件', '周报', '项目计划书 最终版 已确认 可以发给客户的那一份',
     'Quarterly report', 'budget', 'Meeting notes from the long planning session in March', 'IMG', '发票', 'release notes draft')
   $exts = @('txt', 'md', 'log', 'csv', 'json', 'ini')
-  # The same dates in every run: the pictures of two builds are compared pixel by pixel.
-  $base = [datetime]'2025-01-01T09:00:00'
+  # The same dates in every run (the pictures of two builds are compared pixel by pixel),
+  # none of them after today: a file made by the steps is the newest.
+  $base = [datetime]'2024-06-01T09:00:00'
   for ($i = 1; $i -le $n; $i++) {
     $p = Join-Path $d ("{0} {1:D4}.{2}" -f $words[$i % $words.Count], $i, $exts[$i % $exts.Count])
     [IO.File]::WriteAllText($p, "big $i" + ('x' * ($i % 97)))
@@ -288,6 +289,9 @@ function PartM() {
       BgAct 'Peek search: a letter typed' $r { [G]::Type('b') } 0 1200 | Out-Null
       BgAct 'Peek closed (Esc twice)' $r { [G]::Press(0x1B); Start-Sleep -Milliseconds 300; [G]::Press(0x1B) } 0 1200 | Out-Null
     }
+    # By name the new file is the first: every icon moves one cell on.
+    Pf fence set $BgBig sort name | Out-Null
+    BgQuiet (BgNow) 1200 20000
     $new = Join-Path $big '000 新来的文件.txt'
     for ($r = 1; $r -le $Runs; $r++) {
       BgAct 'a file added in the folder' $r { [IO.File]::WriteAllText($new, 'new') } ($N + 1) 1500 | Out-Null
@@ -406,6 +410,171 @@ function PartR() {
   Remove-Item -Recurse -Force "$PfRun\bigdata" -ErrorAction SilentlyContinue
 }
 
+# A part of the screen as numbers, and whether two such grabs differ.
+function BgGrab($x, $y) { return [Px]::Grab($x, $y, 360, 240) }
+function BgChanged($a, $b) { return ([Px]::Diff($a, $b, 0, 359, 0, 239) -gt 0.02) }
+# After an action at $t0: when the picture at ($x, $y) first changed and when it stopped
+# changing (three equal grabs in a row), in ms; grabs come about every 25 ms.
+function BgWatch($t0, $x, $y, $before, $max = 15000) {
+  $first = -1; $settled = -1; $same = 0; $prev = $before; $lastChange = 0
+  while (((BgNow) - $t0) -lt $max) {
+    $g = BgGrab $x $y
+    $at = (BgNow) - $t0
+    if (BgChanged $g $prev) { if ($first -lt 0) { $first = $at }; $lastChange = $at; $same = 0 } else { $same++ }
+    if ($prev -ne $before) { $prev.Dispose() }
+    $prev = $g
+    if ($first -ge 0 -and $same -ge 3) { $settled = $lastChange; break }
+    if ($first -lt 0 -and $at -gt 4000) { break }
+  }
+  if ($prev -ne $before) { $prev.Dispose() }
+  return @([math]::Round($first), [math]::Round($settled))
+}
+
+function PartE() {
+  trap { PfTrap $_; continue }
+  Case "E Explorer, $N files"
+  $big = BgFolder "big$N" $N
+  CloseWindows
+  $sh = New-Object -ComObject Shell.Application
+  for ($r = 1; $r -le $Runs; $r++) {
+    # Where the window will be is not known before it opens: the open is timed by the window
+    # appearing and by its file list coming to rest.
+    $t0 = BgNow
+    Start-Process explorer.exe $big
+    $w = $null
+    for ($k = 0; $k -lt 600 -and -not $w; $k++) {
+      Start-Sleep -Milliseconds 20
+      $w = @($sh.Windows() | Where-Object { $_.LocationURL -and $_.Document -and $_.Document.Folder.Self.Path -eq $big }) | Select-Object -First 1
+    }
+    $shown = [math]::Round((BgNow) - $t0)
+    $rc = Rect ([IntPtr][int64]$w.HWND)
+    # The file list: right of the navigation pane, below the bars.
+    $gx = $rc.L + 330; $gy = $rc.T + 190
+    $blank = BgGrab $gx $gy
+    $o = BgWatch $t0 $gx $gy $blank 20000
+    Start-Sleep -Milliseconds 1500
+    $view = $w.Document.CurrentViewMode
+    $before = BgGrab $gx $gy
+    $t1 = BgNow
+    $w.Document.SortColumns = 'prop:-System.DateModified;'
+    $sd = BgWatch $t1 $gx $gy $before
+    Start-Sleep -Milliseconds 800
+    $before2 = BgGrab $gx $gy
+    $t2 = BgNow
+    $w.Document.SortColumns = 'prop:System.ItemNameDisplay;'
+    $sn = BgWatch $t2 $gx $gy $before2
+    Start-Sleep -Milliseconds 800
+    [G]::MoveTo($gx + 180, $gy + 120); Start-Sleep -Milliseconds 400
+    $before3 = BgGrab $gx $gy
+    $t3 = BgNow
+    [CW]::Wheel(-1)
+    $wh = BgWatch $t3 $gx $gy $before3
+    $row = "N=$N run=$r view mode=$view window found=$shown ms, list first drawn=$($o[0]) settled=$($o[1]) ms; sort by date first=$($sd[0]) settled=$($sd[1]) ms; sort by name first=$($sn[0]) settled=$($sn[1]) ms; wheel notch first=$($wh[0]) settled=$($wh[1]) ms"
+    Log "BIGEXP $row"
+    "EXP`t$row" | Add-Content "$PfRun\big.tsv" -Encoding UTF8
+    if ($r -eq 1) { Shot "e-$N-explorer" }
+    foreach ($b in $blank, $before, $before2, $before3) { $b.Dispose() }
+    ParkMouse
+    $w.Quit()
+    Start-Sleep -Milliseconds 1500
+  }
+  Check 'E Explorer was timed' (@(Get-Content "$PfRun\big.tsv" | Where-Object { $_ -match '^EXP' }).Count -eq $Runs) ''
+  CloseWindows
+  Remove-Item -Recurse -Force "$PfRun\bigdata" -ErrorAction SilentlyContinue
+}
+
+# One bound per fix, on a folder of 4000 files: loose enough for a box without a graphics
+# card, tight enough to fail on the build before the fix (the numbers of both are in the
+# details). Medians of three.
+function PartB() {
+  trap { PfTrap $_; continue }
+  Case 'B setup: 4000 files'
+  $script:N = 4000; $script:View = 'icons'
+  $animWas = [Anim]::Get(); [Anim]::Set($true)
+  $big = BgFolder 'big4000' 4000
+  $small = BgFolder 'small' $BgSmallN -Plain
+  PfStart -Script (DumpScript 500 2) -Lang 'zh-CN'
+  Start-Sleep -Seconds 2
+  ClearFences | Out-Null
+  Pf settings set featureTips false | Out-Null
+  Pf fence create --portal $small --title $BgSmall --rect "$BgX,$BgY,$BgW,$BgH" | Out-Null
+  Pf fence create --portal $big --title $BgBig --rect '700,80,600,560' | Out-Null
+  Start-Sleep -Seconds 3
+  Pf fence set $BgBig sort name | Out-Null
+  Pf fence merge $BgBig --into $BgSmall | Out-Null
+  BgQuiet (BgNow) 3000 60000
+  $d = DumpOf $BgSmall 8
+  $script:BgTabs = @($d.rects | ForEach-Object { $_[0] + $_[1] / 2 })
+  $iBig = [array]::IndexOf(@($d.tabs), $BgBig); $iSmall = [array]::IndexOf(@($d.tabs), $BgSmall)
+  $script:BgBigId = ''
+  BgClickTab $iBig; BgQuiet (BgNow) 2000 60000
+  $m = [regex]::Matches((BgLogFrom 0), 'content draw fence=(\S+) items=4000 ')
+  if ($m.Count -gt 0) { $script:BgBigId = $m[$m.Count - 1].Groups[1].Value }
+  Check 'B the folder of 4000 files is a tab and draws' ($iBig -ge 0 -and $script:BgBigId -ne '') "tabs $($d.tabs -join ' | ') id '$($script:BgBigId)'"
+
+  Case 'B1 a name is fitted when its icon is first drawn'
+  $tab = @(); $names = @()
+  for ($r = 1; $r -le 3; $r++) {
+    BgOverTab $iSmall; BgAct 'B tab click away' $r { BgPress } 0 900 | Out-Null
+    BgOverTab $iBig
+    $a = BgAct 'B tab click, again' $r { BgPress } 4000 900
+    $tab += $a.first; $names += $a.labels
+  }
+  ParkMouse
+  $t = BgMedian $tab
+  Check 'B1 a click on the tab of a folder of 4000 files shows it within 120 ms (before: about 280 ms, of which 270 ms fit 4000 names)' ($t -ge 0 -and $t -lt 120) "first picture after $([math]::Round($t)) ms (runs $(@($tab | ForEach-Object { [math]::Round($_) }) -join ', ')); names and icon requests $(@($names | ForEach-Object { [math]::Round($_, 1) }) -join ', ') ms"
+  Pf fence set $BgBig layout details | Out-Null
+  BgQuiet (BgNow) 1500 30000
+  $wide = @()
+  for ($r = 1; $r -le 3; $r++) {
+    $a = BgAct 'B details, one column wider' $r { Pf fence resize $BgSmall --w ($BgW + 80) | Out-Null } 0
+    $wide += $a.worst
+    BgAct 'B details, one column narrower' $r { Pf fence resize $BgSmall --w $BgW | Out-Null } 0 | Out-Null
+  }
+  $w = BgMedian $wide
+  Check 'B1 详细信息 with 4000 files: 80 px wider keeps the fence under 100 ms (before: about 250 ms, every name fitted again)' ($w -lt 100) "longest message $([math]::Round($w, 1)) ms (runs $(@($wide | ForEach-Object { [math]::Round($_, 1) }) -join ', '))"
+  Pf fence set $BgBig layout icons | Out-Null
+  BgQuiet (BgNow) 1500 30000
+
+  Case 'B2 a list change moves only the icons near the visible part'
+  $new = Join-Path $big '000 新来的文件.txt'
+  $work = @(); $far = @(); $moving = @()
+  for ($r = 1; $r -le 3; $r++) {
+    $pos = BgLogLen
+    $a = BgAct 'B a file added' $r { [IO.File]::WriteAllText($new, 'new') } 4001 1500
+    if ($a.frames -gt 0) { $work += $a.work / $a.frames }
+    $line = [regex]::Match((BgLogFrom $pos), 'icons out of sight take their places at once moving=(\d+) far=(\d+)')
+    if ($line.Success) { $moving += [int]$line.Groups[1].Value; $far += [int]$line.Groups[2].Value }
+    BgAct 'B a file removed' $r { Remove-Item -LiteralPath $new -Force } 4000 1500 | Out-Null
+  }
+  Check 'B2 a file added at the top of 4000: at most 150 icons glide, the others take their places at once (before: 4000 glides)' ($moving.Count -eq 3 -and (BgMedian $moving) -le 150 -and (BgMedian $far) -ge 3800) "gliding $($moving -join ', '), at once $($far -join ', ')"
+  $wf = BgMedian $work
+  Check 'B2 the frames of that glide take under 2 ms of work each (before: about 2 ms with 4000 files, 3.3 ms with 8000)' ($wf -ge 0 -and $wf -lt 2.0) "mean work per frame $(@($work | ForEach-Object { [math]::Round($_, 2) }) -join ', ') ms"
+
+  Case 'B3 a letter in the filter lists the folder once'
+  $lists = @(); $sorts = @(); $busy = @()
+  for ($r = 1; $r -le 3; $r++) {
+    [G]::Click($BgX + 40, $BgY + 36 + 40); Start-Sleep -Milliseconds 300
+    Chord 0x11 0x46; BgQuiet (BgNow) 700 8000
+    $pos = BgLogLen
+    $a = BgAct 'B filter: a letter typed' $r { [G]::Type('b') } 0 900
+    $busy += $a.busy
+    $text = BgLogFrom $pos
+    $l = [regex]::Matches($text, 'item list built for the window[^\n]* sort_ms=([\d.]+)')
+    $lists += $l.Count
+    if ($l.Count -gt 0) { $sorts += [double]$l[0].Groups[1].Value }
+    [G]::Press(0x1B); BgQuiet (BgNow) 900 8000
+  }
+  Check 'B3 a letter typed into the filter of 4000 files lists the folder once (before: three times, each with its sort)' ((BgMedian $lists) -eq 1) "listings per letter $($lists -join ', '); UI thread $(@($busy | ForEach-Object { [math]::Round($_, 1) }) -join ', ') ms"
+  $sm = BgMedian $sorts
+  Check 'B3 the name sort of 4000 files takes under 12 ms' ($sm -ge 0 -and $sm -lt 12) "sort $($sorts -join ', ') ms"
+  PfQuit
+  [Anim]::Set($animWas)
+  Remove-Item -Recurse -Force "$PfRun\bigdata" -ErrorAction SilentlyContinue
+}
+
 if ($Part -match 'M') { PartM }
+if ($Part -match 'E') { PartE }
+if ($Part -match 'B') { PartB }
 if ($Part -match 'P') { PartP }
 if ($Part -match 'R') { PartR }
