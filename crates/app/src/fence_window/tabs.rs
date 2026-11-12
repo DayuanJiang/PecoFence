@@ -436,7 +436,44 @@ impl FenceViewState {
             // The column fills from its top; 标题对齐 only moves a title row. A merge opens
             // one row there.
             let shift = start - TAB_LEFT;
-            return tab_strip_rects_with(&natural, gap.map(|g| (g, RAIL_ROW_H)), end - start)
+            let room = (end - start).max(0.0);
+            // The rows shrink as far as a caption needs (`RAIL_ROW_MIN`). A column still too
+            // short for them (the fence cannot grow, or was sized shorter by hand) scrolls
+            // like a title row, just far enough to show the active tab whole; squeezed
+            // further, the captions ran into each other.
+            let least = vec![RAIL_ROW_MIN; natural.len()];
+            let phantom = gap.map(|g| (g, RAIL_ROW_MIN));
+            let span = tab_strip_span(&least, phantom);
+            if span > room + 0.5 {
+                let max = span - room;
+                let mut scroll = self.tab_scroll.get().clamp(0.0, max);
+                if self.tab_drag.as_ref().is_none_or(|d| !d.moved)
+                    && self.merge_gap.is_none()
+                    && let Some(&(y, h)) =
+                        tab_strip_scrolled(&least, phantom, 0.0).get(self.active_index())
+                {
+                    scroll = scroll_to_show(scroll, y - TAB_LEFT, h, room, max);
+                }
+                let before = self.tab_scroll.get();
+                if (scroll - before).abs() > 0.5 {
+                    tracing::debug!(
+                        fence = %self.fence_id,
+                        from = before,
+                        to = scroll,
+                        room,
+                        max,
+                        active = self.active_index(),
+                        "tab column scroll: active tab kept in view, or the scroll clamped to the room"
+                    );
+                }
+                self.tab_scroll.set(scroll);
+                return tab_strip_scrolled(&least, phantom, scroll)
+                    .into_iter()
+                    .map(|(y, h)| (y + shift, h))
+                    .collect();
+            }
+            self.tab_scroll.set(0.0);
+            return tab_strip_rects_with(&natural, gap.map(|g| (g, RAIL_ROW_H)), room)
                 .into_iter()
                 .map(|(y, h)| (y + shift, h))
                 .collect();
@@ -534,6 +571,24 @@ impl FenceViewState {
     /// Where a title-row strip that scrolls is cut (DIPs) and how far its pills reach; None
     /// while the strip fits.
     pub(super) fn tab_strip_clip(&self) -> Option<StripClip> {
+        if self.tabs_on_rail() {
+            // A left tab column that scrolls: the same, down the column.
+            let (start, end) = self.tab_strip_bounds();
+            let least = vec![RAIL_ROW_MIN; self.tabs.len()];
+            let phantom = self.merge_gap.map(|g| (g, RAIL_ROW_MIN));
+            let max = tab_strip_span(&least, phantom) - (end - start).max(0.0);
+            if max <= 0.5 {
+                return None;
+            }
+            let scroll = self.tab_scroll.get();
+            return Some(StripClip {
+                left: start,
+                right: end,
+                rest_right: end,
+                content_right: end + max - scroll,
+                fade_left: scroll > 0.5,
+            });
+        }
         if !self.title_row_strip() {
             return None;
         }
@@ -564,6 +619,19 @@ impl FenceViewState {
             content_right: end + max - scroll,
             fade_left: scroll > 0.5,
         })
+    }
+
+    /// Where the rows of the left tab column end (DIPs down the window): the last row's end,
+    /// or the end of the part in view when the column scrolls. The chevron and the lock glyph
+    /// sit under it.
+    pub(super) fn rail_rows_end(&self) -> f32 {
+        let end = self
+            .tab_rects()
+            .iter()
+            .map(|(y, h)| y + h)
+            .fold(0.0, f32::max);
+        self.tab_strip_clip()
+            .map_or(end, |clip| end.min(clip.right))
     }
 
     /// The tabs stack in a column on the left (标签栏位置 → 左侧, two or more tabs).
@@ -840,6 +908,11 @@ impl FenceViewState {
     /// moves that way at `TAB_EDGE_SPEED`; the dragged tab swaps past the tabs coming in, or
     /// the insertion gap follows them. Returns true while it moved.
     pub(super) fn tab_strip_autoscroll(&mut self, now: Instant) -> bool {
+        // A left tab column that scrolls follows its active tab only (the wheel, Ctrl+Tab, a
+        // click): a drag reorders the rows in view.
+        if self.tabs_on_rail() {
+            return false;
+        }
         let pointer = match (&self.tab_drag, self.merge_pointer) {
             (Some(td), _) if td.moved => Some(td.pointer_x),
             (None, Some((x, _))) if self.merge_gap.is_some() => {

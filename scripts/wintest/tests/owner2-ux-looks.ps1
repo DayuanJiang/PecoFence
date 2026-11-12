@@ -174,12 +174,13 @@ if ($Part -match 'R') {
   UlPark
   $r3 = UlRail 'third-tab'
   Check 'R a click on the third row shows the third tab' ($r3.Active -eq 2) $r3.Text
-  # Three tabs in the same fence fit: nothing scrolls, the rows keep their 32 px.
+  # Three tabs in the same fence fit (98 px for rows of 32: they shrink to 30): nothing scrolls.
   foreach ($t in '四月', '五月', '六月', '七月') { Pf fence delete $t | Out-Null }
   Start-Sleep -Seconds 1
   $d = DumpOf '一月'
   $hs = @($d.rects | ForEach-Object { $_[1] })
-  Check 'R three tabs in the same fence keep rows of 32 px' ($hs.Count -eq 3 -and ($hs | Measure-Object -Minimum).Minimum -ge 31.5 -and $d.rects[0][0] -ge 7.5) "rows (y, h): $(($d.rects | ForEach-Object { '{0:F0},{1:F0}' -f $_[0], $_[1] }) -join ' ')"
+  $last = $d.rects[$hs.Count - 1]
+  Check 'R three tabs in the same fence fit without scrolling' ($hs.Count -eq 3 -and ($hs | Measure-Object -Minimum).Minimum -ge 29.5 -and [math]::Abs($d.rects[0][0] - 8) -le 0.5 -and ($last[0] + $last[1]) -le ($d.b - $d.t) - 43.5) "rows (y, h): $(($d.rects | ForEach-Object { '{0:F0},{1:F0}' -f $_[0], $_[1] }) -join ' ')"
   Pf settings set tabBar top | Out-Null
 }
 

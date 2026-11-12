@@ -129,6 +129,9 @@ pub(super) const TAB_EDGE_SPEED: f32 = 360.0;
 pub(super) const TAB_RAIL_MIN_W: f32 = 96.0;
 pub(super) const TAB_RAIL_MAX_W: f32 = 160.0;
 pub(super) const TAB_RAIL_TEXT_ROOM: f32 = 18.0;
+/// The least height of a row in the left tab column (DIPs): a caption with a little air. A
+/// column too short for its rows at this height scrolls, as a title row too narrow does.
+pub(super) const RAIL_ROW_MIN: f32 = 24.0;
 pub(super) const TAB_RAIL_DOT_ROOM: f32 = 14.0;
 /// Width of the insertion gap a tabbed strip opens for a fence dragged over it (WinUI TabView's
 /// default tab width; the merged tab is laid out for real once it lands).

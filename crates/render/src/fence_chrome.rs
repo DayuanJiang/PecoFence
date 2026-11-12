@@ -527,6 +527,47 @@ fn push_strip_fade(
     Ok(brush)
 }
 
+/// `push_strip_fade` for a left tab column that scrolls: the rows are cut to `clip` (DIPs down
+/// the column, `rail_w` wide) and fade out over `STRIP_FADE_W` at an end with rows behind it.
+/// End it with `pop_strip_fade`.
+fn push_rail_fade(
+    session: &DrawingSession<'_>,
+    clip: StripClip,
+    rail_w: f32,
+) -> Result<b::ID2D1Brush> {
+    let fade_end = clip.content_right > clip.right + 0.5;
+    let fade = (STRIP_FADE_W / (clip.right - clip.left).max(1.0)).min(0.5);
+    let opaque = ColorF::new(0.0, 0.0, 0.0, 1.0);
+    let end = |hidden: bool| if hidden { ColorF::TRANSPARENT } else { opaque };
+    let gradient = session.create_linear_gradient(
+        Vector2::new(0.0, clip.left),
+        Vector2::new(0.0, clip.right),
+        &[
+            GradientStop::new(0.0, end(clip.fade_left)),
+            GradientStop::new(fade, opaque),
+            GradientStop::new(1.0 - fade, opaque),
+            GradientStop::new(1.0, end(fade_end)),
+        ],
+    )?;
+    let brush: b::ID2D1Brush = gradient.as_raw_brush().cast()?;
+    let context: b::ID2D1DeviceContext = session.raw().cast()?;
+    let params = b::D2D1_LAYER_PARAMETERS1 {
+        contentBounds: b::D2D_RECT_F {
+            left: 0.0,
+            top: clip.left,
+            right: rail_w,
+            bottom: clip.right,
+        },
+        maskTransform: windows_numerics::Matrix3x2::identity(),
+        opacity: 1.0,
+        opacityBrush: ManuallyDrop::new(Some(brush.clone())),
+        ..Default::default()
+    };
+    unsafe { context.PushLayer(&params, None::<&b::ID2D1Layer>) };
+    drop(ManuallyDrop::into_inner(params.opacityBrush));
+    Ok(brush)
+}
+
 /// A layer over `bounds` that leaves a clear disc of `radius` around `center`: what is drawn
 /// inside stops short of a badge drawn there afterwards, over any title background (a fixed
 /// ring colour smudged on tinted, Mica or glass titles). End it with `pop_strip_fade`.
@@ -2877,6 +2918,10 @@ impl FenceChrome {
             // expands it): the chevron turns as it fades out with the collapse, and back in
             // as the fence expands.
             let rows_end = tabs.iter().map(|t| t.x + t.w).fold(0.0, f32::max);
+            // A column that scrolls ends where its part in view does.
+            let rows_end = state
+                .strip_clip
+                .map_or(rows_end, |clip| rows_end.min(clip.right));
             // 锁定位置和大小: the lock glyph before the chevron, gone with it once the fence is
             // collapsed to the column (no room under the last tab there).
             if deco.locked {
@@ -3527,6 +3572,11 @@ impl FenceChrome {
                 h,
             )
         };
+        // A column too short for its rows scrolls: the rows are cut to the part in view.
+        let rail_fade = match state.strip_clip {
+            Some(clip) => Some(push_rail_fade(session, clip, rail_w)?),
+            None => None,
+        };
         let separator = session.create_solid_brush(line(if dark { 0.16 } else { 0.13 }))?;
         for pair in tabs.windows(2) {
             if pair[0].dragging || pair[1].dragging {
@@ -3727,6 +3777,9 @@ impl FenceChrome {
             }
         }
         if let Some(brush) = under_drag.take() {
+            pop_strip_fade(session, brush);
+        }
+        if let Some(brush) = rail_fade {
             pop_strip_fade(session, brush);
         }
         Ok(())

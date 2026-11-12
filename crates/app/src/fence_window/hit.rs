@@ -405,11 +405,7 @@ impl FenceViewState {
             return false;
         }
         let r = if self.tabs_on_rail() {
-            let rows_end = self
-                .tab_rects()
-                .iter()
-                .map(|(y, h)| y + h)
-                .fold(0.0, f32::max);
+            let rows_end = self.rail_rows_end();
             TitleDeco::rail_chevron_box(self.rail_w(), h_px as f32 / scale, rows_end)
         } else {
             TitleDeco::chevron_box(w_px as f32 / scale, self.theme.title_height)
@@ -446,11 +442,7 @@ impl FenceViewState {
         let scale = self.scale();
         let (w_px, h_px) = self.chrome_panel.size_px();
         let r = if self.tabs_on_rail() {
-            let rows_end = self
-                .tab_rects()
-                .iter()
-                .map(|(y, h)| y + h)
-                .fold(0.0, f32::max);
+            let rows_end = self.rail_rows_end();
             TitleDeco::rail_lock_box(self.rail_w(), h_px as f32 / scale, rows_end)
         } else {
             TitleDeco::lock_box(w_px as f32 / scale, self.theme.title_height)
