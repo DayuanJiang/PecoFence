@@ -160,7 +160,7 @@ fn not_done_for_snapshot_limit_text() -> String {
 /// export would write the stand-in.
 pub(super) fn config_locked_text() -> &'static str {
     pecofence_core::i18n::text(
-        "配置文件正被其他程序占用，现在不能导入、导出或恢复备份。等 PecoFence 读到配置文件后再试。",
+        "请等 PecoFence 读到配置文件后再试：它正被其他程序占用，现在不能导入、导出或恢复备份。",
     )
 }
 

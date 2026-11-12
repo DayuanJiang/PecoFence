@@ -2780,8 +2780,8 @@
       : s === 'upToDate' ? t("已是最新版本")
       : s === 'available' ? (install ? tf("有新版本 {0}。安装时 PecoFence 会先退出，装好后自动重新打开。", version) : tf("有新版本 {0}", version))
       : s === 'downloading' ? t("正在下载新版本…")
-      : s === 'checkFailed' ? t("没能连上 GitHub 和 PecoFence 网站，检查不了更新。请稍后再试，或到 pecofence.jiang.jp 下载最新版本。")
-      : s === 'downloadFailed' ? t("没能下载新版本。请稍后再试，或到 pecofence.jiang.jp 下载最新版本。")
+      : s === 'checkFailed' ? t("请稍后再试，或到 pecofence.jiang.jp 下载最新版本：没能连上 GitHub 和 PecoFence 网站，检查不了更新。")
+      : s === 'downloadFailed' ? t("请稍后再试，或到 pecofence.jiang.jp 下载最新版本：没能下载新版本。")
       : '';
     status.classList.toggle('busy', s === 'checking' || s === 'downloading');
     // A failed check or download: the site's download page is one click away.
