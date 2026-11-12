@@ -28,6 +28,7 @@
 <link rel="stylesheet" href="demos/icons.css">
 <script src="demos/items.js" defer></script>
 <script src="demos/view.js" defer></script>
+<script src="demos/free-place.js" defer></script>
 <link rel="stylesheet" href="demos/peek.css">
 <script src="demos/peek.js" defer></script>
 <script src="demos/portal.js" defer></script>
@@ -77,6 +78,7 @@
       <li><a href="#items"><span class="num">3.1</span>在栅栏之间移动图标</a></li>
       <li><a href="#view"><span class="num">3.2</span>视图、图标大小和排序</a></li>
       <li><a href="#rules"><span class="num">3.3</span>自动整理规则</a></li>
+      <li><a href="#free-place"><span class="num">3.4</span>自由摆放桌面图标</a></li>
     </ol>
     </div>
     <div class="toc-group">
@@ -386,6 +388,41 @@
             <h3>小提示</h3>
             <p>托盘菜单里的「立即应用整理规则」效果一样。想一步建好栅栏和规则，可以用「快速添加」里的按钮。点「添加条件」可以给一条规则再加条件，全部符合的才放进目标栅栏。规则右边的「编辑」用来修改，「上移」和「下移」用来调整顺序。</p>
             <p>更快的办法：右键一个文件，选<b>「以后把 .pdf 文件都放到这里」</b>（菜单里显示的是这个文件的扩展名）。以后这种文件会自动放进这个栅栏。</p>
+          </aside>
+        </div>
+      </div>
+    </article>
+
+    <article class="lesson" data-lesson="free-place" id="free-place">
+      <header class="lesson-head">
+        <p class="kicker">3.4 · 整理图标</p>
+        <h2>自由摆放桌面图标</h2>
+        <p class="lede">没放进栅栏的图标，和 Windows 桌面上的一样，想放哪就拖到哪。</p>
+      </header>
+      <div class="lesson-body">
+        <figure class="demo">
+          <div class="stage" role="img" aria-label="动画：没放进栅栏的四个图标排在屏幕左上角；把「预算.xlsx」拖到桌面中间松开，它停在那一格，再把「待办.txt」拖到它旁边；桌面上新出现的「安装日志.log」放进左上角第一个空格子；右键「预算.xlsx」，菜单里「像桌面一样排列」和「自由摆放」前面都有勾，点一下「自由摆放」，图标按顺序排回左上角，再点一次，它们回到刚才摆的位置"></div>
+          <div class="controls">
+            <button class="btn play" type="button" data-play aria-label="暂停">
+              <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.7 2.1a.8.8 0 0 0-1.2.7Z"/></svg>
+            </button>
+            <div class="track" data-track role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="track-fill"></div></div>
+            <button class="btn speed" type="button" data-speed aria-pressed="false">慢放</button>
+          </div>
+        </figure>
+        <div class="side">
+          <ol class="steps">
+            <li data-at="0.3"><span class="n">1</span><p>没放进栅栏的图标排在屏幕左上角，没有标题也没有边框。按住一个，拖到桌面空白处。</p></li>
+            <li data-at="2.55"><span class="n">2</span><p>松开鼠标，图标就停在这一格，重启以后也不变。再拖一个，放在它旁边。</p></li>
+            <li data-at="5.6"><span class="n">3</span><p>以后桌面上出现的新文件，如果没有被整理规则放进栅栏，就放进从左上角数起的第一个空格子。</p></li>
+            <li data-at="7.2"><span class="n">4</span><p>右键其中一个图标，菜单里的<b>「自由摆放」</b>前面有个勾。点一下关掉，图标就按顺序排回左上角；再点一次，它们回到你摆的位置。</p></li>
+          </ol>
+          <aside class="tip">
+            <h3>小提示</h3>
+            <p>这些图标属于「桌面」栅栏。新装的 PecoFence 会把它<b>「像桌面一样排列」</b>并打开<b>「自由摆放」</b>。0.3.2 以前装的 PecoFence，「桌面」还是一个带标题的普通栅栏：右键它的标题栏，先点「像桌面一样排列」，再点「自由摆放」。</p>
+            <p>一次拖几个图标，它们会保持彼此的位置。把栅栏挪到图标上面，被盖住的图标会让到最近的空格子。</p>
+            <p>这两个开关也在「设置」→「栅栏」里，选「桌面」就能看到。关掉「像桌面一样排列」，「桌面」就变回普通栅栏，可以移动和调整大小。</p>
           </aside>
         </div>
       </div>
