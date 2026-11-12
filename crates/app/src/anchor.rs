@@ -1696,6 +1696,14 @@ impl DesktopAnchor {
         if let Some((interval_ms, first)) =
             self.quick.desktop_press(Instant::now(), pt, limit, slop)
         {
+            if self.windows_icon_selected() {
+                tracing::info!(
+                    ?pt,
+                    interval_ms,
+                    "double-click on one of Windows' own desktop icons (it is selected); no quick hide"
+                );
+                return;
+            }
             tracing::info!(
                 ?pt,
                 interval_ms,
@@ -1742,6 +1750,12 @@ impl DesktopAnchor {
             return false;
         }
         self.quick.seen.taken += 1;
+        tracing::debug!(
+            ?pt,
+            hit = %desktop::class_name(hit),
+            top = %desktop::class_name(root),
+            "press taken as one on the bare desktop"
+        );
         if !self.quick.fences_hidden {
             self.quick.marquee_origin = Some(pt);
             self.quick.marquee_live = false;
@@ -1751,6 +1765,22 @@ impl DesktopAnchor {
             });
         }
         true
+    }
+
+    /// The Windows icons show and one of them is selected: the double-click just seen was on
+    /// that icon. Its first click selected it, and a click on the bare desktop selects none.
+    /// `on_icon` does not catch every press on an icon: Explorer's list view marks the icon
+    /// under the pointer when the pointer moves onto it, drops the mark when a window comes
+    /// over the pointer, and does not set it again when that window goes away (closed, or
+    /// show desktop) while the pointer rests where it was. A double-click on the icon then
+    /// passed as one on the bare desktop and hid every fence (measured on Windows 10 19045
+    /// and Windows 11 26300).
+    fn windows_icon_selected(&self) -> bool {
+        !shell_icons::desktop_icons_hidden()
+            && self
+                .host
+                .and_then(|h| shell_icons::desktop_selected_count(h.def_view))
+                .is_some_and(|n| n > 0)
     }
 
     /// The pointer moved with the button down since a press on the bare desktop: past the drag
