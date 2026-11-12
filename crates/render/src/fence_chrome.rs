@@ -1036,6 +1036,21 @@ fn draw_header_glass(
     Ok(())
 }
 
+/// How much of the wallpaper the lens of the shown tab lets through (`draw_header_glass`).
+const LENS_SELECTED: f32 = 0.78;
+
+/// The opacity the caption of the shown tab is picked for. On Liquid Glass its lens shows the
+/// wallpaper through the veil of 「更厚实」, so under it that much of the veil is gone: over a
+/// light wallpaper in dark mode the pill is light while the plate around it is dark, and a
+/// caption picked for the plate was white on it.
+fn lens_opacity(theme: &Theme, opacity: f32, shown: bool) -> f32 {
+    if theme.liquid_glass && shown && opacity > 1.0 {
+        1.0 + (opacity - 1.0) * (1.0 - LENS_SELECTED)
+    } else {
+        opacity
+    }
+}
+
 fn header_foreground(
     backdrop: &Backdrop<'_>,
     theme: &Theme,
@@ -3185,8 +3200,9 @@ impl FenceChrome {
                 {
                     marker(marker_x, marker_w, color, ta * 0.7)?;
                 }
+                let shown_on = lens_opacity(theme, opacity, tab.active);
                 let foreground =
-                    header_foreground(&backdrop, theme, tab.key, rect, scale, opacity, style.tint);
+                    header_foreground(&backdrop, theme, tab.key, rect, scale, shown_on, style.tint);
                 let color = if tab.pressed && !tab.dragging {
                     foreground.text_tertiary
                 } else {
@@ -3696,8 +3712,9 @@ impl FenceChrome {
                 let brush = session.create_solid_brush(with_alpha(color, ta))?;
                 session.fill_rounded_rect(&RoundedRect::uniform(dot, 3.0), &brush);
             }
+            let shown_on = lens_opacity(theme, opacity, tab.active);
             let foreground =
-                header_foreground(backdrop, theme, tab.key, rect, scale, opacity, tint);
+                header_foreground(backdrop, theme, tab.key, rect, scale, shown_on, tint);
             let color = if tab.pressed && !tab.dragging {
                 foreground.text_secondary
             } else {

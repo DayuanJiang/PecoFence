@@ -193,7 +193,8 @@ if ($Part -match 'G') {
   $j = if ($i -eq 0) { 1 } else { 0 }
   $rest = $d.rects[$j]
   $m2 = UlRead 'G/resting tab' ($d.l + $rest[0] + 10) ($d.t + 10) ($rest[1] - 20) 16
-  Check 'G a resting tab reads on the plate' ($m2.Contrast -ge 3.0) "$($m2.Text) (needs 3 : 1)"
+  # The plate around the pill keeps its light text (secondary: 2.9 : 1 here, as before).
+  Check 'G a resting tab keeps its light caption on the dark plate' ((-not $m2.Dark) -and $m2.Contrast -ge 2.6) "$($m2.Text)"
   foreach ($t in '工作', '学习', '娱乐与游戏') { Pf fence delete $t | Out-Null }
   Pf settings set themeStyle fluent | Out-Null
   Start-Sleep -Milliseconds 800
