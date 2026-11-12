@@ -268,7 +268,10 @@ once can see that.
 for the dev box key, a standard user `pf` that signs in by itself, the `PFJob` task, WebView2,
 Chinese fonts, Windows Update off); it is ready about 20 minutes later. `box.sh up` starts a
 stopped box and keeps an RDP session for pf open from a virtual X server, so pf's desktop is
-1600x900 (`WINTEST_SIZE`); `box.sh down` stops both.
+1600x900 (`WINTEST_SIZE`); `box.sh down` stops both. pf's Chinese input method hangs on a box
+now and then (every key waits 10 s and arrives as a plain letter, in Notepad too; the setup
+check of `tests/peek-chinese-input.ps1` says so): `box.sh ime-reset <name>` ends its two
+processes, which pf cannot do, and Windows starts them again.
 
 Private settings live outside the repo in `~/.config/pecofence-wintest/`: `config.sh` (pf's
 password, AMI, subnet, security group), `boxes` (`name instance-id private-ip` per line), the ssh

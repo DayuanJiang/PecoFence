@@ -65,8 +65,9 @@ function StageSummary($from) {
 # Does the box's own Microsoft Pinyin compose at all? Typed into Notepad: "nihao" and Space must
 # give 你好. On the EC2 boxes the input method's process hangs now and then (2026-11-12: three
 # boxes); then no program takes Chinese, every key waits 10 s for it and arrives as a plain
-# letter, in PecoFence's search box as in Notepad. Returns the text Notepad holds and how long
-# Notepad took to answer after the word.
+# letter, in PecoFence's search box as in Notepad (2026-11-13 on ec2-7: the check failed twice
+# and was right; pf cannot end the hung processes, `box.sh ime-reset <box>` does). Returns the
+# text Notepad holds, when it got there and how long Notepad took to answer after the word.
 function PinyinInNotepad() {
   Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
   Start-Process notepad
@@ -79,16 +80,23 @@ function PinyinInNotepad() {
   }
   $layout = [Ime]::Layout()
   foreach ($c in 'NIHAO'.ToCharArray()) { [G]::Press([uint16][int]$c); Start-Sleep -Milliseconds 120 }
-  [G]::Press(0x20); Start-Sleep -Milliseconds 1500
-  # How long Notepad takes to answer now (a hung input method keeps it waiting for seconds).
-  $sw = [Diagnostics.Stopwatch]::StartNew(); $res = [IntPtr]::Zero
-  $answered = [G]::SendMessageTimeoutW($np, 0, [IntPtr]0, [IntPtr]0, 2, 12000, [ref]$res) -ne [IntPtr]::Zero
-  $ms = [int]$sw.ElapsedMilliseconds
-  $text = ''
-  if ($answered) { $e = [M]::FindWindowExW($np, [IntPtr]::Zero, 'Edit', $null); if ($e -ne [IntPtr]::Zero) { $text = [W]::Text($e) } }
+  [G]::Press(0x20)
+  # The word is there within a second when the input method works (its first use after the
+  # language was added takes longest); looked for up to 4 s. Notepad is asked only while it
+  # answers: a hung input method keeps it waiting for seconds.
+  $e = [M]::FindWindowExW($np, [IntPtr]::Zero, 'Edit', [NullString]::Value)
+  $typed = [Diagnostics.Stopwatch]::StartNew(); $text = ''; $ms = 0; $answered = $false
+  while ($typed.ElapsedMilliseconds -lt 4000 -and $text -notmatch '你好') {
+    Start-Sleep -Milliseconds 200
+    $sw = [Diagnostics.Stopwatch]::StartNew(); $res = [IntPtr]::Zero
+    $answered = [G]::SendMessageTimeoutW($np, 0, [IntPtr]0, [IntPtr]0, 2, 1000, [ref]$res) -ne [IntPtr]::Zero
+    $ms = [int]$sw.ElapsedMilliseconds
+    if ($answered -and $e -ne [IntPtr]::Zero) { $text = [W]::Text($e) }
+  }
+  $at = [int]$typed.ElapsedMilliseconds
   Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
   Start-Sleep -Milliseconds 500
-  return @{ text = $text; ms = $ms; layout = $layout; answered = $answered }
+  return @{ text = $text; ms = $ms; at = $at; layout = $layout; answered = $answered }
 }
 function Round($name, $ctl) {
   DeskClick 1500 820 | Out-Null
@@ -131,7 +139,7 @@ Check 'Microsoft Pinyin is an input method of pf' (@(Get-WinUserLanguageList | W
 # The box's input method itself, before PecoFence is asked to take Chinese from it.
 $np = PinyinInNotepad
 $script:ImeWorks = ($np.text -match '你好')
-Check 'the box''s Microsoft Pinyin composes in Notepad (nihao gives 你好); if not, the box is at fault and the Chinese rounds are left out' $script:ImeWorks "Notepad holds '$($np.text)', layout $($np.layout), answered=$($np.answered) after $($np.ms) ms"
+Check 'the box''s Microsoft Pinyin composes in Notepad (nihao gives 你好); if not, the box is at fault and the Chinese rounds are left out' $script:ImeWorks "Notepad holds '$($np.text)' $($np.at) ms after the word, layout $($np.layout), answered=$($np.answered) after $($np.ms) ms$(if (-not $script:ImeWorks) { '; a hung input method is put right with box.sh ime-reset <box>' })"
 # A few thousand Chinese file names to index, a folder fence with some of them, desktop files.
 $words = '季度报告', '年度预算', '工作计划', '会议记录', '新年活动', '文件整理', '图片素材', '报销单', '发票', '合同', '项目进度', '的说明'
 New-Item -ItemType Directory -Force $Zh | Out-Null
