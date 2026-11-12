@@ -2980,5 +2980,7 @@ impl App {
             a.release_desktop_icons();
         }
         self.tray = None;
+        // Last, with the fences and the tray icon already gone: it may take up to a second.
+        self.end_streams_at_quit();
     }
 }

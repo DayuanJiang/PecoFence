@@ -410,6 +410,17 @@ impl Stream {
         }
         sent
     }
+
+    /// Closes the script's standard input: a script that watches it ends by itself and may
+    /// tidy up first (the clipboard history removes the pictures it wrote).
+    pub fn close_input(&mut self) {
+        self.input = None;
+    }
+
+    /// The script, or something it started, still runs.
+    pub fn running(&self) -> bool {
+        self.job.has_processes()
+    }
 }
 
 impl Drop for Stream {

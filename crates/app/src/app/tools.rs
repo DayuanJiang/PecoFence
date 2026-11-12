@@ -533,6 +533,32 @@ impl App {
         }
     }
 
+    /// PecoFence quits: the scripts that keep running get their input closed and up to a second
+    /// to end by themselves, so one that keeps files only while it runs can remove them (the
+    /// clipboard history's pictures). What still runs after that is ended as before.
+    pub(super) fn end_streams_at_quit(&mut self) {
+        const GRACE: std::time::Duration = std::time::Duration::from_millis(1000);
+        let streams = &mut self.script_runs.streams;
+        if streams.is_empty() {
+            return;
+        }
+        for (_, _, stream) in streams.values_mut() {
+            stream.close_input();
+        }
+        let asked = Instant::now();
+        while asked.elapsed() < GRACE && streams.values().any(|(_, _, s)| s.running()) {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let left = streams.values().filter(|(_, _, s)| s.running()).count();
+        tracing::info!(
+            scripts = streams.len(),
+            still_running = left,
+            waited_ms = asked.elapsed().as_millis() as u64,
+            "quit: streaming scripts asked to end; the ones still running are ended now"
+        );
+        streams.clear();
+    }
+
     /// Ends the streaming scripts whose fence went, lost its script or had the tool switched
     /// off.
     pub(super) fn sync_streams(&mut self) {

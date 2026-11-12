@@ -8,6 +8,24 @@ use crate::bindings::*;
 unsafe extern "system" {
     // Not in the generated bindings.
     fn TerminateJobObject(job: HANDLE, exit_code: u32) -> windows_core::BOOL;
+    fn QueryInformationJobObject(
+        job: HANDLE,
+        class: i32,
+        info: *mut core::ffi::c_void,
+        len: u32,
+        returned: *mut u32,
+    ) -> windows_core::BOOL;
+}
+
+/// JOBOBJECT_BASIC_ACCOUNTING_INFORMATION (class 1): only `active_processes` is read.
+#[repr(C)]
+#[derive(Default)]
+struct JobAccounting {
+    times: [i64; 4],
+    page_faults: u32,
+    total_processes: u32,
+    active_processes: u32,
+    terminated_processes: u32,
 }
 
 /// Every process assigned to it ends when it is dropped (or at [`Self::terminate`]).
@@ -43,6 +61,22 @@ impl KillOnCloseJob {
         use std::os::windows::io::AsRawHandle;
         // SAFETY: the child's process handle stays open while `child` lives.
         unsafe { AssignProcessToJobObject(self.0, HANDLE(child.as_raw_handle())).as_bool() }
+    }
+
+    /// A process of the job still runs (also the answer when Windows does not say).
+    pub fn has_processes(&self) -> bool {
+        let mut info = JobAccounting::default();
+        // SAFETY: our own job handle; the struct outlives the call and its size is passed.
+        let ok = unsafe {
+            QueryInformationJobObject(
+                self.0,
+                1,
+                (&mut info as *mut JobAccounting).cast(),
+                size_of::<JobAccounting>() as u32,
+                std::ptr::null_mut(),
+            )
+        };
+        !ok.as_bool() || info.active_processes > 0
     }
 
     /// Ends every process in the job now.
