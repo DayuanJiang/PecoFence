@@ -610,6 +610,11 @@ impl App {
         let unplaced = self.state.unplaced.clone();
         // A different monitor set may select a different layout: sync windows first.
         self.sync_fence_windows();
+        // Fences that only move (the taskbar hid itself, another resolution at the same scale)
+        // glide to their new places once all of them are placed, instead of jumping.
+        for w in self.fences.values() {
+            w.defer_moves(true);
+        }
         for fence in self.state.fences().to_vec() {
             if self.fences.contains_key(&fence.id) {
                 // State, not the window: sync_fence_windows has just made the window agree, and
@@ -629,6 +634,10 @@ impl App {
         self.refresh_visuals(true);
         // 像桌面一样排列: the new work area (and the fences placed again on it).
         self.arrange_desktop_fence();
+        // Everything above has read the new places: now the windows travel there.
+        for w in self.fences.values() {
+            w.defer_moves(false);
+        }
     }
 
     /// One line per fence after a display change: where its window was (`from`), where the

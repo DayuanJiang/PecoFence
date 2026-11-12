@@ -341,6 +341,8 @@ impl FenceWindow {
             peek_blocked: false,
             capped_h_px: None,
             glide: None,
+            defer_place: false,
+            pending_place: None,
             placing: false,
             behavior: ctx.behavior.clone(),
         };
@@ -466,7 +468,30 @@ impl FenceWindow {
     }
 
     pub fn rect(&self) -> RECT {
+        // During a display change's pass: where the window is about to glide to.
+        if let Ok(guard) = self.view.try_borrow()
+            && let Some(r) = guard.as_ref().and_then(|v| v.pending_place)
+        {
+            return r;
+        }
         self.window.window_rect()
+    }
+
+    /// A display change places every fence in one pass and reads the others' rects while it
+    /// does. With `on`, a placement that only moves this window (same size, in sight,
+    /// animations on) is kept instead of carried out, and `rect` answers with it; `on` false
+    /// ends that, and the window glides from where it stands to the place it was given
+    /// (250 ms), so the fences travel to their new places together instead of jumping.
+    pub fn defer_moves(&self, on: bool) {
+        let pending = self.view.borrow_mut().as_mut().and_then(|v| {
+            v.defer_place = on;
+            v.pending_place.take()
+        });
+        if let Some(to) = pending
+            && !self.start_glide(to, motion::NORMAL, Curve::PointToPoint, false)
+        {
+            self.place_window(to);
+        }
     }
 
     /// One-line state summary for `--test-script dump`: what the compositor shows (root
@@ -708,11 +733,26 @@ impl FenceWindow {
     }
 
     fn place_window(&self, r: RECT) {
-        self.with_view(|v| {
+        let cur = self.window.window_rect();
+        let hwnd = self.hwnd();
+        let deferred = self.view.borrow_mut().as_mut().is_some_and(|v| {
             v.height_anim = None;
             v.glide = None;
-            v.placing = true;
+            let moves_only = (cur.left, cur.top) != (r.left, r.top)
+                && cur.right - cur.left == r.right - r.left
+                && cur.bottom - cur.top == r.bottom - r.top;
+            let defer = v.defer_place
+                && moves_only
+                && v.motion.enabled()
+                && !v.retired
+                && desktop::is_visible(hwnd);
+            v.pending_place = defer.then_some(r);
+            v.placing = !defer;
+            defer
         });
+        if deferred {
+            return;
+        }
         let _ = self
             .window
             .set_bounds(r.left, r.top, r.right - r.left, r.bottom - r.top);
@@ -2093,6 +2133,11 @@ impl FenceWindow {
     /// there. False when the caller should place it at once: animations off, a hidden window,
     /// another size, or 2 px or less to go.
     pub fn glide_to(&self, to: RECT) -> bool {
+        self.start_glide(to, motion::FAST, Curve::Decelerate, true)
+    }
+
+    /// `glide_to` with its time and curve; `notify`: the app hears the bounds on arrival.
+    fn start_glide(&self, to: RECT, time: Duration, curve: Curve, notify: bool) -> bool {
         let hwnd = self.hwnd();
         let r = self.window.window_rect();
         let same_size =
@@ -2107,15 +2152,16 @@ impl FenceWindow {
                 to = ?(to.left, to.top),
                 same_size,
                 glide,
-                "dropped fence goes to its landing place"
+                by_user = notify,
+                "fence goes to its landing place"
             );
             if glide {
                 v.glide = Some(WindowGlide {
                     from: (r.left, r.top),
                     to: (to.left, to.top),
-                    t: v.motion
-                        .tween(0.0, 1.0, motion::FAST, Curve::Decelerate, Instant::now()),
+                    t: v.motion.tween(0.0, 1.0, time, curve, Instant::now()),
                     begun: false,
+                    notify,
                 });
                 v.frames.request();
             }

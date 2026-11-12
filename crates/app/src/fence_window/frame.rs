@@ -136,9 +136,9 @@ impl FrameHandle {
             let _ = window::move_window_to(hwnd, to.0, to.1);
         }
         if done {
-            let handles = self.view.borrow_mut().as_mut().map(|v| {
-                v.glide = None;
-                (v.queue.clone(), v.behavior.clone())
+            let handles = self.view.borrow_mut().as_mut().and_then(|v| {
+                let notify = v.glide.take().is_some_and(|g| g.notify);
+                notify.then(|| (v.queue.clone(), v.behavior.clone()))
             });
             if let Some((queue, behavior)) = handles {
                 queue_bounds_changed(&queue, &behavior, self.id, hwnd);

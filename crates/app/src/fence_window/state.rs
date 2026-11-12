@@ -51,6 +51,9 @@ pub(super) struct WindowGlide {
     pub(super) t: Tween,
     /// Its first frame has run (`tick_glide` starts `t` there).
     pub(super) begun: bool,
+    /// The app hears the new bounds when the window has arrived (a fence the user dropped);
+    /// false for a place the app itself chose and has recorded (a display change).
+    pub(super) notify: bool,
 }
 
 impl WindowGlide {
@@ -564,6 +567,11 @@ pub struct FenceViewState {
     /// Let go over another fence: the window glides from where it was dropped to the free
     /// spot it lands on (`FenceWindow::glide_to`), ticked by the frame clock.
     pub(super) glide: Option<WindowGlide>,
+    /// A display change places every fence in one pass (`FenceWindow::defer_moves`): while
+    /// this is set, a placement that only moves the window waits in `pending_place` and the
+    /// window glides there when the pass is over.
+    pub(super) defer_place: bool,
+    pub(super) pending_place: Option<RECT>,
     /// The app is placing the window (`FenceWindow::place_window`, a cancelled drag put back):
     /// the rect it sets is already in the target monitor's pixels, so a WM_DPICHANGED sent
     /// inside that SetWindowPos (a move onto a monitor with another scale) must not scale it
