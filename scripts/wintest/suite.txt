@@ -231,3 +231,8 @@ o6-tray            3   ec2    debug   owner6-tray.ps1
 # the see-through pane and the card, then the line on the settings page.
 o6-livewall        4   ec2    release owner6-livewall.ps1
 o6-livewall-page   3   ec2    debug   owner6-livewall.ps1            --var Part=P
+# 图标对齐 右对齐 and 鼠标移入时保持透明 (GitHub #222): the fences, the two options in 栅栏选项,
+# and 右对齐 at 150 %.
+o6-align           4   ec2    release owner6-align.ps1
+o6-align-page      3   ec2    debug   owner6-align.ps1               --var Part=P
+o6-align-scale     3   resize release free-placement.ps1             --part S --steps owner6-align.ps1
