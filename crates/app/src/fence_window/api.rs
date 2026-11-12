@@ -1401,6 +1401,9 @@ impl FenceWindow {
             let same_set = v.tabs.len() == tabs.len()
                 && v.tabs.iter().all(|t| tabs.iter().any(|n| n.id == t.id));
             let active_changed = v.active != active;
+            // Asked for by the hover switch on its way: for this call only. A switch whose tab
+            // was closed or moved away before it ran left the mark for the next click on a tab.
+            let at_once = std::mem::take(&mut v.tab_swap_at_once);
             let old_active = v.active;
             let old_idx = v.tabs.iter().position(|t| t.id == v.active);
             let new_idx = tabs.iter().position(|t| t.id == active);
@@ -1491,7 +1494,6 @@ impl FenceWindow {
                 }
             }
             if active_changed {
-                let at_once = std::mem::take(&mut v.tab_swap_at_once);
                 v.selected.clear();
                 v.anchor_index = None;
                 v.range_anchor = None;
