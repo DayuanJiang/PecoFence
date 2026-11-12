@@ -595,8 +595,11 @@ fn on_key(vk: u32) -> bool {
         return true;
     }
     // Ctrl+Z goes back through the editor's own history, Ctrl+Y and Ctrl+Shift+Z forward;
-    // 「撤销」 in the text menu goes back too.
-    if vk == edit::KEY_UNDO || (ctrl && (vk == VK_Z || vk == VK_Y)) {
+    // 「撤销」 in the text menu goes back too. Not with Alt down: Windows reports AltGr as
+    // Ctrl and Alt, and AltGr+Z or AltGr+Y types a letter on several layouts (æ and ü on
+    // US-International, ż on the Polish one).
+    let alt = window::key_down(msg::VK_MENU);
+    if vk == edit::KEY_UNDO || (ctrl && !alt && (vk == VK_Z || vk == VK_Y)) {
         step_history(vk == VK_Y || (vk == VK_Z && shift));
         return true;
     }
