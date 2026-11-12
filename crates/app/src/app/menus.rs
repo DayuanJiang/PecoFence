@@ -1439,7 +1439,7 @@ impl App {
                 settings.tools.clock_seconds = !settings.tools.clock_seconds;
                 self.apply_settings(settings, "clock menu");
             }
-            CMD_FENCE_EDIT_NOTE => self.edit_note(fence),
+            CMD_FENCE_EDIT_NOTE => self.edit_note(fence, None),
             CMD_FENCE_SCRIPT_RUN => self.refresh_script(fence),
             CMD_FENCE_SCRIPT_EDIT => self.edit_script(fence),
             CMD_FENCE_SCRIPT_PICK => self.pick_script_for(fence),

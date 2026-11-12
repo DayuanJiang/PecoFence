@@ -257,7 +257,9 @@ impl FenceWindow {
                     // A click outside an open note editor saves and closes it. The editor
                     // itself only notices when it loses the focus, and a press on a clock or
                     // a script fence moves no focus.
-                    if crate::note_edit::is_open() {
+                    if crate::note_edit::is_open()
+                        && !mouse::press_in_note_editor(h, message, lparam)
+                    {
                         tracing::debug!(?hwnd, message, "a press in a fence ends the note editor");
                         h.queue.push(Command::EndNoteEdit);
                     }
@@ -268,6 +270,9 @@ impl FenceWindow {
                     {
                         v.forget_user_delete("a press in the fence");
                     }
+                }
+                if let Some(done) = mouse::note_edit_mouse(h, hwnd, message, wparam, lparam) {
+                    return Some(done);
                 }
                 match message {
                     msg::WM_MOUSEACTIVATE => Some(msg::MA_NOACTIVATE),

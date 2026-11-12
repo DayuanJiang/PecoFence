@@ -2808,7 +2808,33 @@ impl App {
                 self.new_script_example_of(example, x, y)
             }
             Command::NewScript { x, y } => self.new_script_near(x, y, None),
-            Command::EditNote { fence } => self.edit_note(fence),
+            Command::EditNote { fence, caret } => self.edit_note(fence, caret),
+            Command::NoteEditState {
+                fence,
+                text,
+                anchor,
+                active,
+            } => self.note_edit_state(fence, text, anchor, active),
+            Command::NoteCaretBlink { fence, on } => {
+                if let Some(w) = self.window_for(fence) {
+                    w.set_note_caret_on(on);
+                }
+            }
+            Command::NoteCaret {
+                fence,
+                offset,
+                extend,
+                word,
+            } => crate::note_edit::set_caret(fence, offset, extend, word),
+            Command::NoteCaretLine { fence, dir, extend } => {
+                let to = self
+                    .window_for(fence)
+                    .and_then(|w| w.note_offset_vertical(dir));
+                if let Some(offset) = to {
+                    crate::note_edit::set_caret(fence, offset, extend, false);
+                }
+            }
+            Command::NoteEditMenu { x, y } => crate::note_edit::text_menu(x, y),
             Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
             Command::ScriptRowClicked { fence, row } => self.script_row_clicked(fence, row),
             Command::EmptyActionClicked { fence } => self.smart_everything_clicked(fence),

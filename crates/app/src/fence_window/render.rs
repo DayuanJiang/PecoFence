@@ -1250,21 +1250,20 @@ impl FenceViewState {
 
     /// 便签与待办: the note's lines in place of items.
     pub(super) fn redraw_note(&mut self) -> Result<()> {
-        let Some(text) = self.note.clone() else {
+        if self.note.is_none() {
+            return Ok(());
+        }
+        // While the note is edited, the editor's text with its selection and caret.
+        let marks = self.note_edit_marks();
+        let Some(text) = self
+            .note_edit
+            .as_ref()
+            .map(|e| e.text.clone())
+            .or_else(|| self.note.clone())
+        else {
             return Ok(());
         };
-        use pecofence_core::note::NoteLine;
-        use pecofence_render::fence_chrome::NoteLineDraw;
-        let lines: Vec<NoteLineDraw<'_>> = pecofence_core::note::lines(&text)
-            .into_iter()
-            .map(|l| match l {
-                NoteLine::Text(text) => NoteLineDraw { text, todo: None },
-                NoteLine::Todo { done, text } => NoteLineDraw {
-                    text,
-                    todo: Some(done),
-                },
-            })
-            .collect();
+        let lines = super::note_text::note_draw_lines(&text, marks.is_some());
         let scale = self.scale();
         let theme = self
             .material_foreground()
@@ -1281,9 +1280,25 @@ impl FenceViewState {
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
+                let edit = marks.as_ref().map(|(selection, caret)| {
+                    pecofence_render::fence_chrome::NoteEditDraw {
+                        caret: *caret,
+                        selection,
+                    }
+                });
                 boxes = chrome.draw_note(
-                    session, &theme, scale, wd, hd, text_size, &lines, hint, None, scroll,
+                    session,
+                    &theme,
+                    scale,
+                    wd,
+                    hd,
+                    text_size,
+                    &lines,
+                    hint,
+                    None,
+                    scroll,
                     scrollbar,
+                    edit.as_ref(),
                 )?;
                 Ok(())
             })?;

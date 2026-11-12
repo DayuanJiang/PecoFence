@@ -184,6 +184,8 @@ impl FenceWindow {
             col_drag: None,
             is_portal: false,
             note: None,
+            note_edit: None,
+            note_drag: false,
             note_boxes: Vec::new(),
             clock: None,
             clock_text: (0.0, 0.0),
@@ -1627,6 +1629,62 @@ impl FenceWindow {
                 let _ = v.redraw();
             }
         });
+    }
+
+    /// 便签与待办: the note shown is being edited: its text, selection and caret are drawn from
+    /// `edit` in place of the stored note, and the line with the caret is scrolled into
+    /// view. None = the editor closed.
+    pub fn set_note_edit(&self, edit: Option<NoteEditView>) {
+        self.with_view(|v| {
+            if v.note_edit == edit {
+                return;
+            }
+            let moved = match (&v.note_edit, &edit) {
+                (Some(old), Some(new)) => old.text != new.text || old.active != new.active,
+                (None, Some(_)) => true,
+                _ => false,
+            };
+            v.note_edit = edit;
+            if v.note_edit.is_none() {
+                v.note_drag = false;
+            }
+            if moved {
+                v.note_caret_into_view();
+            }
+            let _ = v.redraw_content();
+        });
+    }
+
+    /// The caret of the note being edited here shows or hides (its blink).
+    pub fn set_note_caret_on(&self, on: bool) {
+        self.with_view(|v| {
+            if let Some(e) = v.note_edit.as_mut()
+                && e.caret_on != on
+            {
+                e.caret_on = on;
+                let _ = v.redraw_content();
+            }
+        });
+    }
+
+    /// The caret of the note being edited here, in screen px: its x, its top and its height.
+    pub fn note_caret_screen(&self) -> Option<(i32, i32, i32)> {
+        let r = self.rect();
+        let view = self.view.borrow();
+        let v = view.as_ref()?;
+        let (x, top, h) = v.note_caret_dip()?;
+        let scale = v.scale();
+        Some((
+            r.left + v.content_x + (x * scale).round() as i32,
+            r.top + v.content_y + ((top - v.scroll_y) * scale).round() as i32,
+            (h * scale).round() as i32,
+        ))
+    }
+
+    /// The place in the text one line on screen above (`dir` < 0) or below the caret of the
+    /// note being edited here.
+    pub fn note_offset_vertical(&self, dir: i8) -> Option<usize> {
+        self.view.borrow().as_ref()?.note_offset_vertical(dir)
     }
 
     /// A script's copy action uses a short, non-activating tip beside the pointer.

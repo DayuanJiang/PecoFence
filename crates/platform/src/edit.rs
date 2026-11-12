@@ -14,12 +14,20 @@ const ES_CENTER: i32 = 0x0001;
 const ES_MULTILINE: i32 = 0x0004;
 const ES_AUTOVSCROLL: i32 = 0x0040;
 const ES_WANTRETURN: i32 = 0x1000;
-const WS_VSCROLL: i32 = 0x0020_0000;
 const EM_SETMARGINS: u32 = 0x00D3;
 const EM_GETLINECOUNT: u32 = 0x00BA;
 const EM_LINESCROLL: u32 = 0x00B6;
 const EM_SCROLLCARET: u32 = 0x00B7;
 const EM_GETFIRSTVISIBLELINE: u32 = 0x00CE;
+const EM_REPLACESEL: u32 = 0x00C2;
+const EM_UNDO: u32 = 0x00C7;
+const WM_IME_ENDCOMPOSITION: u32 = 0x010E;
+const WM_IME_COMPOSITION: u32 = 0x010F;
+const WM_IME_CHAR: u32 = 0x0286;
+const WM_CUT: u32 = 0x0300;
+const WM_PASTE: u32 = 0x0302;
+const WM_CLEAR: u32 = 0x0303;
+const WM_UNDO: u32 = 0x0304;
 const EC_LEFTMARGIN: usize = 1;
 const EC_RIGHTMARGIN: usize = 2;
 
@@ -125,9 +133,9 @@ impl EditControl {
         Ok(ctl)
     }
 
-    /// A control for several lines: Enter starts a new line, long lines wrap, and a scroll bar
-    /// appears when the text is taller than the box. `margin_dip` keeps the text off the
-    /// left and right edges.
+    /// A control for several lines: Enter starts a new line and long lines wrap. It has no
+    /// scroll bar: the note editor keeps it out of sight and draws the text itself.
+    /// `margin_dip` keeps the text off the left and right edges.
     #[allow(clippy::too_many_arguments)]
     pub fn create_multiline(
         parent: HWND,
@@ -149,16 +157,11 @@ impl EditControl {
             text,
             dark,
             on_key,
-            ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | WS_VSCROLL,
+            ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
         )?;
         let m = (margin_dip * dpi as f32 / 96.0).round() as usize & 0xFFFF;
-        // SAFETY: plain messages and theme call on our control; the buffer outlives the call.
+        // SAFETY: a plain message to our control.
         unsafe {
-            if dark {
-                // A dark scroll bar to go with the dark background.
-                let theme = to_wide("DarkMode_Explorer");
-                let _ = SetWindowTheme(ctl.hwnd, PCWSTR(theme.as_ptr()), PCWSTR::null());
-            }
             SendMessageW(
                 ctl.hwnd,
                 EM_SETMARGINS,
@@ -400,12 +403,22 @@ impl EditControl {
     }
 
     pub fn text(&self) -> String {
-        // SAFETY: buffer sized from the control's own length.
+        window_text(self.hwnd)
+    }
+
+    /// The control's window, for calls made while nothing borrows the control itself (see
+    /// [`EditHandle`]).
+    pub fn handle(&self) -> EditHandle {
+        EditHandle(self.hwnd)
+    }
+
+    /// Posts `message` to the parent after every message that can change the text, the
+    /// selection or the caret (keys, characters, the input method, the clipboard, undo, a
+    /// selection set by a message): the parent then reads the new state.
+    pub fn notify_changes(&self, message: u32) {
+        // SAFETY: plain FFI call on our control; the subclass goes with it in `drop`.
         unsafe {
-            let len = GetWindowTextLengthW(self.hwnd);
-            let mut buf = vec![0u16; (len.max(0) as usize) + 1];
-            let n = GetWindowTextW(self.hwnd, PWSTR(buf.as_mut_ptr()), buf.len() as i32);
-            from_wide(&buf[..n.max(0) as usize])
+            let _ = SetWindowSubclass(self.hwnd, Some(notify_proc), 2, message as usize);
         }
     }
 
@@ -419,6 +432,125 @@ impl EditControl {
         }
         self.brush.0 as isize
     }
+}
+
+fn window_text(hwnd: HWND) -> String {
+    // SAFETY: buffer sized from the control's own length.
+    unsafe {
+        let len = GetWindowTextLengthW(hwnd);
+        let mut buf = vec![0u16; (len.max(0) as usize) + 1];
+        let n = GetWindowTextW(hwnd, PWSTR(buf.as_mut_ptr()), buf.len() as i32);
+        from_wide(&buf[..n.max(0) as usize])
+    }
+}
+
+/// The window of an [`EditControl`]. A message to the control can come back into its owner
+/// (a notification, a menu's message loop), so the owner makes these calls with nothing of
+/// its own borrowed, on a copy of this handle.
+#[derive(Clone, Copy)]
+pub struct EditHandle(HWND);
+
+impl EditHandle {
+    pub fn text(&self) -> String {
+        window_text(self.0)
+    }
+
+    /// The selection as (first, one past the last), in UTF-16 units; equal for a bare caret.
+    pub fn selection(&self) -> (usize, usize) {
+        let mut start = 0u32;
+        let mut end = 0u32;
+        // SAFETY: EM_GETSEL writes the selection into the two locals.
+        unsafe {
+            SendMessageW(
+                self.0,
+                EM_GETSEL as u32,
+                WPARAM(&mut start as *mut u32 as usize),
+                LPARAM(&mut end as *mut u32 as isize),
+            );
+        }
+        (start as usize, end as usize)
+    }
+
+    /// Selects from `anchor` to `active` (UTF-16 units); the caret stands at `active`.
+    pub fn select(&self, anchor: usize, active: usize) {
+        // SAFETY: plain messages to our control.
+        unsafe {
+            SendMessageW(
+                self.0,
+                EM_SETSEL as u32,
+                WPARAM(anchor),
+                LPARAM(active as isize),
+            );
+            SendMessageW(self.0, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
+        }
+    }
+
+    /// Puts `text` in place of the selection, as typing would (Ctrl+Z takes it back).
+    pub fn replace_selection(&self, text: &str) {
+        let wide = to_wide(text);
+        // SAFETY: the buffer outlives the call; a plain message to our control.
+        unsafe {
+            SendMessageW(
+                self.0,
+                EM_REPLACESEL,
+                WPARAM(1),
+                LPARAM(wide.as_ptr() as isize),
+            );
+        }
+    }
+
+    /// Where the control's own caret stands in its client area (pixels), while the control
+    /// has the keyboard. The input method puts its window there.
+    pub fn caret_pos(&self) -> Option<(i32, i32)> {
+        windows_core::link!("user32.dll" "system" fn GetCaretPos(point: *mut POINT) -> windows_core::BOOL);
+        let mut pt = POINT::default();
+        // SAFETY: plain FFI calls; `pt` outlives the call.
+        unsafe {
+            if GetFocus() != self.0 || !GetCaretPos(&mut pt).as_bool() {
+                return None;
+            }
+        }
+        Some((pt.x, pt.y))
+    }
+
+    /// Moves the control within its parent (client pixels), keeping its size.
+    pub fn move_to(&self, x: i32, y: i32) {
+        // SAFETY: plain FFI call on our control.
+        unsafe {
+            let _ = SetWindowPos(
+                self.0,
+                None,
+                x,
+                y,
+                0,
+                0,
+                (SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) as u32,
+            );
+        }
+    }
+
+    /// Opens the control's own text menu (cut, copy, paste, select all) at screen point
+    /// (`x`, `y`). Returns when the menu has closed.
+    pub fn context_menu(&self, x: i32, y: i32) {
+        let at = ((y as u32 & 0xFFFF) << 16 | (x as u32 & 0xFFFF)) as i32 as isize;
+        // SAFETY: a plain message to our control.
+        unsafe {
+            SendMessageW(
+                self.0,
+                WM_CONTEXTMENU as u32,
+                WPARAM(self.0.0 as usize),
+                LPARAM(at),
+            );
+        }
+    }
+}
+
+/// How long the system's text caret shows and hides (ms); None when it does not blink.
+pub fn caret_blink_ms() -> Option<u32> {
+    windows_core::link!("user32.dll" "system" fn GetCaretBlinkTime() -> u32);
+    // SAFETY: plain FFI call.
+    let ms = unsafe { GetCaretBlinkTime() };
+    (ms != 0 && ms != u32::MAX).then_some(ms)
 }
 
 /// `face` at an em height of `font_dip` DIPs for `dpi`, as the controls use it.
@@ -452,12 +584,53 @@ impl Drop for EditControl {
     fn drop(&mut self) {
         // SAFETY: we own these GDI objects; the control dies with its parent window.
         unsafe {
+            let _ = RemoveWindowSubclass(self.hwnd, Some(notify_proc), 2);
             let _ = RemoveWindowSubclass(self.hwnd, Some(subclass_proc), 1);
             let _ = DestroyWindow(self.hwnd);
             let _ = DeleteObject(HGDIOBJ(self.font.0));
             let _ = DeleteObject(HGDIOBJ(self.brush.0));
         }
     }
+}
+
+/// [`EditControl::notify_changes`]: after a message that can change what the control holds
+/// or selects, the parent gets the message in `refdata`, posted.
+unsafe extern "system" fn notify_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    _id: usize,
+    refdata: usize,
+) -> LRESULT {
+    // SAFETY: the next handler in the subclass chain gets the message unchanged.
+    let result = unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) };
+    let changes = msg == WM_KEYDOWN as u32
+        || msg == WM_CHAR as u32
+        || msg == WM_SETTEXT as u32
+        || msg == EM_SETSEL as u32
+        || matches!(
+            msg,
+            WM_IME_COMPOSITION
+                | WM_IME_ENDCOMPOSITION
+                | WM_IME_CHAR
+                | WM_CUT
+                | WM_PASTE
+                | WM_CLEAR
+                | WM_UNDO
+                | EM_UNDO
+                | EM_REPLACESEL
+        );
+    if changes {
+        // SAFETY: plain FFI calls; a control without a parent posts nothing.
+        unsafe {
+            let parent = GetParent(hwnd);
+            if !parent.0.is_null() {
+                let _ = PostMessageW(Some(parent), refdata as u32, WPARAM(0), LPARAM(0));
+            }
+        }
+    }
+    result
 }
 
 /// A key or IME message the box handled slower than this is logged (its name and ms only).

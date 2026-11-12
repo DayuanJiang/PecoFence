@@ -25,6 +25,12 @@ pub(super) fn on_setcursor(
         window::set_standard_cursor(StandardCursor::SizeWE);
         return Some(1);
     }
+    // The text of a note that is being edited: the text cursor.
+    if v.note_edit.is_some() && v.in_note_text(pt.x, pt.y) {
+        drop(guard);
+        window::set_standard_cursor(StandardCursor::IBeam);
+        return Some(1);
+    }
     // A script fence's clickable row, the empty state's action row: the hand, as over a link.
     if v.script_row_at(pt.x, pt.y).is_some() || v.empty_action_at(pt.x, pt.y) {
         drop(guard);
@@ -898,6 +904,95 @@ pub(super) fn on_xbuttonup(
         _ => {}
     }
     Some(1)
+}
+
+/// A press in the text of the note that is being edited in this window: it places the
+/// caret, so the editor stays open.
+pub(super) fn press_in_note_editor(h: &HandlerCtx, message: u32, lparam: isize) -> bool {
+    matches!(
+        message,
+        msg::WM_LBUTTONDOWN | msg::WM_LBUTTONDBLCLK | msg::WM_RBUTTONDOWN | WM_RBUTTONDBLCLK
+    ) && h.view.try_borrow().is_ok_and(|view| {
+        view.as_ref().is_some_and(|v| {
+            v.note_edit.is_some() && v.in_note_text(msg::lo_i16(lparam), msg::hi_i16(lparam))
+        })
+    })
+}
+
+/// The mouse in the text of a note that is being edited (see `note_text`): a press places
+/// the caret (Shift extends the selection, a double-click takes the word), moving with the
+/// button held selects, a right-click opens the editor's own text menu. None for every other
+/// message: the usual handling goes on.
+pub(super) fn note_edit_mouse(
+    h: &HandlerCtx,
+    hwnd: HWND,
+    message: u32,
+    wparam: usize,
+    lparam: isize,
+) -> Option<isize> {
+    if !matches!(
+        message,
+        msg::WM_LBUTTONDOWN
+            | msg::WM_LBUTTONDBLCLK
+            | msg::WM_MOUSEMOVE
+            | msg::WM_LBUTTONUP
+            | msg::WM_RBUTTONDOWN
+            | WM_RBUTTONDBLCLK
+            | msg::WM_RBUTTONUP
+    ) {
+        return None;
+    }
+    let x = msg::lo_i16(lparam);
+    let y = msg::hi_i16(lparam);
+    let mut guard = h.view.try_borrow_mut().ok()?;
+    let v = guard.as_mut()?;
+    v.note_edit.as_ref()?;
+    let fence = v.active;
+    match message {
+        msg::WM_LBUTTONDOWN | msg::WM_LBUTTONDBLCLK if v.in_note_text(x, y) => {
+            let offset = v.note_offset_at(x, y)?;
+            v.note_drag = true;
+            drop(guard);
+            window::set_capture(hwnd);
+            h.queue.push(Command::NoteCaret {
+                fence,
+                offset,
+                extend: wparam & msg::MK_SHIFT as usize != 0,
+                word: message == msg::WM_LBUTTONDBLCLK,
+            });
+            Some(0)
+        }
+        msg::WM_MOUSEMOVE if v.note_drag => {
+            if wparam & msg::MK_LBUTTON as usize == 0 {
+                // The release went elsewhere.
+                v.note_drag = false;
+                return None;
+            }
+            let offset = v.note_offset_at(x.max(v.content_x), y.max(v.content_y))?;
+            drop(guard);
+            h.queue.push(Command::NoteCaret {
+                fence,
+                offset,
+                extend: true,
+                word: false,
+            });
+            Some(0)
+        }
+        msg::WM_LBUTTONUP if v.note_drag => {
+            v.note_drag = false;
+            drop(guard);
+            window::release_capture();
+            Some(0)
+        }
+        msg::WM_RBUTTONDOWN | WM_RBUTTONDBLCLK if v.in_note_text(x, y) => Some(0),
+        msg::WM_RBUTTONUP if v.in_note_text(x, y) => {
+            drop(guard);
+            let at = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
+            h.queue.push(Command::NoteEditMenu { x: at.x, y: at.y });
+            Some(0)
+        }
+        _ => None,
+    }
 }
 
 pub(super) fn on_mousewheel(

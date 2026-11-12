@@ -948,12 +948,13 @@ impl App {
     /// was off (the fence would have no window otherwise).
     pub(super) fn new_note_near(&mut self, x: i32, y: i32) {
         if let Some(id) = self.create_tool_fence(NewTool::Note(String::new()), None, None, x, y) {
-            self.edit_note(id);
+            self.edit_note(id, None);
         }
     }
 
-    /// Opens the editor over note `fence`'s content.
-    pub(super) fn edit_note(&mut self, fence: FenceId) {
+    /// Opens the editor of note `fence`, the caret at `caret` (a place in its text, UTF-16
+    /// units) or after the last line.
+    pub(super) fn edit_note(&mut self, fence: FenceId, caret: Option<usize>) {
         let Some(text) = self.state.note_text(fence).map(str::to_string) else {
             tracing::info!(%fence, "note editor not opened: no such note");
             return;
@@ -973,6 +974,7 @@ impl App {
             text_size,
             font_dip,
             chars = text.chars().count(),
+            ?caret,
             "note editor opened"
         );
         crate::note_edit::open(
@@ -983,7 +985,36 @@ impl App {
             self.queue.clone(),
             self.theme_mode,
             font_dip,
+            caret,
         );
+    }
+
+    /// The editor of note `fence` holds `text` with this selection now: its window draws
+    /// them, and the editor's control follows the caret drawn there (the input method's
+    /// window appears at it).
+    pub(super) fn note_edit_state(
+        &self,
+        fence: FenceId,
+        text: String,
+        anchor: usize,
+        active: usize,
+    ) {
+        if crate::note_edit::open_for() != Some(fence) {
+            // The editor closed while this was queued: its text is on the way as the note's.
+            return;
+        }
+        let Some(w) = self.window_for(fence).filter(|w| w.active_fence() == fence) else {
+            return;
+        };
+        w.set_note_edit(Some(crate::fence_window::NoteEditView {
+            text,
+            anchor,
+            active,
+            caret_on: true,
+        }));
+        if let Some((x, top, _)) = w.note_caret_screen() {
+            crate::note_edit::place_caret(fence, x, top);
+        }
     }
 
     /// Quitting: the text of a note editor still open goes into the note now (its commit through
@@ -1011,6 +1042,10 @@ impl App {
             self.schedule_save();
         }
         self.push_note(fence);
+        // The window draws the stored note again, which has the editor's text by now.
+        if let Some(w) = self.window_for(fence) {
+            w.set_note_edit(None);
+        }
     }
 
     /// Shows note `fence`'s current text in its window.

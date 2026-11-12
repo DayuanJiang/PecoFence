@@ -57,6 +57,7 @@ mod group;
 mod handler;
 mod hit;
 mod items;
+mod note_text;
 mod render;
 mod roll;
 mod scroll;
@@ -441,6 +442,17 @@ pub struct ScriptView {
     pub footer: String,
     /// No "printed no text" hint while the body is empty (the first run has not ended).
     pub quiet: bool,
+}
+
+/// A note while its editor is open (`crate::note_edit`): the text as it stands in the
+/// editor (line breaks are `\n`), the two ends of the selection in UTF-16 units (the caret is
+/// at `active`), and whether the caret shows right now (it blinks).
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoteEditView {
+    pub text: String,
+    pub anchor: usize,
+    pub active: usize,
+    pub caret_on: bool,
 }
 
 /// One row of a script fence as drawn (see `pecofence_core::script_output`).

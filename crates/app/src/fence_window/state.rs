@@ -235,6 +235,10 @@ pub struct FenceViewState {
     /// 便签与待办: the fence shown is a note with this text, drawn in place of items (None =
     /// it shows items).
     pub(super) note: Option<String>,
+    /// The note is being edited: what its editor holds, drawn in place of `note`.
+    pub(super) note_edit: Option<NoteEditView>,
+    /// A press in the edited note's text is held: moving the pointer selects.
+    pub(super) note_drag: bool,
     /// The note's to-do check boxes as last drawn: line index and (left, top, right, bottom)
     /// in content DIPs.
     pub(super) note_boxes: Vec<(usize, [f32; 4])>,
@@ -752,7 +756,11 @@ impl FenceViewState {
             .map(|&(line, _)| line);
         Some(match line {
             Some(line) => Command::ToggleNoteLine { fence, line },
-            None => Command::EditNote { fence },
+            // The editor opens with the caret where the click was.
+            None => Command::EditNote {
+                fence,
+                caret: self.note_offset_at(x, y),
+            },
         })
     }
 

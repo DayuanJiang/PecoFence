@@ -363,9 +363,11 @@ pub enum Command {
     FenceFilterClosed(FenceId),
     /// Esc in a filtered fence, or 清除筛选 in its menu: the fence shows everything again.
     ClearFenceFilter(FenceId),
-    /// A click on a note's text: open its editor.
+    /// A click on a note's text: open its editor, the caret at that place of the text
+    /// (UTF-16 units).
     EditNote {
         fence: FenceId,
+        caret: Option<usize>,
     },
     /// A click on a to-do's check box in a note.
     ToggleNoteLine {
@@ -381,6 +383,40 @@ pub enum Command {
     /// Everything: 「启动 Everything」 / 「安装 Everything」).
     EmptyActionClicked {
         fence: FenceId,
+    },
+    /// The note editor holds this text and selection now (UTF-16 units, line breaks `\n`;
+    /// the caret is at `active`): the note's fence draws them.
+    NoteEditState {
+        fence: FenceId,
+        text: String,
+        anchor: usize,
+        active: usize,
+    },
+    /// The caret of the note being edited shows or hides (its blink).
+    NoteCaretBlink {
+        fence: FenceId,
+        on: bool,
+    },
+    /// The mouse in the text of the note being edited: the caret goes to `offset` (`extend`
+    /// keeps the other end of the selection, `word` takes the word there).
+    NoteCaret {
+        fence: FenceId,
+        offset: usize,
+        extend: bool,
+        word: bool,
+    },
+    /// Up or Down in the note editor: the caret goes one line on screen up (`dir` < 0) or
+    /// down, as the fence wraps the text.
+    NoteCaretLine {
+        fence: FenceId,
+        dir: i8,
+        extend: bool,
+    },
+    /// A right-click in the text of the note being edited: the editor's own text menu opens
+    /// at this screen point.
+    NoteEditMenu {
+        x: i32,
+        y: i32,
     },
     /// A press in a fence window while a note editor is open: the editor saves and closes
     /// (a tool fence takes no focus, so the editor would not notice the click).

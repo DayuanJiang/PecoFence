@@ -4092,6 +4092,15 @@ pub struct NoteLineDraw<'a> {
     pub todo: Option<bool>,
 }
 
+/// What a note shows on top of its text while it is being edited: the caret (the line and
+/// the place in that line's drawn text, in UTF-16 units; None while it is blinked off) and
+/// the selected part of each line (the line, from, to, and whether the selection goes on
+/// past the line's end).
+pub struct NoteEditDraw<'a> {
+    pub caret: Option<(usize, usize)>,
+    pub selection: &'a [(usize, usize, usize, bool)],
+}
+
 /// One line of a note laid out: its wrapped text, where the text starts, its top from the
 /// first line's top (before any scrolling) and its height.
 struct NoteRow {
@@ -4238,13 +4247,86 @@ impl FenceChrome {
         })
     }
 
+    /// The place in a note's text nearest to point (`x`, `y`) of its content before any
+    /// scrolling: the line, and the place in that line's drawn text in UTF-16 units. A point
+    /// above or below the text takes the first or the last line.
+    pub fn note_hit(
+        &self,
+        width: f32,
+        text_size: u8,
+        lines: &[NoteLineDraw<'_>],
+        x: f32,
+        y: f32,
+    ) -> Result<(usize, usize)> {
+        let (rows, _) = self.note_rows(width, text_size, lines)?;
+        let gap = NOTE_LINE_GAP * self.tool_text(text_size).k;
+        let y = y - NOTE_PAD_TOP;
+        // A line owns its text and half the gap above and below it.
+        let i = rows
+            .iter()
+            .position(|r| y < r.y + r.h + gap / 2.0)
+            .unwrap_or(rows.len().saturating_sub(1));
+        let Some(row) = rows.get(i) else {
+            return Ok((0, 0));
+        };
+        let len = lines[i].text.encode_utf16().count();
+        let hit = row.layout.hit_test_point(Vector2::new(
+            x - row.x,
+            (y - row.y).clamp(0.0, (row.h - 0.5).max(0.0)),
+        ));
+        let at = hit.text_position as usize + usize::from(hit.is_trailing_hit);
+        Ok((i, at.min(len)))
+    }
+
+    /// The place one line on screen above (`dir` < 0) or below the caret at (`line`, `at`),
+    /// at the caret's x. On the first and the last line the caret stays where it is.
+    pub fn note_vertical(
+        &self,
+        width: f32,
+        text_size: u8,
+        lines: &[NoteLineDraw<'_>],
+        line: usize,
+        at: usize,
+        dir: i8,
+    ) -> Result<(usize, usize)> {
+        let (x, top, h) = self.note_caret(width, text_size, lines, line, at)?;
+        // The middle of the neighbouring line, whether it belongs to the same wrapped line
+        // (right above or below) or to the next one (a gap away).
+        let gap = NOTE_LINE_GAP * self.tool_text(text_size).k;
+        let y = if dir < 0 {
+            top - gap - h / 2.0
+        } else {
+            top + h + gap + h / 2.0
+        };
+        self.note_hit(width, text_size, lines, x, y)
+    }
+
+    /// Where the caret stands before place `at` (UTF-16 units) of line `line`'s drawn text:
+    /// its x, its top and its height in content DIPs, before any scrolling.
+    pub fn note_caret(
+        &self,
+        width: f32,
+        text_size: u8,
+        lines: &[NoteLineDraw<'_>],
+        line: usize,
+        at: usize,
+    ) -> Result<(f32, f32, f32)> {
+        let (rows, line_h) = self.note_rows(width, text_size, lines)?;
+        let (Some(row), Some(text)) = (rows.get(line), lines.get(line)) else {
+            return Ok((NOTE_PAD_X, NOTE_PAD_TOP, line_h));
+        };
+        let (x, top, h) = layout_caret(&row.layout, at, text.text.encode_utf16().count());
+        Ok((row.x + x, NOTE_PAD_TOP + row.y + top, h))
+    }
+
     /// Draws a note's lines from the top left, each wrapped to the width, at 文字大小
     /// `text_size` (0 to 3); a to-do gets a check box before its text, ticked ones in the
     /// accent with their text dimmed. `hint` shows in the secondary colour while the note has
     /// no text. `footer` (a script fence's status line) sits at the bottom in the secondary
     /// colour and the lines stop above it. The lines are moved up by `scroll` DIPs (a note
-    /// taller than its fence), with the overlay `scrollbar` at the right. Returns each
-    /// to-do's line index with its check box (surface DIPs) for hit-testing.
+    /// taller than its fence), with the overlay `scrollbar` at the right. While the note is
+    /// being edited, `edit` adds the selection and the caret; nothing else changes. Returns
+    /// each to-do's line index with its check box (surface DIPs) for hit-testing.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_note(
         &self,
@@ -4259,6 +4341,7 @@ impl FenceChrome {
         footer: Option<&str>,
         scroll: f32,
         scrollbar: Option<ScrollbarDraw>,
+        edit: Option<&NoteEditDraw<'_>>,
     ) -> Result<Vec<(usize, Rect)>> {
         session.clear(ColorF::TRANSPARENT);
         let tt = self.tool_text(text_size);
@@ -4288,11 +4371,21 @@ impl FenceChrome {
                 ),
                 &secondary,
             );
-            return Ok(Vec::new());
+            // A note that is being edited shows its hint until the first character, with
+            // the caret before it.
+            if edit.is_none() {
+                return Ok(Vec::new());
+            }
         }
         let (rows, line_h) = self.note_rows(width, text_size, lines)?;
         let px = Px::new(scale);
         let todo = TodoBrushes::new(session, theme)?;
+        let selected = match edit {
+            Some(e) if !e.selection.is_empty() => {
+                Some(session.create_solid_brush(with_alpha(theme.accent, 0.4))?)
+            }
+            _ => None,
+        };
         let mut boxes = Vec::new();
         for (i, (line, row)) in lines.iter().zip(&rows).enumerate() {
             let y = NOTE_PAD_TOP + row.y - scroll;
@@ -4327,12 +4420,40 @@ impl FenceChrome {
             if let Some(done) = line.todo {
                 boxes.push((i, todo.draw(tt, session, px, y, line_h, done)));
             }
+            let len = line.text.encode_utf16().count();
+            if let (Some(e), Some(fill)) = (edit, &selected) {
+                for &(_, from, to, past_end) in e.selection.iter().filter(|s| s.0 == i) {
+                    for r in layout_selection(&row.layout, from, to, len) {
+                        session.fill_rect(
+                            &Rect::from_xywh(
+                                row.x + r.left,
+                                y + r.top,
+                                r.right - r.left,
+                                r.bottom - r.top,
+                            ),
+                            fill,
+                        );
+                    }
+                    if past_end {
+                        // The line break is selected too: a short mark after the text.
+                        let (cx, top, h) = layout_caret(&row.layout, len, len);
+                        session.fill_rect(&Rect::from_xywh(row.x + cx, y + top, 0.3 * h, h), fill);
+                    }
+                }
+            }
             let brush = if line.todo == Some(true) {
                 &secondary
             } else {
                 &primary
             };
             session.draw_text_layout(Vector2::new(row.x, y), &row.layout, brush);
+            if let Some((_, at)) = edit.and_then(|e| e.caret).filter(|c| c.0 == i) {
+                let (cx, top, h) = layout_caret(&row.layout, at, len);
+                session.fill_rect(
+                    &Rect::from_xywh(px.snap(row.x + cx), y + top, px.hair(), h),
+                    &primary,
+                );
+            }
         }
         if let Some(bar) = scrollbar {
             draw_scrollbar(session, theme, &self.sort_glyph_format, width, bar)?;
@@ -4346,6 +4467,48 @@ fn note_is_empty(lines: &[NoteLineDraw<'_>]) -> bool {
     lines
         .iter()
         .all(|l| l.text.trim().is_empty() && l.todo.is_none())
+}
+
+/// The caret before place `at` (UTF-16 units) of a laid-out line whose text is `len` units
+/// long: its x, and the top and height of the line on screen it stands in, from the layout's
+/// origin. The lines of one paragraph are equally high (see `layout_line_tops`).
+fn layout_caret(layout: &TextLayout, at: usize, len: usize) -> (f32, f32, f32) {
+    let r = if len > 0 && at >= len {
+        layout.caret_bounds((len - 1) as u32, true)
+    } else {
+        layout.caret_bounds(at as u32, false)
+    };
+    let m = layout.metrics();
+    let lines = m.line_count.max(1) as f32;
+    let line_h = m.height / lines;
+    let line = ((r.top + line_h / 2.0) / line_h)
+        .floor()
+        .clamp(0.0, lines - 1.0);
+    (r.left, line * line_h, line_h)
+}
+
+/// The boxes that cover places `from..to` of a laid-out line (its text `len` units long),
+/// one per line on screen, from the layout's origin.
+fn layout_selection(layout: &TextLayout, from: usize, to: usize, len: usize) -> Vec<Rect> {
+    let (ax, ay, line_h) = layout_caret(layout, from, len);
+    let (bx, by, _) = layout_caret(layout, to, len);
+    let mut out = Vec::new();
+    let (mut y, mut left) = (ay, ax);
+    while out.len() < 512 {
+        if y + 0.5 >= by {
+            out.push(Rect::from_xywh(left, y, (bx - left).max(0.0), line_h));
+            break;
+        }
+        // The last character of the line on screen at `y`: its box ends where the line does.
+        let end = layout
+            .hit_test_point(Vector2::new(1.0e6, y + line_h / 2.0))
+            .bounds
+            .right;
+        out.push(Rect::from_xywh(left, y, (end - left).max(0.0), line_h));
+        y += line_h;
+        left = 0.0;
+    }
+    out
 }
 
 /// Tops of the lines `layout` (`height` DIPs high) wraps into, from its own top. The lines
@@ -5489,6 +5652,149 @@ mod tests {
         // where the strip starts.
         assert_eq!(w - ICON_LABEL_SIDE_INSET, w - SCROLL_STRIP);
         assert_eq!(NOTE_PAD_X, TEXT_LEFT);
+    }
+
+    /// A note's text measured for scrolling and for its editor: every line on screen has a
+    /// top, a place and the point of its caret name each other, and Up and Down go one line
+    /// on screen at a time.
+    #[test]
+    fn note_text_places_and_lines() {
+        let chrome = FenceChrome::new().unwrap();
+        let long = "给客户回邮件：确认报价单和交付日期，附上合同扫描件，然后把结果写进周报";
+        let lines = [
+            NoteLineDraw {
+                text: "周会准备",
+                todo: None,
+            },
+            NoteLineDraw {
+                text: long,
+                todo: Some(false),
+            },
+            NoteLineDraw {
+                text: "",
+                todo: None,
+            },
+            NoteLineDraw {
+                text: "备注：周五前完成",
+                todo: None,
+            },
+        ];
+        let w = 260.0;
+        let extent = chrome.note_extent(w, 1, &lines).unwrap();
+        // The long to-do wraps: more tops than lines, rising from 0, inside the height.
+        assert!(extent.tops.len() > lines.len(), "{:?}", extent.tops);
+        assert_eq!(extent.tops[0], 0.0);
+        assert!(
+            extent.tops.windows(2).all(|p| p[1] > p[0]),
+            "{:?}",
+            extent.tops
+        );
+        assert!(extent.height > *extent.tops.last().unwrap());
+        assert!(extent.line_step > 0.0);
+        // An empty note takes nothing.
+        let empty = [NoteLineDraw {
+            text: " ",
+            todo: None,
+        }];
+        assert_eq!(
+            chrome.note_extent(w, 1, &empty).unwrap(),
+            ToolTextExtent::default()
+        );
+        // The caret of a place, hit again, is that place: line starts, middles, ends.
+        let len = |i: usize| lines[i].text.encode_utf16().count();
+        for (line, at) in [
+            (0, 0),
+            (0, 2),
+            (0, 4),
+            (1, 0),
+            (1, 5),
+            (1, len(1)),
+            (2, 0),
+            (3, 3),
+            (3, len(3)),
+        ] {
+            let (x, top, h) = chrome.note_caret(w, 1, &lines, line, at).unwrap();
+            assert!(h > 10.0);
+            assert_eq!(
+                chrome.note_hit(w, 1, &lines, x, top + h / 2.0).unwrap(),
+                (line, at),
+                "caret of ({line}, {at}) at {x}, {top}"
+            );
+        }
+        // A to-do's text starts right of its check box; a plain line at the text edge.
+        assert_eq!(chrome.note_caret(w, 1, &lines, 0, 0).unwrap().0, NOTE_PAD_X);
+        assert!(chrome.note_caret(w, 1, &lines, 1, 0).unwrap().0 > NOTE_PAD_X + NOTE_BOX);
+        // Down from the first line goes into the to-do's first line on screen, down again
+        // into its second (a later place of the same line), and Up comes back.
+        let first = chrome.note_vertical(w, 1, &lines, 0, 0, 1).unwrap();
+        assert_eq!(first.0, 1);
+        let second = chrome
+            .note_vertical(w, 1, &lines, first.0, first.1, 1)
+            .unwrap();
+        assert_eq!(second.0, 1);
+        assert!(second.1 > first.1, "{first:?} then {second:?}");
+        let back = chrome
+            .note_vertical(w, 1, &lines, second.0, second.1, -1)
+            .unwrap();
+        assert_eq!(back, first);
+        // Up on the first line and Down on the last stay.
+        assert_eq!(
+            chrome.note_vertical(w, 1, &lines, 0, 2, -1).unwrap(),
+            (0, 2)
+        );
+        assert_eq!(chrome.note_vertical(w, 1, &lines, 3, 3, 1).unwrap(), (3, 3));
+        // A point below all the text takes the last line, one above it the first.
+        assert_eq!(
+            chrome.note_hit(w, 1, &lines, 500.0, 900.0).unwrap(),
+            (3, len(3))
+        );
+        assert_eq!(chrome.note_hit(w, 1, &lines, 0.0, -50.0).unwrap(), (0, 0));
+        // A selection over the wrapped to-do has a box for each of its lines on screen.
+        let (rows, _) = chrome.note_rows(w, 1, &lines).unwrap();
+        let boxes = layout_selection(&rows[1].layout, 0, len(1), len(1));
+        assert_eq!(
+            boxes.len(),
+            layout_line_tops(&rows[1].layout, rows[1].h).len()
+        );
+        assert!(boxes.len() >= 2);
+        assert!(boxes.iter().all(|r| r.right > r.left && r.bottom > r.top));
+        // A script fence's rows scroll above its footer.
+        let script = [
+            ScriptRowDraw {
+                text: "第一行",
+                separator: false,
+                todo: None,
+                color: None,
+                icon: None,
+                clickable: false,
+                opens: false,
+            },
+            ScriptRowDraw {
+                text: "",
+                separator: true,
+                todo: None,
+                color: None,
+                icon: None,
+                clickable: false,
+                opens: false,
+            },
+            ScriptRowDraw {
+                text: "第二行",
+                separator: false,
+                todo: None,
+                color: None,
+                icon: None,
+                clickable: true,
+                opens: true,
+            },
+        ];
+        let bare = chrome.script_extent(w, 1, &script, "").unwrap();
+        let footed = chrome
+            .script_extent(w, 1, &script, "脚本.ps1 · 09:00 更新")
+            .unwrap();
+        assert_eq!(bare.tops.len(), 2);
+        assert_eq!(bare.tops, footed.tops);
+        assert!(footed.height > bare.height + 12.0);
     }
 
     #[test]
