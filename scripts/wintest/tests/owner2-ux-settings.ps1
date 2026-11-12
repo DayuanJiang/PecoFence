@@ -8,6 +8,11 @@
 #   G  a rule moved down: its row and the row under it glide to their places
 #   R  the card that 「Windows 桌面图标」 = 隐藏 brings up grows open, and closes again
 #   S  the switch of a rule slides like every other switch
+#   C  新建智能栅栏: after 创建 the editor goes away as it looked, with no white frame.
+#      NOT in the default parts: it fails today (the editor is white for 3 to 4 frames before
+#      Windows fades it out, in dark mode too). Two changes of SettingsHost::close did not help:
+#      hiding the window before the browser is closed, and destroying the window with the
+#      browser still on it. Run it with $Part = 'C' when that is fixed.
 # The part is $Part (default: all). $Rec = 1 keeps the frames of M, L, G and R (and of a page
 # switch and a change of fence) in shots\b-<name> for the before/after pictures.
 if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'PMLGRS' }
@@ -23,6 +28,13 @@ public static class UxPx {
       if (System.Math.Abs(((p >> 16) & 255) - ((q >> 16) & 255)) > thr || System.Math.Abs(((p >> 8) & 255) - ((q >> 8) & 255)) > thr || System.Math.Abs((p & 255) - (q & 255)) > thr) n++;
     }
     return n;
+  }
+  // The smallest of the three channel means of a grab (a white picture: near 255).
+  public static int MinMean(int[] a) {
+    long r = 0, g = 0, b = 0;
+    foreach (int p in a) { r += (p >> 16) & 255; g += (p >> 8) & 255; b += p & 255; }
+    long n = System.Math.Max(1, a.Length);
+    return (int)System.Math.Min(r / n, System.Math.Min(g / n, b / n));
   }
 }
 '@
@@ -210,6 +222,47 @@ function PartS() {
   Check 'S a second click switches it back' ((Rules)[0].enabled -eq $was) "enabled is $((Rules)[0].enabled)"
 }
 if ($Part -match 'S') { PartS }
+
+# ---- C: 创建 closes the smart fence editor without a white frame
+function Fences() { return @(@(PfJson fence list) | Where-Object { $_ -and $_.id -and $_.kind -ne 'inbox' }) }
+function LastRow($m) { return (@(MenuRows $m) | Where-Object { $_.text } | Select-Object -Last 1) }
+function PartC() {
+  trap { PfTrap $_; continue }
+  Case 'C: 创建 closes the editor as it looked'
+  Pf settings set theme dark | Out-Null
+  Start-Sleep -Seconds 1
+  # 新建智能栅栏…: the last row of 添加到桌面, the last row of a fence's menu.
+  $wr = (FenceGet (Fences)[0].id).windowRect
+  [G]::RClick([int]($wr.x + $wr.w / 2), [int]($wr.y + 14)); Start-Sleep -Milliseconds 800
+  $m = MenuWin 5
+  $row = LastRow $m
+  [G]::Click([int](($row.L + $row.R) / 2), [int](($row.T + $row.B) / 2)); Start-Sleep -Milliseconds 800
+  $sub = @([W]::Tops('#32768')) | Where-Object { $_ -ne $m } | Select-Object -First 1
+  $s = LastRow $sub
+  [G]::Click([int](($s.L + $s.R) / 2), [int](($s.T + $s.B) / 2))
+  $ed = EditorWin
+  Check 'C the editor opened' ($ed -ne [IntPtr]::Zero) ''
+  if ($ed -eq [IntPtr]::Zero) { return }
+  $n = (Fences).Count
+  $chip = Js "(() => { const b = [...document.querySelectorAll('#seWindow [data-preset]')].filter(x => !x.disabled); return b.length ? b[0].dataset.preset : null; })()"
+  if ($chip) { PageClick "#seWindow [data-preset=$chip]"; Start-Sleep -Milliseconds 1000 }
+  $er = Rect $ed
+  $ok = PageRect '#seWindow .se-ok'
+  [G]::MoveTo($ok.cx, $ok.cy); Start-Sleep -Milliseconds 500
+  # The middle of the editor (dark mode: a dark page) from the click until the window is gone.
+  [Px]::Burst($er.L + 40, $er.T + 60, $er.R - $er.L - 80, $er.B - $er.T - 140, 900, 1); SaveBurst 'create'
+  $white = @()
+  for ($i = 0; $i -lt [Px]::Frames.Count; $i++) {
+    $c = [UxPx]::MinMean([Px]::Pixels([Px]::Frames[$i]))
+    if ($c -gt 190) { $white += "$([Px]::Times[$i]) ms (darkest channel $c)" }
+  }
+  Check 'C no frame of the closing editor is white' ($white.Count -eq 0) "$($white.Count) white frames: $($white -join '; ')"
+  Start-Sleep -Milliseconds 800
+  Check 'C the smart fence was created and the editor is gone' ((Fences).Count -eq $n + 1 -and (EditorCount) -eq 0) "fences $n -> $((Fences).Count), editor windows $(EditorCount)"
+  # Back on the settings page for what follows.
+  CdpOpen | Out-Null
+}
+if ($Part -match 'C') { PartC }
 
 # ---- recordings for the before/after pictures: a page switch, another fence
 if ($Rec) {
