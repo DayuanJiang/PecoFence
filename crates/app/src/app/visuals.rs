@@ -19,11 +19,17 @@ pub(super) fn theme_for(
         theme = theme.with_liquid_glass();
     }
     if let Some(p) = accent {
-        theme = theme.with_accent(if mode == ThemeMode::Dark {
-            p.light2
-        } else {
-            p.dark1
-        });
+        theme = theme
+            .with_accent(if mode == ThemeMode::Dark {
+                p.light2
+            } else {
+                p.dark1
+            })
+            .with_other_accent(if mode == ThemeMode::Dark {
+                p.dark1
+            } else {
+                p.light2
+            });
     }
     match custom {
         Some(c) => c.apply(theme),

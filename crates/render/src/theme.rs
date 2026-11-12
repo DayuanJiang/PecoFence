@@ -84,6 +84,8 @@ pub struct Theme {
     /// A custom theme's light and dark ink, which the text switches to over a bright or a
     /// dark backdrop (None = the built-in style's).
     pub custom_inks: Option<[Ink; 2]>,
+    /// The system accent shade of the other colour mode (see [`Self::with_other_accent`]).
+    pub other_accent: Option<[u8; 3]>,
     /// The 「文字颜色」 the text was fixed to by [`Self::with_label_color`]; titles and tabs
     /// over glass keep it instead of picking their ink from the wallpaper (Auto: they pick).
     pub label_color: pecofence_core::LabelColor,
@@ -168,6 +170,10 @@ pub struct Ink {
     subtle_hover: ColorF,
     subtle_pressed: ColorF,
     tab_active_fill: ColorF,
+    /// The accent tint of a selected item: the dark set's is a light shade for a dark plate,
+    /// the light set's a dark shade for a light one.
+    selection_fill: ColorF,
+    selection_stroke: ColorF,
     selection_fill_inactive: ColorF,
     selection_stroke_inactive: ColorF,
     focus_outer: ColorF,
@@ -185,6 +191,8 @@ impl Ink {
             subtle_hover: theme.subtle_hover,
             subtle_pressed: theme.subtle_pressed,
             tab_active_fill: theme.tab_active_fill,
+            selection_fill: theme.selection_fill,
+            selection_stroke: theme.selection_stroke,
             selection_fill_inactive: theme.selection_fill_inactive,
             selection_stroke_inactive: theme.selection_stroke_inactive,
             focus_outer: theme.focus_outer,
@@ -312,6 +320,7 @@ impl Theme {
             lens: Lens::BUILT_IN,
             shadow: ShadowOverride::NONE,
             custom_inks: None,
+            other_accent: None,
             label_color: pecofence_core::LabelColor::Auto,
             title_text: None,
             text_fx: [TextFx::NONE; 2],
@@ -352,6 +361,7 @@ impl Theme {
             lens: Lens::BUILT_IN,
             shadow: ShadowOverride::NONE,
             custom_inks: None,
+            other_accent: None,
             label_color: pecofence_core::LabelColor::Auto,
             title_text: None,
             text_fx: [TextFx::NONE; 2],
@@ -723,6 +733,10 @@ impl Theme {
     pub fn desktop_ink(self) -> Self {
         let ink = self.ink(ThemeMode::Dark);
         let mut theme = self.with_ink_of(ink);
+        // On bare wallpaper nothing says how bright the ground is: the selection stays the
+        // colour mode's.
+        theme.selection_fill = self.selection_fill;
+        theme.selection_stroke = self.selection_stroke;
         theme.text_halo = true;
         // Light text takes `text_fx[1]`; a theme file's own effects stay.
         if theme.text_fx[1] == TextFx::NONE {
@@ -744,19 +758,28 @@ impl Theme {
     }
 
     /// The ink of this style's `mode` variant: a custom theme's own, else the built-in one.
+    /// The selection tint of the theme's own mode is the theme's (the user's accent); the
+    /// other mode's takes that mode's accent shade when the theme was given it.
     fn ink(&self, mode: ThemeMode) -> Ink {
-        if let Some([light, dark]) = self.custom_inks {
-            return if mode == ThemeMode::Light {
-                light
-            } else {
-                dark
-            };
+        let mut ink = match self.custom_inks {
+            Some([light, _]) if mode == ThemeMode::Light => light,
+            Some([_, dark]) => dark,
+            None => {
+                let mut theme = Self::for_mode(mode);
+                if self.liquid_glass {
+                    theme = theme.with_liquid_glass();
+                }
+                if let Some(rgb) = self.other_accent {
+                    theme = theme.with_accent(rgb);
+                }
+                Ink::of(&theme)
+            }
+        };
+        if mode == self.mode {
+            ink.selection_fill = self.selection_fill;
+            ink.selection_stroke = self.selection_stroke;
         }
-        let mut theme = Self::for_mode(mode);
-        if self.liquid_glass {
-            theme = theme.with_liquid_glass();
-        }
-        Ink::of(&theme)
+        ink
     }
 
     /// Takes the text and control-feedback tokens of `foreground`; material, accent and
@@ -769,6 +792,8 @@ impl Theme {
         self.subtle_hover = foreground.subtle_hover;
         self.subtle_pressed = foreground.subtle_pressed;
         self.tab_active_fill = foreground.tab_active_fill;
+        self.selection_fill = foreground.selection_fill;
+        self.selection_stroke = foreground.selection_stroke;
         self.selection_fill_inactive = foreground.selection_fill_inactive;
         self.selection_stroke_inactive = foreground.selection_stroke_inactive;
         self.focus_outer = foreground.focus_outer;
@@ -792,6 +817,16 @@ impl Theme {
         self.selection_stroke = tint(self.selection_stroke.a);
         self.drop_highlight = tint(self.drop_highlight.a);
         self.accent = tint(1.0);
+        self
+    }
+
+    /// The system accent shade of the other colour mode (`AccentDark1` for a dark theme,
+    /// `AccentLight2` for a light one): the selection takes it when the text switches to the
+    /// other mode's because of the wallpaper. Light mode over a dark wallpaper kept its dark
+    /// accent tint on the dark plate, where a selected icon showed less than a hovered one
+    /// (1.13 : 1 against the plate; the hover fill 1.39 : 1).
+    pub fn with_other_accent(mut self, rgb: [u8; 3]) -> Self {
+        self.other_accent = Some(rgb);
         self
     }
 
@@ -890,9 +925,11 @@ mod tests {
                 on_dark.text_primary.r > 0.5,
                 "light ink over a dark wallpaper"
             );
-            // Material and accent stay the user's.
+            // Material and accent stay the user's; the selection tint goes with the text.
             assert_eq!(on_light.liquid_glass, base.liquid_glass);
-            assert_eq!(on_light.selection_fill, base.selection_fill);
+            assert_eq!(on_light.accent, base.accent);
+            assert_eq!(on_light.selection_fill, Theme::light().selection_fill);
+            assert_eq!(on_dark.selection_fill, Theme::dark().selection_fill);
             assert_eq!(on_light.glass_layer_fill, base.glass_layer_fill);
         }
     }
@@ -1052,13 +1089,39 @@ mod tests {
         assert_eq!(flipped.control_strong, light.control_strong);
         assert_eq!(flipped.mode, ThemeMode::Dark);
         assert_eq!(flipped.glass_layer_fill, dark.glass_layer_fill);
-        assert_eq!(flipped.selection_fill, dark.selection_fill);
+        assert_eq!(flipped.selection_fill, light.selection_fill);
+        assert_eq!(flipped.accent, dark.accent);
         assert_eq!(flipped.acrylic_tint(), dark.acrylic_tint());
         assert!(!flipped.text_halo);
-        // Light mode over a dark wallpaper: light text.
+        // Light mode over a dark wallpaper: light text, and the dark set's selection tint (the
+        // light mode's dark blue did not show on the dark plate).
         let flipped = over(light, [19, 20, 25]);
         assert!(flipped.text_primary.r > 0.9);
         assert_eq!(flipped.subtle_hover, dark.subtle_hover);
+        assert_eq!(flipped.selection_fill, dark.selection_fill);
+        assert_eq!(flipped.selection_stroke, dark.selection_stroke);
+        // With the user's accent: the other mode's shade of it, at that mode's strength; the
+        // mode's own where the text does not switch.
+        let (own, other) = ([0x00, 0x67, 0xC0], [0x4C, 0xC2, 0xFF]);
+        let accented = light.with_accent(own).with_other_accent(other);
+        let flipped = over(accented, [19, 20, 25]);
+        assert_eq!(
+            flipped.selection_fill,
+            dark.with_accent(other).selection_fill
+        );
+        assert_eq!(flipped.accent_rgb8(), own);
+        assert_eq!(
+            over(accented, [236, 239, 244]).selection_fill,
+            accented.selection_fill
+        );
+        let glass = accented.with_liquid_glass();
+        let kept = glass.over_glass(&crate::Image::solid(30, 30, [235; 3]));
+        assert_eq!(kept.selection_fill, glass.selection_fill);
+        let turned = glass.over_glass(&crate::Image::solid(30, 30, [20; 3]));
+        assert_eq!(
+            turned.selection_fill,
+            dark.with_accent(other).selection_fill
+        );
         assert_eq!(flipped.glass_layer_fill, light.glass_layer_fill);
         // Where the mode's own ink reads, nothing changes: matching wallpapers and the middle
         // greys, which each mode's plate pulls to its own side.
