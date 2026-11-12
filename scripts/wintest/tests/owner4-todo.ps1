@@ -1,6 +1,6 @@
 # Owner round 2026-11-12, fourth batch: a to-do of a note is moved by dragging it, zh-CN.
 # Parts (run.sh --var Part=...; D, C and K without it):
-#   D  the drag: the third to-do above the first, by the check box, ended with Esc, released
+#   D  the drag: the third to-do above the first, not by the check box, ended with Esc, released
 #      outside the fence, dropped under a plain line, in a locked fence, taken back with Ctrl+Z;
 #      the saved text after each
 #   C  a press without a move is the click it was: on a to-do the editor opens on the release (on
@@ -107,17 +107,17 @@ Check 'the note''s text changes on the release, not while the to-do is held' ($m
 Check 'the third to-do, a line that wraps, lands whole above the first; nothing else changes places' ($after -eq $want) "note: $(OneLine $after)"
 Check 'the drop opens no editor' (-not (EditorOpen)) "editor=$(EditorOpen)"
 
-Case 'D2 a drag that starts on the check box moves the line and ticks nothing'
+Case 'D2 a check box is no handle: its press is taken back by sliding off, as before'
 $w = Fresh $nid $T0; $c = CRect $w; $boxes = Rects $w 'note_boxes'
 $from = BoxPt $c $boxes 1; $to = BoxPt $c $boxes 2
+$lift0 = Lifts
 [G]::MoveTo($from[0], $from[1]); Start-Sleep -Milliseconds 300
 MDown; Start-Sleep -Milliseconds 200
 Glide $from[0] $from[1] ($from[0] + 3) ($to[1] + 6) 10 30
 Start-Sleep -Milliseconds 400
 MUp; Start-Sleep -Milliseconds 900
 $after = NoteText $nid
-$want = "周会后要做`n[x] 回邮件`n[ ] 买菜`n[ ] $Long`n备注：周五前"
-Check 'dragged by its check box one line down, the to-do changes places with the next and stays unticked' ($after -eq $want) "note: $(OneLine $after)"
+Check 'a press on a check box that slides down to the next line lifts nothing, moves nothing and ticks nothing' ($after -eq $T0 -and (Lifts) -eq $lift0 -and -not (EditorOpen)) "lifted (log): $lift0 -> $(Lifts); note: $(OneLine $after); editor=$(EditorOpen)"
 
 Case 'D3 Esc during the drag puts the line back'
 $w = Fresh $nid $T0; $c = CRect $w; $boxes = Rects $w 'note_boxes'

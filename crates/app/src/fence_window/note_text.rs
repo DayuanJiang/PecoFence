@@ -40,15 +40,16 @@ fn whole_char(text: &str, offset: usize) -> usize {
     }
 }
 
-/// 便签与待办: the press held on a to-do of a note that is not being edited. Released where
-/// it was pressed it is the click it always was (`click`: the editor opens with the caret
-/// there; a check box or a web address is `pressed`'s). Once the pointer leaves the system's
-/// drag threshold it is a drag: the line follows the pointer up and down, the lines it
-/// passes make room, and the release leaves it where it is shown.
+/// 便签与待办: the press held on the text of a to-do in a note that is not being edited.
+/// Released where it was pressed it is the click it always was (`click`: the editor opens
+/// with the caret there). Once the pointer leaves the system's drag threshold it is a drag:
+/// the line follows the pointer up and down, the lines it passes make room, and the release
+/// leaves it where it is shown. A check box and a web address are no handles: they are
+/// buttons, whose press is taken back by sliding off them.
 pub(super) struct TodoDrag {
     /// Client point of the press.
     pub(super) start: (i32, i32),
-    pub(super) click: Option<Command>,
+    pub(super) click: Command,
     /// The pressed to-do's line in the note's text.
     pub(super) from: usize,
     /// The line it is shown at (it changes as the to-do passes its neighbours).
@@ -229,25 +230,18 @@ impl FenceViewState {
         (todo && cy >= top - 3.0).then_some((line, cy - top))
     }
 
-    /// Button-down in a note that is not being edited, at client point (`x`, `y`). `click`
-    /// is what a click there does (the editor opens); None for a press on a check box or a
-    /// web address, which `pressed` holds. On a to-do the press is held here: its click
-    /// waits for the release, since the press may become a drag of the line (the caller
-    /// takes the mouse capture). Anywhere else nothing can be dragged and `click` comes
-    /// back to be done at once, as it always was.
-    pub(super) fn begin_todo_press(
-        &mut self,
-        x: i32,
-        y: i32,
-        click: Option<Command>,
-    ) -> Option<Command> {
+    /// Button-down on the text of a note that is not being edited, at client point (`x`,
+    /// `y`). `click` is what a click there does (the editor opens). On a to-do the press is
+    /// held here: its click waits for the release, since the press may become a drag of the
+    /// line (the caller takes the mouse capture). Anywhere else nothing can be dragged and
+    /// `click` comes back to be done at once, as it always was.
+    pub(super) fn begin_todo_press(&mut self, x: i32, y: i32, click: Command) -> Option<Command> {
         let Some((line, grab_dy)) = self.todo_line_at(y) else {
-            return click;
+            return Some(click);
         };
         tracing::debug!(
             fence = %self.active,
             line,
-            opens_editor = click.is_some(),
             "to-do pressed: the click waits for the release"
         );
         self.todo_drag = Some(TodoDrag {
@@ -278,12 +272,13 @@ impl FenceViewState {
         }
         let was_outside = d.outside;
         let now = Instant::now();
-        let (prev, _) = self.note_line_tops(now);
         // Out of the fence by more than the distance that tears a tab off: the line goes
-        // back to its place, and comes back under the pointer when the pointer does.
+        // back to its place, and comes back under the pointer when the pointer does. The
+        // lines glide from where they are drawn at that moment.
         let far = (TAB_DETACH_DIP * self.scale()) as i32;
         let (w, h) = self.chrome_panel.size_px();
         let outside = x < -far || y < -far || x >= w + far || y >= h + far;
+        let prev = (outside != was_outside).then(|| self.note_line_tops(now).0);
         let pointer_y = (y - self.content_y) as f32 / self.scale() + self.scroll_y;
         if let Some(d) = self.todo_drag.as_mut() {
             d.moved = true;
@@ -291,11 +286,6 @@ impl FenceViewState {
             d.pointer_y = pointer_y;
         }
         if started {
-            // The press is the drag's from here on: no check box ticks, no link opens.
-            self.pressed = None;
-            self.press_inside = false;
-            self.note_box_hover = None;
-            self.note_link_hover = None;
             self.hide_tip();
             self.note_lift = Some((
                 from,
@@ -304,12 +294,13 @@ impl FenceViewState {
             ));
             tracing::debug!(fence = %self.active, line = from, "to-do drag starts");
         }
-        if outside != was_outside {
+        if let Some(prev) = prev {
             tracing::debug!(fence = %self.active, outside, "to-do drag: pointer out of the fence");
             self.sync_note_slides(&prev, now);
         }
-        self.reorder_dragged_todo(now);
-        // Drawn once per frame by `tick`, not once per mouse message.
+        // The line changes places with its neighbours and is drawn once per frame
+        // (`redraw_note` from `tick`), not once per mouse message: a mouse reports up to
+        // 1000 times a second, and every look at the lines lays their text out.
         self.content_busy = true;
         self.frames.request();
         Some(started)
@@ -317,8 +308,9 @@ impl FenceViewState {
 
     /// The dragged to-do changes places with the lines it has passed: one line per step
     /// (its middle past the neighbour's middle, as a dragged tab), repeated so that a fast
-    /// move crosses several lines at once.
-    fn reorder_dragged_todo(&mut self, now: Instant) {
+    /// move crosses several lines at once. Called before the note is drawn and before the
+    /// line is dropped.
+    pub(super) fn reorder_dragged_todo(&mut self, now: Instant) {
         let Some((from, shown_to, pointer, grab)) = self.lifted_todo() else {
             return;
         };
@@ -350,11 +342,16 @@ impl FenceViewState {
     /// tells the app to store it) or, taken back or released outside the fence, into the
     /// place it came from. The caller pushes the command and redraws the content.
     pub(super) fn end_todo_drag(&mut self, commit: bool) -> Option<Command> {
+        self.todo_drag.as_ref()?;
         let now = Instant::now();
+        if commit {
+            // The pointer may have moved since the last frame.
+            self.reorder_dragged_todo(now);
+        }
         let (prev, _) = self.note_line_tops(now);
         let d = self.todo_drag.take()?;
         if !d.moved {
-            return d.click.filter(|_| commit);
+            return commit.then_some(d.click);
         }
         let from = d.from;
         let to = if commit && !d.outside { d.to } else { from };

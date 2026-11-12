@@ -312,8 +312,6 @@ pub(super) fn on_lbuttondown(
         // A note's check box, a script fence's clickable row: pressed look now, the action on
         // a release over it.
         if v.press_tool_at(x, y, false).is_some() {
-            // On a to-do's check box or web address: a drag from there moves the line.
-            let _ = v.begin_todo_press(x, y, None);
             drop(guard);
             window::set_capture(hwnd);
             queue.push(Command::RaiseFence(hwnd));
@@ -323,7 +321,7 @@ pub(super) fn on_lbuttondown(
         // on the release, since the press may become a drag of the line (`TodoDrag`); on
         // other text, where nothing can be dragged, at once.
         if let Some(cmd) = v.note_press(x, y) {
-            let at_once = v.begin_todo_press(x, y, Some(cmd));
+            let at_once = v.begin_todo_press(x, y, cmd);
             drop(guard);
             match at_once {
                 Some(cmd) => queue.push(cmd),

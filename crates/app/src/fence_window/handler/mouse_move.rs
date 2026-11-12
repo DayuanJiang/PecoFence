@@ -417,11 +417,8 @@ pub(super) fn on_mousemove(
                 }
                 return Some(0);
             }
-            Some(false) => return Some(0),
-            // Still a click. A check box or a web address goes on tracking the pointer
-            // below; the text has nothing to track.
-            None if v.pressed.is_none() => return Some(0),
-            None => {}
+            // Following the pointer, or still a click: the text has nothing to track.
+            Some(false) | None => return Some(0),
         }
     }
     // A release-fired button is held: track whether the pointer is still

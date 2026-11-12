@@ -1575,6 +1575,8 @@ impl FenceViewState {
         if self.note.is_none() {
             return Ok(());
         }
+        // A dragged to-do changes places with the lines the pointer has passed.
+        self.reorder_dragged_todo(Instant::now());
         // While the note is edited, the editor's text with its selection and caret; while a
         // to-do is dragged, the text with that line where it has got to.
         let marks = self.note_edit_marks();
