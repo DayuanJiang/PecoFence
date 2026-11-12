@@ -83,7 +83,9 @@ pub(super) fn on_mouseleave(
         if !inside
             || !matches!(
                 v.tip_target,
-                Some(TipTarget::Desktops | TipTarget::FilterTag | TipTarget::Lock)
+                Some(
+                    TipTarget::Desktops | TipTarget::FilterTag | TipTarget::Lock | TipTarget::Title
+                )
             )
         {
             v.hide_tip();

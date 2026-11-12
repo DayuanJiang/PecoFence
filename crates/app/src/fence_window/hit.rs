@@ -266,6 +266,40 @@ impl FenceViewState {
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
     }
 
+    /// Is the single title drawn cut short (it ends in an ellipsis)? Its infotip then shows the
+    /// whole title, as a cut tab caption's does. Never for a tab strip, a left tab column (the
+    /// tabs have their own infotips) or the desktop fence without a title row.
+    pub(super) fn lone_title_cut(&self) -> bool {
+        if self.title_row_strip() || self.tabs_on_rail() || self.bare() {
+            return false;
+        }
+        let width = self.chrome_panel.size_px().0 as f32 / self.scale();
+        // As drawn (see `desktop_glyph_at`): the rolled count's room at the right.
+        let reserve = if self.roll_target()
+            && !self.behavior.hide_count_and_chevron.get()
+            && self.title_count.is_none()
+            && self.filter_tag.is_none()
+        {
+            pecofence_render::fence_chrome::header_count_width(
+                width - self.laid_deco().lock_w(),
+                1,
+                self.deco.title_x(),
+            )
+        } else {
+            0.0
+        };
+        self.chrome.lone_title_cut(
+            &self.title,
+            self.title_count.as_deref(),
+            self.filter_tag_ref(),
+            self.style.title_size,
+            self.behavior.title_align.get(),
+            width,
+            self.laid_deco(),
+            reserve,
+        )
+    }
+
     /// The portal up button in a left tab column (DIPs): at the end of the shown tab's row, as
     /// drawn (`TitleDeco::rail_up_box`). A column the fence is collapsed to has none.
     pub(super) fn rail_up_box(&self) -> Option<Rect> {

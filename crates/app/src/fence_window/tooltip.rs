@@ -34,6 +34,10 @@ pub(super) enum TipTarget {
     FilterTag,
     /// The lock glyph of a locked fence: how to unlock it.
     Lock,
+    /// A single title that is drawn cut short: all of it.
+    Title,
+    /// The arrow at the right of the title: what a click on it does (收起 / 展开).
+    Chevron,
 }
 
 /// TME_HOVER rectangle test: has the pointer left the `rect` (SPI_GETMOUSEHOVERWIDTH x
@@ -181,6 +185,15 @@ impl FenceViewState {
             )),
             TipTarget::Up => Some(with_folder(pecofence_core::i18n::text("向上"))),
             TipTarget::Desktops => self.desktop_tip.clone(),
+            TipTarget::Title => Some(self.title.clone()),
+            TipTarget::Chevron => Some(
+                pecofence_core::i18n::text(if self.roll_target() {
+                    "展开"
+                } else {
+                    "收起"
+                })
+                .to_string(),
+            ),
             TipTarget::Lock => {
                 Some(pecofence_core::i18n::text("已锁定位置和大小，右键可解除锁定").to_string())
             }

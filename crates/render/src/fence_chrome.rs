@@ -2672,6 +2672,25 @@ impl FenceChrome {
         Rect::from_xywh(x - 2.0, 0.0, 20.0, title_h)
     }
 
+    /// Is a single title laid out with `deco` drawn cut short (it ends in an ellipsis)? Its
+    /// infotip then shows all of it, as a cut tab caption's does.
+    #[allow(clippy::too_many_arguments)]
+    pub fn lone_title_cut(
+        &self,
+        title: &str,
+        count: Option<&str>,
+        tag: Option<(&str, &str, &str)>,
+        size: u8,
+        align: pecofence_core::TitleAlign,
+        width: f32,
+        deco: TitleDeco,
+        reserve: f32,
+    ) -> bool {
+        let (_, fitted, _) =
+            self.lone_title_place(title, count, tag, size, align, width, deco, reserve);
+        fitted != title
+    }
+
     /// Width a caption gets in a row of a `rail_w` DIP left tab column: after the colour dot's
     /// room when any tab has a colour and the folder glyph's when any tab has one, before the
     /// badge and the portal up button.

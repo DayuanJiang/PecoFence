@@ -510,9 +510,13 @@ pub(super) fn on_mousemove(
     let script_changed = (std::mem::replace(&mut v.script_hover, script_row) != script_row)
         | (std::mem::replace(&mut v.note_box_hover, note_box) != note_box)
         | v.hover_empty_action((!sb_hot && !on_control).then_some((x, y)));
-    let tip = v
-        .tip_target_at(x, y, hit.filter(|_| behavior.info_tips.get()))
-        .or(script_row.map(TipTarget::ScriptRow));
+    // The arrow says what a click on it does, as the buttons of a window's title bar do.
+    let tip = if chev {
+        Some(TipTarget::Chevron)
+    } else {
+        v.tip_target_at(x, y, hit.filter(|_| behavior.info_tips.get()))
+            .or(script_row.map(TipTarget::ScriptRow))
+    };
     v.update_tip_target(tip, x, y);
     let header = if divider.is_some() || on_control {
         None

@@ -237,9 +237,14 @@ pub(super) fn on_ncmousemove(
             Some(TipTarget::Desktops)
         } else if v.lock_glyph_at(pt.x, pt.y) {
             Some(TipTarget::Lock)
+        } else if v.cut_filter_tag_at(pt.x, pt.y) {
+            Some(TipTarget::FilterTag)
         } else {
-            v.cut_filter_tag_at(pt.x, pt.y)
-                .then_some(TipTarget::FilterTag)
+            // A title cut short with an ellipsis: the caption shows all of it, as a cut tab
+            // caption does. A rolled-up fence that the resting pointer is about to expand
+            // shows none: the tip would come up over the icons as they appear.
+            let expands = v.rolled_up && !v.behavior.click_to_expand.get();
+            (is_title && !expands && v.lone_title_cut()).then_some(TipTarget::Title)
         };
         v.update_tip_target(tip, pt.x, pt.y);
         if item && !v.rolled_up {
@@ -313,7 +318,7 @@ pub(super) fn on_ncmouseleave(
         // (WM_MOUSEMOVE decides over the client area).
         if matches!(
             v.tip_target,
-            Some(TipTarget::Desktops | TipTarget::FilterTag | TipTarget::Lock)
+            Some(TipTarget::Desktops | TipTarget::FilterTag | TipTarget::Lock | TipTarget::Title)
         ) {
             v.hide_tip();
         }
