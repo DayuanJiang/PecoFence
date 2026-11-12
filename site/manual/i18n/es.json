@@ -590,6 +590,7 @@
   "保存快照": "Guardar instantánea",
   "快照名称（可选）": "Nombre (opcional)",
   "尚无快照": "Aún no hay instantáneas",
+  "点上面的“保存快照”，以后可以随时恢复到现在的布局。": "Pulsa «Guardar instantánea», arriba, y podrás volver cuando quieras a la distribución actual.",
   "{0} 个栅栏": "Grupos: {0}",
   "自动保存": "Guardada automáticamente",
   "恢复": "Restaurar",

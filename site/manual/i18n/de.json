@@ -590,6 +590,7 @@
   "保存快照": "Momentaufnahme speichern",
   "快照名称（可选）": "Name (optional)",
   "尚无快照": "Noch keine Momentaufnahmen",
+  "点上面的“保存快照”，以后可以随时恢复到现在的布局。": "Klick oben auf „Momentaufnahme speichern“, dann kannst du jederzeit zum jetzigen Layout zurückkehren.",
   "{0} 个栅栏": "Bereiche: {0}",
   "自动保存": "Automatisch gespeichert",
   "恢复": "Wiederherstellen",

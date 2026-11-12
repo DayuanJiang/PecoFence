@@ -117,8 +117,11 @@
         r.save = SM.button(save, '保存快照', 62, { accent: true, right: 10, top: 40 });
         const nameRight = 18 + r.save.w;
         r.name = SM.input(save, '快照名称（可选）', Math.min(132, pg.cardW - nameRight - 12), { right: nameRight, top: 40 });
-        r.empty = SM.card(pg, { s: '尚无快照', h: 34, indent: 22, textW: 200 });
-        r.empty.s.style.top = '10px';
+        // the empty list: its title and a second line that says what to do, which wraps as on the
+        // page (two lines here; a longer translation ends in an ellipsis)
+        r.empty = SM.card(pg, { t: '尚无快照', s: '点上面的“保存快照”，以后可以随时恢复到现在的布局。', h: 58, indent: 22, textW: pg.cardW - 46 });
+        r.empty.t.style.top = '8px';
+        Object.assign(r.empty.s.style, { top: '24px', whiteSpace: 'normal', display: '-webkit-box', webkitLineClamp: '2', webkitBoxOrient: 'vertical' });
         const now = SM.dateTime(NOW, new Date(2026, 9, 6, 10, 24));
         // a snapshot the app saved by itself says so after its date and count (「… · 自动保存」);
         // this narrow window has no room for it there, so it stands on the line below, where

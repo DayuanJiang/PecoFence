@@ -81,11 +81,13 @@
         r.scene.style.opacity = loopFade(t, D, looped);
         const p = pathAt(t, PATH);
 
-        // PecoFence starts: tray icon, then the fences fade in one after another
+        // PecoFence starts: tray icon, then the fences fade in one after another. On quit the
+        // fences stay for 0.4 s, until the desktop's own icons are on their way back, and then
+        // fade (167 ms), as the app does
         const on = ramp(t, 1.6, 1.85), off = ramp(t, QUIT_AT + .15, QUIT_AT + .35, E.lin);
         put(r.tb.mark, 0, 0, on * (1 - off), ` scale(${lerp(.4, 1, on)})`);
         r.fences.forEach((f, i) => {
-            const o = ramp(t, 1.9 + i * .08, 2.15 + i * .08) * (1 - ramp(t, QUIT_AT + .1, QUIT_AT + .27, E.lin));
+            const o = ramp(t, 1.9 + i * .08, 2.15 + i * .08) * (1 - ramp(t, QUIT_AT + .4, QUIT_AT + .567, E.lin));
             if (show(f.n, o > 0)) put(f.n, f.x, f.y, o, ` scale(${lerp(.97, 1, Math.min(1, o * 1.5))})`);
         });
 

@@ -590,6 +590,7 @@
   "保存快照": "Enregistrer l’instantané",
   "快照名称（可选）": "Nom (facultatif)",
   "尚无快照": "Aucun instantané pour le moment",
+  "点上面的“保存快照”，以后可以随时恢复到现在的布局。": "Cliquez sur « Enregistrer l’instantané » ci-dessus pour pouvoir revenir à tout moment à la disposition actuelle.",
   "{0} 个栅栏": "Groupes : {0}",
   "自动保存": "Enregistré automatiquement",
   "恢复": "Restaurer",

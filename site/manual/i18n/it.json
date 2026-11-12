@@ -590,6 +590,7 @@
   "保存快照": "Salva istantanea",
   "快照名称（可选）": "Nome (facoltativo)",
   "尚无快照": "Nessuna istantanea",
+  "点上面的“保存快照”，以后可以随时恢复到现在的布局。": "Fai clic su «Salva istantanea» qui sopra per poter tornare in qualsiasi momento al layout attuale.",
   "{0} 个栅栏": "Riquadri: {0}",
   "自动保存": "Salvata automaticamente",
   "恢复": "Ripristina",
