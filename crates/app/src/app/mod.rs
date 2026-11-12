@@ -3004,6 +3004,13 @@ impl App {
             Command::NoteCaretBlink { fence, on } => {
                 if let Some(w) = self.window_for(fence) {
                     w.set_note_caret_on(on);
+                    // The note was scrolled by the wheel, or its fence was pushed aside,
+                    // since the caret was placed: the editor's control (and with it the
+                    // input method's window) follows the caret as it is drawn now. Nothing
+                    // moves when the place is the same.
+                    if let Some((x, top, _)) = w.note_caret_screen() {
+                        crate::note_edit::place_caret(fence, x, top);
+                    }
                 }
             }
             Command::NoteCaret {
