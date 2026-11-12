@@ -1857,6 +1857,8 @@ impl FenceWindow {
             v.note_edit = edit;
             if v.note_edit.is_none() {
                 v.note_drag = false;
+                // A hover expansion that the editor held open counts down again.
+                v.resume_peek_close();
             }
             if moved {
                 v.note_caret_into_view();
@@ -2108,6 +2110,14 @@ impl FenceWindow {
                 }
             }
         }
+    }
+
+    /// Rolled up and at rest or rolling up: not open by a hover expansion.
+    pub fn rests_rolled(&self) -> bool {
+        self.view
+            .borrow()
+            .as_ref()
+            .is_some_and(|v| v.roll_target() && !v.peeking)
     }
 
     /// Ends a peek without rolling back (the fence stays expanded).

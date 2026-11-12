@@ -572,7 +572,9 @@ pub(super) fn on_timer_peek_close(
     let popup = menu_open.get()
         || view.try_borrow().ok().is_some_and(|g| {
             g.as_ref()
-                .is_some_and(|v| v.renaming.is_some() || v.title_renaming)
+                // A note that is being edited keeps its fence open too: the editor draws
+                // nothing itself, so a fence that rolled up left the typing unseen.
+                .is_some_and(|v| v.renaming.is_some() || v.title_renaming || v.note_edit.is_some())
         });
     // A Peek search holds it open; ending the search restarts this countdown.
     if view

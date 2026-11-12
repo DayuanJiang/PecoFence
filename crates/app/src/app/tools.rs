@@ -1066,6 +1066,12 @@ impl App {
             tracing::info!(%fence, "note editor not opened: no such note");
             return;
         };
+        // A rolled-up note (「编辑便签」 or 「添加待办」 from its title's menu) opens first: the
+        // editor draws nothing itself, the fence shows the text, and a rolled one shows none.
+        if self.window_for(fence).is_some_and(|w| w.rests_rolled()) {
+            tracing::info!(%fence, "note editor: the rolled-up fence opens first");
+            self.set_roll(fence, false);
+        }
         let Some(w) = self.window_for(fence) else {
             tracing::info!(%fence, "note editor not opened: the note has no window");
             return;
