@@ -5,7 +5,9 @@
 #   C  a tab split out lands off the window it left while 「桌面」 is arranged like the desktop
 #   D  a tab dragged along the strip hides the names it passes over
 #   E  the tips of the title's folder and up arrow name the folder shown
-if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'ABCDE' }
+#   F  into a subfolder: the title fades in with the icons
+#   G  a folder renamed away is noticed when the pointer comes onto its fence
+if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'ABCDEFG' }
 
 function Sx($d, $x) { return [int]($d.l + $d.ox + $x) }
 function TitleY($d) { return [int]($d.t + $d.oy + 18) }
@@ -229,6 +231,74 @@ function PartE() {
   PfQuit
 }
 
+function PartF() {
+  trap { PfTrap $_; continue }
+  Case 'F into a subfolder: the title fades in with the icons'
+  . C:\pf\kit\rec.ps1
+  $root = "$PfRun\标题文件夹"
+  New-Item -ItemType Directory -Force "$root\子文件夹甲乙丙丁" | Out-Null
+  Set-Content -LiteralPath "$root\计划书.txt" 'x'; Set-Content -LiteralPath "$root\子文件夹甲乙丙丁\里面的文件.txt" 'x'
+  $animWas = [Anim]::Get(); [Anim]::Set($true)
+  PfStart -Script (DumpScript) -Lang 'zh-CN'
+  Pf settings set theme light | Out-Null
+  ClearFences | Out-Null; SmallInbox
+  $fid = (PfJson fence create --portal $root --rect '60,60,480,330').fence.id
+  Pf fence rename $fid 资料 | Out-Null
+  Start-Sleep -Seconds 2
+  DeskClick 1100 760; Start-Sleep -Milliseconds 300
+  $p = ItemAt $fid '子文件夹甲乙丙丁'
+  RecStart 'F-title' -X 60 -Y 60 -W 260 -H 36 -Fps 30
+  Start-Sleep -Milliseconds 300
+  DblClick $p[0] $p[1]; Start-Sleep -Milliseconds 900
+  RecStop
+  [Anim]::Set($animWas)
+  # The ink of the title in every frame, in the columns that only the longer new name reaches.
+  $profs = @()
+  foreach ($f in (Get-ChildItem "$PfShots\rec-F-title" -Filter *.jpg | Sort-Object Name)) {
+    $b = [Drawing.Bitmap]::FromFile($f.FullName); $profs += , ([Px]::Ink($b, 6, 30)); $b.Dispose()
+  }
+  $endOf = { param($pr) $e = 0; for ($i = 36; $i -lt 260; $i++) { if ($pr[$i] -ge 60) { $e = $i } }; $e }
+  $xa = & $endOf $profs[0]; $x1 = & $endOf $profs[-1]
+  $vals = @($profs | ForEach-Object { $s = 0; for ($i = $xa + 4; $i -le $x1; $i++) { $s += $_[$i] }; $s })
+  $full = $vals[-1]
+  $partial = @($vals | Where-Object { $_ -gt 0.15 * $full -and $_ -lt 0.85 * $full }).Count
+  Check 'the fence went into the subfolder and its title is the longer name' ($x1 -gt $xa + 20 -and $full -gt 500) "old name ends at $xa px, new at $x1 px, ink of the new part $full"
+  Check 'the new name fades in (frames that show it part-way)' ($partial -ge 1 -and $partial -le 6) "frames part-way: $partial of $($vals.Count); ink of the new part per frame: $(($vals | ForEach-Object { [int](100 * $_ / [math]::Max(1, $full)) }) -join ' ') %"
+  PfQuit
+}
+
+function PartG() {
+  trap { PfTrap $_; continue }
+  Case 'G a folder renamed away is noticed when the pointer comes onto its fence'
+  $root = "$PfRun\指针文件夹"
+  New-Item -ItemType Directory -Force $root | Out-Null
+  foreach ($n in '计划书.txt', '预算表.txt') { Set-Content -LiteralPath "$root\$n" 'x' }
+  PfStart -Script (DumpScript) -Lang 'zh-CN'
+  ClearFences | Out-Null; SmallInbox
+  $fid = (PfJson fence create --portal $root --rect '60,60,480,330').fence.id
+  Pf fence create --title 普通 --rect '620,60,300,220' | Out-Null
+  Pf item move "$PfDesk\年度报告.txt" --to 普通 | Out-Null
+  Start-Sleep -Seconds 2
+  ParkMouse 1100 760; Start-Sleep -Milliseconds 300
+  Rename-Item -LiteralPath $root '指针文件夹-改名'; Start-Sleep -Milliseconds 1200
+  $before = Count $fid
+  [G]::MoveTo(300, 250); Start-Sleep -Milliseconds 150; [G]::MoveTo(310, 256); Start-Sleep -Milliseconds 900
+  $after = Count $fid
+  Check 'the pointer on the fence: it says that the folder is gone' ($before -eq 2 -and $after -eq 0) "icons before the pointer came: $before, after: $after; $(LastLog 'no longer at its path')"
+  Shot 'G1-pointer-in'
+  # It takes no drop now: a file dragged onto it stays, and no move is tried.
+  $fails = @(PfLogAll | Select-String -Pattern 'move into folder failed').Count
+  $p = ItemAt 普通 '年度报告'
+  DragTo $p[0] $p[1] 300 250; Start-Sleep -Milliseconds 1200
+  $fails2 = @(PfLogAll | Select-String -Pattern 'move into folder failed').Count
+  Check 'a file dragged onto the fence that says so is refused (no move is tried)' ((Test-Path -LiteralPath "$PfDesk\年度报告.txt") -and $fails2 -eq $fails) "on the desktop: $(Test-Path -LiteralPath "$PfDesk\年度报告.txt"); failed moves in the log before $fails, after $fails2"
+  Rename-Item -LiteralPath "$PfRun\指针文件夹-改名" '指针文件夹'
+  $ms = WaitCount $fid 2 8
+  Check 'the folder is shown again within 3 s of its return' ($ms -is [int] -and $ms -le 3000) "shown after $ms ms"
+  CloseWindows
+  PfQuit
+}
+
 Case 'setup'
 CloseWindows
 GreyWallpaper
@@ -239,6 +309,8 @@ if ($Part -match 'B') { PartB }
 if ($Part -match 'C') { PartC }
 if ($Part -match 'D') { PartD }
 if ($Part -match 'E') { PartE }
+if ($Part -match 'F') { PartF }
+if ($Part -match 'G') { PartG }
 
 Case 'end'
 if (PfAlive) { PfQuit }
