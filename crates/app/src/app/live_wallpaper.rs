@@ -2,15 +2,16 @@
 //! player window, so the backdrops show captures of that window instead (feedback #24). A
 //! capture is a still picture: Liquid Glass frosts it (see `MonitorRecipe::show_live`), and it
 //! is taken again for a new window, after a wallpaper signal, when the desktop comes to the
-//! front, and every half minute while a fence on that monitor can be seen.
+//! front, and every ten seconds while a fence on that monitor can be seen.
 
 use super::visuals::{MonitorRecipe, backdrop_signature, monitor_recipes};
 use super::*;
 use crate::commands::WM_APP_LIVE_WALLPAPER;
 use pecofence_platform::{live_capture, live_wallpaper};
 
-/// A visible fence's backdrop catches up with the live wallpaper this often.
-pub(super) const LIVE_REFRESH: Duration = Duration::from_secs(30);
+/// A visible fence's backdrop catches up with the live wallpaper this often. With the light
+/// frost (see `LIVE_FROST_DIP`) this is what keeps a still frame from reading as frozen.
+pub(super) const LIVE_REFRESH: Duration = Duration::from_secs(10);
 /// The desktop came to the front: no new capture if the last one is this recent.
 pub(super) const LIVE_FRONT_REFRESH: Duration = Duration::from_secs(2);
 /// A new window (every window after a wallpaper signal) is captured again at every check (at
@@ -24,10 +25,10 @@ const LIVE_GONE_AFTER: Duration = Duration::from_secs(2);
 /// A capture whose result has not come back after this is given up (see
 /// `capture_live_wallpapers`).
 const LIVE_CAPTURE_GIVE_UP: Duration = Duration::from_secs(30);
-/// Captures are kept this many times smaller than the monitor. Liquid Glass shows the capture
-/// (frosted) as the fence's backdrop, so it keeps half the monitor's pixels, as a still
-/// wallpaper does; acrylic discards that detail anyway.
-const CAPTURE_DOWNSCALE: u32 = 2;
+/// Captures keep the player window's own pixels. Liquid Glass shows a capture as the fence's
+/// backdrop (Liquid Glass only), and a detailed wallpaper must not be softened before the
+/// glass sees it; acrylic downsamples it in `MonitorBackdrop::build` anyway.
+const CAPTURE_DOWNSCALE: u32 = 1;
 /// Wallpaper Engine's clone mode shows one monitor's wallpaper on the others in windows of this
 /// class, through a DWM thumbnail of the window it copies (feedback #55).
 const CLONE_CLASS: &str = "WPECloneView";
