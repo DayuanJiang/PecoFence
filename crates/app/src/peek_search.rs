@@ -1439,16 +1439,30 @@ fn paint_box(hwnd: HWND) {
             );
         }
         // The bottom bar: what the keys do, and how many results in all (more than shown).
-        // It ends the list: under the last row, also while the window is on its way to the
-        // list's height (a shorter list: the window's edge comes up to the bar; a longer one:
-        // the edge goes down over the rows and reaches the bar last).
-        let y0 = s.list_h - px(BAR_H);
+        // It ends the list, under the last row. While the window is on its way to a shorter
+        // list's height the bar is at its final place and the window's edge comes up to it;
+        // on the way to a longer list it stays at the window's edge, over the rows the edge
+        // has not reached yet, so the box ends with its bar in every frame.
+        let bar_bottom = h.min(s.list_h);
+        let y0 = bar_bottom - px(BAR_H);
+        let edge = 1.max(px(1.0));
+        if bar_bottom < s.list_h {
+            p.fill(
+                RECT {
+                    left: edge,
+                    top: y0,
+                    right: w - edge,
+                    bottom: bar_bottom - edge,
+                },
+                back,
+            );
+        }
         p.fill(
             RECT {
                 left: 0,
                 top: y0,
                 right: w,
-                bottom: y0 + 1.max(px(1.0)),
+                bottom: y0 + edge,
             },
             line,
         );
@@ -1456,7 +1470,7 @@ fn paint_box(hwnd: HWND) {
             left: pad,
             top: y0,
             right: w - pad,
-            bottom: s.list_h,
+            bottom: bar_bottom,
         };
         // Ctrl+Enter and the actions need a file: the two action rows and system items (此电脑)
         // have none, and the keys do nothing there.
