@@ -569,6 +569,22 @@ function FrChecks() {
   Shot 'c3-after'
   Check 'C3 after Esc the keys are with another window and no icon shows the focus ring' ((Fg) -notmatch 'PecoFence' -and $after -lt 10) "fg=$(Fg) ring row=$after px (during the Peek $during) focus_ring=$(DumpVal $w 'focus_ring') selected=$(DumpVal $w 'selected')"
 
+  # C5: the Peek was opened from the desktop and closed with Esc: the keyboard is back on the
+  # desktop (Windows gave it to the taskbar). Opened while a fence had the keyboard: back in
+  # that fence, and the arrow keys go on there.
+  Case 'C5 the keyboard goes back where it was after a Peek'
+  Check 'C5 opened from the desktop: after Esc the desktop has the keyboard' ((Fg) -match '^(Progman|WorkerW)') "fg=$(Fg)"
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
+  ParkMouse 1300 700
+  $was = Fg
+  PeekKey; Start-Sleep -Seconds 1
+  $during = Fg
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 1500
+  $now = Fg
+  [G]::Press(0x27); Start-Sleep -Milliseconds 500
+  $w = DumpOf 'Kb' 4
+  Check 'C5 opened from a fence: after Esc that fence has the keyboard and Right moves on' ($was -match "PecoFence.Fence 'Kb'" -and $during -match 'PeekDimmer' -and $now -eq $was -and (FkFocus $w) -ne $name -and (DumpVal $w 'selected') -eq '1') "before=$was during=$during after=$now focused=[$(FkFocus $w)] (was [$name])"
+
   # C4: 退出 in the tray menu. File Explorer shows its icons about a third of a second after it
   # is asked; the fences used to be gone after 167 ms, and the desktop was empty in between.
   # (The sampling is the one of owner2-ux-fence-life.ps1 part Q.)
@@ -579,6 +595,29 @@ function FrChecks() {
   $fr = Rect ([G]::FindWindowW('PecoFence.Fence', '程序'))
   ParkMouse 800 850
   $sy = 104; $sh = 60; $fx = $fr.L + 10
+  # C6 first, with the same sampling: 「临时显示 Windows 桌面」 had the same empty moment.
+  Case 'C6 the desktop is not empty on the way to the Windows desktop'
+  $samples = New-Object System.Collections.Generic.List[object]
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  Start-Process "$PfApp\pecofence-cli.exe" -ArgumentList 'windows-desktop start' -WindowStyle Hidden | Out-Null
+  while ($sw.ElapsedMilliseconds -lt 2000) {
+    $t = $sw.ElapsedMilliseconds
+    $bs = [Px]::Grab(0, $sy, 1600, $sh)
+    $samples.Add(@($t, [Px]::MaxInk($bs, 8, 80, 0, $sh - 1), [Px]::MaxInk($bs, $fx, $fx + 200, 0, $sh - 1)))
+    $bs.Dispose()
+  }
+  Log ("C6 samples (ms:Windows icon/fence): " + ((@($samples | Where-Object { $_[0] -lt 1400 }) | ForEach-Object { "$($_[0]):$($_[1])/$($_[2])" }) -join ' '))
+  $goneAt = @($samples | Where-Object { $_[2] -lt 10 } | Select-Object -First 1)
+  $tGone = -1; if ($goneAt.Count) { $tGone = $goneAt[0][0] }
+  $back = @($samples | Where-Object { $_[1] -ge 25 } | Select-Object -First 1)
+  $tBack = -1; if ($back.Count) { $tBack = $back[0][0] }
+  Check 'C6 setup: the fences went and the Windows icons show' ((VisFences) -eq 0 -and [W]::IconsVisible() -and $tGone -gt 0 -and $tBack -gt 0) "fences=$(VisFences) fence gone at $tGone ms, Windows icon back at $tBack ms"
+  Check 'C6 the fences are still there when the Windows icons come' ($tBack - $tGone -le 50) "the desktop is empty for $($tBack - $tGone) ms (fence gone at $tGone ms, Windows icon back at $tBack ms)"
+  Pf windows-desktop end | Out-Null
+  Start-Sleep -Seconds 2
+  Check 'C6 back: the fences show and the Windows icons are hidden' ((VisFences) -ge 3 -and -not [W]::IconsVisible()) "fences=$(VisFences) icons=$([W]::IconsVisible())"
+
+  Case 'C4 the desktop is not empty at exit'
   $m = TrayMenu
   Start-Sleep -Milliseconds 400
   $pt = MenuPoint $m '^退出'
