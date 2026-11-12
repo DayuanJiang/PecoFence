@@ -361,6 +361,8 @@ impl FenceViewState {
             };
         let old_len = self.items.len();
         let old_ids: Vec<ItemId> = self.items.iter().map(|i| i.id).collect();
+        // New items have no fitted names: the fitting ahead starts over after the next draw.
+        self.fit_ahead_done = false;
         // The search fades are set for the new list at its first draw.
         self.search_fades_for = None;
         // A new list asks the shell for its type names again (kept items keep theirs below).

@@ -137,6 +137,13 @@ pub struct FenceViewState {
     /// The details view's type names by extension, asked from the shell as rows come near the
     /// viewport (`ensure_texts`); emptied with every new item list (`replace_items`).
     pub(super) type_names: pecofence_platform::fileinfo::TypeNames,
+    /// Every item has its fitted name (and, in the details view, its column texts): the
+    /// fitting ahead has nothing left and its timer is off. Cleared wherever names are dropped
+    /// or the list changes.
+    pub(super) fit_ahead_done: bool,
+    /// When the user last pressed a key or used the mouse, as of the last content draw or
+    /// piece (`sysparams::last_input_tick`): a later input puts the next piece off.
+    pub(super) fit_ahead_input: Option<u32>,
     /// The last content draw kept the scrollbar's strip clear (the fence scrolled): only for
     /// the debug line when that changes.
     pub(super) strip_kept: bool,
@@ -708,6 +715,7 @@ impl FenceViewState {
             item.label = None;
         }
         self.unfold_cache = None;
+        self.fit_ahead_done = false;
     }
 
     /// The grid the fence asks for; its layout is the fence's own (`wanted_layout`).
@@ -754,6 +762,8 @@ impl FenceViewState {
             }
             self.unfold_cache = None;
         }
+        // Another view has other texts (the columns of the details view).
+        self.fit_ahead_done = false;
     }
 
     /// Lays the items out for `grid` at once, also when only the shown layout changes (像桌面一样

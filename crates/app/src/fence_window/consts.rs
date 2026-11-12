@@ -68,6 +68,16 @@ pub(super) const TIMER_NAME_BOX: usize = 49;
 /// activation back (about 0.2 s after the end), and the colour follows the real state again.
 pub(super) const TIMER_ACTIVE_SYNC: usize = 60;
 pub(super) const TIMER_ACTIVE_SYNC_END: usize = 61;
+/// The names beyond the rows in view are fitted in pieces while the fence rests
+/// (`fit_ahead_tick`). Armed by a content draw while names are missing; it ends by itself
+/// when every item has its name, so a fence at rest has no timer.
+pub(super) const TIMER_FIT_AHEAD: usize = 62;
+/// How long nothing must be drawn and no key or mouse input arrive before a piece is fitted.
+pub(super) const FIT_AHEAD_REST_MS: u32 = 300;
+/// The pause between two pieces: input and painting come first.
+pub(super) const FIT_AHEAD_PAUSE_MS: u32 = 10;
+/// The work of one piece.
+pub(super) const FIT_AHEAD_PIECE: Duration = Duration::from_micros(2500);
 pub(super) const ACTIVE_SYNC_MS: u32 = 500;
 /// DWM can suspend completion callbacks for fully occluded windows. UI state must still
 /// settle after the longest (250 ms) transition, independently of compositor visibility.

@@ -170,6 +170,41 @@ pub(super) fn band_range(
     start..end.max(start)
 }
 
+/// The order in which the items get their names while the fence rests: the rows in `view`,
+/// then outward from them, below and above in turn, `near` items each way; then the last
+/// `far` items of the list from its end (where End jumps) and its first `far` (Home); then
+/// outward again over everything left. Every index below `count` once.
+pub(super) fn fit_ahead_order(
+    count: usize,
+    view: std::ops::Range<usize>,
+    near: usize,
+    far: usize,
+) -> Vec<usize> {
+    let (start, end) = (view.start.min(count), view.end.min(count));
+    let mut order = Vec::with_capacity(count);
+    let mut taken = vec![false; count];
+    let mut take = |i: usize| {
+        if i < count && !taken[i] {
+            taken[i] = true;
+            order.push(i);
+        }
+    };
+    let outward = |from: usize, to: usize, take: &mut dyn FnMut(usize)| {
+        for d in from..to {
+            take(end + d);
+            if start > d {
+                take(start - 1 - d);
+            }
+        }
+    };
+    (start..end).for_each(&mut take);
+    outward(0, near, &mut take);
+    (0..far.min(count)).for_each(|d| take(count - 1 - d));
+    (0..far.min(count)).for_each(&mut take);
+    outward(near, count, &mut take);
+    order
+}
+
 /// Every index of the two `bands` below `count` once, the first band's before the second's:
 /// what a content draw looks at for icons and names instead of every item of the fence.
 pub(super) fn band_indices(
@@ -1209,6 +1244,7 @@ impl FenceViewState {
                 item.label = None;
             }
             self.unfold_cache = None;
+            self.fit_ahead_done = false;
         }
         // Explorer's list and details rows show folders without the preview of their contents.
         let rows = self.layout != ViewLayout::Icons;
@@ -1328,6 +1364,96 @@ impl FenceViewState {
                 "names fitted for the items drawn"
             );
         }
+    }
+
+    /// After a content draw: while names are missing, the fitting ahead is due once nothing
+    /// has been drawn for `FIT_AHEAD_REST_MS` (every draw sets the timer anew, so a glide or
+    /// a fade keeps putting it off).
+    pub(super) fn arm_fit_ahead(&mut self) {
+        if self.fit_ahead_done || self.items.is_empty() {
+            return;
+        }
+        self.fit_ahead_input = pecofence_platform::sysparams::last_input_tick();
+        window::set_timer(self.hwnd, TIMER_FIT_AHEAD, FIT_AHEAD_REST_MS);
+    }
+
+    /// `TIMER_FIT_AHEAD`: one piece of names fitted ahead, if the fence rests. A fence that
+    /// is rolled up, hidden or retired does nothing and waits for its next draw; one that
+    /// moves, or whose user just pressed a key or moved the mouse, looks again after the
+    /// rest time; one with names left goes on after a short pause; one with every name
+    /// fitted stops, and no timer is left.
+    pub(super) fn fit_ahead_tick(&mut self) {
+        window::kill_timer(self.hwnd, TIMER_FIT_AHEAD);
+        if self.fit_ahead_done
+            || self.retired
+            || self.rolled_up
+            || self.label_w <= 0.0
+            || !desktop::is_visible(self.hwnd)
+        {
+            return;
+        }
+        let input = pecofence_platform::sysparams::last_input_tick();
+        let moving = self.scroll_anim.is_some()
+            || !self.item_motion.is_empty()
+            || !self.leaving.is_empty()
+            || !self.outgoing.is_empty()
+            || self.roll_anim.is_some()
+            || self.content_busy
+            || self.ole_drag
+            || self.marquee.is_some()
+            || self.peeking
+            || window::key_down(msg::VK_LBUTTON);
+        if moving || input != self.fit_ahead_input {
+            self.fit_ahead_input = input;
+            window::set_timer(self.hwnd, TIMER_FIT_AHEAD, FIT_AHEAD_REST_MS);
+            return;
+        }
+        let started = Instant::now();
+        let (fitted, left) = self.fit_ahead(started);
+        tracing::debug!(
+            fence = %self.fence_id,
+            items = self.items.len(),
+            fitted,
+            left,
+            ms = (started.elapsed().as_secs_f64() * 100_000.0).round() / 100.0,
+            "names fitted ahead while the fence rests"
+        );
+        if left {
+            window::set_timer(self.hwnd, TIMER_FIT_AHEAD, FIT_AHEAD_PAUSE_MS);
+        } else {
+            self.fit_ahead_done = true;
+        }
+    }
+
+    /// Fits names in the order of `fit_ahead_order` until `FIT_AHEAD_PIECE` has passed since
+    /// `started`: how many were fitted, and whether any are left.
+    fn fit_ahead(&mut self, started: Instant) -> (usize, bool) {
+        let (cw, _) = self.content_size_px();
+        let layout = self.layout(cw as f32 / self.scale());
+        let view_h = self.scroll_view_h(&layout);
+        let count = self.items.len();
+        let view = band_range(
+            &layout,
+            count,
+            self.scroll_y - 1.0,
+            self.scroll_y + view_h + 1.0,
+        );
+        let screen = view.len().max(1);
+        let (label_w, wide_w) = (self.label_w, self.label_wide_w);
+        let details = self.layout == ViewLayout::Details;
+        let mut fitted = 0usize;
+        for i in fit_ahead_order(count, view, 2 * screen, 6 * screen) {
+            let it = &self.items[i];
+            if it.label.is_some() && (!details || it.size_label.is_some()) {
+                continue;
+            }
+            if started.elapsed() >= FIT_AHEAD_PIECE {
+                return (fitted, true);
+            }
+            self.ensure_texts(i, label_w, wide_w);
+            fitted += 1;
+        }
+        (fitted, false)
     }
 
     /// Fits item `i`'s name to `label_w` (`wide_w`: see `ensure_icons_and_labels`) and, for
@@ -1984,6 +2110,7 @@ impl FenceViewState {
         self.note_draw_result(ok);
         self.note_content_fades(now);
         self.log_content_draw(draw_started, labels_spent, placed_count);
+        self.arm_fit_ahead();
         Ok(())
     }
 
@@ -2242,6 +2369,7 @@ impl FenceViewState {
         self.note_draw_result(ok);
         self.note_content_fades(now);
         self.log_content_draw(draw_started, labels_spent, placed_count);
+        self.arm_fit_ahead();
         Ok(())
     }
 }

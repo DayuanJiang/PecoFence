@@ -610,6 +610,22 @@ pub(super) fn on_timer_peek_close(
 }
 
 /// 时钟与日期: the minute (or second) turned; draw the new time and wait for the next one.
+/// `TIMER_FIT_AHEAD`: see `FenceViewState::fit_ahead_tick`. A view that is busy right now
+/// (a popup re-entered us) is asked again after the rest time.
+pub(super) fn on_timer_fit_ahead(h: &HandlerCtx, hwnd: HWND) -> Option<isize> {
+    match h.view.try_borrow_mut() {
+        Ok(mut g) => {
+            if let Some(v) = g.as_mut() {
+                v.fit_ahead_tick();
+            } else {
+                window::kill_timer(hwnd, TIMER_FIT_AHEAD);
+            }
+        }
+        Err(_) => window::set_timer(hwnd, TIMER_FIT_AHEAD, FIT_AHEAD_REST_MS),
+    }
+    Some(0)
+}
+
 pub(super) fn on_timer_clock(h: &HandlerCtx) -> Option<isize> {
     if let Ok(mut g) = h.view.try_borrow_mut()
         && let Some(v) = g.as_mut()

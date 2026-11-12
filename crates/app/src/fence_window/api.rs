@@ -135,6 +135,8 @@ impl FenceWindow {
             rename_after_fade: None,
             unfold_cache: None,
             type_names: Default::default(),
+            fit_ahead_done: false,
+            fit_ahead_input: None,
             strip_kept: false,
             detach_pending: false,
             detach_cancelled: false,
@@ -1375,6 +1377,7 @@ impl FenceWindow {
                 item.label = None;
             }
             v.unfold_cache = None;
+            v.fit_ahead_done = false;
             v.snap_item_motion();
             let _ = v.redraw();
         });

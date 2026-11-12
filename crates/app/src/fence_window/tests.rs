@@ -655,6 +655,54 @@ fn a_content_draw_looks_at_the_two_bands_only_whatever_the_item_count() {
     assert!(near(8000, 96_000.0) < 60, "{} items", near(8000, 96_000.0));
 }
 
+/// While the fence rests, names are fitted outward from the rows in view, then at the two
+/// ends of the list, then everywhere else: every item once, whatever the scroll position.
+#[test]
+fn names_are_fitted_ahead_from_the_view_outward_then_at_both_ends() {
+    // 100 items, rows 40..47 in view, 3 near each way, 5 at each end.
+    let order = fit_ahead_order(100, 40..47, 3, 5);
+    assert_eq!(
+        order[..7],
+        [40, 41, 42, 43, 44, 45, 46],
+        "the rows in view first"
+    );
+    assert_eq!(
+        order[7..13],
+        [47, 39, 48, 38, 49, 37],
+        "below and above in turn"
+    );
+    assert_eq!(order[13..18], [99, 98, 97, 96, 95], "where End jumps");
+    assert_eq!(order[18..23], [0, 1, 2, 3, 4], "where Home jumps");
+    assert_eq!(order[23..27], [50, 36, 51, 35], "then outward again");
+    let mut all = order.clone();
+    all.sort_unstable();
+    assert_eq!(all, (0..100).collect::<Vec<_>>(), "every item once");
+    // At the top of the list, at its end, with more near rows than items, with none.
+    for (count, view, near, far) in [
+        (100usize, 0..7usize, 14usize, 42usize),
+        (100, 93..100, 14, 42),
+        (5, 0..5, 14, 42),
+        (8000, 4000..4042, 84, 252),
+        (3, 7..9, 2, 2),
+        (0, 0..0, 2, 2),
+    ] {
+        let mut all = fit_ahead_order(count, view.clone(), near, far);
+        assert_eq!(all.len(), count, "{count} items, view {view:?}");
+        all.sort_unstable();
+        assert_eq!(all, (0..count).collect::<Vec<_>>());
+    }
+    // The first items a piece takes are near the view or at an end, never from the middle.
+    let first: Vec<usize> = fit_ahead_order(8000, 4000..4042, 84, 252)
+        .into_iter()
+        .take(42 + 2 * 84 + 2 * 252)
+        .collect();
+    assert!(
+        first
+            .iter()
+            .all(|i| (3916..4126).contains(i) || *i >= 7748 || *i < 252)
+    );
+}
+
 /// A list change moves the icons within one viewport of the visible part (at the offset or
 /// where a running glide ends); the ones further away take their places at once.
 #[test]
