@@ -1001,5 +1001,6 @@
   "右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里恢复。上次因其他程序的 {0} 出错而关闭。": "Menus dos ícones sem entradas do Windows; o menu da bandeja as reativa. Erro de outro programa: {0}.",
   "恢复右键菜单里的 Windows 菜单项": "Reativar as entradas do Windows nos menus dos ícones",
   "剪切\tCtrl+X": "Recortar\tCtrl+X",
-  "复制\tCtrl+C": "Copiar\tCtrl+C"
+  "复制\tCtrl+C": "Copiar\tCtrl+C",
+  "PecoFence 正在启动…": "Iniciando o PecoFence…"
 }

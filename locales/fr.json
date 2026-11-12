@@ -1001,5 +1001,6 @@
   "右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里恢复。上次因其他程序的 {0} 出错而关闭。": "Menus d’icônes sans entrées Windows ; le menu de la zone de notification les réactive. Plantage dans {0}.",
   "恢复右键菜单里的 Windows 菜单项": "Réactiver les entrées Windows dans les menus d’icônes",
   "剪切\tCtrl+X": "Couper\tCtrl+X",
-  "复制\tCtrl+C": "Copier\tCtrl+C"
+  "复制\tCtrl+C": "Copier\tCtrl+C",
+  "PecoFence 正在启动…": "Démarrage de PecoFence…"
 }

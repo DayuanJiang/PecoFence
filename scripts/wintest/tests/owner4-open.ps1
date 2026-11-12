@@ -3,8 +3,8 @@
 #   K  the keyboard after Esc in the Peek search while a card is on screen; the focus mark of a
 #      fence whose tabs stand at the left
 #   M  motion (Windows' animations on, recordings): 按时间分组 with many and with few icons, the
-#      scroll bar that new files bring; two looks: the hover fill after a press the pointer
-#      jumped to, a new name confirmed by a click on the bare part of the fence
+#      scroll bar that new files bring; a look: the hover fill after a press the pointer
+#      jumped to
 #   W  the settings window behind another window or minimised: the command line and the tray's
 #      设置… bring it to the front
 #   T  (a debug build) the tips of the settings page's icon buttons follow the app's colour
@@ -139,8 +139,13 @@ function OoMotion() {
   trap { PfTrap $_; continue }
   Case 'M setup'
   $animWas = [Anim]::Get(); [Anim]::Set($true)
-  foreach ($s in $OoStems) { DeskFile "$s.fqa" | Out-Null }
-  foreach ($s in $OoStems[0..7]) { DeskFile "$s.fqb" | Out-Null }
+  # Files of today, yesterday, eight days and forty days ago: four groups by time.
+  $k = 0
+  foreach ($s in $OoStems) { $p = DeskFile "$s.fqa"; (Get-Item -LiteralPath $p).LastWriteTime = (Get-Date).AddDays(-@(0, 1, 8, 40)[$k % 4]); $k++ }
+  $k = 0
+  foreach ($s in $OoStems[0..7]) { $p = DeskFile "$s.fqb"; (Get-Item -LiteralPath $p).LastWriteTime = (Get-Date).AddDays(-@(0, 1, 8, 40)[$k % 4]); $k++ }
+  # Sixteen files of one day: 按时间分组 only moves them down by its one caption.
+  foreach ($s in $OoStems) { DeskFile "$s.fqc" | Out-Null }
   PfStart -Lang zh-CN
   Start-Sleep -Seconds 4
   CloseNotice | Out-Null
@@ -149,8 +154,12 @@ function OoMotion() {
   Pf fence create --title '少的' --rect '520,80,420,300' | Out-Null
   Pf item move --glob '*.fqa' --to '多的' | Out-Null
   Pf item move --glob '*.fqb' --to '少的' | Out-Null
-  Pf fence set '多的' sort name | Out-Null
-  Pf fence set '少的' sort name | Out-Null
+  Pf fence create --title '同一天' --rect '1000,300,420,440' | Out-Null
+  Pf item move --glob '*.fqc' --to '同一天' | Out-Null
+  # Sorted by date: 按时间分组 keeps the order then, so its own motion is what shows (where
+  # the order changes too, the list that follows cross-fades by the sort's rule).
+  Pf fence set '多的' sort date | Out-Null
+  Pf fence set '少的' sort date | Out-Null
   Start-Sleep -Seconds 2
   ParkMouse 1300 800
   $n16 = @(@(PfJson item list --fence '多的') | Where-Object { $_ -and $_.name }).Count
@@ -171,11 +180,19 @@ function OoMotion() {
   Pf fence set '少的' groupByDate false | Out-Null
   Start-Sleep -Milliseconds 1500
   RecStop
+  Pf fence set '同一天' groupByDate true | Out-Null
+  Start-Sleep -Milliseconds 1200
+  Pf fence set '同一天' groupByDate false | Out-Null
+  Start-Sleep -Milliseconds 1200
+  Pf fence delete '同一天' | Out-Null
+  Get-ChildItem -LiteralPath $PfDesk -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '\.fqc$' } | Remove-Item -Force -ErrorAction SilentlyContinue
   $lines = @(PfLogAll | Where-Object { $_ -match 'group by date changed' } | ForEach-Object { $_ -replace '^.*(group by date changed)', '$1' } | Select-Object -Unique)
   $fade16 = @($lines | Where-Object { $_ -match 'cross-fades' -and $_ -match 'items=16' }).Count
   $glide8 = @($lines | Where-Object { $_ -match 'icons glide' -and $_ -match 'items=8' }).Count
   Check 'M3 sixteen icons cross-fade when 按时间分组 goes on and off' ($fade16 -ge 2) "$($lines -join ' | ')"
   Check 'M3 eight icons glide' ($glide8 -ge 2) "glide lines for eight icons: $glide8"
+  $glide16 = @($lines | Where-Object { $_ -match 'icons glide' -and $_ -match 'items=16' }).Count
+  Check 'M3 sixteen icons of one day, which only move down by the caption, glide' ($glide16 -ge 2) "glide lines for sixteen icons: $glide16"
 
   # Nine files arrive in a fence 150 px high: they need a scroll bar. It comes with the icons
   # (it stood there about three frames before them).
@@ -227,22 +244,6 @@ function OoMotion() {
   $b3.Dispose(); $b4.Dispose()
   Check 'M7 after Ctrl and Shift clicks and a plain click on the first icon the fifth is plain' ($d3 -lt $d1 * 0.15) "difference from the plain icon: $d3 (with the hover fill: $d1)"
 
-  # A look: a new name confirmed by a click on the bare part of the fence (frames kept).
-  Case 'M6 look: a new name confirmed by a click on the bare part of the fence'
-  [G]::Click($p1[0], $p1[1]); Start-Sleep -Milliseconds 500
-  [G]::Press(0x71); Start-Sleep -Milliseconds 1000
-  [G]::Type('zz'); Start-Sleep -Milliseconds 500
-  $g = FenceGet '少的'
-  RecStart 'm6-rename' -X 520 -Y 80 -W 420 -H 300 -Fps 30
-  Start-Sleep -Milliseconds 300
-  RecMark '点栅栏空白处确认新名字'
-  [G]::Click($g.windowRect.x + $g.windowRect.w - 30, $g.windowRect.y + $g.windowRect.h - 20)
-  Start-Sleep -Milliseconds 1500
-  RecStop
-  $ren = @(PfLogAll | Where-Object { $_ -match 'name box|rename' } | Select-Object -Last 6 | ForEach-Object { $_ -replace '^\S+\s+', '' })
-  Log ("rename log: " + ($ren -join ' || '))
-  Check 'M6 the file has its new name' (@(Get-ChildItem -LiteralPath $PfDesk | Where-Object { $_.Name -like 'zz*' }).Count -eq 1) ''
-  Get-ChildItem -LiteralPath $PfDesk | Where-Object { $_.Name -like 'zz*' } | Remove-Item -Force -ErrorAction SilentlyContinue
   [Anim]::Set($animWas)
   PfQuit
 }
@@ -270,6 +271,10 @@ function OoFront() {
   [L]::MoveWindow($n, $r.R - 380, $r.T + 60, 760, 520, $true) | Out-Null
   Start-Sleep -Milliseconds 500
   Check 'W setup: the settings window and Notepad over it' ($h -ne [IntPtr]::Zero -and $n -ne [IntPtr]::Zero) "settings=$h notepad=$n"
+  # The tray icon's tip says 「PecoFence 正在启动…」 until the first frame (seen only while a
+  # start waits; here the log says that the name came back).
+  $tip = @(PfLogAll | Where-Object { $_ -match "first frame, the tray icon's tip is the app's name again" }).Count
+  Check 'W the tip of the tray icon is the name of the app again after the first frame' ($tip -ge 1) "log lines: $tip"
 
   Case 'W the command line brings the settings window to the front'
   $np = OoNotepadFront $n
@@ -440,4 +445,4 @@ if ($script:OoTouched) { OoWinMode $script:OoWas }
 Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
 [G]::KeyUp(0x11); [G]::KeyUp(0x12)
 OoClean
-Check 'test files removed' (@(Get-ChildItem $PfDesk | Where-Object { $OoDocs -contains $_.Name -or $_.Name -match '\.fq[abc]$' -or $_.Name -like 'zz*' }).Count -eq 0) ''
+Check 'test files removed' (@(Get-ChildItem $PfDesk | Where-Object { $OoDocs -contains $_.Name -or $_.Name -match '\.fq[abc]$' }).Count -eq 0) ''

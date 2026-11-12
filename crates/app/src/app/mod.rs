@@ -483,6 +483,8 @@ pub struct App {
     /// The start has shown the fences and waits for their first frame to hide the Windows
     /// desktop icons (`hide_icons_as_fences_come`).
     hide_icons_at_frame: bool,
+    /// The tray icon's tip still says 「PecoFence 正在启动…」: the first frame puts its name back.
+    starting_tip: bool,
     /// Previous frame's timestamp while an animation runs (frame-gap diagnostics).
     frame_prev: Option<Instant>,
     /// Cadence statistics of the animation run in progress.
@@ -1847,7 +1849,13 @@ impl App {
             tray_px,
             &tray_icon_image(tray_px, theme.accent_rgb8(), theme_mode == ThemeMode::Dark),
         )
-        .map(|icon| TrayIcon::new(control.hwnd(), TRAY_ID, WM_APP_TRAY, icon, "PecoFence"))
+        .map(|icon| {
+            // Until the fences have drawn their first frame (`on_frame`) the tip says that
+            // PecoFence is starting: while the disk keeps the start waiting (36 s were seen
+            // during a large copy) nothing else of PecoFence is on screen.
+            let tip = pecofence_core::i18n::text("PecoFence 正在启动…");
+            TrayIcon::new(control.hwnd(), TRAY_ID, WM_APP_TRAY, icon, tip)
+        })
         .map_err(|e| tracing::warn!(error = %e, "tray icon image failed"))
         .ok();
         if let Some(t) = &tray
@@ -1953,6 +1961,7 @@ impl App {
             paste_dups: Vec::new(),
             pasted: None,
             hide_icons_at_frame: false,
+            starting_tip: true,
             frame_prev: None,
             desktop_arrange_after_frames: false,
             frame_run: FrameRun::default(),

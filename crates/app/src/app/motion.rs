@@ -376,6 +376,12 @@ impl App {
     /// anything still moves.
     pub(super) fn on_frame(&mut self) {
         let now = Instant::now();
+        if std::mem::take(&mut self.starting_tip) {
+            if let Some(t) = self.tray.as_mut() {
+                t.set_tip("PecoFence");
+            }
+            tracing::debug!("start: first frame, the tray icon's tip is the app's name again");
+        }
         if std::mem::take(&mut self.hide_icons_at_frame) {
             self.hide_icons_as_fences_come();
         }
