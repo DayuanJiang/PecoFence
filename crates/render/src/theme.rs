@@ -95,6 +95,9 @@ pub struct Theme {
     /// A theme file's halo and shadow for text drawn straight over wallpaper: for dark text
     /// (the light mode's values) and for light text (the dark mode's), see [`Self::text_fx`].
     pub text_fx: [TextFx; 2],
+    /// The colour of the plate the text was last picked for (`with_quiet_text_on`): a link
+    /// in the text is read against it ([`Self::link_ink`]). None where nothing was picked.
+    pub plate: Option<ColorF>,
 }
 
 /// The halo and soft shadow a theme file gives text over bare wallpaper (None = built in: the
@@ -237,6 +240,11 @@ const TERTIARY_REACH: f32 = 0.45;
 /// The way is gone in this many steps: a fence dragged over a wallpaper draws its content
 /// again only when a step changes ([`Theme::label_look`]).
 const QUIET_TEXT_STEPS: u8 = 6;
+/// A link in the text keeps as much of the accent's hue as it can: on a plate where the
+/// accent gives less than `LINK_BAR` : 1 (3.9 : 1, what names and rows need) it moves towards
+/// the text's colour, at most `LINK_REACH` of the way.
+const LINK_BAR: f32 = 3.9;
+const LINK_REACH: f32 = 0.7;
 
 fn luma(rgb: [f32; 3]) -> f32 {
     0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
@@ -375,6 +383,7 @@ impl Theme {
             label_color: pecofence_core::LabelColor::Auto,
             title_text: None,
             text_fx: [TextFx::NONE; 2],
+            plate: None,
         }
     }
 
@@ -416,6 +425,7 @@ impl Theme {
             label_color: pecofence_core::LabelColor::Auto,
             title_text: None,
             text_fx: [TextFx::NONE; 2],
+            plate: None,
         }
     }
 
@@ -727,6 +737,7 @@ impl Theme {
     /// The secondary and tertiary text for `plate`, the colour under the text (see
     /// `SECONDARY_BAR`): each as strong as its bar needs there, within its reach.
     fn with_quiet_text_on(mut self, plate: ColorF) -> Self {
+        self.plate = Some(plate);
         let plate = [plate.r, plate.g, plate.b];
         let primary = self.text_primary;
         self.text_secondary = quiet_ink(
@@ -858,16 +869,32 @@ impl Theme {
 
     /// The ink of a link in the text (a web address in a note): the accent in the shade that
     /// goes with the text as it was picked for the plate, the light shade beside light text
-    /// and the dark one beside dark text.
+    /// and the dark one beside dark text. On a plate of middle brightness the accent reads
+    /// worse than the text around it (the light shade 2.2 : 1 on a mid grey, where white has
+    /// 3.9 : 1): there it moves towards the text's colour, as secondary text does.
     pub fn link_ink(&self) -> ColorF {
         let light_text = self.text_primary.r > 0.5;
-        if light_text == (self.mode == ThemeMode::Dark) {
-            return self.accent;
-        }
-        match self.other_accent {
-            Some([r, g, b]) => ColorF::from_rgba8(r, g, b, 0xFF),
-            None if light_text => Self::dark().accent,
-            None => Self::light().accent,
+        let accent = if light_text == (self.mode == ThemeMode::Dark) {
+            self.accent
+        } else {
+            match self.other_accent {
+                Some([r, g, b]) => ColorF::from_rgba8(r, g, b, 0xFF),
+                None if light_text => Self::dark().accent,
+                None => Self::light().accent,
+            }
+        };
+        match self.plate {
+            Some(plate) => quiet_ink(
+                accent,
+                ColorF {
+                    a: 1.0,
+                    ..self.text_primary
+                },
+                [plate.r, plate.g, plate.b],
+                LINK_BAR,
+                LINK_REACH,
+            ),
+            None => accent,
         }
     }
 
@@ -1329,6 +1356,13 @@ mod tests {
             assert!(picked.text_secondary.a > dark.text_secondary.a + 0.05);
             assert!(picked.text_secondary.a < picked.text_primary.a - 0.05);
         }
+        // A link keeps the accent where that reads and moves towards the text where not.
+        assert_eq!(on_dark.link_ink(), dark.accent);
+        let link = on_mid.link_ink();
+        let plate = on_mid.plate.unwrap();
+        let plate = [plate.r, plate.g, plate.b];
+        assert!(contrast_over(link, plate) > contrast_over(dark.accent, plate) + 0.5);
+        assert!(link.b > link.r + 0.1, "still blue: {link:?}");
         // A theme file's secondary text in a colour of its own moves towards its primary
         // text: an opaque brown on a plate of middle brightness stayed at 2.1 : 1.
         let brown = ColorF::from_rgba8(0x6B, 0x4A, 0x2E, 0xFF);
