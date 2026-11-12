@@ -427,6 +427,12 @@ mod tests {
                     "{}: {odd:?} in {value} ({source})",
                     language.tag()
                 );
+                // A name in straight " " (\"{0}\" 필터) beside the language's own marks.
+                assert!(
+                    !value.contains("\"{") && !value.contains("}\""),
+                    "{}: a straight \" around a name in {value}",
+                    language.tag()
+                );
                 // A straight ' after a letter is an apostrophe (it's, d'ora, fences'); one
                 // that starts a word opens a quotation.
                 let chars: Vec<char> = value.chars().collect();
