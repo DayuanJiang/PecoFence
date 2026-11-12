@@ -638,7 +638,8 @@ pub fn quit_posted() -> bool {
     QUIT_POSTED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Posts WM_QUIT to the calling (UI) thread after `ms` milliseconds (test tooling).
+/// Posts WM_QUIT to the calling (UI) thread after `ms` milliseconds (test tooling, and 退出
+/// once the fences have faded out).
 pub fn quit_after(ms: u32) {
     // SAFETY: plain FFI call.
     let thread = unsafe { GetCurrentThreadId() };

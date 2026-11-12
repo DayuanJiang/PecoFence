@@ -3037,7 +3037,25 @@ impl App {
                 if let Some(a) = self.anchor.borrow_mut().as_mut() {
                     a.release_desktop_icons();
                 }
-                window::post_quit(0);
+                // 退出 in the tray menu, or for an update: the fences fade out (167 ms) while
+                // Explorer brings its icons back, and the program ends when they have gone.
+                // They were cut off in one frame. The end of a Windows session does not wait,
+                // and with animations off (or no fence on screen) nothing fades.
+                let fading = reason != "session end"
+                    && self.fences.values().fold(false, |any, w| w.retire() | any);
+                tracing::debug!(
+                    reason,
+                    fading,
+                    fences = self.fences.len(),
+                    "quit: the fences fade out first"
+                );
+                if fading {
+                    let fade = pecofence_render::motion::FAST.as_millis() as u32;
+                    // Two frames more, so the last step of the fade is on screen.
+                    window::quit_after(fade + 33);
+                } else {
+                    window::post_quit(0);
+                }
             }
             Command::SettingsActivated => self.query_store_startup(),
             Command::WindowGone(hwnd) => {

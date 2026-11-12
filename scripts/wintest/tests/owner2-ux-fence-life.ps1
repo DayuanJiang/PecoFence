@@ -232,6 +232,60 @@ if ($Part -match 'X') {
   WaitWin 'PecoFence.Control' 20 -Hidden | Out-Null
 }
 
+if ($Part -match 'Q') {
+  # ---- FL-4: 退出 PecoFence in the tray menu fades the fences out (167 ms) while Explorer
+  # brings its icons back. They were cut off in one frame, a quarter of a second before the
+  # icons showed.
+  Case 'FL-4 exit fades the fences out'
+  . C:\pf\kit\user.ps1
+  PfFresh
+  Pf settings set language zh-CN | Out-Null
+  Start-Sleep -Seconds 3
+  $fr = FlRect '程序'
+  FlPark
+  $sy = 104; $sh = 60; $fx = $fr.L + 10
+  $m = TrayMenu
+  Start-Sleep -Milliseconds 400
+  $pt = MenuPoint $m '^退出'
+  [G]::MoveTo($pt[0], $pt[1]); Start-Sleep -Milliseconds 300
+  $b0 = [Px]::Grab(0, $sy, 1600, $sh); $f0 = [Px]::MaxInk($b0, $fx, $fx + 200, 0, $sh - 1); $b0.Dispose()
+  [G]::Click($pt[0], $pt[1])
+  # Every sample: ms, ink of the Windows icon in the second cell at the left, ink of the fence.
+  $samples = New-Object System.Collections.Generic.List[object]
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  while ($sw.ElapsedMilliseconds -lt 2500) {
+    $t = $sw.ElapsedMilliseconds
+    $bs = [Px]::Grab(0, $sy, 1600, $sh)
+    $samples.Add(@($t, [Px]::MaxInk($bs, 8, 80, 0, $sh - 1), [Px]::MaxInk($bs, $fx, $fx + 200, 0, $sh - 1)))
+    $bs.Dispose()
+  }
+  $quit = WaitNoPf 15
+  Log ("FL-4 samples: " + ((@($samples | Where-Object { $_[0] -lt 1200 }) | ForEach-Object { "$($_[0]):$($_[1])/$($_[2])" }) -join ' '))
+  # Fading: samples in which the fence shows at part strength, before it has gone.
+  $goneAt = @($samples | Where-Object { $_[2] -lt 10 } | Select-Object -First 1)
+  $tGone = -1; if ($goneAt.Count) { $tGone = $goneAt[0][0] }
+  $fading = @($samples | Where-Object { $_[0] -lt $tGone -and $_[2] -ge 10 -and $_[2] -le 110 }).Count
+  $back = @($samples | Where-Object { $_[1] -ge 25 } | Select-Object -First 1)
+  $tBack = -1; if ($back.Count) { $tBack = $back[0][0] }
+  Check 'FL-4 the fence showed, PecoFence quit and the Windows icons are back' ($f0 -ge 100 -and $quit -and [W]::IconsVisible() -and $tGone -gt 0) "fence ink before $f0; quit=$quit; fence gone at $tGone ms, Windows icon back at $tBack ms"
+  Check 'FL-4 the fences fade out' ($fading -ge 2) "$fading samples show the fence at part strength; the desktop is empty for $($tBack - $tGone) ms after it"
+  # The same exit once more for the report.
+  PfStart -Lang zh-CN -Script @('sleep 3600000')
+  Start-Sleep -Seconds 3
+  FlPark
+  $m = TrayMenu
+  Start-Sleep -Milliseconds 400
+  $pt = MenuPoint $m '^退出'
+  [G]::MoveTo($pt[0], $pt[1]); Start-Sleep -Milliseconds 300
+  RecStart 'fl4-exit' -X 0 -Y 0 -W 1600 -H 420 -Fps 30
+  RecMark '托盘菜单 → 退出 PecoFence'
+  Start-Sleep -Milliseconds 300
+  [G]::Click($pt[0], $pt[1])
+  Start-Sleep -Milliseconds 1500
+  RecStop
+  WaitNoPf 15 | Out-Null
+}
+
 Case 'cleanup'
 [Anim]::Set($AnimWas)
 PfQuit
