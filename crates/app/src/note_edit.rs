@@ -245,6 +245,39 @@ fn tell_fence() {
     let first = note::crlf_to_lf_offset(&units, first);
     let last = note::crlf_to_lf_offset(&units, last);
     let text = raw.replace("\r\n", "\n");
+    // A marker just typed on a line that starts with one already: Enter began the line as a
+    // to-do and 「[ ]」 was typed all the same, as every to-do needed before. The marker the
+    // line began with goes and the typed one stays, so the line shows one check box and
+    // holds what was typed. Only when the text has just changed: a caret put there by a
+    // click leaves a note as it was written.
+    let typed = ACTIVE.with(|a| {
+        a.borrow()
+            .as_ref()
+            .and_then(|s| s.told.borrow().as_ref().map(|told| told.0 != text))
+            .unwrap_or(false)
+    });
+    if first == last && typed {
+        let doubled = note::line_spans(&text)
+            .into_iter()
+            .zip(text.split('\n'))
+            .filter(|(s, _)| s.prefix > 0 && first > s.start + s.prefix && first <= s.start + s.len)
+            .find_map(|(s, line)| {
+                let shown = after_units(line, s.prefix);
+                let note::NoteLine::Todo { text: rest, .. } = note::parse_line(shown) else {
+                    return None;
+                };
+                let marker = shown.encode_utf16().count() - rest.encode_utf16().count();
+                (first == s.start + s.prefix + marker).then_some((s.start, s.prefix, marker))
+            });
+        if let Some((start, prefix, marker)) = doubled {
+            tracing::debug!(%fence, "note editor: a marker typed after a check box replaces it");
+            let from = note::lf_to_crlf_offset(&units, start);
+            handle.select(from, note::lf_to_crlf_offset(&units, start + prefix));
+            handle.replace_selection("");
+            handle.select(from + marker, from + marker);
+            return;
+        }
+    }
     // A bare caret inside a to-do's marker, which is not shown (after Ctrl+Home, Ctrl+Left, a
     // Right from the line before): it goes on to the start of the line's text, so that what
     // is typed lands where the caret shows and the to-do stays one. The control tells its
@@ -297,6 +330,18 @@ fn tell_fence() {
         });
         *s.told.borrow_mut() = Some(state);
     });
+}
+
+/// `s` without its first `units` UTF-16 units.
+fn after_units(s: &str, units: usize) -> &str {
+    let mut seen = 0;
+    for (i, c) in s.char_indices() {
+        if seen >= units {
+            return &s[i..];
+        }
+        seen += c.len_utf16();
+    }
+    ""
 }
 
 /// The blink timer: the caret hides or shows.
