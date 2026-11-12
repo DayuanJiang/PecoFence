@@ -128,6 +128,14 @@ if ($Part -match 'V') {
   Pf fence set UiV layout icons | Out-Null; Start-Sleep -Milliseconds 1200
   $s3 = UiState 'UiV'
   Check 'V icons again: the selected file is on screen' ($s3.focused -match 'b47' -and $s3.scroll -ge 930 -and $s3.scroll -le 1070) "focused=$($s3.focused) scroll=$($s3.scroll)"
+  # An icon size step (48 to 64, cells 112 px tall): the selected file is on screen there too.
+  Pf fence set UiV iconSize 64 | Out-Null; Start-Sleep -Milliseconds 1500
+  $s5 = UiState 'UiV'; $f5 = FenceGet 'UiV'
+  $cols5 = [int]$f5.fit.columns
+  $top5 = 8 + [math]::Floor(46 / $cols5) * 112 - $s5.scroll
+  $view5 = $f5.windowRect.h - 36
+  Check 'V icon size 64: the selected file is on screen' ($s5.focused -match 'b47' -and $top5 -ge -8 -and ($top5 + 112) -le ($view5 + 8)) "columns=$cols5 scroll=$($s5.scroll): the file's cell is $top5 to $($top5 + 112) px below the title, the fence shows $view5 px"
+  Pf fence set UiV iconSize 48 | Out-Null; Start-Sleep -Milliseconds 1500
   # Nothing selected: a view switch starts at the top, as before.
   [G]::Press(0x1B); Start-Sleep -Milliseconds 300
   Pf fence set UiV layout list | Out-Null; Start-Sleep -Milliseconds 1200
