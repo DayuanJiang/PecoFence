@@ -16,10 +16,20 @@ const ES_AUTOVSCROLL: i32 = 0x0040;
 const ES_WANTRETURN: i32 = 0x1000;
 const WS_VSCROLL: i32 = 0x0020_0000;
 const EM_SETMARGINS: u32 = 0x00D3;
+const EM_GETLINECOUNT: u32 = 0x00BA;
+const EM_LINESCROLL: u32 = 0x00B6;
+const EM_SCROLLCARET: u32 = 0x00B7;
+const EM_GETFIRSTVISIBLELINE: u32 = 0x00CE;
 const EC_LEFTMARGIN: usize = 1;
 const EC_RIGHTMARGIN: usize = 2;
 
 type KeyHandler = fn(u32) -> bool;
+
+/// Background colour (COLORREF) of an [`EditControl`] made with `dark`, for a parent that
+/// paints its frame in a handler that does not hold the control.
+pub fn back_color(dark: bool) -> u32 {
+    if dark { 0x0032_3232 } else { 0x00FB_FBFB }
+}
 
 /// The code a key handler gets for the menu key or Shift+F10 (a `WM_CONTEXTMENU` from the
 /// keyboard). Outside the virtual-key range; returning true keeps the control's own text menu
@@ -86,6 +96,35 @@ impl EditControl {
         )
     }
 
+    /// A box for one name that wraps like an icon's label: centred lines, no line breaks
+    /// (Enter and Tab go to the key handler, Ctrl+Enter does nothing), no scroll bar, no
+    /// margins. The owner sizes it to its lines ([`Self::line_count`], [`Self::line_height`]).
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_wrapping(
+        parent: HWND,
+        width: i32,
+        height: i32,
+        dpi: u32,
+        font_dip: f32,
+        text: &str,
+        dark: bool,
+        on_key: KeyHandler,
+    ) -> Result<Self> {
+        let ctl = Self::create_styled(
+            parent,
+            width,
+            height,
+            dpi,
+            font_dip,
+            text,
+            dark,
+            on_key,
+            ES_MULTILINE | ES_AUTOVSCROLL | ES_CENTER,
+        )?;
+        ctl.set_margins(0);
+        Ok(ctl)
+    }
+
     /// A control for several lines: Enter starts a new line, long lines wrap, and a scroll bar
     /// appears when the text is taller than the box. `margin_dip` keeps the text off the
     /// left and right edges.
@@ -144,11 +183,8 @@ impl EditControl {
     ) -> Result<Self> {
         let class = to_wide("EDIT");
         let text_w = to_wide(text);
-        let (text_color, back_color) = if dark {
-            (0x00FF_FFFF, 0x0032_3232)
-        } else {
-            (0x001B_1B1B, 0x00FB_FBFB)
-        };
+        let text_color = if dark { 0x00FF_FFFF } else { 0x001B_1B1B };
+        let back_color = back_color(dark);
         // SAFETY: standard control creation; all buffers outlive the calls.
         unsafe {
             let hwnd = CreateWindowExW(
@@ -168,23 +204,7 @@ impl EditControl {
             if hwnd.0.is_null() {
                 return Err(Error::from_thread());
             }
-            let face = to_wide(crate::fonts::text_face());
-            let font = CreateFontW(
-                -(font_dip * dpi as f32 / 96.0).round() as i32,
-                0,
-                0,
-                0,
-                FW_NORMAL,
-                0,
-                0,
-                0,
-                DEFAULT_CHARSET as u32,
-                OUT_DEFAULT_PRECIS as u32,
-                CLIP_DEFAULT_PRECIS as u32,
-                CLEARTYPE_QUALITY as u32,
-                (DEFAULT_PITCH | FF_DONTCARE) as u32,
-                PCWSTR(face.as_ptr()),
-            );
+            let font = make_font(crate::fonts::text_face(), font_dip, dpi);
             SendMessageW(hwnd, WM_SETFONT as u32, WPARAM(font.0 as usize), LPARAM(1));
             let brush = CreateSolidBrush(COLORREF(back_color));
             let _ = SetWindowSubclass(hwnd, Some(subclass_proc), 1, on_key as usize);
@@ -227,6 +247,84 @@ impl EditControl {
                 WPARAM(start as usize),
                 LPARAM(end as isize),
             );
+        }
+    }
+
+    /// Gives the control the font `face` at `font_dip` DIPs in place of the body text face:
+    /// a box over text that is drawn in another font (an item's name). The margins follow the
+    /// new font again.
+    pub fn set_font(&mut self, face: &str, font_dip: f32, dpi: u32) {
+        // SAFETY: plain GDI and message calls; the old font goes once the control has the new.
+        unsafe {
+            let font = make_font(face, font_dip, dpi);
+            if font.0.is_null() {
+                return;
+            }
+            SendMessageW(
+                self.hwnd,
+                WM_SETFONT as u32,
+                WPARAM(font.0 as usize),
+                LPARAM(1),
+            );
+            let _ = DeleteObject(HGDIOBJ(self.font.0));
+            self.font = font;
+        }
+    }
+
+    /// Left and right text margins in pixels (the default follows the font).
+    pub fn set_margins(&self, px: i32) {
+        let m = px.clamp(0, 0xFFFF) as usize;
+        // SAFETY: a plain message to our control.
+        unsafe {
+            SendMessageW(
+                self.hwnd,
+                EM_SETMARGINS,
+                WPARAM(EC_LEFTMARGIN | EC_RIGHTMARGIN),
+                LPARAM((m | (m << 16)) as isize),
+            );
+        }
+    }
+
+    /// Lines the text takes at the control's width (1 for an empty or one-line control).
+    pub fn line_count(&self) -> i32 {
+        // SAFETY: a plain message to our control.
+        let n = unsafe { SendMessageW(self.hwnd, EM_GETLINECOUNT, WPARAM(0), LPARAM(0)) };
+        (n.0 as i32).max(1)
+    }
+
+    /// Height of one text line in pixels (the font's cell height, which is the control's
+    /// line pitch).
+    pub fn line_height(&self) -> i32 {
+        let probe: Vec<u16> = "Ag".encode_utf16().collect();
+        let mut size = SIZE::default();
+        // SAFETY: the DC is released before returning; the font stays ours and is selected
+        // out again; the buffer and `size` outlive the call.
+        unsafe {
+            let hdc = GetDC(Some(self.hwnd));
+            let old = SelectObject(hdc, HGDIOBJ(self.font.0));
+            let _ = GetTextExtentPoint32W(hdc, &probe, &mut size);
+            SelectObject(hdc, old);
+            ReleaseDC(Some(self.hwnd), hdc);
+        }
+        size.cy.max(1)
+    }
+
+    /// Shows the text from its first line (a box that fits every line).
+    pub fn scroll_to_top(&self) {
+        // SAFETY: plain messages to our control.
+        unsafe {
+            let first = SendMessageW(self.hwnd, EM_GETFIRSTVISIBLELINE, WPARAM(0), LPARAM(0)).0;
+            if first > 0 {
+                SendMessageW(self.hwnd, EM_LINESCROLL, WPARAM(0), LPARAM(-first));
+            }
+        }
+    }
+
+    /// Scrolls the caret into view (a text with more lines than the box shows).
+    pub fn scroll_caret(&self) {
+        // SAFETY: a plain message to our control.
+        unsafe {
+            SendMessageW(self.hwnd, EM_SCROLLCARET, WPARAM(0), LPARAM(0));
         }
     }
 
@@ -323,6 +421,33 @@ impl EditControl {
     }
 }
 
+/// `face` at an em height of `font_dip` DIPs for `dpi`, as the controls use it.
+///
+/// # Safety
+/// A plain GDI call; the caller owns the font and deletes it.
+unsafe fn make_font(face: &str, font_dip: f32, dpi: u32) -> HFONT {
+    let face = to_wide(face);
+    // SAFETY: the face buffer outlives the call.
+    unsafe {
+        CreateFontW(
+            -(font_dip * dpi as f32 / 96.0).round() as i32,
+            0,
+            0,
+            0,
+            FW_NORMAL,
+            0,
+            0,
+            0,
+            DEFAULT_CHARSET as u32,
+            OUT_DEFAULT_PRECIS as u32,
+            CLIP_DEFAULT_PRECIS as u32,
+            CLEARTYPE_QUALITY as u32,
+            (DEFAULT_PITCH | FF_DONTCARE) as u32,
+            PCWSTR(face.as_ptr()),
+        )
+    }
+}
+
 impl Drop for EditControl {
     fn drop(&mut self) {
         // SAFETY: we own these GDI objects; the control dies with its parent window.
@@ -403,11 +528,18 @@ unsafe fn handle(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, refdata: 
                 return LRESULT(0);
             }
         }
-        let multiline = GetWindowLongW(hwnd, GWL_STYLE) & ES_MULTILINE != 0;
-        // Enter, Esc and (one line) Tab: their keys act through the handler; the character
-        // would beep or, for Tab, sit hidden in the text and eat the next Backspace.
+        // A control that takes line breaks: several lines with ES_WANTRETURN (a note). A
+        // wrapping one-name box (`create_wrapping`) is multi-line without it.
+        let style = GetWindowLongW(hwnd, GWL_STYLE);
+        let multiline = style & ES_MULTILINE != 0;
+        let breaks = multiline && style & ES_WANTRETURN != 0;
+        // Enter, Esc and (one name) Tab: their keys act through the handler; the character
+        // would beep or, for Tab, sit hidden in the text and eat the next Backspace. Ctrl+Enter
+        // arrives as a line feed, which a multi-line control would insert.
         if msg == WM_CHAR as u32
-            && (((wparam.0 == 13 || wparam.0 == 9) && !multiline) || wparam.0 == 27)
+            && (((wparam.0 == 13 || wparam.0 == 9) && !breaks)
+                || (wparam.0 == 10 && multiline && !breaks)
+                || wparam.0 == 27)
         {
             return LRESULT(0);
         }

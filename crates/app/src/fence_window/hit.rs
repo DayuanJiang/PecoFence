@@ -15,6 +15,50 @@ pub(super) fn bounded_auto_height(desired: i32, title_height: i32, top: i32, bot
     desired.min(bottom.saturating_sub(top).max(title_height + 1))
 }
 
+/// The resize hit code of a point `inside` (px from the window's left, top, right and bottom
+/// edges) of a window `size` px large, or None off the resize edges. An edge is `border` px
+/// deep (`right_border` on the right, thinner beside a scrollbar). A corner is the part of an
+/// edge within `corner` px of the adjacent edge, as DefWindowProc gives a normal window, so the
+/// diagonal cursor answers along 16 DIPs of each edge and not only in the 6 x 6 square where
+/// two edges cross. On a small window a corner takes at most a third of the edge.
+pub(super) fn resize_edge_at(
+    inside: (i32, i32, i32, i32),
+    size: (i32, i32),
+    border: i32,
+    right_border: i32,
+    corner: i32,
+) -> Option<isize> {
+    let (left, top, right, bottom) = inside;
+    let (on_left, on_right) = (left < border, right <= right_border);
+    let (on_top, on_bottom) = (top < border, bottom <= border);
+    let (reach_x, reach_y) = (
+        corner.min(size.0 / 3).max(border),
+        corner.min(size.1 / 3).max(border),
+    );
+    let (near_left, near_right) = (left < reach_x, right <= reach_x);
+    let (near_top, near_bottom) = (top < reach_y, bottom <= reach_y);
+    let code = if (on_left && near_top) || (on_top && near_left) {
+        msg::HTTOPLEFT
+    } else if (on_right && near_top) || (on_top && near_right) {
+        msg::HTTOPRIGHT
+    } else if (on_left && near_bottom) || (on_bottom && near_left) {
+        msg::HTBOTTOMLEFT
+    } else if (on_right && near_bottom) || (on_bottom && near_right) {
+        msg::HTBOTTOMRIGHT
+    } else if on_left {
+        msg::HTLEFT
+    } else if on_right {
+        msg::HTRIGHT
+    } else if on_top {
+        msg::HTTOP
+    } else if on_bottom {
+        msg::HTBOTTOM
+    } else {
+        return None;
+    };
+    Some(code)
+}
+
 impl FenceViewState {
     /// Is the client-pixel point on item `index`'s label text (not its icon)? Never in an
     /// icon grid without labels, whose label rect has no height.
@@ -152,7 +196,11 @@ impl FenceViewState {
                 && !self.behavior.hide_count_and_chevron.get()
                 && self.filter_tag.is_none()
             {
-                pecofence_render::fence_chrome::header_count_width(width, 1, self.deco.title_x())
+                pecofence_render::fence_chrome::header_count_width(
+                    width - self.laid_deco().lock_w(),
+                    1,
+                    self.deco.title_x(),
+                )
             } else {
                 0.0
             };
@@ -162,7 +210,7 @@ impl FenceViewState {
                 self.style.title_size,
                 self.behavior.title_align.get(),
                 width,
-                self.deco.desktop_icon,
+                (self.deco.desktop_icon, self.laid_deco().locked),
                 reserve,
                 self.theme.title_height,
             )
@@ -192,7 +240,11 @@ impl FenceViewState {
             && self.title_count.is_none()
             && self.filter_tag.is_none()
         {
-            pecofence_render::fence_chrome::header_count_width(width, 1, self.deco.title_x())
+            pecofence_render::fence_chrome::header_count_width(
+                width - self.laid_deco().lock_w(),
+                1,
+                self.deco.title_x(),
+            )
         } else {
             0.0
         };
@@ -203,7 +255,7 @@ impl FenceViewState {
             self.style.title_size,
             self.behavior.title_align.get(),
             width,
-            self.deco,
+            self.laid_deco(),
             reserve,
             self.theme.title_height,
         );
@@ -252,7 +304,8 @@ impl FenceViewState {
         if self.title_row_strip() || self.tabs_on_rail() || self.bare() {
             return None;
         }
-        let width = self.chrome_panel.size_px().0 as f32 / self.scale();
+        // As drawn: a locked fence keeps the lock glyph's slot before the chevron.
+        let width = self.chrome_panel.size_px().0 as f32 / self.scale() - self.laid_deco().lock_w();
         self.chrome.filter_tag_fit(
             width,
             self.theme.title_height,
@@ -321,6 +374,47 @@ impl FenceViewState {
             TitleDeco::rail_chevron_box(self.rail_w(), h_px as f32 / scale, rows_end)
         } else {
             TitleDeco::chevron_box(w_px as f32 / scale, self.theme.title_height)
+        };
+        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
+        x >= r.left && x < r.right && y >= r.top && y < r.bottom
+    }
+
+    /// The title-row decorations as they are laid out and drawn now: the stored ones, except
+    /// that the lock glyph of a single title gives way when the row has no room for it beside
+    /// the start of the name (`FenceChrome::lone_deco_in`: a fence sized to its narrowest and
+    /// locked afterwards). Drawing, the hit tests and the infotip all go by this.
+    pub(super) fn laid_deco(&self) -> TitleDeco {
+        if !self.deco.locked || self.title_row_strip() || self.tabs_on_rail() {
+            return self.deco;
+        }
+        let width = self.chrome_panel.size_px().0 as f32 / self.scale();
+        self.chrome.lone_deco_in(
+            &self.title,
+            self.title_count.as_deref(),
+            self.style.title_size,
+            width,
+            self.deco,
+        )
+    }
+
+    /// Is the client-pixel point on the lock glyph of a locked fence (its infotip says how to
+    /// unlock)? The glyph's slot before the chevron, as drawn; a fence collapsed to its left
+    /// tab column shows none.
+    pub(super) fn lock_glyph_at(&self, x_px: i32, y_px: i32) -> bool {
+        if !self.laid_deco().locked || self.bare() || self.column_collapsed {
+            return false;
+        }
+        let scale = self.scale();
+        let (w_px, h_px) = self.chrome_panel.size_px();
+        let r = if self.tabs_on_rail() {
+            let rows_end = self
+                .tab_rects()
+                .iter()
+                .map(|(y, h)| y + h)
+                .fold(0.0, f32::max);
+            TitleDeco::rail_lock_box(self.rail_w(), h_px as f32 / scale, rows_end)
+        } else {
+            TitleDeco::lock_box(w_px as f32 / scale, self.theme.title_height)
         };
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
@@ -592,7 +686,15 @@ impl FenceViewState {
             let (above, below) = if self.expand_upward {
                 self.expand_rooms_px()
             } else {
-                (i32::MAX, i32::MAX)
+                // With pushNeighbors: as far as the fences below can slide down. A hover peek
+                // opens in full, above the fences it cannot push.
+                let floor = self.title_h_px() + 40;
+                (
+                    i32::MAX,
+                    self.kept_room_below_px()
+                        .filter(|_| !self.peeking)
+                        .map_or(i32::MAX, |room| room.max(floor)),
+                )
             };
             let (top, bottom) = if self.row_bottom {
                 let top = rect.bottom.saturating_sub(above);
@@ -624,6 +726,19 @@ impl FenceViewState {
                     (rect.bottom - m.work_area.top, m.work_area.bottom - rect.top)
                 })
         })
+    }
+
+    /// Room (device px) below the window's top edge that the App's push pass kept for it: with
+    /// `rollUp.pushNeighbors`, down to where the fences below it, slid as far as they can go,
+    /// leave room. None when the pass keeps none (pushNeighbors off, a fence in the user's
+    /// hands): the fence then opens as tall as it is saved.
+    pub(super) fn kept_room_below_px(&self) -> Option<i32> {
+        self.behavior
+            .expand_room
+            .borrow()
+            .iter()
+            .find(|(hwnd, ..)| *hwnd == self.hwnd)
+            .map(|&(_, _, below)| below)
     }
 
     /// Test hook: the screen point over the first item whose name contains `name` (a drop onto

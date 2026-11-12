@@ -761,6 +761,8 @@ impl DetailColumns {
     pub const TYPE_W: f32 = 108.0;
     pub const SIZE_W: f32 = 76.0;
     pub const GUTTER: f32 = 8.0;
+    /// Where the rows' icons and the 名称 caption start: the fence title's left edge.
+    pub const NAME_X: f32 = TITLE_X;
 
     pub const DEFAULT_WIDTHS: [f32; 3] = [Self::DATE_W, Self::TYPE_W, Self::SIZE_W];
     pub const MIN_COL_W: f32 = 40.0;
@@ -778,8 +780,10 @@ impl DetailColumns {
     pub fn for_width_with(width: f32, widths: [f32; 3], visible: [bool; 3]) -> Self {
         let clamp = |w: f32| w.clamp(Self::MIN_COL_W, Self::MAX_COL_W);
         let (date_w, type_w, size_w) = (clamp(widths[0]), clamp(widths[1]), clamp(widths[2]));
-        let name_x = 8.0;
-        let min_name = 120.0;
+        let name_x = Self::NAME_X;
+        // 8 less than the 120 the name had when it started at 8: a fence keeps the columns it
+        // showed at its width.
+        let min_name = 112.0;
         let mut right = width - Self::GUTTER;
         let mut size = None;
         let mut date = None;
@@ -855,7 +859,9 @@ impl DetailColumns {
             Some(DetailColumn::Type)
         } else if hit(self.date) {
             Some(DetailColumn::Date)
-        } else if x >= self.name_x && x < self.name_x + self.name_w {
+        } else if x >= self.name_x - 8.0 && x < self.name_x + self.name_w {
+            // The 名称 cell reaches 8 DIPs left of its caption: it starts 8 DIPs from the edge,
+            // as it did before the caption moved to the title's edge.
             Some(DetailColumn::Name)
         } else {
             None
@@ -2194,6 +2200,17 @@ mod tests {
         // Widths clamp so a dragged column can never eat the whole fence.
         let tiny = DetailColumns::for_width_with(600.0, [1.0, 1.0, 1.0], [true; 3]);
         assert_eq!(tiny.size.unwrap().1, DetailColumns::MIN_COL_W);
+    }
+
+    /// The rows' icons start at the title's left edge, and a fence shows the columns it showed
+    /// when the name started at 8 DIPs: all three from 472 DIPs on.
+    #[test]
+    fn rows_start_at_the_title_and_keep_their_columns() {
+        assert_eq!(DetailColumns::for_width(480.0).name_x, TITLE_X);
+        assert_eq!(DetailColumns::NAME_X, 16.0);
+        assert!(DetailColumns::for_width(472.0).type_.is_some());
+        assert!(DetailColumns::for_width(471.0).type_.is_none());
+        assert!(DetailColumns::for_width(471.0).date.is_some());
     }
 
     /// Larger row text (Windows' text size 150 %: an 18 DIP font, 24 DIP lines) makes the rows

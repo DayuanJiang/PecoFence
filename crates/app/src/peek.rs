@@ -337,7 +337,10 @@ impl PeekOverlay {
     }
 
     /// Starts the fade-out (continuing from wherever a running fade-in is). Idempotent.
-    pub fn begin_close(&mut self, now: Instant) {
+    /// `fences_fade`: fences fade out too (`App::begin_peek_fade_out`), so the close takes the
+    /// fade's time also when the dimmer has nothing to fade (dimming off, or clear for a file
+    /// drag).
+    pub fn begin_close(&mut self, now: Instant, fences_fade: bool) {
         if self.closing {
             return;
         }
@@ -345,6 +348,10 @@ impl PeekOverlay {
         if self.dim {
             self.alpha
                 .retarget(CLEAR_ALPHA as f32, PEEK_FADE, Curve::Linear, now);
+        }
+        if fences_fade && self.alpha.is_done(now) {
+            let a = self.alpha.value_at(now);
+            self.alpha = Tween::new(a, a, PEEK_FADE, Curve::Linear, now);
         }
     }
 

@@ -976,6 +976,7 @@ pub fn do_drag_drop(
     skip_drop: Option<SkipDrop>,
 ) -> DragOutcome {
     windows_core::link!("shell32.dll" "system" fn SHDoDragDrop(hwnd: HWND, pdata: *mut core::ffi::c_void, pdsrc: *mut core::ffi::c_void, dweffect: u32, pdweffect: *mut u32) -> windows_core::HRESULT);
+    allow_drop_description_text(data);
     let source = skip_drop.map(|skip| new_drop_source(data, skip));
     let mut effect: u32 = 0;
     // SAFETY: valid HWND and interfaces; a null IDropSource asks the shell for its default one.
@@ -1001,6 +1002,54 @@ pub fn do_drag_drop(
         dropped: hr.0 == DRAGDROP_S_DROP || skipped,
         effect: DropEffect::from_raw(effect),
     }
+}
+
+static DRAG_SOURCE_HELPER_FLAGS_FORMAT: OnceLock<u16> = OnceLock::new();
+
+/// Lets the drag image carry the target's text beside its badge ("移动到 <栅栏>"), as a drag out
+/// of an Explorer window does: the `DragSourceHelperFlags` format with
+/// `DSH_ALLOWDROPDESCRIPTIONTEXT`, which is what `IDragSourceHelper2::SetFlags` leaves on the
+/// data object. Without it the image shows the badge alone, whatever description a target sets.
+/// A data object that refuses `SetData` just keeps the badge.
+fn allow_drop_description_text(data: &IDataObject) {
+    windows_core::link!("kernel32.dll" "system" fn GlobalAlloc(uflags: u32, dwbytes: usize) -> HGLOBAL);
+    windows_core::link!("kernel32.dll" "system" fn GlobalFree(hmem: HGLOBAL) -> HGLOBAL);
+    const GMEM_MOVEABLE_ZEROINIT: u32 = 0x0042;
+    const DSH_ALLOWDROPDESCRIPTIONTEXT: u32 = 1;
+    let fmt = hglobal_format(registered_format(
+        "DragSourceHelperFlags",
+        &DRAG_SOURCE_HELPER_FLAGS_FORMAT,
+    ));
+    // SAFETY: standard GlobalAlloc / GlobalLock / SetData protocol; on success the data object
+    // owns the memory (fRelease = TRUE), on failure it is freed here.
+    let set = unsafe {
+        let hmem = GlobalAlloc(GMEM_MOVEABLE_ZEROINIT, size_of::<u32>());
+        if hmem.0.is_null() {
+            return;
+        }
+        let ptr = GlobalLock(hmem) as *mut u32;
+        if ptr.is_null() {
+            let _ = GlobalFree(hmem);
+            return;
+        }
+        *ptr = DSH_ALLOWDROPDESCRIPTIONTEXT;
+        let _ = GlobalUnlock(hmem);
+        let medium = STGMEDIUM {
+            tymed: TYMED_HGLOBAL as u32,
+            Anonymous: uSTGMEDIUM_0 { hGlobal: hmem },
+            pUnkForRelease: core::mem::ManuallyDrop::new(None),
+        };
+        let set = data.SetData(&fmt, &medium, true);
+        if set.is_err() {
+            let _ = GlobalFree(hmem);
+        }
+        set
+    };
+    tracing::debug!(
+        allowed = set.is_ok(),
+        hresult = set.0,
+        "drag image text beside the badge (DragSourceHelperFlags on the data object)"
+    );
 }
 
 // ---- Drop source (the shell's default one plus `SkipDrop`) -----------------------------------

@@ -16,6 +16,9 @@ pub(super) struct InternalDrag {
     /// Each item's centre less the press point (screen px): where the icons land when they
     /// are dropped on a 「桌面」 that places them freely (自由摆放).
     pub(super) offsets: Vec<(ItemId, (i32, i32))>,
+    /// The drag picture is the icons themselves, each at its own place (`render_drag_image`
+    /// answered); false = the shell's stack with the count badge, under the pointer.
+    pub(super) in_place: bool,
 }
 
 thread_local! {
@@ -29,7 +32,8 @@ pub(super) struct DropSpot {
     pub(super) tab: Option<usize>,
     /// A folder item (files go into the folder).
     pub(super) folder: Option<usize>,
-    /// Insertion index for reordering an internal drag inside its own 手动 fence.
+    /// Insertion index for an internal drag over the icons of a 手动 fence: reordering inside
+    /// its own fence, or the place icons of another fence land at.
     pub(super) insert: Option<usize>,
     /// An internal drag over its own fence — its own tab pill, or a content area that cannot
     /// reorder (sorted / portal): no-op, "not allowed" cursor, no highlight.
@@ -618,10 +622,29 @@ impl FenceDropHandler {
                 .map(|t| t.title.clone())
                 .unwrap_or_else(|| v.title.clone())
         };
+        // A reorder inside its own fence takes the icons nowhere else: the badge alone, without
+        // "移动到 <this fence>".
+        let reorder =
+            spot.insert.is_some() && internal.as_ref().is_some_and(|d| d.from == v.active);
+        let description = if reorder {
+            (DropImage::Move, "", String::new())
+        } else {
+            drop_description(effect, insert)
+        };
         Feedback {
             effect,
-            description: Some(drop_description(effect, insert)),
+            description: Some(description),
             hwnd: v.hwnd,
+        }
+    }
+
+    /// Tells the fence shown where each icon of an internal drag was let go on it
+    /// (`FenceViewState::note_drop_landing`).
+    fn note_landing(&self, d: &InternalDrag, pt: DragPoint) {
+        if let Ok(mut guard) = self.view.try_borrow_mut()
+            && let Some(v) = guard.as_mut()
+        {
+            v.note_drop_landing(d, pt.x, pt.y);
         }
     }
 
@@ -936,6 +959,7 @@ impl DropHandler for FenceDropHandler {
                     if free {
                         // 自由摆放: dropped on the icons of 「桌面」 (its own or another fence's
                         // icons): they stay where they land, beside the icons that are there.
+                        self.note_landing(&d, pt);
                         let at = DesktopDrop {
                             cursor: (pt.x, pt.y),
                             centres: d
@@ -951,11 +975,26 @@ impl DropHandler for FenceDropHandler {
                         break 'resolve DropEffect::Move;
                     }
                     if let Some(index) = spot.insert {
-                        self.queue.push(Command::ReorderItems {
-                            fence: active,
-                            items: d.items,
-                            index,
-                        });
+                        self.note_landing(&d, pt);
+                        if d.from == active {
+                            self.queue.push(Command::ReorderItems {
+                                fence: active,
+                                items: d.items,
+                                index,
+                            });
+                        } else {
+                            // Icons of another fence let go between these: they land there.
+                            tracing::debug!(
+                                index,
+                                items = d.items.len(),
+                                "icons of another fence dropped between the icons"
+                            );
+                            self.queue.push(Command::MoveItems {
+                                items: d.items,
+                                to: active,
+                                at: Some(index),
+                            });
+                        }
                         break 'resolve DropEffect::Move;
                     }
                     if to == d.from {
@@ -977,7 +1016,14 @@ impl DropHandler for FenceDropHandler {
                         });
                         break 'resolve effect;
                     }
-                    self.queue.push(Command::MoveItems { items: d.items, to });
+                    if to == active {
+                        self.note_landing(&d, pt);
+                    }
+                    self.queue.push(Command::MoveItems {
+                        items: d.items,
+                        to,
+                        at: None,
+                    });
                     DropEffect::Move
                 }
                 DropKind::Files => {
@@ -1111,6 +1157,38 @@ impl FenceViewState {
         }
     }
 
+    /// Icons of our own were let go on this fence at screen point (sx, sy): remembers where the
+    /// centre of each one's drag picture was (unscrolled content DIPs), so the list refresh the
+    /// drop causes starts them there (`replace_items`) and they arrive from the pointer. The
+    /// shell's stack picture (more icons than the in-place one shows) sits under the pointer.
+    pub(super) fn note_drop_landing(&mut self, d: &InternalDrag, sx: i32, sy: i32) {
+        if !self.motion.enabled() || self.rolled_up {
+            return;
+        }
+        let r = window::window_rect(self.hwnd);
+        let scale = self.scale();
+        let (cw, _) = self.content_size_px();
+        let fixed = self.layout(cw as f32 / scale).fixed_top();
+        let from: HashMap<ItemId, (f32, f32)> = d
+            .offsets
+            .iter()
+            .map(|(id, (dx, dy))| {
+                let (dx, dy) = if d.in_place { (*dx, *dy) } else { (0, 0) };
+                let x = (sx + dx - r.left - self.content_x) as f32 / scale;
+                let y = (sy + dy - r.top - self.content_y) as f32 / scale - fixed + self.scroll_y;
+                (*id, (x, y))
+            })
+            .collect();
+        tracing::debug!(
+            icons = from.len(),
+            in_place = d.in_place,
+            x = sx,
+            y = sy,
+            "drop landing noted: the icons start where they were let go"
+        );
+        self.drop_landing = Some((Instant::now(), from));
+    }
+
     /// Insertion index for reordering at a client-pixel point: only in a 手动-sorted virtual
     /// fence and only inside the item area.
     pub(super) fn insertion_at(&self, x_px: i32, y_px: i32) -> Option<usize> {
@@ -1206,12 +1284,14 @@ impl FenceViewState {
             return spot;
         }
         if let Some(d) = internal
-            && d.from == self.active
             && !self.places_freely()
         {
             match self.insertion_at(cx, cy) {
                 Some(i) => spot.insert = Some(i),
-                None => spot.self_drop = true,
+                // Its own fence takes its icons nowhere else; another fence's go after the
+                // others (a sorted fence, the title row).
+                None if d.from == self.active => spot.self_drop = true,
+                None => {}
             }
         }
         spot
@@ -1235,9 +1315,11 @@ impl FenceViewState {
                 s.tab,
                 s.folder,
                 s.insert,
+                // Icons of another fence dropped between these: the ring says which fence takes
+                // them, the caret where.
                 s.tab.is_none()
                     && s.folder.is_none()
-                    && s.insert.is_none()
+                    && (s.insert.is_none() || !self.ole_drag)
                     && !s.self_drop
                     && !self.bare(),
             ),
@@ -1413,7 +1495,10 @@ impl FenceViewState {
             return None;
         }
         let rt = self.stack.create_render_target(w_px, h_px).ok()?;
-        let theme = self.theme.with_label_color(self.behavior.label_color.get());
+        // The names in the picture keep the colour they have in the fence.
+        let theme = self
+            .material_foreground()
+            .with_label_color(self.behavior.label_color.get());
         let chrome = self.chrome.clone();
         // Fresh uploads for the one-off target; the shared cache belongs to the surfaces.
         let mut bitmaps = BitmapCache::new();
@@ -1430,7 +1515,7 @@ impl FenceViewState {
             cells
                 .iter()
                 .map(|(i, _)| &self.items[*i])
-                .map(|it| icons.draw_key(&it.icon_key, it.icon_px))
+                .map(|it| it.draw_key(&icons))
                 .collect()
         };
         let drawn = match &layout {
@@ -1458,6 +1543,7 @@ impl FenceViewState {
                             alpha: 1.0,
                             icon_alpha: 1.0,
                             full_label: None,
+                            label_inset: super::render::label_inset(item.label_wide),
                         }
                     })
                     .collect();
@@ -1477,6 +1563,7 @@ impl FenceViewState {
                     insert_caret_alpha: 0.0,
                     selection_inactive: 0.0,
                     items_bottom: f32::INFINITY,
+                    plates_right: f32::INFINITY,
                 };
                 rt.draw(|session| {
                     session.set_transform(&transform);
@@ -1547,6 +1634,7 @@ impl FenceViewState {
                     origin_x: 0.0,
                     origin_y: 0.0,
                     rows_bottom: f32::INFINITY,
+                    plates_right: f32::INFINITY,
                 };
                 rt.draw(|session| {
                     session.set_transform(&transform);

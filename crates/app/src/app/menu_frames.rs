@@ -20,6 +20,8 @@ struct MenuFrames {
     gaps: u32,
     max_gap: Duration,
     max_frame: Duration,
+    /// UI-thread time of the frames together (see `FrameRun::work`).
+    work: Duration,
     /// The last frame found nothing moving any more: the run ended then.
     ended: Option<Instant>,
 }
@@ -48,6 +50,7 @@ impl App {
                 gaps: 0,
                 max_gap: Duration::ZERO,
                 max_frame: Duration::ZERO,
+                work: Duration::ZERO,
                 ended: None,
             })
         });
@@ -67,6 +70,7 @@ impl App {
             self.frame_run.frames += run.gaps;
             self.frame_run.max_gap = self.frame_run.max_gap.max(run.max_gap);
             self.frame_run.max_frame = self.frame_run.max_frame.max(run.max_frame);
+            self.frame_run.work += run.work;
             match run.ended {
                 Some(at) => self.end_frame_run(at),
                 None => {
@@ -109,7 +113,9 @@ pub(super) fn menu_frame() -> bool {
         for w in &run.windows {
             more |= w.on_frame(now);
         }
-        run.max_frame = run.max_frame.max(now.elapsed());
+        let spent = now.elapsed();
+        run.max_frame = run.max_frame.max(spent);
+        run.work += spent;
         if more {
             run.ended = None;
             run.frames.request();

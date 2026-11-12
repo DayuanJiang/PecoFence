@@ -450,7 +450,7 @@
             Object.assign(help.style, { left: '34px', top: ROW + 28 + 'px', width: g.cardW - 34 - 12 + 'px' });
         }
         select(card(g, { ic: '\uE7A1', t: '颜色模式', textW: 120 }), '跟随 Windows 模式', sw);
-        select(card(g, { ic: '\uE8D3', t: '文字颜色', s: '图标名称，以及标题颜色为“跟随主题”的栅栏标题和标签页。自动：液态玻璃按背后壁纸的明暗选深色或浅色，Fluent 跟随颜色模式', textW: g.cardW - sw - 60 }), '自动', sw);
+        select(card(g, { ic: '\uE8D3', t: '文字颜色', s: '图标名称，以及标题颜色为“跟随主题”的栅栏标题和标签页。自动：每个栅栏按它背后壁纸的明暗选深色或浅色', textW: g.cardW - sw - 60 }), '自动', sw);
         select(card(g, { ic: '\uE8E4', t: '标题对齐', textW: 120 }), '左对齐', sw);
         drawToggle(toggle(card(g, { ic: '\uE7B1', t: '自动隐藏滚动条', s: '鼠标移到栅栏上或滚动时才显示', textW: g.cardW - 34 - 52 - 24 })), false);
         h3(g, '图标');

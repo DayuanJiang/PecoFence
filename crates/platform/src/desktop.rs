@@ -435,6 +435,27 @@ pub fn is_cloaked(hwnd: HWND) -> bool {
     cloaked != 0
 }
 
+/// `DWMWA_EXTENDED_FRAME_BOUNDS` (not in the generated bindings).
+const EXTENDED_FRAME_BOUNDS: u32 = 9;
+
+/// The rectangle a window is drawn in: `GetWindowRect` of a resizable window also holds its
+/// invisible resize borders. `None` when DWM does not answer (a window that is gone).
+pub fn frame_rect(hwnd: HWND) -> Option<RECT> {
+    let mut rect = RECT::default();
+    // SAFETY: out-pointer sized for a RECT.
+    unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            EXTENDED_FRAME_BOUNDS,
+            (&mut rect as *mut RECT).cast(),
+            size_of::<RECT>() as u32,
+        )
+        .ok()
+        .ok()?;
+    }
+    Some(rect)
+}
+
 pub fn set_cloak(hwnd: HWND, cloak: bool) -> Result<()> {
     let value: i32 = cloak as i32;
     // SAFETY: value outlives the call.

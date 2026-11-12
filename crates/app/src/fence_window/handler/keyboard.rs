@@ -72,6 +72,23 @@ pub(super) fn on_keydown(
     let mut release = false;
     let shift = window::key_down(msg::VK_SHIFT);
     let ctrl = window::key_down(msg::VK_CONTROL);
+    // Any other key ends the wait of an earlier Delete for its icons to go (`UserDelete`);
+    // Shift, Ctrl and Alt alone may be the start of the next Delete, whose repeats count too.
+    let deletes = vk == msg::VK_DELETE || (vk == VK_D && ctrl && !shift);
+    if !deletes && !matches!(vk, msg::VK_SHIFT | msg::VK_CONTROL | msg::VK_MENU) {
+        v.forget_user_delete("another key was pressed");
+    }
+    // A rolled-up fence (from the moment it starts to roll up) shows none of its items: a key
+    // must not act on a selection nobody can see (Delete sent a hidden file to the Recycle Bin).
+    if v.roll_target() && acts_on_items(wparam as u32, ctrl) {
+        tracing::debug!(
+            vk = wparam as u32,
+            ctrl,
+            selected = ids.len(),
+            "key ignored: the fence is rolled up, its items are hidden"
+        );
+        return Some(0);
+    }
     const VK_BACK: u32 = 0x08;
     const VK_TAB: u32 = 0x09;
     const VK_PRIOR: u32 = 0x21;
@@ -169,7 +186,19 @@ pub(super) fn on_keydown(
         }),
         VK_F5 => queue.push(Command::RefreshFence(v.active)),
         k if k == msg::VK_F2 => {
-            if let [item] = ids[..] {
+            // Several selected: the focused one is renamed, as in Explorer (the first of them
+            // when the focus is on none).
+            let focused = v
+                .anchor_index
+                .filter(|i| v.selected.contains(i))
+                .and_then(|i| v.items.get(i))
+                .map(|it| it.id);
+            if let Some(item) = focused.or_else(|| ids.first().copied()) {
+                tracing::debug!(
+                    selected = ids.len(),
+                    focused = focused.is_some(),
+                    "F2 rename"
+                );
                 queue.push(Command::RenameItem {
                     fence: v.active,
                     item,
@@ -202,6 +231,8 @@ pub(super) fn on_keydown(
             if lparam & (1 << 30) != 0 {
                 tracing::debug!("delete key repeat ignored");
             } else if !ids.is_empty() {
+                // From the keyboard: the neighbour that takes the focus shows the focus ring.
+                v.user_delete = Some(UserDelete::new(ids.iter().copied().collect(), true));
                 queue.push(Command::DeleteItems {
                     fence: v.active,
                     items: ids,
@@ -226,12 +257,15 @@ pub(super) fn on_keydown(
                 window::release_capture();
                 return Some(0);
             }
-            // A filtered fence: Esc clears the filter first.
+            // A filtered fence: Esc clears the filter first and leaves the selection, which
+            // the next Esc clears.
             if v.filter_active {
+                tracing::debug!(selected = ids.len(), "Esc: filter cleared, selection kept");
                 queue.push(Command::ClearFenceFilter(v.active));
+            } else {
+                v.selected.clear();
+                v.type_ahead.clear();
             }
-            v.selected.clear();
-            v.type_ahead.clear();
             seer::close();
             quicklook::close();
             if !h.behavior.selection.borrow().is_empty() {
@@ -310,7 +344,8 @@ pub(super) fn on_syskeydown(
     let v = guard.as_mut()?;
     if vk == msg::VK_RETURN {
         let ids = v.selected_ids();
-        if !ids.is_empty() {
+        // Not for the hidden items of a rolled-up fence (see `acts_on_items`).
+        if !ids.is_empty() && !v.roll_target() {
             queue.push(Command::ItemProperties {
                 fence: v.active,
                 items: ids,
@@ -349,7 +384,8 @@ pub(super) fn on_contextmenu(
         return Some(0);
     };
     let ids = v.selected_ids();
-    if ids.is_empty() {
+    // A rolled-up fence shows no items: the Menu key opens the fence menu there.
+    if ids.is_empty() || v.roll_target() {
         // Background menu at the content's top-left.
         let win = window::window_rect(hwnd);
         let pad = (8.0 * v.scale()) as i32;

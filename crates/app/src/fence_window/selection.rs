@@ -129,6 +129,19 @@ pub(super) enum CursorMode {
     FocusOnly,
 }
 
+/// Keys that act on the items of a fence (its selection or its keyboard cursor): the arrows,
+/// Home / End, PageUp / PageDown, Enter, F2, Delete, and Ctrl with A, C, D, X or Space. A
+/// rolled-up fence ignores them; Tab, Ctrl+Tab, Ctrl+Z, Ctrl+V, Ctrl+F, F5 and Esc stay.
+pub(super) fn acts_on_items(vk: u32, ctrl: bool) -> bool {
+    // 0x21..=0x28: PageUp, PageDown, End, Home, Left, Up, Right, Down.
+    matches!(vk, 0x21..=0x28)
+        || vk == msg::VK_RETURN
+        || vk == msg::VK_F2
+        || vk == msg::VK_DELETE
+        // A, C, D, X, Space.
+        || (ctrl && matches!(vk, 0x41 | 0x43 | 0x44 | 0x58 | 0x20))
+}
+
 pub(super) fn cursor_mode(shift: bool, ctrl: bool) -> CursorMode {
     if shift {
         CursorMode::Extend
@@ -358,13 +371,21 @@ impl FenceViewState {
     /// cursor logic then re-runs from the message loop instead of being duplicated here.
     /// `PostMessage` is asynchronous, so this is safe under the borrow and from `tick`
     /// (`hide_tip` is not: TTM_TRACKACTIVATE is a SendMessage). Skipped while a gesture owns
-    /// the pointer, as those branches track the offset themselves.
+    /// the pointer, as those branches track the offset themselves, and while Windows' size or
+    /// move loop runs: that loop reads a posted WM_MOUSEMOVE as a pointer position on the
+    /// screen, so a refresh posted when icons finished gliding after a column change made the
+    /// held edge jump to another width and back, about five times a second.
     pub(super) fn request_hover_refresh(&self) {
         if !self.mouse_inside
             || self.marquee.is_some()
             || self.drag.is_some()
             || self.ole_drag
             || self.scrollbar_pressed()
+            || self
+                .behavior
+                .size_move
+                .try_borrow()
+                .map_or(true, |s| s.is_some())
         {
             return;
         }
@@ -497,7 +518,8 @@ impl FenceViewState {
             return;
         }
         self.mouse_inside = inside;
-        if self.title_on_hover() || self.is_clear() {
+        // A locked fence shows its lock glyph while the pointer is over it.
+        if self.title_on_hover() || self.is_clear() || self.locked {
             let _ = self.redraw_chrome_only();
         }
         if self.behavior.hide_inactive_scrollbar.get() {
