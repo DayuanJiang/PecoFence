@@ -289,9 +289,11 @@ using System; using System.Text; using System.Runtime.InteropServices;
 public static class M {
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SendMessageW(IntPtr h, uint m, IntPtr w, StringBuilder l);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowExW(IntPtr p, IntPtr a, string c, string t);
+  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
   public static string BoxText() {
     IntPtr box = FindWindowExW(IntPtr.Zero, IntPtr.Zero, "PecoFence.PeekSearch", null);
-    if (box == IntPtr.Zero) return null;
+    // A hidden one is made ahead for the Peek's first letter: no open box.
+    if (box == IntPtr.Zero || !IsWindowVisible(box)) return null;
     IntPtr edit = FindWindowExW(box, IntPtr.Zero, "Edit", null);
     if (edit == IntPtr.Zero) return "(no edit)";
     var sb = new StringBuilder(512); SendMessageW(edit, 0x000D, (IntPtr)512, sb); return sb.ToString();

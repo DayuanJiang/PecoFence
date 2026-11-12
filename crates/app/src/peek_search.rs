@@ -179,6 +179,12 @@ thread_local! {
     static ACTIVE: RefCell<Option<Session>> = const { RefCell::new(None) };
     /// The box of the search that just ended, while it fades out.
     static LEAVING: RefCell<Option<Session>> = const { RefCell::new(None) };
+    /// A box made when the Peek started, hidden, for its first letter (`prepare`): a window
+    /// that is new at the letter comes on screen a refresh later than one that only has to
+    /// be shown. It is no open box: nothing but `open` and `drop_prepared` looks at it.
+    static PREPARED: RefCell<Option<Session>> = const { RefCell::new(None) };
+    /// The box made ahead is getting its first text (`adopt_prepared`): no change to report.
+    static ADOPTING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     static CLASS: RefCell<Option<WindowClass>> = const { RefCell::new(None) };
     static ICON_WORKER: IconWorker = IconWorker::new();
     /// When the box's text changed and the rows for it are not shown yet.
@@ -779,6 +785,94 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
     close();
     // A box still fading out, or hidden since its fade: gone before this one is made.
     drop(LEAVING.with(|l| l.borrow_mut().take()));
+    let ready = adopt_prepared(text, dark, avoid);
+    if !ready {
+        let Some(s) = build(text, queue, dark, avoid) else {
+            return;
+        };
+        ACTIVE.with(|a| *a.borrow_mut() = Some(s));
+    }
+    let Some(hwnd) = hwnd() else { return };
+    window::show_normal(hwnd);
+    if !window::claim_foreground(hwnd) {
+        tracing::debug!("search box: the foreground switch was refused");
+    }
+    ACTIVE.with(|a| {
+        if let Some(s) = a.borrow().as_ref() {
+            // Caret after the typed text, ready for the next character.
+            let end = text.encode_utf16().count() as i32;
+            s.edit.focus_and_select(end, end);
+        }
+    });
+    if ready {
+        // Drawn now, with the letter and before its first list, so that it is on screen
+        // with the refresh that follows the letter (`reveal`).
+        window::paint_now(hwnd);
+    }
+}
+
+/// Makes the box's window before the first letter, hidden and without the keyboard, when the
+/// Peek has started: `open` then only shows it. `avoid` as for `open`.
+pub fn prepare(queue: CommandQueue, dark: bool, avoid: &[RECT]) {
+    if is_open() {
+        return;
+    }
+    let made = build("", queue, dark, avoid);
+    tracing::debug!(
+        made = made.is_some(),
+        "search box: made ahead of the first letter"
+    );
+    drop(PREPARED.with(|p| p.replace(made)));
+}
+
+/// The box made ahead is not needed (the Peek ended without a letter): it goes unseen.
+pub fn drop_prepared() {
+    if let Some(s) = PREPARED.with(|p| p.borrow_mut().take()) {
+        tracing::debug!("search box: the one made ahead was not needed");
+        drop(s);
+    }
+}
+
+/// Takes the box made ahead for the search that opens now with `text`, if it was made for the
+/// screen the pointer is on and the colour mode of now. Its place is taken again by the rule
+/// of `open`, with the fences as they stand now.
+fn adopt_prepared(text: &str, dark: bool, avoid: &[RECT]) -> bool {
+    let Some(mut s) = PREPARED.with(|p| p.borrow_mut().take()) else {
+        return false;
+    };
+    let pt = window::cursor_pos();
+    let same_screen = monitors::query(monitors::monitor_from_point(pt.x, pt.y))
+        .is_some_and(|m| m.work_area == s.work && m.dpi.max(96) == s.dpi);
+    if !same_screen || s.dark != dark {
+        tracing::debug!(same_screen, "search box: the one made ahead no longer fits");
+        return false;
+    }
+    let full = s.px(FULL_H).min(s.work.bottom - s.home.1);
+    let (x, y) = place(s.home, s.w, full, s.work, avoid, s.px(AVOID_GAP));
+    let moved = (x, y) != s.home;
+    tracing::debug!(
+        home = ?s.home,
+        x,
+        y,
+        fences = avoid.len(),
+        moved,
+        ready = true,
+        "search box: place taken as it opens"
+    );
+    if (x, y) != (s.x, s.y) {
+        (s.x, s.y) = (x, y);
+        let (_, h) = window::window_rect_size(s.window.hwnd());
+        let _ = s.window.set_bounds(x, y, s.w, h);
+    }
+    ACTIVE.with(|a| *a.borrow_mut() = Some(s));
+    ADOPTING.with(|a| a.set(true));
+    set_text(text);
+    ADOPTING.with(|a| a.set(false));
+    true
+}
+
+/// The box's window, its text field and its session for `text`, not shown yet.
+fn build(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) -> Option<Session> {
     CLASS.with(|c| {
         if c.borrow().is_none() {
             *c.borrow_mut() = WindowClass::register(SEARCH_CLASS, ClassOptions::default()).ok();
@@ -786,9 +880,7 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
     });
     // On the screen the pointer is on, where the user is looking.
     let pt = window::cursor_pos();
-    let Some(m) = monitors::query(monitors::monitor_from_point(pt.x, pt.y)) else {
-        return;
-    };
+    let m = monitors::query(monitors::monitor_from_point(pt.x, pt.y))?;
     let dpi = m.dpi.max(96);
     let px = |dip: f32| (dip * dpi as f32 / 96.0).round() as i32;
     let (w, h) = (px(WIDTH), px(HEIGHT) + px(TABS_H));
@@ -814,6 +906,9 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
             move |hwnd: HWND, message: u32, wparam: usize, lparam: isize| -> Option<isize> {
                 match message {
                     msg::WM_COMMAND if msg::hi_u16(wparam) == edit::EN_CHANGE => {
+                        if ADOPTING.with(|a| a.get()) {
+                            return Some(0);
+                        }
                         CHANGED_AT.with(|c| {
                             if c.get().is_none() {
                                 c.set(Some(Instant::now()));
@@ -986,7 +1081,7 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
             .create(handler)
             .ok()
     });
-    let Some(window) = created else { return };
+    let window = created?;
     // Invisible until it has been drawn once (`reveal`): it takes the keyboard meanwhile.
     window::set_layered_alpha(window.hwnd(), 0);
     let _ = dwm::set_corner_preference(window.hwnd(), dwm::CornerPreference::Round);
@@ -1003,7 +1098,7 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
         dark,
         on_key,
     ) else {
-        return;
+        return None;
     };
     // The list's font: Chinese typed here came out of GDI's fallback face on a Windows in
     // another language, beside names in Microsoft YaHei UI.
@@ -1012,65 +1107,51 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
     ctl.set_margins(0);
     // In the box above the tabs.
     ctl.set_bounds(edit_x, (px(HEIGHT) - px(EDIT_H)) / 2, edit_w, px(EDIT_H));
-    let hwnd = window.hwnd();
-    ACTIVE.with(|a| {
-        *a.borrow_mut() = Some(Session {
-            window,
-            edit: ctl,
-            queue,
-            dpi,
-            dark,
-            x,
-            y,
-            w,
-            work_bottom: wa.bottom,
-            work: wa,
-            home,
-            dim_color: if dark { 0x00C5_C5C5 } else { 0x005F_5F5F },
-            glyph_font: Font::new(fonts::icon_face(), GLYPH_SIZE, dpi),
-            status_font: Font::new(fonts::text_face(), STATUS_SIZE, dpi),
-            name_font: Font::new(fonts::han_text_face(), NAME_SIZE, dpi),
-            detail_font: Font::new(fonts::han_text_face(), DETAIL_SIZE, dpi),
-            heading_font: Font::new(fonts::han_text_face(), HEADING_SIZE, dpi),
-            row_glyph_font: Font::new(fonts::icon_face(), 14.0, dpi),
-            status: String::new(),
-            status_room: px(STATUS_W),
-            rows: Vec::new(),
-            selected: None,
-            total: 0,
-            row_spans: Vec::new(),
-            scroll: None,
-            list_span: (0, 0),
-            wheel: 0,
-            tab: 0,
-            tab_spans: Vec::new(),
-            icons: HashMap::new(),
-            asked: HashSet::new(),
-            type_icons: HashMap::new(),
-            hover: None,
-            hover_level: 0.0,
-            hover_out: None,
-            hover_tick: Instant::now(),
-            tip: None,
-            revealed: false,
-            alpha: 0.0,
-            alpha_to: 0.0,
-            alpha_tick: Instant::now(),
-            list_h: h,
-            glide: None,
-        })
-    });
-    window::show_normal(hwnd);
-    if !window::claim_foreground(hwnd) {
-        tracing::debug!("search box: the foreground switch was refused");
-    }
-    ACTIVE.with(|a| {
-        if let Some(s) = a.borrow().as_ref() {
-            // Caret after the typed text, ready for the next character.
-            let end = text.encode_utf16().count() as i32;
-            s.edit.focus_and_select(end, end);
-        }
-    });
+    Some(Session {
+        window,
+        edit: ctl,
+        queue,
+        dpi,
+        dark,
+        x,
+        y,
+        w,
+        work_bottom: wa.bottom,
+        work: wa,
+        home,
+        dim_color: if dark { 0x00C5_C5C5 } else { 0x005F_5F5F },
+        glyph_font: Font::new(fonts::icon_face(), GLYPH_SIZE, dpi),
+        status_font: Font::new(fonts::text_face(), STATUS_SIZE, dpi),
+        name_font: Font::new(fonts::han_text_face(), NAME_SIZE, dpi),
+        detail_font: Font::new(fonts::han_text_face(), DETAIL_SIZE, dpi),
+        heading_font: Font::new(fonts::han_text_face(), HEADING_SIZE, dpi),
+        row_glyph_font: Font::new(fonts::icon_face(), 14.0, dpi),
+        status: String::new(),
+        status_room: px(STATUS_W),
+        rows: Vec::new(),
+        selected: None,
+        total: 0,
+        row_spans: Vec::new(),
+        scroll: None,
+        list_span: (0, 0),
+        wheel: 0,
+        tab: 0,
+        tab_spans: Vec::new(),
+        icons: HashMap::new(),
+        asked: HashSet::new(),
+        type_icons: HashMap::new(),
+        hover: None,
+        hover_level: 0.0,
+        hover_out: None,
+        hover_tick: Instant::now(),
+        tip: None,
+        revealed: false,
+        alpha: 0.0,
+        alpha_to: 0.0,
+        alpha_tick: Instant::now(),
+        list_h: h,
+        glide: None,
+    })
 }
 
 fn paint_box(hwnd: HWND) {

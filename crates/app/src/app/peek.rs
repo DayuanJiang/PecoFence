@@ -40,6 +40,9 @@ pub(super) const PEEK_RAISE_LIMIT_MS: u32 = 50;
 /// made opaque in the same turn, the fence showed for one frame over the window that hides it
 /// again (4 of 6 closes on a test box). Nobody sees the wait, the fence is under that window.
 const PEEK_REST_FRAMES: u8 = 4;
+/// How long after the Peek's start the search box's window is made for its first letter: after
+/// the Peek's fade (83 ms) and the raise of covered fences, so the start is not held up.
+const PEEK_SEARCH_READY_MS: u32 = 150;
 
 /// A shortcut as the tray menu and messages show it: `Ctrl+Alt+空格`.
 pub(super) fn peek_hotkey_label(h: Hotkey) -> String {
@@ -398,6 +401,24 @@ impl App {
         if animating || !held.is_empty() {
             self.ctx.frames.request();
         }
+        // The search box's window is made once the Peek's own first frames are out.
+        window::set_timer(
+            self.control.hwnd(),
+            TIMER_PEEK_SEARCH_READY,
+            PEEK_SEARCH_READY_MS,
+        );
+    }
+
+    /// `TIMER_PEEK_SEARCH_READY`: the search box's window is made, hidden, so that the first
+    /// letter only has to show it. Not when the Peek is ending or the box is open already
+    /// (a Peek started with the box, or a letter typed in its first moments).
+    pub(super) fn prepare_peek_search(&mut self) {
+        if self.peek.as_ref().is_none_or(|p| p.is_closing()) || crate::peek_search::is_open() {
+            return;
+        }
+        let fences = self.fence_plates(|_| true);
+        let dark = self.theme_mode == ThemeMode::Dark;
+        crate::peek_search::prepare(self.queue.clone(), dark, &fences);
     }
 
     /// The fences another program's window hides completely do not pop up over it: each is made
@@ -721,6 +742,8 @@ impl App {
     /// Closes the search box, puts back the tabs it switched and draws every fence as usual
     /// again (fences it expanded roll back up).
     fn end_peek_search(&mut self) {
+        window::kill_timer(self.control.hwnd(), TIMER_PEEK_SEARCH_READY);
+        crate::peek_search::drop_prepared();
         crate::peek_search::close();
         self.peek_hits.clear();
         self.peek_hit = 0;

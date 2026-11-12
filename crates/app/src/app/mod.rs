@@ -131,6 +131,8 @@ const TIMER_PEEK_FOCUS_RETRY: usize = 49;
 /// The longest the Peek's covered fences wait for the frame clock before they are raised
 /// (`App::peek_raise_overdue`).
 const TIMER_PEEK_RAISE: usize = 79;
+/// The Peek has shown: its search box is made ahead of the first letter (`prepare_peek_search`).
+const TIMER_PEEK_SEARCH_READY: usize = 132;
 /// Low-frequency safety net for changes that did not produce a wallpaper notification.
 const TIMER_WALLPAPER_POLL: usize = 50;
 /// `events.subscribe` diff tick while at least one CLI stream is open (see `ipc.rs`).
@@ -1381,6 +1383,14 @@ impl App {
                                         } else {
                                             window::set_timer(hwnd, TIMER_PEEK_FOCUS_RETRY, 50);
                                         }
+                                    }
+                                }
+                                TIMER_PEEK_SEARCH_READY => {
+                                    window::kill_timer(hwnd, TIMER_PEEK_SEARCH_READY);
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.prepare_peek_search();
                                     }
                                 }
                                 TIMER_PEEK_RAISE => {

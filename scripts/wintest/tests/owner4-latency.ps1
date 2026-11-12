@@ -1005,21 +1005,55 @@ function PartSRCH {
   PeekOff
   Check 'SRCH the search box opened' ($br.R -gt $br.L) "box $($br.L),$($br.T),$($br.R),$($br.B)"
 
+  Case 'SRCH the Peek itself: its start, and no search window without a letter'
+  # A Notepad window over the fence: the Peek brings the fence over it (as in part ACT2).
+  Start-Process notepad
+  $np = WaitWin 'Notepad' 10
+  [L]::MoveWindow($np, 250, 120, 800, 450, $true) | Out-Null
+  Start-Sleep -Seconds 1
+  $vis = @(); $left = @()
+  foreach ($k in 1..5) {
+    [G]::Click(700, 400); Start-Sleep -Milliseconds 500
+    ParkMouse 1300 860
+    [Lat]::Region(340, 240, 300, 150)
+    $r = LatWatch 1000 $null { PeekKey }
+    Add1 'srchpeek' (After $r 0)
+    # No letter: the box made ahead stays out of sight, and goes with the Peek.
+    $h = [G]::FindWindowW('PecoFence.PeekSearch', [NullString]::Value)
+    $vis += [int]($h -ne [IntPtr]::Zero -and [G]::IsWindowVisible($h))
+    $fg = Fg
+    PeekKey; Start-Sleep -Milliseconds 900
+    $left += [int]([G]::FindWindowW('PecoFence.PeekSearch', [NullString]::Value) -ne [IntPtr]::Zero)
+  }
+  Row 'the Peek hotkey (fences over the window)' 'a Notepad window over the fence' 'srchpeek' "foreground during the Peek: $fg"
+  $pf = @($script:Ms['srchpeek'] | ForEach-Object { $_.first })
+  Check 'SRCH the Peek starts as fast as before (first picture within 75 ms, 4 of 5 runs)' (@($pf | Where-Object { $_ -ge 0 -and $_ -le 75 }).Count -ge 4) "first: $($pf -join ' ') ms"
+  Check 'SRCH a Peek without a letter shows no search box and leaves no search window' ((($vis | Measure-Object -Sum).Sum -eq 0) -and (($left | Measure-Object -Sum).Sum -eq 0)) "visible during the Peek: $($vis -join ' '); window left after it: $($left -join ' '); foreground during the Peek: $fg"
+  Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
+  Start-Sleep -Milliseconds 500
+  # A letter typed 60 ms after the hotkey (before the box is made ahead) opens the box all the same.
+  PeekKey; Start-Sleep -Milliseconds 60
+  [G]::Type('l'); Start-Sleep -Milliseconds 900
+  $h = [G]::FindWindowW('PecoFence.PeekSearch', [NullString]::Value)
+  Check 'SRCH a letter typed 60 ms after the hotkey opens the box with that letter' ($h -ne [IntPtr]::Zero -and [G]::IsWindowVisible($h) -and [M]::BoxText() -eq 'l' -and (Fg) -match 'PeekSearch') "text='$([M]::BoxText())' fg=$(Fg)"
+  PeekOff
+
   Case 'SRCH the first letter typed in a Peek'
   $drawn = @(); $shows = @(); $notes = @()
-  foreach ($k in 1..7) {
+  foreach ($k in 0..7) {
     PeekKey; Start-Sleep -Milliseconds 900
     [Lat]::Region($br.L, $br.T, [math]::Min(700, $br.R - $br.L), 320)
-    # The key is sent a little after a screen refresh, at another point of the refresh each run.
-    Start-Sleep -Milliseconds (4 * $k)
     $pos = LogPos
     $r = LatWatch 800 $null { [G]::Type('l') }
     $m = After $r 0
+    # The first run is not counted: PowerShell's first call of the key's block takes 13 ms.
+    if ($k -eq 0) { PeekOff; continue }
     Add1 'srch1' $m
     Start-Sleep -Milliseconds 200
     $t = LogLines $pos $r.utc 'peek key kept|search box|search list laid out|slow command'
     $drawn += (LogAt $t 'drawn once'); $shows += (LogAt $t 'search box: shows')
     if ($k -le 2) { $notes += $t }
+    $script:SrchFg = Fg; $script:SrchText = [M]::BoxText()
     $r = LatWatch 600 $null { [G]::Type('4') }
     Add1 'srch2' (After $r 0)
     PeekOff
@@ -1035,6 +1069,9 @@ function PartSRCH {
   Row 'the first letter typed in a Peek (search box, results)' 'Peek open' 'srch1' "log: box drawn at +$($drawn -join ' ') ms, first visible alpha at +$($shows -join ' ') ms | $($notes[0])"
   Row 'the second letter typed in a Peek (results)' 'Peek open' 'srch2'
   $f = @($script:Ms['srch1'] | ForEach-Object { $_.first })
+  # The box's window is made when the Peek has started, so the letter only has to show it.
+  Check 'SRCH the search box is on screen in the first picture after the first letter (48 ms at most, 5 of 7 runs)' (@($f | Where-Object { $_ -ge 0 -and $_ -le 48 }).Count -ge 5) "first: $($f -join ' ') ms; the log has the box drawn at +$($drawn -join ' ') ms"
+  Check 'SRCH the box has the keyboard and the letter after the first letter' ($script:SrchFg -match 'PeekSearch' -and $script:SrchText -eq 'l') "foreground: $script:SrchFg text: '$script:SrchText'"
   # A new window is on screen two refreshes after the key on these boxes (0.3.3: 63 to 65 ms; its
   # 34 ms are the marks in the fence its box covered). With the fade started by a timer it was three.
   Check 'SRCH the search box is on screen two refreshes after the first letter, as in 0.3.3 (75 ms at most, 6 of 7 runs)' (@($f | Where-Object { $_ -ge 0 -and $_ -le 75 }).Count -ge 6) "first: $($f -join ' ') ms; the log has the box drawn at +$($drawn -join ' ') ms and visible at +$($shows -join ' ') ms"
