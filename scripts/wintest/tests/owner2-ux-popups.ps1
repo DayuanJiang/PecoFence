@@ -10,8 +10,11 @@
 #                             and the arrow at its right says 收起 / 展开
 #   run.sh --var Part=R ...   a name no file can have: the reason shows under the name box
 #   run.sh --var Part=M ...   the icon menu's own entries have an icon each
+#   run.sh --var Part=C ...   「添加规则」 on the card that offers a sorting rule: the card for the
+#                             added rule takes its place where it stands (the app runs without
+#                             a test script here: the offer does not show under one)
 # Without --var every part runs. Record=1 also records the clips for the report.
-if (-not $Part) { $Part = 'NSTRM' }
+if (-not $Part) { $Part = 'NSTRMC' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
 $UpFiles = @('预算表 2026.xlsx', '会议纪要 11月.txt', '年度报告 2025 董事会审阅版（含附录）.pdf', '报告.txt', 'a.md')
@@ -376,8 +379,73 @@ function UpPartM() {
   UpClean
 }
 
+function UpPartC() {
+  trap { PfTrap $_; continue }
+  Case 'rule offer card: the next card takes its place'
+  UpClean
+  $names = @('会议纪要 11月', '报告', '合同 草稿')
+  foreach ($n in $names) { DeskFile "$n.txt" | Out-Null }
+  $anim = [Anim]::Get(); [Anim]::Set($true)
+  if (PfAlive) { PfQuit }
+  Remove-Item -Recurse -Force "$PfApp\config", "$PfApp\notices.json" -ErrorAction SilentlyContinue
+  if (-not (Test-Path "$PfApp\pecofence.exe")) { New-Item -ItemType Directory -Force $PfApp | Out-Null; Copy-Item "$PfBin\*" $PfApp -Force }
+  $env:PECOFENCE_INSTANCE = $PfInst
+  $env:RUST_LOG = 'pecofence=debug'
+  [G]::MoveTo(700, 450)
+  Start-Process "$PfApp\pecofence.exe" -ArgumentList '--portable' -WorkingDirectory $PfApp
+  WaitWin 'PecoFence.Control' 20 -Hidden | Out-Null
+  UpWaitNotice 30 | Out-Null
+  Start-Sleep -Seconds 3
+  Pf settings set language zh-CN | Out-Null
+  Start-Sleep -Seconds 2
+  # The first-start tip goes (its close mark), then three .txt files are dragged into a new fence.
+  $n = UpNotice; $r = Rect $n
+  [G]::Click($r.R - 24, $r.T + 24); Start-Sleep -Milliseconds 1200
+  Pf fence create --title '文档' --rect '500,200,360,240' | Out-Null
+  Start-Sleep -Seconds 2
+  $g = UpFence '文档'
+  foreach ($name in $names) {
+    $p = ItemPt (ItemFence $name) $name
+    DragTo $p[0] $p[1] ($g.windowRect.x + 180) ($g.windowRect.y + 150)
+    Start-Sleep -Milliseconds 1200
+  }
+  $n = UpWaitNotice 8
+  Start-Sleep -Milliseconds 800
+  Check 'three files of one kind dragged into a fence bring up the rule offer' ($n -ne [IntPtr]::Zero -and [L]::Text($n) -match '让新文件自动进来') "title='$([L]::Text($n))'"
+  $r = Rect $n
+  if ($Record) { RecStart 'C-rule-card' -X 1180 -Y 600 -W 420 -H 260 -Fps 30 }
+  # The pointer rests on 添加规则; a patch of the card's plate near its bottom-left corner is
+  # read as fast as the screen allows while the button is clicked.
+  [G]::MoveTo($r.R - 60, $r.B - 30); Start-Sleep -Milliseconds 600
+  if ($Record) { RecMark '点“添加规则”' }
+  [Px]::Burst($r.L + 10, $r.B - 14, 6, 6, 800, 1)
+  $first = [Px]::Frames[0].GetPixel(3, 3)
+  $gone = 0; $goneAt = @()
+  for ($i = 1; $i -lt [Px]::Frames.Count; $i++) {
+    if ((UpFar ([Px]::Frames[$i].GetPixel(3, 3)) $first) -gt 10) { $gone++; $goneAt += [Px]::Times[$i] }
+  }
+  Start-Sleep -Milliseconds 700
+  if ($Record) { RecStop }
+  $n1 = UpNotice
+  $row = "window $n -> $n1, frames $([Px]::Frames.Count), plate changed in $gone ($(($goneAt | Select-Object -First 1)) to $(($goneAt | Select-Object -Last 1)) ms)"
+  Shot 'c-rule-added'
+  Check 'the card for the added rule shows' ($n1 -ne [IntPtr]::Zero -and [L]::Text($n1) -match '已添加整理规则') "title='$([L]::Text($n1))'"
+  Check 'it is the card that was there (no second card)' ($n1 -eq $n) $row
+  Check 'the card''s plate never leaves the screen between the two' ($gone -eq 0) $row
+  Check 'the rule was added' (@(Rules | Where-Object { "$($_ | ConvertTo-Json -Depth 6 -Compress)" -match '\.txt' }).Count -ge 1) "rules=$(@(Rules).Count)"
+  # The new card works: x closes it.
+  $r = Rect $n1
+  [G]::Click($r.R - 24, $r.T + 24); Start-Sleep -Milliseconds 1000
+  Check 'x closes the new card' ((UpNotice) -eq [IntPtr]::Zero) "notice=$(UpNotice)"
+  [Anim]::Set($anim)
+  PfQuit
+  UpClean
+  foreach ($n in $names) { Remove-Item -LiteralPath (Join-Path $PfDesk "$n.txt") -Force -ErrorAction SilentlyContinue }
+}
+
 if ($Part -match 'N') { UpPartN }
 if ($Part -match 'S') { UpPartS }
 if ($Part -match 'T') { UpPartT }
 if ($Part -match 'R') { UpPartR }
 if ($Part -match 'M') { UpPartM }
+if ($Part -match 'C') { UpPartC }

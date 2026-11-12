@@ -139,9 +139,18 @@ impl App {
                 self.show_next_tip(notice, next);
                 return;
             }
-            // It fades out; a card that the answer brings up takes its place at once.
-            notice.leave();
+            // A card that the answer brings up (「已添加整理规则」 after 「添加规则」) takes this
+            // card's place where it stands; else this one fades out.
+            if event == crate::notice::NoticeEvent::Action {
+                notice.hold();
+                self.answered_card = Some(notice);
+            } else {
+                notice.leave();
+            }
             self.on_welcome_notice(which, event);
+            if let Some(notice) = self.answered_card.take() {
+                notice.leave();
+            }
             return;
         }
         if self.update_notice_open() {

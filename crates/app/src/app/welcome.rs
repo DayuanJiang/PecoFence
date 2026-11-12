@@ -427,6 +427,24 @@ impl App {
         let secondary = matches!(which, Welcome::FolderTip { .. } | Welcome::RuleTip { .. })
             .then(|| text("不用"));
         let locale = crate::notice::locale();
+        // The card whose button brought this one up takes the new texts where it stands: the
+        // old card went and the new one faded in from nothing, a blink at the same place. (A
+        // card with two buttons is made anew.)
+        if let Some(notice) = self.answered_card.take() {
+            if secondary.is_none()
+                && notice
+                    .set_content(&title, &body, action, locale)
+                    .map_err(
+                        |error| tracing::warn!(%error, "answered card did not take the next card"),
+                    )
+                    .is_ok()
+            {
+                tracing::info!(notice = %kind, "welcome notice shown on the card just answered");
+                self.welcome = Some((notice, which));
+                return;
+            }
+            notice.leave();
+        }
         let avoid = self.notice_avoid_rects();
         let shown = match which {
             // The tips share one card (`show_next_tip`): it is as tall as the tallest of them

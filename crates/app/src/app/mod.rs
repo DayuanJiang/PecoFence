@@ -416,6 +416,9 @@ pub struct App {
     welcome: Option<(crate::notice::Notice, welcome::Welcome)>,
     /// Ctrl+Z in a fence: the newest undoable step last (see `undo.rs`).
     undo: Vec<undo::UndoStep>,
+    /// A welcome card whose button was just clicked, while the app acts on it: a card that
+    /// the answer brings up takes its place where it stands (`show_welcome`).
+    answered_card: Option<crate::notice::Notice>,
     /// The 「已删除栅栏」 or 「已按规则整理」 notice with 撤销, and what it undoes.
     undo_notice: Option<(crate::notice::Notice, undo::UndoNotice)>,
     /// Ctrl+Z was pressed while a file operation was running: it runs when that has finished.
@@ -1868,6 +1871,7 @@ impl App {
             rating,
             welcome: None,
             undo: Vec::new(),
+            answered_card: None,
             undo_notice: None,
             undo_waiting: false,
             marquee_offer: None,

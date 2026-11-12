@@ -89,6 +89,9 @@ struct View {
     /// Answered and handed back by the app ([`Notice::leave`]): the fade's end hides the card
     /// and reports nothing.
     left: bool,
+    /// Answered and kept by the app for the card the answer may bring up ([`Notice::hold`]):
+    /// it takes no more clicks until it has other texts.
+    held: bool,
 }
 
 impl View {
@@ -282,6 +285,7 @@ impl Notice {
             closing: false,
             declined: false,
             left: false,
+            held: false,
         }));
         shared.borrow_mut().redraw();
         *view.borrow_mut() = Some(shared.clone());
@@ -315,6 +319,7 @@ impl Notice {
         let old = window::window_rect(hwnd);
         let (rect, dpi) = {
             let mut v = self.view.borrow_mut();
+            v.held = false;
             if std::mem::take(&mut v.closing) {
                 tracing::debug!("notice was fading out: back for its new content");
                 v.declined = false;
@@ -366,6 +371,14 @@ impl Notice {
         window::set_title(hwnd, title);
         self.window.set_timer(TIMER_DISMISS, SHOW_FOR_MS);
         Ok(())
+    }
+
+    /// The card was answered and the app keeps it while it acts on the answer, for a card that
+    /// the answer brings up ([`Self::set_content`]): until then it takes no clicks and does
+    /// not leave by itself.
+    pub fn hold(&self) {
+        window::kill_timer(self.window.hwnd(), TIMER_DISMISS);
+        self.view.borrow_mut().held = true;
     }
 
     /// The card was answered (its button, or Ctrl+Z for what it offers to undo): it fades out
@@ -462,7 +475,12 @@ fn handle(
             v.redraw();
         }
     };
-    if view.borrow().closing && m != msg::WM_TIMER {
+    // A card that is fading out, or kept for the next card's texts, takes no input.
+    let inert = {
+        let v = view.borrow();
+        v.closing || v.held
+    };
+    if inert && m != msg::WM_TIMER {
         return None;
     }
     match m {
