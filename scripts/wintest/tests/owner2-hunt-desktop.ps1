@@ -71,3 +71,37 @@ if ($Part -eq 'A') {
   Check 'the Recycle Bin is in its cell after Windows'' icons were shown and hidden again' ($came -and (HdCell $bin) -eq $wantBin) "left meanwhile=$left came back=$came cell=$(HdCell $bin) want=$wantBin ; $(HdAll)"
   HdClean
 }
+
+if ($Part -eq 'B') {
+  # 「临时显示 Windows 桌面」: every fence is away and Windows' own icons show. The double-click
+  # that hides and shows the fences showed them over Windows' icons (each loose icon twice),
+  # left a fence marked 「双击桌面隐藏时保留此栅栏」 hidden and the mode on.
+  Case 'A double-click during the temporary Windows desktop ends it'
+  HdClean
+  foreach ($n in $HdNames) { DeskFile $n | Out-Null }
+  PfStart -Lang 'zh-CN'
+  Start-Sleep -Seconds 4
+  CloseNotice | Out-Null
+  $all = @(@(PfJson fence list) | Where-Object { $_ -and $_.id })
+  $kept = $all | Where-Object { $_.kind -ne 'inbox' } | Select-Object -First 1
+  Pf fence set $kept.id excludeFromQuickHide true | Out-Null
+  $spot = FreeSpot 900 600
+  Check 'setup: every fence shows and Windows'' icons are hidden' ((VisFences) -eq $all.Count -and -not [W]::IconsVisible()) "fences $(VisFences) of $($all.Count), Windows icons $([W]::IconsVisible())"
+  Pf windows-desktop start | Out-Null
+  $in = HdWait { (VisFences) -eq 0 -and [W]::IconsVisible() } 6
+  Check 'setup: in the mode no fence shows and Windows'' icons show' $in "fences $(VisFences), Windows icons $([W]::IconsVisible())"
+  DblClick $spot[0] $spot[1]
+  $out = HdWait { (VisFences) -eq $all.Count -and -not [W]::IconsVisible() } 4
+  Start-Sleep -Milliseconds 600
+  ParkMouse
+  Shot 'B-after-double-click'
+  $vis = @([W]::Tops('PecoFence.Fence') | ForEach-Object { [W]::Title($_) }) -join ', '
+  Check 'after the double-click every fence is back and Windows'' icons are hidden' ($out -and (VisFences) -eq $all.Count -and -not [W]::IconsVisible()) "double-click at $($spot -join ','): fences $(VisFences) of $($all.Count) [$vis] (kept on quick hide: $($kept.title)), Windows icons $([W]::IconsVisible())"
+  $m = TrayMenu
+  $texts = if ($m -ne [IntPtr]::Zero) { Start-Sleep -Milliseconds 300; MenuTexts $m } else { 'the tray menu did not open' }
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 500
+  Check 'the tray menu offers to hide the fences and to show the Windows desktop again' ($texts -match '^隐藏所有栅栏 \| 临时显示 Windows 桌面 ') "$texts"
+  Pf windows-desktop end | Out-Null
+  Pf fence show-all | Out-Null
+  HdClean
+}

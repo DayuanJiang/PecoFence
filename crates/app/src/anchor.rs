@@ -253,6 +253,10 @@ pub enum MarqueeEvent {
     Released(RECT),
     /// Another window took the foreground mid-drag: the marquee ends where it was.
     Cancelled,
+    /// The double-click that hides and shows the fences came during 「临时显示 Windows 桌面」:
+    /// the App, which owns that mode, ends it (the anchor showing the fences by itself left
+    /// them over Windows' own icons, with the fences kept on quick hide still away).
+    DoubleClickInWindowsDesktop,
 }
 
 fn marquee_rect(a: POINT, b: POINT) -> RECT {
@@ -355,6 +359,9 @@ pub struct DesktopAnchor {
     /// `Settings::keep_icons_hidden`: exit leaves the icons hidden (`release_desktop_icons`).
     pub keep_icons_hidden: bool,
     pub quick_hide_enabled: bool,
+    /// 「临时显示 Windows 桌面」 is on (the App sets it with its own flag): every fence is away
+    /// and Windows' icons show.
+    pub windows_desktop: bool,
     /// Presses, drags and releases on the empty desktop (fence selection / new fence).
     pub on_marquee: Option<Box<dyn Fn(MarqueeEvent)>>,
     /// Fence windows (as raw handles) that stay visible during quick hide.
@@ -549,6 +556,7 @@ impl DesktopAnchor {
             icons: DesktopIcons::new(),
             keep_icons_hidden: false,
             quick_hide_enabled,
+            windows_desktop: false,
             on_marquee: None,
             quick_hide_excluded: std::collections::HashSet::new(),
             off_desktop: std::collections::HashSet::new(),
@@ -1858,6 +1866,14 @@ impl DesktopAnchor {
 
     /// Quick hide's double-click on the empty desktop.
     pub fn toggle_fences_hidden(&mut self) {
+        if self.windows_desktop {
+            // Showing the fences here would leave Windows' icons under them and the mode on.
+            tracing::info!(
+                "double-click on the desktop during the temporary Windows desktop; the App ends it"
+            );
+            self.emit_marquee(MarqueeEvent::DoubleClickInWindowsDesktop);
+            return;
+        }
         self.toggle_fences_hidden_by("double-click on the desktop");
     }
 

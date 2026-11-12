@@ -18,6 +18,9 @@ impl App {
             return;
         };
         self.windows_desktop = on;
+        // The anchor sees the double-click that hides and shows the fences: in this mode it
+        // hands it to the App (`MarqueeEvent::DoubleClickInWindowsDesktop`).
+        a.windows_desktop = on;
         if on {
             a.set_fences_hidden(true, true, "windows desktop");
             // Only the icons PecoFence hid: icons hidden in Explorer itself stay hidden.

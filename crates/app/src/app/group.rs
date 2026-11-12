@@ -94,6 +94,11 @@ impl App {
                     w.end_desktop_band();
                 }
             }
+            // As 「显示所有栅栏」 from the command line does in this mode: the icons go again and
+            // every fence comes back (nothing happens when the mode ended meanwhile).
+            MarqueeEvent::DoubleClickInWindowsDesktop => {
+                self.set_windows_desktop(false, "double-click on the desktop");
+            }
         }
     }
 
