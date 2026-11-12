@@ -3230,7 +3230,7 @@ async function runTests() {
     assert(await motionReady(), 'The page never allowed transitions');
     const row = doc.querySelector('[data-bind="snapping.guideLines"]').closest('.card');
     doc.querySelector('[data-bind="snapping.enabled"]').click();
-    assert(row.classList.contains('disabled'), '显示对齐辅助线 is not greyed out while 吸附 is off');
+    assert(row.classList.contains('disabled'), '显示对齐参考线 is not greyed out while 吸附 is off');
     const fading = doc.getAnimations().filter(a => a.transitionProperty === 'color' && row.contains(a.effect.target)).map(a => a.effect.target.className);
     assert(fading.includes('t') && fading.includes('switch-label'), 'The text of the row turns grey in one frame while its switch fades: ' + fading.join());
     doc = await reset();
