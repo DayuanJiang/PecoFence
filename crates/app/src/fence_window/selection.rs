@@ -111,7 +111,8 @@ pub(super) fn drag_selection(selected: &mut HashSet<usize>, item: usize) {
 /// The control the mouse button is held on. Items and tabs act on press (selection / switch,
 /// as in Explorer); the up button, the roll-up chevron, header cells, a note's check boxes
 /// (by line) and a script fence's clickable rows (by row) are buttons that fire on release
-/// inside the same control and show the WinUI pressed fill meanwhile.
+/// inside the same control and show the WinUI pressed fill meanwhile; so is a web address
+/// in a note (by line and start).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum PressTarget {
     Item(usize),
@@ -120,6 +121,7 @@ pub(super) enum PressTarget {
     Up,
     Chevron,
     NoteBox(usize),
+    NoteLink(usize, usize),
     ScriptRow(usize),
 }
 
@@ -475,6 +477,7 @@ impl FenceViewState {
             PressTarget::Item(_)
             | PressTarget::Header(_)
             | PressTarget::NoteBox(_)
+            | PressTarget::NoteLink(..)
             | PressTarget::ScriptRow(_) => {
                 if !self.rolled_up {
                     let _ = self.redraw_content();
@@ -521,6 +524,8 @@ impl FenceViewState {
     ) -> Option<PressTarget> {
         let p = if let Some(line) = self.note_box_at(x_px, y_px) {
             PressTarget::NoteBox(line)
+        } else if let Some((line, start)) = self.note_link_at(x_px, y_px).filter(|_| !second) {
+            PressTarget::NoteLink(line, start)
         } else {
             let row = self.script_row_at(x_px, y_px).filter(|_| !second)?;
             PressTarget::ScriptRow(row)

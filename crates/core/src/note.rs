@@ -243,6 +243,168 @@ pub fn new_todo_suffix(text: &str) -> &'static str {
     }
 }
 
+/// The web addresses in `text`, the drawn text of one line of a note: each one's start and
+/// end in UTF-16 units. An address starts with `http://` or `https://` where a word starts
+/// and runs to the next space, quote or angle bracket, or the next character that is not
+/// ASCII (Chinese text often follows an address without a space); what a sentence puts after it (`.`, `,`, `;`, `:`,
+/// `!`, `?`, a quote, a closing bracket that was never opened) is not part of it. Nothing
+/// else is an address: a click on a note opens these two kinds only, as a script fence's row
+/// does ([`crate::script_output::is_web_address`]).
+pub fn links(text: &str) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut from = 0;
+    while from < text.len() {
+        let rest = &text[from..];
+        let Some(at) = ["https://", "http://"]
+            .iter()
+            .filter_map(|scheme| {
+                // ASCII only, so the lower-cased text has the same byte offsets.
+                rest.to_ascii_lowercase()
+                    .find(scheme)
+                    .map(|i| (i, scheme.len()))
+            })
+            .min()
+        else {
+            break;
+        };
+        let (start, scheme) = (from + at.0, at.1);
+        let word_start = text[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_ascii_alphanumeric());
+        let run = text[start..]
+            .find(|c: char| {
+                !c.is_ascii()
+                    || c.is_ascii_whitespace()
+                    || c.is_ascii_control()
+                    || matches!(c, '"' | '<' | '>')
+            })
+            .unwrap_or(text.len() - start);
+        let mut address = &text[start..start + run];
+        // What follows the address in its sentence.
+        loop {
+            let Some(last) = address.chars().next_back() else {
+                break;
+            };
+            let closes = match last {
+                ')' => Some('('),
+                ']' => Some('['),
+                '}' => Some('{'),
+                _ => None,
+            };
+            let ends_sentence = matches!(last, '.' | ',' | ';' | ':' | '!' | '?' | '\'' | '"')
+                || closes.is_some_and(|open| {
+                    address.matches(open).count() < address.matches(last).count()
+                });
+            if !ends_sentence {
+                break;
+            }
+            address = &address[..address.len() - 1];
+        }
+        if word_start && address.len() > scheme && crate::script_output::is_web_address(address) {
+            let first = units(&text[..start]);
+            // ASCII: one unit per byte.
+            out.push((first, first + address.len()));
+        }
+        from = start + run.max(scheme);
+    }
+    out
+}
+
+/// A note's text and selection while it is edited (the two ends in UTF-16 units, line breaks
+/// counted as `\n`).
+pub type EditState = (String, usize, usize);
+
+/// The undo history of one editing session of a note: the states Ctrl+Z goes back through
+/// and Ctrl+Y forward again. A run of typing (or of deleting) is one step; a space typed after
+/// a word starts the next step, and so does everything else: a paste, a cut, a check box
+/// ticked, typing after the caret was moved.
+#[derive(Debug, Default)]
+pub struct EditHistory {
+    undo: Vec<EditState>,
+    redo: Vec<EditState>,
+    run: Option<Run>,
+}
+
+/// The run of single characters the last change belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Run {
+    /// Typed one after the other; `space`: the last one was a space or a line break.
+    Typing {
+        space: bool,
+    },
+    Deleting,
+}
+
+impl EditHistory {
+    /// The states kept: older ones are dropped.
+    const KEPT: usize = 200;
+
+    /// The text changed from the state `before` to `text`: `before` becomes a step to go back
+    /// to, unless the change goes on with the run of typing or deleting before it. What was
+    /// undone can no longer be redone.
+    pub fn record(&mut self, before: &EditState, text: &str) {
+        let (old, new) = (before.0.chars().count(), text.chars().count());
+        let bare_caret = before.1 == before.2;
+        let run = if bare_caret && new == old + 1 {
+            // The one character that went in: where the two texts first differ.
+            let typed = text
+                .chars()
+                .zip(before.0.chars().chain(std::iter::once('\0')))
+                .find(|(a, b)| a != b)
+                .map(|(a, _)| a);
+            Some(Run::Typing {
+                space: typed.is_some_and(char::is_whitespace),
+            })
+        } else if bare_caret && new + 1 == old {
+            Some(Run::Deleting)
+        } else {
+            None
+        };
+        let goes_on = match (self.run, run) {
+            // A space after a word ends the step: the next word goes with its space.
+            (Some(Run::Typing { space: before }), Some(Run::Typing { space })) => before || !space,
+            (Some(Run::Deleting), Some(Run::Deleting)) => true,
+            _ => false,
+        };
+        self.run = run;
+        self.redo.clear();
+        if !goes_on {
+            self.undo.push(before.clone());
+            if self.undo.len() > Self::KEPT {
+                self.undo.remove(0);
+            }
+        }
+    }
+
+    /// The caret or the selection moved without a change of the text: what is typed next is
+    /// a step of its own.
+    pub fn break_run(&mut self) {
+        self.run = None;
+    }
+
+    /// Ctrl+Z from the state `now`: the state to go back to, if there is one.
+    pub fn undo(&mut self, now: EditState) -> Option<EditState> {
+        let to = self.undo.pop()?;
+        self.redo.push(now);
+        self.run = None;
+        Some(to)
+    }
+
+    /// Ctrl+Y from the state `now`: the state that was undone last, if there is one.
+    pub fn redo(&mut self, now: EditState) -> Option<EditState> {
+        let to = self.redo.pop()?;
+        self.undo.push(now);
+        self.run = None;
+        Some(to)
+    }
+
+    /// How many steps Ctrl+Z and Ctrl+Y can go (for the log).
+    pub fn depth(&self) -> (usize, usize) {
+        (self.undo.len(), self.redo.len())
+    }
+}
+
 /// Byte range of the `[ ]` / `[]` / `[x]` marker at the start of `line` (after leading spaces
 /// and an optional `- ` or `* `), and whether it is ticked.
 fn marker(line: &str) -> Option<(usize, usize, bool)> {
@@ -510,5 +672,54 @@ mod tests {
         );
         assert_eq!(toggle(text, 0), None);
         assert_eq!(toggle(text, 9), None);
+    }
+
+    #[test]
+    fn web_addresses_in_a_note_line() {
+        let found = |text: &str| -> Vec<String> {
+            let wide: Vec<u16> = text.encode_utf16().collect();
+            links(text)
+                .into_iter()
+                .map(|(a, b)| String::from_utf16_lossy(&wide[a..b]))
+                .collect()
+        };
+        assert_eq!(
+            found("详见 https://example.com/wiki/weekly"),
+            ["https://example.com/wiki/weekly"]
+        );
+        // The sentence's punctuation, Chinese text right after it, brackets around it.
+        assert_eq!(
+            found("看 https://a.example/x。然后"),
+            ["https://a.example/x"]
+        );
+        assert_eq!(
+            found("看https://a.example/x，然后"),
+            ["https://a.example/x"]
+        );
+        assert_eq!(found("(see http://a.example/b.)"), ["http://a.example/b"]);
+        assert_eq!(
+            found("https://en.wikipedia.org/wiki/Fence_(disambiguation), HTTP://B.example"),
+            [
+                "https://en.wikipedia.org/wiki/Fence_(disambiguation)",
+                "HTTP://B.example"
+            ]
+        );
+        // Offsets count UTF-16 units: an emoji before the address is two.
+        assert_eq!(links("😀 http://a.example"), [(3, 19)]);
+        // No address: other schemes, a path, a scheme alone, one inside a word, one with a
+        // quote in it (the browser's command line).
+        for none in [
+            "file:///C:/Windows/notepad.exe",
+            "ms-settings:display",
+            "C:\\Windows\\notepad.exe",
+            "mailto:a@example.com",
+            "https://",
+            "xhttps://a.example",
+            "javascript:alert(1)",
+            "\\\\server\\share",
+        ] {
+            assert!(links(none).is_empty(), "{none}");
+        }
+        assert_eq!(found("http://a.example/\"b c"), ["http://a.example/"]);
     }
 }

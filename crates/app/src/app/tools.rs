@@ -1156,6 +1156,38 @@ impl App {
         }
     }
 
+    /// A click on a web address in a note: it opens in the default browser. Only what
+    /// `note::links` finds there is opened, an `http://` or `https://` address, as a script
+    /// fence's `href=` row opens without its header line: a note starts no program and opens
+    /// no file.
+    pub(super) fn open_note_link(&mut self, fence: FenceId, line: usize, start: usize) {
+        use pecofence_core::note::{self, NoteLine};
+        let address = self.state.note_text(fence).and_then(|text| {
+            let shown = match *note::lines(text).get(line)? {
+                NoteLine::Todo { text, .. } | NoteLine::Text(text) => text,
+            };
+            let wide: Vec<u16> = shown.encode_utf16().collect();
+            let (from, to) = note::links(shown).into_iter().find(|l| l.0 == start)?;
+            Some(String::from_utf16_lossy(&wide[from..to]))
+        });
+        let Some(address) = address.filter(|a| pecofence_core::script_output::is_web_address(a))
+        else {
+            tracing::info!(%fence, line, start, "note link not opened: no web address there");
+            return;
+        };
+        let owner = self.window_for(fence).map(|w| w.hwnd());
+        let opened = shell::shell_execute(std::path::Path::new(&address), None, owner);
+        // The address itself stays out of the log: it is the user's.
+        tracing::info!(
+            %fence,
+            line,
+            chars = address.len(),
+            https = address.to_ascii_lowercase().starts_with("https://"),
+            ok = opened.is_ok(),
+            "note link opened in the browser"
+        );
+    }
+
     /// The editor closed: its text replaces the note's (line breaks stored as `\n`).
     pub(super) fn note_edited(&mut self, fence: FenceId, text: &str) {
         crate::note_edit::take_committed(fence);

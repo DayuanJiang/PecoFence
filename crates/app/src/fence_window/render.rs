@@ -1391,7 +1391,12 @@ impl FenceViewState {
             Some(PressTarget::NoteBox(line)) => self.press_inside.then_some((line, true)),
             _ => self.note_box_hover.map(|line| (line, false)),
         };
-        let mut boxes = Vec::new();
+        // The web address under the pointer, or the one held (while the pointer is on it).
+        let link_hot = match self.pressed {
+            Some(PressTarget::NoteLink(line, start)) => self.press_inside.then_some((line, start)),
+            _ => self.note_link_hover,
+        };
+        let mut drawn = pecofence_render::fence_chrome::NoteDrawn::default();
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
@@ -1401,7 +1406,7 @@ impl FenceViewState {
                         selection,
                     }
                 });
-                boxes = chrome.draw_note(
+                drawn = chrome.draw_note(
                     session,
                     &theme,
                     scale,
@@ -1415,13 +1420,20 @@ impl FenceViewState {
                     scrollbar,
                     edit.as_ref(),
                     hot,
+                    link_hot,
                 )?;
                 Ok(())
             })?;
         self.note_draw_result(ok);
-        self.note_boxes = boxes
+        self.note_boxes = drawn
+            .boxes
             .into_iter()
             .map(|(line, r)| (line, [r.left, r.top, r.right, r.bottom]))
+            .collect();
+        self.note_links = drawn
+            .links
+            .into_iter()
+            .map(|(line, start, r)| (line, start, [r.left, r.top, r.right, r.bottom]))
             .collect();
         Ok(())
     }

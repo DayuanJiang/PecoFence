@@ -408,6 +408,7 @@ pub(super) fn on_mousemove(
                 | PressTarget::Chevron
                 | PressTarget::Header(_)
                 | PressTarget::NoteBox(_)
+                | PressTarget::NoteLink(..)
                 | PressTarget::ScriptRow(_)
         )
     {
@@ -443,6 +444,7 @@ pub(super) fn on_mousemove(
                 PressTarget::Chevron => v.chevron_hovered = inside,
                 PressTarget::Header(c) => v.header_hover = inside.then_some(c),
                 PressTarget::NoteBox(l) => v.note_box_hover = inside.then_some(l),
+                PressTarget::NoteLink(l, s) => v.note_link_hover = inside.then_some((l, s)),
                 PressTarget::ScriptRow(r) => v.script_hover = inside.then_some(r),
                 _ => {}
             }
@@ -507,8 +509,15 @@ pub(super) fn on_mousemove(
     } else {
         v.note_box_at(x, y)
     };
+    // A web address in a note is underlined under the pointer.
+    let note_link = if sb_hot || on_control {
+        None
+    } else {
+        v.note_link_at(x, y)
+    };
     let script_changed = (std::mem::replace(&mut v.script_hover, script_row) != script_row)
         | (std::mem::replace(&mut v.note_box_hover, note_box) != note_box)
+        | (std::mem::replace(&mut v.note_link_hover, note_link) != note_link)
         | v.hover_empty_action((!sb_hot && !on_control).then_some((x, y)));
     // The arrow says what a click on it does, as the buttons of a window's title bar do.
     let tip = if chev {

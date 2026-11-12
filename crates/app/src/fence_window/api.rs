@@ -187,6 +187,7 @@ impl FenceWindow {
             note_edit: None,
             note_drag: false,
             note_boxes: Vec::new(),
+            note_links: Vec::new(),
             clock: None,
             clock_text: (0.0, 0.0),
             clock_text_logged: (0.0, 0.0),
@@ -202,6 +203,7 @@ impl FenceWindow {
             script_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             script_footer_form: "full",
             note_box_hover: None,
+            note_link_hover: None,
             portal_missing: false,
             empty_override: None,
             empty_action: None,
@@ -522,7 +524,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={}",
+            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={}",
             v.title,
             v.title_count,
             v.filter_active,
@@ -571,6 +573,12 @@ impl FenceWindow {
             v.clock_text.0,
             v.clock_text.1,
             dump_rects(&v.note_boxes),
+            dump_rects(
+                &v.note_links
+                    .iter()
+                    .map(|&(line, _, r)| (line, r))
+                    .collect::<Vec<_>>(),
+            ),
             dump_rects(&v.script_rows),
             v.off_desktop,
             v.desktop_tip,
@@ -1699,6 +1707,8 @@ impl FenceWindow {
             if v.note != text {
                 v.note = text;
                 v.note_boxes.clear();
+                v.note_links.clear();
+                v.note_link_hover = None;
                 let _ = v.redraw();
             }
         });

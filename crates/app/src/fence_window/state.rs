@@ -248,6 +248,10 @@ pub struct FenceViewState {
     /// The note's to-do check boxes as last drawn: line index and (left, top, right, bottom)
     /// in content DIPs.
     pub(super) note_boxes: Vec<(usize, [f32; 4])>,
+    /// The note's web addresses as last drawn (none while it is edited): the line, the
+    /// address's start in the line's text (UTF-16 units), and one box (left, top, right,
+    /// bottom) in content DIPs per line on screen the address runs over.
+    pub(super) note_links: Vec<(usize, usize, [f32; 4])>,
     /// 时钟与日期: the fence shown is a clock; true = with seconds. None = it shows items.
     pub(super) clock: Option<bool>,
     /// The clock's time and date text sizes (DIPs) as last drawn, and as last logged.
@@ -280,6 +284,8 @@ pub struct FenceViewState {
     pub(super) script_footer_form: &'static str,
     /// 便签与待办: the line whose check box is under the pointer.
     pub(super) note_box_hover: Option<usize>,
+    /// 便签与待办: the web address under the pointer (its line and start).
+    pub(super) note_link_hover: Option<(usize, usize)>,
     /// The portal's folder could not be found (its empty state says so).
     pub(super) portal_missing: bool,
     /// The empty-state text in place of the usual one (a smart fence's state, a filter that
@@ -813,13 +819,36 @@ impl FenceViewState {
         if self.note.is_none() || self.rolled_up || y < self.content_y || x < self.content_x {
             return None;
         }
-        if self.note_box_at(x, y).is_some() {
+        // A check box ticks, a web address opens (the second click of a double-click on one
+        // does nothing more).
+        if self.note_box_at(x, y).is_some() || self.note_link_at(x, y).is_some() {
             return None;
         }
         Some(Command::EditNote {
             fence: self.active,
             caret: self.note_offset_at(x, y),
         })
+    }
+
+    /// 便签与待办: the web address (its line and start) at client point (`x`, `y`) of a note
+    /// that is not being edited.
+    pub(super) fn note_link_at(&self, x: i32, y: i32) -> Option<(usize, usize)> {
+        if self.note.is_none()
+            || self.note_edit.is_some()
+            || self.rolled_up
+            || y < self.content_y
+            || x < self.content_x
+            || self.scrollbar_hit(x, y).is_some()
+        {
+            return None;
+        }
+        let scale = self.scale();
+        let cx = (x - self.content_x) as f32 / scale;
+        let cy = (y - self.content_y) as f32 / scale;
+        self.note_links
+            .iter()
+            .find(|(_, _, r)| cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3])
+            .map(|&(line, start, _)| (line, start))
     }
 
     /// 脚本栅栏: the clickable row at client point (`x`, `y`).

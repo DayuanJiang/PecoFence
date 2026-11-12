@@ -4379,6 +4379,15 @@ pub struct NoteEditDraw<'a> {
     pub selection: &'a [(usize, usize, usize, bool)],
 }
 
+/// What [`FenceChrome::draw_note`] drew that takes the pointer, in surface DIPs: each to-do's
+/// line index with its check box, and each web address (its line and its start in the line's
+/// text, UTF-16 units) with one box per line on screen it runs over.
+#[derive(Default)]
+pub struct NoteDrawn {
+    pub boxes: Vec<(usize, Rect)>,
+    pub links: Vec<(usize, usize, Rect)>,
+}
+
 /// One line of a note laid out: its wrapped text, where the text starts, its top from the
 /// first line's top (before any scrolling) and its height.
 struct NoteRow {
@@ -4604,8 +4613,10 @@ impl FenceChrome {
     /// colour and the lines stop above it. The lines are moved up by `scroll` DIPs (a note
     /// taller than its fence), with the overlay `scrollbar` at the right. While the note is
     /// being edited, `edit` adds the selection and the caret; nothing else changes. `hot` is
-    /// the line whose check box is under the pointer (true: held). Returns each to-do's line
-    /// index with its check box (surface DIPs) for hit-testing.
+    /// the line whose check box is under the pointer (true: held). A web address
+    /// (`pecofence_core::note::links`) is drawn as a link, in the accent ink, the one at
+    /// `link_hot` (line, start) underlined; while the note is edited it is plain text.
+    /// Returns the check boxes and the links for hit-testing.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_note(
         &self,
@@ -4622,11 +4633,16 @@ impl FenceChrome {
         scrollbar: Option<ScrollbarDraw>,
         edit: Option<&NoteEditDraw<'_>>,
         hot: Option<(usize, bool)>,
-    ) -> Result<Vec<(usize, Rect)>> {
+        link_hot: Option<(usize, usize)>,
+    ) -> Result<NoteDrawn> {
         session.clear(ColorF::TRANSPARENT);
         let tt = self.tool_text(text_size);
         let primary = session.create_solid_brush(theme.text_primary)?;
         let secondary = session.create_solid_brush(theme.text_secondary)?;
+        // A link in a done to-do is dimmed as the line's text is.
+        let link = session.create_solid_brush(theme.link_ink())?;
+        let link_dim =
+            session.create_solid_brush(with_alpha(theme.link_ink(), theme.text_secondary.a))?;
         let halo = tool_halo(session, theme, scale)?;
         let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
         let height = match footer.filter(|f| !f.is_empty()) {
@@ -4660,7 +4676,7 @@ impl FenceChrome {
             // A note that is being edited shows its hint until the first character, with
             // the caret before it.
             if edit.is_none() {
-                return Ok(Vec::new());
+                return Ok(NoteDrawn::default());
             }
         }
         let (rows, line_h) = self.note_rows(width, text_size, lines)?;
@@ -4673,6 +4689,7 @@ impl FenceChrome {
             _ => None,
         };
         let mut boxes = Vec::new();
+        let mut links = Vec::new();
         for (i, (line, row)) in lines.iter().zip(&rows).enumerate() {
             let y = NOTE_PAD_TOP + row.y - scroll;
             if y >= height {
@@ -4740,6 +4757,33 @@ impl FenceChrome {
             if let Some((halo, down)) = &halo {
                 session.draw_text_layout(Vector2::new(row.x, y + down), &row.layout, halo);
             }
+            // After the halo, which stays the fence text's: the links take their ink.
+            if edit.is_none() {
+                for (from, to) in pecofence_core::note::links(line.text) {
+                    let (start, count) = (from as u32, (to - from) as u32);
+                    let ink = if line.todo == Some(true) {
+                        &link_dim
+                    } else {
+                        &link
+                    };
+                    row.layout.set_range_brush(start, count, ink);
+                    if link_hot == Some((i, from)) {
+                        row.layout.set_range_underline(start, count);
+                    }
+                    for r in layout_selection(&row.layout, from, to, len) {
+                        links.push((
+                            i,
+                            from,
+                            Rect::from_xywh(
+                                row.x + r.left,
+                                y + r.top,
+                                r.right - r.left,
+                                r.bottom - r.top,
+                            ),
+                        ));
+                    }
+                }
+            }
             session.draw_text_layout(Vector2::new(row.x, y), &row.layout, brush);
             if let Some((_, at)) = edit.and_then(|e| e.caret).filter(|c| c.0 == i) {
                 let (cx, top, h) = layout_caret(&row.layout, at, len);
@@ -4752,7 +4796,7 @@ impl FenceChrome {
         if let Some(bar) = scrollbar {
             draw_scrollbar(session, theme, &self.sort_glyph_format, width, bar)?;
         }
-        Ok(boxes)
+        Ok(NoteDrawn { boxes, links })
     }
 }
 

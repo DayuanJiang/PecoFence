@@ -856,6 +856,21 @@ impl Theme {
         self.title_text.unwrap_or(fallback)
     }
 
+    /// The ink of a link in the text (a web address in a note): the accent in the shade that
+    /// goes with the text as it was picked for the plate, the light shade beside light text
+    /// and the dark one beside dark text.
+    pub fn link_ink(&self) -> ColorF {
+        let light_text = self.text_primary.r > 0.5;
+        if light_text == (self.mode == ThemeMode::Dark) {
+            return self.accent;
+        }
+        match self.other_accent {
+            Some([r, g, b]) => ColorF::from_rgba8(r, g, b, 0xFF),
+            None if light_text => Self::dark().accent,
+            None => Self::light().accent,
+        }
+    }
+
     /// The theme file's halo and shadow for text in `ink`: dark text takes the light mode's,
     /// light text the dark mode's.
     pub fn text_fx(&self, ink: ColorF) -> TextFx {
