@@ -2389,6 +2389,22 @@ impl FenceChrome {
         }
     }
 
+    /// Where the caption's text starts in a tab pill `w` DIPs wide, counted from the pill's
+    /// left edge, as drawn: after its glyphs, centred in its room. The name box opens there.
+    pub fn tab_caption_text_x(
+        &self,
+        theme: &Theme,
+        w: f32,
+        title: &str,
+        size: u8,
+        glyphs: (bool, bool),
+        badge: Option<&str>,
+    ) -> f32 {
+        let c = self.tab_caption(theme, w, title, size, glyphs, badge);
+        let text_w = crate::text::measure_width(&c.fitted, &self.tab_format(size)).min(c.w);
+        c.x + (c.w - text_w) * 0.5
+    }
+
     /// The up button of a folder tab's pill at `x`, `w` wide, in a title-row strip: the square
     /// around its folder glyph, as drawn. The app hit-tests the same box.
     pub fn tab_up_box(
@@ -2765,6 +2781,27 @@ impl FenceChrome {
         };
         // The glyph's slot as drawn: 20 DIPs from 2 before its place.
         Rect::from_xywh(x - 2.0, 0.0, 20.0, title_h)
+    }
+
+    /// Where the text of a single title laid out with `deco` stands, as drawn, for its name
+    /// box: its left edge, its width as shown, and the width of the room it is aligned in
+    /// (which starts at `deco.title_x()`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn lone_title_text_span(
+        &self,
+        title: &str,
+        count: Option<&str>,
+        tag: Option<(&str, &str, &str)>,
+        size: u8,
+        align: pecofence_core::TitleAlign,
+        width: f32,
+        deco: TitleDeco,
+        reserve: f32,
+    ) -> (f32, f32, f32) {
+        let (x, fitted, room_w) =
+            self.lone_title_place(title, count, tag, size, align, width, deco, reserve);
+        let text_w = crate::text::measure_width(&fitted, &self.title_format(size)).min(room_w);
+        (x + deco.glyphs_w(), text_w, room_w)
     }
 
     /// Is a single title laid out with `deco` drawn cut short (it ends in an ellipsis)? Its

@@ -4,7 +4,7 @@
 //! Enter commits, Esc cancels, losing focus commits.
 
 use crate::commands::{Command, CommandQueue};
-use pecofence_core::{FenceId, ItemId};
+use pecofence_core::{FenceId, ItemId, TitleAlign};
 use pecofence_platform::tooltip::Tooltip;
 use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
@@ -74,6 +74,9 @@ struct ItemBox {
     pad_bottom: i32,
     line_h: i32,
     max_lines: i32,
+    /// A title's one line: where its text stands in the box (an icon's name is always centred,
+    /// a row's starts at the left).
+    align: TitleAlign,
 }
 
 /// A fence title or a tab's caption as it is drawn (`FenceWindow::title_text_place`): `x` px
@@ -86,12 +89,19 @@ pub struct TitlePlace {
     pub font_dip: f32,
     pub face: Option<String>,
     pub weight: i32,
+    /// A centred or right-aligned single title: its alignment, where its text ends and the
+    /// room it is aligned in (from, to), all in px from the window's left edge.
+    pub aligned: Option<(TitleAlign, i32, (i32, i32))>,
 }
 
 /// The name box over a title: its screen rectangle and where its edit sits in it. The text
 /// starts where the title's does, on a line in the middle of the title row, so the name does
 /// not move when the box opens (it stood 4 px left of the title and 5 px above it, in a
 /// 14 DIP regular font whatever the title's size and weight). `r` is the fence window.
+/// A centred title's box is centred on the title's text and as wide as the title's room
+/// allows on both sides; a right-aligned title's box ends where its text ends and reaches back
+/// over the room. Their text is centred or right-aligned in the box, so the name stays where
+/// it stood and grows as the title will.
 fn title_box_place(r: RECT, dpi: u32, title: &TitlePlace) -> (RECT, ItemBox) {
     let scale = dpi.max(96) as f32 / 96.0;
     let px = |dip: f32| (dip * scale).round() as i32;
@@ -99,10 +109,26 @@ fn title_box_place(r: RECT, dpi: u32, title: &TitlePlace) -> (RECT, ItemBox) {
     // 1 DIP and the 2 DIP accent line below.
     let (pad_x, pad_top, pad_bottom) = (px(3.0) + 1, px(1.0) + 1, px(3.0));
     let h = (pad_top + px(title.font_dip * 4.0 / 3.0) + pad_bottom).min(title.row_h);
-    let left = r.left + title.x - pad_x;
     let top = r.top + (title.row_h - h) / 2;
-    // Up to the count and the chevron at the right, as before.
-    let right = (r.right - px(44.0)).max(left + px(80.0));
+    let (left, right, align) = match title.aligned {
+        Some((TitleAlign::Center, end, (from, to))) => {
+            // Twice the text's centre, so a half pixel is not lost.
+            let c2 = title.x + end;
+            let half = ((c2 - 2 * from).min(2 * to - c2) / 2).max(px(40.0));
+            let left = r.left + (c2 - 2 * half) / 2 - pad_x;
+            (left, left + 2 * half + 2 * pad_x, TitleAlign::Center)
+        }
+        Some((TitleAlign::Right, end, (from, _))) => {
+            let right = r.left + end + pad_x;
+            let left = (r.left + from - pad_x).min(right - px(80.0));
+            (left, right, TitleAlign::Right)
+        }
+        _ => {
+            let left = r.left + title.x - pad_x;
+            // Up to the count and the chevron at the right, as before.
+            (left, (r.right - px(44.0)).max(left + px(80.0)), TitleAlign::Left)
+        }
+    };
     let rect = RECT {
         left,
         top,
@@ -116,6 +142,7 @@ fn title_box_place(r: RECT, dpi: u32, title: &TitlePlace) -> (RECT, ItemBox) {
         pad_bottom,
         line_h: 0,
         max_lines: 1,
+        align,
     };
     (rect, item_box)
 }
@@ -348,6 +375,7 @@ fn item_box_place(
                 pad_bottom,
                 line_h: 0,
                 max_lines: ITEM_BOX_MAX_LINES,
+                align: TitleAlign::Center,
             }
         }
         None => {
@@ -365,6 +393,7 @@ fn item_box_place(
                 pad_bottom: 0,
                 line_h: 0,
                 max_lines: 1,
+                align: TitleAlign::Left,
             }
         }
     };
@@ -530,6 +559,27 @@ fn begin_rename_at(
             window.hwnd(),
             w - 2 * b.edit_x,
             h - b.pad_top - b.pad_bottom,
+            dpi,
+            font_dip,
+            &current,
+            dark,
+            on_key,
+        ),
+        // A centred or right-aligned title: its text keeps that place in the box.
+        Some(b) if b.align == TitleAlign::Center => edit::EditControl::create_centered(
+            window.hwnd(),
+            w,
+            h,
+            dpi,
+            font_dip,
+            &current,
+            dark,
+            on_key,
+        ),
+        Some(b) if b.align == TitleAlign::Right => edit::EditControl::create_right(
+            window.hwnd(),
+            w,
+            h,
             dpi,
             font_dip,
             &current,
@@ -756,6 +806,7 @@ mod tests {
             font_dip,
             face: None,
             weight: 600,
+            aligned: None,
         };
         let (r, b) = title_box_place(fence, 96, &title(16, 36, 14.0));
         // Text at box.left + edit_x: the title's 8 + 16.
@@ -781,6 +832,25 @@ mod tests {
             "the same room above and below"
         );
         assert!(r.bottom - r.top <= 54);
+        // A centred title (text 120..180 in a room 16..260 of a 300 px fence): the box is
+        // centred on the text and takes the room the nearer end leaves on both sides.
+        let centred = TitlePlace {
+            aligned: Some((TitleAlign::Center, 180, (16, 260))),
+            ..title(120, 36, 14.0)
+        };
+        let (r, b) = title_box_place(fence, 96, &centred);
+        assert_eq!((r.left + r.right) / 2, 8 + 150, "centred on the text");
+        assert_eq!(r.right - b.edit_x, 8 + 260, "up to the end of the room");
+        assert_eq!(b.align, TitleAlign::Center);
+        // Right-aligned (text 200..260): the box ends where the text ends and reaches back.
+        let right = TitlePlace {
+            aligned: Some((TitleAlign::Right, 260, (16, 260))),
+            ..title(200, 36, 14.0)
+        };
+        let (r, b) = title_box_place(fence, 96, &right);
+        assert_eq!(r.right - b.edit_x, 8 + 260, "the text ends where the title's did");
+        assert_eq!(r.left + b.edit_x, 8 + 16);
+        assert_eq!(b.align, TitleAlign::Right);
     }
 
     #[test]

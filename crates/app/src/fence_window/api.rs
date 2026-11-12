@@ -2664,10 +2664,10 @@ impl FenceWindow {
     }
 
     /// The title of `fence` as it is drawn, for its name box (`rename::begin_inline_rename`):
-    /// where its text starts, its row's height, its size and its font. A lone title aligned
-    /// left, or a tab in the title row (its caption is centred in its pill). None for a
-    /// centred or right-aligned lone title, a tab with a glyph and the left tab column: their
-    /// box keeps its own place.
+    /// where its text starts, its row's height, its size and its font. A lone title (centred
+    /// or right-aligned: with the room it is aligned in, which its box takes) or a tab in the
+    /// title row (its caption is centred in its pill, after its glyphs). None for the left
+    /// tab column: its box keeps its row.
     pub fn title_text_place(&self, fence: FenceId) -> Option<crate::rename::TitlePlace> {
         const SIZES: [f32; 4] = [12.0, 14.0, 16.0, 18.0];
         let guard = self.view.borrow();
@@ -2676,29 +2676,37 @@ impl FenceWindow {
             return None;
         }
         let (face, weight) = v.chrome.title_font();
-        let (x, size) = if v.tabs.len() > 1 {
+        let px = |dip: f32| (dip * v.scale()).round() as i32;
+        let align = v.behavior.title_align.get();
+        let (x, size, aligned) = if v.tabs.len() > 1 {
             let i = v.tabs.iter().position(|t| t.id == fence)?;
-            // A glyph before the caption (a portal's folder, Task View) moves it off centre.
-            if v.tabs[i].folder_icon || v.tabs[i].desktop_icon {
-                return None;
-            }
+            let t = &v.tabs[i];
             let (x, w) = *v.tab_rects().get(i)?;
-            let size = v.tabs[i].title_size.min(3);
-            let caption =
-                pecofence_render::text::measure_width(&v.tabs[i].title, &v.chrome.tab_format(size));
-            // The pill is the caption and 8 DIPs at each side, or wider (48 at least).
-            (x + ((w - caption) / 2.0).max(8.0), size)
-        } else if v.behavior.title_align.get() == pecofence_core::TitleAlign::Left {
-            (v.deco.title_x(), v.style.title_size.min(3))
+            let size = t.title_size.min(3);
+            // As drawn: centred in the pill, after a glyph (a portal's folder, Task View).
+            let dx = v.chrome.tab_caption_text_x(
+                &v.theme,
+                w,
+                &t.title,
+                size,
+                (t.folder_icon, t.desktop_icon),
+                v.tab_badge(t.id).as_deref(),
+            );
+            (x + dx, size, None)
+        } else if align == pecofence_core::TitleAlign::Left {
+            (v.deco.title_x(), v.style.title_size.min(3), None)
         } else {
-            return None;
+            let (x, end, (from, to)) = v.lone_title_text_span();
+            let aligned = Some((align, px(end), (px(from), px(to))));
+            (x, v.style.title_size.min(3), aligned)
         };
         Some(crate::rename::TitlePlace {
-            x: (x * v.scale()).round() as i32,
+            x: px(x),
             row_h: v.title_h_px(),
             font_dip: SIZES[usize::from(size)],
             face,
             weight,
+            aligned,
         })
     }
 
