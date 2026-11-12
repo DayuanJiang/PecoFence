@@ -62,7 +62,7 @@ you come back to 0.2.4.
 - Icons in fences with hidden labels show squeezed labels; a default icon size
   other than 32, 48, 64 or 96 makes 0.2.3's `pecofence-cli settings set` fail
   until it is set back to one of those.
-- With 「关闭 PecoFence 时保持 Windows 桌面图标隐藏」 on, the desktop shows no
+- With 「退出 PecoFence 时保持 Windows 桌面图标隐藏」 on, the desktop shows no
   icons while 0.2.3 is not running: turn it off before going back, or choose
   View → Show desktop icons on the desktop.
 

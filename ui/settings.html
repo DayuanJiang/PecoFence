@@ -457,7 +457,6 @@
   .dj-demo .dj-pic { flex: none; border-radius: var(--r-control); background: var(--dj-panel); padding: 6px; line-height: 0; }
   .dj-demo ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--text2); }
   .dj-demo li.on { color: var(--text); font-weight: 600; }
-  .dj-demo > .s { margin-top: 10px; }
   .dj-pic .w { fill: var(--dj-win); stroke: var(--dj-line); }
   .dj-pic .w.front { stroke: var(--accent); stroke-width: 2; }
   .dj-pic .bar { fill: var(--dj-bar); }
@@ -589,16 +588,16 @@
         <div class="card child"><div class="l"><div><div class="t">图标着色强度</div></div></div>
           <select id="iconTintStrength"><option value="0.35">弱</option><option value="0.6">中</option><option value="0.9">强</option></select></div>
       </div>
-      <div class="card"><div class="l"><span class="ic">&#xE793;</span><div><div class="t">图标融入背景（Chameleon）</div><div class="s">降低图标饱和度和不透明度，让桌面看起来更清爽</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="icons.chameleon"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE793;</span><div><div class="t">图标融入背景</div><div class="s">降低图标饱和度和不透明度，让桌面看起来更清爽</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="icons.chameleon"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE71B;</span><div><div class="t">显示快捷方式箭头</div><div class="s">和 Windows 桌面一样，在快捷方式图标的左下角显示小箭头</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="icons.shortcutArrows"></div></div>
       <h3>桌面与启动</h3>
       <div class="card"><div class="l"><span class="ic">&#xE7E8;</span><div><div class="t">随 Windows 启动</div><div class="s" hidden></div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="autostart"></div></div>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t" id="desktopIconsTitle">Windows 桌面图标</div><div class="s" id="desktopIconsHelp"></div></div></div>
           <select id="desktopIcons" aria-labelledby="desktopIconsTitle" aria-describedby="desktopIconsHelp"><option value="hide">隐藏，项目放在栅栏里</option><option value="showWithInbox">显示，也显示“桌面”栅栏</option><option value="showNoInbox">显示，不显示“桌面”栅栏</option></select></div>
-        <div class="card child" id="keepIconsCard"><div class="l"><div><div class="t">关闭 PecoFence 时保持 Windows 桌面图标隐藏</div><div class="s">登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="keepIconsHidden"></div></div>
+        <div class="card child" id="keepIconsCard"><div class="l"><div><div class="t">退出 PecoFence 时保持 Windows 桌面图标隐藏</div><div class="s">打开后，退出或注销时图标保持隐藏，下次登录不会闪现。PecoFence 没有运行时桌面上没有图标；要恢复，右键桌面选“查看”→“显示桌面图标”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="keepIconsHidden"></div></div>
       </div>
-      <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时显示“新建栅栏”按钮</div><div class="s">矩形没有碰到任何栅栏时，在它的右下角显示“新建栅栏”和“在此显示文件夹…”两个小按钮，不点的话几秒后消失；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时显示“新建栅栏”按钮</div><div class="s">在矩形右下角显示“新建栅栏”和“在此显示文件夹…”，几秒后消失。关闭后拖出矩形只用来框选</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
       <div class="card" id="perDesktopCard"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">每个虚拟桌面各用一套栅栏</div><div class="s">打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="perDesktopFences"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE82F;</span><div><div class="t">功能提示</div><div class="s">用得上某个功能时提示一次，例如栅栏多了可以收起、常开的文件夹可以放到桌面上。每条只出现一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="featureTips"></div></div>
       <h3>隐藏栅栏</h3>
@@ -656,7 +655,7 @@
       </div>
       <h3>文件对话框</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8DA;</span><div><div class="t">对话框跳转</div><div class="s">打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.dialogJump"></div></div>
-      <div class="card child dj-demo" id="dialogJumpDemo"><div class="dj-head">怎么用</div><div class="dj-body"><div class="dj-pic" aria-hidden="true"></div><ol><li>“打开”对话框停在程序自己选的文件夹</li><li></li><li></li></ol></div><div class="s">也可以在对话框里按 Ctrl+G，或者点一下文件夹栅栏。</div></div>
+      <div class="card child dj-demo" id="dialogJumpDemo"><div class="dj-head">怎么用</div><div class="dj-body"><div class="dj-pic" aria-hidden="true"></div><ol><li>“打开”对话框停在程序自己选的文件夹</li><li></li><li></li></ol></div></div>
     </section>
 
     <section class="page" id="page-fences">
@@ -675,12 +674,12 @@
       <div class="card"><div class="l"><span class="ic">&#xE721;</span><div><div class="t">标题前显示放大镜</div><div class="s">一眼看出这个栅栏会自己更新</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="portalTitleIcon"></div></div>
       </div>
       <h3>外观</h3>
-      <div class="card"><div class="l"><span class="ic">&#xE744;</span><div><div class="t">不透明度</div><div class="s">默认：透出桌面。更厚实：多一层底色。全透明：鼠标悬停时才显示玻璃。</div></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE744;</span><div><div class="t">不透明度</div><div class="s">全透明：鼠标悬停时才显示玻璃。更透明：底色更淡。更厚实：多一层底色。</div></div></div>
         <select id="fenceOpacity" data-fence="opacity"><option value="transparent">全透明</option><option value="clear">更透明</option><option value="default">默认</option><option value="solid">更厚实</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE790;</span><div><div class="t">色调</div><div class="s">给玻璃染上一层颜色，标签页的色条随之变化</div></div></div>
         <div class="swatches" id="fenceTintSwatches" role="radiogroup"></div>
         <select id="fenceTint" data-fence="tint" hidden><option value="">无</option></select></div>
-      <div class="card" id="fenceTintTitleOnly"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">只给标题栏上色</div><div class="s">关掉的话，整个栅栏都会染上色调</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="tintTitleOnly"></div></div>
+      <div class="card" id="fenceTintTitleOnly"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">只给标题栏上色</div><div class="s">关闭后，整个栅栏都会染上色调</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="tintTitleOnly"></div></div>
       <div class="card" id="fenceTabColor"><div class="l"><span class="ic">&#xE7C3;</span><div><div class="t">标签页颜色</div><div class="s">标签页文字下方那条色条的颜色，方便区分同一个栅栏里的标签页</div></div></div>
         <div class="swatches" id="fenceTabColorSwatches" role="radiogroup"></div>
         <select id="fenceTabColorSel" data-fence="tabColor" hidden><option value="">跟随色调</option></select></div>
@@ -690,7 +689,7 @@
         <select id="fenceTitleSize" data-fence="titleSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
       <div class="card" id="fenceTextSize"><div class="l"><span class="ic">&#xE70B;</span><div><div class="t">文字大小</div><div class="s">栅栏里文字的大小</div></div></div>
         <select id="fenceTextSizeSel" data-fence="textSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">显示标题栏</div><div class="s">鼠标悬停时显示：平时收起标题行，指针移到栅栏上才出现</div></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">显示标题栏</div><div class="s">鼠标悬停时显示：平时隐藏标题栏，鼠标移到栅栏上才出现</div></div></div>
         <select id="fenceTitleOnHover" data-fence="titleOnHover"><option value="default">跟随常规设置</option><option value="always">始终显示</option><option value="hover">鼠标悬停时显示</option></select></div>
       <div id="fenceLayoutGroup">
       <h3>布局</h3>
@@ -711,7 +710,7 @@
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面隐藏时保留此栅栏</div><div class="s">其他栅栏隐藏时，这个栅栏仍留在桌面上</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="excludeFromQuickHide"></div></div>
       <div class="card" id="fenceHideEmpty"><div class="l"><span class="ic">&#xED1A;</span><div><div class="t">为空时自动隐藏</div><div class="s">里面没有图标时就不显示；桌面上一出现新图标，它会自己回来</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="hideWhenEmpty"></div></div>
       <div class="card" id="fenceDesktopLayout"><div class="l"><span class="ic">&#xE80A;</span><div><div class="t">像桌面一样排列</div><div class="s">图标像 Windows 桌面上一样从屏幕左上角一列一列往下排，绕开其他栅栏。关闭后“桌面”变回普通栅栏，可以移动和调整大小</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="desktopLayout"></div></div>
-      <div class="card" id="fenceFreePlacement"><div class="l"><span class="ic">&#xE7C2;</span><div><div class="t">自由摆放</div><div class="s">图标拖到桌面上哪里，就停在哪个格子里，像 Windows 桌面关掉“自动排列图标”时一样。关闭后图标按顺序排列</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="freePlacement"></div></div>
+      <div class="card" id="fenceFreePlacement"><div class="l"><span class="ic">&#xE7C2;</span><div><div class="t">自由摆放</div><div class="s">图标拖到桌面上哪里，就停在哪个格子里，像 Windows 桌面关闭“自动排列图标”时一样。关闭后图标按顺序排列</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="freePlacement"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE74A;</span><div><div class="t">停靠到屏幕顶部</div><div class="s">贴到屏幕顶边并收起，鼠标悬停时展开，像一个下拉抽屉</div></div></div><button id="fenceDock">停靠</button></div>
       <div class="card" id="fenceOpenFolders"><div class="l"><span class="ic">&#xE838;</span><div><div class="t">双击文件夹或文件夹快捷方式时在此栅栏内打开</div><div class="s">在栅栏里显示文件夹的内容，点向上箭头或按 Backspace 回到原来的图标</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="openFoldersInside"></div></div>
       <div id="fencePortalGroup">
@@ -724,8 +723,8 @@
 
     <section class="page" id="page-rules">
       <header class="page-header"><h2>整理规则</h2></header>
-      <div class="card"><div class="l"><span class="ic">&#xE8CB;</span><div><div class="t">新项目出现在桌面时自动归类</div><div class="s">先看快捷方式目标规则，再按列表顺序匹配；都不符合的放进“桌面”栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rules.keepUpdated"></div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE718;</span><div><div class="t">没有命中规则的项目</div><div class="s">应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏</div></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8CB;</span><div><div class="t">新项目出现在桌面时自动归类</div><div class="s">条件是“快捷方式目标包含”的规则先匹配，其余按列表顺序；都不符合的放进“桌面”栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rules.keepUpdated"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE718;</span><div><div class="t">不符合任何规则的项目</div><div class="s">应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏</div></div></div>
         <select data-bind="rules.unmatched"><option value="defaultTarget">回到“桌面”栅栏</option><option value="stay">留在当前栅栏</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8AB;</span><div><div class="t">立即对桌面上的全部项目应用规则</div><div class="s">手动放进栅栏的项目保持原位</div></div></div><button id="applyRules">立即应用</button></div>
       <h3>快速添加</h3>
@@ -776,7 +775,7 @@
       <header class="page-header"><h2>小工具</h2></header>
       <p class="page-lede">便签、时钟和脚本放在栅栏里，和普通栅栏一样可以移动、吸附和收起。</p>
       <div class="group">
-        <div class="card"><div class="l"><span class="ic">&#xEA86;</span><div><div class="t">小工具</div><div class="s">关上后，桌面上的小工具都不显示，脚本也全部停下</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.enabled"></div></div>
+        <div class="card"><div class="l"><span class="ic">&#xEA86;</span><div><div class="t">小工具</div><div class="s">关闭后，桌面上的小工具都不显示，脚本也全部停下</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.enabled"></div></div>
         <div class="card child"><div class="l"><div><div class="t">便签与待办</div><div class="s">在栅栏里写几行字，单击就能编辑。行首写 [ ] 的一行会变成可以勾选的待办</div></div></div><button class="accent" id="newNote">新建便签</button></div>
         <div class="card child"><div class="l"><div><div class="t">时钟</div><div class="s">显示时间、日期和星期。右键时钟可以打开“显示秒”</div></div></div><button id="newClock">添加</button></div>
         <div class="card child"><div class="l"><div><div class="t">天气</div><div class="s">今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选“编辑脚本”，把 Tokyo 换成你的城市</div></div></div><button id="addWeather" data-example="weather">添加</button></div>
@@ -838,7 +837,7 @@
       <div class="fb-foot"><div class="s">反馈只会发给 PecoFence 开发者。</div>
         <button type="button" class="accent" id="fbSend"><span class="idle">发送</span><span class="busy">正在发送…</span></button></div>
       <h3>疑难解答</h3>
-      <div class="card"><div class="l"><span class="ic">&#xE90F;</span><div><div class="t">Windows 桌面图标</div><div class="s" id="desktopIconsStatus"></div></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE90F;</span><div><div class="t">修复 Windows 桌面图标</div><div class="s" id="desktopIconsStatus"></div></div></div>
         <div class="actions"><button id="repairIcons">恢复显示桌面图标</button><button id="hideIconsAgain">重新隐藏桌面图标</button></div></div>
     </section>
   </main>
@@ -1103,7 +1102,7 @@
     select.disabled = !names.length;
     document.getElementById('customThemeHelp').textContent = names.length
       ? t("主题文件放在 themes 文件夹里，文件保存后栅栏立即更新")
-      : t("themes 文件夹里还没有主题文件：点“打开主题文件夹”放进去，或者看“写法说明”自己写一个");
+      : t("themes 文件夹是空的。点“打开主题文件夹”放入主题文件，或看“写法说明”");
     select.onchange = () => {
       state.settings.customTheme = select.value || null;
       bindThemeStyle();
@@ -1235,7 +1234,7 @@
     ['[data-bind=theme]', t("搜索别名\x04深色|暗色|夜间|黑暗模式|浅色|亮色|白天|dark|light")],
     ['[data-bind=labelColor]', t("搜索别名\x04字体颜色|文本颜色|白字|黑字")],
     ['#iconSize', t("搜索别名\x04图标尺寸|大图标|小图标|缩放")],
-    ['[data-bind="icons.chameleon"]', t("搜索别名\x04变淡|半透明|褪色|低饱和")],
+    ['[data-bind="icons.chameleon"]', t("搜索别名\x04变淡|半透明|褪色|低饱和|Chameleon")],
     ['[data-bind=autostart]', t("搜索别名\x04开机|开机启动|自启|自动启动|登录时启动")],
     ['#desktopIcons', t("搜索别名\x04隐藏桌面图标|显示桌面图标|系统图标|原来的图标")],
     ['[data-bind=featureTips]', t("搜索别名\x04小技巧|提示卡片|新手提示|引导")],
@@ -1846,7 +1845,7 @@
   // answers with a fresh state, so nothing here mutates `state` itself.
   let fenceSel = null;
   const fenceById = (id) => (state.fences || []).find(f => f.id === id);
-  const fenceOption = (f) => f.title + (f.kind === 'portal' ? t("（文件夹）") : f.kind === 'inbox' ? t("（桌面）") : '') + (f.host ? tf("（{0} 的标签页）", f.host) : '');
+  const fenceOption = (f) => f.title + (f.kind === 'portal' ? t("（文件夹栅栏）") : f.kind === 'inbox' && f.title !== t("桌面") ? t("（桌面）") : '') + (f.host ? tf("（{0} 的标签页）", f.host) : '');
   // A slider's live ticks resize the fence without the cell snap; its release snaps once.
   const setFence = (id, prop, value, live) => send({ type: 'setFence', id, prop, value, ...(live && { live }) });
   function ensureOption(sel, value, label) {
@@ -2542,7 +2541,7 @@
       hide: t("桌面项目只显示在栅栏里，没有归类的放进“桌面”栅栏；回收站等系统图标也在“桌面”栅栏里"),
       showWithInbox: t("Windows 桌面照常显示图标，没有归类的项目同时出现在“桌面”栅栏里"),
       showNoInbox: arranged
-        ? t("“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关掉它的“像桌面一样排列”")
+        ? t("“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关闭它的“像桌面一样排列”")
         : t("没有归类的项目只留在 Windows 桌面上，不显示“桌面”栅栏"),
     }[value];
     document.getElementById('keepIconsCard').hidden = value !== 'hide';

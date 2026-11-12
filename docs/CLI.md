@@ -262,7 +262,7 @@ where each move has `item`, `name`, `path`, `from`/`fromTitle`, `to`/`toTitle`, 
 `moves` list describes what happened.
 
 An item no rule matches goes to `defaultTarget` (the inbox). With `"unmatched": "stay"` in the rule set
-(Settings › 整理规则 › 没有命中规则的项目 › 留在当前栅栏; the default is `"defaultTarget"`), applying the
+(Settings › 整理规则 › 不符合任何规则的项目 › 留在当前栅栏; the default is `"defaultTarget"`), applying the
 rules leaves such an item in the fence it is in, so disabling a rule no longer sends the items it filed
 back to the inbox. An item in no fence yet still goes to `defaultTarget`. `rule list` shows the value;
 change it in Settings or with `rule import` of an edited `rule list`.

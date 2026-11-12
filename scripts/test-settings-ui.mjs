@@ -466,7 +466,7 @@ async function runTests() {
     doc.querySelector('[data-page=fences]').click();
     const sel = doc.getElementById('fenceSel');
     assert(sel.options.length === 4, 'Fence list incomplete');
-    assert([...sel.options].map(o => o.textContent).join('|') === 'Documents|Images（Documents 的标签页）|Desktop（桌面）|Portal（文件夹）', 'Fence labels wrong: ' + [...sel.options].map(o => o.textContent).join('|'));
+    assert([...sel.options].map(o => o.textContent).join('|') === 'Documents|Images（Documents 的标签页）|Desktop（桌面）|Portal（文件夹栅栏）', 'Fence labels wrong: ' + [...sel.options].map(o => o.textContent).join('|'));
     assert(doc.getElementById('fencePortalGroup').style.display === 'none', 'Portal options shown for an ordinary fence');
     assert(doc.getElementById('fenceHideEmpty').style.display === '', 'Hide-when-empty not offered for an ordinary fence');
     assert(doc.getElementById('fenceDesktopLayout').style.display === 'none', 'Desktop layout offered for an ordinary fence');
@@ -1344,7 +1344,7 @@ async function runTests() {
     const wd = rows()[titles().indexOf('临时显示 Windows 桌面')];
     assert(wd.querySelector('small').textContent.startsWith('常规 › 隐藏栅栏 · ') && wd.querySelector('small mark'), 'Path or snippet missing: ' + wd.textContent);
     // A card its page hides now (the keep switch while the Windows icons show) stays out.
-    assert(!titles().includes('关闭 PecoFence 时保持 Windows 桌面图标隐藏'), 'A hidden card was listed');
+    assert(!titles().includes('退出 PecoFence 时保持 Windows 桌面图标隐藏'), 'A hidden card was listed');
     // ↓ and Enter open the pick on its page, tinted, with the focus on its control.
     const target = titles().indexOf('为空时自动隐藏');
     for (let i = 0; i < target; i++) key(box, 'ArrowDown', 40);
@@ -2441,7 +2441,7 @@ async function runTests() {
     const asked = posted('editorCount').length;
     assert(w.querySelector('.se-count').textContent.includes('Everything 语法不能和这一行一起用'), 'The count does not say why: ' + w.querySelector('.se-count').textContent);
     w.querySelector('.se-ok').click(); await settle();
-    assert(!saved() && w.querySelector('.se-msg').textContent === '选「任一」时，Everything 语法不能和这一行一起用' && rowsOf(doc)[2].classList.contains('bad'), 'Saved or the row not marked: ' + w.querySelector('.se-msg').textContent);
+    assert(!saved() && w.querySelector('.se-msg').textContent === '选“任一”时，Everything 语法不能和这一行一起用' && rowsOf(doc)[2].classList.contains('bad'), 'Saved or the row not marked: ' + w.querySelector('.se-msg').textContent);
     for (const [kind, ok] of [['target', false], ['ext', true]]) {
       sePick(rowsOf(doc)[2].querySelector('.se-kind'), kind); await settle();
       if (kind === 'target' || kind === 'ext') seType(rowsOf(doc)[2].querySelector('.se-text'), 'x');
@@ -2504,7 +2504,7 @@ async function runTests() {
     doc = await openEditor('fence=odd');
     const w = doc.getElementById('seWindow');
     await new Promise(r => setTimeout(r, 420));
-    assert(w.querySelector('.se-count').textContent.includes('「来源」不能作为智能栅栏的条件'), 'The count does not name the origin row: ' + w.querySelector('.se-count').textContent);
+    assert(w.querySelector('.se-count').textContent.includes('“来源”不能作为智能栅栏的条件'), 'The count does not name the origin row: ' + w.querySelector('.se-count').textContent);
     w.querySelector('.se-ok').click(); await settle();
     const origin = rowsOf(doc).find(r => r.dataset.kind === 'keep' && r.textContent.includes('来源'));
     assert(!saved() && origin.classList.contains('bad') && w.querySelector('.se-msg').textContent.includes('请删掉这一行'), 'The origin row was not named');
@@ -2524,7 +2524,7 @@ async function runTests() {
   await test('Smart fence editor: a change made elsewhere stays said until 好 or 取消; plain files count as a rough row', async () => {
     doc = await openEditor('fence=dl');
     const w = doc.getElementById('seWindow');
-    ew().testReceive({ type: 'editorNotice', text: '这个栅栏的条件刚在别处改过，按「好」会换成这里的条件' }); await settle();
+    ew().testReceive({ type: 'editorNotice', text: '这个栅栏的条件刚在别处改过，按“好”会换成这里的条件' }); await settle();
     seType(w.querySelector('.se-name'), 'typed after');
     await new Promise(r => setTimeout(r, 420));
     assert(w.querySelector('.se-msg').textContent.includes('刚在别处改过'), 'The notice went with the next edit: ' + w.querySelector('.se-msg').textContent);
@@ -2796,6 +2796,34 @@ async function runTests() {
     const n = win().testMessages.length;
     doc.getElementById('openThemes').click();
     assert(win().testMessages.slice(n).some(m => m.name === 'openThemesFolder' && !m.quiet), 'The button no longer opens the folder');
+    doc = await reset();
+  });
+
+  await test('Wording: one kind of quotation mark, 关闭 for a switch that is off, plain names in the fence picker, no two cards with one name', async () => {
+    doc = await reset();
+    win().testState.fences.find(f => f.kind === 'inbox').title = '桌面';
+    win().testRefresh(); await settle();
+    const text = [...doc.querySelectorAll('nav, main')].map(el => el.textContent).join('\n')
+      + [...doc.querySelectorAll('main [title], main [placeholder], main [aria-label]')].map(el => ['title', 'placeholder', 'aria-label'].map(a => el.getAttribute(a) || '').join('\n')).join('\n');
+    for (const word of ['“', '”', '关掉', '关上', '标题行', '指针', 'Chameleon', '没有命中']) assert(!text.includes(word), 'The page still says ' + word + ': …' + text.slice(Math.max(0, text.indexOf(word) - 20), text.indexOf(word) + 20) + '…');
+    const titles = [...doc.querySelectorAll('main .card .t')].map(el => el.textContent.trim());
+    assert(titles.filter(x => x === 'Windows 桌面图标').length === 1 && titles.includes('修复 Windows 桌面图标'), 'Two cards are named Windows 桌面图标');
+    assert(titles.includes('退出 PecoFence 时保持 Windows 桌面图标隐藏') && titles.includes('不符合任何规则的项目') && titles.includes('图标融入背景'), 'Titles: ' + titles.join(' | '));
+    const help = title => [...doc.querySelectorAll('main .card')].find(c => c.querySelector('.t')?.textContent.trim() === title).querySelector('.s').textContent;
+    assert(help('退出 PecoFence 时保持 Windows 桌面图标隐藏').length <= 75, 'The help of the keep-hidden switch has ' + help('退出 PecoFence 时保持 Windows 桌面图标隐藏').length + ' characters');
+    assert(help('在桌面空白处拖出矩形时显示“新建栅栏”按钮').length <= 50, 'The help of the new-fence button has ' + help('在桌面空白处拖出矩形时显示“新建栅栏”按钮').length + ' characters');
+    assert(/^全透明.*更透明.*更厚实/.test(help('不透明度')), '不透明度 does not explain its choices in order: ' + help('不透明度'));
+    assert(!doc.querySelector('#dialogJumpDemo > .s'), 'The demo repeats the help of 对话框跳转');
+    const options = () => [...doc.getElementById('fenceSel').options].map(o => o.text);
+    assert(options().includes('桌面') && options().includes('Portal（文件夹栅栏）') && !options().some(o => o.includes('（文件夹）')), 'Fence picker: ' + options().join(' | '));
+    win().testState.fences.find(f => f.kind === 'inbox').title = '杂物';
+    win().testRefresh(); await settle();
+    assert(options().includes('杂物（桌面）'), 'A renamed 桌面 fence is not marked: ' + options().join(' | '));
+    const box = doc.getElementById('settingsSearch');
+    box.focus(); box.value = 'chameleon'; box.dispatchEvent(new (win().Event)('input', { bubbles: true }));
+    assert([...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent).includes('图标融入背景'), 'Chameleon no longer finds 图标融入背景');
+    change(doc, 'language', 'en'); await settle();
+    assert([...doc.querySelectorAll('main .card .t')].some(el => el.textContent.trim() === 'Show the Windows desktop temporarily'), 'English: for now');
     doc = await reset();
   });
 
