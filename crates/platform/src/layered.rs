@@ -98,6 +98,27 @@ impl LayeredImage {
         true
     }
 
+    /// Every pixel of the section (its whole room, `width * 4` bytes a row, top row first),
+    /// for a caller that rewrites some rows of the image in place; `set_rows` then says how
+    /// many rows the image has.
+    pub fn pixels_mut(&mut self) -> &mut [u8] {
+        // SAFETY: the section holds `width` x `height` pixels of 4 bytes for as long as
+        // `self` lives, and nothing else reads them while this borrow is held.
+        unsafe {
+            core::slice::from_raw_parts_mut(self.bits, (self.width * self.height * 4) as usize)
+        }
+    }
+
+    /// The image is the section's first `h` rows from now on. Returns false, and changes
+    /// nothing, when the section has no room for that many.
+    pub fn set_rows(&mut self, h: i32) -> bool {
+        if h <= 0 || h > self.height {
+            return false;
+        }
+        self.rows = h;
+        true
+    }
+
     /// Presents the image to `hwnd` at (`x`, `y`) (screen pixels), sizing the window to the
     /// image. `alpha` is the constant alpha multiplied into every pixel
     /// (`SourceConstantAlpha`): 255 shows the image as is, smaller values fade the whole window

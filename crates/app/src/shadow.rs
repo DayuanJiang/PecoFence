@@ -260,6 +260,33 @@ impl ShadowTemplate {
         }
     }
 
+    /// The rows of the padded image of a body `h` px tall that differ from those of a body
+    /// `prev_h` px tall and as wide (both at least `min_body`): the bottom corner rows of the
+    /// new image, and, when it grew, the rows from the old bottom corner rows down to them.
+    /// The top corner rows and the middle rows above are the same in both.
+    fn restretch_rows(&self, prev_h: i32, h: i32) -> std::ops::Range<i32> {
+        let c = self.pad + self.corner;
+        (prev_h.min(h) + self.pad * 2 - c)..(h + self.pad * 2)
+    }
+
+    /// Turns the padded image of a `w`x`prev_h` body at the top of `canvas` (rows of
+    /// `(w + 2 pad) * 4` bytes, room for the new image) into that of a `w`x`h` body by
+    /// writing `restretch_rows` only. The result is what `make(w, h)` builds.
+    fn restretch(&self, w: i32, prev_h: i32, h: i32, canvas: &mut [u8]) {
+        let sw = w + self.pad * 2;
+        let sh = h + self.pad * 2;
+        let th = self.img.height as i32;
+        let c = self.pad + self.corner;
+        debug_assert!(prev_h.min(h) >= self.min_body() && w >= self.min_body());
+        let rb = (sw * 4) as usize;
+        for y in self.restretch_rows(prev_h, h) {
+            // A middle row above the bottom corner rows, the template's own row inside them.
+            let ty = if y < sh - c { c } else { th - (sh - y) };
+            let at = y as usize * rb;
+            self.build_row(ty, sw, &mut canvas[at..at + rb]);
+        }
+    }
+
     /// Builds a body shadow `w` wide and exactly the template's body height (padded) by
     /// stretching every row horizontally (`build_for_height` templates).
     fn make_wide(&self, w: i32) -> Image {
@@ -461,6 +488,56 @@ impl ShadowWindow {
         }
         let tpl = &self.template.as_ref().unwrap().1;
         let min_body = tpl.min_body();
+        let started = std::time::Instant::now();
+        // A step of a height animation (`keep_upload`): the image in the kept section differs
+        // from this one only in its height, so only the rows that differ are written, in
+        // place. (Building the whole image and copying it into the section was 1.2 to 2.2 ms
+        // of a roll frame for a 780 x 600 px fence at 150 %; these rows are a tenth of it.)
+        if self.ring.is_none()
+            && w >= min_body
+            && h >= min_body
+            && let Some((prev, prev_dpi)) = self.last
+            && prev_dpi == dpi
+            && prev.right - prev.left == w
+            && prev.bottom - prev.top >= min_body
+            && let Some(section) = self.canvas.as_mut()
+            && section.size() == (w + pad * 2, prev.bottom - prev.top + pad * 2)
+            && section.set_rows(h + pad * 2)
+        {
+            let prev_h = prev.bottom - prev.top;
+            tpl.restretch(w, prev_h, h, section.pixels_mut());
+            let written = started.elapsed();
+            let presented = section.present(
+                self.window.hwnd(),
+                body.left - pad,
+                body.top - pad,
+                self.alpha,
+            );
+            tracing::trace!(
+                target: "pecofence::render_timing",
+                w,
+                h,
+                rows = tpl.restretch_rows(prev_h, h).len(),
+                make_us = written.as_micros(),
+                copy_us = 0,
+                present_us = (started.elapsed() - written).as_micros(),
+                "shadow stages"
+            );
+            match presented {
+                Ok(()) => {
+                    self.presented = true;
+                    self.last = Some((body, dpi));
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "shadow update failed");
+                    self.presented = false;
+                    // Retry with a full render on the next update.
+                    self.last = None;
+                    self.canvas = None;
+                }
+            }
+            return;
+        }
         let mut img = if w >= min_body && h >= min_body {
             tpl.make(w, h)
         } else if w >= min_body {
@@ -529,6 +606,7 @@ impl ShadowWindow {
         // fades go through `set_alpha`. While the height animates the section is kept for the
         // next frame's bitmap instead.
         let (iw, ih) = (img.width as i32, img.height as i32);
+        let made = started.elapsed();
         let kept = self
             .canvas
             .take()
@@ -540,6 +618,7 @@ impl ShadowWindow {
                 LayeredImage::with_room(iw, ih, room, &img.bgra)
             }
         };
+        let copied = started.elapsed();
         let presented = upload.and_then(|up| {
             let done = up.present(
                 self.window.hwnd(),
@@ -552,6 +631,16 @@ impl ShadowWindow {
             }
             done
         });
+        tracing::trace!(
+            target: "pecofence::render_timing",
+            w,
+            h,
+            rows = ih,
+            make_us = made.as_micros(),
+            copy_us = (copied - made).as_micros(),
+            present_us = (started.elapsed() - copied).as_micros(),
+            "shadow stages"
+        );
         self.presented = match presented {
             Ok(()) => true,
             Err(e) => {
@@ -660,6 +749,44 @@ mod tests {
             1,
             "200x200",
         );
+    }
+
+    /// A roll's frames: the rows rewritten in place give, byte for byte, the image built whole
+    /// for every height, rolling up and opening again, at 100 % and at 150 %.
+    #[test]
+    fn rows_rewritten_for_a_new_height_give_the_image_built_whole() {
+        for scale in [1.0, 1.5] {
+            let style = ShadowStyle::DARK;
+            let tpl = ShadowTemplate::build(scale, &style);
+            let w = tpl.min_body() + 40;
+            let tall = tpl.min_body() + 300;
+            let rb = ((w + tpl.pad * 2) * 4) as usize;
+            let mut canvas = vec![0u8; rb * (tall + tpl.pad * 2) as usize];
+            let first = tpl.make(w, tall);
+            canvas[..first.bgra.len()].copy_from_slice(&first.bgra);
+            let mut prev = tall;
+            let down = [
+                tall - 1,
+                tall - 40,
+                tall - 170,
+                tpl.min_body() + 3,
+                tpl.min_body(),
+            ];
+            let up = [tpl.min_body() + 1, tpl.min_body() + 90, tall - 7, tall];
+            for h in down.into_iter().chain(up) {
+                tpl.restretch(w, prev, h, &mut canvas);
+                let whole = tpl.make(w, h);
+                assert!(
+                    canvas[..whole.bgra.len()] == whole.bgra[..],
+                    "scale {scale}: {prev} px to {h} px"
+                );
+                // Shrinking writes the bottom corner rows only; growing, those and the rows
+                // the body grew by.
+                let rows = tpl.restretch_rows(prev, h).len() as i32;
+                assert_eq!(rows, tpl.pad + tpl.corner + (h - prev).max(0));
+                prev = h;
+            }
+        }
     }
 
     /// The selection ring sits outside the body (white 1–3 DIP out, the hairline 3–4 DIP),
