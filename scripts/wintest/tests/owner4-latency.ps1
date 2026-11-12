@@ -1219,3 +1219,217 @@ function PartFILL {
 
 if ($Part -eq 'ROLL') { PartROLL }
 if ($Part -eq 'FILL') { PartFILL }
+
+# MORE: what the first round left unmeasured. Two file changes within 0.4 s, a new match in a
+# smart fence, the whole-computer rows of the Peek search (with Everything), a page change in
+# the settings window; MORE2: the first right-click menu and the first Peek after the app's start.
+function MoreSetup($withFolders) {
+  [Lat]::Tol = 1
+  CloseWindows
+  $script:AnimWas = [Anim]::Get(); [Anim]::Set($true)
+  LtClean
+  $script:MDir = Join-Path $PfRun 'L4文件夹'; $script:MSmart = Join-Path $PfRun 'L4智能'
+  if ($withFolders) {
+    New-Item -ItemType Directory -Force $script:MDir, $script:MSmart | Out-Null
+    foreach ($k in 1..10) { Set-Content -LiteralPath (Join-Path $script:MDir ("a{0:d2} 报告.txt" -f $k)) -Value 'x' -Encoding ASCII }
+    foreach ($k in 1..4) { Set-Content -LiteralPath (Join-Path $script:MSmart ("b{0:d2} 纪要.txt" -f $k)) -Value 'x' -Encoding ASCII }
+  }
+  PfStart -Script @('sleep 3600000')
+  Start-Sleep -Seconds 2
+  ClearFences
+  $links = L4Links 12
+  Pf fence create --title 'L4 图标' --rect '300,160,640,330' | Out-Null
+  WaitL4 12
+  Pf item move @links --to 'L4 图标' | Out-Null
+  if ($withFolders) {
+    Pf fence create --portal $script:MDir --title 'L4 文件夹' --rect '980,340,420,500' | Out-Null
+    Pf fence create --title 'L4 智能' --smart-folder $script:MSmart --rect '980,40,420,280' | Out-Null
+  }
+  Start-Sleep -Seconds 3
+  ParkMouse 800 860
+}
+function MoreEnd() {
+  Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
+  if ($script:MDir) { Remove-Item -LiteralPath $script:MDir, $script:MSmart -Recurse -Force -ErrorAction SilentlyContinue }
+  LtEnd
+}
+
+function PartMORE {
+  trap { PfTrap $_; continue }
+  Case 'MORE setup'
+  . C:\pf\kit\smart.ps1
+  MoreSetup $true
+  $TP = 'L4 文件夹'; $TS = 'L4 智能'
+  $wp = (FenceGet $TP).windowRect; $ws = (FenceGet $TS).windowRect
+  Check 'MORE fences are there' ($wp.w -eq 420 -and $ws.w -eq 420) "folder $($wp.x),$($wp.y) smart $($ws.x),$($ws.y): $(SmartLine $TS)"
+
+  Case 'MORE two file changes within 0.4 s'
+  $note = ''
+  foreach ($k in 1..3) {
+    $n = 10 + 3 * ($k - 1)
+    $fa = Join-Path $script:MDir "z${k}a 甲.txt"; $fb = Join-Path $script:MDir "z${k}b 乙.txt"; $fc = Join-Path $script:MDir "z${k}c 丙.txt"
+    # The second file's own place: its first change after the file was made (200 ms after the first).
+    $p = CellPt $TP ($n + 1); CellBox $p
+    $pos = LogPos
+    $r = LatWatch 1600 $null { Set-Content -LiteralPath $fa -Value 'x' -Encoding ASCII } { Set-Content -LiteralPath $fb -Value 'x' -Encoding ASCII } 200
+    Add1 'two2' (After $r 200)
+    if ($k -eq 1) { $note = LogLines $pos $r.utc 'fs change batch' }
+    Start-Sleep -Milliseconds 1500
+    # A file alone, long after the last change.
+    $p = CellPt $TP ($n + 2); CellBox $p
+    $r = LatWatch 1200 $null { Set-Content -LiteralPath $fc -Value 'x' -Encoding ASCII }
+    Add1 'two1' (After $r 0)
+    Start-Sleep -Milliseconds 1500
+  }
+  Row 'a file created in a watched folder (icon there)' 'alone, in its own cell' 'two1'
+  Row 'a second file created 0.2 s after another (icon there)' 'from the second file' 'two2' $note
+  $f2 = @($script:Ms['two2'] | ForEach-Object { $_.first })
+  Check 'MORE a second file created 0.2 s after another shows its icon within 200 ms too' ((Worst $f2) -le 200 -and (Med $f2) -gt 0) "first: $($f2 -join ' ') ms"
+
+  Case 'MORE a new match in a smart fence'
+  [Lat]::Region($ws.x + 12, $ws.y + 50, $ws.w - 44, $ws.h - 70)
+  $ev = EvRunning
+  foreach ($k in 1..3) {
+    $f = Join-Path $script:MSmart "c${k} 新纪要.txt"
+    $pos = LogPos
+    $r = LatWatch 6000 $null { Set-Content -LiteralPath $f -Value 'x' -Encoding ASCII }
+    Add1 'smart' (After $r 0)
+    if ($k -eq 1) { $note = LogLines $pos $r.utc 'smart fence' }
+    Start-Sleep -Milliseconds 1000
+  }
+  Row 'a file created in a smart fence''s folder (icon there)' "Everything running: $ev" 'smart' $note
+
+  Case 'MORE a page change in the settings window'
+  $tr = TrayIconRect
+  if ($tr) {
+    $tx = [int]($tr.X + $tr.Width / 2); $ty = [int]($tr.Y + $tr.Height / 2)
+    [G]::Click($tx, $ty); Start-Sleep -Seconds 5
+    $hs = [G]::FindWindowW('PecoFence.Settings', [NullString]::Value)
+    $rr = Rect $hs; Log "settings window $hs at $($rr.L),$($rr.T),$($rr.R),$($rr.B)"
+    $a = OcrFind '^About$' $rr.L $rr.T 300 ($rr.B - $rr.T)
+    $g = OcrFind '^General$' $rr.L $rr.T 300 ($rr.B - $rr.T)
+    Log "nav: About at $($a -join ','), General at $($g -join ',')"
+    if ($a -and $g) {
+      [Lat]::Region($rr.L + 320, $rr.T + 80, [math]::Min(600, $rr.R - $rr.L - 360), 300)
+      foreach ($k in 1..6) {
+        $t = if ($k % 2) { $a } else { $g }
+        [G]::MoveTo($t[0], $t[1]); Start-Sleep -Milliseconds 700
+        $r = LatWatch 900 $null { MDown } { MUp } 40
+        Add1 'page' (After $r 40 2000)
+      }
+    }
+    $res = [IntPtr]::Zero
+    [G]::SendMessageTimeoutW($hs, 0x10, [IntPtr]0, [IntPtr]0, 2, 5000, [ref]$res) | Out-Null
+    Start-Sleep -Milliseconds 800
+  }
+  Row 'another page clicked in the settings window' 'General and About; from the release' 'page'
+
+  Case 'MORE the whole-computer rows of the Peek search'
+  if (EvStart) {
+    Pf settings set tools.everything true | Out-Null
+    Start-Sleep -Seconds 3
+    $shown = @(); $asked = @(); $answered = @(); $note = ''
+    foreach ($k in 1..4) {
+      PeekKey; Start-Sleep -Milliseconds 900
+      [G]::Type('notepa'); Start-Sleep -Milliseconds 900
+      $sb = [G]::FindWindowW('PecoFence.PeekSearch', [NullString]::Value)
+      $br = Rect $sb
+      [Lat]::Region($br.L, $br.T, [math]::Min(700, $br.R - $br.L), 420)
+      $pos = LogPos
+      $r = LatWatch 1200 $null { [G]::Type('d') }
+      $m = After $r 0
+      Start-Sleep -Milliseconds 200
+      $t = LogLines $pos $r.utc 'Everything|search list laid out'
+      $asked += (LogAt $t 'Everything is asked|asks Everything|Everything asked'); $answered += (LogAt $t 'Everything answered')
+      $shown += $m.done
+      if ($k -eq 1) { $note = $t }
+      Add1 'evrows' $m
+      PeekOff
+    }
+    Row 'a letter typed in a Peek, the whole-computer rows (Everything)' 'the last letter of notepad' 'evrows' "log: Everything answered at +$($answered -join ' ') ms | $note"
+    Pf settings set tools.everything false | Out-Null
+  } else {
+    LatRow 'a letter typed in a Peek, the whole-computer rows (Everything)' 'Everything is not on this box' 'not measured' '' '' ''
+  }
+  MoreEnd
+}
+
+# Starts the test instance again without the kit's waits; returns the ms until the fence window is there.
+function QuickStart($title) {
+  $env:PECOFENCE_INSTANCE = $PfInst; $env:RUST_LOG = 'pecofence=debug'
+  [IO.File]::WriteAllLines("$PfRun\script.txt", @('sleep 3600000'), (New-Object Text.UTF8Encoding($false)))
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  Start-Process "$PfApp\pecofence.exe" -ArgumentList '--portable', '--test-script', "$PfRun\script.txt" -WorkingDirectory $PfApp
+  while ($sw.ElapsedMilliseconds -lt 20000) {
+    $h = [G]::FindWindowW('PecoFence.Fence', $title)
+    if ($h -ne [IntPtr]::Zero -and [G]::IsWindowVisible($h)) { break }
+    Start-Sleep -Milliseconds 20
+  }
+  return [int]$sw.ElapsedMilliseconds
+}
+function PartMORE2 {
+  trap { PfTrap $_; continue }
+  Case 'MORE2 setup'
+  MoreSetup $false
+  $TI = 'L4 图标'
+  $p = CellPt $TI 2
+
+  Case 'MORE2 the first right-click menu after the app''s start'
+  $firsts = @(); $later = @(); $shownAt = @(); $note = ''
+  foreach ($k in 1..3) {
+    PfQuit
+    Start-Sleep -Milliseconds 800
+    $ms = QuickStart $TI
+    $shownAt += $ms
+    [G]::MoveTo($p[0], $p[1]); Start-Sleep -Milliseconds 300
+    [Lat]::Region($p[0] + 60, $p[1] + 10, 160, 240)
+    $pos = LogPos
+    $r = LatWatch 4000 $null { RDown } { RUp } 40
+    $m = After $r 40 12000
+    $firsts += $m.first
+    if ($k -eq 1) { $note = LogLines $pos $r.utc 'slow command|menu|shell' ; [Lat]::Strip("$PfShots\act-firstmenu.png", 10) }
+    [G]::Press(0x1B); Start-Sleep -Milliseconds 600
+    $null = DeskClick 1300 780
+    Start-Sleep -Seconds 4
+    [G]::MoveTo($p[0], $p[1]); Start-Sleep -Milliseconds 400
+    $r = LatWatch 1500 $null { RDown } { RUp } 40
+    $later += (After $r 40 12000).first
+    [G]::Press(0x1B); Start-Sleep -Milliseconds 600
+    $null = DeskClick 1300 780
+  }
+  LatRow 'right-click on an icon right after the app''s start (menu)' "the fence was on screen $($shownAt -join ' ') ms after the start; the click 0.3 s later" "$(Med $firsts) (worst $(Worst $firsts))" '' 31 "first: $($firsts -join ' ') | the same icon 5 s later: $($later -join ' ') | $note"
+  Check 'MORE2 the first menu after the start came' ((Med $firsts) -gt 0) "first: $($firsts -join ' ') later: $($later -join ' ')"
+
+  Case 'MORE2 the first Peek after the app''s start'
+  Start-Process notepad
+  $np = WaitWin 'Notepad' 10
+  [L]::MoveWindow($np, 250, 120, 800, 450, $true) | Out-Null
+  Start-Sleep -Seconds 1
+  $f1 = @(); $d1 = @(); $f2 = @(); $d2 = @(); $note = ''
+  foreach ($k in 1..3) {
+    PfQuit
+    Start-Sleep -Milliseconds 800
+    $null = QuickStart $TI
+    Start-Sleep -Seconds 3
+    [G]::Click(700, 400); Start-Sleep -Milliseconds 500
+    ParkMouse 1300 860
+    [Lat]::Region(340, 240, 300, 150)
+    $pos = LogPos
+    $r = LatWatch 1200 $null { PeekKey }
+    $m = After $r 0; $f1 += $m.first; $d1 += $m.done
+    if ($k -eq 1) { $note = LogLines $pos $r.utc 'peek|slow command' }
+    Start-Sleep -Milliseconds 600
+    PeekKey; Start-Sleep -Milliseconds 900
+    $r = LatWatch 1200 $null { PeekKey }
+    $m = After $r 0; $f2 += $m.first; $d2 += $m.done
+    Start-Sleep -Milliseconds 600
+    PeekKey; Start-Sleep -Milliseconds 900
+  }
+  LatRow 'the Peek hotkey, the first time after the app''s start' 'a Notepad window over the fence, 3 s after the start' "$(Med $f1) (worst $(Worst $f1))" "$(Med $d1) (worst $(Worst $d1))" 31 "first: $($f1 -join ' ') done: $($d1 -join ' ') | $note"
+  LatRow 'the Peek hotkey, the second time' 'a Notepad window over the fence' "$(Med $f2) (worst $(Worst $f2))" "$(Med $d2) (worst $(Worst $d2))" 31 "first: $($f2 -join ' ') done: $($d2 -join ' ')"
+  Check 'MORE2 the first Peek after the start came' ((Med $f1) -gt 0) "first: $($f1 -join ' ') second: $($f2 -join ' ')"
+  MoreEnd
+}
+
+if ($Part -eq 'MORE') { PartMORE }
+if ($Part -eq 'MORE2') { PartMORE2 }

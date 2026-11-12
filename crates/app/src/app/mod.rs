@@ -872,6 +872,8 @@ impl App {
             // Folder-watcher debounce state (see WM_APP_FS_CHANGED / TIMER_FS).
             let fs_armed = Cell::new(false);
             let fs_flushed: Cell<Option<Instant>> = Cell::new(None);
+            // How many batches in a row began within FS_STORM_MS of the one before.
+            let fs_run: Cell<u32> = Cell::new(0);
             // The pending batch must sync the desktop even if its events all lie in portal
             // folders: a shell notice or a menu asked for it.
             let fs_desktop = Cell::new(false);
@@ -952,13 +954,23 @@ impl App {
                             // Explorer reacts to a folder change within a frame or two; a file
                             // the shell just moved onto the desktop (drag-out from a portal)
                             // must be filed as fast. Coalesce for one short window, never
-                            // postpone while events keep coming, and back off only when a
-                            // batch has just run (a big copy in progress).
+                            // postpone while events keep coming, and back off only when
+                            // batches keep coming (a big copy in progress): from the third
+                            // in a row. One change soon after another (a second file saved,
+                            // a new file renamed at once) is no copy, and its icon waited
+                            // 0.4 s longer than the first one's.
                             if !fs_armed.replace(true) {
-                                let storm = fs_flushed.get().is_some_and(|t| {
+                                let soon = fs_flushed.get().is_some_and(|t| {
                                     t.elapsed() < Duration::from_millis(FS_STORM_MS)
                                 });
-                                let delay = if storm { FS_STORM_MS } else { FS_DEBOUNCE_MS };
+                                let run = if soon { fs_run.get() + 1 } else { 0 };
+                                fs_run.set(run);
+                                let delay = if run >= 2 {
+                                    FS_STORM_MS
+                                } else {
+                                    FS_DEBOUNCE_MS
+                                };
+                                tracing::debug!(run, delay, "fs change batch armed");
                                 window::set_timer(hwnd, TIMER_FS, delay as u32);
                             }
                             Some(0)
