@@ -280,9 +280,14 @@ pub fn target_kind(target: &str, path: &Path) -> pecofence_core::script_output::
     if is_web_address(target) {
         return TargetKind::Web;
     }
-    // A network path is not looked at: asking whether it exists already signs in to that
-    // server.
-    if target.starts_with(r"\\") || target.starts_with("//") {
+    // Only a path on one of this computer's disks is looked at. Asking a network place
+    // (`\\server\share` however its slashes are written, a mapped drive) whether it exists
+    // already signs in to that server, and can keep the click waiting. A disc in a CD or DVD
+    // drive can name a program of its own to start when it is opened (autorun.inf).
+    if matches!(
+        pecofence_platform::shell::drive_kind(path),
+        "network" | "unc" | "unknown" | "cdrom"
+    ) {
         return TargetKind::Other;
     }
     if path.is_dir() {
@@ -895,6 +900,9 @@ mod tests {
             "shell:AppsFolder",
             r"\\server\share\a.txt",
             "//server/share",
+            r"/\server\share\a.txt",
+            r"\/server/share",
+            r"\\?\C:\Windows\System32\notepad.exe",
             "notepad",
             "",
         ] {

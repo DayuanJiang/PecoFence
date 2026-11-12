@@ -235,14 +235,19 @@ pub enum TargetKind {
     Other,
 }
 
-/// `target` is an `http://` or `https://` address.
+/// `target` is an `http://` or `https://` address. One with a space, a double quote or a
+/// control character is none: Windows hands the address to the browser on its command line,
+/// where these could read as further arguments.
 pub fn is_web_address(target: &str) -> bool {
     let starts = |scheme: &str| {
         target
             .get(..scheme.len())
             .is_some_and(|s| s.eq_ignore_ascii_case(scheme))
     };
-    starts("http://") || starts("https://")
+    (starts("http://") || starts("https://"))
+        && !target
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || c == '"')
 }
 
 /// Whether a click may carry out `action`. A script that allows it in its header
@@ -426,6 +431,9 @@ mod tests {
             "javascript:alert(1)",
             "https:/example.com",
             " https://example.com",
+            "https://example.com/\" --some-switch \"",
+            "https://example.com/a b",
+            "https://example.com/\u{7}",
             "calc.exe",
             "C:\\Users",
             "ht",

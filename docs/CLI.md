@@ -423,7 +423,7 @@ drawn as a to-do with a check box.
 | Parameter | A click on the row |
 |---|---|
 | `href=<url>` | opens an `http://` or `https://` address in the default browser. Any other address (`file:`, `mailto:`, `ms-settings:`, a path) needs the header line (see Rows that start programs) |
-| `open=<path>` | opens a folder, a document (a file of a type Windows does not class as dangerous to open: a text, a picture, a PDF) or an `http://` / `https://` address, as a double-click does; a relative path starts at the script's folder. A program, a script, a shortcut, a network path (`\\server\...`) or anything else needs the header line (see Rows that start programs) |
+| `open=<path>` | opens a folder, a document (a file of a type Windows does not class as dangerous to open: a text, a picture, a PDF) or an `http://` / `https://` address, as a double-click does; a relative path starts at the script's folder. A program, a script, a shortcut, a place on the network (`\\server\...`, a mapped network drive), a disc in a CD or DVD drive or anything else needs the header line (see Rows that start programs) |
 | `run=<program>` (or SwiftBar's `bash=`), with `param1=`, `param2=` ... | needs the header line (see Rows that start programs). Runs the program with those arguments, without a window, in the script's folder; a relative path that exists there is taken from there, else from PATH. A .ps1, .py or .js runs through Windows PowerShell, `py -3` or `node`. A program that needs administrator rights and has no arguments starts through the shell, so Windows asks first |
 | `copy=<text>` | copies the text to the clipboard |
 | `action=<value>` | runs the same script again with `PECOFENCE_ACTION` set to the value and shows its new output |
@@ -486,7 +486,8 @@ file:
 ```
 
 Without that line `run=` and `bash=` do nothing, `href=` opens `http://` and `https://` addresses
-only, and `open=` opens folders, documents and `http://` / `https://` addresses only. A click that
+only, and `open=` opens folders, documents and `http://` / `https://` addresses only (an address
+with a space or a double quote in it does not count as one: write `%20` and `%22`). A click that
 is refused shows a short message beside the pointer that names the line to add, and the log gets
 an info line with the script's file name and the parameter (never its value). With the line every
 parameter works as the table says. `copy=`, `action=` and `refresh=true` need no line: they start
@@ -504,7 +505,8 @@ Text from the network, from a file somebody else can change or from another prog
 user name, a file name, a weather report) can hold `|`, quotes and line breaks, and then reads as
 parameters of the row or as a row of its own. Clean every such value before printing it, also in
 a script without the header line (a forged `href=` could still send the click to another web
-page), and build links from parts you trust:
+page, a forged `copy=` puts its own text on the clipboard, and a forged `action=` reaches your
+script as input), and build links from parts you trust:
 
 ```powershell
 function Clean($text) { "$text" -replace '\|', '¦' -replace '[\r\n]+', ' ' -replace '["'']', [char]0x2019 }

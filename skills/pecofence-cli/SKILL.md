@@ -147,7 +147,7 @@ Each printed line is a row (at most 40 lines, 300 characters each); keep them sh
   once, then the script's output decides). Lines without parameters are plain text.
 - Rows start programs only when the script has `<pecofence.allow>run</pecofence.allow>` in a comment
   in its first 8 KB. Without it `run=` / `bash=` do nothing, `href=` opens http(s) addresses only and
-  `open=` opens folders, documents (no programs, scripts, shortcuts or `\\server` paths) and http(s)
+  `open=` opens folders, documents (no programs, scripts, shortcuts or network places) and http(s)
   addresses only; a refused click shows a message naming the line. Add the line only to scripts that
   need it, and tell the user you did.
 - Text the script did not write itself (from the network, a file others can change, another
