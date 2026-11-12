@@ -7,7 +7,8 @@
 #   E  the tips of the title's folder and up arrow name the folder shown
 #   F  into a subfolder: the title fades in with the icons
 #   G  a folder renamed away is noticed when the pointer comes onto its fence
-if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'ABCDEFG' }
+#   H  Ctrl+Z after the first tab was dragged out, and after a tab was dragged into another window
+if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'ABCDEFGH' }
 
 function Sx($d, $x) { return [int]($d.l + $d.ox + $x) }
 function TitleY($d) { return [int]($d.t + $d.oy + 18) }
@@ -312,6 +313,63 @@ function PartG() {
   PfQuit
 }
 
+# Every fence but 「桌面」 with its window, tabs, items and place, as one line to compare.
+function TabState($tag) {
+  $rows = @()
+  foreach ($f in @(PfJson fence list)) {
+    if (-not $f -or -not $f.id -or $f.kind -eq 'inbox') { continue }
+    $h = if ($f.tabHost) { $IdTitle["$($f.tabHost)"] } else { '-' }
+    $rows += "$($f.title)[host=$h tabs=$(@($f.tabs).Count) n=$($f.itemCount) rect=$(RectText $f)]"
+  }
+  Log "STATE $tag :: $($rows -join ' ; ')"
+  return ($rows -join ' ; ')
+}
+function PartH() {
+  trap { PfTrap $_; continue }
+  Case 'H Ctrl+Z after the first tab was dragged out, and after a tab went into another window'
+  PfStart -Script (DumpScript) -Lang 'zh-CN'
+  Pf settings set rollUp.switchTabOnHover false | Out-Null
+  ClearFences | Out-Null; SmallInbox
+  Pf fence create --title 工作 --rect '60,60,420,260' | Out-Null
+  Pf fence create --title 图片素材 --rect '60,400,300,200' | Out-Null
+  Pf fence create --title 第三个 --rect '60,400,300,200' | Out-Null
+  Pf fence create --title 独立 --rect '700,60,300,200' | Out-Null
+  Pf item move "$PfDesk\年度报告.txt" --to 工作 | Out-Null
+  Pf item move "$PfDesk\设计稿-最终版.txt" --to 图片素材 | Out-Null
+  Pf item move "$PfDesk\独立的文件.txt" --to 独立 | Out-Null
+  Pf fence merge 图片素材 --into 工作 | Out-Null
+  Pf fence merge 第三个 --into 工作 | Out-Null
+  Start-Sleep -Seconds 2
+  FenceIds
+  DeskClick 1100 760; Start-Sleep -Milliseconds 400
+  $s0 = TabState 'start'
+  # The first tab is the fence that owns the window: another tab takes the window over.
+  $d = DumpOf '工作'
+  $x0 = TabX $d 0; $y0 = TitleY $d
+  [G]::MoveTo($x0, $y0); Start-Sleep -Milliseconds 250; MDown; Start-Sleep -Milliseconds 120
+  Glide $x0 $y0 ($x0 + 420) ($y0 + 420) 16 30; Start-Sleep -Milliseconds 500; MUp; Start-Sleep -Milliseconds 900
+  $s1 = TabState 'first tab out'
+  Chord 0x11 0x5A; Start-Sleep -Milliseconds 1200
+  $s2 = TabState 'after Ctrl+Z'
+  Check 'the first tab dragged out is a fence of its own' ($s1 -ne $s0 -and $s1 -match '工作\[host=- tabs=0') $s1
+  Check 'Ctrl+Z puts every fence back as it was' ($s2 -eq $s0) "now: $s2 | at the start: $s0 | $(LastLog 'undo: undone|nothing to undo')"
+  $wins = @(PfDump).Count
+  Check 'three windows again (工作 with its tabs, 独立, 桌面)' ($wins -eq 3) "windows=$wins"
+  # One drag takes a tab out of 工作 and drops it on the title of 独立.
+  $d = DumpOf '工作'; $t = DumpOf '独立'
+  $i = [array]::IndexOf(@($d.tabs), '第三个')
+  $x0 = TabX $d $i; $y0 = TitleY $d
+  [G]::MoveTo($x0, $y0); Start-Sleep -Milliseconds 250; MDown; Start-Sleep -Milliseconds 120
+  Glide $x0 $y0 ($x0 + 60) ($y0 + 80) 8 30; Start-Sleep -Milliseconds 300
+  Glide ($x0 + 60) ($y0 + 80) (Sx $t 200) (TitleY $t) 16 30; Start-Sleep -Milliseconds 600; MUp; Start-Sleep -Milliseconds 900
+  $s3 = TabState 'tab moved to 独立'
+  Chord 0x11 0x5A; Start-Sleep -Milliseconds 1200
+  $s4 = TabState 'after Ctrl+Z'
+  Check 'a tab dragged onto another fence''s title is a tab there' ($s3 -match '第三个\[host=独立') $s3
+  Check 'Ctrl+Z brings it back to its first window, all as before' ($s4 -eq $s0) "now: $s4 | at the start: $s0 | $(LastLog 'undo: undone|nothing to undo')"
+  PfQuit
+}
+
 Case 'setup'
 CloseWindows
 GreyWallpaper
@@ -324,6 +382,7 @@ if ($Part -match 'D') { PartD }
 if ($Part -match 'E') { PartE }
 if ($Part -match 'F') { PartF }
 if ($Part -match 'G') { PartG }
+if ($Part -match 'H') { PartH }
 
 Case 'end'
 if (PfAlive) { PfQuit }
