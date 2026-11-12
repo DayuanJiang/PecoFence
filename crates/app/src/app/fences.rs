@@ -1415,7 +1415,7 @@ impl App {
             ?work,
             size = ?(w, h),
             fences = fences.len(),
-            wanted = ?(want_left, want_top),
+            want_at = ?(want_left, want_top),
             side = if right_side { "right" } else { "left" },
             rect = ?(r.left, r.top, r.right, r.bottom),
             covered_px = covered,
