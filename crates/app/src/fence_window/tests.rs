@@ -1935,3 +1935,25 @@ fn lock_refuses_only_drags_that_are_not_something_else() {
     // Out of the fence: that is the resize the lock refused.
     assert!(lock_drag_refused(edge, (490, 300), threshold, false));
 }
+
+/// The tip of a shortcut says what File Explorer's says: the shortcut's comment, else where it
+/// leads. A comment that is a resource reference is not shown, and a link without a path gets
+/// the usual lines (None).
+#[test]
+fn a_shortcut_tip_shows_its_comment_or_where_it_leads() {
+    let line = |comment: Option<&str>, target: Option<&str>| {
+        shortcut_tip_line(
+            comment.map(str::to_string),
+            target.map(std::path::PathBuf::from),
+        )
+    };
+    let notepad = Some(r"C:\Windows\notepad.exe");
+    assert_eq!(
+        line(Some("Write short notes"), notepad).as_deref(),
+        Some("\nWrite short notes")
+    );
+    let place = pecofence_core::i18n::format("\n位置: {0}", &[r"notepad (C:\Windows)".to_string()]);
+    assert_eq!(line(None, notepad), Some(place.clone()));
+    assert_eq!(line(Some("@shell32.dll,-22566"), notepad), Some(place));
+    assert_eq!(line(None, None), None);
+}

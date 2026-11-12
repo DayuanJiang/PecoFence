@@ -34,6 +34,30 @@ pub(super) fn tip_hover_moved(anchor: (i32, i32), pt: (i32, i32), rect: (i32, i3
     (pt.0 - anchor.0).abs() >= (rect.0 / 2).max(1) || (pt.1 - anchor.1).abs() >= (rect.1 / 2).max(1)
 }
 
+/// The second line of a shortcut's tip, as File Explorer writes it: the shortcut's `comment`,
+/// else 「位置: <target> (<its folder>)」. None when there is neither (the usual type, size and
+/// date lines show then). A comment kept as a resource reference (`@shell32.dll,-22566`) is
+/// no text to show.
+pub(super) fn shortcut_tip_line(
+    comment: Option<String>,
+    target: Option<std::path::PathBuf>,
+) -> Option<String> {
+    if let Some(c) = comment.filter(|c| !c.starts_with('@')) {
+        return Some(format!("\n{c}"));
+    }
+    let target = target?;
+    let name = target
+        .file_stem()
+        .or_else(|| target.file_name())?
+        .to_string_lossy()
+        .into_owned();
+    let place = match target.parent().filter(|p| !p.as_os_str().is_empty()) {
+        Some(dir) => format!("{name} ({})", dir.display()),
+        None => name,
+    };
+    Some(pecofence_core::i18n::format("\n位置: {0}", &[place]))
+}
+
 impl FenceViewState {
     /// What an infotip at a client-pixel point would describe. `hit` is the hover-filtered
     /// item hit (None over the scrollbar hot zone / title controls), so the tip can never
@@ -210,6 +234,21 @@ impl FenceViewState {
             TipTarget::Item(i) => {
                 let it = self.items.get(i)?;
                 let mut s = it.name.clone();
+                // A shortcut: what it is for or where it leads, as in Explorer. The size and
+                // the date of the link file itself say nothing about the program.
+                let is_link = !it.is_folder
+                    && it
+                        .path
+                        .extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case("lnk"));
+                if is_link
+                    && let Some((comment, target)) =
+                        pecofence_platform::shell::shortcut_tip(&it.path)
+                    && let Some(line) = shortcut_tip_line(comment, target)
+                {
+                    s.push_str(&line);
+                    return Some(s);
+                }
                 if let Some(t) = fileinfo::type_name(&it.path, it.is_folder) {
                     s.push_str(&pecofence_core::i18n::format(
                         "\n类型: {0}",

@@ -1625,6 +1625,23 @@ pub fn shortcut_target_expanded(path: &Path) -> Option<PathBuf> {
     shortcut_path(&link, 0).map(PathBuf::from)
 }
 
+/// What File Explorer's tip of a `.lnk` is made of: its comment (the description field, `None`
+/// when empty) and the path it leads to (`None` for a link to something that is no file or
+/// folder). `None` when the file cannot be read as a shortcut.
+pub fn shortcut_tip(path: &Path) -> Option<(Option<String>, Option<PathBuf>)> {
+    let link = load_shortcut(path)?;
+    // SAFETY: the buffer is sized and NUL-terminated.
+    let comment = unsafe {
+        let mut text = [0u16; 1024];
+        link.GetDescription(PWSTR(text.as_mut_ptr()), text.len() as i32)
+            .ok()
+            .ok()
+            .map(|_| crate::wide::from_wide(&text).trim().to_string())
+            .filter(|c| !c.is_empty())
+    };
+    Some((comment, shortcut_path(&link, 0).map(PathBuf::from)))
+}
+
 /// A `.lnk`'s target path and its command-line arguments (`None` when it has none).
 pub fn shortcut_info(path: &Path) -> Option<(String, Option<String>)> {
     let link = load_shortcut(path)?;
