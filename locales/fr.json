@@ -886,6 +886,8 @@
   "桌面 {0}": "Bureau {0}",
   "{0}（当前）": "{0} (actuel)",
   "栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。": "Le groupe « {0} » ne s’affiche plus que sur « {1} ». Passez à ce bureau virtuel pour le voir.",
+  "“{0}”现在只在“{1}”上显示": "« {0} » ne s’affiche plus que sur « {1} »",
+  "切换到那个虚拟桌面就能看到它；点“撤销”让它回到这个桌面。": "Passez à ce bureau virtuel pour le voir, ou cliquez sur Annuler pour le ramener sur celui-ci.",
   "按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出": "Quand vous changez de bureau virtuel avec Win+Ctrl+Gauche/Droite, les groupes qui n’appartiennent pas à ce bureau s’estompent",
   "只在“{0}”上显示": "Uniquement sur « {0} »",
   "每个虚拟桌面各用一套栅栏": "Des groupes propres à chaque bureau virtuel",

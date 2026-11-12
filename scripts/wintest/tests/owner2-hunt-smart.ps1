@@ -114,3 +114,56 @@ function PartD {
   Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
 }
 if ($Part -match 'D') { PartD }
+
+function HsNotice() { $n = [G]::FindWindowW('PecoFence.Notice', [NullString]::Value); if ($n -ne [IntPtr]::Zero -and [G]::IsWindowVisible($n)) { return $n }; return [IntPtr]::Zero }
+function PartC {
+  trap { PfTrap $_; continue }
+  Case 'C: setup'
+  CloseWindows
+  $sav = DeskFile '存档 第3关.sav'
+  $txt = DeskFile '会议纪要 11月.txt'
+  VdTwo '工作' '游戏'
+  $ids = @(VdIds)
+  PfStart -Lang zh-CN -Script (DumpScript 500 20)
+  ClearFences
+  Pf fence create --title 游戏存档 --rect '420,80,300,240' | Out-Null
+  Pf fence create --title 都显示 --rect '760,80,300,240' | Out-Null
+  Pf item move $sav --to 游戏存档 | Out-Null
+  Pf item move $txt --to 都显示 | Out-Null
+  Start-Sleep -Seconds 2
+  # The first-run tips are a card too: closed, so the next card can show.
+  for ($i = 0; $i -lt 4 -and (HsNotice) -ne [IntPtr]::Zero; $i++) { CloseNotice | Out-Null; Start-Sleep -Milliseconds 700 }
+  Check 'C two desktops, no card on screen' ($ids.Count -eq 2 -and (HsNotice) -eq [IntPtr]::Zero) (VdState)
+
+  Case 'C: sent to the other desktop from the fence menu'
+  $sub = VdSubmenu '游戏存档'
+  Start-Sleep -Milliseconds 400
+  MenuPick '^游戏' $sub | Out-Null
+  [G]::MoveTo(600, 700); Start-Sleep -Milliseconds 1500
+  $n = HsNotice
+  Shot 'c-card'
+  Check 'C the fence left this desktop' ((FVis '游戏存档') -eq $false) "vd=$((FenceGet 游戏存档).virtualDesktops)"
+  Check 'C a card of PecoFence says where it went' ($n -ne [IntPtr]::Zero) "notice=$n $(if ($n -ne [IntPtr]::Zero) { [W]::Info($n) })"
+  if ($n -ne [IntPtr]::Zero) { $nr = Rect $n; [G]::Click($nr.R - 50, $nr.B - 30); Start-Sleep -Milliseconds 1500 }
+  Shot 'c-after-undo'
+  Check 'C its 撤销 brings the fence back, on every desktop as before' ((FVis '游戏存档') -eq $true -and @((FenceGet 游戏存档).virtualDesktops).Count -eq 0) "visible=$(FVis '游戏存档') vd=$((FenceGet 游戏存档).virtualDesktops)"
+  Check 'C the card is gone' ((HsNotice) -eq [IntPtr]::Zero) ''
+
+  Case 'C: Ctrl+Z in a fence takes it back too'
+  $sub = VdSubmenu '游戏存档'
+  Start-Sleep -Milliseconds 400
+  MenuPick '^游戏' $sub | Out-Null
+  Start-Sleep -Milliseconds 1200
+  Check 'C sent away again' ((FVis '游戏存档') -eq $false) ''
+  $p = ItemPt '都显示' '会议纪要 11月'
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 400
+  Chord 0x11 0x5A; Start-Sleep -Milliseconds 1500
+  Check 'C Ctrl+Z: the fence is back and the card closed' ((FVis '游戏存档') -eq $true -and @((FenceGet 游戏存档).virtualDesktops).Count -eq 0 -and (HsNotice) -eq [IntPtr]::Zero) "visible=$(FVis '游戏存档') vd=$((FenceGet 游戏存档).virtualDesktops) notice=$(HsNotice)"
+
+  Case 'C: cleanup'
+  ClearPfNotices
+  PfQuit
+  VdOnlyOne
+  Remove-Item -LiteralPath $sav, $txt -Force -ErrorAction SilentlyContinue
+}
+if ($Part -match 'C') { PartC }

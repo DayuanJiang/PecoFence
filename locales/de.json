@@ -886,6 +886,8 @@
   "桌面 {0}": "Desktop {0}",
   "{0}（当前）": "{0} (aktuell)",
   "栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。": "Der Bereich „{0}“ wird jetzt nur auf „{1}“ angezeigt. Wechsle zu diesem virtuellen Desktop, um ihn zu sehen.",
+  "“{0}”现在只在“{1}”上显示": "„{0}“ wird jetzt nur auf „{1}“ angezeigt",
+  "切换到那个虚拟桌面就能看到它；点“撤销”让它回到这个桌面。": "Wechsle zu diesem virtuellen Desktop, um ihn zu sehen, oder klicke auf „Rückgängig“, um ihn hierher zurückzuholen.",
   "按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出": "Beim Wechsel des virtuellen Desktops mit Win+Strg+Links/Rechts werden Bereiche, die nicht zu diesem Desktop gehören, ausgeblendet",
   "只在“{0}”上显示": "Nur auf „{0}“",
   "每个虚拟桌面各用一套栅栏": "Eigene Bereiche für jeden virtuellen Desktop",

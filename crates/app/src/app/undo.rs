@@ -29,6 +29,9 @@ pub(super) enum UndoStep {
     },
     /// A fence deleted from its menu.
     Deleted(Box<DeletedFence>),
+    /// A fence sent away from the current virtual desktop (its menu, Settings): the desktops
+    /// its window showed on before (empty: every desktop).
+    Desktops { fence: FenceId, before: Vec<String> },
     /// Icons 「立即应用」 sorted: where each was, grouped by the fence it went to.
     Refiled {
         id: u64,
@@ -75,6 +78,8 @@ pub(super) enum UndoNotice {
     Deleted(FenceId),
     /// The 「立即应用」 step of this id.
     Refiled(u64),
+    /// The fence sent to another virtual desktop.
+    Desktops(FenceId),
 }
 
 /// Ids of the 「立即应用」 steps, so the notice undoes its own one.
@@ -86,6 +91,7 @@ impl UndoStep {
             Self::Bounds { .. } => "bounds",
             Self::Items { .. } => "items",
             Self::Deleted(_) => "deleted fence",
+            Self::Desktops { .. } => "virtual desktops",
             Self::Refiled { .. } => "rules applied",
             Self::Renamed { .. } => "rename",
             Self::Created { .. } => "new item",
@@ -318,6 +324,7 @@ impl App {
         let Some(i) = self.undo.iter().rposition(|s| match (s, target) {
             (UndoStep::Deleted(d), UndoNotice::Deleted(fence)) => d.fence.id == fence,
             (UndoStep::Refiled { id, .. }, UndoNotice::Refiled(want)) => *id == want,
+            (UndoStep::Desktops { fence, .. }, UndoNotice::Desktops(want)) => *fence == want,
             _ => false,
         }) else {
             tracing::info!(?target, "no longer undoable");
@@ -367,6 +374,21 @@ impl App {
                     .is_some_and(|(_, t)| *t == UndoNotice::Deleted(id))
                 {
                     self.undo_notice = None;
+                }
+                usize::from(back)
+            }
+            UndoStep::Desktops { fence, before } => {
+                let back = self.state.fence(fence).is_some()
+                    && self.set_fence_desktops(fence, before, "undo");
+                if self
+                    .undo_notice
+                    .as_ref()
+                    .is_some_and(|(_, t)| *t == UndoNotice::Desktops(fence))
+                {
+                    self.undo_notice = None;
+                }
+                if back {
+                    self.push_settings_state();
                 }
                 usize::from(back)
             }
@@ -566,6 +588,45 @@ impl App {
             Ok(notice) => {
                 tracing::info!(moved, "undo notice shown for the rules applied");
                 self.undo_notice = Some((notice, UndoNotice::Refiled(id)));
+                true
+            }
+            Err(error) => {
+                tracing::warn!(%error, "undo notice not shown");
+                false
+            }
+        }
+    }
+
+    /// Fence `fence` was sent away from the current virtual desktop; its window showed on
+    /// `before` until then.
+    pub(super) fn note_desktops_for_undo(&mut self, fence: FenceId, before: Vec<String>) {
+        self.push_undo(UndoStep::Desktops { fence, before });
+    }
+
+    /// After a fence was sent to another virtual desktop from its menu or Settings: 「“X”现在
+    /// 只在“Y”上显示」 with 撤销, unless another notice is up (Ctrl+Z still undoes it then).
+    /// Returns whether it is shown.
+    pub(super) fn offer_undo_desktops(&mut self, fence: FenceId, title: &str, on: &str) -> bool {
+        if self.notice_showing() {
+            tracing::info!("undo notice not shown: another notice is up");
+            return false;
+        }
+        self.undo_notice = None;
+        let head = pecofence_core::i18n::format(
+            "“{0}”现在只在“{1}”上显示",
+            &[title.to_string(), on.to_string()],
+        );
+        match crate::notice::Notice::show(
+            &self.ctx,
+            &head,
+            pecofence_core::i18n::text("切换到那个虚拟桌面就能看到它；点“撤销”让它回到这个桌面。"),
+            pecofence_core::i18n::text("撤销"),
+            crate::notice::locale(),
+            &self.notice_avoid_rects(),
+        ) {
+            Ok(notice) => {
+                tracing::info!(%fence, "undo notice shown for the fence sent to another desktop");
+                self.undo_notice = Some((notice, UndoNotice::Desktops(fence)));
                 true
             }
             Err(error) => {

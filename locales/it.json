@@ -886,6 +886,8 @@
   "桌面 {0}": "Desktop {0}",
   "{0}（当前）": "{0} (corrente)",
   "栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。": "Il riquadro «{0}» ora è visibile solo su «{1}». Passa a quel desktop virtuale per vederlo.",
+  "“{0}”现在只在“{1}”上显示": "«{0}» ora è visibile solo su «{1}»",
+  "切换到那个虚拟桌面就能看到它；点“撤销”让它回到这个桌面。": "Passa a quel desktop virtuale per vederlo, o fai clic su Annulla per riportarlo su questo.",
   "按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出": "Quando cambi desktop virtuale con Win+Ctrl+Sinistra/Destra, i riquadri che non appartengono a quel desktop svaniscono",
   "只在“{0}”上显示": "Solo su «{0}»",
   "每个虚拟桌面各用一套栅栏": "Riquadri separati per ogni desktop virtuale",

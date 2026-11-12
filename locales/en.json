@@ -886,6 +886,8 @@
   "桌面 {0}": "Desktop {0}",
   "{0}（当前）": "{0} (current)",
   "栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。": "The fence “{0}” now shows only on “{1}”. Switch to that virtual desktop to see it.",
+  "“{0}”现在只在“{1}”上显示": "“{0}” now shows only on “{1}”",
+  "切换到那个虚拟桌面就能看到它；点“撤销”让它回到这个桌面。": "Switch to that virtual desktop to see it, or click Undo to bring it back to this one.",
   "按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出": "When you switch virtual desktops with Win+Ctrl+Left/Right, fences that do not belong to that desktop fade out",
   "只在“{0}”上显示": "Only on “{0}”",
   "每个虚拟桌面各用一套栅栏": "Separate fences for each virtual desktop",

@@ -382,12 +382,15 @@ impl App {
         // The tab pills' glyphs, then the window's.
         self.refresh_fence(host);
         self.apply_desktop_visibility(reason);
-        // Picked on one desktop for another: it is gone from here, say where it went (a CLI
-        // caller reads the reply instead).
+        // Picked on one desktop for another: it is gone from here. PecoFence's own card says
+        // where it went and takes it back (撤销, or Ctrl+Z in a fence); a Windows notification
+        // says it while another card is up (a CLI caller reads the reply instead).
         if reason != "CLI"
+            && reason != "undo"
             && !self.on_current_desktop(host)
-            && let (Some(t), Some(f)) = (&self.tray, self.state.fence(host))
+            && let Some(f) = self.state.fence(host)
         {
+            let title = f.title.clone();
             let names: Vec<String> = self
                 .desktop_labels()
                 .into_iter()
@@ -398,18 +401,20 @@ impl App {
                 })
                 .map(|(_, label, _)| label)
                 .collect();
-            tracing::info!(fence = %host, desktops = names.len(), reason, "notice: the fence now shows on another desktop");
-            t.show_info(
-                "PecoFence",
-                &pecofence_core::i18n::format(
-                    "栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。",
-                    &[
-                        f.title.clone(),
-                        names.join(pecofence_core::i18n::text("、")),
-                    ],
-                ),
-                false,
-            );
+            let names = names.join(pecofence_core::i18n::text("、"));
+            self.note_desktops_for_undo(host, before.unwrap_or_default());
+            let card = self.offer_undo_desktops(host, &title, &names);
+            tracing::info!(fence = %host, card, reason, "notice: the fence now shows on another desktop");
+            if !card && let Some(t) = &self.tray {
+                t.show_info(
+                    "PecoFence",
+                    &pecofence_core::i18n::format(
+                        "栅栏“{0}”现在只在“{1}”上显示，切换到那个虚拟桌面就能看到它。",
+                        &[title, names],
+                    ),
+                    false,
+                );
+            }
         }
         self.schedule_save();
         true
