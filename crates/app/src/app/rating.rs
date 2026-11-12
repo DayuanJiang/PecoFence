@@ -238,7 +238,7 @@ impl App {
     }
 
     /// The notices on screen: a tip, the rating offer, an undo, the update card.
-    fn notices(&self) -> impl Iterator<Item = &crate::notice::Notice> {
+    pub(super) fn notices(&self) -> impl Iterator<Item = &crate::notice::Notice> {
         self.welcome
             .iter()
             .map(|(n, _)| n)

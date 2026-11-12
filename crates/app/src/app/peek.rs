@@ -852,10 +852,22 @@ impl App {
         // the taskbar, and the arrow keys moved through the taskbar's buttons.
         if let Some(back) = self.peek_back.take() {
             let front = desktop::foreground_window();
-            let taskbar = front.0.is_null() || desktop::class_name(front) == "Shell_TrayWnd";
+            let class = desktop::class_name(front);
+            // A card on screen (the undo card, a tip) is the next window in line as well:
+            // Windows gave it the keyboard, the card showed no mark and took no key. A card
+            // the user went to with F6 has a button with the focus mark and keeps the keys.
+            let card = self
+                .notices()
+                .any(|n| n.hwnd() == front && !n.has_keyboard());
+            // The search box that Esc closed still has the keyboard while it fades out; when
+            // it is gone the keyboard goes to the next window in line all the same.
+            let search = class == "PecoFence.PeekSearch";
+            let taskbar = front.0.is_null() || card || search || class == "Shell_TrayWnd";
             let given = taskbar && window::claim_foreground(back);
             tracing::debug!(
                 taskbar,
+                card,
+                search,
                 given,
                 "peek ended: the keyboard goes back to where it was"
             );
