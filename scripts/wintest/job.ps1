@@ -21,14 +21,20 @@ if (Test-Path -LiteralPath (Join-Path $PfDesk 'EC2 Feedback.url')) {
       Log "desktop: removing what an earlier job left: $($_.Name)"
       Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
     }
-  # The same for Windows' app colour mode: a job that was cut off while it had the box on dark
-  # left the next jobs' pictures dark (2026-11-13: a fade check read a dark search box as "no
-  # fade" twice on one box). Steps that want dark set it themselves.
+  # The same for Windows' two colour modes, the one for apps and the one for Windows itself
+  # (the taskbar), which PecoFence follows by default. A value that is 0 or gone reads as dark
+  # there: Windows itself answers "dark" for a missing SystemUsesLightTheme, and PecoFence's
+  # fences, cards and search box turn dark with it (2026-11-13: a steps file emptied the key on
+  # two boxes, and every later job there had a dark search box). Steps that want dark set it
+  # themselves.
   $themeKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
-  $apps = (Get-ItemProperty -Path $themeKey -ErrorAction SilentlyContinue).AppsUseLightTheme
-  if ($null -ne $apps -and $apps -eq 0) {
-    Log 'colour mode: an earlier job left Windows on dark for apps: set back to light'
-    Set-ItemProperty -Path $themeKey -Name AppsUseLightTheme -Value 1 -Type DWord
+  if (-not (Test-Path -LiteralPath $themeKey)) { New-Item -Path $themeKey -Force | Out-Null }
+  foreach ($mode in 'AppsUseLightTheme', 'SystemUsesLightTheme') {
+    $was = (Get-ItemProperty -Path $themeKey -ErrorAction SilentlyContinue).$mode
+    if ($was -ne 1) {
+      Log "colour mode: $mode was '$was' (what an earlier job left): set to 1, light"
+      Set-ItemProperty -Path $themeKey -Name $mode -Value 1 -Type DWord
+    }
   }
 }
 . $PfSteps

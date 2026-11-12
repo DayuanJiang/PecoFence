@@ -350,7 +350,12 @@ if ($Part -match 'W') { OoFront }
 $OoThemeKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
 function OoWinMode($light) {
   if ($null -eq $light) { Remove-ItemProperty -Path $OoThemeKey -Name AppsUseLightTheme -ErrorAction SilentlyContinue }
-  else { New-Item -Path $OoThemeKey -Force -ErrorAction SilentlyContinue | Out-Null; Set-ItemProperty -Path $OoThemeKey -Name AppsUseLightTheme -Value $light -Type DWord }
+  else {
+    # New-Item -Force on a key that is there empties it: SystemUsesLightTheme went with it, and
+    # every later job on the box had PecoFence on dark (2026-11-13).
+    if (-not (Test-Path -LiteralPath $OoThemeKey)) { New-Item -Path $OoThemeKey -Force -ErrorAction SilentlyContinue | Out-Null }
+    Set-ItemProperty -Path $OoThemeKey -Name AppsUseLightTheme -Value $light -Type DWord
+  }
 }
 # The tone of the tip of the first 编辑 button on 整理规则: how many of the pixels that changed
 # under the pointer are light and how many are dark.
