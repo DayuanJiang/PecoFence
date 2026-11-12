@@ -110,6 +110,7 @@
 - The installer runs on Windows 10 1809 and later, LTSC 2019 and Windows Server 2019 included (GitHub #219). It stopped on everything before Windows 10 2004 with 「此程序不支持当前计算机运行的 Windows 版本」, although the app works there (tested on build 17763, with the fixes above). The Microsoft Store edition still needs Windows 10 2004.
 - Windows 10 1809 to 1909: the Settings window has a dark title bar in dark mode; it stayed white over the dark page.
 - Windows 10 1809: after a right-button drag from File Explorer onto a program or its shortcut in a fence, Esc closes the menu that asks what to do (Open with / Cancel). The menu took no key, as the tray menu did (GitHub #219).
+- A right-click opens the menu while a Windows notification is the window in front. When the window in front closes while a notification shows, Windows (10 and 11) makes the notification the foreground window and lets no program take that from it. Since 0.3.2 a right-click on a fence or an icon then opened no menu at all, click after click, until the notification went away (0.3.2 stopped opening menus it could not close, after one had stayed open for 20 minutes). The menu now opens in that case too: its entries take clicks as always, and Esc or a click anywhere outside it closes it.
 
 ## 0.3.3
 

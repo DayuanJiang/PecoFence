@@ -600,9 +600,10 @@ impl PopupMenu {
     }
 
     /// Shows the menu at screen coordinates and returns the chosen command id (0 = dismissed).
-    /// `owner` is brought to the foreground first: a menu without it cannot be dismissed. When
-    /// another window keeps the foreground the menu does not open (0), and an open menu that
-    /// finds itself without it closes.
+    /// `owner` is brought to the foreground first: a menu without it gets no Esc and no click
+    /// outside it. When another window keeps the foreground (a Windows toast lets no call take
+    /// it), the menu opens all the same and [`OutsidePress`] and the timer close it at the first
+    /// press outside it or at Esc; a menu that loses the foreground while it opens closes.
     pub fn show(&self, owner: HWND, x: i32, y: i32) -> u32 {
         self.show_aligned(owner, x, y, true)
     }
@@ -621,14 +622,34 @@ impl PopupMenu {
         // outside it go to the other window: it stays open until an item is chosen, and the
         // UI thread waits in it all that time (a Windows Security toast took the foreground
         // right at a right-click, and PecoFence stood still for 20 minutes).
-        let Some(foreground_step) = take_foreground(owner) else {
-            let class = crate::desktop::class_name(crate::desktop::foreground_window());
-            tracing::warn!(
-                class = %class,
-                "popup menu not opened: another window keeps the foreground"
-            );
-            return 0;
+        let foreground_step = take_foreground(owner);
+        // A toast notification that has the foreground keeps it against every call (Windows 11
+        // gives a toast the foreground when the window in front closes; measured there:
+        // SetForegroundWindow returns 0 also after an Alt press, AttachThreadInput to the
+        // toast's thread is refused with error 5). The menu then opens without the foreground:
+        // it still gets the clicks on its own entries, a hook closes it at a press elsewhere,
+        // and the timer below reads Esc from the key state.
+        let outside = match foreground_step {
+            Some(_) => None,
+            None => {
+                let class = crate::desktop::class_name(crate::desktop::foreground_window());
+                let Some(watch) = OutsidePress::start() else {
+                    tracing::warn!(
+                        class = %class,
+                        "popup menu not opened: another window keeps the foreground"
+                    );
+                    return 0;
+                };
+                tracing::debug!(
+                    class = %class,
+                    "popup menu opens without the foreground; a press outside it or Esc closes it"
+                );
+                // Forgets an Esc pressed before the menu.
+                let _ = crate::window::key_pressed_async(VK_ESCAPE as u32);
+                Some(watch)
+            }
         };
+        MENU_WITHOUT_FOREGROUND.with(|w| w.set(outside.is_some()));
         MENU_FOREGROUND_LOST.with(|n| n.set(0));
         // A menu that starts while this thread's key state still has a mouse button down takes
         // no key until a click in it (the tray menu of Windows 10 1809 after a right-click on
@@ -685,13 +706,14 @@ impl PopupMenu {
             tracing::info!(
                 cmd = cmd.0,
                 open_ms = open.as_millis() as u64,
-                foreground_step,
+                foreground_step = foreground_step.unwrap_or(0),
                 check_timer = timer != 0,
                 closed_for_lost_foreground = lost,
                 "popup menu closed"
             );
             cmd.0 as u32
         };
+        drop(outside);
         if let Some(hook) = hook {
             // SAFETY: the hook set above.
             unsafe {
@@ -735,6 +757,61 @@ thread_local! {
     /// Checks in a row that found another thread's window in the foreground while a menu is
     /// open (see [`check_menu_foreground`]).
     static MENU_FOREGROUND_LOST: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// The open menu was opened without the foreground (see [`OutsidePress`]).
+    static MENU_WITHOUT_FOREGROUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// While it lives, the first mouse button press outside this thread's popup menus closes the
+/// open menu (a low-level mouse hook on this thread; the menu's own loop pumps its messages).
+/// For a menu opened while another program keeps the foreground: such a menu sees the presses
+/// on its own windows only, so one elsewhere would leave it open.
+struct OutsidePress(HHOOK);
+
+impl OutsidePress {
+    fn start() -> Option<Self> {
+        // SAFETY: a low-level hook needs no module handle.
+        let hook = unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(outside_press_proc), None, 0) };
+        (!hook.0.is_null()).then_some(Self(hook))
+    }
+}
+
+impl Drop for OutsidePress {
+    fn drop(&mut self) {
+        // SAFETY: balances SetWindowsHookExW.
+        unsafe {
+            let _ = UnhookWindowsHookEx(self.0);
+        }
+    }
+}
+
+unsafe extern "system" fn outside_press_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    let m = wparam.0 as u32;
+    if code >= 0
+        && [
+            WM_LBUTTONDOWN as u32,
+            WM_RBUTTONDOWN as u32,
+            WM_MBUTTONDOWN as u32,
+            WM_XBUTTONDOWN as u32,
+        ]
+        .contains(&m)
+    {
+        // SAFETY: for WH_MOUSE_LL, lParam points to an MSLLHOOKSTRUCT, which starts with the
+        // pointer's position; plain FFI calls.
+        let on_menu = unsafe {
+            let under = WindowFromPoint(*(lparam.0 as *const POINT));
+            GetWindowThreadProcessId(under, None) == GetCurrentThreadId()
+                && crate::desktop::class_name(under) == "#32768"
+        };
+        if !on_menu {
+            tracing::debug!(
+                wm = m,
+                "press outside a popup menu without the foreground; closing it"
+            );
+            end_menu();
+        }
+    }
+    // SAFETY: passes the event on unchanged.
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
 }
 
 /// Whether the foreground window belongs to this thread: only then does an open menu get Esc
@@ -751,7 +828,8 @@ fn foreground_is_ours() -> bool {
 /// thread the foreground one: 1 a plain SetForegroundWindow, 2 the same after an empty input
 /// event (the foreground lock refuses a process that did not get the last input, as for a
 /// menu the CLI opens). None when another thread still has it. (Attaching to the foreground
-/// thread's input for the call was tried as well: the fence menu it opened ignored Esc.)
+/// thread's input for the call was tried as well: the fence menu it opened ignored Esc, and a
+/// toast's thread refuses it.)
 fn take_foreground(owner: HWND) -> Option<u32> {
     // SAFETY: plain FFI calls; the injected event has no flags, so it moves and presses nothing.
     unsafe {
@@ -770,6 +848,14 @@ fn take_foreground(owner: HWND) -> Option<u32> {
 /// it is closed here once the foreground stayed elsewhere for two checks. (Measured: a
 /// foreground change after the menu opened closes it by itself.)
 unsafe extern "system" fn check_menu_foreground(_: HWND, _: u32, _: usize, _: u32) {
+    if MENU_WITHOUT_FOREGROUND.with(|w| w.get()) {
+        // The keys go to the program that has the foreground, so the menu never sees Esc.
+        if crate::window::key_pressed_async(VK_ESCAPE as u32) {
+            tracing::debug!("Esc while a popup menu is open without the foreground; closing it");
+            end_menu();
+        }
+        return;
+    }
     let lost = if foreground_is_ours() {
         0
     } else {
