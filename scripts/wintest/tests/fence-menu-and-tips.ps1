@@ -375,15 +375,15 @@ $n = WaitNotice 5
 Check 'fourth fence: the roll-up tip' ((NoticeTitle) -eq $TRoll) "picked=$p2 title=$(NoticeTitle)"
 ShotNotice "t-roll-$Lng"
 
-Case "rule tip waits while another card shows $Lng"
+# The roll-up tip is still up (30 s): the rule offer takes its place. It used to wait for a
+# fourth file of that kind, which a desktop with three PDF files never brings.
+Case "rule tip takes the place of the roll-up tip $Lng"
 foreach ($n in 'doc1', 'doc2', 'doc3') { DragItemTo $FFiles $n 'Work' | Out-Null }
 Check 'three pdfs moved into Work' (@((PfJson item list --fence Work) | Where-Object { $_.name -like 'doc*' }).Count -eq 3) ((PfJson item list --fence Work | ForEach-Object { $_.name }) -join ', ')
-Check 'rule tip held back while the roll-up tip shows' ((NoticeTitle) -eq $TRoll) "title=$(NoticeTitle)"
-ClickAccent
-Check 'Got it closes the roll-up tip' (WaitGoneWin 'PecoFence.Notice' 3) "title=$(NoticeTitle)"
-DragItemTo $FFiles 'doc4' 'Work' | Out-Null
+# The roll-up tip's card fades out (167 ms) while the offer's comes in.
+Start-Sleep -Milliseconds 800
 $n = WaitNotice 5
-Check 'fourth pdf: the rule tip' ((NoticeTitle) -eq $TRule) "title=$(NoticeTitle)"
+Check 'third pdf: the rule tip, in place of the roll-up tip' ((NoticeTitle) -eq $TRule -and @([W]::Tops('PecoFence.Notice')).Count -eq 1) "title=$(NoticeTitle) cards=$(@([W]::Tops('PecoFence.Notice')).Count)"
 ShotNotice "t-rule-$Lng"
 $rulesBefore = @(Rules).Count
 if ($Zh) {
