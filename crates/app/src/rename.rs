@@ -126,7 +126,11 @@ fn title_box_place(r: RECT, dpi: u32, title: &TitlePlace) -> (RECT, ItemBox) {
         _ => {
             let left = r.left + title.x - pad_x;
             // Up to the count and the chevron at the right, as before.
-            (left, (r.right - px(44.0)).max(left + px(80.0)), TitleAlign::Left)
+            (
+                left,
+                (r.right - px(44.0)).max(left + px(80.0)),
+                TitleAlign::Left,
+            )
         }
     };
     let rect = RECT {
@@ -848,7 +852,11 @@ mod tests {
             ..title(200, 36, 14.0)
         };
         let (r, b) = title_box_place(fence, 96, &right);
-        assert_eq!(r.right - b.edit_x, 8 + 260, "the text ends where the title's did");
+        assert_eq!(
+            r.right - b.edit_x,
+            8 + 260,
+            "the text ends where the title's did"
+        );
         assert_eq!(r.left + b.edit_x, 8 + 16);
         assert_eq!(b.align, TitleAlign::Right);
     }

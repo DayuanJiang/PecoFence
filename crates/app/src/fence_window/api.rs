@@ -1397,8 +1397,7 @@ impl FenceWindow {
                     // its new places at once; pills that only got narrower still slide.
                     let grew = same_set
                         && old_ids.iter().eq(v.tabs.iter().map(|t| &t.id))
-                        && v
-                            .tab_rects()
+                        && v.tab_rects()
                             .iter()
                             .zip(&old_widths)
                             .any(|((_, w), old)| *w > *old + 0.5);

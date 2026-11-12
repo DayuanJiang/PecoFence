@@ -92,8 +92,8 @@ impl DropPreview {
             );
         } else {
             let scale = dpi.max(96) as f32 / 96.0;
-            let presented = LayeredImage::new(w, h, &render(w, h, scale, radius_dip))
-                .and_then(|img| {
+            let presented =
+                LayeredImage::new(w, h, &render(w, h, scale, radius_dip)).and_then(|img| {
                     img.present(window.hwnd(), rect.left, rect.top, self.layer.alpha())
                 });
             if let Err(e) = presented {

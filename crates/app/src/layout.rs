@@ -1529,7 +1529,10 @@ mod tests {
             "level with the side fence's lower edge: 1 px above the fence below"
         );
         let spot = nearest_free_apart(&card, &fences, &work, 16).unwrap();
-        assert!(spot.bottom + 16 <= below.top && spot.top >= above.bottom + 16, "{spot:?}");
+        assert!(
+            spot.bottom + 16 <= below.top && spot.top >= above.bottom + 16,
+            "{spot:?}"
+        );
         assert!(spot.left >= side.right + 16, "{spot:?}");
         // 110 px of room for a 100 px card: 5 px at each end.
         let above = rc(0, 0, 400, 150);
