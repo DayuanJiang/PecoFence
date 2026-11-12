@@ -3235,6 +3235,10 @@
         document.getElementById('iconTintStrength').setAttribute('aria-label', t("图标着色强度"));
       }
       state.settings.themeStyle ||= 'fluent';
+      // Another colour mode or accent lands in one frame: the cards and the text change at
+      // once, so the controls must not fade behind them (drawnSoon allows transitions again).
+      const root = document.documentElement;
+      if (root.classList.contains('light') !== (m.themeMode === 'light') || (m.accent && root.style.getPropertyValue('--accent') !== m.accent)) root.classList.remove('ready');
       document.documentElement.classList.toggle('light', m.themeMode === 'light');
       if (m.accent) {
         document.documentElement.style.setProperty('--accent', m.accent);

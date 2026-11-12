@@ -268,7 +268,10 @@ async function runTests() {
     return frame.contentDocument;
   };
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
+  // /?only=<text> runs the tests whose name contains the text (those that start with a reset).
+  const only = new URLSearchParams(location.search).get('only');
   const test = async (name, run) => {
+    if (only && !name.includes(only)) return;
     const li = document.createElement('li');
     try { await run(); li.textContent = 'PASS — ' + name; li.className = 'pass'; passed++; }
     catch (error) { li.textContent = 'FAIL — ' + name + ': ' + error.message; li.className = 'fail'; failed++; }
@@ -3017,6 +3020,30 @@ async function runTests() {
     assert(doc.querySelector('nav a.sel').dataset.page === 'fences' && doc.querySelector('main').scrollTop === 120, 'showPage did not restore the page and its scroll offset: ' + doc.querySelector('main').scrollTop);
     frame.contentWindow.testHost({ type: 'showPage', page: 'general' });
     assert(doc.querySelector('nav a.sel').dataset.page === 'general' && doc.querySelector('main').scrollTop === 0, 'showPage without an offset did not start at the top');
+    doc = await reset();
+  });
+
+  // ---- motion (owner round 2026-11-12): what moves, and what must not, after a gesture.
+  // The transitions and animations running right now, as "element property" lines.
+  const moving = () => doc.getAnimations().map(a => {
+    const target = a.effect.target;
+    return (target.id ? '#' + target.id : target.tagName.toLowerCase() + '.' + target.className) + (a.effect.pseudoElement || '') + ' ' + (a.transitionProperty || a.animationName);
+  });
+  const until = async ok => { for (let i = 0; i < 50 && !ok(); i++) await settle(); return ok(); };
+  const motionReady = () => until(() => doc.documentElement.classList.contains('ready'));
+  await test('A colour mode switch lands in one frame: no control fades behind the page', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    Object.assign(current(), { themeMode: 'light', accent: '#005FB8' });
+    current().settings.theme = 'light';
+    frame.contentWindow.testRefresh();
+    const fading = moving().filter(line => line.includes('color'));
+    assert(doc.documentElement.classList.contains('light'), 'The page did not switch to light');
+    assert(fading.length === 0, fading.length + ' colours fade after the switch: ' + fading.slice(0, 4).join(', '));
+    assert(await motionReady(), 'Transitions stayed off after the switch');
+    // The same mode again leaves the transitions on.
+    frame.contentWindow.testRefresh();
+    assert(doc.documentElement.classList.contains('ready'), 'A state without a change of mode switched the transitions off');
     doc = await reset();
   });
 
