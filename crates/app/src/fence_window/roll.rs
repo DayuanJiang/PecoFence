@@ -157,6 +157,13 @@ pub(super) fn show_shadow(shadow: HWND, fence: HWND) {
 impl FenceViewState {
     /// Update only compositor opacity and the cached shadow, never rasterize icons per frame.
     pub(super) fn sync_idle_fade(&mut self, now: Instant) -> bool {
+        // Off (the default) and at full strength: nothing to work out, per frame or per draw.
+        if self.behavior.idle_opacity.get() >= 1.0
+            && self.idle_opacity_applied == 1.0
+            && self.idle_fade.target() == 1.0
+        {
+            return false;
+        }
         let engaged = self.mouse_inside
             || (self.win_active && self.focus_visible)
             || self.drag.is_some()
