@@ -9,6 +9,19 @@ trap {
   continue
 }
 . C:\pf\kit\lib.ps1
+# An EC2 box's desktop starts every job with only the two shortcuts the box came with. What an
+# earlier job left (a job that was stopped, files moved there with an older creation time, which
+# the cleanup at the end of this file does not see) shows up in this job's fences (2026-11-12:
+# forty left files made the desktop fence 822 px tall, and it pushed the fence under test).
+# A Hyper-V guest's desktop is left as it is: only the EC2 boxes have these shortcuts.
+if (Test-Path -LiteralPath (Join-Path $PfDesk 'EC2 Feedback.url')) {
+  Get-ChildItem -LiteralPath $PfDesk -Force -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne 'desktop.ini' -and $_.Name -notlike 'EC2 *.url' } |
+    ForEach-Object {
+      Log "desktop: removing what an earlier job left: $($_.Name)"
+      Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
 . $PfSteps
 Case 'end'
 if (PfAlive) { PfQuit }
