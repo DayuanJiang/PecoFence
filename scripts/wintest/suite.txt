@@ -161,3 +161,24 @@ tray-menu-keys     1   manual release tray-menu-keys.ps1
 icon-font-gaps     1   manual debug   icon-font-gaps.ps1
 dark-title-bar     1   manual release dark-title-bar.ps1
 toast-menu          3   vm     release owner-toast-menu.ps1
+# Owner round 2026-11-12, second batch (UI, UX and motion hunts): one steps file per group.
+o2-update          3   ec2    debug   owner2-update.ps1
+o2-requests-HS     2   ec2    release owner2-requests.ps1            --var Part=HS
+o2-requests-TD     2   ec2    release owner2-requests.ps1            --var Part=TD
+o2-requests-FV     2   ec2    release owner2-requests.ps1            --var Part=FV
+o2-requests-page   2   ec2    debug   owner2-requests.ps1            --var Part=FVS
+o2-hardening       3   ec2    release owner2-hardening.ps1
+o2-lang            4   ec2    release owner2-hunt-lang.ps1
+o2-tabs            4   ec2    release owner2-hunt-tabs.ps1
+o2-smart           4   ec2    release owner2-hunt-smart.ps1
+o2-smart-page      2   ec2    debug   owner2-hunt-smart.ps1          --var Part=G
+o2-rules           4   ec2    release owner2-hunt-rules.ps1
+o2-rules-page      2   ec2    debug   owner2-hunt-rules.ps1          --var Part=P
+o2-desktop         4   ec2    release owner2-hunt-desktop.ps1
+o2-scale           3   ec2    release owner2-hunt-scale.ps1
+o2-fence-life      4   ec2    release owner2-ux-fence-life.ps1
+o2-items           4   ec2    release owner2-ux-items.ps1
+o2-popups          5   ec2    release owner2-ux-popups.ps1
+o2-tools           4   ec2    release owner2-ux-tools.ps1
+o2-settings        3   vm     debug   owner2-ux-settings.ps1
+o2-looks           5   vm     release owner2-ux-looks.ps1
