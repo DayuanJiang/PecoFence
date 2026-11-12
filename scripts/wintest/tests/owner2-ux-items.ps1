@@ -10,9 +10,10 @@
 #   E  the only icon of a fence fades out while the empty fence's text fades in (it was a cut)
 #   M  after a rectangle selection the arrow keys go on from the rectangle
 #   N  the name box of a name longer than the box opens on the name's first line
+#   C  light mode over a dark wallpaper: a selected icon shows on the dark plate
 # Parts: run.sh --var Part=TV ... (default: all). --var Rec=1 also records the parts that move
 # (for before / after animations). Runs on a 1600x900 box at 100 %.
-if (-not $Part) { $Part = 'TVDGSLKEMN' }
+if (-not $Part) { $Part = 'TVDGSLKEMNC' }
 trap { PfTrap $_; continue }
 if ($Rec) { . C:\pf\kit\rec.ps1 }
 function UiRec($name, $x, $y, $w, $h) { if ($Rec) { RecStart $name -X $x -Y $y -W $w -H $h -Fps 30 } }
@@ -390,6 +391,41 @@ public static class UiEdit {
   [G]::Press(0x1B); Start-Sleep -Milliseconds 500
   ParkMouse
   Pf fence delete UiN | Out-Null; Start-Sleep -Milliseconds 800
+}
+
+if ($Part -match 'C') {
+  Case 'C a selected icon on a dark plate in light mode'
+  # Light colour mode over a nearly black wallpaper: the plate is dark and the text light. The
+  # selection must show against the plate (WCAG contrast of the fill against the plate).
+  function UiLum($c) {
+    $v = @($c.R, $c.G, $c.B) | ForEach-Object { $x = $_ / 255.0; if ($x -le 0.03928) { $x / 12.92 } else { [math]::Pow(($x + 0.055) / 1.055, 2.4) } }
+    return 0.2126 * $v[0] + 0.7152 * $v[1] + 0.0722 * $v[2]
+  }
+  function UiContrast($a, $b) { $la = UiLum $a; $lb = UiLum $b; return ([math]::Max($la, $lb) + 0.05) / ([math]::Min($la, $lb) + 0.05) }
+  $black = New-Object Drawing.Bitmap 32, 32; $bg = [Drawing.Graphics]::FromImage($black); $bg.Clear([Drawing.Color]::FromArgb(12, 12, 12)); $bg.Dispose()
+  $black.Save("$PfRun\black.bmp", [Drawing.Imaging.ImageFormat]::Bmp); $black.Dispose()
+  [G]::SystemParametersInfoW(0x14, 0, "$PfRun\black.bmp", 3) | Out-Null
+  Pf settings set theme light | Out-Null
+  UiFence 'UiC' '300,150,500,260' | Out-Null
+  $wc = (FenceGet 'UiC').windowRect
+  $cc = CellPt 'UiC' 0; $ch = CellPt 'UiC' 2
+  foreach ($style in 'liquidGlass', 'fluent') {
+    Pf settings set themeStyle $style | Out-Null; Start-Sleep -Milliseconds 2500
+    [G]::Click($cc[0], $cc[1]); Start-Sleep -Milliseconds 400
+    # The pointer rests on the third icon: its hover fill is the measure of "shows".
+    [G]::MoveTo($ch[0] - 3, $ch[1]); Start-Sleep -Milliseconds 50; [G]::MoveTo($ch[0], $ch[1]); Start-Sleep -Milliseconds 350
+    $bmp = [Px]::Grab($wc.x, $wc.y, $wc.w, $wc.h)
+    # Inside the first icon's plate, left of its picture; the same spot of the third; an empty spot of the fence.
+    $sel = $bmp.GetPixel(12, 70); $hov = $bmp.GetPixel(12 + ($ch[0] - $cc[0]), 70); $plate = $bmp.GetPixel(400, 220)
+    $bmp.Dispose()
+    Crop "C-$style" ($wc.x - 10) ($wc.y - 10) ($wc.w + 20) 170 | Out-Null
+    $rs = UiContrast $sel $plate; $rh = UiContrast $hov $plate
+    Check "C $style, light mode on a dark wallpaper: the selection fill shows on the plate (1.3 : 1 or more)" ($rs -ge 1.3) ("selected {0},{1},{2}; hovered {3},{4},{5}; plate {6},{7},{8}; selection {9:F2} : 1, hover {10:F2} : 1" -f $sel.R, $sel.G, $sel.B, $hov.R, $hov.G, $hov.B, $plate.R, $plate.G, $plate.B, $rs, $rh)
+    ParkMouse; [G]::Press(0x1B); Start-Sleep -Milliseconds 300
+  }
+  Pf settings set themeStyle fluent | Out-Null
+  GreyWallpaper; Start-Sleep -Milliseconds 1500
+  Pf fence delete UiC | Out-Null; Start-Sleep -Milliseconds 800
 }
 
 Case 'cleanup'
