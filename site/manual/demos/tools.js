@@ -1,7 +1,8 @@
 // 7.1 便签、时钟和脚本栅栏 (lesson id tools): 设置 → 小工具 (ui/settings.html #page-tools): one
 // 小工具 switch at the top (on), then a list with a button on each row. 「新建便签」 puts a note on
 // the desktop, edited in place (note_edit.rs): the note keeps its look, only a caret blinks, and
-// a line typed as 「[ ] …」 shows its check box at once; a click elsewhere saves, and a click
+// a line typed as 「[ ] …」 shows its check box at once; Enter after a to-do starts the next line
+// with a check box of its own (note.rs todo_enter). A click elsewhere saves, and a click
 // ticks a box (fence_chrome.rs draw_note: the box fills with the accent, the text turns
 // secondary). 时钟's 「添加」 adds the clock (draw_clock: the
 // time large, the long date with the weekday under it); there is one clock at most, so the
@@ -25,14 +26,17 @@
     const SCRIPT = { x: 532, y: 254, w: 246, h: 158, title: '天气' };
 
     const lang = () => document.documentElement.lang || 'zh-CN';
-    const TODO = '[ ] 交周报\n[ ] 订会议室\n周五前寄出合同';
+    // The note when it is saved. Typed are the first line, the second with its 「[ ] 」 and the
+    // words of the third: the marker of the third comes with the Enter before it.
+    const TODO = '周五前寄出合同\n[ ] 交周报\n[ ] 订会议室';
+    const AUTO = TODO.lastIndexOf('\n') + 1;
     const DATE = '2026年11月5日 星期四';
     const WEATHER = ['Tokyo  18°C  多云', '体感 17°C，湿度 62%，风 9 km/h', '今天 12 到 19°C，明天 13 到 21°C，降雨概率 40%'];
 
     const NEW_NOTE = 1.0, TYPE_AT = 1.35, TYPE_STEP = .06, SAVE = 3.4, TICK = 4.15;
     const ADD_CLOCK = 5.05, ADD_WEATHER = 6.2, OUTPUT = 6.95;
     const FADE_IN = .167;
-    let PATH, CLICKS, CHIPS;
+    let PATH, CLICKS, CHIPS, NOTES;
     const at = t => pathAt(t, PATH);
 
     // A list row under the 小工具 card (the page's .card.child in one .group, text indented): its
@@ -111,6 +115,8 @@
             return { n, box, span, todo: l.todo, full: l.text, mark: raw[i].length - l.text.length };
         });
         r.caret = el('span', 'tl-caret', r.todo[0].n);
+        r.first = r.todo.find(l => l.todo);
+        r.tip = el('div', 'chip', S);
 
         // the clock: time large, the long date and the weekday under it
         r.C = fence(S, { ...CLOCK });
@@ -134,8 +140,8 @@
         const note = fix(SM.at(r.page.newNote));
         const clock = fix(SM.at(r.page.addClock));
         const weather = fix(SM.at(r.page.addWeather));
-        // the first to-do box (note body: 14 px in, line 1)
-        const box = { x: NOTE.x + 14 + 6.5, y: NOTE.y + 32 + 2 + 8.5 };
+        // the first to-do box (note body: 14 px in, under the lines before it)
+        const box = { x: NOTE.x + 14 + 6.5, y: NOTE.y + 32 + 2 + r.first.n.offsetTop + 8.5 };
 
         PATH = [
             [0, 330, 380], [0.3, 330, 380],
@@ -149,6 +155,9 @@
         ];
         CLICKS = [{ t: NEW_NOTE }, { t: SAVE }, { t: TICK }, { t: ADD_CLOCK }, { t: ADD_WEATHER }];
         CHIPS = [[3.15, 3.55, '点别处保存', 16, -30], [3.95, 4.3, '点方框', 16, 18]];
+        // under the note, from the Enter that begins the last to-do until the note is saved
+        const enter = TYPE_AT + (AUTO - 1) * Math.min(TYPE_STEP, 1.7 / (TODO.length - 1));
+        NOTES = [[enter, SAVE - .35, '按 Enter，下一行自带方框', NOTE.x + NOTE.w, NOTE.y + NOTE.h + 8, 'abs', 'right']];
         return r;
     }
 
@@ -177,10 +186,14 @@
         SM.drawButton(P.addWeather, p, t >= ADD_WEATHER - .08 && t < ADD_WEATHER + .08);
 
         // the note is typed in place: the lines as the note draws them and a caret after the last
-        // character; a line shows its check box as soon as 「[ ] 」 is typed. A click elsewhere saves.
+        // character; a line shows its check box as soon as 「[ ] 」 is typed, and the line that Enter
+        // begins after a to-do has its box from the start. A click elsewhere saves.
         appear(r.N, t, NEW_NOTE + .05);
         const editing = t < SAVE;
-        const typed = editing ? SM.typed(t, TYPE_AT, TODO, TYPE_STEP, 1.7).split('\n') : null;   // longer translations type quicker
+        let keys = editing ? SM.typed(t, TYPE_AT, TODO, TYPE_STEP, 1.7) : '';   // longer translations type quicker
+        const mark = r.todo[r.todo.length - 1].mark;
+        if (keys.length >= AUTO && keys.length < AUTO + mark) keys = TODO.slice(0, AUTO + mark);
+        const typed = editing ? keys.split('\n') : null;
         r.todo.forEach((l, i) => {
             const part = typed ? typed[i] : '';
             if (!show(l.n, !typed || part != null)) return;
@@ -191,7 +204,8 @@
             if (typed && i === typed.length - 1 && r.caret.parentNode !== l.n) l.n.appendChild(r.caret);
         });
         show(r.caret, editing && Math.floor((t - NEW_NOTE) / .5) % 2 === 0);
-        r.todo[0].n.classList.toggle('done', t >= TICK);
+        r.first.n.classList.toggle('done', t >= TICK);
+        PM.drawChip(r.tip, t, NOTES, p);
 
         // the clock
         appear(r.C, t, ADD_CLOCK + .05);
