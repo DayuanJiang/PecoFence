@@ -155,6 +155,7 @@ impl FenceWindow {
             chrome_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             drop_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             search: None,
+            search_fades_for: None,
             search_dim: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             search_expanded: false,
             search_scroll: HashMap::new(),
@@ -1029,6 +1030,7 @@ impl FenceWindow {
                 v.item_sel.rekey(&old, new);
                 v.drop_fades.rekey(&old, new);
                 v.search_dim.rekey(&old, new);
+                v.search_fades_for = None;
                 if v.renaming == Some(old) {
                     v.renaming = Some(new);
                 }
@@ -1146,6 +1148,7 @@ impl FenceWindow {
                 Vec::new()
             };
             v.search = marks;
+            v.search_fades_for = None;
             if tabs_changed {
                 if v.tab_drag.is_none() {
                     v.sync_tab_slides(&prev, now);

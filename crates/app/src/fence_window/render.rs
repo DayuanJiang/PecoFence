@@ -368,6 +368,7 @@ impl FenceViewState {
         self.item_sel.clear();
         self.drop_fades.clear();
         self.search_dim.clear();
+        self.search_fades_for = None;
     }
 
     /// Syncs the per-item hover / selection / drop-target / search-dim fades from the logical
@@ -385,7 +386,22 @@ impl FenceViewState {
         let animate = self.motion.enabled();
         let dragging = self.ole_drag;
         if let Some(m) = &self.search {
-            for (i, it) in self.items.iter().enumerate() {
+            // Every item's fades take their targets from the marks, the item list, the hover
+            // and the drop target. Setting a fade to the target it has does nothing, so they
+            // are set when one of those changed, not at every draw: a fence of 8000 files
+            // set 32 000 fades in each frame of the matches' fade-in.
+            let inputs = (self.hover, self.drop_item, dragging, animate);
+            let stale = self.search_fades_for != Some(inputs);
+            if stale {
+                tracing::debug!(
+                    fence = %self.fence_id,
+                    items = self.items.len(),
+                    matches = m.matches.len(),
+                    "search fades set for every item"
+                );
+            }
+            self.search_fades_for = Some(inputs);
+            for (i, it) in self.items.iter().enumerate().filter(|_| stale) {
                 let hit = m.matches.contains(&it.id);
                 let hover = (self.hover == Some(i) && !dragging && !hit) as u8 as f32;
                 let sel = if m.current == Some(it.id) {
@@ -424,6 +440,7 @@ impl FenceViewState {
             self.drop_fades
                 .release_unless(animate, now, |id| Some(*id) == drop);
             self.search_dim.release_unless(animate, now, |_| false);
+            self.search_fades_for = None;
         }
         let out = drawn
             .map(|i| {

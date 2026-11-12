@@ -182,6 +182,9 @@ pub struct FenceViewState {
     pub(super) drop_fades: Fades<ItemId>,
     /// Peek search marks (None = no search) and the per-item dimming they fade (83 ms).
     pub(super) search: Option<SearchMarks>,
+    /// The hover, drop target, drag and animation state the search fades of every item were
+    /// last set for (`item_alphas`); None when the marks or the item list changed since.
+    pub(super) search_fades_for: Option<(Option<usize>, Option<usize>, bool, bool)>,
     pub(super) search_dim: Fades<ItemId>,
     /// A Peek search holds this fence open (a hover peek that does not close until the search
     /// has no matches here any more).
