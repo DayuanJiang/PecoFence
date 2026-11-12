@@ -500,6 +500,9 @@ function UpPartO() {
   Start-Sleep -Seconds 1
   $fr = FreeRect 340 220 700 500
   $x0 = $fr[0] + 10; $y0 = $fr[1] + 10; $x1 = $fr[0] + 310; $y1 = $fr[1] + 190
+  # A click on the bare desktop first: after other parts the first press only brought the
+  # desktop to the front and the rectangle began halfway through the drag.
+  [G]::Click($x0 + 150, $y0 + 90); Start-Sleep -Milliseconds 500
   RecStart 'O-offer' -X ($fr[0] - 20) -Y ($fr[1] - 20) -W 400 -H 300 -Fps 30
   RecMark 'drag a rectangle on the bare desktop'
   [G]::MoveTo($x0, $y0); Start-Sleep -Milliseconds 150
@@ -507,6 +510,10 @@ function UpPartO() {
   Start-Sleep -Milliseconds 800
   $o = [G]::FindWindowW('PecoFence.MarqueeOffer', [NullString]::Value); $or = Rect $o
   Check 'the two buttons show under the rectangle' ($o -ne [IntPtr]::Zero -and [G]::IsWindowVisible($o)) "buttons $($or.L),$($or.T),$($or.R),$($or.B)"
+  # Where the rectangle really is: the largest of its windows is its inside.
+  $band = @([W]::Tops('PecoFence.MarqueeBand') | Sort-Object { $q = Rect $_; -(($q.R - $q.L) * ($q.B - $q.T)) }) | Select-Object -First 1
+  $bandR = if ($band) { Rect $band } else { $null }
+  Check 'the rectangle stays with the buttons' ($null -ne $bandR -and ($bandR.R - $bandR.L) -ge 200) "rectangle $(if ($bandR) { "$($bandR.L),$($bandR.T),$($bandR.R),$($bandR.B)" } else { 'none' })"
   RecMark 'the pointer leaves; the buttons go after 3 s'
   [G]::MoveTo($fr[0] - 200, $fr[1] + 100)
   Start-Sleep -Milliseconds 4300
@@ -515,7 +522,7 @@ function UpPartO() {
   # of a few rows around it, in the middle of the edge, clear of the pointer's path).
   $fs = UpFrames 'O-offer'
   $bx = $or.L - ($fr[0] - 20) + 8; $by = $or.T - ($fr[1] - 20) + 6
-  $ex = 20 + 10 + 150; $ey = 20 + 10
+  $ex = [int](($bandR.L + $bandR.R) / 2) - ($fr[0] - 20); $ey = $bandR.T - ($fr[1] - 20)
   $series = @(); $rows = @()
   foreach ($f in $fs) {
     $b = UpLum $f.B.GetPixel($bx, $by)
