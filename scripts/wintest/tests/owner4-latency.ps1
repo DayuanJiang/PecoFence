@@ -10,6 +10,7 @@
 #                     roll, chevron, tab, icon size, wheel, F2, Delete, double-click, quick hide
 #   --var Part=ACT2   notes, a watched folder and its filter, the tray menu, 设置…, Peek and its search
 #   --var Part=WIN    the same pointer and key actions on Windows' own desktop, PecoFence not running
+#   --var Part=CLEAN  removes what an interrupted run left (test files on the desktop and in the Recycle Bin)
 # Every part writes shots\latency.tsv: part, action, case, first answer ms (median and worst of
 # five), complete ms, ms per grab, the single runs and the app's log lines.
 # How the times are taken: [Lat]::Watch grabs a small screen region as fast as the box allows
@@ -164,6 +165,18 @@ $LtCount = 5, 5, 60, 5, 5
 function HtX($d, $i) { return [int]($d.l + $d.ox + $d.rects[$i][0] + $d.rects[$i][1] / 2) }
 function HtY($d) { return [int]($d.t + $d.oy + 18) }
 function LtClean() { Remove-Item "$PfDesk\L4 *" -Force -ErrorAction SilentlyContinue }
+# The shortcuts the Delete measures sent to the Recycle Bin leave it too (entries named "L4 ..." only).
+function LtBinClean() {
+  $dir = RecycleDir
+  foreach ($it in @((New-Object -ComObject Shell.Application).NameSpace(10).Items())) {
+    if ($it.Name -notlike 'L4 *') { continue }
+    $r = "$($it.Path)"
+    if ($r.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase)) {
+      $i = Join-Path $dir ('$I' + (Split-Path $r -Leaf).Substring(2))
+      Remove-Item -LiteralPath $r, $i -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
 # Shortcuts to 80 programs of Windows (each with its own icon to read), spread over five fences
 # that are then merged into one. Returns the dump of the merged fence.
 function LtBuild() {
@@ -389,8 +402,9 @@ function LtEnd {
   ParkMouse 1300 820
   PfQuit
   LtClean
+  LtBinClean
   [Anim]::Set([bool]$script:AnimWas)
-  Check 'the test files are gone from the desktop' (@(Get-ChildItem "$PfDesk\L4 *" -ErrorAction SilentlyContinue).Count -eq 0) ''
+  Check 'the test files are gone from the desktop and the Recycle Bin' (@(Get-ChildItem "$PfDesk\L4 *" -ErrorAction SilentlyContinue).Count -eq 0 -and (BinNames) -notmatch '(^|, )L4 ') "bin: $(BinNames)"
 }
 
 if ($Part -eq 'TAB') { PartTAB }
@@ -940,10 +954,13 @@ function PartWIN {
   Case 'cleanup'
   ParkMouse 1300 820
   LtClean
+  LtBinClean
   [Anim]::Set([bool]$script:AnimWas)
-  Check 'the test files are gone from the desktop' (@(Get-ChildItem "$PfDesk\L4 *" -ErrorAction SilentlyContinue).Count -eq 0) ''
+  Check 'the test files are gone from the desktop and the Recycle Bin' (@(Get-ChildItem "$PfDesk\L4 *" -ErrorAction SilentlyContinue).Count -eq 0 -and (BinNames) -notmatch '(^|, )L4 ') "bin: $(BinNames)"
 }
 
 if ($Part -eq 'ACT') { PartACT }
 if ($Part -eq 'ACT2') { PartACT2 }
 if ($Part -eq 'WIN') { PartWIN }
+# What an interrupted run of this file left on the desktop and in the Recycle Bin.
+if ($Part -eq 'CLEAN') { Case 'cleanup'; LtClean; LtBinClean; Check 'the test files are gone from the desktop and the Recycle Bin' (@(Get-ChildItem "$PfDesk\L4 *" -ErrorAction SilentlyContinue).Count -eq 0 -and (BinNames) -notmatch '(^|, )L4 ') "bin: $(BinNames)" }
