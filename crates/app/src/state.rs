@@ -1503,11 +1503,13 @@ impl AppState {
                 crate::icons::icon_key_for(&entry.path, entry.is_folder, entry.mtime);
             if let Some(&id) = self.catalog.get(&key) {
                 seen.insert(id);
+                let mut returned = false;
                 if let Some(item) = self.config.items.get_mut(&id) {
                     let mut changed = false;
                     if item.orphaned_since.is_some() {
                         item.orphaned_since = None;
                         changed = true;
+                        returned = true;
                     }
                     if item.mtime != entry.mtime || item.icon_key != icon_key {
                         item.mtime = entry.mtime;
@@ -1534,6 +1536,26 @@ impl AppState {
                     if changed {
                         report.updated += 1;
                         self.dirty = true;
+                    }
+                }
+                // A file that went and came back, kept for its cell on the freely placed 「桌面」
+                // (see the orphans below), where the default or a rule had put it: the rules
+                // place it as they place a new file. Where that is the fence it is in, it
+                // stands in its cell again.
+                if returned && in_fence.contains(&id) && !self.placed_by_user(id) {
+                    let (decision, _) = self.route_decision(entry);
+                    let from = self.config.fence_of_item(self.layout, id);
+                    if let Some((fence, by)) = self.target_fence(decision)
+                        && from != Some(fence)
+                        && self.config.assign(self.layout, id, fence, by).is_some()
+                    {
+                        tracing::info!(%fence, "a returned desktop file is placed by the rules again");
+                        report.updated += 1;
+                        if shown.contains(&fence) {
+                            arrived.push((fence, id));
+                        }
+                    } else {
+                        tracing::debug!(fence = ?from, "a returned desktop file keeps its fence and place");
                     }
                 }
                 // An item that exists but is in no fence (e.g. its fence was deleted, or a .tmp
@@ -1653,6 +1675,24 @@ impl AppState {
             .filter(|r| r.assigned_by == AssignedBy::User)
             .map(|r| r.item_id)
             .collect();
+        // 自由摆放: an icon's cell on the desktop is its place as the user sees it, whether he
+        // dropped it there or left it where it came. A file that goes and comes back (Delete
+        // then Ctrl+Z, a restore from the Recycle Bin, a program that saves by deleting the
+        // file and writing it again, the Recycle Bin while Windows shows its own icons)
+        // returns to that cell, so its record stays like a hand-placed one's.
+        let free_cells: HashSet<ItemId> = self
+            .config
+            .layouts
+            .iter()
+            .flat_map(|l| &l.fences)
+            .filter(|f| f.desktop_layout && f.free_placement)
+            .flat_map(|f| {
+                f.desktop_cells
+                    .keys()
+                    .copied()
+                    .filter(|id| f.contains_item(*id))
+            })
+            .collect();
         let (mut placed, mut aged) = (0usize, 0usize);
         let mut to_remove = Vec::new();
         let mut kept: Vec<(i64, ItemId)> = Vec::new();
@@ -1669,7 +1709,7 @@ impl AppState {
                     now
                 }
             };
-            if !placed_by_user.contains(id) {
+            if !placed_by_user.contains(id) && !free_cells.contains(id) {
                 placed += 1;
                 to_remove.push(*id);
             } else if now - since > ORPHAN_GC_SECS {
@@ -2373,6 +2413,15 @@ impl AppState {
             .get(&id)
             .is_some_and(|it| it.orphaned_since.is_none())
             .then_some(id)
+    }
+
+    /// Whether the user put the item into the fence it is in (on this monitor setup).
+    fn placed_by_user(&self, id: ItemId) -> bool {
+        self.config.layouts[self.layout]
+            .fences
+            .iter()
+            .flat_map(|f| &f.items)
+            .any(|r| r.item_id == id && r.assigned_by == AssignedBy::User)
     }
 
     /// Re-keys an item after a rename so it stays in its fence. Returns false if unknown.
@@ -4951,6 +5000,50 @@ mod tests {
         assert_eq!(state.fence(c).unwrap().virtual_desktops, bound);
         state.attach_tab(c, inbox);
         assert!(state.fence(c).unwrap().virtual_desktops.is_empty());
+    }
+
+    /// 自由摆放: a file with a cell on the freely placed 「桌面」 that goes and comes back (Delete
+    /// then Ctrl+Z, a save by delete and create) stands in its cell again, also one the default
+    /// put there. It took the first free cell, far from where the user had dropped it.
+    #[test]
+    fn a_file_that_comes_back_returns_to_its_cell_on_the_freely_placed_desktop() {
+        use pecofence_core::rules::Rule;
+        let mut state = test_state();
+        let inbox = state.inbox_id().unwrap();
+        let both = [desktop_entry("loose.xyz"), desktop_entry("other.xyz")];
+        let path = PathBuf::from("C:/Users/Me/Desktop/loose.xyz");
+        state.sync_desktop(&both);
+        let id = state.item_id_for_path(&path).unwrap();
+        let stays = state
+            .item_id_for_path(&PathBuf::from("C:/Users/Me/Desktop/other.xyz"))
+            .unwrap();
+        assert_eq!(state.config.fence_of_item(0, id), Some(inbox));
+        assert!(!state.placed_by_user(id));
+        assert!(state.set_desktop_cells(inbox, &[(id, [6, 3]), (stays, [0, 0])]));
+        // Gone: the record and the cell stay.
+        state.sync_desktop(&both[1..]);
+        assert!(state.config.items[&id].orphaned_since.is_some());
+        // Back: the same icon, in the same fence and cell.
+        state.sync_desktop(&both);
+        assert_eq!(state.item_id_for_path(&path), Some(id));
+        assert!(state.config.items[&id].orphaned_since.is_none());
+        assert_eq!(state.config.fence_of_item(0, id), Some(inbox));
+        let cells = &state.fence(inbox).unwrap().desktop_cells;
+        assert_eq!(cells.get(&id), Some(&[6, 3]));
+        // Away again, and a rule that takes such files is added meanwhile: back, the rules
+        // place it as they place a new file. The file that never left stays on the desktop.
+        state.sync_desktop(&both[1..]);
+        let other = state.new_fence("其它", rect(0, 0, 300, 200)).unwrap();
+        let rule = Rule::new("其它", Target::Fence(other), vec![Cond::PlainFiles]);
+        state.config.rules.list.push(rule);
+        state.sync_desktop(&both);
+        assert_eq!(state.item_id_for_path(&path), Some(id));
+        assert_eq!(state.config.fence_of_item(0, id), Some(other));
+        assert_eq!(state.config.fence_of_item(0, stays), Some(inbox));
+        // Without 自由摆放 the record of a file the default placed goes at once, as before.
+        state.set_free_placement(inbox, false);
+        state.sync_desktop(&both[..1]);
+        assert!(!state.config.items.contains_key(&stays));
     }
 
     /// Fence review S13: deleting many files a rule or the default placed must not grow the
