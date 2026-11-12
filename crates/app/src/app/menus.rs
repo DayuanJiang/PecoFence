@@ -1401,7 +1401,11 @@ impl App {
                     self.schedule_save();
                 }
             }
-            CMD_TAB_DETACH => self.detach_tab(fence, x, y, false),
+            CMD_TAB_DETACH => {
+                if let Some(change) = self.detach_tab(fence, x, y, false) {
+                    self.note_split_for_undo(change, false);
+                }
+            }
             CMD_TAB_MOVE_LEFT => self.reorder_tab(host, fence, tab_idx.saturating_sub(1)),
             CMD_TAB_MOVE_RIGHT => self.reorder_tab(host, fence, tab_idx + 1),
             CMD_FENCE_PASTE => self.paste_into(fence),

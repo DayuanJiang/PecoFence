@@ -2604,6 +2604,14 @@ impl App {
                     if let Some(w) = self.fences.get(&host) {
                         self.queue.push(Command::RaiseFence(w.hwnd()));
                     }
+                    // Dropped there by the user's drag (the CLI passes no pointer position):
+                    // Ctrl+Z takes the merge back. The dragged window had the keyboard and is
+                    // gone now: the window it joined takes it, or that Ctrl+Z would go to the
+                    // desktop and undo a file operation there.
+                    if at.0 != i32::MIN {
+                        self.note_merge_for_undo(fence, &moved);
+                        self.give_keyboard(host, "a fence merged into it");
+                    }
                     self.schedule_save();
                 }
             }
@@ -2612,8 +2620,15 @@ impl App {
                 x,
                 y,
                 from_drag,
-            } => self.detach_tab(tab, x, y, from_drag),
-            Command::CancelDetach { change } => self.cancel_tab_detach(*change),
+            } => {
+                if let Some(change) = self.detach_tab(tab, x, y, from_drag) {
+                    self.note_split_for_undo(change, from_drag);
+                }
+            }
+            Command::CancelDetach { change } => {
+                self.drop_split_step(change.tab);
+                self.cancel_tab_detach(*change);
+            }
             Command::ReorderTab { host, tab, to } => self.reorder_tab(host, tab, to),
             Command::DesktopCellsPlaced { fence } => {
                 // The icons of 「桌面」 itself (not a folder opened inside it), as its window

@@ -52,6 +52,20 @@ pub(super) enum UndoStep {
     /// A file operation nothing can undo (a permanent delete): Ctrl+Z says so and stops there,
     /// rather than put back an older step the user did not mean.
     Permanent { what: &'static str },
+    /// A fence dragged by its title onto another fence's title: it became a tab there. `tabs`
+    /// are the tabs its own window had (itself among them, in strip order), `before` where that
+    /// window stood before the drag (its expanded rect, device px).
+    Merged {
+        fence: FenceId,
+        tabs: Vec<FenceId>,
+        before: RECT,
+    },
+    /// A tab dragged out of its window, or split out from the tab menu. `settled` once the
+    /// drag that tore it off has ended: until then the new window's move is part of this step.
+    Split {
+        change: Box<pecofence_core::TabDetach>,
+        settled: bool,
+    },
 }
 
 /// What the notice's 撤销 undoes.
@@ -76,6 +90,8 @@ impl UndoStep {
             Self::Renamed { .. } => "rename",
             Self::Created { .. } => "new item",
             Self::Shell { what } | Self::Permanent { what } => what,
+            Self::Merged { .. } => "merge into tabs",
+            Self::Split { .. } => "tab split out",
         }
     }
 }
@@ -104,6 +120,16 @@ impl App {
 
     /// A user move or resize of `fence` that left `before` (its expanded rect until then).
     pub(super) fn note_bounds_for_undo(&mut self, fence: FenceId, before: RECT) {
+        // The drag that tore this tab off ends here: where the new window was let go belongs
+        // to the split, which Ctrl+Z takes back as a whole.
+        if let Some(UndoStep::Split { change, settled }) = self.undo.last_mut()
+            && change.tab == fence
+            && !*settled
+        {
+            *settled = true;
+            tracing::debug!(%fence, "undo: the torn-off tab's move stays part of its split");
+            return;
+        }
         let now = Instant::now();
         if let Some(UndoStep::Bounds { at, rects }) = self.undo.last_mut()
             && now.duration_since(*at) < SAME_GESTURE
@@ -117,6 +143,50 @@ impl App {
             at: now,
             rects: vec![(fence, before)],
         });
+    }
+
+    /// `fence` was dropped on another fence's title and is a tab there now. The drag noted
+    /// where its window stood before (a Bounds step): that step becomes the merge's, so Ctrl+Z
+    /// splits the fence out again at that place. A merge that no move of the window preceded
+    /// (a tab torn off and dropped on another strip in one drag) is covered by its split.
+    pub(super) fn note_merge_for_undo(&mut self, fence: FenceId, tabs: &[FenceId]) {
+        let Some(UndoStep::Bounds { rects, .. }) = self.undo.last_mut() else {
+            tracing::debug!(%fence, "undo: merge not noted, no move of the window before it");
+            return;
+        };
+        let Some(i) = rects.iter().position(|(f, _)| *f == fence) else {
+            tracing::debug!(%fence, "undo: merge not noted, the last move was another fence's");
+            return;
+        };
+        let (_, before) = rects.remove(i);
+        if rects.is_empty() {
+            self.undo.pop();
+        }
+        self.push_undo(UndoStep::Merged {
+            fence,
+            tabs: tabs.to_vec(),
+            before,
+        });
+    }
+
+    /// A tab left its window (`change`), by a drag (`from_drag`) or from the tab menu.
+    pub(super) fn note_split_for_undo(
+        &mut self,
+        change: pecofence_core::TabDetach,
+        from_drag: bool,
+    ) {
+        self.push_undo(UndoStep::Split {
+            change: Box::new(change),
+            settled: !from_drag,
+        });
+    }
+
+    /// The tear-off was cancelled (Esc, the right button): its step goes with it.
+    pub(super) fn drop_split_step(&mut self, tab: FenceId) {
+        if matches!(self.undo.last(), Some(UndoStep::Split { change, .. }) if change.tab == tab) {
+            self.undo.pop();
+            tracing::debug!(%tab, "undo: the cancelled tear-off is no step");
+        }
     }
 
     /// Desktop icons the user moved into `to` from `places` (see `AppState::item_places`).
@@ -344,11 +414,69 @@ impl App {
                 self.toast(pecofence_core::i18n::text("永久删除的文件无法撤销。").to_string());
                 0
             }
+            UndoStep::Merged {
+                fence,
+                tabs,
+                before,
+            } => usize::from(self.undo_merge(fence, &tabs, before)),
+            UndoStep::Split { change, .. } => usize::from(self.undo_split(*change)),
         };
         tracing::info!(kind, from, done, left = self.undo.len(), "undone");
         if done > 0 {
             self.schedule_save();
         }
+    }
+
+    /// Takes a merge by drag back: `fence` leaves the window it was dropped on, gets the tabs
+    /// it brought along again and stands where it stood before the drag. A fence that is no
+    /// tab any more (split out by hand since) only moves back there.
+    fn undo_merge(&mut self, fence: FenceId, tabs: &[FenceId], before: RECT) -> bool {
+        if self.state.fence(fence).is_none() {
+            tracing::info!(%fence, "merge not undone: the fence is gone");
+            return false;
+        }
+        let host = self.state.host_of(fence);
+        if host != fence {
+            let (x, y) = ((before.left + before.right) / 2, before.top);
+            if self.detach_tab(fence, x, y, false).is_none() {
+                tracing::info!(%fence, %host, "merge not undone: the tab could not leave");
+                return false;
+            }
+            // The tabs its window had, in their order (those still in the window it left).
+            let mut brought = 0;
+            for (k, tab) in tabs.iter().enumerate() {
+                if *tab != fence
+                    && self.state.host_of(*tab) == host
+                    && self.state.attach_tab(*tab, fence)
+                {
+                    self.state.reorder_tab(fence, *tab, k);
+                    brought += 1;
+                }
+            }
+            if brought > 0 {
+                self.state.set_active_tab(fence, fence);
+                self.resync_windows();
+                self.apply_fence_view(host);
+                self.apply_fence_view(fence);
+            }
+            tracing::debug!(%fence, %host, brought, "undo: merged fence split out again");
+        }
+        self.put_fence_at(fence, before)
+    }
+
+    /// Takes a split back: the tab returns to its window at the place it had in the strip. A
+    /// tab that the same drag dropped on another window leaves that one first.
+    fn undo_split(&mut self, change: pecofence_core::TabDetach) -> bool {
+        let tab = change.tab;
+        if self.state.fence(tab).is_some() && self.state.host_of(tab) != tab {
+            let _ = self.state.detach_tab(tab);
+        }
+        let back = self.cancel_tab_detach(change);
+        tracing::debug!(%tab, back, "undo: split-out tab back in its window");
+        if back {
+            self.give_keyboard(self.state.host_of(tab), "undo of a split");
+        }
+        back
     }
 
     /// Moves `fence` back to `rect` (its expanded rect) the way `fence move` does. False when

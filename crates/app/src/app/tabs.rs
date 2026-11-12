@@ -46,8 +46,15 @@ impl App {
     /// and is free (Fence.geometry is kept while it is a tab), else at its own size beside
     /// its former host / on free space. Torn off by dragging (`from_drag`): the new window
     /// appears under the pointer and keeps following it until the button is released, like a
-    /// browser tab; dropping it on another fence's title merges it there.
-    pub(super) fn detach_tab(&mut self, tab: FenceId, x: i32, y: i32, from_drag: bool) {
+    /// browser tab; dropping it on another fence's title merges it there. Returns what changed
+    /// (Ctrl+Z puts it back), None when the tab stayed.
+    pub(super) fn detach_tab(
+        &mut self,
+        tab: FenceId,
+        x: i32,
+        y: i32,
+        from_drag: bool,
+    ) -> Option<pecofence_core::TabDetach> {
         let source = self.state.host_of(tab);
         if from_drag
             && self
@@ -55,10 +62,10 @@ impl App {
                 .get(&source)
                 .is_some_and(|w| w.take_cancelled_detach())
         {
-            return;
+            return None;
         }
         if self.state.tabs_of(source).len() < 2 {
-            return;
+            return None;
         }
         if let Some(window) = self.fences.get(&source) {
             let (rect, rolled, expanded) = (
@@ -68,9 +75,8 @@ impl App {
             );
             self.record_bounds(source, rect, rolled, expanded, "tab detach");
         }
-        let Some(change) = self.state.detach_tab(tab) else {
-            return;
-        };
+        let change = self.state.detach_tab(tab)?;
+        let undo = change.clone();
         let host = change.remaining_host;
         let stored = self
             .state
@@ -198,14 +204,17 @@ impl App {
             }
         }
         self.schedule_save();
+        Some(undo)
     }
 
-    pub(super) fn cancel_tab_detach(&mut self, change: pecofence_core::TabDetach) {
+    /// Puts a detached tab back where `change` took it from. False when the windows changed
+    /// since (a delete, another merge) and nothing was restored.
+    pub(super) fn cancel_tab_detach(&mut self, change: pecofence_core::TabDetach) -> bool {
         for window in self.fences.values() {
             window.set_merge_hint(false, (0, 0));
         }
         if !self.state.cancel_tab_detach(&change) {
-            return;
+            return false;
         }
         self.resync_windows();
         self.apply_fence_view(change.source_host);
@@ -227,6 +236,7 @@ impl App {
             self.queue.push(Command::RaiseFence(window.hwnd()));
         }
         self.schedule_save();
+        true
     }
 
     /// Shows `tab`'s items in its host window.
