@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- F2 on an icon: the name no longer goes blank for a frame before the name box shows. The fence drew the icon without its name first and the box was painted a frame later.
 - A file renamed in place and confirmed by a click on an empty part of its fence glides to its new place in the sort order, as it does after Enter. It stood there in one frame (the click's rubber band, not yet moved, switched the motion off).
 - Ctrl+X on an icon, then Esc: the cut is taken back, as on Explorer's desktop (the icon is whole again and still selected, the clipboard is empty; a second Esc ends the selection). Esc used to end the selection and leave the icon faded, with the file still on the clipboard. A click elsewhere leaves the cut as it is, as in Explorer.
 - Ctrl+C, Ctrl+V on an icon: the selection box of the copy fades in with the copy. The copy faded in bare and its box stood there in one frame when the fade-in was over; on the freely placed desktop the box came, went for a frame and came again. (The box of an icon was drawn only once the icon was at full strength.)

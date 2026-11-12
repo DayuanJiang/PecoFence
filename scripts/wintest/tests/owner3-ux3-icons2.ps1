@@ -3,7 +3,8 @@
 #   run.sh --var Part=A tests/owner3-ux3-icons2.ps1    a new file: name and picture together; a pasted copy: its selection box
 #   run.sh --var Part=B ...                            Ctrl+X, then Esc (as Explorer's desktop does)
 #   run.sh --var Part=C ...                            the tip when the pointer comes back to the very point
-#   --var Rec=1 keeps the frames of part A's recordings for the report (they are recorded either way).
+#   run.sh --var Part=D ...                            the name box: F2, and a new name confirmed by a click in the fence
+# Parts A and D record small regions at 30 frames a second and read the frames (rec-*).
 # Real mouse and keys, zh-CN, a new configuration (「桌面」 arranged like the desktop, 自由摆放).
 # Every part ends with the desktop cleaned (U2End).
 if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'A' }
@@ -23,7 +24,7 @@ function U2Wait([scriptblock]$ok, $sec = 8) { for ($k = 0; $k -lt $sec * 5; $k++
 $U2Names = @('季度预算.fpx', '图.fpx', '一个名字特别长的客户往来文件最终版.fpx', 'b.fpx')
 function U2Clean() {
   foreach ($n in $U2Names) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue }
-  Get-ChildItem -LiteralPath $PfDesk -Filter '*.fpx' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Copy|副本|新来的' } | Remove-Item -Force -ErrorAction SilentlyContinue
+  Get-ChildItem -LiteralPath $PfDesk -Filter '*.fpx' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'Copy|副本|新来的|这个' } | Remove-Item -Force -ErrorAction SilentlyContinue
 }
 function U2Start() {
   CloseWindows
@@ -76,6 +77,33 @@ if ($Part -eq 'A') {
   Check 'no frame shows the name without the picture' ($picEnd -gt 5 -and $alone.Count -eq 0) "$($alone.Count) frames with the name alone; from the first frame with the name, name: $(U2Fmt ($around | ForEach-Object { $nam[$_] })) ; picture: $(U2Fmt ($around | ForEach-Object { $pic[$_] })) ; log: $(if ($line -match 'new icons.*') { $Matches[0] })"
   foreach ($b in $f) { $b.Dispose() }
   Remove-Item -LiteralPath $new -Force -ErrorAction SilentlyContinue
+  U2Wait { -not (U2Cell '新来的文件.fpx') } 8 | Out-Null
+  Start-Sleep -Milliseconds 1200
+
+  # The same on the freely placed desktop, where the box of the copy came, went for a frame
+  # and came again. The copy takes the first free place: the one the new file had.
+  Case 'A copy pasted on the desktop keeps its selection box once it shows'
+  $p = U2Pt '季度预算.fpx'
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 700
+  Chord 0x11 0x43; Start-Sleep -Milliseconds 500
+  RecStart 'a-paste-desk' -X $c[0] -Y $c[1] -W 80 -H 96 -Fps 30
+  RecMark '选中桌面上的一个图标，按 Ctrl+C，再按 Ctrl+V'
+  Start-Sleep -Milliseconds 200
+  Chord 0x11 0x56
+  Start-Sleep -Milliseconds 2000
+  RecStop
+  $f = U2Frames 'a-paste-desk'
+  $box = @($f | ForEach-Object { [Px]::Diff($f[0], $_, 4, 11, 8, 50) })
+  $pic = @($f | ForEach-Object { [Px]::Diff($f[0], $_, 16, 63, 6, 52) })
+  $boxEnd = $box[-1]; $picEnd = $pic[-1]
+  $first = @(0..($f.Count - 1) | Where-Object { $box[$_] -gt 0.3 * $boxEnd }) | Select-Object -First 1
+  $gone = @($first..($f.Count - 1) | Where-Object { $box[$_] -lt 0.12 * $boxEnd })
+  $around = @($first..([Math]::Min($f.Count - 1, $first + 9)))
+  Check 'setup: the copy stands in the free place, selected' ($picEnd -gt 5 -and $boxEnd -gt 2) "change of the picture's place $('{0:N1}' -f $picEnd), of the box strip $('{0:N1}' -f $boxEnd)"
+  Check 'the box does not go again once it shows' ($boxEnd -gt 2 -and $gone.Count -eq 0) "$($gone.Count) frames without the box after frame $first; box strip from there: $(U2Fmt ($around | ForEach-Object { $box[$_] })) ; picture: $(U2Fmt ($around | ForEach-Object { $pic[$_] }))"
+  foreach ($b in $f) { $b.Dispose() }
+  Get-ChildItem -LiteralPath $PfDesk -Filter '*.fpx' | Where-Object { $_.Name -match 'Copy|副本' } | Remove-Item -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 1500
 
   # Ctrl+C, Ctrl+V in a fence: the copy arrives selected. Its selection box was drawn only
   # when the copy's fade-in was over (167 ms) and then stood there in one frame; on the bare
@@ -157,6 +185,62 @@ if ($Part -eq 'B') {
   $still = [Px]::Diff($esc2, $plain, 0, 47, 0, 47)
   Check 'the icon stays faded and the file stays on the clipboard' ($still -gt 3 -and ((ClipFiles) -join ',') -match 'b\.fpx') "the picture against the whole icon: $('{0:N1}' -f $still); clipboard: $((ClipFiles) -join ',') effect=$(ClipEffect)"
   [Windows.Forms.Clipboard]::Clear()
+  Pf fence delete '工作文件' | Out-Null
+  U2End
+}
+
+if ($Part -eq 'D') {
+  # F2 on an icon: the fence drew the icon without its name at once and the name box was
+  # painted a frame later, so the name went blank for a frame. Seen best on a selected icon
+  # whose long name shows in full (several lines).
+  Case 'F2: the name does not go blank before the name box shows'
+  U2Start
+  Pf fence create --title '工作文件' --rect '560,200,420,300' | Out-Null
+  Pf item move "$PfDesk\b.fpx" "$PfDesk\一个名字特别长的客户往来文件最终版.fpx" --to '工作文件' | Out-Null
+  Start-Sleep -Seconds 2
+  $q = CellPt '工作文件' 1
+  [G]::Click($q[0], $q[1]); Start-Sleep -Milliseconds 900
+  [G]::MoveTo(900, 440); Start-Sleep -Milliseconds 500
+  # The place of the name under the icon, recorded at 30 frames a second across F2.
+  RecStart 'd-f2' -X ($q[0] - 38) -Y ($q[1] + 28) -W 76 -H 44 -Fps 30
+  RecMark '选中一个名字很长的图标，按 F2'
+  Start-Sleep -Milliseconds 300
+  [G]::Press(0x71)
+  $box = WaitWin 'PecoFence.Rename' 5
+  Start-Sleep -Milliseconds 900
+  RecStop
+  $f = U2Frames 'd-f2'
+  $d0 = @($f | ForEach-Object { [Px]::Diff($f[0], $_, 0, 75, 0, 43) })
+  $d1 = @($f | ForEach-Object { [Px]::Diff($f[-1], $_, 0, 75, 0, 43) })
+  $blank = @(0..($f.Count - 1) | Where-Object { $d0[$_] -gt 6 -and $d1[$_] -gt 6 })
+  $turn = @(0..($f.Count - 1) | Where-Object { $d0[$_] -gt 6 }) | Select-Object -First 1
+  $around = @(([Math]::Max(0, $turn - 2))..([Math]::Min($f.Count - 1, $turn + 3)))
+  Check 'setup: the name box opened over the name' ($box -ne [IntPtr]::Zero -and $d0[-1] -gt 6) "box=$($box -ne [IntPtr]::Zero); the name's place at the end against the start: $('{0:N1}' -f $d0[-1])"
+  Check 'no frame shows the icon with neither its name nor the box' ($blank.Count -eq 0) "$($blank.Count) frames unlike the name and unlike the box; around the change, against the name: $(U2Fmt ($around | ForEach-Object { $d0[$_] })) ; against the box: $(U2Fmt ($around | ForEach-Object { $d1[$_] }))"
+  foreach ($b in $f) { $b.Dispose() }
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 700
+
+  # A new name confirmed by a click on an empty part of the fence: the icon stood at its new
+  # place in the sort order in one frame (the press had begun a rubber band, and that switched
+  # the motion off). After Enter it glides (250 ms).
+  Case 'A new name confirmed by a click in the fence glides the icon to its new place'
+  $p = CellPt '工作文件' 0
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 800
+  [G]::Press(0x71)
+  $box = WaitWin 'PecoFence.Rename' 5
+  Start-Sleep -Milliseconds 500
+  [G]::Type('这个'); Start-Sleep -Milliseconds 500
+  RecStart 'd-click' -X 560 -Y 236 -W 260 -H 150 -Fps 30
+  RecMark '输入新名字后，点一下栅栏里的空白处'
+  Start-Sleep -Milliseconds 300
+  [G]::Click(900, 440); Start-Sleep -Milliseconds 1500
+  RecStop
+  $log = @(PfLogAll)
+  $at = -1; for ($i = 0; $i -lt $log.Count; $i++) { if ($log[$i] -match 'item renamed from=.*b\.fpx') { $at = $i } }
+  $next = if ($at -ge 0) { @($log[$at..($log.Count - 1)] | Where-Object { $_ -match 'replace_items animate=' }) | Select-Object -First 1 } else { '' }
+  Check 'the file has its new name' (Test-Path -LiteralPath (Join-Path $PfDesk '这个.fpx')) "renamed line found=$($at -ge 0)"
+  Check 'the new order is taken with motion' ($next -match 'animate=true') "$(if ($next -match 'replace_items.*') { $Matches[0] })"
+  Remove-Item -LiteralPath (Join-Path $PfDesk '这个.fpx') -Force -ErrorAction SilentlyContinue
   Pf fence delete '工作文件' | Out-Null
   U2End
 }

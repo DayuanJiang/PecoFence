@@ -650,6 +650,15 @@ fn begin_rename_at(
             item_box,
         })
     });
+    // Painted now and on screen before the caller takes the name off the icon or the title:
+    // painted when the message loop was next idle, the box came one to two frames after the
+    // name had gone. Windows shows a new window a frame after its first paint, so this waits
+    // for that frame (16 ms at 60 Hz).
+    let shown = ACTIVE.with(|a| a.borrow().as_ref().map(|s| s.window.hwnd()));
+    if let Some(hwnd) = shown {
+        window::paint_now(hwnd);
+        dwm::wait_for_frame();
+    }
 }
 
 fn on_key(vk: u32) -> bool {

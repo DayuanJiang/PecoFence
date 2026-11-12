@@ -107,6 +107,15 @@ pub fn repaint_title_bar(hwnd: HWND) {
     crate::window::send_message(hwnd, WM_NCACTIVATE as u32, usize::from(active), 0);
 }
 
+/// Waits until Windows has put the windows on screen once more (`DwmFlush`: one frame at
+/// most), so that a window shown and painted just now is there before what follows is drawn.
+pub fn wait_for_frame() {
+    // SAFETY: plain FFI call.
+    unsafe {
+        let _ = DwmFlush();
+    }
+}
+
 /// Disables DWM's minimize/restore transition animations for this window.
 pub fn set_transitions_disabled(hwnd: HWND, disabled: bool) -> Result<()> {
     let value: i32 = disabled as i32;

@@ -2863,6 +2863,11 @@ pub unsafe fn UpdateLayeredWindow(
     }
 }
 #[inline]
+pub unsafe fn UpdateWindow(hwnd: HWND) -> windows_core::BOOL {
+    windows_core::link!("user32.dll" "system" fn UpdateWindow(hwnd : HWND) -> windows_core::BOOL);
+    unsafe { UpdateWindow(hwnd) }
+}
+#[inline]
 pub unsafe fn WaitForMultipleObjects(
     lphandles: &[HANDLE],
     bwaitall: bool,

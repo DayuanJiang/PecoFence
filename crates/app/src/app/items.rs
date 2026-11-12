@@ -332,7 +332,6 @@ impl App {
         let inset = w.item_label_inset(item);
         tracing::info!(?rect, centered, inset, "item rename box opened");
         let ink = w.label_ink(self.theme_mode);
-        w.set_renaming(Some(item));
         let label_size = self.ctx.chrome.label_size();
         crate::rename::begin_item_rename(
             rect,
@@ -347,6 +346,9 @@ impl App {
             self.queue.clone(),
             ink,
         );
+        // After the box is up and painted: the fence then draws the icon without its name.
+        // The other way round the name was gone for a frame before the box showed.
+        w.set_renaming(Some(item));
     }
 
     /// The inline rename edit closed (commit or cancel): labels may unfold again and a hover

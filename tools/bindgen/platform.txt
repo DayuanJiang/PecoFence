@@ -294,6 +294,7 @@
     // ---- layered windows (shadow window)
     SetLayeredWindowAttributes
     UpdateLayeredWindow
+    UpdateWindow
     LWA_ALPHA
     LWA_COLORKEY
     ULW_ALPHA

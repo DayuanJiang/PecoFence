@@ -598,6 +598,15 @@ pub fn window_rect_size(hwnd: HWND) -> (i32, i32) {
     (r.right - r.left, r.bottom - r.top)
 }
 
+/// Paints what is waiting to be painted in the window and its children now, instead of when
+/// the message loop is next idle (`UpdateWindow`).
+pub fn paint_now(hwnd: HWND) {
+    // SAFETY: plain FFI call.
+    unsafe {
+        let _ = UpdateWindow(hwnd);
+    }
+}
+
 /// Brings a window to the foreground (activating it).
 pub fn bring_to_front(hwnd: HWND) {
     // SAFETY: plain FFI call.
