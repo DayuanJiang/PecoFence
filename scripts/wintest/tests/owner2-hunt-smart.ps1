@@ -1,5 +1,5 @@
 # Smart fences and fences per virtual desktop: what the hunt of 2026-11-12 found (Everything is
-# installed on the box, see smart.ps1). --var Part=A to G runs one part (default: A to F on a release build, G on a debug build).
+# installed on the box, see smart.ps1). --var Part=A to H runs one part (default: all but G on a release build, G on a debug build).
 #   A  a smart fence that waits for Everything: started outside PecoFence, Everything is found
 #      within seconds; a click on 「启动 Everything」 changes the fence at once
 #   B  a smart fence whose folder is gone says that the folder cannot be found
@@ -11,7 +11,8 @@
 #      that answers like one): the fence is not left empty until the next once-a-minute search
 #   G  (a debug build: run.sh --bin target/wintest-bin-debug) the fence picker of Settings says
 #      which fence is a smart fence and which shows on one virtual desktop only
-if (-not $Part) { $Part = if ($PfDebugBuild) { 'G' } else { 'ABCDEF' } }
+#   H  a smart fence whose results all go fades to its empty state (Windows' animations on)
+if (-not $Part) { $Part = if ($PfDebugBuild) { 'G' } else { 'ABCDEFH' } }
 $HsDir = "$PfDocs\智能栅栏检查"
 function HsFiles() {
   Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
@@ -337,3 +338,30 @@ function PartG {
   Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
 }
 if ($Part -match 'G') { PartG }
+
+function PartH {
+  trap { PfTrap $_; continue }
+  Case 'H: the results of a smart fence all go'
+  CloseWindows
+  HsFiles
+  EvStart | Out-Null
+  # An RDP session has Windows' animations off: on for this part.
+  $anim = [Anim]::Get(); [Anim]::Set($true)
+  PfStart -Lang en -Script (DumpScript 500 20)
+  ClearFences
+  Pf fence create --title 'Whole PC' --everything '会议纪要' --rect '60,60,440,220' | Out-Null
+  Check 'H the fence shows the file' (WaitSmart 'Whole PC' { $s.source -eq 'everything' -and $s.shown -ge 1 } 15) (SmartLine 'Whole PC')
+  [G]::MoveTo(1200, 800); Start-Sleep -Seconds 1
+  EvStop | Out-Null
+  $t = { param($l) [datetime]::Parse(($l -split ' ')[0]).ToUniversalTime() }
+  $t0 = (Get-Date).ToUniversalTime().AddMilliseconds(-50)
+  Pf fence refresh 'Whole PC' | Out-Null
+  $gone = WaitSmart 'Whole PC' { $s.source -eq 'needsEverything' -and $s.shown -eq 0 } 10
+  Start-Sleep -Milliseconds 600
+  $fade = @(PfLogAll | Where-Object { $_ -match 'refill cross-fades' -and (& $t $_) -ge $t0 }) | Select-Object -First 1
+  Check 'H the icons fade out under the sentence (a cross-fade, no cut)' ($gone -and $fade) "results gone=$gone; log: $(if ($fade) { $fade.Substring([math]::Min(28, $fade.Length)) } else { 'no cross-fade' })"
+  PfQuit
+  [Anim]::Set($anim)
+  Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
+}
+if ($Part -match 'H') { PartH }

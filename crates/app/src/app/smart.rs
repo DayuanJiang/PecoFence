@@ -685,6 +685,14 @@ impl App {
             tracing::info!(%id, source = source.as_str(), count, total, "smart fence results changed");
         }
         if changed {
+            // Results that replace most of what the fence shows (none any more, another
+            // search) fade over the old page, as a filter does, instead of cutting to it.
+            let host = self.state.host_of(id);
+            if self.state.active_tab_of(host) == id
+                && let Some(w) = self.fences.get(&host)
+            {
+                w.fade_next_refill();
+            }
             self.refresh_fence(id);
         } else if source_changed {
             self.apply_portal_deco(self.state.host_of(id));
