@@ -1154,6 +1154,14 @@ impl App {
         }
     }
 
+    /// A to-do was dragged to another line of its note: one saved change, as a tick is.
+    pub(super) fn move_note_line(&mut self, fence: FenceId, from: usize, to: usize) {
+        if self.state.move_note_line(fence, from, to) {
+            self.push_note(fence);
+            self.schedule_save();
+        }
+    }
+
     /// A click on a web address in a note: it opens in the default browser. Only what
     /// `note::links` finds there is opened, an `http://` or `https://` address, as a script
     /// fence's `href=` row opens without its header line: a note starts no program and opens

@@ -1575,16 +1575,19 @@ impl FenceViewState {
         if self.note.is_none() {
             return Ok(());
         }
-        // While the note is edited, the editor's text with its selection and caret.
+        // While the note is edited, the editor's text with its selection and caret; while a
+        // to-do is dragged, the text with that line where it has got to.
         let marks = self.note_edit_marks();
         let Some(text) = self
             .note_edit
             .as_ref()
             .map(|e| e.text.clone())
-            .or_else(|| self.note.clone())
+            .or_else(|| self.note_shown())
         else {
             return Ok(());
         };
+        let now = Instant::now();
+        let moving = self.note_drag_draw(now);
         let lines = super::note_text::note_draw_lines(&text, marks.is_some());
         let scale = self.scale();
         let theme = self
@@ -1618,6 +1621,12 @@ impl FenceViewState {
                         selection,
                     }
                 });
+                let drag = moving.as_ref().map(|(offsets, lifted)| {
+                    pecofence_render::fence_chrome::NoteDragDraw {
+                        offsets,
+                        lifted: *lifted,
+                    }
+                });
                 drawn = chrome.draw_note(
                     session,
                     &theme,
@@ -1633,10 +1642,16 @@ impl FenceViewState {
                     edit.as_ref(),
                     hot,
                     link_hot,
+                    drag.as_ref(),
                 )?;
                 Ok(())
             })?;
         self.note_draw_result(ok);
+        // The frame clock goes on while lines glide or the lifted line's plate fades.
+        self.content_busy = self.note_lines_moving(now);
+        if self.content_busy {
+            self.frames.request();
+        }
         self.note_boxes = drawn
             .boxes
             .into_iter()

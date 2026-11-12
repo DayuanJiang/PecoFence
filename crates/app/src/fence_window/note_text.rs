@@ -40,7 +40,359 @@ fn whole_char(text: &str, offset: usize) -> usize {
     }
 }
 
+/// 便签与待办: the press held in a note that is not being edited. Released where it was
+/// pressed it is the click it always was (`click`: the editor opens with the caret there; a
+/// check box or a web address is `pressed`'s). On a to-do (`from`) it becomes a drag once
+/// the pointer leaves the system's drag threshold: the line follows the pointer up and down,
+/// the lines it passes make room, and the release leaves it where it is shown.
+pub(super) struct TodoDrag {
+    /// Client point of the press.
+    pub(super) start: (i32, i32),
+    pub(super) click: Option<Command>,
+    /// The pressed to-do's line in the note's text. None on a plain line, which stays put.
+    pub(super) from: Option<usize>,
+    /// The line it is shown at (it changes as the to-do passes its neighbours).
+    pub(super) to: usize,
+    /// The pointer left the drag threshold: the line is lifted.
+    pub(super) moved: bool,
+    /// The pointer is outside the fence: the line shows back in its place, and a release
+    /// there leaves it there.
+    pub(super) outside: bool,
+    /// The pointer's y minus the line's top at the press, and the pointer's y now (content
+    /// DIPs before scrolling).
+    pub(super) grab_dy: f32,
+    pub(super) pointer_y: f32,
+}
+
+/// The line that line `j` of a text is shown at while its line `from` is shown at `to`.
+fn shown_at(j: usize, from: usize, to: usize) -> usize {
+    if j == from {
+        return to;
+    }
+    let among_others = if j < from { j } else { j - 1 };
+    if among_others < to {
+        among_others
+    } else {
+        among_others + 1
+    }
+}
+
 impl FenceViewState {
+    /// The dragged to-do once it is lifted: its line in the note's text, the line it is
+    /// shown at, the pointer's y and the pointer's y minus the line's top at the press.
+    fn lifted_todo(&self) -> Option<(usize, usize, f32, f32)> {
+        let d = self.todo_drag.as_ref().filter(|d| d.moved && !d.outside)?;
+        Some((d.from?, d.to, d.pointer_y, d.grab_dy))
+    }
+
+    /// The note's text as it is shown: while a to-do is dragged, with that line at the
+    /// place it has reached.
+    pub(super) fn note_shown(&self) -> Option<String> {
+        let text = self.note.as_deref()?;
+        let moved = self
+            .lifted_todo()
+            .and_then(|(from, to, ..)| note::move_lines(text, from, 1, to));
+        Some(moved.unwrap_or_else(|| text.to_string()))
+    }
+
+    /// The top (content DIPs before scrolling) and the height of each line of `text` as the
+    /// note draws them.
+    fn note_row_spans(&self, text: &str) -> Vec<(f32, f32)> {
+        let lines = note_draw_lines(text, false);
+        self.chrome
+            .note_row_spans(self.note_width(), self.text_size, &lines)
+            .unwrap_or_default()
+    }
+
+    /// Where each line of the note's text is drawn now (its top, by its line in the text):
+    /// its place, the glide to it, or under the pointer for the dragged to-do, kept inside
+    /// the text. With them, the place of each line as shown (`note_row_spans`).
+    fn note_line_tops(&self, now: Instant) -> (Vec<f32>, Vec<(f32, f32)>) {
+        let spans = self
+            .note_shown()
+            .map(|shown| self.note_row_spans(&shown))
+            .unwrap_or_default();
+        let lifted = self.lifted_todo();
+        let at = |j: usize| lifted.map_or(j, |(from, to, ..)| shown_at(j, from, to));
+        let mut tops: Vec<f32> = (0..spans.len())
+            .map(|j| spans.get(at(j)).map_or(0.0, |s| s.0))
+            .collect();
+        for (j, t) in self.note_slide.iter().filter(|(_, t)| !t.is_done(now)) {
+            if let Some(top) = tops.get_mut(*j) {
+                *top = t.value_at(now);
+            }
+        }
+        if let Some((from, to, pointer, grab)) = lifted
+            && let (Some(first), Some(last), Some(own)) =
+                (spans.first(), spans.last(), spans.get(to))
+            && let Some(top) = tops.get_mut(from)
+        {
+            *top = (pointer - grab).clamp(first.0, (last.0 + last.1 - own.1).max(first.0));
+        }
+        (tops, spans)
+    }
+
+    /// What `redraw_note` adds while a to-do is dragged or lines glide to their places: how
+    /// far below its place each shown line is drawn (whole pixels), and the lifted line with
+    /// how much of its plate shows. None while every line rests.
+    #[allow(clippy::type_complexity)]
+    pub(super) fn note_drag_draw(
+        &mut self,
+        now: Instant,
+    ) -> Option<(Vec<f32>, Option<(usize, f32)>)> {
+        self.note_slide.retain(|(_, t)| !t.is_done(now));
+        if self
+            .note_lift
+            .as_ref()
+            .is_some_and(|(_, t)| t.is_done(now) && t.target() <= 0.0)
+        {
+            self.note_lift = None;
+        }
+        let lifted = self.lifted_todo();
+        if self.note_slide.is_empty() && self.note_lift.is_none() && lifted.is_none() {
+            return None;
+        }
+        let at = |j: usize| lifted.map_or(j, |(from, to, ..)| shown_at(j, from, to));
+        let (tops, spans) = self.note_line_tops(now);
+        let scale = self.scale();
+        let mut offsets = vec![0.0; spans.len()];
+        for (j, top) in tops.iter().enumerate() {
+            if let (Some(offset), Some(span)) = (offsets.get_mut(at(j)), spans.get(at(j))) {
+                *offset = ((top - span.0) * scale).round() / scale;
+            }
+        }
+        let lift = self
+            .note_lift
+            .as_ref()
+            .map(|(j, t)| (at(*j), t.value_at(now)));
+        Some((offsets, lift))
+    }
+
+    /// Whether lines of the note are still moving (a glide, the plate of the lifted line
+    /// coming or going): the frame clock goes on.
+    pub(super) fn note_lines_moving(&self, now: Instant) -> bool {
+        !self.note_slide.is_empty()
+            || self
+                .note_lift
+                .as_ref()
+                .is_some_and(|(_, t)| !t.is_done(now))
+    }
+
+    /// After the lines changed places: every line whose top (`prev`, by its line in the
+    /// text) is not its place glides there over 167 ms point-to-point, as the tabs beside a
+    /// dragged tab do (at once with animations off). The dragged to-do keeps following the
+    /// pointer.
+    fn sync_note_slides(&mut self, prev: &[f32], now: Instant) {
+        let (_, spans) = self.note_line_tops(now);
+        let lifted = self.lifted_todo().map(|l| (l.0, l.1));
+        let dur = self.anim_dur(motion::FAST);
+        self.note_slide.retain(|(_, t)| !t.is_done(now));
+        for (j, from) in prev.iter().enumerate() {
+            let known = self.note_slide.iter().position(|(k, _)| *k == j);
+            let slot = match lifted {
+                Some((dragged, _)) if dragged == j => None,
+                Some((dragged, to)) => spans.get(shown_at(j, dragged, to)),
+                None => spans.get(j),
+            };
+            match (slot, known) {
+                (Some(slot), Some(k)) => {
+                    self.note_slide[k]
+                        .1
+                        .retarget(slot.0, dur, Curve::PointToPoint, now)
+                }
+                (Some(slot), None) if (from - slot.0).abs() >= 0.5 => self
+                    .note_slide
+                    .push((j, Tween::new(*from, slot.0, dur, Curve::PointToPoint, now))),
+                (None, Some(k)) => {
+                    self.note_slide.remove(k);
+                }
+                _ => {}
+            }
+        }
+        self.content_busy = true;
+        self.frames.request();
+    }
+
+    /// The to-do whose line is at client y `y` of a note that is not being edited: its line
+    /// in the text, and the point's y minus the line's top (DIPs).
+    fn todo_line_at(&self, y: i32) -> Option<(usize, f32)> {
+        if self.note_edit.is_some() {
+            return None;
+        }
+        let text = self.note.as_deref()?;
+        let cy = (y - self.content_y) as f32 / self.scale() + self.scroll_y;
+        let spans = self.note_row_spans(text);
+        // A line owns its text and half the gap to its neighbours (3 DIPs or more).
+        let line = spans.iter().position(|(top, h)| cy < top + h + 3.0)?;
+        let top = spans[line].0;
+        let todo = matches!(note::lines(text).get(line), Some(NoteLine::Todo { .. }));
+        (todo && cy >= top - 3.0).then_some((line, cy - top))
+    }
+
+    /// Button-down in a note that is not being edited, at client point (`x`, `y`). `click`
+    /// is what the release of a press that never moved does (the editor opens); None for a
+    /// press on a check box or a web address, which `pressed` holds and which only the drag
+    /// of a to-do takes over. The caller takes the mouse capture.
+    pub(super) fn begin_todo_press(&mut self, x: i32, y: i32, click: Option<Command>) {
+        let line = self.todo_line_at(y);
+        if line.is_none() && click.is_none() {
+            return;
+        }
+        tracing::debug!(
+            fence = %self.active,
+            todo = ?line.map(|l| l.0),
+            opens_editor = click.is_some(),
+            "note pressed: the click waits for the release"
+        );
+        self.todo_drag = Some(TodoDrag {
+            start: (x, y),
+            click,
+            from: line.map(|l| l.0),
+            to: line.map_or(0, |l| l.0),
+            moved: false,
+            outside: false,
+            grab_dy: line.map_or(0.0, |l| l.1),
+            pointer_y: 0.0,
+        });
+    }
+
+    /// The pointer moved to client point (`x`, `y`) with a note press held. None while the
+    /// press is still a click (inside the drag threshold, or on a plain line); Some(true)
+    /// on the move that lifts the to-do, Some(false) while it follows the pointer.
+    pub(super) fn todo_drag_move(&mut self, x: i32, y: i32) -> Option<bool> {
+        let d = self.todo_drag.as_ref()?;
+        let from = d.from?;
+        let started = !d.moved;
+        if started {
+            let (tx, ty) = window::drag_threshold();
+            if (x - d.start.0).abs() <= tx && (y - d.start.1).abs() <= ty {
+                return None;
+            }
+        }
+        let was_outside = d.outside;
+        let now = Instant::now();
+        let (prev, _) = self.note_line_tops(now);
+        // Out of the fence by more than the distance that tears a tab off: the line goes
+        // back to its place, and comes back under the pointer when the pointer does.
+        let far = (TAB_DETACH_DIP * self.scale()) as i32;
+        let (w, h) = self.chrome_panel.size_px();
+        let outside = x < -far || y < -far || x >= w + far || y >= h + far;
+        let pointer_y = (y - self.content_y) as f32 / self.scale() + self.scroll_y;
+        if let Some(d) = self.todo_drag.as_mut() {
+            d.moved = true;
+            d.outside = outside;
+            d.pointer_y = pointer_y;
+        }
+        if started {
+            // The press is the drag's from here on: no check box ticks, no link opens.
+            self.pressed = None;
+            self.press_inside = false;
+            self.note_box_hover = None;
+            self.note_link_hover = None;
+            self.hide_tip();
+            self.note_lift = Some((
+                from,
+                self.motion
+                    .tween(0.0, 1.0, motion::FASTER, Curve::Linear, now),
+            ));
+            tracing::debug!(fence = %self.active, line = from, "to-do drag starts");
+        }
+        if outside != was_outside {
+            tracing::debug!(fence = %self.active, outside, "to-do drag: pointer out of the fence");
+            self.sync_note_slides(&prev, now);
+        }
+        self.reorder_dragged_todo(now);
+        // Drawn once per frame by `tick`, not once per mouse message.
+        self.content_busy = true;
+        self.frames.request();
+        Some(started)
+    }
+
+    /// The dragged to-do changes places with the lines it has passed: one line per step
+    /// (its middle past the neighbour's middle, as a dragged tab), repeated so that a fast
+    /// move crosses several lines at once.
+    fn reorder_dragged_todo(&mut self, now: Instant) {
+        let Some((from, shown_to, pointer, grab)) = self.lifted_todo() else {
+            return;
+        };
+        let Some(text) = self.note.clone() else {
+            return;
+        };
+        let (prev, _) = self.note_line_tops(now);
+        let mut to = shown_to;
+        for _ in 0..prev.len() {
+            let shown = note::move_lines(&text, from, 1, to).unwrap_or_else(|| text.clone());
+            let spans = self.note_row_spans(&shown);
+            let Some(over) = tab_reorder_at_pointer(to, pointer, grab, &spans) else {
+                break;
+            };
+            to = over;
+        }
+        if to != shown_to {
+            if let Some(d) = self.todo_drag.as_mut() {
+                d.to = to;
+            }
+            tracing::debug!(fence = %self.active, from, to, "to-do drag: the line changes places");
+            self.sync_note_slides(&prev, now);
+        }
+    }
+
+    /// The note press ends: the button was released (`commit`), or Esc or a lost capture
+    /// took it back. A press that never moved gives its click. A lifted to-do settles into
+    /// the place it is shown at (the note's text changes here, and the command returned
+    /// tells the app to store it) or, taken back or released outside the fence, into the
+    /// place it came from. The caller pushes the command and redraws the content.
+    pub(super) fn end_todo_drag(&mut self, commit: bool) -> Option<Command> {
+        let now = Instant::now();
+        let (prev, _) = self.note_line_tops(now);
+        let d = self.todo_drag.take()?;
+        if !d.moved {
+            return d.click.filter(|_| commit);
+        }
+        let from = d.from?;
+        let to = if commit && !d.outside { d.to } else { from };
+        let moved = self
+            .note
+            .as_deref()
+            .and_then(|text| note::move_lines(text, from, 1, to));
+        tracing::debug!(
+            fence = %self.active,
+            from,
+            to,
+            commit,
+            outside = d.outside,
+            "to-do drag ends"
+        );
+        // The tops the lines are drawn at, by the line each one is from now on.
+        let mut tops = prev.clone();
+        if let Some(text) = moved {
+            for (j, top) in prev.iter().enumerate() {
+                if let Some(slot) = tops.get_mut(shown_at(j, from, to)) {
+                    *slot = *top;
+                }
+            }
+            self.note_slide.clear();
+            self.note = Some(text);
+            self.note_boxes.clear();
+            self.note_links.clear();
+        }
+        let shown = self
+            .note_lift
+            .as_ref()
+            .map_or(1.0, |(_, t)| t.value_at(now));
+        self.note_lift = Some((
+            to,
+            self.motion
+                .tween(shown, 0.0, motion::FAST, Curve::Linear, now),
+        ));
+        self.sync_note_slides(&tops, now);
+        (to != from).then_some(Command::MoveNoteLine {
+            fence: self.active,
+            from,
+            to,
+        })
+    }
+
     /// Width of the content in DIPs, which a note's lines wrap to.
     fn note_width(&self) -> f32 {
         self.content_size_px().0 as f32 / self.scale()

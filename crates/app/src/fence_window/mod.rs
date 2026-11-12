@@ -99,6 +99,7 @@ use self::dnd::*;
 use self::group::*;
 use self::hit::*;
 use self::items::*;
+use self::note_text::TodoDrag;
 use self::render::*;
 use self::roll::*;
 use self::scroll::*;

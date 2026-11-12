@@ -4560,6 +4560,16 @@ pub struct NoteDrawn {
     pub links: Vec<(usize, usize, Rect)>,
 }
 
+/// What a note shows while one of its to-dos is moved by a drag: how far below its place
+/// each line is drawn (DIPs: the lines that make room glide, the dragged one follows the
+/// pointer), and the lifted line with how much of its plate shows (0 to 1). The lifted line
+/// is drawn above the others on the plate a script fence's row has under the pointer, and
+/// what it passes over is not drawn under it, as with a dragged tab.
+pub struct NoteDragDraw<'a> {
+    pub offsets: &'a [f32],
+    pub lifted: Option<(usize, f32)>,
+}
+
 /// One line of a note laid out: its wrapped text, where the text starts, its top from the
 /// first line's top (before any scrolling) and its height.
 struct NoteRow {
@@ -4706,6 +4716,18 @@ impl FenceChrome {
         })
     }
 
+    /// Each line of a note as [`FenceChrome::draw_note`] places it: its top in the content
+    /// (before any scrolling) and its height, a wrapped line with all its lines on screen.
+    pub fn note_row_spans(
+        &self,
+        width: f32,
+        text_size: u8,
+        lines: &[NoteLineDraw<'_>],
+    ) -> Result<Vec<(f32, f32)>> {
+        let (rows, _) = self.note_rows(width, text_size, lines)?;
+        Ok(rows.iter().map(|r| (NOTE_PAD_TOP + r.y, r.h)).collect())
+    }
+
     /// The place in a note's text nearest to point (`x`, `y`) of its content before any
     /// scrolling: the line, and the place in that line's drawn text in UTF-16 units. A point
     /// above or below the text takes the first or the last line.
@@ -4788,6 +4810,7 @@ impl FenceChrome {
     /// the line whose check box is under the pointer (true: held). A web address
     /// (`pecofence_core::note::links`) is drawn as a link, in the accent ink, the one at
     /// `link_hot` (line, start) underlined; while the note is edited it is plain text.
+    /// `drag` moves the lines of a note in which a to-do is dragged ([`NoteDragDraw`]).
     /// Returns the check boxes and the links for hit-testing.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_note(
@@ -4806,6 +4829,7 @@ impl FenceChrome {
         edit: Option<&NoteEditDraw<'_>>,
         hot: Option<(usize, bool)>,
         link_hot: Option<(usize, usize)>,
+        drag: Option<&NoteDragDraw<'_>>,
     ) -> Result<NoteDrawn> {
         session.clear(ColorF::TRANSPARENT);
         let tt = self.tool_text(text_size);
@@ -4862,10 +4886,52 @@ impl FenceChrome {
         };
         let mut boxes = Vec::new();
         let mut links = Vec::new();
-        for (i, (line, row)) in lines.iter().zip(&rows).enumerate() {
-            let y = NOTE_PAD_TOP + row.y - scroll;
+        let top_of = |i: usize, row: &NoteRow| {
+            let moved = drag.and_then(|d| d.offsets.get(i)).copied().unwrap_or(0.0);
+            NOTE_PAD_TOP + row.y - scroll + moved
+        };
+        // The lifted line of a drag comes last, over the others, on its plate; the others
+        // are not drawn where it is.
+        let lifted = drag
+            .and_then(|d| d.lifted)
+            .filter(|(i, _)| *i < rows.len().min(lines.len()));
+        let lifted_plate = lifted.map(|(i, _)| {
+            Rect::from_xywh(
+                NOTE_PAD_X - SCRIPT_ROW_PAD_X,
+                top_of(i, &rows[i]) - SCRIPT_ROW_PAD_Y,
+                w + 2.0 * SCRIPT_ROW_PAD_X,
+                rows[i].h + 2.0 * SCRIPT_ROW_PAD_Y,
+            )
+        });
+        let mut under_lifted = match lifted_plate {
+            Some(r) => Some(push_span_gap(
+                session,
+                Rect::from_xywh(0.0, 0.0, width, height),
+                (r.top, r.bottom),
+                true,
+            )?),
+            None => None,
+        };
+        let order = (0..rows.len().min(lines.len()))
+            .filter(|i| lifted.is_none_or(|(l, _)| l != *i))
+            .chain(lifted.map(|(i, _)| i));
+        for i in order {
+            let (line, row) = (&lines[i], &rows[i]);
+            if let (Some((l, shown)), Some(r)) = (lifted, lifted_plate)
+                && l == i
+            {
+                if let Some(layer) = under_lifted.take() {
+                    pop_strip_fade(session, layer);
+                }
+                let plate =
+                    session.create_solid_brush(with_alpha(theme.text_primary, 0.07 * shown))?;
+                session.fill_rounded_rect(&RoundedRect::uniform(r, 4.0), &plate);
+            }
+            let y = top_of(i, row);
             if y >= height {
-                break;
+                // Under the fence's bottom edge (the lines after it are too, unless a drag
+                // moves them).
+                continue;
             }
             if y + row.h <= 0.0 {
                 // Scrolled out above the fence.
@@ -4964,6 +5030,9 @@ impl FenceChrome {
                     &primary,
                 );
             }
+        }
+        if let Some(layer) = under_lifted.take() {
+            pop_strip_fade(session, layer);
         }
         if let Some(bar) = scrollbar {
             draw_scrollbar(session, theme, &self.sort_glyph_format, width, bar)?;

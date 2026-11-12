@@ -188,6 +188,9 @@ impl FenceWindow {
             note: None,
             note_edit: None,
             note_drag: false,
+            todo_drag: None,
+            note_slide: Vec::new(),
+            note_lift: None,
             note_boxes: Vec::new(),
             note_links: Vec::new(),
             clock: None,
@@ -1804,6 +1807,10 @@ impl FenceWindow {
         self.with_view(|v| {
             if v.note != text {
                 v.note = text;
+                // Another text: a to-do dragged in the old one, and its lines' glides, end.
+                v.todo_drag = None;
+                v.note_slide.clear();
+                v.note_lift = None;
                 v.note_boxes.clear();
                 v.note_links.clear();
                 v.note_link_hover = None;

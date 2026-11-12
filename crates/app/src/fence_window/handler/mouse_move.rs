@@ -399,6 +399,31 @@ pub(super) fn on_mousemove(
         v.frames.request();
         return Some(0);
     }
+    // A press in a note: on a to-do it becomes a drag once the pointer leaves the drag
+    // threshold, and the line follows the pointer.
+    if v.todo_drag.is_some() {
+        match v.todo_drag_move(x, y) {
+            Some(true) => {
+                // The fence takes the keyboard, so that Esc puts the line back. Taking it
+                // can cost the mouse capture, and a lost capture ends a drag: the drag is
+                // held out of the view meanwhile.
+                let held = v.todo_drag.take();
+                drop(guard);
+                focus_session(view, hwnd);
+                window::set_capture(hwnd);
+                window::set_standard_cursor(StandardCursor::Arrow);
+                if let Some(v) = view.borrow_mut().as_mut() {
+                    v.todo_drag = held;
+                }
+                return Some(0);
+            }
+            Some(false) => return Some(0),
+            // Still a click. A check box or a web address goes on tracking the pointer
+            // below; the text has nothing to track.
+            None if v.pressed.is_none() => return Some(0),
+            None => {}
+        }
+    }
     // A release-fired button is held: track whether the pointer is still
     // over it (Win32 button semantics: pressed fill and hover fill both go
     // when the pointer leaves, both return with it); no tip updates

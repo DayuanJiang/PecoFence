@@ -251,6 +251,15 @@ pub struct FenceViewState {
     pub(super) note_edit: Option<NoteEditView>,
     /// A press in the edited note's text is held: moving the pointer selects.
     pub(super) note_drag: bool,
+    /// The press held in a note that is not being edited: a click that opens the editor on
+    /// its release, or a to-do that follows the pointer to another place (`TodoDrag`).
+    pub(super) todo_drag: Option<TodoDrag>,
+    /// Lines of the note on their way to their places after a to-do moved: the line and the
+    /// top it is drawn at (content DIPs before scrolling; 167 ms).
+    pub(super) note_slide: Vec<(usize, Tween)>,
+    /// The line drawn lifted and how much of its plate shows: it comes while the to-do is
+    /// dragged and goes while the released line settles.
+    pub(super) note_lift: Option<(usize, Tween)>,
     /// The note's to-do check boxes as last drawn: line index and (left, top, right, bottom)
     /// in content DIPs.
     pub(super) note_boxes: Vec<(usize, [f32; 4])>,

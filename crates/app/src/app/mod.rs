@@ -3022,6 +3022,7 @@ impl App {
             }
             Command::NoteEditMenu { x, y } => crate::note_edit::text_menu(x, y),
             Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
+            Command::MoveNoteLine { fence, from, to } => self.move_note_line(fence, from, to),
             Command::OpenNoteLink { fence, line, start } => self.open_note_link(fence, line, start),
             Command::ScriptRowClicked { fence, row } => self.script_row_clicked(fence, row),
             Command::EmptyActionClicked { fence } => self.smart_everything_clicked(fence),

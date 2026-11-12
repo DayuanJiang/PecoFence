@@ -312,12 +312,23 @@ pub(super) fn on_lbuttondown(
         // A note's check box, a script fence's clickable row: pressed look now, the action on
         // a release over it.
         if v.press_tool_at(x, y, false).is_some() {
+            // On a to-do's check box or web address: a drag from there moves the line.
+            v.begin_todo_press(x, y, None);
             drop(guard);
             window::set_capture(hwnd);
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
-        if let Some(cmd) = v.note_press(x, y).or_else(|| v.empty_action_press(x, y)) {
+        // A note's text: the editor opens on the release, at the place of the press. Until
+        // then the press may become the drag of a to-do (`TodoDrag`).
+        if let Some(cmd) = v.note_press(x, y) {
+            v.begin_todo_press(x, y, Some(cmd));
+            drop(guard);
+            window::set_capture(hwnd);
+            queue.push(Command::RaiseFence(hwnd));
+            return Some(0);
+        }
+        if let Some(cmd) = v.empty_action_press(x, y) {
             drop(guard);
             queue.push(cmd);
             queue.push(Command::RaiseFence(hwnd));
@@ -494,6 +505,14 @@ pub(super) fn on_lbuttonup(
         }
         return Some(0);
     }
+    // A press in a note: its click (the editor opens now), or the dragged to-do lands.
+    let note_press = view.borrow_mut().as_mut().and_then(|v| {
+        let held = v.todo_drag.as_ref()?.moved;
+        if let Some(cmd) = v.end_todo_drag(true) {
+            queue.push(cmd);
+        }
+        Some(held)
+    });
     let (drag, had_marquee, tab_drag, col_done, had_scroll, press) = {
         let mut guard = view.borrow_mut();
         match guard.as_mut() {
@@ -552,7 +571,7 @@ pub(super) fn on_lbuttonup(
     };
     // Each surface is rasterised at most once for the release: the flags
     // collect what changed, the redraws come last.
-    let mut need_content = had_marquee || had_scroll;
+    let mut need_content = had_marquee || had_scroll || note_press == Some(true);
     let mut need_chrome = false;
     match press {
         Some((
@@ -688,6 +707,8 @@ pub(super) fn on_capturechanged(
         v.drag = None;
         v.click_pending = None;
         v.rbutton_press = None;
+        // A note press that lost the capture is no click, and a dragged to-do goes back.
+        let _ = v.end_todo_drag(false);
         v.clear_pressed();
         if v.detach_pending || v.remote_drag.is_some() {
             tracing::info!(

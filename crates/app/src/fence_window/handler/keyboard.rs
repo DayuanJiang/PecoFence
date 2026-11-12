@@ -297,6 +297,13 @@ pub(super) fn on_keydown(
                 finish_drag_cancel(c, &h.view, queue, &h.behavior);
                 return Some(0);
             }
+            // A to-do dragged in a note goes back to its place.
+            if v.todo_drag.as_ref().is_some_and(|d| d.moved) {
+                let _ = v.end_todo_drag(false);
+                drop(guard);
+                window::release_capture();
+                return Some(0);
+            }
             // A divider drag: the column gets its width back and the selection stays
             // (Explorer).
             if let Some(cd) = v.col_drag.take() {

@@ -3220,6 +3220,22 @@ impl AppState {
         }
     }
 
+    /// Moves line `from` of note `id` to line `to`; false when the text has no such lines.
+    pub fn move_note_line(&mut self, id: FenceId, from: usize, to: usize) -> bool {
+        let moved = self
+            .note_text(id)
+            .and_then(|text| pecofence_core::note::move_lines(text, from, 1, to));
+        tracing::info!(%id, from, to, moved = moved.is_some(), "note line moved");
+        match moved {
+            Some(new) => {
+                self.config.notes.insert(id, new);
+                self.dirty = true;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// "快速添加": a fence for `template` at `rect` plus its rules, inserted ahead of the
     /// existing rules so they win over the broader first-run presets (an installer is also a
     /// program). `Err(existing)` when the template was added before; `existing` is the fence

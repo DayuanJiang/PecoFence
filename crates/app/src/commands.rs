@@ -383,6 +383,12 @@ pub enum Command {
         fence: FenceId,
         line: usize,
     },
+    /// A to-do of a note was dragged from line `from` to line `to` of its text.
+    MoveNoteLine {
+        fence: FenceId,
+        from: usize,
+        to: usize,
+    },
     /// A click on a web address in a note's text (not while it is edited): its line and its
     /// start in the line's text (UTF-16 units).
     OpenNoteLink {
