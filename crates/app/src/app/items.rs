@@ -553,10 +553,9 @@ impl App {
         )
     }
 
-    /// Runs one of the shell's canonical verbs (`cut`, `copy`, `properties`) on the selection
-    /// as if picked from Explorer's menu, or deletes it (`delete`: the shell's file operation
-    /// on a worker thread, see [`App::start_shell_delete`]). `shift` = Shift held (permanent
-    /// delete).
+    /// Runs the shell's `properties` verb on the selection as if picked from Explorer's menu, or
+    /// deletes it (`delete`: the shell's file operation on a worker thread, see
+    /// [`App::start_shell_delete`]). `shift` = Shift held (permanent delete).
     pub(super) fn shell_verb_on_items(
         &mut self,
         fence: FenceId,
@@ -565,9 +564,9 @@ impl App {
         shift: bool,
     ) -> bool {
         let mut paths = self.shell_paths_of(items);
-        if matches!(verb, "delete" | "cut" | "copy") {
-            // The Recycle Bin cannot be deleted, cut or copied, and the other special items
-            // only pretend to (their "delete" hides the desktop icon): leave them to Windows.
+        if verb == "delete" {
+            // The Recycle Bin cannot be deleted, and the other special items only pretend to
+            // (their "delete" hides the desktop icon): leave them to Windows.
             paths.retain(|p| !shell::is_namespace_path(p));
         }
         if paths.is_empty() {
@@ -577,9 +576,7 @@ impl App {
             .window_for(fence)
             .map(|w| w.hwnd())
             .unwrap_or(self.control.hwnd());
-        if !matches!(verb, "cut" | "copy")
-            && let Some(a) = self.anchor.borrow_mut().as_mut()
-        {
+        if let Some(a) = self.anchor.borrow_mut().as_mut() {
             // Properties and the delete confirmation: closing them gives the fence the
             // keyboard back with its selection.
             a.dialog_opened_from(owner);
@@ -590,11 +587,7 @@ impl App {
         }
         let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
         let started = Instant::now();
-        let _loads = pecofence_platform::shell_menu::LoadWatch::new(match verb {
-            "cut" => "Cut",
-            "copy" => "Copy",
-            _ => "Properties",
-        });
+        let _loads = pecofence_platform::shell_menu::LoadWatch::new("Properties");
         let result = ShellContextMenu::for_paths(&refs)
             .and_then(|m| m.invoke_verb(verb, owner, window::cursor_pos(), shift));
         let ms = crate::share_log::millis(started.elapsed());
@@ -649,12 +642,27 @@ impl App {
         }
     }
 
-    /// Ctrl+C / Ctrl+X: the shell's copy / cut verb puts the files on the clipboard exactly as
-    /// Explorer does (`CF_HDROP` + `Preferred DropEffect`); cut items draw dimmed.
-    pub(super) fn clipboard_verb(&mut self, fence: FenceId, items: &[ItemId], cut: bool) {
-        if !self.shell_verb_on_items(fence, items, if cut { "cut" } else { "copy" }, false) {
+    /// Ctrl+C / Ctrl+X: the files go on the clipboard exactly as Explorer puts them there (the
+    /// shell's data object of the files with `Preferred DropEffect`, `clipboard::set_files`);
+    /// cut items draw dimmed. The Recycle Bin and the other special items cannot be cut or
+    /// copied.
+    pub(super) fn clipboard_verb(&mut self, _fence: FenceId, items: &[ItemId], cut: bool) {
+        let mut paths = self.shell_paths_of(items);
+        paths.retain(|p| !shell::is_namespace_path(p));
+        if paths.is_empty() {
             return;
         }
+        let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
+        let started = Instant::now();
+        let _loads =
+            pecofence_platform::shell_menu::LoadWatch::new(if cut { "Cut" } else { "Copy" });
+        let result = clipboard::set_files(&refs, cut);
+        let ms = crate::share_log::millis(started.elapsed());
+        if let Err(e) = result {
+            tracing::warn!(error = %e, cut, ms, "files not put on the clipboard");
+            return;
+        }
+        tracing::info!(count = paths.len(), cut, ms, "files put on the clipboard");
         self.cut_items = if cut {
             items.iter().copied().collect()
         } else {

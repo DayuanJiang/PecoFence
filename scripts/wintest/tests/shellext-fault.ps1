@@ -7,6 +7,9 @@
 #   D  Delete calls no menu extension: with the extension set to fault in its first call,
 #      Delete, Shift+Delete, the item menu's Delete, several files at once, a folder fence and
 #      a folder still delete, and Ctrl+Z brings a deleted file back
+#   C  Ctrl+C and Ctrl+X call no menu extension: with the extension set to fault in its first
+#      call they put the files on the clipboard as Explorer does (copy 5, cut 2), and a cut
+#      file pastes into a folder fence
 #   F  a fault while the item menu is built (the shell loads every menu extension for it): the
 #      crash line and the next start's notice name the DLL, the process is gone within half a
 #      second of that line, the watchdog starts PecoFence again and the layout is as before
@@ -16,7 +19,7 @@
 #      sends with a report keeps the DLL's name
 # Parts: run.sh --var Part=D ... (default: all). About 4 minutes.
 $PfAllowLogErrors = $true
-if (-not $Part) { $Part = 'LDFO' }
+if (-not $Part) { $Part = 'LDCFO' }
 trap { PfTrap $_; continue }
 
 Add-Type @'
@@ -123,6 +126,17 @@ function SxFence($title, $rect, $names) {
   Start-Sleep -Seconds 2
 }
 function SxSelect($fence, $i) { $p = CellPt $fence $i; [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 600; ParkMouse; Start-Sleep -Milliseconds 200 }
+# PecoFence as a user runs it (no test script): the watchdog starts it again after a crash.
+function SxPlain() {
+  $env:PECOFENCE_INSTANCE = $PfInst
+  $env:RUST_LOG = 'pecofence=debug'
+  Start-Process "$PfApp\pecofence.exe" -ArgumentList '--portable' -WorkingDirectory $PfApp
+  $null = WaitWin 'PecoFence.Control' 20 -Hidden
+}
+# The last line of the running instance's log that matches.
+function SxNewLog($regex) { return (@(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -match $regex }) | Select-Object -Last 1) }
+# While this file exists, item menus leave out Windows' part.
+$SxMarker = "$PfApp\config\windows-menu-off.marker"
 # Windows' question of a delete (a dialog of the PecoFence process), zero when none shows.
 function SxQuestion($sec = 6) {
   for ($i = 0; $i -lt $sec * 5; $i++) {
@@ -266,6 +280,51 @@ if ($dll -and $Part -match 'D') {
   SxClean
 }
 
+if ($dll -and $Part -match 'C') {
+  Case 'C copy and cut with a menu extension that faults'
+  DeskFile 'sx a0.txt' | Out-Null
+  PfStart
+  Pf settings set featureTips false | Out-Null
+  ClearFences | Out-Null
+  $null = PfWaitLog 'shell menu (pre|not pre)warmed' 20
+  $cn = @('sx c1 文档.txt', 'sx c2 表格.txt', 'sx c3 图片.txt')
+  SxFence 'SxC' '300,200,520,170' $cn
+  New-Item -ItemType Directory -Force $SxDir | Out-Null
+  Pf fence create --portal $SxDir --title 'SxV' --rect '300,440,520,170' | Out-Null
+  Start-Sleep -Seconds 3
+  $script:SxPid = (Get-Process pecofence | Select-Object -First 1).Id
+  ExtArm 'Initialize'
+  [Windows.Forms.Clipboard]::Clear()
+  SxSelect 'SxC' 0
+  Chord 0x11 0x43; Start-Sleep -Milliseconds 800
+  $c = @(ClipFiles | ForEach-Object { Split-Path $_ -Leaf }); $e = ClipEffect
+  Check 'C Ctrl+C puts the file on the clipboard as a copy' ($c.Count -eq 1 -and $c[0] -eq $cn[0] -and $e -eq 5 -and (PfAlive)) "clipboard: $($c -join ' | ') effect=$e; extension calls: $((ExtCalls) -join ', ')"
+  Chord 0x11 0x41; Start-Sleep -Milliseconds 500
+  Chord 0x11 0x43; Start-Sleep -Milliseconds 800
+  $c = @(ClipFiles)
+  Check 'C Ctrl+C on three files copies the three' ($c.Count -eq 3 -and (ClipEffect) -eq 5) "clipboard: $(($c | ForEach-Object { Split-Path $_ -Leaf }) -join ' | ') effect=$(ClipEffect)"
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 300
+  SxSelect 'SxC' 1
+  Chord 0x11 0x58; Start-Sleep -Milliseconds 800
+  $c = @(ClipFiles | ForEach-Object { Split-Path $_ -Leaf }); $e = ClipEffect
+  Check 'C Ctrl+X puts the file on the clipboard as a cut' ($c.Count -eq 1 -and $c[0] -eq $cn[1] -and $e -eq 2) "clipboard: $($c -join ' | ') effect=$e"
+  # The cut file pastes into the folder fence: it moves into that folder.
+  $v = (FenceGet 'SxV').windowRect
+  [G]::Click([int]($v.x + $v.w / 2), [int]($v.y + $v.h - 30)); Start-Sleep -Milliseconds 500
+  Chord 0x11 0x56
+  $moved = $false
+  for ($i = 0; $i -lt 40 -and -not $moved; $i++) { Start-Sleep -Milliseconds 200; $moved = (Test-Path -LiteralPath (Join-Path $SxDir $cn[1])) -and -not (Test-Path -LiteralPath (Join-Path $PfDesk $cn[1])) }
+  Check 'C the cut file pastes into a folder fence: it moves there' $moved "in the folder=$(Test-Path -LiteralPath (Join-Path $SxDir $cn[1])); still on the desktop=$(Test-Path -LiteralPath (Join-Path $PfDesk $cn[1]))"
+  $p = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
+  $calls = ExtCalls
+  $crash = @(PfLogAll | Where-Object { $_ -cmatch 'CRASH \(|panicked' }).Count
+  Check 'C no copy, cut or paste called the menu extension, and PecoFence still runs' ($calls.Count -eq 0 -and $p -and $p.Id -eq $script:SxPid -and $crash -eq 0) "calls from PecoFence since the extension was set to fault: $($calls -join ', '); same process=$($p -and $p.Id -eq $script:SxPid); crash lines=$crash"
+  ExtDisarm
+  [Windows.Forms.Clipboard]::Clear()
+  PfQuit
+  SxClean
+}
+
 if ($dll -and $Part -match 'F') {
   Case 'F a fault while the item menu is built'
   # A first run makes the fences and ends normally; the run under test has no test script, so
@@ -328,7 +387,8 @@ if ($dll -and $Part -match 'F') {
   Get-Process pecofence, pecofence-watchdog -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   Start-Sleep -Seconds 3
   if (-not [W]::IconsVisible()) { [W]::ToggleIcons(); Start-Sleep -Seconds 1 }
-  Remove-Item $Stamp -ErrorAction SilentlyContinue
+  # The restarted run switched the Windows part of the item menus off: on again for the rest.
+  Remove-Item $Stamp, $SxMarker -ErrorAction SilentlyContinue
   Remove-Item "$env:LOCALAPPDATA\PecoFence\crash-*.dmp" -ErrorAction SilentlyContinue
 }
 
