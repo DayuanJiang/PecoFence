@@ -320,6 +320,7 @@
   .hotkey-win input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
   .disabled .hotkey-win { color: var(--text-disabled); }
   .card .s.error { color: var(--error); } .card .s.caution { color: var(--caution); }
+  #toolsHeld { white-space: pre-line; margin-top: 4px; }
   /* A line that waits (正在检查更新…, 正在下载新版本…) has the small ring Windows shows beside such
      a line: three quarters of a circle in the accent colour, one turn a second. With Windows'
      animations off it stands still. */
@@ -887,7 +888,7 @@
       <header class="page-header"><h2>小工具</h2></header>
       <p class="page-lede">便签、时钟和脚本放在栅栏里，和普通栅栏一样可以移动、吸附和收起。</p>
       <div class="group">
-        <div class="card"><div class="l"><span class="ic">&#xEA86;</span><div><div class="t">小工具</div><div class="s">关闭后，桌面上的小工具都不显示，脚本也全部停下</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.enabled"></div></div>
+        <div class="card"><div class="l"><span class="ic">&#xEA86;</span><div><div class="t">小工具</div><div class="s">关闭后，桌面上的小工具都不显示，脚本也全部停下</div><div class="s caution" id="toolsHeld" hidden></div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.enabled"></div></div>
         <div class="card child"><div class="l"><div><div class="t">便签与待办</div><div class="s">在栅栏里写几行字，单击就能编辑。行首写 [ ] 的一行会变成可以勾选的待办</div></div></div><button class="accent" id="newNote">新建便签</button></div>
         <div class="card child"><div class="l"><div><div class="t">时钟</div><div class="s">显示时间、日期和星期。右键时钟可以打开“显示秒”</div></div></div><button id="newClock">添加</button></div>
         <div class="card child"><div class="l"><div><div class="t">天气</div><div class="s">今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选“编辑脚本”，把 Tokyo 换成你的城市</div></div></div><button id="addWeather" data-example="weather">添加</button></div>
@@ -1717,6 +1718,11 @@
     const clock = document.getElementById('newClock');
     clock.disabled = clocks > 0;
     clock.textContent = clocks ? t("已在桌面上") : t("添加");
+    // Scripts of an imported configuration wait for the switch: its card says so and lists
+    // them, so what would start is read before the switch is turned on.
+    const held = state.heldScripts || [], heldEl = document.getElementById('toolsHeld');
+    heldEl.hidden = !held.length;
+    heldEl.textContent = held.length ? [t("已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在“小工具”页打开“小工具”开关。"), ...held].join('\n') : '';
     renderEverything();
   }
   // 搜索整台电脑 › Everything's state from the host: running (version, pinyin), installed,

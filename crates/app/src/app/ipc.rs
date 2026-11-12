@@ -1256,9 +1256,16 @@ impl App {
                 // Portals restored with the snapshot need enumerating; stale runtime state of
                 // the replaced ones is pruned on the way.
                 self.refresh_portals();
+                // Scripts of an imported configuration that the snapshot brought back wait
+                // for the 小工具 switch, as after the import.
+                let held = self.hold_switch_for_held_scripts("snapshot restored by the CLI");
                 self.schedule_save();
                 self.push_settings_state();
-                Ok(mutation(true, backup, json!({ "restored": target })))
+                let mut extra = json!({ "restored": target });
+                if held > 0 {
+                    extra["scriptsHeld"] = json!(held);
+                }
+                Ok(mutation(true, backup, extra))
             }
             Method::SnapshotsPlanRestore { id } => {
                 let target = self.resolve_snapshot(id)?;
@@ -2227,6 +2234,21 @@ impl App {
         }
         let requested = rect;
         if let Some(tool) = tool {
+            if self.held_scripts_wait() {
+                // A new tool fence turns 小工具 on, and the switch starts every script.
+                let held = self.state.config.held_scripts();
+                return Err(IpcError::new(
+                    ErrorCode::Unsupported,
+                    format!(
+                        "小工具 is off and {} script(s) of an imported configuration wait for it: {}",
+                        held.len(),
+                        held.join(", ")
+                    ),
+                )
+                .hint(
+                    "Read the scripts; `pecofence-cli settings set tools.enabled true` starts them and allows new tool fences",
+                ));
+            }
             let rect = rect.map(rect_to_win);
             let id = self
                 .create_tool_fence(tool, title, rect, cx, cy)

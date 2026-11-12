@@ -113,6 +113,17 @@ impl App {
         if !self.fence_room_or_notice() {
             return None;
         }
+        if self.held_scripts_wait() {
+            // Switching 小工具 on for this fence would start the scripts of an imported
+            // configuration: the user turns the switch himself, on the page that lists them.
+            tracing::info!(
+                ?kind,
+                "new tool fence refused: imported scripts wait for 小工具"
+            );
+            self.open_settings_page("tools", None);
+            self.settings_error(super::settings::scripts_held_text());
+            return None;
+        }
         self.ensure_tool_on(kind);
         let (w, h) = match kind {
             FenceTool::Note => (280.0, 240.0),
@@ -188,6 +199,12 @@ impl App {
             running: self.script_runs.running.contains_key(&id)
                 || self.script_runs.streams.contains_key(&id),
         })
+    }
+
+    /// 小工具 is off and scripts of an imported configuration wait for the user to turn it on
+    /// (see `ScriptSpec::held`): nothing else may turn it on.
+    pub(super) fn held_scripts_wait(&self) -> bool {
+        !self.state.config.settings.tools.enabled && !self.state.config.held_scripts().is_empty()
     }
 
     /// Switches 小工具 on in the settings when it is off (a new tool fence would have no
@@ -444,6 +461,11 @@ impl App {
             return;
         };
         if spec.path.is_empty() || !self.state.config.settings.tools.enabled {
+            return;
+        }
+        if spec.held {
+            // From an imported configuration and not allowed yet, whatever the switch says.
+            tracing::debug!(%id, "script fence not started: held since the import");
             return;
         }
         let path = std::path::PathBuf::from(&spec.path);
@@ -970,6 +992,8 @@ impl App {
             return false;
         }
         spec.path = path.to_string();
+        // A script the user chose himself is his own.
+        spec.held = false;
         tracing::info!(%id, "script fence script changed");
         self.state.mark_dirty();
         self.schedule_save();

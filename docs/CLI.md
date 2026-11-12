@@ -383,7 +383,11 @@ part in tabs (`fence merge` refuses them). Properties about icons (`iconSize`, `
 An imported configuration (`config import`) with script fences switches `tools.enabled` off until
 the user turns it on again, and the reply says how many scripts wait (`scriptsHeld`): read them
 before switching it on when the file came from someone else. A snapshot that came with the file
-brings no script paths. A backup restore keeps the switch.
+brings no script paths. A backup restore keeps the switch. While such scripts wait, only
+`settings set tools.enabled true` (or the switch on the settings page) starts them:
+`fence create --tool` and `--script` fail with `unsupported` and name the scripts, and a
+snapshot or backup that brings them back later switches `tools.enabled` off again
+(`scriptsHeld` in the reply of `snapshot restore`).
 
 `tools.dialogJump` (Settings › 速览与搜索 › 文件对话框 › 「对话框跳转」, `false` by default) has no fence: an Open,
 Save As or Select Folder dialog of any program jumps to the folder of the File Explorer window or

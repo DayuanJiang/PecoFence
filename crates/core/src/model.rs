@@ -241,7 +241,8 @@ pub struct Settings {
 #[serde(rename_all = "camelCase")]
 pub struct ToolSettings {
     /// 小工具: note, clock and script fences. Off hides them all and stops every script; an
-    /// imported configuration with script fences switches it off until the user turns it on.
+    /// imported configuration with script fences switches it off until the user turns it on
+    /// (see `ScriptSpec::held`).
     #[serde(default = "default_true")]
     pub enabled: bool,
     /// Clock fences show the seconds too (and redraw every second instead of every minute);
@@ -283,6 +284,11 @@ pub struct ScriptSpec {
     #[serde(default = "ScriptSpec::default_interval")]
     #[cfg_attr(feature = "schema", schemars(range(min = 1, max = 1440)))]
     pub interval_minutes: u32,
+    /// The script came with an imported configuration and the user has not turned 小工具 on
+    /// for it yet: it never runs while this is set, whatever the switch says. It stays set in
+    /// snapshots and backups that keep the script.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub held: bool,
 }
 
 impl ScriptSpec {
@@ -296,6 +302,7 @@ impl ScriptSpec {
         Self {
             path: path.to_string(),
             interval_minutes: Self::default_interval(),
+            held: false,
         }
     }
 }
@@ -2015,6 +2022,55 @@ impl Config {
         before - self.notes.len() - self.scripts.len()
     }
 
+    /// Marks every script of this configuration as held (see [`ScriptSpec::held`]): it is a
+    /// file from someone else about to be imported. Returns how many have a path to run.
+    pub fn hold_scripts(&mut self) -> usize {
+        let mut held = 0;
+        for spec in self.scripts.values_mut().filter(|s| !s.path.is_empty()) {
+            spec.held = true;
+            held += 1;
+        }
+        held
+    }
+
+    /// The paths of the held scripts whose fence is in a layout: what would start once the
+    /// user allows them. Sorted, so a notice lists them in one order.
+    pub fn held_scripts(&self) -> Vec<&str> {
+        let mut paths: Vec<&str> = self
+            .layouts
+            .iter()
+            .flat_map(|l| l.fences.iter())
+            .filter(|f| f.tool == Some(FenceTool::Script))
+            .filter_map(|f| self.scripts.get(&f.id))
+            .filter(|s| s.held && !s.path.is_empty())
+            .map(|s| s.path.as_str())
+            .collect();
+        paths.sort_unstable();
+        paths.dedup();
+        paths
+    }
+
+    /// The user turned 小工具 on knowingly: the held scripts whose fence is in a layout may
+    /// run from now on. Those only a snapshot still has stay held. Returns how many were let go.
+    pub fn allow_held_scripts(&mut self) -> usize {
+        let shown: HashSet<FenceId> = self
+            .layouts
+            .iter()
+            .flat_map(|l| l.fences.iter())
+            .map(|f| f.id)
+            .collect();
+        let mut allowed = 0;
+        for (_, spec) in self
+            .scripts
+            .iter_mut()
+            .filter(|(id, s)| s.held && shown.contains(id))
+        {
+            spec.held = false;
+            allowed += 1;
+        }
+        allowed
+    }
+
     /// Makes `index` the layout shown last; false when it already was.
     pub fn mark_shown(&mut self, index: usize) -> bool {
         let top = self.layouts.iter().map(|l| l.shown).max().unwrap_or(0);
@@ -2568,6 +2624,67 @@ mod tests {
         c.snapshots.clear();
         assert_eq!(c.prune_notes(), 1);
         assert!(c.notes.is_empty());
+    }
+
+    #[test]
+    fn imported_scripts_stay_held_until_the_user_allows_those_on_show() {
+        let script_fence = |title: &str| {
+            let mut f = Fence::new(title, FenceKind::Virtual, note_geo());
+            f.tool = Some(FenceTool::Script);
+            f
+        };
+        let (shown, in_snapshot, unset) = (script_fence("a"), script_fence("b"), script_fence("c"));
+        let mut c = Config::default();
+        c.scripts
+            .insert(shown.id, ScriptSpec::new("C:/s/shown.ps1"));
+        c.scripts
+            .insert(in_snapshot.id, ScriptSpec::new("C:/s/snap.cmd"));
+        c.scripts.insert(unset.id, ScriptSpec::new(""));
+        c.layouts.push(Layout {
+            fingerprint: Vec::new(),
+            fences: vec![shown.clone(), unset.clone()],
+            shown: 1,
+        });
+        c.snapshots.push(Snapshot {
+            id: Uuid::new_v4(),
+            name: "s".into(),
+            ts: 0,
+            layouts: vec![Layout {
+                fingerprint: Vec::new(),
+                fences: vec![in_snapshot.clone()],
+                shown: 1,
+            }],
+            notes: Default::default(),
+            scripts: Default::default(),
+        });
+        assert!(c.held_scripts().is_empty());
+        // The file is imported: every script with a path is held, the fence without one has
+        // nothing to hold.
+        assert_eq!(c.hold_scripts(), 2);
+        assert!(c.scripts[&shown.id].held && c.scripts[&in_snapshot.id].held);
+        assert!(!c.scripts[&unset.id].held);
+        assert_eq!(c.held_scripts(), ["C:/s/shown.ps1"]);
+        // The mark is written to the file (snapshots and backups keep it) and only when set.
+        let json = serde_json::to_value(&c.scripts[&shown.id]).unwrap();
+        assert_eq!(json["held"], true);
+        assert!(
+            serde_json::to_value(ScriptSpec::new("x"))
+                .unwrap()
+                .get("held")
+                .is_none()
+        );
+        let back: ScriptSpec = serde_json::from_value(json).unwrap();
+        assert!(back.held);
+        // The user turns 小工具 on: the script on show may run, the one only a snapshot has
+        // stays held for the day that snapshot is restored.
+        assert_eq!(c.allow_held_scripts(), 1);
+        assert!(!c.scripts[&shown.id].held && c.scripts[&in_snapshot.id].held);
+        assert!(c.held_scripts().is_empty());
+        // That snapshot restored: its script is on show and still held.
+        c.layouts[0].fences.push(in_snapshot.clone());
+        assert_eq!(c.held_scripts(), ["C:/s/snap.cmd"]);
+        assert_eq!(c.allow_held_scripts(), 1);
+        assert_eq!(c.allow_held_scripts(), 0);
     }
 
     #[test]

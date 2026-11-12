@@ -305,7 +305,9 @@ pub enum Method {
     SnapshotsSave { name: String },
     /// `id` = snapshot id (or unique prefix) or name. A snapshot of the current layout is
     /// taken first unless the list is full of user snapshots (then `warning` says so and
-    /// `snapshotId` is absent). Result: `{changed, restored: uuid, snapshotId?}`.
+    /// `snapshotId` is absent). Result: `{changed, restored: uuid, snapshotId?, scriptsHeld?}`
+    /// (`scriptsHeld`: how many scripts of an imported file the snapshot brought back; they
+    /// wait until `tools.enabled` is switched on, and it is off again).
     #[serde(rename = "snapshots.restore")]
     SnapshotsRestore { id: String },
     /// What `snapshots.restore` with the same `id` would change, without restoring (the CLI's

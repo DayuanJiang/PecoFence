@@ -164,6 +164,15 @@ pub(super) fn config_locked_text() -> &'static str {
     )
 }
 
+/// What the user reads while scripts of an imported configuration wait for the 小工具 switch
+/// (after the import, after a snapshot or backup brought them back, when a new tool fence
+/// would have turned the switch on). The 小工具 page lists the scripts on the switch's card.
+pub(super) fn scripts_held_text() -> &'static str {
+    pecofence_core::i18n::text(
+        "已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在“小工具”页打开“小工具”开关。",
+    )
+}
+
 /// The names of the top-level settings that differ (`hideRealIcons,quickHide`): field names of
 /// `Settings`, never their values (a path, a hotkey).
 fn changed_settings(old: &pecofence_core::Settings, new: &pecofence_core::Settings) -> String {
@@ -214,8 +223,9 @@ impl App {
             0
         };
         // The scripts the file itself brings (the user's own stay in the configuration for the
-        // undo snapshot and are counted apart).
-        let file_scripts = cfg.scripts.values().filter(|s| !s.path.is_empty()).count();
+        // undo snapshot and are counted apart). Each is marked as held: the mark stays with the
+        // script in snapshots and backups, and only the user's own turn of 小工具 takes it off.
+        let file_scripts = if imported { cfg.hold_scripts() } else { 0 };
         self.state.replace_config(cfg);
         if let Some(desk) = shell::user_desktop() {
             self.state.migrate_desktop_path(&desk);
@@ -226,7 +236,9 @@ impl App {
         // An imported file may come from someone else: its script fences do not run until the
         // user switches 小工具 on (a backup is the user's own and keeps the switch). A file that
         // has the switch off already gets the same words: its scripts start with the switch too.
-        let scripts_held = imported && file_scripts > 0;
+        // A backup made while imported scripts waited brings them back held: the same goes.
+        let file_scripts = file_scripts.max(self.state.config.held_scripts().len());
+        let scripts_held = file_scripts > 0;
         if scripts_held || snapshot_scripts > 0 {
             tracing::info!(
                 scripts = file_scripts,
@@ -260,9 +272,7 @@ impl App {
         self.state.save_and_wait("import");
         self.push_settings_state();
         if scripts_held {
-            self.settings_toast(pecofence_core::i18n::text(
-                "已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在“小工具”页打开“小工具”开关。",
-            ));
+            self.settings_toast(scripts_held_text());
             file_scripts
         } else {
             self.settings_toast(source.done());
@@ -419,10 +429,30 @@ impl App {
         }
     }
 
+    /// A snapshot or a backup put fences back. When scripts that came with an imported
+    /// configuration and were never allowed are on show now, 小工具 goes off as after the
+    /// import, until the user turns it on. Returns how many scripts wait.
+    pub(super) fn hold_switch_for_held_scripts(&mut self, why: &'static str) -> usize {
+        let held = self.state.config.held_scripts().len();
+        if held > 0 && self.state.config.settings.tools.enabled {
+            tracing::info!(
+                scripts = held,
+                why,
+                "held scripts are back on show: 小工具 off"
+            );
+            let mut settings = self.state.config.settings.clone();
+            settings.tools.enabled = false;
+            self.apply_settings(settings, "held scripts");
+        }
+        held
+    }
+
     /// After the page restored a snapshot's layouts (or took the restore back): the windows
-    /// follow, and the page lists the snapshots as they are now.
-    fn show_restored_layout(&mut self) {
+    /// follow, and the page lists the snapshots as they are now. Returns how many scripts of
+    /// an imported configuration the restore brought back (they wait for the 小工具 switch).
+    fn show_restored_layout(&mut self) -> usize {
         self.end_peek_now();
+        let held = self.hold_switch_for_held_scripts("snapshot restored on the page");
         // Files that came to the desktop after the snapshot are in none of its fences: they
         // are filed now, not at the next desktop change.
         self.sync_desktop_if_available("snapshot restored");
@@ -432,6 +462,7 @@ impl App {
         self.refresh_portals();
         self.schedule_save();
         self.push_settings_state();
+        held
     }
 
     pub(super) fn restore_from_file(&mut self, path: &std::path::Path, source: ConfigSource) {
@@ -681,6 +712,9 @@ impl App {
             "peekHotkey": self.peek_hotkey_json(),
             "windowsDesktopHotkey": self.windows_desktop_hotkey_json(),
             "everything": self.everything_json(),
+            // The scripts of an imported configuration that start once 小工具 is turned on:
+            // the switch's card lists them.
+            "heldScripts": self.state.config.held_scripts(),
         })
         .to_string()
     }
@@ -853,7 +887,7 @@ impl App {
         }
     }
 
-    fn settings_error(&self, text: &str) {
+    pub(super) fn settings_error(&self, text: &str) {
         if let Some(h) = &self.settings {
             h.post_json(
                 &serde_json::json!({ "type": "toast", "text": text, "error": true }).to_string(),
@@ -1149,11 +1183,14 @@ impl App {
                             id,
                             pecofence_core::i18n::text("恢复快照前"),
                         );
-                        self.show_restored_layout();
+                        let held = self.show_restored_layout();
                         // The notice offers 撤销 for a few seconds, as after a delete: the
                         // layout from before is in the snapshot just taken.
                         self.settings_kept.restore_undo = before;
-                        if let Some(h) = &self.settings {
+                        if held > 0 {
+                            // The snapshot brought scripts of an imported configuration back.
+                            self.settings_error(scripts_held_text());
+                        } else if let Some(h) = &self.settings {
                             h.post_json(
                                 &serde_json::json!({
                                     "type": "toast",
@@ -1173,7 +1210,9 @@ impl App {
                     {
                         self.state.delete_snapshot(before);
                         tracing::info!("snapshot restore undone from the page's notice");
-                        self.show_restored_layout();
+                        if self.show_restored_layout() > 0 {
+                            self.settings_error(scripts_held_text());
+                        }
                     }
                 }
                 Some("deleteSnapshot") => {
@@ -1511,6 +1550,19 @@ impl App {
             new.hide_inbox_when_icons_shown != old.hide_inbox_when_icons_shown;
         // A tool switched on brings its fences back; switched off, they go.
         let tools_changed = new.tools != old.tools;
+        // The user's own turn of the 小工具 switch (on the page or by the command line) is the
+        // yes the scripts of an imported configuration wait for. A switch turned for a new tool
+        // fence never gets here with them waiting (`create_tool_fence`).
+        if new.tools.enabled && !old.tools.enabled && matches!(by, "settings" | "cli") {
+            let allowed = self.state.config.allow_held_scripts();
+            if allowed > 0 {
+                tracing::info!(
+                    allowed,
+                    by,
+                    "held scripts allowed: the user turned 小工具 on"
+                );
+            }
+        }
         let per_desktop_changed = new.per_desktop_fences != old.per_desktop_fences;
         if per_desktop_changed {
             tracing::info!(
