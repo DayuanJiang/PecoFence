@@ -107,6 +107,7 @@
 - Windows 10 1809: no empty boxes in place of icons. 「退出 PecoFence」 in the tray menu and five icons in Settings (颜色模式, 自动隐藏滚动条, 为空时自动隐藏, 自由摆放 and the 压缩包 rule template) use glyphs the older icon font of that Windows has; the icon of 为空时自动隐藏 was an empty box on every Windows 10.
 - Windows 10 1809: deleting a folder that a fence shows really removes it, and a folder made again under the same name is back in its fence within about a second. PecoFence kept the deleted folder open for up to a minute; on that Windows the folder then stayed on disk unusable, a new folder of the same name could not be made, and the fence stayed empty for up to another minute (GitHub #219).
 - The installer runs on Windows 10 1809 and later, LTSC 2019 and Windows Server 2019 included (GitHub #219). It stopped on everything before Windows 10 2004 with 「此程序不支持当前计算机运行的 Windows 版本」, although the app works there (tested on build 17763, with the fixes above). The Microsoft Store edition still needs Windows 10 2004.
+- Windows 10 1809 to 1909: the Settings window has a dark title bar in dark mode; it stayed white over the dark page.
 
 ## 0.3.3
 

@@ -76,9 +76,35 @@ pub fn set_caption_color(hwnd: HWND, colorref: u32) -> Result<()> {
     set_attribute(hwnd, DWMWA_CAPTION_COLOR, &colorref)
 }
 
+/// The first build that knows the dark title bar attribute under its number of today (20), and
+/// that repaints a title bar as soon as the attribute changes: Windows 10 2004's.
+const DARK_TITLE_BAR_BUILD: u32 = 18985;
+
+/// A dark title bar and frame. The builds before Windows 10 2004 (1809 to 1909) know the
+/// attribute as 19, and the settings window kept a white title bar over its dark page there
+/// (#219).
 pub fn set_immersive_dark_mode(hwnd: HWND, dark: bool) -> Result<()> {
+    const DWMWA_USE_IMMERSIVE_DARK_MODE_OLD: i32 = 19;
     let value: i32 = dark as i32;
-    set_attribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &value)
+    let attribute = if crate::desktop::os_build() < DARK_TITLE_BAR_BUILD {
+        DWMWA_USE_IMMERSIVE_DARK_MODE_OLD
+    } else {
+        DWMWA_USE_IMMERSIVE_DARK_MODE
+    };
+    set_attribute(hwnd, attribute, &value)
+}
+
+/// For a window on screen whose mode just changed ([`set_immersive_dark_mode`]): the builds
+/// before Windows 10 2004 paint the title bar in its new colour only when the window is
+/// activated or deactivated next (measured on build 17763: a frame change or a frame redraw
+/// does not do it). The frame is told both, ending with its real state.
+pub fn repaint_title_bar(hwnd: HWND) {
+    if crate::desktop::os_build() >= DARK_TITLE_BAR_BUILD {
+        return;
+    }
+    let active = crate::desktop::foreground_window() == hwnd;
+    crate::window::send_message(hwnd, WM_NCACTIVATE as u32, usize::from(!active), 0);
+    crate::window::send_message(hwnd, WM_NCACTIVATE as u32, usize::from(active), 0);
 }
 
 /// Disables DWM's minimize/restore transition animations for this window.

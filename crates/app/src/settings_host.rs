@@ -489,6 +489,7 @@ impl SettingsHost {
     /// the same for both materials: an opaque window has nothing for Liquid Glass to refract.
     pub fn set_theme(&self, mode: ThemeMode, _liquid_glass: bool) {
         let _ = dwm::set_immersive_dark_mode(self.window.hwnd(), matches!(mode, ThemeMode::Dark));
+        dwm::repaint_title_bar(self.window.hwnd());
         apply_caption(self.window.hwnd(), mode, self.mica);
         if let Some(c) = self.state.borrow().controller.as_ref() {
             let _ = c.set_default_background_color(page_background(mode, self.mica));

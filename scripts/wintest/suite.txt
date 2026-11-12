@@ -159,3 +159,4 @@ owner-drop-effect  3   manual release owner-small.ps1                --var Part=
 # of that build (WINTEST_CONF with a Server 2019 box; each file's header says why).
 tray-menu-keys     1   manual release tray-menu-keys.ps1
 icon-font-gaps     1   manual debug   icon-font-gaps.ps1
+dark-title-bar     1   manual release dark-title-bar.ps1
