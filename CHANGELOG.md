@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Settings: an open drop-down list is never wider than the window. A fence with a very long name (up to 120 characters) made the lists of 栅栏 and of a rule's 「目标栅栏」 wider than the window, shifted to the left and cut at the right; the name now wraps inside the list.
 - Settings › 整理规则: with no fence at all, the 「目标栅栏」 list of a rule is greyed out. It opened as an empty list.
 - Settings: a description that wraps no longer leaves one character alone on its last line (整理规则 read 「…都不符合的放进“桌面”栅」 and then 「栏」 at the window's default size; in Japanese two descriptions on 常规 ended with a two-character line).
 - 新建智能栅栏: the line that says how many files were found breaks into two lines of about one length when it needs two. In a narrow editor window it read 「填好条件后显示找到几个文」 with 「件」 alone on the second line, and in German and Russian the last word stood alone at the window's default size.

@@ -256,7 +256,10 @@
       scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
     ::picker(select) { transition: opacity var(--faster) linear, transform var(--fast) var(--decelerate); }
     @starting-style { ::picker(select):popover-open { opacity: 0; transform: translateY(-8px); } }
-    select option { display: flex; align-items: center; min-height: 36px; padding: 0 11px; border-radius: 4px; background: transparent; white-space: nowrap; cursor: default; }
+    /* The open list is never wider than the window: a choice too long for it (a fence name can
+       have 120 characters) wraps inside the list instead of running off the window's edge. */
+    ::picker(select) { max-width: calc(100vw - 16px); }
+    select option { display: flex; align-items: center; min-height: 36px; padding: 6px 11px; border-radius: 4px; background: transparent; white-space: normal; overflow-wrap: anywhere; cursor: default; }
     select option::checkmark { display: none; }
     select option:hover, select option:focus { background: var(--subtle); }
     select option:active { background: var(--subtle-pressed); }

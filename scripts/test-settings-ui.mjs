@@ -3355,6 +3355,7 @@ async function runTests() {
     assert(box.width <= 460, 'A long fence name makes the picker ' + Math.round(box.width) + ' px wide');
     assert(count.getBoundingClientRect().top < box.bottom, 'The number of fences wrapped under the picker');
     assert(!w.CSS.supports('appearance: base-select') || w.getComputedStyle(sel).overflowClipMargin.includes('content-box'), 'The name runs under the arrow of the list: ' + w.getComputedStyle(sel).overflowClipMargin);
+    assert(!w.CSS.supports('appearance: base-select') || w.getComputedStyle(sel.options[0]).whiteSpace === 'normal', 'A name longer than the window cannot wrap in the open list');
     w.testState.fences = []; w.testRefresh(); await settle();
     assert(!sel.offsetParent && !count.offsetParent, 'With no fence the empty picker is still there');
     assert(doc.getElementById('fenceEmpty').offsetParent, 'With no fence nothing says how to make one');
