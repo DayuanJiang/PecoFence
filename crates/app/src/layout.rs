@@ -811,7 +811,10 @@ impl DetailColumns {
         };
         let want_size = include(visible[2], size_w);
         let want_date = include(visible[0], date_w);
-        let want_type = include(visible[1], type_w);
+        // 类型 goes first: it does not stand in while the 修改日期 the user shows has no room.
+        // It did for the 28 DIPs between the two fits, so a fence dragged wider showed
+        // 名称 类型 大小, then 修改日期 in the place of 类型, then all three.
+        let want_type = (want_date || !visible[0]) && include(visible[1], type_w);
         if want_size {
             size = Some((right - size_w, size_w));
             right -= size_w + Self::GUTTER;
@@ -2287,6 +2290,33 @@ mod tests {
         // Widths clamp so a dragged column can never eat the whole fence.
         let tiny = DetailColumns::for_width_with(600.0, [1.0, 1.0, 1.0], [true; 3]);
         assert_eq!(tiny.size.unwrap().1, DetailColumns::MIN_COL_W);
+    }
+
+    /// A fence dragged wider gets 大小, then 修改日期, then 类型: 类型 never shows without the
+    /// 修改日期 the user has not hidden (it stood in for it between 328 and 355 DIPs).
+    #[test]
+    fn the_type_column_never_stands_in_for_the_date_column() {
+        let mut shown = Vec::new();
+        for width in 150..520 {
+            let c = DetailColumns::for_width(width as f32);
+            assert!(
+                c.type_.is_none() || c.date.is_some(),
+                "width {width}: 类型 without 修改日期"
+            );
+            let now = (c.size.is_some(), c.date.is_some(), c.type_.is_some());
+            if shown.last() != Some(&now) {
+                shown.push(now);
+            }
+        }
+        assert_eq!(
+            shown,
+            vec![
+                (false, false, false),
+                (true, false, false),
+                (true, true, false),
+                (true, true, true)
+            ]
+        );
     }
 
     /// The rows' icons start at the title's left edge, and a fence shows the columns it showed
