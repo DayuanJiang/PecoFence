@@ -192,10 +192,10 @@ function UpPartS() {
     # The text field is there (A far from the desktop) and the box around it is not (B still the desktop).
     if ($f.T -lt $t1 -and [Math]::Abs($a - $a0) -gt 40 -and [Math]::Abs($b - $b0) -lt 15) { $bare++; $bareAt += $f.T }
     if ($f.T -lt $t1 -and [Math]::Abs($b - $b0) -gt 15 -and [Math]::Abs($b - $b1) -gt 15) { $in++ }
-    # Fading out: brighter than the desktop there is under the dimmer at this moment, and no
-    # longer the box's full colour.
+    # Fading out: neither the desktop as it is under the dimmer at this moment nor the box's
+    # full colour any more (a light box is brighter than the desktop, a dark one darker).
     $desk = $bEnd * $c / $cEnd
-    if ($f.T -ge $t2 -and ($b - $desk) -gt 20 -and ($b1 - $b) -gt 15) { $out++ }
+    if ($f.T -ge $t2 -and [Math]::Abs($b - $desk) -gt 20 -and [Math]::Abs($b1 - $b) -gt 15) { $out++ }
   }
   Log "search box frames (ms:field/padding/desktop): $($series -join ' ')"
   $row = "desktop field/padding=$a0/$b0, box=$a1/$b1; frames with the text field alone: $bare ($(($bareAt | Select-Object -First 1)) to $(($bareAt | Select-Object -Last 1)) ms); frames half faded: in $in, out $out"
