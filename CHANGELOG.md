@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- 新建智能栅栏: the line that says how many files were found breaks into two lines of about one length when it needs two. In a narrow editor window it read 「填好条件后显示找到几个文」 with 「件」 alone on the second line, and in German and Russian the last word stood alone at the window's default size.
 - Settings: the notice at the bottom of the page (「已保存快照」, 「撤销」) comes in decelerating and leaves accelerating, as everything that enters and leaves on the fences does. It moved on the browser's default curve in both directions.
 - Settings › 关于: when 「检查更新」 fails, its card needs a second line and 「打开下载页」, and everything under it jumped down by 10 px. The cards under it now glide down (167 ms).
 - Settings: empty lists say what to do, and the fence picker copes with no fence and with a long name. 「尚未添加规则」 and 「尚无快照」 now have a second line (pick a kind under 「快速添加」 or write a rule under 「新建规则」; 「保存快照」 keeps the layout as it is now). With no fence left, 栅栏 showed an empty drop-down list beside 「0 个栅栏」: the picker is gone there and the card that says how to make a fence stands alone. A fence with a very long name made the picker as wide as the page, pushed the number of fences onto a second line and ran its text under the list's arrow: the picker is now at most 460 px wide and the name ends before the arrow.

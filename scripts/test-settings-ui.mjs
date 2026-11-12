@@ -3389,6 +3389,24 @@ async function runTests() {
       assert(has(wanted), 'No rule for ' + wanted);
     doc = await reset();
   });
+  await test('Smart fence editor: the line that says how many files were found leaves no character alone on its second line', async () => {
+    const was = frame.style.width;
+    try {
+      frame.style.width = '640px';
+      doc = await openEditor('fence=new');
+      const text = [...doc.querySelectorAll('#seWindow .se-count > div *')].flatMap(el => [...el.childNodes]).find(n => n.nodeType === 3 && n.data.trim().length > 6);
+      assert(text, 'The count shows no text');
+      const range = doc.createRange(), lines = [];
+      for (let i = 0, last = null; i < text.length; i++) {
+        range.setStart(text, i); range.setEnd(text, i + 1);
+        const top = Math.round(range.getBoundingClientRect().top);
+        if (top !== last) { lines.push(''); last = top; }
+        lines[lines.length - 1] += text.data[i];
+      }
+      assert(lines.length === 1 || lines.at(-1).length >= 3, 'In a 640 px window the text breaks as: ' + lines.join(' / '));
+    } finally { frame.style.width = was; }
+    doc = await reset();
+  });
   await test('The notice at the bottom comes in decelerating and leaves accelerating', async () => {
     doc = await reset();
     assert(await motionReady(), 'The page never allowed transitions');

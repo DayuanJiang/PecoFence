@@ -582,7 +582,8 @@
   .se-msg:empty { display: none; }
   .se-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
   .se-count { flex: 1 1 180px; display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .se-count > div { display: flex; flex-direction: column; min-width: 0; }
+  /* A text that needs two lines breaks into two of about one length (no last word alone). */
+  .se-count > div { display: flex; flex-direction: column; min-width: 0; text-wrap: balance; }
   .se-count .ic { color: var(--accent); }
   .se-count b { font-weight: 600; }
   .se-count .s { color: var(--text2); font-size: 12px; }
