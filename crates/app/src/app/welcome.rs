@@ -590,8 +590,7 @@ impl App {
     /// A name box may have closed (`Command::RenameFence`, or `Command::RedrawAll` for Esc):
     /// the roll-up tip that waited for it shows.
     pub(super) fn roll_tip_after_name_box(&mut self) {
-        if self.roll_tip_waits == RollTipWait::NameBox && crate::rename::active_target().is_none()
-        {
+        if self.roll_tip_waits == RollTipWait::NameBox && crate::rename::active_target().is_none() {
             self.roll_tip_waits = RollTipWait::No;
             tracing::debug!("roll tip: the name box of the new fence closed");
             self.offer_roll_tip();
