@@ -174,7 +174,7 @@ impl FenceViewState {
             || self.drop_insert.is_some()
             || self.drop_tab.is_some()
             || self.behavior.floating.get()
-            || self.behavior.menu_open.get();
+            || self.menu_open;
         let target = if self.bare() || engaged {
             1.0
         } else {

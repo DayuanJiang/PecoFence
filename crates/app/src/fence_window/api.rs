@@ -235,6 +235,7 @@ impl FenceWindow {
             idle_layer,
             idle_fade: Tween::at(1.0, Instant::now()),
             idle_opacity_applied: 1.0,
+            menu_open: false,
             chrome: ctx.chrome.clone(),
             icons: ctx.icons.clone(),
             bitmaps: ctx.bitmaps.clone(),
@@ -2690,7 +2691,7 @@ impl FenceWindow {
         changes
     }
 
-    /// Popup menus suspend the App's normal frame dispatch, but keep their fences readable.
+    /// 闲置时的不透明度 changed: the fence goes to what it asks for now.
     pub fn refresh_idle_opacity(&self) {
         self.with_view(|v| {
             v.sync_idle_fade(Instant::now());

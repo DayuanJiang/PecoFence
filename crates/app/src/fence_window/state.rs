@@ -342,6 +342,9 @@ pub struct FenceViewState {
     pub(super) idle_layer: ContainerVisual,
     pub(super) idle_fade: Tween,
     pub(super) idle_opacity_applied: f32,
+    /// A popup menu of this fence is open (WM_ENTERMENULOOP to WM_EXITMENULOOP): the fence
+    /// keeps its full strength under its own menu, the other fences stay as they are.
+    pub(super) menu_open: bool,
     pub(super) chrome: Rc<FenceChrome>,
     pub(super) icons: Rc<RefCell<IconCache>>,
     pub(super) bitmaps: Rc<RefCell<BitmapCache>>,
