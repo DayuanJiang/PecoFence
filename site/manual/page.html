@@ -939,9 +939,9 @@
                 <tr><th scope="col">写法</th><th scope="col">作用</th></tr>
               </thead>
               <tbody>
-                <tr><td><code>href=网址</code></td><td>点一下，用浏览器打开这个网址</td></tr>
-                <tr><td><code>open=路径</code></td><td>点一下，打开这个文件或文件夹。没写盘符的路径，从脚本所在的文件夹算起</td></tr>
-                <tr><td><code>run=程序 param1=参数</code></td><td>点一下，不弹窗口运行这个程序。参数依次写成 <code>param1=</code>、<code>param2=</code>…</td></tr>
+                <tr><td><code>href=网址</code></td><td>点一下，用浏览器打开这个网址。网址要以 <code>http://</code> 或 <code>https://</code> 开头</td></tr>
+                <tr><td><code>open=路径</code></td><td>点一下，打开这个文件夹，或者这台电脑上的普通文档，比如文本、图片、PDF；也可以写 <code>http://</code> 或 <code>https://</code> 开头的网址。没写盘符的路径，从脚本所在的文件夹算起</td></tr>
+                <tr><td><code>run=程序 param1=参数</code></td><td>点一下，不弹窗口运行这个程序。参数依次写成 <code>param1=</code>、<code>param2=</code>…。脚本开头要先写上允许启动程序的那一行，见下面的「让一行启动程序」</td></tr>
                 <tr><td><code>copy=文字</code></td><td>点一下，把这段文字复制下来</td></tr>
                 <tr><td><code>action=值</code></td><td>点一下，带着这个值再运行一次脚本，见下一段</td></tr>
                 <tr><td><code>refresh=true</code></td><td>点完以后，脚本再运行一次。可以和上面任何一个一起写</td></tr>
@@ -953,6 +953,23 @@
               </tbody>
             </table>
             <p>一行里写了好几个能点的参数时，只算第一个，顺序是 href、open、run、copy、action。这种写法来自 macOS 的菜单栏工具 SwiftBar。</p>
+          </section>
+
+          <section class="ws-sec">
+            <h3>让一行启动程序</h3>
+            <p>带 <code>run=</code> 的行，只有脚本自己允许时才会启动程序。在脚本开头的注释里写上这一行：</p>
+<pre class="ws-code"><code># &lt;pecofence.allow&gt;run&lt;/pecofence.allow&gt;
+"打开任务管理器 | run=taskmgr.exe"</code></pre>
+            <p>没有这一行时，点带 <code>run=</code> 的行什么也不会启动。<code>open=</code> 只打开文件夹、这台电脑上的普通文档和网址，程序、脚本、快捷方式和网络上的位置都打不开。<code>href=</code> 只打开 <code>http://</code> 和 <code>https://</code> 开头的网址。点了打不开的一行，鼠标旁边会出现提示，告诉你要加哪一行。<code>copy=</code>、<code>action=</code> 和 <code>refresh=true</code> 不需要这一行。在批处理文件里，把这一行写在 <code>::</code> 后面。</p>
+            <p>要这样做的原因：栅栏分不出一行里哪些是脚本自己写的参数，哪些是脚本从别处拿来、照样打印出来的文字。</p>
+          </section>
+
+          <section class="ws-sec">
+            <h3>打印别处拿来的文字之前，先清理</h3>
+            <p>从网络上取来的文字（标题、用户名、天气预报），或者别人能改的文件里的文字，可能带着竖线、引号和换行。照原样打印，它们会被当成这一行的参数，或者变成另外一行。打印之前先把这些字符换掉，链接用你信得过的部分拼出来：</p>
+<pre class="ws-code"><code>function Clean($text) { "$text" -replace '\|', '¦' -replace '[\r\n]+', ' ' -replace '["'']', [char]0x2019 }
+"#$([int]$i.number)  $(Clean $i.title) | href=https://github.com/$repo/issues/$([int]$i.number)"</code></pre>
+            <p>没写允许启动程序那一行的脚本也要清理：假冒的 <code>href=</code> 仍然能把这一下点击带到别的网页，假冒的 <code>copy=</code> 会把它自己的文字放进剪贴板。写了那一行的脚本，每一个这样的值都要清理，因为 PecoFence 对这种脚本不再拦任何参数。</p>
           </section>
 
           <section class="ws-sec">
@@ -997,7 +1014,7 @@ while ($true) {
 
           <section class="ws-sec">
             <h3>出错了怎么办</h3>
-            <p>脚本出错时，栅栏里显示错误信息的第一行，底部写明退出代码。找不到脚本文件、不能运行这种文件、没装运行它的程序（比如 Python），栅栏里也都会写明。改好脚本以后，右键栅栏选「立即运行」再试一次。</p>
+            <p>脚本出错时，栅栏的第一行用红字写出错在哪里（错误信息的第一行；Python 脚本是报错的最后一行），下面照常显示脚本出错前打印的内容，底部写明退出代码。找不到脚本文件、不能运行这种文件、没装运行它的程序（比如 Python），栅栏里也都会写明。改好脚本以后，右键栅栏选「立即运行」再试一次。</p>
           </section>
         </div>
 
@@ -1285,11 +1302,11 @@ while ($true) {
         </section>
         <section class="ap-q">
           <h3>桌面图标全不见了怎么办？</h3>
-          <p>PecoFence 运行时会隐藏 Windows 自己的桌面图标，图标都显示在栅栏里。要是退出后图标没回来，右键桌面，选<b>「查看」</b>→<b>「显示桌面图标」</b>就行。打开了<b>「关闭 PecoFence 时保持 Windows 桌面图标隐藏」</b>的话，卸载 Microsoft Store 版或删掉便携版以后，图标也要这样找回。PecoFence 开着时，也可以右键托盘图标，选<b>「修复桌面图标（图标消失时使用）」</b>。</p>
+          <p>PecoFence 运行时会隐藏 Windows 自己的桌面图标，图标都显示在栅栏里。要是退出后图标没回来，右键桌面，选<b>「查看」</b>→<b>「显示桌面图标」</b>就行。打开了<b>「退出 PecoFence 时保持 Windows 桌面图标隐藏」</b>的话，卸载 Microsoft Store 版或删掉便携版以后，图标也要这样找回。PecoFence 开着时，也可以右键托盘图标，选<b>「修复桌面图标（图标消失时使用）」</b>。</p>
         </section>
         <section class="ap-q">
           <h3>退出或卸载以后，桌面会变成什么样？</h3>
-          <p>退出后栅栏消失，桌面图标重新显示出来，和用 PecoFence 之前一样。如果在「设置」→「常规」里打开了<b>「关闭 PecoFence 时保持 Windows 桌面图标隐藏」</b>，退出后图标会保持隐藏，安装版卸载时会让它们重新显示；Microsoft Store 版和便携版不会，卸载或删除之前先关掉这个开关再退出。卸载只删除程序本身，桌面上的文件不受影响。安装版卸载后设置还留着，Microsoft Store 版会连设置一起删掉，需要的话先导出配置。便携版没有卸载程序：先在「设置」→「常规」关掉<b>「随 Windows 启动」</b>，退出后再删掉文件夹。</p>
+          <p>退出后栅栏消失，桌面图标重新显示出来，和用 PecoFence 之前一样。如果在「设置」→「常规」里打开了<b>「退出 PecoFence 时保持 Windows 桌面图标隐藏」</b>，退出后图标会保持隐藏，安装版卸载时会让它们重新显示；Microsoft Store 版和便携版不会，卸载或删除之前先关掉这个开关再退出。卸载只删除程序本身，桌面上的文件不受影响。安装版卸载后设置还留着，Microsoft Store 版会连设置一起删掉，需要的话先导出配置。便携版没有卸载程序：先在「设置」→「常规」关掉<b>「随 Windows 启动」</b>，退出后再删掉文件夹。</p>
         </section>
         <section class="ap-q">
           <h3>按 <kbd>Win</kbd>+<kbd>D</kbd> 时，栅栏会消失吗？</h3>
@@ -1329,7 +1346,7 @@ while ($true) {
         </section>
         <section class="ap-q">
           <h3>脚本栅栏会运行什么？</h3>
-          <p>脚本栅栏运行的是你自己选的脚本文件，每次最多 10 秒，不弹出窗口，脚本启动的程序也会跟着结束。脚本里写明要一直运行的，会一直运行到栅栏删掉、「小工具」开关关上或者 PecoFence 退出。点栅栏里的一行时，做的也是脚本写好的事：打开网页或文件，运行它写明的程序，或者再运行一次脚本。PecoFence 本身不为脚本栅栏联网。别人分享的配置里可能带着脚本栅栏，所以导入的配置里有脚本栅栏时，「小工具」开关会先关上并给出提示。你看过脚本、确认可信以后，再到「设置」→「小工具」把它打开。脚本的写法见<a href="#write-scripts">「自己写脚本栅栏」</a>。</p>
+          <p>脚本栅栏运行的是你自己选的脚本文件，每次最多 10 秒，不弹出窗口，脚本启动的程序也会跟着结束。脚本里写明要一直运行的，会一直运行到栅栏删掉、「小工具」开关关上或者 PecoFence 退出。点栅栏里的一行时，做的也是脚本写好的事：打开网页、文件夹或文档，复制文字，或者再运行一次脚本。要让一行启动程序，脚本开头必须写着允许启动程序的那一行，没有这一行，点了也不会启动。PecoFence 本身不为脚本栅栏联网。别人分享的配置里可能带着脚本栅栏，所以导入的配置里有脚本栅栏时，「小工具」开关会先关上并给出提示。你看过脚本、确认可信以后，再到「设置」→「小工具」把它打开。脚本的写法见<a href="#write-scripts">「自己写脚本栅栏」</a>。</p>
         </section>
         <section class="ap-q">
           <h3>怎么知道有没有新版本？</h3>
