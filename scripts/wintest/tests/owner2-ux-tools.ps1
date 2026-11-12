@@ -432,6 +432,20 @@ Start-Sleep -Milliseconds 1200
 $w = DumpOf '时钟'
 $wide = [UX]::Ink($w.l + 16, $w.t + 38, 200, 50, 50) -split ' '
 Check 'at 240 px the seconds are back' ([int]$wide[1] -ge 100) "the time's last text pixel is $($wide[1]) px from its left edge; time form: $(DumpVal $w 'clock_time')"
+# A 12 hour format without seconds: at 86 px the hours and minutes stay whole, the AM / PM goes.
+Pf settings set tools.clockSeconds false | Out-Null
+Set-Culture en-US
+[UX]::Intl()
+Pf fence move $cid --rect '100,100,86,150' | Out-Null
+Start-Sleep -Milliseconds 1500
+$w = DumpOf '时钟'
+$ink = [UX]::Ink($w.l + 16, $c[1] + 2, $w.r - $w.l - 20, 30, 50) -split ' '
+$gap = ($w.r - $w.l - 20) - 1 - [int]$ink[1]
+FCrop 'e4-narrow-clock-12h' $w
+Check 'in a 12 hour format the 86 px wide clock keeps its minutes whole' ([int]$ink[0] -gt 20 -and $gap -ge 8) "text pixels $($ink[0]), room right of the last one $gap px; time form: $(DumpVal $w 'clock_time')"
+Set-Culture zh-CN
+[UX]::Intl()
+Start-Sleep -Milliseconds 600
 Pf settings set tools.clockSeconds false | Out-Null
 Pf fence delete $cid | Out-Null
 

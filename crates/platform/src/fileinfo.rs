@@ -210,6 +210,38 @@ pub fn format_local_time(unix: i64) -> String {
     }
 }
 
+/// 时钟与日期: the local time now as hours and minutes alone, without seconds and without the
+/// AM / PM marker of a 12 hour format ("2:32" for "2:32 PM", "下午 2:32"): what a clock too
+/// narrow for the whole time still shows. Empty when Windows gives none.
+pub fn clock_time_plain() -> String {
+    let unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let Some(st) = local_system_time(unix) else {
+        return String::new();
+    };
+    const TIME_NOTIMEMARKER: u32 = 4;
+    let mut buf = [0u16; 64];
+    // SAFETY: the buffer is live and its length is passed; `st` is a valid SYSTEMTIME.
+    let n = unsafe {
+        GetTimeFormatEx(
+            PCWSTR::null(),
+            TIME_NOSECONDS as u32 | TIME_NOTIMEMARKER,
+            Some(&st),
+            PCWSTR::null(),
+            Some(PWSTR(buf.as_mut_ptr())),
+            buf.len() as i32,
+        )
+    };
+    if n > 1 {
+        String::from_utf16_lossy(&buf[..(n - 1) as usize])
+            .trim()
+            .to_string()
+    } else {
+        String::new()
+    }
+}
+
 /// 时钟与日期: the local time as Windows' region format writes it (12 or 24 hours; `seconds`
 /// adds them) and the region's long date, with the weekday after it when the long date has
 /// none ("2026年11月4日 星期三", "Wednesday, November 4, 2026"), in the user's time zone. The

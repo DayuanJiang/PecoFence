@@ -5076,26 +5076,38 @@ impl FenceChrome {
     }
 
     /// 时钟与日期: the time a clock area `width` × `height` DIPs has room for at the size
-    /// [`Self::clock_text_sizes`] gives: `time`, else `short` (the same time without its
-    /// seconds; empty when `time` has none), which a clock at its smallest size in a narrow
-    /// fence falls back to. The second value names the choice for the log.
+    /// [`Self::clock_text_sizes`] gives: `time`, else the first of `shorter` that fits (the
+    /// same time without its seconds, then without its AM / PM marker too; empty ones are
+    /// passed over), else the last of them. A clock at its smallest size in a narrow fence
+    /// falls back to these. The second value names the choice for the log.
     pub fn clock_time<'a>(
         &self,
         width: f32,
         height: f32,
         time: &'a str,
-        short: &'a str,
+        shorter: &[&'a str],
         date: &str,
     ) -> (&'a str, &'static str) {
-        let (time_dip, _) = self.clock_text_sizes(width, height, time, date);
         let w = (width - 2.0 * CLOCK_FIT_PAD_X).max(1.0);
-        let wide =
-            crate::text::measure_width(time, &self.clock_time_format) * time_dip / CLOCK_TIME_DIP;
-        if short.is_empty() || wide <= w {
-            (time, "full")
-        } else {
-            (short, "short")
+        let fits = |text: &str| {
+            let (time_dip, _) = self.clock_text_sizes(width, height, text, date);
+            crate::text::measure_width(text, &self.clock_time_format) * time_dip / CLOCK_TIME_DIP
+                <= w
+        };
+        if fits(time) {
+            return (time, "full");
         }
+        let mut last = None;
+        for text in shorter.iter().copied() {
+            if text.is_empty() || text == time {
+                continue;
+            }
+            last = Some(text);
+            if fits(text) {
+                break;
+            }
+        }
+        last.map_or((time, "full"), |text| (text, "short"))
     }
 
     /// 时钟与日期: the date line a clock area `width` × `height` DIPs has room for on one
@@ -5940,16 +5952,25 @@ mod tests {
             assert_eq!(got, (long, "long"), "content height {h}");
         }
         assert_eq!(
-            chrome.clock_time(86.0, 114.0, "5:09:59", "5:09", long),
+            chrome.clock_time(86.0, 114.0, "5:09:59", &["5:09", "5:09"], long),
             ("5:09", "short")
         );
         assert_eq!(
-            chrome.clock_time(240.0, 104.0, "5:09:59", "5:09", long),
+            chrome.clock_time(240.0, 104.0, "5:09:59", &["5:09", "5:09"], long),
             ("5:09:59", "full")
         );
-        // Without seconds there is nothing to leave out.
+        // A 12 hour format: first the seconds go, then the marker.
         assert_eq!(
-            chrome.clock_time(86.0, 114.0, "5:09", "", long),
+            chrome.clock_time(128.0, 114.0, "5:09:59 PM", &["5:09 PM", "5:09"], long),
+            ("5:09 PM", "short")
+        );
+        assert_eq!(
+            chrome.clock_time(86.0, 114.0, "5:09:59 PM", &["5:09 PM", "5:09"], long),
+            ("5:09", "short")
+        );
+        // Nothing shorter to show: the time stays.
+        assert_eq!(
+            chrome.clock_time(86.0, 114.0, "5:09", &["", "5:09"], long),
             ("5:09", "full")
         );
     }

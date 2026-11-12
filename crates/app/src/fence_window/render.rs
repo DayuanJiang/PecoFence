@@ -1380,12 +1380,14 @@ impl FenceViewState {
             return Ok(());
         };
         let (time, date, short_date) = pecofence_platform::fileinfo::clock_texts(seconds);
-        // The time without its seconds, for a clock too narrow for them at its smallest size.
+        // For a clock too narrow for the time at its smallest size: the time without its
+        // seconds, then without the AM / PM marker of a 12 hour format too.
         let time_short = if seconds {
             pecofence_platform::fileinfo::clock_texts(false).0
         } else {
             String::new()
         };
+        let time_plain = pecofence_platform::fileinfo::clock_time_plain();
         let theme = self
             .material_foreground()
             .with_label_color(self.behavior.label_color.get());
@@ -1399,7 +1401,8 @@ impl FenceViewState {
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
                 area = (wd, hd);
-                let (time, which) = chrome.clock_time(wd, hd, &time, &time_short, &date);
+                let shorter = [time_short.as_str(), time_plain.as_str()];
+                let (time, which) = chrome.clock_time(wd, hd, &time, &shorter, &date);
                 time_shown = which;
                 let (shown, which) = chrome.clock_date(wd, hd, time, &date, &short_date);
                 date_shown = which;
