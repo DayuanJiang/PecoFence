@@ -206,7 +206,7 @@ impl FenceViewState {
             let h = r.bottom - r.top;
             h.max(
                 self.height_target_px()
-                    .map_or(h, |t| t - self.plate_inset_px),
+                    .map_or(h, |t| t - self.plate_inset_px + self.square_top_px()),
             )
         });
         self.shadow.keep_upload(tallest);
@@ -226,6 +226,9 @@ impl FenceViewState {
         // Inside the app's frame: where the frame's batch is about to put the window.
         let mut r = self.behavior.frame_rect(self.hwnd);
         r.top = (r.top + self.plate_inset_px).min(r.bottom - 1);
+        // Square top corners at the screen edge: the shadow is cast by a shape that starts
+        // one radius higher, so it runs straight up to the edge beside the plate.
+        r.top -= self.square_top_px();
         r
     }
 

@@ -626,6 +626,7 @@ pub(super) fn on_size(h: &HandlerCtx, hwnd: HWND, _wparam: usize, lparam: isize)
         // A window created during early logon may have reported 96 DPI
         // before the display settled; re-read it on every size change.
         let dpi_changed = v.apply_dpi(monitors::dpi_for_window(hwnd));
+        v.note_edge_top();
         v.update_backdrop();
         let crop_done = Instant::now();
         let drawn = if v.height_animating() {
@@ -706,6 +707,7 @@ pub(super) fn on_move(
         } else {
             v.refresh_backdrop();
         }
+        v.sync_edge_top();
         v.update_shadow();
     }
     Some(0)

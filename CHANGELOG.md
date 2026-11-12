@@ -237,6 +237,7 @@
 - A rolled-up fence shows more of a long title. The count at its right (「3 项」) kept a box of 64 px for a text of 22 px, so the title ended 53 px before it. A left-aligned title now runs on to about 16 px before the count.
 - A change of 「不透明度」 or 「色调」 picks the text colour of the fence again. In dark mode over the Windows 11 wallpaper, a note switched from 「更厚实」 to 「全透明」 kept the white text of its dark plate on the light wallpaper (1.75 : 1), for as long as nothing else changed: the colour stays put near its threshold so that it does not flicker while a fence is moved, and that carried over to the new look.
 - The alignment guides and the white outline of where a dragged fence will land fade in and out. They appeared in one frame when an edge lined up and vanished in one frame at the release, while everything else that comes and goes on a fence fades. Both now take the same 83 ms; with Windows' animations off they still show and go at once.
+- A fence at the top edge of the screen has square top corners. Docked with 「停靠到屏幕顶部」 (or dragged up against the edge), the title row touched the screen edge with its two rounded corners, and the wallpaper showed in two small notches above it. The top corners of the plate, its rim and its shadow are now square while the fence stands at the edge, as a drawer's are where it hangs, and round again as soon as it leaves.
 
 ## 0.3.3
 

@@ -569,6 +569,10 @@ pub struct FenceViewState {
     /// and the shadow follow them (`sync_plate_shape`).
     pub(super) plate_inset_px: i32,
     pub(super) plate_alpha: f32,
+    /// The window's top edge lies on the top edge of its monitor's work area (docked to the
+    /// top, or dragged there): the top corners of the plate and of its shadow are square
+    /// there and round again when the fence leaves (`sync_edge_top`).
+    pub(super) edge_top: bool,
     /// Temporarily expanded by hovering a rolled fence (state stays "rolled" for persistence).
     pub(super) peeking: bool,
     /// A hover peek (or a file drag) opened it and raised it above the other fences
