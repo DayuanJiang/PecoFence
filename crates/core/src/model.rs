@@ -117,6 +117,14 @@ pub struct Snapshot {
 
 pub const MAX_SNAPSHOTS: usize = 20;
 
+/// Note texts and scripts by fence, kept apart from the configuration for a while (see
+/// [`Config::tool_data_of`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ToolData {
+    pub notes: HashMap<FenceId, String>,
+    pub scripts: HashMap<FenceId, ScriptSpec>,
+}
+
 /// Settings the file keeps but no version acts on (planned options that were never built).
 /// They stay in `config.json` because older versions require them to read the file; the CLI
 /// hides them from `settings get` / the schema and refuses to set them.
@@ -1949,6 +1957,41 @@ impl Config {
         last_shown(&self.layouts)
     }
 
+    /// The note texts and scripts of the tool fences in `snapshot`'s layouts, as the
+    /// configuration has them now. A deleted snapshot's undo keeps them: `prune_notes` drops
+    /// them with the next save when nothing else has those fences.
+    pub fn tool_data_of(&self, snapshot: &Snapshot) -> ToolData {
+        let ids: HashSet<FenceId> = snapshot
+            .layouts
+            .iter()
+            .flat_map(|l| l.fences.iter())
+            .filter(|f| f.tool.is_some())
+            .map(|f| f.id)
+            .collect();
+        let pick = |id: &FenceId| ids.contains(id);
+        ToolData {
+            notes: (self.notes.iter())
+                .filter(|(id, _)| pick(id))
+                .map(|(id, text)| (*id, text.clone()))
+                .collect(),
+            scripts: (self.scripts.iter())
+                .filter(|(id, _)| pick(id))
+                .map(|(id, spec)| (*id, spec.clone()))
+                .collect(),
+        }
+    }
+
+    /// Puts back what [`Self::tool_data_of`] kept; texts and scripts the configuration still
+    /// has (they may have been edited since) stay as they are.
+    pub fn put_back_tool_data(&mut self, data: ToolData) {
+        for (id, text) in data.notes {
+            self.notes.entry(id).or_insert(text);
+        }
+        for (id, spec) in data.scripts {
+            self.scripts.entry(id).or_insert(spec);
+        }
+    }
+
     /// Drops the text of notes and the scripts of script fences no layout and no snapshot has
     /// a fence for any more (a snapshot that still has the fence brings it back with them).
     /// Returns how many went.
@@ -2447,6 +2490,54 @@ mod tests {
         .unwrap();
         assert!(tools.enabled && tools.clock_seconds);
         assert!(FenceTool::Script.enabled(&tools) && FenceTool::Note.enabled(&tools));
+    }
+
+    #[test]
+    fn a_deleted_snapshot_keeps_its_note_texts_and_scripts_for_the_undo() {
+        let mut c = Config::default();
+        let mut note = Fence::new("n", FenceKind::Virtual, note_geo());
+        note.tool = Some(FenceTool::Note);
+        let mut script = Fence::new("s", FenceKind::Virtual, note_geo());
+        script.tool = Some(FenceTool::Script);
+        let (note_id, script_id) = (note.id, script.id);
+        c.notes.insert(note_id, "[ ] milk".into());
+        c.scripts.insert(script_id, ScriptSpec::new("C:/s/a.ps1"));
+        // Both fences were deleted: only the snapshot taken before still has them.
+        c.layouts.push(Layout {
+            fingerprint: Vec::new(),
+            fences: Vec::new(),
+            shown: 1,
+        });
+        c.snapshots.push(Snapshot {
+            id: Uuid::new_v4(),
+            name: "删除栅栏前".into(),
+            ts: 0,
+            layouts: vec![Layout {
+                fingerprint: Vec::new(),
+                fences: vec![note, script],
+                shown: 1,
+            }],
+            notes: Default::default(),
+            scripts: Default::default(),
+        });
+        assert_eq!(c.prune_notes(), 0);
+        // The snapshot is deleted on the page; the save that follows drops the text and the
+        // script, as it should for a snapshot that stays deleted.
+        let gone = c.snapshots.remove(0);
+        let kept = c.tool_data_of(&gone);
+        assert_eq!(c.prune_notes(), 2);
+        assert!(c.notes.is_empty() && c.scripts.is_empty());
+        // 撤销: the snapshot comes back with what its fences showed.
+        c.snapshots.push(gone);
+        c.put_back_tool_data(kept);
+        assert_eq!(c.prune_notes(), 0);
+        assert_eq!(c.notes.get(&note_id).map(String::as_str), Some("[ ] milk"));
+        assert_eq!(c.scripts[&script_id].path, "C:/s/a.ps1");
+        // A text written since the delete is not overwritten by the undo.
+        let mut other = ToolData::default();
+        other.notes.insert(note_id, "old".into());
+        c.put_back_tool_data(other);
+        assert_eq!(c.notes[&note_id], "[ ] milk");
     }
 
     #[test]

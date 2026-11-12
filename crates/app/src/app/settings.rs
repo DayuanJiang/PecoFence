@@ -131,9 +131,10 @@ pub(super) struct SettingsKept {
     pub closed_at: Option<(RECT, f32)>,
     /// The page it showed (a `data-page` of the navigation) and how far it was scrolled.
     pub view: Option<(String, f64)>,
-    /// The snapshot the page deleted last and its place in the list, for the notice's 撤销.
-    /// Gone when the window closes.
-    pub deleted_snapshot: Option<(usize, pecofence_core::Snapshot)>,
+    /// The snapshot the page deleted last, its place in the list and the note texts and
+    /// scripts of its fences (the save after the delete drops those nothing else has), for the
+    /// notice's 撤销. Gone when the window closes.
+    pub deleted_snapshot: Option<(usize, pecofence_core::Snapshot, pecofence_core::ToolData)>,
     /// The 「恢复快照前」 snapshot of the page's last restore, for the notice's 撤销.
     pub restore_undo: Option<uuid::Uuid>,
 }
@@ -1186,11 +1187,14 @@ impl App {
                         // One click deletes. The page's notice offers 撤销 for a few seconds:
                         // the snapshot is kept for it.
                         let gone = self.state.config.snapshots[at].clone();
+                        let tool_data = self.state.config.tool_data_of(&gone);
                         self.state.delete_snapshot(id);
                         self.schedule_save();
                         self.push_settings_state();
                         tracing::debug!(
                             index = at,
+                            notes = tool_data.notes.len(),
+                            scripts = tool_data.scripts.len(),
                             "snapshot deleted on the page, kept for its undo"
                         );
                         if let Some(h) = &self.settings {
@@ -1204,13 +1208,15 @@ impl App {
                                     .to_string(),
                             );
                         }
-                        self.settings_kept.deleted_snapshot = Some((at, gone));
+                        self.settings_kept.deleted_snapshot = Some((at, gone, tool_data));
                     }
                 }
                 // 撤销 on the delete notice: the snapshot goes back to its place in the list,
                 // with its name and content.
                 Some("restoreDeletedSnapshot") => {
-                    if let Some((at, snapshot)) = self.settings_kept.deleted_snapshot.take() {
+                    if let Some((at, snapshot, tool_data)) =
+                        self.settings_kept.deleted_snapshot.take()
+                    {
                         if !snapshot_room(&mut self.state.config.snapshots, None) {
                             self.settings_error(&snapshot_limit_text());
                             return;
@@ -1218,6 +1224,8 @@ impl App {
                         let list = &mut self.state.config.snapshots;
                         let at = at.min(list.len());
                         list.insert(at, snapshot);
+                        // What its fences showed: the save after the delete may have dropped it.
+                        self.state.config.put_back_tool_data(tool_data);
                         self.state.mark_dirty();
                         self.schedule_save();
                         self.push_settings_state();
