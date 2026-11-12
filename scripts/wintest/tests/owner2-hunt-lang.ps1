@@ -294,7 +294,28 @@ if ($Part -match 'R') {
   Crop 'r-filterbox-de' ($s.x - 4) ($s.y - 4) ($s.w + 8) 60 | Out-Null
   $t = OcrText $s.x $s.y $s.w 40 'r-filterbox-ocr'
   Check 'German, the filter box of a fence with three files: the count shows its number' ($t -match 'Elemente:\s*3') "the box reads '$t'"
+  # A word that names a type: the type is offered at the right end with its key, Tab.
+  [G]::Type('installers'); Start-Sleep -Milliseconds 900
+  Crop 'r-filtertype-de' ($s.x - 4) ($s.y - 4) ($s.w + 8) 60 | Out-Null
+  $t = OcrText $s.x $s.y $s.w 40 'r-filtertype-ocr'
+  Check 'German, "installers" typed in the filter box: the offered type shows its key, Tab' ($t -match 'Installationsprogramme\s+Tab') "the box reads '$t'"
   [G]::Press(0x1B); Start-Sleep -Milliseconds 400
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 400
+
+  # The search box when nothing matches: the words at the right of the typed text show whole.
+  Case 'search box: nothing found'
+  Pf settings set language fr | Out-Null
+  Start-Sleep -Seconds 2
+  DeskClick 1500 840 | Out-Null
+  PeekKey; Start-Sleep -Milliseconds 900
+  [G]::Type('qqzzxx'); Start-Sleep -Milliseconds 1200
+  $b = HlBox
+  $q = Rect $b
+  Crop 'r-searchnone-fr' ($q.L - 4) ($q.T - 4) ($q.R - $q.L + 8) 64 | Out-Null
+  $t = OcrText $q.L $q.T ($q.R - $q.L) 56 'r-searchnone-ocr'
+  Check 'French, a search that finds nothing: the box says so in whole words' ($b -ne [IntPtr]::Zero -and $t -match 'Aucun fichier correspondant') "the box reads '$t'"
+  HlEndPeek
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 500
   PfQuit
   foreach ($n in $HrFiles) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue }
 }

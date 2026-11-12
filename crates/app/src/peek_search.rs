@@ -355,6 +355,9 @@ struct Session {
     row_glyph_font: Font,
     /// Match count shown at the right ("2 / 5", or that nothing matches).
     status: String,
+    /// The room (px) the status has at the right of the text box: `STATUS_W`, or what a
+    /// longer text needs.
+    status_room: i32,
     rows: Vec<Row>,
     selected: Option<usize>,
     /// How many results the search has in all (more than the rows shown).
@@ -919,6 +922,7 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
             heading_font: Font::new(fonts::han_text_face(), HEADING_SIZE, dpi),
             row_glyph_font: Font::new(fonts::icon_face(), 14.0, dpi),
             status: String::new(),
+            status_room: px(STATUS_W),
             rows: Vec::new(),
             selected: None,
             total: 0,
@@ -990,9 +994,23 @@ fn paint_box(hwnd: HWND) {
             s.dim_color,
             Align::Center,
         );
+        // The status takes the room its text needs: 「Aucun fichier correspondant」 is wider
+        // than 「没有匹配的文件」 and lost its end in 170 DIPs. The text box ends before it.
+        let status_w = px(STATUS_W).max(p.text_width(&s.status, &s.status_font) + px(8.0));
+        if status_w != s.status_room {
+            s.status_room = status_w;
+            let edit_x = px(ROW_PAD) + px(ICON) + px(12.0);
+            s.edit.set_bounds(
+                edit_x,
+                (px(HEIGHT) - px(EDIT_H)) / 2,
+                w - edit_x - status_w - px(PAD + 8.0),
+                px(EDIT_H),
+            );
+            tracing::debug!(status_w, "search box: the text box ends before the status");
+        }
         p.text(
             RECT {
-                left: w - px(PAD + STATUS_W),
+                left: w - px(PAD) - status_w,
                 top: 0,
                 right: w - px(PAD),
                 bottom: box_h,
