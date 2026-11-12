@@ -10,9 +10,11 @@
 #   F  a fault while the item menu is built (the shell loads every menu extension for it): the
 #      crash line and the next start's notice name the DLL, the process is gone within half a
 #      second of that line, the watchdog starts PecoFence again and the layout is as before
-# Parts: run.sh --var Part=D ... (default: all). About 3 minutes.
+#   O  a crash in PecoFence's own code (the test script's `crash` line) is left to Windows
+#      Error Reporting as before: Windows records it, the process ends when that is done
+# Parts: run.sh --var Part=D ... (default: all). About 4 minutes.
 $PfAllowLogErrors = $true
-if (-not $Part) { $Part = 'DF' }
+if (-not $Part) { $Part = 'DFO' }
 trap { PfTrap $_; continue }
 
 Add-Type @'
@@ -26,6 +28,15 @@ public static class SxMon {
   [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint id);
   [DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr h, uint ms);
   [DllImport("kernel32.dll")] static extern bool GetExitCodeProcess(IntPtr h, out uint code);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr FindWindowW(string cls, string title);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr FindWindowExW(IntPtr parent, IntPtr after, string cls, string title);
+  // Windows' own desktop icons on screen (Explorer's list under SHELLDLL_DefView).
+  static bool WindowsIcons() {
+    IntPtr view = FindWindowExW(FindWindowW("Progman", null), IntPtr.Zero, "SHELLDLL_DefView", null);
+    if (view == IntPtr.Zero) EnumWindows((h, l) => { var d = FindWindowExW(h, IntPtr.Zero, "SHELLDLL_DefView", null); if (d != IntPtr.Zero) { view = d; return false; } return true; }, IntPtr.Zero);
+    IntPtr list = FindWindowExW(view, IntPtr.Zero, "SysListView32", null);
+    return list != IntPtr.Zero && IsWindowVisible(list);
+  }
   static int VisibleFences(uint pid) {
     int n = 0;
     EnumWindows((h, l) => {
@@ -38,19 +49,23 @@ public static class SxMon {
   // Watches a PecoFence process until a new one shows fences, `seconds` at most. Milliseconds
   // since the call: exit (and the exit code), born = a new pecofence.exe after that exit (while
   // Windows Error Reporting works, a copy of the crashed process runs under the same name),
-  // fences = the new one shows a fence.
-  public static string Watch(int pid, int seconds) {
+  // fences = the new one shows a fence, icons = Windows' own desktop icons were on screen.
+  // settle > 0: stop that many ms after the exit when no new PecoFence has come.
+  public static string Watch(int pid, int seconds) { return Watch(pid, seconds, 0); }
+  public static string Watch(int pid, int seconds, int settle) {
     var sw = Stopwatch.StartNew();
     IntPtr hp = OpenProcess(0x00100000 | 0x1000, false, (uint)pid);
-    long exited = -1, born = -1, shown = -1; uint code = 0; int newPid = 0;
+    long exited = -1, born = -1, shown = -1, icons = -1; uint code = 0; int newPid = 0;
     while (sw.ElapsedMilliseconds < seconds * 1000L && shown < 0) {
       long t = sw.ElapsedMilliseconds;
       if (exited < 0 && (hp == IntPtr.Zero || WaitForSingleObject(hp, 0) == 0)) { exited = t; GetExitCodeProcess(hp, out code); }
       if (exited >= 0 && newPid == 0) foreach (var p in Process.GetProcessesByName("pecofence")) if (p.Id != pid) { newPid = p.Id; born = t; }
       if (newPid != 0 && VisibleFences((uint)newPid) > 0) shown = t;
+      if (icons < 0 && WindowsIcons()) icons = t;
+      if (settle > 0 && exited >= 0 && newPid == 0 && t - exited > settle) break;
       Thread.Sleep(20);
     }
-    return string.Format("exit={0} code={1:X8} new_pid={2} born={3} fences={4}", exited, code, newPid, born, shown);
+    return string.Format("exit={0} code={1:X8} new_pid={2} born={3} fences={4} icons={5}", exited, code, newPid, born, shown, icons);
   }
 }
 '@
@@ -286,6 +301,29 @@ if ($dll -and $Part -match 'F') {
   Start-Sleep -Seconds 3
   if (-not [W]::IconsVisible()) { [W]::ToggleIcons(); Start-Sleep -Seconds 1 }
   Remove-Item $Stamp -ErrorAction SilentlyContinue
+  Remove-Item "$env:LOCALAPPDATA\PecoFence\crash-*.dmp" -ErrorAction SilentlyContinue
+}
+
+if ($Part -match 'O') {
+  Case 'O a crash in PecoFence''s own code'
+  # The test script's `crash` line writes to address 0 in pecofence.exe itself.
+  $t0 = [DateTime]::UtcNow
+  PfStart -Script @('sleep 12000', 'crash', 'sleep 3600000')
+  $p1 = Get-Process pecofence | Select-Object -First 1
+  $tw = [DateTime]::UtcNow
+  $watch = [SxMon]::Watch($p1.Id, 60, 3000)
+  Log "watch: $watch"
+  $w = @{}; foreach ($kv in ($watch -split ' ')) { $a = $kv -split '=', 2; $w[$a[0]] = $a[1] }
+  $crashLine = @(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -cmatch 'CRASH \(unhandled exception\)' }) | Select-Object -Last 1
+  $exitAt = $tw.AddMilliseconds([int]$w['exit'])
+  $dead = if ($crashLine -and [int]$w['exit'] -ge 0) { [int]($exitAt - (LogTime $crashLine)).TotalMilliseconds } else { -1 }
+  Start-Sleep -Seconds 2
+  $ev = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = 'Application Error'; StartTime = $t0.ToLocalTime() } -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'pecofence\.exe' })
+  Check 'O the crash line says the crash was in PecoFence''s own file' ($crashLine -match ' at=pecofence\.exe\+0x' -and $crashLine -match 'module_owner="?pecofence') "$(if ($crashLine -match '(code=.*?) dump=') { $Matches[1] })"
+  Check 'O the crash is left to Windows Error Reporting: Windows records it and the process ends after that' ($ev.Count -ge 1 -and $w['code'] -eq 'C0000005' -and $dead -ge 500) "Application Error events: $($ev.Count); exit $dead ms after the crash line, code $($w['code'])"
+  Get-Process pecofence, pecofence-watchdog -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 3
+  if (-not [W]::IconsVisible()) { [W]::ToggleIcons(); Start-Sleep -Seconds 1 }
   Remove-Item "$env:LOCALAPPDATA\PecoFence\crash-*.dmp" -ErrorAction SilentlyContinue
 }
 
