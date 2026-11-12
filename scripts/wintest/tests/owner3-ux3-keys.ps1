@@ -2,10 +2,11 @@
 # Parts (run.sh --var Part=...):
 #   K  the focus mark of a rolled-up fence, and after Ctrl+Tab (an icon of the new tab, or the
 #      caption of a tab with nothing in it)
+#   P  a folder fence: after Enter into a folder its first icon has the focus mark
 #   C  the cards: the last tip's button says what it opens, F6 reaches a card's buttons, and a
 #      rule offer takes the place of a first-start tip, which comes back afterwards
 # Each check fails on the round's base and passes after. Runs on a 1600x900 box at 100 %.
-if (-not $Part) { $Part = 'KC' }
+if (-not $Part) { $Part = 'KCP' }
 trap { PfTrap $_; continue }
 
 $KkFiles = @('季度销售报告.pdf', '合同 2026.pdf', '发票.pdf', '说明.txt', '会议记录 11-12.txt', '全家福.png', '截图 2026-11-12.png')
@@ -113,6 +114,16 @@ function KkMarks() {
   $row2 = KkDarkRow ($w.l + 4) ($w.r - 4) ($w.t + 3) ($w.t + 8)
   Shot 'k1-tab-away'
   Check 'K1 after Tab the mark has left the fence' ($row2 -lt 10 -and (Fg) -notmatch "'文档'") "mark's top edge: $row2 px; fg=$(Fg)"
+  # During a Peek the fences get no focus messages: Tab, Tab leaves the mark with one fence only
+  # (the fence left behind would show it on its title row).
+  DeskClick 1300 600 | Out-Null
+  PeekKey; Start-Sleep -Seconds 1
+  [G]::Press(0x09); Start-Sleep -Milliseconds 700
+  [G]::Press(0x09); Start-Sleep -Milliseconds 700
+  $marked = @(@(PfDump 4) | Where-Object { (DumpVal $_ 'focus_ring') -eq 'true' })
+  Shot 'k1-peek-tab-tab'
+  Check 'K1 during a Peek only the fence that has the keys has a focus mark' ($marked.Count -eq 1) "fences with a mark: $(($marked | ForEach-Object { $_.title }) -join ', ')"
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 1200
   PfQuit
 }
 if ($Part -match 'K') { KkMarks }
@@ -197,6 +208,25 @@ function KcCards() {
     Check 'C2 F6 on the card gives the keyboard back to the fence' ((Fg) -match "PecoFence.Fence 'Target'") "fg=$(Fg)"
   }
 
+  # C4: the same during a Peek: F6 moves the keyboard to the card and the Peek stays open,
+  # F6 again gives it back to the Peek.
+  Case 'C4 F6 during a Peek'
+  DeskClick 700 780 | Out-Null
+  PeekKey; Start-Sleep -Seconds 1
+  [G]::Press(0x09); Start-Sleep -Milliseconds 700
+  $fg0 = Fg
+  [G]::Press(0x75); Start-Sleep -Milliseconds 700
+  $fg1 = Fg
+  $open1 = @([W]::Tops('PecoFence.PeekDimmer') | Where-Object { [G]::IsWindowVisible($_) }).Count
+  Shot 'c4-peek-f6'
+  [G]::Press(0x75); Start-Sleep -Milliseconds 700
+  $fg2 = Fg
+  $open2 = @([W]::Tops('PecoFence.PeekDimmer') | Where-Object { [G]::IsWindowVisible($_) }).Count
+  Check 'C4 F6 during a Peek moves the keyboard to the card and the Peek stays open' ($fg0 -match 'PeekDimmer' -and $fg1 -match 'PecoFence.Notice' -and $open1 -ge 1) "before F6: $fg0; after: $fg1; Peek windows=$open1"
+  Check 'C4 F6 on the card gives the keyboard back to the Peek' ($fg2 -match 'PeekDimmer' -and $open2 -ge 1) "fg=$fg2; Peek windows=$open2"
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 1200
+  if (@([W]::Tops('PecoFence.PeekDimmer') | Where-Object { [G]::IsWindowVisible($_) }).Count -ge 1) { [G]::Press(0x1B); Start-Sleep -Milliseconds 1200 }
+
   # C1: the last tip's button says what it opens (it read "Manual"): its label is longer than
   # the button's smallest width, 120 px. The words are checked by a unit test of the catalogs.
   Case 'C1 the last tip''s button says that it opens the manual'
@@ -224,7 +254,45 @@ function KcCards() {
 }
 if ($Part -match 'C') { KcCards }
 
+# ---- P: a folder fence. Enter on a folder goes into it: the first icon of the folder that
+# arrives has the focus mark (nothing was marked until an arrow key was pressed).
+function KpFolder() {
+  trap { PfTrap $_; continue }
+  Case 'P1 after Enter into a folder its first icon has the focus mark'
+  $root = "$PfRun\kp-folder"
+  New-Item -ItemType Directory -Force "$root\子文件夹" | Out-Null
+  foreach ($n in @('子文件夹\里面的第一个文件.txt', '子文件夹\第二个.txt', '外面的文件.txt')) { Set-Content -LiteralPath "$root\$n" -Value 'x' -Encoding ASCII }
+  PfStart -Lang zh-CN -Script (DumpScript 250 6)
+  Start-Sleep -Seconds 4
+  ClearFences
+  Pf fence create --portal $root --title 'Kp' --rect '520,160,340,240' | Out-Null
+  Start-Sleep -Seconds 3
+  $file = @(@(PfJson item list --fence 'Kp') | Where-Object { $_ -and $_.name -like '外面*' }) | Select-Object -First 1
+  $p = ItemPt 'Kp' $file.name
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
+  ParkMouse 1300 800
+  # Home or End puts the selection and the mark on the folder (it stands first or last).
+  $on = '-'
+  foreach ($vk in 0x24, 0x23) {
+    [G]::Press($vk); Start-Sleep -Milliseconds 500
+    $w = @(PfDump 4) | Where-Object { $_.l -eq 520 -and $_.t -eq 160 } | Select-Object -First 1
+    $on = KkFocus $w
+    if ($on -eq '子文件夹') { break }
+  }
+  if ($on -eq '子文件夹') { [G]::Press(0x0D); Start-Sleep -Milliseconds 1800 }
+  $w = @(PfDump 4) | Where-Object { $_.l -eq 520 -and $_.t -eq 160 } | Select-Object -First 1
+  Shot 'p1-entered'
+  Check 'P1 setup: the keyboard is on the folder' ($on -eq '子文件夹') "focused=[$on]"
+  Check 'P1 after Enter the first icon of the folder has the focus mark' ((DumpVal $w 'items') -eq '2' -and (DumpVal $w 'focus_ring') -eq 'true' -and (KkFocus $w) -ne '-' -and (DumpVal $w 'selected') -eq '0') "items=$(DumpVal $w 'items') focus_ring=$(DumpVal $w 'focus_ring') focused=$(KkFocus $w) selected=$(DumpVal $w 'selected')"
+  [G]::Press(0x27); Start-Sleep -Milliseconds 500
+  $w = @(PfDump 4) | Where-Object { $_.l -eq 520 -and $_.t -eq 160 } | Select-Object -First 1
+  Check 'P1 an arrow key goes on from there' ((DumpVal $w 'selected') -eq '1' -and (DumpVal $w 'focus_ring') -eq 'true') "selected=$(DumpVal $w 'selected') focused=$(KkFocus $w)"
+  PfQuit
+}
+if ($Part -match 'P') { KpFolder }
+
 Case 'cleanup'
 if (PfAlive) { PfQuit }
+Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
 KkClean
 Check 'test files removed' (@(Get-ChildItem $PfDesk | Where-Object { $KkFiles -contains $_.Name }).Count -eq 0) ''
