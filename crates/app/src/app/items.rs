@@ -647,6 +647,25 @@ impl App {
 
     /// Alt+Enter / 属性: the shell's `properties` verb (multi-select gives one combined sheet).
     pub(super) fn show_properties(&mut self, fence: FenceId, items: &[ItemId]) {
+        // The Windows part of the item menus is off after a crash in a menu extension: the
+        // verb would load every menu extension again (`ShellContextMenu::invoke_verb`). The
+        // property sheet of the first file is opened without the menu.
+        if self.windows_menu_off() {
+            let path = self.shell_paths_of(items).into_iter().next();
+            let owner = self
+                .window_for(fence)
+                .map(|w| w.hwnd())
+                .unwrap_or(self.control.hwnd());
+            let shown = path.as_deref().is_some_and(|p| {
+                !shell::is_namespace_path(p) && shell::show_properties_sheet(p, owner)
+            });
+            tracing::info!(
+                count = items.len(),
+                shown,
+                "properties without the Windows menu: its part is off"
+            );
+            return;
+        }
         if self.shell_verb_on_items(fence, items, "properties", false) {
             return;
         }

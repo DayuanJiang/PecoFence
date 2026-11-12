@@ -1604,6 +1604,29 @@ unsafe extern "system" {
     fn AssocIsDangerous(assoc: PCWSTR) -> windows_core::BOOL;
 }
 
+#[link(name = "shell32")]
+unsafe extern "system" {
+    // Not in the generated bindings.
+    fn SHObjectProperties(
+        hwnd: HWND,
+        object_type: u32,
+        object_name: PCWSTR,
+        property_page: PCWSTR,
+    ) -> windows_core::BOOL;
+}
+
+/// Opens the property sheet of the file or folder `path`, as 属性 does, without the item's
+/// menu: the `properties` verb goes through that menu, and the shell loads every menu
+/// extension for it. For when the Windows part of the item menus is off after a crash in one.
+/// False when the sheet could not be opened.
+pub fn show_properties_sheet(path: &Path, owner: HWND) -> bool {
+    const SHOP_FILEPATH: u32 = 2;
+    let file = path_wide(path);
+    // SAFETY: the string is NUL-terminated and outlives the call.
+    unsafe { SHObjectProperties(owner, SHOP_FILEPATH, PCWSTR(file.as_ptr()), PCWSTR::null()) }
+        .as_bool()
+}
+
 /// Windows classes files of this extension (without the dot) as dangerous to open: programs,
 /// scripts, shortcuts, installers and the like (`AssocIsDangerous`, what the "Open File -
 /// Security Warning" asks about).

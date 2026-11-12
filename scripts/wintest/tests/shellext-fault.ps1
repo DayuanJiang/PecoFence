@@ -16,7 +16,8 @@
 #      without Windows' own icons showing in between, and the layout is as before
 #   M  after that crash the item menus leave out Windows' part: the notice says so, the same
 #      right-click shows PecoFence's entries with the extension still set to fault, among
-#      them a Cut and a Copy of its own that work, the next start builds no menu in the
+#      them a Cut and a Copy of its own that work and a Properties that opens the sheet
+#      without Windows' menu, the next start builds no menu in the
 #      background, and the tray menu's entry brings Windows' part back
 #   A  an extension that faults whenever its menu is built: that first happens two seconds
 #      after a start, in the menu built in the background; the run is started again with the
@@ -478,6 +479,20 @@ if ($dll -and $Part -match 'M') {
   [Windows.Forms.Clipboard]::Clear()
   [G]::Press(0x1B); Start-Sleep -Milliseconds 300
   Check 'M that menu has PecoFence''s own Cut and Copy, and they work' ($texts -match 'Cut ~ Ctrl\+X \| Copy ~ Ctrl\+C \| Properties' -and $picked -and $picked2 -and $copied -eq 'sx n1 报告.txt effect=5' -and $cut -eq 'sx n1 报告.txt effect=2' -and @(ExtCalls).Count -eq 0) "Copy: $copied; Cut: $cut; extension calls: $((ExtCalls) -join ', ')"
+  # Properties from that menu, the extension still set to fault: the sheet opens without
+  # Windows' menu, for which the shell would load every menu extension again.
+  Remove-Item "$ExtDir\calls.log" -ErrorAction SilentlyContinue
+  $pb = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
+  [G]::RClick($p[0], $p[1])
+  $m = MenuWin 8
+  $pickedP = MenuPick '^Properties' $m
+  Start-Sleep -Seconds 5
+  $pa = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
+  $sheet = @([W]::Tops('#32770') | Where-Object { [L]::Text($_) -match 'sx n1.*Properties' }) | Select-Object -First 1
+  Shot 'M-properties-without-windows-part'
+  Check 'M Properties from that menu calls no menu extension, and PecoFence stays' ($pickedP -and @(ExtCalls).Count -eq 0 -and $pb -and $pa -and $pb.Id -eq $pa.Id) "picked=$pickedP; extension calls: $((ExtCalls) -join ', '); process before $($pb.Id), after $($pa.Id)"
+  Check 'M the property sheet of the file opens' ([bool]$sheet) "sheet: $(if ($sheet) { [L]::Text($sheet) } else { 'none' })"
+  if ($sheet) { [L]::PostMessageW($sheet, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Milliseconds 600 }
   # A normal exit and start: no menu is built in the background while the part is off.
   PfQuit
   Start-Sleep -Seconds 2
