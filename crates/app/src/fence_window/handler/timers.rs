@@ -350,7 +350,11 @@ pub(super) fn on_timer_hover_select(
         && !window::key_down(msg::VK_LBUTTON)
         && crate::rename::active_target().is_none()
     {
-        let elsewhere = !v.win_active && !crate::note_edit::is_open() && keyboard_on_desktop();
+        // During a Peek the dimmer has the keyboard and hands the keys to the fence last used
+        // (`focus_session`): no fence is the active window then, and each of them selects.
+        let elsewhere = !v.win_active
+            && !crate::note_edit::is_open()
+            && (behavior.floating.get() || keyboard_on_desktop());
         if let Some(i) = v.hover
             && !v.rolled_up
             && (v.win_active || elsewhere)
@@ -378,10 +382,13 @@ pub(super) fn on_timer_hover_select(
             queue.push(Command::EndItemSelection { except: hwnd });
         }
         // From Explorer's desktop a plain request is refused (a timer is no input of ours).
-        let got = window::claim_foreground(hwnd);
+        // During a Peek the foreground stays with the dimmer (taking it would end the Peek).
+        let peek = behavior.floating.get();
+        let got = !peek && window::claim_foreground(hwnd);
         tracing::debug!(
             fence = %h.fence_id,
             item,
+            peek,
             got,
             "hover select: the fence under the pointer takes the keyboard"
         );

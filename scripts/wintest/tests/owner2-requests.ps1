@@ -9,6 +9,8 @@ if (-not $Part) { $Part = 'HS' }
 # How many icons of fence $t are selected, from the next dump line.
 function RqSel($t) { return (DumpVal (DumpOf $t 3) 'selected') }
 # The pointer glides to a point and rests there longer than Windows' hover time (400 ms).
+# The one icon of fence Alpha, whatever it is called by now.
+function RqAlphaPt() { $it = @(PfJson item list --fence Alpha) | Where-Object { $_ -and $_.name } | Select-Object -First 1; return (ItemPt 'Alpha' $it.name) }
 function RqRest($x, $y) {
   $c = [Windows.Forms.Cursor]::Position
   Glide $c.X $c.Y $x $y 10 20
@@ -19,7 +21,7 @@ if ($Part -eq 'HS') {
 Case 'HS setup'
 $made = @()
 foreach ($n in '悬停甲.txt', '悬停乙的长名字.txt', '悬停丙.txt') { $made += DeskFile $n }
-$made += "$PfDesk\hover one.txt"
+$made += "$PfDesk\hover one.txt"; $made += "$PfDesk\peek one.txt"
 [Th]::SetSingleClick($true)
 PfFresh (DumpScript)
 ClearFences
@@ -45,8 +47,7 @@ Check 'F2 renames the icon the pointer selected' (Test-Path "$PfDesk\hover one.t
 
 Case 'HS another fence has the keyboard'
 # Alpha has it now (a press on its icon, in case the rest above did not give it).
-$p = ItemPt 'Alpha' 'hover one'
-if (-not $p) { $p = ItemPt 'Alpha' '悬停甲' }
+$p = RqAlphaPt
 if ((RqSel 'Alpha') -ne '1') { [G]::KeyDown(0x11); [G]::Click($p[0], $p[1]); [G]::KeyUp(0x11); Start-Sleep -Milliseconds 600 }
 $a0 = RqSel 'Alpha'
 $q = ItemPt 'Beta' '悬停丙'
@@ -64,14 +65,29 @@ if ($ren -ne [IntPtr]::Zero) { Start-Sleep -Milliseconds 300; [G]::Type('Gamma')
 Shot 'hs-3-title-f2'
 Check 'F2 while the pointer rests on a title renames the fence' ([bool](PfFence 'Gamma')) "foreground before F2=$fg name box=$ren titles=$((@(PfJson fence list) | ForEach-Object { $_.title }) -join ',')"
 
+Case 'HS during a Peek'
+# The dimmer has the keyboard then and hands the keys to the fence used last.
+DeskClick | Out-Null
+PeekKey; Start-Sleep -Milliseconds 1200
+$p = RqAlphaPt
+RqRest $p[0] $p[1]
+$sel = RqSel 'Alpha'; $fg = Fg
+[G]::Press(0x71); $ren = WaitWin 'PecoFence.Rename' 3
+if ($ren -ne [IntPtr]::Zero) { Start-Sleep -Milliseconds 300; [G]::Type('peek one'); Start-Sleep -Milliseconds 200; [G]::Press(0x0D); Start-Sleep -Seconds 2 }
+Shot 'hs-4-peek'
+Check 'resting on an icon during a Peek selects it' ($sel -eq '1') "Alpha selected=$sel foreground=$fg"
+Check 'F2 renames it during the Peek' (Test-Path "$PfDesk\peek one.txt") "name box=$ren"
+[G]::Press(0x1B); Start-Sleep -Milliseconds 800
+if ((Fg) -match 'Peek|Dim') { [G]::Press(0x1B); Start-Sleep -Milliseconds 800 }
+Log "after the Peek: foreground=$(Fg)"
+
 Case 'HS another program in front keeps the keyboard'
 DeskClick | Out-Null
 Start-Process notepad.exe; Start-Sleep -Seconds 2
 $np = Get-Process notepad -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne [IntPtr]::Zero } | Select-Object -First 1
 if ($np) { [L]::MoveWindow($np.MainWindowHandle, 1050, 420, 480, 380, $true) | Out-Null; Start-Sleep -Milliseconds 500 }
 $a0 = RqSel 'Alpha'
-$p = ItemPt 'Alpha' 'hover one'
-if (-not $p) { $p = ItemPt 'Alpha' '悬停甲' }
+$p = RqAlphaPt
 RqRest $p[0] $p[1]
 $sa = RqSel 'Alpha'; $fg = Fg
 Check 'resting on an icon selects nothing while another program is in front' ($a0 -eq '0' -and $sa -eq '0' -and $fg -match 'Notepad') "Alpha selected before=$a0 after=$sa foreground=$fg"
