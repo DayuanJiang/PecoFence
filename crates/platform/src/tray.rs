@@ -630,29 +630,14 @@ impl PopupMenu {
             return 0;
         };
         MENU_FOREGROUND_LOST.with(|n| n.set(0));
-        // A menu takes no key while it believes a mouse button is held, and it believes so
-        // when this thread's key state says the right button is down as the menu starts.
-        // After a right-click on the tray icon of Windows 10 1809 the button is up again, but
-        // this thread has not read that yet: the menu took neither Esc nor the arrow keys
-        // until a click in it (#219). Reading the queue once brings the key state up to date.
+        // A menu that starts while this thread's key state still has a mouse button down takes
+        // no key until a click in it (the tray menu of Windows 10 1809 after a right-click on
+        // the icon, #219): see `sync_mouse_buttons`.
         let buttons_before = button_states();
-        let stale = right_button_stale();
-        if stale {
-            let mut msg = MSG::default();
-            // SAFETY: plain FFI call; nothing is removed from the queue.
-            unsafe {
-                let _ = PeekMessageW(
-                    &mut msg,
-                    None,
-                    WM_MOUSEMOVE as u32,
-                    WM_MOUSEMOVE as u32,
-                    PM_NOREMOVE,
-                );
-            }
-        }
+        let queue_read = crate::window::sync_mouse_buttons();
         tracing::debug!(
             buttons_before,
-            queue_read = stale,
+            queue_read,
             buttons_now = button_states(),
             "popup menu: mouse buttons as this thread has them / as they are"
         );
@@ -717,14 +702,6 @@ impl PopupMenu {
         MENU_TIPS.with(|t| t.borrow_mut().take());
         cmd
     }
-}
-
-/// `PeekMessageW`: look, leave the message in the queue.
-const PM_NOREMOVE: u32 = 0;
-
-/// This thread's key state has the right mouse button down although it is up.
-fn right_button_stale() -> bool {
-    crate::window::key_down(VK_RBUTTON as u32) && !crate::window::key_down_async(VK_RBUTTON as u32)
 }
 
 /// The mouse buttons for the log: as this thread's key state has them / as they are.

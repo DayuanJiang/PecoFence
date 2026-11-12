@@ -728,6 +728,16 @@ impl ShortcutDropTarget {
         }
         let mut effect = allowed & (DROPEFFECT_COPY | DROPEFFECT_LINK) as u32;
         self.entered = false;
+        // The shell may show its right-drag menu (打开方式 / 取消) in the Drop below. On Windows 10
+        // 1809 that menu took no key after a right-button drag from File Explorer, so Esc did
+        // not close it (#219), unless the state of the mouse buttons is read first. Measured
+        // with the suite line drop-on-program-D on build 17763: 4 of 4 runs fail without this
+        // read, 3 of 3 pass with it, although the read finds both buttons up by then.
+        let buttons_synced = crate::window::sync_mouse_buttons();
+        tracing::debug!(
+            buttons_synced,
+            "drop on a program: handing the drop to the shell"
+        );
         // SAFETY: a successful DragEnter preceded this Drop; data lives through the call.
         unsafe {
             self.target

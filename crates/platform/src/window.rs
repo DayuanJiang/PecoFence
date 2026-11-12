@@ -464,6 +464,33 @@ pub fn key_down_async(vk: u32) -> bool {
     unsafe { GetAsyncKeyState(vk as i32) < 0 }
 }
 
+/// Brings this thread's key state up to date when it still has a mouse button down that is up
+/// by now; true when that was the case. Windows ignores the keyboard in a popup menu for as
+/// long as a button counts as held, so a menu that starts in that state takes neither Esc nor
+/// the arrow keys until a click in it. On Windows 10 1809 that happened to the tray menu after
+/// a right-click on the tray icon (#219): the button went up in Explorer's window and this
+/// thread had not read that yet. Reading the queue once does it (nothing is removed from it).
+pub fn sync_mouse_buttons() -> bool {
+    /// `PeekMessageW`: look, leave the message in the queue.
+    const PM_NOREMOVE: u32 = 0;
+    let stale = |vk: i32| key_down(vk as u32) && !key_down_async(vk as u32);
+    if !stale(VK_LBUTTON) && !stale(VK_RBUTTON) {
+        return false;
+    }
+    let mut msg = MSG::default();
+    // SAFETY: plain FFI call with a valid out-pointer.
+    unsafe {
+        let _ = PeekMessageW(
+            &mut msg,
+            None,
+            WM_MOUSEMOVE as u32,
+            WM_MOUSEMOVE as u32,
+            PM_NOREMOVE,
+        );
+    }
+    true
+}
+
 /// Is `vk` down now, or was it pressed since the previous call? The "since" part is best
 /// effort (another program's query can take it), but it catches a press shorter than the
 /// caller's polling interval most of the time. Call once to forget earlier presses.
