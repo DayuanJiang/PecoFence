@@ -263,6 +263,9 @@ impl AppState {
                 .language
                 .resolve(pecofence_platform::locale::ui_language()),
         );
+        // Before any fence is placed: a snapping gap wider than 16 counts as "at the screen
+        // edge" for a fence as tall as the screen (`geometry::set_edge_gap_max`).
+        pecofence_core::geometry::set_edge_gap_max(config.settings.snapping.gap_px);
         let mut state = Self {
             config,
             saver: saver_for(&store),

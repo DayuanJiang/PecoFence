@@ -1436,6 +1436,7 @@ impl App {
             .behavior
             .snap_gap_dip
             .set(snap_gap_dip(&new.snapping));
+        pecofence_core::geometry::set_edge_gap_max(snap_gap_dip(&new.snapping));
         self.ctx
             .behavior
             .size_to_cells

@@ -5,8 +5,22 @@ use crate::model::{Anchor, Fence, FenceId, NormGeometry};
 pub const MIN_W_DIP: f32 = 64.0;
 pub const MIN_H_DIP: f32 = 36.0;
 pub const MAX_DIP: f32 = 8192.0;
-/// The widest gap to a screen edge that a fence cut to fit a smaller work area keeps.
+/// The widest gap to a screen edge that a fence cut to fit a smaller work area keeps, and
+/// that still counts as "at the edge" for the anchor: 16 DIPs, or the snapping gap the user
+/// set when that is wider (`set_edge_gap_max`; the setting goes up to 64).
 const EDGE_GAP_MAX_DIP: f32 = 16.0;
+static EDGE_GAP_MAX: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(16);
+
+/// The snapping gap changed (`snapping.gapPx`, DIPs): a fence that stands that far from both
+/// screen edges is a fence as tall (or wide) as the screen, as one within 16 DIPs is.
+pub fn set_edge_gap_max(gap_dip: i32) {
+    let gap = gap_dip.clamp(EDGE_GAP_MAX_DIP as i32, 64) as u32;
+    EDGE_GAP_MAX.store(gap, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn edge_gap_max() -> f32 {
+    EDGE_GAP_MAX.load(std::sync::atomic::Ordering::Relaxed) as f32
+}
 
 /// A monitor's work area in physical pixels plus its DPI.
 #[derive(Clone, Debug, PartialEq)]
@@ -85,21 +99,21 @@ impl PxRect {
 /// `EDGE_GAP_MAX_DIP` of both ends of an axis (a column as tall as the screen, a fence cut to
 /// fit) hangs from its nearer edge, the left or top one when they are equal: held by the
 /// middle it would float in the middle of a longer work area.
-fn pick_anchor(x: f32, y: f32, w: f32, h: f32, work_w: f32, work_h: f32) -> Anchor {
+fn pick_anchor(x: f32, y: f32, w: f32, h: f32, work_w: f32, work_h: f32, edge: f32) -> Anchor {
     let left = x;
     let right = work_w - (x + w);
     let top = y;
     let bottom = work_h - (y + h);
     let hcenter = (x + w / 2.0 - work_w / 2.0).abs();
     let vcenter = (y + h / 2.0 - work_h / 2.0).abs();
-    let h_side = if hcenter < left.min(right) * 0.5 && left.min(right) > EDGE_GAP_MAX_DIP {
+    let h_side = if hcenter < left.min(right) * 0.5 && left.min(right) > edge {
         0 // centre
     } else if left <= right {
         1
     } else {
         2
     };
-    let v_side = if vcenter < top.min(bottom) * 0.5 && top.min(bottom) > EDGE_GAP_MAX_DIP {
+    let v_side = if vcenter < top.min(bottom) * 0.5 && top.min(bottom) > edge {
         0
     } else if top <= bottom {
         1
@@ -121,6 +135,11 @@ fn pick_anchor(x: f32, y: f32, w: f32, h: f32, work_w: f32, work_h: f32) -> Anch
 
 /// Converts a physical rectangle on `work` into monitor-relative DIPs.
 pub fn normalize(rect: PxRect, work: &WorkArea) -> NormGeometry {
+    normalize_with(rect, work, edge_gap_max())
+}
+
+/// [`normalize`] with the widest gap that counts as "at the edge" given (DIPs).
+fn normalize_with(rect: PxRect, work: &WorkArea, edge: f32) -> NormGeometry {
     let s = work.scale();
     let x = (rect.left - work.left) as f32 / s;
     let y = (rect.top - work.top) as f32 / s;
@@ -136,13 +155,18 @@ pub fn normalize(rect: PxRect, work: &WorkArea) -> NormGeometry {
         h,
         work_w,
         work_h,
-        anchor: pick_anchor(x, y, w, h, work_w, work_h),
+        anchor: pick_anchor(x, y, w, h, work_w, work_h, edge),
     }
 }
 
 /// Converts saved DIP geometry back into physical pixels on `work`, keeping the anchored edge
 /// distances when the work area changed size, then clamping into the work area.
 pub fn denormalize(geo: &NormGeometry, work: &WorkArea) -> PxRect {
+    denormalize_with(geo, work, edge_gap_max())
+}
+
+/// [`denormalize`] with the widest gap to a screen edge that a fence cut to fit keeps (DIPs).
+fn denormalize_with(geo: &NormGeometry, work: &WorkArea, edge: f32) -> PxRect {
     let s = work.scale();
     let work_w = work.width_dip();
     let work_h = work.height_dip();
@@ -152,7 +176,7 @@ pub fn denormalize(geo: &NormGeometry, work: &WorkArea) -> PxRect {
     // (the first-run column, a fence snapped to the screen edge) keeps the smaller of its two
     // gaps at both ends instead of touching the screen edge and the taskbar.
     let edge_gap = |near: f32, far: f32| {
-        let small = |g: &f32| (0.0..=EDGE_GAP_MAX_DIP).contains(g);
+        let small = |g: &f32| (0.0..=edge).contains(g);
         [near, far]
             .into_iter()
             .filter(small)
@@ -311,7 +335,15 @@ pub fn keep_groups_together(
         let y0 = geos().map(|g| g.y).fold(f32::MAX, f32::min);
         let x1 = geos().map(|g| g.x + g.w).fold(f32::MIN, f32::max);
         let y1 = geos().map(|g| g.y + g.h).fold(f32::MIN, f32::max);
-        let (h_side, v_side) = anchor_sides(pick_anchor(x0, y0, x1 - x0, y1 - y0, old_w, old_h));
+        let (h_side, v_side) = anchor_sides(pick_anchor(
+            x0,
+            y0,
+            x1 - x0,
+            y1 - y0,
+            old_w,
+            old_h,
+            edge_gap_max(),
+        ));
         let dx = carry_axis(h_side, x0, x1 - x0, old_w, new_w) - x0;
         let dy = carry_axis(v_side, y0, y1 - y0, old_h, new_h) - y0;
         for &i in &of_group {
@@ -320,7 +352,7 @@ pub fn keep_groups_together(
             g.y += dy;
             g.work_w = new_w;
             g.work_h = new_h;
-            g.anchor = pick_anchor(g.x, g.y, g.w, g.h, new_w, new_h);
+            g.anchor = pick_anchor(g.x, g.y, g.w, g.h, new_w, new_h, edge_gap_max());
             moved += 1;
         }
     }
@@ -529,6 +561,52 @@ mod tests {
     /// A fence 8 px under the top edge and taller than the new work area is cut to fit with
     /// 8 px at both ends (it took the whole height, from the screen edge to the taskbar); one
     /// that stood far from both edges, or flush with one, fills the height as before.
+    /// With a snapping gap of 24 a fence as tall as the screen stands 24 DIPs from both
+    /// edges: cut to fit a smaller screen it keeps that gap, and on a taller one it hangs
+    /// from the top. Both rules knew gaps up to 16 only: the fence touched the screen edge
+    /// and the taskbar at 672, and floated 114 px down at 1032.
+    #[test]
+    fn a_fence_as_tall_as_the_screen_with_a_wide_snapping_gap() {
+        let at100 = work(96, 1600, 852);
+        for (gap, edge) in [(24, 24.0), (48, 48.0), (8, 16.0), (16, 16.0)] {
+            let tall = normalize_with(
+                PxRect {
+                    left: 1104,
+                    top: gap,
+                    right: 1344,
+                    bottom: 852 - gap,
+                },
+                &at100,
+                edge,
+            );
+            let r = denormalize_with(&tall, &work(96, 1280, 672), edge);
+            assert_eq!(
+                (r.top, r.bottom),
+                (gap, 672 - gap),
+                "gap {gap}, a smaller screen"
+            );
+            let r = denormalize_with(&tall, &work(96, 1920, 1032), edge);
+            assert_eq!(r.top, gap, "gap {gap}, a taller screen");
+        }
+        // What the built-in bound of 16 alone gives for a gap of 24 (as before this change).
+        let rect = PxRect {
+            left: 1104,
+            top: 24,
+            right: 1344,
+            bottom: 828,
+        };
+        let tall = normalize_with(rect, &at100, 16.0);
+        let r = denormalize_with(&tall, &work(96, 1280, 672), 16.0);
+        assert_eq!((r.top, r.bottom), (0, 672));
+        assert_eq!(
+            denormalize_with(&tall, &work(96, 1920, 1032), 16.0).top,
+            114
+        );
+        // A narrower gap than 16 in the settings keeps the built-in bound.
+        set_edge_gap_max(4);
+        assert_eq!(edge_gap_max(), 16.0);
+    }
+
     #[test]
     fn a_fence_cut_to_fit_keeps_its_small_gap_to_the_edge() {
         let at100 = work(96, 1600, 852);
