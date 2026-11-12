@@ -53,3 +53,37 @@ function PartA {
   Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
 }
 if ($Part -match 'A') { PartA }
+
+function PartB {
+  trap { PfTrap $_; continue }
+  Case 'B: a smart fence whose folder is gone'
+  CloseWindows
+  HsFiles
+  EvStart | Out-Null
+  PfStart -Lang en -Script (DumpScript 500 20)
+  Pf settings set theme light | Out-Null
+  ClearFences
+  Pf fence create --title 'Reports' --smart-folder $HsDir --rect '60,60,440,220' | Out-Null
+  Check 'B the fence shows the three files' (WaitSmart 'Reports' { $s.shown -eq 3 } 15) (SmartLine 'Reports')
+  Remove-Item -Recurse -Force $HsDir
+  Check 'B the files leave with the folder' (WaitSmart 'Reports' { $s.shown -eq 0 } 20) (SmartLine 'Reports')
+  [G]::MoveTo(1200, 800); Start-Sleep -Milliseconds 800
+  $words = FenceWords 'Reports' 'b-gone'
+  $d = DumpOf 'Reports'
+  Shot 'b-folder-gone'
+  Check 'B the fence says the folder cannot be found, without a count' ($words -match 'cannot be found' -and $d.raw -match 'title_count=None') "words='$words' $([regex]::Match($d.raw, 'title_count=\S+').Value)"
+  # The folder read without Everything says the same.
+  EvStop | Out-Null
+  Pf fence refresh 'Reports' | Out-Null
+  WaitSmart 'Reports' { $s.source -eq 'folder' } 10 | Out-Null
+  Start-Sleep -Milliseconds 600
+  $words = FenceWords 'Reports' 'b-gone-folder-read'
+  Check 'B without Everything too' ($words -match 'cannot be found') "words='$words' $(SmartLine 'Reports')"
+  HsFiles
+  Start-Sleep -Seconds 1
+  Pf fence refresh 'Reports' | Out-Null
+  Check 'B the folder is back: its files and the count show again' ((WaitSmart 'Reports' { $s.shown -eq 3 } 10) -and (DumpOf 'Reports').raw -match 'title_count=Some\("3"\)') (SmartLine 'Reports')
+  PfQuit
+  Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
+}
+if ($Part -match 'B') { PartB }

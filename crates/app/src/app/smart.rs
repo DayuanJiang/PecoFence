@@ -72,6 +72,9 @@ pub(super) struct SmartRun {
     read: Option<u32>,
     /// The run in progress is the once-a-minute one (see `smart_line`).
     routine: bool,
+    /// The last run found nothing and none of the fence's folders is there (deleted, renamed,
+    /// a drive that is unplugged): the fence says so in place of "no matching files".
+    pub missing: bool,
 }
 
 /// A log line of a smart fence's run: info for a run something asked for (startup, F5, the
@@ -95,6 +98,8 @@ struct Found {
     total: u32,
     scanned: usize,
     kept: usize,
+    /// Nothing found and none of the folders is there (see `SmartRun::missing`).
+    missing: bool,
 }
 
 /// A smart fence's results worked out on a worker: a folder read without Everything, or
@@ -107,6 +112,7 @@ pub(super) struct FolderRead {
     total: u32,
     scanned: usize,
     kept: usize,
+    missing: bool,
     /// Time spent finding (reading or checking) and naming the results.
     ms: u64,
     names_ms: u64,
@@ -360,6 +366,7 @@ impl App {
                 total: kept as u32,
                 scanned,
                 kept,
+                missing: kept == 0 && folders_missing(&spec),
             }
         });
     }
@@ -394,6 +401,7 @@ impl App {
                     total,
                     scanned,
                     kept,
+                    missing,
                 } = find();
                 let ms = started.elapsed().as_millis() as u64;
                 let named_at = Instant::now();
@@ -415,6 +423,7 @@ impl App {
                     total,
                     scanned,
                     kept,
+                    missing,
                     ms,
                     names_ms,
                 });
@@ -471,7 +480,12 @@ impl App {
                 let routine = run.routine;
                 let shown = r.found.len();
                 let applied_at = Instant::now();
+                let missing_changed = std::mem::replace(&mut run.missing, r.missing) != r.missing;
                 self.smart_done(r.id, r.source, r.found, r.total);
+                if missing_changed {
+                    tracing::info!(id = %r.id, missing = r.missing, "smart fence: whether its folders are there changed");
+                    self.apply_portal_deco(self.state.host_of(r.id));
+                }
                 let ui_ms = applied_at.elapsed().as_millis() as u64;
                 if r.source == SmartSource::Folder {
                     smart_line!(routine, id = %r.id, seq = r.seq, scanned = r.scanned, total = r.total, shown, ms = r.ms, names_ms = r.names_ms, ui_ms, "smart fence: folder read without Everything");
@@ -570,6 +584,7 @@ impl App {
                 },
                 scanned: got,
                 kept,
+                missing: kept == 0 && folders_missing(&spec),
             }
         });
         // Everything is free: the next waiting search goes.
@@ -1123,11 +1138,17 @@ impl App {
             SmartSource::NeedsEverything => pecofence_core::i18n::text(
                 "要搜索整台电脑，需要先打开 Everything：右键这个栅栏可以启动或安装它。",
             ),
+            // What a folder fence says when its folder is gone.
+            SmartSource::Everything | SmartSource::Folder if run.is_some_and(|r| r.missing) => {
+                pecofence_core::i18n::text("找不到此文件夹。")
+            }
             SmartSource::Everything | SmartSource::Folder => {
                 pecofence_core::i18n::text("没有符合条件的文件。")
             }
         });
-        let count = matches!(source, SmartSource::Everything | SmartSource::Folder).then(|| {
+        let found = matches!(source, SmartSource::Everything | SmartSource::Folder)
+            && !run.is_some_and(|r| r.missing);
+        let count = found.then(|| {
             let shown = self.item_views(f).len();
             let cut =
                 run.is_some_and(|r| r.total > spec.limit) && self.fence_filter(f.id).is_none();
@@ -1265,6 +1286,12 @@ fn entry_matches(spec: &SmartSpec, e: &DesktopEntry, targets: bool, now: i64) ->
         crate::state::AppState::plain_facts(e, None, now)
     };
     spec.matches(&facts, e.mtime.max(e.created), now)
+}
+
+/// Whether the search names folders and none of them is there (on a worker: a folder on a
+/// network drive that does not answer takes its time).
+fn folders_missing(spec: &SmartSpec) -> bool {
+    !spec.folders.is_empty() && !spec.folders.iter().any(|f| Path::new(f).is_dir())
 }
 
 /// Reads the search's folders (and their subfolders when the search takes them) without
