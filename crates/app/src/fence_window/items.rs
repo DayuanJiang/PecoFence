@@ -211,6 +211,22 @@ impl FenceViewState {
         } else {
             HashMap::new()
         };
+        // 自由摆放: every icon stands in a cell of its own, but `desktop_slots` pairs with the
+        // items by their place in the list, and holds the old list's cells until
+        // `arrange_desktop` places the new one (after this, in `set_items`). With an icon gone
+        // from the middle of the list, every icon after it took the cell of the one before it
+        // as its new place: it glided there, and another file's icon stood in its cell, until
+        // the cells were placed again. Each icon's own cell, by id, for the new list below.
+        let own_slots: HashMap<ItemId, CellRect> =
+            if self.places_freely() && !self.desktop_slots.is_empty() {
+                self.items
+                    .iter()
+                    .zip(&self.desktop_slots)
+                    .map(|(it, slot)| (it.id, *slot))
+                    .collect()
+            } else {
+                HashMap::new()
+            };
         let old_len = self.items.len();
         let old_ids: Vec<ItemId> = self.items.iter().map(|i| i.id).collect();
         // Keep icons / labels for unchanged items.
@@ -256,6 +272,28 @@ impl FenceViewState {
             })
             .collect();
         drop(icons);
+        if !own_slots.is_empty() && !self.items.iter().map(|n| n.id).eq(old_ids.iter().copied()) {
+            // An icon that is new here has no cell yet: the spare one (where a single new icon
+            // goes) until the cells are placed. One slot per item and none to spare, so the
+            // placing that follows always differs from these and fits the window to it.
+            let spare = self.desktop_slots.last().copied();
+            let kept = self
+                .items
+                .iter()
+                .filter(|n| own_slots.contains_key(&n.id))
+                .count();
+            self.desktop_slots = self
+                .items
+                .iter()
+                .filter_map(|n| own_slots.get(&n.id).copied().or(spare))
+                .collect();
+            tracing::debug!(
+                kept,
+                new = self.items.len() - kept,
+                gone = old_len - kept,
+                "free placement: icons keep their own cells while the list changes"
+            );
+        }
         // `old` now holds only the removed items: their fades leave with them.
         if !old.is_empty() {
             self.item_hover.prune(now, |k| !old.contains_key(k));
