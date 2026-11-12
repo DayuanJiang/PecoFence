@@ -279,11 +279,49 @@ impl FenceViewState {
     /// Releasing while the band was still edge-auto-scrolling leaves the offset between
     /// pixels, so it snaps here; the caller's redraw paints the snapped offset.
     pub(super) fn end_marquee(&mut self) -> bool {
-        let had = self.marquee.take().is_some();
-        if had {
-            self.snap_scroll();
+        let Some(m) = self.marquee.take() else {
+            return false;
+        };
+        self.focus_after_marquee(&m);
+        self.snap_scroll();
+        true
+    }
+
+    /// The keyboard goes on from a rectangle selection: the focus and the Shift anchor move to
+    /// the selected item nearest to where the rectangle began, as in File Explorer (there,
+    /// Down after a rectangle drawn from file 3 to file 6 selects file 4). They stayed on the
+    /// item that had the focus before, often none, so the next arrow key started at the first
+    /// icon of the fence. A rectangle that selected nothing leaves them alone.
+    fn focus_after_marquee(&mut self, m: &MarqueeState) {
+        if self.selected.is_empty() {
+            return;
         }
-        had
+        let scale = self.scale();
+        let (layout, _) = self.scroll_extent();
+        // Where the rectangle began, in unscrolled content DIPs (as `marquee_rect_dip`).
+        let x = (m.start.0 - self.content_x) as f32 / scale;
+        let y = (m.start.1 - self.content_y) as f32 / scale - layout.fixed_top() + m.start_scroll;
+        let away = |i: usize| {
+            let c = layout.cell(i);
+            let dx = (c.x - x).max(x - (c.x + c.w)).max(0.0);
+            let dy = (c.y - y).max(y - (c.y + c.h)).max(0.0);
+            dx * dx + dy * dy
+        };
+        let nearest = self
+            .selected
+            .iter()
+            .copied()
+            .filter(|i| *i < self.items.len())
+            .min_by(|a, b| away(*a).total_cmp(&away(*b)).then(a.cmp(b)));
+        if let Some(i) = nearest {
+            tracing::debug!(
+                selected = self.selected.len(),
+                focus = i,
+                "rectangle selection ended: the focus goes to the item nearest to its start"
+            );
+            self.anchor_index = Some(i);
+            self.range_anchor = Some(i);
+        }
     }
 
     /// PageUp / PageDown: moves the anchor one viewport of rows (same column), scrolling a
