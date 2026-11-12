@@ -182,3 +182,17 @@ o2-popups          5   ec2    release owner2-ux-popups.ps1
 o2-tools           4   ec2    release owner2-ux-tools.ps1
 o2-settings        3   vm     debug   owner2-ux-settings.ps1
 o2-looks           5   vm     release owner2-ux-looks.ps1
+# Owner round 2026-11-12, third batch (UI, UX and motion leftovers): one steps file per group.
+o3-chrome          4   ec2    release owner3-ux3-chrome.ps1
+o3-chrome-scale    3   resize release free-placement.ps1             --steps owner3-ux3-chrome-scale.ps1
+o3-icons-A         2   ec2    release owner3-ux3-icons.ps1           --var Part=A
+o3-icons-B         2   ec2    release owner3-ux3-icons.ps1           --var Part=B
+o3-icons-C         1   ec2    release owner3-ux3-icons.ps1           --var Part=C
+o3-icons-D         2   ec2    release owner3-ux3-icons.ps1           --var Part=D
+o3-icons-E         1   ec2    release owner3-ux3-icons.ps1           --var Part=E
+o3-icons-F         1   ec2    release owner3-ux3-icons.ps1           --var Part=F
+o3-icons-G         1   ec2    release owner3-ux3-icons.ps1           --var Part=G
+o3-peek            4   ec2    release owner3-ux3-peek.ps1
+o3-peek-texts      1   ec2    release owner3-ux3-peek-texts.ps1
+o3-settings        3   vm     debug   owner3-ux3-settings.ps1
+o3-firstrun        4   ec2    release owner3-ux3-firstrun.ps1        --var Part=C
