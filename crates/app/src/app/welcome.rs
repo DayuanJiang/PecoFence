@@ -557,9 +557,14 @@ impl App {
     /// (`resume_displaced_tip`), the roll-up tip with the next fence the user makes.
     fn feature_tip_allowed(&mut self, what: &'static str) -> bool {
         let on = self.state.config.settings.feature_tips;
+        // Another card besides the tip (the undo card, the update or the rating card) keeps
+        // the offer away in any case: the tip then stays. It used to leave first, the offer
+        // did not show, and the first-start tips did not come back in that run.
+        let others = self.notices().count() > usize::from(self.welcome.is_some());
         if what != "roll"
             && self.notices
             && on
+            && !others
             && matches!(self.welcome, Some((_, Welcome::RollTip | Welcome::Tip(_))))
             && let Some((notice, tip)) = self.welcome.take()
         {
@@ -705,6 +710,9 @@ impl App {
         if self.welcome.is_some() {
             saved.folder_tip_shown = true;
             self.save_notices(&saved);
+        } else {
+            // The offer's card could not be made: the tip it took the place of comes back.
+            self.resume_displaced_tip();
         }
     }
 
@@ -793,6 +801,8 @@ impl App {
         if self.welcome.is_some() {
             saved.rule_tip_shown = true;
             self.save_notices(&saved);
+        } else {
+            self.resume_displaced_tip();
         }
     }
 
