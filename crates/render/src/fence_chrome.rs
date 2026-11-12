@@ -4474,8 +4474,9 @@ impl FenceChrome {
     /// no text. `footer` (a script fence's status line) sits at the bottom in the secondary
     /// colour and the lines stop above it. The lines are moved up by `scroll` DIPs (a note
     /// taller than its fence), with the overlay `scrollbar` at the right. While the note is
-    /// being edited, `edit` adds the selection and the caret; nothing else changes. Returns
-    /// each to-do's line index with its check box (surface DIPs) for hit-testing.
+    /// being edited, `edit` adds the selection and the caret; nothing else changes. `hot` is
+    /// the line whose check box is under the pointer (true: held). Returns each to-do's line
+    /// index with its check box (surface DIPs) for hit-testing.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_note(
         &self,
@@ -4491,6 +4492,7 @@ impl FenceChrome {
         scroll: f32,
         scrollbar: Option<ScrollbarDraw>,
         edit: Option<&NoteEditDraw<'_>>,
+        hot: Option<(usize, bool)>,
     ) -> Result<Vec<(usize, Rect)>> {
         session.clear(ColorF::TRANSPARENT);
         let tt = self.tool_text(text_size);
@@ -4568,7 +4570,12 @@ impl FenceChrome {
                 None
             };
             if let Some(done) = line.todo {
-                boxes.push((i, todo.draw(tt, session, px, y, line_h, done)));
+                let state = match hot {
+                    Some((l, true)) if l == i => TodoBoxState::Pressed,
+                    Some((l, false)) if l == i => TodoBoxState::Hover,
+                    _ => TodoBoxState::Rest,
+                };
+                boxes.push((i, todo.draw(tt, session, px, y, line_h, done, state)));
             }
             let len = line.text.encode_utf16().count();
             if let (Some(e), Some(fill)) = (edit, &selected) {
@@ -4790,8 +4797,10 @@ impl FenceChrome {
 
     /// 脚本栅栏: the rows a script printed, from the top left, each wrapped to the width, at
     /// 文字大小 `text_size` (0 to 3): a to-do's check box, an icon, the text in its colour;
-    /// `---` a hairline. The row under the pointer (`hover`) gets a plate when it is
-    /// clickable, and an arrow when it opens something. `footer` sits at the bottom and the
+    /// `---` a hairline. A clickable row under the pointer gets a plate, and an arrow when it
+    /// opens something: `hover` lists the rows whose plate shows and how far it has faded in
+    /// (0 to 1); the plate of the row held (`pressed`) is the lighter pressed fill. `footer`
+    /// sits at the bottom and the
     /// rows stop above it, as in [`Self::draw_note`]. The rows are moved up by `scroll` DIPs
     /// (more rows than the fence holds), with the overlay `scrollbar` at the right. Returns
     /// each clickable row's index and plate (surface DIPs).
@@ -4805,7 +4814,8 @@ impl FenceChrome {
         height: f32,
         text_size: u8,
         rows: &[ScriptRowDraw<'_>],
-        hover: Option<usize>,
+        hover: &[(usize, f32)],
+        pressed: Option<usize>,
         hint: &str,
         footer: &str,
         scroll: f32,
@@ -4844,6 +4854,7 @@ impl FenceChrome {
         let (laid, line_h) = self.script_rows(width, text_size, rows)?;
         let px = Px::new(scale);
         let plate = session.create_solid_brush(with_alpha(theme.text_primary, 0.07))?;
+        let arrow = session.create_solid_brush(theme.text_secondary)?;
         let rule = session.create_solid_brush(with_alpha(theme.text_primary, 0.14))?;
         let todo = TodoBrushes::new(session, theme)?;
         let glyph_w = (14.0 * tt.k).round();
@@ -4888,12 +4899,23 @@ impl FenceChrome {
                 w + 2.0 * SCRIPT_ROW_PAD_X,
                 h + 2.0 * SCRIPT_ROW_PAD_Y,
             );
-            let hovered = row.clickable && hover == Some(i);
-            if hovered {
+            // How far this row's plate has faded in.
+            let hot = if row.clickable {
+                hover
+                    .iter()
+                    .find(|(r, _)| *r == i)
+                    .map_or(0.0, |(_, a)| a.clamp(0.0, 1.0))
+            } else {
+                0.0
+            };
+            if hot > 0.0 {
+                // Held: the pressed fill, lighter than the hover's (as a WinUI list row).
+                let strength = if pressed == Some(i) { 0.04 } else { 0.07 };
+                plate.set_color(with_alpha(theme.text_primary, strength * hot));
                 session.fill_rounded_rect(&RoundedRect::uniform(plate_rect, 4.0), &plate);
             }
             if let Some(done) = row.todo {
-                todo.draw(tt, session, px, y, line_h, done);
+                todo.draw(tt, session, px, y, line_h, done, TodoBoxState::Rest);
             }
             if let Some(icon) = &at.icon {
                 session.draw_text_layout_color(Vector2::new(at.x, y), icon, &primary);
@@ -4912,12 +4934,13 @@ impl FenceChrome {
                 session.draw_text_layout(Vector2::new(at.text_x, y + down), layout, halo);
             }
             session.draw_text_layout_color(Vector2::new(at.text_x, y), layout, brush);
-            if hovered && row.opens {
+            if hot > 0.0 && row.opens {
+                arrow.set_color(with_alpha(theme.text_secondary, hot));
                 session.draw_text(
                     OPEN_GLYPH,
                     &tt.glyph,
                     &Rect::from_xywh(width - NOTE_PAD_X - glyph_w, y, glyph_w, line_h),
-                    &secondary,
+                    &arrow,
                 );
             }
             if row.clickable {
@@ -4937,27 +4960,44 @@ fn script_is_empty(rows: &[ScriptRowDraw<'_>]) -> bool {
         .all(|r| !r.separator && r.text.trim().is_empty() && r.todo.is_none() && r.icon.is_none())
 }
 
-/// The brushes of a to-do's check box: its ring, the accent fill and the check mark.
+/// A to-do's check box as the pointer has it: at rest, under the pointer, or held.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TodoBoxState {
+    Rest,
+    Hover,
+    Pressed,
+}
+
+/// The brushes of a to-do's check box: its ring, the fill under the pointer, the accent fill
+/// and the check mark.
 struct TodoBrushes {
     ring: Brush,
+    fill: Brush,
     accent: Brush,
     check: Brush,
+    ink: ColorF,
+    accent_color: ColorF,
 }
 
 impl TodoBrushes {
     fn new(session: &DrawingSession<'_>, theme: &Theme) -> Result<Self> {
         Ok(Self {
             ring: session.create_solid_brush(with_alpha(theme.text_primary, 0.7))?,
+            fill: session.create_solid_brush(ColorF::TRANSPARENT)?,
             accent: session.create_solid_brush(theme.accent)?,
             check: session.create_solid_brush(match theme.mode {
                 crate::theme::ThemeMode::Dark => ColorF::from_rgba8(0, 0, 0, 0xE6),
                 crate::theme::ThemeMode::Light => ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xFF),
             })?,
+            ink: theme.text_primary,
+            accent_color: theme.accent,
         })
     }
 
     /// The box of a to-do whose first line is at `y` (`line_h` tall), sized for the text
-    /// `tt`; returns its rect.
+    /// `tt`; returns its rect. As a WinUI CheckBox, the box answers the pointer: under it an
+    /// open box fills a little and a ticked one lightens; held, both dim.
+    #[allow(clippy::too_many_arguments)]
     fn draw(
         &self,
         tt: &ToolText,
@@ -4966,14 +5006,27 @@ impl TodoBrushes {
         y: f32,
         line_h: f32,
         done: bool,
+        state: TodoBoxState,
     ) -> Rect {
         let edge = tt.box_edge();
         let top = px.snap(y + (line_h - edge) / 2.0);
         let r = Rect::from_xywh(px.snap(NOTE_PAD_X), top, edge, edge);
+        let (ring_a, fill_a, accent_a) = match state {
+            TodoBoxState::Rest => (0.7, 0.0, 1.0),
+            TodoBoxState::Hover => (0.95, 0.08, 0.85),
+            TodoBoxState::Pressed => (0.45, 0.14, 0.7),
+        };
         if done {
+            self.accent
+                .set_color(with_alpha(self.accent_color, accent_a));
             session.fill_rounded_rect(&RoundedRect::uniform(r, 4.0), &self.accent);
             session.draw_text(CHECK_GLYPH, &tt.glyph, &r, &self.check);
         } else {
+            if fill_a > 0.0 {
+                self.fill.set_color(with_alpha(self.ink, fill_a));
+                session.fill_rounded_rect(&RoundedRect::uniform(r, 4.0), &self.fill);
+            }
+            self.ring.set_color(with_alpha(self.ink, ring_a));
             session.draw_rounded_rect(&px.ring(r, 4.0), &self.ring, px.hair());
         }
         r

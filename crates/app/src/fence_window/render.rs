@@ -1247,7 +1247,24 @@ impl FenceViewState {
         } else {
             pecofence_core::i18n::text("脚本没有输出文字")
         };
-        let hover = self.script_hover;
+        // The hover plates fade like an icon's: the row under the pointer in, the others out.
+        let now = Instant::now();
+        let animate = self.motion.enabled();
+        let hovered = self.script_hover;
+        if let Some(row) = hovered {
+            self.script_fades.set(animate, row, 1.0, now);
+        }
+        self.script_fades
+            .release_unless(animate, now, |row| hovered == Some(*row));
+        let hover: Vec<(usize, f32)> = (0..rows.len())
+            .map(|row| (row, self.script_fades.value(&row, now)))
+            .filter(|(_, a)| *a > 0.0)
+            .collect();
+        self.script_fades.prune(now, |row| *row < rows.len());
+        let pressed = match self.pressed {
+            Some(PressTarget::ScriptRow(row)) if self.press_inside => Some(row),
+            _ => None,
+        };
         let text_size = self.text_size;
         // Rows that do not fit scroll above the footer.
         let width_dip = self.content_size_px().0 as f32 / scale;
@@ -1265,7 +1282,8 @@ impl FenceViewState {
                     hd,
                     text_size,
                     &rows,
-                    hover,
+                    &hover,
+                    pressed,
                     hint,
                     &script.footer,
                     scroll,
@@ -1274,6 +1292,11 @@ impl FenceViewState {
                 Ok(())
             })?;
         self.note_draw_result(ok);
+        // The frame clock goes on until the plates have faded.
+        self.content_busy = self.script_fades.busy(now);
+        if self.content_busy {
+            self.frames.request();
+        }
         self.script_rows = hits
             .into_iter()
             .map(|(row, r)| (row, [r.left, r.top, r.right, r.bottom]))
@@ -1309,6 +1332,11 @@ impl FenceViewState {
         let width_dip = self.content_size_px().0 as f32 / scale;
         let extent = chrome.note_extent(width_dip, text_size, &lines)?;
         let (scroll, scrollbar) = self.scroll_tool_text(extent);
+        // The check box under the pointer, or the one held (while the pointer is on it).
+        let hot = match self.pressed {
+            Some(PressTarget::NoteBox(line)) => self.press_inside.then_some((line, true)),
+            _ => self.note_box_hover.map(|line| (line, false)),
+        };
         let mut boxes = Vec::new();
         let ok = self
             .content_panel
@@ -1332,6 +1360,7 @@ impl FenceViewState {
                     scroll,
                     scrollbar,
                     edit.as_ref(),
+                    hot,
                 )?;
                 Ok(())
             })?;

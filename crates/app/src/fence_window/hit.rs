@@ -432,6 +432,8 @@ impl FenceViewState {
             PressTarget::Header(c) => self.header_hit(x_px, y_px) == Some(c),
             PressTarget::Item(i) => self.hit_item(x_px, y_px) == Some(i),
             PressTarget::Tab(t) => self.tab_at(x_px, y_px) == Some(t),
+            PressTarget::NoteBox(l) => self.note_box_at(x_px, y_px) == Some(l),
+            PressTarget::ScriptRow(r) => self.script_row_at(x_px, y_px) == Some(r),
         }
     }
 

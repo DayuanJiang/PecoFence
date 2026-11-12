@@ -94,6 +94,7 @@ pub(super) fn on_mouseleave(
         v.set_scrollbar_pointer(None);
         let content_changed = v.header_hover.take().is_some()
             | v.script_hover.take().is_some()
+            | v.note_box_hover.take().is_some()
             | v.hover_empty_action(None);
         // Onto the caption part of the title row (a gap between tabs): still the row, as in
         // WM_NCMOUSELEAVE; this message can come after the WM_NCMOUSEMOVE there.
@@ -278,11 +279,15 @@ pub(super) fn on_lbuttondown(
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
-        if let Some(cmd) = v
-            .note_press(x, y)
-            .or_else(|| v.script_press(x, y))
-            .or_else(|| v.empty_action_press(x, y))
-        {
+        // A note's check box, a script fence's clickable row: pressed look now, the action on
+        // a release over it.
+        if v.press_tool_at(x, y, false).is_some() {
+            drop(guard);
+            window::set_capture(hwnd);
+            queue.push(Command::RaiseFence(hwnd));
+            return Some(0);
+        }
+        if let Some(cmd) = v.note_press(x, y).or_else(|| v.empty_action_press(x, y)) {
             drop(guard);
             queue.push(cmd);
             queue.push(Command::RaiseFence(hwnd));
@@ -520,7 +525,13 @@ pub(super) fn on_lbuttonup(
     let mut need_content = had_marquee || had_scroll;
     let mut need_chrome = false;
     match press {
-        Some((PressTarget::Item(_) | PressTarget::Header(_), _)) => {
+        Some((
+            PressTarget::Item(_)
+            | PressTarget::Header(_)
+            | PressTarget::NoteBox(_)
+            | PressTarget::ScriptRow(_),
+            _,
+        )) => {
             need_content = true;
         }
         Some((PressTarget::Tab(_) | PressTarget::Up | PressTarget::Chevron, _)) => {
@@ -537,6 +548,14 @@ pub(super) fn on_lbuttonup(
             PressTarget::Header(col) => queue.push(Command::SortColumn {
                 fence: v.active,
                 sort: column_sort(col),
+            }),
+            PressTarget::NoteBox(line) => queue.push(Command::ToggleNoteLine {
+                fence: v.active,
+                line,
+            }),
+            PressTarget::ScriptRow(row) => queue.push(Command::ScriptRowClicked {
+                fence: v.active,
+                row,
             }),
             // Also while a roll is still in flight: the toggle goes against the state it is
             // rolling to (`is_rolled`), so the roll turns round.
@@ -718,6 +737,11 @@ pub(super) fn on_lbuttondblclk(
             return Some(0);
         }
         // In a note the second click is another press: a check box ticks back.
+        if v.press_tool_at(x, y, true).is_some() {
+            drop(guard);
+            window::set_capture(hwnd);
+            return Some(0);
+        }
         if let Some(cmd) = v.note_press(x, y) {
             drop(guard);
             queue.push(cmd);

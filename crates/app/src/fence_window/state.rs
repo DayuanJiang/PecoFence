@@ -271,6 +271,10 @@ pub struct FenceViewState {
     pub(super) script_rows: Vec<(usize, [f32; 4])>,
     /// The clickable row under the pointer.
     pub(super) script_hover: Option<usize>,
+    /// The hover plates of its rows fading in and out, by row index (as `item_hover`).
+    pub(super) script_fades: Fades<usize>,
+    /// 便签与待办: the line whose check box is under the pointer.
+    pub(super) note_box_hover: Option<usize>,
     /// The portal's folder could not be found (its empty state says so).
     pub(super) portal_missing: bool,
     /// The empty-state text in place of the usual one (a smart fence's state, a filter that
@@ -772,10 +776,9 @@ impl FenceViewState {
         self.desktop.is_some()
     }
 
-    /// 便签与待办: what a press at client point (`x`, `y`) in a note's content does: tick the
-    /// to-do whose check box (with a little slack) is under it, else open the editor. None
-    /// when this window shows no note or the point is not in its content.
-    pub(super) fn note_press(&self, x: i32, y: i32) -> Option<Command> {
+    /// 便签与待办: the line of the to-do whose check box (with a little slack) is at client
+    /// point (`x`, `y`).
+    pub(super) fn note_box_at(&self, x: i32, y: i32) -> Option<usize> {
         if self.note.is_none() || self.rolled_up || y < self.content_y || x < self.content_x {
             return None;
         }
@@ -783,21 +786,27 @@ impl FenceViewState {
         let cx = (x - self.content_x) as f32 / scale;
         let cy = (y - self.content_y) as f32 / scale;
         const SLACK: f32 = 4.0;
-        let fence = self.active;
-        let line = self
-            .note_boxes
+        self.note_boxes
             .iter()
             .find(|(_, r)| {
                 cx >= r[0] - SLACK && cx < r[2] + SLACK && cy >= r[1] - SLACK && cy < r[3] + SLACK
             })
-            .map(|&(line, _)| line);
-        Some(match line {
-            Some(line) => Command::ToggleNoteLine { fence, line },
-            // The editor opens with the caret where the click was.
-            None => Command::EditNote {
-                fence,
-                caret: self.note_offset_at(x, y),
-            },
+            .map(|&(line, _)| line)
+    }
+
+    /// 便签与待办: a press at client point (`x`, `y`) in a note's text opens the editor with
+    /// the caret where the press was. None when this window shows no note, the point is not
+    /// in its content, or a check box is there (`press_tool_at` takes that press).
+    pub(super) fn note_press(&self, x: i32, y: i32) -> Option<Command> {
+        if self.note.is_none() || self.rolled_up || y < self.content_y || x < self.content_x {
+            return None;
+        }
+        if self.note_box_at(x, y).is_some() {
+            return None;
+        }
+        Some(Command::EditNote {
+            fence: self.active,
+            caret: self.note_offset_at(x, y),
         })
     }
 
@@ -862,15 +871,6 @@ impl FenceViewState {
     pub(super) fn hover_empty_action(&mut self, at: Option<(i32, i32)>) -> bool {
         let over = at.is_some_and(|(x, y)| self.empty_action_at(x, y));
         std::mem::replace(&mut self.empty_action_hover, over) != over
-    }
-
-    /// 脚本栅栏: a press on a clickable row runs what it asks for.
-    pub(super) fn script_press(&self, x: i32, y: i32) -> Option<Command> {
-        let row = self.script_row_at(x, y)?;
-        Some(Command::ScriptRowClicked {
-            fence: self.active,
-            row,
-        })
     }
 
     /// The fence shown is a tool (小工具) in place of items: it takes no drops, merges or

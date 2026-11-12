@@ -404,7 +404,11 @@ pub(super) fn on_mousemove(
     if let Some(p) = v.pressed
         && matches!(
             p,
-            PressTarget::Up | PressTarget::Chevron | PressTarget::Header(_)
+            PressTarget::Up
+                | PressTarget::Chevron
+                | PressTarget::Header(_)
+                | PressTarget::NoteBox(_)
+                | PressTarget::ScriptRow(_)
         )
     {
         if p == PressTarget::Chevron {
@@ -438,6 +442,8 @@ pub(super) fn on_mousemove(
                 PressTarget::Up => v.up_hovered = inside,
                 PressTarget::Chevron => v.chevron_hovered = inside,
                 PressTarget::Header(c) => v.header_hover = inside.then_some(c),
+                PressTarget::NoteBox(l) => v.note_box_hover = inside.then_some(l),
+                PressTarget::ScriptRow(r) => v.script_hover = inside.then_some(r),
                 _ => {}
             }
             v.redraw_for_press(p);
@@ -494,7 +500,15 @@ pub(super) fn on_mousemove(
     } else {
         v.script_row_at(x, y)
     };
+    // A note's check box under the pointer lights up (not while the note is edited: the
+    // pointer places the caret then).
+    let note_box = if sb_hot || on_control || v.note_edit.is_some() {
+        None
+    } else {
+        v.note_box_at(x, y)
+    };
     let script_changed = (std::mem::replace(&mut v.script_hover, script_row) != script_row)
+        | (std::mem::replace(&mut v.note_box_hover, note_box) != note_box)
         | v.hover_empty_action((!sb_hot && !on_control).then_some((x, y)));
     let tip = v
         .tip_target_at(x, y, hit.filter(|_| behavior.info_tips.get()))
