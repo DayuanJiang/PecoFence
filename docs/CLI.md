@@ -283,6 +283,10 @@ included. `config.json` and `config export` files write this condition as
 
 `rule import` reads UTF-8 (a BOM is fine). Windows PowerShell 5 writes UTF-16 with `>`; such a file
 is rejected with `invalid_value` and the hint to re-save it (`| Set-Content -Encoding utf8`).
+The list is stored as given; when some of its rules target a fence that does not exist or cannot
+hold desktop items (a folder portal, a tool fence, a smart fence), the result carries a `warning`
+with their number, because the files they match go to the inbox. `rule add --to` refuses such a
+fence.
 
 `settings set` paths are dotted camelCase keys of the Settings object, e.g. `iconSize`, `theme`,
 `themeStyle`, `hideRealIcons` and `hideInboxWhenIconsShown` (the settings page shows the two as one
