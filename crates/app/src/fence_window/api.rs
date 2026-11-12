@@ -3059,7 +3059,11 @@ impl FenceWindow {
     /// on the Windows desktop do.
     pub fn end_item_selection(&self) {
         self.with_view(|v| {
-            if v.end_selection() {
+            // The keyboard is elsewhere too. During a Peek no focus message says so (the
+            // dimmer passes the keys on): the focus mark would stay behind on this fence's
+            // title row when Tab goes on to the next fence.
+            let ring = v.end_focus_mark() && !v.rolled_up;
+            if v.end_selection() || ring {
                 let _ = v.redraw_content();
             }
         });

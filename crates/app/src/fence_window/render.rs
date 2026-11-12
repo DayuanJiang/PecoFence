@@ -903,7 +903,8 @@ impl FenceViewState {
                 state,
                 style,
             )?;
-            if title_focus {
+            // Not on a title row that is folded away (「鼠标悬停时才显示标题栏」).
+            if title_focus && (rolled || state.title > 0.0) {
                 chrome.draw_title_focus(session, &theme, scale, wd, hd, &tabs, style)?;
             }
             Ok(())
