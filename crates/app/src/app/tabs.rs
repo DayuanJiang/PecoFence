@@ -254,6 +254,9 @@ impl App {
         // The host's frame belongs to all tabs. Snapping it to each tab's different row
         // height made repeated Icons/Details switches grow the window and lose scroll.
         self.apply_fence_view(host);
+        if let Some(w) = self.fences.get(&host) {
+            w.focus_after_tab_keys();
+        }
         self.schedule_save();
     }
 }

@@ -224,6 +224,7 @@ impl FenceWindow {
             scroll_memory: HashMap::new(),
             scroll_restore: None,
             select_after_nav: None,
+            tab_switch_by_keys: false,
             user_delete: None,
             scroll_anim: None,
             dpi,
@@ -2947,6 +2948,36 @@ impl FenceWindow {
             let _ = v.redraw_content();
         });
         handler::focus_session(&self.view, self.hwnd());
+    }
+
+    /// After a tab switch: when Ctrl+Tab asked for it, the keyboard's place shows in the new
+    /// tab as after Tab into a fence. The first icon in view is selected with the focus mark
+    /// (the tab keeps the scroll place it had); a tab with nothing in it carries the mark on
+    /// its caption. A switch by mouse leaves the new tab without a selection, as before.
+    pub fn focus_after_tab_keys(&self) {
+        self.with_view(|v| {
+            if !std::mem::take(&mut v.tab_switch_by_keys) {
+                return;
+            }
+            let first = (!v.items.is_empty() && !v.roll_target()).then(|| {
+                let (layout, _) = v.scroll_extent();
+                let top = v.scroll_target();
+                (0..v.items.len())
+                    .find(|i| layout.cell(*i).y >= top)
+                    .unwrap_or(0)
+            });
+            tracing::debug!(
+                fence = %v.active,
+                items = v.items.len(),
+                ?first,
+                "Ctrl+Tab: the focus mark goes to the new tab"
+            );
+            match first {
+                Some(i) => v.cursor_to(i, CursorMode::Select),
+                None => v.focus_visible = true,
+            }
+            let _ = v.redraw();
+        });
     }
 
     /// The window takes the keyboard as a click on it would, with the selection left as it is

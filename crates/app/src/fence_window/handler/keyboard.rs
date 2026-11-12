@@ -216,6 +216,8 @@ pub(super) fn on_keydown(
             } else {
                 (cur + 1) % n
             };
+            // By keyboard: the new tab shows where the keyboard is (`focus_after_tab_keys`).
+            v.tab_switch_by_keys = true;
             queue.push(Command::SwitchTab {
                 host: fence_id,
                 tab: v.tabs[next].id,
