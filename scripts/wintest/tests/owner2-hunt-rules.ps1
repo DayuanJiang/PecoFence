@@ -78,6 +78,22 @@ if ($Part -match 'N') {
   Start-Sleep -Seconds 1
   $text = (FenceGet '待办').noteText
   Check 'the fence is back and the note keeps its newer text' ((PfFence '要删的栅栏') -and $text -eq '第二版，删除之后写的') "note='$text'"
+  # A note deleted from its menu comes back with its own text.
+  Pf fence create --tool note --title '要删的便签' --text '删掉又回来的字' --rect '720,360,260,160' | Out-Null
+  Start-Sleep -Seconds 2
+  $n = PfFence '要删的便签'
+  [G]::RClick($n.windowRect.x + 150, $n.windowRect.y + 14); Start-Sleep -Milliseconds 900
+  $picked = MenuPick '^(删除栅栏|Delete fence)'
+  # A note with text asks first: Y is 「是」.
+  Start-Sleep -Milliseconds 900
+  [G]::Press(0x59)
+  Start-Sleep -Seconds 1
+  $gone = -not (PfFence '要删的便签')
+  $snap = HrSnap '删除栅栏前'
+  Pf snapshot restore $snap.id | Out-Null
+  Start-Sleep -Seconds 1
+  $back = (FenceGet '要删的便签').noteText
+  Check 'a deleted note comes back with its text' ($picked -and $gone -and $back -eq '删掉又回来的字') "picked='$picked' gone=$gone note='$back'"
   PfQuit
 }
 
