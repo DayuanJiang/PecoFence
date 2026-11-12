@@ -183,7 +183,7 @@ PecoFence는 Apache 2.0 라이선스로 공개되어 있습니다. 더 정확한
 
 이 저장소의 버전 태그에서 GitHub Actions가 빌드한 파일만 서명합니다. 서명할 때마다 직접 승인합니다.
 
-**개인정보:** 사용자나 이 프로그램을 설치하거나 사용하는 사람이 명시적으로 요청하지 않는 한, 이 프로그램은 다른 네트워크 시스템으로 어떤 정보도 보내지 않습니다. **업데이트 확인**을 누르면 GitHub API에 연결합니다. **피드백**에서 보낸 내용은 PecoFence 피드백 서비스로 전달됩니다. 설정 창은 Microsoft Edge WebView2로 실행되며 [Microsoft 개인정보처리방침](https://privacy.microsoft.com/privacystatement)이 적용됩니다.
+**개인정보:** 사용자나 이 프로그램을 설치하거나 사용하는 사람이 명시적으로 요청하지 않는 한, 이 프로그램은 다른 네트워크 시스템으로 어떤 정보도 보내지 않습니다. **업데이트 확인**을 누르면 GitHub API에 연결합니다. GitHub에서 응답이 없을 때에만 PecoFence 웹사이트(pecofence.jiang.jp)에 연결합니다. 요청 자체(PecoFence 버전 번호 포함) 외에는 아무것도 보내지 않습니다. **피드백**에서 보낸 내용은 PecoFence 피드백 서비스로 전달됩니다. 설정 창은 Microsoft Edge WebView2로 실행되며 [Microsoft 개인정보처리방침](https://privacy.microsoft.com/privacystatement)이 적용됩니다.
 
 ---
 
