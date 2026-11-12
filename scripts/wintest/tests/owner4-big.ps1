@@ -5,6 +5,10 @@
 #      spent it on, read from the app's debug log (`slow message`, `content draw`,
 #      `animation run`). --var Lite=1 leaves out Peek, the file added and removed, and memory.
 #      --var Only=scroll or Only=peek measures those rows alone, right after a start.
+#   S  the first End, Home and thumb drag over names not shown yet, the folder in name order:
+#      --var N=4000 --var View=icons|details (--var Runs=3), right after the folder's tab is
+#      shown and after 3 s of rest; then what the app does in 5 s of rest (pieces fitted
+#      ahead, processor time).
 #   R  memory: --var N=1000 (--var Runs=3). Private commit with the small folder alone, with the
 #      big folder's fence open, after scrolling through all of it, and 40 s later.
 #   P  pictures of a fence of 1000 files at rest (three views, three scroll positions, a
@@ -84,6 +88,7 @@ function BgQuiet($t0, $min = 900, $max = 20000) {
 # to the end of the last one; `busy` the sum of the outermost window messages of 4 ms or more.
 function BgRow($action, $run, $pos, $t0, [int]$items = 0, $note = '') {
   $text = BgLogFrom $pos
+  $over7 = 0; $over17 = 0
   $first = -1; $last = -1; $draws = 0; $drawSum = 0.0; $labels = 0.0; $drawOnly = 0.0; $drawMax = 0.0; $drawn = 0; $scroll = ''
   foreach ($m in [regex]::Matches($text, '(?m)^(\S+Z)\s[^\n]*content draw fence=(\S+) items=(\d+) drawn=(\d+) scroll=(-?[\d.]+) ms=([\d.]+) labels_ms=([\d.]+) draw_ms=([\d.]+)')) {
     $at = (BgStamp $m.Groups[1].Value) - $t0
@@ -93,6 +98,8 @@ function BgRow($action, $run, $pos, $t0, [int]$items = 0, $note = '') {
     if ($first -lt 0) { $first = $at }
     $last = $at; $draws++
     $ms = [double]$m.Groups[6].Value
+    if ($ms -gt 6.9) { $over7++ }
+    if ($ms -gt 16.7) { $over17++ }
     $drawSum += $ms; $labels += [double]$m.Groups[7].Value; $drawOnly += [double]$m.Groups[8].Value
     if ($ms -gt $drawMax) { $drawMax = $ms }
     $drawn = [int]$m.Groups[4].Value; $scroll = $m.Groups[5].Value
@@ -115,10 +122,10 @@ function BgRow($action, $run, $pos, $t0, [int]$items = 0, $note = '') {
   }
   $r = { param($v) [math]::Round($v, 1) }
   $row = @($N, $View, $action, $run, (& $r $first), (& $r $last), (& $r $busy), (& $r $worst), $draws, (& $r $drawSum), (& $r $labels), (& $r $drawOnly),
-    (& $r $drawMax), $drawn, $scroll, $frames, (& $r $work), (& $r $maxFrame), ($cmds -join ' '), $note) -join "`t"
+    (& $r $drawMax), $drawn, $scroll, $frames, (& $r $work), (& $r $maxFrame), ($cmds -join ' '), "$note over6.9=$over7 over16.7=$over17".Trim()) -join "`t"
   $row | Add-Content "$PfRun\big.tsv" -Encoding UTF8
   Log "BIG $row"
-  return @{ first = $first; last = $last; busy = $busy; worst = $worst; draws = $draws; labels = $labels; frames = $frames; work = $work; maxFrame = $maxFrame; scroll = $scroll; drawMax = $drawMax; drawSum = $drawSum }
+  return @{ first = $first; last = $last; busy = $busy; worst = $worst; draws = $draws; labels = $labels; frames = $frames; work = $work; maxFrame = $maxFrame; over7 = $over7; over17 = $over17; scroll = $scroll; drawMax = $drawMax; drawSum = $drawSum }
 }
 # One user action on the running app: the body, then quiet, then the row.
 function BgAct($action, $run, [scriptblock]$body, [int]$items = 0, [int]$min = 900, [int]$max = 20000) {
@@ -555,13 +562,14 @@ function PartB() {
   ParkMouse
   $t = BgMedian $tab
   Check 'B1 a click on the tab of a folder of 4000 files shows it within 120 ms (before: about 280 ms, of which 270 ms fit 4000 names)' ($t -ge 0 -and $t -lt 120) "first picture after $([math]::Round($t)) ms (runs $(@($tab | ForEach-Object { [math]::Round($_) }) -join ', ')); names and icon requests $(@($names | ForEach-Object { [math]::Round($_, 1) }) -join ', ') ms"
-  # The first End and Home after the tab is shown again: the rows on the way have no
-  # fitted name yet, and every frame of the glide fits the names it shows.
+  # The first End and Home 3 s after the tab is shown again. The rows on the way had no
+  # fitted name and every frame of the glide fitted the names it showed, a whole screen of
+  # long ones at the end of this folder; now they are fitted ahead while the fence rests.
   $endMax = @(); $homeMax = @(); $endWork = @()
   for ($r = 1; $r -le 3; $r++) {
     BgOverTab $iSmall; BgAct 'B tab click away' $r { BgPress } 0 900 | Out-Null
     BgOverTab $iBig; BgAct 'B tab click, again' $r { BgPress } 4000 900 | Out-Null
-    [G]::Click($BgX + 40, $BgY + 36 + 40); Start-Sleep -Milliseconds 400
+    [G]::Click($BgX + 40, $BgY + 36 + 40); Start-Sleep -Milliseconds 1600
     $a = BgAct 'B first End' $r { [G]::Press(0x23) } 0 900
     $endMax += $a.maxFrame
     if ($a.frames -gt 0) { $endWork += $a.work / $a.frames }
@@ -638,7 +646,103 @@ function PartB() {
   Remove-Item -Recurse -Force "$PfRun\bigdata" -ErrorAction SilentlyContinue
 }
 
+# The folder's tab shown anew: its items are a new list, no name below the first screen fitted.
+function BgFresh($iSmall, $iBig) {
+  BgOverTab $iSmall; BgPress; Start-Sleep -Milliseconds 350
+  BgOverTab $iBig; BgPress; Start-Sleep -Milliseconds 300
+}
+function BgFocus() { [G]::Click($BgX + 40, $BgY + 36 + 40) }
+
+function PartS() {
+  trap { PfTrap $_; continue }
+  Case "S setup: $N files by name, $View"
+  $animWas = [Anim]::Get(); [Anim]::Set($true)
+  $big = BgFolder "big$N" $N
+  $small = BgFolder 'small' $BgSmallN -Plain
+  PfStart -Script (DumpScript 500 2) -Lang 'zh-CN'
+  Start-Sleep -Seconds 2
+  ClearFences | Out-Null
+  Pf settings set featureTips false | Out-Null
+  Pf fence create --portal $small --title $BgSmall --rect "$BgX,$BgY,$BgW,$BgH" | Out-Null
+  Pf fence create --portal $big --title $BgBig --rect '700,80,600,560' | Out-Null
+  Start-Sleep -Seconds 3
+  Pf fence set $BgBig layout $View | Out-Null
+  Pf fence set $BgBig sort name | Out-Null
+  Pf fence merge $BgBig --into $BgSmall | Out-Null
+  BgQuiet (BgNow) 3000 60000
+  $d = DumpOf $BgSmall 8
+  $script:BgTabs = @($d.rects | ForEach-Object { $_[0] + $_[1] / 2 })
+  $iBig = [array]::IndexOf(@($d.tabs), $BgBig); $iSmall = [array]::IndexOf(@($d.tabs), $BgSmall)
+  $script:BgBigId = ''
+  BgClickTab $iBig; BgQuiet (BgNow) 2000 60000
+  $m = [regex]::Matches((BgLogFrom 0), "content draw fence=(\S+) items=$N ")
+  if ($m.Count -gt 0) { $script:BgBigId = $m[$m.Count - 1].Groups[1].Value }
+  Check 'S the folder is a tab and draws' ($iBig -ge 0 -and $script:BgBigId -ne '') "tabs $($d.tabs -join ' | ') id '$($script:BgBigId)'"
+  $tx = $BgX + $BgW - 7
+  $ty = if ($View -eq 'details') { $BgY + 80 } else { $BgY + 50 }
+
+  Case "S right after the fence appeared, $N files, $View"
+  for ($r = 1; $r -le $Runs; $r++) {
+    BgFresh $iSmall $iBig; BgFocus
+    BgAct 'End, right after the fence appeared' $r { [G]::Press(0x23) } 0 900 | Out-Null
+    BgFresh $iSmall $iBig; BgFocus
+    [G]::Press(0x23); Start-Sleep -Milliseconds 520
+    BgAct 'Home, right after the fence appeared' $r { [G]::Press(0x24) } 0 900 | Out-Null
+    BgFresh $iSmall $iBig
+    [G]::MoveTo($tx, $ty); Start-Sleep -Milliseconds 250
+    BgAct 'thumb drag, right after the fence appeared' $r { MDown; Start-Sleep -Milliseconds 60; Glide $tx $ty $tx ($BgY + $BgH - 6) 30 25; Start-Sleep -Milliseconds 100; MUp } 0 1200 | Out-Null
+    ParkMouse
+  }
+
+  Case "S after 3 s of rest, $N files, $View"
+  for ($r = 1; $r -le $Runs; $r++) {
+    BgFresh $iSmall $iBig; BgFocus
+    Start-Sleep -Milliseconds 3000
+    BgAct 'End, after 3 s of rest' $r { [G]::Press(0x23) } 0 900 | Out-Null
+    BgAct 'Home, after 3 s of rest' $r { [G]::Press(0x24) } 0 900 | Out-Null
+    BgFresh $iSmall $iBig
+    [G]::MoveTo($tx, $ty); Start-Sleep -Milliseconds 3000
+    BgAct 'thumb drag, after 3 s of rest' $r { MDown; Start-Sleep -Milliseconds 60; Glide $tx $ty $tx ($BgY + $BgH - 6) 30 25; Start-Sleep -Milliseconds 100; MUp } 0 1200 | Out-Null
+    ParkMouse
+  }
+
+  Case "S at rest, $N files, $View"
+  # The folder shown anew, then left alone: the names are fitted ahead and the timer ends.
+  BgFresh $iSmall $iBig
+  ParkMouse
+  $pos = BgLogLen
+  Start-Sleep -Seconds 20
+  $pieces = [regex]::Matches((BgLogFrom $pos), '(?m)^(\S+Z)\s[^\n]*names fitted ahead while the fence rests[^\n]* fitted=(\d+) left=(\w+) ms=([\d.]+)')
+  $fitted = 0; $work = 0.0; $longest = 0.0; $lastAt = 0.0; $firstAt = 0.0
+  foreach ($x in $pieces) {
+    $fitted += [int]$x.Groups[2].Value; $ms = [double]$x.Groups[4].Value; $work += $ms
+    if ($ms -gt $longest) { $longest = $ms }
+    $at = BgStamp $x.Groups[1].Value
+    if ($firstAt -eq 0) { $firstAt = $at }
+    $lastAt = $at
+  }
+  $done = ($pieces.Count -gt 0 -and $pieces[$pieces.Count - 1].Groups[3].Value -eq 'false')
+  # Then 5 s more of rest: no piece, no line of ours, and the processor time of the process.
+  $pos2 = BgLogLen
+  $p = Get-Process pecofence | Select-Object -First 1
+  $cpu0 = $p.TotalProcessorTime.TotalMilliseconds
+  Start-Sleep -Seconds 5
+  $p.Refresh()
+  $cpu = [math]::Round($p.TotalProcessorTime.TotalMilliseconds - $cpu0, 1)
+  $late = [regex]::Matches((BgLogFrom $pos2), 'names fitted ahead while the fence rests|content draw fence=').Count
+  $row = "N=$N view=$View pieces=$($pieces.Count) names fitted=$fitted work=$([math]::Round($work)) ms longest piece=$longest ms from first to last piece=$([math]::Round(($lastAt - $firstAt) / 1000, 2)) s all fitted=$done; next 5 s of rest: pieces and draws=$late processor time=$cpu ms commit=$(BgCommit) MB"
+  Log "BIGREST $row"
+  "REST`t$row" | Add-Content "$PfRun\big.tsv" -Encoding UTF8
+  if ($Ahead -ne '0') {
+    Check 'S the names of the whole folder are fitted ahead within 20 s of rest, in pieces of 4 ms at most, and then nothing runs' ($done -and $longest -le 4.0 -and $late -eq 0) $row
+  }
+  PfQuit
+  [Anim]::Set($animWas)
+  Remove-Item -Recurse -Force "$PfRun\bigdata" -ErrorAction SilentlyContinue
+}
+
 if ($Part -match 'M') { PartM }
+if ($Part -match 'S') { PartS }
 if ($Part -match 'E') { PartE }
 if ($Part -match 'B') { PartB }
 if ($Part -match 'P') { PartP }
