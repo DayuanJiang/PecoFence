@@ -443,7 +443,8 @@ pub struct FenceViewState {
     /// comctl32, a move to the same point neither arms nor re-targets the tip: Windows sends
     /// one after a click, when a window appears or when the content moves under a resting
     /// pointer. A tip that a click, a key or the wheel hid comes back only when the pointer
-    /// really moves.
+    /// really moves. Forgotten when the pointer leaves the window for another point
+    /// (`on_mouseleave`), so a pointer that comes back to the very point gets its tip.
     pub(super) tip_move_at: Option<(i32, i32)>,
     /// 自由摆放: the icons the user is moving by hand right now. The placing of their new
     /// cells leaves them out of its glide (`glide_to_new_slots`): they arrive from where they

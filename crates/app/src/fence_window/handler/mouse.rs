@@ -82,6 +82,13 @@ pub(super) fn on_mouseleave(
         if !inside {
             v.set_mouse_inside(false);
             v.lift_peek_block("the pointer left the fence");
+            // The pointer went away from the point of its last move: a move back to that very
+            // point is a move again and arms the tip. (A menu that opened under a resting
+            // pointer leaves it where it was: the move that follows its closing stays none.)
+            if v.tip_move_at.is_some_and(|at| at != (pt.x, pt.y)) {
+                tracing::debug!("pointer left the fence: the point of its last move is forgotten");
+                v.tip_move_at = None;
+            }
         }
         // A tip armed over a spot of the caption (the Task View glyph, a filter tag, the lock
         // glyph) is WM_NCMOUSEMOVE's, which can come before this message when the pointer goes

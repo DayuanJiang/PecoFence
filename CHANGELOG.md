@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The tip of an icon comes again when the pointer leaves the fence and comes back to the very same point. It stayed away until the pointer had moved by at least a pixel.
 - Settings › 布局与备份: 「尚无每日备份」 has a second line too (a backup is made by itself on the first change of each day, the last 7 are kept), like the empty lists of rules and snapshots.
 - Settings › 关于: a click on 「检查更新」 no longer makes the card's title jump. At rest the card shows 「更新」 alone; 「正在检查更新…」 then came under it and the title jumped up by half a line. The title now glides there and the status line fades in.
 - Settings: an open drop-down list is never wider than the window. A fence with a very long name (up to 120 characters) made the lists of 栅栏 and of a rule's 「目标栅栏」 wider than the window, shifted to the left and cut at the right; the name now wraps inside the list.
