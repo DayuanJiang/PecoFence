@@ -177,6 +177,70 @@ impl FenceViewState {
         (0..self.items.len()).map(|i| layout.cell(i)).collect()
     }
 
+    /// 按时间分组 goes on or off: the section captions come or go, and every icon or row near
+    /// the viewport glides from where it stood to its cell in the new arrangement, as a sort
+    /// glides them (250 ms point-to-point). They used to jump there in one frame: the list
+    /// that follows (`replace_items`) measured its "old" cells with the new grouping already
+    /// set, so it found nothing to move. That list continues these glides to the new order.
+    /// Snaps under the conditions `replace_items` snaps under.
+    pub(super) fn regroup(&mut self, on: bool) {
+        let animate = self.motion.enabled()
+            && !self.rolled_up
+            && self.roll_anim.is_none()
+            && !self.ole_drag
+            && self.marquee.is_none()
+            && self.outgoing.is_empty()
+            && desktop::is_visible(self.hwnd);
+        let (cw, _) = self.content_size_px();
+        let width_dip = cw as f32 / self.scale();
+        let old = if animate {
+            self.cell_origins(width_dip)
+        } else {
+            Vec::new()
+        };
+        self.group_by_date = on;
+        // The cells a running glide was computed for no longer exist.
+        self.snap_item_motion();
+        if !animate {
+            tracing::debug!(on, "group by date changed: no glide");
+            return;
+        }
+        let now = Instant::now();
+        let (layout, view_h) = self.scroll_extent();
+        let scroll = self.scroll_y;
+        // One viewport of slack above and below, as a column change takes; the rest snaps.
+        let near = |y: f32, h: f32| y + h > scroll - view_h && y < scroll + 2.0 * view_h;
+        let mut motion: HashMap<ItemId, ItemMotion> = HashMap::new();
+        for (i, (item, o)) in self.items.iter().zip(&old).enumerate() {
+            let c = layout.cell(i);
+            let moved = (o.x - c.x).abs() > 0.5 || (o.y - c.y).abs() > 0.5;
+            if moved && (near(o.y, o.h) || near(c.y, c.h)) {
+                let glide = |from: f32, to: f32| {
+                    self.motion
+                        .tween(from, to, motion::NORMAL, Curve::PointToPoint, now)
+                };
+                motion.insert(
+                    item.id,
+                    ItemMotion {
+                        x: glide(o.x, c.x),
+                        y: glide(o.y, c.y),
+                        alpha: Tween::at(1.0, now),
+                    },
+                );
+            }
+        }
+        tracing::debug!(
+            on,
+            items = self.items.len(),
+            gliding = motion.len(),
+            "group by date changed: icons glide"
+        );
+        if !motion.is_empty() {
+            self.item_motion = motion;
+            self.frames.request();
+        }
+    }
+
     /// Replaces the item list with layout motion (WinUI Reorder / AddDelete theme transitions):
     /// items present before and after glide from their old cell to the new one (250 ms
     /// point-to-point), new items fade in (167 ms) at their cell, removed items fade out (83 ms)

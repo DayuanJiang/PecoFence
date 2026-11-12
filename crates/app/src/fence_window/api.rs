@@ -1897,9 +1897,7 @@ impl FenceWindow {
             if v.group_by_date == on {
                 return;
             }
-            v.group_by_date = on;
-            // The cells a running glide was computed for no longer exist.
-            v.snap_item_motion();
+            v.regroup(on);
             let _ = v.redraw_content();
         });
     }
