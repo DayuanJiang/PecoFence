@@ -924,8 +924,8 @@ fn tab_glyph_centre(caption_x: f32) -> f32 {
 
 /// Where captions start in a left tab column row: after the colour dot when any tab has a
 /// colour, and after the folder and Task View glyphs when any tab has them, so the names stay
-/// aligned.
-fn rail_text_left(colored: bool, folders: bool, desktops: bool) -> f32 {
+/// aligned. Counted from the row's left edge; the name box of a row opens there.
+pub fn rail_text_left(colored: bool, folders: bool, desktops: bool) -> f32 {
     (if colored { 24.0 } else { 10.0 }) + tab_glyphs_w(folders, desktops)
 }
 

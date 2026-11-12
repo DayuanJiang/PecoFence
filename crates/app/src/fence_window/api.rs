@@ -2682,17 +2682,37 @@ impl FenceWindow {
     /// The title of `fence` as it is drawn, for its name box (`rename::begin_inline_rename`):
     /// where its text starts, its row's height, its size and its font. A lone title (centred
     /// or right-aligned: with the room it is aligned in, which its box takes) or a tab in the
-    /// title row (its caption is centred in its pill, after its glyphs). None for the left
-    /// tab column: its box keeps its row.
+    /// title row (its caption is centred in its pill, after its glyphs), or a row of the left
+    /// tab column (`x` then counts from the row's left edge, `rail_row_screen_rect`).
     pub fn title_text_place(&self, fence: FenceId) -> Option<crate::rename::TitlePlace> {
         const SIZES: [f32; 4] = [12.0, 14.0, 16.0, 18.0];
         let guard = self.view.borrow();
         let v = guard.as_ref()?;
-        if v.bare() || v.tabs_on_rail() {
+        if v.bare() {
             return None;
         }
         let (face, weight) = v.chrome.title_font();
         let px = |dip: f32| (dip * v.scale()).round() as i32;
+        if v.tabs_on_rail() {
+            // A row of the left tab column, as drawn: the caption after the colour dot and
+            // the glyphs any tab has, semibold for the shown tab of an expanded fence.
+            let i = v.tabs.iter().position(|t| t.id == fence)?;
+            let (_, h) = *v.tab_rects().get(i)?;
+            let x = pecofence_render::fence_chrome::rail_text_left(
+                v.tabs.iter().any(|t| t.color.is_some()),
+                v.tabs.iter().any(|t| t.folder_icon),
+                v.tabs.iter().any(|t| t.desktop_icon),
+            );
+            let shown = fence == v.active && !v.column_collapsed;
+            return Some(crate::rename::TitlePlace {
+                x: px(x),
+                row_h: px(h),
+                font_dip: SIZES[usize::from(v.tabs[i].title_size.min(3))],
+                face,
+                weight: if shown { weight } else { 400 },
+                aligned: None,
+            });
+        }
         let align = v.behavior.title_align.get();
         let (x, size, aligned) = if v.tabs.len() > 1 {
             let i = v.tabs.iter().position(|t| t.id == fence)?;

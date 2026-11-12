@@ -155,7 +155,8 @@ fn title_box_place(r: RECT, dpi: u32, title: &TitlePlace) -> (RECT, ItemBox) {
 /// rect of the tab's row in a left tab column). `title` is the title or tab caption the box
 /// replaces, where the fence can say where its text is: the box then sits on that text, in its
 /// font (a tab's box on its own tab; it opened at the left end of the row, over the first
-/// tab). `ink` is the colour the fence's text is drawn in (see [`box_colors`]).
+/// tab; a row of the left tab column on the row's caption). `ink` is the colour the fence's
+/// text is drawn in (see [`box_colors`]).
 pub fn begin_inline_rename(
     fence_hwnd: HWND,
     fence: FenceId,
@@ -167,10 +168,17 @@ pub fn begin_inline_rename(
 ) {
     let r = window::window_rect(fence_hwnd);
     let dpi = monitors::dpi_for_window(fence_hwnd).max(96);
-    if row.is_none()
-        && let Some(title) = title
-    {
-        let (rect, item_box) = title_box_place(r, dpi, &title);
+    if let Some(title) = title {
+        let (rect, item_box) = match row {
+            // A row of the left tab column: the box sits on the row's caption (`title.x`
+            // counts from the row's left edge) and ends with the row.
+            Some(row) => {
+                let (mut rect, item_box) = title_box_place(row, dpi, &title);
+                rect.right = row.right.max(rect.left + (80.0 * dpi as f32 / 96.0) as i32);
+                (rect, item_box)
+            }
+            None => title_box_place(r, dpi, &title),
+        };
         // The built-in title faces: the Small optical size under 13 DIPs, as the title.
         let built_in = if title.font_dip < 13.0 {
             pecofence_platform::fonts::small_face()

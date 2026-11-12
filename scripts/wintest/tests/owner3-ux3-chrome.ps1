@@ -128,6 +128,17 @@ function PartK() {
   Check 'K docked: both top corners are filled by the plate (square)' ([Math]::Abs($cl - $mid) -le 25 -and [Math]::Abs($cr - $mid) -le 25) "brightness: left corner $cl, right corner $cr, plate $mid"
   SaveCrop 'K-docked-left' ($r.L - 14) 0 60 50
   SaveCrop 'K-docked' ($r.L - 20) 0 ($r.R - $r.L + 40) 60
+  # Opened by the pointer (the drawer hangs from the edge): still square at the top.
+  RecStart 'K-drawer' -X ($r.L - 20) -Y 0 -W ($r.R - $r.L + 40) -H 300 -Fps 30
+  RecMark '指针移到停靠的栅栏上'
+  [G]::MoveTo($r.L + 100, 18); Start-Sleep -Milliseconds 300; [G]::MoveTo($r.L + 102, 18); Start-Sleep -Milliseconds 1200
+  $open = Rect (FWin '抽屉')
+  $ol = Lum ($open.L + 1) ($open.T + 1); $om = Lum ($open.L + 40) ($open.T + 1)
+  Check 'K docked and opened by the pointer: still square at the top' (($open.B - $open.T) -gt 100 -and [Math]::Abs($ol - $om) -le 25) "height $($open.B - $open.T); brightness: left corner $ol, plate $om"
+  SaveCrop 'K-docked-open' ($r.L - 20) 0 ($r.R - $r.L + 40) 280
+  RecMark '指针移开'
+  ParkMouse 1200 820; Start-Sleep -Milliseconds 1500
+  RecStop
   Pf settings set themeStyle liquidGlass | Out-Null; Start-Sleep -Seconds 2
   SaveCrop 'K-docked-glass' ($r.L - 20) 0 ($r.R - $r.L + 40) 60
   Pf settings set themeStyle fluent | Out-Null; Start-Sleep -Seconds 2
@@ -270,6 +281,29 @@ function PartN() {
     Check 'N folder tab: the box starts at the caption, after the glyph' ([Math]::Abs(($box.L + 4) - $capL) -le 3 -and $box.L -gt $tx) "caption text from $capL; box from $($box.L); tab pill from $tx"
   }
   [G]::Press(0x1B); Start-Sleep -Milliseconds 500
+
+  # The same two tabs in a left tab column: the box sits on the row's name.
+  Pf settings set tabBar left | Out-Null; Start-Sleep -Seconds 2
+  ParkMouse 1200 820
+  $d = DumpOf '季度报告'
+  $i = [array]::IndexOf(@($d.tabs), '资料夹')
+  $rowY = [int]($d.t + $d.oy + $d.rects[$i][0]); $rowH = [int]$d.rects[$i][1]
+  $r = Rect (FWin '季度报告')
+  SaveCrop 'N-rail-title' $r.L $r.T 200 120
+  # The name's text in its row: the dark pixels right of the folder glyph's slot.
+  $t = InkBox ($r.L + 33) $rowY 120 $rowH
+  [G]::RClick($r.L + 60, $rowY + [int]($rowH / 2)); Start-Sleep -Milliseconds 900
+  MenuPick '^重命名' (MenuWin 5) | Out-Null
+  $box = NameBoxAt 'rail'
+  Check 'N left tab column: the name box opens' ($box -ne $null) ''
+  if ($box) {
+    SaveCrop 'N-rail-box' $r.L $r.T 200 120
+    $capL = $r.L + 33 + $t[0]
+    $mid = $rowY + $rowH / 2
+    Check 'N left tab column: the box sits on the row''s name' ([Math]::Abs(($box.L + 4) - $capL) -le 3 -and [Math]::Abs((($box.T + $box.B) / 2) - $mid) -le 2) "name text from $capL, row middle $mid; box $($box.L),$($box.T),$($box.R),$($box.B)"
+  }
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 500
+  Pf settings set tabBar top | Out-Null; Start-Sleep -Seconds 1
 }
 
 function PartB() {
@@ -337,6 +371,47 @@ function PartH() {
   foreach ($f in $files) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
 }
 
+# Recordings of drag and resize feedback for a look (no checks): an edge dragged towards a
+# neighbour, a fence docked to the top and dragged away again, its chevron clicked at the edge.
+function PartR() {
+  trap { PfTrap $_; continue }
+  Case 'R recordings of drag and resize feedback'
+  ClearFences | Out-Null; SmallInbox
+  Pf fence create --title 左边 --rect '200,200,300,220' | Out-Null
+  Pf fence create --title 右边 --rect '560,200,300,220' | Out-Null
+  Pf fence create --title 抽屉 --rect '940,300,320,240' | Out-Null
+  Start-Sleep -Seconds 1
+  ParkMouse 1200 820
+  # The right edge of 左边 dragged towards 右边 (60 px away), slowly, past the gap and back.
+  RecStart 'R-resize' -X 180 -Y 170 -W 700 -H 290 -Fps 30
+  [G]::MoveTo(499, 320); Start-Sleep -Milliseconds 300; MDown; Start-Sleep -Milliseconds 150
+  RecMark '拖动右边缘靠近旁边的栅栏'
+  Glide 499 320 549 320 25 30; Start-Sleep -Milliseconds 400
+  Glide 549 320 520 320 15 30; Start-Sleep -Milliseconds 300
+  RecMark '松开'; MUp; Start-Sleep -Milliseconds 700
+  RecStop
+  # Docked to the top, then dragged away by its title, then back up.
+  RecStart 'R-dock' -X 900 -Y 0 -W 420 -H 420 -Fps 30
+  RecMark '停靠到屏幕顶部'
+  Start-Process "$PfApp\pecofence-cli.exe" -ArgumentList 'fence dock-top 抽屉' -WindowStyle Hidden | Out-Null
+  Start-Sleep -Milliseconds 1500
+  $r = Rect (FWin '抽屉')
+  [G]::MoveTo($r.L + 100, 18); Start-Sleep -Milliseconds 200; MDown; Start-Sleep -Milliseconds 150
+  RecMark '按住标题往下拖'
+  Glide ($r.L + 100) 18 ($r.L + 100) 140 20 30; Start-Sleep -Milliseconds 300
+  RecMark '拖回顶边'
+  Glide ($r.L + 100) 140 ($r.L + 100) 16 20 30; Start-Sleep -Milliseconds 300
+  RecMark '松开'; MUp; Start-Sleep -Milliseconds 800
+  # The chevron clicked at the edge: the fence opens and rolls up again.
+  $r = Rect (FWin '抽屉')
+  RecMark '点折叠箭头展开'
+  [G]::Click($r.R - 14, $r.T + 18); Start-Sleep -Milliseconds 1200
+  RecMark '再点一次收起'
+  [G]::Click($r.R - 14, $r.T + 18); Start-Sleep -Milliseconds 1200
+  RecStop
+  ParkMouse 1200 820
+}
+
 Case 'setup'
 CloseWindows
 $AnimWas = [Anim]::Get(); [Anim]::Set($true)
@@ -355,6 +430,7 @@ if ($Part -match 'F') { PartF }
 if ($Part -match 'N') { PartN }
 if ($Part -match 'B') { PartB }
 if ($Part -match 'H') { PartH }
+if ($Part -match 'R') { PartR }
 
 Case 'end'
 [Anim]::Set($AnimWas)
