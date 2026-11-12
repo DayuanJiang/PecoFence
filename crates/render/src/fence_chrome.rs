@@ -300,6 +300,10 @@ pub struct RowsDraw<'a> {
     pub scrollbar: Option<ScrollbarDraw>,
     /// The text of an empty fence and how strongly it shows (0..=1, see `ContentDraw`).
     pub empty_text: Option<(&'a str, f32)>,
+    /// The content height (DIPs) `empty_text` is placed by when that is not the present one:
+    /// the height the fence had while it was empty. A fence of automatic height grows under
+    /// arriving icons, and the text that fades out stays where it stood.
+    pub empty_text_height: Option<f32>,
     /// A clickable row under `empty_text` (「启动 Everything」).
     pub empty_action: Option<EmptyAction<'a>>,
     /// Fence-wide drop wash + accent ring alpha 0..=1 (a drag hovers the fence itself).
@@ -1529,6 +1533,10 @@ pub struct ContentDraw<'a> {
     /// rest, and what the last icon fading out or the first one fading in leaves of it, so
     /// the two cross-fade.
     pub empty_text: Option<(&'a str, f32)>,
+    /// The content height (DIPs) `empty_text` is placed by when that is not the present one:
+    /// the height the fence had while it was empty. A fence of automatic height grows under
+    /// arriving icons, and the text that fades out stays where it stood.
+    pub empty_text_height: Option<f32>,
     /// A clickable row under `empty_text` (「启动 Everything」).
     pub empty_action: Option<EmptyAction<'a>>,
     /// Fence-wide drop wash + accent ring alpha 0..=1 (a drag hovers the fence itself).
@@ -4344,7 +4352,10 @@ impl FenceChrome {
         if let Some((text, alpha)) = rows.empty_text {
             let faded = session.create_solid_brush(with_alpha(theme.text_secondary, alpha))?;
             let avail = (height - header_h).max(0.0);
-            let y0 = empty_text_top(avail);
+            let placed_by = rows
+                .empty_text_height
+                .map_or(avail, |h| (h - header_h).max(0.0));
+            let y0 = empty_text_top(placed_by);
             let (x, w) = balanced_wrap_span(text, &self.empty_format, width);
             session.draw_text(
                 text,
@@ -4493,7 +4504,7 @@ impl FenceChrome {
 
         if let Some((text, alpha)) = content.empty_text {
             let secondary = session.create_solid_brush(with_alpha(theme.text_secondary, alpha))?;
-            let y0 = empty_text_top(height);
+            let y0 = empty_text_top(content.empty_text_height.unwrap_or(height));
             let (x, w) = balanced_wrap_span(text, &self.empty_format, width);
             session.draw_text(
                 text,

@@ -217,6 +217,7 @@ impl FenceWindow {
             label_w: 0.0,
             label_wide_w: 0.0,
             icons_pending: false,
+            empty_text_h: None,
             hover: None,
             title_hover: false,
             selected: HashSet::new(),

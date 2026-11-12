@@ -575,6 +575,27 @@ impl FenceViewState {
         (shown < 1.0).then(|| (self.empty_text(), 1.0 - shown))
     }
 
+    /// The content height the text of an empty fence is placed by, when it is not the
+    /// present one: the height the fence had while it was empty, for the text that fades out
+    /// under arriving icons. A fence of automatic height grows with them: the text jumped
+    /// down in one frame and lay across the names of the first row.
+    pub(super) fn empty_text_height(&mut self, now: Instant) -> Option<f32> {
+        let now_h = self.content_size_px().1 as f32 / self.scale();
+        if self.items.is_empty() {
+            self.empty_text_h = Some(now_h);
+            return None;
+        }
+        // Only while the text still shows: a fence that has its icons draws none.
+        self.empty_text_draw(now)?;
+        let kept = self.empty_text_h.filter(|h| (h - now_h).abs() > 0.5)?;
+        tracing::debug!(
+            kept,
+            now_h,
+            "the text of an empty fence stays where it stood"
+        );
+        Some(kept)
+    }
+
     pub(super) fn empty_text(&self) -> &'static str {
         if self.bare() {
             // An empty desktop shows nothing.
@@ -1702,6 +1723,7 @@ impl FenceViewState {
 
         let now = Instant::now();
         self.prune_content_motion(now);
+        let empty_text_height = self.empty_text_height(now);
         self.sync_scrollbar_alpha();
         // Only the cells in the viewport are prepared (`draw_content` skips the others anyway);
         // an item gliding in from outside counts where it is drawn.
@@ -1824,6 +1846,7 @@ impl FenceViewState {
             label_gap: grid.metrics.label_gap,
             scrollbar,
             empty_text: self.empty_text_draw(now),
+            empty_text_height,
             empty_action: self.empty_action_draw(),
             drop_highlight: self.drop_wash.value_at(now),
             marquee: self.marquee_rect_dip(),
@@ -1899,6 +1922,7 @@ impl FenceViewState {
 
         let now = Instant::now();
         self.prune_content_motion(now);
+        let empty_text_height = self.empty_text_height(now);
         self.sync_scrollbar_alpha();
         // Only the rows in the viewport are prepared (`draw_rows` skips the others anyway); a
         // row gliding in from outside counts where it is drawn.
@@ -2035,6 +2059,7 @@ impl FenceViewState {
             header_pressed,
             scrollbar,
             empty_text,
+            empty_text_height,
             empty_action: self.empty_action_draw(),
             drop_highlight: self.drop_wash.value_at(now),
             marquee,

@@ -2,6 +2,8 @@
 #   run.sh --var Part=H tests/owner3-ux3-icons3.ps1    the one-line messages of an empty fence in narrow fences, four languages (pictures)
 #   run.sh --var Part=K ...                            three clock fences asked for within a second from the command line (the desktop takes one)
 #   run.sh --var Part=E ...                            exploration: double-click, Enter, five files arriving, paste, Ctrl / Shift clicks (recordings)
+#   run.sh --var Part=F ...                            nine files arriving in a fence that is full and in one of automatic height (the text of the empty fence stays in place), a paste of nine (recordings)
+#   run.sh --var Part=X ...                            Explorer's own desktop without PecoFence: a double-click on an icon (recording, the busy pointer)
 # Real mouse and keys, a new configuration. Every part ends with the desktop cleaned.
 if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'H' }
 . C:\pf\kit\rec.ps1
@@ -202,4 +204,49 @@ if ($Part -eq 'X') {
   Check 'Explorer: the busy pointer shows while the program starts' ($cur -notmatch '^-1') "first,last,busy/all = $cur"
   Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
   Remove-Item -LiteralPath (Join-Path $PfDesk '说明.txt') -Force -ErrorAction SilentlyContinue
+}
+
+if ($Part -eq 'F') {
+  function U3CleanF() { Get-ChildItem -LiteralPath $PfDesk -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '\.fpy$|\.fpz$' } | Remove-Item -Force -ErrorAction SilentlyContinue }
+  Case 'Nine files arrive at once in a full fence and in one of automatic height, a paste of nine'
+  CloseWindows; U3CleanF
+  $animWas = [Anim]::Get(); [Anim]::Set($true)
+  PfStart -Lang 'zh-CN'
+  Start-Sleep -Seconds 4
+  CloseNotice | Out-Null
+  ClearFences | Out-Null
+  Pf fence create --title '丙' --rect '60,80,340,150' | Out-Null
+  Pf fence create --title '丁' --rect '440,80,340,150' | Out-Null
+  Log ("auto height: " + (Pf fence set '丁' autoHeight true))
+  Pf rule add --name fpy --ext fpy --to '丙' | Out-Null
+  Pf rule add --name fpz --ext fpz --to '丁' | Out-Null
+  Start-Sleep -Milliseconds 800
+  ParkMouse 1100 700
+  RecStart 'f1-arrive' -X 60 -Y 80 -W 720 -H 420 -Fps 30
+  Start-Sleep -Milliseconds 300
+  RecMark '两个栅栏各来九个文件'
+  foreach ($k in 1..9) { DeskFile "来的文件$k.fpy" | Out-Null; DeskFile "另一批$k.fpz" | Out-Null }
+  Start-Sleep -Milliseconds 3500
+  RecStop
+  Shot 'f1-after-arrive'
+  # The fence of automatic height grows under the nine icons: the text of the empty fence
+  # fades out where it stood (it jumped down 46 px in one frame, across the first row's names).
+  $kept = @(PfLogAll | Where-Object { $_ -match 'the text of an empty fence stays where it stood' })
+  Check 'files arrive in an empty fence of automatic height: its text stays where it stood while it fades out' ($kept.Count -ge 1) "log lines: $($kept.Count); $(($kept | Select-Object -First 1) -replace '^.*DEBUG ', '')"
+  # A paste of nine into the fence of automatic height.
+  [G]::Click(100, 150); Start-Sleep -Milliseconds 300
+  Chord 0x11 0x41; Start-Sleep -Milliseconds 300
+  Chord 0x11 0x43; Start-Sleep -Milliseconds 400
+  $g = FenceGet '丁'
+  [G]::Click($g.windowRect.x + 300, $g.windowRect.y + $g.windowRect.h - 12); Start-Sleep -Milliseconds 500
+  RecStart 'f2-paste' -X 60 -Y 80 -W 720 -H 620 -Fps 30
+  Start-Sleep -Milliseconds 300
+  RecMark 'Ctrl+V 九个文件'
+  Chord 0x11 0x56
+  Start-Sleep -Milliseconds 4000
+  RecStop
+  Shot 'f2-after-paste'
+  Log ("after the paste: " + ((@(PfJson item list --fence '丁') | ForEach-Object { $_.fileName }) -join ' | '))
+  [Anim]::Set($animWas); U3CleanF
+  Check 'exploration ran' $true ''
 }
