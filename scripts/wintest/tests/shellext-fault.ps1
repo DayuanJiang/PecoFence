@@ -8,8 +8,8 @@
 #      Delete, Shift+Delete, the item menu's Delete, several files at once, a folder fence and
 #      a folder still delete, and Ctrl+Z brings a deleted file back
 #   C  Ctrl+C and Ctrl+X call no menu extension: with the extension set to fault in its first
-#      call they put the files on the clipboard as Explorer does (copy 5, cut 2), and a cut
-#      file pastes into a folder fence
+#      call they put the files on the clipboard as Explorer does (copy 5, cut 2), a cut file
+#      pastes into a folder fence and a copy pastes into an Explorer window
 #   F  a fault while the item menu is built (the shell loads every menu extension for it): the
 #      crash line and the next start's notice name the DLL, the process is gone within half a
 #      second of that line, the watchdog starts PecoFence again within a second of the click
@@ -84,6 +84,7 @@ public static class SxMon {
 '@
 
 $SxDir = 'C:\pf\sx-folder'
+$SxExplorer = 'C:\pf\sx-explorer'
 $ExtDir = "$PfRun\ext"
 $ExtClsid = '{7C0F1E5A-51B6-4E0C-9C55-70F5C0F3A167}'
 $ExtParents = @('HKCU\Software\Classes\*', 'HKCU\Software\Classes\Directory')
@@ -96,6 +97,7 @@ $Stamp = "$env:LOCALAPPDATA\PecoFence\icons-hidden.$PfInst.restarted"
 function SxClean() {
   Get-ChildItem -LiteralPath $PfDesk -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'sx *' } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
   if (Test-Path $SxDir) { Remove-Item -LiteralPath $SxDir -Recurse -Force -ErrorAction SilentlyContinue }
+  if (Test-Path $SxExplorer) { Remove-Item -LiteralPath $SxExplorer -Recurse -Force -ErrorAction SilentlyContinue }
   Clear-RecycleBin -Force -ErrorAction SilentlyContinue
 }
 function RegHas($key) { & reg.exe query $key 2>$null | Out-Null; return ($LASTEXITCODE -eq 0) }
@@ -323,6 +325,24 @@ if ($dll -and $Part -match 'C') {
   $moved = $false
   for ($i = 0; $i -lt 40 -and -not $moved; $i++) { Start-Sleep -Milliseconds 200; $moved = (Test-Path -LiteralPath (Join-Path $SxDir $cn[1])) -and -not (Test-Path -LiteralPath (Join-Path $PfDesk $cn[1])) }
   Check 'C the cut file pastes into a folder fence: it moves there' $moved "in the folder=$(Test-Path -LiteralPath (Join-Path $SxDir $cn[1])); still on the desktop=$(Test-Path -LiteralPath (Join-Path $PfDesk $cn[1]))"
+  # A copy made in a fence pastes into an Explorer window.
+  New-Item -ItemType Directory -Force $SxExplorer | Out-Null
+  SxSelect 'SxC' 0
+  Chord 0x11 0x43; Start-Sleep -Milliseconds 800
+  $copied = @(ClipFiles | ForEach-Object { Split-Path $_ -Leaf }) -join ' | '
+  $had = @([W]::Tops('CabinetWClass'))
+  Start-Process explorer.exe $SxExplorer
+  $fw = $null
+  for ($k = 0; $k -lt 30 -and -not $fw; $k++) { Start-Sleep -Milliseconds 300; $fw = @([W]::Tops('CabinetWClass') | Where-Object { $had -notcontains $_ }) | Select-Object -First 1 }
+  if ($fw) { [L]::MoveWindow($fw, 880, 420, 640, 400, $true) | Out-Null }
+  Start-Sleep -Seconds 2
+  # The empty file list of that window, then Ctrl+V.
+  [G]::Click(1320, 700); Start-Sleep -Milliseconds 500
+  Chord 0x11 0x56
+  $pasted = $false
+  for ($i = 0; $i -lt 40 -and -not $pasted; $i++) { Start-Sleep -Milliseconds 200; $pasted = Test-Path -LiteralPath (Join-Path $SxExplorer $copied) }
+  Check 'C a copy made in a fence pastes into an Explorer window' ($fw -and $copied -and $pasted -and (Test-Path -LiteralPath (Join-Path $PfDesk $copied))) "copied: $copied; in the Explorer folder=$pasted; still on the desktop=$(Test-Path -LiteralPath (Join-Path $PfDesk $copied))"
+  CloseWindows
   $p = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
   $calls = ExtCalls
   $crash = @(PfLogAll | Where-Object { $_ -cmatch 'CRASH \(|panicked' }).Count
