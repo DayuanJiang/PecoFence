@@ -459,9 +459,10 @@ pub struct TitleState {
     /// The lock glyph of a locked fence: shown while the pointer is over the fence (83 ms),
     /// dipping once when the lock refuses a drag.
     pub lock: f32,
-    /// A lone title's name and glyph just changed with the folder shown (into a subfolder,
-    /// back up): 1 → 0 is the remainder of their fade-in, so they draw at alpha `1 - swap`
-    /// while the icons cross-fade (83 ms linear), instead of cutting a frame ahead of them.
+    /// The title's name and glyph (a lone title's, or the shown tab's) just changed with the
+    /// folder shown (into a subfolder, back up): 1 → 0 is the remainder of their fade-in, so
+    /// they draw at alpha `1 - swap` while the icons cross-fade (83 ms linear), instead of
+    /// cutting a frame ahead of them.
     pub swap: f32,
     /// The plate's top edge lies on the screen edge (a fence docked to the top): its top
     /// corners are square there, as a drawer's are at the edge it hangs from.
@@ -3245,8 +3246,15 @@ impl FenceChrome {
                         })
                     })
                 };
-                let brush = session.create_solid_brush(with_alpha(color, ta))?;
-                let fx = legible.as_ref().map(|l| l.fx(theme, color, ta, false));
+                // The shown tab's caption and glyph fade in after its folder changed; the
+                // pill and the marker stay.
+                let ca = if tab.active {
+                    ta * (1.0 - state.swap.clamp(0.0, 1.0))
+                } else {
+                    ta
+                };
+                let brush = session.create_solid_brush(with_alpha(color, ca))?;
+                let fx = legible.as_ref().map(|l| l.fx(theme, color, ca, false));
                 if tab.desktop_icon {
                     let slot =
                         Rect::from_xywh(caption_x - TAB_ICON_W - 2.0, 0.0, TAB_ICON_W, title_h);
@@ -3267,7 +3275,7 @@ impl FenceChrome {
                             } else {
                                 color
                             },
-                            ta,
+                            ca,
                         ))?;
                         session.draw_text("\u{E74A}", &self.title_glyph_format, &slot, &ink);
                     } else {
@@ -3787,8 +3795,14 @@ impl FenceChrome {
             }
             // The shown tab's semibold caption cross-fades to the others' regular weight as the
             // fence collapses to the column.
+            // After its folder changed the shown tab's caption fades in, as in the title row.
+            let ca = if tab.active {
+                ta * (1.0 - state.swap.clamp(0.0, 1.0))
+            } else {
+                ta
+            };
             for (strong, a) in [(true, sel), (false, 1.0 - sel)] {
-                let a = a * ta;
+                let a = a * ca;
                 if a <= 0.0 {
                     continue;
                 }

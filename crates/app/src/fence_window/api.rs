@@ -957,15 +957,18 @@ impl FenceWindow {
                 && desktop::is_visible(v.hwnd)
             {
                 v.begin_content_swap(dir);
-                // The title names the folder shown: with a single title its name and glyph
-                // fade in while the icons cross-fade (a tab keeps its pill as it is).
-                if v.tabs.len() <= 1 {
-                    let now = Instant::now();
-                    v.chrome_fades.snap(ChromeKey::TitleSwap, 1.0, now);
-                    v.chrome_fades.set(true, ChromeKey::TitleSwap, 0.0, now);
-                    v.frames.request();
-                    tracing::debug!(dir, "folder navigation: the title fades in with the icons");
-                }
+                // The title names the folder shown: its name and glyph fade in while the
+                // icons cross-fade (a single title, or the shown tab's caption: the tab keeps
+                // its pill as it is).
+                let now = Instant::now();
+                v.chrome_fades.snap(ChromeKey::TitleSwap, 1.0, now);
+                v.chrome_fades.set(true, ChromeKey::TitleSwap, 0.0, now);
+                v.frames.request();
+                tracing::debug!(
+                    dir,
+                    tabs = v.tabs.len(),
+                    "folder navigation: the title fades in with the icons"
+                );
             }
         });
     }
