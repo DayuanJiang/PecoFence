@@ -4,8 +4,11 @@
 #      box and the fence's title box, both colour modes over a light and a dark wallpaper, both
 #      styles, 文字颜色 白色 / 黑色. In dark mode over a light wallpaper the names are dark on a
 #      light plate and the box was a dark block. The note editor is only read and logged.
-# Default: all.
-if (-not $Part) { $Part = 'R' }
+#   H  Liquid Glass with dark text (a bright plate): the hover fill shows, and a selected item
+#      still looks different from a hovered one. Its white fill showed nothing on a bright plate.
+# Default: all. The box draws Liquid Glass without a GPU, so H reads the same fills here;
+# how they look through the real lens is checked on a PC with a GPU.
+if (-not $Part) { $Part = 'RH' }
 trap { PfTrap $_; continue }
 
 Add-Type -ReferencedAssemblies System.Drawing @'
@@ -175,6 +178,62 @@ if ($Part -match 'R') {
   GlBoxes fluent dark dark black
   GlBoxes liquidGlass light dark auto
   Pf settings set labelColor auto | Out-Null
+}
+
+if ($Part -match 'H') {
+  function GlFill($tag, $p) {
+    $b = [Px]::Grab(($p[0] - 33), ($p[1] - 27), 5, 5); $m = MeanRgb $b; $b.Dispose()
+    Log "fill $tag = $($m -join ',')"
+    "fill/$tag`t$($m -join ',')" | Add-Content "$PfShots\boxes.tsv" -Encoding UTF8
+    return $m
+  }
+  function GlDelta($a, $b) { return [math]::Max([math]::Max([math]::Abs($a[0] - $b[0]), [math]::Abs($a[1] - $b[1])), [math]::Abs($a[2] - $b[2])) }
+  function GlHover($mode, $wall) {
+    trap { PfTrap $_; continue }
+    Case "hover fill: Liquid Glass, $mode mode, $wall wallpaper"
+    Pf settings set labelColor auto | Out-Null
+    Pf settings set themeStyle liquidGlass | Out-Null
+    Pf settings set theme $mode | Out-Null
+    GlWallpaper $wall
+    Start-Sleep -Milliseconds 1500
+    $w = GlWin '文档'
+    # Nothing selected: a click on the fence's empty lower part.
+    [G]::Click(($w.x + $w.w - 40), ($w.y + $w.h - 30)); GlPark
+    $p = CellPt '文档' 1
+    $rest = GlFill "$mode/$wall rest" $p
+    [G]::MoveTo($p[0], $p[1]); Start-Sleep -Milliseconds 700
+    $hover = GlFill "$mode/$wall hover" $p
+    Crop "H-$mode-$wall-hover" $w.x $w.y $w.w $w.h | Out-Null
+    [G]::Click($p[0], $p[1]); GlPark
+    $sel = GlFill "$mode/$wall selected" $p
+    Crop "H-$mode-$wall-selected" $w.x $w.y $w.w $w.h | Out-Null
+    # Another program's window in front: the selection takes its neutral look, a fill and a
+    # ring. The ring is the pixel of a short row across the plate's left edge that is
+    # farthest from the bare plate.
+    $had = @(Get-Process notepad -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+    Start-Process notepad; Start-Sleep -Seconds 2
+    $np = @(Get-Process notepad -ErrorAction SilentlyContinue | Where-Object { $had -notcontains $_.Id })
+    foreach ($q in $np) { if ($q.MainWindowHandle -ne [IntPtr]::Zero) { [L]::MoveWindow($q.MainWindowHandle, 900, 470, 520, 300, $true) | Out-Null } }
+    Start-Sleep -Milliseconds 900
+    $idle = GlFill "$mode/$wall selected, another program in front" $p
+    $row = [Px]::Grab(($p[0] - 46), $p[1], 14, 1); $ring = $idle; $far = -1
+    foreach ($c in [Px]::Pixels($row)) {
+      $rgb = @((($c -shr 16) -band 255), (($c -shr 8) -band 255), ($c -band 255)); $d = GlDelta $rgb $rest
+      if ($d -gt $far) { $far = $d; $ring = $rgb }
+    }
+    $row.Dispose()
+    "fill/$mode/$wall ring of that selection`t$($ring -join ',')" | Add-Content "$PfShots\boxes.tsv" -Encoding UTF8
+    Crop "H-$mode-$wall-inactive" $w.x $w.y $w.w $w.h | Out-Null
+    foreach ($q in $np) { Stop-Process -Id $q.Id -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Milliseconds 500
+    [G]::Click(($w.x + $w.w - 40), ($w.y + $w.h - 30)); GlPark
+    Check "$mode mode over a $wall wallpaper: the hover fill shows (8 levels or more)" ((GlDelta $rest $hover) -ge 8) "rest $($rest -join ','), hover $($hover -join ','), difference $(GlDelta $rest $hover)"
+    Check "$mode mode over a $wall wallpaper: a selected item differs from a hovered one" ((GlDelta $hover $sel) -ge 8) "hover $($hover -join ','), selected $($sel -join ','), difference $(GlDelta $hover $sel)"
+    Check "$mode mode over a $wall wallpaper: a selected item differs from a hovered one while another program is in front (by its fill or its ring)" ([math]::Max((GlDelta $hover $idle), (GlDelta $hover $ring)) -ge 8) "hover $($hover -join ','), selected fill $($idle -join ',') (difference $(GlDelta $hover $idle)), its ring $($ring -join ',') (difference $(GlDelta $hover $ring))"
+  }
+  GlHover light light
+  GlHover dark light
+  GlHover dark dark
 }
 
 Case 'cleanup'

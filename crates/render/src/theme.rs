@@ -393,7 +393,11 @@ impl Theme {
                 self.glass_layer_fill = ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0x03);
                 self.glass_rim_bottom = ColorF::from_rgba8(0x4A, 0x61, 0x86, 0x40);
                 self.tab_active_fill = ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xAE);
-                self.subtle_hover = ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0x60);
+                // These go with dark text, so the glass under them is bright: the hover fill
+                // darkens it like the pressed one. A white fill left a glass at 254 as it
+                // was (under 3 levels of 255); this one gives 19 there and 7 on the darkest
+                // glass that still has dark text (`INK_KEEP_DARK`).
+                self.subtle_hover = ColorF::from_rgba8(0x20, 0x36, 0x55, 0x18);
                 self.subtle_pressed = ColorF::from_rgba8(0x20, 0x36, 0x55, 0x15);
                 self.text_primary = ColorF::from_rgba8(0x13, 0x20, 0x36, 0xFF);
                 self.text_secondary = ColorF::from_rgba8(0x20, 0x30, 0x49, 0xEB);
@@ -937,6 +941,30 @@ mod tests {
                 .text_primary,
             fluent.text_primary
         );
+    }
+
+    #[test]
+    fn liquid_glass_hover_and_pressed_fills_show_on_every_glass() {
+        // How far a fill moves the brightness of a plain glass of `grey`, in levels of 255.
+        let shift = |fill: ColorF, grey: u8| {
+            (luma([fill.r, fill.g, fill.b]) * 255.0 - grey as f32) * fill.a
+        };
+        for mode in [ThemeMode::Light, ThemeMode::Dark] {
+            let base = Theme::for_mode(mode).with_liquid_glass();
+            for grey in (0..=255u8).step_by(5) {
+                let picked = base.over_glass(&crate::Image::solid(16, 16, [grey; 3]));
+                let hover = shift(picked.subtle_hover, grey);
+                let pressed = shift(picked.subtle_pressed, grey);
+                // Dark text sits on a bright glass, which the fills darken; light text on a
+                // dark one, which they lighten. A white fill on a white glass showed nothing.
+                let dark_text = picked.text_primary.r < 0.5;
+                assert_eq!(hover < 0.0, dark_text, "glass {grey}: hover {hover}");
+                assert!(hover.abs() >= 8.0, "glass {grey}: hover {hover}");
+                assert!(pressed.abs() >= 5.0, "glass {grey}: pressed {pressed}");
+                // The pressed fill recedes from the hover one, as in the Fluent style.
+                assert!(pressed.abs() < hover.abs(), "glass {grey}");
+            }
+        }
     }
 
     #[test]

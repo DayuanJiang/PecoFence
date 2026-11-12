@@ -634,6 +634,15 @@ impl FenceWindow {
             // The pointer entering (x = 1) / leaving (x = 0) the fence without a real cursor:
             // title on hover and 全透明 react as they do to WM_MOUSEMOVE / WM_MOUSELEAVE.
             "hover" => self.with_view(|v| v.set_mouse_inside(x != 0)),
+            // The hover look of the item at client point (x, y) without a real cursor, kept
+            // until the cursor next passes over the fence (x < 0 takes it off). A "move"
+            // asks for WM_MOUSELEAVE, which comes at once while the cursor is elsewhere.
+            "hover-item" => self.with_view(|v| {
+                let hit = if x < 0 { None } else { v.hit_item(x, y) };
+                if v.set_hover(hit, false).0 {
+                    let _ = v.redraw_content();
+                }
+            }),
             _ => {
                 let (message, key, point) = match action {
                     "down" => (msg::WM_LBUTTONDOWN, 1, (x, y)),
