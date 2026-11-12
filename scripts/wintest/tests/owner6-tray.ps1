@@ -189,6 +189,7 @@ Check 'no shortcut is free: the notice goes out and the icon is there although t
 # Longer than the notification shows (about 7 s on the box).
 Start-Sleep -Seconds 12
 Check 'the icon is still there after the notice went away' (TrayThere)
+T6Corner 'corner-no-peek-shortcut'
 $picked = TrayPick '速览所有栅栏'
 Start-Sleep -Milliseconds 1000
 $dim = [G]::FindWindowW('PecoFence.PeekDimmer', [NullString]::Value)
