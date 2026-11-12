@@ -647,12 +647,16 @@ pub(super) fn on_size(h: &HandlerCtx, hwnd: HWND, _wparam: usize, lparam: isize)
         v.note_edge_top();
         v.update_backdrop();
         let crop_done = Instant::now();
+        // The parts of an animated step's draw, for the `resize stages` line.
+        let (mut clip_us, mut surface_us) = (0, 0);
         let drawn = if v.height_animating() {
             // Frame-clock resize: the content surface is frozen at its
             // expanded size; only the chrome (backdrop, rim) follows.
-            v.update_shape_clip(w, h)
-                .and_then(|_| v.chrome_panel.resize(w, h))
-                .and_then(|_| v.draw_chrome_panel())
+            let clipped = v.update_shape_clip(w, h);
+            clip_us = crop_done.elapsed().as_micros();
+            let resized = clipped.and_then(|_| v.chrome_panel.resize(w, h));
+            surface_us = crop_done.elapsed().as_micros() - clip_us;
+            resized.and_then(|_| v.draw_chrome_panel())
         } else {
             // The cell grid is re-laid out for the new width: an edge the user drags glides
             // the icons to their new cells when the column count changes; any other resize
@@ -701,7 +705,12 @@ pub(super) fn on_size(h: &HandlerCtx, hwnd: HWND, _wparam: usize, lparam: isize)
             w, h,
             crop_us = crop_done.duration_since(started).as_micros(),
             draw_us = draw_done.duration_since(crop_done).as_micros(),
+            // Of `draw_us` in a step of a height animation: the rounded clip and the
+            // chrome surface's new size; the rest is the chrome's redraw (`surface draw`).
+            clip_us,
+            surface_us,
             shadow_us = draw_done.elapsed().as_micros(),
+            animating = v.height_animating(),
             "resize stages"
         );
     }
