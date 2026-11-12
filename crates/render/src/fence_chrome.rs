@@ -1226,6 +1226,22 @@ fn halo_color(theme: &Theme, ink: ColorF, alpha: f32, soft: bool) -> ColorF {
     }
 }
 
+/// The halo of a note's lines and a script's rows in a fence that has it (`Theme::text_halo`:
+/// part of its plate is weak for its text), as a list row has it: the line once more in the
+/// soft halo colour, one device pixel lower. The brush and that offset in DIPs; None without
+/// the halo.
+fn tool_halo(
+    session: &DrawingSession<'_>,
+    theme: &Theme,
+    scale: f32,
+) -> Result<Option<(Brush, f32)>> {
+    if !theme.text_halo {
+        return Ok(None);
+    }
+    let brush = session.create_solid_brush(halo_color(theme, theme.text_primary, 1.0, true))?;
+    Ok(Some((brush, 1.0 / scale.max(1.0))))
+}
+
 /// The halo brush of captions straight over wallpaper, recoloured per caption by
 /// [`Legible::fx`].
 struct Legible {
@@ -4347,6 +4363,7 @@ impl FenceChrome {
         let tt = self.tool_text(text_size);
         let primary = session.create_solid_brush(theme.text_primary)?;
         let secondary = session.create_solid_brush(theme.text_secondary)?;
+        let halo = tool_halo(session, theme, scale)?;
         let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
         let height = match footer.filter(|f| !f.is_empty()) {
             Some(footer) => {
@@ -4446,6 +4463,9 @@ impl FenceChrome {
             } else {
                 &primary
             };
+            if let Some((halo, down)) = &halo {
+                session.draw_text_layout(Vector2::new(row.x, y + down), &row.layout, halo);
+            }
             session.draw_text_layout(Vector2::new(row.x, y), &row.layout, brush);
             if let Some((_, at)) = edit.and_then(|e| e.caret).filter(|c| c.0 == i) {
                 let (cx, top, h) = layout_caret(&row.layout, at, len);
@@ -4662,6 +4682,7 @@ impl FenceChrome {
         let tt = self.tool_text(text_size);
         let primary = session.create_solid_brush(theme.text_primary)?;
         let secondary = session.create_solid_brush(theme.text_secondary)?;
+        let halo = tool_halo(session, theme, scale)?;
         let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
         let has_footer = !footer.is_empty();
         let height = if has_footer {
@@ -4753,6 +4774,10 @@ impl FenceChrome {
                 (None, Some(true)) => &secondary,
                 (None, _) => &primary,
             };
+            // A row in a colour of its own keeps it bare: the halo is the fence text's.
+            if let (Some((halo, down)), None) = (&halo, &own) {
+                session.draw_text_layout(Vector2::new(at.text_x, y + down), layout, halo);
+            }
             session.draw_text_layout_color(Vector2::new(at.text_x, y), layout, brush);
             if hovered && row.opens {
                 session.draw_text(

@@ -200,9 +200,13 @@ impl Ink {
 const INK_KEEP_DARK: f32 = 0.50;
 const INK_KEEP_LIGHT: f32 = 0.62;
 const INK_NEUTRAL: f32 = 0.56;
-/// Fluent: light text is weak (under about 3.3 : 1) on a plate brighter than `INK_NEUTRAL`,
-/// dark text on one darker than this. A fence with at least `WEAK_PLATE_SHARE` of its plate
-/// there gets the halo: a busy wallpaper, or light text kept near its threshold.
+/// Fluent: light text is weak (under about 3.9 : 1, what names and rows need) on a plate
+/// brighter than `LIGHT_TEXT_WEAK`, dark text on one darker than `DARK_TEXT_WEAK`. A fence with
+/// at least `WEAK_PLATE_SHARE` of its plate there gets the halo: a busy wallpaper, or light
+/// text kept near its threshold. Light text is kept from `LIGHT_TEXT_WEAK` up to
+/// `INK_KEEP_LIGHT`: counted from `INK_NEUTRAL` only, an even plate in between (Windows 10's
+/// own wallpaper in dark mode, brightness 0.53) had white text at 3.6 : 1 and no halo.
+const LIGHT_TEXT_WEAK: f32 = INK_KEEP_DARK;
 const DARK_TEXT_WEAK: f32 = 0.40;
 const WEAK_PLATE_SHARE: f32 = 0.125;
 /// A fence that has the halo keeps it down to this share, so a fence resting or moving near
@@ -560,7 +564,7 @@ impl Theme {
                 self.plate_over([p[2], p[1], p[0]].map(|c| c as f32 / 255.0), opacity, tint);
             let value = brightness(plate);
             sum += value;
-            bright += (value > INK_NEUTRAL) as u32;
+            bright += (value > LIGHT_TEXT_WEAK) as u32;
             dim += (value < DARK_TEXT_WEAK) as u32;
             count += 1;
         }
@@ -1182,6 +1186,20 @@ mod tests {
         image.tint(m.color, m.luminosity_opacity, m.noise, m.chroma);
         let busy = dark.over_acrylic(&image, 1.0, None, None);
         assert!(busy.text_primary.r < 0.2 && busy.text_halo);
+        // An even plate between the two thresholds, as Windows 10's own wallpaper gives in dark
+        // mode ((22,139,226) on screen, brightness 0.53). The light text is kept and white has
+        // about 3.6 : 1 there; no part of the plate is over the neutral threshold, so it had
+        // no halo.
+        let even = crop_of(&dark, [140; 3]);
+        let (brightness, bright_share, _) = dark.acrylic_plate_stats(&even, 1.0, None);
+        assert!(
+            LIGHT_TEXT_WEAK < brightness && brightness < INK_NEUTRAL,
+            "{brightness}"
+        );
+        assert_eq!(bright_share, 1.0);
+        let kept = dark.over_acrylic(&even, 1.0, None, None);
+        assert_eq!(kept.text_primary, dark.text_primary);
+        assert!(kept.text_halo);
         // A plain wallpaper where the picked text reads needs none.
         for gray in [20, 128, 236] {
             assert!(
