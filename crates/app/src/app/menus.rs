@@ -247,23 +247,6 @@ mod glyph {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    /// A glyph the icon font of this Windows lacks is drawn as an empty box beside the menu
-    /// item (退出 PecoFence on Windows 10 1809, #219).
-    #[test]
-    fn the_icon_font_has_every_menu_glyph() {
-        for glyph in super::glyph::all() {
-            assert!(
-                pecofence_platform::fonts::icon_font_has(glyph),
-                "U+{:04X} is not in {}",
-                glyph as u32,
-                pecofence_platform::fonts::icon_face()
-            );
-        }
-    }
-}
-
 impl App {
     pub(super) fn show_tray_menu(&mut self, x: i32, y: i32) {
         let hidden = self
@@ -1642,6 +1625,23 @@ impl App {
                 self.schedule_save();
             }
             _ => {}
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// A glyph the icon font of this Windows lacks is drawn as an empty box beside the menu
+    /// item (退出 PecoFence on Windows 10 1809, #219).
+    #[test]
+    fn the_icon_font_has_every_menu_glyph() {
+        for glyph in super::glyph::all() {
+            assert!(
+                pecofence_platform::fonts::icon_font_has(glyph),
+                "U+{:04X} is not in {}",
+                glyph as u32,
+                pecofence_platform::fonts::icon_face()
+            );
         }
     }
 }
