@@ -356,7 +356,9 @@ MDown; Start-Sleep -Milliseconds 200
 Glide $from[0] $from[1] ($from[0] + 6) $to[1] 8 30
 Start-Sleep -Milliseconds 400
 # Two notches down with the pointer at rest; the button stays held and the pointer does not move.
+$places0 = @(PfLogAll | Where-Object { $_ -match 'to-do drag: the line changes places' }).Count
 Wheel ($from[0] + 6) $to[1] (-2); Start-Sleep -Milliseconds 1200
+$places1 = @(PfLogAll | Where-Object { $_ -match 'to-do drag: the line changes places' }).Count
 $wWheel = DumpOf '便签'
 $scrollWheel = [double](DumpVal $wWheel 'scroll')
 FCrop 's1b-wheel-while-dragging' $w
@@ -367,6 +369,7 @@ MUp; Start-Sleep -Milliseconds 1200
 $after = NoteText $nid
 $idx = [array]::IndexOf(@($after -split "`n"), '[ ] 第01条')
 Check 'the wheel scrolls the note while the to-do is held, and the held line stays at the pointer' ($scrollWheel -ge 60 -and $near -le 3) "scroll after two notches: $scrollWheel; the nearest check box is $near px from the pointer's height"
+Check 'while the text scrolls by, the held line changes places line by line (it does not ride away with the text and jump back at the end)' ($places1 - $places0 -ge 4) "log lines 'the line changes places' during the scroll: $($places1 - $places0) (one jump at the end would be 1)"
 Check 'released without another move, the to-do lands where it was held: several lines down, not beside its old place' ($idx -ge 4) "the first to-do is now line $($idx + 1) of 12; note: $(OneLine $after)"
 
 Case 'S2 Esc at the edge puts the line back and the note where it was scrolled'
