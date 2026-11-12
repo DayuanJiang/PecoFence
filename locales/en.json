@@ -498,6 +498,7 @@
   "速览所有栅栏\t{0}": "Peek at all fences\t{0}",
   "重命名\tF2": "Rename\tF2",
   "已按规则整理 {0} 个项目。": "Rules applied. Items sorted: {0}",
+  "没有需要整理的项目，图标都已按规则放好。": "Nothing to sort: the icons are already where the rules put them.",
   "\n大小: {0}": "\nSize: {0}",
   "打开\tEnter": "Open\tEnter",
   "\n修改日期: {0}": "\nDate modified: {0}",

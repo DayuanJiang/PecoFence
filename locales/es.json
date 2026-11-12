@@ -474,6 +474,7 @@
   "速览所有栅栏\t{0}": "Vista rápida de los grupos\t{0}",
   "重命名\tF2": "Cambiar nombre\tF2",
   "已按规则整理 {0} 个项目。": "Elementos organizados por reglas: {0}",
+  "没有需要整理的项目，图标都已按规则放好。": "No hay nada que ordenar: los iconos ya están donde los colocan las reglas.",
   "\n大小: {0}": "\nTamaño: {0}",
   "打开\tEnter": "Abrir\tEntrar",
   "\n修改日期: {0}": "\nFecha de modificación: {0}",

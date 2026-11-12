@@ -474,6 +474,7 @@
   "速览所有栅栏\t{0}": "Alle Bereiche hervorholen\t{0}",
   "重命名\tF2": "Umbenennen\tF2",
   "已按规则整理 {0} 个项目。": "Elemente nach Regeln einsortiert: {0}",
+  "没有需要整理的项目，图标都已按规则放好。": "Nichts zu sortieren: Die Symbole liegen schon dort, wo die Regeln sie hinlegen.",
   "\n大小: {0}": "\nGröße: {0}",
   "打开\tEnter": "Öffnen\tEingabe",
   "\n修改日期: {0}": "\nÄnderungsdatum: {0}",

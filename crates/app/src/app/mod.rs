@@ -2989,14 +2989,18 @@ impl App {
                 let (moved, step) = self.apply_rules_now();
                 let shown = step.is_some_and(|id| self.offer_undo_refiled(id, moved));
                 if !shown && let Some(t) = &self.tray {
-                    t.show_info(
-                        "PecoFence",
-                        &pecofence_core::i18n::format(
+                    // Nothing moved: say that, not "0 items sorted".
+                    tracing::debug!(moved, "rules applied from the tray: a notification says so");
+                    let text = if moved == 0 {
+                        pecofence_core::i18n::text("没有需要整理的项目，图标都已按规则放好。")
+                            .to_string()
+                    } else {
+                        pecofence_core::i18n::format(
                             "已按规则整理 {0} 个项目。",
                             &[moved.to_string()],
-                        ),
-                        false,
-                    );
+                        )
+                    };
+                    t.show_info("PecoFence", &text, false);
                 }
             }
             Command::OpenSettings => self.open_settings(),

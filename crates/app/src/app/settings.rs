@@ -905,7 +905,12 @@ impl App {
                 Some("applyRules") => {
                     // The notice with 撤销 says how many moved; without it, the page does.
                     let (moved, step) = self.apply_rules_now();
-                    if !step.is_some_and(|id| self.offer_undo_refiled(id, moved)) {
+                    if moved == 0 {
+                        // Nothing moved: say that, not "0 items sorted".
+                        self.settings_toast(pecofence_core::i18n::text(
+                            "没有需要整理的项目，图标都已按规则放好。",
+                        ));
+                    } else if !step.is_some_and(|id| self.offer_undo_refiled(id, moved)) {
                         self.settings_toast(&pecofence_core::i18n::format(
                             "已按规则整理 {0} 个项目",
                             &[moved.to_string()],

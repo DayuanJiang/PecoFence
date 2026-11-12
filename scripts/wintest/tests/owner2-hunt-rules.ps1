@@ -11,10 +11,11 @@
 #   run.sh --var Part=B ...   no "cannot save" when only the day's backup copy fails
 #   run.sh --var Part=G ...   a snapshot restore glides the fences that moved (recorded)
 #   run.sh --var Part=F ...   icons taken out of a fence fade out, however many (recorded)
+#   run.sh --var Part=Z ...   立即应用整理规则 with nothing to sort says so
 #   run.sh --bin target/wintest-bin-debug --var Part=P ...   the settings page (CDP): the notice
 #                             after a restore has 撤销; no smart fence among a rule's targets
 # Without --var every part but P runs (about 4 minutes).
-if (-not $Part) { $Part = 'SINLXRKDBGF' }
+if (-not $Part) { $Part = 'SINLXRKDBGFZ' }
 $HrCfg = "$PfApp\config\config.json"
 function HrClean() { Get-ChildItem -LiteralPath $PfDesk -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'hr2-*' } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue }
 function HrUtf8($path, $text) { [IO.File]::WriteAllText($path, $text, (New-Object Text.UTF8Encoding($false))) }
@@ -229,6 +230,19 @@ if ($Part -match 'F') {
   Check 'they fade out (all ten at once is no refill)' ($fade.Count -ge 1) "log lines: $($fade.Count)"
   [Anim]::Set($anim0)
   PfQuit; HrClean
+}
+
+if ($Part -match 'Z') {
+  Case 'Z 立即应用整理规则 with nothing to sort'
+  . C:\pf\kit\user.ps1
+  # In English: the box's OCR reads the notification.
+  HrClean; PfFresh
+  Start-Sleep -Seconds 2
+  $picked = TrayPick '立即应用整理规则|Apply'
+  $said = ToastOcr 'Nothing to sort|sorted' 6
+  Crop 'Z-notice' 1200 640 400 215 | Out-Null
+  Check 'the notification says that nothing needed sorting (not: 0 items sorted)' ($picked -and $said -match 'Nothing to sort') "picked='$picked' said='$said'"
+  PfQuit
 }
 
 if ($Part -match 'P') {

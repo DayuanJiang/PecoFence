@@ -498,6 +498,7 @@
   "速览所有栅栏\t{0}": "Aperçu des groupes\t{0}",
   "重命名\tF2": "Renommer\tF2",
   "已按规则整理 {0} 个项目。": "Éléments classés par les règles : {0}",
+  "没有需要整理的项目，图标都已按规则放好。": "Rien à trier : les icônes sont déjà là où les règles les placent.",
   "\n大小: {0}": "\nTaille : {0}",
   "打开\tEnter": "Ouvrir\tEntrée",
   "\n修改日期: {0}": "\nModifié le : {0}",
