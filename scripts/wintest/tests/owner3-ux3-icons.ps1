@@ -3,6 +3,8 @@
 #   run.sh --var Part=B ...                            fences made or renamed while the fences hide
 #   run.sh --var Part=C ...                            the drag label over the desktop
 #   run.sh --var Part=D ...                            tooltips fade
+#   run.sh --var Part=E ...                            the icons of a deleted fence
+#   run.sh --var Part=P ...                            Windows' own tip, recorded for comparison (no check of PecoFence)
 #   --var Rec=1 also records the clips of the report (rec-*).
 # Real mouse and keys, zh-CN, a new configuration (「桌面」 arranged like the desktop, 自由摆放).
 if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'A' }
@@ -224,6 +226,40 @@ if ($Part -eq 'D') {
   $partOut = @($out | Where-Object { $_[1] -gt 0.15 * $full -and $_[1] -lt 0.85 * $full })
   Check 'no read shows the tip at part strength' ($full -gt 3 -and $partIn.Count -eq 0 -and $partOut.Count -eq 0 -and $out[-1][1] -lt 1.0) "in: $($partIn.Count) part reads, $(UxReadsText $in ($first[0] - 70) ($first[0] + 130)); out: $($partOut.Count) part reads, $(UxReadsText $out 0 200)"
   [Anim]::Set($true)
+  UxEnd
+}
+
+if ($Part -eq 'E') {
+  # A fence with icons is deleted: the fence faded out where it stood and its icons faded in
+  # at their places on the desktop, with nothing between the two. They now arrive from where
+  # they stood in the fence (167 ms).
+  Case 'The icons of a deleted fence arrive at the desktop from where the fence stood'
+  UxStart
+  Pf fence create --title '工作文件' --rect '560,240,340,220' | Out-Null
+  Pf item move "$PfDesk\b.fpx" "$PfDesk\图.fpx" --to '工作文件' | Out-Null
+  Start-Sleep -Seconds 2
+  ParkMouse 1100 700
+  $in = @(@(PfJson item list --fence '工作文件') | Where-Object { $_ -and $_.id })
+  Check 'setup: two icons are in the fence, away from the loose icons' ($in.Count -eq 2 -and -not (UxCell 'b.fpx')) "in the fence: $(($in | ForEach-Object { $_.fileName }) -join ', '); loose: $(UxAll)"
+  if ($Rec) { RecStart 'rec-delete' -X 0 -Y 0 -W 960 -H 520 -Fps 30; RecMark '删除一个装着 2 个图标的栅栏'; Start-Sleep -Milliseconds 500 }
+  # The bare desktop between the loose icons' columns and the fence, read as often as the
+  # screen can be read while the fence is deleted (the command line returns too late for that,
+  # so it runs beside the reads).
+  Start-Process "$PfApp\pecofence-cli.exe" -ArgumentList 'fence delete 工作文件' -WindowStyle Hidden | Out-Null
+  [Px]::Burst(200, 60, 320, 440, 1500, 0)
+  $n = [Px]::Frames.Count
+  $reads = @(for ($i = 1; $i -lt $n; $i++) { , @([Px]::Times[$i], [Px]::Diff([Px]::Frames[0], [Px]::Frames[$i], 0, 319, 0, 439)) })
+  $crossing = @($reads | Where-Object { $_[1] -ge 0.3 })
+  if ($Rec) { RecStop }
+  $back = UxWait { (UxCell 'b.fpx') -and (UxCell '图.fpx') } 5
+  $glides = @(PfLogAll | Where-Object { $_ -match 'dropped icon glides from where it was let go to its cell' -and $_ -match 'name=(b|图)(\.fpx)? ' })
+  $noted = @(PfLogAll | Where-Object { $_ -match 'fence deleted: its icons arrive at the desktop from where they stood' }) | Select-Object -Last 1
+  Check 'the fence is gone and its icons are loose icons again' ($back -and -not (@(PfJson fence list) | Where-Object { $_ -and $_.title -eq '工作文件' })) "$(UxAll)"
+  Check 'the log says both icons glide from the fence to their places' ($noted -and $glides.Count -eq 2) "$noted ; $(($glides | ForEach-Object { if ($_ -match 'name=.*') { $Matches[0] } }) -join ' ; ')"
+  Check 'the icons are seen on their way across the desktop between the fence and their places' ($crossing.Count -ge 1) "$($crossing.Count) of $($reads.Count) reads show something there; (ms:mean brightness change) $(($crossing | Select-Object -First 8 | ForEach-Object { '{0}:{1:N2}' -f $_[0], $_[1] }) -join ' ')"
+  Start-Sleep -Milliseconds 600
+  $way = [W]::RootClassAt(360, 280)
+  Check 'afterwards the desktop between them is bare again' ($way -ne 'PecoFence.Fence' -and $reads[-1][1] -lt 0.1) "window there: $way; last read $('{0:N2}' -f $reads[-1][1])"
   UxEnd
 }
 
