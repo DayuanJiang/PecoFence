@@ -208,6 +208,9 @@ pub enum Command {
     DesktopCellsPlaced {
         fence: FenceId,
     },
+    /// 像桌面一样排列: the icons of 「桌面」 that glided or faded out are at rest; its window,
+    /// which reached to them meanwhile, fits its cells again.
+    DesktopIconsAtRest,
     /// Files dropped from Explorer onto a fence with the effect the drop reported (Explorer's
     /// modifier table: Ctrl copy, Alt / Ctrl+Shift shortcut, otherwise move).
     ExternalDrop {

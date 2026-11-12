@@ -2722,6 +2722,7 @@ impl App {
                     self.arrange_desktop_fence();
                 }
             }
+            Command::DesktopIconsAtRest => self.arrange_desktop_fence(),
             Command::MoveItemsToInbox { items, at } => {
                 // Dropped on the bare desktop: back to the inbox, as 「移出栅栏」 in the item
                 // menu does. The rules sent a shortcut straight back to 「程序」, so it could

@@ -372,6 +372,11 @@ impl Tween {
         self.to
     }
 
+    /// The value it started from.
+    pub fn origin(&self) -> f32 {
+        self.from
+    }
+
     fn progress(&self, now: Instant) -> f32 {
         if self.dur.is_zero() {
             return 1.0;

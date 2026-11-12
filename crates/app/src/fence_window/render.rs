@@ -460,7 +460,18 @@ impl FenceViewState {
             tracing::debug!("layout motion ended: hover refresh requested");
             self.request_hover_refresh();
         }
+        let leaving = !self.leaving.is_empty();
         self.leaving.retain(|l| !l.alpha.is_done(now));
+        if self.bare()
+            && ((sliding && self.item_motion.is_empty()) || (leaving && self.leaving.is_empty()))
+        {
+            // 像桌面一样排列: the window's shape held the way of the gliding icons and the
+            // places of the leaving ones (`desktop_shape`); now it is the cells again.
+            tracing::debug!("desktop icons at rest: the window takes the shape of its cells");
+            self.sync_desktop_shape(true);
+            // And its size, which reached to them (`arrange_desktop`).
+            self.queue.push(Command::DesktopIconsAtRest);
+        }
         for item in &mut self.items {
             if item.icon_fade.is_some_and(|t| t.is_done(now)) {
                 item.icon_fade = None;

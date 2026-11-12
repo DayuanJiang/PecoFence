@@ -2525,7 +2525,13 @@ impl FenceWindow {
         let mut relayout = force;
         if let Some((rect, changed)) = placed {
             relayout |= changed;
-            if rect != window::window_rect(hwnd) {
+            let old = window::window_rect(hwnd);
+            if rect != old {
+                if (rect.left, rect.top) != (old.left, old.top) {
+                    // The cells are measured from the window's corner: motion in flight was
+                    // computed for the old one.
+                    self.with_view(|v| v.snap_item_motion());
+                }
                 self.place_window(rect);
                 relayout = true;
             }

@@ -309,12 +309,21 @@ impl FenceViewState {
         } else {
             &shapes[..]
         };
-        let rect = RECT {
+        let mut rect = RECT {
             left: area.work.left,
             top: area.work.top,
             right: used.iter().map(|r| r.right).max()? + edge,
             bottom: used.iter().map(|r| r.bottom).max()? + edge,
         };
+        // Icons on their way and icons fading out are drawn outside the cells of the list (an
+        // icon that leaves the last column, say): the window reaches to them until they are
+        // at rest. It shrank to the cells at once, which cut such an icon off in one frame.
+        for r in self.desktop_motion_rects() {
+            let right = rect.left + ((r.x + r.w) * scale).ceil() as i32;
+            let bottom = rect.top + ((r.y + r.h) * scale).ceil() as i32;
+            rect.right = rect.right.max(right.min(area.work.right));
+            rect.bottom = rect.bottom.max(bottom.min(area.work.bottom));
+        }
         let slots: Vec<CellRect> = cells
             .iter()
             .map(|r| CellRect {
@@ -583,13 +592,19 @@ impl FenceViewState {
     }
 
     /// The window's shape (window px): the icon cells, plus room under the selected icon for
-    /// its full name; clicks anywhere else reach the desktop.
+    /// its full name; clicks anywhere else reach the desktop. While icons move or leave, the
+    /// shape also holds what is drawn outside the cells: the way of each icon that glides to
+    /// its cell (from where it is drawn now), and the place of each icon that fades out. The
+    /// shape used to be the new cells alone, so a loose icon that left was cut off in one
+    /// frame and an icon on its way showed only where it crossed a cell.
+    /// `prune_content_motion` asks for the shape again when they have come to rest.
     fn desktop_shape(&self) -> Vec<RECT> {
         let scale = self.scale();
         let px = |v: f32| (v * scale).round() as i32;
         let unfolded = self.desktop_unfolded();
         let line_h = self.grid_metrics().line_h;
-        self.desktop_slots
+        let mut shape: Vec<RECT> = self
+            .desktop_slots
             .iter()
             .take(self.items.len())
             .enumerate()
@@ -605,7 +620,42 @@ impl FenceViewState {
                     bottom: px(c.y + c.h) + room,
                 }
             })
-            .collect()
+            .collect();
+        shape.extend(self.desktop_motion_rects().iter().map(|r| RECT {
+            left: px(r.x),
+            top: px(r.y),
+            right: px(r.x + r.w),
+            bottom: px(r.y + r.h),
+        }));
+        shape
+    }
+
+    /// What is drawn outside the cells while icons move or leave (content DIPs): the way of
+    /// each icon that glides, from where its glide began to its cell, and the place of each
+    /// icon that fades out. The window and its shape hold them until the icons are at rest.
+    fn desktop_motion_rects(&self) -> Vec<CellRect> {
+        let m = self.grid_metrics();
+        let mut out: Vec<CellRect> = self
+            .item_motion
+            .values()
+            .map(|t| {
+                let (x0, x1) = (t.x.origin(), t.x.target());
+                let (y0, y1) = (t.y.origin(), t.y.target());
+                CellRect {
+                    x: x0.min(x1),
+                    y: y0.min(y1),
+                    w: (x0 - x1).abs() + m.cell_w,
+                    h: (y0 - y1).abs() + m.cell_h,
+                }
+            })
+            .collect();
+        out.extend(self.leaving.iter().map(|l| CellRect {
+            x: l.x,
+            y: l.y,
+            w: l.w,
+            h: l.h,
+        }));
+        out
     }
 
     /// Gives the window its shape when the cells or the selected icon changed (`force`: the
