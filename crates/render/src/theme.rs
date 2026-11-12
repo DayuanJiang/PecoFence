@@ -286,10 +286,17 @@ fn quiet_ink(ink: ColorF, primary: ColorF, plate: [f32; 3], bar: f32, reach: f32
             reach * f32::from(step) / f32::from(QUIET_TEXT_STEPS),
         )
     };
+    // No step reaches the bar: the one that reads best. That is the last one when `primary`
+    // reads better than `ink`, as it does when it was picked for the plate; a text colour
+    // the user fixed (white on a bright plate) reads worse, and every step towards it took
+    // the link further from being readable.
+    let best =
+        |a: &ColorF, b: &ColorF| contrast_over(*a, plate).total_cmp(&contrast_over(*b, plate));
     (0..=QUIET_TEXT_STEPS)
         .map(at)
         .find(|c| contrast_over(*c, plate) >= bar)
-        .unwrap_or_else(|| at(QUIET_TEXT_STEPS))
+        .or_else(|| (0..=QUIET_TEXT_STEPS).map(at).max_by(best))
+        .unwrap_or(ink)
 }
 
 /// Up to 16 x 16 pixels (BGRA) spread evenly over `image`.
@@ -1451,6 +1458,21 @@ mod tests {
             mark.r > mark.b + 0.3 && mark.g > 0.6,
             "a light orange: {mark:?}"
         );
+        // A text colour the user fixed that is close to the plate (white text over a bright
+        // plate): the link does not move towards it, where it would read worse still.
+        let bright_plate = [0.86, 0.87, 0.88];
+        let white = ColorF::new(1.0, 1.0, 1.0, 1.0);
+        let pale = quiet_ink(dark.accent, white, bright_plate, LINK_BAR, LINK_REACH);
+        assert!(contrast_over(dark.accent, bright_plate) < LINK_BAR);
+        assert!(
+            contrast_over(pale, bright_plate) >= contrast_over(dark.accent, bright_plate),
+            "the link reads no worse than the accent itself: {pale:?}"
+        );
+        // Where the text reads better than the link, the way towards it is still gone whole.
+        let black = ColorF::new(0.0, 0.0, 0.0, 1.0);
+        let mid_plate = [0.55, 0.55, 0.55];
+        let towards = quiet_ink(dark.accent, black, mid_plate, 21.0, LINK_REACH);
+        assert!(contrast_over(towards, mid_plate) > contrast_over(dark.accent, mid_plate));
         // A theme file's secondary text in a colour of its own moves towards its primary
         // text: an opaque brown on a plate of middle brightness stayed at 2.1 : 1.
         let brown = ColorF::from_rgba8(0x6B, 0x4A, 0x2E, 0xFF);
