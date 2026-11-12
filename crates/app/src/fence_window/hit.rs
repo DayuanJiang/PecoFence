@@ -7,6 +7,8 @@ pub(super) struct ColDrag {
     pub(super) col: DetailColumn,
     pub(super) start_x_px: i32,
     pub(super) start_w: f32,
+    /// The widest the column may get in this drag (`DetailColumns::drag_limit`).
+    pub(super) max_w: f32,
 }
 
 pub(super) fn bounded_auto_height(desired: i32, title_height: i32, top: i32, bottom: i32) -> i32 {

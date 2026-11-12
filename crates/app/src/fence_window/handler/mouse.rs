@@ -238,10 +238,15 @@ pub(super) fn on_lbuttondown(
         }
         let in_content = !v.rolled_up && y >= v.content_y && x >= v.content_x;
         if let Some(col) = v.divider_hit(x, y) {
+            let start_w = v.column_width(col);
+            let (cw, _) = v.content_size_px();
+            let max_w = v.columns_for(cw as f32 / v.scale()).drag_limit(start_w);
+            tracing::debug!(?col, start_w, max_w, "column divider drag starts");
             v.col_drag = Some(ColDrag {
                 col,
                 start_x_px: x,
-                start_w: v.column_width(col),
+                start_w,
+                max_w,
             });
             v.header_hover = None;
             if focus_cleared {

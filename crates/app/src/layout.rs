@@ -767,6 +767,9 @@ impl DetailColumns {
     pub const DEFAULT_WIDTHS: [f32; 3] = [Self::DATE_W, Self::TYPE_W, Self::SIZE_W];
     pub const MIN_COL_W: f32 = 40.0;
     pub const MAX_COL_W: f32 = 480.0;
+    /// What the name column keeps before a column is dropped: 8 less than the 120 the name had
+    /// when it started at 8, so a fence keeps the columns it showed at its width.
+    pub const MIN_NAME_W: f32 = 112.0;
     /// Half-width of the grab zone on a column's left edge (DIPs).
     pub const DIVIDER_GRIP: f32 = 5.0;
 
@@ -781,9 +784,7 @@ impl DetailColumns {
         let clamp = |w: f32| w.clamp(Self::MIN_COL_W, Self::MAX_COL_W);
         let (date_w, type_w, size_w) = (clamp(widths[0]), clamp(widths[1]), clamp(widths[2]));
         let name_x = Self::NAME_X;
-        // 8 less than the 120 the name had when it started at 8: a fence keeps the columns it
-        // showed at its width.
-        let min_name = 112.0;
+        let min_name = Self::MIN_NAME_W;
         let mut right = width - Self::GUTTER;
         let mut size = None;
         let mut date = None;
@@ -830,6 +831,15 @@ impl DetailColumns {
             type_,
             size,
         }
+    }
+
+    /// How wide a column that is `width` wide now may get under a divider drag: it takes room
+    /// from the name column down to that column's minimum, and no further. Wider, and
+    /// `for_width_with` would drop a column to give the name its room back: the type column
+    /// vanished in the middle of the drag and the divider jumped away from the pointer.
+    pub fn drag_limit(&self, width: f32) -> f32 {
+        // Half a DIP short of the exact fit, which rounding could miss.
+        width + (self.name_w - Self::MIN_NAME_W - 0.5).max(0.0)
     }
 
     /// The column whose left-edge divider is under a content-local x (header resize grip).
@@ -2211,6 +2221,30 @@ mod tests {
         assert!(DetailColumns::for_width(472.0).type_.is_some());
         assert!(DetailColumns::for_width(471.0).type_.is_none());
         assert!(DetailColumns::for_width(471.0).date.is_some());
+    }
+
+    /// A divider drag widens its column only as far as the name column has room: at the limit
+    /// every column is still shown. Without the limit the type column was dropped in the
+    /// middle of the drag (and the divider jumped to where the columns then stood).
+    #[test]
+    fn a_dragged_column_stops_before_another_one_is_dropped() {
+        let width = 500.0;
+        let cols = DetailColumns::for_width(width);
+        assert!(cols.type_.is_some());
+        let limit = cols.drag_limit(DetailColumns::DATE_W);
+        assert!(limit > DetailColumns::DATE_W + 10.0, "{limit}");
+        let with_date = |w: f32| {
+            let widths = [w, DetailColumns::TYPE_W, DetailColumns::SIZE_W];
+            DetailColumns::for_width_with(width, widths, [true; 3])
+        };
+        let at_limit = with_date(limit);
+        assert!(at_limit.date.is_some() && at_limit.type_.is_some() && at_limit.size.is_some());
+        assert!(at_limit.name_w >= DetailColumns::MIN_NAME_W);
+        // What a drag did before: a little wider and the type column goes.
+        assert!(with_date(limit + 10.0).type_.is_none());
+        // No room left: the column keeps its width.
+        let tight = DetailColumns::for_width(472.0);
+        assert!(tight.drag_limit(DetailColumns::DATE_W) < DetailColumns::DATE_W + 1.0);
     }
 
     /// Larger row text (Windows' text size 150 %: an 18 DIP font, 24 DIP lines) makes the rows

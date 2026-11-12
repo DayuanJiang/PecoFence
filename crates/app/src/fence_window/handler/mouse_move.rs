@@ -388,7 +388,8 @@ pub(super) fn on_mousemove(
     if let Some(cd) = v.col_drag.as_ref() {
         // Divider sits on the column's left edge: dragging right shrinks it.
         let dx = (x - cd.start_x_px) as f32 / v.scale();
-        let (col, w) = (cd.col, cd.start_w - dx);
+        // No wider than the name column has room for: every column stays, the divider stops.
+        let (col, w) = (cd.col, (cd.start_w - dx).min(cd.max_w));
         v.set_column_width(col, w);
         window::set_standard_cursor(StandardCursor::SizeWE);
         // Drawn once per frame by `tick` (see the marquee arm above).
