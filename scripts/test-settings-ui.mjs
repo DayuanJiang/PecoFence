@@ -491,10 +491,10 @@ async function runTests() {
     assert(doc.getElementById('fencePortalGroup').style.display === 'none', 'Portal options shown for an ordinary fence');
     assert(doc.getElementById('fenceHideEmpty').style.display === '', 'Hide-when-empty not offered for an ordinary fence');
     assert(doc.getElementById('fenceDesktopLayout').style.display === 'none', 'Desktop layout offered for an ordinary fence');
-    assert(doc.getElementById('fenceFreePlacement').style.display === 'none', 'Free placement offered for an ordinary fence');
+    assert(doc.getElementById('fenceFreePlacement').hidden, 'Free placement offered for an ordinary fence');
     const fenceHideNote = doc.querySelector('#fenceHideEmpty .s').textContent;
     assert(doc.getElementById('fenceOpenFolders').style.display === '' && !doc.querySelector('[data-fence=openFoldersInside]').classList.contains('on'), 'Open-folders-inside missing or on for an ordinary fence');
-    assert(doc.getElementById('fenceTintTitleOnly').style.display === 'none', 'Title-only tint offered without a tint');
+    assert(doc.getElementById('fenceTintTitleOnly').hidden, 'Title-only tint offered without a tint');
     assert(doc.getElementById('fenceTabColor').style.display === 'none', 'Tab colour offered for a fence without tabs');
     assert(doc.querySelector('[data-fence=titleColor] [value=tint]').disabled, 'Follow-tint offered without a tint');
     const tintHint = doc.getElementById('fenceTitleColor').closest('.card').querySelector('.s');
@@ -505,10 +505,10 @@ async function runTests() {
     assert(doc.querySelector('[data-fence=expandUpward]').classList.contains('on'), 'Expand upward not shown');
     assert(doc.getElementById('fenceHideEmpty').style.display === '' && doc.querySelector('[data-fence=hideWhenEmpty]').classList.contains('on'), 'Inbox hide-when-empty not shown');
     assert(doc.getElementById('fenceDesktopLayout').style.display === '' && doc.querySelector('[data-fence=desktopLayout]').classList.contains('on'), 'Inbox desktop layout not shown');
-    assert(doc.getElementById('fenceFreePlacement').style.display === '' && !doc.querySelector('[data-fence=freePlacement]').classList.contains('on'), 'Inbox free placement not shown, or on');
+    assert(!doc.getElementById('fenceFreePlacement').hidden && !doc.querySelector('[data-fence=freePlacement]').classList.contains('on'), 'Inbox free placement not shown, or on');
     assert(doc.querySelector('#fenceHideEmpty .s').textContent !== fenceHideNote, 'Inbox hide-when-empty note is the one of other fences');
     assert(doc.querySelector('[data-fence=openFoldersInside]').classList.contains('on'), 'Open-folders-inside state not shown');
-    assert(doc.getElementById('fenceTintTitleOnly').style.display === '' && doc.querySelector('[data-fence=tintTitleOnly]').classList.contains('on'), 'Title-only tint not shown');
+    assert(!doc.getElementById('fenceTintTitleOnly').hidden && doc.querySelector('[data-fence=tintTitleOnly]').classList.contains('on'), 'Title-only tint not shown');
     assert(doc.querySelector('[data-fence=tint]').value === '0078D4', 'Palette tint not selected');
     assert(doc.querySelector('[data-fence=titleColor]').value === 'tint' && !doc.querySelector('[data-fence=titleColor] [value=tint]').disabled, 'Follow-tint title not shown');
     assert(doc.querySelector('[data-fence=titleSize]').value === 'large', 'Title size not shown');
@@ -621,11 +621,11 @@ async function runTests() {
     inbox.desktopLayout = false; frame.contentWindow.testRefresh();
     assert(greyed() && note() === '只用于图标视图', 'Details inbox: labels card not greyed');
     // 自由摆放 is part of 像桌面一样排列: no card while that is off.
-    assert(doc.getElementById('fenceFreePlacement').style.display === 'none', 'Free placement offered while the inbox is not arranged');
+    assert(doc.getElementById('fenceFreePlacement').hidden, 'Free placement offered while the inbox is not arranged');
     // A 「桌面」 with tabs stays a fence and shows its own view.
     inbox.desktopLayout = true; inbox.tabbed = true; frame.contentWindow.testRefresh();
     assert(greyed(), 'Tabbed inbox in details: labels card not greyed');
-    assert(doc.getElementById('fenceFreePlacement').style.display === 'none', 'Free placement offered for a tabbed inbox');
+    assert(doc.getElementById('fenceFreePlacement').hidden, 'Free placement offered for a tabbed inbox');
     delete inbox.tabbed; delete inbox.freePlacement; inbox.layout = 'icons'; frame.contentWindow.testRefresh();
     assert(!greyed(), 'Labels card stays greyed after the inbox shows icons again');
     change(doc, 'fenceSel', 'fence-a');
@@ -3210,6 +3210,16 @@ async function runTests() {
     doc.querySelector('[data-page=fences]').click();
     doc.querySelector('[data-page=general]').click();
     assert(growing() === '', 'The card grows again when its page comes in: ' + growing());
+    // 栅栏: a tint brings up 「只给标题栏上色」 the same way; another fence shows it without a motion.
+    doc.querySelector('[data-page=fences]').click();
+    const tintCard = doc.getElementById('fenceTintTitleOnly'), tintGrows = () => moving().some(line => line.startsWith('#fenceTintTitleOnly') && line.endsWith('height'));
+    assert(tintCard.hidden, '「只给标题栏上色」 shows for a fence without a tint');
+    change(doc, 'fenceTint', '0078D4');
+    await settle();
+    assert(!tintCard.hidden && tintGrows(), '「只给标题栏上色」 appears in one frame');
+    assert(await until(() => !tintGrows() && !tintCard.classList.contains('reveal')), 'The tint card never came to rest');
+    change(doc, 'fenceSel', 'fence-b');
+    assert(tintCard.hidden && !tintGrows(), 'Another fence closes the card with a motion');
     doc = await reset();
   });
   await test('Smart fence editor: the count dims the old number only when the answer takes a moment', async () => {

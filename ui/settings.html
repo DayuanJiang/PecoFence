@@ -1973,7 +1973,7 @@
     document.getElementById('fenceTextSize').style.display = f.tool && (f.tool.kind === 'note' || f.tool.kind === 'script') ? '' : 'none';
     document.getElementById('fenceDesktopLayout').style.display = f.kind === 'inbox' ? '' : 'none';
     // 自由摆放 is a way of 像桌面一样排列 (a 「桌面」 with tabs stays a fence).
-    document.getElementById('fenceFreePlacement').style.display = f.kind === 'inbox' && f.desktopLayout && !f.tabbed ? '' : 'none';
+    reveal(document.getElementById('fenceFreePlacement'), f.kind === 'inbox' && !!f.desktopLayout && !f.tabbed);
     // List and Details rows keep the name on one line, so the setting does nothing there and is
     // greyed. 像桌面一样排列 shows icons whatever the fence's view (a 「桌面」 with tabs stays a fence).
     const nameLines = [t("图标名称\x04不显示"), t("图标名称\x04一行"), t("图标名称\x04两行"), t("图标名称\x04三行")];
@@ -1990,7 +1990,7 @@
     const tabSel = document.querySelector('[data-fence=tabColor]');
     const tabPalette = `<option value="">${esc(t("跟随色调"))}</option>` + palette.slice(palette.indexOf('</option>') + 9);
     if (tabSel.innerHTML !== tabPalette) tabSel.innerHTML = tabPalette;
-    document.getElementById('fenceTintTitleOnly').style.display = f.tint ? '' : 'none';
+    reveal(document.getElementById('fenceTintTitleOnly'), !!f.tint);
     document.getElementById('fenceTabColor').style.display = f.host || f.tabbed ? '' : 'none';
     document.querySelectorAll('[data-fence]').forEach(el => {
       const prop = el.dataset.fence;
