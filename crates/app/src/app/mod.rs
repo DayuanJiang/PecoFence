@@ -2992,7 +2992,14 @@ impl App {
                 self.end_item_rename_visuals();
                 self.rename_item_file(item, &name);
             }
-            Command::RenameItemInvalid => self.invalid_name_toast(),
+            // Under the name box, which stays open; a Windows notification if it is gone.
+            Command::RenameItemInvalid => {
+                let why =
+                    pecofence_core::i18n::text("名称不能为空，也不能包含 \\ / : * ? \" < > |");
+                if !crate::rename::show_hint(why) {
+                    self.invalid_name_toast();
+                }
+            }
             Command::EndItemRename { commit } => crate::rename::end_active(commit),
             Command::DeleteItems {
                 fence,

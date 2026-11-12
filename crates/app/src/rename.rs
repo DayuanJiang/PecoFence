@@ -5,6 +5,7 @@
 
 use crate::commands::{Command, CommandQueue};
 use pecofence_core::{FenceId, ItemId};
+use pecofence_platform::tooltip::Tooltip;
 use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
 };
@@ -27,6 +28,11 @@ pub enum RenameTarget {
 }
 
 struct RenameSession {
+    /// The tip under the box that says why Enter did not take the name (`show_hint`); made
+    /// when first needed. Before `window`: it goes first.
+    hint: Option<Tooltip>,
+    /// The box is a dark field (the tip under it is dark too).
+    dark: bool,
     window: Window,
     edit: edit::EditControl,
     target: RenameTarget,
@@ -470,8 +476,16 @@ fn begin_rename_at(
                     end_active(true);
                     Some(0)
                 }
-                // The text changed: an icon's name box follows its lines.
+                // The text changed: an icon's name box follows its lines, and the hint about
+                // the last Enter goes.
                 msg::WM_COMMAND if framed && msg::hi_u16(wparam) == edit::EN_CHANGE => {
+                    ACTIVE.with(|a| {
+                        if let Ok(mut a) = a.try_borrow_mut()
+                            && let Some(t) = a.as_mut().and_then(|s| s.hint.as_mut())
+                        {
+                            t.hide();
+                        }
+                    });
                     ACTIVE.with(|a| {
                         if let Ok(a) = a.try_borrow()
                             && let Some(s) = a.as_ref()
@@ -564,6 +578,8 @@ fn begin_rename_at(
     }
     ACTIVE.with(|a| {
         *a.borrow_mut() = Some(RenameSession {
+            hint: None,
+            dark,
             window,
             edit: ctl,
             target,
@@ -601,6 +617,31 @@ fn on_key(vk: u32) -> bool {
         }
         _ => false,
     }
+}
+
+/// Shows `text` in a tip under the open name box (why Enter did not take the name), where
+/// the user is looking; it goes when the text changes or the box closes. False when no name
+/// box is open.
+pub fn show_hint(text: &str) -> bool {
+    ACTIVE.with(|a| {
+        let mut a = a.borrow_mut();
+        let Some(s) = a.as_mut() else {
+            return false;
+        };
+        let hwnd = s.window.hwnd();
+        if s.hint.is_none() {
+            s.hint = Tooltip::create(hwnd, s.dark)
+                .map_err(|e| tracing::warn!(error = %e, "name box: no window for its hint"))
+                .ok();
+        }
+        let r = window::window_rect(hwnd);
+        let Some(tip) = s.hint.as_mut() else {
+            return false;
+        };
+        tip.show(text, r.left, r.bottom + 4);
+        tracing::debug!(at = ?(r.left, r.bottom + 4), "name box: hint shown under it");
+        true
+    })
 }
 
 /// What the open rename popup targets, if one is open.
