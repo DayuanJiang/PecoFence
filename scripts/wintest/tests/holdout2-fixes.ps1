@@ -112,7 +112,7 @@ PfQuit
 $t = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.ffffffZ')
 Add-Content (ShareLog) "$t ERROR pecofence_platform::crashlog: CRASH (unhandled exception) code=0xc0000005 at=ExplorerPatcher.amd64.dll+0xc0c1 module_owner=other module_version=26100.8457.70.3 access=write stack=  ExplorerPatcher.amd64.dll+0xc0c1" -Encoding UTF8
 PfStart
-$toast = ToastOcr 'PecoFence (crashed|closed)' 8
+$toast = ToastOcr 'ExplorerPatcher' 8
 Shot '11-notice'
 $seen = PfWaitLog 'previous run crashed' 5
 $ep = PfWaitLog 'the crash was inside ExplorerPatcher' 2
