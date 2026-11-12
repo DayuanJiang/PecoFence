@@ -3311,6 +3311,33 @@ async function runTests() {
     assert(shade() === 1 && !w.querySelector('.se-count').classList.contains('busy'), 'The new number is dim');
     doc = await reset();
   });
+  await test('Every transition and animation of the page takes one of the app\'s four times', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const root = win().getComputedStyle(doc.documentElement);
+    const times = ['--faster', '--fast', '--normal', '--slow'].map(name => root.getPropertyValue(name).trim()).join();
+    assert(times === '83ms,167ms,250ms,333ms', 'The four times of the motion language are ' + times);
+    // No declaration names a time of its own (0s is a switch at the end of a wait).
+    const own = [];
+    const walk = rules => {
+      for (const rule of rules) {
+        if (rule.cssRules?.length) walk(rule.cssRules);
+        for (const property of rule.style ? ['transition', 'animation'] : []) {
+          const value = rule.style.getPropertyValue(property);
+          const literal = (value.replace(/var\([^)]*\)|cubic-bezier\([^)]*\)/g, '').match(/[\d.]+m?s\b/g) || []).filter(time => parseFloat(time) !== 0);
+          if (literal.length) own.push((rule.selectorText || '') + ' { ' + property + ': ' + value + ' }');
+        }
+      }
+    };
+    walk(doc.styleSheets[0].cssRules);
+    assert(!own.length, own.length + ' declarations with a time of their own: ' + own.slice(0, 3).join(' | '));
+    // What runs: a switch slides and a hovered button fades in the app's times.
+    const toggle = doc.querySelector('[data-bind=autostart]');
+    toggle.click();
+    const ran = [...new Set(doc.getAnimations().map(a => Math.round(a.effect.getComputedTiming().duration)))];
+    assert(ran.includes(167) && ran.every(ms => [83, 167, 250, 333].includes(ms)), 'After a click on a switch, motion of ' + (ran.join(', ') || 'no time') + ' ms runs');
+    doc = await reset();
+  });
 
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
