@@ -490,6 +490,14 @@
   .se-limit { display: flex; align-items: center; gap: 8px; color: var(--text2); }
   .se-limit select { min-width: 96px; color: var(--text); }
   .se-btns { display: flex; gap: 8px; margin-left: auto; }
+  /* The rows share the list's columns: the kind menus are as wide as their longest option in
+     the page language (a fixed 132 px cut «Расположение») and the rest of every row starts at
+     one edge. A WebView2 older than 117 has no subgrid and keeps the fixed width. */
+  @supports (grid-template-columns: subgrid) {
+    .se-rows { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content max-content; grid-auto-rows: max-content; align-content: start; }
+    .se-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; }
+    .se-row > .se-kind { width: auto; justify-self: stretch; }
+  }
 </style>
 </head>
 <body>

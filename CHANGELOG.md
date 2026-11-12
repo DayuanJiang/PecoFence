@@ -63,6 +63,7 @@
 - Peek search: Chinese typed in the search box is drawn in the same font as the list (Microsoft YaHei UI and its counterparts) on a Windows in another language too, where it came out in a lighter fallback font.
 - Peek search: the search box has a thin outline, so it keeps its edge over a white window when 「速览时调暗背景」 is off.
 - Peek search: on the two action rows (「在 Everything 里查看全部结果」, 「把这次搜索放到桌面」) and on system items the bottom bar shows only 「Enter 打开」; it also offered 「Ctrl+Enter 打开所在文件夹」 and 「→ 更多操作」, which do nothing there.
+- The smart fence editor (「新建智能栅栏…」, 「编辑条件…」) shows all of its rows in every language. Its window opened at 680 × 560: once a template filled the list, the list scrolled in all eleven interface languages (the second line of the type buttons was cut off in Chinese and English too); in German, Portuguese and Russian 「选择…」 dropped under its row; in those three, Spanish and Italian 「取消」 and 「创建」 dropped under the count; and the first menu of a row was 132 px wide in every language, which cut «Расположение» to «Расположени». The window now opens at 880 × 660 (as large as the work area on a smaller screen), the first menu of every row is as wide as its longest entry in the language in use, and each of the five templates, or four conditions of any kind, shows without a scrollbar and with every control on its own line. More rows than fit scroll as before.
 
 ## 0.3.3
 

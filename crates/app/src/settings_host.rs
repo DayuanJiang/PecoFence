@@ -466,12 +466,15 @@ struct Placement {
     min_h: i32,
 }
 
-/// The smart fence editor: 680 x 560 DIP (minimum 560 x 420), centred on the work area, and
-/// smaller on a work area that has no room for it.
+/// The smart fence editor: 880 x 660 DIP (minimum 560 x 420), centred on the work area, and
+/// smaller on a work area that has no room for it. That size holds the template with the most
+/// rows (最近一周的截图: five, two of them with the type buttons) and every kind of row on one
+/// line in each interface language (`tests/owner-smart-editor.ps1`); 680 x 560 scrolled its list
+/// in all of them and pushed 选择… or 取消 and 创建 to a second line in five.
 fn editor_placement(work: RECT, scale: f32) -> Placement {
     let (area_w, area_h) = (work.right - work.left, work.bottom - work.top);
-    let w = ((680.0 * scale) as i32).min(area_w);
-    let h = ((560.0 * scale) as i32).min(area_h);
+    let w = ((880.0 * scale) as i32).min(area_w);
+    let h = ((660.0 * scale) as i32).min(area_h);
     Placement {
         x: work.left + (area_w - w) / 2,
         y: work.top + (area_h - h) / 2,
@@ -610,13 +613,23 @@ mod tests {
     #[test]
     fn the_smart_fence_editor_is_a_small_window_that_fits() {
         let p = editor_placement(work(1600, 852), 1.0);
-        assert_eq!((p.w, p.h, p.x, p.y), (680, 560, 460, 146));
-        for (area, scale) in [(work(1366, 708), 1.5), (work(1280, 672), 1.75)] {
+        assert_eq!((p.w, p.h, p.x, p.y), (880, 660, 360, 96));
+        // 1366 x 768 at 100 % has room for the whole window.
+        let p = editor_placement(work(1366, 720), 1.0);
+        assert_eq!((p.w, p.h, p.x, p.y), (880, 660, 243, 30));
+        // Smaller work areas (1024 x 768 at 150 % among them) get a window no larger than they
+        // are; its list scrolls there.
+        for (area, scale) in [
+            (work(1024, 696), 1.5),
+            (work(1366, 708), 1.5),
+            (work(1280, 672), 1.75),
+        ] {
             let p = editor_placement(area, scale);
             assert!(
-                p.y + p.h <= area.bottom && p.x >= 0 && p.min_h <= p.h,
-                "{p:?}"
+                p.x >= 0 && p.y >= 0 && p.x + p.w <= area.right && p.y + p.h <= area.bottom,
+                "{p:?} on {area:?}"
             );
+            assert!(p.min_w <= p.w && p.min_h <= p.h, "{p:?}");
         }
     }
 }
