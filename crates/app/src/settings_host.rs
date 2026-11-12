@@ -468,10 +468,23 @@ impl SettingsHost {
             HostKind::Settings => "",
             HostKind::SmartEditor => "window.PECOFENCE_MODE='smartEditor';",
         };
-        let document = SETTINGS_HTML
+        // The icons this Windows' icon fonts lack give way to their stand-ins here, before
+        // the browser lays the page out (`icon_stand_ins`), and the page is told so.
+        let (document, icons) =
+            icon_stand_ins(SETTINGS_HTML, pecofence_platform::fonts::icon_fonts_have);
+        tracing::debug!(
+            checked = icons,
+            "settings: icons the icon fonts lack replaced in the document"
+        );
+        let icons = if icons {
+            "window.PECOFENCE_ICONS=1;"
+        } else {
+            ""
+        };
+        let document = document
             .replace(
                 "<!-- PECOFENCE_LOCALE -->",
-                &format!("<script>window.PECOFENCE_LOCALE={payload};{editor}</script>"),
+                &format!("<script>window.PECOFENCE_LOCALE={payload};{editor}{icons}</script>"),
             )
             .replace(
                 "<script src=\"i18n.js\"></script>",
@@ -644,6 +657,49 @@ impl SettingsHost {
         }
         drop(self.window);
     }
+}
+
+/// The page with the stand-in (`data-alt`) of every icon that the icon fonts lack in the
+/// icon's place, and whether `has` (`fonts::icon_fonts_have`) could tell for all of them;
+/// when it could not, the page is returned as it is and checks for itself, as it used to:
+/// it drew each of these icons, and a code point no font has, on a canvas. For a glyph that
+/// no font of the list has, the browser looks through the system's fonts: on a Windows
+/// Server 2025 box it set up Segoe MDL2 Assets, Noto Sans SC (12 ms) and Arial in vain, in
+/// the page's first layout (one icon of 常规 is missing there) and again for the canvas, 14 ms
+/// in every new browser, and the check took 4 to 7 ms more. GDI answers in well under 1 ms.
+fn icon_stand_ins(html: &str, has: impl Fn(char) -> Option<bool>) -> (String, bool) {
+    // `data-alt="&#x<stand-in>;">&#x<icon>;`
+    const ALT: &str = "data-alt=\"&#x";
+    const ICON: &str = ";\">&#x";
+    let hex = |s: &str| !s.is_empty() && s.len() <= 6 && s.bytes().all(|b| b.is_ascii_hexdigit());
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(at) = rest.find(ALT) {
+        out.push_str(&rest[..at + ALT.len()]);
+        rest = &rest[at + ALT.len()..];
+        let Some((alt, after)) = rest.split_once(ICON) else {
+            continue;
+        };
+        let Some((icon, _)) = after.split_once(';') else {
+            continue;
+        };
+        if !hex(alt) || !hex(icon) {
+            continue;
+        }
+        let glyph = u32::from_str_radix(icon, 16).ok().and_then(char::from_u32);
+        match glyph.map(&has) {
+            Some(Some(true)) => {}
+            Some(Some(false)) => {
+                out.push_str(alt);
+                out.push_str(ICON);
+                out.push_str(alt);
+                rest = &rest[alt.len() + ICON.len() + icon.len()..];
+            }
+            _ => return (html.to_string(), false),
+        }
+    }
+    out.push_str(rest);
+    (out, true)
 }
 
 /// Moves the browser's window from beside the client area into it (once).
@@ -918,6 +974,48 @@ mod tests {
         let left = rect(-1920, 0, 0, 1040);
         let p = placement(left, 1.0).reopened(rect(-1500, 200, -400, 900), 1.0, left, 1.0);
         assert_eq!((p.x, p.y, p.w, p.h), (-1500, 200, 1100, 700));
+    }
+
+    /// The host puts the stand-in of an icon the icon fonts lack into the page, so that the
+    /// browser never lays out a glyph no font has.
+    #[test]
+    fn icons_the_fonts_lack_give_way_to_their_stand_ins_in_the_document() {
+        let page = "<span class=\"ic\" data-alt=\"&#xE793;\">&#xE7A1;</span> \
+                    <span class=\"ic\" data-alt=\"&#xE8CB;\">&#xE7B1;</span> \
+                    querySelectorAll('.ic[data-alt]') <span class=\"ic\">&#xE713;</span>";
+        let lacks = |code: u32| move |glyph: char| Some(glyph as u32 != code);
+        // One icon is missing: its stand-in twice, the rest as it was.
+        let (out, checked) = icon_stand_ins(page, lacks(0xE7B1));
+        assert!(checked);
+        assert_eq!(
+            out,
+            page.replace(
+                "data-alt=\"&#xE8CB;\">&#xE7B1;",
+                "data-alt=\"&#xE8CB;\">&#xE8CB;"
+            )
+        );
+        // Nothing missing: unchanged, and the page need not check.
+        assert_eq!(
+            icon_stand_ins(page, |_| Some(true)),
+            (page.to_string(), true)
+        );
+        // GDI cannot tell for one icon: unchanged, and the page checks for itself.
+        let unsure = |glyph: char| (glyph as u32 != 0xE7B1).then_some(false);
+        assert_eq!(icon_stand_ins(page, unsure), (page.to_string(), false));
+        // The real page: every icon with a stand-in is found, and all of them can be replaced.
+        let (all, checked) = icon_stand_ins(SETTINGS_HTML, |_| Some(false));
+        assert!(checked);
+        let stand_ins = SETTINGS_HTML.matches("data-alt=\"&#x").count();
+        assert!(stand_ins >= 5, "{stand_ins} icons with a stand-in");
+        assert_eq!(all.len(), SETTINGS_HTML.len());
+        let same = |s: &str| {
+            let (alt, icon) = s.split_once(";\">&#x").unwrap();
+            icon.starts_with(alt)
+        };
+        assert!(
+            all.split("data-alt=\"&#x").skip(1).all(same),
+            "an icon kept its glyph"
+        );
     }
 
     #[test]

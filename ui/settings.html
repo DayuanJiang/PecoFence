@@ -958,6 +958,8 @@
 <div class="infobar" id="toast" role="status"><span class="ic" aria-hidden="true"></span><span id="toastText"></span><button id="toastUndo" hidden>撤销</button></div>
 <script>
 (() => {
+  // (Read by scripts/wintest/tests/owner4-settings.ps1, like the mark at the script's end.)
+  performance.mark('pf-script');
   const i18n = window.PecoFenceI18n;
   const t = i18n.text, tf = i18n.format;
   // Windows 11 switches carry an On/Off caption; clicking it toggles like the switch itself.
@@ -3561,7 +3563,10 @@
   // Windows 10 lacks some glyphs of Segoe Fluent Icons, and its 1809 version lacks more (#219).
   // Such an icon gives way to the stand-in its data-alt names. Every missing glyph is drawn the
   // same way, so each icon is compared with a code point no icon font has.
-  (() => {
+  // The host does this before it hands the document over, and says so (PECOFENCE_ICONS): it
+  // asks Windows which glyphs the two fonts have. Drawing a glyph that no font has makes the
+  // browser set up fonts of the system in search of it, about 14 ms on each opening.
+  if (!window.PECOFENCE_ICONS) (() => {
     const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
     const drawn = ch => {
       ctx.clearRect(0, 0, 24, 24);
@@ -3575,6 +3580,7 @@
       if (drawn(el.textContent) === box) el.textContent = el.dataset.alt;
     }
   })();
+  performance.mark('pf-ready');
   send({ type: 'ready' });
 })();
 </script>

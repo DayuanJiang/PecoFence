@@ -134,15 +134,36 @@ pub fn fluent_icons() -> bool {
 /// the one of version 1809 (font version 1.68) lacks code points the later ones have, and a
 /// glyph a font lacks is drawn as an empty box. True when GDI cannot tell.
 pub fn icon_font_has(glyph: char) -> bool {
+    face_has(icon_face(), glyph).unwrap_or(true)
+}
+
+/// Whether Segoe Fluent Icons or Segoe MDL2 Assets, as far as they are installed, has `glyph`:
+/// what a page that names both as its icon font draws as the icon. `None` when GDI cannot
+/// tell for one of them, or neither is installed.
+pub fn icon_fonts_have(glyph: char) -> Option<bool> {
+    let mut asked = false;
+    for face in ["Segoe Fluent Icons", "Segoe MDL2 Assets"] {
+        if font_installed(face) {
+            if face_has(face, glyph)? {
+                return Some(true);
+            }
+            asked = true;
+        }
+    }
+    asked.then_some(false)
+}
+
+/// Whether the font GDI picks for `face` has `glyph`. `None` when GDI cannot tell.
+fn face_has(face: &str, glyph: char) -> Option<bool> {
     windows_core::link!("gdi32.dll" "system" fn GetGlyphIndicesW(hdc: HDC, text: PCWSTR, count: i32, indices: *mut u16, flags: u32) -> u32);
     /// The index of a character the font lacks is 0xFFFF.
     const GGI_MARK_NONEXISTING_GLYPHS: u32 = 1;
     let mut buf = [0u16; 2];
     let text = glyph.encode_utf16(&mut buf);
     if text.len() != 1 {
-        return true;
+        return None;
     }
-    with_font(icon_face(), |dc| {
+    with_font(face, |dc| {
         let mut index = 0u16;
         // SAFETY: one character in, room for one glyph index out.
         let found = unsafe {
@@ -156,12 +177,24 @@ pub fn icon_font_has(glyph: char) -> bool {
         };
         (found == 1).then_some(index != 0xFFFF)
     })
-    .unwrap_or(true)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_two_icon_fonts_together_know_which_glyphs_a_page_can_draw() {
+        // Setting (the gear, U+E713) is in every version of both; U+F8FF is in none.
+        let (gear, none) = (
+            char::from_u32(0xE713).unwrap(),
+            char::from_u32(0xF8FF).unwrap(),
+        );
+        assert_eq!(icon_fonts_have(gear), Some(true));
+        assert_eq!(icon_fonts_have(none), Some(false));
+        // A character outside the basic plane: not asked.
+        assert_eq!(icon_fonts_have(char::from_u32(0x1F600).unwrap()), None);
+    }
 
     #[test]
     fn families_are_found_by_any_name_and_missing_ones_are_not() {
