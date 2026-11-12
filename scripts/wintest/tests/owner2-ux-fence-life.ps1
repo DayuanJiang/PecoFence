@@ -73,6 +73,19 @@ if ($Part -match 'D') {
   Pf fence delete '工作文件' | Out-Null
   Start-Sleep -Milliseconds 1500
   RecStop
+  # The other way: two icons leave 「桌面」 for a fence, and the ones that stay keep their cells.
+  Pf fence create --title '去处' --rect '560,240,340,220' | Out-Null
+  Start-Sleep -Seconds 1
+  FlPark
+  FlCliAsync "item move `"$PfDesk\fl 季度报告.txt`" `"$PfDesk\fl 预算表 2026.txt`" --to 去处"
+  [Px]::Burst(8, 8, 72, 84, 1100, 0)
+  $n = [Px]::Frames.Count
+  $away = 0; $worst = 0.0
+  for ($i = 1; $i -lt $n; $i++) { $d = [Px]::Diff([Px]::Frames[0], [Px]::Frames[$i], 0, 71, 0, 83); if ($d -gt $worst) { $worst = $d }; if ($d -gt 4) { $away++ } }
+  $went = WaitItemFence 'fl 季度报告.txt' '去处' 5
+  Check 'FL-1 two icons left 「桌面」 for the fence' ($went -eq '去处') "fl 季度报告 is in '$went'"
+  Check 'FL-1 the Recycle Bin stays in its cell while icons leave' ($away -eq 0) "$away of $n frames show something else in its cell (largest difference $([Math]::Round($worst, 1)))"
+  Pf fence delete '去处' | Out-Null; Start-Sleep -Milliseconds 800
 }
 
 if ($Part -match 'N') {
