@@ -18,6 +18,9 @@ pub const ICON_SIZE_MIN: u32 = 24;
 pub const ICON_SIZE_MAX: u32 = 128;
 pub const ICON_SIZE_STEP: u32 = 4;
 
+/// The lowest `idleOpacity`: a fence at rest can still be seen and found again.
+pub const IDLE_OPACITY_MIN: f32 = 0.1;
+
 /// An icon size edited by hand loads as the nearest size in range.
 fn icon_size_in_range<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
     let size = u32::deserialize(d)?.clamp(ICON_SIZE_MIN, ICON_SIZE_MAX);
@@ -146,7 +149,7 @@ pub struct Settings {
     /// Whole-fence opacity while idle (0.1..1); 1 disables hover fading.
     #[serde(
         default = "default_idle_opacity",
-        deserialize_with = "read_idle_opacity"
+        deserialize_with = "idle_opacity_in_range"
     )]
     #[cfg_attr(feature = "schema", schemars(range(min = 0.1, max = 1.0)))]
     pub idle_opacity: f32,
@@ -411,14 +414,11 @@ fn default_idle_opacity() -> f32 {
     1.0
 }
 
-fn read_idle_opacity<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
-    let value = f32::deserialize(d)?;
-    if !value.is_finite() || !(0.1..=1.0).contains(&value) {
-        return Err(serde::de::Error::custom(
-            "idleOpacity must be between 0.1 and 1",
-        ));
-    }
-    Ok(value)
+/// An idle opacity edited by hand loads as the nearest value in range, like an icon size: one
+/// number out of range must not make the whole file unreadable (the app would then start from a
+/// backup or from nothing). The command line refuses such a value before it gets here.
+fn idle_opacity_in_range<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+    Ok(f32::deserialize(d)?.clamp(IDLE_OPACITY_MIN, 1.0))
 }
 
 impl Default for Settings {
@@ -2296,7 +2296,7 @@ mod tests {
     }
 
     #[test]
-    fn idle_opacity_defaults_off_and_validates_saved_values() {
+    fn idle_opacity_defaults_off_and_loads_in_range() {
         let mut json = serde_json::to_value(Settings::default()).unwrap();
         json.as_object_mut().unwrap().remove("idleOpacity");
         assert_eq!(
@@ -2312,13 +2312,20 @@ mod tests {
             let saved = serde_json::to_value(&settings).unwrap();
             assert_eq!(serde_json::from_value::<Settings>(saved).unwrap(), settings);
         }
-        for value in [
-            serde_json::json!(0),
-            serde_json::json!(-0.5),
-            serde_json::json!(1.01),
-            serde_json::json!("0.45"),
-            serde_json::Value::Null,
+        // A number out of range in a hand-edited file loads as the nearest one in range: the
+        // rest of the file (every fence) must load.
+        for (value, loaded) in [
+            (0.0, 0.1),
+            (-0.5, 0.1),
+            (0.05, 0.1),
+            (1.01, 1.0),
+            (7.0, 1.0),
         ] {
+            json["idleOpacity"] = serde_json::json!(value);
+            let settings: Settings = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(settings.idle_opacity, loaded as f32, "{value}");
+        }
+        for value in [serde_json::json!("0.45"), serde_json::Value::Null] {
             json["idleOpacity"] = value;
             assert!(serde_json::from_value::<Settings>(json.clone()).is_err());
         }

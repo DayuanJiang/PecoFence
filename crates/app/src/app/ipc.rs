@@ -336,6 +336,19 @@ pub(super) fn patch_settings_path(
             "expected": { "min": ICON_SIZE_MIN, "max": ICON_SIZE_MAX, "step": ICON_SIZE_STEP }
         })));
     }
+    // The idle opacity too: loading takes the nearest value in range.
+    if let Some(opacity) = root.get("idleOpacity").and_then(Value::as_f64)
+        && opacity as f32 != current.idle_opacity
+        && !(pecofence_core::model::IDLE_OPACITY_MIN..=1.0).contains(&(opacity as f32))
+    {
+        let min = pecofence_core::model::IDLE_OPACITY_MIN;
+        return Err(IpcError::new(
+            ErrorCode::ValidationFailed,
+            format!("idleOpacity {opacity} is not between {min} and 1"),
+        )
+        .hint("1 = fences never fade; 0.45 = a fence nobody uses fades to 45 %")
+        .details(json!({ "expected": { "min": min, "max": 1 } })));
+    }
     let mut settings: Settings = serde_json::from_value(root).map_err(|e| {
         IpcError::new(
             ErrorCode::ValidationFailed,
