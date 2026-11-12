@@ -693,6 +693,14 @@
         <select id="fenceTitleOnHover" data-fence="titleOnHover"><option value="default">跟随常规设置</option><option value="always">始终显示</option><option value="hover">鼠标悬停时显示</option></select></div>
       <div id="fenceLayoutGroup">
       <h3>布局</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t">视图</div></div></div>
+        <select id="fenceLayout" data-fence="layout"><option value="icons">图标</option><option value="list">列表</option><option value="details">详细信息</option></select></div>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE8CB;</span><div><div class="t">排序方式</div></div></div>
+          <select id="fenceSort" data-fence="sort"><option value="manual">手动</option><option value="name">按名称</option><option value="type">按类型</option><option value="date">按修改日期</option><option value="size">按大小</option><option value="openCount">按打开次数</option></select></div>
+        <div class="card child"><div class="l"><div><div class="t">倒序</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="reverse"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">文件夹优先</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="foldersFirst"></div></div>
+      </div>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">图标大小</div><div class="s">也可以在栅栏内按住 Ctrl 滚动鼠标滚轮</div></div></div>
         <div class="slider"><input type="range" id="fenceIconSize" data-fence="iconSize"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xF0E2;</span><div><div class="t">图标间距</div><div class="s">图标之间的距离，以“标准”为基准</div></div></div>
@@ -1883,7 +1891,7 @@
     renderSmart(f);
     // A tool fence (小工具) never holds icons: hiding it while empty would hide it for good.
     document.getElementById('fenceHideEmpty').style.display = f.tool ? 'none' : '';
-    // Icon size, spacing, names, alignment and auto height are about icons.
+    // View, order, icon size, spacing, names, alignment and auto height are about icons.
     document.getElementById('fenceLayoutGroup').style.display = f.tool ? 'none' : '';
     document.getElementById('fenceAutoHeight').style.display = f.tool ? 'none' : '';
     // 文字大小: notes and script fences (a clock's text follows the fence size).

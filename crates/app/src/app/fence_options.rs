@@ -911,6 +911,10 @@ impl App {
             "spacingPx": f.view.spacing,
             "labelLines": f.view.label_lines,
             "layout": layout_name(f.view.layout),
+            // 排序方式 on the 栅栏 page (the fence menu's own choices).
+            "sort": sort_name(f.view.sort),
+            "reverse": f.view.reverse,
+            "foldersFirst": f.view.folders_first,
             "iconAlign": match f.view.icon_align {
                 IconAlign::Left => "left",
                 IconAlign::Center => "center",

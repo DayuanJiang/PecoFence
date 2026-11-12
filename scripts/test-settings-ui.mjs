@@ -56,6 +56,9 @@ const fixture = {
   everything: { state: 'missing' },
 };
 
+// 排序方式 of each fence, as the host sends it.
+fixture.fences.forEach((f, i) => Object.assign(f, { sort: i === 1 ? 'date' : 'manual', reverse: i === 1, foldersFirst: i === 2 }));
+
 function bridge() {
   const state = JSON.parse(document.getElementById('fixture').textContent);
   const catalogs = JSON.parse(document.getElementById('fixture-catalogs').textContent);
@@ -2824,6 +2827,40 @@ async function runTests() {
     assert([...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent).includes('图标融入背景'), 'Chameleon no longer finds 图标融入背景');
     change(doc, 'language', 'en'); await settle();
     assert([...doc.querySelectorAll('main .card .t')].some(el => el.textContent.trim() === 'Show the Windows desktop temporarily'), 'English: for now');
+    doc = await reset();
+  });
+
+  await test('栅栏 page: 视图 and 排序方式 show the chosen fence and change it, in every language, and the search finds them', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=fences]').click();
+    const view = doc.getElementById('fenceLayout'), sort = doc.getElementById('fenceSort');
+    const toggle = prop => doc.querySelector(`#page-fences .toggle[data-fence=${prop}]`), fence = id => win().testState.fences.find(f => f.id === id);
+    assert(view && sort && toggle('reverse') && toggle('foldersFirst'), 'The cards are missing');
+    assert(view.closest('#fenceLayoutGroup') && view.closest('.card').querySelector('.t').textContent === '视图' && sort.closest('.card').querySelector('.t').textContent === '排序方式', 'The cards are not under 布局');
+    assert(view.value === 'icons' && sort.value === 'manual' && !toggle('reverse').classList.contains('on'), 'fence-a: ' + view.value + ' ' + sort.value);
+    change(doc, 'fenceSel', 'fence-b'); await settle();
+    assert(view.value === 'list' && sort.value === 'date' && toggle('reverse').classList.contains('on') && !toggle('foldersFirst').classList.contains('on'), 'fence-b: ' + view.value + ' ' + sort.value);
+    assert([...sort.options].map(o => o.text).join() === '手动,按名称,按类型,按修改日期,按大小,按打开次数' && [...view.options].map(o => o.text).join() === '图标,列表,详细信息', 'Choices differ from the fence menu');
+    change(doc, 'fenceSort', 'name'); change(doc, 'fenceLayout', 'details'); toggle('reverse').click(); toggle('foldersFirst').click(); await settle();
+    const sent = win().testMessages.filter(m => m.type === 'setFence' && m.id === 'fence-b').slice(-4).map(m => m.prop + '=' + m.value).join();
+    assert(sent === 'sort=name,layout=details,reverse=false,foldersFirst=true', 'Sent: ' + sent);
+    assert(fence('fence-b').sort === 'name' && fence('fence-b').layout === 'details' && fence('fence-a').sort === 'manual', 'Another fence changed');
+    // A tool fence holds no icons: no view, no order.
+    fence('fence-a').tool = { kind: 'note' }; win().testRefresh(); await settle();
+    change(doc, 'fenceSel', 'fence-a'); await settle();
+    assert(!view.getClientRects().length && !sort.getClientRects().length, 'A note fence shows 视图 and 排序方式');
+    change(doc, 'fenceSel', 'fence-b'); await settle();
+    const box = doc.getElementById('settingsSearch'), found = () => [...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent);
+    const type = text => { box.focus(); box.value = text; box.dispatchEvent(new (win().Event)('input', { bubbles: true })); };
+    type('排序'); assert(found()[0] === '排序方式', '排序 finds: ' + found().join(' | '));
+    type('视图'); assert(found()[0] === '视图', '视图 finds: ' + found().join(' | '));
+    type('倒序'); assert(found()[0] === '倒序', '倒序 finds: ' + found().join(' | '));
+    const catalogs = JSON.parse(doc.getElementById('fixture-catalogs').textContent);
+    for (const language of Object.keys(catalogs)) {
+      change(doc, 'language', language); await settle();
+      const texts = [view.closest('.card').querySelector('.t'), sort.closest('.card').querySelector('.t'), toggle('reverse').closest('.card').querySelector('.t'), toggle('foldersFirst').closest('.card').querySelector('.t'), ...view.options, ...sort.options].map(el => el.textContent);
+      assert(texts.join() === ['视图', '排序方式', '倒序', '文件夹优先', '图标', '列表', '详细信息', '手动', '按名称', '按类型', '按修改日期', '按大小', '按打开次数'].map(k => catalogs[language][k]).join(), language + ': ' + texts.join(' | '));
+    }
     doc = await reset();
   });
 
