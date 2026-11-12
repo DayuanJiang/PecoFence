@@ -124,3 +124,20 @@ polish-peek        3   ec2    release polish-peek.ps1
 polish-ink-AD      3   ec2    release polish-ink.ps1                 --var Part=AD
 polish-ink-BC      4   ec2    release polish-ink.ps1                 --var Part=BC
 polish-tool-place  2   ec2    release polish-tool-place.ps1
+# Owner round 2026-11-12: one steps file per fix package (owner-notices' N part needs the exe's
+# version resource: build.sh embeds it; its E part and the editor's B part need Everything).
+owner-tools-A      1   ec2    release owner-tools.ps1                --var Part=A
+owner-tools-B      1   ec2    release owner-tools.ps1                --var Part=B
+owner-tools-C      1   ec2    release owner-tools.ps1                --var Part=C
+owner-tools-I      1   ec2    release owner-tools.ps1                --var Part=I
+owner-notices      2   ec2    release owner-notices.ps1
+owner-search-core  2   ec2    release owner-search-core.ps1
+owner-search-look  2   ec2    release owner-search-polish.ps1
+owner-glass-looks  3   ec2    release owner-glass-looks.ps1
+owner-frames-A     2   ec2    release owner-frame-pacing.ps1         --var Part=A
+owner-frames-B     2   ec2    release owner-frame-pacing.ps1         --var Part=B
+owner-settings-open 2  ec2    release owner-settings-host.ps1        --var Part=OK
+owner-settings-page 2  ec2    debug   owner-settings-host.ps1        --var Part=RDK
+owner-settings-ui  1   ec2    debug   owner-settings-ui.ps1
+owner-editor-A     2   ec2    debug   owner-smart-editor.ps1         --var Part=A
+owner-editor-B     2   ec2    debug   owner-smart-editor.ps1         --var Part=B
