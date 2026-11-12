@@ -1009,6 +1009,21 @@ fn narrow_tab_crossing_a_wide_one_is_stable() {
     assert_eq!(tab_reorder_step(0, 49.0 - 20.0, 40.0, &slots), None);
 }
 
+/// A new order of the same icons cross-fades only when it takes more than half of more than a
+/// dozen icons far from their places.
+#[test]
+fn a_new_order_cross_fades_only_for_many_icons_that_go_far() {
+    assert!(reorder_cross_fades(30, 34));
+    assert!(reorder_cross_fades(7, 13));
+    // Half or fewer go far: the eye follows them.
+    assert!(!reorder_cross_fades(17, 34));
+    // One icon moved by hand: the others shift by one place and do not count.
+    assert!(!reorder_cross_fades(1, 34));
+    // A dozen icons or fewer always glide.
+    assert!(!reorder_cross_fades(12, 12));
+    assert!(!reorder_cross_fades(8, 8));
+}
+
 /// Layout motion is a rearrangement effect: it runs for sorts / reorders / a few adds or
 /// removes and snaps for refills (tab switch, portal navigation); the first items of an empty
 /// fence fade in.

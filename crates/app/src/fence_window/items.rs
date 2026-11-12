@@ -53,6 +53,17 @@ pub(super) fn one_way_change(removed: usize, added: usize) -> bool {
     (removed == 0) != (added == 0)
 }
 
+/// The same icons in a new order (a sort change) cross-fade instead of gliding when more than
+/// half of them go further than to the next place in the order and there are more than
+/// `REORDER_FADE_OVER` of them: gliding sends them all through the middle of the fence at
+/// once. `far` = icons whose place in the order changed by more than one. Up to a dozen icons
+/// the eye still follows each one to its new cell (looked at on the test box with 6, 10, 14,
+/// 20 and 34 icons); an icon moved by hand shifts the others by one place, which never counts.
+pub(super) const REORDER_FADE_OVER: usize = 12;
+pub(super) fn reorder_cross_fades(far: usize, len: usize) -> bool {
+    len > REORDER_FADE_OVER && far * 2 > len
+}
+
 /// How long after a drop its icons still count as "just let go here" (`drop_landing`): the
 /// refresh the drop causes follows within a frame or two; anything later is another change.
 pub(super) const DROP_LANDING_MAX: Duration = Duration::from_millis(500);
@@ -453,6 +464,32 @@ impl FenceViewState {
                 self.begin_content_swap(0);
             }
             return;
+        }
+        // The same icons in a new order that takes most of them far from their places (a sort
+        // change): every icon glided through the middle of the fence at once, lying on the
+        // others for the whole glide. The old page fades out under the new one, as the
+        // filter's refill does. A few icons that change places, a short list, and an icon
+        // let go at another place (`landing`; its neighbours move one cell) glide.
+        if changed == 0 && landing.is_empty() && self.desktop.is_none() && self.content_swap_shows()
+        {
+            let old_index: HashMap<ItemId, usize> =
+                old_ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+            let far = self
+                .items
+                .iter()
+                .enumerate()
+                .filter(|(i, n)| old_index.get(&n.id).is_some_and(|o| o.abs_diff(*i) > 1))
+                .count();
+            if reorder_cross_fades(far, self.items.len()) {
+                tracing::debug!(
+                    far,
+                    items = self.items.len(),
+                    "new order moves most icons far: the content cross-fades"
+                );
+                self.snap_item_motion();
+                self.begin_content_swap(0);
+                return;
+            }
         }
         // 像桌面一样排列: the cells of the new list are placed here, before the glides get
         // their targets. They used to be placed only after this function, so every icon
