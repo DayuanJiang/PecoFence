@@ -336,8 +336,13 @@ impl App {
         }
         self.show_welcome(welcome::Welcome::LiveWallpaper {
             player: note.player,
-            key: note.key,
+            key: note.key.clone(),
         });
+        if self.welcome.is_none() {
+            // The card could not be made (the log says why): not at every check of this run.
+            tracing::debug!(key = %note.key, "live wallpaper card not shown; not tried again in this run");
+            self.live_card_told.get_or_insert_default().push(note.key);
+        }
     }
 
     /// Follows which monitors a live wallpaper covers (`live_wallpaper::windows`, ~30 us). A
