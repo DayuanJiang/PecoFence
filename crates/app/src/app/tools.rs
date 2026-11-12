@@ -1154,9 +1154,14 @@ impl App {
         }
     }
 
-    /// A to-do was dragged to another line of its note: one saved change, as a tick is.
+    /// A to-do was dragged to another line of its note: one saved change, as a tick is,
+    /// and one step for Ctrl+Z in the fence.
     pub(super) fn move_note_line(&mut self, fence: FenceId, from: usize, to: usize) {
+        let before = self.state.note_text(fence).map(str::to_string);
         if self.state.move_note_line(fence, from, to) {
+            if let (Some(before), Some(after)) = (before, self.state.note_text(fence)) {
+                self.note_line_for_undo(fence, before, after.to_string());
+            }
             self.push_note(fence);
             self.schedule_save();
         }

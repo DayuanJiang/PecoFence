@@ -42,6 +42,14 @@ pub(super) enum UndoStep {
     },
     /// A file renamed in a fence (renamed directly, so Windows' undo list does not hold it).
     Renamed { from: PathBuf, to: PathBuf },
+    /// A to-do dragged to another line of a note: the note's text before the drop and after
+    /// it. Ctrl+Z puts the text back while the note still reads as the drop left it; once it
+    /// was edited or ticked the step is spent, so nothing written since is lost.
+    NoteLine {
+        fence: FenceId,
+        before: String,
+        after: String,
+    },
     /// Folders or files made from a fence (made directly too): Ctrl+Z moves them to the
     /// Recycle Bin, as Explorer's own undo of 新建 does, without a record in Windows' undo list
     /// (a record would be the newest one there, and the next step handed to Windows would
@@ -98,6 +106,7 @@ impl UndoStep {
             Self::NewFence(_) => "new fence",
             Self::Refiled { .. } => "rules applied",
             Self::Renamed { .. } => "rename",
+            Self::NoteLine { .. } => "note line moved",
             Self::Created { .. } => "new item",
             Self::Shell { what } | Self::Permanent { what } => what,
             Self::Merged { .. } => "merge into tabs",
@@ -117,6 +126,16 @@ impl App {
         if self.undo.len() > UNDO_KEPT {
             self.undo.remove(0);
         }
+    }
+
+    /// A to-do of note `fence` was dragged to another line: the note's text until then and
+    /// since. The drag gave the fence the keyboard, so a Ctrl+Z right after it lands here.
+    pub(super) fn note_line_for_undo(&mut self, fence: FenceId, before: String, after: String) {
+        self.push_undo(UndoStep::NoteLine {
+            fence,
+            before,
+            after,
+        });
     }
 
     /// The whole layout was replaced: no step applies to it any more.
@@ -466,6 +485,18 @@ impl App {
                         0
                     }
                 }
+            }
+            UndoStep::NoteLine {
+                fence,
+                before,
+                after,
+            } => {
+                let unchanged = self.state.note_text(fence) == Some(after.as_str());
+                tracing::info!(%fence, unchanged, "note line move undone");
+                if unchanged && self.state.set_note_text(fence, &before) {
+                    self.push_note(fence);
+                }
+                usize::from(unchanged)
             }
             UndoStep::Created { items } => {
                 let count = items.len();
