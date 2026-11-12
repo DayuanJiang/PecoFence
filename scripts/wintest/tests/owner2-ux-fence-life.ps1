@@ -1,9 +1,12 @@
 # Owner round 2026-11-12, UI / UX / motion hunt, package ux-fence-life: the life of a fence as a
 # window. Parts (run.sh --var Part=...): D the icons of 「桌面」 keep their cells while a deleted
 # fence's icons come back (FL-1), N the name box of a fence (FL-2), K 停靠到屏幕顶部 glides
-# (FL-5), U Ctrl+Z after a new fence (FL-13), X a start without an empty desktop (FL-3).
-# Default: all parts. Runs on a 1600x900 box at 100 %.
-if (-not $Part) { $Part = 'DNKUX' }
+# (FL-5), U a new fence from a rectangle: its buttons fade (FL-6), its name box opens at the
+# fade's end (FL-14), Ctrl+Z takes it away (FL-13), X a start without an empty desktop (FL-3),
+# Q the fences fade out at 退出 (FL-4). Default: all parts. --var Style=liquidGlass runs them
+# in Liquid Glass. Runs on a 1600x900 box at 100 %.
+if (-not $Part) { $Part = 'DNKUXQ' }
+function FlStyle() { if ($Style) { Pf settings set themeStyle $Style | Out-Null; Start-Sleep -Seconds 2 } }
 trap { PfTrap $_; continue }
 Case 'setup'
 CloseWindows
@@ -19,6 +22,7 @@ PfStart -Lang zh-CN -Script @('sleep 3600000')
 Start-Sleep -Seconds 4
 ClearFences
 Start-Sleep -Seconds 1
+FlStyle
 function FlWin($t) { return [G]::FindWindowW('PecoFence.Fence', $t) }
 function FlRect($t) { return (Rect (FlWin $t)) }
 function FlPark() { ParkMouse 1300 760; Start-Sleep -Milliseconds 400 }
@@ -77,6 +81,8 @@ if ($Part -match 'N') {
   ClearFences
   Pf fence create --title '工作文件 2026' --rect '560,240,340,220' | Out-Null
   Start-Sleep -Seconds 1
+  # --var TitleSize=small|large|extraLarge: the same checks at another 标题大小.
+  if ($TitleSize) { Pf fence set '工作文件 2026' titleSize $TitleSize | Out-Null; Start-Sleep -Milliseconds 800 }
   FlPark
   $r = FlRect '工作文件 2026'
   $title = FlTextAt ($r.L + 4) ($r.T + 4) 220 28
@@ -91,7 +97,8 @@ if ($Part -match 'N') {
   $b = Rect $box
   $inside = FlTextAt ($b.L + 2) ($b.T + 2) ($b.R - $b.L - 4) ($b.B - $b.T - 5)
   Crop 'fl2-box' ($r.L - 8) ($r.T - 8) 360 60 | Out-Null
-  # The box's edge against its field, at mid height: a frame is darker than the field.
+  # The box's edge against its field, at mid height: a frame differs from the field (darker
+  # on the light field, lighter on the dark one).
   $edge = [Px]::Grab($b.L, $b.T + [int](($b.B - $b.T) / 2), 6, 1)
   $pe = [Px]::Pixels($edge); $edge.Dispose()
   $edgeLum = [int]((($pe[0] -shr 16) -band 255) * 0.299 + (($pe[0] -shr 8) -band 255) * 0.587 + ($pe[0] -band 255) * 0.114)
@@ -99,7 +106,7 @@ if ($Part -match 'N') {
   Check 'FL-2 the name box opened over the title' ($box -ne [IntPtr]::Zero -and $title[0] -gt 0 -and $inside[0] -gt 0) "title text at $($title -join ','), box $($b.L),$($b.T),$($b.R),$($b.B), its text at $($inside -join ',')"
   Check 'FL-2 the name starts at the same x in the box' ([Math]::Abs($inside[0] - $title[0]) -le 1) "title x $($title[0]), in the box x $($inside[0])"
   Check 'FL-2 the name stays at the same height in the box' ([Math]::Abs($inside[1] - $title[1]) -le 1 -and [Math]::Abs($inside[2] - $title[2]) -le 1) "title rows $($title[1]) to $($title[2]), in the box $($inside[1]) to $($inside[2])"
-  Check 'FL-2 the box has an outline' ($fieldLum - $edgeLum -ge 20) "edge brightness $edgeLum, field $fieldLum"
+  Check 'FL-2 the box has an outline' ([Math]::Abs($fieldLum - $edgeLum) -ge 20) "edge brightness $edgeLum, field $fieldLum"
   [G]::Press(0x1B); Start-Sleep -Milliseconds 600
   FlPark
 }
@@ -191,6 +198,7 @@ if ($Part -match 'X') {
   Case 'FL-3 start without an empty desktop'
   PfFresh
   Pf settings set language zh-CN | Out-Null
+  FlStyle
   Start-Sleep -Seconds 3
   # A first-run fence at the right that holds shortcuts, and the second cell of Windows' own
   # icon column at the left (the Recycle Bin's, the first, also shows in 「桌面」).
@@ -249,6 +257,7 @@ if ($Part -match 'Q') {
   . C:\pf\kit\user.ps1
   PfFresh
   Pf settings set language zh-CN | Out-Null
+  FlStyle
   Start-Sleep -Seconds 3
   $fr = FlRect '程序'
   FlPark
