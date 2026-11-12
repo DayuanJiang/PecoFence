@@ -149,7 +149,7 @@ impl App {
             &current,
             &cue,
             self.queue.clone(),
-            self.theme_mode,
+            w.label_ink(self.theme_mode),
         );
         self.sync_filter_view(fence);
     }

@@ -17,7 +17,7 @@ use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
 };
 use pecofence_platform::{HWND, RECT, dwm, edit, fonts, monitors, msg, paint};
-use pecofence_render::ThemeMode;
+use pecofence_render::ColorF;
 use std::cell::{Cell, RefCell};
 
 const FILTER_CLASS: &str = "PecoFence.Filter";
@@ -115,16 +115,19 @@ fn type_change() {
 }
 
 /// Opens (or moves) the filter box over `fence_hwnd`'s title row with `current` in it; `cue`
-/// is the grey hint while it is empty.
+/// is the grey hint while it is empty. `ink` is the colour the fence draws its title in: the
+/// box takes it for its text, on the field that colour reads on, as a name box does.
 pub fn open(
     fence_hwnd: HWND,
     fence: FenceId,
     current: &str,
     cue: &str,
     queue: CommandQueue,
-    mode: ThemeMode,
+    ink: ColorF,
 ) {
     close();
+    let (dark, text_color) = crate::rename::box_colors(ink);
+    tracing::debug!(%fence, dark_field = dark, text = format_args!("{text_color:06x}"), "filter box colours");
     let r = window::window_rect(fence_hwnd);
     let dpi = monitors::dpi_for_window(fence_hwnd).max(96);
     let px = |dip: f32| (dip * dpi as f32 / 96.0).round() as i32;
@@ -220,18 +223,19 @@ pub fn open(
     let edit_w = (w - edit_x - px(COUNT_W + CLEAR_W + 4.0)).max(px(40.0));
     // A type in the current filter comes back as its chip.
     let (tokens, typed) = type_filter::split(current);
-    let Ok(ctl) = edit::EditControl::create(
+    let Ok(mut ctl) = edit::EditControl::create(
         window.hwnd(),
         edit_w,
         px(EDIT_H),
         dpi,
         14.0,
         &typed,
-        mode == ThemeMode::Dark,
+        dark,
         on_key,
     ) else {
         return;
     };
+    ctl.set_text_color(text_color);
     ctl.set_bounds(edit_x, (h - px(EDIT_H)) / 2, edit_w, px(EDIT_H));
     ctl.set_cue(cue);
     window::show_normal(window.hwnd());

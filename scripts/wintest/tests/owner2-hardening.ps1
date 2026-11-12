@@ -132,3 +132,103 @@ if ($Part -match 'B') {
   Check 'the shareable log keeps the type, the reason and the place, and no path' ($sl -match 'file_ext=lnk reason=generic from_shortcut=true place=fixed' -and $sl -match 'target_ext=exe' -and $sl -notmatch '探针|pf\\run|hd2') $sl
   PfQuit
 }
+
+if ($Part -match 'C') {
+  Add-Type -ReferencedAssemblies System.Drawing @'
+using System; using System.Collections.Generic; using System.Drawing; using System.Drawing.Imaging; using System.Runtime.InteropServices;
+public static class HdLook {
+  static int[] Px(Bitmap b) {
+    var d = b.LockBits(new Rectangle(0, 0, b.Width, b.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+    var px = new int[b.Width * b.Height]; Marshal.Copy(d.Scan0, px, 0, px.Length); b.UnlockBits(d);
+    return px;
+  }
+  static int Lum(int c) { return (((c >> 16) & 255) * 299 + ((c >> 8) & 255) * 587 + (c & 255) * 114) / 1000; }
+  static string Rgb(int c) { return ((c >> 16) & 255) + "," + ((c >> 8) & 255) + "," + (c & 255); }
+  // Text on a plate: the plate is the pixel of median brightness, the text the pixel farthest
+  // from it. "plate rgb|text rgb|plate brightness|text brightness".
+  public static string Text(Bitmap b) {
+    var px = Px(b); var lum = new int[px.Length];
+    for (int i = 0; i < px.Length; i++) lum[i] = Lum(px[i]);
+    var sorted = (int[])lum.Clone(); Array.Sort(sorted);
+    int med = sorted[sorted.Length / 2], plate = 0, ink = 0, near = 999, far = -1;
+    for (int i = 0; i < px.Length; i++) {
+      int diff = Math.Abs(lum[i] - med);
+      if (diff < near) { near = diff; plate = i; }
+      if (diff > far) { far = diff; ink = i; }
+    }
+    return Rgb(px[plate]) + "|" + Rgb(px[ink]) + "|" + lum[plate] + "|" + lum[ink];
+  }
+  // A text box: its field is the most frequent colour, its text the pixel farthest from the
+  // field. The caret is the field's colour inverted and counts as neither. Same format.
+  public static string Box(Bitmap b) {
+    var px = Px(b); var count = new Dictionary<int, int>();
+    int field = 0, most = 0;
+    foreach (int p in px) { int c = p & 0xFFFFFF, n; count.TryGetValue(c, out n); count[c] = ++n; if (n > most) { most = n; field = c; } }
+    int fl = Lum(field), far = -1, text = field, caret = ~field & 0xFFFFFF;
+    foreach (int p in px) { int c = p & 0xFFFFFF; if (c == caret) continue; int d = Math.Abs(Lum(c) - fl); if (d > far) { far = d; text = c; } }
+    return Rgb(field) + "|" + Rgb(text) + "|" + fl + "|" + Lum(text);
+  }
+}
+'@
+  function HdWall($name) {
+    $rgb = if ($name -eq 'light') { 236, 239, 243 } else { 18, 20, 26 }
+    $bm = New-Object Drawing.Bitmap 32, 32; $gr = [Drawing.Graphics]::FromImage($bm); $gr.Clear([Drawing.Color]::FromArgb($rgb[0], $rgb[1], $rgb[2])); $gr.Dispose()
+    $p = "$PfRun\wall-$name.bmp"; $bm.Save($p, [Drawing.Imaging.ImageFormat]::Bmp); $bm.Dispose()
+    [G]::SystemParametersInfoW(0x14, 0, $p, 3) | Out-Null
+    # PecoFence looks at the wallpaper every 5 seconds.
+    Start-Sleep -Seconds 8
+  }
+  function HdRead($kind, $x, $y, $w, $h) {
+    $b = [Px]::Grab([int]$x, [int]$y, [int]$w, [int]$h)
+    $r = if ($kind -eq 'box') { [HdLook]::Box($b) } else { [HdLook]::Text($b) }
+    $b.Dispose()
+    $p = $r -split '\|'
+    return [pscustomobject]@{ Back = $p[0]; Ink = $p[1]; BackLum = [int]$p[2]; InkLum = [int]$p[3]; DarkText = ([int]$p[3] -lt [int]$p[2]); Text = "text $($p[1]) on $($p[0])" }
+  }
+  function HdApart($a, $b) {
+    $x = @($a -split ',' | ForEach-Object { [int]$_ }); $y = @($b -split ',' | ForEach-Object { [int]$_ })
+    return [math]::Max([math]::Max([math]::Abs($x[0] - $y[0]), [math]::Abs($x[1] - $y[1])), [math]::Abs($x[2] - $y[2]))
+  }
+
+  Case 'HD-3 setup'
+  CloseWindows
+  $FDir = "$PfRun\hd3\合同 与 报告"
+  New-Item -ItemType Directory -Force $FDir | Out-Null
+  foreach ($n in 'a1 季度报告.txt', 'b2 合同.txt', 'c3 notes.txt') { Set-Content -LiteralPath "$FDir\$n" -Value 'x' -Encoding UTF8 }
+  HdWall 'light'
+  PfStart -Lang en
+  Start-Sleep -Seconds 2
+  Pf settings set featureTips false | Out-Null
+  Pf settings set themeStyle fluent | Out-Null
+  Pf fence create --portal $FDir --title 'Papers' --rect '300,160,420,220' | Out-Null
+  Start-Sleep -Seconds 2
+
+  # The filter box against the title it covers.
+  function HdFilterBox($mode, $wall) {
+    trap { PfTrap $_; continue }
+    Case "HD-3 filter box: $mode mode, $wall wallpaper"
+    Pf settings set theme $mode | Out-Null
+    HdWall $wall
+    Start-Sleep -Milliseconds 1500
+    $w = (FenceGet 'Papers').windowRect
+    # The fence gets the keyboard: a click on its empty lower part.
+    [G]::Click(($w.x + $w.w - 40), ($w.y + $w.h - 30)); ParkMouse 1540 780; Start-Sleep -Milliseconds 500
+    $title = HdRead 'text' ($w.x + 12) ($w.y + 8) 120 22
+    Chord 0x11 0x46; Start-Sleep -Milliseconds 700
+    $box = [G]::FindWindowW('PecoFence.Filter', [NullString]::Value)
+    [G]::Type('abc'); Start-Sleep -Milliseconds 700
+    $q = $null
+    if ($box -ne [IntPtr]::Zero) { $r = Rect $box; $q = HdRead 'box' ($r.L + 34) ($r.T + 6) 100 15 }
+    Crop "hd3-$mode-$wall" $w.x $w.y $w.w 64 | Out-Null
+    $side = if ($title.DarkText) { 'dark' } else { 'light' }
+    Check "the filter box has $side text, like the title it covers" ($q -and $q.DarkText -eq $title.DarkText) "title: $($title.Text); box: $(if ($q) { $q.Text } else { 'did not open' })"
+    Check "the filter box's text has the title's own colour" ($q -and (HdApart $q.Ink $title.Ink) -le 32) "title text $($title.Ink), box text $(if ($q) { $q.Ink } else { 'did not open' })"
+    Check "the filter box has a field that $side text reads on" ($q -and (($q.BackLum -ge 128) -eq $title.DarkText) -and [math]::Abs($q.BackLum - $q.InkLum) -ge 120) "box: $(if ($q) { "$($q.Text), brightness $($q.InkLum) on $($q.BackLum)" } else { 'did not open' })"
+    [G]::Press(0x1B); Start-Sleep -Milliseconds 500
+  }
+  HdFilterBox dark light
+  HdFilterBox light dark
+  HdFilterBox dark dark
+  HdFilterBox light light
+  PfQuit
+}

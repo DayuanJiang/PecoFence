@@ -126,7 +126,7 @@ pub fn begin_inline_rename(
 /// colour mode: in dark mode over a light wallpaper the names are dark on a light plate, and a
 /// dark box was the one dark block in the fence. Returns whether the field is the dark one and
 /// the text colour (a COLORREF, the ink's own alpha blended over the field).
-fn box_colors(ink: ColorF) -> (bool, u32) {
+pub(crate) fn box_colors(ink: ColorF) -> (bool, u32) {
     let dark = 0.2126 * ink.r + 0.7152 * ink.g + 0.0722 * ink.b > 0.5;
     let [r, g, b, _] = edit::back_color(dark).to_le_bytes();
     let over = |c: f32, field: u8| {
