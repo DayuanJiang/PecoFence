@@ -52,6 +52,17 @@
 - A click on a clock or on a script fence's text also saves and closes an open note editor; these fences take no focus, so the editor stayed open. After Esc or Ctrl+Enter the keyboard is with the note's fence; it went to the taskbar.
 - A narrow clock shows a shorter date in place of a cut one: 「11月12日 周四」 (「Thu, Nov 12」) when the long date 「2026年11月12日 星期四」 does not fit on one line at the smallest date size, and no date when that does not fit either. It showed the start of the long date and a clipped second line.
 - 「编辑脚本」 and 「编辑便签」 in the fence menu have a pencil icon; they had the same icon as 「重命名…」.
+- Peek search: the result row and the type tab under the pointer get a hover fill (83 ms fade, as an icon in a fence), and a row shows the hand cursor. They did not react to the pointer at all, although a click opens the row as Enter does. The highlighted row stays where the keys put it.
+- Peek search: a file that two fences show (a folder fence and a smart fence over the same folder) is listed once, with 「<栅栏> 等 2 个栅栏」 under its name, and counted once in 「N 个结果」. It took one row per fence, so three of nine rows could be repeats. Of equally good matches the list keeps the one in the leftmost fence (then the topmost); the fences still highlight every copy.
+- Peek search: the empty search box says what can be typed: 「搜索栅栏里的文件，可以用拼音」, or 「搜索栅栏和整台电脑，可以用拼音」 when the whole-computer search is on and Everything is running (other languages leave out the pinyin part), in the secondary text colour in light and dark mode. It was an empty strip.
+- Peek search: the search box follows the Windows accent colour (matched letters, the highlighted row, the chosen type tab, the glyphs of the action rows), also when the colour changes while the box is open. It was always blue, next to fences that mark the same matches in the accent colour.
+- Peek search: the bottom bar writes 「Enter 打开」. The Enter key was a 「↵」 about 6 px high in a fallback font, much smaller than the text beside it.
+- Peek search: a folder path too long for its row is cut in the middle: the drive and the last folders stay (「C:\…\客户往来文件\最终版 A」), where the end was cut and results from neighbouring folders read the same. The path line uses the row's full width, and the pointer resting on a whole-computer result shows the full path in a tip.
+- Peek search: the result list is drawn off screen and shown in one step. On the first search after signing in to Windows, while Windows was still loading the fonts, the list window stood empty and its rows came in one after another over about a tenth of a second.
+- Peek search: the typed text starts at the same left edge as the result names and the magnifier sits over the row icons (the text was 13 px further right, the magnifier 2 px).
+- Peek search: Chinese typed in the search box is drawn in the same font as the list (Microsoft YaHei UI and its counterparts) on a Windows in another language too, where it came out in a lighter fallback font.
+- Peek search: the search box has a thin outline, so it keeps its edge over a white window when 「速览时调暗背景」 is off.
+- Peek search: on the two action rows (「在 Everything 里查看全部结果」, 「把这次搜索放到桌面」) and on system items the bottom bar shows only 「Enter 打开」; it also offered 「Ctrl+Enter 打开所在文件夹」 and 「→ 更多操作」, which do nothing there.
 
 ## 0.3.3
 
