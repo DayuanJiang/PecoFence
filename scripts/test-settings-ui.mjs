@@ -3192,6 +3192,26 @@ async function runTests() {
     assert(kindsOf(doc) === 'where,name' && rowGlides() === '1 from below', 'A row removed: ' + (rowGlides() || 'nothing moves'));
     doc = await reset();
   });
+  await test('A card that another setting shows grows open and closes; a page that comes in does not replay it', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const card = doc.getElementById('keepIconsCard'), growing = () => moving().filter(line => line.startsWith('#keepIconsCard')).join(', ');
+    assert(card.hidden && growing() === '', 'The card of 「隐藏」 shows, or moves, before the list is changed: ' + growing());
+    change(doc, 'desktopIcons', 'hide');
+    assert(!card.hidden && growing().includes('height'), 'The card appears in one frame: ' + (growing() || 'nothing moves'));
+    assert(await until(() => growing() === ''), 'The card never came to rest');
+    assert(card.getBoundingClientRect().height >= 52, 'The open card is ' + card.getBoundingClientRect().height + ' px tall');
+    change(doc, 'desktopIcons', 'showNoInbox');
+    assert(card.hidden && growing().includes('height') && frame.contentWindow.getComputedStyle(card).display !== 'none', 'The card is gone in one frame: ' + (growing() || 'nothing moves'));
+    assert(await until(() => frame.contentWindow.getComputedStyle(card).display === 'none'), 'The closed card stays drawn');
+    // Shown again, then away to another page and back after its motion: nothing grows.
+    change(doc, 'desktopIcons', 'hide');
+    assert(await until(() => !card.classList.contains('reveal')), 'The card keeps its motion class');
+    doc.querySelector('[data-page=fences]').click();
+    doc.querySelector('[data-page=general]').click();
+    assert(growing() === '', 'The card grows again when its page comes in: ' + growing());
+    doc = await reset();
+  });
 
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';

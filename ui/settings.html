@@ -144,6 +144,17 @@
   .card:not(.stack) > :not(.l):not(.s) { margin-left: auto; }
   .card.disabled .t, .card.disabled .s { color: var(--text-disabled); }
   .card.disabled button.accent:disabled { color: var(--text-disabled); background: var(--control-disabled); border-color: var(--control-stroke); }
+  /* A card or row that another setting shows or hides (see reveal()): it grows open and closes
+     with the expander's timing, so what is under it glides instead of jumping. `hidden` is set
+     at once; the row stays drawn until it has closed. Its content is clipped while it moves and
+     free again at rest (the value bubble of a slider stands above its card). */
+  .reveal { interpolate-size: allow-keywords;
+    transition: height .333s cubic-bezier(0, 0, 0, 1), min-height .333s cubic-bezier(0, 0, 0, 1), padding .333s cubic-bezier(0, 0, 0, 1), border-width .333s, opacity .167s linear,
+      overflow 0s .333s allow-discrete, display .333s allow-discrete; }
+  .reveal[hidden] { display: none; overflow: clip; height: 0; min-height: 0; padding-top: 0; padding-bottom: 0; border-top-width: 0; border-bottom-width: 0; opacity: 0;
+    transition: height .167s cubic-bezier(1, 0, 1, 1), min-height .167s cubic-bezier(1, 0, 1, 1), padding .167s cubic-bezier(1, 0, 1, 1), border-width .167s, opacity .167s linear,
+      overflow 0s allow-discrete, display .167s allow-discrete; }
+  @starting-style { .reveal:not([hidden]) { overflow: clip; height: 0; min-height: 0; padding-top: 0; padding-bottom: 0; border-top-width: 0; border-bottom-width: 0; opacity: 0; } }
   /* A master setting and the rows that only matter while it is on share one surface. */
   .group { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
   .group > .card, .rows > .card { margin: 0; border-radius: 0; }
@@ -1112,7 +1123,7 @@
         commit('themeStyle');
       };
     });
-    document.getElementById('customThemeRow').hidden = !custom;
+    reveal(document.getElementById('customThemeRow'), custom);
   }
   // The theme files of the themes folder; a chosen file that is gone stays listed with its error.
   function bindCustomTheme() {
@@ -1518,6 +1529,15 @@
 
   const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
   const set = (obj, path, v) => { const ks = path.split('.'); let o = obj; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]]; o[ks[ks.length - 1]] = v; };
+  // Shows or hides a card that depends on another setting, with a motion (the .reveal rules).
+  // The class is there only for the change itself: a page that comes in must not replay it.
+  function reveal(el, show) {
+    if (el.hidden === !show) return;
+    el.classList.add('reveal');
+    el.hidden = !show;
+    clearTimeout(el.revealTimer);
+    el.revealTimer = setTimeout(() => el.classList.remove('reveal'), 400);
+  }
   const keyToggle = (el) => { el.onkeydown = (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); el.click(); } }; };
   // closed lists: a styled list (appearance: base-select) opens on an arrow key and ignores
   // Home and End, where the system list changes the choice in place. Keep the system's keys.
@@ -1717,7 +1737,7 @@
     const on = !!state.settings.peek.enabled, double = !!state.settings.peek.doubleCtrl;
     document.getElementById('peekHotkeyCard').classList.toggle('disabled', !on);
     if (!on) peekCustom = false;
-    document.getElementById('peekHotkeyEdit').hidden = !peekCustom;
+    reveal(document.getElementById('peekHotkeyEdit'), peekCustom);
     peekRecorder.render();
     const choices = p.presets.map(k => [keyValue(k), k.keys.join(' + ')]);
     if (!p.presets.some(k => sameKey(k, p.chosen))) choices.push([keyValue(p.chosen), p.chosen.keys.join(' + ')]);
@@ -2657,7 +2677,7 @@
         ? t("“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关闭它的“像桌面一样排列”")
         : t("没有归类的项目只留在 Windows 桌面上，不显示“桌面”栅栏"),
     }[value];
-    document.getElementById('keepIconsCard').hidden = value !== 'hide';
+    reveal(document.getElementById('keepIconsCard'), value === 'hide');
     select.onchange = () => {
       const settings = state.settings;
       settings.hideRealIcons = select.value === 'hide';
@@ -2673,7 +2693,7 @@
   // 「鼠标悬停时切换标签页」: shown while either is on.
   function renderHoverSpeed() {
     const r = state.settings.rollUp;
-    document.getElementById('hoverSpeedCard').hidden = !((r.hoverPeek && !r.clickToExpand) || r.switchTabOnHover);
+    reveal(document.getElementById('hoverSpeedCard'), !!((r.hoverPeek && !r.clickToExpand) || r.switchTabOnHover));
   }
   function bindRollExpand() {
     const r = state.settings.rollUp, select = document.getElementById('rollExpand');
