@@ -318,7 +318,11 @@ pub(super) fn on_keydown(
             if v.filter_active {
                 tracing::debug!(selected = ids.len(), "Esc: filter cleared, selection kept");
                 queue.push(Command::ClearFenceFilter(v.active));
-            } else if v.items.iter().any(|it| v.cut.contains(&it.id)) {
+            } else if v.items.iter().any(|it| v.cut.contains(&it.id))
+                // A paste of the cut that is still running keeps the cut (`cancel_cut`): Esc
+                // then clears the selection, as it does without a cut.
+                && !crate::fence_window::own_file_op_running()
+            {
                 // Icons of this fence wait on the clipboard after Ctrl+X: Esc takes the cut
                 // back and leaves the selection, as on Explorer's desktop; the next Esc
                 // clears the selection.
