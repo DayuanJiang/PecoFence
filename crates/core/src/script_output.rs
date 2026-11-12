@@ -143,24 +143,28 @@ pub fn is_cells_line(line: &str) -> bool {
         .is_some_and(|rest| rest.is_empty() || rest.starts_with([' ', '\t']))
 }
 
-/// The cells of a `::` line: split at each `::` that is not inside a quoted value (a quote
-/// opens right after `=`, so an apostrophe in a text is only a letter).
+/// The cells of a `::` line: split at each `::` that is not inside a quoted value. A quote
+/// opens right after `=` in a cell's parameters (after its `|`), so an apostrophe in a text is
+/// only a letter, and so is the `"` of a copied `href="...` that a text holds.
 fn split_cells(text: &str) -> Vec<&str> {
     let mut out = Vec::new();
     let mut start = 0;
     let mut quote: Option<char> = None;
     let mut prev = ' ';
+    let mut in_params = false;
     let mut chars = text.char_indices().peekable();
     while let Some((at, c)) = chars.next() {
         match quote {
             Some(q) if c == q => quote = None,
             Some(_) => {}
-            None if (c == '"' || c == '\'') && prev == '=' => quote = Some(c),
+            None if c == '|' => in_params = true,
+            None if in_params && (c == '"' || c == '\'') && prev == '=' => quote = Some(c),
             None if c == ':' && matches!(chars.peek(), Some((_, ':'))) => {
                 out.push(&text[start..at]);
                 chars.next();
                 start = at + 2;
                 prev = ' ';
+                in_params = false;
                 continue;
             }
             None => {}
@@ -438,6 +442,29 @@ mod tests {
         assert_eq!(cells[1].tooltip.as_deref(), Some("a :: b"));
         // The line of a text that only holds a colon is no row of cells.
         assert!(matches!(parse_one("a :: b"), ScriptLine::Row(_)));
+    }
+
+    #[test]
+    fn a_quote_in_the_text_of_a_cell_is_only_a_letter() {
+        // Copied HTML cut in the middle of an attribute, shown with buttons beside it: the
+        // `="` of the text opens no quoted value, so the cells after it stay cells.
+        let ScriptLine::Cells(cells) = parse_one(
+            ":: <a href=\"https://exam | fill=true action=copy:1 tooltip=\"<a href='https://exam\" :: T | action=del:1 :: P | under=true action=pin:1",
+        ) else {
+            panic!("cells");
+        };
+        assert_eq!(cells.len(), 3, "{cells:?}");
+        assert_eq!(cells[0].text, "<a href=\"https://exam");
+        assert_eq!(cells[0].action, Some(RowAction::Script("copy:1".into())));
+        assert_eq!(cells[0].tooltip.as_deref(), Some("<a href='https://exam"));
+        assert_eq!(cells[1].action, Some(RowAction::Script("del:1".into())));
+        assert_eq!(cells[2].action, Some(RowAction::Script("pin:1".into())));
+        // The same for an apostrophe after `=`.
+        let ScriptLine::Cells(cells) = parse_one(":: x='y | action=a :: B | action=b") else {
+            panic!("cells");
+        };
+        assert_eq!(cells.len(), 2, "{cells:?}");
+        assert_eq!(cells[0].text, "x='y");
     }
 
     #[test]
