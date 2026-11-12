@@ -112,10 +112,16 @@
   :is(main, nav, .search-list, textarea, .fb-preview, .se-rows):hover::-webkit-scrollbar-thumb { border-width: 3px; }
   :is(main, nav, .search-list, textarea, .fb-preview, .se-rows)::-webkit-scrollbar-thumb:hover { background-color: var(--control-strong); }
   :is(main, nav, .search-list, textarea, .fb-preview, .se-rows)::-webkit-scrollbar-corner { background: transparent; }
-  .page { display: none; } .page.on { display: block; animation: page-in .2s cubic-bezier(.1, .9, .2, 1); anchor-name: --page; }
-  @keyframes page-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-  /* 栅栏: the settings of another fence come in like a page. */
-  #fenceBody.swap { animation: page-in .2s cubic-bezier(.1, .9, .2, 1); }
+  .page { display: none; } .page.on { display: block; anchor-name: --page; }
+  /* A page comes in as the pages of Windows' Settings do: its title stands, what is under it
+     rises and fades in (250 ms, decelerating). The rise stays inside the bottom padding of
+     main, so a page that fits does not flash a scrollbar. */
+  .page.on > :not(.page-header) { animation: page-in .25s cubic-bezier(0, 0, 0, 1); }
+  @keyframes page-in { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+  /* 栅栏: the settings of another fence come in like a page (a name of its own, so that the
+     class restarts it). */
+  #fenceBody.swap { animation: fence-in .25s cubic-bezier(0, 0, 0, 1); }
+  @keyframes fence-in { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
   .page-header { margin: 4px 2px 16px; }
   h2 { font: 600 28px/36px "Segoe UI Variable Display", "Segoe UI", var(--font-cjk), sans-serif; margin: 0; }
   h3 { font-size: 14px; line-height: 20px; font-weight: 600; margin: 24px 2px 8px; }
@@ -2704,9 +2710,10 @@
     if (crash) { fbCrash = true; document.querySelector('input[name=fbKind][value=bug]').checked = true; }
     showPage('about');
     requestFeedbackInfo();
-    document.getElementById('feedbackHeading').scrollIntoView({ block: 'start' });
-    // page-in still holds the page 8 px lower: scroll that much less, or the heading ends up cut off.
-    document.querySelector('main').scrollTop -= new DOMMatrixReadOnly(getComputedStyle(document.getElementById('page-about')).transform).m42;
+    const heading = document.getElementById('feedbackHeading');
+    heading.scrollIntoView({ block: 'start' });
+    // page-in still holds what is under the page's title lower: scroll that much less, or the heading ends up cut off.
+    document.querySelector('main').scrollTop -= new DOMMatrixReadOnly(getComputedStyle(heading.closest('#page-about > *')).transform).m42;
     renderFeedback();
     fbMessage.focus({ preventScroll: true });
   }

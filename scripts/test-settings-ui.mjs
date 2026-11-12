@@ -3088,7 +3088,7 @@ async function runTests() {
     const lines = moving();
     assert(doc.querySelector('[data-fence=locked]').classList.contains('on'), 'The page does not show the other fence');
     assert(!lines.some(line => line.includes('toggle')), 'Switches slide to the other fence\'s values: ' + lines.filter(line => line.includes('toggle')).slice(0, 3).join(', '));
-    assert(lines.some(line => line.startsWith('#fenceBody') && line.endsWith('page-in')), 'The body of the page does not come in again: ' + lines.join(', '));
+    assert(lines.some(line => line.startsWith('#fenceBody') && line.endsWith('fence-in')), 'The body of the page does not come in again: ' + lines.join(', '));
     assert(await motionReady(), 'Transitions stayed off after the change of fence');
     // A switch flipped by the user still slides.
     const knob = [...doc.querySelectorAll('#fenceBody .toggle')].find(el => el.offsetParent);
@@ -3121,6 +3121,23 @@ async function runTests() {
     current().snapshots.push({ id: 'snapshot-b', name: '整理之后', date: '2026-11-12', fenceCount: 4 });
     frame.contentWindow.testRefresh();
     assert(glides() === 'snapshot-a from above, snapshot-b fades in', 'A new snapshot: ' + (glides() || 'nothing moves'));
+    doc = await reset();
+  });
+  await test('A page switch: the title stands, what is under it rises 24 px and fades in over 250 ms', async () => {
+    doc = await reset();
+    for (const name of ['layout', 'tools', 'about']) {
+      doc.querySelector(`[data-page=${name}]`).click();
+      const page = doc.getElementById('page-' + name), main = doc.querySelector('main');
+      const rising = doc.getAnimations().filter(a => a.animationName === 'page-in');
+      assert(rising.length > 0 && rising.every(a => a.effect.target.parentElement === page), name + ': the parts under the title do not come in (' + rising.length + ' animations)');
+      assert(!rising.some(a => a.effect.target.matches('.page-header')), name + ': the title moves with the page');
+      const from = rising[0].effect.getKeyframes()[0];
+      assert(rising[0].effect.getComputedTiming().duration === 250 && from.transform === 'translateY(24px)' && from.opacity === '0', name + ': ' + rising[0].effect.getComputedTiming().duration + ' ms from ' + from.transform);
+      // The rise must not make the page taller for its time (a scrollbar would flash).
+      const during = main.scrollHeight;
+      rising.forEach(a => a.finish());
+      assert(main.scrollHeight === during, name + ': the page is ' + (during - main.scrollHeight) + ' px taller while it comes in');
+    }
     doc = await reset();
   });
 
