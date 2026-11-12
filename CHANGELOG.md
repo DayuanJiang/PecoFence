@@ -105,6 +105,7 @@
 - 「鼠标悬停时切换标签页」 waits as long as 「展开快慢」 says (Settings › 常规 › 收起与展开): 快 150 ms, 默认 the Windows mouse hover time (400 ms), 慢 1 s. The tab switched after the Windows hover time whatever was chosen, so 快 did not make it faster (measured 370 to 403 ms with 快, now 124 to 144 ms; linux.do). 「展开快慢」 now also shows on the page while the tab switch is on and rolled-up fences expand on a click.
 - Windows 10 1809: the tray menu takes the arrow keys and Esc right after a right-click on the tray icon. It took no key until a click inside it, so Esc did not close it (GitHub #219).
 - Windows 10 1809: no empty boxes in place of icons. 「退出 PecoFence」 in the tray menu and five icons in Settings (颜色模式, 自动隐藏滚动条, 为空时自动隐藏, 自由摆放 and the 压缩包 rule template) use glyphs the older icon font of that Windows has; the icon of 为空时自动隐藏 was an empty box on every Windows 10.
+- Windows 10 1809: deleting a folder that a fence shows really removes it, and a folder made again under the same name is back in its fence within about a second. PecoFence kept the deleted folder open for up to a minute; on that Windows the folder then stayed on disk unusable, a new folder of the same name could not be made, and the fence stayed empty for up to another minute (GitHub #219).
 
 ## 0.3.3
 
