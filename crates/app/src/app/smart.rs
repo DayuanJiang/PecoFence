@@ -61,6 +61,22 @@ pub(super) struct SmartRun {
     /// The worker (a folder read, or the check of Everything's answer) whose result this fence
     /// waits for (a newer run drops an older one).
     read: Option<u32>,
+    /// The run in progress is the once-a-minute one (see `smart_line`).
+    routine: bool,
+}
+
+/// A log line of a smart fence's run: info for a run something asked for (startup, F5, the
+/// CLI, a changed folder), debug for the once-a-minute run. Its two lines per fence and minute
+/// were all an idle PecoFence wrote at the default level, about 26 KB an hour for each smart
+/// fence; what such a run changes is still logged at info (`smart fence results changed`).
+macro_rules! smart_line {
+    ($routine:expr, $($arg:tt)*) => {
+        if $routine {
+            tracing::debug!($($arg)*)
+        } else {
+            tracing::info!($($arg)*)
+        }
+    };
 }
 
 /// What a smart fence's worker found: the results kept (newest first, at most the limit), the
@@ -206,6 +222,7 @@ impl App {
         let Some(spec) = self.smart_spec_of(id) else {
             return;
         };
+        let routine = why == "minute";
         // One worker per fence: a run asked for while one works out the fence's results (a
         // slow drive, a folder that keeps changing) follows it, so those results still show
         // and no threads pile up.
@@ -277,12 +294,13 @@ impl App {
                 ev::COPYDATA_QUERY2W,
                 &payload,
             );
-            tracing::info!(%id, why, sent, version = %format!("{}.{}", instance.major, instance.minor), search = %query, "smart fence: Everything asked");
+            smart_line!(routine, %id, why, sent, version = %format!("{}.{}", instance.major, instance.minor), search = %query, "smart fence: Everything asked");
             if sent {
                 let run = self.smart.runs.entry(id).or_default();
                 run.query = query;
                 run.pending = Some(seq);
                 run.read = None;
+                run.routine = routine;
                 self.smart.in_flight = Some((id, seq, Instant::now()));
                 return;
             }
@@ -291,10 +309,11 @@ impl App {
             self.smart.preview_sent = self.smart.preview.as_ref().map_or(0, |p| p.1);
         }
         if !spec.works_without_everything() {
-            tracing::info!(%id, why, "smart fence: needs Everything, which is not running");
+            smart_line!(routine, %id, why, "smart fence: needs Everything, which is not running");
             self.smart_done(id, SmartSource::NeedsEverything, Vec::new(), 0);
             return;
         }
+        self.smart.runs.entry(id).or_default().routine = routine;
         self.read_folder_later(id, spec, why);
     }
 
@@ -308,7 +327,7 @@ impl App {
 
     /// Reads smart fence `id`'s folders on a worker (a big folder tree takes a while).
     fn read_folder_later(&mut self, id: FenceId, spec: SmartSpec, why: &str) {
-        tracing::info!(%id, why, folders = spec.folders.len(), "smart fence: reading the folders without Everything");
+        smart_line!(why == "minute", %id, why, folders = spec.folders.len(), "smart fence: reading the folders without Everything");
         // The editor's count names nothing: it shows only how many.
         let limit = if id == PREVIEW {
             0
@@ -431,15 +450,17 @@ impl App {
                 continue;
             }
             if current && self.state.smart_spec(r.id).is_some() {
-                self.smart.runs.entry(r.id).or_default().read = None;
+                let run = self.smart.runs.entry(r.id).or_default();
+                run.read = None;
+                let routine = run.routine;
                 let shown = r.found.len();
                 let applied_at = Instant::now();
                 self.smart_done(r.id, r.source, r.found, r.total);
                 let ui_ms = applied_at.elapsed().as_millis() as u64;
                 if r.source == SmartSource::Folder {
-                    tracing::info!(id = %r.id, seq = r.seq, scanned = r.scanned, total = r.total, shown, ms = r.ms, names_ms = r.names_ms, ui_ms, "smart fence: folder read without Everything");
+                    smart_line!(routine, id = %r.id, seq = r.seq, scanned = r.scanned, total = r.total, shown, ms = r.ms, names_ms = r.names_ms, ui_ms, "smart fence: folder read without Everything");
                 } else {
-                    tracing::info!(id = %r.id, seq = r.seq, total = r.total, got = r.scanned, kept = r.kept, shown, ms = r.ms, names_ms = r.names_ms, ui_ms, "smart fence: Everything answered");
+                    smart_line!(routine, id = %r.id, seq = r.seq, total = r.total, got = r.scanned, kept = r.kept, shown, ms = r.ms, names_ms = r.names_ms, ui_ms, "smart fence: Everything answered");
                 }
             } else {
                 tracing::debug!(id = %r.id, seq = r.seq, source = r.source.as_str(), "smart fence: an older result dropped");
