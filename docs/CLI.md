@@ -484,6 +484,10 @@ for ($i = 0; $i -lt $lines.Count; $i++) { "$($lines[$i]) | action=toggle:$i" }
 A line that is `::` alone or followed by a space or a tab is a row of cells side by side (so text
 such as the IPv6 address `::1` stays text). Cells are separated by `::` outside a quoted value, and
 each one is written like a row: `text | key=value ...`. A row of cells may be 2000 characters long.
+A quoted value is one of a cell's parameters (after its `|`); in the text of a cell a quote is only
+a letter, but a `::` there ends the cell. A script that shows text it did not write (a file name,
+a copied text) replaces `::` and `|` in it first, and `"` in what it puts into a quoted value. A
+cell takes no `icon=`, and a text that starts with `[ ]` or `[x]` loses that mark (use `checkbox=`).
 
 ```
 :: 0:42 | color=gray width=36 :: | slider=0.25 action=seek tooltip="Position" :: 3:15 | color=gray
@@ -554,7 +558,11 @@ show together. Python streaming scripts get
 A click on a row with `action=` sends the value as one line to the script's standard input
 (`PECOFENCE_ACTION` stays empty for a streaming script). The script, and the programs it started,
 end when its fence is deleted or gets another script, when `tools.enabled` is switched off and when
-PecoFence exits. When the script ends by itself, the fence keeps what it showed last (after a
+PecoFence exits. At exit PecoFence first closes the script's standard input and waits up to a
+second: a script that sees its input end (a read that returns nothing) can remove what it keeps only
+while it runs and end by itself; what still runs after that second is ended. In the other cases the
+script is ended at once, so it should also tidy up what an earlier run left when it starts. When the
+script ends by itself, the fence keeps what it showed last (after a
 failure, the error and the exit code), and PecoFence starts the script again at the next
 interval. 立即运行, `refresh=true` and `fence refresh` start it again at once.
 

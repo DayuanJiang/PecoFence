@@ -44,9 +44,15 @@ the trash button, or **Unpin**, lets it go.
 - What a program asks not to be kept (password managers set the clipboard formats
   `ExcludeClipboardContentFromMonitorProcessing` or `CanIncludeInClipboardHistory` = 0) is left
   out, as Windows' own history leaves it out.
-- The entries are in memory only and are gone when PecoFence ends, except the pinned ones, which
-  are written to `pinned.json` in the fence's data folder. The pictures are stored as files in its
-  `images` folder while their entry lives; at the start, what is not pinned is removed.
+- Texts and lists of files are kept in memory only and are gone when PecoFence ends, except the
+  pinned ones, which are written as plain text to `pinned.json` in the fence's data folder
+  (`<config folder>\scripts-data\<fence id>`).
+- Every picture is stored as files in the `images` folder there while its entry lives (the
+  picture itself, a small one and a blurred one), and every text as a blurred picture of its first
+  line. When PecoFence quits, the script removes the files of what is not pinned. After a crash,
+  or when the script was ended another way (Tools switched off, the fence deleted), they stay
+  until the script next starts. A deleted fence leaves its data folder behind: delete the folder
+  by hand to remove its pinned entries and pictures for good.
 - Nothing is sent anywhere. The boxes and the purge delay are kept in `settings.json`.
   Errors go to `clipboard-history.log` there.
 
@@ -54,7 +60,7 @@ the trash button, or **Unpin**, lets it go.
 
 At the top of the script: `$Language`, `$MaxEntries`, `$MaxTextChars`, `$TextWidth` (the width of
 the blurred picture of a hidden text, in DIPs), `$ImageHeight`,
-`$RevealSeconds`, `$PollMs` and `$DefaultMinutes`.
+`$RevealSeconds`, `$PollMs` and `$DefaultSeconds`.
 
 The script uses the rows of cells, pictures, check boxes and scrolling of the script fence output
 (see [docs/CLI.md](../../docs/CLI.md#script-fence-output)).

@@ -313,10 +313,11 @@ if ($Part -eq 'C') {
   $list.AddRange($paths)
   $t = Get-Date
   [Windows.Forms.Clipboard]::SetFileDropList($list)
+  $set = [math]::Round(((Get-Date) - $t).TotalSeconds, 1)
   $came = ChWait 'file-0\.txt' 120
   $took = [math]::Round(((Get-Date) - $t).TotalSeconds, 1)
   $line = (ChLines)[(ChLine 'file-0\.txt')]
-  Check '100000 copied files are listed as one entry' $came "after ${took}s; line length $($line.Length)"
+  Check '100000 copied files are listed as one entry' $came "after ${took}s (${set}s of it to put them on the clipboard); line length $($line.Length)"
   $sp = ChProc
   $idle = Cpu $sp 10
   # With the purge ticked the script builds its screen four times a second.
