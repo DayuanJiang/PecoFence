@@ -168,6 +168,10 @@ impl FenceViewState {
             || self.marquee.is_some()
             || self.title_renaming
             || self.renaming.is_some()
+            // A note's editor and the filter box are windows of their own over the fence: they
+            // do not fade, so the fence under them must not either.
+            || crate::note_edit::active_fence() == Some(self.active)
+            || crate::filter_box::active_fence() == Some(self.active)
             || self.merge_hint
             || self.drop_hover
             || self.drop_item.is_some()

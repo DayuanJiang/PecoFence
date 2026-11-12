@@ -34,6 +34,11 @@ pub fn take_open() -> Option<(FenceId, String)> {
     Some((session.fence, text))
 }
 
+/// The note whose editor is open, if one is.
+pub fn active_fence() -> Option<FenceId> {
+    ACTIVE.with(|a| a.try_borrow().ok()?.as_ref().map(|s| s.fence))
+}
+
 /// The App applied the editor's text for `fence`: forget it.
 pub fn take_committed(fence: FenceId) {
     COMMITTED.with(|c| {
