@@ -60,7 +60,7 @@ pub fn own_file_op_started() {
 
 pub fn own_file_op_ended() {
     use std::sync::atomic::Ordering::Relaxed;
-    let _ = OWN_FILE_OPS.fetch_update(Relaxed, Relaxed, |n| n.checked_sub(1));
+    let _ = OWN_FILE_OPS.try_update(Relaxed, Relaxed, |n| n.checked_sub(1));
 }
 
 fn own_file_op_running() -> bool {
