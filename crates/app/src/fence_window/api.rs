@@ -1203,10 +1203,13 @@ impl FenceWindow {
         });
     }
 
-    /// A fence just made: its name box opens when the fade-in running now has ended (the
-    /// window then asks with `Command::BeginFenceRename`), so the box does not float fully
-    /// opaque on a fence that is still nearly transparent. False when no fade-in runs
-    /// (animations off, a batch the compositor refused): the caller opens the box at once.
+    /// A fence just made: its name box opens when the fade-in running now has brought it to
+    /// full strength (the window then asks with `Command::BeginFenceRename`), so the box does
+    /// not float fully opaque on a fence that is still nearly transparent. That is after the
+    /// 167 ms of the fade (`TIMER_NAME_BOX`); the entrance's scale runs on to 250 ms and the
+    /// compositor reports the whole of it later still (about 0.3 s after the click), which is
+    /// when the box used to open: keys typed until then went nowhere. False when no fade-in
+    /// runs (animations off, a batch the compositor refused): the caller opens the box at once.
     pub fn rename_after_fade_in(&self) -> bool {
         let mut guard = self.view.borrow_mut();
         let Some(v) = guard.as_mut() else {
@@ -1214,18 +1217,22 @@ impl FenceWindow {
         };
         let fading = v.vis_fade == Some(VisFade::Showing);
         v.rename_after_fade = fading.then(Instant::now);
+        if fading {
+            window::set_timer(v.hwnd, TIMER_NAME_BOX, motion::FAST.as_millis() as u32);
+        }
         fading
     }
 
     /// Whether the user sees the start of the title row, where the name box opens: the window
-    /// is shown on this virtual desktop, no hide is under way, and what lies at that spot of
+    /// is shown on this virtual desktop, no hide is under way (a fade-in may still run: the
+    /// name box of a new fence opens at its end), and what lies at that spot of
     /// the screen is this window (a window that covers the fence, as after a Peek has ended,
     /// would get the topmost box on top of itself).
     pub fn title_on_screen(&self) -> bool {
         let hwnd = self.hwnd();
         let (resting, scale) = match self.view.borrow().as_ref() {
             Some(v) => (
-                !v.retired && !v.off_desktop && v.vis_fade.is_none(),
+                !v.retired && !v.off_desktop && !matches!(v.vis_fade, Some(VisFade::Hiding { .. })),
                 v.scale(),
             ),
             None => return false,

@@ -39,6 +39,27 @@ pub(super) fn on_timer_composition_finish(
     }
 }
 
+/// A fence just made is at full strength (the 167 ms of its fade-in are over): its name box
+/// opens now, unless a hide has begun meanwhile (the fade's end then drops the request). A
+/// view that is borrowed right now leaves the request to the fade's end, as before.
+pub(super) fn on_timer_name_box(h: &HandlerCtx, hwnd: HWND) -> Option<isize> {
+    window::kill_timer(hwnd, TIMER_NAME_BOX);
+    if let Ok(mut guard) = h.view.try_borrow_mut()
+        && let Some(v) = guard.as_mut()
+        && !matches!(v.vis_fade, Some(VisFade::Hiding { .. }))
+        && let Some(asked) = v.rename_after_fade.take()
+    {
+        tracing::debug!(
+            title = %v.title,
+            waited_ms = asked.elapsed().as_millis() as u64,
+            fade = ?v.vis_fade,
+            "new fence at full strength: name box"
+        );
+        v.queue.push(Command::BeginFenceRename(h.fence_id));
+    }
+    Some(0)
+}
+
 pub(super) fn on_timer_rename(
     h: &HandlerCtx,
     hwnd: HWND,

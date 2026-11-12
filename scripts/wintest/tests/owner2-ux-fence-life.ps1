@@ -157,6 +157,12 @@ if ($Part -match 'U') {
   $boxMs = -1
   while ($sw.ElapsedMilliseconds -lt 3000) { $bx = [G]::FindWindowW('PecoFence.Rename', 'rename'); if ($bx -ne [IntPtr]::Zero -and [G]::IsWindowVisible($bx)) { $boxMs = $sw.ElapsedMilliseconds; break }; Start-Sleep -Milliseconds 5 }
   Start-Sleep -Milliseconds 500
+  # FL-14: the name box opens when the fence has faded in (167 ms). It waited for the whole
+  # entrance to be reported (the 250 ms scale and the compositor's answer: about 0.3 s), and
+  # what was typed meanwhile went nowhere.
+  $nb = @(PfLogAll | Where-Object { $_ -match 'name box.*waited_ms=\d+' } | Select-Object -Last 1)
+  $waited = -1; if ($nb.Count -and $nb[0] -match 'waited_ms=(\d+)') { $waited = [int]$Matches[1] }
+  Check 'FL-14 the name box of a new fence opens when the fence has faded in' ($waited -ge 0 -and $waited -le 230) "the app waited $waited ms for the fence; the box was on screen $boxMs ms after the click"
   # Esc: the fence keeps the name 新栅栏 and takes the keyboard.
   [G]::Press(0x1B); Start-Sleep -Milliseconds 800
   $made = (FlWin '新栅栏') -ne [IntPtr]::Zero
