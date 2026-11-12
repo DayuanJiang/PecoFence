@@ -15,8 +15,9 @@
 #      second of that line, the watchdog starts PecoFence again within a second of the click
 #      without Windows' own icons showing in between, and the layout is as before
 #   M  after that crash the item menus leave out Windows' part: the notice says so, the same
-#      right-click shows PecoFence's entries with the extension still set to fault, the next
-#      start builds no menu in the background, and the tray menu's entry brings it back
+#      right-click shows PecoFence's entries with the extension still set to fault, among
+#      them a Cut and a Copy of its own that work, the next start builds no menu in the
+#      background, and the tray menu's entry brings Windows' part back
 #   A  an extension that faults whenever its menu is built: that first happens two seconds
 #      after a start, in the menu built in the background; the run is started again with the
 #      Windows part of the item menus off, and a right-click then loads nothing. Before that:
@@ -456,10 +457,27 @@ if ($dll -and $Part -match 'M') {
   [G]::RClick($p[0], $p[1])
   $m = MenuWin 8
   $texts = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+  Shot 'M-menu-without-windows-part'
   CloseMenus
   Start-Sleep -Milliseconds 500
   $p3 = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
   Check 'M the same right-click again shows PecoFence''s entries, and PecoFence stays' ($texts -match 'Delete' -and $texts -match 'Rename' -and $texts -notmatch 'PF fault test' -and $p2 -and $p3 -and $p2.Id -eq $p3.Id -and @(ExtCalls).Count -eq 0) "same process=$($p2 -and $p3 -and $p2.Id -eq $p3.Id); extension calls: $((ExtCalls) -join ', '); menu: $texts"
+  # Windows' part had Cut and Copy: the menu has PecoFence's own now, with their keys, and
+  # they do what Ctrl+X and Ctrl+C do.
+  [Windows.Forms.Clipboard]::Clear()
+  [G]::RClick($p[0], $p[1])
+  $m = MenuWin 8
+  $picked = MenuPick '^Copy ~ Ctrl\+C$' $m
+  Start-Sleep -Milliseconds 800
+  $copied = "$((ClipFiles | ForEach-Object { Split-Path $_ -Leaf }) -join ' | ') effect=$(ClipEffect)"
+  [G]::RClick($p[0], $p[1])
+  $m = MenuWin 8
+  $picked2 = MenuPick '^Cut ~ Ctrl\+X$' $m
+  Start-Sleep -Milliseconds 800
+  $cut = "$((ClipFiles | ForEach-Object { Split-Path $_ -Leaf }) -join ' | ') effect=$(ClipEffect)"
+  [Windows.Forms.Clipboard]::Clear()
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 300
+  Check 'M that menu has PecoFence''s own Cut and Copy, and they work' ($texts -match 'Cut ~ Ctrl\+X \| Copy ~ Ctrl\+C \| Properties' -and $picked -and $picked2 -and $copied -eq 'sx n1 报告.txt effect=5' -and $cut -eq 'sx n1 报告.txt effect=2' -and @(ExtCalls).Count -eq 0) "Copy: $copied; Cut: $cut; extension calls: $((ExtCalls) -join ', ')"
   # A normal exit and start: no menu is built in the background while the part is off.
   PfQuit
   Start-Sleep -Seconds 2

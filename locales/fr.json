@@ -977,5 +977,7 @@
   "搜索栅栏里的文件，可以用拼音": "Chercher dans les groupes",
   "搜索栅栏和整台电脑，可以用拼音": "Chercher dans les groupes et le PC",
   "PecoFence 上次在生成右键菜单时因 {0} 出错而关闭，这个文件属于其他程序。图标右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里重新打开。点击这里报告问题。": "PecoFence s'est fermé à cause d'une erreur dans {0}, un fichier d'un autre programme, pendant la création d'un menu contextuel. Les entrées Windows des menus d'icônes sont désactivées pour l'instant ; le menu de la zone de notification permet de les réactiver. Cliquez ici pour signaler le problème.",
-  "恢复右键菜单里的 Windows 菜单项": "Réactiver les entrées Windows dans les menus d'icônes"
+  "恢复右键菜单里的 Windows 菜单项": "Réactiver les entrées Windows dans les menus d'icônes",
+  "剪切\tCtrl+X": "Couper\tCtrl+X",
+  "复制\tCtrl+C": "Copier\tCtrl+C"
 }

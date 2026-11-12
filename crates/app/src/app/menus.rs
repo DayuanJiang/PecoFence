@@ -36,6 +36,9 @@ const CMD_ITEM_PORTAL: u32 = 104;
 const CMD_ITEM_RENAME: u32 = 105;
 const CMD_ITEM_DELETE: u32 = 106;
 const CMD_ITEM_EMPTY_BIN: u32 = 107;
+/// 剪切 / 复制 of our own, in a menu without Windows' part (which has them otherwise).
+const CMD_ITEM_CUT: u32 = 111;
+const CMD_ITEM_COPY: u32 = 112;
 /// 像桌面一样排列 and 栅栏选项… in the item menu of the arranged 「桌面」 fence, whose own fence
 /// menu is out of reach (its window is only the icon cells).
 const CMD_ITEM_DESKTOP_LAYOUT: u32 = 108;
@@ -448,6 +451,8 @@ impl App {
                 }
             }
             CMD_ITEM_PROPERTIES => self.show_properties(fence, &items),
+            CMD_ITEM_CUT => self.clipboard_verb(fence, &items, true),
+            CMD_ITEM_COPY => self.clipboard_verb(fence, &items, false),
             CMD_ITEM_TO_INBOX if self.state.smart_spec(fence).is_none() => {
                 if let Some(inbox) = self.state.inbox_id() {
                     self.move_items(&items, inbox);
@@ -719,6 +724,23 @@ impl App {
         }
         if shell_items == 0 {
             shell_menu = None;
+            // Windows' part has 剪切 and 复制; without it they are ours, in Explorer's place
+            // (before 属性) and by the code of Ctrl+X and Ctrl+C. Not for the Recycle Bin and
+            // the other special icons, which cannot be cut or copied.
+            let no_files = paths.iter().all(|p| shell::is_namespace_path(p));
+            menu.item(
+                CMD_ITEM_CUT,
+                pecofence_core::i18n::text("剪切\tCtrl+X"),
+                false,
+                no_files,
+            )
+            .item(
+                CMD_ITEM_COPY,
+                pecofence_core::i18n::text("复制\tCtrl+C"),
+                false,
+                no_files,
+            )
+            .separator();
             menu.item(
                 CMD_ITEM_PROPERTIES,
                 pecofence_core::i18n::text("属性\tAlt+Enter"),
