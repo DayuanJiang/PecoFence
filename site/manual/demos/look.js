@@ -64,7 +64,7 @@
         SM.drawInput(SM.input(SM.card(f, { ic: '\uE8AC', t: '栅栏名称', textW: 160 }), '', 140), '工作', false, 0);
         SM.drawToggle(SM.toggle(SM.card(f, { ic: '\uE745', t: '自动高度', s: '高度跟随内容行数，内容增减时平滑过渡', textW: 200 })), false);
         SM.h3(f, '外观');
-        r.opa = SM.select(SM.card(f, { ic: '\uE744', t: '不透明度', s: '全透明：鼠标悬停时才显示玻璃。更透明：底色更淡。更厚实：多一层底色。', textW: 190 }), '默认', 100);
+        r.opa = SM.select(SM.card(f, { ic: '\uE744', t: '不透明度', s: '全透明：鼠标悬停时才显示玻璃。更透明：底色更淡。更厚实：多一层底色', textW: 190 }), '默认', 100);
         const tint = SM.card(f, { ic: '\uE790', t: '色调', s: '给玻璃染上一层颜色，标签页的色条随之变化', textW: 118 });
         r.sw = SWATCHES.map((hex, i) => {
             const c = SM.ctrl(tint, 'set-sw' + (hex ? '' : ' none'), 15, 15, { right: 10 + (SWATCHES.length - 1 - i) * 19.5, label: null });
