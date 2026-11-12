@@ -1062,9 +1062,12 @@ fn same_picture(a: &ShellImage, b: &ShellImage) -> bool {
             <= a.bgra.len() as u64 * 2
 }
 
-/// File attributes that say reading the file fetches it first: offline storage, or a cloud file
-/// that is not on this disk (`FILE_ATTRIBUTE_OFFLINE`, `RECALL_ON_OPEN`, `RECALL_ON_DATA_ACCESS`).
-const ATTRS_NOT_HERE: u32 = 0x1000 | 0x4_0000 | 0x40_0000;
+/// File attributes of a cloud file that is not on this disk: reading it makes its program
+/// download it (`RECALL_ON_OPEN`, `RECALL_ON_DATA_ACCESS`).
+const ATTRS_RECALL: u32 = 0x4_0000 | 0x40_0000;
+/// File attributes that say reading the file fetches it first: offline storage
+/// (`FILE_ATTRIBUTE_OFFLINE`), or such a cloud file.
+const ATTRS_NOT_HERE: u32 = 0x1000 | ATTRS_RECALL;
 
 /// The file attributes of `path` (of a link itself, not of what it points to); 0 when they
 /// cannot be read.
@@ -1108,8 +1111,12 @@ fn expand_env(text: &str) -> String {
 /// The icon of shortcut `path` read out of the shortcut itself, for when the shell hands back a
 /// blank or generic picture for it: the icon the shortcut names (its icon location), else the
 /// icon of its target. None when neither file is on this disk (gone, offline, a cloud file that
-/// would have to be fetched) or when the target's icon is blank or generic too.
+/// would have to be fetched) or when the target's icon is blank or generic too. A shortcut that
+/// is itself a cloud file not on this disk is not read: that would download it.
 pub fn shortcut_icon(path: &Path, size_px: u32) -> Option<ShellImage> {
+    if file_attributes(path) & ATTRS_RECALL != 0 {
+        return None;
+    }
     let link = load_shortcut(path)?;
     let here = |p: &Path| p.is_absolute() && p.exists() && file_attributes(p) & ATTRS_NOT_HERE == 0;
     let mut buf = [0u16; 1024];
@@ -2036,6 +2043,37 @@ mod move_tests {
             std::fs::canonicalize(&folder).unwrap()
         );
         let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// The log keeps a file's type, never a word a user put after the last dot.
+    #[test]
+    fn log_ext_keeps_plain_extensions_only() {
+        for (path, ext) in [
+            (r"C:\Users\x\Desktop\Chrome.LNK", "lnk"),
+            (r"C:\x\setup.exe", "exe"),
+            (r"C:\x\notes", "none"),
+            (r"C:\x\letter.to anna", "other"),
+            (r"C:\x\报告.文档", "other"),
+            (r"C:\x\a.abcdefghijk", "other"),
+        ] {
+            assert_eq!(log_ext(Path::new(path)), ext, "{path}");
+        }
+    }
+
+    /// A shortcut's icon location may name its file through an environment variable.
+    #[test]
+    fn expand_env_fills_in_set_variables() {
+        // SAFETY: a variable of this test's own; no other thread reads it.
+        unsafe { std::env::set_var("PECOFENCE_TEST_ICON_DIR", r"C:\Icons") };
+        assert_eq!(
+            expand_env(r"%PECOFENCE_TEST_ICON_DIR%\app.ico"),
+            r"C:\Icons\app.ico"
+        );
+        assert_eq!(
+            expand_env(r"%PECOFENCE_NOT_SET_1%\a%b"),
+            r"%PECOFENCE_NOT_SET_1%\a%b"
+        );
+        assert_eq!(expand_env(r"C:\plain\50%.ico"), r"C:\plain\50%.ico");
     }
 
     /// The Link drop effect writes Explorer's `<stem> - 快捷方式.lnk` (folders keep their full

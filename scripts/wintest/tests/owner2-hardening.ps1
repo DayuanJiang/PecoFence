@@ -71,7 +71,8 @@ if ($Part -match 'A') {
   $off = $j -replace '("tools":\s*\{\s*"enabled":\s*)true', '${1}false'
   [IO.File]::WriteAllText("$PfRun\hd1-off.json", $off)
   Check 'the file to import has a script, a snapshot with a script, and the switch off' ($off -match 'hd1-script' -and $off -match '"tools":\s*\{\s*"enabled":\s*false') ''
-  Pf config import "$PfRun\hd1-off.json" | Out-Null; Start-Sleep -Seconds 3
+  $rep = PfJson config import "$PfRun\hd1-off.json"; Start-Sleep -Seconds 3
+  Check 'the CLI reply says how many scripts wait' ($rep.scriptsHeld -eq 1) ($rep | ConvertTo-Json -Compress)
   $line = [regex]::Match((LogText), '.*imported script fences held off[^\n]*switch_was_on=false[^\n]*').Value
   Check 'the switch off in the file: its scripts are held and the import says so' ($line -ne '' -and (Tools).enabled -eq $false) $line
   Check 'a snapshot of the file brings no script' ($line -match 'snapshot_scripts=[1-9]') $line
@@ -130,6 +131,17 @@ if ($Part -match 'B') {
   $share = if (Test-Path (ShareLog)) { (Get-Content (ShareLog) -Encoding UTF8) -join "`n" } else { '' }
   $sl = @([regex]::Matches($share, '[^\n]*icon is not the file''s own picture[^\n]*') | ForEach-Object { $_.Value }) -join ' // '
   Check 'the shareable log keeps the type, the reason and the place, and no path' ($sl -match 'file_ext=lnk reason=generic from_shortcut=true place=fixed' -and $sl -match 'target_ext=exe' -and $sl -notmatch '探针|pf\\run|hd2') $sl
+
+  # Other sizes, as other display scales ask for: Windows hands back its 256 px picture there
+  # and PecoFence scales it down, so the white page must be known in that form too.
+  Case 'HD-2 the white page is known at other icon sizes'
+  foreach ($size in 72, 96) {
+    Pf fence set Probe iconSize $size | Out-Null; Start-Sleep -Seconds 5
+    $log = (Get-Content (PfLogPath) -Encoding UTF8) -join "`n"
+    $seen = @([regex]::Matches($log, '[^\n]*icon came back empty, blank or generic[^\n]*d [^\n]*\.lnk reason="generic" from_shortcut=true[^\n]*')).Count
+    Check "icons of $size px: the offline shortcut is found and read again" ($seen -eq $(if ($size -eq 72) { 2 } else { 3 })) "per-file lines for it so far: $seen"
+  }
+  Shot 'hd2-probe-96'
   PfQuit
 }
 
