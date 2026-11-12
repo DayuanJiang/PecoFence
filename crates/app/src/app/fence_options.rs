@@ -684,6 +684,11 @@ impl App {
         // them rather than in the first free ones.
         self.arrange_desktop_fence();
         if !own {
+            // Let go on the bare desktop, the window of 「桌面」 did not see the drop: it learns
+            // here where the icons were let go, and they arrive from there.
+            if let Some(w) = self.fences.get(&inbox) {
+                w.note_desktop_landing(at);
+            }
             self.move_items(items, inbox);
         }
         self.schedule_save();

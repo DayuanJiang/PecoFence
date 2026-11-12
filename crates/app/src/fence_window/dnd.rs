@@ -1239,6 +1239,41 @@ impl FenceViewState {
         self.drop_landing = Some((Instant::now(), from));
     }
 
+    /// 自由摆放: icons of another fence were let go on the bare desktop beside this 「桌面」. The
+    /// drag source ends that drop (`handler/mouse_move.rs`), so this window's drop handler,
+    /// which notes the landing for icons let go on its cells, never saw it. `centres` are the
+    /// icons' centres on screen when let go: they arrive from there too, instead of fading in.
+    /// A landing noted for this drop already (let go on a cell) stays.
+    pub(super) fn note_landing_at(&mut self, centres: &[(ItemId, (i32, i32))]) {
+        if !self.motion.enabled() || self.rolled_up {
+            return;
+        }
+        if self
+            .drop_landing
+            .as_ref()
+            .is_some_and(|(at, _)| at.elapsed() < super::items::DROP_LANDING_MAX)
+        {
+            return;
+        }
+        let r = window::window_rect(self.hwnd);
+        let scale = self.scale();
+        let (cw, _) = self.content_size_px();
+        let fixed = self.layout(cw as f32 / scale).fixed_top();
+        let from: HashMap<ItemId, (f32, f32)> = centres
+            .iter()
+            .map(|(id, (sx, sy))| {
+                let x = (sx - r.left - self.content_x) as f32 / scale;
+                let y = (sy - r.top - self.content_y) as f32 / scale - fixed + self.scroll_y;
+                (*id, (x, y))
+            })
+            .collect();
+        tracing::debug!(
+            icons = from.len(),
+            "drop landing noted for icons let go on the bare desktop"
+        );
+        self.drop_landing = Some((Instant::now(), from));
+    }
+
     /// Insertion index for reordering at a client-pixel point: only in a 手动-sorted virtual
     /// fence and only inside the item area.
     pub(super) fn insertion_at(&self, x_px: i32, y_px: i32) -> Option<usize> {

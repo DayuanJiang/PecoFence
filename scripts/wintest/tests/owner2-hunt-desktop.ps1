@@ -220,18 +220,26 @@ if ($Part -eq 'D') {
     Glide ($from[0] - 14) ($from[1] + 6) $x $y 20 30
     Start-Sleep -Milliseconds 600
     MUp
-    $sw = [Diagnostics.Stopwatch]::StartNew(); $reads = 0; $blank = 0; $first = -1
+    # $strength: how much of the icon shows in the first read that shows it, against the icon
+    # at rest (mean brightness change of the cell): about 1 for an icon that arrives at full
+    # strength, well under 1 for one that fades in.
+    $sw = [Diagnostics.Stopwatch]::StartNew(); $reads = 0; $blank = 0; $first = -1; $firstD = 0.0; $d = 0.0
     while ($sw.ElapsedMilliseconds -lt 400) {
       $t = $sw.ElapsedMilliseconds
       $g = [Px]::Grab($rx, $ry, 80, 96); $d = [Px]::Diff($empty, $g, 0, 79, 0, 95); $g.Dispose()
       if ($t -le 300) { $reads++; if ($d -lt 3.0) { $blank++ } }
-      if ($d -ge 3.0 -and $first -lt 0) { $first = $t }
+      if ($d -ge 3.0 -and $first -lt 0 -and $t -gt 15) { $first = $t; $firstD = $d }
     }
     Start-Sleep -Milliseconds 900
-    $glide = @(PfLogAll | Where-Object { $_ -match 'dropped icon glides from where it was let go' }) | Select-Object -Last 1
+    # A click on the bare desktop takes the selection box off the dropped icon: the icon alone.
+    DeskClick 1100 700 | Out-Null; Start-Sleep -Milliseconds 400
+    $g = [Px]::Grab($rx, $ry, 80, 96); $rest = [Px]::Diff($empty, $g, 0, 79, 0, 95); $g.Dispose()
+    $shown = [IO.Path]::GetFileNameWithoutExtension($file)
+    $glide = @(PfLogAll | Where-Object { $_ -match "dropped icon glides from where it was let go.* name=$([regex]::Escape($shown)) " }) | Select-Object -Last 1
     $to = if ($glide -match 'to_x=([\d.]+) to_y=([\d.]+)') { @([double]$Matches[1], [double]$Matches[2]) } else { $null }
     ParkMouse 1100 700
-    return [pscustomobject]@{ cell = (HdCell $file); reads = $reads; blank = $blank; first = $first; to = $to; inCell = ($to -and $to[0] -ge $rx -and $to[0] -lt $rx + 80 -and $to[1] -ge $ry -and $to[1] -lt $ry + 96) }
+    $strength = if ($rest -gt 0) { [math]::Round($firstD / $rest, 2) } else { 0 }
+    return [pscustomobject]@{ cell = (HdCell $file); reads = $reads; blank = $blank; first = $first; strength = $strength; firstD = [math]::Round($firstD, 1); rest = [math]::Round($rest, 1); to = $to; inCell = ($to -and $to[0] -ge $rx -and $to[0] -lt $rx + 80 -and $to[1] -ge $ry -and $to[1] -lt $ry + 96) }
   }
   # On the loose icon: the nearest free cell is the one left of it.
   $t = HdPt '图.fpx'
@@ -251,6 +259,15 @@ if ($Part -eq 'D') {
   # it: only the count of empty reads says something here.
   # Measured 2026-11-12 on ec2-7: 5 of 11 reads empty before, 1 of 11 after; two are allowed.
   Check 'let go on the bare desktop: its cell is not empty after the release' ($b.reads -ge 5 -and $b.blank -le 2) "$($b.blank) of $($b.reads) reads in the first 300 ms show the cell empty"
+  Log "strength of the first read that shows the icon: on a loose icon $($a.strength) ($($a.firstD) of $($a.rest), $($a.first) ms); on the bare desktop $($b.strength) ($($b.firstD) of $($b.rest), $($b.first) ms); bare desktop glide target $($b.to -join ',')"
+  # Let go on the bare desktop, the drag source ends the drop and the window of 「桌面」 did not
+  # learn where the icon was let go: it faded in at its cell. It now arrives from there at full
+  # strength, as one let go on a loose icon does. How much of the icon the first read shows,
+  # against the icon at rest: 0.32 and 0.30 while it faded in (reads 47 and 43 ms after the
+  # release), 1.0 now (42 ms); 2026-11-12, ec2-7. A first read later than 60 ms cannot tell a
+  # fade from an arrival and fails.
+  Check 'let go on the bare desktop: the landing glide goes to its cell' ($b.inCell) "the log's glide target $($b.to -join ','); cell 14,2 is x 1124 to 1204, y 196 to 292"
+  Check 'let go on the bare desktop: the icon arrives at full strength' ($b.first -ge 0 -and $b.first -le 60 -and $b.strength -ge 0.6) "first read that shows it: $($b.first) ms after the release, $($b.firstD) of $($b.rest) at rest ($($b.strength))"
   [Anim]::Set($animWas)
   HdClean
   foreach ($n in $HdTxt) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue }

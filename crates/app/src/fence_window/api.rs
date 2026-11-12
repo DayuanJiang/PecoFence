@@ -2375,6 +2375,13 @@ impl FenceWindow {
             .is_ok_and(|g| g.as_ref().is_some_and(|v| v.bare()))
     }
 
+    /// 自由摆放: icons of another fence were let go at `at` on the bare desktop; they are about
+    /// to join this 「桌面」 and arrive from where they were let go
+    /// (`FenceViewState::note_landing_at`).
+    pub fn note_desktop_landing(&self, at: &DesktopDrop) {
+        self.with_view(|v| v.note_landing_at(&at.centres));
+    }
+
     /// Re-places the desktop cells (items added or removed, area changed) and fits the window
     /// to them; `force` relayouts even when nothing moved (the look changed).
     fn arrange_desktop(&self, force: bool) {
