@@ -64,6 +64,18 @@ fn ask(hwnd: HWND, request: usize) -> Option<u32> {
     (ok.0 != 0).then_some(result as u32)
 }
 
+/// Whether an Everything window is there: no message is sent, so this never waits for an
+/// Everything that is busy (as [`find`] may, up to its timeout).
+pub fn running() -> bool {
+    IPC_CLASSES.iter().any(|class| {
+        let class = to_wide(class);
+        // SAFETY: plain FFI call with a NUL-terminated class name.
+        !unsafe { FindWindowW(PCWSTR(class.as_ptr()), PCWSTR::null()) }
+            .0
+            .is_null()
+    })
+}
+
 /// The running Everything, if any.
 pub fn find() -> Option<Instance> {
     IPC_CLASSES.iter().find_map(|class| {

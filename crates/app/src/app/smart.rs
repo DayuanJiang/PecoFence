@@ -32,6 +32,10 @@ const STARTING_POLL_MS: u32 = 250;
 /// How long the waiting fences say 「正在搜索…」 after 「启动 Everything」; an Everything that is
 /// not there by then did not start, and the row comes back.
 const STARTING_FOR: Duration = Duration::from_secs(10);
+/// How long an Everything that is there but says its index is not read yet is waited for (a
+/// search sent before that finds nothing); after it the search is sent anyway, as it was
+/// 2.5 s after 「启动 Everything」 before the index was asked about.
+const INDEX_WAIT: Duration = Duration::from_secs(3);
 /// The smart fence editor's live count runs as this make-believe fence: it takes its turn with
 /// Everything (after the Peek search, between the fences' own runs) and its workers like a
 /// fence's, and its results go to the editor instead of a fence.
@@ -154,6 +158,8 @@ pub(super) struct SmartState {
     /// When 「启动 Everything」 was picked: until Everything is there (or `STARTING_FOR`) the
     /// fences that wait for it say 「正在搜索…」, without the row.
     starting: Option<Instant>,
+    /// When the look for Everything first saw its window (see `INDEX_WAIT`).
+    seen: Option<Instant>,
 }
 
 impl Default for SmartState {
@@ -177,6 +183,7 @@ impl Default for SmartState {
             preview_total: 0,
             wait_poll: false,
             starting: None,
+            seen: None,
         }
     }
 }
@@ -699,16 +706,30 @@ impl App {
         let waiting = self.smart_waiting_for_everything();
         if waiting.is_empty() {
             self.smart.starting = None;
+            self.smart.seen = None;
             return;
         }
-        let found = everything::find();
-        if found.is_some_and(|i| i.db_loaded()) {
+        // Only the window is looked for while Everything is not there: asking it waits for
+        // an Everything that is busy.
+        let found = everything::running().then(everything::find).flatten();
+        let loaded = found.is_some_and(|i| i.db_loaded());
+        let seen_for = match found {
+            Some(_) => Some(self.smart.seen.get_or_insert_with(Instant::now).elapsed()),
+            None => {
+                self.smart.seen = None;
+                None
+            }
+        };
+        if loaded || seen_for.is_some_and(|d| d >= INDEX_WAIT) {
             tracing::info!(
                 fences = waiting.len(),
                 started_here = self.smart.starting.is_some(),
+                loaded,
+                seen_ms = seen_for.map(|d| d.as_millis() as u64),
                 "smart fence: Everything is running now"
             );
             self.smart.starting = None;
+            self.smart.seen = None;
             self.run_waiting_smart();
             self.push_settings_state();
             return;
@@ -727,7 +748,8 @@ impl App {
                 self.apply_portal_deco(self.state.host_of(id));
             }
         }
-        self.poll_for_everything(starting);
+        // Soon again while it is on its way (just started, or there and reading its index).
+        self.poll_for_everything(starting || found.is_some());
     }
 
     /// 「启动 Everything」 was picked: the fences that wait for it say 「正在搜索…」 at once (the
