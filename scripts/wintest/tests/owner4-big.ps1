@@ -726,11 +726,10 @@ function PartS() {
   $done = ($pieces.Count -gt 0 -and $pieces[$pieces.Count - 1].Groups[3].Value -eq 'false')
   # Then 5 s more of rest: no piece, no line of ours, and the processor time of the process.
   $pos2 = BgLogLen
-  $p = Get-Process pecofence | Select-Object -First 1
-  $cpu0 = $p.TotalProcessorTime.TotalMilliseconds
+  $cpu0 = (Get-Process pecofence | Select-Object -First 1).TotalProcessorTime.TotalMilliseconds
   Start-Sleep -Seconds 5
-  $p.Refresh()
-  $cpu = [math]::Round($p.TotalProcessorTime.TotalMilliseconds - $cpu0, 1)
+  $cpu1 = (Get-Process pecofence | Select-Object -First 1).TotalProcessorTime.TotalMilliseconds
+  $cpu = [math]::Round($cpu1 - $cpu0, 1)
   $late = [regex]::Matches((BgLogFrom $pos2), 'names fitted ahead while the fence rests|content draw fence=').Count
   $row = "N=$N view=$View pieces=$($pieces.Count) names fitted=$fitted work=$([math]::Round($work)) ms longest piece=$longest ms from first to last piece=$([math]::Round(($lastAt - $firstAt) / 1000, 2)) s all fitted=$done; next 5 s of rest: pieces and draws=$late processor time=$cpu ms commit=$(BgCommit) MB"
   Log "BIGREST $row"
