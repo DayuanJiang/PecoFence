@@ -295,6 +295,20 @@ impl TextLayout {
         unsafe { _ = self.raw.SetUnderline(true, range) };
     }
 
+    /// Takes the brushes of [`TextLayout::set_range_brush`] and the underlines of
+    /// [`TextLayout::set_range_underline`] off the whole text again (a layout that is kept
+    /// and drawn again). PecoFence addition.
+    pub fn clear_range_marks(&self) {
+        let range = DWRITE_TEXT_RANGE {
+            startPosition: 0,
+            length: u32::MAX,
+        };
+        unsafe {
+            _ = self.raw.SetDrawingEffect(std::ptr::null_mut(), range);
+            _ = self.raw.SetUnderline(false, range);
+        }
+    }
+
     /// Returns the underlying `IDWriteTextLayout`.
     pub fn raw(&self) -> &IDWriteTextLayout {
         &self.raw

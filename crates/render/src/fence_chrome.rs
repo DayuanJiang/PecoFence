@@ -9,7 +9,7 @@ use crate::panel::Clip;
 use crate::text::TextLayouts;
 use crate::text_shadow::TextShadows;
 use crate::theme::{TextFx, Theme, font_display, font_small, font_text, lerp, with_alpha};
-use std::cell::{Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use windows_canvas::{
@@ -2054,6 +2054,10 @@ impl FenceChrome {
     /// for a layout with the layout, so kept layouts held the old device's memory after a
     /// rebuild that should hand it back (the S15 memory check went from 15 to 20 MB).
     pub fn forget_text_layouts(&self) {
+        // The rows of the note laid out last hold the old device's memory in the same way.
+        if let Ok(mut rows) = self.note_rows_cache.try_borrow_mut() {
+            *rows = None;
+        }
         if let Ok(mut layouts) = self.text_layouts.try_borrow_mut() {
             let n = layouts.len();
             layouts.clear();
@@ -4589,12 +4593,15 @@ pub struct NoteDragDraw<'a> {
 }
 
 /// One line of a note laid out: its wrapped text, where the text starts, its top from the
-/// first line's top (before any scrolling) and its height.
+/// first line's top (before any scrolling) and its height. `inked`: the draw before put a
+/// link's ink (and underline) on the layout; the rows are kept from one draw to the next, so
+/// that comes off before the row is drawn again.
 struct NoteRow {
     layout: TextLayout,
     x: f32,
     y: f32,
     h: f32,
+    inked: Cell<bool>,
 }
 
 /// One row of a script fence laid out: its text (none for a separator) and icon, where the
@@ -4716,7 +4723,13 @@ impl FenceChrome {
             let text = if line.text.is_empty() { " " } else { line.text };
             let layout = TextLayout::new(text, &tt.body, text_w, f32::MAX)?;
             let h = layout.metrics().height.max(line_h);
-            rows.push(NoteRow { layout, x, y, h });
+            rows.push(NoteRow {
+                layout,
+                x,
+                y,
+                h,
+                inked: Cell::new(false),
+            });
             y += h + NOTE_LINE_GAP * tt.k;
         }
         let rows = Rc::new((rows, line_h));
@@ -5032,6 +5045,12 @@ impl FenceChrome {
             } else {
                 &primary
             };
+            // The row is kept from the draw before: the ink and the underline that draw put
+            // on its links come off (the pointer has left the link, the note is being edited
+            // now, and the halo is the fence text's in any case).
+            if row.inked.replace(false) {
+                row.layout.clear_range_marks();
+            }
             if let Some((halo, down)) = &halo {
                 session.draw_text_layout(Vector2::new(row.x, y + down), &row.layout, halo);
             }
@@ -5045,6 +5064,7 @@ impl FenceChrome {
                         &link
                     };
                     row.layout.set_range_brush(start, count, ink);
+                    row.inked.set(true);
                     if link_hot == Some((i, from)) {
                         row.layout.set_range_underline(start, count);
                     }
