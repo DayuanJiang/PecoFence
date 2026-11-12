@@ -90,22 +90,27 @@ pub(super) fn snapshot_room(
     snapshots: &mut Vec<pecofence_core::Snapshot>,
     protect: Option<uuid::Uuid>,
 ) -> bool {
-    let auto = [
-        pecofence_core::i18n::text("恢复快照前"),
-        pecofence_core::i18n::text("删除栅栏前"),
-        ConfigSource::Import.before(),
-        ConfigSource::Backup.before(),
-    ];
     if snapshots.len() >= pecofence_core::MAX_SNAPSHOTS
-        && let Some(i) = snapshots.iter().position(|s| {
-            Some(s.id) != protect
-                && (s.name.starts_with(super::ipc::AUTO_SNAPSHOT_PREFIX)
-                    || auto.contains(&s.name.as_str()))
-        })
+        && let Some(i) = snapshots
+            .iter()
+            .position(|s| Some(s.id) != protect && is_auto_snapshot(&s.name))
     {
         snapshots.remove(i);
     }
     snapshots.len() < pecofence_core::MAX_SNAPSHOTS
+}
+
+/// A snapshot the app saved by itself (the page's 「…前」 ones in the current language, the
+/// CLI's `auto-cli-…`): the ones a full list gives up, and the page marks them 「自动保存」.
+pub(super) fn is_auto_snapshot(name: &str) -> bool {
+    name.starts_with(super::ipc::AUTO_SNAPSHOT_PREFIX)
+        || [
+            pecofence_core::i18n::text("恢复快照前"),
+            pecofence_core::i18n::text("删除栅栏前"),
+            ConfigSource::Import.before(),
+            ConfigSource::Backup.before(),
+        ]
+        .contains(&name)
 }
 
 /// What the settings window leaves for the next one of this run.
@@ -553,6 +558,7 @@ impl App {
                     "ts": s.ts,
                     "date": pecofence_platform::fileinfo::format_local_datetime(s.ts),
                     "fenceCount": super::ipc::snapshot_dto(s, &self.state.work_areas).fence_count,
+                    "auto": is_auto_snapshot(&s.name),
                 })
             })
             .collect();

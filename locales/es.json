@@ -122,6 +122,7 @@
   "{0} - 快捷方式": "{0} - Acceso directo",
   "快照 {0}": "Instantánea {0}",
   "恢复快照前": "Antes de restaurar la instantánea",
+  "自动保存": "Guardada automáticamente",
   "删除栅栏前": "Antes de eliminar el grupo",
   "导出 PecoFence 配置": "Exportar configuración de PecoFence",
   "导入 PecoFence 配置": "Importar configuración de PecoFence",

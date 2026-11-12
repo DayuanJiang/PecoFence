@@ -2466,7 +2466,7 @@
       const div = document.createElement('div');
       div.className = 'card';
       div.dataset.rowId = sn.id;
-      div.innerHTML = `<div class="l"><div><div class="t">${esc(sn.name)}</div><div class="s">${esc(sn.date)} · ${esc(tf("{0} 个栅栏", sn.fenceCount))}</div></div></div>
+      div.innerHTML = `<div class="l"><div><div class="t">${esc(sn.name)}</div><div class="s">${esc(sn.date)} · ${esc(tf("{0} 个栅栏", sn.fenceCount))}${sn.auto ? ' · ' + esc(t("自动保存")) : ''}</div></div></div>
         <div class="actions"><button data-act="restore">${esc(t("恢复"))}</button><button class="iconbtn" title="${esc(t("删除"))}" data-act="del">&#xE74D;</button></div>`;
       div.querySelector('[data-act=restore]').onclick = () => send({ type: 'action', name: 'restoreSnapshot', id: sn.id });
       div.querySelector('[data-act=del]').onclick = () => send({ type: 'action', name: 'deleteSnapshot', id: sn.id });

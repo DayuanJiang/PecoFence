@@ -122,6 +122,7 @@
   "{0} - 快捷方式": "{0} - Verknüpfung",
   "快照 {0}": "Momentaufnahme {0}",
   "恢复快照前": "Vor dem Wiederherstellen der Momentaufnahme",
+  "自动保存": "Automatisch gespeichert",
   "删除栅栏前": "Vor dem Löschen des Bereichs",
   "导出 PecoFence 配置": "PecoFence-Konfiguration exportieren",
   "导入 PecoFence 配置": "PecoFence-Konfiguration importieren",

@@ -272,6 +272,8 @@ if ($Part -match 'P') {
   Check 'the notice 已恢复快照 has 撤销' ($t.text -eq '已恢复快照' -and $undo) "toast='$($t.text)' undo=$undo"
   $f = PfFence '工作资料'
   Check 'the fence is back at its saved place' ($f.rect.x -eq 420 -and $f.rect.y -eq 120) "$($f.rect.x),$($f.rect.y)"
+  $rows = Js "[...document.querySelectorAll('#snapList .card')].map(c => c.querySelector('.t').textContent + ': ' + c.querySelector('.s').textContent).join(' | ')"
+  Check 'the list marks the automatic snapshot, not the one I saved' ($rows -match '恢复快照前: [^|]*自动保存' -and $rows -notmatch '整理之前: [^|]*自动保存') "$rows"
   Shot 'P-restore-notice'
   if ($undo) { PageClick '#toastUndo' }
   Start-Sleep -Milliseconds 1200

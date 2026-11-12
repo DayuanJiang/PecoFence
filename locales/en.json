@@ -124,6 +124,7 @@
   "{0} - 快捷方式": "{0} - Shortcut",
   "快照 {0}": "Snapshot {0}",
   "恢复快照前": "Before snapshot restore",
+  "自动保存": "Saved automatically",
   "删除栅栏前": "Before fence delete",
   "导入配置前": "Before import",
   "恢复备份前": "Before backup restore",
