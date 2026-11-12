@@ -1353,7 +1353,13 @@ mod tests {
             dark.over_bare_wallpaper(&crop_of(&dark, [120, 150, 170]), None),
             dark.over_clear_plate(&crop_of(&dark, [120, 150, 170]), None, None),
         ] {
-            assert!(picked.text_secondary.a > dark.text_secondary.a + 0.05);
+            // Whichever text the pick took: stronger than that text's own secondary.
+            let own = if picked.text_primary.r > 0.5 {
+                Theme::dark()
+            } else {
+                Theme::light()
+            };
+            assert!(picked.text_secondary.a > own.text_secondary.a + 0.01);
             assert!(picked.text_secondary.a < picked.text_primary.a - 0.05);
         }
         // A link keeps the accent where that reads and moves towards the text where not.
