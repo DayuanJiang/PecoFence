@@ -966,6 +966,8 @@
   "项目": "Projeto",
   "灵感": "Inspiração",
   "随 Windows 启动": "Iniciar com o Windows",
+  "显示托盘图标": "Mostrar ícone na bandeja",
+  "关闭后，任务栏角落不再显示 PecoFence 的图标，有通知要提醒你时才暂时出现。要打开设置，再启动一次 PecoFence；要退出，点下面的“退出”": "Quando desativado, o ícone do PecoFence sai do canto da barra de tarefas e só volta enquanto uma notificação aparece. Para abrir as configurações, inicie o PecoFence de novo; para sair, clique em “Sair” abaixo",
   "Windows 桌面图标": "Ícones da área de trabalho do Windows",
   "桌面项目只显示在栅栏里，没有归类的放进“桌面”栅栏；回收站等系统图标也在“桌面”栅栏里": "Os itens da área de trabalho aparecem só nos grupos; os não classificados vão para o grupo “Área de trabalho”, assim como ícones do sistema como a Lixeira",
   "隐藏，项目放在栅栏里": "Ocultos, itens nos grupos",

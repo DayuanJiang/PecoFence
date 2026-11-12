@@ -299,6 +299,10 @@ shows two small buttons at its bottom-right corner, 「新建栅栏」 and 「�
 default on), `featureTips` (「功能提示」: one-time cards in the corner when a
 feature would help, such as rolling up fences once there are many, showing a folder opened often on
 the desktop, or a rule for files of one type dragged into one fence; each shows once; default on),
+`showTrayIcon` (「显示托盘图标」: PecoFence's icon in the notification area of the taskbar; `false`
+takes it out at once, and it comes back only while a notification of PecoFence shows; starting
+PecoFence again or `settings open-ui` opens the settings window then, where 「退出 PecoFence」 is
+under the switch; default on),
 `autoCheckUpdates` (「自动检查更新」, installer and ZIP editions: a check of GitHub's latest release,
 or of the website's copy of it when GitHub gives no answer,
 about a minute after start and then once a day, and a card once per new version; default on),

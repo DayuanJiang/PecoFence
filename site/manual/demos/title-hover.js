@@ -24,6 +24,7 @@
     // 桌面与启动: Windows 桌面图标 is 隐藏, so 关闭 PecoFence 时保持… shows under it (bindDesktopIcons)
     const DESKTOP = [
         { ic: '\uE7E8', t: '随 Windows 启动', on: true },
+        { ic: '\uE90E', t: '显示托盘图标', s: '关闭后，任务栏角落不再显示 PecoFence 的图标，有通知要提醒你时才暂时出现。要打开设置，再启动一次 PecoFence；要退出，点下面的“退出”', on: true },
         { ic: '\uE8A9', t: 'Windows 桌面图标', s: '桌面项目只显示在栅栏里，没有归类的放进“桌面”栅栏；回收站等系统图标也在“桌面”栅栏里', v: '隐藏，项目放在栅栏里', o: { gap: 1 } },
         { t: '退出 PecoFence 时保持 Windows 桌面图标隐藏', s: '打开后，下次登录时桌面图标不会闪现。PecoFence 没有运行时桌面上没有图标；要恢复，右键桌面选“查看”→“显示桌面图标”', on: false, o: { indent: 22 } },
         { ic: '\uE8B3', t: '在桌面空白处拖出矩形时显示“新建栅栏”按钮', s: '在矩形右下角显示“新建栅栏”和“在此显示文件夹…”，几秒后消失。关闭后拖出矩形只用来框选', on: true },
