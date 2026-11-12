@@ -346,6 +346,8 @@
   "（桌面）": " (Escritorio)",
   "（文件夹）": " (Carpeta)",
   "（文件夹栅栏）": " (grupo de carpeta)",
+  "（智能栅栏）": " (grupo inteligente)",
+  "（只在“{0}”上显示）": " (solo en «{0}»)",
   "（{0} 的标签页）": " (pestaña de {0})",
   "{0} 个栅栏": "Grupos: {0}",
   "{0} 个栅栏 · {1} 个项目": "Grupos: {0} · Elementos: {1}",

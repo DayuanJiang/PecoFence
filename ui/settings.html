@@ -1868,7 +1868,14 @@
   // answers with a fresh state, so nothing here mutates `state` itself.
   let fenceSel = null;
   const fenceById = (id) => (state.fences || []).find(f => f.id === id);
-  const fenceOption = (f) => f.title + (f.kind === 'portal' ? t("（文件夹栅栏）") : f.kind === 'inbox' && f.title !== t("桌面") ? t("（桌面）") : '') + (f.host ? tf("（{0} 的标签页）", f.host) : '');
+  // The desktops of a fence that shows only on some of them (nothing with a single desktop,
+  // where the page hides that choice too).
+  const fenceDesktops = (f) => {
+    const all = state.virtualDesktops || [], bound = (f.virtualDesktops || []).map(k => k.toLowerCase());
+    const names = all.length > 1 ? all.filter(d => bound.includes(d.id.toLowerCase())).map(d => d.name) : [];
+    return names.length ? tf("（只在“{0}”上显示）", names.join(t("、"))) : '';
+  };
+  const fenceOption = (f) => f.title + (f.smart ? t("（智能栅栏）") : f.kind === 'portal' ? t("（文件夹栅栏）") : f.kind === 'inbox' && f.title !== t("桌面") ? t("（桌面）") : '') + (f.host ? tf("（{0} 的标签页）", f.host) : '') + fenceDesktops(f);
   // A slider's live ticks resize the fence without the cell snap; its release snaps once.
   const setFence = (id, prop, value, live) => send({ type: 'setFence', id, prop, value, ...(live && { live }) });
   function ensureOption(sel, value, label) {

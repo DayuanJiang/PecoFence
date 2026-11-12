@@ -1,5 +1,5 @@
 # Smart fences and fences per virtual desktop: what the hunt of 2026-11-12 found (Everything is
-# installed on the box, see smart.ps1). --var Part=A to F runs one part (default: all).
+# installed on the box, see smart.ps1). --var Part=A to G runs one part (default: A to F on a release build, G on a debug build).
 #   A  a smart fence that waits for Everything: started outside PecoFence, Everything is found
 #      within seconds; a click on 「启动 Everything」 changes the fence at once
 #   B  a smart fence whose folder is gone says that the folder cannot be found
@@ -9,7 +9,9 @@
 #      land on a fence that stands at the same spot there
 #   F  PecoFence starts while Everything is there but has not read its index (a stand-in window
 #      that answers like one): the fence is not left empty until the next once-a-minute search
-if (-not $Part) { $Part = 'ABCDEF' }
+#   G  (a debug build: run.sh --bin target/wintest-bin-debug) the fence picker of Settings says
+#      which fence is a smart fence and which shows on one virtual desktop only
+if (-not $Part) { $Part = if ($PfDebugBuild) { 'G' } else { 'ABCDEF' } }
 $HsDir = "$PfDocs\智能栅栏检查"
 function HsFiles() {
   Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
@@ -301,3 +303,34 @@ function PartF {
   Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
 }
 if ($Part -match 'F') { PartF }
+
+function PartG {
+  trap { PfTrap $_; continue }
+  Case 'G: the fence picker of Settings'
+  Check 'G a debug build (the page is read over CDP)' $PfDebugBuild ''
+  CloseWindows
+  HsFiles
+  VdTwo '工作' '游戏'
+  $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'
+  PfStart -Lang zh-CN -Script (DumpScript 500 20)
+  ClearFences
+  Pf fence create --title 游戏存档 --rect '420,80,300,240' | Out-Null
+  Pf fence set 游戏存档 virtualDesktops 2 | Out-Null
+  Pf fence create --title 最近文件 --smart-folder $HsDir --rect '760,80,300,240' | Out-Null
+  Pf fence create --title 普通栅栏 --rect '420,360,300,200' | Out-Null
+  PfSettings | Out-Null
+  Js "(() => { document.querySelector('[data-page=fences]')?.click(); return true; })()" | Out-Null
+  Start-Sleep -Milliseconds 800
+  $opts = Js "[...document.getElementById('fenceSel').options].map(o => o.textContent).join(' | ')"
+  Shot 'g-picker'
+  Check 'G the picker says which fence shows on one desktop only' ($opts -match '游戏存档（只在“游戏”上显示）') "$opts"
+  Check 'G and which one is a smart fence' ($opts -match '最近文件（智能栅栏）') "$opts"
+  Check 'G a plain fence has its name only' ($opts -match '(^| \| )普通栅栏( \| |$)') "$opts"
+  $h = [G]::FindWindowW('PecoFence.Settings', [NullString]::Value)
+  if ($h -ne [IntPtr]::Zero) { [W]::PostMessageW($h, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 1 }
+  ClearPfNotices
+  PfQuit
+  VdOnlyOne
+  Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
+}
+if ($Part -match 'G') { PartG }
