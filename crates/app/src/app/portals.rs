@@ -320,6 +320,10 @@ impl App {
         for id in ids {
             self.refresh_fence(id);
         }
+        // Whatever re-read found a folder gone (a watcher batch, a file operation, a click on
+        // the title's folder): it is looked for from now on, so it is shown again as soon as
+        // it is back.
+        self.arm_portal_back_check();
     }
 
     pub(super) fn portal_enter(&mut self, fence: FenceId, dir: &std::path::Path) {
@@ -355,11 +359,21 @@ impl App {
 
     /// Opens the folder `fence` shows in Explorer (the title glyph at the root, the fence
     /// menu's 在资源管理器中打开文件夹). `by` names the control for the log.
-    pub(super) fn open_portal_folder(&self, fence: FenceId, by: &'static str) {
+    pub(super) fn open_portal_folder(&mut self, fence: FenceId, by: &'static str) {
         let Some(dir) = self.state.portal_path(fence) else {
             tracing::info!(fence = %fence, by, "open folder: not a folder fence");
             return;
         };
+        // A folder that is gone (renamed, deleted, its drive unplugged) while the fence still
+        // shows its icons: Explorer would put up its own "Windows cannot find" box, inside
+        // this call, and every fence would wait until it is closed. The fence is read again
+        // instead and says 找不到此文件夹。
+        if !dir.is_dir() {
+            tracing::info!(fence = %fence, by, place = shell::path_place(&dir), "open folder: the folder is gone; fence re-read");
+            self.portal_watchers.remove(&fence);
+            self.refresh_portals_in(std::slice::from_ref(&dir));
+            return;
+        }
         let ok = open_folder_in_explorer(&dir);
         tracing::info!(fence = %fence, by, place = shell::path_place(&dir), ok, "folder opened in Explorer");
     }

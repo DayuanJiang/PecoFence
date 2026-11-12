@@ -938,6 +938,20 @@ impl App {
                 inside && f.navigates_folders(),
             )
         });
+        // An icon of a folder shown in a fence whose file is gone: the folder was renamed or
+        // deleted and the fence has not noticed yet (its watcher follows a renamed folder; the
+        // check for that runs once a minute). Explorer would put up its "Windows cannot find"
+        // box inside the call below, and every fence would wait until it is closed. The fence
+        // is read again instead and shows what is there now.
+        if self.state.is_portal_item(item)
+            && let Some(dir) = self.state.portal_path(from)
+            && !path.exists()
+        {
+            tracing::info!(fence = %from, place = shell::path_place(&path), "launch: the file is gone; its fence is re-read");
+            self.portal_watchers.remove(&from);
+            self.refresh_portals_in(std::slice::from_ref(&dir));
+            return;
+        }
         // A folder inside a navigating portal opens in place (Fences "Navigate"). Two portals
         // can show the same folder, so only the one the item was opened from navigates.
         if portal && navigate && is_folder && self.state.is_portal_item(item) {
