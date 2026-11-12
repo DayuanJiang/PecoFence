@@ -3222,6 +3222,19 @@ async function runTests() {
     assert(tintCard.hidden && !tintGrows(), 'Another fence closes the card with a motion');
     doc = await reset();
   });
+  await test('The arrow of 「新建规则」 turns for as long as its body opens or closes', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    doc.querySelector('[data-page=rules]').click();
+    const panel = doc.getElementById('nrPanel');
+    const turn = () => doc.getAnimations().filter(a => a.transitionProperty === 'transform' && a.effect.target.classList.contains('chev')).map(a => a.effect.getComputedTiming().duration).join();
+    panel.open = true;
+    assert(turn() === '333', 'Opening: the arrow turns in ' + (turn() || 'no time') + ' ms, the body opens in 333');
+    assert(await until(() => turn() === ''), 'The arrow never came to rest');
+    panel.open = false;
+    assert(turn() === '167', 'Closing: the arrow turns in ' + (turn() || 'no time') + ' ms, the body closes in 167');
+    doc = await reset();
+  });
   await test('Smart fence editor: the count dims the old number only when the answer takes a moment', async () => {
     doc = await openEditor('fence=new');
     assert(await motionReady(), 'The editor never allowed transitions');
