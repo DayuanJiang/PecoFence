@@ -399,7 +399,7 @@ impl App {
         let text = if crash_module(log).is_some_and(is_explorer_patcher) {
             tracing::info!("the crash was inside ExplorerPatcher");
             pecofence_core::i18n::text(
-                "上次因 ExplorerPatcher 出错而关闭。请在它的 Properties › File Explorer 中取消勾选“Register as shell extension”，然后重启资源管理器。",
+                "请在 ExplorerPatcher 的 Properties › File Explorer 里取消“Register as shell extension”并重启资源管理器。上次因它出错而关闭。",
             )
             .to_string()
         } else if let Some(module) = other_programs_module(log).filter(|_| menu_crash) {
@@ -414,7 +414,7 @@ impl App {
         } else if let Some(module) = other_programs_module(log) {
             tracing::info!(module, "the crash was inside another program's module");
             pecofence_core::i18n::format(
-                "PecoFence 上次因 {0} 出错而关闭，这个文件属于其他程序，更新或卸载那个程序可能会解决。点击这里报告问题。",
+                "更新或卸载 {0} 所属的程序可能会解决：上次 PecoFence 因这个文件出错而关闭。点击这里报告问题。",
                 &[module.to_string()],
             )
         } else {

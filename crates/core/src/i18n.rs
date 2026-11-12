@@ -417,6 +417,111 @@ mod tests {
         }
     }
 
+    /// Every text the app hands to a Windows notification fits the banner in every language:
+    /// 4 lines of about 36 Latin or 18 Chinese, Japanese or Korean characters (measured on
+    /// 2026-11-12), the rest is cut, and the end of a sentence is often the part that says
+    /// what to do. The texts are found in the app's sources: every catalog key in a function
+    /// that calls `show_info(`. Not checked where the sources are not beside the test (the
+    /// test boxes run the built tests only).
+    #[test]
+    fn every_notification_fits_the_banner() {
+        fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    rust_files(&path, out);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    out.push(path);
+                }
+            }
+        }
+        // The string literals of a piece of Rust code (`\"` and `\\` unescaped).
+        fn literals(code: &str) -> Vec<String> {
+            let mut out = Vec::new();
+            let mut chars = code.chars();
+            while let Some(c) = chars.next() {
+                if c == '\'' && chars.as_str().starts_with("\"'") {
+                    chars.nth(1); // the character '"'
+                } else if c == '"' {
+                    let mut literal = String::new();
+                    while let Some(c) = chars.next() {
+                        match c {
+                            '"' => break,
+                            '\\' => literal.extend(chars.next()),
+                            _ => literal.push(c),
+                        }
+                    }
+                    out.push(literal);
+                }
+            }
+            out
+        }
+        let app = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/src");
+        let mut files = Vec::new();
+        rust_files(&app, &mut files);
+        if files.is_empty() {
+            eprintln!("no app sources at {}: not checked here", app.display());
+            return;
+        }
+        let english = catalog(Language::English);
+        let mut sources = std::collections::BTreeSet::new();
+        for file in &files {
+            let code = std::fs::read_to_string(file).unwrap();
+            for (call, _) in code.match_indices("show_info(") {
+                // From the start of the function around the call to a little after it.
+                let from = code[..call]
+                    .rfind("\n    fn ")
+                    .max(code[..call].rfind("\n    pub"))
+                    .unwrap_or(0);
+                let to = code[call..]
+                    .char_indices()
+                    .nth(700)
+                    .map_or(code.len(), |(i, _)| call + i);
+                sources.extend(
+                    literals(&code[from..to])
+                        .into_iter()
+                        .filter(|s| english.contains_key(s)),
+                );
+            }
+        }
+        assert!(sources.len() >= 30, "only {} texts found", sources.len());
+        // Values as long as real ones: a shortcut, the configuration folder, the name an
+        // unreadable configuration file gets, a file name of 24 characters.
+        let values = |source: &str| -> [String; 2] {
+            let first = if source.contains("快捷键") {
+                "Ctrl+Alt+Shift+Space"
+            } else if source.contains("能否写入") {
+                r"C:\Users\me\AppData\Roaming\PecoFence"
+            } else if source.contains("改名为") {
+                "config.unreadable-20261112-66600.json"
+            } else {
+                "ContextMenuHandler64.dll"
+            };
+            [first.to_string(), "Ctrl+Alt+Space".to_string()]
+        };
+        // Half-width characters: Chinese, Japanese and Korean characters take two.
+        let width =
+            |s: &str| -> usize { s.chars().map(|c| if c >= '\u{2E80}' { 2 } else { 1 }).sum() };
+        let mut long = Vec::new();
+        for source in &sources {
+            for &language in SUPPORTED {
+                let text = match language {
+                    Language::SimplifiedChinese => source,
+                    _ => &catalog(language)[source],
+                };
+                let shown = interpolate(text, &values(source));
+                if width(&shown) > 130 {
+                    long.push(format!("{} {}: {shown}", language.tag(), width(&shown)));
+                }
+            }
+        }
+        assert!(
+            long.is_empty(),
+            "longer than 130 half-width characters:\n{}",
+            long.join("\n")
+        );
+    }
+
     /// One kind of quotation mark per language: a card that names a fence in “ ” above a
     /// button named in 「 」 reads as two programs. The source strings (Simplified Chinese)
     /// are the catalogs' keys.

@@ -112,7 +112,7 @@ impl App {
             t.show_info(
                 "PecoFence",
                 &pecofence_core::i18n::format(
-                    "快捷键 {0} 已被系统或其他程序占用，“临时显示 Windows 桌面”暂时没有快捷键。",
+                    "请在设置里给“临时显示 Windows 桌面”换一个快捷键：{0} 已被系统或其他程序占用。",
                     &[peek_hotkey_label(h)],
                 ),
                 false,

@@ -170,7 +170,7 @@ impl App {
                             t.show_info(
                                 "PecoFence",
                                 &pecofence_core::i18n::format(
-                                    "快捷键 {0} 已被系统或其他程序占用，“速览栅栏”改用 {1}。",
+                                    "“速览栅栏”改用 {1}：快捷键 {0} 已被系统或其他程序占用。",
                                     &[peek_hotkey_label(h), peek_hotkey_label(c)],
                                 ),
                                 false,

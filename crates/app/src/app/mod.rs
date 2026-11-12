@@ -2062,7 +2062,7 @@ impl App {
                 t.show_info(
                     "PecoFence",
                     pecofence_core::i18n::text(
-                        "配置文件正被其他程序占用（可能是杀毒或同步软件）。读到它之前，PecoFence 不保存任何更改；读到后自动换回你的栅栏。",
+                        "现在的更改不会保存：配置文件正被其他程序占用（可能是杀毒或同步软件）。读到它后，PecoFence 自动换回你的栅栏。",
                     ),
                     true,
                 );
@@ -2072,7 +2072,7 @@ impl App {
             t.show_info(
                 "PecoFence",
                 pecofence_core::i18n::text(
-                    "无法读取保存的设置（Windows 错误 409）。请把 PecoFence 移到 C 盘（Windows 设置 › 应用 › 已安装的应用），或改用便携版。",
+                    "请把 PecoFence 移到 C 盘（Windows 设置 › 应用 › 已安装的应用），或改用便携版：保存的设置读不出来（Windows 错误 409）。",
                 ),
                 true,
             );
@@ -2357,7 +2357,7 @@ impl App {
         t.show_info(
             "PecoFence",
             &pecofence_core::i18n::format(
-                "无法保存配置，退出后更改会丢失。请检查这个文件夹能否写入：{0}",
+                "请检查能否写入 {0}：配置无法保存，退出后更改会丢失。",
                 &[path.parent().unwrap_or(&path).display().to_string()],
             ),
             true,
