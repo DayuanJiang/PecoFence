@@ -1,11 +1,13 @@
 # Smart fences and fences per virtual desktop: what the hunt of 2026-11-12 found (Everything is
-# installed on the box, see smart.ps1). --var Part=A, B, C or D runs one part (default: all).
+# installed on the box, see smart.ps1). --var Part=A, B, C, D or E runs one part (default: all).
 #   A  a smart fence that waits for Everything: started outside PecoFence, Everything is found
 #      within seconds; a click on 「启动 Everything」 changes the fence at once
 #   B  a smart fence whose folder is gone says that the folder cannot be found
 #   C  a fence sent to another virtual desktop from its menu: the notice has 撤销
 #   D  without Everything a new file shows in a smart fence within half a second
-if (-not $Part) { $Part = 'ABCD' }
+#   E  a fence that comes to a desktop (its own was closed, or it was set to show here) does not
+#      land on a fence that stands at the same spot there
+if (-not $Part) { $Part = 'ABCDE' }
 $HsDir = "$PfDocs\智能栅栏检查"
 function HsFiles() {
   Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
@@ -167,3 +169,49 @@ function PartC {
   Remove-Item -LiteralPath $sav, $txt -Force -ErrorAction SilentlyContinue
 }
 if ($Part -match 'C') { PartC }
+
+function HsApart($a, $b) { return (($a.x + $a.w -le $b.x) -or ($b.x + $b.w -le $a.x) -or ($a.y + $a.h -le $b.y) -or ($b.y + $b.h -le $a.y)) }
+function HsAt($r) { return "$($r.x),$($r.y) $($r.w)x$($r.h)" }
+function PartE {
+  trap { PfTrap $_; continue }
+  Case 'E: setup: two fences at one spot, each on its own desktop'
+  CloseWindows
+  VdTwo '工作' '游戏'
+  PfStart -Lang zh-CN -Script (DumpScript 500 20)
+  ClearFences
+  Pf fence create --title 工作文件 --rect '420,80,300,240' | Out-Null
+  Pf fence set 工作文件 virtualDesktops 1 | Out-Null
+  VdRight
+  Pf fence create --title 游戏存档 --rect '420,80,300,240' | Out-Null
+  Pf fence set 游戏存档 virtualDesktops 2 | Out-Null
+  Start-Sleep -Seconds 1
+  $a = (FenceGet 工作文件).windowRect; $b = (FenceGet 游戏存档).windowRect
+  Check 'E both fences at the same spot, 游戏存档 shows on desktop 2' ($a.x -eq $b.x -and $a.y -eq $b.y -and (FVis 游戏存档) -eq $true -and (FVis 工作文件) -eq $false) "工作文件=$(HsAt $a) 游戏存档=$(HsAt $b) $(VisText @('工作文件', '游戏存档'))"
+
+  Case 'E: desktop 2 is closed'
+  VdClose
+  Start-Sleep -Seconds 2
+  $a = (FenceGet 工作文件).windowRect; $b = (FenceGet 游戏存档).windowRect
+  Shot 'e-after-close'
+  Check 'E on the desktop that is left both fences show, not one on the other' ((FVis 工作文件) -eq $true -and (FVis 游戏存档) -eq $true -and (HsApart $a $b)) "工作文件=$(HsAt $a) 游戏存档=$(HsAt $b) $(VisText @('工作文件', '游戏存档'))"
+  Check 'E the fence that was here kept its spot' ($a.x -eq 420 -and $a.y -eq 80) "工作文件=$(HsAt $a)"
+
+  Case 'E: a fence set to show on a desktop where its spot is taken'
+  VdNew
+  Start-Sleep -Seconds 1
+  Pf fence create --title 新桌面的栅栏 --rect '420,80,300,240' | Out-Null
+  Pf fence set 新桌面的栅栏 virtualDesktops current | Out-Null
+  Start-Sleep -Milliseconds 500
+  $c0 = (FenceGet 新桌面的栅栏).windowRect
+  Pf fence set 工作文件 virtualDesktops all | Out-Null
+  Start-Sleep -Seconds 1
+  $a = (FenceGet 工作文件).windowRect; $c = (FenceGet 新桌面的栅栏).windowRect
+  Shot 'e-after-set-all'
+  Check 'E the fence brought here stands beside the one at its spot' ((FVis 工作文件) -eq $true -and (FVis 新桌面的栅栏) -eq $true -and (HsApart $a $c) -and $c.x -eq $c0.x -and $c.y -eq $c0.y) "工作文件=$(HsAt $a) 新桌面的栅栏=$(HsAt $c) (was $(HsAt $c0))"
+
+  Case 'E: cleanup'
+  ClearPfNotices
+  PfQuit
+  VdOnlyOne
+}
+if ($Part -match 'E') { PartE }

@@ -103,6 +103,8 @@ impl App {
         }
         if changed {
             self.apply_desktop_visibility("virtual desktops changed");
+            // A closed desktop's fences came to this one: off the fences that stand here.
+            self.settle_unplaced(false);
             // The page marks the current desktop and lists the names.
             self.push_settings_state();
         }
@@ -281,6 +283,7 @@ impl App {
             );
         }
         let mut moved = 0;
+        let mut followed: Vec<FenceId> = Vec::new();
         for layout in &mut self.state.config.layouts {
             for f in &mut layout.fences {
                 let Some((keep, gone)) = vdesk::follow(&f.virtual_desktops, &old, &now) else {
@@ -303,11 +306,20 @@ impl App {
                     "fence virtual desktops followed the desktops"
                 );
                 f.virtual_desktops = keep;
+                followed.push(f.id);
                 moved += 1;
             }
         }
         if moved > 0 {
             self.state.mark_dirty();
+            // Fences of different desktops may share a spot: where a followed fence lands, a
+            // fence of that desktop may stand. Those of the shown layout move to free space at
+            // the next `settle_unplaced` (the caller's, once they are on the desktop).
+            for id in followed {
+                if self.state.fence(id).is_some() && !self.state.unplaced.contains(&id) {
+                    self.state.unplaced.push(id);
+                }
+            }
             // Tab pills carry the glyph of their window's binding.
             for host in self.fences.keys().copied().collect::<Vec<_>>() {
                 self.refresh_fence(host);
@@ -378,10 +390,17 @@ impl App {
             reason,
             "fence virtual desktops set"
         );
+        let was_here = self.on_current_desktop(host);
         self.state.set_virtual_desktops(host, desktops);
         // The tab pills' glyphs, then the window's.
         self.refresh_fence(host);
         self.apply_desktop_visibility(reason);
+        // Brought to this desktop: off a fence that stands at its spot here.
+        if !was_here && self.on_current_desktop(host) {
+            tracing::debug!(%host, reason, "fence brought to this virtual desktop: checked for a fence at its spot");
+            self.state.unplaced.push(host);
+            self.settle_unplaced(false);
+        }
         // Picked on one desktop for another: it is gone from here. PecoFence's own card says
         // where it went and takes it back (撤销, or Ctrl+Z in a fence); a Windows notification
         // says it while another card is up (a CLI caller reads the reply instead).
