@@ -86,6 +86,7 @@
 - A folder fence with many files switches to 「详细信息」 faster the first time: Windows was asked for the type name of every file, now once per extension. With 2000 files the switch went from about 320 to 245 ms on a PC without a graphics card and from 96 to 48 ms on a fast one.
 - Rolling a large fence up or opening it takes less work: its shadow went through a new 2.4 MB bitmap section for every frame, now through one for the whole animation (780 x 600 px fence on a 4K screen at 150 %: the shadow 3.9 to 2.9 ms per frame, the whole frame 7.2 to 6.6 ms).
 - The log stays quiet while nothing happens: a smart fence (智能栅栏) wrote two lines every minute, about 26 KB an hour for each smart fence. Its once-a-minute search is logged only when the results change.
+- The settings window no longer flashes when it opens. It was shown before its page had the settings: in light mode the window was black for a frame and then showed the dark page for about 80 ms, and in dark mode the page showed its built-in values (显示语言 「跟随系统」, no 主题风格 chosen) before the real ones. The window now shows when the page has drawn the real settings, about 0.1 s after the page has loaded, and comes up in its own colour mode with the real values. On a test machine the right page is on screen 0.67 to 0.93 s after the click, about 0.03 s later than it used to arrive behind the flash. The smart fence editor opens the same way. A page that never answers still shows after half a second.
 
 ## 0.3.3
 

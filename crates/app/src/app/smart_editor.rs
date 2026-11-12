@@ -148,10 +148,16 @@ impl App {
                 if let Some(ed) = &self.smart_editor {
                     ed.post_json(&state);
                     ed.post_json(&editor);
+                    // The window shows once the page has drawn the two (`drawn`).
                     if first {
-                        window::show_normal(ed.hwnd());
-                        window::bring_to_front(ed.hwnd());
+                        ed.host.show_soon();
                     }
+                }
+            }
+            Some("drawn") => {
+                if ed.host.show() {
+                    let ms = ed.host.opened.elapsed().as_millis() as u64;
+                    tracing::info!(ms, "smart fence editor: page drawn, window shown");
                 }
             }
             Some("editorDirty") => {

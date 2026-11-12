@@ -85,6 +85,11 @@ struct HostState {
     webview: Option<WebView>,
 }
 
+/// `WM_TIMER` id of the host window: shows a window whose page never said `drawn`.
+const SHOW_TIMER: usize = 1;
+/// How long after `ready` a window shows anyway (a script error must not keep it hidden).
+const SHOW_FALLBACK_MS: u32 = 500;
+
 pub struct SettingsHost {
     window: Window,
     state: Rc<RefCell<HostState>>,
@@ -206,6 +211,18 @@ impl SettingsHost {
                             }
                             Some(0)
                         }
+                        msg::WM_TIMER if wparam == SHOW_TIMER => {
+                            window::kill_timer(hwnd, SHOW_TIMER);
+                            if !desktop::is_visible(hwnd) {
+                                tracing::warn!(
+                                    ?kind,
+                                    "settings: the page did not say it has drawn, window shown anyway"
+                                );
+                                window::show_normal(hwnd);
+                                window::bring_to_front(hwnd);
+                            }
+                            Some(0)
+                        }
                         msg::WM_ACTIVATE if wparam & 0xffff != 0 && kind == HostKind::Settings => {
                             queue.push(Command::SettingsActivated);
                             None
@@ -310,15 +327,20 @@ impl SettingsHost {
                 1,
             ),
         };
-        let html = if mica {
-            document
-        } else {
-            document.replacen(
-                "<html lang=\"zh-CN\">",
-                "<html lang=\"zh-CN\" class=\"no-mica\">",
-                1,
-            )
-        };
+        // The colour mode too, so that the page's first style pass is already in it (the state
+        // brings it again and follows a later switch).
+        let mut classes = Vec::new();
+        if !mica {
+            classes.push("no-mica");
+        }
+        if mode == ThemeMode::Light {
+            classes.push("light");
+        }
+        let html = document.replacen(
+            "<html lang=\"zh-CN\">",
+            &format!("<html lang=\"zh-CN\" class=\"{}\">", classes.join(" ")),
+            1,
+        );
         webview.navigate_to_string(&html)?;
         tracing::debug!("settings: page navigation submitted");
 
@@ -328,8 +350,10 @@ impl SettingsHost {
             s.webview = Some(webview);
         }
         // The controller is created while the host is still hidden and stays invisible until
-        // told. The host itself is shown once the page reports `ready` (`App::on_settings_message`):
-        // shown at once, it was white until WebView2 painted, even in dark mode.
+        // told. The host itself is shown once the page reports `drawn` (`App::on_settings_message`):
+        // shown at once, it was white until WebView2 painted, even in dark mode; shown on
+        // `ready`, it was black for a frame and had the page's built-in values and dark colours
+        // for another.
         if let Some(c) = state.borrow().controller.as_ref() {
             let _ = c.set_visible(true);
         }
@@ -352,6 +376,24 @@ impl SettingsHost {
     /// it shows).
     pub fn set_title(&self, title: &str) {
         window::set_title(self.window.hwnd(), title);
+    }
+
+    /// The page is loaded and has been sent what it shows: the window appears when the page
+    /// says it has drawn that (`show`), or after `SHOW_FALLBACK_MS` when it never says so.
+    pub fn show_soon(&self) {
+        window::set_timer(self.window.hwnd(), SHOW_TIMER, SHOW_FALLBACK_MS);
+    }
+
+    /// Shows the window for the first time. False when it was showing already.
+    pub fn show(&self) -> bool {
+        let hwnd = self.window.hwnd();
+        window::kill_timer(hwnd, SHOW_TIMER);
+        if desktop::is_visible(hwnd) {
+            return false;
+        }
+        window::show_normal(hwnd);
+        window::bring_to_front(hwnd);
+        true
     }
 
     /// 栅栏选项…: moves the window beside `fence` (screen px) on the fence's monitor, on the

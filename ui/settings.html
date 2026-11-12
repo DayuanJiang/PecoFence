@@ -3132,6 +3132,19 @@
     }
   });
 
+  // Transitions come on a frame after a state has been drawn: a single frame would style both
+  // changes together and start them after all. The host shows the window on the first `drawn`,
+  // so it appears with the state's colours and values. `drawn` goes one frame later still: after
+  // two frames the state was not on the page's surface yet in one open of eight, and the window
+  // came up with its plain background, or with the page before the state, for a frame.
+  let drawnSent = false;
+  function drawnSoon() {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      document.documentElement.classList.add('ready');
+      if (!drawnSent) { drawnSent = true; requestAnimationFrame(() => send({ type: 'drawn' })); }
+    }));
+  }
+
   if (wv) wv.addEventListener('message', e => {
     const m = e.data;
     if (m.type === 'state') {
@@ -3166,7 +3179,7 @@
       // The smart fence editor takes the language and the theme; the editor message brings the rest.
       if (EDITOR) {
         if (languageChanged) seRelabel();
-        requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add('ready')));
+        drawnSoon();
         return;
       }
       document.getElementById('ver').textContent = 'v' + m.version;
@@ -3176,9 +3189,7 @@
       document.getElementById('cfgPath').textContent = m.configPath;
       bindAll(); bindThemeStyle(); bindCustomTheme(); bindDesktopIcons(); bindRollExpand(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); renderTools(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderStartupNote(); renderWindowsDesktopHotkey();
       update = m.update; renderUpdate();
-      // Transitions come on a frame after this state has been drawn: a single frame would style
-      // both changes together and start them after all.
-      requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add('ready')));
+      drawnSoon();
     } else if (m.type === 'workspaceSummary') {
       if (!state) return;
       state.itemCount = m.itemCount;

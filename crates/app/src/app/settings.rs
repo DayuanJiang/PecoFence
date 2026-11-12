@@ -717,14 +717,14 @@ impl App {
                 // A reload in the middle of recording a shortcut never says it ended.
                 self.resume_hotkeys();
                 self.push_settings_state();
-                // The first `ready` shows the window; a reload's leaves it as the user left it.
+                // The window of a first `ready` shows once the page has drawn this state
+                // (`drawn`); a reload's stays as the user left it.
                 if let Some(h) = self
                     .settings
                     .as_ref()
                     .filter(|h| !desktop::is_visible(h.hwnd()))
                 {
-                    window::show_normal(h.hwnd());
-                    window::bring_to_front(h.hwnd());
+                    h.show_soon();
                 }
                 if let Some((page, focus)) = self.settings_focus_page.take() {
                     self.post_show_page(page, focus);
@@ -733,6 +733,16 @@ impl App {
                     self.post_show_fence(fence);
                 }
                 self.show_pending_feedback();
+            }
+            // The page has drawn the state (and the page or fence it was asked for): the
+            // window appears with the right colours and the real values.
+            Some("drawn") => {
+                if let Some(h) = &self.settings
+                    && h.show()
+                {
+                    let ms = h.opened.elapsed().as_millis() as u64;
+                    tracing::info!(ms, "settings: page drawn, window shown");
+                }
             }
             Some("setFence") => self.on_set_fence(&v),
             Some("ringFence") => {

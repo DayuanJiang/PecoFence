@@ -2892,6 +2892,23 @@ async function runTests() {
     doc = await reset();
   });
 
+  await test('The page tells the host once that it has drawn the state', async () => {
+    doc = await reset();
+    const sent = type => frame.contentWindow.testMessages.filter(m => m.type === type);
+    // The page sends it two frames after a state. A headless run with a virtual clock may draw
+    // no frame between two timers, so the frames of this window come by timer from here on:
+    // whether the first state's frames came or not, one more state leaves exactly one drawn.
+    frame.contentWindow.requestAnimationFrame = callback => setTimeout(callback, 0);
+    frame.contentWindow.testRefresh();
+    for (let i = 0; i < 3; i++) await settle();
+    assert(sent('drawn').length === 1, 'drawn was not sent once after the first states: ' + sent('drawn').length);
+    const all = frame.contentWindow.testMessages;
+    assert(all.findIndex(m => m.type === 'drawn') > all.findIndex(m => m.type === 'ready'), 'drawn came before ready');
+    assert(doc.documentElement.classList.contains('ready'), 'drawn came before the page allowed transitions');
+    frame.contentWindow.testRefresh();
+    for (let i = 0; i < 3; i++) await settle();
+    assert(sent('drawn').length === 1, 'A later state sent drawn again');
+  });
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
   window.testResults = { passed, failed };
