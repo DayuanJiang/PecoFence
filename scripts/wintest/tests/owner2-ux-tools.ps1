@@ -344,6 +344,16 @@ $vals = @($seen -split ' ' | Where-Object { $_ } | ForEach-Object { [double](($_
 $restV = $vals[0]; $fullV = $vals[-1]
 $between = @($vals | Where-Object { [math]::Abs($_ - $restV) -ge 1 -and [math]::Abs($_ - $fullV) -ge 1 }).Count
 Check 'the plate passes through at least one strength between none and full' ($between -ge 1 -and [math]::Abs($fullV - $restV) -ge 4) "brightness of the plate after the pointer arrived (ms:value): $seen"
+# With Windows' animations off the plate is there at once.
+[Anim]::Set($false)
+ParkMouse 700 700
+Start-Sleep -Milliseconds 1200
+$seen = [UX]::Watch($px, $py, $sx, $sy, 40, 12, 450)
+$vals = @($seen -split ' ' | Where-Object { $_ } | ForEach-Object { [double](($_ -split ':')[1]) })
+$between = @($vals | Where-Object { [math]::Abs($_ - $vals[0]) -ge 1 -and [math]::Abs($_ - $vals[-1]) -ge 1 }).Count
+Check 'with Windows'' animations off the plate snaps' ($between -eq 0 -and [math]::Abs($vals[-1] - $vals[0]) -ge 4) "brightness of the plate (ms:value): $seen"
+[Anim]::Set($true)
+Start-Sleep -Milliseconds 800
 ParkMouse 700 700
 Pf fence delete $sid | Out-Null
 }
