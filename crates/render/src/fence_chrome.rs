@@ -2420,9 +2420,13 @@ impl FenceChrome {
             w,
             COUNT_CAPSULE_H,
         );
-        // ControlFillColorSecondary-like: a faint wash of the text colour.
+        // The capsule is the number's ground. Under a light number it is a dark wash, so the
+        // number reads on a plate of any brightness: the light wash it was made the ground
+        // lighter still (2.1 : 1 over the Windows 11 wallpaper in dark mode). Under a dark
+        // number it stays the faint dark wash (ControlFillColorSecondary-like): dark text has
+        // contrast to spare on every plate that takes it.
         let wash = if foreground.text_secondary.r > 0.5 {
-            ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0x1A)
+            ColorF::from_rgba8(0, 0, 0, 0x38)
         } else {
             ColorF::from_rgba8(0, 0, 0, 0x0F)
         };
