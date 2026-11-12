@@ -3,7 +3,10 @@
 #   W  the walk: a first start on a desktop with forty files and shortcuts, recorded (the start at
 #      15 frames per second, the rest at 5), then what a new user tries. --var Lang=zh-CN sets
 #      the language as soon as the app answers (the boxes have no Chinese display language).
+#   K  the fences by keyboard alone: every step logs who has the keyboard and takes a screenshot.
+#   S  a first start while the disk keeps writes waiting (a 6 GB copy, as big-copy-save.ps1), recorded.
 #   C  the checks of this package's fixes (each fails on the round's base and passes after).
+# W, K and S are for looking (frames, screenshots, the job log); only C is a suite line.
 # Runs on a 1600x900 box at 100 %.
 if (-not $Part) { $Part = 'C' }
 if (-not $Lang) { $Lang = 'en' }
@@ -489,6 +492,50 @@ function FrKeys() {
   Check 'high contrast is off again' (-not [Hc]::On()) ''
 }
 if ($Part -match 'K') { FrKeys }
+
+# ---- S: a first start while C: keeps every write waiting. A 6 GB file without data, copied by
+# the shell from a helper process, stalls the volume for about 40 s on these boxes; the job's
+# own log and the recorder's frames would wait too, so the frames stay in memory.
+function FrSlowDisk() {
+  trap { PfTrap $_; continue }
+  Case 'slow disk: the first start'
+  if (PfAlive) { PfQuit }
+  Remove-Item -Recurse -Force "$PfApp\config", "$PfApp\notices.json" -ErrorAction SilentlyContinue
+  if (-not (Test-Path "$PfApp\pecofence.exe")) { New-Item -ItemType Directory -Force $PfApp | Out-Null; Copy-Item "$PfBin\*" $PfApp -Force }
+  New-Item -ItemType Directory -Force "$PfRun\big" | Out-Null
+  $f = [IO.File]::Create("$PfRun\big\fr-big.bin"); $f.SetLength([int64]6 * 1GB); $f.Close()
+  ParkMouse 800 850
+  $cmd = "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::CopyFile('$PfRun\big\fr-big.bin', '$PfRun\big\fr-copy.bin', 'AllDialogs')"
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  $copy = Start-Process powershell -PassThru -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', $cmd
+  Start-Sleep -Seconds 6
+  RecStart 'slow-start' -Fps 10 -InMemory
+  RecMark 'start PecoFence'
+  $env:PECOFENCE_INSTANCE = $PfInst
+  $env:RUST_LOG = 'pecofence=debug'
+  $t0 = $sw.ElapsedMilliseconds
+  Start-Process "$PfApp\pecofence.exe" -ArgumentList '--portable' -WorkingDirectory $PfApp
+  $tFence = -1; $tCard = -1; $tIcons = -1
+  while ($sw.ElapsedMilliseconds - $t0 -lt 30000) {
+    $t = $sw.ElapsedMilliseconds - $t0
+    if ($tFence -lt 0 -and (VisFences) -gt 0) { $tFence = $t }
+    if ($tIcons -lt 0 -and $tFence -ge 0 -and -not [W]::IconsVisible()) { $tIcons = $t }
+    $nw = [G]::FindWindowW('PecoFence.Notice', [NullString]::Value)
+    if ($tCard -lt 0 -and $nw -ne [IntPtr]::Zero -and [G]::IsWindowVisible($nw)) { $tCard = $t }
+    if ($tFence -ge 0 -and $tIcons -ge 0 -and $tCard -ge 0 -and $t -gt $tCard + 3000) { break }
+    Start-Sleep -Milliseconds 20
+  }
+  $tEnd = $sw.ElapsedMilliseconds - $t0
+  RecStop
+  $copyDone = $copy.WaitForExit(180000)
+  $tCopy = $sw.ElapsedMilliseconds
+  Log "slow disk: PecoFence started $t0 ms into the copy; first fence window at $tFence ms, Windows icons hidden at $tIcons ms, tip card at $tCard ms after the start; watched for $tEnd ms; the copy ended=$copyDone after $tCopy ms"
+  Shot 's-after'
+  Check 'slow disk: the fences, the hidden Windows icons and the tip card all came' ($tFence -ge 0 -and $tIcons -ge 0 -and $tCard -ge 0) "fence $tFence ms, icons hidden $tIcons ms, card $tCard ms"
+  if (PfAlive) { PfQuit }
+  Remove-Item -Recurse -Force "$PfRun\big" -ErrorAction SilentlyContinue
+}
+if ($Part -match 'S') { FrSlowDisk }
 
 # ---- C: the checks of this package's fixes.
 # The focus ring of the icon whose middle is at ($x, $y): the longest row of dark pixels in the
