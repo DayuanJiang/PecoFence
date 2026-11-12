@@ -822,7 +822,8 @@ impl App {
         };
         let rect = self.place_new_tool(w, h, x, y);
         let script = NewTool::Script(path.to_string_lossy().to_string());
-        self.create_tool_fence(script, None, Some(rect), x, y);
+        // Titled as its menu line reads (a file is named `pc-status` in some languages).
+        self.create_tool_fence(script, Some(kind.label()), Some(rect), x, y);
     }
 
     /// Fence menu: another script for fence `id` (runs it at once).

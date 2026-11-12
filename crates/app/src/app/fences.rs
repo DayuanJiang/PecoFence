@@ -1201,11 +1201,11 @@ impl App {
     }
 
     /// Picks a screen rectangle `cols` icon columns wide and `h_dip` tall for a new fence that
-    /// does not overlap any existing fence: beside `near` (right, left, below, above) the
-    /// snapping gap away, then centred on the point, then the free spot nearest to it,
-    /// finally centred on the point over what is there. Result is clamped into the work
-    /// area. The width is taken from the grid metrics, so a new fence shows exactly `cols`
-    /// columns.
+    /// does not overlap any existing fence: beside `near` (right, left, below, above; without
+    /// one, the fence under the point) the snapping gap away, then centred on the point, then
+    /// the free spot nearest to it, finally centred on the point over what is there. Result
+    /// is clamped into the work area. The width is taken from the grid metrics, so a new
+    /// fence shows exactly `cols` columns.
     pub(super) fn place_new_fence(
         &self,
         cols: u32,
@@ -1277,6 +1277,19 @@ impl App {
             right: left + w,
             bottom: top + h,
         };
+        // A menu opened on a fence that names no source (a tool, a smart fence): that fence.
+        let near = near.or_else(|| {
+            self.fences
+                .iter()
+                .find(|(_, f)| {
+                    let r = f.footprint_rect();
+                    !f.is_desktop_arranged()
+                        && pecofence_platform::desktop::is_visible(f.hwnd())
+                        && (r.left..r.right).contains(&x)
+                        && (r.top..r.bottom).contains(&y)
+                })
+                .map(|(id, _)| *id)
+        });
         let mut candidates = Vec::new();
         if let Some(src) = near
             .and_then(|id| self.fences.get(&id))
