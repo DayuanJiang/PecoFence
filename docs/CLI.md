@@ -422,9 +422,9 @@ drawn as a to-do with a check box.
 
 | Parameter | A click on the row |
 |---|---|
-| `href=<url>` | opens the URL (the default browser, or whatever program handles it) |
-| `open=<path>` | opens a file or folder as a double-click does; a relative path starts at the script's folder |
-| `run=<program>` (or SwiftBar's `bash=`), with `param1=`, `param2=` ... | runs the program with those arguments, without a window, in the script's folder; a relative path that exists there is taken from there, else from PATH. A .ps1, .py or .js runs through Windows PowerShell, `py -3` or `node`. A program that needs administrator rights and has no arguments starts through the shell, so Windows asks first |
+| `href=<url>` | opens an `http://` or `https://` address in the default browser. Any other address (`file:`, `mailto:`, `ms-settings:`, a path) needs the header line (see Rows that start programs) |
+| `open=<path>` | opens a folder, a document (a file of a type Windows does not class as dangerous to open: a text, a picture, a PDF) or an `http://` / `https://` address, as a double-click does; a relative path starts at the script's folder. A program, a script, a shortcut, a network path (`\\server\...`) or anything else needs the header line (see Rows that start programs) |
+| `run=<program>` (or SwiftBar's `bash=`), with `param1=`, `param2=` ... | needs the header line (see Rows that start programs). Runs the program with those arguments, without a window, in the script's folder; a relative path that exists there is taken from there, else from PATH. A .ps1, .py or .js runs through Windows PowerShell, `py -3` or `node`. A program that needs administrator rights and has no arguments starts through the shell, so Windows asks first |
 | `copy=<text>` | copies the text to the clipboard |
 | `action=<value>` | runs the same script again with `PECOFENCE_ACTION` set to the value and shows its new output |
 | `refresh=true` | runs the script again after the click; after a `run=` program, once that program has ended (waiting at most 60 seconds) |
@@ -474,6 +474,44 @@ for ($i = 0; $i -lt $lines.Count; $i++) { "$($lines[$i]) | action=toggle:$i" }
 "Open the list | open=""$file"""
 'PecoFence on GitHub | href=https://github.com/DayuanJiang/PecoFence color=blue'
 ```
+
+### Rows that start programs
+
+Rows start programs only in a script that allows it in a comment within the first 8 KB of the
+file:
+
+```powershell
+# <pecofence.allow>run</pecofence.allow>
+"Open Task Manager | run=taskmgr.exe"
+```
+
+Without that line `run=` and `bash=` do nothing, `href=` opens `http://` and `https://` addresses
+only, and `open=` opens folders, documents and `http://` / `https://` addresses only. A click that
+is refused shows a short message beside the pointer that names the line to add, and the log gets
+an info line with the script's file name and the parameter (never its value). With the line every
+parameter works as the table says. `copy=`, `action=` and `refresh=true` need no line: they start
+nothing but the script itself. In a .cmd or .bat file write the line after `::` (in a `rem` line
+cmd.exe takes `<` and `>` as redirections). A program (.exe) used as the script cannot carry the
+line: start it from a small .cmd or .ps1 that does.
+
+The reason: a row cannot tell text the script wrote from text it only passed on. A script that
+printed an issue title unchanged turned the title `x | run=calc.exe r=' k=v` into a row that
+started the calculator on a click (the built-in GitHub example of 0.3.0 to 0.3.3 did).
+
+### Printing text you did not write
+
+Text from the network, from a file somebody else can change or from another program (a title, a
+user name, a file name, a weather report) can hold `|`, quotes and line breaks, and then reads as
+parameters of the row or as a row of its own. Clean every such value before printing it, also in
+a script without the header line (a forged `href=` could still send the click to another web
+page), and build links from parts you trust:
+
+```powershell
+function Clean($text) { "$text" -replace '\|', '¦' -replace '[\r\n]+', ' ' -replace '["'']', [char]0x2019 }
+"#$([int]$i.number)  $(Clean $i.title) | href=https://github.com/$repo/issues/$([int]$i.number)"
+```
+
+A script with the header line has to clean every such value: PecoFence refuses nothing there.
 
 ### Streaming scripts
 

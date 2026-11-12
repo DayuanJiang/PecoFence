@@ -145,6 +145,17 @@ Each printed line is a row (at most 40 lines, 300 characters each); keep them sh
   red|green|orange|yellow|blue|purple|gray|#rrggbb, `icon=` (an emoji before the text), `tooltip=`.
   `---` is a separator; `[ ]` / `[x]` at the start makes a to-do (with `action=` its box ticks at
   once, then the script's output decides). Lines without parameters are plain text.
+- Rows start programs only when the script has `<pecofence.allow>run</pecofence.allow>` in a comment
+  in its first 8 KB. Without it `run=` / `bash=` do nothing, `href=` opens http(s) addresses only and
+  `open=` opens folders, documents (no programs, scripts, shortcuts or `\\server` paths) and http(s)
+  addresses only; a refused click shows a message naming the line. Add the line only to scripts that
+  need it, and tell the user you did.
+- Text the script did not write itself (from the network, a file others can change, another
+  program: titles, names, file names) can hold `|`, quotes and line breaks and then reads as the
+  row's parameters. Clean every such value before printing, in every script:
+  `function Clean($t) { "$t" -replace '\|', '¦' -replace '[\r\n]+', ' ' -replace '["'']', [char]0x2019 }`,
+  and build links from trusted parts (`href=https://github.com/$repo/issues/$([int]$i.number)`).
+  Never print such text in a script that has the allow line unless it is cleaned.
 - Every run gets `PECOFENCE=1`, `PECOFENCE_ACTION` (empty on a timed run), `PECOFENCE_DATA` (a folder
   of this fence's own: keep state there), `PECOFENCE_THEME` (light|dark), `PECOFENCE_FENCE` (its id).
 - Streaming: a comment `<pecofence.type>streamable</pecofence.type>` in the first 8 KB keeps the script
