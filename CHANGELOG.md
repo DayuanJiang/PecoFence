@@ -213,6 +213,7 @@
 - 「添加规则」 on the card that offers a sorting rule changes the card where it stands into 「已添加整理规则」. The offer vanished, one frame showed no card, and the second card faded in from nothing at the same place. The first card now takes the new texts, as 「下一条」 on the tips does.
 - The Menu key (or Shift+F10) on an icon opens the menu clear of that icon. With no room under the name, as in the lower half of the screen, Windows slid the menu up and it lay over the icon it was for. It now opens above or beside the icon; a right-click still opens it at the pointer.
 - The rectangle drawn on the bare desktop fades out together with the two buttons under it (「在此显示文件夹…」, 「新建栅栏」). It stood until the buttons had faded and then went in one frame.
+- A fence deleted while another card is up still gets its undo card. While a first-start tip, the update card or the rating offer stood at the corner (30 seconds each, the four tips one after another), 「删除栅栏」 and 「立即应用」 showed no 「撤销」 card at all. The undo card now shows at the nearest free place beside the other card, usually right above it, and each card answers its own buttons.
 
 ## 0.3.3
 

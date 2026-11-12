@@ -16,8 +16,10 @@
 #   run.sh --var Part=K ...   the Menu key on an icon: the menu opens clear of the icon
 #   run.sh --var Part=O ...   the two offer buttons after a rectangle on the bare desktop: the
 #                             rectangle fades out with them (it went in one frame after them)
+#   run.sh --var Part=U ...   a fence deleted while a tip card is up gets its undo card beside
+#                             the tip, and each card answers its own button (no test script)
 # Without --var every part runs. Record=1 also records the clips for the report.
-if (-not $Part) { $Part = 'NSTRMCKO' }
+if (-not $Part) { $Part = 'NSTRMCKOU' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
 $UpFiles = @('预算表 2026.xlsx', '会议纪要 11月.txt', '年度报告 2025 董事会审阅版（含附录）.pdf', '报告.txt', 'a.md')
@@ -538,6 +540,49 @@ function UpPartO() {
   UpClean
 }
 
+function UpPartU() {
+  trap { PfTrap $_; continue }
+  Case 'undo card beside another card'
+  UpClean
+  $anim = [Anim]::Get(); [Anim]::Set($true)
+  if (PfAlive) { PfQuit }
+  Remove-Item -Recurse -Force "$PfApp\config", "$PfApp\notices.json" -ErrorAction SilentlyContinue
+  if (-not (Test-Path "$PfApp\pecofence.exe")) { New-Item -ItemType Directory -Force $PfApp | Out-Null; Copy-Item "$PfBin\*" $PfApp -Force }
+  $env:PECOFENCE_INSTANCE = $PfInst
+  $env:RUST_LOG = 'pecofence=debug'
+  [G]::MoveTo(700, 450)
+  Start-Process "$PfApp\pecofence.exe" -ArgumentList '--portable' -WorkingDirectory $PfApp
+  WaitWin 'PecoFence.Control' 20 -Hidden | Out-Null
+  UpWaitNotice 30 | Out-Null
+  Start-Sleep -Seconds 3
+  Pf settings set language zh-CN | Out-Null
+  Start-Sleep -Seconds 2
+  # The first-start tip card is up; a fence is made and deleted from its menu.
+  $tip = UpNotice; $tipTitle = [L]::Text($tip); $tr = Rect $tip
+  Pf fence create --title '临时甲' --rect '300,300,300,200' | Out-Null
+  Start-Sleep -Seconds 2
+  UpMenuDelete '临时甲' | Out-Null
+  Start-Sleep -Milliseconds 1500
+  $cards = @([W]::Tops('PecoFence.Notice'))
+  $undo = $cards | Where-Object { [L]::Text($_) -match '已删除栅栏' } | Select-Object -First 1
+  $titles = ($cards | ForEach-Object { [L]::Text($_) }) -join ' | '
+  Shot 'u-two-cards'
+  Check 'a fence deleted while a tip card is up gets its undo card' ($null -ne $undo) "cards on screen: $titles"
+  $ur = if ($undo) { Rect $undo } else { $tr }
+  $apart = ($ur.R -le $tr.L -or $tr.R -le $ur.L -or $ur.B -le $tr.T -or $tr.B -le $ur.T)
+  Check 'the undo card stands clear of the tip card' ($undo -and $apart) "tip $($tr.L),$($tr.T),$($tr.R),$($tr.B); undo $($ur.L),$($ur.T),$($ur.R),$($ur.B)"
+  Crop 'u-two-cards-crop' ([Math]::Min($tr.L, $ur.L) - 20) ([Math]::Min($tr.T, $ur.T) - 20) 420 ([Math]::Max($tr.B, $ur.B) - [Math]::Min($tr.T, $ur.T) + 40) | Out-Null
+  # Each card answers its own button.
+  if ($undo) { [G]::Click($ur.R - 60, $ur.B - 30); Start-Sleep -Milliseconds 1300 }
+  Check '撤销 on the undo card brings the fence back' ($null -ne (UpFence '临时甲')) "临时甲=$($null -ne (UpFence '临时甲'))"
+  Check 'the tip card stays as it was' ([G]::IsWindowVisible($tip) -and [L]::Text($tip) -eq $tipTitle) "title='$([L]::Text($tip))' (was '$tipTitle')"
+  [G]::Click($tr.R - 60, $tr.B - 30); Start-Sleep -Milliseconds 1000
+  Check 'the tip card''s button shows the next tip' ([G]::IsWindowVisible($tip) -and [L]::Text($tip) -ne $tipTitle) "title='$([L]::Text($tip))' (was '$tipTitle')"
+  [Anim]::Set($anim)
+  PfQuit
+  UpClean
+}
+
 if ($Part -match 'N') { UpPartN }
 if ($Part -match 'S') { UpPartS }
 if ($Part -match 'T') { UpPartT }
@@ -546,3 +591,4 @@ if ($Part -match 'M') { UpPartM }
 if ($Part -match 'C') { UpPartC }
 if ($Part -match 'K') { UpPartK }
 if ($Part -match 'O') { UpPartO }
+if ($Part -match 'U') { UpPartU }

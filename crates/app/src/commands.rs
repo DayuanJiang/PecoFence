@@ -520,7 +520,7 @@ pub enum Command {
     /// JSON message from the smart fence editor's page.
     EditorMessage(String),
     /// The rating notice was clicked or went away (see `notice.rs`).
-    Notice(crate::notice::NoticeEvent),
+    Notice(isize, crate::notice::NoticeEvent),
     /// Ctrl+Z in a fence (see `app/undo.rs`).
     Undo,
 }

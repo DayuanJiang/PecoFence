@@ -33,8 +33,11 @@ const MARGIN: f32 = 12.0;
 
 thread_local! {
     /// Cards that were answered and fade out by themselves ([`Notice::leave`]). The next card
-    /// drops them before it shows: the window class can be registered by one card at a time.
+    /// drops them as it shows.
     static LEAVING: RefCell<Vec<Notice>> = const { RefCell::new(Vec::new()) };
+    /// The cards' window class, registered with the first card: two cards can show at once
+    /// (an undo card above a tip).
+    static NOTICE_CLASS: RefCell<Option<WindowClass>> = const { RefCell::new(None) };
 }
 
 /// The `locale` for [`Notice::show`] in the UI language (fonts for Han, kana, Hangul).
@@ -134,7 +137,6 @@ pub struct Notice {
     window: Window,
     _target: DesktopWindowTarget,
     view: Rc<RefCell<View>>,
-    _class: WindowClass,
 }
 
 impl Notice {
@@ -194,7 +196,7 @@ impl Notice {
         title: &str,
         avoid: &[RECT],
     ) -> Result<Self> {
-        // A card still fading out goes now: this one needs its window class.
+        // A card still fading out goes now.
         LEAVING.with(|l| l.borrow_mut().clear());
         let monitor = monitors::enumerate()
             .into_iter()
@@ -238,19 +240,28 @@ impl Notice {
             corner
         };
 
-        let class = WindowClass::register(CLASS, ClassOptions::default())?;
+        NOTICE_CLASS.with(|c| -> Result<()> {
+            if c.borrow().is_none() {
+                *c.borrow_mut() = Some(WindowClass::register(CLASS, ClassOptions::default())?);
+            }
+            Ok(())
+        })?;
         let view: Rc<RefCell<Option<Rc<RefCell<View>>>>> = Rc::new(RefCell::new(None));
         let handler_view = view.clone();
         let queue: CommandQueue = ctx.queue.clone();
-        let window = WindowBuilder::new(&class)
-            .title(title)
-            .style(style::POPUP)
-            .ex_style(style::EX_TOPMOST | style::EX_TOOLWINDOW | style::EX_NOREDIRECTIONBITMAP)
-            .bounds(rect.left, rect.top, w, h)
-            .create(Box::new(move |hwnd, m, wparam, lparam| {
-                let view = handler_view.borrow().clone()?;
-                handle(hwnd, m, wparam, lparam, &view, &queue)
-            }))?;
+        let window = NOTICE_CLASS.with(|c| {
+            let c = c.borrow();
+            let class = c.as_ref().ok_or_else(windows_core::Error::empty)?;
+            WindowBuilder::new(class)
+                .title(title)
+                .style(style::POPUP)
+                .ex_style(style::EX_TOPMOST | style::EX_TOOLWINDOW | style::EX_NOREDIRECTIONBITMAP)
+                .bounds(rect.left, rect.top, w, h)
+                .create(Box::new(move |hwnd, m, wparam, lparam| {
+                    let view = handler_view.borrow().clone()?;
+                    handle(hwnd, m, wparam, lparam, &view, &queue)
+                }))
+        })?;
         let hwnd = window.hwnd();
         let _ = dwm::set_corner_preference(hwnd, dwm::CornerPreference::Round);
         let _ = dwm::set_immersive_dark_mode(
@@ -302,7 +313,6 @@ impl Notice {
             window,
             _target: target,
             view: shared,
-            _class: class,
         };
         // A flyout already open over the corner (the taskbar's hidden icons) stays on top.
         notice.go_below(desktop::foreground_window());
@@ -371,6 +381,12 @@ impl Notice {
         window::set_title(hwnd, title);
         self.window.set_timer(TIMER_DISMISS, SHOW_FOR_MS);
         Ok(())
+    }
+
+    /// The card's window: its events name it ([`Command::Notice`]), and another card keeps
+    /// clear of its place.
+    pub fn hwnd(&self) -> HWND {
+        self.window.hwnd()
     }
 
     /// The card was answered and the app keeps it while it acts on the answer, for a card that
@@ -536,7 +552,7 @@ fn handle(
                 fade_out(hwnd, view);
             } else {
                 // What the click opens should not wait for the exit fade.
-                queue.push(Command::Notice(NoticeEvent::Action));
+                queue.push(Command::Notice(hwnd.0 as isize, NoticeEvent::Action));
             }
             Some(0)
         }
@@ -568,11 +584,12 @@ fn handle(
                     drop(v);
                     desktop::hide_window(hwnd);
                 } else if v.closing {
-                    queue.push(Command::Notice(if v.declined {
+                    let event = if v.declined {
                         NoticeEvent::Declined
                     } else {
                         NoticeEvent::Dismissed
-                    }));
+                    };
+                    queue.push(Command::Notice(hwnd.0 as isize, event));
                 }
             }
             Some(0)

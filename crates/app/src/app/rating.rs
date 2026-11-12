@@ -127,13 +127,15 @@ impl App {
 
     /// A notice was clicked or went away. The welcome and the rating offer never show at
     /// the same time.
-    pub(super) fn on_notice(&mut self, event: crate::notice::NoticeEvent) {
-        if let Some((notice, fence)) = self.undo_notice.take() {
+    pub(super) fn on_notice(&mut self, card: isize, event: crate::notice::NoticeEvent) {
+        // Two cards can be up (an undo card above a tip): the event names its card.
+        let is = |n: &crate::notice::Notice| n.hwnd().0 as isize == card;
+        if let Some((notice, fence)) = self.undo_notice.take_if(|(n, _)| is(n)) {
             notice.leave();
             self.on_undo_notice(fence, event);
             return;
         }
-        if let Some((notice, which)) = self.welcome.take() {
+        if let Some((notice, which)) = self.welcome.take_if(|(n, _)| is(n)) {
             // 「下一条」: the card stays and shows the next tip.
             if let Some(next) = self.next_tip(&which, event) {
                 self.show_next_tip(notice, next);
@@ -153,16 +155,25 @@ impl App {
             }
             return;
         }
-        if self.update_notice_open() {
+        if self.update_notice().is_some_and(is) {
             self.on_update_notice(event);
             return;
         }
-        if let Some(notice) = self.rating.notice.take() {
-            notice.leave();
-        }
+        let Some(notice) = self.rating.notice.take_if(|n| is(n)) else {
+            tracing::debug!(?event, "notice event from a card that is gone");
+            return;
+        };
+        notice.leave();
         if event == crate::notice::NoticeEvent::Action {
             self.open_store_rating();
         }
+    }
+
+    /// Where the cards on screen stand (screen px): another card keeps clear of them.
+    pub(super) fn notice_rects(&self) -> Vec<RECT> {
+        self.notices()
+            .map(|n| window::window_rect(n.hwnd()))
+            .collect()
     }
 
     /// A welcome, what's-new, 对话框跳转 or rating notice is on screen.

@@ -3109,7 +3109,7 @@ impl App {
             }
             Command::SettingsMessage(json) => self.on_settings_message(&json),
             Command::EditorMessage(json) => self.on_editor_message(&json),
-            Command::Notice(event) => self.on_notice(event),
+            Command::Notice(card, event) => self.on_notice(card, event),
             Command::Undo => self.undo_last("Ctrl+Z"),
         }
     }
