@@ -884,8 +884,11 @@ impl App {
             crate::scripts::Example::ClipboardHistory => (380.0, 560.0),
         };
         let rect = self.place_new_fence_dip(w, h, x, y, None);
+        // An example whose script names its fence does so in English: the fence gets the
+        // example's name in PecoFence's language, as the menu and the settings page show it.
+        let title = crate::scripts::title_of(&path).map(|_| kind.label());
         let script = NewTool::Script(path.to_string_lossy().to_string());
-        self.create_tool_fence(script, None, Some(rect), x, y);
+        self.create_tool_fence(script, title, Some(rect), x, y);
     }
 
     /// Fence menu: another script for fence `id` (runs it at once).

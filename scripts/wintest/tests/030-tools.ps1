@@ -101,7 +101,7 @@ if ($st.Count) {
 }
 PageClick '#addClipboard'; Start-Sleep -Seconds 8
 $ch = @(ToolFences 'script' | Where-Object { $_.title -eq 'Clipboard History' })
-Check 'Add on Clipboard history makes its script fence, named by its header' ($ch.Count -eq 1) ((ToolFences 'script' | ForEach-Object { $_.title }) -join ', ')
+Check 'Add on Clipboard history makes its script fence, named as the list names it' ($ch.Count -eq 1) ((ToolFences 'script' | ForEach-Object { $_.title }) -join ', ')
 if ($ch.Count) {
   $g = PfJson fence get $ch[0].id
   $s = if ($g.fence) { $g.fence.script } else { $g.script }

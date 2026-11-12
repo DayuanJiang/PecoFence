@@ -5,7 +5,14 @@
 #   run.sh --var Part=A   basics, private formats, row texts, blur     (default: A)
 #   run.sh --var Part=B   pin, restart, Delete all, purge, files left on the disk
 #   run.sh --var Part=C   a 51 MB picture, 100000 files, a 200000 character text, cost at rest
+#   run.sh --var Part=D   in Chinese: the fence's title and its rows
 if (-not $Part) { $Part = 'A' }
+# The menu texts, the fence's title and two of its rows in the language of the part.
+$L = if ($Part -eq 'D') {
+  @{ lang = 'zh-CN'; add = '^添加到桌面'; fence = '新建栅栏'; tool = '^新建小工具'; weather = '天气'; pick = '^剪贴板历史$'; title = '剪贴板历史'; show = '显示条目'; empty = '还没有复制任何内容' }
+} else {
+  @{ lang = 'en'; add = '^Add to desktop'; fence = '^New fence'; tool = '^New tool'; weather = 'Weather'; pick = '^Clipboard history$'; title = 'Clipboard History'; show = 'Show entries'; empty = 'Nothing copied yet' }
+}
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 
 # Hit rects of a dump field (script_rows) as objects: i (row * 100 + cell), l, t, r, b in content DIPs.
@@ -36,11 +43,11 @@ function ChWaitGone($pattern, $sec = 10) {
 function ChLine($pattern) { $l = ChLines; for ($i = 0; $i -lt $l.Count; $i++) { if ($l[$i] -match $pattern) { return $i } }; return -1 }
 # The clickable cells drawn for an output line: their cell numbers.
 function ChCells($line) {
-  $w = DumpOf 'Clipboard History' 5
+  $w = DumpOf $script:ChTitle 5
   return @(DumpRects $w 'script_rows' | Where-Object { [math]::Floor($_.i / 100) -eq $line } | ForEach-Object { $_.i % 100 })
 }
 function ChClick($line, $cell) {
-  $w = DumpOf 'Clipboard History' 5
+  $w = DumpOf $script:ChTitle 5
   $r = @(DumpRects $w 'script_rows' | Where-Object { $_.i -eq $line * 100 + $cell }) | Select-Object -First 1
   if (-not $r) { Log "no cell $line/$cell in $(DumpVal $w 'script_rows')"; return $false }
   $p = ContentPt $w (($r.l + $r.r) / 2) (($r.t + $r.b) / 2)
@@ -83,40 +90,40 @@ function Cpu($proc, $sec) {
   $proc.Refresh(); return [math]::Round(($proc.TotalProcessorTime.TotalMilliseconds - $a) / ($sec * 10.0), 2)
 }
 # Opens 添加到桌面 > 新建小工具 of a plain fence's menu and picks an entry.
-function AddTool($pick) {
+function AddTool() {
   $f = @(@((PfJson fence list)) | Where-Object { $_ -and -not $_.tool }) | Select-Object -First 1
   $wr = $f.windowRect
   [G]::RClick([int]($wr.x + $wr.w / 2), [int]($wr.y + 14)); Start-Sleep -Milliseconds 700
   $h = MenuWin 5
-  $p = MenuPoint $h '^Add to desktop'
+  $p = MenuPoint $h $L.add
   if (-not $p) { return $false }
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 700
   $add = $null
-  foreach ($m in @([W]::Tops('#32768'))) { if ((MenuTexts $m) -match '^New fence') { $add = $m } }
+  foreach ($m in @([W]::Tops('#32768'))) { if ((MenuTexts $m) -match $L.fence) { $add = $m } }
   if (-not $add) { return $false }
-  $p = MenuPoint $add '^New tool'
+  $p = MenuPoint $add $L.tool
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 700
   $sub = $null
-  foreach ($m in @([W]::Tops('#32768'))) { if ((MenuTexts $m) -match 'Weather') { $sub = $m } }
+  foreach ($m in @([W]::Tops('#32768'))) { if ((MenuTexts $m) -match $L.weather) { $sub = $m } }
   if (-not $sub) { return $false }
-  return [bool](MenuPick $pick $sub)
+  return [bool](MenuPick $L.pick $sub)
 }
 
 Case 'setup'
 CloseWindows
 Set-Culture en-US
 [Windows.Forms.Clipboard]::Clear()
-PfStart -Lang en -Script (DumpScript 250 12)
+PfStart -Lang $L.lang -Script (DumpScript 250 12)
 Start-Sleep -Seconds 2
-$picked = AddTool '^Clipboard history$'
+$picked = AddTool
 Start-Sleep -Seconds 6
-$ch = @(@((PfJson fence list)) | Where-Object { $_ -and $_.tool -eq 'script' -and $_.title -eq 'Clipboard History' })
-Check 'New tool > Clipboard history makes a script fence named by the script' ($picked -and $ch.Count -eq 1) "picked=$picked fences=$((@((PfJson fence list)) | ForEach-Object { $_.title }) -join ', ')"
-$script:ChId = "$($ch[0].id)"
+$ch = @(@((PfJson fence list)) | Where-Object { $_ -and $_.tool -eq 'script' })
+Check 'New tool > Clipboard history makes a script fence with the name the menu shows' ($picked -and $ch.Count -eq 1 -and $ch[0].title -eq $L.title) "picked=$picked fences=$((@((PfJson fence list)) | ForEach-Object { $_.title }) -join ', ')"
+$script:ChId = "$($ch[0].id)"; $script:ChTitle = "$($ch[0].title)"
 Pf fence move $script:ChId --x 900 --y 80 | Out-Null
 Pf fence resize $script:ChId --w 420 --h 600 | Out-Null
-Check 'the script keeps running and shows its boxes' ((ChWait 'Show entries' 20) -and (FenceGet $script:ChId).script.running) ((ChLines)[0])
-Check 'what was on the clipboard before is not listed' ((ChWait 'Nothing copied yet' 15)) ((ChLines) -join ' / ')
+Check 'the script keeps running and shows its boxes' ((ChWait $L.show 20) -and (FenceGet $script:ChId).script.running) ((ChLines)[0])
+Check 'what was on the clipboard before is not listed' ((ChWait $L.empty 15)) ((ChLines) -join ' / ')
 ParkMouse
 
 if ($Part -eq 'A') {
@@ -185,19 +192,19 @@ if ($Part -eq 'A') {
   Check 'a click on an entry puts it on the clipboard again' ($clicked -and $clip -eq 'HELLO WORLD 12345') "clip='$clip'"
 
   Case 'A5 blur'
-  $w = DumpOf 'Clipboard History' 5
+  $w = DumpOf $script:ChTitle 5
   $seen = OcrText $w.l $w.t ($w.r - $w.l) ($w.b - $w.t) 'a5-shown'
   Check 'shown, the text can be read off the screen (OCR)' ($seen -match 'HELLO\s*WORLD') "ocr=$($seen -replace '\s+', ' ')"
   $clicked = ChClick 0 0
   $hid = ChWaitGone 'HELLO WORLD 12345' 6
   Check 'Show entries unticked: no entry text is left in what the script prints' ($clicked -and $hid -and (ChOut) -notmatch 'ALLOWEDCHARLIE|one\.txt') ((ChLines) -join ' / ')
   Start-Sleep -Seconds 1
-  $w = DumpOf 'Clipboard History' 5
+  $w = DumpOf $script:ChTitle 5
   $seen = OcrText $w.l $w.t ($w.r - $w.l) ($w.b - $w.t) 'a5-blurred'
   Check 'blurred, OCR reads none of the texts, file names or the picture off the screen' ($seen -notmatch 'HELLO|WORLD|12345|ALLOWED|CHARLIE|one\.txt|PICTURE|4711') "ocr=$($seen -replace '\s+', ' ')"
   Shot 'a5-blurred'
   $l = ChLine 'copy:\d+'
-  $w = DumpOf 'Clipboard History' 5
+  $w = DumpOf $script:ChTitle 5
   $r = @(DumpRects $w 'script_rows' | Where-Object { $_.i -eq $l * 100 }) | Select-Object -First 1
   $p = ContentPt $w (($r.l + $r.r) / 2) (($r.t + $r.b) / 2)
   [G]::MoveTo($p[0], $p[1]); Start-Sleep -Milliseconds 1800
@@ -249,7 +256,7 @@ if ($Part -eq 'B') {
   Check 'after PecoFence quits no picture that was not pinned stays on the disk' ($full.Count -eq 0) "left in images: $($left -join ',')"
   $alive = [bool](ChProc)
   Check 'the script ends with PecoFence' (-not $alive) "alive=$alive"
-  PfStart -Lang en -Script (DumpScript 250 10)
+  PfStart -Lang $L.lang -Script (DumpScript 250 10)
   Start-Sleep -Seconds 4
   Check 'after a restart the pinned entry is back' (ChWait 'KEEPME[^\n]*checked=true' 25) ((ChLines) -join ' / ')
   Check 'and the others are gone' ((ChOut) -notmatch 'LOSEME|image=') ((ChLines) -join ' / ')
@@ -337,6 +344,14 @@ if ($Part -eq 'C') {
   Check 'a 200000 character text is listed, cut to one line' ($came -and (ChLines)[(ChLine 'LONGTEXT')].Length -lt 2100) "line length $((ChLines)[(ChLine 'LONGTEXT')].Length); script cpu with the purge counting down=$busy%"
   $frames = @(PfLogAll | Select-String -Pattern 'animation run' | Select-Object -Last 3 | ForEach-Object { $_.Line })
   Log "frame runs: $($frames -join ' // ')"
+}
+
+if ($Part -eq 'D') {
+  Case 'D1 in Chinese'
+  Check 'the rows are in Chinese' ((ChLines)[1] -match '全部删除' -and (ChLines)[1] -match '清除条目') ((ChLines)[1])
+  ClipWith '中文条目 12345'
+  Check 'a copied Chinese text is listed' (ChWait '中文条目 12345') ((ChLines) -join ' / ')
+  Shot 'd1-chinese'
 }
 
 Case 'cleanup'
