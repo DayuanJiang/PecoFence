@@ -1830,6 +1830,16 @@ fn hover_switches_only_to_another_tab() {
     assert_eq!(hover_switch_target(None, 0, 3, true, false), None);
 }
 
+#[test]
+fn hover_switch_waits_less_after_the_first_one() {
+    // The first tab waits the hover delay of 「展开快慢」; the tabs after it the short wait.
+    assert_eq!(tab_hover_wait_ms(400, false), 400);
+    assert_eq!(tab_hover_wait_ms(400, true), TAB_HOVER_NEXT_MS);
+    assert_eq!(tab_hover_wait_ms(1000, true), TAB_HOVER_NEXT_MS);
+    // Never longer than the full wait.
+    assert_eq!(tab_hover_wait_ms(20, true), 20);
+}
+
 /// A 300 x 400 px window at 100 %: 6 px edges, corners that reach 16 px along each edge.
 fn edge(left: i32, top: i32) -> Option<isize> {
     resize_edge_at((left, top, 300 - left, 400 - top), (300, 400), 6, 6, 16)

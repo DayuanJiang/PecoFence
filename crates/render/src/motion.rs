@@ -34,6 +34,10 @@ use windows_time::TimeSpan;
 
 /// `ControlFasterAnimationDuration`: fades (hover in/out, tooltip, scrollbar opacity).
 pub const FASTER: Duration = Duration::from_millis(83);
+/// Where a fade-in that answers a click or a key starts, so that its first frame already
+/// shows the answer: from 0 the first frame showed nothing, and a tab's new page or a
+/// filtered list came one frame late.
+pub const FADE_IN_FIRST: f32 = 0.2;
 /// `ControlFastAnimationDuration`: small moves, exits, collapse, scrollbar expand/contract.
 pub const FAST: Duration = Duration::from_millis(167);
 /// `ControlNormalAnimationDuration`: medium moves, entrances.

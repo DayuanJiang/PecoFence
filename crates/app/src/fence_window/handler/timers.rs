@@ -357,6 +357,12 @@ pub(super) fn on_timer_tab_hover(
             && !in_size_move.get()
             && !window::key_down(msg::VK_LBUTTON)
         {
+            // A switch that follows another hover switch shows its content at once: the swap's
+            // fade and slide would run into the next tab's during a sweep along the strip.
+            v.tab_swap_at_once = v.tab_hover_quick;
+            v.tab_hover_quick = true;
+            v.tab_strip_left = None;
+            tracing::debug!(tab = i, at_once = v.tab_swap_at_once, "tab hover switch");
             queue.push(Command::SwitchTab {
                 host: *fence_id,
                 tab: v.tabs[i].id,

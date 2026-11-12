@@ -466,7 +466,9 @@ pub(super) fn on_mousemove(
     let on_control = up || chev || tab.is_some();
     // With 「鼠标悬停时切换标签页」 on, resting on another tab switches to it after the hover
     // delay of 「展开快慢」 (the one a rolled fence waits); moving onto a different tab restarts
-    // the wait.
+    // the wait. Once a hover has switched a tab, the next ones follow the pointer after
+    // `TAB_HOVER_NEXT_MS`, as Windows' menus and tips do.
+    v.note_tab_strip_pointer(tab.is_some());
     let switch_to = hover_switch_target(
         tab.filter(|&i| v.tab_fully_shown(i)),
         v.active_index(),
@@ -477,8 +479,9 @@ pub(super) fn on_mousemove(
     if switch_to != v.tab_hover_switch {
         v.tab_hover_switch = switch_to;
         if let Some(i) = switch_to {
-            let delay_ms = behavior.hover_open_ms();
-            tracing::debug!(tab = i, delay_ms, "tab hover switch armed");
+            let quick = v.tab_hover_quick;
+            let delay_ms = tab_hover_wait_ms(behavior.hover_open_ms(), quick);
+            tracing::debug!(tab = i, delay_ms, quick, "tab hover switch armed");
             window::set_timer(hwnd, TIMER_TAB_HOVER, delay_ms);
         } else {
             window::kill_timer(hwnd, TIMER_TAB_HOVER);

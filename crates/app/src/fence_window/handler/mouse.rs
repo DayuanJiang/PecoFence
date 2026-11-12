@@ -107,6 +107,7 @@ pub(super) fn on_mouseleave(
         {
             v.hide_tip();
         }
+        v.note_tab_strip_pointer(false);
         let chrome_changed = std::mem::take(&mut v.up_hovered)
             | std::mem::take(&mut v.chevron_hovered)
             | v.tab_hover.take().is_some();
@@ -165,6 +166,8 @@ pub(super) fn on_lbuttondown(
         v.cancel_pending_rename();
         v.suppress_dblclk = false;
         v.hide_tip();
+        // A press ends the short wait of hover switches that follow each other.
+        v.tab_hover_quick = false;
         // A press where the fence would resize without its lock (an edge band inside the
         // plate). It is remembered for the lock glyph's pulse only further down, once nothing
         // else has taken the press: the scrollbar, a tab, a header, a tool's row and an icon
@@ -837,6 +840,7 @@ pub(super) fn on_rbuttondown(
     if window::get_capture() != hwnd {
         if let Some(v) = view.borrow_mut().as_mut() {
             v.rbutton_press = Some((msg::lo_i16(lparam), msg::hi_i16(lparam)));
+            v.tab_hover_quick = false;
         }
         window::set_capture(hwnd);
         return Some(0);
