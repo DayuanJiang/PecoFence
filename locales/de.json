@@ -816,6 +816,7 @@
   "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Auf Everything 1.5 gewechselt. Es startet ab jetzt auch bei der Anmeldung bei Windows",
   "已复制": "Kopiert",
   "复制失败，请重试": "Kopieren fehlgeschlagen. Bitte erneut versuchen.",
+  "这个脚本不能启动程序。要允许，在脚本开头的注释里加上：{0}": "Dieses Skript darf keine Programme starten. Zum Erlauben das hier in einen Kommentar am Anfang des Skripts schreiben: {0}",
   "搜索别名\u0004字体大小|字号|放大文字|看不清": "Schriftgröße|Schrift größer|größerer Text|schwer lesbar",
   "新建智能栅栏": "Neuer intelligenter Bereich",
   "智能栅栏": "Intelligenter Bereich",

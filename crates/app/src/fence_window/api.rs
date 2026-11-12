@@ -1698,14 +1698,33 @@ impl FenceWindow {
 
     /// A script's copy action uses a short, non-activating tip beside the pointer.
     pub fn show_script_copy_result(&self, index: usize, copied: bool) {
+        let text = if copied {
+            pecofence_core::i18n::text("已复制")
+        } else {
+            pecofence_core::i18n::text("复制失败，请重试")
+        };
+        self.show_script_row_tip(index, text, 2000);
+    }
+
+    /// A click on a script row that would start a program, in a script whose header does not
+    /// allow that: the tip beside the pointer says so and names the line to add.
+    pub fn show_script_row_refused(&self, index: usize) {
+        // The line to add goes on a line of its own, so the tip does not break it in two.
+        let text = pecofence_core::i18n::format(
+            "这个脚本不能启动程序。要允许，在脚本开头的注释里加上：{0}",
+            &["\n<pecofence.allow>run</pecofence.allow>".to_string()],
+        );
+        // Long enough to read both sentences.
+        let secs = pecofence_platform::sysparams::message_duration_secs().max(8);
+        self.show_script_row_tip(index, &text, secs * 1000);
+    }
+
+    /// `text` in a non-activating tip beside the pointer for `ms`, as the result of a click
+    /// on script row `index`.
+    fn show_script_row_tip(&self, index: usize, text: &str, ms: u32) {
         self.with_view(|v| {
             v.hide_tip();
             v.tip_target = Some(TipTarget::ScriptRow(index));
-            let text = if copied {
-                pecofence_core::i18n::text("已复制")
-            } else {
-                pecofence_core::i18n::text("复制失败，请重试")
-            };
             let pt = window::cursor_pos();
             let scale = v.scale();
             v.show_tip_text_at(
@@ -1713,7 +1732,7 @@ impl FenceWindow {
                 pt.x + (12.0 * scale).round() as i32,
                 pt.y + (20.0 * scale).round() as i32,
             );
-            window::set_timer(v.hwnd, TIMER_TIP_HIDE, 2000);
+            window::set_timer(v.hwnd, TIMER_TIP_HIDE, ms);
         });
     }
 

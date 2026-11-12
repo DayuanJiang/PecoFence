@@ -816,6 +816,7 @@
   "已改用 Everything 1.5，以后登录 Windows 时也会启动它": "Switched to Everything 1.5. It also starts when you sign in to Windows from now on",
   "已复制": "Copied",
   "复制失败，请重试": "Copy failed. Try again.",
+  "这个脚本不能启动程序。要允许，在脚本开头的注释里加上：{0}": "This script may not start programs. To allow it, add this to a comment at the top of the script: {0}",
   "搜索别名\u0004字体大小|字号|放大文字|看不清": "font size|text size|bigger text|larger font|hard to read",
   "新建智能栅栏": "New smart fence",
   "智能栅栏": "Smart fence",

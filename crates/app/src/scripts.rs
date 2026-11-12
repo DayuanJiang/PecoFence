@@ -252,13 +252,64 @@ pub struct Stream {
     input: Option<mpsc::Sender<String>>,
 }
 
-/// The first 8 KB of `path` mark it as a streaming script (the tag sits in the header).
-pub fn is_streamable(path: &Path) -> bool {
+/// The first 8 KB of `path`, where a script's header comments sit.
+fn header(path: &Path) -> String {
     let mut head = vec![0u8; 8 * 1024];
     let n = std::fs::File::open(path)
         .and_then(|mut f| f.read(&mut head))
         .unwrap_or(0);
-    pecofence_core::script_output::is_streamable(&String::from_utf8_lossy(&head[..n]))
+    String::from_utf8_lossy(&head[..n]).into_owned()
+}
+
+/// The first 8 KB of `path` mark it as a streaming script (the tag sits in the header).
+pub fn is_streamable(path: &Path) -> bool {
+    pecofence_core::script_output::is_streamable(&header(path))
+}
+
+/// The first 8 KB of `path` allow its rows to start programs
+/// (`<pecofence.allow>run</pecofence.allow>` in the header).
+pub fn allows_run(path: &Path) -> bool {
+    pecofence_core::script_output::allows_run(&header(path))
+}
+
+/// What a row's `href=` / `open=` value `target` points at, for
+/// `script_output::click_allowed`; `path` is the value as a path (a relative one already
+/// taken from the script's folder).
+pub fn target_kind(target: &str, path: &Path) -> pecofence_core::script_output::TargetKind {
+    use pecofence_core::script_output::{TargetKind, is_web_address};
+    if is_web_address(target) {
+        return TargetKind::Web;
+    }
+    // A network path is not looked at: asking whether it exists already signs in to that
+    // server.
+    if target.starts_with(r"\\") || target.starts_with("//") {
+        return TargetKind::Other;
+    }
+    if path.is_dir() {
+        return TargetKind::Folder;
+    }
+    // Windows drops dots and spaces at the end of a name: `a.exe.` opens `a.exe`.
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().trim_end_matches(['.', ' ']).to_string())
+        .unwrap_or_default();
+    // No extension (the shell would look for a program of that name) or a stream of a file
+    // (`a.txt:b.exe`) is nothing to judge by.
+    let ext = match name.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() && !ext.is_empty() && !name.contains(':') => {
+            ext.to_lowercase()
+        }
+        _ => return TargetKind::Other,
+    };
+    // What PecoFence itself runs as a script (.py runs when Python is installed), and what
+    // Windows classes as dangerous to open.
+    let runs = command_for(Path::new(&name)).is_some()
+        || pecofence_platform::shell::is_dangerous_type(&ext);
+    if !runs && path.is_file() {
+        TargetKind::Document
+    } else {
+        TargetKind::Other
+    }
 }
 
 /// What a streaming script shows, line by line, as SwiftBar does: every line is added at
@@ -757,6 +808,101 @@ mod tests {
         let many: String = (0..100).map(|i| format!("{i}\n")).collect();
         assert_eq!(clean(&many).lines().count(), MAX_LINES);
         assert_eq!(clean(&"x".repeat(1000)).chars().count(), MAX_LINE_CHARS);
+    }
+
+    #[test]
+    fn row_targets_are_told_apart() {
+        use pecofence_core::script_output::TargetKind::*;
+        let dir = std::env::temp_dir().join(format!("pf-row-targets-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("文件夹.exe")).unwrap();
+        for name in [
+            "说明.txt",
+            "图.png",
+            "a.exe",
+            "b.bat",
+            "c.cmd",
+            "d.lnk",
+            "e.ps1",
+            "f.py",
+            "g.vbs",
+            "h.msi",
+            "i.url",
+            "j.js",
+            "noext",
+        ] {
+            std::fs::write(dir.join(name), "x").unwrap();
+        }
+        let kind = |name: &str| {
+            let path = dir.join(name);
+            target_kind(&path.to_string_lossy(), &path)
+        };
+        assert_eq!(kind("说明.txt"), Document);
+        assert_eq!(kind("图.png"), Document);
+        // A folder is a folder whatever its name ends in.
+        assert_eq!(kind("文件夹.exe"), Folder);
+        for name in [
+            "a.exe",
+            "b.bat",
+            "c.cmd",
+            "d.lnk",
+            "e.ps1",
+            "f.py",
+            "g.vbs",
+            "h.msi",
+            "i.url",
+            "j.js",
+            "noext",
+            // Windows opens a.exe for these.
+            "a.exe.",
+            "a.exe ",
+            "A.EXE",
+            // A stream of a file, a file that is not there.
+            "说明.txt:b.exe",
+            "missing.txt",
+        ] {
+            assert_eq!(kind(name), Other, "{name}");
+        }
+        let other = |target: &str| target_kind(target, Path::new(target));
+        assert_eq!(other("https://github.com/a/b/issues/1"), Web);
+        assert_eq!(other("HTTP://example.com/a.exe"), Web);
+        for target in [
+            "file:///C:/Windows/System32/notepad.exe",
+            "ms-settings:display",
+            "shell:AppsFolder",
+            r"\\server\share\a.txt",
+            "//server/share",
+            "notepad",
+            "",
+        ] {
+            assert_eq!(other(target), Other, "{target}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_script_allows_programs_in_its_header() {
+        let dir = std::env::temp_dir().join(format!("pf-allow-run-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let with = dir.join("with.ps1");
+        std::fs::write(
+            &with,
+            "\u{feff}# <pecofence.allow>run</pecofence.allow>\r\n\"Notepad | run=notepad.exe\"\r\n",
+        )
+        .unwrap();
+        assert!(allows_run(&with));
+        // A tag the script only prints far below its header does not count.
+        let below = dir.join("below.ps1");
+        std::fs::write(
+            &below,
+            format!(
+                "{}\"<pecofence.allow>run</pecofence.allow>\"\n",
+                "# filler\n".repeat(1200)
+            ),
+        )
+        .unwrap();
+        assert!(!allows_run(&below));
+        assert!(!allows_run(&dir.join("missing.ps1")));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

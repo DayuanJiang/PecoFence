@@ -1463,6 +1463,21 @@ pub fn shell_execute(path: &Path, verb: Option<&str>, owner: Option<HWND>) -> Re
     result
 }
 
+#[link(name = "shlwapi")]
+unsafe extern "system" {
+    // Not in the generated bindings.
+    fn AssocIsDangerous(assoc: PCWSTR) -> windows_core::BOOL;
+}
+
+/// Windows classes files of this extension (without the dot) as dangerous to open: programs,
+/// scripts, shortcuts, installers and the like (`AssocIsDangerous`, what the "Open File -
+/// Security Warning" asks about).
+pub fn is_dangerous_type(ext: &str) -> bool {
+    let ext = to_wide(&format!(".{ext}"));
+    // SAFETY: the string outlives the call.
+    unsafe { AssocIsDangerous(PCWSTR(ext.as_ptr())) }.as_bool()
+}
+
 /// Resolves a `.lnk` file's target path (raw, unexpanded), or `None`.
 pub fn shortcut_target(path: &Path) -> Option<String> {
     shortcut_info(path).map(|(target, _)| target)

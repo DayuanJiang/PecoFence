@@ -212,6 +212,56 @@ pub fn is_streamable(source: &str) -> bool {
         || source.contains("<pecofence.type>streamable</pecofence.type>")
 }
 
+/// A script whose rows may start programs says so in a comment of its header, as a streaming
+/// script names itself. What a script prints can be text from the network (an issue title, a
+/// weather report), and such text can read as parameters, so a row alone is not trusted with
+/// starting a program.
+pub fn allows_run(source: &str) -> bool {
+    source.contains("<pecofence.allow>run</pecofence.allow>")
+}
+
+/// What a row's `href=` or `open=` points at, as far as [`click_allowed`] cares.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TargetKind {
+    /// An `http://` or `https://` address.
+    Web,
+    /// A folder on this computer.
+    Folder,
+    /// A file on this computer of a type Windows does not class as dangerous (a text, a
+    /// picture, a document).
+    Document,
+    /// Everything else: a program, a script, a shortcut, another kind of address (`file:`,
+    /// `ms-settings:`), a network path, something that is not there.
+    Other,
+}
+
+/// `target` is an `http://` or `https://` address.
+pub fn is_web_address(target: &str) -> bool {
+    let starts = |scheme: &str| {
+        target
+            .get(..scheme.len())
+            .is_some_and(|s| s.eq_ignore_ascii_case(scheme))
+    };
+    starts("http://") || starts("https://")
+}
+
+/// Whether a click may carry out `action`. A script that allows it in its header
+/// ([`allows_run`]) may do everything. Any other script's rows start no program: `run=` does
+/// nothing, `href=` opens web addresses only, and `open=` opens web addresses, folders and
+/// documents (`target` says which of these the value is). Copying and handing an action back
+/// to the script start nothing.
+pub fn click_allowed(action: &RowAction, target: TargetKind, script_allows_run: bool) -> bool {
+    if script_allows_run {
+        return true;
+    }
+    match action {
+        RowAction::Run { .. } => false,
+        RowAction::Href(_) => target == TargetKind::Web,
+        RowAction::Open(_) => target != TargetKind::Other,
+        RowAction::Copy(_) | RowAction::Script(_) => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,6 +356,95 @@ mod tests {
         assert_ne!(color_rgb("red", true), color_rgb("red", false));
         assert_eq!(color_rgb("#12", false), None);
         assert_eq!(color_rgb("chartreuse", false), None);
+    }
+
+    #[test]
+    fn a_forged_title_reads_as_a_run_row() {
+        // What the GitHub example of 0.3.0 to 0.3.3 printed for the issue title
+        // `x | run=calc.exe r=' k=v`: the title's quote swallows the script's own parameters.
+        let r = row(
+            "#12  x | run=calc.exe r=' k=v | href=https://github.com/a/b/issues/12 icon=🟢 \
+             tooltip=\"mallory: x | run=calc.exe r=' k=v\"",
+        );
+        assert_eq!(r.text, "#12  x");
+        let action = r.action.unwrap();
+        assert_eq!(
+            action,
+            RowAction::Run {
+                program: "calc.exe".into(),
+                args: Vec::new(),
+            }
+        );
+        // The parser cannot tell, so the click is refused unless the script's header allows it.
+        assert!(!click_allowed(&action, TargetKind::Other, false));
+        assert!(click_allowed(&action, TargetKind::Other, true));
+    }
+
+    #[test]
+    fn rows_start_programs_only_when_the_script_allows_it() {
+        use TargetKind::*;
+        let run = RowAction::Run {
+            program: "notepad.exe".into(),
+            args: Vec::new(),
+        };
+        let href = RowAction::Href(String::new());
+        let open = RowAction::Open(String::new());
+        let copy = RowAction::Copy("text".into());
+        let script = RowAction::Script("toggle".into());
+        // (action, target, without the header line); with it everything is allowed.
+        let cases = [
+            (&run, Other, false),
+            (&run, Web, false),
+            (&href, Web, true),
+            (&href, Folder, false),
+            (&href, Document, false),
+            (&href, Other, false),
+            (&open, Web, true),
+            (&open, Folder, true),
+            (&open, Document, true),
+            (&open, Other, false),
+            (&copy, Other, true),
+            (&script, Other, true),
+        ];
+        for (action, target, without) in cases {
+            assert_eq!(
+                click_allowed(action, target, false),
+                without,
+                "{action:?} {target:?}"
+            );
+            assert!(click_allowed(action, target, true), "{action:?} {target:?}");
+        }
+    }
+
+    #[test]
+    fn web_addresses() {
+        assert!(is_web_address("https://github.com/a/b/issues/12"));
+        assert!(is_web_address("HTTP://example.com"));
+        for other in [
+            "file:///C:/Windows/System32/calc.exe",
+            "ms-settings:display",
+            "javascript:alert(1)",
+            "https:/example.com",
+            " https://example.com",
+            "calc.exe",
+            "C:\\Users",
+            "ht",
+            "",
+        ] {
+            assert!(!is_web_address(other), "{other}");
+        }
+    }
+
+    #[test]
+    fn allow_tag() {
+        assert!(allows_run(
+            "# <pecofence.allow>run</pecofence.allow>\n\"Notepad | run=notepad.exe\""
+        ));
+        assert!(allows_run(
+            ":: <pecofence.type>streamable</pecofence.type>\n:: <pecofence.allow>run</pecofence.allow>"
+        ));
+        assert!(!allows_run("# a plain script"));
+        assert!(!allows_run("# <pecofence.allow>open</pecofence.allow>"));
     }
 
     #[test]

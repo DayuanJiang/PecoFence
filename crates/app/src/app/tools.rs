@@ -666,7 +666,9 @@ impl App {
 
     /// A click on row `index` of script fence `fence`: what its parameters ask for.
     pub(super) fn script_row_clicked(&mut self, fence: FenceId, index: usize) {
-        use pecofence_core::script_output::{RowAction, ScriptLine, parse};
+        use pecofence_core::script_output::{
+            RowAction, ScriptLine, TargetKind, click_allowed, parse,
+        };
         let Some((Outcome::Done(text), at)) = self.script_runs.last.get(&fence).cloned() else {
             return;
         };
@@ -676,11 +678,30 @@ impl App {
         if !row.clickable() {
             return;
         }
-        let dir = self.state.config.scripts.get(&fence).and_then(|s| {
-            std::path::Path::new(&s.path)
-                .parent()
-                .map(|d| d.to_path_buf())
-        });
+        let script = self
+            .state
+            .config
+            .scripts
+            .get(&fence)
+            .map(|s| std::path::PathBuf::from(&s.path));
+        let dir = script
+            .as_deref()
+            .and_then(|s| s.parent().map(|d| d.to_path_buf()));
+        // What `href=` / `open=` name, as a path: a relative one is taken from the script's
+        // folder.
+        let opens = match &row.action {
+            Some(RowAction::Href(target) | RowAction::Open(target)) => {
+                let mut path = std::path::PathBuf::from(target);
+                if path.is_relative()
+                    && !target.contains(':')
+                    && let Some(d) = &dir
+                {
+                    path = d.join(path);
+                }
+                Some((target.clone(), path))
+            }
+            _ => None,
+        };
         let kind = match &row.action {
             Some(RowAction::Href(_)) => "href",
             Some(RowAction::Open(_)) => "open",
@@ -690,18 +711,36 @@ impl App {
             None => "refresh",
         };
         tracing::info!(%fence, index, what = kind, refresh = row.refresh, "script row clicked");
+        // A row starts a program only when the script's header allows it: what a script prints
+        // can be text from the network that reads as parameters.
+        if let Some(action) = &row.action {
+            let allows = script.as_deref().is_some_and(crate::scripts::allows_run);
+            let target = match &opens {
+                Some((target, path)) if !allows => crate::scripts::target_kind(target, path),
+                _ => TargetKind::Other,
+            };
+            let allowed = click_allowed(action, target, allows);
+            tracing::debug!(%fence, key = kind, ?target, allows, allowed, "script row: may the click do this");
+            if !allowed {
+                let script = script
+                    .as_deref()
+                    .and_then(|s| s.file_name())
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                tracing::info!(%fence, script, key = kind, "script row refused: the script's header does not allow starting programs");
+                if let Some(w) = self.window_for(fence) {
+                    w.show_script_row_refused(index);
+                }
+                return;
+            }
+        }
         let owner = self.window_for(fence).map(|w| w.hwnd());
         let mut refresh = row.refresh;
         match row.action {
-            Some(RowAction::Href(target)) | Some(RowAction::Open(target)) => {
-                let mut path = std::path::PathBuf::from(&target);
-                if path.is_relative()
-                    && !target.contains(':')
-                    && let Some(d) = &dir
+            Some(RowAction::Href(_)) | Some(RowAction::Open(_)) => {
+                if let Some((_, path)) = &opens
+                    && let Err(e) = shell::shell_execute(path, None, owner)
                 {
-                    path = d.join(path);
-                }
-                if let Err(e) = shell::shell_execute(&path, None, owner) {
                     tracing::warn!(%fence, what = kind, error = %e, "script row: open failed");
                 }
             }
