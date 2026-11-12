@@ -217,9 +217,13 @@ const TIMER_CONFIG_LOCKED: usize = 77;
 const TIMER_START_ICONS: usize = 75;
 /// 退出: the fences start to fade out once File Explorer's icons are about to show (one shot;
 /// it stays armed while the App is borrowed). See `Command::Quit`.
-const TIMER_QUIT_FADE: usize = 97;
-/// How long the fences stay after File Explorer was asked for its icons at 退出.
-const QUIT_HOLD_MS: u32 = 400;
+const TIMER_QUIT_FADE: usize = 86;
+/// 「临时显示 Windows 桌面」: the same wait before the fences fade out (one shot; it stays
+/// armed while the App is borrowed). See `set_windows_desktop`.
+const TIMER_WINDOWS_DESKTOP_FADE: usize = 87;
+/// How long the fences stay after File Explorer was asked for its icons, at 退出 and for
+/// 「临时显示 Windows 桌面」.
+const ICONS_BACK_HOLD_MS: u32 = 400;
 const CONFIG_LOCKED_RETRY_MS: u32 = 2_000;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
@@ -1148,6 +1152,14 @@ impl App {
                                     {
                                         window::kill_timer(hwnd, TIMER_QUIT_FADE);
                                         app.fade_out_and_quit("after the hold");
+                                    }
+                                }
+                                TIMER_WINDOWS_DESKTOP_FADE => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        window::kill_timer(hwnd, TIMER_WINDOWS_DESKTOP_FADE);
+                                        app.hide_fences_for_windows_desktop();
                                     }
                                 }
                                 TIMER_IDLE_TRIM => {
@@ -3103,7 +3115,7 @@ impl App {
                 // File Explorer shows its icons about a third of a second after it was asked
                 // (343 ms with Windows' animations on, measured with 45 icons), and the fences
                 // had gone after 167 ms: the desktop was empty in between. The fences stay for
-                // `QUIT_HOLD_MS` first, so that their fade ends after the icons are back.
+                // `ICONS_BACK_HOLD_MS` first, so that their fade ends after the icons are back.
                 let icons_coming =
                     hidden && !pecofence_platform::shell_icons::desktop_icons_hidden();
                 let holds = icons_coming
@@ -3117,7 +3129,7 @@ impl App {
                     "quit: the fences wait for File Explorer's icons"
                 );
                 if holds {
-                    window::set_timer(self.control.hwnd(), TIMER_QUIT_FADE, QUIT_HOLD_MS);
+                    window::set_timer(self.control.hwnd(), TIMER_QUIT_FADE, ICONS_BACK_HOLD_MS);
                 } else {
                     self.fade_out_and_quit(reason);
                 }
