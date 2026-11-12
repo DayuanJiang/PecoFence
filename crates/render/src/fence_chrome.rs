@@ -4631,14 +4631,10 @@ impl FenceChrome {
                 let h = layout.metrics().height;
                 let top = (height - h - 8.0).max(0.0);
                 let at = Vector2::new(NOTE_PAD_X, top);
-                draw_layout_halo(
-                    session,
-                    theme,
-                    legible.as_ref(),
-                    &layout,
-                    at,
-                    theme.text_secondary,
-                );
+                // The footer's halo, as the lines above have it.
+                if let Some((halo, down)) = &halo {
+                    session.draw_text_layout(Vector2::new(at.x, at.y + down), &layout, halo);
+                }
                 session.draw_text_layout(at, &layout, &secondary);
                 (top - 4.0).max(0.0)
             }
@@ -4732,10 +4728,10 @@ impl FenceChrome {
                     }
                 }
             }
-            let (brush, ink) = if line.todo == Some(true) {
-                (&secondary, theme.text_secondary)
+            let brush = if line.todo == Some(true) {
+                &secondary
             } else {
-                (&primary, theme.text_primary)
+                &primary
             };
             if let Some((halo, down)) = &halo {
                 session.draw_text_layout(Vector2::new(row.x, y + down), &row.layout, halo);
@@ -4983,14 +4979,10 @@ impl FenceChrome {
             let h = layout.metrics().height;
             let top = (height - h - 8.0).max(0.0);
             let at = Vector2::new(NOTE_PAD_X, top);
-            draw_layout_halo(
-                session,
-                theme,
-                legible.as_ref(),
-                &layout,
-                at,
-                theme.text_secondary,
-            );
+            // The footer's halo, as the lines above have it.
+            if let Some((halo, down)) = &halo {
+                session.draw_text_layout(Vector2::new(at.x, at.y + down), &layout, halo);
+            }
             session.draw_text_layout(at, &layout, &secondary);
             (top - 4.0).max(0.0)
         } else {
