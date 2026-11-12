@@ -502,6 +502,37 @@ fn on_key(vk: u32) -> bool {
             }
         }
     }
+    // Enter on a to-do goes on with the list: the new line starts with an open check box. On
+    // a to-do without text the check box goes instead and the list ends, as in any list
+    // editor. The control adds the line break itself when the key's character arrives, so
+    // the text is made ready for it here: the new line's marker put after the caret, or the
+    // empty to-do taken away together with the line break before it.
+    if vk == msg::VK_RETURN && !ctrl && !shift {
+        let raw = handle.text();
+        let units: Vec<u16> = raw.encode_utf16().collect();
+        let (first, last) = handle.selection();
+        if first == last {
+            let at = note::crlf_to_lf_offset(&units, first);
+            let text = raw.replace("\r\n", "\n");
+            let todo = note::line_spans(&text)
+                .into_iter()
+                .rfind(|s| s.start <= at)
+                .filter(|s| s.prefix > 0 && at >= s.start + s.prefix.min(s.len));
+            if let Some(span) = todo {
+                let empty = span.len <= span.prefix;
+                tracing::debug!(%fence, empty, "note editor: Enter on a to-do");
+                if empty {
+                    let from = note::lf_to_crlf_offset(&units, span.start.saturating_sub(1));
+                    let to = note::lf_to_crlf_offset(&units, span.start + span.len);
+                    handle.select(from, to);
+                    handle.replace_selection("");
+                } else {
+                    handle.replace_selection("[ ] ");
+                    handle.select(first, first);
+                }
+            }
+        }
+    }
     false
 }
 
