@@ -975,5 +975,7 @@
   "每天检查一次有没有新版本，有新版本时提醒一次": "Looks for a new version once a day and tells you once when there is one",
   "{0} 等 {1} 个栅栏": "{0} (in {1} fences)",
   "搜索栅栏里的文件，可以用拼音": "Search the files in your fences",
-  "搜索栅栏和整台电脑，可以用拼音": "Search fences and the whole computer"
+  "搜索栅栏和整台电脑，可以用拼音": "Search fences and the whole computer",
+  "PecoFence 上次在生成右键菜单时因 {0} 出错而关闭，这个文件属于其他程序。图标右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里重新打开。点击这里报告问题。": "PecoFence crashed in {0}, part of another program, while it built a right-click menu. The Windows entries in icon menus are off for now; the tray menu turns them back on. Click to report it.",
+  "恢复右键菜单里的 Windows 菜单项": "Turn Windows entries in icon menus back on"
 }

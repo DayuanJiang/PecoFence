@@ -24,6 +24,8 @@ const CMD_SHOW_FOLDER: u32 = 11;
 const CMD_NEW_SMART: u32 = 30;
 /// 「更新到 0.3.3」 while a newer version is known.
 const CMD_UPDATE: u32 = 31;
+/// 「恢复右键菜单里的 Windows 菜单项」, while they are off after a crash in a menu extension.
+const CMD_WINDOWS_MENU_ON: u32 = 32;
 const CMD_ITEM_OPEN: u32 = 100;
 const CMD_ITEM_LOCATION: u32 = 101;
 /// Canonical verb of Windows' 打开文件所在的位置 on a shortcut (its target's folder).
@@ -212,6 +214,17 @@ impl App {
             .icon(glyph::REFRESH)
             .separator();
         }
+        // After a crash in a menu extension the item menus have no Windows part: the way back.
+        if self.windows_menu_off() {
+            menu.item(
+                CMD_WINDOWS_MENU_ON,
+                pecofence_core::i18n::text("恢复右键菜单里的 Windows 菜单项"),
+                false,
+                false,
+            )
+            .icon(glyph::REPAIR)
+            .separator();
+        }
         // While 「临时显示 Windows 桌面」 is on, 「回到栅栏」 is the one way back: 「显示所有栅栏」
         // would do the same, and 「重新隐藏桌面图标」 would leave neither fences nor icons.
         menu.item(
@@ -360,6 +373,7 @@ impl App {
             }),
             CMD_APPLY_RULES => self.queue.push(Command::ApplyRulesNow),
             CMD_UPDATE => self.update_now("tray menu"),
+            CMD_WINDOWS_MENU_ON => self.turn_windows_menu_on(),
             CMD_REPAIR_ICONS => self.set_desktop_icons_hidden(false),
             CMD_HIDE_ICONS_AGAIN => {
                 self.set_desktop_icons_hidden(
@@ -648,9 +662,13 @@ impl App {
         // Explorer's own menu (send to / copy / delete / pin / extensions …) appended below ours.
         let paths = self.shell_paths_of(items);
         let _loads = pecofence_platform::shell_menu::LoadWatch::new("ItemMenu");
-        let mut shell_menu =
-            ShellContextMenu::for_paths(&paths.iter().map(|p| p.as_path()).collect::<Vec<_>>())
-                .ok();
+        // Not after a crash in a menu extension, until the tray menu turns it back on.
+        let mut shell_menu = if self.windows_menu_off() {
+            tracing::info!("item menu: the Windows part is off");
+            None
+        } else {
+            ShellContextMenu::for_paths(&paths.iter().map(|p| p.as_path()).collect::<Vec<_>>()).ok()
+        };
         let mut shell_items = 0;
         if let Some(sm) = shell_menu.as_mut() {
             let extended = window::key_down(msg::VK_SHIFT);

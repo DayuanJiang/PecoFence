@@ -13,13 +13,16 @@
 #   F  a fault while the item menu is built (the shell loads every menu extension for it): the
 #      crash line and the next start's notice name the DLL, the process is gone within half a
 #      second of that line, the watchdog starts PecoFence again and the layout is as before
+#   M  after that crash the item menus leave out Windows' part: the notice says so, the same
+#      right-click shows PecoFence's entries with the extension still set to fault, the next
+#      start builds no menu in the background, and the tray menu's entry brings it back
 #   O  a crash in PecoFence's own code (the test script's `crash` line) is left to Windows
 #      Error Reporting as before: Windows records it, the process ends when that is done
 #   L  the log says once per run which operation loaded the extension, and the log a user
 #      sends with a report keeps the DLL's name
 # Parts: run.sh --var Part=D ... (default: all). About 4 minutes.
 $PfAllowLogErrors = $true
-if (-not $Part) { $Part = 'LDCFO' }
+if (-not $Part) { $Part = 'LDCFMO' }
 trap { PfTrap $_; continue }
 
 Add-Type @'
@@ -390,6 +393,69 @@ if ($dll -and $Part -match 'F') {
   # The restarted run switched the Windows part of the item menus off: on again for the rest.
   Remove-Item $Stamp, $SxMarker -ErrorAction SilentlyContinue
   Remove-Item "$env:LOCALAPPDATA\PecoFence\crash-*.dmp" -ErrorAction SilentlyContinue
+}
+
+if ($dll -and $Part -match 'M') {
+  Case 'M after a crash in a menu extension'
+  ExtDisarm
+  Remove-Item $SxMarker -ErrorAction SilentlyContinue
+  PfStart
+  Pf settings set featureTips false | Out-Null
+  ClearFences | Out-Null
+  SxFence 'SxN' '300,200,520,170' @('sx n1 报告.txt', 'sx n2 预算.txt')
+  PfQuit
+  Start-Sleep -Seconds 2
+  Remove-Item $Stamp -ErrorAction SilentlyContinue
+  SxPlain
+  Start-Sleep -Seconds 9
+  $p1 = Get-Process pecofence | Select-Object -First 1
+  $p = CellPt 'SxN' 0
+  ExtArm 'QueryContextMenu'
+  [G]::RClick($p[0], $p[1])
+  $watch = [SxMon]::Watch($p1.Id, 60)
+  Log "watch: $watch"
+  $toast = ToastOcr 'Windows entries' 8
+  Start-Sleep -Seconds 3
+  $said = SxNewLog 'item menus are built without the Windows part'
+  Check 'M the next start turns the Windows part of the item menus off and says so' ($said -and (Test-Path $SxMarker) -and $toast -match 'pf_shellext_fault' -and $toast -match 'Windows entries') "log: $(if ($said -match '(item menus.*)$') { $Matches[1] }); marker there=$(Test-Path $SxMarker); notice: $toast"
+  # The same right-click, the extension still set to fault.
+  $p2 = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
+  Remove-Item "$ExtDir\calls.log" -ErrorAction SilentlyContinue
+  [G]::RClick($p[0], $p[1])
+  $m = MenuWin 8
+  $texts = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+  CloseMenus
+  Start-Sleep -Milliseconds 500
+  $p3 = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
+  Check 'M the same right-click again shows PecoFence''s entries, and PecoFence stays' ($texts -match 'Delete' -and $texts -match 'Rename' -and $texts -notmatch 'PF fault test' -and $p2 -and $p3 -and $p2.Id -eq $p3.Id -and @(ExtCalls).Count -eq 0) "same process=$($p2 -and $p3 -and $p2.Id -eq $p3.Id); extension calls: $((ExtCalls) -join ', '); menu: $texts"
+  # A normal exit and start: no menu is built in the background while the part is off.
+  PfQuit
+  Start-Sleep -Seconds 2
+  SxPlain
+  Start-Sleep -Seconds 8
+  $warm = SxNewLog 'shell menu (pre|not pre)warmed'
+  Check 'M while it is off, a start builds no menu in the background' ($warm -match 'the Windows part of item menus is off' -and @(ExtCalls).Count -eq 0) "log: $(if ($warm -match '(shell menu.*)$') { $Matches[1] }); extension calls: $((ExtCalls) -join ', ')"
+  # The tray menu's entry brings the Windows part back.
+  ExtDisarm
+  $picked = TrayPick 'Turn Windows entries'
+  Start-Sleep -Milliseconds 800
+  Check 'M the tray menu has an entry that turns the Windows part back on' ($picked -and -not (Test-Path $SxMarker)) "picked: $picked; marker there=$(Test-Path $SxMarker); tray menu: $script:LastTrayMenu"
+  [G]::RClick($p[0], $p[1])
+  $m = MenuWin 8
+  $texts = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+  CloseMenus
+  Check 'M after that the item menu has Windows'' entries again' ($texts -match 'PF fault test' -and $texts -match 'Send to') "menu: $texts"
+  $m = TrayMenu
+  $tray = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+  CloseMenus
+  Check 'M and the tray entry is gone' ($tray -match 'Settings|Exit' -and $tray -notmatch 'Turn Windows entries') "tray menu: $tray"
+  if (PfAlive) { PfQuit }
+  Get-Process pecofence, pecofence-watchdog -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 3
+  if (-not [W]::IconsVisible()) { [W]::ToggleIcons(); Start-Sleep -Seconds 1 }
+  Remove-Item $Stamp, $SxMarker -ErrorAction SilentlyContinue
+  Remove-Item "$env:LOCALAPPDATA\PecoFence\crash-*.dmp" -ErrorAction SilentlyContinue
+  SxClean
 }
 
 if ($Part -match 'O') {

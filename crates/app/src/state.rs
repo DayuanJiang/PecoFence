@@ -316,6 +316,11 @@ impl AppState {
         self.store.primary_path()
     }
 
+    /// While this file exists, item menus leave out Windows' part (`feedback.rs`).
+    pub fn windows_menu_marker(&self) -> PathBuf {
+        self.store.dir().join("windows-menu-off.marker")
+    }
+
     /// The folder custom themes are read from (see `pecofence_render::CustomTheme`).
     pub fn themes_dir(&self) -> PathBuf {
         self.store.dir().join("themes")

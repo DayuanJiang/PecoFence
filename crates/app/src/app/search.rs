@@ -834,9 +834,13 @@ impl App {
                 false,
             );
         let _loads = pecofence_platform::shell_menu::LoadWatch::new("SearchMenu");
-        let mut shell_menu = match ShellContextMenu::for_paths(&[path.as_path()]) {
-            Ok(sm) => Some(sm),
-            Err(e) => {
+        // Not after a crash in a menu extension (see `App::windows_menu_off`).
+        let bound =
+            (!self.windows_menu_off()).then(|| ShellContextMenu::for_paths(&[path.as_path()]));
+        let mut shell_menu = match bound {
+            None => None,
+            Some(Ok(sm)) => Some(sm),
+            Some(Err(e)) => {
                 tracing::info!(error = %e, "search actions: no Windows menu for the row");
                 None
             }

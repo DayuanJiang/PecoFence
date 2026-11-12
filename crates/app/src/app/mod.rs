@@ -2196,6 +2196,9 @@ impl App {
             _ if !app.previous_run_ended_normally() => {
                 tracing::info!("shell menu not prewarmed: the previous run did not end normally");
             }
+            _ if app.windows_menu_off() => {
+                tracing::info!("shell menu not prewarmed: the Windows part of item menus is off");
+            }
             Some(path) => {
                 pecofence_platform::shell_menu::prewarm(path, Duration::from_secs(2));
             }
