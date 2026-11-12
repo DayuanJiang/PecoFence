@@ -129,7 +129,7 @@ impl App {
     /// the same time.
     pub(super) fn on_notice(&mut self, event: crate::notice::NoticeEvent) {
         if let Some((notice, fence)) = self.undo_notice.take() {
-            drop(notice);
+            notice.leave();
             self.on_undo_notice(fence, event);
             return;
         }
@@ -139,8 +139,8 @@ impl App {
                 self.show_next_tip(notice, next);
                 return;
             }
-            // Gone before the next tip registers its window class.
-            drop(notice);
+            // It fades out; a card that the answer brings up takes its place at once.
+            notice.leave();
             self.on_welcome_notice(which, event);
             return;
         }
@@ -148,7 +148,9 @@ impl App {
             self.on_update_notice(event);
             return;
         }
-        self.rating.notice = None;
+        if let Some(notice) = self.rating.notice.take() {
+            notice.leave();
+        }
         if event == crate::notice::NoticeEvent::Action {
             self.open_store_rating();
         }

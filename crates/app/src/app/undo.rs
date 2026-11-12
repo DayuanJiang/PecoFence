@@ -382,8 +382,9 @@ impl App {
                     .undo_notice
                     .as_ref()
                     .is_some_and(|(_, t)| *t == UndoNotice::Deleted(id))
+                    && let Some((notice, _)) = self.undo_notice.take()
                 {
-                    self.undo_notice = None;
+                    notice.leave();
                 }
                 usize::from(back)
             }
@@ -438,8 +439,9 @@ impl App {
                     .undo_notice
                     .as_ref()
                     .is_some_and(|(_, t)| *t == UndoNotice::Refiled(id))
+                    && let Some((notice, _)) = self.undo_notice.take()
                 {
-                    self.undo_notice = None;
+                    notice.leave();
                 }
                 n
             }

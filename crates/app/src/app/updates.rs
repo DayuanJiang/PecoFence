@@ -725,7 +725,9 @@ impl App {
     /// The card's buttons: 「更新」 / 「去下载」, 「查看新功能」 (the release page); × or the
     /// timeout leave it for later (the tray item stays).
     pub(super) fn on_update_notice(&mut self, event: crate::notice::NoticeEvent) {
-        self.updates.notice = None;
+        if let Some(notice) = self.updates.notice.take() {
+            notice.leave();
+        }
         self.record_update_card(event != crate::notice::NoticeEvent::Dismissed);
         match event {
             crate::notice::NoticeEvent::Action => self.update_now("update card"),

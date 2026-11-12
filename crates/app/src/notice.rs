@@ -31,6 +31,12 @@ const HOVER_RECHECK_MS: u32 = 1_500;
 /// Gap to the work area's edge, in DIPs.
 const MARGIN: f32 = 12.0;
 
+thread_local! {
+    /// Cards that were answered and fade out by themselves ([`Notice::leave`]). The next card
+    /// drops them before it shows: the window class can be registered by one card at a time.
+    static LEAVING: RefCell<Vec<Notice>> = const { RefCell::new(Vec::new()) };
+}
+
 /// The `locale` for [`Notice::show`] in the UI language (fonts for Han, kana, Hangul).
 pub fn locale() -> &'static str {
     match pecofence_core::i18n::language().tag() {
@@ -77,6 +83,9 @@ struct View {
     closing: bool,
     /// Closed by the second button: the fade's end reports [`NoticeEvent::Declined`].
     declined: bool,
+    /// Answered and handed back by the app ([`Notice::leave`]): the fade's end hides the card
+    /// and reports nothing.
+    left: bool,
 }
 
 impl View {
@@ -178,6 +187,8 @@ impl Notice {
         title: &str,
         avoid: &[RECT],
     ) -> Result<Self> {
+        // A card still fading out goes now: this one needs its window class.
+        LEAVING.with(|l| l.borrow_mut().clear());
         let monitor = monitors::enumerate()
             .into_iter()
             .find(|m| m.primary)
@@ -265,6 +276,7 @@ impl Notice {
             fade: Some(Tween::at(0.0, Instant::now())),
             closing: false,
             declined: false,
+            left: false,
         }));
         shared.borrow_mut().redraw();
         *view.borrow_mut() = Some(shared.clone());
@@ -292,12 +304,17 @@ impl Notice {
     /// on screen with no fade and keeps its size: texts that need less room leave it between
     /// the text and the button. Only texts that need more make it taller (its bottom edge
     /// keeps its place); [`Self::show_reserving`] gives the first card that room. The 30 s
-    /// until it leaves by itself start again.
+    /// until it leaves by itself start again, and a card that was fading out comes back.
     pub fn set_content(&self, title: &str, body: &str, action: &str, locale: &str) -> Result<()> {
         let hwnd = self.window.hwnd();
         let old = window::window_rect(hwnd);
         let (rect, dpi) = {
             let mut v = self.view.borrow_mut();
+            if std::mem::take(&mut v.closing) {
+                tracing::debug!("notice was fading out: back for its new content");
+                v.declined = false;
+                v.start_fade(hwnd, 1.0);
+            }
             let card =
                 NoticeCard::new(title, body, action, locale)?.with_min_height(v.layout.height);
             let layout = card.layout()?;
@@ -344,6 +361,29 @@ impl Notice {
         window::set_title(hwnd, title);
         self.window.set_timer(TIMER_DISMISS, SHOW_FOR_MS);
         Ok(())
+    }
+
+    /// The card was answered (its button, or Ctrl+Z for what it offers to undo): it fades out
+    /// as it does after × and the timeout, and reports nothing more. With Windows' animations
+    /// off it goes at once.
+    pub fn leave(self) {
+        let hwnd = self.window.hwnd();
+        window::kill_timer(hwnd, TIMER_DISMISS);
+        let fades = {
+            let mut v = self.view.borrow_mut();
+            // A card that × or the timeout already faded out has nothing left to show.
+            let fades = v.motion.enabled() && !v.closing;
+            if fades {
+                v.left = true;
+                v.closing = true;
+                v.start_fade(hwnd, 0.0);
+            }
+            fades
+        };
+        tracing::debug!(fades, "notice answered: it leaves");
+        if fades {
+            LEAVING.with(|l| l.borrow_mut().push(self));
+        }
     }
 
     /// The front window changed: another program's topmost window over the card (the
@@ -479,7 +519,13 @@ fn handle(
             if done {
                 v.fade = None;
                 window::kill_timer(hwnd, TIMER_FADE);
-                if v.closing {
+                if v.closing && v.left {
+                    // Nobody waits for this card: hidden here, dropped when the next one
+                    // shows. Hiding sends messages back here: no borrow held.
+                    v.shadow.hide();
+                    drop(v);
+                    desktop::hide_window(hwnd);
+                } else if v.closing {
                     queue.push(Command::Notice(if v.declined {
                         NoticeEvent::Declined
                     } else {
