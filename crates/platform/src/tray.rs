@@ -392,7 +392,8 @@ impl MenuTips {
                     let mut r = RECT::default();
                     if GetMenuItemRect(None, hmenu, pos as u32, &mut r).as_bool() {
                         let text = text.clone();
-                        self.tooltip.show(&text, r.right + 4, r.top);
+                        // Beside the row; with no room below, its bottom edge at the row's.
+                        self.tooltip.show(&text, r.right + 4, r.top, r.bottom);
                     }
                     return;
                 }

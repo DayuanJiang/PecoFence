@@ -547,9 +547,9 @@ fn show_path_tip(hwnd: HWND) {
                 .ok();
         }
         let pt = window::cursor_pos();
-        let below = s.px(22.0);
+        let (below, above) = (s.px(22.0), s.px(4.0));
         if let Some(tip) = s.tip.as_mut() {
-            tip.show(&path.to_string_lossy(), pt.x, pt.y + below);
+            tip.show(&path.to_string_lossy(), pt.x, pt.y + below, pt.y - above);
             tracing::debug!(row = i, "search: the row's full path is shown in a tip");
         }
     });

@@ -1782,13 +1782,8 @@ impl FenceWindow {
         self.with_view(|v| {
             v.hide_tip();
             v.tip_target = Some(TipTarget::ScriptRow(index));
-            let pt = window::cursor_pos();
-            let scale = v.scale();
-            v.show_tip_text_at(
-                text,
-                pt.x + (12.0 * scale).round() as i32,
-                pt.y + (20.0 * scale).round() as i32,
-            );
+            let (x, y, above) = pointer_tip_place(v.scale());
+            v.show_tip_text_at(text, x, y, above);
             window::set_timer(v.hwnd, TIMER_TIP_HIDE, ms);
         });
     }

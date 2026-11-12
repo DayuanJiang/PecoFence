@@ -11,6 +11,15 @@ pub(super) fn tip_delay_ms(hover_ms: u32, reshow_ms: u32, hidden_ago: Option<Dur
     }
 }
 
+/// Where a tip beside the pointer goes at `scale`: its top-left (12 DIPs right of the pointer
+/// and 20 below it, under the cursor's picture), and where its bottom edge goes when there is
+/// no room below: 4 DIPs above the pointer.
+pub(super) fn pointer_tip_place(scale: f32) -> (i32, i32, i32) {
+    let pt = window::cursor_pos();
+    let px = |dip: f32| (dip * scale).round() as i32;
+    (pt.x + px(12.0), pt.y + px(20.0), pt.y - px(4.0))
+}
+
 /// What the infotip describes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TipTarget {
@@ -274,12 +283,8 @@ impl FenceViewState {
     }
 
     pub(super) fn show_tip(&mut self) {
-        let pt = window::cursor_pos();
-        let scale = self.scale();
-        self.show_tip_at(
-            pt.x + (12.0 * scale).round() as i32,
-            pt.y + (20.0 * scale).round() as i32,
-        );
+        let (x, y, above) = pointer_tip_place(self.scale());
+        self.show_tip_at(x, y, above);
     }
 
     /// Keyboard focus (arrow keys, type-to-select, the Peek search's current match) moved to
@@ -300,17 +305,20 @@ impl FenceViewState {
         // target, so the tip goes where the item stops.
         let glide = ((self.scroll_y - self.scroll_target()) * self.scale()).round() as i32;
         self.tip_target = Some(TipTarget::Item(i));
-        self.show_tip_at(r.left, r.bottom + glide);
+        // With no room below, above the icon (the name's place is right under it).
+        let icon = ((self.icon_size as f32 + 8.0) * self.scale()).round() as i32;
+        self.show_tip_at(r.left, r.bottom + glide, r.top + glide - icon);
     }
 
-    fn show_tip_at(&mut self, x: i32, y: i32) {
+    fn show_tip_at(&mut self, x: i32, y: i32, above: i32) {
         let Some(text) = self.tip_text() else {
             return;
         };
-        self.show_tip_text_at(&text, x, y);
+        self.show_tip_text_at(&text, x, y, above);
     }
 
-    pub(super) fn show_tip_text_at(&mut self, text: &str, x: i32, y: i32) {
+    /// `above`: where the tip's bottom edge goes when it has no room below (`Tooltip::show`).
+    pub(super) fn show_tip_text_at(&mut self, text: &str, x: i32, y: i32, above: i32) {
         if self.tip.is_none() {
             let dark = matches!(self.theme.mode, pecofence_render::ThemeMode::Dark);
             self.tip = Tooltip::create(self.hwnd, dark)
@@ -318,7 +326,7 @@ impl FenceViewState {
                 .ok();
         }
         if let Some(t) = self.tip.as_mut() {
-            t.show(text, x, y);
+            t.show(text, x, y, above);
             self.tip_shown = true;
             self.tip_armed = false;
             window::set_timer(
