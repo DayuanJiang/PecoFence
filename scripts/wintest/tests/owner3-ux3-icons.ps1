@@ -4,6 +4,7 @@
 #   run.sh --var Part=C ...                            the drag label over the desktop
 #   run.sh --var Part=D ...                            tooltips fade
 #   run.sh --var Part=E ...                            the icons of a deleted fence
+#   run.sh --var Part=F ...                            a selection that ends does not flash
 #   run.sh --var Part=P ...                            Windows' own tip, recorded for comparison (no check of PecoFence)
 #   --var Rec=1 also records the clips of the report (rec-*).
 # Real mouse and keys, zh-CN, a new configuration (「桌面」 arranged like the desktop, 自由摆放).
@@ -242,13 +243,13 @@ if ($Part -eq 'E') {
   $in = @(@(PfJson item list --fence '工作文件') | Where-Object { $_ -and $_.id })
   Check 'setup: two icons are in the fence, away from the loose icons' ($in.Count -eq 2 -and -not (UxCell 'b.fpx')) "in the fence: $(($in | ForEach-Object { $_.fileName }) -join ', '); loose: $(UxAll)"
   if ($Rec) { RecStart 'rec-delete' -X 0 -Y 0 -W 960 -H 520 -Fps 30; RecMark '删除一个装着 2 个图标的栅栏'; Start-Sleep -Milliseconds 500 }
-  # The bare desktop between the loose icons' columns and the fence, read as often as the
+  # The bare desktop between the loose icons' first column and the fence, read as often as the
   # screen can be read while the fence is deleted (the command line returns too late for that,
   # so it runs beside the reads).
   Start-Process "$PfApp\pecofence-cli.exe" -ArgumentList 'fence delete 工作文件' -WindowStyle Hidden | Out-Null
-  [Px]::Burst(200, 60, 320, 440, 1500, 0)
+  [Px]::Burst(88, 0, 432, 440, 1500, 0)
   $n = [Px]::Frames.Count
-  $reads = @(for ($i = 1; $i -lt $n; $i++) { , @([Px]::Times[$i], [Px]::Diff([Px]::Frames[0], [Px]::Frames[$i], 0, 319, 0, 439)) })
+  $reads = @(for ($i = 1; $i -lt $n; $i++) { , @([Px]::Times[$i], [Px]::Diff([Px]::Frames[0], [Px]::Frames[$i], 0, 431, 0, 439)) })
   $crossing = @($reads | Where-Object { $_[1] -ge 0.3 })
   if ($Rec) { RecStop }
   $back = UxWait { (UxCell 'b.fpx') -and (UxCell '图.fpx') } 5
@@ -260,6 +261,39 @@ if ($Part -eq 'E') {
   Start-Sleep -Milliseconds 600
   $way = [W]::RootClassAt(360, 280)
   Check 'afterwards the desktop between them is bare again' ($way -ne 'PecoFence.Fence' -and $reads[-1][1] -lt 0.1) "window there: $way; last read $('{0:N2}' -f $reads[-1][1])"
+  UxEnd
+}
+
+if ($Part -eq 'F') {
+  # A loose icon is selected while the keyboard is in another program (a faint box). A click
+  # on the bare desktop ends the selection: the box turned bright (the accent look) for the
+  # two frames of its fade-out before it was gone.
+  Case 'A selection that ends on a click on the desktop does not flash'
+  UxStart
+  $p = UxPt '图.fpx'; DragTo $p[0] $p[1] 644 322 20; Start-Sleep -Seconds 1
+  $p = UxPt '图.fpx'
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 700
+  Start-Process notepad
+  $np = WaitWin 'Notepad' 8
+  Start-Sleep -Milliseconds 800
+  [L]::MoveWindow($np, 900, 420, 520, 300, $true) | Out-Null
+  Start-Sleep -Milliseconds 800
+  $c = UxCorner (UxCell '图.fpx')
+  $spot = FreeSpot 420 620
+  [G]::MoveTo($spot[0], $spot[1]); Start-Sleep -Milliseconds 600
+  $g = FenceGet inbox
+  Check 'setup: the icon is selected and Notepad has the keyboard' ((Fg) -match 'Notepad' -and (UxCell '图.fpx') -eq '8,3') "foreground: $(Fg); cell $(UxCell '图.fpx')"
+  if ($Rec) { RecStart 'rec-flash' -X ($c[0] - 60) -Y ($c[1] - 40) -W 200 -H 180 -Fps 30; RecMark '点一下桌面空白处'; Start-Sleep -Milliseconds 400 }
+  # The cell as often as the screen can be read, with the click after the first read.
+  [Px]::Burst($c[0], $c[1], 80, 96, 600, 1)
+  if ($Rec) { RecStop }
+  $n = [Px]::Frames.Count
+  $reads = @(for ($i = 1; $i -lt $n; $i++) { , @([Px]::Times[$i], [Px]::Diff([Px]::Frames[0], [Px]::Frames[$i], 0, 79, 0, 95)) })
+  $final = $reads[-1][1]
+  $max = ($reads | ForEach-Object { $_[1] } | Measure-Object -Maximum).Maximum
+  Check 'setup: the click ended the selection' ($final -gt 0.3) "the cell against the selected icon: $('{0:N2}' -f $final) at the end"
+  Check 'no read shows the box brighter than before the click' ($max -le $final + 1.5) "largest change against the selected icon $('{0:N2}' -f $max), at the end $('{0:N2}' -f $final); reads (ms:change): $(($reads | Select-Object -First 10 | ForEach-Object { '{0}:{1:N1}' -f $_[0], $_[1] }) -join ' ')"
+  CloseWindows
   UxEnd
 }
 

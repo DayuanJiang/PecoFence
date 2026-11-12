@@ -1187,6 +1187,7 @@ impl App {
         }
         // Where its window is, before the window goes (a tab's window stays).
         let gone = self.window_for(fence).map(|w| w.rect());
+        self.note_icons_return_to_desktop(fence);
         let Some(deleted) = self.state.delete_fence_keeping(fence) else {
             return;
         };
@@ -1255,9 +1256,52 @@ impl App {
 
     /// Deletes a fence (or a tab); a deleted host's next tab takes its place and keeps the rest.
     pub(super) fn delete_fence(&mut self, fence: FenceId) {
+        self.note_icons_return_to_desktop(fence);
         if self.state.delete_fence(fence) {
             self.after_fence_deleted(fence);
         }
+    }
+
+    /// `fence` is about to be deleted and its icons go back to 「桌面」. Arranged like the
+    /// desktop, 「桌面」 lets them arrive from where they stood in the fence, as an icon dropped
+    /// on the desktop arrives from the pointer (`FenceWindow::note_desktop_landing`). They
+    /// used to fade in at their places while the fence faded out somewhere else, and nothing
+    /// on screen said that these were the fence's icons. An icon that is not in view in the
+    /// fence (scrolled away, rolled up, another tab) starts from the middle of its window.
+    fn note_icons_return_to_desktop(&self, fence: FenceId) {
+        let (Some(f), Some(inbox)) = (self.state.fence(fence), self.state.inbox_id()) else {
+            return;
+        };
+        let (Some(from), Some(to)) = (self.window_for(fence), self.fences.get(&inbox)) else {
+            return;
+        };
+        if fence == inbox || !f.holds_items() || f.items.is_empty() || !to.is_desktop_arranged() {
+            return;
+        }
+        let r = from.rect();
+        let middle = ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+        // The middle of an icon's cell is about 12 px above its name.
+        let centres: Vec<(ItemId, (i32, i32))> = f
+            .items
+            .iter()
+            .map(|rec| {
+                let at = from
+                    .item_label_rect(rec.item_id)
+                    .filter(|l| l.left >= r.left && l.right <= r.right)
+                    .filter(|l| l.top >= r.top && l.bottom <= r.bottom)
+                    .map_or(middle, |l| ((l.left + l.right) / 2, l.top - 12));
+                (rec.item_id, at)
+            })
+            .collect();
+        tracing::debug!(
+            %fence,
+            icons = centres.len(),
+            "fence deleted: its icons arrive at the desktop from where they stood"
+        );
+        to.note_desktop_landing(&crate::commands::DesktopDrop {
+            cursor: middle,
+            centres,
+        });
     }
 
     fn after_fence_deleted(&mut self, fence: FenceId) {
