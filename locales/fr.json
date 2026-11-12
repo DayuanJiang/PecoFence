@@ -840,7 +840,7 @@
   "最近打开的文件": "Fichiers ouverts récemment",
   "正在搜索…": "Recherche…",
   "没有符合条件的文件。": "Aucun fichier ne correspond.",
-  "显示最新的 {0} 个，共找到 {1} 个": "Les {0} plus récents sur {1} trouvés",
+  "显示最新的 {0} 个，共找到 {1} 个": "Affiche les {0} plus récents sur {1} trouvés",
   "筛选“{0}”": "Filtrer « {0} »",
   "{0} · 筛选：{1}": "{0} · Filtre : {1}",
   "没有符合筛选的文件。": "Aucun fichier ne correspond au filtre.",
