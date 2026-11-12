@@ -83,6 +83,8 @@ impl WebEnvironment {
 struct HostState {
     controller: Option<Controller>,
     webview: Option<WebView>,
+    /// Where the window stood when it closed and its scale there (`SettingsHost::closed_at`).
+    closed_at: Option<(RECT, f32)>,
 }
 
 /// `WM_TIMER` id of the host window: shows a window whose page never said `drawn`.
@@ -116,7 +118,9 @@ impl SettingsHost {
     /// Creates the window and the WebView2 controller and loads the settings page. Page
     /// messages are forwarded to the command queue as `Command::SettingsMessage` (the editor's
     /// as `Command::EditorMessage`). The settings open on the primary monitor, the editor on
-    /// the monitor of `near` (the point its menu opened at), centred on its work area.
+    /// the monitor of `near` (the point its menu opened at), centred on its work area. `last`:
+    /// where this run's last settings window was closed (its rectangle and scale); the window
+    /// opens there again.
     #[allow(clippy::too_many_arguments)]
     pub fn open(
         class: &WindowClass,
@@ -127,16 +131,20 @@ impl SettingsHost {
         kind: HostKind,
         title: &str,
         near: Option<(i32, i32)>,
+        last: Option<(RECT, f32)>,
     ) -> Result<Self> {
         let opened = std::time::Instant::now();
         let state = Rc::new(RefCell::new(HostState {
             controller: None,
             webview: None,
+            closed_at: None,
         }));
 
         let mons = monitors::enumerate();
         let primary = mons.iter().find(|m| m.primary).or(mons.first());
+        let last_centre = last.map(|(r, _)| ((r.left + r.right) / 2, (r.top + r.bottom) / 2));
         let monitor = near
+            .or(last_centre)
             .and_then(|(x, y)| {
                 mons.iter().find(|m| {
                     let r = m.work_area;
@@ -149,7 +157,24 @@ impl SettingsHost {
             HostKind::Settings => placement(work, scale),
             HostKind::SmartEditor => editor_placement(work, scale),
         };
-        let place = monitor.map(|m| place_on(m.work_area, scale));
+        let place = monitor.map(|m| {
+            let p = place_on(m.work_area, scale);
+            match last {
+                Some((rect, last_scale)) => {
+                    let to = p.reopened(rect, last_scale, m.work_area, scale);
+                    tracing::debug!(
+                        ?rect,
+                        last_scale,
+                        work = ?m.work_area,
+                        scale,
+                        ?to,
+                        "settings: window reopens where it was closed"
+                    );
+                    to
+                }
+                None => p,
+            }
+        });
         let (min_w, min_h) = place
             .map(|p| (p.min_w, p.min_h))
             .unwrap_or(((560.0 * scale) as i32, (420.0 * scale) as i32));
@@ -228,11 +253,21 @@ impl SettingsHost {
                             None
                         }
                         msg::WM_DESTROY => {
+                            // Where the window stood, for the next open. A maximized or
+                            // minimized window has no place of its own to keep.
+                            const WS_MAXIMIZE: u32 = 0x0100_0000;
+                            const WS_MINIMIZE: u32 = 0x2000_0000;
+                            let normal = desktop::style(hwnd) & (WS_MAXIMIZE | WS_MINIMIZE) == 0;
+                            let closed_at = normal.then(|| {
+                                let scale = monitors::dpi_for_window(hwnd).max(96) as f32 / 96.0;
+                                (window::window_rect(hwnd), scale)
+                            });
                             // Taken out of the state first: closing the browser may let a
                             // message sent by another thread in, whose handling reads the
                             // state (GitHub #166).
                             let (webview, controller) = {
                                 let mut s = state.borrow_mut();
+                                s.closed_at = closed_at;
                                 (s.webview.take(), s.controller.take())
                             };
                             drop(webview);
@@ -381,6 +416,12 @@ impl SettingsHost {
         self.window.hwnd()
     }
 
+    /// After the window was closed: where it stood (screen px) and the scale of its monitor.
+    /// `None` when it was closed maximized or minimized.
+    pub fn closed_at(&self) -> Option<(RECT, f32)> {
+        self.state.borrow().closed_at
+    }
+
     /// The window's caption (the settings' after a language change, the editor's for the fence
     /// it shows).
     pub fn set_title(&self, title: &str) {
@@ -515,6 +556,30 @@ struct Placement {
     h: i32,
     min_w: i32,
     min_h: i32,
+}
+
+impl Placement {
+    /// The window as it was closed: `last` is its rectangle then, on a monitor at `last_scale`.
+    /// The size follows this monitor's scale and stays between the minimum and the work area.
+    /// The place is kept while the rectangle's centre is on this work area (moved inside it);
+    /// when the monitor it stood on is gone, the window is centred as on a first open.
+    fn reopened(self, last: RECT, last_scale: f32, work: RECT, scale: f32) -> Placement {
+        let (area_w, area_h) = (work.right - work.left, work.bottom - work.top);
+        let rescaled = |px: i32| (px as f32 * scale / last_scale).round() as i32;
+        let w = rescaled(last.right - last.left).clamp(self.min_w, area_w);
+        let h = rescaled(last.bottom - last.top).clamp(self.min_h, area_h);
+        let (cx, cy) = ((last.left + last.right) / 2, (last.top + last.bottom) / 2);
+        let on_work = cx >= work.left && cx < work.right && cy >= work.top && cy < work.bottom;
+        let (x, y) = if on_work {
+            (
+                last.left.clamp(work.left, work.right - w),
+                last.top.clamp(work.top, work.bottom - h),
+            )
+        } else {
+            (work.left + (area_w - w) / 2, work.top + (area_h - h) / 2)
+        };
+        Placement { x, y, w, h, ..self }
+    }
 }
 
 /// The smart fence editor: 880 x 660 DIP (minimum 560 x 420), centred on the work area, and
@@ -659,6 +724,38 @@ mod tests {
         let p = placement(work(2560, 1392), 1.0);
         assert_eq!((p.w, p.h), (960, 660));
         assert_eq!((p.x, p.y), (800, 366));
+    }
+
+    /// Reopening in the same run: the window comes back where it was closed, on the monitors
+    /// that exist now.
+    #[test]
+    fn settings_window_reopens_where_it_was_closed() {
+        let area = work(1600, 852);
+        let first = placement(area, 1.0);
+        // Moved and resized: the same rectangle again.
+        let p = first.reopened(rect(60, 40, 1260, 820), 1.0, area, 1.0);
+        assert_eq!((p.x, p.y, p.w, p.h), (60, 40, 1200, 780));
+        assert_eq!((p.min_w, p.min_h), (first.min_w, first.min_h));
+        // Dragged half off the right edge, or closed on a larger screen: back inside the work
+        // area, no larger than it.
+        let p = first.reopened(rect(1100, 300, 2060, 960), 1.0, area, 1.0);
+        assert_eq!((p.x, p.y, p.w, p.h), (640, 192, 960, 660));
+        let p = first.reopened(rect(100, 0, 2500, 1300), 1.0, area, 1.0);
+        assert_eq!((p.x, p.y, p.w, p.h), (0, 0, 1600, 852));
+        // The monitor it stood on is gone: its size, centred like a first open.
+        let p = first.reopened(rect(1700, 100, 2700, 800), 1.0, area, 1.0);
+        assert_eq!((p.x, p.y, p.w, p.h), (300, 76, 1000, 700));
+        // The monitor's scale changed from 100 % to 150 %: the same size in DIP, and never
+        // below the minimum of the new scale.
+        let big = work(2560, 1392);
+        let p = placement(big, 1.5).reopened(rect(200, 100, 1200, 800), 1.0, big, 1.5);
+        assert_eq!((p.x, p.y, p.w, p.h), (200, 100, 1500, 1050));
+        let p = placement(big, 1.5).reopened(rect(200, 100, 920, 580), 1.0, big, 1.5);
+        assert_eq!((p.w, p.h), (1080, 720));
+        // A second monitor left of the primary one (negative coordinates) keeps the window.
+        let left = rect(-1920, 0, 0, 1040);
+        let p = placement(left, 1.0).reopened(rect(-1500, 200, -400, 900), 1.0, left, 1.0);
+        assert_eq!((p.x, p.y, p.w, p.h), (-1500, 200, 1100, 700));
     }
 
     #[test]

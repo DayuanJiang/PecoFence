@@ -1217,6 +1217,7 @@
     document.querySelector('main').scrollTop = 0;
     if (name === 'about') requestFeedbackInfo();
     ringFence();
+    viewSoon();
   }
   // The nav is one Tab stop, its selected row. The arrow keys, Home and End move between the
   // rows, Enter or Space shows a row's page, and the next Tab lands on that page's first control.
@@ -1230,6 +1231,13 @@
       else if (e.key === ' ') { e.preventDefault(); a.click(); }
     });
   });
+  // The host is told which page shows and how far it is scrolled: the window opens there again.
+  let viewTimer;
+  function viewSoon() {
+    clearTimeout(viewTimer);
+    viewTimer = setTimeout(() => send({ type: 'view', page: document.querySelector('nav a.sel').dataset.page, scroll: document.querySelector('main').scrollTop }), 150);
+  }
+  if (!EDITOR) document.querySelector('main').addEventListener('scroll', viewSoon, { passive: true });
 
   // 查找设置: every card with a title on every page, read from the page as it is (its language,
   // the cards the current state shows), so nothing has to be kept in step. Every word must
@@ -3198,6 +3206,7 @@
     else if (m.type === 'showPage') {
       showPage(m.page);
       if (m.focus) document.getElementById(m.focus)?.scrollIntoView({ block: 'center' });
+      else if (m.scroll) document.querySelector('main').scrollTop = m.scroll;
     }
     else if (m.type === 'feedbackInfo') {
       fbInfo = m; fbCrash ||= !!m.crashed; renderFeedback();

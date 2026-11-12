@@ -108,6 +108,15 @@ pub(super) fn snapshot_room(
     snapshots.len() < pecofence_core::MAX_SNAPSHOTS
 }
 
+/// What the settings window leaves for the next one of this run.
+#[derive(Default)]
+pub(super) struct SettingsKept {
+    /// Where the window was closed: its rectangle (screen px) and the scale of its monitor.
+    pub closed_at: Option<(RECT, f32)>,
+    /// The page it showed (a `data-page` of the navigation) and how far it was scrolled.
+    pub view: Option<(String, f64)>,
+}
+
 fn snapshot_limit_text() -> String {
     pecofence_core::i18n::format(
         "快照已达上限（{0} 个），未保存新快照。请删除不需要的快照。",
@@ -369,6 +378,7 @@ impl App {
             HostKind::Settings,
             pecofence_core::i18n::text("PecoFence 设置"),
             None,
+            self.settings_kept.closed_at,
         ) {
             Ok(mut host) => {
                 self.set_host_icons(&mut host);
@@ -726,6 +736,21 @@ impl App {
                 {
                     h.show_soon();
                 }
+                // Nothing asked for a page (栅栏选项…, a tip's 打开设置, the feedback form):
+                // the page this run's last window was closed on, scrolled as it was.
+                let asked = self.settings_focus_page.is_some()
+                    || self.settings_focus_fence.is_some()
+                    || self.feedback.focus.is_some();
+                if !asked
+                    && let Some((page, scroll)) = &self.settings_kept.view
+                    && let Some(h) = &self.settings
+                {
+                    tracing::debug!(page, scroll, "settings: page shown as it was closed");
+                    h.post_json(
+                        &serde_json::json!({ "type": "showPage", "page": page, "scroll": scroll })
+                            .to_string(),
+                    );
+                }
                 if let Some((page, focus)) = self.settings_focus_page.take() {
                     self.post_show_page(page, focus);
                 }
@@ -742,6 +767,13 @@ impl App {
                 {
                     let ms = h.opened.elapsed().as_millis() as u64;
                     tracing::info!(ms, "settings: page drawn, window shown");
+                }
+            }
+            // The page shown and how far it is scrolled, kept for the next open in this run.
+            Some("view") => {
+                if let Some(page) = v.get("page").and_then(|p| p.as_str()) {
+                    let scroll = v.get("scroll").and_then(|s| s.as_f64()).unwrap_or(0.0);
+                    self.settings_kept.view = Some((page.to_string(), scroll));
                 }
             }
             Some("setFence") => self.on_set_fence(&v),

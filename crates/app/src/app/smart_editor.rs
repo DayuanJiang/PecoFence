@@ -85,6 +85,7 @@ impl App {
             HostKind::SmartEditor,
             editor_title(fence),
             Some(at),
+            None,
         ) {
             Ok(mut host) => {
                 self.set_host_icons(&mut host);

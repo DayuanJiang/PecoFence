@@ -392,6 +392,8 @@ pub struct App {
     /// The settings window's rectangle while its page makes a tool fence, which is placed
     /// clear of it (`place_new_tool`); None for a tool from a menu or the CLI.
     tool_clear_of: Option<RECT>,
+    /// Where the settings window was closed and what it showed, for the next open.
+    settings_kept: settings::SettingsKept,
     /// The 「反馈」 form on 「关于」: pending focus and the crash offer (see `feedback.rs`).
     feedback: feedback::FeedbackState,
     updates: updates::Updates,
@@ -1808,6 +1810,7 @@ impl App {
             settings_focus_fence: None,
             settings_focus_page: None,
             tool_clear_of: None,
+            settings_kept: Default::default(),
             feedback: Default::default(),
             updates: Default::default(),
             rating,
@@ -2947,7 +2950,11 @@ impl App {
             }
             Command::SettingsActivated => self.query_store_startup(),
             Command::WindowGone(hwnd) => {
-                if self.settings.as_ref().is_some_and(|h| h.hwnd() == hwnd) {
+                if let Some(h) = self.settings.as_ref().filter(|h| h.hwnd() == hwnd) {
+                    // The next open in this run starts where this window was closed.
+                    if let Some(at) = h.closed_at() {
+                        self.settings_kept.closed_at = Some(at);
+                    }
                     self.settings = None;
                     self.set_settings_ring(None);
                     self.resume_hotkeys();

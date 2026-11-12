@@ -67,6 +67,8 @@ function bridge() {
   window.testSummary = (itemCount) => receive({ data: { type: 'workspaceSummary', fenceCount: state.fences.length, itemCount } });
   window.testRefresh = () => receive({ data: structuredClone(state) });
   window.testUpdate = (update) => receive({ data: { type: 'update', update } });
+  // Any other message of the host (a notice, showPage).
+  window.testHost = (data) => receive({ data });
   window.testState = state;
   // The real page is a data: URL, not a secure context: secure-only APIs are missing there.
   delete Crypto.prototype.randomUUID;
@@ -2909,6 +2911,25 @@ async function runTests() {
     for (let i = 0; i < 3; i++) await settle();
     assert(sent('drawn').length === 1, 'A later state sent drawn again');
   });
+  await test('The page tells the host which page it shows and how far it is scrolled, and goes back there', async () => {
+    doc = await reset();
+    const sent = type => frame.contentWindow.testMessages.filter(m => m.type === type);
+    const until = async ok => { for (let i = 0; i < 50 && !ok(); i++) await settle(); return ok(); };
+    doc.querySelector('[data-page=fences]').click();
+    doc.querySelector('main').scrollTop = 120;
+    doc.querySelector('main').dispatchEvent(new frame.contentWindow.Event('scroll'));
+    assert(await until(() => sent('view').some(m => m.page === 'fences' && m.scroll === 120)), 'The page and its scroll offset were not reported: ' + JSON.stringify(sent('view')));
+    assert(sent('view').at(-1).page === 'fences' && sent('view').at(-1).scroll === 120, 'The last report is not the page as it is: ' + JSON.stringify(sent('view').at(-1)));
+    // A reopened window: the host asks for that page and offset. Without an offset the page
+    // starts at the top.
+    doc = await reset();
+    frame.contentWindow.testHost({ type: 'showPage', page: 'fences', scroll: 120 });
+    assert(doc.querySelector('nav a.sel').dataset.page === 'fences' && doc.querySelector('main').scrollTop === 120, 'showPage did not restore the page and its scroll offset: ' + doc.querySelector('main').scrollTop);
+    frame.contentWindow.testHost({ type: 'showPage', page: 'general' });
+    assert(doc.querySelector('nav a.sel').dataset.page === 'general' && doc.querySelector('main').scrollTop === 0, 'showPage without an offset did not start at the top');
+    doc = await reset();
+  });
+
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
   window.testResults = { passed, failed };
