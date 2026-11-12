@@ -570,19 +570,45 @@ impl App {
         true
     }
 
-    /// After a delete from the fence menu: 「已删除栅栏“X”」 with 撤销, unless another notice
-    /// is up (Ctrl+Z still undoes it then).
+    /// An undo card is up and something newer can be undone: the card takes the newer texts
+    /// where it stands and its 撤销 undoes `target` (Ctrl+Z still reaches the older step after
+    /// it). False when no undo card is up or it cannot take the texts.
+    fn retarget_undo_notice(&mut self, title: &str, body: &str, target: UndoNotice) -> bool {
+        let Some((notice, shown)) = self.undo_notice.as_mut() else {
+            return false;
+        };
+        let action = pecofence_core::i18n::text("撤销");
+        match notice.set_content(title, body, action, crate::notice::locale()) {
+            Ok(()) => {
+                tracing::info!(from = ?*shown, to = ?target, "undo notice names the newer step");
+                *shown = target;
+                true
+            }
+            Err(error) => {
+                tracing::warn!(%error, "undo notice did not take the newer step");
+                false
+            }
+        }
+    }
+
+    /// After a delete from the fence menu: 「已删除栅栏“X”」 with 撤销. The card of an earlier
+    /// undo offer takes the new texts; while another kind of notice is up none shows (Ctrl+Z
+    /// still undoes it then).
     pub(super) fn offer_undo_delete(&mut self, fence: FenceId, title: &str) {
+        let title = pecofence_core::i18n::format("已删除栅栏“{0}”", &[title.to_string()]);
+        let body = pecofence_core::i18n::text("点“撤销”，或在栅栏上按 Ctrl+Z，就能把它找回来。");
+        if self.retarget_undo_notice(&title, body, UndoNotice::Deleted(fence)) {
+            return;
+        }
         if self.notice_showing() {
             tracing::info!("undo notice not shown: another notice is up");
             return;
         }
         self.undo_notice = None;
-        let title = pecofence_core::i18n::format("已删除栅栏“{0}”", &[title.to_string()]);
         match crate::notice::Notice::show(
             &self.ctx,
             &title,
-            pecofence_core::i18n::text("点“撤销”，或在栅栏上按 Ctrl+Z，就能把它找回来。"),
+            body,
             pecofence_core::i18n::text("撤销"),
             crate::notice::locale(),
             &self.notice_avoid_rects(),
@@ -595,19 +621,25 @@ impl App {
         }
     }
 
-    /// After 「立即应用」 moved `moved` icons (step `id`): 「已按规则整理 N 个项目」 with 撤销, unless
-    /// another notice is up (Ctrl+Z still undoes it then). Returns whether it is shown.
+    /// After 「立即应用」 moved `moved` icons (step `id`): 「已按规则整理 N 个项目」 with 撤销. The
+    /// card of an earlier undo offer takes the new texts; while another kind of notice is up
+    /// none shows (Ctrl+Z still undoes it then). Returns whether it is shown.
     pub(super) fn offer_undo_refiled(&mut self, id: u64, moved: usize) -> bool {
+        let title = pecofence_core::i18n::format("已按规则整理 {0} 个项目", &[moved.to_string()]);
+        let body =
+            pecofence_core::i18n::text("点“撤销”，或在栅栏上按 Ctrl+Z，就能把它们放回原处。");
+        if self.retarget_undo_notice(&title, body, UndoNotice::Refiled(id)) {
+            return true;
+        }
         if self.notice_showing() {
             tracing::info!("undo notice not shown: another notice is up");
             return false;
         }
         self.undo_notice = None;
-        let title = pecofence_core::i18n::format("已按规则整理 {0} 个项目", &[moved.to_string()]);
         match crate::notice::Notice::show(
             &self.ctx,
             &title,
-            pecofence_core::i18n::text("点“撤销”，或在栅栏上按 Ctrl+Z，就能把它们放回原处。"),
+            body,
             pecofence_core::i18n::text("撤销"),
             crate::notice::locale(),
             &self.notice_avoid_rects(),
