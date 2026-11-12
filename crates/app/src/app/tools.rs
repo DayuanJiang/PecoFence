@@ -1148,7 +1148,13 @@ impl App {
             crate::note_edit::toggle_line(fence, line);
             return;
         }
+        // Outside the editor the tick is a step for Ctrl+Z in the fence, as a dragged
+        // to-do is.
+        let before = self.state.note_text(fence).map(str::to_string);
         if self.state.toggle_note_line(fence, line) {
+            if let (Some(before), Some(after)) = (before, self.state.note_text(fence)) {
+                self.note_line_for_undo(fence, before, after.to_string(), "note to-do ticked");
+            }
             self.push_note(fence);
             self.schedule_save();
         }
@@ -1160,7 +1166,7 @@ impl App {
         let before = self.state.note_text(fence).map(str::to_string);
         if self.state.move_note_line(fence, from, to) {
             if let (Some(before), Some(after)) = (before, self.state.note_text(fence)) {
-                self.note_line_for_undo(fence, before, after.to_string());
+                self.note_line_for_undo(fence, before, after.to_string(), "note line moved");
             }
             self.push_note(fence);
             self.schedule_save();

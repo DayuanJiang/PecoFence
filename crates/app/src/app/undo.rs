@@ -42,13 +42,15 @@ pub(super) enum UndoStep {
     },
     /// A file renamed in a fence (renamed directly, so Windows' undo list does not hold it).
     Renamed { from: PathBuf, to: PathBuf },
-    /// A to-do dragged to another line of a note: the note's text before the drop and after
-    /// it. Ctrl+Z puts the text back while the note still reads as the drop left it; once it
-    /// was edited or ticked the step is spent, so nothing written since is lost.
+    /// A to-do dragged to another line of a note, or ticked by a click on its check box,
+    /// while the note is not being edited (`what` for the log): the note's text before and
+    /// after. Ctrl+Z puts the text back while the note still reads as the step left it; once
+    /// it was changed in another way the step is spent, so nothing written since is lost.
     NoteLine {
         fence: FenceId,
         before: String,
         after: String,
+        what: &'static str,
     },
     /// Folders or files made from a fence (made directly too): Ctrl+Z moves them to the
     /// Recycle Bin, as Explorer's own undo of 新建 does, without a record in Windows' undo list
@@ -106,7 +108,7 @@ impl UndoStep {
             Self::NewFence(_) => "new fence",
             Self::Refiled { .. } => "rules applied",
             Self::Renamed { .. } => "rename",
-            Self::NoteLine { .. } => "note line moved",
+            Self::NoteLine { what, .. } => what,
             Self::Created { .. } => "new item",
             Self::Shell { what } | Self::Permanent { what } => what,
             Self::Merged { .. } => "merge into tabs",
@@ -128,13 +130,21 @@ impl App {
         }
     }
 
-    /// A to-do of note `fence` was dragged to another line: the note's text until then and
-    /// since. The drag gave the fence the keyboard, so a Ctrl+Z right after it lands here.
-    pub(super) fn note_line_for_undo(&mut self, fence: FenceId, before: String, after: String) {
+    /// A to-do of note `fence` was dragged to another line or ticked (`what`): the note's
+    /// text until then and since. A drag gives the fence the keyboard, so a Ctrl+Z right
+    /// after it lands here.
+    pub(super) fn note_line_for_undo(
+        &mut self,
+        fence: FenceId,
+        before: String,
+        after: String,
+        what: &'static str,
+    ) {
         self.push_undo(UndoStep::NoteLine {
             fence,
             before,
             after,
+            what,
         });
     }
 
@@ -490,9 +500,10 @@ impl App {
                 fence,
                 before,
                 after,
+                what,
             } => {
                 let unchanged = self.state.note_text(fence) == Some(after.as_str());
-                tracing::info!(%fence, unchanged, "note line move undone");
+                tracing::info!(%fence, unchanged, what, "note step undone");
                 if unchanged && self.state.set_note_text(fence, &before) {
                     self.push_note(fence);
                 }
