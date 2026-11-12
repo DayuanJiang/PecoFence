@@ -320,14 +320,15 @@ function OoTipTone($name) {
   $b = PageRect '.iconbtn[data-act=edit]'
   if (-not $b) { return 'no button' }
   [G]::MoveTo($b.cx - 260, $b.cy + 160); Start-Sleep -Milliseconds 700
-  $x0 = $b.cx - 70; $y0 = $b.cy + 18
-  $g0 = [Px]::Grab($x0, $y0, 190, 64)
+  # Above and under the button (the button itself changes under the pointer and is left out).
+  $x0 = $b.cx - 95; $y0 = $b.cy - 64
+  $g0 = [Px]::Grab($x0, $y0, 190, 146)
   [G]::MoveTo($b.cx - 2, $b.cy); Start-Sleep -Milliseconds 300
   [G]::MoveTo($b.cx, $b.cy); Start-Sleep -Milliseconds 2200
-  $g1 = [Px]::Grab($x0, $y0, 190, 64)
-  Crop $name ($b.cx - 200) ($b.cy - 40) 400 130 | Out-Null
+  $g1 = [Px]::Grab($x0, $y0, 190, 146)
+  Crop $name ($b.cx - 200) ($b.cy - 70) 400 160 | Out-Null
   $light = 0; $dark = 0; $changed = 0
-  foreach ($y in 0..63) {
+  foreach ($y in @(0..45) + @(82..145)) {
     foreach ($x in 0..189) {
       $p = $g0.GetPixel($x, $y); $q = $g1.GetPixel($x, $y)
       if ([math]::Abs($p.R - $q.R) + [math]::Abs($p.G - $q.G) + [math]::Abs($p.B - $q.B) -gt 12) {

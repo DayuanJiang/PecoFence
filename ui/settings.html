@@ -245,6 +245,12 @@
   .slider-bubble small { position: relative; z-index: 1; font-size: inherit; color: var(--accent); }
   .slider-bubble small::before { content: "·"; margin: 0 6px; color: var(--text2); }
   .slider-track.live .slider-bubble, .slider input:focus-visible ~ .slider-bubble { opacity: 1; }
+  /* The tip of an icon button or of a cut text, drawn by the page (`pageTip` in the script) in
+     the colours of the slider's value tip. */
+  #pageTip { position: fixed; z-index: 70; left: 0; top: 0; max-width: 320px; padding: 5px 9px 7px; border-radius: 4px; border: 1px solid var(--tip-stroke); background: var(--tip);
+    color: var(--text); box-shadow: 0 4px 8px #00000024; font-size: 12px; line-height: 16px; overflow-wrap: anywhere; pointer-events: none; opacity: 0; visibility: hidden;
+    transition: opacity var(--faster) linear, visibility 0s var(--faster); }
+  #pageTip.on { opacity: 1; visibility: visible; transition: opacity var(--faster) linear; }
 
   input[type=time], input[type=text], input[type=number], input[type=email], select, button { height: 32px; border-radius: var(--r-control); background: var(--control);
     border: 1px solid var(--control-stroke); border-bottom-color: var(--control-stroke-bottom); font-size: 14px; max-width: 100%; }
@@ -1604,10 +1610,48 @@
   // A row of the navigation shows its name as a tip only while the navigation is folded to its
   // icons (as WinUI's NavigationView does in its compact mode): beside the name itself the tip
   // said the same word again. The tip's text is the row's aria-label, which follows the language.
-  document.querySelectorAll('nav a[title]').forEach(a => {
-    a.addEventListener('pointerenter', () => { if (!matchMedia('(max-width: 540px)').matches) a.removeAttribute('title'); });
-    a.addEventListener('pointerleave', () => a.setAttribute('title', a.getAttribute('aria-label')));
+  const navTipQuiet = el => el.matches('nav a') && !matchMedia('(max-width: 540px)').matches;
+  // Every tip (`title`) is drawn by the page, in the page's colours. The browser draws its own
+  // tips in Windows' colour mode: a white box on the dark page of an app set to 深色 while
+  // Windows is light, a dark one on the light page the other way round. While the pointer is
+  // on an element its `title` is taken off, so the browser shows nothing (the text stays as
+  // the element's aria-label), and it is put back when the pointer leaves. The tip comes
+  // after Windows' hover time (400 ms) above the element, under it when there is no room.
+  const pageTip = document.createElement('div');
+  pageTip.id = 'pageTip';
+  pageTip.setAttribute('role', 'tooltip');
+  document.body.append(pageTip);
+  let tipOn = null, tipWait = 0;
+  const hidePageTip = () => { clearTimeout(tipWait); pageTip.classList.remove('on'); };
+  function endPageTip() {
+    hidePageTip();
+    if (!tipOn) return;
+    if (!tipOn.el.hasAttribute('title')) tipOn.el.setAttribute('title', tipOn.text);
+    if (tipOn.named) tipOn.el.removeAttribute('aria-label');
+    tipOn = null;
+  }
+  document.addEventListener('pointerover', e => {
+    if (tipOn && tipOn.el.contains(e.target)) return;
+    endPageTip();
+    const el = e.target.closest ? e.target.closest('[title]') : null;
+    if (!el || !el.title) return;
+    tipOn = { el, text: el.title, named: !el.hasAttribute('aria-label') };
+    if (tipOn.named) el.setAttribute('aria-label', tipOn.text);
+    el.removeAttribute('title');
+    if (navTipQuiet(el)) return;
+    tipWait = setTimeout(() => {
+      if (!tipOn || !tipOn.el.isConnected) return;
+      pageTip.textContent = tipOn.text;
+      const r = tipOn.el.getBoundingClientRect(), w = pageTip.offsetWidth, h = pageTip.offsetHeight;
+      const x = Math.max(4, Math.min(innerWidth - w - 4, r.left + r.width / 2 - w / 2));
+      const y = r.top - h - 6 >= 4 ? r.top - h - 6 : r.bottom + 6;
+      pageTip.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+      pageTip.classList.add('on');
+    }, 400);
   });
+  document.addEventListener('pointerout', e => { if (tipOn && !tipOn.el.contains(e.relatedTarget)) endPageTip(); });
+  // A press, a key or the wheel hides the tip, as Windows' tips go; the browser's own stays away.
+  for (const ev of ['pointerdown', 'keydown', 'wheel']) addEventListener(ev, hidePageTip, true);
   const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
   const set = (obj, path, v) => { const ks = path.split('.'); let o = obj; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]]; o[ks[ks.length - 1]] = v; };
   // Shows or hides a card that depends on another setting, with a motion (the .reveal rules).
