@@ -142,6 +142,8 @@
   .card .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; max-width: 100%; }
   /* Controls that wrap under a long description stay on the right, as in Windows Settings. */
   .card:not(.stack) > :not(.l):not(.s) { margin-left: auto; }
+  /* A row that a master switch greys out changes with that switch, not ahead of it. */
+  .card .t, .card .s, .switch-label { transition: color .15s; }
   .card.disabled .t, .card.disabled .s { color: var(--text-disabled); }
   .card.disabled button.accent:disabled { color: var(--text-disabled); background: var(--control-disabled); border-color: var(--control-stroke); }
   /* A card or row that another setting shows or hides (see reveal()): it grows open and closes
