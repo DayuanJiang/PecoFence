@@ -3407,6 +3407,32 @@ async function runTests() {
     } finally { frame.style.width = was; }
     doc = await reset();
   });
+  await test('No description on a page ends with one character alone on its last line', async () => {
+    doc = await reset();
+    const was = frame.style.width;
+    try {
+      frame.style.width = '944px'; await settle();
+      doc.querySelectorAll('details').forEach(d => { d.open = true; });
+      const alone = [];
+      for (const page of doc.querySelectorAll('.page')) {
+        doc.querySelector(`nav a[data-page=${page.id.replace('page-', '')}]`).click();
+        for (const el of page.querySelectorAll('.card .s, .card .t')) {
+          const text = el.firstChild;
+          if (!el.offsetParent || el.children.length || !text || text.nodeType !== 3 || text.length < 8) continue;
+          const range = doc.createRange(), lines = [];
+          for (let i = 0, last = null; i < text.length; i++) {
+            range.setStart(text, i); range.setEnd(text, i + 1);
+            const top = Math.round(range.getBoundingClientRect().top);
+            if (top !== last) { lines.push(''); last = top; }
+            lines[lines.length - 1] += text.data[i];
+          }
+          if (lines.length > 1 && lines.at(-1).trim().length < 2) alone.push(lines.at(-2).slice(-8) + ' / ' + lines.at(-1));
+        }
+      }
+      assert(!alone.length, alone.length + ' descriptions end with one character alone: ' + alone.join(' | '));
+    } finally { frame.style.width = was; }
+    doc = await reset();
+  });
   await test('The notice at the bottom comes in decelerating and leaves accelerating', async () => {
     doc = await reset();
     assert(await motionReady(), 'The page never allowed transitions');
