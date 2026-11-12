@@ -1653,6 +1653,14 @@
     }, 400);
   });
   document.addEventListener('pointerout', e => { if (tipOn && !tipOn.el.contains(e.relatedTarget)) endPageTip(); });
+  // A script that draws an element again writes its `title` back while the pointer is still
+  // on it (a colour swatch after a click): it is taken off again and kept as the tip's text,
+  // or the browser showed its own tip after all.
+  new MutationObserver(() => {
+    if (!tipOn || !tipOn.el.hasAttribute('title')) return;
+    tipOn.text = tipOn.el.title;
+    tipOn.el.removeAttribute('title');
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['title'], subtree: true });
   // A press, a key or the wheel hides the tip, as Windows' tips go; the browser's own stays away.
   for (const ev of ['pointerdown', 'keydown', 'wheel']) addEventListener(ev, hidePageTip, true);
   const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
