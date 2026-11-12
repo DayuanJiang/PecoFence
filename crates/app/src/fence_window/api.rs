@@ -1112,10 +1112,30 @@ impl FenceWindow {
             } else {
                 Vec::new()
             };
+            let old_widths: Vec<f32> = if tabs_changed {
+                v.tab_rects().iter().map(|(_, w)| *w).collect()
+            } else {
+                Vec::new()
+            };
             v.search = marks;
             if tabs_changed {
                 if v.tab_drag.is_none() {
                     v.sync_tab_slides(&prev, now);
+                    // A pill that got wider (a new badge, one more digit) is drawn at its new
+                    // width at once: the tabs after it would slide across its end for the
+                    // first frames. As after a rename, the strip then stands at its new
+                    // places at once; pills that only got narrower still slide.
+                    let grew = v
+                        .tab_rects()
+                        .iter()
+                        .zip(&old_widths)
+                        .any(|((_, w), old)| *w > *old + 0.5);
+                    if grew {
+                        tracing::debug!(
+                            "a tab got its match badge: the strip stands at its new places"
+                        );
+                        v.tab_slide.clear();
+                    }
                 }
                 let _ = v.redraw_chrome_only();
             }
