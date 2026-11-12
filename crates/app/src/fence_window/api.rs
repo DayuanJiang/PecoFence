@@ -2115,6 +2115,7 @@ impl FenceWindow {
                     to: (to.left, to.top),
                     t: v.motion
                         .tween(0.0, 1.0, motion::FAST, Curve::Decelerate, Instant::now()),
+                    begun: false,
                 });
                 v.frames.request();
             }

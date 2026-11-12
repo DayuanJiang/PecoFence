@@ -117,12 +117,17 @@ impl FrameHandle {
     /// the window moved in this frame and whether the glide goes on.
     fn tick_glide(&self, now: Instant) -> (bool, bool) {
         let hwnd = self.hwnd();
-        let Some((to, done)) = self
-            .view
-            .borrow()
-            .as_ref()
-            .and_then(|v| v.glide.map(|g| g.at(now)))
-        else {
+        let Some((to, done)) = self.view.borrow_mut().as_mut().and_then(|v| {
+            let g = v.glide.as_mut()?;
+            // The glide's clock starts with its first frame: what the caller did after asking
+            // for it (an import saves and repaints first) does not eat the motion.
+            if !std::mem::replace(&mut g.begun, true) {
+                g.t = v
+                    .motion
+                    .tween(0.0, 1.0, motion::FAST, Curve::Decelerate, now);
+            }
+            Some(g.at(now))
+        }) else {
             return (false, false);
         };
         let r = window::window_rect(hwnd);

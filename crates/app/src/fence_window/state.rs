@@ -49,6 +49,8 @@ pub(super) struct WindowGlide {
     pub(super) from: (i32, i32),
     pub(super) to: (i32, i32),
     pub(super) t: Tween,
+    /// Its first frame has run (`tick_glide` starts `t` there).
+    pub(super) begun: bool,
 }
 
 impl WindowGlide {
