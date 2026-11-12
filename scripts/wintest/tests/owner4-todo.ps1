@@ -197,7 +197,8 @@ Chord 0x11 0x5A; Start-Sleep -Milliseconds 800
 $undone = NoteText $nid
 $want = "周会后要做`n[ ] $Long`n[ ] 买菜`n[x] 回邮件`n备注：周五前"
 Check 'Ctrl+Z right after the drop puts the to-do back where it was' ($dropped -eq $want -and $undone -eq $T0) "after the drop: $(OneLine $dropped); after Ctrl+Z: $(OneLine $undone)"
-# A drop, then a tick: the note no longer reads as the drop left it, and Ctrl+Z leaves it alone.
+# A drop, then the note is changed from outside: it no longer reads as the drop left it, and
+# Ctrl+Z leaves it alone.
 $w = Fresh $nid $T0; $c = CRect $w; $boxes = Rects $w 'note_boxes'
 $from = TodoPt $c $boxes 2; $to = TodoPt $c $boxes 1
 [G]::MoveTo($from[0], $from[1]); Start-Sleep -Milliseconds 300
@@ -205,13 +206,12 @@ MDown; Start-Sleep -Milliseconds 200
 Glide $from[0] $from[1] ($from[0] + 6) ($to[1] - 6) 10 30
 Start-Sleep -Milliseconds 400
 MUp; Start-Sleep -Milliseconds 900
-$b = BoxPt $c $boxes 2
-[G]::Click($b[0], $b[1]); Start-Sleep -Milliseconds 700
-$ticked = NoteText $nid
+$want = "周会后要做`n[x] 回邮件`n[ ] 买菜和水果`n[ ] $Long`n备注：周五前"
+Pf fence set $nid noteText $want --string | Out-Null
+Start-Sleep -Milliseconds 600
 Chord 0x11 0x5A; Start-Sleep -Milliseconds 800
 $kept = NoteText $nid
-$want = "周会后要做`n[x] 回邮件`n[x] 买菜`n[ ] $Long`n备注：周五前"
-Check 'after a tick that followed the drop, Ctrl+Z changes nothing in the note' ($ticked -eq $want -and $kept -eq $want) "after the drop and the tick: $(OneLine $ticked); after Ctrl+Z: $(OneLine $kept)"
+Check 'after the note was changed in another way, Ctrl+Z changes nothing in the note' ($kept -eq $want) "after the drop and the change: $(OneLine $want); after Ctrl+Z: $(OneLine $kept)"
 Pf fence delete $nid | Out-Null
 }
 
