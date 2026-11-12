@@ -183,6 +183,8 @@ const TIMER_TMP_SETTLE: usize = 65;
 const TIMER_THEMES: usize = 66;
 /// 脚本栅栏: a script run ended (`WM_APP_SCRIPT_DONE`); retried while the App is borrowed.
 const TIMER_SCRIPT_DONE: usize = 67;
+/// 脚本栅栏: a run PecoFence started by itself has taken a second: its footer says so now.
+const TIMER_SCRIPT_QUIET: usize = 131;
 /// Search box: the typing pause before Everything is asked is over.
 const TIMER_EVERYTHING: usize = 68;
 /// 搜索整台电脑: Everything was installed or started; the settings card asks again.
@@ -1147,6 +1149,7 @@ impl App {
                                 | TIMER_TMP_SETTLE
                                 | TIMER_THEMES
                                 | TIMER_SCRIPT_DONE
+                                | TIMER_SCRIPT_QUIET
                                 | TIMER_EVERYTHING
                                 | TIMER_EVERYTHING_STATUS
                                 | TIMER_EVERYTHING_SETUP
@@ -1175,6 +1178,7 @@ impl App {
                                             TIMER_TMP_SETTLE => app.sync_settled_tmp(),
                                             TIMER_THEMES => app.on_themes_changed(),
                                             TIMER_SCRIPT_DONE => app.drain_scripts(),
+                                            TIMER_SCRIPT_QUIET => app.show_long_script_runs(),
                                             TIMER_EVERYTHING => app.send_everything_query(),
                                             TIMER_EVERYTHING_STATUS => {
                                                 // Everything was started or installed: the

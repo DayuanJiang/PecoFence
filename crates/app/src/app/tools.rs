@@ -23,9 +23,16 @@ pub(super) struct ScriptRuns {
     /// not this one's) and the process.
     streams: HashMap<FenceId, (String, u64, crate::scripts::Stream)>,
     next_stream: u64,
+    /// The runs PecoFence started by itself (the interval came round) and when: their footer
+    /// goes on showing the last run's time until the run has taken [`QUIET_RUN`], so a
+    /// script that answers at once does not make the footer blink at every run.
+    quiet: HashMap<FenceId, Instant>,
     tx: std::sync::mpsc::Sender<ScriptMsg>,
     rx: std::sync::mpsc::Receiver<ScriptMsg>,
 }
+
+/// How long a run PecoFence started by itself goes on without 「正在运行…」 in the footer.
+const QUIET_RUN: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// What the script workers send back.
 enum ScriptMsg {
@@ -57,6 +64,7 @@ impl Default for ScriptRuns {
             pending: HashMap::new(),
             streams: HashMap::new(),
             next_stream: 0,
+            quiet: HashMap::new(),
             tx,
             rx,
         }
@@ -299,7 +307,13 @@ impl App {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| spec.path.clone());
-        let running = self.script_runs.running.contains_key(&id);
+        // A run started by the interval says so only once it has taken a while.
+        let running = self.script_runs.running.contains_key(&id)
+            && self
+                .script_runs
+                .quiet
+                .get(&id)
+                .is_none_or(|begun| begun.elapsed() >= QUIET_RUN);
         let Some((outcome, at)) = self.script_runs.last.get(&id) else {
             return ScriptView {
                 rows: Vec::new(),
@@ -376,7 +390,38 @@ impl App {
             .filter(|id| self.script_runs.due.get(id).is_none_or(|&at| at <= now))
             .collect();
         for id in due {
+            // Not the first run: its footer has a time to go on showing.
+            if self.script_runs.last.contains_key(&id) {
+                self.script_runs.quiet.insert(id, now);
+                window::set_timer(
+                    self.control.hwnd(),
+                    TIMER_SCRIPT_QUIET,
+                    QUIET_RUN.as_millis() as u32 + 20,
+                );
+            }
             self.start_script(id);
+        }
+    }
+
+    /// `TIMER_SCRIPT_QUIET`: the runs started by the interval that are still going after
+    /// [`QUIET_RUN`] say 「正在运行…」 in their footer now.
+    pub(super) fn show_long_script_runs(&mut self) {
+        let late: Vec<FenceId> = self
+            .script_runs
+            .quiet
+            .iter()
+            .filter(|(_, begun)| begun.elapsed() >= QUIET_RUN)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &late {
+            self.script_runs.quiet.remove(id);
+            if self.script_runs.running.contains_key(id) {
+                tracing::debug!(%id, "script fence: the run takes long, the footer says it is running");
+                self.push_tool_view(self.state.host_of(*id));
+            }
+        }
+        if !self.script_runs.quiet.is_empty() {
+            window::set_timer(self.control.hwnd(), TIMER_SCRIPT_QUIET, 200);
         }
     }
 
@@ -587,6 +632,7 @@ impl App {
                     ms,
                 } => {
                     let ran = self.script_runs.running.remove(&id);
+                    self.script_runs.quiet.remove(&id);
                     let current = self.state.config.scripts.get(&id).map(|s| s.path.as_str());
                     if ran.as_deref() != current {
                         // The fence was given another script (or went) while this one ran: its
