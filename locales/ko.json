@@ -562,6 +562,7 @@
   "PecoFence 上次意外关闭了。点击这里报告问题。": "PecoFence가 지난번에 예기치 않게 종료되었습니다. 여기를 클릭해 문제를 알려 주세요.",
   "更新或卸载 {0} 所属的程序可能会解决：上次 PecoFence 因这个文件出错而关闭。点击这里报告问题。": "{0}이(가) 속한 프로그램을 업데이트하거나 제거하면 해결될 수 있습니다. 이 파일의 오류로 종료되었습니다.",
   "请在 ExplorerPatcher 的 Properties › File Explorer 里取消“Register as shell extension”并重启资源管理器。上次因它出错而关闭。": "ExplorerPatcher의 Properties › File Explorer에서 “Register as shell extension”을 끄세요. 그 오류로 종료되었습니다.",
+  "右键菜单里的 Windows 菜单项已暂时关闭。先在 ExplorerPatcher 的 Properties 里取消“Register as shell extension”，再从托盘菜单恢复。": "먼저 ExplorerPatcher에서 “Register as shell extension”을 끈 다음 트레이 메뉴에서 아이콘 메뉴의 Windows 항목을 다시 켜세요.",
   "PecoFence 上次意外关闭了，那次的日志会一起发送。如果还记得当时在做什么，请写在下面。": "PecoFence가 지난번에 예기치 않게 종료되었습니다. 그때의 로그도 함께 전송됩니다. 무엇을 하고 있었는지 기억나면 아래에 적어 주세요.",
   "其他": "기타",
   "内容": "내용",

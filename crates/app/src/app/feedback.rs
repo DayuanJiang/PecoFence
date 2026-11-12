@@ -397,10 +397,18 @@ impl App {
         tracing::info!("previous run crashed; offering to send feedback");
         let log = previous.as_deref().unwrap_or_default();
         let text = if crash_module(log).is_some_and(is_explorer_patcher) {
-            tracing::info!("the crash was inside ExplorerPatcher");
-            pecofence_core::i18n::text(
-                "请在 ExplorerPatcher 的 Properties › File Explorer 里取消“Register as shell extension”并重启资源管理器。上次因它出错而关闭。",
-            )
+            tracing::info!(menu_crash, "the crash was inside ExplorerPatcher");
+            // While a menu was built: Windows' part of the item menus is off now as well, so
+            // the notice names both steps, the setting first (the banner holds no more).
+            if menu_crash {
+                pecofence_core::i18n::text(
+                    "右键菜单里的 Windows 菜单项已暂时关闭。先在 ExplorerPatcher 的 Properties 里取消“Register as shell extension”，再从托盘菜单恢复。",
+                )
+            } else {
+                pecofence_core::i18n::text(
+                    "请在 ExplorerPatcher 的 Properties › File Explorer 里取消“Register as shell extension”并重启资源管理器。上次因它出错而关闭。",
+                )
+            }
             .to_string()
         } else if let Some(module) = other_programs_module(log).filter(|_| menu_crash) {
             tracing::info!(module, "the crash was inside another program's module");

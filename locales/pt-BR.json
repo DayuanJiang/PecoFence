@@ -562,6 +562,7 @@
   "PecoFence 上次意外关闭了。点击这里报告问题。": "O PecoFence fechou inesperadamente da última vez. Clique aqui para relatar o problema.",
   "更新或卸载 {0} 所属的程序可能会解决：上次 PecoFence 因这个文件出错而关闭。点击这里报告问题。": "Atualize ou remova o programa ao qual {0} pertence: o PecoFence fechou por uma falha nesse arquivo.",
   "请在 ExplorerPatcher 的 Properties › File Explorer 里取消“Register as shell extension”并重启资源管理器。上次因它出错而关闭。": "Em Properties › File Explorer do ExplorerPatcher, desmarque “Register as shell extension”: o PecoFence fechou por um erro nele.",
+  "右键菜单里的 Windows 菜单项已暂时关闭。先在 ExplorerPatcher 的 Properties 里取消“Register as shell extension”，再从托盘菜单恢复。": "Desmarque “Register as shell extension” no ExplorerPatcher e depois reative as entradas do Windows pelo menu da bandeja.",
   "PecoFence 上次意外关闭了，那次的日志会一起发送。如果还记得当时在做什么，请写在下面。": "O PecoFence fechou inesperadamente da última vez; o registro dessa execução vai junto. Se você lembrar o que estava fazendo, descreva abaixo.",
   "其他": "Outro",
   "内容": "Mensagem",
