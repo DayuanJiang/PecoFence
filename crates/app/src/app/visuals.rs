@@ -1306,6 +1306,8 @@ impl App {
 
     pub(super) fn on_system_settings_changed(&mut self) {
         self.refresh_language();
+        // The region's time and date formats (12 or 24 hours) may be what changed.
+        self.refresh_clocks("a system setting changed");
         self.ctx
             .motion
             .set_enabled(sysparams::client_area_animation());

@@ -222,6 +222,8 @@ const WALLPAPER_PREWARM_DELAY_MS: u32 = 3_000;
 const SPI_SETDESKWALLPAPER: usize = 0x0014;
 const SPI_SETWORKAREA: usize = 0x002F;
 const WM_POWERBROADCAST: u32 = 0x0218;
+/// The system time or the time zone changed.
+const WM_TIMECHANGE: u32 = 0x001E;
 const WM_WTSSESSION_CHANGE: u32 = 0x02B1;
 const PBT_APMSUSPEND: usize = 0x0004;
 const PBT_APMRESUMEAUTOMATIC: usize = 0x0012;
@@ -1494,6 +1496,16 @@ impl App {
                             } else {
                                 // A menu or dialog runs; Windows does not repeat the broadcast.
                                 window::set_timer(hwnd, TIMER_SYSTEM_SETTINGS_RETRY, 250);
+                            }
+                            None
+                        }
+                        WM_TIMECHANGE => {
+                            // While a menu or dialog runs, the clocks' own next tick takes
+                            // the new time.
+                            if let Ok(guard) = cell.try_borrow()
+                                && let Some(app) = guard.as_ref()
+                            {
+                                app.refresh_clocks("the system time changed");
                             }
                             None
                         }

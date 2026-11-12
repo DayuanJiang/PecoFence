@@ -212,6 +212,15 @@ impl App {
         self.create_tool_fence(NewTool::Clock, None, None, x, y);
     }
 
+    /// 时钟与日期: the system time, the time zone or the region's time format changed (`why`).
+    /// Every clock shows the new time now; it waited for its next tick, up to a minute.
+    pub(super) fn refresh_clocks(&self, why: &'static str) {
+        let drawn = self.fences.values().filter(|w| w.clock_changed()).count();
+        if drawn > 0 {
+            tracing::debug!(clocks = drawn, why, "clocks drawn again");
+        }
+    }
+
     /// 新建小工具 (tray and fence menu), command ids `base`..`base + 5`: 时钟 (while the
     /// desktop has none), the script examples, then 用自己的脚本….
     pub(super) fn new_tool_submenu(&self, base: u32) -> PopupMenu {
