@@ -389,6 +389,32 @@ mod tests {
         }
     }
 
+    /// The notice after a crash while a menu was built is a Windows banner: 4 lines of about
+    /// 36 Latin or 18 Chinese, Japanese or Korean characters, the rest is cut. Measured on
+    /// 2026-11-12 with a 24-character file name: every language fits at up to 126 half-width
+    /// characters, and the 182 of the earlier English text lost their last 48.
+    #[test]
+    fn the_menu_crash_notice_fits_the_banner() {
+        let source = "右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里恢复。上次因其他程序的 {0} 出错而关闭。";
+        let name = "ContextMenuHandler64.dll".to_string();
+        // Half-width characters: Chinese, Japanese and Korean characters take two.
+        let width =
+            |s: &str| -> usize { s.chars().map(|c| if c >= '\u{2E80}' { 2 } else { 1 }).sum() };
+        for &language in SUPPORTED {
+            let text = match language {
+                Language::SimplifiedChinese => source,
+                _ => catalog(language).get(source).expect(language.tag()),
+            };
+            let shown = interpolate(text, std::slice::from_ref(&name));
+            assert!(
+                width(&shown) <= 130,
+                "{}: {} half-width characters: {shown}",
+                language.tag(),
+                width(&shown)
+            );
+        }
+    }
+
     /// One kind of quotation mark per language: a card that names a fence in “ ” above a
     /// button named in 「 」 reads as two programs. The source strings (Simplified Chinese)
     /// are the catalogs' keys.
