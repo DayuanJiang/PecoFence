@@ -12,6 +12,8 @@
 #      the feed has none): the card's line comes from the site's copy
 #   F  installer edition, Update on the card, the download fails (the feed serves no setup): the
 #      About page opens, says so and offers the download page
+#   G  installer edition, Update on the card, a slow download (port 8723 answers the setup 25 s
+#      late): a notification says that it downloads, the tray item says so and takes no click
 # English UI (the card is read by OCR). Debug build (test delays, the settings page over CDP).
 function NoticeWin() { $n = [G]::FindWindowW('PecoFence.Notice', [NullString]::Value); if ($n -ne [IntPtr]::Zero -and [G]::IsWindowVisible($n)) { return $n }; return [IntPtr]::Zero }
 function Lines($re) { return @(PfLogAll | Where-Object { $_ -match $re -and $_ -notmatch 'omitted' } | Sort-Object -Unique) }
@@ -47,8 +49,9 @@ $script:NextRe = [regex]::Escape($script:Next)
 Log "build $v, the feed offers $script:Next"
 $feed = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\pf\kit\assets\serve-update.ps1', '-Port', '8721', '-Tag', "v$script:Next" -WindowStyle Hidden -PassThru
 $hang = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\pf\kit\assets\serve-update.ps1', '-Port', '8722', '-Tag', "v$script:Next", '-Hang' -WindowStyle Hidden -PassThru
+$slow = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\pf\kit\assets\serve-update.ps1', '-Port', '8723', '-Tag', "v$script:Next", '-SetupDelay', '25' -WindowStyle Hidden -PassThru
 Start-Sleep -Seconds 2
-Check 'both stand-ins run' ($feed -and -not $feed.HasExited -and $hang -and -not $hang.HasExited) ''
+Check 'the stand-ins run' ($feed -and -not $feed.HasExited -and $hang -and -not $hang.HasExited -and $slow -and -not $slow.HasExited) ''
 
 Case 'A: GitHub refuses, the site answers (automatic check)'
 Again 8799 8721
@@ -142,8 +145,29 @@ Check 'Update on the card, the setup cannot be downloaded: the About page opens 
 Check 'Open download page shows there too' ($open -and (SiteButton)) "extra button=$(if ($open) { SiteButton })"
 Remove-Item "$PfApp\unins000.exe" -ErrorAction SilentlyContinue
 
+Case 'G: installer edition, a slow download says that it runs'
+PfQuit
+Set-Content "$PfApp\unins000.exe" 'test'
+Again 8723 8723
+$card = WaitLine 'update card shown' 25
+Start-Sleep -Milliseconds 800
+$n = NoticeWin
+if ($n -ne [IntPtr]::Zero) { $r = Rect $n; [G]::Click($r.R - 70, $r.B - 34) }
+$toast = ToastOcr 'Downloading' 6
+Shot 'g1-downloading'
+CloseToast
+$m = TrayMenu; Start-Sleep -Milliseconds 500
+$menu = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+[G]::Press(0x1B); Start-Sleep -Milliseconds 400; [G]::Press(0x1B); [G]::MoveTo(700, 450)
+Check 'Update on the card: a notification says that the new version downloads' ($card -match 'installs=true' -and $toast -match 'Downloading the new version') "toast: $toast"
+Check 'while it downloads the tray item says so and takes no click' ($menu -match '^Downloading the new version.{1,3} \(off\)') "menu: $menu"
+PfQuit
+Remove-Item "$PfApp\unins000.exe" -ErrorAction SilentlyContinue
+ClearPfNotices
+
 Case 'cleanup'
 PfQuit
+Stop-Process -Id $slow.Id -Force -ErrorAction SilentlyContinue
 Stop-Process -Id $feed.Id -Force -ErrorAction SilentlyContinue
 Stop-Process -Id $hang.Id -Force -ErrorAction SilentlyContinue
 Remove-Item Env:\PECOFENCE_UPDATE_URL, Env:\PECOFENCE_UPDATE_SITE_URL, Env:\PECOFENCE_TEST_UPDATE_MS, Env:\PECOFENCE_WEBVIEW_ARGS -ErrorAction SilentlyContinue

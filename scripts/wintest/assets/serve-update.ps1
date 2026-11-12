@@ -6,7 +6,8 @@
 # line). Its setup file is not served (404), so an
 # update stops at the download. Requests go to C:\pf\run\feed.log.
 # -Hang: a server that takes connections and never answers (a network that swallows the request).
-param([int]$Port = 8721, [string]$Tag = 'v0.3.3', [switch]$Hang)
+# -SetupDelay N: the setup's 404 comes N seconds late (a slow download that then fails).
+param([int]$Port = 8721, [string]$Tag = 'v0.3.3', [switch]$Hang, [int]$SetupDelay = 0)
 $base = "http://127.0.0.1:$Port/"
 $name = 'pecofence-' + $Tag + '-x64-setup.exe'
 $json = '{"tag_name":"' + $Tag + '","html_url":"https://example.invalid/","body":"\u8fd9\u4e00\u7248\u4fee\u597d\u4e86\u901f\u89c8\u641c\u7d22\u91cc\u8f93\u5165\u4e2d\u6587\u65f6\u5076\u5c14\u5361\u4f4f\u7684\u95ee\u9898\uff0c\u5e76\u4e14\u4f1a\u81ea\u5df1\u68c0\u67e5\u6709\u6ca1\u6709\u65b0\u7248\u672c\u3002\n\n## \u65b0\u529f\u80fd\n- \u81ea\u52a8\u68c0\u67e5\u66f4\u65b0","assets":[{"name":"' + $name + '","browser_download_url":"' + $base + $Tag + '/' + $name + '"}]}'
@@ -33,7 +34,10 @@ while ($true) {
     if ($path -eq '/repos/DayuanJiang/PecoFence/releases/latest') { $body = [Text.Encoding]::UTF8.GetBytes($json); $type = 'application/json'; $code = '200 OK' }
     elseif ($path -eq '/update.json') { $body = [Text.Encoding]::UTF8.GetBytes($site); $type = 'application/json'; $code = '200 OK' }
     elseif ($lang -and $notes.ContainsKey($lang)) { $body = [Text.Encoding]::UTF8.GetBytes($notes[$lang]); $type = 'text/plain; charset=utf-8'; $code = '200 OK' }
-    else { $body = [Text.Encoding]::UTF8.GetBytes('not found'); $type = 'text/plain'; $code = '404 Not Found' }
+    else {
+      if ($SetupDelay -gt 0 -and $path -eq "/$Tag/$name") { Start-Sleep -Seconds $SetupDelay }
+      $body = [Text.Encoding]::UTF8.GetBytes('not found'); $type = 'text/plain'; $code = '404 Not Found'
+    }
     $head = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $code`r`nContent-Type: $type`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n")
     $s.Write($head, 0, $head.Length); $s.Write($body, 0, $body.Length); $s.Flush()
     "$(Get-Date -Format HH:mm:ss.fff) $line -> $code $($body.Length) bytes" | Add-Content C:\pf\run\feed.log

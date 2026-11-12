@@ -469,8 +469,8 @@ impl App {
                 }
             };
             self.post_update();
-            // 「更新」 on the card or in the tray menu shows nothing while it downloads: when
-            // that failed, the About page opens, says so and offers the site's download page.
+            // 「更新」 on the card or in the tray menu runs with Settings closed: when the
+            // download failed, the About page opens, says so and offers the site's download page.
             if matches!(self.updates.status, Status::DownloadFailed) {
                 tracing::info!("update: the download failed; opening the About page");
                 self.open_settings_page("about", Some("updateCard"));
@@ -535,6 +535,11 @@ impl App {
         self.updates.found.as_ref().map(|r| r.version.clone())
     }
 
+    /// The new setup is downloading (the tray item says so meanwhile).
+    pub(super) fn update_downloading(&self) -> bool {
+        matches!(self.updates.status, Status::Downloading(_))
+    }
+
     /// 「更新」 (the tray item, the card): the installer edition downloads and installs, the ZIP
     /// edition opens the download page.
     pub(super) fn update_now(&mut self, by: &'static str) {
@@ -555,6 +560,14 @@ impl App {
         }
         let install = self.update_edition() == Some("installer") && release.setup.is_some();
         tracing::info!(by, installs = install, version = %release.version, "update: update now");
+        // Nothing else shows until setup starts, and on a slow line that takes minutes.
+        if install && let Some(tray) = &self.tray {
+            tray.show_info(
+                "PecoFence",
+                pecofence_core::i18n::text("正在下载新版本…"),
+                false,
+            );
+        }
         self.on_update_action(if install {
             "installUpdate"
         } else {

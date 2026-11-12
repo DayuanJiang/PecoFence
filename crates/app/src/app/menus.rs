@@ -257,14 +257,16 @@ impl App {
         let menu = PopupMenu::new();
         // A newer version stays offered at the top until it is installed.
         if let Some(version) = self.update_offered() {
-            menu.item(
-                CMD_UPDATE,
-                &pecofence_core::i18n::format("更新到 {0}", &[version]),
-                false,
-                false,
-            )
-            .icon(glyph::REFRESH)
-            .separator();
+            // While its setup downloads the item says so and takes no click.
+            let downloading = self.update_downloading();
+            let label = if downloading {
+                pecofence_core::i18n::text("正在下载新版本…").to_string()
+            } else {
+                pecofence_core::i18n::format("更新到 {0}", &[version])
+            };
+            menu.item(CMD_UPDATE, &label, false, downloading)
+                .icon(glyph::REFRESH)
+                .separator();
         }
         // After a crash in a menu extension the item menus have no Windows part: the way back.
         if self.windows_menu_off() {
