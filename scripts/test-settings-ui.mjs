@@ -2016,7 +2016,12 @@ async function runTests() {
     button.click(); assert(lastAction() === 'checkUpdate', 'Check not requested');
     await show({ ...installer, state: 'checking', version: null });
     assert(button.disabled && status.textContent === '正在检查更新…', 'Checking state wrong');
+    // The line that waits has a ring that turns, one that stands still without animations.
+    const ring = () => doc.getAnimations().filter(a => a.animationName === 'ring-turn' && a.effect.target === status && a.effect.pseudoElement === '::before');
+    assert(status.classList.contains('busy') && ring().length === 1 && ring()[0].effect.getComputedTiming().iterations === Infinity, '正在检查更新…: no ring turns beside the line');
+    assert(frame.contentWindow.getComputedStyle(status, '::before').width === '12px', 'The ring is not 12 px');
     await show({ ...installer, state: 'available' });
+    assert(!status.classList.contains('busy') && ring().length === 0, 'The ring stays after the check has ended');
     assert(status.textContent.startsWith('有新版本 0.1.4。') && button.textContent === '下载并安装' && button.classList.contains('accent'), 'Available (installer) wrong: ' + status.textContent);
     button.click(); assert(lastAction() === 'installUpdate', 'Install not requested');
     await show({ ...installer, state: 'downloading' });
@@ -3376,14 +3381,14 @@ async function runTests() {
       const card = doc.getElementById('updateCard'), next = doc.getElementById('updateAutoCard'), height = card.offsetHeight;
       assert(height > 0, 'The update card does not show while the check runs');
       const gliding = () => doc.getAnimations().filter(a => a.effect.target === next && !a.animationName).length;
-      assert(await until(() => !doc.getAnimations().length), 'The page never came to rest');
+      assert(await until(() => !doc.getAnimations().filter(a => a.animationName !== 'ring-turn').length), 'The page never came to rest');
       // At rest the card has its title alone; the status line of a check moves the title up.
       const title = card.querySelector('.t'), rising = () => doc.getAnimations().filter(a => a.effect.target === title && !a.animationName && !a.transitionProperty).length;
       w.testUpdate({ state: 'idle', version: '', edition: 'installer', hasSetup: true });
-      assert(await until(() => !doc.getAnimations().length), 'The card never came to rest');
+      assert(await until(() => !doc.getAnimations().filter(a => a.animationName !== 'ring-turn').length), 'The card never came to rest');
       w.testUpdate({ state: 'checking', version: '', edition: 'installer', hasSetup: true });
       assert(rising() === 1, 'A click on 检查更新: the title jumps up to make room for the status line');
-      assert(await until(() => !doc.getAnimations().length), 'The card never came to rest');
+      assert(await until(() => !doc.getAnimations().filter(a => a.animationName !== 'ring-turn').length), 'The card never came to rest');
       w.testUpdate({ state: 'checkFailed', version: '', edition: 'installer', hasSetup: true });
       assert(card.offsetHeight > height, 'The failed check no longer needs a second line (the test needs another width)');
       assert(gliding() === 1, 'The card grew by ' + (card.offsetHeight - height) + ' px and the card under it jumped');

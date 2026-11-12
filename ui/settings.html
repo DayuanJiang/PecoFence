@@ -305,6 +305,11 @@
   .hotkey-win input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
   .disabled .hotkey-win { color: var(--text-disabled); }
   .card .s.error { color: var(--error); } .card .s.caution { color: var(--caution); }
+  /* A line that waits (正在检查更新…, 正在下载新版本…) has the small ring Windows shows beside such
+     a line: three quarters of a circle in the accent colour, one turn a second. With Windows'
+     animations off it stands still. */
+  .card .s.busy::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-inline-end: 6px; vertical-align: -2px; border: 1.5px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: ring-turn calc(var(--slow) * 3) linear infinite; }
+  @keyframes ring-turn { to { transform: rotate(360deg); } }
   button[aria-pressed=true] { background: var(--accent); color: var(--on-accent); border-color: transparent; }
   button[aria-pressed=true]:hover { background: var(--accent-hover); }
   button[aria-pressed=true]:disabled { background: var(--control-disabled); color: var(--text-disabled); border-color: var(--control-stroke); }
@@ -2706,6 +2711,7 @@
       : s === 'checkFailed' ? t("没能连上 GitHub 和 PecoFence 网站，检查不了更新。请稍后再试，或到 pecofence.jiang.jp 下载最新版本。")
       : s === 'downloadFailed' ? t("没能下载新版本。请稍后再试，或到 pecofence.jiang.jp 下载最新版本。")
       : '';
+    status.classList.toggle('busy', s === 'checking' || s === 'downloading');
     // A failed check or download: the site's download page is one click away.
     const site = document.getElementById('updateSite');
     site.hidden = s !== 'checkFailed' && s !== 'downloadFailed';
