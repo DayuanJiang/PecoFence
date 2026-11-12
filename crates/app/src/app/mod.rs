@@ -2955,6 +2955,7 @@ impl App {
                     if let Some(at) = h.closed_at() {
                         self.settings_kept.closed_at = Some(at);
                     }
+                    self.settings_kept.deleted_snapshot = None;
                     self.settings = None;
                     self.set_settings_ring(None);
                     self.resume_hotkeys();

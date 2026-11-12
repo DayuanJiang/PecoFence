@@ -510,6 +510,8 @@
   "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。": "Puedes tener como máximo {0} grupos (incluidas las pestañas). Elimina o fusiona algunos primero.",
   "要删除栅栏“{0}”吗？": "¿Eliminar el grupo «{0}»?",
   "已删除栅栏“{0}”": "Grupo «{0}» eliminado",
+  "已删除规则“{0}”": "Regla «{0}» eliminada",
+  "已删除快照“{0}”": "Instantánea «{0}» eliminada",
   "点“撤销”，或在栅栏上按 Ctrl+Z，就能把它找回来。": "Haz clic en Deshacer, o pulsa Ctrl+Z en un grupo, para recuperarlo.",
   "点“撤销”，或在栅栏上按 Ctrl+Z，就能把它们放回原处。": "Haz clic en Deshacer, o pulsa Ctrl+Z en un grupo, para devolverlos a su sitio.",
   "永久删除的文件无法撤销。": "La eliminación permanente no se puede deshacer.",

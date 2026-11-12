@@ -180,7 +180,20 @@ function bridge() {
           state.pickedColors = { ...state.pickedColors, [message.target]: '123456' };
           setTimeout(() => receive({ data: { type: 'pickedColor', target: message.target, hex: '123456' } }), 0);
         }
-        if (message.name === 'deleteSnapshot') state.snapshots = state.snapshots.filter(s => s.id !== message.id);
+        // Mirror the host: a deleted snapshot is kept for the notice's 撤销, which puts it back
+        // at its place.
+        if (message.name === 'deleteSnapshot') {
+          const at = state.snapshots.findIndex(s => s.id === message.id);
+          if (at >= 0) {
+            const [gone] = state.snapshots.splice(at, 1);
+            window.testDeletedSnapshot = { at, gone };
+            setTimeout(() => receive({ data: { type: 'toast', text: '已删除快照“' + gone.name + '”', undo: 'restoreDeletedSnapshot' } }), 0);
+          }
+        }
+        if (message.name === 'restoreDeletedSnapshot' && window.testDeletedSnapshot) {
+          state.snapshots.splice(window.testDeletedSnapshot.at, 0, window.testDeletedSnapshot.gone);
+          window.testDeletedSnapshot = null;
+        }
         if (['ready', 'patchSettings', 'setRules', 'setFence'].includes(message.type) || message.type === 'action') {
           setTimeout(window.testRefresh, 0);
         }
@@ -2894,6 +2907,45 @@ async function runTests() {
     doc = await reset();
   });
 
+  await test('Deleting a rule shows a notice with 撤销 that puts the rule back at its place', async () => {
+    doc = await reset();
+    rulesPage(doc);
+    const before = structuredClone(current().rules.list);
+    const toast = doc.getElementById('toast'), undo = doc.getElementById('toastUndo');
+    const clickable = () => frame.contentWindow.getComputedStyle(toast).pointerEvents === 'auto';
+    assert(undo.hidden && !clickable(), 'The notice bar takes clicks before any delete');
+    doc.querySelector('#ruleList [data-act=del]').click(); await settle();
+    assert(current().rules.list.length === before.length - 1 && current().rules.list[0].id === 'rule-b', 'One click did not delete the rule');
+    assert(toast.classList.contains('on') && doc.getElementById('toastText').textContent === '已删除规则“Documents”', 'No notice names the deleted rule: ' + doc.getElementById('toastText').textContent);
+    assert(!undo.hidden && visible(undo) && clickable(), '撤销 is not shown or cannot be clicked');
+    undo.click(); await settle();
+    assert(JSON.stringify(current().rules.list) === JSON.stringify(before), 'The rule did not come back at its place with all its fields: ' + JSON.stringify(current().rules.list));
+    assert(ruleCount(doc) === before.length && !toast.classList.contains('on') && !clickable(), 'The list or the notice did not follow the undo');
+    // The second of two, then the first: each undo puts back the rule of its own notice only.
+    doc.querySelectorAll('#ruleList [data-act=del]')[1].click(); await settle();
+    doc.querySelector('#ruleList [data-act=del]').click(); await settle();
+    assert(current().rules.list.length === 0 && doc.getElementById('toastText').textContent === '已删除规则“Documents”', 'The second delete did not replace the notice');
+    undo.click(); await settle();
+    assert(current().rules.list.length === 1 && current().rules.list[0].id === 'rule-a', 'Undo did not put back the rule deleted last');
+    // A notice without an undo has no button and lets clicks through.
+    doc.querySelector('#ruleList [data-act=del]').click(); await settle();
+    frame.contentWindow.testHost({ type: 'toast', text: '已保存快照' }); await settle();
+    assert(undo.hidden && !clickable() && toast.classList.contains('on'), 'A plain notice kept 撤销');
+    assert(current().rules.list.length === 0, 'A plain notice brought the rule back');
+  });
+  await test('Deleting a snapshot: the notice of the host carries 撤销, which asks the host to put it back', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=layout]').click();
+    const undo = doc.getElementById('toastUndo');
+    doc.querySelector('#snapList [data-act=del]').click(); await settle();
+    assert(current().snapshots.length === 0 && !doc.querySelector('#snapList [data-row-id]'), 'One click did not delete the snapshot');
+    assert(doc.getElementById('toast').classList.contains('on') && doc.getElementById('toastText').textContent === '已删除快照“Before changes”' && !undo.hidden,
+      'No notice with 撤销 names the snapshot: ' + doc.getElementById('toastText').textContent);
+    undo.click(); await settle();
+    assert(frame.contentWindow.testMessages.filter(m => m.name === 'restoreDeletedSnapshot').length === 1, '撤销 did not ask the host once: ' + JSON.stringify(frame.contentWindow.testMessages.slice(-3)));
+    assert(current().snapshots.length === 1 && doc.querySelector('#snapList [data-row-id=snapshot-a]'), 'The snapshot did not come back');
+    assert(!doc.getElementById('toast').classList.contains('on'), 'The notice stayed after 撤销');
+  });
   await test('The page tells the host once that it has drawn the state', async () => {
     doc = await reset();
     const sent = type => frame.contentWindow.testMessages.filter(m => m.type === type);

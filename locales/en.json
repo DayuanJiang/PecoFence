@@ -534,6 +534,8 @@
   "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。": "You can have at most {0} fences (tabs included). Delete or merge some first.",
   "要删除栅栏“{0}”吗？": "Delete the fence “{0}”?",
   "已删除栅栏“{0}”": "Fence “{0}” deleted",
+  "已删除规则“{0}”": "Rule “{0}” deleted",
+  "已删除快照“{0}”": "Snapshot “{0}” deleted",
   "点“撤销”，或在栅栏上按 Ctrl+Z，就能把它找回来。": "Click Undo, or press Ctrl+Z on a fence, to get it back.",
   "点“撤销”，或在栅栏上按 Ctrl+Z，就能把它们放回原处。": "Click Undo, or press Ctrl+Z on a fence, to put them back.",
   "永久删除的文件无法撤销。": "A permanent delete cannot be undone.",

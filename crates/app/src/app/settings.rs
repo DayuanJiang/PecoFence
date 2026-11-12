@@ -115,6 +115,9 @@ pub(super) struct SettingsKept {
     pub closed_at: Option<(RECT, f32)>,
     /// The page it showed (a `data-page` of the navigation) and how far it was scrolled.
     pub view: Option<(String, f64)>,
+    /// The snapshot the page deleted last and its place in the list, for the notice's 撤销.
+    /// Gone when the window closes.
+    pub deleted_snapshot: Option<(usize, pecofence_core::Snapshot)>,
 }
 
 fn snapshot_limit_text() -> String {
@@ -997,10 +1000,48 @@ impl App {
                         .get("id")
                         .and_then(|i| i.as_str())
                         .and_then(|i| uuid::Uuid::parse_str(i).ok())
-                        && self.state.delete_snapshot(id)
+                        && let Some(at) =
+                            self.state.config.snapshots.iter().position(|s| s.id == id)
                     {
+                        // One click deletes. The page's notice offers 撤销 for a few seconds:
+                        // the snapshot is kept for it.
+                        let gone = self.state.config.snapshots[at].clone();
+                        self.state.delete_snapshot(id);
                         self.schedule_save();
                         self.push_settings_state();
+                        tracing::debug!(
+                            index = at,
+                            "snapshot deleted on the page, kept for its undo"
+                        );
+                        if let Some(h) = &self.settings {
+                            let text = pecofence_core::i18n::format(
+                                "已删除快照“{0}”",
+                                std::slice::from_ref(&gone.name),
+                            );
+                            let undo = "restoreDeletedSnapshot";
+                            h.post_json(
+                                &serde_json::json!({ "type": "toast", "text": text, "undo": undo })
+                                    .to_string(),
+                            );
+                        }
+                        self.settings_kept.deleted_snapshot = Some((at, gone));
+                    }
+                }
+                // 撤销 on the delete notice: the snapshot goes back to its place in the list,
+                // with its name and content.
+                Some("restoreDeletedSnapshot") => {
+                    if let Some((at, snapshot)) = self.settings_kept.deleted_snapshot.take() {
+                        if !snapshot_room(&mut self.state.config.snapshots, None) {
+                            self.settings_error(&snapshot_limit_text());
+                            return;
+                        }
+                        let list = &mut self.state.config.snapshots;
+                        let at = at.min(list.len());
+                        list.insert(at, snapshot);
+                        self.state.mark_dirty();
+                        self.schedule_save();
+                        self.push_settings_state();
+                        tracing::info!(index = at, "deleted snapshot put back from the page");
                     }
                 }
                 Some("swapMonitors") => {

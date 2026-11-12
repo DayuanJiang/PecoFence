@@ -406,6 +406,9 @@
   .infobar .ic::before { content: "\E73E"; font-size: 16px; color: var(--ok); }
   .infobar.on { opacity: 1; transform: none; }
   .infobar.error { background: var(--error-bg); } .infobar.error .ic::before { content: "\E783"; color: var(--error); }
+  /* With 撤销 (a rule or a snapshot was deleted) the bar takes clicks; the button leaves with the bar. */
+  .infobar.on.undo { pointer-events: auto; } .infobar button { flex: none; min-width: 72px; margin: -6px -4px -6px 4px; }
+  .infobar:not(.on) button { visibility: hidden; transition: visibility 0s .18s; }
 
   @media (max-width: 900px) {
     .app { grid-template-columns: 200px minmax(0, 1fr); } main { padding: 20px 24px 32px 20px; }
@@ -854,7 +857,7 @@
   </main>
 </div>
 <div id="seWindow"></div>
-<div class="infobar" id="toast" role="status"><span class="ic" aria-hidden="true"></span><span id="toastText"></span></div>
+<div class="infobar" id="toast" role="status"><span class="ic" aria-hidden="true"></span><span id="toastText"></span><button id="toastUndo" hidden>撤销</button></div>
 <script>
 (() => {
   const i18n = window.PecoFenceI18n;
@@ -2129,7 +2132,14 @@
             return;
           }
           if (act === 'toggle') r.enabled = !r.enabled;
-          if (act === 'del') rules.splice(i, 1);
+          if (act === 'del') {
+            rules.splice(i, 1);
+            // 撤销 puts the rule back at its place with all its fields.
+            toast(tf("已删除规则“{0}”", r.name), false, () => {
+              state.rules.list.splice(Math.min(i, state.rules.list.length), 0, r);
+              send({ type: 'setRules', rules: state.rules }); renderRules();
+            });
+          }
           if (act === 'up' && i > 0) { rules.splice(i - 1, 0, rules.splice(i, 1)[0]); }
           if (act === 'down' && i < rules.length - 1) { rules.splice(i + 1, 0, rules.splice(i, 1)[0]); }
           send({ type: 'setRules', rules: state.rules }); renderRules();
@@ -2664,8 +2674,21 @@
   };
   renderFeedback();
 
-  let toastTimer;
-  function toast(t, error = false) { const el = document.getElementById('toast'); document.getElementById('toastText').textContent = t; el.classList.toggle('error', error); el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), error ? 5000 : 2400); }
+  // `undo`: the bar carries 「撤销」 for 6 s, which runs it (a rule or a snapshot was deleted).
+  let toastTimer, toastUndo = null;
+  function toast(t, error = false, undo = null) {
+    const el = document.getElementById('toast');
+    document.getElementById('toastText').textContent = t;
+    el.classList.toggle('error', error);
+    toastUndo = undo;
+    document.getElementById('toastUndo').hidden = !undo;
+    el.classList.toggle('undo', !!undo);
+    el.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(toastOff, undo ? 6000 : error ? 5000 : 2400);
+  }
+  function toastOff() { clearTimeout(toastTimer); toastUndo = null; document.getElementById('toast').classList.remove('on', 'undo'); }
+  document.getElementById('toastUndo').onclick = () => { const undo = toastUndo; toastOff(); if (undo) undo(); };
 
   function renderWorkspaceSummary(fenceCount, itemCount) {
     document.getElementById('workspaceSummary').textContent = tf("{0} 个栅栏 · {1} 个项目", fenceCount, itemCount);
@@ -3213,7 +3236,7 @@
       if (fbSendPending) { fbSendPending = false; fbSend.click(); }
     }
     else if (m.type === 'showFeedback') showFeedback(!!m.crash);
-    else if (m.type === 'toast') toast(m.text, !!m.error);
+    else if (m.type === 'toast') toast(m.text, !!m.error, m.undo ? () => send({ type: 'action', name: m.undo }) : null);
     else if (m.type === 'pickedColor') pickedColor(m.target, m.hex);
     else if (m.type === 'update') { update = m.update; renderUpdate(); }
     else if (m.type === 'peekHotkeyResult') { peekRecorder.result(m); renderPeekHotkey(); }

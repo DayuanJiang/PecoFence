@@ -533,6 +533,8 @@
   "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。": "Puoi avere al massimo {0} riquadri, incluse le schede. Eliminane o uniscine alcuni.",
   "要删除栅栏“{0}”吗？": "Vuoi eliminare il riquadro «{0}»?",
   "已删除栅栏“{0}”": "Riquadro «{0}» eliminato",
+  "已删除规则“{0}”": "Regola «{0}» eliminata",
+  "已删除快照“{0}”": "Istantanea «{0}» eliminata",
   "点“撤销”，或在栅栏上按 Ctrl+Z，就能把它找回来。": "Fai clic su Annulla, o premi Ctrl+Z su un riquadro, per recuperarlo.",
   "点“撤销”，或在栅栏上按 Ctrl+Z，就能把它们放回原处。": "Fai clic su Annulla, o premi Ctrl+Z su un riquadro, per rimetterli a posto.",
   "永久删除的文件无法撤销。": "L'eliminazione definitiva non può essere annullata.",
