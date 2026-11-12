@@ -739,6 +739,9 @@ impl FenceViewState {
             self.begin_content_swap(0);
         }
         let _ = self.redraw();
+        // Another icon is under the resting pointer now (a Ctrl+wheel step): the hover fill
+        // goes to it at once; it stayed on the old icon until the fence had its new height.
+        self.request_hover_refresh();
         true
     }
 
