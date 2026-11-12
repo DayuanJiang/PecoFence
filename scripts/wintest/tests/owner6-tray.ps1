@@ -4,7 +4,8 @@
 # the icon hidden: a second start opens the settings, the page has 「退出 PecoFence」, a
 # notification brings the icon for as long as it shows, and while the item menus wait to get
 # their Windows part back (after a crash in a menu extension) the icon stays, because the entry
-# that brings it back is in its menu.
+# that brings it back is in its menu. The same while no Peek shortcut can be registered: that
+# notice says to use Peek from the tray menu.
 # A debug build (build.sh --debug, run.sh --bin target/wintest-bin-debug): the page is read over
 # CDP, the clicks are real.
 Add-Type @"
@@ -173,6 +174,34 @@ Check 'the icon leaves again when the notification is gone' ($down -ge 0 -and [b
 [TrayAt]::UnregisterHotKey([IntPtr]::Zero, 77) | Out-Null
 T6Corner 'corner-after-notice'
 
+Case 'the icon stays while no Peek shortcut works'
+# Every combination Peek can take is taken (by this job) when PecoFence starts: its notice says
+# to use Peek from the tray menu, so the icon is there until a shortcut works again.
+PfQuit
+$t1 = [TrayAt]::RegisterHotKey([IntPtr]::Zero, 77, 3, 0x20)
+$t2 = [TrayAt]::RegisterHotKey([IntPtr]::Zero, 78, 9, 0x20)
+Log "Ctrl+Alt+Space and Win+Alt+Space registered by the job: $t1 $t2"
+[G]::MoveTo(700, 450)
+PfStart -Lang ''
+$up = TrayWait $true 8
+Shot 'notice-no-peek-shortcut'
+Check 'no shortcut is free: the notice goes out and the icon is there although the switch is off' ($t1 -and $t2 -and $up -ge 0 -and (TraySetting) -eq 'false' -and [bool](T6Log 'no peek hotkey combination is free') -and [bool](T6Log 'tray icon shown or hidden.*shown=true.*peek_without_shortcut=true')) "icon after $up ms; log: $(T6Log 'tray icon shown or hidden')"
+# Longer than the notification shows (about 7 s on the box).
+Start-Sleep -Seconds 12
+Check 'the icon is still there after the notice went away' (TrayThere)
+$picked = TrayPick '速览所有栅栏'
+Start-Sleep -Milliseconds 1000
+$dim = [G]::FindWindowW('PecoFence.PeekDimmer', [NullString]::Value)
+Check 'its menu starts the Peek' ([bool]$picked -and $dim -ne [IntPtr]::Zero -and [G]::IsWindowVisible($dim)) "menu: $script:LastTrayMenu; peek window=$dim"
+[G]::Press(0x1B); Start-Sleep -Milliseconds 1200
+[TrayAt]::UnregisterHotKey([IntPtr]::Zero, 77) | Out-Null
+[TrayAt]::UnregisterHotKey([IntPtr]::Zero, 78) | Out-Null
+# Any change of a setting makes PecoFence try the shortcuts again.
+Pf settings set featureTips true | Out-Null
+$ms = TrayWait $false
+Check 'a shortcut works again and the icon is hidden again' ($ms -ge 0 -and [bool](T6Log 'peek hotkey registered') -and [bool](T6Log 'tray icon shown or hidden.*shown=false.*why="peek shortcut"')) "gone after $ms ms; log: $(T6Log 'tray icon shown or hidden')"
+Pf settings set featureTips false | Out-Null
+
 Case 'the way back after a crash in a menu extension'
 # The marker a start writes after such a crash (tests/shellext-fault.ps1 part M makes the crash):
 # the notice then says the Windows entries come back from the tray menu, so the icon is there
@@ -213,6 +242,7 @@ Check 'switched off again, it is gone' ((TrayWait $false) -ge 0)
 Case 'cleanup'
 Remove-Item $T6Marker -ErrorAction SilentlyContinue
 [TrayAt]::UnregisterHotKey([IntPtr]::Zero, 77) | Out-Null
+[TrayAt]::UnregisterHotKey([IntPtr]::Zero, 78) | Out-Null
 CloseWindows
 PfQuit
 Get-Process pecofence-watchdog -ErrorAction SilentlyContinue | Stop-Process -Force

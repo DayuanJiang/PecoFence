@@ -205,6 +205,11 @@ impl TrayIcon {
         }
     }
 
+    /// What the last [`Self::set_wanted`] said (true before the first).
+    pub fn wanted(&self) -> bool {
+        self.wanted.get()
+    }
+
     /// Adds the icon to the notification area, unless the user does not want it there. Call it
     /// again on `TaskbarCreated`: a restarted Explorer starts without anyone's icons. Already
     /// present (the message also comes on other occasions) counts as success.

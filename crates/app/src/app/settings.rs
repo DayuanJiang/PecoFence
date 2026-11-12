@@ -1587,6 +1587,9 @@ impl App {
         self.refresh_language();
         self.state.mark_dirty();
         self.schedule_save();
+        if tray_changed {
+            self.apply_tray_wanted("setting switched");
+        }
         self.sync_peek_hotkey();
         self.sync_windows_desktop_hotkey();
         self.sync_dialog_jump();
@@ -1613,9 +1616,6 @@ impl App {
         if per_desktop_changed {
             // New fences follow the current desktop from now on: it is followed while on.
             self.apply_desktop_visibility("per-desktop fences switched");
-        }
-        if tray_changed {
-            self.apply_tray_wanted("setting switched");
         }
         self.push_settings_state();
     }

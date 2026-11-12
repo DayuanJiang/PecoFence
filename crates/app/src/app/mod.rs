@@ -3261,22 +3261,30 @@ impl App {
     }
 
     /// Whether the icon belongs in the notification area now: 「显示托盘图标」, and whatever it
-    /// says while the item menus are without their Windows part, because the entry that
-    /// brings that part back is in the icon's menu and the notice after the crash says so.
+    /// says in the two states whose notice sends the user to the icon's menu: the item menus
+    /// are without their Windows part (the entry that brings it back is there), and Peek has
+    /// no shortcut that works (速览所有栅栏 is there).
     fn tray_wanted(&self) -> bool {
-        self.state.config.settings.show_tray_icon || self.windows_menu_off()
+        self.state.config.settings.show_tray_icon
+            || self.windows_menu_off()
+            || self.peek_without_shortcut()
     }
 
-    /// Adds or removes the icon after the setting, or what else decides, changed.
+    /// Adds or removes the icon after the setting, or what else decides, changed. Nothing to
+    /// change leaves the icon alone: it may be there for a notification.
     pub(super) fn apply_tray_wanted(&self, why: &'static str) {
         let Some(t) = &self.tray else {
             return;
         };
         let wanted = self.tray_wanted();
+        if wanted == t.wanted() {
+            return;
+        }
         tracing::info!(
             shown = wanted,
             setting = self.state.config.settings.show_tray_icon,
             menus_wait = self.windows_menu_off(),
+            peek_without_shortcut = self.peek_without_shortcut(),
             why,
             "tray icon shown or hidden"
         );

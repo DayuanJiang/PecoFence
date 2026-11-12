@@ -143,6 +143,8 @@ impl App {
         // While a fallback is registered `want != peek_hotkey`, so every sync (startup, preset,
         // settings apply) retries the preferred combination first and switches back once free.
         if want == self.peek_hotkey {
+            // Peek switched off, or to 「双击 Ctrl」, while no shortcut worked.
+            self.apply_tray_wanted("peek shortcut");
             return;
         }
         let prev = self.peek_hotkey;
@@ -159,9 +161,12 @@ impl App {
             let registered = std::iter::once(h).chain(FALLBACKS).find(|c| {
                 hotkey::register(hwnd, HOTKEY_PEEK, c.mods | hotkey::mods::NOREPEAT, c.vk)
             });
+            self.peek_hotkey = registered;
+            // Before the notices: with 「显示托盘图标」 off the icon stays while no shortcut
+            // works (the notice names the tray menu) and leaves again once one does.
+            self.apply_tray_wanted("peek shortcut");
             match registered {
                 Some(c) => {
-                    self.peek_hotkey = Some(c);
                     tracing::info!(hotkey = %c, "peek hotkey registered");
                     if c != h {
                         tracing::warn!(wanted = %h, "peek hotkey taken; using fallback");
@@ -197,6 +202,13 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Peek is on with a shortcut, and neither the chosen combination nor a fallback could be
+    /// registered: the notice of that sends the user to the tray menu.
+    pub(super) fn peek_without_shortcut(&self) -> bool {
+        let peek = &self.state.config.settings.peek;
+        peek.enabled && !peek.double_ctrl && self.peek_hotkey.is_none()
     }
 
     /// 「双击 Ctrl」 as Peek's shortcut: listened to while Peek is on and chosen, and not while
