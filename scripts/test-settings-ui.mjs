@@ -3342,6 +3342,24 @@ async function runTests() {
     } finally { frame.style.width = was; }
     doc = await reset();
   });
+  await test('Empty lists say what to do, the fence picker goes with the last fence, and a long fence name ends before the arrow', async () => {
+    doc = await reset();
+    const w = win();
+    w.testState.rules.list = []; w.testState.snapshots = []; w.testRefresh(); await settle();
+    const rules = doc.getElementById('ruleList').textContent, snaps = doc.getElementById('snapList').textContent;
+    assert(rules.includes('尚未添加规则') && rules.includes('快速添加') && rules.includes('新建规则'), 'No rules: the list says only: ' + rules);
+    assert(snaps.includes('尚无快照') && snaps.includes('保存快照'), 'No snapshots: the list says only: ' + snaps);
+    doc.querySelector('[data-page=fences]').click();
+    w.testState.fences[0].title = '二〇二六年第四季度项目资料与设计稿归档（请勿删除，等待审核通过后再整理）ABCDEFGHIJKLMNOPQRSTUVWXYZ'; w.testRefresh(); await settle();
+    const sel = doc.getElementById('fenceSel'), count = doc.getElementById('fenceBadge'), box = sel.getBoundingClientRect();
+    assert(box.width <= 460, 'A long fence name makes the picker ' + Math.round(box.width) + ' px wide');
+    assert(count.getBoundingClientRect().top < box.bottom, 'The number of fences wrapped under the picker');
+    assert(!w.CSS.supports('appearance: base-select') || w.getComputedStyle(sel).overflowClipMargin.includes('content-box'), 'The name runs under the arrow of the list: ' + w.getComputedStyle(sel).overflowClipMargin);
+    w.testState.fences = []; w.testRefresh(); await settle();
+    assert(!sel.offsetParent && !count.offsetParent, 'With no fence the empty picker is still there');
+    assert(doc.getElementById('fenceEmpty').offsetParent, 'With no fence nothing says how to make one');
+    doc = await reset();
+  });
   await test('The selected page, the rows of 查找设置, a list\'s options and a text box have a look under the pointer and pressed', async () => {
     doc = await reset();
     const selectors = [];

@@ -246,7 +246,8 @@
      the script (see "closed lists"). */
   @supports (appearance: base-select) {
     select, ::picker(select) { appearance: base-select; }
-    select { align-items: center; white-space: nowrap; overflow: hidden; }
+    /* A choice too long for its box ends before the arrow (the box clips at its content edge). */
+    select { align-items: center; white-space: nowrap; overflow: clip; overflow-clip-margin: content-box; }
     select::picker-icon { display: none; }
     select[hidden] { display: none; }
     ::picker(select) { margin: 4px 0; padding: 4px; border: 1px solid var(--tip-stroke); border-radius: 8px; background: var(--tip); color: var(--text); box-shadow: var(--shadow);
@@ -432,7 +433,8 @@
 
   /* Fences page: the fence picker frames the page instead of posing as a setting. */
   .picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 2px 6px; }
-  .picker select { min-width: 260px; }
+  .picker[hidden] { display: none; }
+  .picker select { min-width: min(260px, 100%); max-width: min(100%, 460px); }
   .fence-dot { width: 14px; height: 14px; flex: none; border-radius: 50%; border: 1px solid var(--control-strong); }
   .picker-count { margin-left: auto; color: var(--text3); font-size: 12px; }
   .picker-note { margin: 0 2px 20px; color: var(--text2); font-size: 12px; line-height: 16px; }
@@ -1993,6 +1995,8 @@
     };
     const f = fenceById(fenceSel);
     document.getElementById('fenceBadge').textContent = tf("{0} 个栅栏", fences.length);
+    // No fence: nothing to pick, the card under the title says how to make one.
+    sel.closest('.picker').hidden = !fences.length;
     document.getElementById('fenceEmpty').style.display = f ? 'none' : '';
     document.getElementById('fenceBody').style.display = f ? '' : 'none';
     document.getElementById('fenceHostNote').style.display = f && (f.host || f.tabbed) ? '' : 'none';
@@ -2241,7 +2245,7 @@
     const typing = editing && editing.form.contains(document.activeElement) ? document.activeElement : null;
     list.innerHTML = '';
     if (!rulesShown) { rulesShown = true; if (!rules.length) openRuleForm(); }
-    if (!rules.length) list.innerHTML = `<div class="card"><div class="s">${esc(t("尚未添加规则"))}</div></div>`;
+    if (!rules.length) list.innerHTML = `<div class="card"><div class="l"><div><div class="t">${esc(t("尚未添加规则"))}</div><div class="s">${esc(t("点上面“快速添加”里的一类，或在下面的“新建规则”里自己写一条。"))}</div></div></div></div>`;
     rules.forEach((r, i) => {
       const div = document.createElement('div');
       div.dataset.rowId = r.id;
@@ -2604,7 +2608,7 @@
     const sl = document.getElementById('snapList');
     const focus = focusBookmark(sl), tops = rowTops(sl);
     const snaps = state.snapshots || [];
-    sl.innerHTML = snaps.length ? '' : `<div class="card"><div class="s">${esc(t("尚无快照"))}</div></div>`;
+    sl.innerHTML = snaps.length ? '' : `<div class="card"><div class="l"><div><div class="t">${esc(t("尚无快照"))}</div><div class="s">${esc(t("点上面的“保存快照”，以后可以随时恢复到现在的布局。"))}</div></div></div></div>`;
     snaps.slice().reverse().forEach(sn => {
       const div = document.createElement('div');
       div.className = 'card';
