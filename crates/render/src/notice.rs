@@ -202,7 +202,10 @@ impl NoticeCard {
         layout: &NoticeLayout,
         theme: &Theme,
         hover: NoticeHit,
+        pressed: NoticeHit,
     ) -> Result<()> {
+        // The part the mouse button is held on, while the pointer is still over it.
+        let down = |hit: NoticeHit| pressed == hit && hover == hit;
         let card = Rect::new(0.0, 0.0, WIDTH, layout.height);
         s.clear(ColorF {
             r: 0.0,
@@ -258,7 +261,10 @@ impl NoticeCard {
                 a: 1.0,
             }
         };
-        let fill = if hover == NoticeHit::Button {
+        // WinUI's accent button: 90 % under the pointer, 80 % while pressed.
+        let fill = if down(NoticeHit::Button) {
+            with_alpha(accent, 0.8)
+        } else if hover == NoticeHit::Button {
             with_alpha(accent, 0.9)
         } else {
             accent
@@ -278,7 +284,9 @@ impl NoticeCard {
         if let (Some(text), Some(rect)) = (&self.secondary, &layout.secondary) {
             let shape = RoundedRect::uniform(*rect, 4.0);
             s.fill_rounded_rect(&shape, &s.create_solid_brush(theme.layer_fill)?);
-            if hover == NoticeHit::Secondary {
+            if down(NoticeHit::Secondary) {
+                s.fill_rounded_rect(&shape, &s.create_solid_brush(theme.subtle_pressed)?);
+            } else if hover == NoticeHit::Secondary {
                 s.fill_rounded_rect(&shape, &s.create_solid_brush(theme.subtle_hover)?);
             }
             let inset = Rect::new(
@@ -301,9 +309,14 @@ impl NoticeCard {
         }
 
         if hover == NoticeHit::Close {
+            let fill = if down(NoticeHit::Close) {
+                theme.subtle_pressed
+            } else {
+                theme.subtle_hover
+            };
             s.fill_rounded_rect(
                 &RoundedRect::uniform(layout.close, 4.0),
-                &s.create_solid_brush(theme.subtle_hover)?,
+                &s.create_solid_brush(fill)?,
             );
         }
         s.draw_text(

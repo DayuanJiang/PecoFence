@@ -74,6 +74,9 @@ struct View {
     theme: Theme,
     dpi: u32,
     hover: NoticeHit,
+    /// The button (or ×) the mouse button went down on, until it comes up or the pointer
+    /// leaves the card: it shows pressed while the pointer is over it.
+    pressed: NoticeHit,
     root: ContainerVisual,
     motion: Rc<Motion>,
     shadow: ShadowWindow,
@@ -109,7 +112,8 @@ impl View {
     /// False on device loss.
     fn draw(&self) -> bool {
         let drawn = self.panel.draw(self.dpi, |s, _, _| {
-            self.card.draw(s, &self.layout, &self.theme, self.hover)
+            self.card
+                .draw(s, &self.layout, &self.theme, self.hover, self.pressed)
         });
         !matches!(drawn, Ok(false))
     }
@@ -270,6 +274,7 @@ impl Notice {
             theme: *ctx.theme.borrow(),
             dpi,
             hover: NoticeHit::None,
+            pressed: NoticeHit::None,
             root,
             motion: ctx.motion.clone(),
             shadow,
@@ -468,7 +473,20 @@ fn handle(
             Some(0)
         }
         msg::WM_MOUSELEAVE => {
+            view.borrow_mut().pressed = NoticeHit::None;
             set_hover(NoticeHit::None);
+            Some(0)
+        }
+        msg::WM_LBUTTONDOWN => {
+            let mut v = view.borrow_mut();
+            let hit = v.hit(lparam);
+            if matches!(
+                hit,
+                NoticeHit::Button | NoticeHit::Secondary | NoticeHit::Close
+            ) {
+                v.pressed = hit;
+                v.redraw();
+            }
             Some(0)
         }
         msg::WM_SETCURSOR => {
@@ -482,6 +500,12 @@ fn handle(
         }
         msg::WM_LBUTTONUP => {
             let hit = view.borrow().hit(lparam);
+            {
+                let mut v = view.borrow_mut();
+                if std::mem::replace(&mut v.pressed, NoticeHit::None) != NoticeHit::None {
+                    v.redraw();
+                }
+            }
             let inert_body = hit == NoticeHit::Card && view.borrow().layout.has_secondary();
             if hit == NoticeHit::None || inert_body {
                 return Some(0);
