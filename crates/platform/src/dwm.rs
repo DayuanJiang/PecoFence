@@ -20,6 +20,36 @@ pub enum SystemBackdrop {
     TabbedWindow,
 }
 
+windows_core::link!("kernel32.dll" "system" fn QueryPerformanceCounter(count: *mut i64) -> i32);
+windows_core::link!("kernel32.dll" "system" fn QueryPerformanceFrequency(frequency: *mut i64) -> i32);
+
+/// How long until Windows puts the windows on screen next, and how long one refresh takes
+/// (ms), from the compositor's own clock. For log lines that say which refresh a draw makes:
+/// what is drawn now is on screen at the next one. `None` when Windows reports no timing.
+pub fn next_refresh_ms() -> Option<(f32, f32)> {
+    let mut info = DWM_TIMING_INFO {
+        cbSize: size_of::<DWM_TIMING_INFO>() as u32,
+        ..Default::default()
+    };
+    let (mut now, mut freq) = (0i64, 0i64);
+    // SAFETY: `info` is a live DWM_TIMING_INFO with its size set (a null window asks for the
+    // desktop's timing); the two counters are written through live pointers.
+    unsafe {
+        if DwmGetCompositionTimingInfo(HWND::default(), &mut info).is_err() {
+            return None;
+        }
+        QueryPerformanceCounter(&mut now);
+        QueryPerformanceFrequency(&mut freq);
+    }
+    let period = info.qpcRefreshPeriod.0 as i64;
+    if freq <= 0 || period <= 0 {
+        return None;
+    }
+    let since = (now - info.qpcVBlank.0 as i64).rem_euclid(period);
+    let ms = |ticks: i64| ticks as f32 * 1000.0 / freq as f32;
+    Some((ms(period - since), ms(period)))
+}
+
 fn set_attribute<T>(hwnd: HWND, attribute: i32, value: &T) -> Result<()> {
     // SAFETY: `value` outlives the call and its size is passed explicitly.
     unsafe {

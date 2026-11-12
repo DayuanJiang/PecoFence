@@ -673,6 +673,12 @@ fn reveal(hwnd: HWND) {
         tracing::debug!(animate, "search box: drawn once, it shows");
         s.alpha_to = 1.0;
         if animate {
+            // The fade starts at a fifth of its strength, set here: left at 0 until the fade's
+            // timer first ran (15 to 31 ms later), the box missed the refresh it was drawn
+            // for, and came one refresh later than it did before it learned to fade.
+            s.alpha = s.alpha.max(pecofence_render::motion::FADE_IN_FIRST);
+            window::set_layered_alpha(hwnd, (s.alpha * 255.0).round() as u8);
+            tracing::debug!(alpha = s.alpha, next_refresh = ?dwm::next_refresh_ms(), "search box: shows");
             s.alpha_tick = Instant::now();
             window::set_timer(hwnd, TIMER_FADE, 15);
         } else {
