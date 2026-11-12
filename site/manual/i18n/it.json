@@ -970,7 +970,7 @@
   "桌面项目只显示在栅栏里，没有归类的放进“桌面”栅栏；回收站等系统图标也在“桌面”栅栏里": "Gli elementi del desktop vengono mostrati solo nei riquadri; quelli non classificati, e le icone di sistema come il Cestino, finiscono nel riquadro «Desktop»",
   "隐藏，项目放在栅栏里": "Nascoste, elementi nei riquadri",
   "退出 PecoFence 时保持 Windows 桌面图标隐藏": "Mantieni nascoste le icone del desktop di Windows alla chiusura di PecoFence",
-  "打开后，下次登录时桌面图标不会闪现。PecoFence 没有运行时桌面上没有图标；要恢复，右键桌面选“查看”→“显示桌面图标”": "Con questa opzione attiva le icone non compaiono per un attimo all’accesso successivo. Finché PecoFence non è in esecuzione, il desktop non mostra icone. Per mostrarle di nuovo, fai clic con il pulsante destro sul desktop e scegli «Visualizza» → «Mostra icone del desktop»",
+  "打开后，下次登录时桌面图标不会闪现。PecoFence 没有运行时桌面上没有图标；要恢复，右键桌面选“查看”→“显示桌面图标”": "Con questa opzione attiva le icone non compaiono per un attimo all’accesso successivo. Finché PecoFence non è in esecuzione, il desktop non mostra icone. Per mostrarle di nuovo, fai clic destro sul desktop e scegli «Visualizza» → «Mostra icone del desktop»",
   "在桌面空白处拖出矩形时显示“新建栅栏”按钮": "Mostra il pulsante «Nuovo riquadro» quando si disegna un rettangolo in un’area vuota del desktop",
   "在矩形右下角显示“新建栅栏”和“在此显示文件夹…”，几秒后消失。关闭后拖出矩形只用来框选": "Mostra «Nuovo riquadro» e «Mostra una cartella qui…» nell’angolo in basso a destra del rettangolo; spariscono dopo qualche secondo. Se disattivata, il rettangolo serve solo a selezionare",
   "每个虚拟桌面各用一套栅栏": "Riquadri separati per ogni desktop virtuale",
