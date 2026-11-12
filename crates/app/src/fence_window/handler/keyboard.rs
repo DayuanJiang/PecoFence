@@ -80,13 +80,22 @@ pub(super) fn on_keydown(
     }
     // F2 while the pointer is on the title row and no icon is selected (none to see, in a
     // rolled-up fence): the name box of the fence, or of the tab under the pointer (#184).
-    if vk == msg::VK_F2 && v.title_hover && (ids.is_empty() || v.roll_target()) {
+    // With Explorer's single-click open, where pointing is selecting, the title the pointer
+    // is on comes before an icon selected earlier.
+    let pointing = h.behavior.single_click.get();
+    if vk == msg::VK_F2 && v.title_hover && (ids.is_empty() || v.roll_target() || pointing) {
         let pt = window::screen_to_client(hwnd, window::cursor_pos());
         let fence = v
             .tab_at(pt.x, pt.y)
             .and_then(|i| v.tabs.get(i))
             .map_or(v.active, |t| t.id);
-        tracing::debug!(%fence, rolled = v.roll_target(), "F2 on the title row: fence name box");
+        tracing::debug!(
+            %fence,
+            rolled = v.roll_target(),
+            selected = ids.len(),
+            pointing,
+            "F2 on the title row: fence name box"
+        );
         queue.push(Command::EditFenceName(fence));
         return Some(0);
     }

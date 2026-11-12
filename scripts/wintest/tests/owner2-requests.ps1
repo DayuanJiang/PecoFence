@@ -66,6 +66,19 @@ if ($ren -ne [IntPtr]::Zero) { Start-Sleep -Milliseconds 300; [G]::Type('Gamma')
 Shot 'hs-3-title-f2'
 Check 'F2 while the pointer rests on a title renames the fence' ([bool](PfFence 'Gamma')) "foreground before F2=$fg name box=$ren titles=$((@(PfJson fence list) | ForEach-Object { $_.title }) -join ',')"
 
+Case 'HS F2 on a title while an icon of that fence is selected'
+# Pointing is selecting: the title the pointer rests on comes before the icon selected earlier.
+$t = @('Gamma', 'Beta') | Where-Object { PfFence $_ } | Select-Object -First 1
+$q = ItemPt $t '悬停丙'
+RqRest $q[0] $q[1]
+$sb = RqSel $t
+$b = (PfFence $t).windowRect
+RqRest ($b.x + 70) ($b.y + 14)
+[G]::Press(0x71); $ren = WaitWin 'PecoFence.Rename' 3
+if ($ren -ne [IntPtr]::Zero) { Start-Sleep -Milliseconds 300; [G]::Type('Zeta'); Start-Sleep -Milliseconds 200; [G]::Press(0x0D); Start-Sleep -Seconds 1 }
+Check 'F2 on the title renames the fence also while one of its icons is selected' ($sb -eq '1' -and [bool](PfFence 'Zeta') -and (Test-Path "$PfDesk\悬停丙.txt")) "fence=$t selected=$sb name box=$ren titles=$((@(PfJson fence list) | ForEach-Object { $_.title }) -join ',') file kept=$(Test-Path "$PfDesk\悬停丙.txt")"
+if ($ren -ne [IntPtr]::Zero -and -not (PfFence 'Zeta')) { [G]::Press(0x1B); Start-Sleep -Milliseconds 500 }
+
 Case 'HS during a Peek'
 # The dimmer has the keyboard then and hands the keys to the fence used last.
 DeskClick | Out-Null
@@ -98,7 +111,7 @@ Case 'HS double-click mode: F2 on the title of the fence that has the keyboard'
 [Th]::SetSingleClick($false)
 Start-Sleep -Seconds 2
 DeskClick | Out-Null
-$t = if (PfFence 'Gamma') { 'Gamma' } else { 'Beta' }
+$t = @('Zeta', 'Gamma', 'Beta') | Where-Object { PfFence $_ } | Select-Object -First 1
 $b = (PfFence $t).windowRect
 [G]::Click($b.x + 70, $b.y + 14); Start-Sleep -Milliseconds 800
 [G]::Press(0x71); $ren = WaitWin 'PecoFence.Rename' 3
