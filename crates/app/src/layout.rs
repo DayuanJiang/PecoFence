@@ -58,6 +58,7 @@ impl GridSpec {
     pub fn grid(&self, line_h: f32, width: f32, count: usize, spans: &[GroupSpan]) -> Grid {
         Grid::grouped(self.metrics(line_h), width, count, spans)
             .centred(self.icon_align == IconAlign::Center)
+            .right_aligned(self.icon_align == IconAlign::Right)
     }
 }
 
@@ -507,6 +508,8 @@ pub struct Grid {
     bands: Bands,
     /// 图标对齐 居中: a row with fewer items than columns sits in the middle (`centred`).
     centre: bool,
+    /// 图标对齐 右对齐: every row fills from the right edge (`right_aligned`).
+    rtl: bool,
     /// 像桌面一样排列 (`Fence::desktop_layout`): one fixed cell per item in list order, plus
     /// one for a drop after the last (`with_slots`). Empty = the usual rows.
     slots: Vec<CellRect>,
@@ -531,6 +534,7 @@ impl Grid {
             content_height: bands.content_height,
             bands,
             centre: false,
+            rtl: false,
             slots: Vec::new(),
             free: false,
         }
@@ -608,13 +612,32 @@ impl Grid {
         self
     }
 
+    /// 图标对齐 右对齐 (GitHub #222): the columns count from the right edge, so the first item
+    /// of every row stands at the right and the next one to its left. A row that is not full
+    /// (the last one) keeps its items against the right edge, and an item added at the end
+    /// takes the free cell to their left: no other icon moves. Clicks, the arrow keys, the
+    /// selection rectangle and the insertion mark all go by the mirrored cells.
+    pub fn right_aligned(mut self, on: bool) -> Self {
+        self.rtl = on;
+        self
+    }
+
     /// How far a row of `len` items moves right; an empty row counts as one item (where the
     /// first item of an empty fence goes).
     fn row_shift(&self, len: usize) -> f32 {
-        if !self.centre {
+        if !self.centre || self.rtl {
             return 0.0;
         }
         self.columns.saturating_sub(len.max(1)) as f32 * self.pitch / 2.0
+    }
+
+    /// The column on screen (counted from the left) of the list's column `col`, and back.
+    fn mirror(&self, col: usize) -> usize {
+        if self.rtl {
+            self.columns.saturating_sub(1 + col)
+        } else {
+            col
+        }
     }
 
     /// Rect of item `index` in content coordinates (before scrolling). Cells sit centred in
@@ -628,7 +651,7 @@ impl Grid {
         CellRect {
             x: self.metrics.pad_x
                 + shift
-                + col as f32 * self.pitch
+                + self.mirror(col) as f32 * self.pitch
                 + (self.pitch - self.metrics.cell_w) / 2.0,
             y: self.bands.groups[gi].rows_y + row as f32 * self.bands.row_h,
             w: self.metrics.cell_w,
@@ -649,7 +672,7 @@ impl Grid {
         if col >= self.columns {
             return None;
         }
-        let idx = self.bands.hit(col, y)?;
+        let idx = self.bands.hit(self.mirror(col), y)?;
         (idx < count && self.cell(idx).contains(x, y)).then_some(idx)
     }
 
@@ -681,8 +704,15 @@ impl Grid {
             return (k + after as usize).min(count);
         }
         let row_x = x - self.row_shift(self.bands.insertion_row_len(y));
-        let colf = ((row_x - self.metrics.pad_x) / self.pitch).max(0.0);
-        self.bands.insertion(y, colf.round() as usize).min(count)
+        let colf = if self.rtl {
+            // Slots count from the right edge of the last column.
+            self.columns as f32 - (row_x - self.metrics.pad_x) / self.pitch
+        } else {
+            (row_x - self.metrics.pad_x) / self.pitch
+        };
+        self.bands
+            .insertion(y, colf.max(0.0).round() as usize)
+            .min(count)
     }
 
     fn centre_x(&self, index: usize) -> f32 {
@@ -1026,7 +1056,11 @@ impl ItemLayout {
     pub fn neighbour(&self, index: usize, dx: i32, dy: i32, count: usize) -> Option<usize> {
         match self {
             Self::Grid(g) if g.has_slots() => g.slot_neighbour(index, dx, dy, count),
-            Self::Grid(g) => g.bands.neighbour(index, dx, dy, count, |i| g.centre_x(i)),
+            // Right-aligned rows run from right to left: Left goes on along the list.
+            Self::Grid(g) => {
+                let dx = if g.rtl { -dx } else { dx };
+                g.bands.neighbour(index, dx, dy, count, |i| g.centre_x(i))
+            }
             Self::Rows { bands, .. } => bands.neighbour(index, dx, dy, count, |_| 0.0),
         }
     }
@@ -1054,10 +1088,27 @@ impl ItemLayout {
                 }
             }
             Self::Grid(g) => {
+                // The edge of a cell the list comes from (the mark before an item stands
+                // there) and the one it goes on to: left and right, swapped in rows that
+                // fill from the right (图标对齐 右对齐).
+                let lead = |c: CellRect| {
+                    if g.rtl {
+                        c.x + c.w - 1.0
+                    } else {
+                        (c.x - 1.0).max(0.0)
+                    }
+                };
+                let trail = |c: CellRect| {
+                    if g.rtl {
+                        (c.x - 1.0).max(0.0)
+                    } else {
+                        c.x + c.w - 1.0
+                    }
+                };
                 if count == 0 {
                     let c = g.cell(0);
                     return CellRect {
-                        x: c.x,
+                        x: if g.rtl { c.x + c.w - 2.0 } else { c.x },
                         y: c.y,
                         w: 2.0,
                         h: c.h,
@@ -1067,16 +1118,16 @@ impl ItemLayout {
                 if index < count || col != 0 {
                     let c = g.cell(index);
                     CellRect {
-                        x: (c.x - 1.0).max(0.0),
+                        x: lead(c),
                         y: c.y,
                         w: 2.0,
                         h: c.h,
                     }
                 } else {
-                    // After a full last row: right edge of the last cell.
+                    // After a full last row: the far edge of the last cell.
                     let c = g.cell(count - 1);
                     CellRect {
-                        x: c.x + c.w - 1.0,
+                        x: trail(c),
                         y: c.y,
                         w: 2.0,
                         h: c.h,
@@ -1811,6 +1862,135 @@ mod tests {
         // An empty fence: the first icon goes to the middle.
         let empty = ItemLayout::Grid(Grid::new(m, 400.0, 0).centred(true));
         assert_eq!(empty.insertion_caret(0, 0).x, 160.0);
+    }
+
+    /// 图标对齐 右对齐 (GitHub #222): every row fills from the right edge, the first icon at
+    /// the right and the next to its left. One icon, a full row, one more than a full row and
+    /// a last row that is not full; an icon added at the end moves no other icon.
+    #[test]
+    fn right_aligned_grid_fills_every_row_from_the_right_edge() {
+        let m = GridMetrics::for_icon_size(48, 2); // 80 DIP cells
+        let right = |count| Grid::new(m, 400.0, count).right_aligned(true);
+        let one = right(1);
+        assert_eq!((one.columns, one.pitch), (5, 80.0));
+        assert_eq!(one.cell(0).x, 320.0, "one icon stands at the right edge");
+        // A full row is the mirror image of the left-aligned one.
+        let (five, left) = (right(5), Grid::new(m, 400.0, 5));
+        for i in 0..5 {
+            assert_eq!(five.cell(i).x, left.cell(4 - i).x);
+            assert_eq!(five.cell(i).y, left.cell(i).y);
+        }
+        // One more starts the next row at the right edge; the first row stays as it was.
+        let six = right(6);
+        for i in 0..5 {
+            assert_eq!(six.cell(i), five.cell(i));
+        }
+        assert_eq!(
+            (six.cell(5).x, six.cell(5).y),
+            (320.0, five.cell(0).y + m.cell_h)
+        );
+        // A last row of two: against the right edge, the free cells to their left.
+        let seven = right(7);
+        assert_eq!(
+            seven.cell(5),
+            six.cell(5),
+            "the seventh icon moved no other"
+        );
+        assert_eq!(seven.cell(6).x, 240.0);
+        let (y1, y2) = (seven.cell(0).y + 1.0, seven.cell(5).y + 1.0);
+        assert_eq!(seven.hit_test(330.0, y1, 7), Some(0));
+        assert_eq!(seven.hit_test(10.0, y1, 7), Some(4));
+        assert_eq!(seven.hit_test(330.0, y2, 7), Some(5));
+        assert_eq!(seven.hit_test(250.0, y2, 7), Some(6));
+        assert_eq!(seven.hit_test(170.0, y2, 7), None, "the free cells");
+        // Drops: before the first icon at the right edge, after the last one to the left.
+        assert_eq!(seven.insertion_index(395.0, y1, 7), 0);
+        assert_eq!(seven.insertion_index(5.0, y1, 7), 5);
+        assert_eq!(seven.insertion_index(395.0, y2, 7), 5);
+        assert_eq!(seven.insertion_index(322.0, y2, 7), 6);
+        assert_eq!(seven.insertion_index(245.0, y2, 7), 7);
+        assert_eq!(seven.insertion_index(10.0, y2, 7), 7);
+        let l = ItemLayout::Grid(seven);
+        // The mark stands on the side the list comes from: the right edge of the cell.
+        assert_eq!(l.insertion_caret(0, 7).x, 399.0);
+        assert_eq!(l.insertion_caret(6, 7).x, 319.0);
+        assert_eq!(l.insertion_caret(7, 7).x, 239.0, "after the last icon");
+        // Left and Right go where the eye goes; at a row's end they go on along the list.
+        assert_eq!(
+            l.neighbour(5, -1, 0, 7),
+            Some(6),
+            "Left: the icon to the left"
+        );
+        assert_eq!(
+            l.neighbour(6, 1, 0, 7),
+            Some(5),
+            "Right: the icon to the right"
+        );
+        assert_eq!(
+            l.neighbour(6, -1, 0, 7),
+            Some(6),
+            "the last icon: Left stays"
+        );
+        assert_eq!(
+            l.neighbour(0, 1, 0, 7),
+            Some(0),
+            "the first icon: Right stays"
+        );
+        assert_eq!(
+            l.neighbour(4, -1, 0, 7),
+            Some(5),
+            "Left at a row's left end"
+        );
+        assert_eq!(l.neighbour(0, 0, 1, 7), Some(5), "Down the right column");
+        assert_eq!(l.neighbour(1, 0, 1, 7), Some(6));
+        assert_eq!(
+            l.neighbour(4, 0, 1, 7),
+            Some(6),
+            "the nearest of a short row"
+        );
+        assert_eq!(l.neighbour(6, 0, -1, 7), Some(1));
+
+        // After a full last row the mark stands at the left edge of the last cell; in an
+        // empty fence where the first icon goes.
+        let full = ItemLayout::Grid(right(5));
+        assert_eq!(full.insertion_caret(5, 5).x, 0.0);
+        let empty = ItemLayout::Grid(right(0));
+        assert_eq!(empty.insertion_caret(0, 0).x, 398.0);
+        // A width that is no whole number of cells: the first column ends where the last
+        // column of a left-aligned grid ends.
+        let wide = Grid::new(m, 300.0, 4).right_aligned(true);
+        assert_eq!((wide.columns, wide.pitch), (3, 100.0));
+        assert_eq!(wide.cell(0).x + wide.cell(0).w + 10.0, 300.0);
+        assert_eq!(wide.cell(3).x, wide.cell(0).x, "the fourth under the first");
+        // One column (a tall narrow fence): the same column as left-aligned.
+        let narrow = Grid::new(m, 96.0, 3).right_aligned(true);
+        assert_eq!(narrow.columns, 1);
+        assert_eq!(narrow.cell(2).x, Grid::new(m, 96.0, 3).cell(2).x);
+    }
+
+    /// 右对齐 under 按时间分组: every group starts its rows at the right edge, clicks land on
+    /// the mirrored cells and never cross a header.
+    #[test]
+    fn right_aligned_groups_start_at_the_right_edge() {
+        let m = GridMetrics::for_icon_size(48, 2);
+        let spans = group_spans(
+            std::iter::repeat_n(Some(DateBucket::Today), 5).chain([Some(DateBucket::Earlier)]),
+        );
+        let l = ItemLayout::Grid(Grid::grouped(m, 320.0, 6, &spans).right_aligned(true));
+        assert_eq!(l.columns(), 4);
+        assert_eq!(l.cell(0).x, 240.0);
+        assert_eq!(l.cell(3).x, 0.0);
+        assert_eq!(l.cell(4).x, 240.0, "the second row of 今天");
+        assert_eq!(l.cell(5).x, 240.0, "更早 starts at the right edge too");
+        for i in 0..6 {
+            let c = l.cell(i);
+            assert_eq!(l.hit_test(c.x + c.w / 2.0, c.y + c.h / 2.0, 6), Some(i));
+        }
+        let c4 = l.cell(4);
+        assert_eq!(l.hit_test(c4.x - 40.0, c4.y + 5.0, 6), None, "free cell");
+        assert_eq!(l.neighbour(0, 0, 1, 6), Some(4));
+        assert_eq!(l.neighbour(4, 0, 1, 6), Some(5), "down across the header");
+        assert_eq!(l.neighbour(4, -1, 0, 6), Some(5), "Left goes on into 更早");
     }
 
     /// 「整数个图标」 at any height: the rows keep their pitch (the items never move with the

@@ -216,7 +216,7 @@
   "大": "Grande",
   "图标间距": "Spaziatura delle icone",
   "图标对齐": "Allineamento delle icone",
-  "一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图": "Se una riga non è piena, «Al centro» divide lo spazio libero tra i due lati. Solo nella visualizzazione a icone",
+  "一行排不满时，居中把空出的宽度平分到左右两边；右对齐让每一行从右边排起；只用于图标视图": "Se una riga non è piena, «Al centro» divide lo spazio libero tra i due lati. «A destra» riempie ogni riga dal bordo destro. Solo nella visualizzazione a icone",
   "图标之间的距离，以“标准”为基准": "Spazio tra le icone, rispetto a «Standard»",
   "紧凑": "Compatta",
   "宽松": "Ampia",

@@ -217,7 +217,7 @@
   "大": "Large",
   "图标间距": "Icon spacing",
   "图标对齐": "Icon alignment",
-  "一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图": "When a row is not full, Center splits the free width between both sides. Icons view only",
+  "一行排不满时，居中把空出的宽度平分到左右两边；右对齐让每一行从右边排起；只用于图标视图": "When a row is not full, Center splits the free width between both sides. Right fills every row from the right edge. Icons view only",
   "图标之间的距离，以“标准”为基准": "Space between icons, relative to “Standard”",
   "紧凑": "Compact",
   "宽松": "Spacious",

@@ -898,7 +898,9 @@ pub struct FenceView {
     #[serde(default)]
     pub folders_first: bool,
     /// 图标对齐 (#154): where a row of icons that does not fill the width sits (icons view only).
-    #[serde(default)]
+    /// The file keeps it in two keys (see `icon_align_keys`).
+    #[serde(flatten, with = "icon_align_keys")]
+    #[cfg_attr(feature = "schema", schemars(with = "icon_align_keys::IconAlignKeys"))]
     pub icon_align: IconAlign,
 }
 
@@ -980,7 +982,9 @@ impl Default for FenceView {
 
 /// 图标对齐 of the icons view: a row that does not fill the fence width starts at the left
 /// edge, or sits in the middle with the leftover width split on both sides (the last, shorter
-/// row too). List and details rows always start at the left.
+/// row too). 右对齐 (GitHub #222) fills every row from the right edge: the first icon of a row
+/// stands at the right, the next one to its left, so the first column runs down the right
+/// edge of the fence. List and details rows always start at the left.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -988,6 +992,7 @@ pub enum IconAlign {
     #[default]
     Left,
     Center,
+    Right,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
@@ -1078,6 +1083,44 @@ impl Spacing {
 /// presets only reads as before. Reading prefers `spacingPx`. A number edited by hand is clamped
 /// to the range and rounded down to the step; a value of another type (a float, a string) fails
 /// to load like any other type error.
+/// 图标对齐 as the file holds it. `iconAlign` is 左对齐 or 居中, the two values versions up to
+/// 0.3.3 know: any other value there makes them refuse the whole file. 右对齐 is the key
+/// `iconAlignRight`, which they ignore, so they show such a fence left-aligned.
+mod icon_align_keys {
+    use super::IconAlign;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase")]
+    pub struct IconAlignKeys {
+        /// `left` or `center` (`right` is read too).
+        #[serde(default)]
+        icon_align: IconAlign,
+        /// 右对齐: every row fills from the right edge. It wins over `iconAlign`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        icon_align_right: bool,
+    }
+
+    pub fn serialize<S: Serializer>(align: &IconAlign, s: S) -> Result<S::Ok, S::Error> {
+        let right = *align == IconAlign::Right;
+        IconAlignKeys {
+            icon_align: if right { IconAlign::Left } else { *align },
+            icon_align_right: right,
+        }
+        .serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<IconAlign, D::Error> {
+        let keys = IconAlignKeys::deserialize(d)?;
+        Ok(if keys.icon_align_right {
+            IconAlign::Right
+        } else {
+            keys.icon_align
+        })
+    }
+}
+
 mod spacing_keys {
     use super::Spacing;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -2834,6 +2877,41 @@ mod tests {
             assert_eq!(json["labelColor"], "white");
             assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
         }
+    }
+
+    /// 图标对齐 右对齐 (GitHub #222) is written as `iconAlignRight` beside an `iconAlign` that
+    /// versions up to 0.3.3 read (`left`), and read back.
+    #[test]
+    fn right_alignment_is_written_in_a_key_of_its_own() {
+        let mut v = serde_json::to_value(FenceView::default()).unwrap();
+        assert_eq!(v["iconAlign"], "left");
+        assert!(v.get("iconAlignRight").is_none(), "written only for 右对齐");
+        let right = FenceView {
+            icon_align: IconAlign::Right,
+            ..Default::default()
+        };
+        let file = serde_json::to_value(&right).unwrap();
+        assert_eq!(
+            (&file["iconAlign"], &file["iconAlignRight"]),
+            (&"left".into(), &true.into())
+        );
+        let back: FenceView = serde_json::from_value(file).unwrap();
+        assert_eq!(back.icon_align, IconAlign::Right);
+        // 居中 as before, and a `right` in the old key is read too.
+        v["iconAlign"] = "center".into();
+        let centre: FenceView = serde_json::from_value(v.clone()).unwrap();
+        assert_eq!(centre.icon_align, IconAlign::Center);
+        assert_eq!(
+            serde_json::to_value(&centre).unwrap()["iconAlign"],
+            "center"
+        );
+        v["iconAlign"] = "right".into();
+        let view: FenceView = serde_json::from_value(v.clone()).unwrap();
+        assert_eq!(view.icon_align, IconAlign::Right);
+        // A file from before 图标对齐 existed has neither key.
+        v.as_object_mut().unwrap().remove("iconAlign");
+        let old: FenceView = serde_json::from_value(v).unwrap();
+        assert_eq!(old.icon_align, IconAlign::Left);
     }
 
     /// Settings from before `rollUp.hideCountAndChevron` keep the count and chevron; the switch

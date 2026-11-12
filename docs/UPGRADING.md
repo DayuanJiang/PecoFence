@@ -114,6 +114,16 @@ back when you return to 0.3.2, restore the daily backup from before the downgrad
 Settings → 布局与备份, or export the configuration with 导出 / 导入配置文件 before going
 back and import that file when you return.
 
+## Going back to 0.3.3
+
+0.3.3 reads a configuration a later version has saved, but it does not know the fence
+options added after it, and its first save drops them:
+
+- A fence whose 图标对齐 is 右对齐 shows left-aligned.
+
+When you return to the later version, set them again, or restore the copy 0.3.3 kept of
+the newer file (see the next section).
+
 ## Going back to an earlier version from a later one
 
 Versions after 0.3.1 record at every save which version made it (`savedBy` in

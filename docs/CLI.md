@@ -171,8 +171,9 @@ in; only the tab currently shown can be measured, so another tab is `unsupported
 to 128 in steps of 4 (the fence menu offers 32/48/64/96), `spacing` compact/normal/loose,
 `spacingPx` -12 to 32 in steps of 4 (DIPs the icon cell gains in width: compact is -12, normal 0,
 loose 16; `fence get` reports both, with `spacing` naming the nearest preset), `iconAlign`
-left/center (center: a row of icons that does not fill the fence width, the last one too, sits in
-the middle; icons view only; left by default), `autoHeight`,
+left/center/right (center: a row of icons that does not fill the fence width, the last one too,
+sits in the middle; right: every row fills from the right edge, its first icon at the right and
+the next one to its left; icons view only; left by default), `autoHeight`,
 `locked`, `expandUpward` (rolled up, it opens upward from its title row where it fits
 above it, else downward, for fences resting on the taskbar; the row stays where it is;
 `bottomAnchored` in `fence get` says whether the bottom edge is the one that stays put, which

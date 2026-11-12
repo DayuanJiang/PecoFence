@@ -310,10 +310,11 @@ pub(super) fn parse_fence_prop(
             }
         },
         "iconAlign" => {
-            const ALLOWED: &[&str] = &["left", "center"];
+            const ALLOWED: &[&str] = &["left", "center", "right"];
             FenceProp::IconAlign(match as_str(ALLOWED)? {
                 "left" => IconAlign::Left,
                 "center" => IconAlign::Center,
+                "right" => IconAlign::Right,
                 _ => return Err(bad(ALLOWED)),
             })
         }
@@ -930,6 +931,7 @@ impl App {
             "iconAlign": match f.view.icon_align {
                 IconAlign::Left => "left",
                 IconAlign::Center => "center",
+                IconAlign::Right => "right",
             },
             "autoHeight": h.view.auto_height,
             "locked": h.locked,

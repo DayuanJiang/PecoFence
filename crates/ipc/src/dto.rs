@@ -231,7 +231,8 @@ pub struct FenceDto {
     /// `normal` (compact -12, loose 16).
     #[serde(default)]
     pub spacing_px: i32,
-    /// `left` | `center`: where a row of icons that does not fill the width sits (icons view).
+    /// `left` | `center` | `right`: where a row of icons that does not fill the width sits;
+    /// `right` fills every row from the right edge (icons view).
     #[serde(default)]
     pub icon_align: String,
     pub auto_height: bool,

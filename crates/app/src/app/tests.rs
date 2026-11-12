@@ -738,6 +738,10 @@ mod ipc {
             FenceProp::TintTitleOnly(true)
         );
         assert_eq!(
+            parse_fence_prop("iconAlign", &json!("right")).unwrap(),
+            FenceProp::IconAlign(pecofence_core::IconAlign::Right)
+        );
+        assert_eq!(
             parse_fence_prop("titleSize", &json!("extraLarge")).unwrap(),
             FenceProp::TitleSize(Some(pecofence_core::TitleSize::ExtraLarge))
         );

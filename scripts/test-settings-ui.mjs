@@ -560,6 +560,7 @@ async function runTests() {
     assert(messages().at(-1).prop === 'tabColor' && messages().at(-1).value === null, 'Following the tint did not post null');
     change(doc, 'fenceSel', 'fence-a');
     assert(doc.querySelector('[data-fence=iconAlign]').value === 'left', 'Left icon alignment not shown');
+    assert(doc.querySelector('[data-fence=iconAlign] [value=right]'), 'Right icon alignment missing');
     change(doc, 'fenceIconAlign', 'center'); await settle();
     assert(messages().at(-1).id === 'fence-a' && messages().at(-1).prop === 'iconAlign' && messages().at(-1).value === 'center', 'Icon alignment not posted');
   });
