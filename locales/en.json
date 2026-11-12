@@ -1001,6 +1001,5 @@
   "右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里恢复。上次因其他程序的 {0} 出错而关闭。": "Windows entries in icon menus are off; the tray menu turns them back on. Crash in another program’s {0}.",
   "恢复右键菜单里的 Windows 菜单项": "Turn Windows entries in icon menus back on",
   "剪切\tCtrl+X": "Cut\tCtrl+X",
-  "复制\tCtrl+C": "Copy\tCtrl+C",
-  "PecoFence 正在启动…": "PecoFence is starting…"
+  "复制\tCtrl+C": "Copy\tCtrl+C"
 }

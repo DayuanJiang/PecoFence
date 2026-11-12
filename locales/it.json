@@ -1001,6 +1001,5 @@
   "右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里恢复。上次因其他程序的 {0} 出错而关闭。": "Menu delle icone senza voci di Windows; il menu dell’area di notifica le riattiva. Errore in {0}.",
   "恢复右键菜单里的 Windows 菜单项": "Riattiva le voci di Windows nei menu delle icone",
   "剪切\tCtrl+X": "Taglia\tCtrl+X",
-  "复制\tCtrl+C": "Copia\tCtrl+C",
-  "PecoFence 正在启动…": "Avvio di PecoFence…"
+  "复制\tCtrl+C": "Copia\tCtrl+C"
 }

@@ -10,6 +10,8 @@
 #      设置… bring it to the front
 #   T  (a debug build) the tips of the settings page's icon buttons follow the app's colour
 #      mode, whatever Windows' own mode is
+#   S  a look: a first start while the disk keeps writes waiting (about a minute): how long
+#      until the first-start card shows
 #   A  (--extra ui/themes) the accent of a theme file reaches the bar under the shown tab, a
 #      ticked check box and a link also where the text took the other colour mode's ink
 # Runs on a 1600x900 box at 100 %.
@@ -306,10 +308,6 @@ function OoFront() {
   [L]::MoveWindow($n, $r.R - 380, $r.T + 60, 760, 520, $true) | Out-Null
   Start-Sleep -Milliseconds 500
   Check 'W setup: the settings window and Notepad over it' ($h -ne [IntPtr]::Zero -and $n -ne [IntPtr]::Zero) "settings=$h notepad=$n"
-  # The tray icon's tip says 「PecoFence 正在启动…」 until the first frame (seen only while a
-  # start waits; here the log says that the name came back).
-  $tip = @(PfLogAll | Where-Object { $_ -match "first frame, the tray icon's tip is the app's name again" }).Count
-  Check 'W the tip of the tray icon is the name of the app again after the first frame' ($tip -ge 1) "log lines: $tip"
 
   Case 'W the command line brings the settings window to the front'
   $np = OoNotepadFront $n
@@ -411,6 +409,44 @@ function OoTips() {
 }
 if ($Part -match 'T') { OoTips }
 
+# ---- S: a look at a first start while C: keeps every write waiting (the stall of part S of
+# owner3-ux3-firstrun.ps1: a 6 GB file copied by the shell from a helper process): how long
+# until the first-start card shows (39 to 41 s on these boxes; the app's log has where it
+# waits: between `z-order after show` and `watchdog started`). The job's own log would wait
+# for the disk too: nothing is written while the start is watched.
+function OoSlowStart() {
+  trap { PfTrap $_; continue }
+  Case 'S look: a first start while the disk keeps writes waiting'
+  if (PfAlive) { PfQuit }
+  Remove-Item -Recurse -Force "$PfApp\config", "$PfApp\notices.json" -ErrorAction SilentlyContinue
+  if (-not (Test-Path "$PfApp\pecofence.exe")) { New-Item -ItemType Directory -Force $PfApp | Out-Null; Copy-Item "$PfBin\*" $PfApp -Force }
+  New-Item -ItemType Directory -Force "$PfRun\big" | Out-Null
+  $f = [IO.File]::Create("$PfRun\big\oo-big.bin"); $f.SetLength([int64]6 * 1GB); $f.Close()
+  ParkMouse 800 850
+  $cmd = "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::CopyFile('$PfRun\big\oo-big.bin', '$PfRun\big\oo-copy.bin', 'AllDialogs')"
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  $copy = Start-Process powershell -PassThru -WindowStyle Hidden -ArgumentList '-NoProfile', '-Command', $cmd
+  Start-Sleep -Seconds 6
+  $env:PECOFENCE_INSTANCE = $PfInst
+  $env:RUST_LOG = 'pecofence=debug'
+  $t0 = $sw.ElapsedMilliseconds
+  Start-Process "$PfApp\pecofence.exe" -ArgumentList '--portable' -WorkingDirectory $PfApp
+  $tCard = -1
+  while ($sw.ElapsedMilliseconds - $t0 -lt 60000) {
+    $t = $sw.ElapsedMilliseconds - $t0
+    $nw = [G]::FindWindowW('PecoFence.Notice', [NullString]::Value)
+    if ($nw -ne [IntPtr]::Zero -and [G]::IsWindowVisible($nw)) { $tCard = $t; break }
+    Start-Sleep -Milliseconds 100
+  }
+  $copyDone = $copy.WaitForExit(180000)
+  Start-Sleep -Seconds 2
+  $wait = @(PfLogAll | Where-Object { $_ -match 'z-order after show|watchdog started' } | ForEach-Object { ($_ -split ' ')[0] } | Select-Object -First 2) -join ' to '
+  Check 'S the first-start card came' ($tCard -ge 0) "the card came $tCard ms after the start; the app's log between the fences being shown and the watchdog started: $wait; the copy ended=$copyDone after $($sw.ElapsedMilliseconds) ms"
+  if (PfAlive) { PfQuit }
+  Remove-Item -Recurse -Force "$PfRun\big" -ErrorAction SilentlyContinue
+}
+if ($Part -match 'S') { OoSlowStart }
+
 # ---- A: a theme file's accent beside text of the other colour mode
 function OoWall($r, $g, $b) {
   $bm = New-Object Drawing.Bitmap 32, 32; $gr = [Drawing.Graphics]::FromImage($bm); $gr.Clear([Drawing.Color]::FromArgb($r, $g, $b)); $gr.Dispose()
@@ -474,6 +510,7 @@ if ($Part -match 'A') { OoAccent }
 
 Case 'cleanup'
 if (PfAlive) { PfQuit }
+Remove-Item -Recurse -Force "$PfRun\big" -ErrorAction SilentlyContinue
 # The wallpaper the box had.
 if ($null -ne $script:OoWallWas) { [G]::SystemParametersInfoW(0x14, 0, $script:OoWallWas, 3) | Out-Null }
 if ($script:OoTouched) { OoWinMode $script:OoWas }
