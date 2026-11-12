@@ -595,7 +595,17 @@ impl App {
         let before: HashMap<FenceId, RECT> =
             self.fences.iter().map(|(id, w)| (*id, w.rect())).collect();
         let from_layout = self.state.layout;
-        self.state.work_areas = work_areas();
+        let fresh = work_areas();
+        // The same monitors at the same places and scales: only a work area moved (the taskbar
+        // hid itself or came back).
+        let same_monitors = fresh.len() == self.state.work_areas.len()
+            && fresh.iter().zip(&self.state.work_areas).all(|(a, b)| {
+                a.device_path == b.device_path
+                    && a.dpi == b.dpi
+                    && (a.mon_left, a.mon_top, a.mon_right, a.mon_bottom)
+                        == (b.mon_left, b.mon_top, b.mon_right, b.mon_bottom)
+            });
+        self.state.work_areas = fresh;
         let layouts = self.state.config.layouts.len();
         self.state.ensure_layout();
         log_monitors(&self.state.work_areas);
@@ -631,7 +641,11 @@ impl App {
             w.repaint_shadow();
         }
         // Wallpaper regions moved with the monitors: rebuild the backdrops unconditionally.
-        self.refresh_visuals(true);
+        // With the same monitors the wallpaper behind the fences is the one they have: built
+        // again (0.15 s without a graphics card) it would only hold the fences back before
+        // they glide; each one takes its new part of it as it moves.
+        tracing::debug!(same_monitors, "display change: backdrops");
+        self.refresh_visuals(!same_monitors);
         // 像桌面一样排列: the new work area (and the fences placed again on it).
         self.arrange_desktop_fence();
         // Everything above has read the new places: now the windows travel there.
