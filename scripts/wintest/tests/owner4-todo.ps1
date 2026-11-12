@@ -11,7 +11,8 @@
 #      Ctrl+Z takes a move back in one step
 #   S  second round: a note taller than its fence scrolls while a to-do is dragged to its edge
 #      (Esc takes the scroll back too), a tick outside the editor is taken back with Ctrl+Z,
-#      Alt+Shift+Down moves every line the selection touches
+#      Alt+Shift+Down moves every line the selection touches, Alt and a drag on a to-do in an
+#      open editor moves it
 #   R  the drag recorded (--var Rec=before|after for the clip; after: light and dark mode too)
 trap { PfTrap $_; continue }
 if (-not $Part) { $Part = 'DCKS' }
@@ -412,6 +413,49 @@ $m3 = [T4]::EdText()
 Check 'the second and the third line go down together, under the fourth' ($m1 -eq "甲乙`n庚辛`n丙丁`n戊己") "editor: $(OneLine $m1)"
 Check 'the selection went with its lines: typing replaces what was selected' ($m2 -eq "甲乙`n庚辛`n丙X己") "editor: $(OneLine $m2)"
 Check 'Ctrl+Z twice takes back the typing and then the move of both lines, in one step' ($m3 -eq $T5) "editor: $(OneLine $m3)"
+Pf fence delete $nid | Out-Null
+
+Case 'S5 Alt and a drag on a to-do in an open editor moves it'
+$T6 = "[ ] 第一`n[ ] 第二`n[ ] 第三"
+$nid = "$((PfJson fence create --tool note --title 便签 --text $T6 --rect '100,100,300,220').fence.id)"
+Start-Sleep -Seconds 1
+$w = Fresh $nid $T6; $c = CRect $w; $boxes = Rects $w 'note_boxes'
+$from = TodoPt $c $boxes 2; $to = TodoPt $c $boxes 0
+# The editor is open with a character typed after the third to-do: its text is ahead of the note's.
+[G]::Click($c[0] + 250, $from[1]); Start-Sleep -Milliseconds 700
+[G]::Type('甲'); Start-Sleep -Milliseconds 300
+$open0 = EditorOpen
+$lift0 = Lifts
+[G]::MoveTo($from[0], $from[1]); Start-Sleep -Milliseconds 300
+[G]::KeyDown(0x12); Start-Sleep -Milliseconds 120
+MDown; Start-Sleep -Milliseconds 300
+Glide $from[0] $from[1] ($from[0] + 6) ($to[1] - 4) 14 30
+Start-Sleep -Milliseconds 500
+$edDrag = EditorOpen
+$lift1 = Lifts
+FCrop 's5-alt-drag' $w
+[G]::KeyUp(0x12); Start-Sleep -Milliseconds 200
+MUp; Start-Sleep -Milliseconds 900
+$after = NoteText $nid
+if (EditorOpen) { [G]::Press(0x1B); Start-Sleep -Milliseconds 500 }
+Check 'with Alt held, a press on a to-do in the open editor lifts it: the editing has ended with its text kept' ($open0 -and $lift1 -eq $lift0 + 1 -and -not $edDrag) "editor open before: $open0; lifted (log): $lift0 -> $lift1; editor open while dragging: $edDrag"
+Check 'released above the first to-do, the third one is first, with the character typed before the drag' ($after -eq "[ ] 第三甲`n[ ] 第一`n[ ] 第二") "note: $(OneLine $after)"
+# The same with Esc after Alt is let go: the line goes back, what was typed stays.
+$w = Fresh $nid $T6; $c = CRect $w; $boxes = Rects $w 'note_boxes'
+[G]::Click($c[0] + 250, $from[1]); Start-Sleep -Milliseconds 700
+[G]::Type('乙'); Start-Sleep -Milliseconds 300
+[G]::MoveTo($from[0], $from[1]); Start-Sleep -Milliseconds 300
+[G]::KeyDown(0x12); Start-Sleep -Milliseconds 120
+MDown; Start-Sleep -Milliseconds 300
+Glide $from[0] $from[1] ($from[0] + 6) ($to[1] - 4) 14 30
+Start-Sleep -Milliseconds 400
+[G]::KeyUp(0x12); Start-Sleep -Milliseconds 300
+[G]::Press(0x1B); Start-Sleep -Milliseconds 600
+MUp; Start-Sleep -Milliseconds 900
+$back = NoteText $nid
+$lift2 = Lifts
+if (EditorOpen) { [G]::Press(0x1B); Start-Sleep -Milliseconds 500 }
+Check 'Esc after Alt is let go puts the line back; what was typed before the drag stays' ($lift2 -eq $lift1 + 1 -and $back -eq "[ ] 第一`n[ ] 第二`n[ ] 第三乙") "lifted (log): $lift1 -> $lift2; note: $(OneLine $back)"
 Pf fence delete $nid | Out-Null
 }
 

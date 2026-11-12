@@ -709,8 +709,15 @@ pub(super) fn on_capturechanged(
         v.drag = None;
         v.click_pending = None;
         v.rbutton_press = None;
-        // A note press that lost the capture is no click, and a dragged to-do goes back.
-        let _ = v.end_todo_drag(false);
+        // A note press that lost the capture is no click, and a dragged to-do goes back. A
+        // press with Alt in an editor that is closing stays (`TodoDrag::editor_closing`).
+        if !v
+            .todo_drag
+            .as_ref()
+            .is_some_and(|d| d.editor_closing && !d.moved)
+        {
+            let _ = v.end_todo_drag(false);
+        }
         v.clear_pressed();
         if v.detach_pending || v.remote_drag.is_some() {
             tracing::info!(
@@ -997,16 +1004,31 @@ pub(super) fn on_xbuttonup(
 }
 
 /// A press in the text of the note that is being edited in this window: it places the
-/// caret, so the editor stays open.
+/// caret, so the editor stays open. Not a press with Alt on a to-do, which drags the to-do
+/// and ends the editing.
 pub(super) fn press_in_note_editor(h: &HandlerCtx, message: u32, lparam: isize) -> bool {
     matches!(
         message,
         msg::WM_LBUTTONDOWN | msg::WM_LBUTTONDBLCLK | msg::WM_RBUTTONDOWN | WM_RBUTTONDBLCLK
     ) && h.view.try_borrow().is_ok_and(|view| {
         view.as_ref().is_some_and(|v| {
-            v.note_edit.is_some() && v.in_note_text(msg::lo_i16(lparam), msg::hi_i16(lparam))
+            let (x, y) = (msg::lo_i16(lparam), msg::hi_i16(lparam));
+            v.note_edit.is_some() && v.in_note_text(x, y) && !alt_press_on_todo(v, message, x, y)
         })
     })
+}
+
+/// Alt held and the left button pressed on a to-do's text in the note that is being edited
+/// here. In an open editor a plain press places the caret and a drag selects, so the drag of
+/// a to-do starts with Alt there. The editing ends (its text is saved) and the press goes on
+/// as on a note at rest: moved, it drags the to-do; released in place, the editor opens
+/// again with the caret there.
+fn alt_press_on_todo(v: &FenceViewState, message: u32, x: i32, y: i32) -> bool {
+    message == msg::WM_LBUTTONDOWN
+        && v.note_edit.is_some()
+        && window::key_down(msg::VK_MENU)
+        && v.note_box_at(x, y).is_none()
+        && v.todo_line_at(y).is_some()
 }
 
 /// The mouse in the text of a note that is being edited (see `note_text`): a press places
@@ -1043,6 +1065,12 @@ pub(super) fn note_edit_mouse(
     if matches!(message, msg::WM_LBUTTONDOWN | msg::WM_LBUTTONDBLCLK)
         && v.note_box_at(x, y).is_some()
     {
+        return None;
+    }
+    // Alt and a press on a to-do's text: the to-do's drag, which the usual press handling
+    // begins.
+    if alt_press_on_todo(v, message, x, y) {
+        tracing::debug!(%fence, "Alt and a press on a to-do in the open editor: the editing ends, the to-do can be dragged");
         return None;
     }
     match message {

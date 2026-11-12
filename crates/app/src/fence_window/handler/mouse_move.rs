@@ -5,7 +5,7 @@ use super::*;
 pub(super) fn on_mousemove(
     h: &HandlerCtx,
     hwnd: HWND,
-    _wparam: usize,
+    wparam: usize,
     lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx {
@@ -401,7 +401,14 @@ pub(super) fn on_mousemove(
     }
     // A press in a note: on a to-do it becomes a drag once the pointer leaves the drag
     // threshold, and the line follows the pointer.
+    if v.todo_drag.is_some() && wparam & msg::MK_LBUTTON as usize == 0 {
+        // The release went elsewhere (the capture was lost meanwhile).
+        tracing::debug!("to-do press: the button is up without a release here");
+        let _ = v.end_todo_drag(false);
+    }
     if v.todo_drag.is_some() {
+        // A press with Alt in an editor that closed: the capture may be gone.
+        let recapture = window::get_capture() != hwnd;
         match v.todo_drag_move(x, y) {
             Some(true) => {
                 // The fence takes the keyboard, so that Esc puts the line back. Taking it
@@ -418,7 +425,13 @@ pub(super) fn on_mousemove(
                 return Some(0);
             }
             // Following the pointer, or still a click: the text has nothing to track.
-            Some(false) | None => return Some(0),
+            Some(false) | None => {
+                if recapture {
+                    drop(guard);
+                    window::set_capture(hwnd);
+                }
+                return Some(0);
+            }
         }
     }
     // A release-fired button is held: track whether the pointer is still

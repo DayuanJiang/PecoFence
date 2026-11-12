@@ -70,6 +70,10 @@ pub(super) struct TodoDrag {
     pub(super) scroll_from: f32,
     /// The edge scroll: when the pointer came into the zone, and the frame it last moved.
     pub(super) auto: Option<(Instant, Instant)>,
+    /// Pressed with Alt in an open editor, which is closing: the keyboard goes from the
+    /// editor to the fence, and that can take the mouse capture away once. The press
+    /// survives it, and the next move takes the capture again.
+    pub(super) editor_closing: bool,
 }
 
 /// The line that line `j` of a text is shown at while its line `from` is shown at `to`.
@@ -221,13 +225,14 @@ impl FenceViewState {
         self.frames.request();
     }
 
-    /// The to-do whose line is at client y `y` of a note that is not being edited: its line
-    /// in the text, and the point's y minus the line's top (DIPs).
-    fn todo_line_at(&self, y: i32) -> Option<(usize, f32)> {
-        if self.note_edit.is_some() {
-            return None;
-        }
-        let text = self.note.as_deref()?;
+    /// The to-do whose line is at client y `y` of the note as it is shown (the editor's
+    /// text while it is open): its line in the text, and the point's y minus the line's top
+    /// (DIPs).
+    pub(super) fn todo_line_at(&self, y: i32) -> Option<(usize, f32)> {
+        let text = match &self.note_edit {
+            Some(e) => e.text.as_str(),
+            None => self.note.as_deref()?,
+        };
         let cy = (y - self.content_y) as f32 / self.scale() + self.scroll_y;
         let spans = self.note_row_spans(text);
         // A line owns its text and half the gap to its neighbours (3 DIPs or more).
@@ -263,6 +268,7 @@ impl FenceViewState {
             client_y: y,
             scroll_from: self.scroll_target(),
             auto: None,
+            editor_closing: self.note_edit.is_some(),
         });
         None
     }
@@ -271,6 +277,11 @@ impl FenceViewState {
     /// press is still a click (inside the drag threshold); Some(true) on the move that
     /// lifts the to-do, Some(false) while it follows the pointer.
     pub(super) fn todo_drag_move(&mut self, x: i32, y: i32) -> Option<bool> {
+        // A press with Alt in an open editor: the editing ends first (its text becomes the
+        // note's), the line is lifted on the move after that.
+        if self.note_edit.is_some() {
+            return None;
+        }
         let d = self.todo_drag.as_ref()?;
         let from = d.from;
         let started = !d.moved;
@@ -295,6 +306,7 @@ impl FenceViewState {
             d.outside = outside;
             d.pointer_y = pointer_y;
             d.client_y = y;
+            d.editor_closing = false;
         }
         if started {
             self.hide_tip();

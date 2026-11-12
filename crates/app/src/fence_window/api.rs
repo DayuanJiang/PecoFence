@@ -1823,11 +1823,16 @@ impl FenceWindow {
     pub fn set_note(&self, text: Option<String>) {
         self.with_view(|v| {
             if v.note != text {
+                // Another text than the one shown: a to-do dragged in the old one, and its
+                // lines' glides, end. The text of an editor that closes is the one shown: a
+                // to-do pressed with Alt in that editor stays held.
+                let shown = v.note_edit.as_ref().map(|e| e.text.as_str());
+                if shown != text.as_deref() {
+                    v.todo_drag = None;
+                    v.note_slide.clear();
+                    v.note_lift = None;
+                }
                 v.note = text;
-                // Another text: a to-do dragged in the old one, and its lines' glides, end.
-                v.todo_drag = None;
-                v.note_slide.clear();
-                v.note_lift = None;
                 v.note_boxes.clear();
                 v.note_links.clear();
                 v.note_link_hover = None;
