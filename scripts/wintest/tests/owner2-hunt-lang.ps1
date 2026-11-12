@@ -1,7 +1,12 @@
 # The desktop side of the app in every interface language: menus, the search box, the marquee's
 # buttons, the name box, tool fences and empty states, captured per language for a contact sheet.
-#   run.sh --var Part=C --var Langs=zh-CN,en,ja,zh-TW ...   captures of these languages
-#   run.sh --var Part=T --var Langs=...                     first-run cards and tips (plain start)
+#   run.sh --var Part=C --var Langs=zh-CN,en,ja,zh-TW ...   captures of these languages (about
+#                                                 100 s each; --var Only=menu: the fence menu alone)
+#   run.sh --var Part=D ...   details headings, a rolled fence's count, the filter box and its tag,
+#                             date group captions, the box that asks before a fence is deleted
+#   run.sh --var Part=R ...   checks: a rolled fence's count beside a long name, the filter box's count
+#   run.sh --var Part=L ...   checks: texts a window keeps follow a language switch; a long status
+#                             line of a script fence shows whole
 # The crops are named <surface>-<lang>.png; menu texts go to job.log as "TEXT <surface> <lang>: ...".
 
 if (-not $Part) { $Part = 'C' }
@@ -64,6 +69,7 @@ function HlLanguage($lang) {
   HlCropMenus "fencemenu-$lang"
   HlSubmenus $m 'fencemenu' $lang
   CloseMenus
+  if ($Only -eq 'menu') { return }
   # The tab fence, the folder fence, the note, the clock, the script and the smart fence: texts only,
   # and one crop each.
   foreach ($k in @(@('Work', 'tabmenu'), @('Shared docs', 'foldermenu'), @('Memo', 'notemenu'), @('Tick', 'clockmenu'), @('Fail', 'scriptmenu'), @('Psd', 'smartmenu'))) {
@@ -193,6 +199,106 @@ if ($Part -match 'C') {
   PfQuit
 }
 
+if ($Part -match 'D') {
+  # The details view's column headings, a rolled fence's count, a filter's tag in the title, the
+  # date group captions and the box that asks before a fence is deleted.
+  PfStart -Lang en
+  Pf settings set theme light | Out-Null
+  ClearFences | Out-Null
+  foreach ($n in 'hd alpha.txt', 'hd beta.txt', 'hd gamma.txt') { Set-Content "$PfRun\Shared docs\$n" 'x' }
+  Pf fence create --title Det --rect '300,60,620,200' | Out-Null
+  Pf fence create --title Rolled --rect '300,300,300,200' | Out-Null
+  Pf fence create --title Grp --rect '960,60,330,260' | Out-Null
+  Pf fence create --portal "$PfRun\Shared docs" --title 'Shared docs' --rect '660,300,420,220' | Out-Null
+  Pf item move (Join-Path $PfDesk $HlFiles[0]) --to Det | Out-Null
+  Pf item move (Join-Path $PfDesk $HlFiles[1]) --to Rolled | Out-Null
+  Pf item move (Join-Path $PfDesk $HlFiles[2]) --to Grp | Out-Null
+  Pf fence set Det layout details | Out-Null
+  Pf fence set Grp sort date | Out-Null
+  Pf fence set Grp groupByDate true | Out-Null
+  Pf fence roll Rolled | Out-Null
+  Start-Sleep -Seconds 3
+  foreach ($lang in $LangList) {
+    Case "more captures $lang"
+    Pf settings set language $lang | Out-Null
+    Start-Sleep -Seconds 2
+    ParkMouse 1500 840
+    $d = (FenceGet 'Det').windowRect
+    Crop "details-$lang" ($d.x - 4) ($d.y - 4) ($d.w + 8) 110 | Out-Null
+    $r = (FenceGet 'Rolled').windowRect
+    Crop "rolled-$lang" ($r.x - 4) ($r.y - 4) ($r.w + 8) 48 | Out-Null
+    $g = (FenceGet 'Grp').windowRect
+    Crop "groups-$lang" ($g.x - 4) ($g.y - 4) ($g.w + 8) 120 | Out-Null
+    # A filter in the folder fence: its tag in the title.
+    $s = (FenceGet 'Shared docs').windowRect
+    [G]::Click($s.x + 200, $s.y + $s.h - 30); Start-Sleep -Milliseconds 300
+    Chord 0x11 0x46; Start-Sleep -Milliseconds 700
+    Crop "filterbox-$lang" ($s.x - 4) ($s.y - 4) ($s.w + 8) 110 | Out-Null
+    [G]::Type('hd'); Start-Sleep -Milliseconds 700
+    [G]::Press(0x0D); Start-Sleep -Milliseconds 600
+    ParkMouse 1500 840
+    Crop "filtertag-$lang" ($s.x - 4) ($s.y - 4) ($s.w + 8) 110 | Out-Null
+    [G]::Click($s.x + 200, $s.y + $s.h - 30); Start-Sleep -Milliseconds 300
+    [G]::Press(0x1B); Start-Sleep -Milliseconds 300; [G]::Press(0x1B); Start-Sleep -Milliseconds 400
+    # 删除栅栏 (the last entry but one of the menu) on a fence with an icon: the box that asks.
+    $m = HlTitleMenu 'Det'
+    $rows = @(MenuRows $m | Where-Object { $_.text })
+    $del = $rows[$rows.Count - 2]
+    [G]::Click([int](($del.L + $del.R) / 2), [int](($del.T + $del.B) / 2))
+    $box = WaitWin '#32770' 5
+    Start-Sleep -Milliseconds 500
+    Check "$lang`: 删除栅栏 asks first" ($box -ne [IntPtr]::Zero) "picked '$($del.text)'"
+    # Enter takes the box's default button, No (a Yes / No box has no Esc).
+    if ($box -ne [IntPtr]::Zero) { HlCropWin "confirm-$lang" $box 4; [G]::Press(0x0D); Start-Sleep -Milliseconds 600 }
+    CloseMenus
+  }
+  PfQuit
+}
+
+if ($Part -match 'R') {
+  # A rolled fence with a long name and twelve icons: the count after the name is one or two
+  # digits in Chinese and a word with a colon in German, Russian, Spanish and French.
+  Case 'rolled fence: name and count'
+  $HrFiles = @(1..12 | ForEach-Object { 'hr {0:d2}.txt' -f $_ })
+  foreach ($n in $HrFiles) { DeskFile $n | Out-Null }
+  PfStart -Lang zh-CN
+  Pf settings set theme light | Out-Null
+  ClearFences | Out-Null
+  $long = 'Geschwindigkeitsbegrenzungen 季度报告与资料汇总'
+  Pf fence create --title $long --rect '700,200,300,220' | Out-Null
+  foreach ($n in $HrFiles) { Pf item move (Join-Path $PfDesk $n) --to $long | Out-Null }
+  Pf fence roll $long | Out-Null
+  Start-Sleep -Seconds 2
+  foreach ($lang in @('zh-CN', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'pt-BR', 'ru', 'it', 'zh-TW')) {
+    Pf settings set language $lang | Out-Null
+    Start-Sleep -Milliseconds 1500
+    ParkMouse 1500 840
+    $r = (FenceGet $long).windowRect
+    Crop "rolledlong-$lang" ($r.x - 4) ($r.y - 4) ($r.w + 8) 44 | Out-Null
+    if ($lang -eq 'es') {
+      $t = OcrText $r.x $r.y $r.w 36 'r-rolled-es'
+      Check 'Spanish, a rolled fence with a long name: the count stands clear of the name' ($t -match '\sElementos:\s*12\b') "the title row reads '$t'"
+    }
+  }
+
+  # The filter box of a folder fence: the count at its right end shows its number.
+  Case 'filter box: the count'
+  foreach ($n in 'hd alpha.txt', 'hd beta.txt', 'hd gamma.txt') { Set-Content "$PfRun\Shared docs\$n" 'x' }
+  Pf fence create --portal "$PfRun\Shared docs" --title 'Shared docs' --rect '700,300,420,220' | Out-Null
+  Pf settings set language de | Out-Null
+  Start-Sleep -Seconds 2
+  $s = (FenceGet 'Shared docs').windowRect
+  [G]::Click($s.x + 200, $s.y + $s.h - 30); Start-Sleep -Milliseconds 300
+  Chord 0x11 0x46; Start-Sleep -Milliseconds 800
+  ParkMouse 1500 840
+  Crop 'r-filterbox-de' ($s.x - 4) ($s.y - 4) ($s.w + 8) 60 | Out-Null
+  $t = OcrText $s.x $s.y $s.w 40 'r-filterbox-ocr'
+  Check 'German, the filter box of a fence with three files: the count shows its number' ($t -match 'Elemente:\s*3') "the box reads '$t'"
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 400
+  PfQuit
+  foreach ($n in $HrFiles) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue }
+}
+
 if ($Part -match 'L') {
   # A script fence's status line and a smart fence's empty text are kept by the window as text:
   # a language switch has to give them again.
@@ -213,6 +319,19 @@ if ($Part -match 'L') {
   $empty = OcrText $s.x ($s.y + 40) $s.w ($s.h - 40) 'l-empty-en'
   Check "2 s after a switch from Chinese to English the script fence's status line is English" ($foot -match 'exit code') "the line reads '$foot'"
   Check "2 s after a switch from Chinese to English the smart fence's empty text is English" ($empty -match 'No files match|needs Everything') "the text reads '$empty'"
+
+  # A status line wider than the fence (German, a fence 300 px wide): its end, the exit code, shows.
+  Case 'a long status line shows whole'
+  Pf fence create --script "$PfRun\fail.ps1" --title Narrow --rect '1140,120,300,200' | Out-Null
+  Pf settings set language de | Out-Null
+  Start-Sleep -Seconds 2
+  Pf fence refresh Narrow | Out-Null
+  Start-Sleep -Seconds 5
+  ParkMouse 1500 840
+  $n = (FenceGet 'Narrow').windowRect
+  Crop 'l-narrow-de' ($n.x - 4) ($n.y - 4) ($n.w + 8) ($n.h + 8) | Out-Null
+  $foot = OcrText $n.x ($n.y + $n.h - 60) $n.w 60 'l-narrow-footer'
+  Check 'German, a script fence 300 px wide: the status line shows the exit code' ($foot -match 'Exitcode\s*3') "the line reads '$foot'"
   PfQuit
 }
 

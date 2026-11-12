@@ -1938,11 +1938,13 @@ impl FenceChrome {
             tool_text(TOOL_TEXT_SIZES[2])?,
             tool_text(TOOL_TEXT_SIZES[3])?,
         ];
+        // Wraps: 「fail.ps1 · Fehler bei der Ausführung um 5:01 (Exitcode 3)」 is wider than a
+        // 300 DIP fence, and its end (the exit code) is what the line is for.
         let note_footer_format =
             TextFormat::with_locale(font_small(), 12.0, FontWeight::NORMAL, locale)?
                 .with_alignment(TextAlignment::Leading)
                 .with_paragraph_alignment(ParagraphAlignment::Top)
-                .with_word_wrapping(WordWrapping::NoWrap);
+                .with_word_wrapping(WordWrapping::Wrap);
         let clock_time_format =
             Self::build_tool_format(font_display(), CLOCK_TIME_DIP, FontWeight(300), false)?;
         let clock_date_format =
