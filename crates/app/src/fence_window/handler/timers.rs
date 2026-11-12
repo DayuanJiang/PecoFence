@@ -48,6 +48,26 @@ pub(super) fn on_timer_active_sync(h: &HandlerCtx, hwnd: HWND, last: bool) -> Op
         if !crate::fence_window::own_file_op_running() {
             window::kill_timer(hwnd, TIMER_ACTIVE_SYNC);
             window::set_timer(hwnd, TIMER_ACTIVE_SYNC_END, ACTIVE_SYNC_MS);
+            return Some(0);
+        }
+        // The operation still runs (a large copy, a question nobody answered) and the user
+        // went on to another program: the selection is not the active one for all that time.
+        // The shell's own progress and question windows belong to this process.
+        let front = desktop::root_ancestor(desktop::foreground_window());
+        let elsewhere = !front.0.is_null()
+            && desktop::window_pid(front) != pecofence_platform::process::current_pid();
+        if elsewhere {
+            window::kill_timer(hwnd, TIMER_ACTIVE_SYNC);
+            if let Ok(mut guard) = h.view.try_borrow_mut()
+                && let Some(v) = guard.as_mut()
+            {
+                tracing::debug!(
+                    "file operation still running, another program in front: the selection colour follows"
+                );
+                if v.set_active(false) {
+                    let _ = v.redraw_content();
+                }
+            }
         }
         return Some(0);
     }
