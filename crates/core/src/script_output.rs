@@ -200,7 +200,7 @@ pub fn error_line(stderr: &str) -> &str {
     let mut lines = stderr.lines().map(str::trim).filter(|l| !l.is_empty());
     let first = lines.next().unwrap_or_default();
     if first.starts_with("Traceback (most recent call last)") {
-        lines.last().unwrap_or(first)
+        lines.next_back().unwrap_or(first)
     } else {
         first
     }
