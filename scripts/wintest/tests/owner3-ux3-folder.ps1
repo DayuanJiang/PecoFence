@@ -10,13 +10,15 @@
 #   S  a sort change that moves most of 34 icons cross-fades; 8 icons glide as before
 #   T  sort changes of fences with 6, 10, 14 and 20 icons: the first two glide, the others
 #      cross-fade (the recording is what the threshold of 12 icons was chosen from)
+#   D  the files of the last row deleted while the fence shows the end of its content: the
+#      rows that stay glide down (they jumped in one frame)
 #   H  recordings and pictures for a look (no checks): resize, scroll, views, tab strip
 #   G  more recordings (no checks): the thumb dragged, a sort change while scrolled, files
 #      removed at the end of the content, a rolled fence made wider
 # Default: the parts with checks. Runs on a 1600x900 box at 100 %, Fluent, light mode, grey
 # wallpaper. The test files live in folders under the job's run folder (folder fences), not
 # on the desktop.
-if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'PCZEST' }
+if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'PCZESTD' }
 
 function Sx($d, $x) { return [int]($d.l + $d.ox + $x) }
 function TitleY($d) { return [int]($d.t + $d.oy + 18) }
@@ -384,6 +386,31 @@ function PartS() {
   Check 'S 8 icons change places: they glide as before' (@($lines | Where-Object { $_ -match 'items=8\b' }).Count -eq 0) "cross-fades logged for the small fence: $(@($lines | Where-Object { $_ -match 'items=8\b' }).Count)"
 }
 
+function PartD() {
+  trap { PfTrap $_; continue }
+  Case 'D files deleted at the end of the scrolled content'
+  ClearFences | Out-Null; SmallInbox
+  $root = TestFolder '删除夹' 34
+  $fid = (PfJson fence create --portal $root --rect '200,120,420,330').fence.id
+  Pf fence rename $fid 资料 | Out-Null
+  Start-Sleep -Seconds 3
+  [G]::MoveTo(400, 300); Start-Sleep -Milliseconds 300
+  WheelRaw -1200; Start-Sleep -Milliseconds 1200
+  ParkMouse 1200 820
+  # The four files of the last row (34 icons in rows of five).
+  $last = @(@(PfJson item list --fence $fid) | Where-Object { $_ -and $_.fileName } | Select-Object -Last 4 | ForEach-Object { $_.fileName })
+  RecStart 'D-delete' -X 180 -Y 100 -W 460 -H 370 -Fps 30
+  Start-Sleep -Milliseconds 300
+  RecMark '删掉最后一行的四个文件'
+  foreach ($f in $last) { Remove-Item -LiteralPath (Join-Path $root $f) -Force }
+  Start-Sleep -Milliseconds 2000
+  RecStop
+  $left = @(@(PfJson item list --fence $fid) | Where-Object { $_ -and $_.name }).Count
+  Check 'D the four files are gone from the fence' ($left -eq 30) "icons left: $left; deleted: $($last -join ', ')"
+  $line = LastLog 'the content ends above the scroll offset'
+  Check 'D the rows that stay glide down to the new end' ([bool]$line) "$line"
+}
+
 # Sort changes of fences with 6, 10, 14 and 20 icons, for choosing where the cross-fade starts.
 function PartT() {
   trap { PfTrap $_; continue }
@@ -483,6 +510,7 @@ if ($Part -match 'C') { PartC }
 if ($Part -match 'Z') { PartZ }
 if ($Part -match 'E') { PartE }
 if ($Part -match 'S') { PartS }
+if ($Part -match 'D') { PartD }
 if ($Part -match 'T') { PartT }
 if ($Part -match 'H') { PartH }
 if ($Part -match 'G') { PartG }
