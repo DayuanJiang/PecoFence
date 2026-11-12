@@ -252,17 +252,13 @@ pub fn new_todo_suffix(text: &str) -> &'static str {
 /// does ([`crate::script_output::is_web_address`]).
 pub fn links(text: &str) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
+    // Only ASCII letters change, so the lower-cased text has the same byte offsets.
+    let lower = text.to_ascii_lowercase();
     let mut from = 0;
     while from < text.len() {
-        let rest = &text[from..];
         let Some(at) = ["https://", "http://"]
             .iter()
-            .filter_map(|scheme| {
-                // ASCII only, so the lower-cased text has the same byte offsets.
-                rest.to_ascii_lowercase()
-                    .find(scheme)
-                    .map(|i| (i, scheme.len()))
-            })
+            .filter_map(|scheme| lower[from..].find(scheme).map(|i| (i, scheme.len())))
             .min()
         else {
             break;
@@ -282,10 +278,7 @@ pub fn links(text: &str) -> Vec<(usize, usize)> {
             .unwrap_or(text.len() - start);
         let mut address = &text[start..start + run];
         // What follows the address in its sentence.
-        loop {
-            let Some(last) = address.chars().next_back() else {
-                break;
-            };
+        while let Some(last) = address.chars().next_back() {
             let closes = match last {
                 ')' => Some('('),
                 ']' => Some('['),
@@ -363,7 +356,9 @@ impl EditHistory {
         };
         let goes_on = match (self.run, run) {
             // A space after a word ends the step: the next word goes with its space.
-            (Some(Run::Typing { space: before }), Some(Run::Typing { space })) => before || !space,
+            (Some(Run::Typing { space: was_space }), Some(Run::Typing { space })) => {
+                was_space || !space
+            }
             (Some(Run::Deleting), Some(Run::Deleting)) => true,
             _ => false,
         };
