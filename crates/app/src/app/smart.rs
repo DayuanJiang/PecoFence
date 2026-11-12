@@ -1252,12 +1252,12 @@ impl App {
         let empty = Some(match source {
             SmartSource::Waiting => pecofence_core::i18n::text("正在搜索…"),
             // A folder search waits for Everything only for its Everything syntax.
-            SmartSource::NeedsEverything if !spec.folders.is_empty() => pecofence_core::i18n::text(
-                "这个栅栏用了 Everything 语法，需要先打开 Everything：右键这个栅栏可以启动或安装它。",
-            ),
-            SmartSource::NeedsEverything => pecofence_core::i18n::text(
-                "要搜索整台电脑，需要先打开 Everything：右键这个栅栏可以启动或安装它。",
-            ),
+            SmartSource::NeedsEverything if !spec.folders.is_empty() => {
+                pecofence_core::i18n::text("这个栅栏用了 Everything 语法，需要先打开 Everything。")
+            }
+            SmartSource::NeedsEverything => {
+                pecofence_core::i18n::text("要搜索整台电脑，需要先打开 Everything。")
+            }
             // What a folder fence says when its folder is gone.
             SmartSource::Everything | SmartSource::Folder if run.is_some_and(|r| r.missing) => {
                 pecofence_core::i18n::text("找不到此文件夹。")
