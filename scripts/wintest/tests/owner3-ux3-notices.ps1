@@ -1,11 +1,14 @@
-# Owner round, third batch: texts of notices and of one settings card. --var Part=N|W (default both).
+# Owner round, third batch: texts of notices, of one settings card and of an empty fence.
+# --var Part=N|W|J (default all).
 #   N: after a crash inside ExplorerPatcher while a menu was built, the notice names the Windows
 #      menu entries that are off now and the tray menu that brings them back (any build).
 #   W: Settings › 布局与备份 in Simplified Chinese at the window's default size: the description of
 #      the 导出 / 导入配置文件 card is one line (it broke inside the word 电脑). Debug build: the
 #      page is read over CDP.
+#   J: the text of an empty fence 150 px wide in Japanese is one line (the last character stood
+#      alone on a second line).
 trap { PfTrap $_; continue }
-if (-not $Part) { $Part = 'NW' }
+if (-not $Part) { $Part = 'NWJ' }
 
 if ($Part -match 'N') {
   Case 'N a crash inside ExplorerPatcher while a menu was built'
@@ -49,4 +52,26 @@ if ($Part -match 'W') {
     CloseWindows
     PfQuit
   }
+}
+
+if ($Part -match 'J') {
+  Case 'J the text of a narrow empty fence in Japanese'
+  CloseWindows
+  PfStart -Lang ja
+  Pf settings set theme light | Out-Null
+  Pf fence create --title 'Narrow' --rect '40,250,150,150' | Out-Null
+  Start-Sleep -Seconds 3
+  ParkMouse
+  $b = Crop 'j-narrow' 40 250 150 150
+  # The lines of text under the title: runs of pixel rows that hold dark pixels (a gap of fewer
+  # than 4 rows is inside one line: the marks over a kana).
+  $runs = 0; $blank = 9
+  for ($y = 44; $y -lt 130; $y++) {
+    $dark = 0
+    for ($x = 8; $x -lt 142; $x++) { $c = $b.GetPixel($x, $y); if ($c.R -lt 140 -and $c.G -lt 140 -and $c.B -lt 150) { $dark++ } }
+    if ($dark -ge 3) { if ($blank -ge 4) { $runs++ }; $blank = 0 } else { $blank++ }
+  }
+  Check 'J the text is one line' ($runs -eq 1) "lines=$runs"
+  Pf fence delete 'Narrow' | Out-Null
+  PfQuit
 }
