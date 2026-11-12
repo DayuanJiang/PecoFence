@@ -76,9 +76,12 @@
   .brand-name { font-size: 15px; line-height: 20px; font-weight: 600; }
   nav a { display: flex; flex: none; align-items: center; gap: 16px; min-height: 36px; padding: 8px 12px; border-radius: var(--r-control); color: var(--text); text-decoration: none; position: relative; }
   nav a .ic { font-size: 16px; width: 16px; flex: none; text-align: center; }
-  nav a:hover, nav a.sel { background: var(--subtle); }
+  nav a:hover { background: var(--subtle); }
   nav a:active { background: var(--subtle-pressed); color: var(--text2); }
-  nav a.sel::before { content: ""; position: absolute; left: 0; top: 50%; width: 3px; height: 16px; margin-top: -8px; border-radius: 2px; background: var(--accent); }
+  /* The selected page: a tint and the accent colour for its icon and name (mixed with the text
+     colour, so that any Windows accent reads on the tint). The weight stays, so a long page name
+     wraps the same way whether or not its row is selected. */
+  nav a.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); color: color-mix(in srgb, var(--accent) 70%, var(--text)); }
   /* 查找设置: the box under the brand; its list floats over the page (the nav scrolls, so the
      list is fixed to the window and placed under the box). */
   .nav-search { position: relative; margin: 0 4px 12px; }

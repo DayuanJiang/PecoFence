@@ -2600,7 +2600,7 @@ async function runTests() {
   });
 
   await test('查找设置: the selected row is tinted in both modes, data rows are not listed, common words find their setting', async () => {
-    const rgb = text => text.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const rgb = text => text.match(/[\d.]+/g).slice(0, 3).map(v => text.startsWith('color(') ? v * 255 : Number(v));
     const lum = c => { const [r, g, b] = rgb(c).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
     const ratio = (a, b) => (Math.max(lum(a), lum(b)) + .05) / (Math.min(lum(a), lum(b)) + .05);
     for (const mode of ['dark', 'light']) {
@@ -2860,6 +2860,34 @@ async function runTests() {
       change(doc, 'language', language); await settle();
       const texts = [view.closest('.card').querySelector('.t'), sort.closest('.card').querySelector('.t'), toggle('reverse').closest('.card').querySelector('.t'), toggle('foldersFirst').closest('.card').querySelector('.t'), ...view.options, ...sort.options].map(el => el.textContent);
       assert(texts.join() === ['视图', '排序方式', '倒序', '文件夹优先', '图标', '列表', '详细信息', '手动', '按名称', '按类型', '按修改日期', '按大小', '按打开次数'].map(k => catalogs[language][k]).join(), language + ': ' + texts.join(' | '));
+    }
+    doc = await reset();
+  });
+
+  await test('The nav marks the selected page with a tint and the accent colour, without a bar at the row edge', async () => {
+    // A computed colour over what is behind it: rgb(…) / rgba(…), or color(srgb … / a) for a color-mix().
+    const parse = (text, under = [0, 0, 0]) => {
+      const n = text.match(/[\d.]+/g).map(Number), a = n.length > 3 ? n[3] : 1;
+      return n.slice(0, 3).map((v, i) => (text.startsWith('color(') ? v * 255 : v) * a + under[i] * (1 - a));
+    };
+    const lum = c => { const [r, g, b] = c.map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+    const ratio = (a, b) => (Math.max(lum(a), lum(b)) + .05) / (Math.min(lum(a), lum(b)) + .05);
+    for (const mode of ['dark', 'light']) {
+      doc = await reset();
+      doc.querySelector('[data-bind=theme]').value = mode; doc.querySelector('[data-bind=theme]').dispatchEvent(new (win().Event)('change', { bubbles: true })); await settle();
+      const rows = [...doc.querySelectorAll('nav a')], css = (el, pseudo) => win().getComputedStyle(el, pseudo);
+      const heights = rows.map(a => a.getBoundingClientRect().height);
+      doc.querySelector('[data-page=layout]').click();
+      // The rows' colours change over 150 ms.
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const sel = doc.querySelector('nav a.sel'), other = rows[0];
+      assert(sel.dataset.page === 'layout' && ['none', 'normal'].includes(css(sel, '::before').content), mode + ': the selected row still has a bar: ' + css(sel, '::before').content);
+      for (const a of rows) for (const side of ['Left', 'Right', 'Top', 'Bottom']) assert(css(a)['border' + side + 'Width'] === '0px', mode + ': a nav row has a border');
+      const sheet = parse(css(doc.body).backgroundColor), tint = parse(css(sel).backgroundColor, sheet);
+      assert(css(other).backgroundColor === 'rgba(0, 0, 0, 0)' && ratio(tint, sheet) >= 1.2, mode + ': the tint is ' + ratio(tint, sheet).toFixed(2) + ' : 1 against the sheet');
+      assert(css(sel).color !== css(other).color && css(sel.querySelector('.ic')).color === css(sel).color, mode + ': the selected name and icon are not in the accent colour');
+      assert(ratio(parse(css(sel).color), tint) >= 4.5, mode + ': the selected name is ' + ratio(parse(css(sel).color), tint).toFixed(2) + ' : 1 on its tint');
+      assert(rows.map(a => a.getBoundingClientRect().height).join() === heights.join(), mode + ': a row changed height when selected');
     }
     doc = await reset();
   });
