@@ -4,14 +4,19 @@
 #      places at once (they slid across the wider tab for 167 ms)
 #   C  a fence in 详细信息 made wider gets 大小, then 修改日期, then 类型 (类型 stood in for
 #      修改日期 between 328 and 355 px)
-#   Z  Ctrl+wheel larger and back: the fence is scrolled where it was
+#   Z  Ctrl+wheel larger and back: the selected icon is in view again
+#   E  an edge dragged fast across several column counts: the icons glide for the first change
+#      and are placed at once for the ones that follow while they are on their way
+#   S  a sort change that moves most of 34 icons cross-fades; 8 icons glide as before
+#   T  sort changes of fences with 6, 10, 14 and 20 icons: the first two glide, the others
+#      cross-fade (the recording is what the threshold of 12 icons was chosen from)
 #   H  recordings and pictures for a look (no checks): resize, scroll, views, tab strip
 #   G  more recordings (no checks): the thumb dragged, a sort change while scrolled, files
 #      removed at the end of the content, a rolled fence made wider
 # Default: the parts with checks. Runs on a 1600x900 box at 100 %, Fluent, light mode, grey
 # wallpaper. The test files live in folders under the job's run folder (folder fences), not
 # on the desktop.
-if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'PCZ' }
+if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'PCZEST' }
 
 function Sx($d, $x) { return [int]($d.l + $d.ox + $x) }
 function TitleY($d) { return [int]($d.t + $d.oy + 18) }
@@ -327,6 +332,81 @@ function PartH() {
   Shot 'H4-rolled'
 }
 
+function LogCount($pattern) { return @(PfLogAll | Select-String -Pattern $pattern).Count }
+
+function PartE() {
+  trap { PfTrap $_; continue }
+  Case 'E an edge dragged across several column counts'
+  ClearFences | Out-Null; SmallInbox
+  $root = TestFolder '拖宽夹' 34
+  $fid = (PfJson fence create --portal $root --rect '200,120,420,330').fence.id
+  Pf fence rename $fid 资料 | Out-Null
+  Start-Sleep -Seconds 3
+  ParkMouse 1200 820
+  # Fast: 5 to 8 columns in a third of a second, then down to one column in half a second.
+  RecStart 'E-fast' -X 180 -Y 100 -W 720 -H 380 -Fps 30
+  [G]::MoveTo(619, 300); Start-Sleep -Milliseconds 300; MDown; Start-Sleep -Milliseconds 150
+  RecMark '快速把右边缘拖宽'
+  Glide 619 300 860 300 12 30; Start-Sleep -Milliseconds 500
+  RecMark '快速拖窄'
+  Glide 860 300 330 300 16 30; Start-Sleep -Milliseconds 500
+  RecMark '松开'; MUp; Start-Sleep -Milliseconds 700
+  RecStop
+  $glides = LogCount 'resize changed the columns: icons glide'
+  $placed = LogCount 'resize changed the columns again'
+  Check 'E a fast drag across many column counts: one glide per drag direction, the other changes place the icons at once' ($glides -le 2 -and $placed -ge 4) "column changes that started a glide: $glides; placed at once: $placed"
+  # Slow: one column more, once.
+  Pf fence resize $fid --w 420 --h 330 | Out-Null; Start-Sleep -Milliseconds 900
+  [G]::MoveTo(619, 300); Start-Sleep -Milliseconds 300; MDown; Start-Sleep -Milliseconds 150
+  Glide 619 300 700 300 20 40; Start-Sleep -Milliseconds 400
+  MUp; Start-Sleep -Milliseconds 600
+  $glides2 = LogCount 'resize changed the columns: icons glide'
+  Check 'E a single change of the column count still glides' ($glides2 - $glides -eq 1) "glides started by the slow drag: $($glides2 - $glides)"
+}
+
+function PartS() {
+  trap { PfTrap $_; continue }
+  Case 'S a sort change that moves most icons'
+  ClearFences | Out-Null; SmallInbox
+  $big = TestFolder '排序大' 34; $small = TestFolder '排序小' 8
+  $fb = (PfJson fence create --portal $big --rect '200,120,420,330').fence.id
+  $fs = (PfJson fence create --portal $small --rect '700,120,340,240').fence.id
+  Pf fence rename $fb 大栅栏 | Out-Null; Pf fence rename $fs 小栅栏 | Out-Null
+  Start-Sleep -Seconds 3
+  ParkMouse 1200 820
+  RecStart 'S-sort' -X 180 -Y 100 -W 900 -H 370 -Fps 30
+  Start-Sleep -Milliseconds 300
+  RecMark '三十四个图标的栅栏改成按类型排序'; Pf fence set $fb sort type | Out-Null; Start-Sleep -Milliseconds 1200
+  RecMark '八个图标的栅栏改成按类型排序'; Pf fence set $fs sort type | Out-Null; Start-Sleep -Milliseconds 1200
+  RecStop
+  $lines = @(PfLogAll | Select-String -Pattern 'new order moves most icons')
+  Check 'S 34 icons change places: the content cross-fades' (@($lines | Where-Object { $_ -match 'items=34' }).Count -eq 1) "$($lines | Select-Object -Last 1)"
+  Check 'S 8 icons change places: they glide as before' (@($lines | Where-Object { $_ -match 'items=8\b' }).Count -eq 0) "cross-fades logged for the small fence: $(@($lines | Where-Object { $_ -match 'items=8\b' }).Count)"
+}
+
+# Sort changes of fences with 6, 10, 14 and 20 icons, for choosing where the cross-fade starts.
+function PartT() {
+  trap { PfTrap $_; continue }
+  Case 'T recordings: sort changes of small fences'
+  ClearFences | Out-Null; SmallInbox
+  $ids = @(); $x = 40
+  foreach ($n in 6, 10, 14, 20) {
+    $root = TestFolder "排序$n" $n
+    $ids += (PfJson fence create --portal $root --rect "$x,120,260,420").fence.id
+    $x += 280
+  }
+  Start-Sleep -Seconds 3
+  ParkMouse 1300 820
+  RecStart 'T-sorts' -X 30 -Y 110 -W 1130 -H 440 -Fps 30
+  Start-Sleep -Milliseconds 300
+  foreach ($id in $ids) { RecMark "排序 $id"; Pf fence set $id sort type | Out-Null; Start-Sleep -Milliseconds 900 }
+  RecStop
+  # Up to a dozen icons glide (each can be followed); 14 and 20 are a pile and cross-fade.
+  $lines = @(PfLogAll | Select-String -Pattern 'new order moves most icons')
+  $n = @(6, 10, 14, 20 | ForEach-Object { $k = $_; @($lines | Where-Object { $_ -match "items=$k\b" }).Count })
+  Check 'T 6 and 10 icons glide, 14 and 20 cross-fade' (($n -join ' ') -eq '0 0 1 1') "cross-fades logged for 6, 10, 14, 20 icons: $($n -join ' ')"
+}
+
 # More recordings for a look (no checks): the thumb dragged, a sort change while scrolled, files
 # removed at the end of the content, a rolled fence made wider.
 function PartG() {
@@ -401,6 +481,9 @@ Pf settings set rollUp.switchTabOnHover false | Out-Null
 if ($Part -match 'P') { PartP }
 if ($Part -match 'C') { PartC }
 if ($Part -match 'Z') { PartZ }
+if ($Part -match 'E') { PartE }
+if ($Part -match 'S') { PartS }
+if ($Part -match 'T') { PartT }
 if ($Part -match 'H') { PartH }
 if ($Part -match 'G') { PartG }
 
