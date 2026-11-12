@@ -5,6 +5,7 @@
 #   run.sh --var Part=D ...   details headings, a rolled fence's count, the filter box and its tag,
 #                             date group captions, the box that asks before a fence is deleted
 #   run.sh --var Part=E ...   the search box with Everything's rows and the two action rows
+#   run.sh --var Part=N ...   two cards: 「已删除栅栏」 with 撤销, 「已添加整理规则」
 #   run.sh --var Part=R ...   checks: a rolled fence's count beside a long name, the filter box's
 #                             count and offered type, the search box when nothing matches
 #   run.sh --var Part=L ...   checks: texts a window keeps follow a language switch; a long status
@@ -320,6 +321,74 @@ if ($Part -match 'R') {
   [G]::Press(0x1B); Start-Sleep -Milliseconds 500
   PfQuit
   foreach ($n in $HrFiles) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue }
+}
+
+function HlNotice($sec = 6) {
+  for ($i = 0; $i -lt $sec * 5; $i++) {
+    $n = [G]::FindWindowW('PecoFence.Notice', [NullString]::Value)
+    if ($n -ne [IntPtr]::Zero -and [G]::IsWindowVisible($n)) { Start-Sleep -Milliseconds 500; return $n }
+    Start-Sleep -Milliseconds 200
+  }
+  return [IntPtr]::Zero
+}
+# Closes the card on screen with its x.
+function HlCloseNotice() {
+  $n = [G]::FindWindowW('PecoFence.Notice', [NullString]::Value)
+  if ($n -eq [IntPtr]::Zero -or -not [G]::IsWindowVisible($n)) { return }
+  $r = Rect $n
+  [G]::Click($r.R - 24, $r.T + 24); Start-Sleep -Milliseconds 300
+  [G]::MoveTo(1100, 400)
+  WaitGoneWin 'PecoFence.Notice' 4 | Out-Null
+}
+function HlCards($lang) {
+  trap { PfTrap $_; continue }
+  Pf settings set language $lang | Out-Null
+  Start-Sleep -Milliseconds 1500
+  HlCloseNotice
+  # 「已删除栅栏」 with 撤销: an empty fence deleted from its menu (the last entry but one).
+  $long = 'Geschwindigkeitsbegrenzungen 季度报告'
+  Pf fence create --title $long --rect '700,60,330,200' | Out-Null
+  Start-Sleep -Milliseconds 900
+  $m = HlTitleMenu $long
+  $rows = @(MenuRows $m | Where-Object { $_.text })
+  $del = $rows[$rows.Count - 2]
+  [G]::Click([int](($del.L + $del.R) / 2), [int](($del.T + $del.B) / 2))
+  $n = HlNotice 6
+  [G]::MoveTo(1100, 400); Start-Sleep -Milliseconds 400
+  Check "$lang`: a card says the fence was deleted" ($n -ne [IntPtr]::Zero) "picked '$($del.text)'; card '$([L]::Text($n))'"
+  if ($n -ne [IntPtr]::Zero) { HlCropWin "card-deleted-$lang" $n 8 }
+  HlCloseNotice
+  CloseMenus
+  # 「已添加整理规则」: 「以后把 .txt 文件都放到这里」 from the menu of an icon in a fence.
+  $m = RClickItem 'Keep' $HlItem
+  $put = @(MenuRows $m | Where-Object { $_.text -match '\.txt' }) | Select-Object -First 1
+  if ($put) { [G]::Click([int](($put.L + $put.R) / 2), [int](($put.T + $put.B) / 2)) } else { CloseMenus }
+  $n = HlNotice 6
+  [G]::MoveTo(1100, 400); Start-Sleep -Milliseconds 400
+  Check "$lang`: a card says the rule was added" ($n -ne [IntPtr]::Zero) "picked '$($put.text)'; card '$([L]::Text($n))'"
+  if ($n -ne [IntPtr]::Zero) { HlCropWin "card-rule-$lang" $n 8 }
+  HlCloseNotice
+  CloseMenus
+  foreach ($r in @(Rules)) { if ($r -and $r.id -and $r.targetTitle -eq 'Keep') { Pf rule remove $r.id | Out-Null } }
+}
+
+if ($Part -match 'N') {
+  # Two cards in every language. Cards do not show under a test script: the build starts without one.
+  Case 'cards'
+  PfStart -Lang en
+  Pf settings set theme light | Out-Null
+  ClearFences | Out-Null
+  Pf fence create --title Keep --rect '300,60,330,200' | Out-Null
+  Pf fence set Keep sort name | Out-Null
+  Pf item move (Join-Path $PfDesk $HlFiles[0]) --to Keep | Out-Null
+  PfQuit
+  $env:PECOFENCE_INSTANCE = $PfInst
+  $env:RUST_LOG = 'pecofence=debug'
+  Start-Process "$PfApp\pecofence.exe" -ArgumentList '--portable' -WorkingDirectory $PfApp
+  WaitWin 'PecoFence.Control' 20 -Hidden | Out-Null
+  Start-Sleep -Seconds 6
+  foreach ($lang in $LangList) { HlCards $lang }
+  PfQuit
 }
 
 if ($Part -match 'E') {
