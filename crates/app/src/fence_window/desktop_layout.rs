@@ -324,7 +324,9 @@ impl FenceViewState {
                 h: m.cell_h,
             })
             .collect();
-        let changed = rescaled || slots != self.desktop_slots;
+        let changed = rescaled
+            || slots != self.desktop_slots
+            || std::mem::take(&mut self.desktop_slots_moved);
         self.desktop_slots = slots;
         Some((rect, changed))
     }

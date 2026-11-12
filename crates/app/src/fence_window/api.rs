@@ -291,6 +291,7 @@ impl FenceWindow {
             opacity: 1.0,
             desktop: None,
             desktop_slots: Vec::new(),
+            desktop_slots_moved: false,
             desktop_free: None,
             desktop_free_sent: None,
             desktop_band_base: None,

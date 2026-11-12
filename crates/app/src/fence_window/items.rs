@@ -380,6 +380,21 @@ impl FenceViewState {
             }
             return;
         }
+        // 像桌面一样排列: the cells of the new list are placed here, before the glides get
+        // their targets. They used to be placed only after this function, so every icon
+        // glided to the cell the old list had at its index and jumped to its own cell when
+        // the glide ended.
+        if self.desktop.is_some()
+            && let Some((_, moved)) = self.arrange_desktop()
+        {
+            tracing::debug!(
+                fence = %self.fence_id,
+                moved,
+                items = self.items.len(),
+                "desktop cells placed for the new item list before its glide"
+            );
+            self.desktop_slots_moved |= moved;
+        }
         let cells = self.cell_origins(width_dip);
         // Cells an icon at rest slides out of in this pass: a new icon there waits for it.
         let vacated: HashSet<(i32, i32)> = self

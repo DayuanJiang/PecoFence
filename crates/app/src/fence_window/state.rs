@@ -464,6 +464,9 @@ pub struct FenceViewState {
     /// The cells of the items (and one more for a drop after the last), content-local DIPs,
     /// from `arrange_desktop`.
     pub(super) desktop_slots: Vec<CellRect>,
+    /// `replace_items` placed the cells of a new item list itself (the glide needs them) and
+    /// they moved: the next `arrange_desktop` reports that, so the window is fitted and drawn.
+    pub(super) desktop_slots_moved: bool,
     /// 自由摆放: the grid the icons stand on and the cell (column, row) of each item, from
     /// `arrange_desktop`; None while the icons are arranged in columns.
     pub(super) desktop_free: Option<(super::desktop_layout::FreeGrid, Vec<(i32, i32)>)>,
