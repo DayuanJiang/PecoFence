@@ -159,8 +159,15 @@ impl App {
         // Counted, never shown: without the sort of the whole folder.
         let items: Vec<&pecofence_core::Item> = self.state.unsorted_items_of(f).collect();
         let shown = match self.fence_filter(f.id) {
-            Some(q) => items.iter().filter(|it| filter_keeps(it, &q)).count(),
             None => items.len(),
+            // The window that shows this fence shows exactly the matches (`item_views`): they
+            // are not matched a second time for the count.
+            Some(q) => self
+                .fences
+                .get(&self.state.host_of(f.id))
+                .filter(|w| w.active_fence() == f.id)
+                .map(|w| w.item_count())
+                .unwrap_or_else(|| items.iter().filter(|it| filter_keeps(it, &q)).count()),
         };
         (shown, items.len())
     }

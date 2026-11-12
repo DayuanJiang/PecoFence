@@ -1788,6 +1788,11 @@ impl FenceWindow {
             .unwrap_or(self.id)
     }
 
+    /// How many items the window shows (of `active_fence`, after its filter).
+    pub fn item_count(&self) -> usize {
+        self.view.borrow().as_ref().map_or(0, |v| v.items.len())
+    }
+
     /// Item whose inline rename edit this window currently shows (see `set_renaming`).
     pub fn renaming_item(&self) -> Option<ItemId> {
         self.view.borrow().as_ref().and_then(|v| v.renaming)
