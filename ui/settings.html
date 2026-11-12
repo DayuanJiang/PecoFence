@@ -464,9 +464,10 @@
 
   /* Centred over the content column (the visible page), not the whole window. */
   .infobar { position: fixed; z-index: 5; left: 16px; right: 16px; left: anchor(--page left, 16px); right: anchor(--page right, 16px); width: fit-content; margin: 0 auto; bottom: 24px; transform: translateY(8px); min-height: 48px; border-radius: var(--r-card); background: var(--ok-bg); border: 1px solid var(--card-stroke); box-shadow: var(--shadow);
-    padding: 13px 16px; overflow-wrap: anywhere; display: flex; gap: 12px; align-items: center; opacity: 0; transition: opacity var(--fast) linear, transform var(--fast) var(--decelerate); pointer-events: none; }
+    padding: 13px 16px; overflow-wrap: anywhere; display: flex; gap: 12px; align-items: center; opacity: 0; transition: opacity var(--fast) linear, transform var(--fast) var(--accelerate); pointer-events: none; }
   .infobar .ic::before { content: "\E73E"; font-size: 16px; color: var(--ok); }
-  .infobar.on { opacity: 1; transform: none; }
+  /* It comes in decelerating and leaves accelerating, as what enters and leaves on the fences does. */
+  .infobar.on { opacity: 1; transform: none; transition: opacity var(--fast) linear, transform var(--fast) var(--decelerate); }
   .infobar.error { background: var(--error-bg); } .infobar.error .ic::before { content: "\E783"; color: var(--error); }
   /* With 撤销 (a rule or a snapshot was deleted) the bar takes clicks; the button leaves with the bar. */
   .infobar.on.undo { pointer-events: auto; } .infobar button { flex: none; min-width: 72px; margin: -6px -4px -6px 4px; }

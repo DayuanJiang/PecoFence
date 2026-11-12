@@ -3389,6 +3389,18 @@ async function runTests() {
       assert(has(wanted), 'No rule for ' + wanted);
     doc = await reset();
   });
+  await test('The notice at the bottom comes in decelerating and leaves accelerating', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const bar = doc.getElementById('toast');
+    const curve = () => doc.getAnimations().filter(a => a.effect.target === bar && a.transitionProperty === 'transform').map(a => a.effect.getComputedTiming().easing).join();
+    win().testHost({ type: 'toast', text: '已保存快照' });
+    assert(curve() === 'cubic-bezier(0, 0, 0, 1)', 'Coming in, the notice moves on ' + (curve() || 'no curve'));
+    assert(await until(() => curve() === ''), 'The notice never came to rest');
+    bar.classList.remove('on');
+    assert(curve() === 'cubic-bezier(1, 0, 1, 1)', 'Leaving, the notice moves on ' + (curve() || 'no curve'));
+    doc = await reset();
+  });
   await test('Every transition and animation of the page takes one of the app\'s four times', async () => {
     doc = await reset();
     assert(await motionReady(), 'The page never allowed transitions');
