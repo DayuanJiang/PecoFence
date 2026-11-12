@@ -231,6 +231,21 @@ impl FenceViewState {
         self.focus_visible = true;
     }
 
+    /// Space: the focused item joins the selection when it is not selected yet (File Explorer
+    /// keeps what was selected). Returns whether it did (false: no focus, or the focused item
+    /// is already selected).
+    pub(super) fn select_focused(&mut self) -> bool {
+        let Some(a) = self.anchor_index.filter(|a| *a < self.items.len()) else {
+            return false;
+        };
+        if self.rolled_up || !self.selected.insert(a) {
+            return false;
+        }
+        self.range_anchor = Some(a);
+        self.focus_visible = true;
+        true
+    }
+
     /// Moves the selection anchor by (dx, dy) cells (see [`CursorMode`]).
     pub(super) fn move_cursor(&mut self, dx: i32, dy: i32, mode: CursorMode) {
         if self.items.is_empty() {

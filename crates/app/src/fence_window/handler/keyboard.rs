@@ -330,6 +330,13 @@ pub(super) fn on_char(h: &HandlerCtx, _hwnd: HWND, wparam: usize, lparam: isize)
     // QuickLook, whichever runs (Seer when both do), as on the desktop and in Explorer (nothing
     // without them); a held Space does not repeat it.
     if ch == ' ' && !v.typing_ahead() && !window::key_down(msg::VK_SHIFT) {
+        // On an item that has the keyboard focus but is not selected (Ctrl+arrows went there):
+        // Space selects it too, as in Explorer and on the desktop.
+        if v.select_focused() {
+            tracing::debug!("Space: the focused item was not selected, now it is");
+            let _ = v.redraw_content();
+            return Some(0);
+        }
         if lparam & (1 << 30) == 0
             && let Some(path) = v.preview_path()
             && !seer::toggle(path)
