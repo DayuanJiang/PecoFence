@@ -298,7 +298,8 @@ pub struct RowsDraw<'a> {
     /// Header cell with the button held (fires on release, like a Win32 header control).
     pub header_pressed: Option<HeaderColumn>,
     pub scrollbar: Option<ScrollbarDraw>,
-    pub empty_text: Option<&'a str>,
+    /// The text of an empty fence and how strongly it shows (0..=1, see `ContentDraw`).
+    pub empty_text: Option<(&'a str, f32)>,
     /// A clickable row under `empty_text` (「启动 Everything」).
     pub empty_action: Option<EmptyAction<'a>>,
     /// Fence-wide drop wash + accent ring alpha 0..=1 (a drag hovers the fence itself).
@@ -1418,7 +1419,10 @@ pub struct ContentDraw<'a> {
     pub label_gap: f32,
     /// Overlay scrollbar thumb when the content overflows.
     pub scrollbar: Option<ScrollbarDraw>,
-    pub empty_text: Option<&'a str>,
+    /// The text of an empty fence and how strongly it shows (0..=1): whole in a fence at
+    /// rest, and what the last icon fading out or the first one fading in leaves of it, so
+    /// the two cross-fade.
+    pub empty_text: Option<(&'a str, f32)>,
     /// A clickable row under `empty_text` (「启动 Everything」).
     pub empty_action: Option<EmptyAction<'a>>,
     /// Fence-wide drop wash + accent ring alpha 0..=1 (a drag hovers the fence itself).
@@ -3731,7 +3735,6 @@ impl FenceChrome {
         draw_drop_wash(session, theme, &state, width, height, rows.drop_highlight);
         let selected = session.create_solid_brush(theme.selection_fill)?;
         let selected_stroke = session.create_solid_brush(theme.selection_stroke)?;
-        let secondary = session.create_solid_brush(theme.text_secondary)?;
         let cols = rows.columns;
         let header_h = rows.header_h;
         let fonts = self.label_font.borrow();
@@ -4057,9 +4060,8 @@ impl FenceChrome {
             draw_scrollbar(session, theme, &self.sort_glyph_format, width, bar)?;
         }
 
-        if let Some(text) = rows.empty_text
-            && rows.rows.is_empty()
-        {
+        if let Some((text, alpha)) = rows.empty_text {
+            let faded = session.create_solid_brush(with_alpha(theme.text_secondary, alpha))?;
             let avail = (height - header_h).max(0.0);
             let y0 = empty_text_top(avail);
             session.draw_text(
@@ -4071,9 +4073,10 @@ impl FenceChrome {
                     (width - 24.0).max(0.0),
                     (avail - y0).max(0.0),
                 ),
-                &secondary,
+                &faded,
             );
-            if let Some(action) = rows.empty_action
+            if alpha >= 1.0
+                && let Some(action) = rows.empty_action
                 && let Some(rect) =
                     self.empty_action_rect(text, action.label, width, height, header_h)
             {
@@ -4211,10 +4214,8 @@ impl FenceChrome {
             draw_scrollbar(session, theme, &self.sort_glyph_format, width, bar)?;
         }
 
-        if let Some(text) = content.empty_text
-            && content.items.is_empty()
-        {
-            let secondary = session.create_solid_brush(theme.text_secondary)?;
+        if let Some((text, alpha)) = content.empty_text {
+            let secondary = session.create_solid_brush(with_alpha(theme.text_secondary, alpha))?;
             let y0 = empty_text_top(height);
             session.draw_text(
                 text,
@@ -4222,7 +4223,8 @@ impl FenceChrome {
                 &Rect::from_xywh(12.0, y0, (width - 24.0).max(0.0), (height - y0).max(0.0)),
                 &secondary,
             );
-            if let Some(action) = content.empty_action
+            if alpha >= 1.0
+                && let Some(action) = content.empty_action
                 && let Some(rect) = self.empty_action_rect(text, action.label, width, height, 0.0)
             {
                 self.draw_empty_action(session, theme, &rect, &action)?;

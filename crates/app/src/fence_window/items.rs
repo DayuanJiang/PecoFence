@@ -37,11 +37,12 @@ pub(super) struct LeavingItem {
 }
 
 /// Layout motion runs only for a *rearrangement*: when at most half of the ids changed
-/// (`changed` = removed + added) relative to the larger of the two lists, or when an empty list
-/// fills up (its items fade in). A tab switch, portal navigation or a refill replaces most ids
-/// and snaps instead.
+/// (`changed` = removed + added) relative to the larger of the two lists, when an empty list
+/// fills up (its items fade in), or when the only item leaves (it fades out and the empty
+/// fence's text fades in). A tab switch, portal navigation or a refill replaces most ids and
+/// snaps instead.
 pub(super) fn layout_motion_applies(changed: usize, old_len: usize, new_len: usize) -> bool {
-    old_len == 0 || changed * 2 <= old_len.max(new_len)
+    old_len == 0 || (old_len == 1 && new_len == 0) || changed * 2 <= old_len.max(new_len)
 }
 
 /// A change that only takes icons away, or only brings icons in, is no refill either, however

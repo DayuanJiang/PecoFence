@@ -1028,6 +1028,9 @@ fn layout_motion_applies_only_to_rearrangements() {
     assert!(one_way_change(0, 30));
     assert!(!one_way_change(10, 10));
     assert!(!one_way_change(0, 0));
+    // The only icon leaving fades out, as the first one fades in.
+    assert!(layout_motion_applies(1, 1, 0));
+    assert!(!layout_motion_applies(2, 2, 0));
 }
 
 /// An edge dragged from five columns to four: the fifth icon glides from the end of the first

@@ -479,6 +479,30 @@ impl FenceViewState {
     }
 
     /// Empty-state caption for the fence being shown.
+    /// The empty fence's text for a draw at `now`, with how strongly it shows: whole in a
+    /// fence without items, and the rest of what the icons at the edge of empty show (the
+    /// last one fading out, the first ones fading in), so text and icon cross-fade. The text
+    /// stood there in the frame the last icon vanished, and was gone a frame before the first
+    /// icon began to show. None once an icon is at full strength.
+    pub(super) fn empty_text_draw(&self, now: Instant) -> Option<(&'static str, f32)> {
+        // An item that is not fading in is at full strength: the usual case, without a look
+        // at every item.
+        if self.item_motion.len() < self.items.len() {
+            return None;
+        }
+        let leaving = self.leaving.iter().map(|l| l.alpha.value_at(now));
+        let arriving = self.items.iter().map(|it| {
+            self.item_motion
+                .get(&it.id)
+                .map_or(1.0, |m| m.alpha.value_at(now))
+        });
+        let shown = leaving
+            .chain(arriving)
+            .fold(0.0f32, f32::max)
+            .clamp(0.0, 1.0);
+        (shown < 1.0).then(|| (self.empty_text(), 1.0 - shown))
+    }
+
     pub(super) fn empty_text(&self) -> &'static str {
         if self.bare() {
             // An empty desktop shows nothing.
@@ -1557,10 +1581,7 @@ impl FenceViewState {
             icon_top: grid.metrics.icon_top,
             label_gap: grid.metrics.label_gap,
             scrollbar,
-            // `cells` holds the viewport only; the hint is for a fence without items, once
-            // the last ones have faded out.
-            empty_text: (self.items.is_empty() && self.leaving.is_empty())
-                .then(|| self.empty_text()),
+            empty_text: self.empty_text_draw(now),
             empty_action: self.empty_action_draw(),
             drop_highlight: self.drop_wash.value_at(now),
             marquee: self.marquee_rect_dip(),
@@ -1747,10 +1768,7 @@ impl FenceViewState {
         }));
         let group_headers = group_header_draws(&layout, scroll, metrics.header_h);
         let scrollbar = self.scrollbar_draw_in(&layout, view_h);
-        // `rows` holds the viewport only; the hint is for a fence without items, once the
-        // last ones have faded out.
-        let empty_text =
-            (self.items.is_empty() && self.leaving.is_empty()).then(|| self.empty_text());
+        let empty_text = self.empty_text_draw(now);
         let marquee = self.marquee_rect_dip().map(|m| Rect {
             left: m.left,
             top: m.top + metrics.header_h,
