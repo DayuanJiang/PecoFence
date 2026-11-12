@@ -202,8 +202,9 @@ pub struct Settings {
     #[serde(default = "default_true")]
     pub auto_check_updates: bool,
     /// 显示托盘图标: PecoFence's icon in the taskbar's notification area. Off keeps it out,
-    /// except for the seconds a notification of PecoFence shows and while the item menus
-    /// wait to get their Windows part back after a crash (the entry is in the icon's menu).
+    /// except for the seconds a notification of PecoFence shows, while the item menus wait
+    /// to get their Windows part back after a crash (the entry is in the icon's menu), and
+    /// while none of Peek's shortcuts can be registered (速览所有栅栏 is in that menu).
     #[serde(default = "default_true")]
     pub show_tray_icon: bool,
     /// Unused (see [`UNUSED_SETTINGS`]).
