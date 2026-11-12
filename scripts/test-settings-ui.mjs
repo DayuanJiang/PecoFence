@@ -2808,7 +2808,7 @@ async function runTests() {
     win().testRefresh(); await settle();
     const text = [...doc.querySelectorAll('nav, main')].map(el => el.textContent).join('\n')
       + [...doc.querySelectorAll('main [title], main [placeholder], main [aria-label]')].map(el => ['title', 'placeholder', 'aria-label'].map(a => el.getAttribute(a) || '').join('\n')).join('\n');
-    for (const word of ['“', '”', '关掉', '关上', '标题行', '指针', 'Chameleon', '没有命中']) assert(!text.includes(word), 'The page still says ' + word + ': …' + text.slice(Math.max(0, text.indexOf(word) - 20), text.indexOf(word) + 20) + '…');
+    for (const word of ['「', '」', '关掉', '关上', '标题行', '指针', 'Chameleon', '没有命中']) assert(!text.includes(word), 'The page still says ' + word + ': …' + text.slice(Math.max(0, text.indexOf(word) - 20), text.indexOf(word) + 20) + '…');
     const titles = [...doc.querySelectorAll('main .card .t')].map(el => el.textContent.trim());
     assert(titles.filter(x => x === 'Windows 桌面图标').length === 1 && titles.includes('修复 Windows 桌面图标'), 'Two cards are named Windows 桌面图标');
     assert(titles.includes('退出 PecoFence 时保持 Windows 桌面图标隐藏') && titles.includes('不符合任何规则的项目') && titles.includes('图标融入背景'), 'Titles: ' + titles.join(' | '));

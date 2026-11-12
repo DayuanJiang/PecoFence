@@ -153,7 +153,7 @@ Check 'the nine file type boxes stand in columns' ($cols.boxes -eq 9 -and $cols.
 Shot 'rule-editor'
 
 Case 'wording'
-$bad = Js "(() => { const t = document.querySelector('main').textContent; return [String.fromCharCode(0x201c), String.fromCharCode(0x201d), '关掉', '关上', '标题行', 'Chameleon', '没有命中'].filter(w => t.includes(w)).join(' '); })()"
+$bad = Js "(() => { const t = document.querySelector('main').textContent; return [String.fromCharCode(0x300c), String.fromCharCode(0x300d), '关掉', '关上', '标题行', 'Chameleon', '没有命中'].filter(w => t.includes(w)).join(' '); })()"
 Check 'one kind of quotation mark and one word for a switch that is off' (-not $bad) "still on the page: $bad"
 $titles = @(Js "[...document.querySelectorAll('main .card .t')].map(e => e.textContent.trim())")
 Check 'one card is named Windows 桌面图标, the other 修复 Windows 桌面图标' (@($titles | Where-Object { $_ -eq 'Windows 桌面图标' }).Count -eq 1 -and $titles -contains '修复 Windows 桌面图标') ''
