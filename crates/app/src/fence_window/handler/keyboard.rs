@@ -444,6 +444,11 @@ pub(super) fn on_contextmenu(
             (p.x, p.y)
         }
     };
+    // With no room under the name the menu opens beside the icon: Windows slid it up over
+    // the icon it is for.
+    if let Some(cell) = v.item_cell_rect(item) {
+        pecofence_platform::tray::keep_clear_next(cell);
+    }
     queue.push(Command::ItemMenu {
         fence: v.active,
         items: ids,

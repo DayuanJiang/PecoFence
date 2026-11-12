@@ -211,6 +211,7 @@
 - A name no file can have: the reason shows under the name box. After Enter on a name with \ / : * ? " < > | the box stayed open and the reason came as a Windows notification at the corner of the screen, far from the box, and not at all with notifications off. It is now a tip right under the name box and goes when the text changes.
 - Peek search: the menu of a result (→ or a right-click) has icons on 「打开」, 「打开所在文件夹」 and 「复制路径」, the same as the right-click menu of an icon in a fence.
 - 「添加规则」 on the card that offers a sorting rule changes the card where it stands into 「已添加整理规则」. The offer vanished, one frame showed no card, and the second card faded in from nothing at the same place. The first card now takes the new texts, as 「下一条」 on the tips does.
+- The Menu key (or Shift+F10) on an icon opens the menu clear of that icon. With no room under the name, as in the lower half of the screen, Windows slid the menu up and it lay over the icon it was for. It now opens above or beside the icon; a right-click still opens it at the pointer.
 
 ## 0.3.3
 

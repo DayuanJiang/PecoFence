@@ -13,8 +13,9 @@
 #   run.sh --var Part=C ...   「添加规则」 on the card that offers a sorting rule: the card for the
 #                             added rule takes its place where it stands (the app runs without
 #                             a test script here: the offer does not show under one)
+#   run.sh --var Part=K ...   the Menu key on an icon: the menu opens clear of the icon
 # Without --var every part runs. Record=1 also records the clips for the report.
-if (-not $Part) { $Part = 'NSTRMC' }
+if (-not $Part) { $Part = 'NSTRMCK' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
 $UpFiles = @('预算表 2026.xlsx', '会议纪要 11月.txt', '年度报告 2025 董事会审阅版（含附录）.pdf', '报告.txt', 'a.md')
@@ -443,9 +444,51 @@ function UpPartC() {
   foreach ($n in $names) { Remove-Item -LiteralPath (Join-Path $PfDesk "$n.txt") -Force -ErrorAction SilentlyContinue }
 }
 
+function UpPartK() {
+  trap { PfTrap $_; continue }
+  Case 'menu key: the menu keeps clear of the icon'
+  UpClean
+  DeskFile '报告.txt' | Out-Null
+  PfStart -Lang 'zh-CN'
+  Pf settings set featureTips false | Out-Null
+  ClearFences
+  # In the lower half of the screen: the menu (about 500 px tall) has no room under the name.
+  Pf fence create --title '资料' --rect '200,360,360,260' | Out-Null
+  Start-Sleep -Seconds 2
+  Pf item move "$PfDesk\报告.txt" --to '资料' | Out-Null
+  Start-Sleep -Seconds 2
+  $p = ItemPt '资料' '报告'
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
+  [G]::Press(0x5D); Start-Sleep -Milliseconds 1500
+  $m = MenuWin 4; $mr = Rect $m
+  Crop 'k-menu-key' 150 300 700 560 | Out-Null
+  $covers = ($mr.L -le $p[0] -and $p[0] -lt $mr.R -and $mr.T -le $p[1] -and $p[1] -lt $mr.B)
+  $row = "menu $($mr.L),$($mr.T),$($mr.R),$($mr.B); icon centre $($p -join ',')"
+  Check 'the Menu key opens the icon menu' ($m -ne [IntPtr]::Zero -and (MenuTexts $m) -match '打开文件所在位置') $row
+  Check 'the menu does not lie over the icon it is for' (-not $covers) $row
+  CloseMenus; Start-Sleep -Milliseconds 400
+  # With room under the name the menu opens there, as before.
+  Pf fence move '资料' --x 200 --y 40 | Out-Null
+  Start-Sleep -Milliseconds 1200
+  $p = ItemPt '资料' '报告'
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
+  [G]::Press(0x5D); Start-Sleep -Milliseconds 1500
+  $m = MenuWin 4; $mr = Rect $m
+  Check 'with room under the name the menu opens under it' ($m -ne [IntPtr]::Zero -and ($mr.T - $p[1]) -ge 20 -and ($mr.T - $p[1]) -le 90 -and [Math]::Abs($mr.L - $p[0]) -le 60) "menu $($mr.L),$($mr.T),$($mr.R),$($mr.B); icon centre $($p -join ',')"
+  CloseMenus
+  # A right-click still opens the menu at the pointer.
+  [G]::RClick($p[0], $p[1]); Start-Sleep -Milliseconds 1500
+  $m = MenuWin 4; $mr = Rect $m
+  Check 'a right-click opens the menu at the pointer' ($m -ne [IntPtr]::Zero -and [Math]::Abs($mr.L - $p[0]) -le 3 -and [Math]::Abs($mr.T - $p[1]) -le 3) "menu $($mr.L),$($mr.T); pointer $($p -join ',')"
+  CloseMenus
+  PfQuit
+  UpClean
+}
+
 if ($Part -match 'N') { UpPartN }
 if ($Part -match 'S') { UpPartS }
 if ($Part -match 'T') { UpPartT }
 if ($Part -match 'R') { UpPartR }
 if ($Part -match 'M') { UpPartM }
 if ($Part -match 'C') { UpPartC }
+if ($Part -match 'K') { UpPartK }

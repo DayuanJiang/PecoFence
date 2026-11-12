@@ -20,6 +20,25 @@ pub fn time_in_menus() -> Duration {
     Duration::from_micros(MENU_TIME_US.load(Ordering::Relaxed))
 }
 
+/// `TPM_VERTICAL`: a menu that cannot open at its point without covering the rectangle it
+/// keeps clear of goes above or below that rectangle first, then beside it.
+const TPM_VERTICAL: u32 = 0x0040;
+/// A rectangle named with [`keep_clear_next`] counts for a menu opened within this time.
+const KEEP_CLEAR_FOR: Duration = Duration::from_secs(1);
+
+thread_local! {
+    /// The rectangle the next menu keeps clear of, and when it was named.
+    static KEEP_CLEAR: std::cell::Cell<Option<(RECT, Instant)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// The next menu this thread shows (within a second) opens clear of `rect` (screen px): the
+/// icon a menu opened with the keyboard is for. Without it Windows slides a menu that has no
+/// room under its point up, over the icon.
+pub fn keep_clear_next(rect: RECT) {
+    KEEP_CLEAR.with(|k| k.set(Some((rect, Instant::now()))));
+}
+
 /// Closes the popup menu this thread shows, if any (its `TrackPopupMenuEx` returns 0).
 pub fn end_menu() {
     // SAFETY: plain FFI call.
@@ -619,6 +638,22 @@ impl PopupMenu {
         if bottom_align {
             flags |= TPM_BOTTOMALIGN as u32;
         }
+        // A rectangle to keep clear of (`keep_clear_next`), named for this menu a moment ago.
+        let keep_clear = KEEP_CLEAR
+            .with(|k| k.take())
+            .filter(|(_, at)| at.elapsed() < KEEP_CLEAR_FOR)
+            .map(|(rect, _)| TPMPARAMS {
+                cbSize: size_of::<TPMPARAMS>() as u32,
+                rcExclude: rect,
+            });
+        if let Some(p) = &keep_clear {
+            flags |= TPM_VERTICAL;
+            let r = p.rcExclude;
+            tracing::debug!(
+                rect = ?(r.left, r.top, r.right, r.bottom),
+                "popup menu keeps clear of a rectangle"
+            );
+        }
         // A menu opened while another thread has the foreground never gets Esc, and clicks
         // outside it go to the other window: it stays open until an item is chosen, and the
         // UI thread waits in it all that time (a Windows Security toast took the foreground
@@ -696,7 +731,14 @@ impl PopupMenu {
                 Some(check_menu_foreground),
             );
             let shown = Instant::now();
-            let cmd = TrackPopupMenuEx(self.hmenu, flags, x, y, owner, None);
+            let cmd = TrackPopupMenuEx(
+                self.hmenu,
+                flags,
+                x,
+                y,
+                owner,
+                keep_clear.as_ref().map(|p| p as *const TPMPARAMS),
+            );
             let open = shown.elapsed();
             if timer != 0 {
                 let _ = KillTimer(Some(owner), MENU_FOREGROUND_TIMER);

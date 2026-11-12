@@ -597,6 +597,29 @@ impl FenceViewState {
         }
     }
 
+    /// Screen rectangle of an item's whole cell (icon and name; its row in the list views):
+    /// what a menu opened for it with the keyboard keeps clear of.
+    pub(super) fn item_cell_rect(&self, item: ItemId) -> Option<RECT> {
+        let index = self.items.iter().position(|i| i.id == item)?;
+        let scale = self.scale();
+        let (cw, _) = self.content_size_px();
+        let layout = self.layout(cw as f32 / scale);
+        let cell = layout.cell(index);
+        let header = match &layout {
+            ItemLayout::Grid(_) => 0.0,
+            ItemLayout::Rows { metrics, .. } => metrics.header_h,
+        };
+        let win = window::window_rect(self.hwnd);
+        let (left, top) = (win.left + self.content_x, win.top + self.content_y);
+        let y = cell.y - self.scroll_y + header;
+        Some(RECT {
+            left: left + (cell.x * scale) as i32,
+            top: top + (y * scale) as i32,
+            right: left + ((cell.x + cell.w) * scale) as i32,
+            bottom: top + ((y + cell.h) * scale) as i32,
+        })
+    }
+
     /// Screen rectangle of an item's label (for the inline rename popup).
     pub(super) fn item_label_rect(&self, item: ItemId) -> Option<RECT> {
         let index = self.items.iter().position(|i| i.id == item)?;
