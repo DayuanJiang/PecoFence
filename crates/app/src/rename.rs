@@ -638,7 +638,7 @@ pub fn show_hint(text: &str) -> bool {
         let Some(tip) = s.hint.as_mut() else {
             return false;
         };
-        tip.show(text, r.left, r.bottom + 4);
+        tip.show(text, r.left, r.bottom + 4, r.top - 4);
         tracing::debug!(at = ?(r.left, r.bottom + 4), "name box: hint shown under it");
         true
     })

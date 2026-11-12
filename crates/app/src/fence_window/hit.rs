@@ -284,6 +284,7 @@ impl FenceViewState {
                 width - self.laid_deco().lock_w(),
                 1,
                 self.deco.title_x(),
+                self.rolled_count_room(),
             )
         } else {
             0.0

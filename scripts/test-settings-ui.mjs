@@ -487,7 +487,7 @@ async function runTests() {
     doc.querySelector('[data-page=fences]').click();
     const sel = doc.getElementById('fenceSel');
     assert(sel.options.length === 4, 'Fence list incomplete');
-    assert([...sel.options].map(o => o.textContent).join('|') === 'Documents|Images（Documents 的标签页）|Desktop（桌面）|Portal（文件夹栅栏）', 'Fence labels wrong: ' + [...sel.options].map(o => o.textContent).join('|'));
+    assert([...sel.options].map(o => o.textContent).join('|') === 'Documents（只在“Games”上显示）|Images（Documents 的标签页）|Desktop（桌面）|Portal（文件夹栅栏）', 'Fence labels wrong: ' + [...sel.options].map(o => o.textContent).join('|'));
     assert(doc.getElementById('fencePortalGroup').style.display === 'none', 'Portal options shown for an ordinary fence');
     assert(doc.getElementById('fenceHideEmpty').style.display === '', 'Hide-when-empty not offered for an ordinary fence');
     assert(doc.getElementById('fenceDesktopLayout').style.display === 'none', 'Desktop layout offered for an ordinary fence');
