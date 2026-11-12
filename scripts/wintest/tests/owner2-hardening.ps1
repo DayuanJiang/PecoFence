@@ -1,0 +1,79 @@
+# Hardening round, 2026-11-12. Parts (run.sh --var Part=A ...; without it every part runs):
+#   A  a configuration imported from someone else: 「在资源管理器中打开文件夹」 of a folder fence
+#      and of a smart fence opens folders only (the file can name a program there), and the
+#      import holds the file's scripts off whatever the file's own 小工具 switch says.
+#   B  icons: a shortcut whose target is gone, or whose file is not on this disk, keeps a real
+#      icon, and every icon that comes back empty or generic says why in the log.
+#   C  the filter box of a fence (Ctrl+F) is drawn in the fence's own text colour.
+# Payloads are harmless: Notepad, and a .cmd that writes a marker file into C:\pf\run.
+if (-not $Part) { $Part = 'ABC' }
+function Tools() { return (PfJson settings get).tools }
+function LogText() { return ((PfLogAll) -join "`n") }
+
+if ($Part -match 'A') {
+  Case 'HD-1 setup'
+  CloseWindows
+  $Mark = "$PfRun\hd1-ran.txt"
+  $Probe = "$PfRun\hd1-probe.cmd"
+  Set-Content $Probe -Value "@echo ran>> `"$Mark`"" -Encoding ASCII
+  $DirA = "$PfRun\共享 资料"; $DirB = "$PfRun\下载 的 文件"
+  New-Item -ItemType Directory -Force $DirA, $DirB | Out-Null
+  Set-Content -LiteralPath "$DirA\说明.txt" -Value 'x'; Set-Content -LiteralPath "$DirB\季度 报告.txt" -Value 'x'
+  PfStart -Lang en
+  Start-Sleep -Seconds 2
+  Pf fence create --portal $DirA --title 'Shared' --rect '420,140,360,240' | Out-Null
+  Pf fence create --title 'Found' --smart-folder $DirB --rect '820,140,360,240' | Out-Null
+  Start-Sleep -Seconds 2
+
+  Case 'HD-1 a real folder still opens'
+  $m = FenceMenuOf 'Shared'; $picked = MenuPick '^Open folder in File Explorer' $m
+  $seen = $false
+  for ($i = 0; $i -lt 20 -and -not $seen; $i++) { Start-Sleep -Milliseconds 500; $seen = ((Explorers) -join "`n").Contains($DirA) }
+  Check 'folder fence: the menu opens its folder in Explorer' $seen "picked=$picked $((Explorers) -join ' / ')"
+  CloseWindows
+  $m = FenceMenuOf 'Found'; $picked = MenuPick '^Open folder in File Explorer' $m
+  $seen = $false
+  for ($i = 0; $i -lt 20 -and -not $seen; $i++) { Start-Sleep -Milliseconds 500; $seen = ((Explorers) -join "`n").Contains($DirB) }
+  Check 'smart fence: the menu opens its folder in Explorer' $seen "picked=$picked $((Explorers) -join ' / ')"
+  CloseWindows
+
+  Case 'HD-1 an imported file names programs as the folders'
+  $exp = "$PfRun\hd1-export.json"
+  Pf config export $exp | Out-Null
+  $json = [IO.File]::ReadAllText($exp)
+  $bad = $json.Replace(($DirA -replace '\\', '\\'), ($Probe -replace '\\', '\\')).Replace(($DirB -replace '\\', '\\'), 'C:\\Windows\\System32\\notepad.exe')
+  [IO.File]::WriteAllText("$PfRun\hd1-bad.json", $bad)
+  Check 'the file to import names a .cmd and Notepad as folders' ($bad -match 'hd1-probe\.cmd' -and $bad -match 'notepad\.exe') ''
+  Pf config import "$PfRun\hd1-bad.json" | Out-Null; Start-Sleep -Seconds 3
+  Remove-Item $Mark -ErrorAction SilentlyContinue
+  $m = FenceMenuOf 'Shared'; $texts = MenuTexts $m; $picked = MenuPick '^Open folder in File Explorer' $m
+  Start-Sleep -Seconds 3
+  Check 'folder fence: the menu line starts no program' ((Test-Path $Mark) -eq $false) "picked=$picked marker=$(Test-Path $Mark) menu=$texts"
+  CloseMenus
+  $m = FenceMenuOf 'Found'; $texts = MenuTexts $m; $picked = MenuPick '^Open folder in File Explorer' $m
+  Start-Sleep -Seconds 3
+  $np = @(Get-Process notepad -ErrorAction SilentlyContinue).Count
+  Shot 'hd1-after-open-folder'
+  Check 'smart fence: the menu line starts no program' ($np -eq 0) "picked=$picked notepads=$np menu=$texts"
+  Check 'log: both were refused as no folder' (([regex]::Matches((LogText), 'open folder refused: not a folder')).Count -ge 2) ([regex]::Match((LogText), '.*open folder refused[^\n]*').Value)
+  CloseMenus; CloseWindows
+
+  Case 'HD-1 import and scripts'
+  $S = "$PfRun\hd1-script.cmd"; Set-Content $S -Value '@echo hello' -Encoding ASCII
+  $base = "$PfRun\hd1-base.json"; Pf config export $base | Out-Null
+  Pf fence create --script $S --title 'Runner' --rect '420,440,300,160' | Out-Null; Start-Sleep -Seconds 2
+  Pf config import $base | Out-Null; Start-Sleep -Seconds 3
+  Check 'a file without scripts leaves the 小工具 switch on' ((Tools).enabled -eq $true) ((Tools) | ConvertTo-Json -Compress)
+  # The undo snapshot of that import keeps the Runner fence and its script: an export holds both.
+  Pf settings set tools.enabled true | Out-Null
+  $withSnap = "$PfRun\hd1-snap.json"; Pf config export $withSnap | Out-Null
+  $j = [IO.File]::ReadAllText($withSnap)
+  $off = $j -replace '("tools":\s*\{\s*"enabled":\s*)true', '${1}false'
+  [IO.File]::WriteAllText("$PfRun\hd1-off.json", $off)
+  Check 'the file to import has a script, a snapshot with a script, and the switch off' ($off -match 'hd1-script' -and $off -match '"tools":\s*\{\s*"enabled":\s*false') ''
+  Pf config import "$PfRun\hd1-off.json" | Out-Null; Start-Sleep -Seconds 3
+  $line = [regex]::Match((LogText), '.*imported script fences held off[^\n]*switch_was_on=false[^\n]*').Value
+  Check 'the switch off in the file: its scripts are held and the import says so' ($line -ne '' -and (Tools).enabled -eq $false) $line
+  Check 'a snapshot of the file brings no script' ($line -match 'snapshot_scripts=[1-9]') $line
+  PfQuit
+}

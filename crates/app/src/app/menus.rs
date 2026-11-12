@@ -1440,10 +1440,11 @@ impl App {
                     .smart_spec(fence)
                     .map(|s| s.folders.clone())
                     .unwrap_or_default();
-                tracing::info!(%fence, folders = dirs.len(), "smart fence: its folders opened in Explorer");
-                for dir in dirs {
-                    let _ = shell::shell_execute(std::path::Path::new(&dir), None, None);
-                }
+                let opened = dirs
+                    .iter()
+                    .filter(|d| super::portals::open_folder_in_explorer(std::path::Path::new(d)))
+                    .count();
+                tracing::info!(%fence, folders = dirs.len(), opened, "smart fence: its folders opened in Explorer");
             }
             CMD_FENCE_SMART_EVERYTHING => self.start_or_install_everything("fence menu"),
             c if (CMD_FENCE_SHOW_FOLDER..CMD_FENCE_SHOW_FOLDER + 4).contains(&c) => {

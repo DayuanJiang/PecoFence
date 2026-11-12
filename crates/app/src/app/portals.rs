@@ -3,6 +3,22 @@
 
 use super::*;
 
+/// Opens `dir` in Explorer when it is a folder given by its full path. A folder fence's folder
+/// and a smart fence's folders come from the configuration, which may be a file from someone
+/// else (an import): a program, a document or a web address there is not handed to Windows.
+/// False when refused or when Explorer did not open it.
+pub(super) fn open_folder_in_explorer(dir: &std::path::Path) -> bool {
+    if !dir.is_absolute() || !dir.is_dir() {
+        tracing::info!(
+            place = shell::path_place(dir),
+            absolute = dir.is_absolute(),
+            "open folder refused: not a folder"
+        );
+        return false;
+    }
+    shell::shell_execute(dir, None, None).is_ok()
+}
+
 impl App {
     /// Pushes the shown fence's portal decorations (folder glyph, up button, navigate flag) and
     /// its display title into the host window. A regular fence showing a folder gets them too,
@@ -344,7 +360,7 @@ impl App {
             tracing::info!(fence = %fence, by, "open folder: not a folder fence");
             return;
         };
-        let ok = shell::shell_execute(&dir, None, None).is_ok();
+        let ok = open_folder_in_explorer(&dir);
         tracing::info!(fence = %fence, by, place = shell::path_place(&dir), ok, "folder opened in Explorer");
     }
 

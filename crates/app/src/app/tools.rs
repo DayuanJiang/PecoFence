@@ -958,6 +958,13 @@ impl App {
         else {
             return;
         };
+        // The path goes in between quotes. No file's path holds a quote, but one in an edited
+        // or imported configuration can: it would end the argument early and hand Explorer the
+        // rest as arguments of its own.
+        if spec.path.contains('"') {
+            tracing::info!(%id, "script fence: its folder not opened, the path holds a quote");
+            return;
+        }
         let _ = std::process::Command::new("explorer.exe")
             .raw_arg(format!("/select,\"{}\"", spec.path))
             .spawn();

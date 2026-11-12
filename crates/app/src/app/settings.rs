@@ -144,9 +144,23 @@ fn changed_settings(old: &pecofence_core::Settings, new: &pecofence_core::Settin
 
 impl App {
     /// Replaces the configuration wholesale (import / backup) and rebuilds everything.
-    pub(super) fn adopt_config(&mut self, cfg: pecofence_core::Config, source: ConfigSource) {
+    pub(super) fn adopt_config(&mut self, mut cfg: pecofence_core::Config, source: ConfigSource) {
         self.end_peek_now();
         let old_settings = self.state.config.settings.clone();
+        let imported = matches!(source, ConfigSource::Import);
+        // The scripts the file itself brings (the user's own stay in the configuration for the
+        // undo snapshot and are counted apart).
+        let file_scripts = cfg.scripts.values().filter(|s| !s.path.is_empty()).count();
+        // A snapshot of an imported file brings its fences, never scripts: restoring it later
+        // would start them with no word of warning.
+        let snapshot_scripts: usize = if imported {
+            cfg.snapshots
+                .iter_mut()
+                .map(|s| std::mem::take(&mut s.scripts).len())
+                .sum()
+        } else {
+            0
+        };
         self.state.replace_config(cfg);
         if let Some(desk) = shell::user_desktop() {
             self.state.migrate_desktop_path(&desk);
@@ -155,16 +169,19 @@ impl App {
         // edition's startup switch is Windows': a file does not change it (nor open its page).
         let mut new_settings = self.state.config.settings.clone();
         // An imported file may come from someone else: its script fences do not run until the
-        // user switches 小工具 on (a backup is the user's own and keeps the switch).
-        let scripts_held = matches!(source, ConfigSource::Import)
-            && new_settings.tools.enabled
-            && !self.state.config.scripts.is_empty();
-        if scripts_held {
-            new_settings.tools.enabled = false;
+        // user switches 小工具 on (a backup is the user's own and keeps the switch). A file that
+        // has the switch off already gets the same words: its scripts start with the switch too.
+        let scripts_held = imported && file_scripts > 0;
+        if scripts_held || snapshot_scripts > 0 {
             tracing::info!(
-                scripts = self.state.config.scripts.len(),
+                scripts = file_scripts,
+                snapshot_scripts,
+                switch_was_on = new_settings.tools.enabled,
                 "imported script fences held off"
             );
+        }
+        if scripts_held {
+            new_settings.tools.enabled = false;
         }
         if pecofence_platform::process::is_packaged() {
             new_settings.autostart = old_settings.autostart;
