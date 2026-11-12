@@ -324,7 +324,8 @@ impl FenceViewState {
         } else {
             incoming.visual.set_offset(left + slide, top, 0.0);
         }
-        incoming.visual.set_opacity(0.0);
+        // Not from 0: the first frame after the click or the key shows the new page.
+        incoming.visual.set_opacity(motion::FADE_IN_FIRST);
         incoming.visual.set_visible(true);
         self.root.children().insert_at_top(&incoming.visual);
         let outgoing = std::mem::replace(&mut self.content_panel, incoming);
