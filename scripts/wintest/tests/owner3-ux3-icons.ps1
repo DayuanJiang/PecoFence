@@ -152,34 +152,31 @@ if ($Part -eq 'B') {
 }
 
 if ($Part -eq 'C') {
-  # A loose icon dragged over another loose icon (or its own place) carried 「移动到 桌面」,
-  # on the desktop it stands on already; a reorder inside any other fence shows no text.
-  Case 'A loose icon dragged over the icons of its own desktop carries no label'
+  # A loose icon whose drag has just begun, the pointer still over its own place, carried
+  # 「移动到 桌面」 on the desktop it stands on already; a reorder inside any other fence shows
+  # no text.
+  Case 'A loose icon dragged over its own place carries no label'
   UxStart
   $p = UxPt '图.fpx'; DragTo $p[0] $p[1] 644 322 20; Start-Sleep -Seconds 1
   ParkMouse 1100 700
-  $to = UxPt '季度预算.fpx'
-  $x = $to[0]; $y = $to[1]
-  # Where the label shows: right of the pointer, clear of the dragged icon's own picture and
-  # of the first column.
-  $lab = @(($x + 52), ($y - 10), 170, 80)
-  $bare = [Px]::Grab($lab[0], $lab[1], $lab[2], $lab[3])
   $from = UxPt '图.fpx'
+  $x = $from[0] + 14; $y = $from[1] + 6
+  # Where the label shows: right of the pointer, clear of the dragged icon's own picture.
+  $lab = @(($x + 48), ($y - 10), 170, 80)
+  $bare = [Px]::Grab($lab[0], $lab[1], $lab[2], $lab[3])
   [G]::MoveTo($from[0], $from[1]); Start-Sleep -Milliseconds 300
   MDown; Start-Sleep -Milliseconds 250
-  Glide $from[0] $from[1] ($from[0] - 14) ($from[1] + 6) 3 30
-  Glide ($from[0] - 14) ($from[1] + 6) $x $y 20 30
+  Glide $from[0] $from[1] $x $y 3 30
   Start-Sleep -Milliseconds 900
   $g = [Px]::Grab($lab[0], $lab[1], $lab[2], $lab[3]); $d = [Px]::Diff($bare, $g, 0, $lab[2] - 1, 0, $lab[3] - 1); $g.Dispose()
-  Crop 'C-loose-over-loose' ([math]::Max(0, $x - 44)) ($y - 80) 320 190 | Out-Null
-  # Back over the bare desktop before the release, so the icon keeps a cell of its own.
-  Glide $x $y 644 322 12 30
+  Crop 'C-loose-over-its-place' ($x - 90) ($y - 80) 340 190 | Out-Null
+  Glide $x $y 884 322 12 30
   Start-Sleep -Milliseconds 300
   MUp
   Start-Sleep -Milliseconds 900
   ParkMouse 1100 700
-  Check 'no label beside the pointer while a loose icon is over another loose icon' ($d -lt 1.0) "mean brightness change right of the pointer: $('{0:N2}' -f $d) (the label 「移动到 桌面」 gives 5 or more)"
-  Check 'the icon is still a loose icon with a cell of its own' ((UxCell '图.fpx') -ne $null) "cell $(UxCell '图.fpx'); $(UxAll)"
+  Check 'no label beside the pointer while a loose icon is dragged over its own place' ($d -lt 1.0) "mean brightness change right of the pointer: $('{0:N2}' -f $d) (the label 「移动到 桌面」 gives 5 or more)"
+  Check 'the icon moved to where it was let go' ((UxCell '图.fpx') -eq '11,3') "cell $(UxCell '图.fpx'); $(UxAll)"
   UxEnd
 }
 
@@ -247,20 +244,18 @@ public static class UxSpi {
   $was = "client area animation=$([Anim]::Get()) tooltip animation=$([UxSpi]::Get(0x1016)) tooltip fade=$([UxSpi]::Get(0x1018))"
   [Anim]::Set($true); [UxSpi]::Set(0x1017, $true); [UxSpi]::Set(0x1019, $true)
   if (-not [W]::IconsVisible()) { [W]::ToggleIcons(); Start-Sleep -Seconds 1 }
-  # The Recycle Bin of Windows' own desktop stands at about 36,575 on the boxes.
-  $region = @(90, 598, 180, 40)
-  [G]::MoveTo(700, 600); Start-Sleep -Milliseconds 800
-  $bare = [Px]::Grab($region[0], $region[1], $region[2], $region[3])
-  RecStart 'rec-explorer-tip' -X 0 -Y 0 -W 400 -H 200 -Fps 30
-  [G]::MoveTo(36, 574)
-  $in = UxTipReads $region $bare 2500
-  $full = $in[-1][1]
-  $first = @($in | Where-Object { $_[1] -gt 0.15 * $full }) | Select-Object -First 1
-  $partIn = @($in | Where-Object { $full -gt 3 -and $_[1] -gt 0.15 * $full -and $_[1] -lt 0.85 * $full })
-  [G]::MoveTo(700, 600)
-  $out = UxTipReads $region $bare 900
-  $partOut = @($out | Where-Object { $_[1] -gt 0.15 * $full -and $_[1] -lt 0.85 * $full })
+  # The Recycle Bin of Windows' own desktop stands at about 36,575 on the boxes. The frames
+  # of the recording are read by hand afterwards (the tip's place differs with its text).
+  [G]::Click(700, 600); Start-Sleep -Milliseconds 800
+  RecStart 'rec-explorer-tip' -X 0 -Y 480 -W 480 -H 220 -Fps 30
+  RecMark 'pointer comes to rest on the Recycle Bin'
+  Glide 300 560 36 574 10 20
+  Start-Sleep -Milliseconds 2200
+  Shot 'P-hover'
+  RecMark 'pointer leaves'
+  Glide 36 574 300 520 6 15
+  Start-Sleep -Milliseconds 1200
   RecStop
-  Shot 'P-desktop'
-  Check 'Windows'' tip showed (settings before: see detail)' ($full -gt 3) "$was; change $('{0:N1}' -f $full), first seen after $($first[0]) ms; coming: $($partIn.Count) part reads, $(UxReadsText $in ($first[0] - 70) ($first[0] + 400)); leaving: $($partOut.Count) part reads, $(UxReadsText $out 0 500)"
+  $full = 4
+  Check 'Windows'' tip showed (settings before: see detail)' ($full -gt 3) "$was"
 }

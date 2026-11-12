@@ -662,9 +662,12 @@ impl FenceDropHandler {
                 .unwrap_or_else(|| v.title.clone())
         };
         // A reorder inside its own fence takes the icons nowhere else: the badge alone, without
-        // "移动到 <this fence>".
-        let reorder =
-            spot.insert.is_some() && internal.as_ref().is_some_and(|d| d.from == v.active);
+        // "移动到 <this fence>". So does a loose icon moved to another place of the freely
+        // placed 「桌面」 (no insertion mark there): it read 「移动到 桌面」 on the desktop it
+        // was on already.
+        let own = internal.as_ref().is_some_and(|d| d.from == v.active);
+        let own_place = v.places_freely() && spot.folder.is_none() && spot.tab.is_none();
+        let reorder = own && (spot.insert.is_some() || own_place);
         let description = if reorder {
             (DropImage::Move, "", String::new())
         } else {
