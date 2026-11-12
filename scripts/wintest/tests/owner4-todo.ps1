@@ -1,5 +1,5 @@
 # Owner round 2026-11-12, fourth batch: a to-do of a note is moved by dragging it, zh-CN.
-# Parts (run.sh --var Part=...; D, C and K without it):
+# Parts (run.sh --var Part=...; D, C, K and S without it):
 #   D  the drag: the third to-do above the first, not by the check box, ended with Esc, released
 #      outside the fence, dropped under a plain line, in a locked fence, taken back with Ctrl+Z;
 #      the saved text after each
@@ -9,9 +9,12 @@
 #      inside the open editor selects
 #   K  Alt+Shift+Down and Alt+Shift+Up move the line with the caret while the note is edited;
 #      Ctrl+Z takes a move back in one step
+#   S  second round: a note taller than its fence scrolls while a to-do is dragged to its edge
+#      (Esc takes the scroll back too), a tick outside the editor is taken back with Ctrl+Z,
+#      Alt+Shift+Down moves every line the selection touches
 #   R  the drag recorded (--var Rec=before|after for the clip; after: light and dark mode too)
 trap { PfTrap $_; continue }
-if (-not $Part) { $Part = 'DCK' }
+if (-not $Part) { $Part = 'DCKS' }
 Case 'setup'
 CloseWindows
 Set-Culture zh-CN
@@ -315,6 +318,100 @@ Check 'Ctrl+Z twice takes back the character and then the move, in one step' ($k
 Check 'Ctrl+Y moves the line down again' ($k4 -eq $k1) "editor: $(OneLine $k4)"
 Check 'Alt+Shift+Down goes on to the last line and stops there' ($k5 -eq "[x] 二号`n说明`n[ ] 三号`n[ ] 一号") "editor: $(OneLine $k5)"
 Check 'Alt+Shift+Up moves it one line up, and Esc saves the order shown' ($k6 -eq "[x] 二号`n说明`n[ ] 一号`n[ ] 三号" -and $saved -eq $k6) "editor: $(OneLine $k6); note: $(OneLine $saved)"
+Pf fence delete $nid | Out-Null
+}
+
+if ($Part -match 'S') {
+Case 'S1 a note taller than its fence scrolls while a to-do is dragged to its bottom edge'
+$T3 = (1..12 | ForEach-Object { '[ ] 第{0:d2}条' -f $_ }) -join "`n"
+$nid = "$((PfJson fence create --tool note --title 便签 --text $T3 --rect '100,100,300,150').fence.id)"
+Start-Sleep -Seconds 1
+$w = Fresh $nid $T3; $c = CRect $w; $boxes = Rects $w 'note_boxes'
+$scroll0 = [double](DumpVal $w 'scroll')
+$from = TodoPt $c $boxes 0
+[G]::MoveTo($from[0], $from[1]); Start-Sleep -Milliseconds 300
+MDown; Start-Sleep -Milliseconds 200
+Glide $from[0] $from[1] ($from[0] + 6) ($w.b - 6) 12 30
+Start-Sleep -Milliseconds 2200
+$wHeld = DumpOf '便签'
+$scrollHeld = [double](DumpVal $wHeld 'scroll')
+FCrop 's1-scrolled-while-dragging' $w
+MUp; Start-Sleep -Milliseconds 1200
+$after = NoteText $nid
+$scrollEnd = [double](DumpVal (DumpOf '便签') 'scroll')
+$want = ((2..12 | ForEach-Object { '[ ] 第{0:d2}条' -f $_ }) + '[ ] 第01条') -join "`n"
+Check 'held at the bottom edge, the note scrolls to its end under the dragged to-do' ($scroll0 -eq 0 -and $scrollHeld -ge 150) "scroll before: $scroll0; after 2.2 s at the edge: $scrollHeld"
+Check 'released there, the first to-do is the last of the twelve' ($after -eq $want) "note: $(OneLine $after)"
+Check 'the note stays scrolled to its end after the drop' ($scrollEnd -ge 150) "scroll after the drop: $scrollEnd"
+
+Case 'S2 Esc at the edge puts the line back and the note where it was scrolled'
+$w = Fresh $nid $T3; $c = CRect $w
+# The note is still scrolled to its end: back to the top first.
+Wheel ($c[0] + 150) ($c[1] + 50) 12; Start-Sleep -Milliseconds 1200
+ParkMouse 900 700
+$w = DumpOf '便签'; $boxes = Rects $w 'note_boxes'
+$scroll0 = [double](DumpVal $w 'scroll')
+$from = TodoPt $c $boxes 1
+[G]::MoveTo($from[0], $from[1]); Start-Sleep -Milliseconds 300
+MDown; Start-Sleep -Milliseconds 200
+Glide $from[0] $from[1] ($from[0] + 6) ($w.b - 6) 12 30
+Start-Sleep -Milliseconds 2000
+$scrollHeld = [double](DumpVal (DumpOf '便签') 'scroll')
+[G]::Press(0x1B); Start-Sleep -Milliseconds 900
+$scrollEsc = [double](DumpVal (DumpOf '便签') 'scroll')
+MUp; Start-Sleep -Milliseconds 700
+$after = NoteText $nid
+Check 'the note scrolled under the dragged to-do, and Esc brings the scroll and the line back' ($scrollHeld -ge 150 -and [math]::Abs($scrollEsc - $scroll0) -lt 1 -and $after -eq $T3) "scroll before: $scroll0, held at the edge: $scrollHeld, after Esc: $scrollEsc; note unchanged: $($after -eq $T3)"
+Pf fence delete $nid | Out-Null
+
+Case 'S3 a tick outside the editor is taken back with Ctrl+Z'
+$T4 = "[ ] 浇花`n[ ] 取快递`n周末"
+$nid = "$((PfJson fence create --tool note --title 便签 --text $T4 --rect '100,100,300,200').fence.id)"
+Start-Sleep -Seconds 1
+$w = Fresh $nid $T4; $c = CRect $w; $boxes = Rects $w 'note_boxes'
+$b0 = BoxPt $c $boxes 0; $b1 = BoxPt $c $boxes 1
+[G]::Click($b0[0], $b0[1]); Start-Sleep -Milliseconds 600
+[G]::Click($b1[0], $b1[1]); Start-Sleep -Milliseconds 600
+$ticked = NoteText $nid
+# The fence gets the keyboard by a click on its title, as for every Ctrl+Z in a fence.
+[G]::Click($w.l + 150, $w.t + 14); Start-Sleep -Milliseconds 500
+Chord 0x11 0x5A; Start-Sleep -Milliseconds 700
+$z1 = NoteText $nid
+Chord 0x11 0x5A; Start-Sleep -Milliseconds 700
+$z2 = NoteText $nid
+Check 'two clicks ticked both to-dos' ($ticked -eq "[x] 浇花`n[x] 取快递`n周末") "note: $(OneLine $ticked)"
+Check 'Ctrl+Z takes the second tick back, Ctrl+Z again the first' ($z1 -eq "[x] 浇花`n[ ] 取快递`n周末" -and $z2 -eq $T4) "after one Ctrl+Z: $(OneLine $z1); after two: $(OneLine $z2)"
+# A tick, then the note is changed in another way: the step is spent.
+[G]::Click($b0[0], $b0[1]); Start-Sleep -Milliseconds 600
+Pf fence set $nid noteText "[x] 浇花`n[ ] 取快递`n周末去超市" --string | Out-Null
+Start-Sleep -Milliseconds 600
+[G]::Click($w.l + 150, $w.t + 14); Start-Sleep -Milliseconds 500
+Chord 0x11 0x5A; Start-Sleep -Milliseconds 700
+$z3 = NoteText $nid
+Check 'after the note was changed in another way, Ctrl+Z leaves the tick and the new text' ($z3 -eq "[x] 浇花`n[ ] 取快递`n周末去超市") "note: $(OneLine $z3)"
+Pf fence delete $nid | Out-Null
+
+Case 'S4 Alt+Shift+Down moves every line the selection touches'
+$T5 = "甲乙`n丙丁`n戊己`n庚辛"
+$nid = "$((PfJson fence create --tool note --title 便签 --text $T5 --rect '100,100,300,220').fence.id)"
+Start-Sleep -Seconds 1
+$w = Fresh $nid $T5; $c = CRect $w
+# A click in the second line after its first character, Shift+Down: the selection runs into
+# the third line.
+[G]::Click($c[0] + 33, $c[1] + 36); Start-Sleep -Milliseconds 700
+[G]::KeyDown(0x10); Start-Sleep -Milliseconds 40; [G]::Press(0x28); Start-Sleep -Milliseconds 40; [G]::KeyUp(0x10); Start-Sleep -Milliseconds 300
+AltShift 0x28; Start-Sleep -Milliseconds 400
+$m1 = [T4]::EdText()
+FCrop 's4-two-lines-down' $w
+[G]::Type('X'); Start-Sleep -Milliseconds 300
+$m2 = [T4]::EdText()
+Chord 0x11 0x5A; Start-Sleep -Milliseconds 300
+Chord 0x11 0x5A; Start-Sleep -Milliseconds 400
+$m3 = [T4]::EdText()
+[G]::Press(0x1B); Start-Sleep -Milliseconds 700
+Check 'the second and the third line go down together, under the fourth' ($m1 -eq "甲乙`n庚辛`n丙丁`n戊己") "editor: $(OneLine $m1)"
+Check 'the selection went with its lines: typing replaces what was selected' ($m2 -eq "甲乙`n庚辛`n丙X己") "editor: $(OneLine $m2)"
+Check 'Ctrl+Z twice takes back the typing and then the move of both lines, in one step' ($m3 -eq $T5) "editor: $(OneLine $m3)"
 Pf fence delete $nid | Out-Null
 }
 
