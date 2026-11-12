@@ -33,6 +33,10 @@ impl FenceViewState {
             content = true;
             more = true;
         }
+        if self.todo_autoscroll(now) {
+            content = true;
+            more = true;
+        }
         if self.tab_strip_autoscroll(now) {
             more = true;
         }

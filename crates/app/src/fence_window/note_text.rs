@@ -63,6 +63,13 @@ pub(super) struct TodoDrag {
     /// DIPs before scrolling).
     pub(super) grab_dy: f32,
     pub(super) pointer_y: f32,
+    /// The pointer's client y now: the note scrolls while it is near the top or bottom edge
+    /// of what the fence shows, and the line stays under it.
+    pub(super) client_y: i32,
+    /// Where the note was scrolled to at the press: a drag that is taken back goes there.
+    pub(super) scroll_from: f32,
+    /// The edge scroll: when the pointer came into the zone, and the frame it last moved.
+    pub(super) auto: Option<(Instant, Instant)>,
 }
 
 /// The line that line `j` of a text is shown at while its line `from` is shown at `to`.
@@ -253,6 +260,9 @@ impl FenceViewState {
             outside: false,
             grab_dy,
             pointer_y: 0.0,
+            client_y: y,
+            scroll_from: self.scroll_target(),
+            auto: None,
         });
         None
     }
@@ -284,6 +294,7 @@ impl FenceViewState {
             d.moved = true;
             d.outside = outside;
             d.pointer_y = pointer_y;
+            d.client_y = y;
         }
         if started {
             self.hide_tip();
@@ -311,6 +322,11 @@ impl FenceViewState {
     /// move crosses several lines at once. Called before the note is drawn and before the
     /// line is dropped.
     pub(super) fn reorder_dragged_todo(&mut self, now: Instant) {
+        // The note may have scrolled under a pointer that rests (the edge scroll, the wheel).
+        let (content_y, scale, scroll) = (self.content_y, self.scale(), self.scroll_y);
+        if let Some(d) = self.todo_drag.as_mut() {
+            d.pointer_y = (d.client_y - content_y) as f32 / scale + scroll;
+        }
         let Some((from, shown_to, pointer, grab)) = self.lifted_todo() else {
             return;
         };
@@ -336,6 +352,53 @@ impl FenceViewState {
         }
     }
 
+    /// One frame of the edge scroll of a dragged to-do, by the rule of a dragged icon
+    /// (`drag_scroll_zone`, `drag_scroll_speed`): with the pointer in the 20 DIPs at the top
+    /// or bottom edge of what the fence shows of the note, or past that edge, the note
+    /// scrolls that way, faster the nearer the edge, after the same short wait. The line
+    /// stays under the pointer and changes places as the lines come by (`reorder_dragged_todo`
+    /// before the draw). True while it scrolled.
+    pub(super) fn todo_autoscroll(&mut self, now: Instant) -> bool {
+        let Some((client_y, auto)) = self
+            .todo_drag
+            .as_ref()
+            .filter(|d| d.moved && !d.outside)
+            .map(|d| (d.client_y, d.auto))
+        else {
+            return false;
+        };
+        let (top, bottom) = (self.content_y, self.content_y + self.content_size_px().1);
+        let zone_px = (DRAG_SCROLL_ZONE_DIP * self.scale()) as i32;
+        let zone = drag_scroll_zone(client_y.clamp(top, bottom), top, bottom, zone_px)
+            .filter(|_| self.scroll_max() > 0.0);
+        let Some((dir, depth)) = zone else {
+            if let Some(d) = self.todo_drag.as_mut() {
+                d.auto = None;
+            }
+            return false;
+        };
+        let (armed_at, last) = auto.unwrap_or((now, now));
+        if let Some(d) = self.todo_drag.as_mut() {
+            d.auto = Some((armed_at, now));
+        }
+        if now.saturating_duration_since(armed_at) < DRAG_SCROLL_ARM {
+            // Still waiting: nothing moved, the clock goes on.
+            self.frames.request();
+            return false;
+        }
+        let dt = now.saturating_duration_since(last).as_secs_f32().min(0.05);
+        let (layout, view_h) = self.scroll_extent();
+        let speed = drag_scroll_speed(depth, self.scroll_row_step(&layout));
+        let old = self.scroll_y;
+        self.scroll_anim = None;
+        self.scroll_y = (old + f32::from(dir) * speed * dt).clamp(0.0, layout.max_scroll(view_h));
+        if self.scroll_y == old {
+            return false;
+        }
+        self.note_scroll_activity();
+        true
+    }
+
     /// The note press ends: the button was released (`commit`), or Esc or a lost capture
     /// took it back. A press that never moved gives its click. A lifted to-do settles into
     /// the place it is shown at (the note's text changes here, and the command returned
@@ -355,6 +418,17 @@ impl FenceViewState {
         }
         let from = d.from;
         let to = if commit && !d.outside { d.to } else { from };
+        // The edge scroll moved the note: a line that goes back takes the note back to where
+        // it was scrolled, a dropped one leaves it with a whole line at its top edge.
+        if (self.scroll_y - d.scroll_from).abs() > 0.5 {
+            let rest = if to == from {
+                d.scroll_from
+            } else {
+                self.tool_line_snap(self.scroll_y)
+            };
+            tracing::debug!(fence = %self.active, from = self.scroll_y, to = rest, "to-do drag ends: the note's scroll comes to rest");
+            self.scroll_to(rest, motion::FAST);
+        }
         let moved = self
             .note
             .as_deref()
