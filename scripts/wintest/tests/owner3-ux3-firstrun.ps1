@@ -560,6 +560,14 @@ function FrChecks() {
   FrStart | Out-Null
   $n = WaitWin 'PecoFence.Notice' 30
   Start-Sleep -Seconds 3
+  # C7: the tip on screen follows a change of the display language (it stayed English under
+  # fences named in Chinese until 「Next」 was pressed).
+  $t0 = [L]::Text($n)
+  & "$PfApp\pecofence-cli.exe" settings set language zh-CN | Out-Null; Start-Sleep -Milliseconds 800
+  $t1 = [L]::Text($n)
+  Shot 'c7-card-language'
+  Check 'C7 the tip on screen follows a change of the display language' ($t0 -like 'Tip 1/*' -and $t1 -like '小技巧 1/*') "before=[$t0] after=[$t1]"
+  & "$PfApp\pecofence-cli.exe" settings set language en | Out-Null; Start-Sleep -Milliseconds 800
   CloseNotice | Out-Null
   Start-Sleep -Seconds 1
   $fr = FreeRect 360 260 300 300
