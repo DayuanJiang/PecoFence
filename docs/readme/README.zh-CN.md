@@ -107,6 +107,20 @@ Everything 是免费的文件搜索工具，在设置里开启 Everything 搜索
 
 ![用快捷键速览栅栏，栅栏显示在应用上方；点一下栅栏外面或打开文件，就回到应用。](../assets/peek.gif)
 
+### 会自己更新的栅栏
+
+智能栅栏显示一条保存下来的搜索的最新结果。选一个模板，比如**最近 7 天下载**，再点**创建**：符合条件的新文件会自己出现，文件留在原来的位置。
+
+![在栅栏菜单里选 New smart fence…，打开一个小窗口；点模板 Downloads of the last 7 days，条件就填好了；点 Create，桌面上多出一个栅栏，里面有六个文件；新下载的文件自己出现在里面。](../assets/smart.gif)
+
+### 便签、时钟和你自己的脚本
+
+在**设置 → 小工具**里添加：便签里以 `[ ]` 开头的行会变成待办，时钟显示时间和日期，脚本栅栏显示脚本打印的内容，比如天气。
+
+![在设置里点 New note，桌面上多出一张便签，点一下勾掉第一条待办；点 Add，旁边多出一个时钟，再多出一个显示东京天气的栅栏。](../assets/tools.gif)
+
+使用手册里还有：[每个虚拟桌面一套栅栏](https://pecofence.jiang.jp/zh-CN/manual/#vdesk)（[动图](../assets/vdesk.gif)）、[散放的桌面图标放哪就在哪](https://pecofence.jiang.jp/zh-CN/manual/#free-place)（[动图](../assets/free-place.gif)）和[按 Ctrl+Z 撤销上一步](https://pecofence.jiang.jp/zh-CN/manual/#undo)（[动图](../assets/undo.gif)）。
+
 <sub>动图来自<a href="https://pecofence.jiang.jp/zh-CN/manual/">使用手册</a>，会自动循环播放。</sub>
 
 ## 日常好用，藏在这些细节里

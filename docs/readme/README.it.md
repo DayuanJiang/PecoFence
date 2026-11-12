@@ -113,6 +113,26 @@ Prendi quello che ti serve, poi premi **Esc** per tornare indietro.
 
 ![La vista rapida porta i riquadri sopra un’applicazione; un clic fuori dai riquadri o l’apertura di un file riporta all’applicazione.](../assets/peek.gif)
 
+### Un riquadro che si riempie da solo.
+
+Un riquadro intelligente mostra sempre aggiornato il risultato di una ricerca salvata. Scegli un
+modello come **Download degli ultimi 7 giorni** e fai clic su **Crea**: i nuovi file che
+corrispondono compaiono da soli, e i file restano dove sono.
+
+![New smart fence… nel menu di un riquadro apre una piccola finestra; il modello Downloads of the last 7 days compila le condizioni; Create mette sul desktop un riquadro con sei file, e un nuovo download vi compare da solo.](../assets/smart.gif)
+
+### Note, un orologio e i tuoi script.
+
+Aggiungili da **Impostazioni → Strumenti**: una nota in cui le righe che iniziano con `[ ]`
+diventano attività da spuntare, un orologio con la data e riquadri script che mostrano ciò che
+stampa uno script, per esempio il meteo.
+
+![Nelle Impostazioni, New note mette una nota sul desktop e un clic spunta la sua prima attività; Add le affianca un orologio, poi un riquadro con il meteo di Tokyo.](../assets/tools.gif)
+
+Nel manuale trovi anche: [riquadri per ogni desktop virtuale](https://pecofence.jiang.jp/it/manual/#vdesk) ([GIF](../assets/vdesk.gif)),
+[icone del desktop che restano dove le metti](https://pecofence.jiang.jp/it/manual/#free-place) ([GIF](../assets/free-place.gif)) e
+[Ctrl+Z per annullare l’ultima operazione](https://pecofence.jiang.jp/it/manual/#undo) ([GIF](../assets/undo.gif)).
+
 <sub>Animazioni dal <a href="https://pecofence.jiang.jp/it/manual/">manuale</a>. Le GIF si ripetono automaticamente.</sub>
 
 ## Piccoli dettagli che fanno la differenza

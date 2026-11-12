@@ -113,6 +113,26 @@ Hol dir, was du brauchst, und kehre mit **Esc** zurück.
 
 ![Hervorholen bringt die Desktop-Bereiche über eine Anwendung; ein Klick daneben oder das Öffnen einer Datei kehrt zur Anwendung zurück.](../assets/peek.gif)
 
+### Ein Bereich, der sich selbst füllt.
+
+Ein intelligenter Bereich zeigt das aktuelle Ergebnis einer gespeicherten Suche. Wähle eine Vorlage
+wie **Downloads der letzten 7 Tage** und klicke auf **Erstellen**: Neue passende Dateien erscheinen
+von selbst, und die Dateien bleiben, wo sie sind.
+
+![New smart fence… im Menü eines Bereichs öffnet ein kleines Fenster; die Vorlage Downloads of the last 7 days füllt die Bedingungen aus; Create legt einen Bereich mit sechs Dateien auf den Desktop, und ein neuer Download erscheint von selbst darin.](../assets/smart.gif)
+
+### Notizen, eine Uhr und deine eigenen Skripte.
+
+Du fügst sie unter **Einstellungen → Werkzeuge** hinzu: eine Notiz, in der Zeilen, die mit `[ ]`
+beginnen, zu Aufgaben werden, eine Uhr mit Datum und Skriptbereiche, die zeigen, was ein Skript
+ausgibt, etwa das Wetter.
+
+![In den Einstellungen legt New note eine Notiz auf den Desktop, und ein Klick hakt ihre erste Aufgabe ab; Add stellt eine Uhr daneben, dann einen Bereich mit dem Wetter in Tokyo.](../assets/tools.gif)
+
+Mehr im Handbuch: [eigene Bereiche für jeden virtuellen Desktop](https://pecofence.jiang.jp/de/manual/#vdesk) ([GIF](../assets/vdesk.gif)),
+[Desktopsymbole, die bleiben, wo du sie hinlegst](https://pecofence.jiang.jp/de/manual/#free-place) ([GIF](../assets/free-place.gif)) und
+[Strg+Z, um den letzten Schritt zurückzunehmen](https://pecofence.jiang.jp/de/manual/#undo) ([GIF](../assets/undo.gif)).
+
 <sub>Animationen aus dem <a href="https://pecofence.jiang.jp/de/manual/">Handbuch</a>. Die GIFs laufen in Endlosschleife.</sub>
 
 ## Kleine Details, die den Alltag leichter machen

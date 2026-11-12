@@ -112,6 +112,25 @@ Toma lo que necesites y presiona **Esc** para volver.
 
 ![La vista rápida muestra los grupos del escritorio sobre una aplicación; un clic fuera o abrir un archivo devuelve a la aplicación.](../assets/peek.gif)
 
+### Un grupo que se llena solo.
+
+Un grupo inteligente muestra al momento el resultado de una búsqueda guardada. Elige una plantilla como
+**Descargas de los últimos 7 días** y haz clic en **Crear**: los archivos nuevos que cumplen las condiciones
+aparecen solos, y los archivos se quedan donde están.
+
+![New smart fence… en el menú de un grupo abre una ventana pequeña; la plantilla Downloads of the last 7 days rellena las condiciones; Create pone en el escritorio un grupo con seis archivos, y una descarga nueva aparece sola en él.](../assets/smart.gif)
+
+### Notas, un reloj y tus propios scripts.
+
+Añádelos en **Configuración → Herramientas**: una nota cuyas líneas que empiezan con `[ ]` se convierten en tareas,
+un reloj con la fecha y grupos de script que muestran lo que imprime un script, como el tiempo.
+
+![En Configuración, New note pone una nota en el escritorio y un clic marca su primera tarea; Add pone un reloj al lado y luego un grupo con el tiempo en Tokio.](../assets/tools.gif)
+
+Más en el manual: [grupos propios para cada escritorio virtual](https://pecofence.jiang.jp/es/manual/#vdesk) ([GIF](../assets/vdesk.gif)),
+[iconos del escritorio que se quedan donde los pones](https://pecofence.jiang.jp/es/manual/#free-place) ([GIF](../assets/free-place.gif)) y
+[Ctrl+Z para deshacer el último paso](https://pecofence.jiang.jp/es/manual/#undo) ([GIF](../assets/undo.gif)).
+
 <sub>Animaciones del <a href="https://pecofence.jiang.jp/es/manual/">manual</a>. Los GIF se repiten automáticamente.</sub>
 
 ## Pequeños detalles que mejoran el día a día

@@ -105,6 +105,20 @@ Everything は無料のファイル検索ツールです。設定で Everything 
 
 ![フェンスをアプリの手前に表示し、外側をクリックするかファイルを開くとアプリに戻る様子。](../assets/peek.gif)
 
+### 自動で更新されるフェンス
+
+スマートフェンスは、保存した検索の結果をいつも最新で表示します。**過去 7 日間のダウンロード**などのテンプレートを選んで**作成**をクリックすると、条件に合う新しいファイルが自動で現れます。ファイルは元の場所のままです。
+
+![フェンスのメニューで New smart fence… を選ぶと小さなウィンドウが開き、テンプレート Downloads of the last 7 days で条件が入力され、Create をクリックすると 6 つのファイルが入ったフェンスがデスクトップにでき、新しくダウンロードしたファイルが自動でそこに現れる様子。](../assets/smart.gif)
+
+### メモ、時計、自分のスクリプト
+
+**設定 → ツール**から追加できます。メモでは `[ ]` で始まる行が ToDo になり、時計は日付も表示し、スクリプトフェンスは天気などスクリプトが出力したテキストを表示します。
+
+![設定で New note をクリックするとデスクトップにメモができ、クリックで最初の ToDo にチェックが付き、Add をクリックするとその隣に時計が、続いて東京の天気を表示するフェンスができる様子。](../assets/tools.gif)
+
+マニュアルではほかにも、[仮想デスクトップごとのフェンス](https://pecofence.jiang.jp/ja/manual/#vdesk)（[GIF](../assets/vdesk.gif)）、[置いた場所にそのまま残るデスクトップのアイコン](https://pecofence.jiang.jp/ja/manual/#free-place)（[GIF](../assets/free-place.gif)）、[直前の操作を元に戻す Ctrl+Z](https://pecofence.jiang.jp/ja/manual/#undo)（[GIF](../assets/undo.gif)）を紹介しています。
+
 <sub><a href="https://pecofence.jiang.jp/ja/manual/">マニュアル</a>のアニメーションです。GIF は自動でループします。</sub>
 
 ## 毎日の使い心地を変える、小さなこだわり

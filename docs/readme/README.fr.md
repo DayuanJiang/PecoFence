@@ -113,6 +113,26 @@ en cours. Prenez ce qu’il vous faut, puis appuyez sur **Échap** pour y reveni
 
 ![L’aperçu des groupes affiche les groupes du Bureau au-dessus d’une application ; un clic à côté ou l’ouverture d’un fichier ramène à l’application.](../assets/peek.gif)
 
+### Un groupe qui se remplit tout seul.
+
+Un groupe intelligent affiche en direct le résultat d’une recherche enregistrée. Choisissez un
+modèle comme **Téléchargements des 7 derniers jours** et cliquez sur **Créer** : les nouveaux
+fichiers qui correspondent apparaissent d’eux-mêmes, et les fichiers restent à leur place.
+
+![New smart fence… dans le menu d’un groupe ouvre une petite fenêtre ; le modèle Downloads of the last 7 days remplit les conditions ; Create place sur le Bureau un groupe avec six fichiers, et un nouveau téléchargement y apparaît de lui-même.](../assets/smart.gif)
+
+### Des notes, une horloge et vos propres scripts.
+
+Ajoutez-les dans **Paramètres → Outils** : une note dont les lignes commençant par `[ ]` deviennent
+des tâches à cocher, une horloge avec la date et des groupes de script qui affichent ce qu’imprime
+un script, la météo par exemple.
+
+![Dans les Paramètres, New note place une note sur le Bureau et un clic coche sa première tâche ; Add place une horloge à côté, puis un groupe avec la météo à Tokyo.](../assets/tools.gif)
+
+À voir aussi dans le manuel : [des groupes pour chaque bureau virtuel](https://pecofence.jiang.jp/fr/manual/#vdesk) ([GIF](../assets/vdesk.gif)),
+[des icônes du Bureau qui restent là où vous les posez](https://pecofence.jiang.jp/fr/manual/#free-place) ([GIF](../assets/free-place.gif)) et
+[Ctrl+Z pour annuler la dernière action](https://pecofence.jiang.jp/fr/manual/#undo) ([GIF](../assets/undo.gif)).
+
 <sub>Animations tirées du <a href="https://pecofence.jiang.jp/fr/manual/">manuel</a>. Les GIF bouclent automatiquement.</sub>
 
 ## Les petits détails qui changent le quotidien

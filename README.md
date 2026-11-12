@@ -112,6 +112,25 @@ Grab what you need, then press **Esc** to return.
 
 ![Peek brings your fences above an application; a click outside or opening a file returns to it.](docs/assets/peek.gif)
 
+### A fence that fills itself.
+
+A smart fence shows the live result of a saved search. Pick a template such as
+**Downloads of the last 7 days** and click **Create**: new files that match show up by
+themselves, and the files stay where they are.
+
+![New smart fence… in a fence's menu opens a small window; the template Downloads of the last 7 days fills in the conditions; Create puts a fence with six files on the desktop, and a new download appears in it by itself.](docs/assets/smart.gif)
+
+### Notes, a clock and your own scripts.
+
+Add them in **Settings → Tools**: a note whose lines that start with `[ ]` become to-dos, a clock
+with the date, and script fences that show what a script prints, such as the weather.
+
+![In Settings, New note puts a note on the desktop and a click ticks its first to-do; Add puts a clock beside it, then a fence with the weather in Tokyo.](docs/assets/tools.gif)
+
+More in the manual: [a set of fences for each virtual desktop](https://pecofence.jiang.jp/manual/#vdesk) ([GIF](docs/assets/vdesk.gif)),
+[desktop icons that stay where you put them](https://pecofence.jiang.jp/manual/#free-place) ([GIF](docs/assets/free-place.gif)) and
+[Ctrl+Z to take back the last step](https://pecofence.jiang.jp/manual/#undo) ([GIF](docs/assets/undo.gif)).
+
 <sub>Animations from the <a href="https://pecofence.jiang.jp/manual/">user manual</a>. GIFs loop automatically.</sub>
 
 ## Small details that add up

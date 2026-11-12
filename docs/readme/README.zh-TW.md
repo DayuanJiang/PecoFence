@@ -107,6 +107,20 @@ Everything 是免費的檔案搜尋工具，在設定裡開啟 Everything 搜尋
 
 ![用快速鍵預覽圍欄，讓圍欄顯示在應用程式上方；點一下圍欄外面或開啟檔案，就回到應用程式。](../assets/peek.gif)
 
+### 會自己更新的圍欄
+
+智慧圍欄顯示一個儲存下來的搜尋的最新結果。選一個範本，例如**最近 7 天下載**，再點**建立**：符合條件的新檔案會自己出現，檔案留在原來的位置。
+
+![在圍欄選單裡選 New smart fence…，開啟一個小視窗；點範本 Downloads of the last 7 days，條件就填好了；點 Create，桌面上多出一個圍欄，裡面有六個檔案；新下載的檔案自己出現在裡面。](../assets/smart.gif)
+
+### 便箋、時鐘和你自己的腳本
+
+在**設定 → 小工具**裡新增：便箋裡以 `[ ]` 開頭的行會變成待辦，時鐘顯示時間和日期，腳本圍欄顯示腳本輸出的文字，例如天氣。
+
+![在設定裡點 New note，桌面上多出一張便箋，點一下就替第一項待辦打勾；點 Add，旁邊多出一個時鐘，再多出一個顯示東京天氣的圍欄。](../assets/tools.gif)
+
+使用手冊裡還有：[每個虛擬桌面一套圍欄](https://pecofence.jiang.jp/zh-TW/manual/#vdesk)（[動畫](../assets/vdesk.gif)）、[散放的桌面圖示放哪裡就在哪裡](https://pecofence.jiang.jp/zh-TW/manual/#free-place)（[動畫](../assets/free-place.gif)）和[按 Ctrl+Z 復原上一步](https://pecofence.jiang.jp/zh-TW/manual/#undo)（[動畫](../assets/undo.gif)）。
+
 <sub>動畫取自<a href="https://pecofence.jiang.jp/zh-TW/manual/">使用手冊</a>，會自動重複播放。</sub>
 
 ## 好用之處藏在細節裡

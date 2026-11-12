@@ -112,6 +112,25 @@ Pegue o que precisa e pressione **Esc** para voltar.
 
 ![O recurso Espiar traz os grupos por cima de um aplicativo; um clique fora ou abrir um arquivo volta ao aplicativo.](../assets/peek.gif)
 
+### Um grupo que se enche sozinho.
+
+Um grupo inteligente mostra sempre atualizado o resultado de uma pesquisa salva. Escolha um modelo como
+**Downloads dos últimos 7 dias** e clique em **Criar**: os arquivos novos que correspondem aparecem
+sozinhos, e os arquivos ficam onde estão.
+
+![New smart fence… no menu de um grupo abre uma janela pequena; o modelo Downloads of the last 7 days preenche as condições; Create coloca na área de trabalho um grupo com seis arquivos, e um download novo aparece nele sozinho.](../assets/smart.gif)
+
+### Notas, um relógio e seus próprios scripts.
+
+Adicione em **Configurações → Ferramentas**: uma nota em que as linhas que começam com `[ ]` viram tarefas,
+um relógio com a data e grupos de script que mostram o que um script imprime, como o clima.
+
+![Nas Configurações, New note coloca uma nota na área de trabalho e um clique marca a primeira tarefa dela; Add coloca um relógio ao lado e depois um grupo com o clima em Tóquio.](../assets/tools.gif)
+
+Mais no manual: [grupos separados para cada área de trabalho virtual](https://pecofence.jiang.jp/pt-BR/manual/#vdesk) ([GIF](../assets/vdesk.gif)),
+[ícones da área de trabalho que ficam onde você os coloca](https://pecofence.jiang.jp/pt-BR/manual/#free-place) ([GIF](../assets/free-place.gif)) e
+[Ctrl+Z para desfazer o último passo](https://pecofence.jiang.jp/pt-BR/manual/#undo) ([GIF](../assets/undo.gif)).
+
 <sub>Animações do <a href="https://pecofence.jiang.jp/pt-BR/manual/">manual</a>. Os GIFs se repetem automaticamente.</sub>
 
 ## Pequenos detalhes que fazem diferença no dia a dia
