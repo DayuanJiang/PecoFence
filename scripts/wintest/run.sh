@@ -38,14 +38,24 @@ T0=$(date +%s)
 now() { date +%s; }
 
 # ---- lock: one run per box; a lock whose owner process is gone is taken over
+# Looking at a lock, taking it over and writing its owner line happen under one file lock: without
+# it a run that had just made the lock's folder and not yet written its owner line lost it to the
+# next run that looked (2026-11-13: two jobs of two runs ran in one C:\pf\run at once).
 take_lock() {
-  local d=$STATE/locks/$1 pid
-  if ! mkdir "$d" 2>/dev/null; then
+  local d=$STATE/locks/$1 pid got=
+  exec 9> "$STATE/take-$1.lock"
+  flock 9
+  if mkdir "$d" 2>/dev/null; then
+    got=1
+  else
     pid=$(awk '{print $1}' "$d/owner" 2>/dev/null)
-    [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null && return 1
-    rm -rf "$d"; mkdir "$d" 2>/dev/null || return 1
+    if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+      rm -rf "$d"; mkdir "$d" 2>/dev/null && got=1
+    fi
   fi
-  echo "$$ $(date +%H:%M:%S) ${CLAUDE_JOB_DIR:-no-job} $*" > "$d/owner"
+  [ -n "$got" ] && echo "$$ $(date +%H:%M:%S) ${CLAUDE_JOB_DIR:-no-job} $*" > "$d/owner"
+  flock -u 9; exec 9>&-
+  [ -n "$got" ] || return 1
   LOCKED=$d
 }
 LOCKED=
