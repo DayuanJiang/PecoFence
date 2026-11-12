@@ -757,7 +757,7 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
     // The typed text starts where the rows' names start, the magnifier sits over their icons.
     let edit_x = px(ROW_PAD) + px(ICON) + px(12.0);
     let edit_w = w - edit_x - px(STATUS_W + PAD + 8.0);
-    let Ok(ctl) = edit::EditControl::create(
+    let Ok(mut ctl) = edit::EditControl::create(
         window.hwnd(),
         edit_w,
         px(EDIT_H),
@@ -769,6 +769,9 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
     ) else {
         return;
     };
+    // The list's font: Chinese typed here came out of GDI's fallback face on a Windows in
+    // another language, beside names in Microsoft YaHei UI.
+    ctl.set_font(fonts::han_text_face(), TEXT_SIZE, dpi);
     // No margins of its own: the text starts at the control's left edge.
     ctl.set_margins(0);
     // In the box above the tabs.
