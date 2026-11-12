@@ -1342,6 +1342,11 @@ impl App {
         let scale = work.scale();
         let (w, h) = ((w_dip * scale) as i32, (h_dip * scale) as i32);
         let gap = ((12.0 * scale) as i32).max(1);
+        // To other fences: the snapping gap, as everywhere a new fence is placed.
+        let fence_gap = crate::fence_window::snap_gap_px(
+            settings::snap_gap_dip(&self.state.config.settings.snapping),
+            scale,
+        );
         let right_side = work.right - win.right >= win.left - work.left;
         let (want_left, want_top) = if right_side {
             (win.right + gap, win.top)
@@ -1360,12 +1365,12 @@ impl App {
                 let covered = i64::from((right.min(win.right) - left.max(win.left)).max(0))
                     * i64::from((bottom.min(win.bottom) - top.max(win.top)).max(0));
                 if covered * 2 < i64::from(w) * i64::from(h) {
-                    // A whole gap to every fence.
+                    // The snapping gap to every fence.
                     let on_fence = fences.iter().any(|o| {
-                        left < o.right + gap
-                            && right > o.left - gap
-                            && top < o.bottom + gap
-                            && bottom > o.top - gap
+                        left < o.right + fence_gap
+                            && right > o.left - fence_gap
+                            && top < o.bottom + fence_gap
+                            && bottom > o.top - fence_gap
                     });
                     let far = (left - want_left).abs() + (top - want_top).abs();
                     let key = (on_fence, covered, far);
