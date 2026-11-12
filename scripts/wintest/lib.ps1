@@ -939,6 +939,17 @@ function WaitRule($id, [scriptblock]$ok, $sec = 8) {
 
 # Where an item's icon is on screen: icons layout at 100 %, sorted by name (other sorts: CellPt
 # with the index), 36 px title row, cells 80 x 96 at icon size 48, from `fence get` (windowRect, fit).
+# Items in the order a fence sorted by name shows them (the app's natural_cmp): lower case, runs
+# of digits by their value, everything else by code point. Sort-Object follows the user's
+# regional format instead (pinyin for Chinese names once a job has set zh-CN), and then ItemPt
+# pointed at the neighbour of the icon it was asked for (2026-11-12).
+function NameOrder($items) {
+  $arr = [object[]]@($items)
+  if ($arr.Count -lt 2) { return $arr }
+  $keys = [string[]]@($arr | ForEach-Object { [regex]::Replace("$($_.name)".ToLowerInvariant(), '[0-9]+', { param($m) $m.Value.TrimStart('0').PadLeft(20, '0') }) })
+  [array]::Sort($keys, $arr, [StringComparer]::Ordinal)
+  return $arr
+}
 function ItemPt($fence, $name) {
   $f = TJson fence get $fence
   $items = @(TJson item list --fence $fence)
@@ -953,8 +964,8 @@ function ItemPt($fence, $name) {
   }
   # As a fence sorted by name shows them: arranged like the desktop (desktopLayout), This PC and
   # the Recycle Bin come first as on the desktop; any other fence sorts them among the files.
-  $ns = if ($f.desktopLayout) { @($items | Where-Object { $_.kind -eq 'namespace' } | Sort-Object name) } else { @() }
-  $order = @(@($ns) + @($items | Where-Object { $ns -notcontains $_ } | Sort-Object name) | ForEach-Object { $_.name })
+  $ns = if ($f.desktopLayout) { @(NameOrder @($items | Where-Object { $_.kind -eq 'namespace' })) } else { @() }
+  $order = @(@($ns) + @(NameOrder @($items | Where-Object { $ns -notcontains $_ })) | ForEach-Object { $_.name })
   $i = [array]::IndexOf($order, $name)
   if ($i -lt 0 -or -not $f.windowRect) { Log "ItemPt: '$name' not in '$fence' ($($order -join ', '))"; return $null }
   $wr = $f.windowRect
