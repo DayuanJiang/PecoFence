@@ -309,7 +309,17 @@ impl FenceViewState {
         let scale = self.scale();
         let (cw, _) = self.content_size_px();
         let width_dip = cw as f32 / scale;
+        // A hover switch that showed its tab at once (`set_tabs`): the list stands at once.
+        let placed = std::mem::take(&mut self.place_next_items);
+        if placed {
+            tracing::debug!(
+                old_len = self.items.len(),
+                new_len = items.len(),
+                "item list of a tab shown at once: placed whole"
+            );
+        }
         let animate = self.motion.enabled()
+            && !placed
             && !self.rolled_up
             && self.roll_anim.is_none()
             && !self.ole_drag

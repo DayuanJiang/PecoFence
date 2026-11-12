@@ -491,6 +491,9 @@ pub struct FenceViewState {
     pub(super) tab_strip_left: Option<Instant>,
     /// The hover switch on its way followed another: its content is placed without the swap.
     pub(super) tab_swap_at_once: bool,
+    /// That switch has placed its tab: the item list that follows stands at once
+    /// (`replace_items` takes this).
+    pub(super) place_next_items: bool,
     /// Fence height follows the item grid (FenceView.auto_height).
     pub(super) auto_height: bool,
     /// The left tab column appeared or grew (a tab joined, a caption changed, 标签栏位置): the

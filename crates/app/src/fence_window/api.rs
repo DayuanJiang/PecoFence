@@ -301,6 +301,7 @@ impl FenceWindow {
             tab_hover_quick: false,
             tab_strip_left: None,
             tab_swap_at_once: false,
+            place_next_items: false,
             auto_height,
             rail_grow: false,
             locked: false,
@@ -1512,9 +1513,13 @@ impl FenceWindow {
                 // glide. Rolled / animating fences and animations-off snap as before.
                 if at_once {
                     // A hover switch that follows another: the page and the pill stand at
-                    // once, and a swap still on its way ends.
+                    // once, and a swap still on its way ends. The list that follows is
+                    // placed whole too: without a swap under way, a tab with nothing in it
+                    // made `replace_items` fade the icons of the page before it out one by
+                    // one over the text of the empty fence, and those of the page after it in.
                     v.finish_content_swap_now();
                     v.pill_anim = None;
+                    v.place_next_items = true;
                 } else if let (Some(o), Some(n)) = (old_idx, new_idx)
                     && o != n
                     && !v.rolled_up
