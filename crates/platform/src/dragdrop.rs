@@ -1102,6 +1102,9 @@ struct DropSourceObject {
     data: IDataObject,
     skip_drop: SkipDrop,
     skipped: std::cell::Cell<bool>,
+    /// The button that carries the drag (`MK_LBUTTON` or `MK_RBUTTON`), known from the first
+    /// `QueryContinueDrag`; 0 before it.
+    button: std::cell::Cell<u32>,
 }
 
 static SOURCE_VTBL: DropSourceVtbl = DropSourceVtbl {
@@ -1121,6 +1124,7 @@ fn new_drop_source(data: &IDataObject, skip_drop: SkipDrop) -> IDropSource {
         data: data.clone(),
         skip_drop,
         skipped: std::cell::Cell::new(false),
+        button: std::cell::Cell::new(0),
     });
     // SAFETY: a valid COM object with one owned reference, transferred to the wrapper.
     unsafe { IDropSource::from_raw(Box::into_raw(object).cast()) }
@@ -1170,8 +1174,33 @@ unsafe extern "system" fn source_release(this: *mut core::ffi::c_void) -> u32 {
     }
 }
 
-/// The shell's rules for a left-button drag (Esc or the right button cancels, releasing the
-/// left one drops), with `skip_drop` asked at the release.
+/// The button that carries a drag, from the key state of the first `QueryContinueDrag`: the
+/// right one when it alone is held, else the left one (also when it is already up, which
+/// drops at once).
+fn carrying_button(key_state: u32) -> u32 {
+    if key_state & (MK_LBUTTON | MK_RBUTTON) == MK_RBUTTON {
+        MK_RBUTTON
+    } else {
+        MK_LBUTTON
+    }
+}
+
+/// How a drag carried by `button` goes on: `Some(true)` it continues, `Some(false)` it is
+/// cancelled (Esc or the other button), `None` the button came up, which is the drop.
+fn drag_goes_on(button: u32, escape: bool, key_state: u32) -> Option<bool> {
+    let buttons = key_state & (MK_LBUTTON | MK_RBUTTON);
+    if escape || buttons & !button != 0 {
+        Some(false)
+    } else if buttons & button != 0 {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+/// The shell's rules for a drag with the left or the right button (Esc or the other button
+/// cancels, releasing the one that carries the drag drops), with `skip_drop` asked at the
+/// release.
 unsafe extern "system" fn source_query_continue_drag(
     this: *mut core::ffi::c_void,
     escape: windows_core::BOOL,
@@ -1179,15 +1208,22 @@ unsafe extern "system" fn source_query_continue_drag(
 ) -> HRESULT {
     // SAFETY: COM contract — `this` is a live DropSourceObject.
     let obj = unsafe { &*(this as *const DropSourceObject) };
-    if escape.as_bool() || key_state & MK_RBUTTON != 0 {
-        DRAGDROP_S_CANCEL
-    } else if key_state & MK_LBUTTON != 0 {
-        S_OK
-    } else if (obj.skip_drop)(key_state) {
-        obj.skipped.set(true);
-        DRAGDROP_S_CANCEL
-    } else {
-        HRESULT(DRAGDROP_S_DROP)
+    if obj.button.get() == 0 {
+        let button = carrying_button(key_state);
+        tracing::debug!(
+            right = button == MK_RBUTTON,
+            "drag out: which button carries it"
+        );
+        obj.button.set(button);
+    }
+    match drag_goes_on(obj.button.get(), escape.as_bool(), key_state) {
+        Some(true) => S_OK,
+        Some(false) => DRAGDROP_S_CANCEL,
+        None if (obj.skip_drop)(key_state) => {
+            obj.skipped.set(true);
+            DRAGDROP_S_CANCEL
+        }
+        None => HRESULT(DRAGDROP_S_DROP),
     }
 }
 
@@ -1568,6 +1604,25 @@ mod effect_tests {
             modifier_effect(MK_RBUTTON | MK_CONTROL, true),
             DropEffect::Copy
         );
+    }
+
+    /// A drag out of a fence is carried by the button that started it: releasing it drops, Esc
+    /// or the other button cancels, modifier keys change nothing.
+    #[test]
+    fn a_drag_is_carried_by_the_left_or_the_right_button() {
+        assert_eq!(carrying_button(MK_LBUTTON), MK_LBUTTON);
+        assert_eq!(carrying_button(MK_RBUTTON | MK_CONTROL), MK_RBUTTON);
+        assert_eq!(carrying_button(MK_LBUTTON | MK_RBUTTON), MK_LBUTTON);
+        assert_eq!(carrying_button(0), MK_LBUTTON);
+        for (button, other) in [(MK_LBUTTON, MK_RBUTTON), (MK_RBUTTON, MK_LBUTTON)] {
+            assert_eq!(drag_goes_on(button, false, button), Some(true));
+            assert_eq!(drag_goes_on(button, false, button | MK_SHIFT), Some(true));
+            assert_eq!(drag_goes_on(button, true, button), Some(false));
+            assert_eq!(drag_goes_on(button, false, button | other), Some(false));
+            assert_eq!(drag_goes_on(button, false, other), Some(false));
+            assert_eq!(drag_goes_on(button, false, 0), None);
+            assert_eq!(drag_goes_on(button, false, MK_CONTROL), None);
+        }
     }
 
     /// Windows' DefaultDropEffect replaces the plain drag's effect on one volume and across

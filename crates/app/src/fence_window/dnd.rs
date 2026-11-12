@@ -208,6 +208,30 @@ pub(super) fn right_drag_choices(candidates: &[DropEffect], allowed: u32) -> Vec
         .collect()
 }
 
+/// A right-button drop of a fence's icons into `folder` (None: a folder fence): Explorer's
+/// menu decides, with `effect` as its default; the Recycle Bin only offers 移动到当前位置.
+fn right_drop_into_folder(
+    hwnd: HWND,
+    pt: DragPoint,
+    effect: DropEffect,
+    folder: Option<&Path>,
+    allowed: u32,
+) -> DropEffect {
+    let candidates: &[DropEffect] =
+        if folder.is_some_and(pecofence_platform::shell::is_recycle_bin_path) {
+            &[DropEffect::Move]
+        } else {
+            &[DropEffect::Move, DropEffect::Copy, DropEffect::Link]
+        };
+    let chosen = right_drag_menu(hwnd, pt, effect, &right_drag_choices(candidates, allowed));
+    tracing::debug!(
+        ?effect,
+        ?chosen,
+        "right-button drop of a fence's icons into a folder"
+    );
+    chosen
+}
+
 pub(super) const CMD_RDRAG_MOVE: u32 = 1;
 pub(super) const CMD_RDRAG_COPY: u32 = 2;
 pub(super) const CMD_RDRAG_LINK: u32 = 3;
@@ -960,7 +984,13 @@ impl DropHandler for FenceDropHandler {
                         // Only a folder target honours the modifiers (our own source offers
                         // every effect, so `allowed` never clips them).
                         let paths = filter_folder_paths(d.paths, &folder);
-                        let effect = folder_effect(Some(&folder), key_state, allowed, same_volume);
+                        let mut effect =
+                            folder_effect(Some(&folder), key_state, allowed, same_volume);
+                        if right && effect != DropEffect::None && !paths.is_empty() {
+                            drop_image(effect);
+                            effect =
+                                right_drop_into_folder(hwnd, pt, effect, Some(&folder), allowed);
+                        }
                         let (Some(mode), false) = (transfer_mode(effect), paths.is_empty()) else {
                             break 'resolve DropEffect::None;
                         };
@@ -1020,7 +1050,11 @@ impl DropHandler for FenceDropHandler {
                         // The target is a portal, a folder: the modifiers decide (Ctrl copies,
                         // Alt links) as for a drop onto a folder item.
                         let paths = filter_folder_paths(d.paths, &dest);
-                        let effect = folder_effect(None, key_state, allowed, same_volume);
+                        let mut effect = folder_effect(None, key_state, allowed, same_volume);
+                        if right && effect != DropEffect::None && !paths.is_empty() {
+                            drop_image(effect);
+                            effect = right_drop_into_folder(hwnd, pt, effect, None, allowed);
+                        }
                         let (Some(mode), false) = (transfer_mode(effect), paths.is_empty()) else {
                             break 'resolve DropEffect::None;
                         };

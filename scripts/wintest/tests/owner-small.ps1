@@ -4,6 +4,8 @@
 #   --var Part=DD   what a drag does with no key, Ctrl, Shift, Alt and Ctrl+Shift: File Explorer
 #                   against PecoFence, on one volume and across volumes (feedback #153)
 #   --var Part=DDT  the same plain drags with Windows' DefaultDropEffect set to move, then to copy
+#   --var Part=RD   an icon dragged out of a fence with the right mouse button (feedback #121);
+#                   --var Rec=before|after records the drag into a File Explorer window
 # "Another volume" in DD and DDT is a share of the box itself, \\localhost\pfdd, made once as
 # Administrator (the box has one drive): New-Item -ItemType Directory C:\pfdd-share;
 # icacls C:\pfdd-share /grant "pf:(OI)(CI)M"; New-SmbShare -Name pfdd -Path C:\pfdd-share
@@ -381,3 +383,240 @@ function PartDDR {
   DdCleanup
 }
 if ($Part -eq 'DDR') { PartDDR }
+
+# ---------------------------------------------------------------------------------------------
+# RD: an icon dragged out of a fence with the right mouse button (feedback #121). It did nothing;
+# now it is the drag the left button starts, and the target shows its menu at the drop.
+# The menu on screen as text, its default entry in [ ]; 'no menu' when none opened.
+function RdMenu($sec = 3) {
+  $m = MenuWin $sec
+  if ($m -eq [IntPtr]::Zero) { return @{ h = $m; text = 'no menu' } }
+  $text = (@(MenuRows $m) | Where-Object { $_.text } | ForEach-Object { if ($_.state -band 0x1000) { "[$($_.text)]" } else { $_.text } }) -join ' | '
+  return @{ h = $m; text = $text }
+}
+# A fresh desktop file in the fence 'Src'; returns its path and the point of its icon.
+function RdFile() {
+  $src = Join-Path $PfDesk (NewLeaf)
+  Set-Content -LiteralPath $src -Value 'rd' -Encoding ASCII
+  return @{ path = $src; leaf = (Split-Path $src -Leaf); pt = (FenceFilePt 'Src' $src) }
+}
+# A right-button drag of a fresh file from 'Src' to the point $q; returns the file and the menu.
+function RdDrag($q) {
+  $f = RdFile
+  if (-not $f.pt) { $f.menu = @{ h = [IntPtr]::Zero; text = 'no source' }; return $f }
+  DragDrop $f.pt[0] $f.pt[1] $q[0] $q[1] -Right
+  $f.menu = RdMenu 3
+  return $f
+}
+# Picks the entry matching $regex (or Esc without one) and waits for the file work.
+function RdPick($menu, $regex) {
+  if ($menu.h -eq [IntPtr]::Zero) { return }
+  if ($regex) { $null = MenuPick $regex $menu.h } else { [G]::Press(0x1B) }
+  Start-Sleep -Milliseconds 900
+}
+function PartRD {
+  trap { PfTrap $_; continue }
+  Case 'RD setup'
+  CloseWindows
+  $dir = "$PfRun\rd-target"; $out = "$PfRun\rd-outside"
+  foreach ($d in $dir, $out) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue; New-Item -ItemType Directory -Force $d | Out-Null }
+  $deskFolder = '桌面上的资料夹'; $fenceFolder = '归档'
+  foreach ($n in $deskFolder, $fenceFolder) { Remove-Item -Recurse -Force (Join-Path $PfDesk $n) -ErrorAction SilentlyContinue }
+  PfStart
+  Start-Sleep -Seconds 3
+  ClearFences
+  Pf fence create --title 'Src' --rect '1140,40,220,300' | Out-Null
+  Pf fence create --title 'Dst' --rect '1370,40,220,300' | Out-Null
+  Start-Sleep -Seconds 1
+  Pf fence set Src sort name | Out-Null; Pf fence set Dst sort name | Out-Null
+  foreach ($n in $deskFolder, $fenceFolder) { New-Item -ItemType Directory -Force (Join-Path $PfDesk $n) | Out-Null }
+  for ($k = 0; $k -lt 20 -and -not ((ItemFence $deskFolder) -and (ItemFence $fenceFolder)); $k++) { Start-Sleep -Milliseconds 300 }
+  Pf item move (Join-Path $PfDesk $fenceFolder) --to Dst | Out-Null
+  $null = WaitItemFence $fenceFolder 'Dst' 6
+  $hw = ExOpen $dir 560 380 560 420
+  foreach ($w in @((New-Object -ComObject Shell.Application).Windows())) { try { $w.Document.CurrentViewMode = 3 } catch { Log "view mode: $_" } }
+  Start-Sleep -Milliseconds 800
+  $exPt = @(980, 700)
+  ParkMouse 1300 700
+  $inbox = ItemFence $deskFolder
+  Shot 'rd-setup'
+  Check 'RD setup: two fences, a folder in 「桌面」 and one in a fence, a File Explorer window' ($hw -ne [IntPtr]::Zero -and $inbox -and $inbox -ne 'Dst' -and (ItemFence $fenceFolder) -eq 'Dst') "explorer=$hw desktop folder in '$inbox', fence folder in '$(ItemFence $fenceFolder)'"
+
+  Case 'RD from a fence to a File Explorer window'
+  $f = RdDrag $exPt
+  Shot 'rd-explorer-menu'
+  RdPick $f.menu '^Move here$'
+  $r = DropOutcome $f.path $dir
+  Check 'RD File Explorer shows its menu (Copy here, Move here, Create shortcuts here, Cancel) and Move here moves the file' ($f.menu.text -match 'Copy here' -and $f.menu.text -match 'Move here' -and $f.menu.text -match 'Create shortcuts here' -and $f.menu.text -match 'Cancel' -and $r -eq 'move') "menu: $($f.menu.text); outcome=$r"
+  $f = RdDrag $exPt
+  RdPick $f.menu '^Cancel$'
+  $r = DropOutcome $f.path $dir 2
+  Check 'RD Cancel in that menu: the file stays in its fence' ($f.menu.text -match 'Cancel' -and $r -eq 'none' -and (ItemFence $f.leaf) -eq 'Src') "menu: $($f.menu.text); outcome=$r fence='$(ItemFence $f.leaf)'"
+  Remove-Item -LiteralPath $f.path -Force -ErrorAction SilentlyContinue
+
+  Case 'RD from a fence to a folder icon'
+  $f = RdDrag (ItemPt 'inbox' $deskFolder)
+  Shot 'rd-desktop-folder-menu'
+  RdPick $f.menu 'Copy here'
+  $r = DropOutcome $f.path (Join-Path $PfDesk $deskFolder)
+  Check 'RD a folder in 「桌面」: the menu, and Copy here copies the file into it' ($f.menu.text -match 'Move here' -and $f.menu.text -match 'Copy here' -and $f.menu.text -match 'Cancel' -and $r -eq 'copy' -and (ItemFence $f.leaf) -eq 'Src') "menu: $($f.menu.text); outcome=$r fence='$(ItemFence $f.leaf)'"
+  Remove-Item -LiteralPath $f.path -Force -ErrorAction SilentlyContinue
+  $f = RdDrag (ItemPt 'Dst' $fenceFolder)
+  Shot 'rd-fence-folder-menu'
+  RdPick $f.menu 'Move here'
+  $r = DropOutcome $f.path (Join-Path $PfDesk $fenceFolder)
+  Check 'RD a folder in another fence: the menu, and Move here moves the file into it' ($f.menu.text -match 'Move here' -and $f.menu.text -match 'Copy here' -and $f.menu.text -match 'Cancel' -and $r -eq 'move') "menu: $($f.menu.text); outcome=$r"
+  $f = RdDrag (ItemPt 'Dst' $fenceFolder)
+  RdPick $f.menu '^Cancel$'
+  $r = DropOutcome $f.path (Join-Path $PfDesk $fenceFolder) 2
+  Check 'RD Cancel on a folder in a fence: the file stays in its fence' ($f.menu.text -match 'Cancel' -and $r -eq 'none' -and (ItemFence $f.leaf) -eq 'Src') "menu: $($f.menu.text); outcome=$r fence='$(ItemFence $f.leaf)'"
+  Remove-Item -LiteralPath $f.path -Force -ErrorAction SilentlyContinue
+
+  # The report's own case: onto a shortcut that points to a folder.
+  $lnk = Join-Path $PfDesk 'rd target link.lnk'
+  $sc = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk); $sc.TargetPath = $dir; $sc.Save()
+  for ($k = 0; $k -lt 20 -and -not (ItemFence 'rd target link.lnk'); $k++) { Start-Sleep -Milliseconds 300 }
+  Pf item move $lnk --to Dst | Out-Null
+  $null = WaitItemFence 'rd target link.lnk' 'Dst' 6
+  Start-Sleep -Milliseconds 600
+  $f = RdDrag (ItemPt 'Dst' 'rd target link')
+  Shot 'rd-shortcut-menu'
+  RdPick $f.menu 'Move here'
+  $r = DropOutcome $f.path $dir
+  Check 'RD a shortcut to a folder in another fence: the menu, and Move here moves the file into the folder it points to' ($f.menu.text -match 'Move here' -and $f.menu.text -match 'Cancel' -and $r -eq 'move' -and (ItemFence 'rd target link.lnk') -eq 'Dst') "menu: $($f.menu.text); outcome=$r; the shortcut is in '$(ItemFence 'rd target link.lnk')'"
+  Remove-Item -LiteralPath $lnk -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 1
+
+  Case 'RD from a fence to a fence'
+  $f = RdDrag (FenceFreePt 'Dst')
+  $to = WaitItemFence $f.leaf 'Dst' 5
+  Check 'RD another fence: the icon moves there, as with the left button, without a menu' ($f.menu.text -eq 'no menu' -and $to -eq 'Dst' -and (Test-Path -LiteralPath $f.path)) "menu: $($f.menu.text); fence='$to'"
+  Remove-Item -LiteralPath $f.path -Force -ErrorAction SilentlyContinue
+  $f = RdDrag (FenceFreePt 'Src')
+  Start-Sleep -Milliseconds 800
+  Check 'RD its own fence: nothing changes and no menu opens' ($f.menu.text -eq 'no menu' -and (ItemFence $f.leaf) -eq 'Src' -and (Test-Path -LiteralPath $f.path)) "menu: $($f.menu.text); fence='$(ItemFence $f.leaf)'"
+  Remove-Item -LiteralPath $f.path -Force -ErrorAction SilentlyContinue
+
+  Case 'RD from a fence to the Recycle Bin and to the bare desktop'
+  $f = RdDrag (ItemPt 'inbox' 'Recycle Bin')
+  Shot 'rd-bin-menu'
+  RdPick $f.menu 'Move here'
+  Start-Sleep -Seconds 2
+  $base = [IO.Path]::GetFileNameWithoutExtension($f.leaf)
+  Check 'RD the Recycle Bin: Move here and Cancel, and Move here recycles the file' ($f.menu.text -match 'Move here' -and $f.menu.text -notmatch 'Copy here' -and $f.menu.text -match 'Cancel' -and -not (Test-Path -LiteralPath $f.path) -and (BinNames) -match [regex]::Escape($base)) "menu: $($f.menu.text); on the desktop=$(Test-Path -LiteralPath $f.path); in the bin=$((BinNames) -match [regex]::Escape($base))"
+  $spot = FreeSpot 1250 600
+  $f = RdDrag $spot
+  $to = WaitItemFence $f.leaf $inbox 5
+  Check 'RD the bare desktop: the icon goes to 「桌面」, as with the left button' ($f.menu.text -eq 'no menu' -and $to -eq $inbox -and (Test-Path -LiteralPath $f.path)) "menu: $($f.menu.text); fence='$to' spot=$($spot -join ',')"
+  Remove-Item -LiteralPath $f.path -Force -ErrorAction SilentlyContinue
+
+  Case 'RD Esc ends a right-button drag'
+  $f = RdFile
+  [G]::MoveTo($f.pt[0], $f.pt[1]); Start-Sleep -Milliseconds 150
+  [G]::mouse_event(8, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 200
+  Glide $f.pt[0] $f.pt[1] $exPt[0] $exPt[1] 16 30
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 400
+  [G]::mouse_event(0x10, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 800
+  $m = RdMenu 2
+  $r = DropOutcome $f.path $dir 1
+  Check 'RD Esc during the drag: no menu, nothing moves' ($m.text -eq 'no menu' -and $r -eq 'none' -and (ItemFence $f.leaf) -eq 'Src') "menu: $($m.text); outcome=$r fence='$(ItemFence $f.leaf)'"
+  CloseMenus
+  # The left button pressed during the drag ends it too (as the right one ends a left drag).
+  [G]::MoveTo($f.pt[0], $f.pt[1]); Start-Sleep -Milliseconds 150
+  [G]::mouse_event(8, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 200
+  Glide $f.pt[0] $f.pt[1] $exPt[0] $exPt[1] 16 30
+  [G]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 300
+  [G]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 200
+  [G]::mouse_event(0x10, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 800
+  $m = RdMenu 2
+  $r = DropOutcome $f.path $dir 1
+  Check 'RD the left button pressed during the drag: no menu, nothing moves' ($m.text -eq 'no menu' -and $r -eq 'none' -and (ItemFence $f.leaf) -eq 'Src') "menu: $($m.text); outcome=$r fence='$(ItemFence $f.leaf)'"
+  CloseMenus; [G]::Press(0x1B); Start-Sleep -Milliseconds 300
+
+  Case 'RD what must not change'
+  # Rename by a slow second click on the name of the selected icon (the left button).
+  [G]::Click($f.pt[0], $f.pt[1]); Start-Sleep -Milliseconds 900
+  [G]::Click($f.pt[0], $f.pt[1] + 38)
+  $box = [IntPtr]::Zero
+  for ($k = 0; $k -lt 60 -and $box -eq [IntPtr]::Zero; $k++) { Start-Sleep -Milliseconds 50; $h = [G]::FindWindowW('PecoFence.Rename', [NullString]::Value); if ($h -ne [IntPtr]::Zero -and [G]::IsWindowVisible($h)) { $box = $h } }
+  Shot 'rd-slow-click-rename'
+  Check 'RD a slow second click on the selected icon opens the rename box' ($box -ne [IntPtr]::Zero) "rename box=$box"
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 500
+  # A plain right-click: the icon's menu. With a few pixels of movement inside the drag
+  # threshold too.
+  [G]::RClick($f.pt[0], $f.pt[1])
+  $m = RdMenu 6
+  Shot 'rd-item-menu'
+  Check 'RD a right-click on an icon opens its menu' ($m.text -match 'Rename' -and $m.text -match 'Properties') "menu: $($m.text)"
+  CloseMenus; Start-Sleep -Milliseconds 400
+  [G]::MoveTo($f.pt[0], $f.pt[1]); Start-Sleep -Milliseconds 150
+  [G]::mouse_event(8, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 120
+  [G]::MoveTo($f.pt[0] + 2, $f.pt[1] + 1); Start-Sleep -Milliseconds 120
+  [G]::mouse_event(0x10, 0, 0, 0, [UIntPtr]::Zero)
+  $m = RdMenu 6
+  Check 'RD a right-click that moves 2 px still opens the menu' ($m.text -match 'Rename' -and $m.text -match 'Properties') "menu: $($m.text)"
+  CloseMenus; Start-Sleep -Milliseconds 400
+  # On the empty part of a fence: the fence menu; a right-button drag there selects nothing
+  # (a fence has no marquee with the right button) and opens nothing.
+  $free = FenceFreePt 'Src'
+  [G]::RClick($free[0], $free[1])
+  $m = RdMenu 6
+  Check 'RD a right-click on the empty part of a fence opens the fence menu' ($m.h -ne [IntPtr]::Zero -and $m.text -notmatch 'Properties') "menu: $($m.text)"
+  CloseMenus; Start-Sleep -Milliseconds 400
+  DragDrop $free[0] $free[1] ($free[0] - 60) ($free[1] - 60) -Right
+  $m = RdMenu 2
+  $sel = @(@(PfJson item list --fence Src) | Where-Object { $_ -and $_.selected }).Count
+  Check 'RD a right-button drag that starts on empty space: no menu, nothing selected' ($m.text -eq 'no menu' -and $sel -eq 0) "menu: $($m.text); selected=$sel"
+  CloseMenus
+  Remove-Item -LiteralPath $f.path -Force -ErrorAction SilentlyContinue
+
+  Case 'RD from File Explorer into a fence with the right button (as before)'
+  $leaf = NewLeaf; $src = Join-Path $out $leaf
+  Set-Content -LiteralPath $src -Value 'rd' -Encoding ASCII
+  $hw2 = ExOpen $out 560 380 560 420
+  foreach ($w in @((New-Object -ComObject Shell.Application).Windows())) { try { $w.Document.CurrentViewMode = 3 } catch { Log "view mode: $_" } }
+  Start-Sleep -Milliseconds 800
+  $el = ExItem $hw2 $leaf
+  $p = ExPt $el; $q = FenceFreePt 'Dst'
+  DragDrop $p[0] $p[1] $q[0] $q[1] -Right
+  $m = RdMenu 3
+  RdPick $m 'Move here'
+  $r = DropOutcome $src $PfDesk
+  $to = WaitItemFence $leaf 'Dst' 5
+  Check 'RD a file from File Explorer: the menu, and Move here moves it into the fence' ($m.text -match 'Move here' -and $m.text -match 'Copy here' -and $r -eq 'move' -and $to -eq 'Dst') "menu: $($m.text); outcome=$r fence='$to'"
+  Remove-Item -LiteralPath (Join-Path $PfDesk $leaf) -Force -ErrorAction SilentlyContinue
+
+  if ($Rec) {
+    Case "RD recording ($Rec)"
+    . C:\pf\kit\rec.ps1
+    CloseWindows
+    $hw = ExOpen $dir 560 380 560 420
+    foreach ($w in @((New-Object -ComObject Shell.Application).Windows())) { try { $w.Document.CurrentViewMode = 3 } catch { Log "view mode: $_" } }
+    Start-Sleep -Milliseconds 800
+    $f = RdFile
+    ParkMouse 1300 700
+    RecStart "RD-$Rec" -X 560 -Y 30 -W 810 -H 780 -Fps 15
+    RecMark '栅栏里有一个文件'
+    Start-Sleep -Milliseconds 900
+    RecMark '按住鼠标右键，把它拖到资源管理器的窗口里，松开'
+    DragDrop $f.pt[0] $f.pt[1] $exPt[0] $exPt[1] -Right
+    $m = RdMenu 3
+    Start-Sleep -Milliseconds 1200
+    RecMark '松开之后'
+    RdPick $m '^Move here$'
+    $r = DropOutcome $f.path $dir 2
+    Start-Sleep -Seconds 2
+    RecStop
+    Check "RD recorded ($Rec)" $true "menu: $($m.text); outcome=$r"
+    Remove-Item -LiteralPath $f.path -Force -ErrorAction SilentlyContinue
+  }
+
+  Case 'RD cleanup'
+  CloseMenus
+  CloseWindows
+  foreach ($d in $dir, $out, (Join-Path $PfDesk $deskFolder), (Join-Path $PfDesk $fenceFolder)) { Remove-Item -Recurse -Force $d -ErrorAction SilentlyContinue }
+  Get-ChildItem -LiteralPath $PfDesk -Force | Where-Object { $_.Name -match ' \d+\.txt( - Shortcut)?(\.lnk)?$' } | Remove-Item -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath (Join-Path $PfDesk 'rd target link.lnk') -Force -ErrorAction SilentlyContinue
+  Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+}
+if ($Part -eq 'RD') { PartRD }

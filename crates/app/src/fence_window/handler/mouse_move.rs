@@ -190,6 +190,29 @@ pub(super) fn on_mousemove(
         v.frames.request();
         return Some(0);
     }
+    // A right-button press on an icon that leaves the drag threshold becomes the shell drag the
+    // left button starts (feedback #121): File Explorer, the desktop and folders show their
+    // 移动到当前位置 / 复制到当前位置 menu at the drop. A press on anything else stays a press.
+    let mut right_drag = false;
+    if v.drag.is_none()
+        && let Some((sx, sy)) = v.rbutton_press
+        && let Some(item) = v.hit_item(sx, sy)
+    {
+        let (tx, ty) = window::drag_threshold();
+        if (x - sx).abs() > tx || (y - sy).abs() > ty {
+            tracing::debug!(item, "right-button drag of an icon starts");
+            v.rbutton_press = None;
+            right_drag = true;
+            v.drag = Some(DragState {
+                start: (sx, sy),
+                item,
+                collapse_on_up: false,
+                was_sole_selected: false,
+                deselect_on_up: false,
+                open_on_up: false,
+            });
+        }
+    }
     if let Some(d) = v.drag.as_ref() {
         let (tx, ty) = window::drag_threshold();
         let (sx, sy) = d.start;
@@ -236,12 +259,16 @@ pub(super) fn on_mousemove(
         // there without Ctrl / Alt, the drag ends in the drop source instead and the items go
         // back to the inbox. A Windows icon that takes the drop (a folder) still gets it; a
         // portal's files really move to the desktop.
+        let skipped = std::rc::Rc::new(std::cell::Cell::new(false));
         let skip_drop = (!from_portal).then(|| -> dragdrop::SkipDrop {
-            Box::new(|keys| {
+            let skipped = skipped.clone();
+            Box::new(move |keys| {
                 let (hit, _, on_desktop) = window_under_cursor();
-                on_desktop
+                let skip = on_desktop
                     && dragdrop::modifier_effect(keys, true) == DropEffect::Move
-                    && !pecofence_platform::shell_icons::desktop_icon_drop_target(hit)
+                    && !pecofence_platform::shell_icons::desktop_icon_drop_target(hit);
+                skipped.set(skip);
+                skip
             })
         });
         let mut drag_returned: Option<Instant> = None;
@@ -300,6 +327,7 @@ pub(super) fn on_mousemove(
             on_desktop,
             %class,
             from_portal,
+            right_drag,
             "drag-out finished"
         );
         match effect {
@@ -309,11 +337,14 @@ pub(super) fn on_mousemove(
             // ListView accepted nothing, so the effect is None): keep
             // "back to the inbox". A Ctrl / Alt drop
             // means duplicate, not relocate. A portal's files really moved
-            // there; the desktop watcher files them.
+            // there; the desktop watcher files them. A right-button drop on one of Windows'
+            // own desktop icons ended in Explorer's menu: 取消 there (effect None) leaves the
+            // icons in their fence.
             Some(r)
                 if on_desktop
                     && !from_portal
-                    && matches!(r.effect, DropEffect::None | DropEffect::Move) =>
+                    && matches!(r.effect, DropEffect::None | DropEffect::Move)
+                    && (!right_drag || skipped.get()) =>
             {
                 // Where the icons landed, for a 「桌面」 that places them freely (自由摆放).
                 let c = window::cursor_pos();
