@@ -285,7 +285,7 @@ impl FenceViewState {
             && self.marquee.as_ref().is_none_or(|m| m.cur == m.start)
             && self.outgoing.is_empty()
             && desktop::is_visible(self.hwnd);
-        let old_pos: HashMap<ItemId, CellRect> = if animate {
+        let mut old_pos: HashMap<ItemId, CellRect> = if animate {
             let cells = self.cell_origins(width_dip);
             self.items
                 .iter()
@@ -517,6 +517,28 @@ impl FenceViewState {
                 ((o.x - c.x).abs() > 0.5 || (o.y - c.y).abs() > 0.5).then(|| cell_key(o.x, o.y))
             })
             .collect();
+        // Fewer rows end the content above the place the fence is scrolled to (files deleted
+        // at the end of the content): the redraw puts the offset back to the new end, and the
+        // rows that stay jumped down by that much in one frame. The offset goes there now and
+        // every icon, the ones that leave too, starts from where it stood on screen: the rows
+        // glide down while the deleted icons fade out in place. (A glide still in flight
+        // holds its own coordinates: then the redraw clamps as before.)
+        if self.desktop.is_none() && self.scroll_anim.is_none() && self.item_motion.is_empty() {
+            let (layout, view_h) = self.scroll_extent();
+            let over = self.scroll_y - layout.max_scroll(view_h);
+            if over > 0.5 {
+                tracing::debug!(
+                    fence = %self.fence_id,
+                    over,
+                    items = self.items.len(),
+                    "the content ends above the scroll offset: the rows that stay glide down"
+                );
+                self.scroll_y -= over;
+                for c in old_pos.values_mut() {
+                    c.y -= over;
+                }
+            }
+        }
         let mut motion: HashMap<ItemId, ItemMotion> = HashMap::new();
         let (mut landed, mut waited) = (0usize, 0usize);
         let wait_for_icon = self.motion.enabled();
