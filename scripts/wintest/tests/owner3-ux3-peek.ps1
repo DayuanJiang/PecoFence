@@ -217,7 +217,7 @@ function U3CapsuleTips($title, $shot) {
     [G]::MoveTo($x, $y); Start-Sleep -Milliseconds 1400
     $t = U3Tips
     if ($t) { $tips += $t }
-    if ($shot -and ($t -or $tips.Count -eq 0)) { Crop $shot ($right - 240) ($f.windowRect.y - 10) 300 110 | Out-Null }
+    if ($shot -and ($t -or $tips.Count -eq 0)) { Crop $shot ($right - 200) ($f.windowRect.y - 10) 480 110 | Out-Null }
   }
   [G]::MoveTo($right - 200, $y + 400); Start-Sleep -Milliseconds 300
   return $tips
