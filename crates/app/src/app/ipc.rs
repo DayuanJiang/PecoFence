@@ -439,12 +439,13 @@ fn auto_snapshot_name() -> String {
 
 /// Pure half of [`App::auto_snapshot`]: prunes `auto-cli-*` entries down to
 /// `AUTO_SNAPSHOTS_KEPT - 1` (making room for the one about to be taken) and reports whether
-/// a slot under `MAX_SNAPSHOTS` is free. `false` means the list is full of snapshots the user
-/// saved, which an automatic one must never evict. `protect` survives the pruning (see
-/// [`prune_auto_snapshots`]).
+/// a slot under `MAX_SNAPSHOTS` is free. A list still full then loses its oldest automatic
+/// snapshot (the page's 「…前」 ones count too), as on the settings page (`snapshot_room`).
+/// `false` means the list is full of snapshots the user saved, which an automatic one must
+/// never evict. `protect` survives the pruning (see [`prune_auto_snapshots`]).
 pub(super) fn auto_snapshot_slot(snapshots: &mut Vec<Snapshot>, protect: Option<Uuid>) -> bool {
     prune_auto_snapshots(snapshots, AUTO_SNAPSHOTS_KEPT.saturating_sub(1), protect);
-    snapshots.len() < pecofence_core::MAX_SNAPSHOTS
+    super::settings::snapshot_room(snapshots, protect)
 }
 
 /// How long a queued request stays runnable: the client's timeout, but never under

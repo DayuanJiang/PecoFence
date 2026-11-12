@@ -980,18 +980,35 @@ mod ipc {
     }
 
     #[test]
-    fn auto_snapshot_makes_room_by_pruning_its_own_kind_only() {
+    fn auto_snapshot_makes_room_by_dropping_automatic_snapshots_only() {
         // Full list: MAX-2 user snapshots plus two auto ones. Pruning to KEPT-1 (= 2) removes
-        // nothing, so there is no room: no snapshot, no eviction.
+        // nothing; the oldest automatic one gives its slot, as on the settings page.
         let mut list: Vec<Snapshot> = (0..MAX_SNAPSHOTS - 2)
             .map(|i| snap(&format!("mine {i}"), i as i64))
             .collect();
+        let users: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
         list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}a"), 100));
+        let oldest_auto = list.last().unwrap().id;
         list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}b"), 101));
+        assert!(auto_snapshot_slot(&mut list, None));
+        assert_eq!(list.len(), MAX_SNAPSHOTS - 1);
+        assert!(list.iter().all(|s| s.id != oldest_auto));
+        assert!(users.iter().all(|u| list.iter().any(|s| s.id == *u)));
+
+        // Full list with one automatic snapshot of the settings page: it gives its slot too
+        // (the CLI went on without a safety snapshot before), unless it is the one to restore.
+        let mut list: Vec<Snapshot> = (0..MAX_SNAPSHOTS - 1)
+            .map(|i| snap(&format!("mine {i}"), i as i64))
+            .collect();
+        list.push(snap(pecofence_core::i18n::text("恢复快照前"), 100));
+        let page_auto = list.last().unwrap().id;
         let before: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
-        assert!(!auto_snapshot_slot(&mut list, None));
+        assert!(!auto_snapshot_slot(&mut list, Some(page_auto)));
         let after: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
-        assert_eq!(after, before, "nothing may be evicted when no slot opens");
+        assert_eq!(after, before, "the snapshot to restore stays");
+        assert!(auto_snapshot_slot(&mut list, None));
+        assert_eq!(list.len(), MAX_SNAPSHOTS - 1);
+        assert!(list.iter().all(|s| s.id != page_auto));
 
         // Three auto snapshots in a full list: the oldest goes, a slot opens, every user
         // snapshot survives.

@@ -702,7 +702,9 @@ The app ignores the field's value.
   `item move` when 20 or more desktop items change fence (not for file moves through a portal),
   and `snapshot restore`. Snapshots record fence layouts (fences, geometry, item membership) only, never
   settings or rules, so `settings set` and `rule import` do not return one. Automatic snapshots never
-  evict user snapshots: at the 20-snapshot limit none is taken and the result carries a `warning`.
+  evict user snapshots: with 20 snapshots stored, the oldest automatic one (the CLI's `auto-cli-…` or one
+  the settings page saved before a restore, an import or a fence delete) gives its place; when all 20
+  are snapshots the user saved, none is taken and the result carries a `warning`.
 - Batches (`fence set --all`, `fence roll --all`, `fence unroll --all`) return
   `{"changed": <any>, "results": [{"fence", "title", "changed"} | {"fence", "title", "error"} |
   {"fence", "title", "skipped": "tab"}]}` and exit 1 if any entry failed. A connection-level error
