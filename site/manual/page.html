@@ -20,6 +20,7 @@
 <script src="demos/look.js" defer></script>
 <script src="demos/backup.js" defer></script>
 <link rel="stylesheet" href="demos/dialogs.css">
+<script src="demos/undo.js" defer></script>
 <link rel="stylesheet" href="demos/smart.css">
 <script src="demos/smart.js" defer></script>
 <script src="demos/vdesk.js" defer></script>
@@ -108,6 +109,7 @@
     <h2>布局与备份</h2>
     <ol>
       <li><a href="#backup"><span class="num">6.1</span>布局快照和备份</a></li>
+      <li><a href="#undo"><span class="num">6.2</span>按 Ctrl+Z 撤销</a></li>
     </ol>
     </div>
     <div class="toc-group">
@@ -777,6 +779,42 @@
       </div>
     </article>
 
+    <article class="lesson" data-lesson="undo" id="undo">
+      <header class="lesson-head">
+        <p class="kicker">6.2 · 布局与备份</p>
+        <h2>按 Ctrl+Z 撤销</h2>
+        <p class="lede">栅栏拖错了地方、图标放错了栅栏、栅栏删错了，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 就退回去。</p>
+      </header>
+      <div class="lesson-body">
+        <figure class="demo">
+          <div class="stage" role="img" aria-label="动画：把「工作」栅栏拖到了别处，按 Ctrl+Z，它回到原处；把「合同.pdf」从「文件与文档」拖进「工作」，再按 Ctrl+Z，它回到「文件与文档」里原来的位置；右键「工作」的标题栏选「删除栅栏」，在询问的对话框里点「是」，栅栏消失，里面的两个图标回到桌面左上角，右下角出现「已删除栅栏“工作”」的卡片；点卡片上的「撤销」，栅栏和图标都回来了"></div>
+          <div class="controls">
+            <button class="btn play" type="button" data-play aria-label="暂停">
+              <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.7 2.1a.8.8 0 0 0-1.2.7Z"/></svg>
+            </button>
+            <div class="track" data-track role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="track-fill"></div></div>
+            <button class="btn speed" type="button" data-speed aria-pressed="false">慢放</button>
+          </div>
+        </figure>
+        <div class="side">
+          <ol class="steps">
+            <li data-at="0.3"><span class="n">1</span><p>栅栏拖到了不想放的地方，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd>，它就回到原处。刚拖过的栅栏已经在接收键盘，不用再点它。</p></li>
+            <li data-at="4.0"><span class="n">2</span><p>图标拖进了别的栅栏，也是按 <kbd>Ctrl</kbd>+<kbd>Z</kbd>，它回到原来的栅栏和位置。</p></li>
+            <li data-at="7.4"><span class="n">3</span><p>右键标题栏，选<b>「删除栅栏」</b>。栅栏里有图标时会先问一句，点<b>「是」</b>以后栅栏就删掉了，里面的图标回到桌面。</p></li>
+            <li data-at="9.8"><span class="n">4</span><p>右下角出现「已删除栅栏“工作”」的卡片。点<b>「撤销」</b>，或者在任意一个栅栏上按 <kbd>Ctrl</kbd>+<kbd>Z</kbd>，栅栏连同里面的图标一起回来。</p></li>
+          </ol>
+          <aside class="tip">
+            <h3>小提示</h3>
+            <p>每按一次 <kbd>Ctrl</kbd>+<kbd>Z</kbd>，退回最近的一步，最多能退 20 步。按之前先点一下栅栏，点标题栏、边框或里面都行。</p>
+            <p>在栅栏里改错了文件名、把文件删进了回收站、新建了文件夹、把文件拖进了文件夹，也都能撤销。用 <kbd>Shift</kbd>+<kbd>Delete</kbd> 永久删除的文件找不回来，这时会提示「永久删除的文件无法撤销。」</p>
+            <p>在「设置」→「整理规则」里点「立即应用」以后，右下角也会出现带「撤销」的卡片。</p>
+            <p>退出 PecoFence、导入配置、恢复备份或快照以后，之前的步骤就不能撤销了。想留一条更长的退路，先存一份<a href="#backup">布局快照</a>。</p>
+          </aside>
+        </div>
+      </div>
+    </article>
+
     <article class="lesson" data-lesson="tools" id="tools">
       <header class="lesson-head">
         <p class="kicker">7.1 · 小工具</p>
@@ -1072,6 +1110,7 @@ while ($true) {
                 <tr><th scope="row">右键标题栏或空白处</th><td>打开栅栏菜单</td></tr>
                 <tr><th scope="row"><kbd>Ctrl</kbd>+滚轮</th><td>改图标大小（只在「图标」视图里，锁定的栅栏不变）</td></tr>
                 <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>V</kbd></th><td>把复制的文件粘贴进来</td></tr>
+                <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Z</kbd></th><td>撤销在栅栏里做的最近一步：拖动栅栏、改大小、移动图标、删除栅栏、改名、删除文件等</td></tr>
                 <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></th><td>新建文件夹</td></tr>
                 <tr><th scope="row"><kbd>F5</kbd></th><td>刷新图标，智能栅栏重新搜索</td></tr>
                 <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>F</kbd></th><td>在文件夹栅栏或智能栅栏里筛选</td></tr>
