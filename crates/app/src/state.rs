@@ -433,6 +433,11 @@ impl AppState {
         for (id, spec) in std::mem::take(&mut self.config.scripts) {
             config.scripts.entry(id).or_insert(spec);
         }
+        // An export leaves the search history out: the files opened most from the search box
+        // on this PC stay ranked first.
+        if config.search_history.is_empty() {
+            config.search_history = std::mem::take(&mut self.config.search_history);
+        }
         config.drop_duplicates();
         pecofence_core::config_store::clamp_sizes(&mut config);
         pecofence_core::config_store::repair_unc_portals(&mut config);
