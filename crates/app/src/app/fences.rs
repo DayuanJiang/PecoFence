@@ -1245,7 +1245,13 @@ impl App {
                 + (r.right - r.left),
             bottom: wa.top + h,
         };
-        w.set_bounds(rect);
+        // It glides to the top edge while it rolls up (167 ms both); it used to stand there
+        // in the next frame.
+        let glides = w.glide_to(rect);
+        tracing::debug!(%fence, glides, from = ?(r.left, r.top), to = ?(rect.left, rect.top), "dock to top");
+        if !glides {
+            w.set_bounds(rect);
+        }
         let expanded = if w.is_rolled() {
             w.expanded_height_px()
         } else {
