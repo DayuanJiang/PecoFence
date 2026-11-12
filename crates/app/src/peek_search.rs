@@ -1693,7 +1693,10 @@ pub fn type_tab() -> Option<TypeCategory> {
 }
 
 fn on_key(vk: u32) -> bool {
-    let ctrl = window::key_down(msg::VK_CONTROL);
+    // Not with Alt down: Windows reports AltGr as Ctrl and Alt, and AltGr with a digit or a
+    // letter types a character on many layouts ([ ] { on the German one, @ # on the Spanish
+    // one, ó ń on the Polish one). Those are text for the box, not Ctrl+8 or Ctrl+O.
+    let ctrl = window::key_down(msg::VK_CONTROL) && !window::key_down(msg::VK_MENU);
     // Ctrl+Tab / Ctrl+Shift+Tab: the next / previous type tab, wrapping around.
     if vk == 0x09 && ctrl {
         let back = window::key_down(0x10);
