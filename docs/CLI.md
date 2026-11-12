@@ -517,8 +517,9 @@ cmd.exe takes `<` and `>` as redirections). A program (.exe) used as the script 
 line: start it from a small .cmd or .ps1 that does.
 
 The reason: a row cannot tell text the script wrote from text it only passed on. A script that
-printed an issue title unchanged turned the title `x | run=calc.exe r=' k=v` into a row that
-started the calculator on a click (the built-in GitHub example of 0.3.0 to 0.3.3 did).
+printed an issue title unchanged turned a title containing a `|` followed by a `run=` parameter
+into a row that started that program on a click (the built-in GitHub example of 0.3.0 to 0.3.3
+did).
 
 ### Printing text you did not write
 
