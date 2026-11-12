@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The text of an empty fence (「将项目拖到此处」, 「此文件夹为空。」, 「找不到此文件夹。」 and the lines of a smart fence) breaks into lines of about one length when it needs more than one. In a narrow fence the last word or character stood alone on the second line: Japanese at 220 px 「このフォルダーが見つかりませ」 and then 「ん。」, German at 150 px 「Dieser Ordner ist」 and then 「leer.」, English 「This folder cannot」 and then 「be found.」. They now read 「このフォルダーが」 / 「見つかりません。」, 「Dieser Ordner」 / 「ist leer.」 and 「This folder」 / 「cannot be found.」. A word that fits on a line in one piece is not cut for this.
 - Ctrl+V and Delete: the selection no longer turns grey for about five frames and then blue again. Windows takes the keyboard from the fence while it copies or deletes the files (about 0.3 s), so the box showed the grey of a fence without the keyboard; on the freely placed desktop the box of a pasted copy came, nearly went and came again. A fence now keeps its selection colour while a file operation of its own runs, and reads the real state again half a second after the operation is over.
 - F2 on an icon: the name no longer goes blank for a frame before the name box shows. The fence drew the icon without its name first and the box was painted a frame later.
 - A file renamed in place and confirmed by a click on an empty part of its fence glides to its new place in the sort order, as it does after Enter. It stood there in one frame (the click's rubber band, not yet moved, switched the motion off).

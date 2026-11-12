@@ -4345,15 +4345,11 @@ impl FenceChrome {
             let faded = session.create_solid_brush(with_alpha(theme.text_secondary, alpha))?;
             let avail = (height - header_h).max(0.0);
             let y0 = empty_text_top(avail);
+            let (x, w) = balanced_wrap_span(text, &self.empty_format, width);
             session.draw_text(
                 text,
                 &self.empty_format,
-                &Rect::from_xywh(
-                    12.0,
-                    header_h + y0,
-                    (width - 24.0).max(0.0),
-                    (avail - y0).max(0.0),
-                ),
+                &Rect::from_xywh(x, header_h + y0, w, (avail - y0).max(0.0)),
                 &faded,
             );
             if alpha >= 1.0
@@ -4498,10 +4494,11 @@ impl FenceChrome {
         if let Some((text, alpha)) = content.empty_text {
             let secondary = session.create_solid_brush(with_alpha(theme.text_secondary, alpha))?;
             let y0 = empty_text_top(height);
+            let (x, w) = balanced_wrap_span(text, &self.empty_format, width);
             session.draw_text(
                 text,
                 &self.empty_format,
-                &Rect::from_xywh(12.0, y0, (width - 24.0).max(0.0), (height - y0).max(0.0)),
+                &Rect::from_xywh(x, y0, w, (height - y0).max(0.0)),
                 &secondary,
             );
             if alpha >= 1.0
@@ -5762,9 +5759,81 @@ fn empty_text_top(avail: f32) -> f32 {
     }
 }
 
+/// Where the text of an empty fence `width` DIPs wide is laid out: left edge and width,
+/// centred, 12 DIPs clear of both sides. A text that needs more than one line gets the
+/// narrowest box that keeps its number of lines, so the lines come out about equally long
+/// (in a fence of 220 DIPs 「このフォルダーが見つかりませ」 / 「ん。」 stood there). The box
+/// stays as wide as the longest word that cannot be broken (a run without a space and
+/// without Chinese, Japanese or Korean characters), so no word is cut that the whole width
+/// keeps in one piece. A text on one line keeps the whole width.
+fn balanced_wrap_span(text: &str, format: &TextFormat, width: f32) -> (f32, f32) {
+    let full = (width - 24.0).max(0.0);
+    let lines = |w: f32| {
+        TextLayout::new(text, format, w, 1000.0)
+            .map(|l| l.metrics().line_count)
+            .unwrap_or(1)
+    };
+    let n = lines(full);
+    if n <= 1 {
+        return (12.0, full);
+    }
+    let word = text
+        .split_whitespace()
+        .filter(|w| !w.chars().any(|c| c >= '\u{2E80}'))
+        .map(|w| crate::text::measure_width(w, format))
+        .fold(0.0f32, f32::max);
+    // n lines need more than full / n: the text would fit on fewer lines otherwise.
+    let (mut lo, mut hi) = ((full / n as f32).max(word), full);
+    if lo >= hi || lines(lo) <= n {
+        hi = lo.min(full);
+    }
+    while hi - lo > 1.0 {
+        let mid = (lo + hi) / 2.0;
+        if lines(mid) <= n {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    let w = hi.ceil().min(full);
+    (12.0 + (full - w) / 2.0, w)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_text_of_an_empty_fence_breaks_into_lines_of_about_one_length() {
+        let chrome = FenceChrome::new().unwrap();
+        let f = &chrome.empty_format;
+        let lines = |t: &str, w: f32| {
+            TextLayout::new(t, f, w, 1000.0)
+                .unwrap()
+                .metrics()
+                .line_count
+        };
+        // A fence of 220 DIPs: fifteen characters, of which the last one and the full stop
+        // stood alone on the second line.
+        let text = "このフォルダーが見つかりません。";
+        assert_eq!(lines(text, 196.0), 2);
+        let (x, w) = balanced_wrap_span(text, f, 220.0);
+        assert!(w < 130.0, "two lines of eight and seven characters: {w}");
+        assert_eq!(lines(text, w), 2);
+        assert!(lines(text, w - 4.0) > 2, "no narrower box keeps two lines");
+        assert!((x + w / 2.0 - 110.0).abs() < 0.01, "centred in the fence");
+        // English breaks at its spaces, and a text on one line keeps the whole width.
+        let en = "This folder cannot be found.";
+        let (_, w) = balanced_wrap_span(en, f, 150.0);
+        assert_eq!(lines(en, w), 2);
+        assert!(w < 126.0);
+        assert_eq!(balanced_wrap_span(text, f, 400.0), (12.0, 376.0));
+        // The least width: the box stays as wide as the longest word, so a word that the
+        // whole width keeps in one piece is not cut.
+        let word = crate::text::measure_width("folder", f);
+        let (_, w) = balanced_wrap_span("This folder is empty.", f, word + 26.0);
+        assert!(w >= word, "the box {w} holds the word {word}");
+    }
 
     #[test]
     fn title_alignment_centres_on_the_fence_and_keeps_clear_of_the_chevron() {
