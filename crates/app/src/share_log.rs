@@ -54,6 +54,7 @@ const CODE_TEXT_FIELDS: &[&str] = &[
     "host_kind",
     "install",
     "language",
+    "layers",
     "memory",
     "method",
     "mode",
@@ -682,6 +683,8 @@ mod tests {
         ("class", "%desktop::class_name(by)"), // class of the window that covered the fences
         // Class of the window the fences go above.
         ("class", "%desktop::class_name(h)"),
+        // Explorer's desktop windows: class names, handles and counts.
+        ("layers", "%desktop::describe_desktop_windows()"),
         ("command", "name"), // `Command` variant name
         // shell::path_place: fixed words for the kind of place a path is on.
         ("place", "shell::path_place(&primary)"),

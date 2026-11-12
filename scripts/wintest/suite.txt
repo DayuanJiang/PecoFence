@@ -30,6 +30,7 @@ watchdog           5   ec2    release watchdog-restart.ps1
 desktop-input-A    2   ec2    release desktop-clicks-and-focus.ps1   --var Part=A
 desktop-input-B    3   ec2    release desktop-clicks-and-focus.ps1   --var Part=B
 desktop-input-C    3   ec2    release desktop-clicks-and-focus.ps1   --var Part=C
+showdesk-nofocus   1   ec2    release show-desktop-window-without-focus.ps1
 explorer-freeze    2   ec2    release explorer-busy.ps1              --var Part=freeze
 explorer-burst     3   ec2    release explorer-busy.ps1              --var Part=burst
 explorer-start     3   ec2    release explorer-busy.ps1              --var Part=start
