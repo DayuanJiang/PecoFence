@@ -597,7 +597,7 @@
   "整理好了": "All sorted",
   "备份": "Backups",
   "导出 / 导入配置文件": "Export or import configuration",
-  "导出为 JSON 以便迁移到另一台电脑；导入前会自动保存一份快照": "Export a JSON file to move your setup to another PC. A snapshot is saved automatically before importing",
+  "导出为 JSON 以便迁移到另一台电脑；导入前自动保存快照": "Export a JSON file to move your setup to another PC. A snapshot is saved automatically before importing",
   "导入…": "Import…",
   "导出…": "Export…",
   "配置文件": "Configuration file",

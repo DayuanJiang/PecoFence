@@ -393,7 +393,7 @@
   "开源的 Windows 桌面整理工具": "Organizador de área de trabalho de código aberto para o Windows",
   "记录所有栅栏的位置、大小和内容，随时恢复": "Salvar a posição, o tamanho e o conteúdo de todos os grupos para restaurar quando quiser",
   "把一个显示器上的全部栅栏搬到另一个，反之亦然": "Trocar todos os grupos entre os monitores selecionados",
-  "导出为 JSON 以便迁移到另一台电脑；导入前会自动保存一份快照": "Exportar em JSON para usar em outro PC; antes de importar, um instantâneo é salvo automaticamente",
+  "导出为 JSON 以便迁移到另一台电脑；导入前自动保存快照": "Exportar em JSON para usar em outro PC; antes de importar, um instantâneo é salvo automaticamente",
   "新项目出现在桌面时自动归类": "Organizar automaticamente novos itens da área de trabalho",
   "立即对桌面上的全部项目应用规则": "Aplicar regras a todos os itens da área de trabalho",
   "手动放进栅栏的项目保持原位": "Itens que você colocou em um grupo permanecem lá",

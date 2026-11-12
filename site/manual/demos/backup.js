@@ -141,7 +141,7 @@
         r.saved = snapRow('整理好了', 3);
         [r.empty, r.saved].forEach(b => { b.n.style.borderRadius = '0 0 4px 4px'; });
         SM.h3(pg, '备份');
-        const io = SM.card(pg, { ic: '\uE78C', t: '导出 / 导入配置文件', s: '导出为 JSON 以便迁移到另一台电脑；导入前会自动保存一份快照', h: 70, gap: 1, textW: 220 });
+        const io = SM.card(pg, { ic: '\uE78C', t: '导出 / 导入配置文件', s: '导出为 JSON 以便迁移到另一台电脑；导入前自动保存快照', h: 70, gap: 1, textW: 220 });
         io.t.style.top = '9px';
         io.s.style.top = '24px';
         io.n.querySelector('.set-ic').style.top = '10px';

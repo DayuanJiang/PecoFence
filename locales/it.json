@@ -416,7 +416,7 @@
   "开源的 Windows 桌面整理工具": "Organizzatore del desktop open source per Windows",
   "记录所有栅栏的位置、大小和内容，随时恢复": "Salva la posizione, le dimensioni e il contenuto di tutti i riquadri per poterli ripristinare in qualsiasi momento",
   "把一个显示器上的全部栅栏搬到另一个，反之亦然": "Sposta tutti i riquadri da un monitor all’altro e viceversa",
-  "导出为 JSON 以便迁移到另一台电脑；导入前会自动保存一份快照": "Esporta in formato JSON per trasferire la configurazione su un altro computer. Prima dell’importazione viene salvata automaticamente un’istantanea",
+  "导出为 JSON 以便迁移到另一台电脑；导入前自动保存快照": "Esporta in formato JSON per trasferire la configurazione su un altro computer. Prima dell’importazione viene salvata automaticamente un’istantanea",
   "新项目出现在桌面时自动归类": "Organizza automaticamente i nuovi elementi sul desktop",
   "立即对桌面上的全部项目应用规则": "Applica subito le regole a tutti gli elementi sul desktop",
   "手动放进栅栏的项目保持原位": "Gli elementi che hai messo in un riquadro restano lì",

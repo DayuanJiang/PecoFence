@@ -597,7 +597,7 @@
   "整理好了": "Organizado",
   "备份": "Backups",
   "导出 / 导入配置文件": "Exportar / importar configuração",
-  "导出为 JSON 以便迁移到另一台电脑；导入前会自动保存一份快照": "Exportar em JSON para usar em outro PC; antes de importar, um instantâneo é salvo automaticamente",
+  "导出为 JSON 以便迁移到另一台电脑；导入前自动保存快照": "Exportar em JSON para usar em outro PC; antes de importar, um instantâneo é salvo automaticamente",
   "导入…": "Importar…",
   "导出…": "Exportar…",
   "配置文件": "Arquivo de configuração",
