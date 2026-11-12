@@ -292,6 +292,9 @@ pub struct FenceViewState {
     /// The pointer is over that row.
     pub(super) empty_action_hover: bool,
     pub(super) title_count: Option<String>,
+    /// What the count capsule's infotip says (`FenceWindow::set_count_tip`): a count with a
+    /// "+" shows the newest files only, and this says of how many. None: no infotip.
+    pub(super) count_tip: Option<String>,
     /// 筛选: the fence is filtered right now (Esc clears it).
     pub(super) filter_active: bool,
     /// 筛选: the tag of a filtered single title once its box closed: the type (「类型：PDF」, or

@@ -207,6 +207,7 @@ impl FenceWindow {
             empty_action: None,
             empty_action_hover: false,
             title_count: None,
+            count_tip: None,
             filter_active: false,
             filter_tag: None,
             refuses_drops: false,
@@ -1686,6 +1687,17 @@ impl FenceWindow {
             let _ = v.redraw_chrome_only();
             if v.items.is_empty() && !v.rolled_up {
                 let _ = v.redraw_content();
+            }
+        });
+    }
+
+    /// The infotip of a smart fence's count capsule (None: the capsule has none). A count such
+    /// as 「200+」 did not say what the plus stands for.
+    pub fn set_count_tip(&self, tip: Option<String>) {
+        self.with_view(|v| {
+            if v.count_tip != tip {
+                tracing::debug!(title = %v.title, tip = tip.is_some(), "count capsule: infotip set");
+                v.count_tip = tip;
             }
         });
     }

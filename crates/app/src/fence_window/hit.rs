@@ -475,6 +475,24 @@ impl FenceViewState {
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
     }
 
+    /// Is the client-pixel point on the count capsule of a smart fence's single title, as drawn
+    /// (its infotip says of how many files the fence shows the newest)?
+    pub(super) fn count_capsule_at(&self, x_px: i32, y_px: i32) -> bool {
+        let Some(count) = self.title_count.as_deref() else {
+            return false;
+        };
+        if self.title_row_strip() || self.tabs_on_rail() || self.bare() || self.column_collapsed {
+            return false;
+        }
+        let scale = self.scale();
+        let width = self.chrome_panel.size_px().0 as f32 / scale - self.laid_deco().lock_w();
+        let r = self
+            .chrome
+            .count_capsule_box(count, width, self.theme.title_height);
+        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
+        x >= r.left && x < r.right && y >= r.top && y < r.bottom
+    }
+
     /// Is the pointer (client px) over the pressed control?
     pub(super) fn press_hit(&self, p: PressTarget, x_px: i32, y_px: i32) -> bool {
         match p {

@@ -5,8 +5,10 @@
 #                             several steps, and the new rows come no later than before
 #   run.sh --var Part=H ...   a Peek over hidden fences (隐藏所有栅栏) ends in one motion: the
 #                             fences fade with the dimmer, not after it
+#   run.sh --var Part=C ...   a smart fence's count with a plus (「3+」): the pointer resting on it
+#                             says of how many files the fence shows the newest
 # Without --var every part runs.
-if (-not $Part) { $Part = 'SH' }
+if (-not $Part) { $Part = 'SHC' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
 $U3Files = @('报告.txt', '宝贝计划.txt', '报价单 客户甲.txt', '报销单 10月.txt', '预算表 2026.xlsx', '年度报告 2025 董事会审阅版（含附录）.pdf', '备忘 周会.md', '笔记 读书.txt')
@@ -198,5 +200,48 @@ function U3PartH() {
   U3Clean
 }
 
+# The texts of the app's tooltips on screen.
+function U3Tips() { return (@(ProcTops 'tooltips_class32' 'pecofence' | ForEach-Object { try { [Windows.Automation.AutomationElement]::FromHandle($_).Current.Name } catch { '?' } }) -join ' / ') }
+# Rests the pointer on points of the title row left of the arrow, one after the other, and
+# returns the tips that came up. `shot`: a picture of the title row's right end with the pointer
+# at rest there (with the tip, when one came up).
+function U3CapsuleTips($title, $shot) {
+  $f = @(@(PfJson fence list) | Where-Object { $_ -and $_.title -eq $title })[0]
+  $right = $f.windowRect.x + $f.windowRect.w; $y = $f.windowRect.y + 16
+  $tips = @()
+  for ($x = $right - 84; $x -le $right - 40; $x += 11) {
+    [G]::MoveTo($right - 200, $y + 400); Start-Sleep -Milliseconds 300
+    [G]::MoveTo($x, $y); Start-Sleep -Milliseconds 1400
+    $t = U3Tips
+    if ($t) { $tips += $t }
+    if ($shot -and ($t -or $tips.Count -eq 0)) { Crop $shot ($right - 240) ($f.windowRect.y - 10) 300 110 | Out-Null }
+  }
+  [G]::MoveTo($right - 200, $y + 400); Start-Sleep -Milliseconds 300
+  return $tips
+}
+
+function U3PartC() {
+  trap { PfTrap $_; continue }
+  Case 'a smart fence count with a plus says what it means'
+  $dir = "$PfDocs\智能栅栏提示检查"
+  Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+  foreach ($i in 1..8) { AgedFile $dir "报告 第 $i 期.txt" $i | Out-Null }
+  PfStart -Lang 'zh-CN'
+  Pf settings set featureTips false | Out-Null
+  ClearFences
+  Pf fence create --title '最近报告' --smart-folder $dir --rect '500,300,360,240' | Out-Null
+  Check 'the fence shows the eight files' (WaitSmart '最近报告' { $s.shown -eq 8 } 15) (SmartLine '最近报告')
+  $all = @(U3CapsuleTips '最近报告')
+  Check 'a count without a plus has no tip about more files' (@($all | Where-Object { $_ -match '共找到' }).Count -eq 0) "tips: $($all -join ' | ')"
+  Pf fence set '最近报告' smartLimit 3 | Out-Null
+  Check 'with a limit of 3 the fence shows three files' (WaitSmart '最近报告' { $s.shown -eq 3 } 15) (SmartLine '最近报告')
+  Start-Sleep -Milliseconds 600
+  $cut = @(U3CapsuleTips '最近报告' 'C-capsule')
+  Check 'the count 「3+」 says of how many files it shows the newest' (@($cut | Where-Object { $_ -eq '显示最新的 3 个，共找到 8 个' }).Count -ge 1) "tips: $($cut -join ' | ')"
+  PfQuit
+  Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+}
+
 if ($Part -match 'S') { U3PartS }
 if ($Part -match 'H') { U3PartH }
+if ($Part -match 'C') { U3PartC }

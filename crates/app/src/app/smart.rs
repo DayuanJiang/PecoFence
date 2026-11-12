@@ -1191,6 +1191,22 @@ impl App {
         }
     }
 
+    /// What the infotip of smart fence `f`'s count says when the count ends with a "+": how
+    /// many files the fence shows (the newest, up to its limit) and how many the search found.
+    /// None when the fence shows all it found, is filtered, or is no smart fence.
+    pub(super) fn smart_count_tip(&self, f: &pecofence_core::Fence) -> Option<String> {
+        let spec = f.smart.as_ref()?;
+        let run = self.smart.runs.get(&f.id)?;
+        let found =
+            matches!(run.source, SmartSource::Everything | SmartSource::Folder) && !run.missing;
+        (found && run.total > spec.limit && self.fence_filter(f.id).is_none()).then(|| {
+            pecofence_core::i18n::format(
+                "显示最新的 {0} 个，共找到 {1} 个",
+                &[self.item_views(f).len().to_string(), run.total.to_string()],
+            )
+        })
+    }
+
     /// Smart fence `id`'s empty-state text, the label of the row under it that starts or
     /// installs Everything (only while the fence waits for Everything) and the count after
     /// its name: the files it shows (after a filter), with a "+" when the limit cut the

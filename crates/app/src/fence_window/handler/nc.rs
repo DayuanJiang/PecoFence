@@ -239,6 +239,8 @@ pub(super) fn on_ncmousemove(
             Some(TipTarget::Lock)
         } else if v.cut_filter_tag_at(pt.x, pt.y) {
             Some(TipTarget::FilterTag)
+        } else if v.count_tip.is_some() && v.count_capsule_at(pt.x, pt.y) {
+            Some(TipTarget::Count)
         } else {
             // A title cut short with an ellipsis: the caption shows all of it, as a cut tab
             // caption does. A rolled-up fence that the resting pointer is about to expand
@@ -318,7 +320,13 @@ pub(super) fn on_ncmouseleave(
         // (WM_MOUSEMOVE decides over the client area).
         if matches!(
             v.tip_target,
-            Some(TipTarget::Desktops | TipTarget::FilterTag | TipTarget::Lock | TipTarget::Title)
+            Some(
+                TipTarget::Desktops
+                    | TipTarget::FilterTag
+                    | TipTarget::Lock
+                    | TipTarget::Title
+                    | TipTarget::Count
+            )
         ) {
             v.hide_tip();
         }

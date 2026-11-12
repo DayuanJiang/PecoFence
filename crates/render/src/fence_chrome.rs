@@ -2431,6 +2431,19 @@ impl FenceChrome {
         crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0 + 8.0
     }
 
+    /// Where a smart fence's count capsule lies in a title row `width` x `title_h` (DIPs; the
+    /// width without a lock glyph's slot), as drawn: the pointer over it gets its infotip.
+    pub fn count_capsule_box(&self, count: &str, width: f32, title_h: f32) -> Rect {
+        let w = crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0;
+        let right = TitleDeco::chevron_box(width, title_h).left - 2.0;
+        Rect::from_xywh(
+            right - w,
+            ((title_h - COUNT_CAPSULE_H) * 0.5).round(),
+            w,
+            COUNT_CAPSULE_H,
+        )
+    }
+
     /// 智能栅栏: the count as a grey capsule right before the chevron's place, so it never reads
     /// as part of the name (mail apps show a folder's count the same way).
     #[allow(clippy::too_many_arguments)]
@@ -2445,14 +2458,7 @@ impl FenceChrome {
         alpha: f32,
         legible: Option<&Legible>,
     ) -> Result<()> {
-        let w = crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0;
-        let right = TitleDeco::chevron_box(width, title_h).left - 2.0;
-        let r = Rect::from_xywh(
-            right - w,
-            ((title_h - COUNT_CAPSULE_H) * 0.5).round(),
-            w,
-            COUNT_CAPSULE_H,
-        );
+        let r = self.count_capsule_box(count, width, title_h);
         // ControlFillColorSecondary-like: a faint wash of the text colour.
         let wash = if foreground.text_secondary.r > 0.5 {
             ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0x1A)

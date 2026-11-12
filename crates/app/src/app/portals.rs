@@ -54,6 +54,7 @@ impl App {
         let action = action.filter(|_| !filtered);
         // The count belongs to a single title; in a tab strip the tab shows the name only.
         let count = count.filter(|_| active == host && self.state.tabs_of(host).len() <= 1);
+        w.set_count_tip(count.as_ref().and_then(|_| self.smart_count_tip(f)));
         w.set_status_view(empty, action, count);
         w.set_filtered(filtered);
         // The tag's count follows what the fence shows (files come and go).
