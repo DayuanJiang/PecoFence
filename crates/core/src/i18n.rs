@@ -524,6 +524,25 @@ mod tests {
         );
     }
 
+    /// The card after a fence is deleted says what happened first and the fence's name last:
+    /// a long name wraps, and the last line then held the verb alone (`Fence “…” / deleted`).
+    #[test]
+    fn the_undo_card_names_the_deleted_fence_last() {
+        let source = "已删除栅栏“{0}”";
+        for &language in SUPPORTED {
+            let text = match language {
+                Language::SimplifiedChinese => source,
+                _ => &catalog(language)[source],
+            };
+            let after = text.split("{0}").nth(1).unwrap_or_default();
+            assert!(
+                !after.chars().any(char::is_alphabetic),
+                "{}: {text}",
+                language.tag()
+            );
+        }
+    }
+
     /// One kind of quotation mark per language: a card that names a fence in “ ” above a
     /// button named in 「 」 reads as two programs. The source strings (Simplified Chinese)
     /// are the catalogs' keys.

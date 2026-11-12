@@ -522,7 +522,7 @@
   "请检查能否写入 {0}：配置无法保存，退出后更改会丢失。": "Prüfe, ob {0} beschreibbar ist: Sonst gehen Änderungen beim Beenden verloren.",
   "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。": "Es sind höchstens {0} Bereiche möglich (Tabs eingeschlossen). Lösche zuerst einige oder führe sie zusammen.",
   "要删除栅栏“{0}”吗？": "Bereich „{0}“ löschen?",
-  "已删除栅栏“{0}”": "Bereich „{0}“ gelöscht",
+  "已删除栅栏“{0}”": "Bereich gelöscht: „{0}“",
   "已删除规则“{0}”": "Regel „{0}“ gelöscht",
   "已删除快照“{0}”": "Momentaufnahme „{0}“ gelöscht",
   "点“撤销”，或在栅栏上按 Ctrl+Z，就能把它找回来。": "Klicke auf „Rückgängig“ oder drücke in einem Bereich Strg+Z, um ihn zurückzuholen.",

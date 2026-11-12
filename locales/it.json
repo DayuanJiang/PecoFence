@@ -545,7 +545,7 @@
   "请检查能否写入 {0}：配置无法保存，退出后更改会丢失。": "Verifica che si possa scrivere in {0}: altrimenti le modifiche andranno perse alla chiusura.",
   "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。": "Puoi avere al massimo {0} riquadri, incluse le schede. Eliminane o uniscine alcuni.",
   "要删除栅栏“{0}”吗？": "Vuoi eliminare il riquadro «{0}»?",
-  "已删除栅栏“{0}”": "Riquadro «{0}» eliminato",
+  "已删除栅栏“{0}”": "Riquadro eliminato: «{0}»",
   "已删除规则“{0}”": "Regola «{0}» eliminata",
   "已删除快照“{0}”": "Istantanea «{0}» eliminata",
   "点“撤销”，或在栅栏上按 Ctrl+Z，就能把它找回来。": "Fai clic su Annulla, o premi Ctrl+Z su un riquadro, per recuperarlo.",

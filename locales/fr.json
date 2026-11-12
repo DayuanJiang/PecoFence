@@ -546,7 +546,7 @@
   "请检查能否写入 {0}：配置无法保存，退出后更改会丢失。": "Vérifiez qu’on peut écrire dans {0} : sinon, les modifications seront perdues à la fermeture.",
   "最多只能有 {0} 个栅栏（含标签页），请先删除或合并一些。": "Vous pouvez avoir au plus {0} groupes (onglets compris). Supprimez-en ou fusionnez-en d’abord.",
   "要删除栅栏“{0}”吗？": "Supprimer le groupe « {0} » ?",
-  "已删除栅栏“{0}”": "Groupe « {0} » supprimé",
+  "已删除栅栏“{0}”": "Groupe supprimé : « {0} »",
   "已删除规则“{0}”": "Règle « {0} » supprimée",
   "已删除快照“{0}”": "Instantané « {0} » supprimé",
   "点“撤销”，或在栅栏上按 Ctrl+Z，就能把它找回来。": "Cliquez sur Annuler, ou appuyez sur Ctrl+Z dans un groupe, pour le récupérer.",
