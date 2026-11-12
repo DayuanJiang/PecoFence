@@ -13,6 +13,15 @@ const PEEK_FOCUS_LOST: [&str; 3] = [
 /// How long after the Peek began the desktop coming to the front is taken for the late answer
 /// to a click before the shortcut (seen 0.65 s after it on Windows 10), not for a move away.
 const PEEK_LATE_DESKTOP: Duration = Duration::from_millis(1500);
+/// Frames between making a covered fence transparent and raising it over the window that hides
+/// it: the opacity reaches the compositor only when the message loop has run again, and the
+/// fence must not come over the window while it is still opaque on screen.
+const PEEK_RAISE_FRAMES: u8 = 1;
+/// Frames a faded fence stays transparent after the Peek put it back under the windows. A
+/// change of the z-order reaches the screen a frame or two after a change of opacity does:
+/// made opaque in the same turn, the fence showed for one frame over the window that hides it
+/// again (4 of 6 closes on a test box). Nobody sees the wait, the fence is under that window.
+const PEEK_REST_FRAMES: u8 = 4;
 
 /// A shortcut as the tray menu and messages show it: `Ctrl+Alt+空格`.
 pub(super) fn peek_hotkey_label(h: Hotkey) -> String {
@@ -309,8 +318,11 @@ impl App {
         if let Some(p) = self.peek.as_mut() {
             let now = Instant::now();
             if p.is_closing() {
-                // Pressed again during the fade-out: dim again, nothing to rebuild.
+                // Pressed again during the fade-out: dim again, nothing to rebuild. The fences
+                // that were fading out fade back in on the next frame (any still held first
+                // come over their window then).
                 p.reopen(now);
+                self.peek_raise_in = Some(0);
                 self.ctx.frames.request();
             } else {
                 self.end_peek("hotkey or tray menu");
@@ -341,12 +353,137 @@ impl App {
         self.prefetch_lnk_targets();
         self.ctx.behavior.floating.set(true);
         self.redraw_for_floating();
+        // A Peek that ended a moment ago may still wait to make its fences opaque.
+        self.rest_peek_fades();
+        let held = self.prepare_peek_fade();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
+            a.hold_for_peek(&held);
             a.set_peek(true, &over);
         }
-        if animating {
+        if !held.is_empty() {
+            self.peek_raise_in = Some(PEEK_RAISE_FRAMES);
+        }
+        if animating || !held.is_empty() {
             self.ctx.frames.request();
         }
+    }
+
+    /// The fences another program's window hides completely do not pop up over it: each is made
+    /// transparent here, raised `PEEK_RAISE_FRAMES` frames later (`raise_peek_held`), when
+    /// that has reached the screen, and then fades in with the dimmer. A fence on visible
+    /// desktop is left alone (it would blink). Returns the fences to hold back; none with
+    /// animations off.
+    fn prepare_peek_fade(&mut self) -> Vec<HWND> {
+        if !self.ctx.motion.enabled() {
+            return Vec::new();
+        }
+        let covered = self
+            .anchor
+            .borrow()
+            .as_ref()
+            .map(|a| a.covered_fences())
+            .unwrap_or_default();
+        let held: Vec<HWND> = self
+            .fences
+            .values()
+            .filter(|w| covered.contains(&w.hwnd()) && w.peek_fade_prepare())
+            .map(|w| w.hwnd())
+            .collect();
+        tracing::debug!(
+            covered = covered.len(),
+            held = held.len(),
+            fences = self.fences.len(),
+            "peek: fences hidden by a window fade in with the dimmer"
+        );
+        held
+    }
+
+    /// Frame tick of the Peek's fence fade: counts down to the raise of the held fences, then
+    /// raises them and starts the fade-in. True while it still waits.
+    pub(super) fn tick_peek_raise(&mut self) -> bool {
+        match self.peek_raise_in {
+            None => false,
+            Some(0) => {
+                self.peek_raise_in = None;
+                self.raise_peek_held();
+                false
+            }
+            Some(n) => {
+                self.peek_raise_in = Some(n - 1);
+                true
+            }
+        }
+    }
+
+    /// Frame tick after a Peek: counts down to `rest_peek_fades`. True while it still waits.
+    pub(super) fn tick_peek_rest(&mut self) -> bool {
+        match self.peek_rest_in {
+            None => false,
+            Some(0) => {
+                self.rest_peek_fades();
+                false
+            }
+            Some(n) => {
+                self.peek_rest_in = Some(n - 1);
+                true
+            }
+        }
+    }
+
+    /// Every fence the Peek faded is opaque again, with its shadow.
+    fn rest_peek_fades(&mut self) {
+        if self.peek_rest_in.take().is_some() {
+            tracing::debug!("peek: faded fences opaque again");
+        }
+        for w in self.fences.values() {
+            w.peek_fade_rest();
+        }
+    }
+
+    /// The held fences come over the windows (transparent by now) and every fence the Peek
+    /// took fades in.
+    fn raise_peek_held(&mut self) {
+        if self.peek.as_ref().is_none_or(|p| p.is_closing()) {
+            return;
+        }
+        let raised = self
+            .anchor
+            .borrow_mut()
+            .as_mut()
+            .is_some_and(|a| a.release_peek_held());
+        if raised {
+            // As after the dimmer's focus handoff: the search box stays over the fences.
+            crate::peek_search::raise();
+        }
+        for w in self.fences.values() {
+            w.peek_fade_in();
+        }
+    }
+
+    /// The Peek starts to end: the fences that go back under a window fade out with the dimmer.
+    /// Fences still held (never raised) stay as they are. Returns whether any fades.
+    fn begin_peek_fade_out(&mut self) -> bool {
+        self.peek_raise_in = None;
+        // The anchor is asked first and let go: the fades below touch windows.
+        let covered: Vec<HWND> = match self.anchor.borrow().as_ref() {
+            Some(a) => a
+                .covered_fences()
+                .into_iter()
+                .filter(|f| !a.is_peek_held(*f))
+                .collect(),
+            None => return false,
+        };
+        let fading = self
+            .fences
+            .values()
+            .filter(|w| covered.contains(&w.hwnd()) && w.peek_fade_out())
+            .count();
+        tracing::debug!(
+            covered = covered.len(),
+            fading,
+            "peek ending: fences that go back under a window fade out"
+        );
+        fading > 0
     }
 
     /// A file drag out of a fence started (`true`) or came back to a fence, the desktop or Esc
@@ -561,7 +698,11 @@ impl App {
             self.end_peek_now();
             return;
         }
-        p.begin_close(now);
+        let fences_fade = self.begin_peek_fade_out();
+        let Some(p) = self.peek.as_mut() else {
+            return;
+        };
+        p.begin_close(now, fences_fade);
         let finished = p.close_finished(now);
         self.end_peek_search();
         if finished {
@@ -602,6 +743,15 @@ impl App {
         let redrawn = Instant::now();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.set_peek(false, &[]);
+        }
+        // The fences the Peek faded are back under the windows: they become opaque again a few
+        // frames later (`PEEK_REST_FRAMES`), at once when nothing animates.
+        self.peek_raise_in = None;
+        if self.ctx.motion.enabled() && self.fences.values().any(|w| w.peek_faded()) {
+            self.peek_rest_in = Some(PEEK_REST_FRAMES);
+            self.ctx.frames.request();
+        } else {
+            self.rest_peek_fades();
         }
         let anchored = Instant::now();
         // Dropping the windows destroys them (after the fences left the topmost band).

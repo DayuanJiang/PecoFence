@@ -35,6 +35,136 @@ pub(super) fn scroll_anim_duration(distance_dip: f32, cap: Duration) -> Duration
     motion::scroll_duration(distance_dip).min(cap)
 }
 
+/// A wheel notch carries the content's speed on only when that speed, kept up for the new
+/// glide's duration, would cover at least this share of the distance left. Below it the glide
+/// has all but come to rest, and the notch starts today's curve from there (a notch must
+/// answer at once, not ease in).
+pub(super) const WHEEL_CARRY_MIN: f32 = 0.5;
+/// A carried speed is lifted to this many times the mean speed the distance needs: from
+/// there on the content does not slow down before the next notch of a turning wheel arrives,
+/// and a notch late in a glide still answers briskly.
+pub(super) const WHEEL_CARRY_FLOOR: f32 = 1.5;
+/// ... and capped at this many times that mean speed: up to there a cubic that ends at rest
+/// never passes its destination.
+pub(super) const WHEEL_CARRY_CAP: f32 = 3.0;
+/// Span over which a glide's speed is read (the decelerate curve has no closed-form slope).
+const GLIDE_SPEED_PROBE: Duration = Duration::from_millis(4);
+
+/// The scroll offset's glide. From rest it is the decelerate curve `(0,0,0,1)`, as WinUI's
+/// ScrollPresenter moves. A wheel notch that arrives while the content still moves the same
+/// way continues from the speed it has (`lead`) and comes to rest at the new destination: a
+/// wheel kept turning then scrolls at a steady speed. Restarting the decelerate curve at
+/// every notch (fastest at its start) made the speed swing by a third ten times a second.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ScrollGlide {
+    from: f32,
+    to: f32,
+    start: Instant,
+    dur: Duration,
+    /// Set when the glide carries on from a running one: the speed at its start times its
+    /// duration (DIPs, signed like `to - from`). None is the decelerate curve from rest.
+    lead: Option<f32>,
+}
+
+impl ScrollGlide {
+    /// A glide from rest at `from`.
+    pub(super) fn new(from: f32, to: f32, dur: Duration, now: Instant) -> Self {
+        Self {
+            from,
+            to,
+            start: now,
+            dur,
+            lead: None,
+        }
+    }
+
+    pub(super) fn target(&self) -> f32 {
+        self.to
+    }
+
+    fn value_after(&self, elapsed: Duration) -> f32 {
+        let s = if self.dur.is_zero() {
+            1.0
+        } else {
+            (elapsed.as_secs_f32() / self.dur.as_secs_f32()).min(1.0)
+        };
+        let d = self.to - self.from;
+        match self.lead {
+            None => self.from + d * motion::ease(Curve::Decelerate, s),
+            // Cubic Hermite from (`from`, speed `lead`) to (`to`, at rest).
+            Some(lead) => {
+                self.from + d * (3.0 - 2.0 * s) * s * s + lead * s * (1.0 - s) * (1.0 - s)
+            }
+        }
+    }
+
+    pub(super) fn value_at(&self, now: Instant) -> f32 {
+        self.value_after(now.saturating_duration_since(self.start))
+    }
+
+    pub(super) fn is_done(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.start) >= self.dur
+    }
+
+    /// Speed (DIPs per second, signed) the offset has at `now`.
+    pub(super) fn speed_at(&self, now: Instant) -> f32 {
+        let elapsed = now.saturating_duration_since(self.start);
+        let probe = GLIDE_SPEED_PROBE.min(elapsed);
+        if probe.is_zero() || elapsed >= self.dur {
+            return 0.0;
+        }
+        (self.value_after(elapsed) - self.value_after(elapsed - probe)) / probe.as_secs_f32()
+    }
+
+    /// Heads for `to` from wherever the offset is now, on the decelerate curve (keyboard,
+    /// paging, a wheel notch the other way). The destination it already has is left alone.
+    pub(super) fn retarget(&mut self, to: f32, dur: Duration, now: Instant) {
+        if (to - self.to).abs() < f32::EPSILON {
+            return;
+        }
+        *self = Self::new(self.value_at(now), to, dur, now);
+    }
+
+    /// A wheel notch moved the destination to `to`. While the offset still moves that way
+    /// fast enough (`WHEEL_CARRY_MIN`), the new glide starts at the speed it has, kept within
+    /// `WHEEL_CARRY_FLOOR..=WHEEL_CARRY_CAP` times the mean speed the distance needs.
+    /// Otherwise this is `retarget`. Returns the start speed as a multiple of that mean speed
+    /// (None: started from rest).
+    pub(super) fn notch(&mut self, to: f32, dur: Duration, now: Instant) -> Option<f32> {
+        if (to - self.to).abs() < f32::EPSILON {
+            return None;
+        }
+        let from = self.value_at(now);
+        let d = to - from;
+        let share = if d.abs() > f32::EPSILON {
+            self.speed_at(now) * dur.as_secs_f32() / d
+        } else {
+            0.0
+        };
+        let carried =
+            (share >= WHEEL_CARRY_MIN).then(|| share.clamp(WHEEL_CARRY_FLOOR, WHEEL_CARRY_CAP));
+        *self = Self {
+            from,
+            to,
+            start: now,
+            dur,
+            lead: carried.map(|share| d * share),
+        };
+        carried
+    }
+}
+
+/// Where a place a Peek search scrolled rests once the search is over: `from`, where it was
+/// before the search first moved it, unless `offset` is no longer where the search `put` it
+/// (the user scrolled it since: that place stays).
+pub(super) fn after_search_offset(offset: f32, from: f32, put: f32) -> f32 {
+    if (offset - put).abs() < 0.5 {
+        from
+    } else {
+        offset
+    }
+}
+
 /// Marquee auto-scroll speed (DIP/s) for a pointer `overshoot_dip` outside the item area.
 pub(super) fn marquee_scroll_speed(overshoot_dip: f32) -> f32 {
     (overshoot_dip.abs() * MARQUEE_SCROLL_GAIN).clamp(MARQUEE_SCROLL_MIN, MARQUEE_SCROLL_MAX)
@@ -207,6 +337,16 @@ impl FenceViewState {
     /// frame clock still coalesces a 120 Hz stream into one redraw per compositor frame. With
     /// animations off the offset snaps at once and `scroll_anim` stays None (callers redraw).
     pub(super) fn scroll_to(&mut self, target: f32, cap: Duration) {
+        self.glide_to(target, cap, false);
+    }
+
+    /// `scroll_to` for a wheel notch: a glide still moving the same way keeps its speed
+    /// (`ScrollGlide::notch`), so a wheel kept turning scrolls evenly.
+    pub(super) fn scroll_to_by_wheel(&mut self, target: f32, cap: Duration) {
+        self.glide_to(target, cap, true);
+    }
+
+    fn glide_to(&mut self, target: f32, cap: Duration, wheel: bool) {
         if self.rolled_up && self.roll_anim.is_none() {
             // Nothing to scroll: the content is hidden and must reappear where it was.
             return;
@@ -235,16 +375,21 @@ impl FenceViewState {
         }
         let dur = scroll_anim_duration(dist, cap);
         match self.scroll_anim.as_mut() {
-            Some(t) if !t.is_done(now) => t.retarget(target, dur, Curve::Decelerate, now),
-            _ => {
-                self.scroll_anim = Some(Tween::new(
-                    self.scroll_y,
-                    target,
-                    dur,
-                    Curve::Decelerate,
-                    now,
-                ));
+            Some(t) if !t.is_done(now) && wheel => {
+                let speed = t.speed_at(now);
+                let carried = t.notch(target, dur, now);
+                tracing::debug!(
+                    to = target,
+                    dist,
+                    speed,
+                    dur_ms = dur.as_millis() as u64,
+                    // The start speed as a multiple of the mean speed; 0: started from rest.
+                    carried = carried.unwrap_or(0.0),
+                    "wheel notch on a running glide: speed carried on, or started again from rest"
+                );
             }
+            Some(t) if !t.is_done(now) => t.retarget(target, dur, now),
+            _ => self.scroll_anim = Some(ScrollGlide::new(self.scroll_y, target, dur, now)),
         }
         self.frames.request();
     }
@@ -316,13 +461,27 @@ impl FenceViewState {
             return None;
         }
         let (layout, view_h) = self.scroll_extent();
+        self.scrollbar_geometry_in(&layout, view_h, scroll_y)
+    }
+
+    /// `scrollbar_geometry_for` with the layout and viewport height the caller already has (a
+    /// content draw builds the layout once; with 按时间分组 building it walks every item).
+    pub(super) fn scrollbar_geometry_in(
+        &self,
+        layout: &ItemLayout,
+        view_h: f32,
+        scroll_y: f32,
+    ) -> Option<ScrollbarGeom> {
+        if self.rolled_up {
+            return None;
+        }
         let max_scroll = layout.max_scroll(view_h);
         if max_scroll <= 0.0 {
             return None;
         }
         // The bar spans the whole band, the empty height under the whole rows included.
         let band_top = layout.fixed_top();
-        let band_h = self.band_h(&layout);
+        let band_h = self.band_h(layout);
         let (track_top, track_h) = scrollbar_track(band_top, band_h);
         let content_h = layout.content_height();
         let thumb_h = scrollbar_thumb_h(track_h, view_h, content_h);
@@ -387,8 +546,12 @@ impl FenceViewState {
 
     /// The bar to draw: width, alpha, the track / arrow reveal and the arrow hover fades
     /// sampled from their tweens (None once faded out).
-    pub(super) fn scrollbar_draw(&self) -> Option<ScrollbarDraw> {
-        let g = self.scrollbar_geometry()?;
+    pub(super) fn scrollbar_draw_in(
+        &self,
+        layout: &ItemLayout,
+        view_h: f32,
+    ) -> Option<ScrollbarDraw> {
+        let g = self.scrollbar_geometry_in(layout, view_h, self.scroll_y)?;
         let now = Instant::now();
         let alpha = self.sb_alpha.value_at(now);
         if alpha <= 0.0 {

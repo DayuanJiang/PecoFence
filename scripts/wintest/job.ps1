@@ -12,6 +12,11 @@ trap {
 . $PfSteps
 Case 'end'
 if (PfAlive) { PfQuit }
+# What the steps put on the desktop goes again: left there, it shows up in the next job's fences
+# (2026-11-12: a file copied by an earlier job read as "Ctrl+drag makes a copy").
+Get-ChildItem -LiteralPath $PfDesk -Force -ErrorAction SilentlyContinue |
+  Where-Object { $_.CreationTime -ge $PfJobStart } |
+  ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 # Defender's machine-learning detections sometimes take an unsigned test build (or a kit script)
 # away mid-run; then most checks fail for that one reason. Say so in one row.
 try {

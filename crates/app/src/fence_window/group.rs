@@ -23,7 +23,7 @@ pub(super) fn group_members(behavior: &Behavior, me: HWND) -> Vec<GroupMember> {
     }
     selection
         .iter()
-        .filter(|(h, _)| *h != me && window::is_window(*h) && desktop::is_visible(*h))
+        .filter(|(h, _)| *h != me && desktop::is_window(*h) && desktop::is_visible(*h))
         .map(|&(hwnd, fence)| GroupMember {
             hwnd,
             fence,

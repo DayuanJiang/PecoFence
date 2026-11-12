@@ -1,6 +1,19 @@
 use super::*;
 use crate::drag_guides::GuideLine;
 
+/// A fence that scrolls keeps the strip along its right edge for the thumb: plates end 8 DIPs
+/// before the edge and the rows' columns stay 4 inside their plate; a fence that shows
+/// everything uses its whole width. An icon's name keeps 8 DIPs beside it, 3 in the wider box.
+#[test]
+fn a_scrolling_fence_keeps_the_scrollbar_strip_clear() {
+    assert_eq!(render::plates_right(300.0, false), f32::INFINITY);
+    assert_eq!(render::plates_right(300.0, true), 292.0);
+    assert_eq!(render::rows_strip(false), 0.0);
+    assert_eq!(render::rows_strip(true), 4.0);
+    assert_eq!(render::label_inset(false), 8.0);
+    assert_eq!(render::label_inset(true), 3.0);
+}
+
 /// A 600 px fence grabbed 500 px from its left edge on a 200 % monitor is dragged onto a 100 %
 /// one: WM_DPICHANGED halves it to 300 px, and the cursor must keep holding the same point of
 /// it (250 px in), not sit 200 px to the right of the window.
@@ -558,6 +571,223 @@ fn scroll_duration_is_capped_per_input() {
     assert!(t.is_done(t0));
 }
 
+/// After a Peek search a place it scrolled goes back to where it was; a place the user
+/// scrolled to during the search stays.
+#[test]
+fn a_place_the_search_scrolled_goes_back_unless_the_user_moved_it() {
+    assert_eq!(after_search_offset(1162.0, 96.0, 1162.0), 96.0);
+    assert_eq!(after_search_offset(1162.2, 96.0, 1162.0), 96.0);
+    assert_eq!(after_search_offset(970.0, 96.0, 1162.0), 970.0);
+    assert_eq!(after_search_offset(0.0, 96.0, 1162.0), 0.0);
+    // The search scrolled to where the fence already was before an earlier scroll of it.
+    assert_eq!(after_search_offset(96.0, 96.0, 96.0), 96.0);
+}
+
+/// The rows a draw looks at, found by bisection, are the cells a look at every item finds.
+#[test]
+fn band_range_holds_exactly_the_cells_that_cross_the_band() {
+    let grid = ItemLayout::Grid(Grid::new(GridMetrics::for_icon_size(48, 2), 360.0, 61));
+    let rows = ItemLayout::rows(RowMetrics::list(16.0), 360.0, 61);
+    for layout in [&grid, &rows] {
+        let height = layout.content_height();
+        for (top, bottom) in [
+            (-50.0, -1.0),
+            (-10.0, 0.0),
+            (0.0, 1.0),
+            (0.0, 300.0),
+            (95.9, 96.1),
+            (130.0, 131.0),
+            (250.0, 900.0),
+            (height - 1.0, height + 200.0),
+            (height + 10.0, height + 20.0),
+        ] {
+            let crossing: Vec<usize> = (0..61)
+                .filter(|&i| {
+                    let c = layout.cell(i);
+                    c.y + c.h > top && c.y < bottom
+                })
+                .collect();
+            let range: Vec<usize> = band_range(layout, 61, top, bottom).collect();
+            assert_eq!(range, crossing, "band {top}..{bottom}");
+        }
+        assert!(band_range(layout, 0, 0.0, 100.0).is_empty());
+    }
+}
+
+/// Content shift per 60 Hz frame for a wheel turned `n` notches `gap_ms` apart (96 DIP per
+/// notch, the 250 ms wheel cap), until the glide has ended. `carry` false restarts the
+/// decelerate curve at every notch, as before `ScrollGlide::notch`.
+fn wheel_frames(n: u32, gap_ms: u64, carry: bool) -> Vec<f32> {
+    let t0 = Instant::now();
+    let frame = Duration::from_micros(16_667);
+    let mut glide: Option<ScrollGlide> = None;
+    let (mut drawn, mut target) = (0.0f32, 0.0f32);
+    let (mut notches, mut frames) = (0u32, 1u32);
+    let mut shifts = Vec::new();
+    loop {
+        let frame_at = t0 + frame * frames;
+        let notch_at = t0 + Duration::from_millis(5 + gap_ms * notches as u64);
+        if notches < n && notch_at <= frame_at {
+            notches += 1;
+            target += 96.0;
+            let dur = scroll_anim_duration(target - drawn, motion::NORMAL);
+            match glide.as_mut() {
+                Some(g) if !g.is_done(notch_at) && carry => {
+                    g.notch(target, dur, notch_at);
+                }
+                Some(g) if !g.is_done(notch_at) => g.retarget(target, dur, notch_at),
+                _ => glide = Some(ScrollGlide::new(drawn, target, dur, notch_at)),
+            }
+            continue;
+        }
+        frames += 1;
+        let Some(g) = glide else {
+            if notches >= n {
+                return shifts;
+            }
+            shifts.push(0.0);
+            continue;
+        };
+        let value = if g.is_done(frame_at) {
+            glide = None;
+            g.target()
+        } else {
+            g.value_at(frame_at)
+        };
+        assert!(value <= target + 0.01, "passed the destination: {value}");
+        shifts.push(value - drawn);
+        drawn = value;
+    }
+}
+
+/// Smallest and largest ratio between a frame's shift and the one before it.
+fn frame_ratios(shifts: &[f32]) -> (f32, f32) {
+    shifts
+        .windows(2)
+        .map(|w| w[1] / w[0])
+        .fold((f32::MAX, 0.0), |(lo, hi), r| (lo.min(r), hi.max(r)))
+}
+
+/// One notch from rest is the decelerate curve it always was.
+#[test]
+fn one_wheel_notch_glides_as_before() {
+    let t0 = Instant::now();
+    let dur = Duration::from_millis(250);
+    let glide = ScrollGlide::new(40.0, 136.0, dur, t0);
+    let tween = Tween::new(40.0, 136.0, dur, Curve::Decelerate, t0);
+    for ms in [0, 1, 16, 33, 100, 200, 249, 250, 400] {
+        let at = t0 + Duration::from_millis(ms);
+        assert_eq!(glide.value_at(at), tween.value_at(at), "{ms} ms");
+        assert_eq!(glide.is_done(at), tween.is_done(at), "{ms} ms");
+    }
+    assert_eq!(glide.target(), 136.0);
+    assert_eq!(wheel_frames(1, 35, true), wheel_frames(1, 35, false));
+}
+
+/// A wheel kept turning scrolls at an even speed: once the second notch has taken over, no
+/// frame moves a tenth less than the one before it until the last notch has arrived. The
+/// decelerate curve restarted at every notch swung by more than a third.
+#[test]
+fn a_turning_wheel_scrolls_at_an_even_speed() {
+    // Ten notches 35 ms apart: the second lands at 40 ms (frame 3), the last at 320 ms.
+    let new = wheel_frames(10, 35, true);
+    let old = wheel_frames(10, 35, false);
+    assert!((new.iter().sum::<f32>() - 960.0).abs() < 0.01);
+    assert!(new.iter().all(|s| *s >= 0.0), "moved backwards: {new:?}");
+    let (drop, jump) = frame_ratios(&new[3..19]);
+    assert!(drop > 0.9 && jump < 1.34, "{drop} {jump} in {new:?}");
+    let (old_drop, _) = frame_ratios(&old[3..19]);
+    assert!(old_drop < 0.67, "the old curve no longer pulses: {old:?}");
+    // The whole scroll takes as long as it did: the last glide runs its 250 ms.
+    assert_eq!(new.len(), old.len());
+
+    // Three notches 70 ms apart: the second lands at 75 ms (frame 5), the third at 145 ms.
+    let new = wheel_frames(3, 70, true);
+    let old = wheel_frames(3, 70, false);
+    assert!((new.iter().sum::<f32>() - 288.0).abs() < 0.01);
+    let (drop, jump) = frame_ratios(&new[5..11]);
+    assert!(drop > 0.9 && jump < 1.34, "{drop} {jump} in {new:?}");
+    let (old_drop, old_jump) = frame_ratios(&old[5..11]);
+    assert!(old_drop < 0.67 && old_jump > 1.5, "{old:?}");
+}
+
+/// A glide a notch has retargeted moves one way only, never passes its destination and ends
+/// on it at rest, whatever speed it took over and however near or far the destination is.
+#[test]
+fn a_wheel_glide_ends_at_rest_on_its_destination() {
+    let t0 = Instant::now();
+    let dur = Duration::from_millis(250);
+    for after_ms in [1, 5, 35, 70, 100] {
+        for step in [-960.0f32, -96.0, 4.0, 96.0, 960.0] {
+            let way = step.signum();
+            let mut glide = ScrollGlide::new(0.0, way * 96.0, dur, t0);
+            let at = t0 + Duration::from_millis(after_ms);
+            let from = glide.value_at(at);
+            let to = glide.target() + step;
+            let carried = glide.notch(to, dur, at);
+            let label = format!("{after_ms} ms, step {step}, carried {carried:?}");
+            // One more notch on a glide in its first 100 ms keeps the speed.
+            assert!(carried.is_some() || step.abs() > 96.0, "{label}");
+            assert!(carried.is_none_or(|c| (1.5..=3.0).contains(&c)), "{label}");
+            assert_eq!(glide.target(), to);
+            assert_eq!(glide.value_at(at), from, "{label}");
+            let mut prev = from;
+            for ms in 1..=250 {
+                let v = glide.value_at(at + Duration::from_millis(ms));
+                assert!((v - prev) * way >= -0.01, "{label}: back at {ms} ms");
+                assert!((to - v) * way >= -0.01, "{label}: passed at {ms} ms");
+                prev = v;
+            }
+            assert!((prev - to).abs() < 0.01, "{label}: ends at {prev}");
+            assert!(glide.is_done(at + dur));
+            let last = glide.speed_at(at + Duration::from_millis(249));
+            assert!(
+                last.abs() < (to - from).abs() / 0.25 * 0.05,
+                "{label}: {last}"
+            );
+        }
+    }
+}
+
+/// A notch the other way, or one that finds the glide all but spent, starts the decelerate
+/// curve from where the content is; a notch pinned at the end changes nothing.
+#[test]
+fn a_wheel_notch_without_speed_to_carry_starts_from_rest() {
+    let t0 = Instant::now();
+    let dur = Duration::from_millis(250);
+    let fresh = |from: f32, to: f32, at: Instant, after: u64| {
+        ScrollGlide::new(from, to, dur, at).value_at(at + Duration::from_millis(after))
+    };
+    // The other way.
+    let mut glide = ScrollGlide::new(0.0, 96.0, dur, t0);
+    let at = t0 + Duration::from_millis(35);
+    let from = glide.value_at(at);
+    assert_eq!(glide.notch(0.0, dur, at), None);
+    assert_eq!(
+        glide.value_at(at + Duration::from_millis(50)),
+        fresh(from, 0.0, at, 50)
+    );
+    // 200 ms into a 250 ms glide the content crawls.
+    let mut glide = ScrollGlide::new(0.0, 96.0, dur, t0);
+    let at = t0 + Duration::from_millis(200);
+    let from = glide.value_at(at);
+    assert_eq!(glide.notch(192.0, dur, at), None);
+    assert_eq!(
+        glide.value_at(at + Duration::from_millis(16)),
+        fresh(from, 192.0, at, 16)
+    );
+    // Pinned at the end of the content: the destination stays, the glide is left alone.
+    let mut glide = ScrollGlide::new(0.0, 96.0, dur, t0);
+    let at = t0 + Duration::from_millis(35);
+    let before = glide.value_at(at + Duration::from_millis(50));
+    assert_eq!(glide.notch(96.0, dur, at), None);
+    assert_eq!(glide.value_at(at + Duration::from_millis(50)), before);
+    // A touchpad delta (no duration) lands on the next frame.
+    assert_eq!(glide.notch(120.0, Duration::ZERO, at), None);
+    assert!((glide.value_at(at) - 120.0).abs() < 0.001);
+    assert!(glide.is_done(at));
+}
+
 /// While a roll is in flight the chrome shows its end state (chevron direction, count,
 /// tab reserve) so those animate with the height instead of flipping when it lands; the
 /// progress tween is phase-locked with the height (167 ms collapse curve reaches 1 exactly
@@ -587,7 +817,7 @@ fn roll_target_leads_the_committed_state() {
     assert!(!roll_target_of(None, false));
     let t0 = Instant::now();
     let mut roll_t = Tween::at(0.0, t0);
-    roll_t.retarget(1.0, motion::FAST, Curve::Collapse, t0);
+    roll_t.retarget(1.0, motion::FAST, Curve::Smooth, t0);
     let mid = roll_t.value_at(t0 + Duration::from_millis(80));
     assert!(mid > 0.0 && mid < 1.0, "{mid}");
     assert_eq!(roll_t.value_at(t0 + motion::FAST), 1.0);
@@ -776,6 +1006,64 @@ fn layout_motion_applies_only_to_rearrangements() {
     assert!(!layout_motion_applies(10, 10, 0));
 }
 
+/// An edge dragged from five columns to four: the fifth icon glides from the end of the first
+/// row to the start of the second, an icon already gliding continues from where it is drawn,
+/// icons more than a viewport away are left out, and a scroll offset the shorter content
+/// clamps moves the start with it (the icon starts from its place on screen).
+#[test]
+fn reflow_glides_start_where_the_icons_are_drawn() {
+    let m = GridMetrics::for_icon_size(48, 2);
+    let (old, new) = (Grid::new(m, 408.0, 300), Grid::new(m, 380.0, 300));
+    assert_eq!((old.columns, new.columns), (5, 4));
+    let in_flight = |i: usize| (i == 0).then_some((7.0, 9.0));
+    let glides = reflow_glides(&old, &new, 300, in_flight, (0.0, 0.0), 300.0);
+    let of = |g: &[(usize, (f32, f32), (f32, f32))], i: usize| g.iter().find(|x| x.0 == i).copied();
+    let (_, from, to) = of(&glides, 4).unwrap();
+    assert_eq!(from, (old.cell(4).x, old.cell(4).y));
+    assert_eq!(to, (new.cell(4).x, new.cell(4).y));
+    assert!(to.0 < from.0 && to.1 > from.1, "{from:?} -> {to:?}");
+    assert_eq!(of(&glides, 0).unwrap().1, (7.0, 9.0));
+    assert!(of(&glides, 299).is_none());
+    // Every icon listed is in or near the 300 DIP viewport before or after.
+    assert!(glides.len() < 60, "{}", glides.len());
+    let glides = reflow_glides(&old, &new, 300, |_| None, (400.0, 350.0), 300.0);
+    assert_eq!(of(&glides, 20).unwrap().1.1, old.cell(20).y - 50.0);
+}
+
+/// A dropped icon starts with its centre where its drag picture's was, and glides from there.
+#[test]
+fn a_dropped_icon_starts_under_its_drag_picture() {
+    let cell = CellRect {
+        x: 160.0,
+        y: 96.0,
+        w: 80.0,
+        h: 96.0,
+    };
+    // Let go with its centre at (300, 400): the cell origin is half a cell up and left.
+    assert_eq!(landing_origin(300.0, 400.0, &cell), (260.0, 352.0));
+    // Let go exactly over its cell: no distance to cover.
+    assert_eq!(landing_origin(200.0, 144.0, &cell), (cell.x, cell.y));
+}
+
+/// A new icon whose cell another icon is still sliding out of fades in 83 ms later; elsewhere
+/// at once. The delayed fade stays at 0 until then and takes its 167 ms from there.
+#[test]
+fn a_new_icon_waits_for_the_icon_leaving_its_cell() {
+    let now = Instant::now();
+    assert_eq!(fade_in_start(false, now), now);
+    let start = fade_in_start(true, now);
+    assert_eq!(start, now + motion::FASTER);
+    let fade = Tween::new(0.0, 1.0, motion::FAST, Curve::Linear, start);
+    assert_eq!(fade.value_at(now), 0.0);
+    assert_eq!(fade.value_at(now + Duration::from_millis(80)), 0.0);
+    assert!(!fade.is_done(now + Duration::from_millis(80)));
+    assert!(fade.value_at(now + Duration::from_millis(170)) > 0.4);
+    assert!(fade.is_done(now + motion::FASTER + motion::FAST));
+    // Cells sit on whole DIPs: the key of a cell is the same however it was computed.
+    assert_eq!(cell_key(159.999, 96.001), cell_key(160.0, 96.0));
+    assert_ne!(cell_key(160.0, 96.0), cell_key(240.0, 96.0));
+}
+
 /// Selection / focus survive a refresh by item identity: kept ids follow their items to
 /// the new slots, vanished ids drop out, an anchor whose item is gone becomes None.
 #[test]
@@ -798,6 +1086,54 @@ fn index_state_remaps_by_item_id_across_a_refresh() {
     // A wholesale replacement (tab switch, portal navigation) keeps nothing.
     let other: HashMap<ItemId, usize> = [(ItemId::new_v4(), 0)].into_iter().collect();
     assert!(remap_indices(&ids, &other, &sel).is_empty());
+}
+
+/// A fence waits for the icons of the user's own Delete to go for `USER_DELETE_WAIT` only: a
+/// delete nobody reported as refused must not hand the selection to a neighbour much later.
+#[test]
+fn the_wait_for_a_delete_runs_out() {
+    let d = UserDelete::new(HashSet::new(), true);
+    assert!(!d.expired(d.since));
+    assert!(!d.expired(d.since + USER_DELETE_WAIT));
+    assert!(d.expired(d.since + USER_DELETE_WAIT + Duration::from_millis(1)));
+    assert_eq!(USER_DELETE_WAIT, Duration::from_secs(10));
+}
+
+/// After the user's own Delete the focus goes to the item that followed the focused one (the
+/// one before it at the end of the list), never to another item of the same Delete.
+#[test]
+fn focus_moves_to_the_neighbour_after_a_delete() {
+    let ids: Vec<ItemId> = (0..5).map(|_| ItemId::new_v4()).collect();
+    let new_of = |left: &[usize]| -> HashMap<ItemId, usize> {
+        left.iter().enumerate().map(|(n, &i)| (ids[i], n)).collect()
+    };
+    let del = |gone: &[usize]| -> HashSet<ItemId> { gone.iter().map(|&i| ids[i]).collect() };
+    // One item in the middle: the next one moves into its slot and takes the focus.
+    assert_eq!(
+        focus_after_delete(&ids, 2, &new_of(&[0, 1, 3, 4]), &del(&[2])),
+        Some(2)
+    );
+    // The last item: the one before it.
+    assert_eq!(
+        focus_after_delete(&ids, 4, &new_of(&[0, 1, 2, 3]), &del(&[4])),
+        Some(3)
+    );
+    // Three selected, the focused one leaves first: the others of the same Delete are skipped.
+    assert_eq!(
+        focus_after_delete(&ids, 2, &new_of(&[0, 1, 3, 4]), &del(&[1, 2, 3])),
+        Some(3),
+        "ids[4], now at index 3"
+    );
+    // Everything after it is being deleted too: back to the one before.
+    assert_eq!(
+        focus_after_delete(&ids, 3, &new_of(&[0, 1, 2, 4]), &del(&[3, 4])),
+        Some(2)
+    );
+    // The only item: nothing to focus.
+    assert_eq!(
+        focus_after_delete(&ids[..1], 0, &new_of(&[]), &del(&[0])),
+        None
+    );
 }
 
 /// Scroll offsets rest on whole device pixels at every common scale (round, not floor,
@@ -850,6 +1186,38 @@ fn folder_drop_filter_rejects_self_parent_and_ancestors() {
             PathBuf::from(r"C:\Users\Me\Desktop\Documents"),
         ]
     );
+}
+
+/// A rolled-up fence ignores the keys that act on its (hidden) items and keeps the others.
+#[test]
+fn rolled_fence_ignores_only_the_item_keys() {
+    // Arrows, Home, End, PageUp, PageDown, Enter, F2, Delete: with or without Ctrl.
+    for vk in [0x25, 0x26, 0x27, 0x28, 0x24, 0x23, 0x21, 0x22] {
+        assert!(acts_on_items(vk, false), "{vk:#x}");
+        assert!(acts_on_items(vk, true), "{vk:#x} with Ctrl");
+    }
+    for vk in [msg::VK_RETURN, msg::VK_F2, msg::VK_DELETE] {
+        assert!(acts_on_items(vk, false), "{vk:#x}");
+    }
+    // Ctrl+A, Ctrl+C, Ctrl+D, Ctrl+X, Ctrl+Space; the bare letters are type-ahead.
+    for vk in [0x41, 0x43, 0x44, 0x58, 0x20] {
+        assert!(acts_on_items(vk, true), "Ctrl+{vk:#x}");
+        assert!(!acts_on_items(vk, false), "{vk:#x}");
+    }
+    // Tab, Ctrl+Tab, Ctrl+Z, Ctrl+V, Ctrl+F, Ctrl+N, F5, Esc, Backspace stay.
+    for (vk, ctrl) in [
+        (0x09, false),
+        (0x09, true),
+        (0x5A, true),
+        (0x56, true),
+        (0x46, true),
+        (0x4E, true),
+        (0x74, false),
+        (msg::VK_ESCAPE, false),
+        (0x08, false),
+    ] {
+        assert!(!acts_on_items(vk, ctrl), "{vk:#x} ctrl={ctrl}");
+    }
 }
 
 #[test]
@@ -1388,4 +1756,128 @@ fn hover_switches_only_to_another_tab() {
     assert_eq!(hover_switch_target(Some(0), 1, 1, true, false), None);
     assert_eq!(hover_switch_target(Some(5), 0, 3, true, false), None);
     assert_eq!(hover_switch_target(None, 0, 3, true, false), None);
+}
+
+/// A 300 x 400 px window at 100 %: 6 px edges, corners that reach 16 px along each edge.
+fn edge(left: i32, top: i32) -> Option<isize> {
+    resize_edge_at((left, top, 300 - left, 400 - top), (300, 400), 6, 6, 16)
+}
+
+/// The diagonal resize answers along 16 px of both edges of a corner, as a normal window's
+/// does, not only in the 6 x 6 square where the two edges cross.
+#[test]
+fn corners_reach_sixteen_px_along_each_edge() {
+    // Bottom edge, walking in from the right corner (`right` = 300 - x, corner while <= 16).
+    assert_eq!(edge(297, 397), Some(msg::HTBOTTOMRIGHT));
+    assert_eq!(edge(290, 397), Some(msg::HTBOTTOMRIGHT));
+    assert_eq!(edge(284, 397), Some(msg::HTBOTTOMRIGHT));
+    assert_eq!(edge(283, 397), Some(msg::HTBOTTOM));
+    // Right edge, walking up from the bottom corner.
+    assert_eq!(edge(297, 384), Some(msg::HTBOTTOMRIGHT));
+    assert_eq!(edge(297, 383), Some(msg::HTRIGHT));
+    // The other three corners.
+    assert_eq!(edge(2, 15), Some(msg::HTTOPLEFT));
+    assert_eq!(edge(15, 2), Some(msg::HTTOPLEFT));
+    assert_eq!(edge(2, 16), Some(msg::HTLEFT));
+    assert_eq!(edge(16, 2), Some(msg::HTTOP));
+    assert_eq!(edge(297, 10), Some(msg::HTTOPRIGHT));
+    assert_eq!(edge(10, 397), Some(msg::HTBOTTOMLEFT));
+    // Inside the corner's square but off both edges: no resize.
+    assert_eq!(edge(290, 390), None);
+    assert_eq!(edge(150, 200), None);
+}
+
+/// Beside a scrollbar the right edge is 3 px deep: the bar keeps its strip right down to the
+/// bottom edge, whose own depth still gives the corner.
+#[test]
+fn corner_beside_a_scrollbar_keeps_the_bars_strip() {
+    let at = |left: i32, top: i32| {
+        resize_edge_at((left, top, 300 - left, 400 - top), (300, 400), 6, 3, 16)
+    };
+    assert_eq!(at(295, 390), None);
+    assert_eq!(at(298, 390), Some(msg::HTBOTTOMRIGHT));
+    assert_eq!(at(298, 300), Some(msg::HTRIGHT));
+    assert_eq!(at(295, 396), Some(msg::HTBOTTOMRIGHT));
+}
+
+/// A corner takes at most a third of a short edge, so a one-column fence keeps a straight
+/// bottom edge between its corners.
+#[test]
+fn corners_of_a_narrow_window_leave_the_edge_between_them() {
+    let at = |left: i32| resize_edge_at((left, 397, 80 - left, 3), (80, 400), 6, 6, 16);
+    assert_eq!(at(10), Some(msg::HTBOTTOMLEFT));
+    assert_eq!(at(40), Some(msg::HTBOTTOM));
+    assert_eq!(at(70), Some(msg::HTBOTTOMRIGHT));
+    let tiny = |left: i32| resize_edge_at((left, 397, 30 - left, 3), (30, 400), 6, 6, 16);
+    assert_eq!(tiny(15), Some(msg::HTBOTTOM));
+}
+
+/// The snap gap is rounded the same way wherever fences are lined up: a gap of 3 DIPs at 150 %
+/// is 5 px (4.5 rounded), where a move used to cut it to 4 and a resize used 5.
+#[test]
+fn snap_gap_is_rounded_at_fractional_scales() {
+    assert_eq!(snap_gap_px(8, 1.0), 8);
+    assert_eq!(snap_gap_px(8, 1.25), 10);
+    assert_eq!(snap_gap_px(3, 1.5), 5);
+    assert_eq!(snap_gap_px(2, 1.25), 3);
+    assert_eq!(snap_gap_px(6, 1.75), 11);
+    assert_eq!(snap_gap_px(0, 1.5), 0);
+}
+
+/// The lock glyph follows its hover fade, except while the lock has just refused a drag: then
+/// it shows at full strength, dips to 0.4 halfway through the 250 ms pulse and comes back.
+#[test]
+fn lock_glyph_pulses_once_when_the_lock_refuses_a_drag() {
+    let ms = |n: u64| Some(Duration::from_millis(n));
+    assert_eq!(lock_alpha(0.0, None), 0.0);
+    assert_eq!(lock_alpha(0.7, None), 0.7);
+    // The pulse wins over a hover fade that has not finished.
+    assert!((lock_alpha(0.2, ms(0)) - 1.0).abs() < 1e-4);
+    assert!((lock_alpha(1.0, ms(125)) - LOCK_PULSE_LOW).abs() < 1e-3);
+    assert!(lock_alpha(1.0, ms(60)) < 1.0 && lock_alpha(1.0, ms(60)) > LOCK_PULSE_LOW);
+    assert!(lock_alpha(1.0, ms(200)) > lock_alpha(1.0, ms(125)));
+    // Over: back on the hover fade.
+    assert_eq!(lock_alpha(1.0, ms(250)), 1.0);
+    assert_eq!(lock_alpha(0.0, ms(400)), 0.0);
+}
+
+/// While an edge is dragged the shadow gets a new bitmap as often as its cost allows: every
+/// frame for a cheap one, the old 40 ms for a very large fence, never more than a sixth of the
+/// time.
+#[test]
+fn shadow_keeps_up_with_a_dragged_edge_when_it_is_cheap() {
+    let us = Duration::from_micros;
+    assert_eq!(shadow_interval_ms(us(300)), 15);
+    assert_eq!(shadow_interval_ms(us(2_500)), 15);
+    assert_eq!(shadow_interval_ms(us(4_000)), 24);
+    assert_eq!(shadow_interval_ms(us(7_000)), 40);
+    assert_eq!(shadow_interval_ms(Duration::from_millis(40)), 40);
+    assert_eq!(shadow_interval_ms(Duration::ZERO), 15);
+}
+
+/// The lock glyph pulses for a drag the lock refused, not for one that does something else: a
+/// press on a locked fence's edge band that began a selection rectangle counts only once the
+/// pointer has left the fence (a resize outward); inward it selects icons.
+#[test]
+fn lock_refuses_only_drags_that_are_not_something_else() {
+    let title = LockPress {
+        at: (500, 300),
+        leave_only: false,
+    };
+    let edge = LockPress {
+        at: (500, 300),
+        leave_only: true,
+    };
+    let threshold = (4, 4);
+    // Within the drag threshold: a click, never a refused drag.
+    assert!(!lock_drag_refused(title, (503, 302), threshold, true));
+    assert!(!lock_drag_refused(edge, (497, 300), threshold, false));
+    // A title drag is refused as soon as it is a drag, wherever the pointer is.
+    assert!(lock_drag_refused(title, (520, 300), threshold, true));
+    assert!(lock_drag_refused(title, (520, 340), threshold, false));
+    // From the edge band: inward the rectangle selects, no refusal however far it goes.
+    assert!(!lock_drag_refused(edge, (560, 320), threshold, true));
+    assert!(!lock_drag_refused(edge, (700, 500), threshold, true));
+    // Out of the fence: that is the resize the lock refused.
+    assert!(lock_drag_refused(edge, (490, 300), threshold, false));
 }

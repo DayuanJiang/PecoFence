@@ -486,8 +486,9 @@ pub enum ThemeStyle {
     LiquidGlass,
 }
 
-/// Item name colour (「文字颜色」). Auto: Liquid Glass picks dark or light text from the
-/// wallpaper under each fence, Fluent follows the colour mode. The halo pairs with the text.
+/// Item name colour (「文字颜色」). Auto: each fence picks dark or light text from the
+/// wallpaper under it, in Liquid Glass and in Fluent (a Fluent fence starts from the colour
+/// mode's text and changes only where that would not read). The halo pairs with the text.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -1373,13 +1374,6 @@ pub struct Assignment {
     pub from: Option<FenceId>,
     pub to: FenceId,
     pub rule_id: Option<RuleId>,
-}
-
-/// Runtime-only: a "New → …" created from fence X's background menu should land in X.
-#[derive(Clone, Debug, PartialEq)]
-pub struct PendingCreation {
-    pub fence_id: FenceId,
-    pub since: std::time::Instant,
 }
 
 /// Reversible change of tab ownership. Content, names and appearance are deliberately

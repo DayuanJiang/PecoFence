@@ -63,6 +63,9 @@ pub const WM_APP_SMART_READ: u32 = msg::WM_APP + 32;
 /// 智能栅栏: a smart fence's own folder watcher saw a change (the fences wait in
 /// `SmartState::changed`).
 pub const WM_APP_SMART_FS: u32 = msg::WM_APP + 33;
+/// A save of the configuration failed on the saver thread (`state::saver_for`); the App takes
+/// the failure and says so on the tray.
+pub const WM_APP_SAVE_FAILED: u32 = msg::WM_APP + 23;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -83,7 +86,6 @@ pub struct DesktopDrop {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum Command {
     /// A fence window finished a move/resize; persist its geometry.
     FenceBoundsChanged {
@@ -105,10 +107,13 @@ pub enum Command {
         from: FenceId,
         inside: bool,
     },
-    /// Move `items` into `to` (internal drag or menu).
+    /// Move `items` into `to` (internal drag or menu). `at`: dropped between the icons of a
+    /// 手动 fence, they go before that display index (counted before they arrived); None = after
+    /// the others.
     MoveItems {
         items: Vec<ItemId>,
         to: FenceId,
+        at: Option<usize>,
     },
     /// Internal drag dropped inside its own fence (手动 sort): place `items` before display
     /// index `index`.
@@ -275,6 +280,9 @@ pub enum Command {
         fence: FenceId,
         title: String,
     },
+    /// A fence just made has faded in: its title opens for editing
+    /// (`FenceWindow::rename_after_fade_in`).
+    BeginFenceRename(FenceId),
     /// F2 / menu on a single selected item: open the inline rename popup.
     RenameItem {
         fence: FenceId,
@@ -301,6 +309,9 @@ pub enum Command {
     },
     /// A composition surface reported `DXGI_ERROR_DEVICE_REMOVED`: rebuild the render stack.
     DeviceLost,
+    /// The name box over this fence's title closed while it had the keyboard (Enter or Esc):
+    /// the fence takes the keyboard, so the next key reaches it and not the taskbar.
+    FocusFence(FenceId),
     DeleteFence(FenceId),
     NewFence {
         x: i32,
@@ -382,7 +393,6 @@ pub enum Command {
     EndItemSelection {
         except: HWND,
     },
-    ToggleAllFences,
     /// Peek hotkey: float all fences above the current windows (again = end).
     TogglePeek,
     /// End the peek; the reason (a fixed text) goes to the log.

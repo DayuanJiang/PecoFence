@@ -172,7 +172,8 @@ impl App {
         self.sync_windows_desktop_hotkey();
         self.apply_icon_variant();
         self.refresh_visuals(true);
-        self.state.save_if_dirty();
+        // Written before the page lists the backups: the first save of a day adds one.
+        self.state.save_and_wait("import");
         self.push_settings_state();
         if scripts_held {
             self.settings_toast(pecofence_core::i18n::text(

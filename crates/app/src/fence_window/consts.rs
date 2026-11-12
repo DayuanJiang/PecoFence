@@ -3,6 +3,9 @@
 use super::*;
 
 pub(super) const RESIZE_BORDER_DIP: f32 = 6.0;
+/// How far along an edge its corner reaches (the diagonal resize): a normal window's corner
+/// answers for about this much of each edge.
+pub(super) const RESIZE_CORNER_DIP: f32 = 16.0;
 /// Opacity of the items a Peek search does not match.
 pub(super) const SEARCH_DIM_ALPHA: f32 = 0.15;
 /// Selection-fill strength of the Peek search matches other than the current one (which is
@@ -78,6 +81,9 @@ pub(super) const DRAG_SCROLL_MAX: f32 = 720.0;
 pub(super) const DRAG_SCROLL_ARM: Duration = Duration::from_millis(50);
 /// Explorer / ListView type-to-select: the typed prefix resets after this pause.
 pub(super) const TYPE_AHEAD_TIMEOUT: Duration = Duration::from_millis(1000);
+/// How long a fence waits for the icons of the user's own Delete to go (`UserDelete`): the shell
+/// deletes within a second or two once Windows' question, if any, is answered.
+pub(super) const USER_DELETE_WAIT: Duration = Duration::from_secs(10);
 /// Pointer within this many DIPs of the right edge counts as "on the scrollbar".
 pub(super) const SCROLLBAR_HOT_DIP: f32 = 12.0;
 /// Right resize border left beside a shown scrollbar (the expanded thumb ends 3 DIP from the
@@ -96,6 +102,9 @@ pub const SC_MOVE_CAPTION: usize = 0xF012;
 /// final geometry. Animated (frame-clock) resizes bypass the throttle so the shadow stays
 /// attached to the plate like a DWM shadow.
 pub(super) const SHADOW_MIN_INTERVAL_MS: u128 = 40;
+/// The shortest interval between two of those uploads: one frame at 60 Hz, for a shadow that
+/// is cheap to make (`shadow_interval_ms`).
+pub(super) const SHADOW_FRAME_MS: u128 = 15;
 /// Hover-peek closes this long after the pointer left (no Fluent reference value).
 pub(super) const PEEK_CLOSE_MS: u32 = 400;
 pub(super) const SNAP_DIST_DIP: i32 = 10;
@@ -135,6 +144,10 @@ pub(super) const TAB_DETACH_DIP: f32 = 28.0;
 
 /// WinUI ScrollBarVerticalThumbMinHeight.
 pub(super) const SCROLLBAR_THUMB_MIN: f32 = 30.0;
+
+/// The lock glyph's pulse when the lock refuses a drag: opacity 1 to `LOCK_PULSE_LOW` and back.
+pub(super) const LOCK_PULSE: Duration = Duration::from_millis(250);
+pub(super) const LOCK_PULSE_LOW: f32 = 0.4;
 
 /// Scale of a fence at the start of its entrance / end of its exit (Fluent Direct Entrance).
 pub(super) const ENTRANCE_SCALE: f32 = 0.97;

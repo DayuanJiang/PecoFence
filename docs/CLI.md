@@ -162,7 +162,8 @@ other fence unless `--size w,h` says otherwise. A rect that would leave that mon
 `warning` naming them.
 
 `fence fit <FENCE>` (method `fences.fit`) sets the height to `fit.fittingHeight` (see *Geometry*
-below): every item visible, no scrollbar, and no empty rows. A tab resizes the window it is shown
+below): every item visible, no scrollbar, and no empty rows. The bottom edge of an open fence glides
+to the new height, as with 「适应内容大小」 in the fence menu; a rolled-up fence takes it at once. A tab resizes the window it is shown
 in; only the tab currently shown can be measured, so another tab is `unsupported` (click it or
 `fence detach` it first).
 
@@ -302,7 +303,9 @@ saved but is not registered; setting `peek.hotkey` or `peek.customHotkey` turns 
 while `peek.enabled` is on; default off), `quickHide.enabled`,
 `titleAlign` (left/center/right: the title and tab strip in every title row),
 `labelColor` (「文字颜色」 on the settings page; auto/white/black: the item names in every fence and view; auto picks dark or light
-names from the wallpaper in Liquid Glass and follows the colour mode in Fluent; white and black
+names for each fence from the wallpaper behind it, in both styles: a Fluent fence keeps the colour
+mode's names where they read and takes the other ones where they would not, such as dark mode over a
+light wallpaper; white and black
 also colour the titles, tabs and item counts of fences whose `titleColor` is `theme`, while a fence
 or tab with a `titleColor` of its own keeps it; default auto),
 `customTheme` (the name of a theme file in the `themes` folder next to `config.json`, without
@@ -319,7 +322,10 @@ leaves the double-click and the chevron; default hover), `rollUp.hoverSpeed` (th
 how long the pointer or a dragged file rests on a rolled fence before it expands, `fast` 150 ms,
 `normal` Windows' mouse hover time (400 ms unless changed), `slow` 1 s; default `normal`),
 `rollUp.pushNeighbors` (an expanded fence pushes the
-fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was,
+fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was;
+when they reach the bottom of the work area, a fence opened by a click or by the command line opens
+only as far as they leave room, never under its title row plus 40 px, its other icons scroll, and it
+opens in full again once there is room, while a fence opened on hover still opens in full above them;
 default on), `rollUp.titleOnHover` (the title row folds away until the
 pointer is over the fence; for every fence whose `titleOnHover` is `default`),
 `rollUp.hideCountAndChevron` (no item count on a rolled title and no roll-up chevron, so the title
@@ -510,8 +516,8 @@ while ($true) {
 ## Folder portals move real files
 
 A portal fence is a live view of a folder on disk. `item move` with a portal as the source or the
-destination is therefore an Explorer file move: the file leaves or enters that folder. Undo is only
-possible through Explorer (Ctrl+Z on the desktop); layout snapshots do not cover file moves. For that
+destination is therefore an Explorer file move: the file leaves or enters that folder. Ctrl+Z on the
+desktop, or in a fence, undoes it (it is one step of both lists); layout snapshots do not cover file moves. For that
 reason `item move --glob` without `--from` never touches items shown by a portal
 (`"assignedBy": "portal"` in `item list`); name the portal with `--from <portal>` to include them. As
 a rule, always pair `--glob` with `--from`, and check `fence list` for `"kind": "portal"` before
@@ -710,7 +716,8 @@ The app ignores the field's value.
 monitors placed to the left of it have negative `x`. `monitor list` shows each monitor's `rect`,
 `workArea` and `dpi`. A fence's `rect` is its expanded size (what `fence move`/`resize` change);
 `windowRect` is what is currently on screen (only the title bar while rolled up, lower than `rect`
-while an expanded fence above pushes it down, see `rollUp.pushNeighbors`). A tab hosted in
+while an expanded fence above pushes it down, shorter than `rect` while the fences an open fence
+pushes cannot go lower, see `rollUp.pushNeighbors`). A tab hosted in
 another fence's window reports that window's `rect` and a `null` `windowRect`, so skip entries with
 a `tabHost` when checking fences for overlaps. The saved, DPI-independent form is in `geometry`.
 Rects that lie off every monitor or exceed the virtual screen are rejected with `invalid_value`.

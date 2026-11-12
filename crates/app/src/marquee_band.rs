@@ -7,10 +7,8 @@
 //! fences, where Explorer's own band would be.
 
 use pecofence_platform::layered::LayeredImage;
-use pecofence_platform::window::{
-    self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
-};
-use pecofence_platform::{HWND, RECT, desktop, msg};
+use pecofence_platform::window::{self, ClassOptions, Window, WindowClass};
+use pecofence_platform::{HWND, RECT, desktop};
 use windows_core::Result;
 
 pub const MARQUEE_BAND_CLASS: &str = "PecoFence.MarqueeBand";
@@ -21,6 +19,10 @@ const FILL_ALPHA: u8 = 0x24;
 /// 92 % white and 45 % black).
 const LINE_PX: [u8; 4] = [235, 235, 235, 235];
 const HAIR_PX: [u8; 4] = [0, 0, 0, 115];
+/// Strength of the band while it is drawn, and while it only marks the rectangle that the
+/// 「＋ 新建栅栏」 buttons refer to (half).
+pub const DRAWN: u8 = 255;
+pub const OFFERED: u8 = 128;
 
 pub struct MarqueeBand {
     // Windows before the class: they are destroyed before it is unregistered.
@@ -51,26 +53,7 @@ impl MarqueeBand {
                 background: Some(0x00FF_FFFF),
             },
         )?;
-        let make = || -> Result<Window> {
-            let handler: MessageHandler =
-                Box::new(|_hwnd, message, _wparam, _lparam| match message {
-                    msg::WM_MOUSEACTIVATE => Some(msg::MA_NOACTIVATE),
-                    msg::WM_NCHITTEST => Some(msg::HTTRANSPARENT),
-                    msg::WM_DESTROY => Some(0),
-                    _ => None,
-                });
-            WindowBuilder::new(&class)
-                .title("marquee")
-                .style(style::POPUP)
-                .ex_style(
-                    style::EX_LAYERED
-                        | style::EX_TRANSPARENT
-                        | style::EX_NOACTIVATE
-                        | style::EX_TOOLWINDOW,
-                )
-                .bounds(0, 0, 1, 1)
-                .create(handler)
-        };
+        let make = || -> Result<Window> { window::create_click_through(&class, "marquee") };
         let fill = make()?;
         window::set_layered_alpha(fill.hwnd(), FILL_ALPHA);
         Ok(Self {
@@ -82,14 +65,19 @@ impl MarqueeBand {
     }
 
     /// Spans `rect` (screen px) at `dpi`, just above the icon `host` when it first shows. The
-    /// white line lies inside `rect`, the hairline just outside it.
-    pub fn show(&mut self, rect: RECT, dpi: u32, host: Option<HWND>) {
+    /// white line lies inside `rect`, the hairline just outside it. `strength` (0..=255) scales
+    /// the wash and the lines.
+    pub fn show(&mut self, rect: RECT, dpi: u32, host: Option<HWND>, strength: u8) {
         let t = ((dpi.max(96) as f32 / 96.0).round() as i32).max(1);
         let (w, h) = (
             (rect.right - rect.left).max(1),
             (rect.bottom - rect.top).max(1),
         );
         let _ = self.fill.set_bounds(rect.left, rect.top, w, h);
+        window::set_layered_alpha(
+            self.fill.hwnd(),
+            (FILL_ALPHA as u32 * strength as u32 / 255) as u8,
+        );
         // Top and bottom span the corners outside the rect too (hairline there).
         let across = w + 2 * t;
         let edges = [
@@ -106,7 +94,7 @@ impl MarqueeBand {
                 outer || (horizontal && (px < t || px >= ew - t))
             });
             let presented = LayeredImage::new(ew, eh, &bgra)
-                .and_then(|img| img.present(self.edges[i].hwnd(), x, y, 255));
+                .and_then(|img| img.present(self.edges[i].hwnd(), x, y, strength));
             if let Err(e) = presented {
                 tracing::warn!(error = %e, "marquee band edge present failed");
             }

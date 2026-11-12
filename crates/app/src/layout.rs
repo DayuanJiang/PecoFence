@@ -503,9 +503,6 @@ pub struct Grid {
     /// whole columns, so the grid fills any fence width (Explorer's auto-arrange). Cells keep
     /// `metrics.cell_w` and sit centred in their pitch.
     pub pitch: f32,
-    /// Rows over all groups.
-    #[allow(dead_code)]
-    pub rows: usize,
     pub content_height: f32,
     bands: Bands,
     /// 图标对齐 居中: a row with fewer items than columns sits in the middle (`centred`).
@@ -531,7 +528,6 @@ impl Grid {
             metrics,
             columns,
             pitch: usable / columns as f32,
-            rows: bands.total_rows(),
             content_height: bands.content_height,
             bands,
             centre: false,
@@ -765,6 +761,8 @@ impl DetailColumns {
     pub const TYPE_W: f32 = 108.0;
     pub const SIZE_W: f32 = 76.0;
     pub const GUTTER: f32 = 8.0;
+    /// Where the rows' icons and the 名称 caption start: the fence title's left edge.
+    pub const NAME_X: f32 = TITLE_X;
 
     pub const DEFAULT_WIDTHS: [f32; 3] = [Self::DATE_W, Self::TYPE_W, Self::SIZE_W];
     pub const MIN_COL_W: f32 = 40.0;
@@ -782,8 +780,10 @@ impl DetailColumns {
     pub fn for_width_with(width: f32, widths: [f32; 3], visible: [bool; 3]) -> Self {
         let clamp = |w: f32| w.clamp(Self::MIN_COL_W, Self::MAX_COL_W);
         let (date_w, type_w, size_w) = (clamp(widths[0]), clamp(widths[1]), clamp(widths[2]));
-        let name_x = 8.0;
-        let min_name = 120.0;
+        let name_x = Self::NAME_X;
+        // 8 less than the 120 the name had when it started at 8: a fence keeps the columns it
+        // showed at its width.
+        let min_name = 112.0;
         let mut right = width - Self::GUTTER;
         let mut size = None;
         let mut date = None;
@@ -859,7 +859,9 @@ impl DetailColumns {
             Some(DetailColumn::Type)
         } else if hit(self.date) {
             Some(DetailColumn::Date)
-        } else if x >= self.name_x && x < self.name_x + self.name_w {
+        } else if x >= self.name_x - 8.0 && x < self.name_x + self.name_w {
+            // The 名称 cell reaches 8 DIPs left of its caption: it starts 8 DIPs from the edge,
+            // as it did before the caption moved to the title's edge.
             Some(DetailColumn::Name)
         } else {
             None
@@ -1812,7 +1814,7 @@ mod tests {
     fn columns_and_hit_test() {
         let g = Grid::new(GridMetrics::for_icon_size(48, 2), 320.0, 7);
         assert_eq!(g.columns, 4);
-        assert_eq!(g.rows, 2);
+        assert_eq!(g.bands.total_rows(), 2);
         let c = g.cell(4);
         assert_eq!(g.hit_test(c.x + 1.0, c.y + 1.0, 7), Some(4));
         assert_eq!(g.hit_test(1.0, 1.0, 7), None);
@@ -2087,7 +2089,7 @@ mod tests {
         // 48 px: 64 x 64 cells and 8 side padding, five columns in 336 DIPs.
         let bare = GridMetrics::for_icon_size(48, 0);
         let g = Grid::new(bare, 336.0, 7);
-        assert_eq!((g.columns, g.rows), (5, 2));
+        assert_eq!((g.columns, g.bands.total_rows()), (5, 2));
         let c = g.cell(6);
         assert_eq!((c.x, c.y, c.h), (8.0 + 64.0, 8.0 + 64.0, 64.0));
         assert_eq!(g.hit_test(c.x + 32.0, c.y + 32.0, 7), Some(6));
@@ -2198,6 +2200,17 @@ mod tests {
         // Widths clamp so a dragged column can never eat the whole fence.
         let tiny = DetailColumns::for_width_with(600.0, [1.0, 1.0, 1.0], [true; 3]);
         assert_eq!(tiny.size.unwrap().1, DetailColumns::MIN_COL_W);
+    }
+
+    /// The rows' icons start at the title's left edge, and a fence shows the columns it showed
+    /// when the name started at 8 DIPs: all three from 472 DIPs on.
+    #[test]
+    fn rows_start_at_the_title_and_keep_their_columns() {
+        assert_eq!(DetailColumns::for_width(480.0).name_x, TITLE_X);
+        assert_eq!(DetailColumns::NAME_X, 16.0);
+        assert!(DetailColumns::for_width(472.0).type_.is_some());
+        assert!(DetailColumns::for_width(471.0).type_.is_none());
+        assert!(DetailColumns::for_width(471.0).date.is_some());
     }
 
     /// Larger row text (Windows' text size 150 %: an 18 DIP font, 24 DIP lines) makes the rows
@@ -2424,7 +2437,7 @@ mod tests {
         );
         for g in [&plain, &one, &broken] {
             assert_eq!(g.columns, 4);
-            assert_eq!(g.rows, 2);
+            assert_eq!(g.bands.total_rows(), 2);
             assert_eq!(g.content_height, m.pad_y * 2.0 + 2.0 * m.cell_h);
             for i in 0..7 {
                 assert_eq!(g.cell(i), plain.cell(i));

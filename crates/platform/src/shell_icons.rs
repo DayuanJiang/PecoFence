@@ -14,6 +14,8 @@ const SSF_DOUBLECLICKINWEBVIEW: u32 = 0x80;
 const SHOW_INFO_TIP_BIT: u32 = 1 << 11; // SHELLSTATE::fShowInfoTip
 const SSF_SHOWINFOTIP: u32 = 0x2000;
 const CMD_TOGGLE_DESKTOP_ICONS: usize = 0x7402;
+/// The desktop view's Edit › Undo (`SFVIDM_EDIT_UNDO`).
+const CMD_UNDO: usize = 0x701B;
 const LVM_GETSELECTEDCOUNT: u32 = 0x1000 + 50; // LVM_FIRST + 50
 const LVM_GETHOTITEM: u32 = 0x1000 + 61; // LVM_FIRST + 61
 const LVM_GETITEMCOUNT: u32 = 0x1000 + 4; // LVM_FIRST + 4
@@ -72,6 +74,27 @@ pub fn toggle_desktop_icons(def_view: HWND, fallback: HWND) -> bool {
         )
     };
     ok.0 != 0
+}
+
+/// Asks the desktop view to undo the newest file operation in Windows' own undo list: the
+/// command its Edit › Undo and Ctrl+Z on the desktop run. The list is Explorer's and holds the
+/// operations of every program that recorded them (`FOFX_ADDUNDORECORD`): a delete to the
+/// Recycle Bin, a move, a copy. Posted, so a busy Explorer does not hold the caller, and the
+/// view takes it with its icons hidden too. False when there is no view to ask.
+pub fn undo_last_file_operation(def_view: HWND) -> bool {
+    if def_view.0.is_null() {
+        return false;
+    }
+    // SAFETY: plain FFI call; Explorer owns the target window.
+    unsafe {
+        PostMessageW(
+            Some(def_view),
+            WM_COMMAND as u32,
+            WPARAM(CMD_UNDO),
+            LPARAM(0),
+        )
+        .as_bool()
+    }
 }
 
 /// How many desktop icons are selected in Explorer's list view under `def_view`; None when

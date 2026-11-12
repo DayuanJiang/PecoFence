@@ -3,10 +3,8 @@
 //! it snapped to, placed directly above the moving fence.
 
 use pecofence_platform::layered::LayeredImage;
-use pecofence_platform::window::{
-    self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
-};
-use pecofence_platform::{HWND, desktop, msg};
+use pecofence_platform::window::{self, ClassOptions, Window, WindowClass};
+use pecofence_platform::{HWND, desktop};
 use windows_core::Result;
 
 pub const DRAG_GUIDE_CLASS: &str = "PecoFence.DragGuide";
@@ -77,23 +75,7 @@ struct LineWindow {
 
 impl LineWindow {
     fn create(class: &WindowClass) -> Result<Self> {
-        let handler: MessageHandler = Box::new(|_hwnd, message, _wparam, _lparam| match message {
-            msg::WM_MOUSEACTIVATE => Some(msg::MA_NOACTIVATE),
-            msg::WM_NCHITTEST => Some(msg::HTTRANSPARENT),
-            msg::WM_DESTROY => Some(0),
-            _ => None,
-        });
-        let window = WindowBuilder::new(class)
-            .title("drag guide")
-            .style(style::POPUP)
-            .ex_style(
-                style::EX_LAYERED
-                    | style::EX_TRANSPARENT
-                    | style::EX_NOACTIVATE
-                    | style::EX_TOOLWINDOW,
-            )
-            .bounds(0, 0, 1, 1)
-            .create(handler)?;
+        let window = window::create_click_through(class, "drag guide")?;
         Ok(Self {
             window,
             last: None,

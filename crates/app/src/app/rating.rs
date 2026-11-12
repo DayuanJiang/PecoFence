@@ -157,16 +157,28 @@ impl App {
             || self.update_notice_open()
     }
 
-    /// After a render stack rebuild: the notice on screen draws on the new device.
-    pub(super) fn redraw_notices(&self) {
-        for notice in self
-            .welcome
+    /// The notices on screen: a tip, the rating offer, an undo, the update card.
+    fn notices(&self) -> impl Iterator<Item = &crate::notice::Notice> {
+        self.welcome
             .iter()
             .map(|(n, _)| n)
             .chain(&self.rating.notice)
             .chain(self.undo_notice.iter().map(|(n, _)| n))
-        {
+            .chain(self.update_notice())
+    }
+
+    /// After a render stack rebuild: the notice on screen draws on the new device.
+    pub(super) fn redraw_notices(&self) {
+        for notice in self.notices() {
             notice.redraw();
+        }
+    }
+
+    /// The front window changed (`foreground`): a card under another program's topmost
+    /// window, such as the taskbar's hidden icons, goes below it.
+    pub(super) fn notices_below(&self, foreground: HWND) {
+        for notice in self.notices() {
+            notice.go_below(foreground);
         }
     }
 

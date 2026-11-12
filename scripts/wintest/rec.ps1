@@ -1,5 +1,7 @@
 # Screen recorder for before/after animations (dot-source it in a steps file).
-#   RecStart 'S1-before' [-X 0 -Y 0 -W 1600 -H 900] [-Fps 12]
+#   RecStart 'S1-before' [-X 0 -Y 0 -W 1600 -H 900] [-Fps 12] [-InMemory]
+#       -InMemory keeps the frames in memory and writes them at RecStop, for steps that keep
+#       the disk busy: a frame written meanwhile waits for the disk and the recording stops.
 #   RecMark 'Drag the fence title'        # one mark per user step, same steps in before and after
 #   RecMetric 3.4                         # optional number to chart under the frames (e.g. MB, ms)
 #   RecStop                               # writes frames.tsv, marks.tsv, metric.tsv, stats.txt
@@ -23,11 +25,13 @@ public static class Rec {
   [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
   static Thread worker; static volatile bool running; static Stopwatch clock;
   static string dir; static int rx, ry, rw, rh, interval;
+  static List<byte[]> kept;
   static List<string> frames, marks, metric;
   static long grabMs, stopped;
-  public static void Start(string folder, int x, int y, int w, int h, int fps) {
+  public static void Start(string folder, int x, int y, int w, int h, int fps, bool inMemory) {
     if (running) Stop();
     dir = folder; Directory.CreateDirectory(dir);
+    kept = inMemory ? new List<byte[]>() : null;
     rx = x; ry = y; rw = w; rh = h; interval = Math.Max(15, 1000 / Math.Max(1, fps));
     frames = new List<string>(); marks = new List<string>(); metric = new List<string>();
     grabMs = 0; clock = Stopwatch.StartNew(); running = true;
@@ -48,7 +52,8 @@ public static class Rec {
           using (var g = Graphics.FromImage(bmp)) g.CopyFromScreen(rx, ry, 0, 0, new Size(rw, rh));
           PT p; GetCursorPos(out p);
           int b = ((GetAsyncKeyState(0x01) & 0x8000) != 0 ? 1 : 0) | ((GetAsyncKeyState(0x02) & 0x8000) != 0 ? 2 : 0);
-          bmp.Save(Path.Combine(dir, i.ToString("D5") + ".jpg"), codec, ep);
+          if (kept != null) { using (var ms = new MemoryStream()) { bmp.Save(ms, codec, ep); kept.Add(ms.ToArray()); } }
+          else bmp.Save(Path.Combine(dir, i.ToString("D5") + ".jpg"), codec, ep);
           lock (frames) frames.Add(i + "\t" + now + "\t" + (p.X - rx) + "\t" + (p.Y - ry) + "\t" + b);
           grabMs += clock.ElapsedMilliseconds - now;
           i++;
@@ -62,6 +67,7 @@ public static class Rec {
     if (!running) return;
     stopped = clock.ElapsedMilliseconds;
     running = false; worker.Join(3000);
+    if (kept != null) { for (int i = 0; i < kept.Count; i++) File.WriteAllBytes(Path.Combine(dir, i.ToString("D5") + ".jpg"), kept[i]); kept = null; }
     var utf8 = new UTF8Encoding(false);
     File.WriteAllLines(Path.Combine(dir, "frames.tsv"), frames, utf8);
     File.WriteAllLines(Path.Combine(dir, "marks.tsv"), marks, utf8);
@@ -72,13 +78,13 @@ public static class Rec {
   }
 }
 '@
-function RecStart([string]$Name, [int]$X = 0, [int]$Y = 0, [int]$W = 0, [int]$H = 0, [int]$Fps = 12) {
+function RecStart([string]$Name, [int]$X = 0, [int]$Y = 0, [int]$W = 0, [int]$H = 0, [int]$Fps = 12, [switch]$InMemory) {
   Add-Type -AssemblyName System.Windows.Forms
   if ($W -le 0 -or $H -le 0) {
     $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $X = $b.X; $Y = $b.Y; $W = $b.Width; $H = $b.Height
   }
   $root = if ($PfShots) { $PfShots } else { $env:TEMP }
-  [Rec]::Start((Join-Path $root "rec-$Name"), $X, $Y, $W, $H, $Fps)
+  [Rec]::Start((Join-Path $root "rec-$Name"), $X, $Y, $W, $H, $Fps, [bool]$InMemory)
 }
 function RecMark([string]$Text) { [Rec]::Mark($Text) }
 function RecMetric([double]$Value) { [Rec]::Metric($Value) }

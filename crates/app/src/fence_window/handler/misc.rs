@@ -26,8 +26,17 @@ pub(super) fn on_getdragimage(
         }
     };
     match image {
-        // SAFETY: lparam is the SHDRAGIMAGE* of this DI_GETDRAGIMAGE message.
-        Some(img) => Some(unsafe { dragdrop::answer_drag_image(lparam, &img) } as isize),
+        Some(img) => {
+            // SAFETY: lparam is the SHDRAGIMAGE* of this DI_GETDRAGIMAGE message.
+            let answered = unsafe { dragdrop::answer_drag_image(lparam, &img) };
+            // The drop then knows each icon's picture is at its own place (`note_drop_landing`).
+            INTERNAL_DRAG.with(|d| {
+                if let Some(d) = d.borrow_mut().as_mut() {
+                    d.in_place = answered;
+                }
+            });
+            Some(answered as isize)
+        }
         None => Some(0),
     }
 }
@@ -200,9 +209,26 @@ pub(super) fn on_app_fade_done(
             None => return Some(0),
             Some(VisFade::Showing) => {
                 v.reset_root();
+                // A fence just made: its name box opens now (a request older than any
+                // fade-in is one whose fade never reported and is dropped).
+                if let Some(asked) = v.rename_after_fade.take() {
+                    let waited = asked.elapsed();
+                    let open = waited < Duration::from_secs(2);
+                    tracing::debug!(
+                        title = %v.title,
+                        waited_ms = waited.as_millis() as u64,
+                        open,
+                        "new fence faded in: name box"
+                    );
+                    if open {
+                        v.queue.push(Command::BeginFenceRename(h.fence_id));
+                    }
+                }
                 (v.shadow.hwnd(), None)
             }
             Some(VisFade::Hiding { destroy }) => {
+                // Hidden again before it had faded in: no name box.
+                v.rename_after_fade = None;
                 (v.shadow.hwnd(), Some((destroy, v.queue.clone())))
             }
         }

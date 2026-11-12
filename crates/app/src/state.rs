@@ -1,10 +1,12 @@
 //! Application state: config + layout selection + desktop item catalog + rule routing.
 
+use pecofence_core::config_store::SaveError;
 use pecofence_core::geometry::{self, PxRect, WorkArea};
 use pecofence_core::rules::{Cond, Decision, RuleSet, Target, Template, Unmatched};
 use pecofence_core::{
-    AssignedBy, Config, ConfigStore, Fence, FenceId, FenceKind, FenceTool, IconKey, Item, ItemId,
-    ItemKey, ItemRef, ItemSourceSpec, Layout, LoadOutcome, MonitorIdentity, Origin, SortMode,
+    AssignedBy, Config, ConfigSaver, ConfigStore, Fence, FenceId, FenceKind, FenceTool, IconKey,
+    Item, ItemId, ItemKey, ItemRef, ItemSourceSpec, Layout, LoadOutcome, MonitorIdentity, Origin,
+    SortMode,
 };
 use pecofence_platform::RECT;
 use pecofence_platform::shell::{self, DesktopEntry, EntryOrigin};
@@ -22,8 +24,14 @@ const ROUTE_LOG_MAX: usize = 20;
 pub struct AppState {
     pub config: Config,
     store: ConfigStore,
+    /// Writes `store`'s files on its own thread (see [`Self::save_if_dirty`]).
+    saver: ConfigSaver,
     pub layout: usize,
+    /// The configuration has changes that were not handed to `saver`, or whose save failed.
     dirty: bool,
+    /// A save failed on the saver thread and the tray has not been asked to say so yet
+    /// ([`Self::take_save_failure`]).
+    save_failed: bool,
     catalog: HashMap<ItemKey, ItemId>,
     /// Runtime-only items of folder portals (never persisted; rebuilt from the folder).
     portal_items: HashMap<ItemId, Item>,
@@ -147,6 +155,58 @@ fn in_package_folder(path: &Path) -> bool {
     std::fs::canonicalize(path).is_ok_and(|real| real.to_string_lossy().contains(r"\Packages\"))
 }
 
+/// A save that took this long gets a line in the log: the disk kept it waiting (a large file
+/// copy, a scan).
+const SLOW_SAVE: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The control window, told when a save fails on the saver thread; 0 until
+/// [`wake_on_save_failure`] names it.
+static SAVE_FAILED_WAKE: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+/// From now on a save that fails posts `WM_APP_SAVE_FAILED` to `control`, so the App takes
+/// the failure right away; until then it takes it with its next save.
+pub fn wake_on_save_failure(control: pecofence_platform::HWND) {
+    SAVE_FAILED_WAKE.store(control.0 as isize, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The saver thread for `store`'s files. It logs how every write ended.
+fn saver_for(store: &ConfigStore) -> ConfigSaver {
+    let files = store.clone();
+    let done = move |took: std::time::Duration, result: &Result<(), SaveError>| {
+        let ms = crate::share_log::millis(took);
+        let primary = files.primary_path();
+        match result {
+            Ok(()) if took >= SLOW_SAVE => {
+                tracing::info!(ms, "config saved; the disk kept the save waiting")
+            }
+            Ok(()) => tracing::debug!(ms, path = %primary.display(), "config saved"),
+            // Where config.json and its temp file really are: one inside the Store
+            // package's copy of %APPDATA% and one outside would explain a refused rename.
+            Err(e) => {
+                tracing::error!(
+                    what = e.step,
+                    error = %e.error,
+                    ms,
+                    config_in_package = in_package_folder(&primary),
+                    temp_in_package = in_package_folder(&files.tmp_path()),
+                    place = shell::path_place(&primary),
+                    "config save failed"
+                );
+                let control = SAVE_FAILED_WAKE.load(std::sync::atomic::Ordering::Relaxed);
+                if control != 0 {
+                    pecofence_platform::window::post_message(
+                        pecofence_platform::HWND(control as *mut core::ffi::c_void),
+                        crate::commands::WM_APP_SAVE_FAILED,
+                        0,
+                        0,
+                    );
+                }
+            }
+        }
+    };
+    ConfigSaver::new(store.clone(), Box::new(done))
+}
+
 impl AppState {
     pub fn load(work_areas: Vec<WorkArea>, portable: bool) -> Self {
         let directory = config_dir(portable);
@@ -196,9 +256,11 @@ impl AppState {
         );
         let mut state = Self {
             config,
+            saver: saver_for(&store),
             store,
             layout: 0,
             dirty: false,
+            save_failed: false,
             catalog: HashMap::new(),
             portal_items: HashMap::new(),
             portal_members: HashMap::new(),
@@ -449,8 +511,10 @@ impl AppState {
             },
             // Never saved: the scratch state is dropped at the end of this call.
             store: ConfigStore::new(PathBuf::new()),
+            saver: saver_for(&ConfigStore::new(PathBuf::new())),
             layout: 0,
             dirty: false,
+            save_failed: false,
             catalog: HashMap::new(),
             portal_items: HashMap::new(),
             portal_members: HashMap::new(),
@@ -979,40 +1043,70 @@ impl AppState {
             .collect()
     }
 
-    pub fn save_if_dirty(&mut self) -> bool {
+    /// Hands the configuration to the saver thread when it has unsaved changes, and returns
+    /// without waiting for the disk: that thread writes the files and logs the result
+    /// (`saver_for`). A save that fails there comes back through [`Self::take_save_failure`].
+    pub fn save_if_dirty(&mut self) {
         if !self.dirty {
-            return false;
+            return;
         }
         if let Some(locked) = &self.locked_config {
             // Saving would rotate the user's files away while they cannot be read.
             tracing::debug!(path = %locked.display(), "config save held: a config file is locked by another program");
-            return false;
+            return;
         }
         let pruned = self.config.prune_notes();
         if pruned > 0 {
             tracing::info!(pruned, "note texts without a fence dropped");
         }
         self.config.saved_by = Some(env!("CARGO_PKG_VERSION").to_string());
-        match self.store.save(&self.config) {
-            Ok(()) => {
-                self.dirty = false;
-                tracing::debug!(path = %self.store.primary_path().display(), "config saved");
-                true
-            }
-            Err(e) => {
-                // Where config.json and its temp file really are: one inside the Store
-                // package's copy of %APPDATA% and one outside would explain a refused rename.
-                tracing::error!(
-                    what = e.step,
-                    error = %e.error,
-                    config_in_package = in_package_folder(&self.store.primary_path()),
-                    temp_in_package = in_package_folder(&self.store.tmp_path()),
-                    place = shell::path_place(&self.store.primary_path()),
-                    "config save failed"
-                );
-                false
-            }
+        self.saver.save(self.config.clone());
+        self.dirty = false;
+        tracing::debug!("config handed to the saver thread");
+    }
+
+    /// [`Self::save_if_dirty`], then waits until the files are written: for a quit, the end
+    /// of the session, and commands whose caller reads the files next. True when the files
+    /// hold the configuration as it is now. `by` names the caller in the log.
+    pub fn save_and_wait(&mut self, by: &'static str) -> bool {
+        // A save that failed earlier is tried again here.
+        self.note_save_failure();
+        self.save_if_dirty();
+        let started = std::time::Instant::now();
+        self.saver.wait();
+        let waited = started.elapsed();
+        if waited >= SLOW_SAVE {
+            let ms = crate::share_log::millis(waited);
+            tracing::info!(by, ms, "waited for the config save");
         }
+        self.note_save_failure();
+        if !self.dirty {
+            // The files hold everything: a failure before this save needs no notice now.
+            self.save_failed = false;
+        }
+        !self.dirty
+    }
+
+    /// Takes a failed save from the saver thread: its changes count as unsaved again, so
+    /// the next save writes them, and the failure waits for [`Self::take_save_failure`].
+    fn note_save_failure(&mut self) {
+        if self.saver.take_failed() {
+            self.dirty = true;
+            self.save_failed = true;
+        }
+    }
+
+    /// Whether a save failed on the saver thread since the last call (the tray then says
+    /// so). The changes it held are unsaved again.
+    pub fn take_save_failure(&mut self) -> bool {
+        self.note_save_failure();
+        std::mem::take(&mut self.save_failed)
+    }
+
+    /// Waits until the configurations handed to the saver thread are written, for the
+    /// control window when a menu or dialog holds the App at the end of the session.
+    pub fn save_waiter(&self) -> pecofence_core::config_store::SaveWaiter {
+        self.saver.waiter()
     }
 
     // ---- desktop items ---------------------------------------------------------------------
@@ -1625,7 +1719,7 @@ impl AppState {
     fn sorted_members(&self, fence: &Fence, held: bool) -> Vec<&Item> {
         let mut items = self.fence_members(fence, held);
         match fence.view.sort {
-            SortMode::Manual => items.sort_by_key(|(r, it)| {
+            SortMode::Manual => items.sort_by_cached_key(|(r, it)| {
                 (
                     r.and_then(|r| r.manual_index).unwrap_or(u32::MAX),
                     it.display_name.to_lowercase(),
@@ -1860,31 +1954,32 @@ impl AppState {
         })
     }
 
-    pub fn set_portal_navigate(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.portal_navigate != on
-        {
-            f.portal_navigate = on;
-            self.dirty = true;
+    /// Sets one field of a fence and marks the config dirty when the value changed.
+    fn set_fence_field<T: PartialEq>(
+        &mut self,
+        id: FenceId,
+        field: impl FnOnce(&mut Fence) -> &mut T,
+        value: T,
+    ) {
+        if let Some(f) = self.fence_mut(id) {
+            let slot = field(f);
+            if *slot != value {
+                *slot = value;
+                self.dirty = true;
+            }
         }
+    }
+
+    pub fn set_portal_navigate(&mut self, id: FenceId, on: bool) {
+        self.set_fence_field(id, |f| &mut f.portal_navigate, on);
     }
 
     pub fn set_open_folders_inside(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.open_folders_inside != on
-        {
-            f.open_folders_inside = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.open_folders_inside, on);
     }
 
     pub fn set_hide_title_icon(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.hide_title_icon != on
-        {
-            f.hide_title_icon = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.hide_title_icon, on);
     }
 
     /// Title shown for a fence: one showing a subfolder, or a folder opened in it, shows that
@@ -2468,17 +2563,6 @@ impl AppState {
         geometry::denormalize(&fence.geometry, &work)
     }
 
-    #[allow(dead_code)]
-    pub fn toggle_rolled(&mut self, id: FenceId) -> Option<bool> {
-        let rolled = {
-            let f = self.fence_mut(id)?;
-            f.rolled_up = !f.rolled_up;
-            f.rolled_up
-        };
-        self.dirty = true;
-        Some(rolled)
-    }
-
     pub fn rename_fence(&mut self, id: FenceId, title: &str) {
         if let Some(f) = self.fence_mut(id)
             && f.title != title
@@ -2489,21 +2573,11 @@ impl AppState {
     }
 
     pub fn set_icon_size(&mut self, id: FenceId, size: u32) {
-        if let Some(f) = self.fence_mut(id)
-            && f.view.icon_size != size
-        {
-            f.view.icon_size = size;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.view.icon_size, size);
     }
 
     pub fn set_auto_height(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.view.auto_height != on
-        {
-            f.view.auto_height = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.view.auto_height, on);
     }
 
     /// The catalogued item for a desktop path, if known.
@@ -2549,30 +2623,15 @@ impl AppState {
     }
 
     pub fn set_locked(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.locked != on
-        {
-            f.locked = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.locked, on);
     }
 
     pub fn set_exclude_from_quick_hide(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.exclude_from_quick_hide != on
-        {
-            f.exclude_from_quick_hide = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.exclude_from_quick_hide, on);
     }
 
     pub fn set_desktop_layout(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.desktop_layout != on
-        {
-            f.desktop_layout = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.desktop_layout, on);
     }
 
     /// Whether the window of `fence` (its host's, for a tab) shows on the current virtual
@@ -2602,12 +2661,7 @@ impl AppState {
     /// 自由摆放 for the 「桌面」 fence arranged like the desktop. The icon cells stay saved
     /// while it is off, so switching it on again puts the icons back where they were.
     pub fn set_free_placement(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.free_placement != on
-        {
-            f.free_placement = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.free_placement, on);
     }
 
     /// 自由摆放: the grid cells `cells` of the fence's icons on this monitor setup, merged into
@@ -2648,21 +2702,11 @@ impl AppState {
     }
 
     pub fn set_hide_when_empty(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.hide_when_empty != on
-        {
-            f.hide_when_empty = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.hide_when_empty, on);
     }
 
     pub fn set_expand_upward(&mut self, id: FenceId, on: bool) {
-        if let Some(f) = self.fence_mut(id)
-            && f.expand_upward != on
-        {
-            f.expand_upward = on;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.expand_upward, on);
     }
 
     /// Changes a fence's appearance override; one left at every default is dropped (None =
@@ -2732,21 +2776,11 @@ impl AppState {
     }
 
     pub fn set_spacing(&mut self, id: FenceId, spacing: i32) {
-        if let Some(f) = self.fence_mut(id)
-            && f.view.spacing != spacing
-        {
-            f.view.spacing = spacing;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.view.spacing, spacing);
     }
 
     pub fn set_icon_align(&mut self, id: FenceId, align: pecofence_core::IconAlign) {
-        if let Some(f) = self.fence_mut(id)
-            && f.view.icon_align != align
-        {
-            f.view.icon_align = align;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.view.icon_align, align);
     }
 
     pub fn set_columns_visible(&mut self, id: FenceId, visible: [bool; 3]) {
@@ -2770,12 +2804,7 @@ impl AppState {
     }
 
     pub fn set_layout(&mut self, id: FenceId, layout: pecofence_core::ViewLayout) {
-        if let Some(f) = self.fence_mut(id)
-            && f.view.layout != layout
-        {
-            f.view.layout = layout;
-            self.dirty = true;
-        }
+        self.set_fence_field(id, |f| &mut f.view.layout, layout);
     }
 
     /// Any order but by date ends Group by date (sections only make sense in date order), and
@@ -3344,9 +3373,11 @@ mod tests {
         ));
         let mut state = AppState {
             config: Config::default(),
+            saver: saver_for(&ConfigStore::new(&dir)),
             store: ConfigStore::new(dir),
             layout: 0,
             dirty: false,
+            save_failed: false,
             catalog: HashMap::new(),
             portal_items: HashMap::new(),
             portal_members: HashMap::new(),
@@ -3374,6 +3405,52 @@ mod tests {
             right: left + w,
             bottom: top + h,
         }
+    }
+
+    #[test]
+    fn save_and_wait_returns_once_the_files_are_written() {
+        let mut state = test_state();
+        state.mark_dirty();
+        assert!(state.save_and_wait("test"));
+        assert!(!state.is_dirty());
+        assert!(matches!(
+            state.store.load(),
+            pecofence_core::LoadOutcome::Primary(_)
+        ));
+        assert!(!state.store.tmp_path().exists());
+        // Nothing left to save.
+        assert!(state.save_and_wait("test"));
+    }
+
+    #[test]
+    fn a_save_that_failed_on_the_saver_thread_leaves_the_changes_unsaved() {
+        let mut state = test_state();
+        // A file where the config folder should be: the save fails at "create folder".
+        let dir = state.store.dir().to_path_buf();
+        std::fs::write(&dir, b"in the way").unwrap();
+        state.mark_dirty();
+        state.save_if_dirty();
+        assert!(!state.is_dirty(), "handed over");
+        state.saver.wait();
+        assert!(state.take_save_failure());
+        assert!(state.is_dirty(), "unsaved again");
+        assert!(!state.take_save_failure(), "told once");
+        // Tried again and waited for: it fails again, and the notice still gets to know.
+        assert!(!state.save_and_wait("test"));
+        assert!(state.is_dirty());
+        assert!(state.take_save_failure());
+        // A failure followed by a waited save that works: nothing is lost, nothing to tell.
+        state.mark_dirty();
+        state.save_if_dirty();
+        state.saver.wait();
+        std::fs::remove_file(&dir).unwrap();
+        assert!(state.save_and_wait("test"));
+        assert!(!state.is_dirty());
+        assert!(!state.take_save_failure());
+        assert!(matches!(
+            state.store.load(),
+            pecofence_core::LoadOutcome::Primary(_)
+        ));
     }
 
     #[test]
@@ -4052,6 +4129,33 @@ mod tests {
         // A sorted fence refuses.
         state.set_sort(fence, SortMode::Name);
         assert!(!state.reorder_items(fence, &[a], 0));
+    }
+
+    /// Icons of another fence dropped between the icons of a 手动 fence: moved, then placed
+    /// before the display index they were let go at (counted before they arrived), in the
+    /// order they had; the icons that were there keep their order.
+    #[test]
+    fn icons_moved_from_another_fence_land_at_the_drop_index() {
+        let mut state = test_state();
+        let (from, to) = (state.fences()[0].id, state.fences()[1].id);
+        assert_eq!(state.fence(to).unwrap().view.sort, SortMode::Manual);
+        let a1 = add_item(&mut state, from, "a1");
+        let a2 = add_item(&mut state, from, "a2");
+        add_item(&mut state, to, "b1");
+        add_item(&mut state, to, "b2");
+        add_item(&mut state, to, "b3");
+        // Without an index they go after the others.
+        assert_eq!(state.move_items(&[a1], to), 1);
+        assert_eq!(names(&state, to), ["b1", "b2", "b3", "a1"]);
+        // Between b1 and b2.
+        assert!(state.reorder_items(to, &[a1], 1));
+        assert_eq!(names(&state, to), ["b1", "a1", "b2", "b3"]);
+        // Two at once, let go before the first icon.
+        assert_eq!(state.move_items(&[a1], from), 1);
+        assert_eq!(state.move_items(&[a1, a2], to), 2);
+        assert!(state.reorder_items(to, &[a1, a2], 0));
+        assert_eq!(names(&state, to), ["a1", "a2", "b1", "b2", "b3"]);
+        assert!(names(&state, from).is_empty());
     }
 
     /// 手动 order (feedback #125): a file that appears while its fence shows icons goes after

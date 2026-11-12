@@ -186,8 +186,10 @@ Pf fence create --title Games --rect '300,500,300,200' | Out-Null
 Pf fence merge Games --into Work | Out-Null
 Pf fence create --title Solo --rect '860,150,300,200' | Out-Null
 Pf fence create --portal "$PfRun\Shared docs" --title 'Shared docs' --rect '860,420,300,200' | Out-Null
-Pf fence create --tool note --title Today --text 'note' | Out-Null
-Pf fence create --tool clock | Out-Null
+# Fixed places for the note and the clock: placed by the app, the note can land where the 「桌面」
+# fence goes below (40,500), push it down to the bottom edge and cover its title (seen on ec2-4).
+Pf fence create --tool note --title Today --text 'note' --rect '320,520,260,160' | Out-Null
+Pf fence create --tool clock --rect '40,150,240,140' | Out-Null
 Start-Sleep -Seconds 2
 ParkPointer
 Check 'fences made' ((FenceCount) -ge 8) "fences=$(FenceCount)"
@@ -245,6 +247,8 @@ foreach ($k in $kinds) {
 Pf fence set Desktop desktopLayout false | Out-Null
 Pf fence move Desktop --rect '40,500,220,200' | Out-Null
 Start-Sleep -Seconds 1
+$dr = (FenceGet 'Desktop').windowRect
+Log "Desktop fence after the move: x=$($dr.x) y=$($dr.y) w=$($dr.w) h=$($dr.h) (asked 40,500,220,200)"
 $m = TitleMenu 'Desktop'
 $line = MenuLine $m
 Log "menu inbox: $line"

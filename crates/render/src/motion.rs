@@ -112,7 +112,6 @@ pub fn scroll_duration(distance_px: f32) -> Duration {
 pub enum Prop {
     Opacity,
     Offset,
-    Size,
     Scale,
 }
 
@@ -121,7 +120,6 @@ impl Prop {
         match self {
             Prop::Opacity => "Opacity",
             Prop::Offset => "Offset",
-            Prop::Size => "Size",
             Prop::Scale => "Scale",
         }
     }
@@ -201,18 +199,6 @@ impl Motion {
         Ok(a)
     }
 
-    fn vector2(
-        &self,
-        to: Vector2,
-        dur: Duration,
-        curve: Curve,
-    ) -> Result<comp::Vector2KeyFrameAnimation> {
-        let a = self.raw.CreateVector2KeyFrameAnimation()?;
-        a.InsertKeyFrameWithEasingFunction(1.0, to, &self.easing(curve)?)?;
-        a.SetDuration(timespan(dur))?;
-        Ok(a)
-    }
-
     /// Animates `Opacity` from its current (possibly mid-animation) value to `to`.
     pub fn fade_to(&self, v: &Visual, to: f32, dur: Duration, curve: Curve) -> Result<()> {
         if !self.enabled.get() {
@@ -234,18 +220,6 @@ impl Motion {
         raw_visual(v)?.StartAnimation(
             &HSTRING::from(Prop::Offset.name()),
             &self.vector3(Vector3::new(x, y, 0.0), dur, curve)?,
-        )
-    }
-
-    /// Animates `Size` from its current value to `(w, h)`.
-    pub fn resize_to(&self, v: &Visual, w: f32, h: f32, dur: Duration, curve: Curve) -> Result<()> {
-        if !self.enabled.get() {
-            v.set_size(w, h);
-            return Ok(());
-        }
-        raw_visual(v)?.StartAnimation(
-            &HSTRING::from(Prop::Size.name()),
-            &self.vector2(Vector2::new(w, h), dur, curve)?,
         )
     }
 
@@ -274,79 +248,6 @@ impl Motion {
     /// Sets a uniform scale immediately (the resting value before / after [`Motion::scale_to`]).
     pub fn set_scale(&self, v: &Visual, s: f32) {
         v.set_scale(Vector3::new(s, s, 1.0));
-    }
-
-    /// Installs implicit animations: from now on any `set_*` of the listed properties on `v`
-    /// animates to the new value (`this.FinalValue`) instead of snapping. This is the WinUI
-    /// way to animate layout changes without touching every call site.
-    pub fn set_implicit(&self, v: &Visual, specs: &[(Prop, Duration, Curve)]) -> Result<()> {
-        let raw = raw_visual(v)?;
-        if !self.enabled.get() || specs.is_empty() {
-            return raw.SetImplicitAnimations(None::<&comp::ImplicitAnimationCollection>);
-        }
-        let coll = self.raw.CreateImplicitAnimationCollection()?;
-        let expr = HSTRING::from("this.FinalValue");
-        for &(prop, dur, curve) in specs {
-            let target = HSTRING::from(prop.name());
-            let easing = self.easing(curve)?;
-            let anim: comp::ICompositionAnimationBase = match prop {
-                Prop::Opacity => {
-                    let a = self.raw.CreateScalarKeyFrameAnimation()?;
-                    a.InsertExpressionKeyFrameWithEasingFunction(1.0, &expr, &easing)?;
-                    a.SetDuration(timespan(dur))?;
-                    a.SetTarget(&target)?;
-                    a.cast()?
-                }
-                Prop::Size => {
-                    let a = self.raw.CreateVector2KeyFrameAnimation()?;
-                    a.InsertExpressionKeyFrameWithEasingFunction(1.0, &expr, &easing)?;
-                    a.SetDuration(timespan(dur))?;
-                    a.SetTarget(&target)?;
-                    a.cast()?
-                }
-                Prop::Offset | Prop::Scale => {
-                    let a = self.raw.CreateVector3KeyFrameAnimation()?;
-                    a.InsertExpressionKeyFrameWithEasingFunction(1.0, &expr, &easing)?;
-                    a.SetDuration(timespan(dur))?;
-                    a.SetTarget(&target)?;
-                    a.cast()?
-                }
-            };
-            coll.Insert(&target, &anim)?;
-        }
-        raw.SetImplicitAnimations(&coll)
-    }
-
-    /// Clips `v` to its bounds minus the given insets (DIPs of the visual's own space).
-    /// Negative insets grow the clip. Use with `Size` animations to reveal / conceal content.
-    pub fn clip_insets(
-        &self,
-        v: &Visual,
-        left: f32,
-        top: f32,
-        right: f32,
-        bottom: f32,
-    ) -> Result<()> {
-        let clip = self
-            .raw
-            .CreateInsetClipWithInsets(left, top, right, bottom)?;
-        raw_visual(v)?.SetClip(&clip)
-    }
-
-    /// Animates the bottom inset of an existing inset clip on `v` (installed with
-    /// [`Motion::clip_insets`]); used to reveal content top-down.
-    pub fn animate_clip_bottom(
-        &self,
-        v: &Visual,
-        to: f32,
-        dur: Duration,
-        curve: Curve,
-    ) -> Result<()> {
-        let clip = raw_visual(v)?.Clip()?.cast::<comp::InsetClip>()?;
-        if !self.enabled.get() {
-            return clip.SetBottomInset(to);
-        }
-        clip.StartAnimation(&HSTRING::from("BottomInset"), &self.scalar(to, dur, curve)?)
     }
 
     pub fn clear_clip(&self, v: &Visual) -> Result<()> {
@@ -561,6 +462,23 @@ impl<K: Hash + Eq + Copy> Fades<K> {
         }
     }
 
+    /// Drives every fade whose key `on` rejects towards 0, exactly as `set(animate, key, 0.0,
+    /// now)` would for each of them. A caller with thousands of keys then only has to `set`
+    /// the few that are on, not every key each frame.
+    pub fn release_unless(&mut self, animate: bool, now: Instant, on: impl Fn(&K) -> bool) {
+        let dur = if animate {
+            self.dur_out
+        } else {
+            Duration::ZERO
+        };
+        let curve = self.curve;
+        for (key, t) in &mut self.map {
+            if t.target() > f32::EPSILON && !on(key) {
+                t.retarget(0.0, dur, curve, now);
+            }
+        }
+    }
+
     /// Places `key` at `value` immediately (no transition), e.g. when the thing it describes
     /// was rebuilt and the old fade would be misleading.
     pub fn snap(&mut self, key: K, value: f32, now: Instant) {
@@ -573,6 +491,14 @@ impl<K: Hash + Eq + Copy> Fades<K> {
 
     pub fn value(&self, key: &K, now: Instant) -> f32 {
         self.map.get(key).map_or(0.0, |t| t.value_at(now))
+    }
+
+    /// Hands the fade of `old` to `new` as it is (the thing it describes got a new identity,
+    /// e.g. a renamed file whose id comes from its path). `new`'s own fade, if any, is replaced.
+    pub fn rekey(&mut self, old: &K, new: K) {
+        if let Some(t) = self.map.remove(old) {
+            self.map.insert(new, t);
+        }
     }
 
     /// True while any fade is still moving (the caller keeps requesting frames).
@@ -683,6 +609,49 @@ mod tests {
         assert!(!f.busy(t0));
         f.snap(1, 0.0, t0);
         assert!(f.map.is_empty());
+        // A rekey carries the running fade to the new key; an absent key carries nothing.
+        f.set(true, 4, 1.0, t0);
+        let mid = t0 + Duration::from_millis(50);
+        f.rekey(&4, 8);
+        assert_eq!(f.value(&4, mid), 0.0);
+        assert!((f.value(&8, mid) - 0.5).abs() < 1e-3);
+        f.rekey(&2, 6);
+        assert_eq!(f.map.len(), 1);
+    }
+
+    #[test]
+    fn release_unless_fades_out_the_keys_that_are_no_longer_on() {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let mut f: Fades<usize> = Fades::new(ms(100), ms(200), Curve::Linear);
+        let mut by_set: Fades<usize> = Fades::new(ms(100), ms(200), Curve::Linear);
+        for fades in [&mut f, &mut by_set] {
+            fades.set(true, 1, 1.0, t0);
+            fades.set(true, 2, 1.0, t0);
+            fades.set(true, 3, 1.0, t0);
+        }
+        // Key 2 stays on; 1 and 3 go off halfway through their fade-in. The same by `set`.
+        let mid = t0 + ms(50);
+        f.release_unless(true, mid, |k| *k == 2);
+        by_set.set(true, 1, 0.0, mid);
+        by_set.set(true, 2, 1.0, mid);
+        by_set.set(true, 3, 0.0, mid);
+        for at in [mid, mid + ms(100), mid + ms(200), mid + ms(300)] {
+            for key in 1..=3 {
+                assert_eq!(f.value(&key, at), by_set.value(&key, at), "key {key}");
+            }
+            assert_eq!(f.busy(at), by_set.busy(at));
+        }
+        assert!((f.value(&1, mid + ms(100)) - 0.25).abs() < 1e-3);
+        assert_eq!(f.value(&2, mid + ms(100)), 1.0);
+        // Called again it restarts nothing, and with animations off it snaps.
+        f.release_unless(true, mid + ms(100), |k| *k == 2);
+        assert!((f.value(&1, mid + ms(100)) - 0.25).abs() < 1e-3);
+        f.release_unless(false, mid + ms(100), |_| false);
+        assert_eq!(f.value(&2, mid + ms(100)), 0.0);
+        // Keys already on their way out keep their fade, as with `set`.
+        assert!((f.value(&1, mid + ms(100)) - 0.25).abs() < 1e-3);
+        assert!(!f.busy(mid + ms(200)));
     }
 
     #[test]

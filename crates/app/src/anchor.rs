@@ -32,6 +32,9 @@ const TIMER_FOREGROUND_AFTER_SWITCH: usize = 18;
 const AFTER_SWITCH_LOOK_MS: u32 = 300;
 const AFTER_SWITCH_LOOKS: u8 = 6;
 const SWITCHER_CLASS: &str = "VirtualDesktopHotkeySwitcher";
+/// Top-level window class of Start, search and the notification centre (an app's core window is
+/// a child of its frame window).
+const SHELL_CORE_WINDOW: &str = "Windows.UI.Core.CoreWindow";
 /// Windows 10: the desktop's clicks followed after a switch (`follow_desktop_after_switch`)
 /// stop being followed this long after it unless the desktop came to the front meanwhile: the
 /// sink gets every mouse move while it is on.
@@ -43,7 +46,6 @@ const TIMER_REORDER_LATER: usize = 16;
 /// foreground change: show desktop raises the desktop over the fences and lowers it again then.
 const SHELL_REORDER_WATCH_MS: u128 = 1000;
 const QUICKHIDE_DELAY_MS: u32 = 300;
-pub const TIMER_TEST: usize = 20;
 
 const RETRY_DELAYS_MS: [u32; 6] = [50, 150, 350, 750, 1500, 1200];
 /// Retries of a failed "hide desktop icons" request (logon: Explorer's desktop not ready yet),
@@ -95,6 +97,16 @@ fn is_drag_overlay(hwnd: HWND) -> bool {
         && desktop::window_pid(hwnd) == std::process::id()
 }
 
+/// Whether `outer` holds all of `inner` (an empty `inner` is held by nothing).
+fn rect_holds(outer: &RECT, inner: &RECT) -> bool {
+    inner.right > inner.left
+        && inner.bottom > inner.top
+        && outer.left <= inner.left
+        && outer.top <= inner.top
+        && outer.right >= inner.right
+        && outer.bottom >= inner.bottom
+}
+
 /// 像桌面一样排列: the fence window arranged like the desktop (0 = none). It stays under the
 /// other fences, and their snapping, overlap and push rules leave it out.
 static DESKTOP_FENCE: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
@@ -138,7 +150,6 @@ pub enum ShowDesktopBehavior {
 }
 
 pub type AnchorCell = Rc<RefCell<Option<DesktopAnchor>>>;
-pub type TestHook = Box<dyn FnMut(&mut DesktopAnchor) -> Option<u32>>;
 
 /// Double-click-on-empty-desktop quick hide (plan §5.4).
 #[derive(Default)]
@@ -338,11 +349,6 @@ pub struct DesktopAnchor {
     /// `Settings::keep_icons_hidden`: exit leaves the icons hidden (`release_desktop_icons`).
     pub keep_icons_hidden: bool,
     pub quick_hide_enabled: bool,
-    /// Optional test script driven by TIMER_TEST on the sentinel window.
-    pub test_hook: Option<TestHook>,
-    /// Set by the test hook / owner to request process exit.
-    #[allow(dead_code)]
-    pub quit_requested: bool,
     /// Presses, drags and releases on the empty desktop (fence selection / new fence).
     pub on_marquee: Option<Box<dyn Fn(MarqueeEvent)>>,
     /// Fence windows (as raw handles) that stay visible during quick hide.
@@ -354,6 +360,9 @@ pub struct DesktopAnchor {
     peeking: bool,
     /// Fences (hidden by quick hide) that Peek showed and must hide again afterwards.
     peek_shown: Vec<HWND>,
+    /// Fences the Peek raises a moment later (`hold_for_peek`): another program's window hides
+    /// them, and they must be transparent on screen before they come over it.
+    peek_held: Vec<HWND>,
     /// Called when another application takes the foreground during a peek.
     pub on_peek_interrupted: Option<Box<dyn Fn()>>,
     /// Foreground transitions also signal virtual-desktop switches before registry writes
@@ -532,13 +541,12 @@ impl DesktopAnchor {
             icons: DesktopIcons::new(),
             keep_icons_hidden: false,
             quick_hide_enabled,
-            test_hook: None,
-            quit_requested: false,
             on_marquee: None,
             quick_hide_excluded: std::collections::HashSet::new(),
             off_desktop: std::collections::HashSet::new(),
             peeking: false,
             peek_shown: Vec::new(),
+            peek_held: Vec::new(),
             on_peek_interrupted: None,
             on_foreground_changed: None,
             on_desktop_front: None,
@@ -808,12 +816,6 @@ impl DesktopAnchor {
         back.then_some(d.fence)
     }
 
-    #[allow(dead_code)]
-    pub fn sentinel_window(&self) -> &Window {
-        &self.sentinel
-    }
-
-    #[allow(dead_code)]
     pub fn host(&self) -> Option<IconHost> {
         self.host
     }
@@ -839,6 +841,9 @@ impl DesktopAnchor {
         let mut refused = None;
         self.with_anchoring(|s| {
             for (f, shadow) in s.fences.clone() {
+                if s.peek_held.contains(&f) {
+                    continue;
+                }
                 for h in std::iter::once(f).chain(shadow) {
                     // Fences created during the peek (resync_windows) are not topmost yet.
                     if let Err(e) = desktop::set_topmost(h, true) {
@@ -1283,6 +1288,106 @@ impl DesktopAnchor {
         }
     }
 
+    /// The fences that windows of other programs hide completely right now (or will, once a
+    /// Peek ends and the fences are back above the desktop), shadow included. Such a fence
+    /// fades in and out with the Peek's dimmer; one of which any part shows is left out,
+    /// because fading it would make that part blink. A window counts when it paints a surface,
+    /// is a program's window (no overlay, no surface of Windows itself), and its drawn frame
+    /// holds the whole fence (the part of it in its own monitor's work area).
+    pub fn covered_fences(&self) -> Vec<HWND> {
+        // Fences kept over the raised desktop are in the topmost band: nothing covers them.
+        if self.show_desktop_active && self.behavior == ShowDesktopBehavior::KeepVisible {
+            return Vec::new();
+        }
+        let Some(host) = self.host else {
+            return Vec::new();
+        };
+        let windows = desktop::top_level_windows();
+        let Some(host_index) = windows.iter().position(|&w| w == host.host) else {
+            return Vec::new();
+        };
+        let own = std::process::id();
+        // Overlays and Windows' own surfaces span the screen without hiding it: the task
+        // switcher and the desktop switcher are tool windows that take no focus, Start, search
+        // and the notification centre are top-level core windows.
+        let no_cover =
+            style::EX_LAYERED | style::EX_TRANSPARENT | style::EX_TOOLWINDOW | style::EX_NOACTIVATE;
+        let covers: Vec<(HWND, RECT)> = windows[..host_index]
+            .iter()
+            .filter(|&&w| {
+                desktop::has_visible_surface(w)
+                    && desktop::ex_style(w) & no_cover == 0
+                    && desktop::window_pid(w) != own
+                    && desktop::class_name(w) != SHELL_CORE_WINDOW
+            })
+            .filter_map(|&w| desktop::frame_rect(w).map(|r| (w, r)))
+            .collect();
+        if covers.is_empty() {
+            return Vec::new();
+        }
+        let monitors = pecofence_platform::monitors::enumerate();
+        self.fences
+            .iter()
+            .filter(|(f, shadow)| {
+                if !desktop::is_visible(*f) {
+                    return false;
+                }
+                let body = window::window_rect(*f);
+                let cast = shadow
+                    .filter(|s| desktop::is_visible(*s))
+                    .map_or(body, window::window_rect);
+                // The shadow's spill under the taskbar or onto the next monitor does not count.
+                let screen = monitors
+                    .iter()
+                    .find(|m| crate::layout::clearance::overlaps(&m.bounds, &body, 0))
+                    .map(|m| m.work_area);
+                let seen = screen.map_or(cast, |b| RECT {
+                    left: cast.left.max(b.left),
+                    top: cast.top.max(b.top),
+                    right: cast.right.min(b.right),
+                    bottom: cast.bottom.min(b.bottom),
+                });
+                let by = covers.iter().find(|(_, c)| rect_holds(c, &seen));
+                if let Some((w, _)) = by {
+                    tracing::debug!(
+                        fence = ?f,
+                        by = ?w,
+                        class = %desktop::class_name(*w),
+                        ex_style = format_args!("{:#x}", desktop::ex_style(*w)),
+                        "fence hidden by a window"
+                    );
+                }
+                by.is_some()
+            })
+            .map(|(f, _)| *f)
+            .collect()
+    }
+
+    /// Before `set_peek(true)`: `fences` stay where they are (under the windows that hide
+    /// them) until `release_peek_held`.
+    pub fn hold_for_peek(&mut self, fences: &[HWND]) {
+        self.peek_held = fences.to_vec();
+    }
+
+    /// Whether the Peek has not raised `hwnd` yet (`hold_for_peek`).
+    pub fn is_peek_held(&self, hwnd: HWND) -> bool {
+        self.peek_held.contains(&hwnd)
+    }
+
+    /// The held fences join the others in the Peek's band. False when none was held.
+    pub fn release_peek_held(&mut self) -> bool {
+        if self.peek_held.is_empty() {
+            return false;
+        }
+        let count = self.peek_held.len();
+        self.peek_held.clear();
+        if self.peeking {
+            self.place_topmost_band();
+        }
+        tracing::debug!(count, "covered fences raised into the peek band");
+        true
+    }
+
     /// Peek (Fences Win+Space): float every fence into the topmost band above `over` (the
     /// dimmer windows, if any) and pause anchoring; `false` restores the desktop z-band.
     pub fn set_peek(&mut self, on: bool, over: &[HWND]) {
@@ -1304,6 +1409,9 @@ impl DesktopAnchor {
                         set_fence_visible(f, shadow, true);
                         s.peek_shown.push(f);
                     }
+                    if s.peek_held.contains(&f) {
+                        continue;
+                    }
                     for h in std::iter::once(f).chain(shadow) {
                         let _ = desktop::set_topmost(h, true);
                     }
@@ -1316,6 +1424,7 @@ impl DesktopAnchor {
             tracing::info!(count = self.fences.len(), "peek on");
         } else {
             self.topmost_refused = false;
+            self.peek_held.clear();
             self.with_anchoring(|s| {
                 for (f, shadow) in s.fences.clone() {
                     for h in std::iter::once(f).chain(shadow) {
@@ -1472,7 +1581,7 @@ impl DesktopAnchor {
             tracing::debug!(?pt, "press on the bare desktop; quick hide is off");
             return;
         }
-        let limit = rawinput::double_click_time_ms() as u128;
+        let limit = pecofence_platform::sysparams::double_click_time_ms() as u128;
         let slop = rawinput::double_click_slop_px();
         if let Some((interval_ms, first)) =
             self.quick.desktop_press(Instant::now(), pt, limit, slop)
@@ -1984,24 +2093,8 @@ impl DesktopAnchor {
                     }
                 }
             }
-            TIMER_TEST => {
-                self.sentinel.kill_timer(TIMER_TEST);
-                if let Some(mut hook) = self.test_hook.take() {
-                    let next = hook(self);
-                    self.test_hook = Some(hook);
-                    if let Some(ms) = next {
-                        self.sentinel.set_timer(TIMER_TEST, ms);
-                    }
-                }
-            }
             _ => {}
         }
-    }
-
-    /// Starts the test script after `delay_ms`.
-    #[allow(dead_code)]
-    pub fn start_test(&self, delay_ms: u32) {
-        self.sentinel.set_timer(TIMER_TEST, delay_ms);
     }
 
     pub fn zorder_report(&self, all_visible: bool) -> String {
@@ -2085,6 +2178,26 @@ mod tests {
 
     fn ms(t: Instant, ms: u64) -> Instant {
         t + Duration::from_millis(ms)
+    }
+
+    #[test]
+    fn a_window_hides_a_fence_only_when_it_holds_all_of_it() {
+        let r = |left, top, right, bottom| RECT {
+            left,
+            top,
+            right,
+            bottom,
+        };
+        let window = r(0, 0, 1600, 852);
+        // The fence with its shadow, inside the window and up to its edges.
+        assert!(rect_holds(&window, &r(180, 140, 520, 400)));
+        assert!(rect_holds(&window, &r(0, 0, 1600, 852)));
+        // One pixel out on any side shows beside the window: not hidden.
+        assert!(!rect_holds(&window, &r(-1, 140, 520, 400)));
+        assert!(!rect_holds(&window, &r(1300, 600, 1601, 800)));
+        assert!(!rect_holds(&window, &r(1300, 600, 1600, 853)));
+        // A fence wholly off its monitor's work area (nothing left after the clip).
+        assert!(!rect_holds(&window, &r(400, 300, 400, 500)));
     }
 
     #[test]

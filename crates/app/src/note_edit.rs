@@ -13,8 +13,9 @@ use pecofence_render::ThemeMode;
 use std::cell::RefCell;
 
 const NOTE_EDIT_CLASS: &str = "PecoFence.NoteEdit";
-/// Side margin in DIPs.
-const MARGIN_DIP: f32 = 10.0;
+/// Side margin in DIPs: 4 less than the note's own text inset (`fence_chrome::NOTE_PAD_X`), as
+/// before that moved from 14 to 16.
+const MARGIN_DIP: f32 = 12.0;
 
 thread_local! {
     static ACTIVE: RefCell<Option<Session>> = const { RefCell::new(None) };
@@ -153,12 +154,6 @@ fn on_key(vk: u32) -> bool {
         return true;
     }
     false
-}
-
-/// The note whose editor is open, if one is.
-#[allow(dead_code)]
-pub fn active_fence() -> Option<FenceId> {
-    ACTIVE.with(|a| a.borrow().as_ref().map(|s| s.fence))
 }
 
 /// Closes the editor (if open); `commit` hands its text to the App.

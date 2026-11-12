@@ -34,17 +34,7 @@ pub struct WallpaperSnapshot {
     pub monitors: Vec<MonitorWallpaper>,
 }
 
-fn take_string(pwstr: windows_core::PWSTR) -> String {
-    if pwstr.is_null() {
-        return String::new();
-    }
-    // SAFETY: the shell allocated this NUL-terminated string with CoTaskMemAlloc.
-    unsafe {
-        let s = pwstr.to_string().unwrap_or_default();
-        CoTaskMemFree(pwstr.0.cast());
-        s
-    }
-}
+use crate::shell::take_string;
 
 impl WallpaperSnapshot {
     /// Fingerprint the same snapshot used to build the backdrops, including monitor geometry.

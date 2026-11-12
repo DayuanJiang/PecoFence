@@ -254,7 +254,7 @@ pub fn paths_for_shell(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 }
 
 /// Reads `HKxx\key\name` as a DWORD; `None` when absent or not a DWORD.
-fn reg_dword(root: HKEY, key: &str, name: &str) -> Option<u32> {
+pub(crate) fn reg_dword(root: HKEY, key: &str, name: &str) -> Option<u32> {
     let key = to_wide(key);
     let name = to_wide(name);
     let mut value: u32 = 0;
@@ -371,6 +371,34 @@ pub fn recycle_bin_has_items_now(wait: std::time::Duration) -> Option<bool> {
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
     None
+}
+
+/// How many items the Recycle Bin of `path`'s drive holds. None when that drive has no bin
+/// to count (a network share, a USB stick: not a fixed drive with a letter) or does not
+/// answer. Counts every item (slow for a bin of tens of thousands): call it off the UI thread.
+pub fn recycle_bin_count_for(path: &Path) -> Option<i64> {
+    let text = path.to_string_lossy();
+    let text = text.strip_prefix(r"\\?\").unwrap_or(&text);
+    let mut chars = text.chars();
+    let letter = chars.next().filter(char::is_ascii_alphabetic)?;
+    if chars.next() != Some(':') {
+        return None;
+    }
+    let root = to_wide(&format!("{letter}:\\"));
+    // SAFETY: the string is NUL-terminated and outlives the calls; `info` is a live struct
+    // with `cbSize` set.
+    unsafe {
+        if GetDriveTypeW(PCWSTR(root.as_ptr())) != DRIVE_FIXED as u32 {
+            return None;
+        }
+        let mut info = SHQUERYRBINFO {
+            cbSize: size_of::<SHQUERYRBINFO>() as u32,
+            ..Default::default()
+        };
+        SHQueryRecycleBinW(PCWSTR(root.as_ptr()), &mut info)
+            .is_ok()
+            .then_some(info.i64NumItems)
+    }
 }
 
 /// Empties the Recycle Bin of every drive, with Windows' own confirmation, progress and sound.
@@ -1123,17 +1151,6 @@ pub fn move_to_folder(paths: &[PathBuf], dest: &Path, owner: Option<HWND>) -> Re
     transfer_to_folder(paths, dest, owner, false, false)
 }
 
-/// Copies files/folders into `dest` (Ctrl held while dropping, like Explorer).
-pub fn copy_to_folder(paths: &[PathBuf], dest: &Path, owner: Option<HWND>) -> Result<bool> {
-    transfer_to_folder(paths, dest, owner, true, false)
-}
-
-/// Copies into `dest` renaming on collision (`FOF_RENAMEONCOLLISION`): pasting a file into its
-/// own folder yields Explorer's "name - 副本" duplicate instead of a prompt.
-pub fn duplicate_in_folder(paths: &[PathBuf], dest: &Path, owner: Option<HWND>) -> Result<bool> {
-    transfer_to_folder(paths, dest, owner, true, true)
-}
-
 /// One shell file operation (`IFileOperation`, with undo and the shell's own conflict /
 /// progress UI): moves or copies `paths` into `dest`. Blocks until it finishes — callers on
 /// the UI thread run it on a worker thread with its own STA (the operation takes hundreds of
@@ -1198,6 +1215,26 @@ pub fn transfer_to_folder(
         }
         performed.ok()?;
         Ok(true)
+    }
+}
+
+/// Moves `path` to the Recycle Bin silently and without a record in Windows' undo list
+/// (`FOFX_RECYCLEONDELETE` alone, neither `FOF_ALLOWUNDO` nor `FOFX_ADDUNDORECORD`): for a
+/// delete that is itself the undo of something. Blocks like [`transfer_to_folder`]; false when
+/// the operation was aborted.
+pub fn recycle_unrecorded(path: &Path) -> Result<bool> {
+    const FOFX_RECYCLEONDELETE: u32 = 0x0008_0000;
+    const FOF_NOERRORUI: u32 = 0x0400;
+    // SAFETY: COM calls on objects created here; the caller's thread has COM initialized.
+    unsafe {
+        let op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL as u32)?;
+        op.SetOperationFlags(
+            FOFX_RECYCLEONDELETE | FOF_NOERRORUI | (FOF_NOCONFIRMATION | FOF_SILENT) as u32,
+        )
+        .ok()?;
+        op.DeleteItem(&shell_item(path)?, None).ok()?;
+        op.PerformOperations().ok()?;
+        Ok(!op.GetAnyOperationsAborted().is_ok_and(|b| b.as_bool()))
     }
 }
 

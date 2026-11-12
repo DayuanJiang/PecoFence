@@ -56,7 +56,7 @@ pub fn sequence() -> u32 {
 
 /// Puts `text` on the clipboard as Unicode text (the search's 复制路径).
 pub fn set_text(owner: HWND, text: &str) -> bool {
-    let wide: Vec<u16> = text.encode_utf16().chain(std::iter::once(0)).collect();
+    let wide = crate::wide::to_wide(text);
     let bytes = wide.len() * 2;
     // SAFETY: the global block is filled while locked; on success the clipboard owns it,
     // otherwise it is freed here.

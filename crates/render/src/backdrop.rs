@@ -352,18 +352,6 @@ impl Image {
             p[3] = 255;
         }
     }
-
-    /// Average relative luminance (0..1), used to pick text colours for legibility.
-    pub fn mean_luminance(&self) -> f32 {
-        if self.bgra.is_empty() {
-            return 0.0;
-        }
-        let mut sum = 0f64;
-        for p in self.bgra.as_chunks::<4>().0 {
-            sum += 0.0722 * p[0] as f64 + 0.7152 * p[1] as f64 + 0.2126 * p[2] as f64;
-        }
-        (sum / (self.bgra.len() / 4) as f64 / 255.0) as f32
-    }
 }
 
 fn gaussian_box_radii(sigma: f32) -> [i32; 3] {

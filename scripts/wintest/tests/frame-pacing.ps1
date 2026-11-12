@@ -24,6 +24,10 @@ function RunsAfter([string[]]$lines, [string]$cmd) {
 function Med($v) { $s = @($v | Sort-Object); if ($s.Count -eq 0) { return -1 }; return $s[[int][math]::Floor($s.Count / 2)] }
 
 Case 'P3 and P8: roll, unroll and Peek from test-script lines, ten fences on screen'
+# A plain grey wallpaper: a Fluent fence in light mode that took light text from a dark part of
+# the wallpaper shows dark text for the length of a Peek, and is redrawn when it ends (2026-11-12).
+# On grey every fence keeps the mode's own text, so P8 still means: no fence is redrawn.
+GreyWallpaper
 # Ten fences on screen. The guests' compositor skipped beats only with the review's heavier layout
 # (thumbnails, 2000-item folders; notes/fix/render-perf): here 0.3.1 also draws 60 frames a second,
 # so the two frame checks guard against a slower clock, and timer_frames shows the new timeout.
