@@ -197,7 +197,23 @@ function U3PartH() {
   Check 'the fence and the dim can be told from the desktop' ($fOn -gt 40 -and [Math]::Abs($dOn - $dEnd) -gt 8) $row
   Check 'the fence fades with the dim, not after it (at most 2 frames of the fence alone)' ($alone -le 2) $row
   foreach ($f in $fr) { $f.B.Dispose() }
-  Pf fence show-all | Out-Null
+  # The fence that faded with the dim is whole again in the next Peek, and after 显示所有栅栏.
+  RecStart 'H-again' -X 40 -Y 100 -W 700 -H 440 -Fps 30
+  Start-Sleep -Milliseconds 300
+  PeekKey; U3WaitPeek $true | Out-Null; Start-Sleep -Milliseconds 1200
+  RecMark 'Esc'
+  [G]::Press(0x1B); U3WaitPeek $false | Out-Null; Start-Sleep -Milliseconds 1000
+  RecMark 'show all'
+  Pf fence show-all | Out-Null; Start-Sleep -Milliseconds 1500
+  RecStop
+  $fr = U3Frames 'H-again'; $mk = U3Marks 'H-again'
+  $peek2 = $fr | Where-Object { $_.T -lt $mk['Esc'] - 100 } | Select-Object -Last 1
+  $bare2 = $fr | Where-Object { $_.T -lt $mk['show all'] - 100 } | Select-Object -Last 1
+  $again = U3Fence $peek2.B $bare2.B $dimStep
+  $back = U3Fence $fr[$fr.Count - 1].B $bare2.B 12
+  Check 'a second Peek shows the fence as the first did' ($again -ge $fOn * 0.8) "points of the fence: first Peek $fOn, second $again"
+  Check 'after 显示所有栅栏 the fence is back whole' ((VisFences) -ge 1 -and $back -gt 40) "visible fences=$(VisFences); points of the fence that differ from the bare desktop: $back"
+  foreach ($f in $fr) { $f.B.Dispose() }
   [Anim]::Set($anim)
   PfQuit
   U3Clean
