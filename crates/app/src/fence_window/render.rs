@@ -1485,6 +1485,7 @@ impl FenceViewState {
             scrollbar,
             // `cells` holds the viewport only; the hint is for a fence without items.
             empty_text: self.items.is_empty().then(|| self.empty_text()),
+            empty_action: self.empty_action_draw(),
             drop_highlight: self.drop_wash.value_at(now),
             marquee: self.marquee_rect_dip(),
             insert_caret: self.insert_caret_dip(0.0),
@@ -1696,6 +1697,7 @@ impl FenceViewState {
             header_pressed,
             scrollbar,
             empty_text,
+            empty_action: self.empty_action_draw(),
             drop_highlight: self.drop_wash.value_at(now),
             marquee,
             insert_caret: self.insert_caret_dip(metrics.header_h),

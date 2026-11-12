@@ -299,6 +299,8 @@ pub struct RowsDraw<'a> {
     pub header_pressed: Option<HeaderColumn>,
     pub scrollbar: Option<ScrollbarDraw>,
     pub empty_text: Option<&'a str>,
+    /// A clickable row under `empty_text` (「启动 Everything」).
+    pub empty_action: Option<EmptyAction<'a>>,
     /// Fence-wide drop wash + accent ring alpha 0..=1 (a drag hovers the fence itself).
     pub drop_highlight: f32,
     pub marquee: Option<Rect>,
@@ -1341,6 +1343,8 @@ pub struct ContentDraw<'a> {
     /// Overlay scrollbar thumb when the content overflows.
     pub scrollbar: Option<ScrollbarDraw>,
     pub empty_text: Option<&'a str>,
+    /// A clickable row under `empty_text` (「启动 Everything」).
+    pub empty_action: Option<EmptyAction<'a>>,
     /// Fence-wide drop wash + accent ring alpha 0..=1 (a drag hovers the fence itself).
     pub drop_highlight: f32,
     /// Rubber-band selection rectangle in content DIPs (already scrolled), while dragging.
@@ -3922,6 +3926,12 @@ impl FenceChrome {
                 ),
                 &secondary,
             );
+            if let Some(action) = rows.empty_action
+                && let Some(rect) =
+                    self.empty_action_rect(text, action.label, width, height, header_h)
+            {
+                self.draw_empty_action(session, theme, &rect, &action)?;
+            }
         }
         Ok(())
     }
@@ -4065,6 +4075,11 @@ impl FenceChrome {
                 &Rect::from_xywh(12.0, y0, (width - 24.0).max(0.0), (height - y0).max(0.0)),
                 &secondary,
             );
+            if let Some(action) = content.empty_action
+                && let Some(rect) = self.empty_action_rect(text, action.label, width, height, 0.0)
+            {
+                self.draw_empty_action(session, theme, &rect, &action)?;
+            }
         }
         Ok(())
     }
@@ -4628,6 +4643,78 @@ impl FenceChrome {
             fx,
         );
 
+        Ok(())
+    }
+}
+
+/// The clickable row under an empty fence's text (a smart fence that needs Everything:
+/// 「启动 Everything」).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EmptyAction<'a> {
+    pub label: &'a str,
+    /// The pointer is over it.
+    pub hover: bool,
+}
+
+/// Height of the empty state's action row and its distance from the text above (DIPs).
+const EMPTY_ACTION_H: f32 = 28.0;
+const EMPTY_ACTION_GAP: f32 = 8.0;
+
+impl FenceChrome {
+    /// Where the action row under the empty-state text is, in the content surface's DIPs:
+    /// under `text` as it wraps in a content area `width` x `height` whose first `header_h`
+    /// DIPs are the column header. None when the fence is too short to show the row.
+    pub fn empty_action_rect(
+        &self,
+        text: &str,
+        label: &str,
+        width: f32,
+        height: f32,
+        header_h: f32,
+    ) -> Option<Rect> {
+        let avail = (height - header_h).max(0.0);
+        let w = (width - 24.0).max(0.0);
+        let text_h = TextLayout::new(text, &self.empty_format, w, 1000.0)
+            .ok()?
+            .metrics()
+            .height;
+        let label_w = TextLayout::new(label, &self.empty_format, 1000.0, 100.0)
+            .ok()?
+            .metrics()
+            .width;
+        let row_w = (label_w + 32.0).min(w);
+        let left = 12.0 + (w - row_w) / 2.0;
+        let top = header_h + empty_text_top(avail) + text_h + EMPTY_ACTION_GAP;
+        (row_w > 0.0 && top + EMPTY_ACTION_H <= height)
+            .then(|| Rect::new(left, top, left + row_w, top + EMPTY_ACTION_H))
+    }
+
+    /// The action row: an accent-tinted plate (stronger under the pointer) with its label.
+    fn draw_empty_action(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        rect: &Rect,
+        action: &EmptyAction<'_>,
+    ) -> Result<()> {
+        let tint = if action.hover { 0.22 } else { 0.14 };
+        session.fill_rounded_rect(
+            &RoundedRect::uniform(*rect, 4.0),
+            &session.create_solid_brush(with_alpha(theme.accent, tint))?,
+        );
+        // `empty_format` starts its text at the top of the box: one 20 DIP line, centred.
+        let line = Rect::new(
+            rect.left,
+            rect.top + (EMPTY_ACTION_H - 20.0) / 2.0,
+            rect.right,
+            rect.bottom,
+        );
+        session.draw_text(
+            action.label,
+            &self.empty_format,
+            &line,
+            &session.create_solid_brush(theme.text_primary)?,
+        );
         Ok(())
     }
 }

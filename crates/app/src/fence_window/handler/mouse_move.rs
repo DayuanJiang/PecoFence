@@ -456,7 +456,8 @@ pub(super) fn on_mousemove(
     } else {
         v.script_row_at(x, y)
     };
-    let script_changed = std::mem::replace(&mut v.script_hover, script_row) != script_row;
+    let script_changed = (std::mem::replace(&mut v.script_hover, script_row) != script_row)
+        | v.hover_empty_action((!sb_hot && !on_control).then_some((x, y)));
     let tip = v
         .tip_target_at(x, y, hit.filter(|_| behavior.info_tips.get()))
         .or(script_row.map(TipTarget::ScriptRow));

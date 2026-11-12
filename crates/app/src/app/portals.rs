@@ -28,16 +28,17 @@ impl App {
             is_portal && self.state.portal_missing(active),
             folder,
         );
-        let (empty, count) = self.smart_view(f);
+        let (empty, action, count) = self.smart_view(f);
         let filtered = self.fence_filter(active).is_some();
         let empty = if filtered {
             Some(pecofence_core::i18n::text("没有符合筛选的文件。"))
         } else {
             empty
         };
+        let action = action.filter(|_| !filtered);
         // The count belongs to a single title; in a tab strip the tab shows the name only.
         let count = count.filter(|_| active == host && self.state.tabs_of(host).len() <= 1);
-        w.set_status_view(empty, count);
+        w.set_status_view(empty, action, count);
         w.set_filtered(filtered);
         // The tag's count follows what the fence shows (files come and go).
         self.sync_filter_view(active);

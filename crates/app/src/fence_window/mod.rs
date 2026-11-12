@@ -31,10 +31,10 @@ use pecofence_platform::window::{
 };
 use pecofence_platform::{HWND, RECT, desktop, dwm, hotkey, monitors, msg};
 use pecofence_render::fence_chrome::{
-    Backdrop, BackdropCrop, ContentDraw, FenceChrome, FenceStyle, GroupHeaderDraw, HeaderColumn,
-    ItemCell, RAIL_BOTTOM, RAIL_COLLAPSED_BOTTOM, RAIL_ROW_H, RAIL_ROW_INSET, RAIL_ROW_RIGHT,
-    RAIL_TOP, RowCell, RowColumns, RowsDraw, ScrollbarDraw, StripClip, TabDraw, TitleDeco,
-    TitleState,
+    Backdrop, BackdropCrop, ContentDraw, EmptyAction, FenceChrome, FenceStyle, GroupHeaderDraw,
+    HeaderColumn, ItemCell, RAIL_BOTTOM, RAIL_COLLAPSED_BOTTOM, RAIL_ROW_H, RAIL_ROW_INSET,
+    RAIL_ROW_RIGHT, RAIL_TOP, RowCell, RowColumns, RowsDraw, ScrollbarDraw, StripClip, TabDraw,
+    TitleDeco, TitleState,
 };
 use pecofence_render::motion::{self, Curve, Fades, Motion, Prop, Tween};
 use pecofence_render::{

@@ -45,6 +45,7 @@
 - 「下一条」 on the first-start tips changes the texts on the card that is there. Each tip was a card of its own: the old one vanished, one frame showed none, and the next faded in at another height, three blinks on the way through four tips. The tips now share one card, as tall as the tallest of them, so the title, the button and the × stay where they are.
 - One gap between fences, the one set under 「栅栏间距」 in Settings (8 px unless changed). The first-run fences stood 16 px apart and 16 px from the screen edges, a fence made from another fence's menu 12 px from it, and only a dragged fence kept the 8 px. The first-run column, a fence made from a fence menu or the tray menu, and a rectangle drawn within 10 px of a fence now all keep that gap with the edges in line. A fence made from the tray menu while its spot is taken lands beside the fence there, no longer in the top-left corner of the screen.
 - A tool made from a fence's menu (新建便签, 新建小工具) stands beside that fence, the snapping gap away with the tops in line; it landed touching the fence and 4 px higher. The script examples are titled as their menu lines in every language (「PC status」; it was the file's name, 「pc-status」).
+- A smart fence that waits for Everything offers it on the spot: under the sentence in the empty fence there is a row, 「启动 Everything」 or 「安装 Everything」, that does what the same entry of its menu does. The fence used to say only that a right-click can start or install it.
 
 ## 0.3.3
 

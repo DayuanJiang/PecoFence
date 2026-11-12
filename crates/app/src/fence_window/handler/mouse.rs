@@ -25,8 +25,8 @@ pub(super) fn on_setcursor(
         window::set_standard_cursor(StandardCursor::SizeWE);
         return Some(1);
     }
-    // A script fence's clickable row: the hand, as over a link.
-    if v.script_row_at(pt.x, pt.y).is_some() {
+    // A script fence's clickable row, the empty state's action row: the hand, as over a link.
+    if v.script_row_at(pt.x, pt.y).is_some() || v.empty_action_at(pt.x, pt.y) {
         drop(guard);
         window::set_standard_cursor(StandardCursor::Hand);
         return Some(1);
@@ -86,7 +86,9 @@ pub(super) fn on_mouseleave(
         // Leaving the bar starts the 0.5 s contract delay, not an
         // instant collapse.
         v.set_scrollbar_pointer(None);
-        let content_changed = v.header_hover.take().is_some() | v.script_hover.take().is_some();
+        let content_changed = v.header_hover.take().is_some()
+            | v.script_hover.take().is_some()
+            | v.hover_empty_action(None);
         // Onto the caption part of the title row (a gap between tabs): still the row, as in
         // WM_NCMOUSELEAVE; this message can come after the WM_NCMOUSEMOVE there.
         let c = window::screen_to_client(hwnd, pt);
@@ -265,7 +267,11 @@ pub(super) fn on_lbuttondown(
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
-        if let Some(cmd) = v.note_press(x, y).or_else(|| v.script_press(x, y)) {
+        if let Some(cmd) = v
+            .note_press(x, y)
+            .or_else(|| v.script_press(x, y))
+            .or_else(|| v.empty_action_press(x, y))
+        {
             drop(guard);
             queue.push(cmd);
             queue.push(Command::RaiseFence(hwnd));
@@ -706,8 +712,9 @@ pub(super) fn on_lbuttondblclk(
             queue.push(cmd);
             return Some(0);
         }
-        // A script row acts once per double-click: a link opens one tab.
-        if v.script_row_at(x, y).is_some() {
+        // A script row acts once per double-click: a link opens one tab. So does the empty
+        // state's action row.
+        if v.script_row_at(x, y).is_some() || v.empty_action_at(x, y) {
             return Some(0);
         }
         // The folder glyph at a portal's root opens Explorer once per double-click.

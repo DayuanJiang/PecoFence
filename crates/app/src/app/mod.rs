@@ -2809,6 +2809,7 @@ impl App {
             Command::EditNote { fence } => self.edit_note(fence),
             Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
             Command::ScriptRowClicked { fence, row } => self.script_row_clicked(fence, row),
+            Command::EmptyActionClicked { fence } => self.smart_everything_clicked(fence),
             Command::NoteEdited { fence, text } => self.note_edited(fence, &text),
             Command::NewFenceRect(rect) => self.offer_new_fence(rect),
             Command::MarqueeOffer(event) => self.on_marquee_offer(event),

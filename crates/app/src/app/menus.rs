@@ -814,14 +814,9 @@ impl App {
                 .icon(glyph::FOLDER_OPEN);
             }
             if self.smart_needs_everything(fence) {
-                let installed = pecofence_platform::everything::installed_exe().is_some();
                 menu.item(
                     CMD_FENCE_SMART_EVERYTHING,
-                    if installed {
-                        pecofence_core::i18n::text("启动 Everything")
-                    } else {
-                        pecofence_core::i18n::text("安装 Everything")
-                    },
+                    super::smart::everything_action_label(),
                     false,
                     self.everything_installing,
                 );
@@ -1345,13 +1340,7 @@ impl App {
                     let _ = shell::shell_execute(std::path::Path::new(&dir), None, None);
                 }
             }
-            CMD_FENCE_SMART_EVERYTHING => {
-                if pecofence_platform::everything::installed_exe().is_some() {
-                    self.start_everything();
-                } else {
-                    self.install_everything();
-                }
-            }
+            CMD_FENCE_SMART_EVERYTHING => self.start_or_install_everything("fence menu"),
             c if (CMD_FENCE_SHOW_FOLDER..CMD_FENCE_SHOW_FOLDER + 4).contains(&c) => {
                 self.show_folder_command(c - CMD_FENCE_SHOW_FOLDER, x, y, Some(host))
             }

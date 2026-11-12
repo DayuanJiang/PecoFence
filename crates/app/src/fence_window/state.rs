@@ -258,6 +258,11 @@ pub struct FenceViewState {
     /// matches nothing), and a smart fence's count in its capsule at the right ("6"; see
     /// `FenceWindow::set_status_view`).
     pub(super) empty_override: Option<&'static str>,
+    /// The label of a clickable row under that text (`set_status_view`: a smart fence
+    /// that needs Everything offers to start or install it).
+    pub(super) empty_action: Option<&'static str>,
+    /// The pointer is over that row.
+    pub(super) empty_action_hover: bool,
     pub(super) title_count: Option<String>,
     /// 筛选: the fence is filtered right now (Esc clears it).
     pub(super) filter_active: bool,
@@ -754,6 +759,55 @@ impl FenceViewState {
             .iter()
             .find(|(_, r)| cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3])
             .map(|&(row, _)| row)
+    }
+
+    /// The empty state's action row as drawn now: only under the text the app set (a drag
+    /// over the fence says 「松开即可放入」 alone).
+    pub(super) fn empty_action_draw(&self) -> Option<EmptyAction<'static>> {
+        let label = self.empty_action?;
+        (self.items.is_empty() && !self.drop_hover && self.empty_override.is_some()).then_some(
+            EmptyAction {
+                label,
+                hover: self.empty_action_hover,
+            },
+        )
+    }
+
+    /// The empty state's action row is under the client point.
+    pub(super) fn empty_action_at(&self, x: i32, y: i32) -> bool {
+        let Some(action) = self.empty_action_draw() else {
+            return false;
+        };
+        if self.rolled_up || x < self.content_x || y < self.content_y {
+            return false;
+        }
+        let scale = self.scale();
+        let cx = (x - self.content_x) as f32 / scale;
+        let cy = (y - self.content_y) as f32 / scale;
+        let (w, h) = self.content_size_px();
+        let header_h = self.row_metrics().map_or(0.0, |m| m.header_h);
+        self.chrome
+            .empty_action_rect(
+                self.empty_text(),
+                action.label,
+                w as f32 / scale,
+                h as f32 / scale,
+                header_h,
+            )
+            .is_some_and(|r| cx >= r.left && cx < r.right && cy >= r.top && cy < r.bottom)
+    }
+
+    /// A press on the empty state's action row: the app does what the row says.
+    pub(super) fn empty_action_press(&self, x: i32, y: i32) -> Option<Command> {
+        self.empty_action_at(x, y)
+            .then_some(Command::EmptyActionClicked { fence: self.active })
+    }
+
+    /// The pointer moved to the client point (None: it left the window): the action row
+    /// lights up under it. True when that changed, and the content needs a redraw.
+    pub(super) fn hover_empty_action(&mut self, at: Option<(i32, i32)>) -> bool {
+        let over = at.is_some_and(|(x, y)| self.empty_action_at(x, y));
+        std::mem::replace(&mut self.empty_action_hover, over) != over
     }
 
     /// 脚本栅栏: a press on a clickable row runs what it asks for.

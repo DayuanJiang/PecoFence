@@ -8,8 +8,10 @@
 #                             with a version resource (CI, or PECOFENCE_RC=/usr/bin/llvm-rc on the
 #                             dev box); with --extra <dir holding old\pecofence.exe> it also
 #                             updates that older exe in place.
-# Without --var all three run.
-if (-not $Part) { $Part = 'FGN' }
+#   run.sh --var Part=E ...   a smart fence that waits for Everything has a row in its empty
+#                             state that starts it (SM-1). Needs Everything installed on the box.
+# Without --var all four run.
+if (-not $Part) { $Part = 'FGNE' }
 $OnGap = 8   # snapping.gapPx by default, at 100 %
 $OnFiles = @('预算表 2026.xlsx', '会议纪要 11月.txt', '年度报告 2025 董事会审阅版（含附录）.pdf', '报告.txt', 'a.md')
 $OnDirs = @('项目资料', '报告归档')
@@ -317,10 +319,48 @@ function OnPartN() {
   OnDropAumids
 }
 
+function OnPartE() {
+  trap { PfTrap $_; continue }
+  Case 'a smart fence that waits for Everything: a row that starts it'
+  $wasRunning = EvRunning
+  $stopped = EvStop
+  Check 'Everything is installed on the box and stopped for the test' ((EvInstalled) -and $stopped) "installed=$(EvInstalled) running=$(EvRunning)"
+  PfStart
+  ClearFences | Out-Null
+  Pf fence create --smart large --title 'Large files' --rect '360,120,340,260' | Out-Null
+  Start-Sleep -Seconds 4
+  $f = OnFence 'Large files'
+  $w = $f.windowRect
+  Log "smart fence: $(OnRectText $f) $(SmartLine 'Large files')"
+  Check 'the smart fence waits for Everything' ($f -and $f.smart.source -eq 'needsEverything') "source=$($f.smart.source)"
+  [G]::MoveTo($w.x + $w.w + 200, $w.y + 40); Start-Sleep -Milliseconds 400
+  Crop 'e-needs-everything' ($w.x - 20) ($w.y - 20) ($w.w + 40) ($w.h + 40) | Out-Null
+  $seen = (OcrText $w.x $w.y $w.w $w.h 'e-fence') -replace '\s+', ' '
+  $pt = OcrFind 'Start Everything' $w.x $w.y $w.w $w.h
+  Check 'its empty state has a Start Everything row' ($null -ne $pt) "OCR: $seen"
+  if ($pt) {
+    [G]::MoveTo($pt[0] - 30, $pt[1] + 20); Start-Sleep -Milliseconds 150; [G]::MoveTo($pt[0], $pt[1]); Start-Sleep -Milliseconds 600
+    Crop 'e-row-hover' ($w.x - 20) ($w.y - 20) ($w.w + 40) ($w.h + 40) | Out-Null
+    [G]::Click($pt[0], $pt[1])
+  }
+  $started = $false
+  for ($i = 0; $i -lt 30 -and -not $started; $i++) { Start-Sleep -Milliseconds 500; $started = EvRunning }
+  Check 'a click on the row starts Everything' ($null -ne $pt -and $started) "row=$($pt -join ',') running=$started"
+  $ran = WaitSmart 'Large files' { $s.source -eq 'everything' } 25
+  [G]::MoveTo($w.x + $w.w + 200, $w.y + 40); Start-Sleep -Milliseconds 600
+  Crop 'e-after-click' ($w.x - 20) ($w.y - 20) ($w.w + 40) ($w.h + 40) | Out-Null
+  $gone = $null -eq (OcrFind 'Start Everything' $w.x $w.y $w.w $w.h)
+  Check 'the fence then searches with Everything and the row is gone' ($ran -and $gone) "$(SmartLine 'Large files') row gone=$gone"
+  Check 'the app log names the click' (@(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -match 'Everything asked for from a smart fence' -and $_ -match 'fence row' }).Count -eq 1) ''
+  PfQuit
+  if (-not $wasRunning) { EvStop | Out-Null }
+}
+
 OnClean
 if ($Part -match 'F') { OnPartF }
 if ($Part -match 'G') { OnPartG }
 if ($Part -match 'N') { OnPartN }
+if ($Part -match 'E') { OnPartE }
 
 Case 'cleanup'
 if (PfAlive) { PfQuit }

@@ -973,14 +973,16 @@ impl App {
         }
     }
 
-    /// Smart fence `id`'s empty-state text and the count after its name: the files it shows
-    /// (after a filter), with a "+" when the limit cut the results. None for other fences.
+    /// Smart fence `id`'s empty-state text, the label of the row under it that starts or
+    /// installs Everything (only while the fence waits for Everything) and the count after
+    /// its name: the files it shows (after a filter), with a "+" when the limit cut the
+    /// results. None for other fences.
     pub(super) fn smart_view(
         &self,
         f: &pecofence_core::Fence,
-    ) -> (Option<&'static str>, Option<String>) {
+    ) -> (Option<&'static str>, Option<&'static str>, Option<String>) {
         let Some(spec) = f.smart.as_ref() else {
-            return (None, None);
+            return (None, None, None);
         };
         let run = self.smart.runs.get(&f.id);
         let source = run.map_or(SmartSource::Waiting, |r| r.source);
@@ -1003,7 +1005,31 @@ impl App {
                 run.is_some_and(|r| r.total > spec.limit) && self.fence_filter(f.id).is_none();
             format!("{shown}{}", if cut { "+" } else { "" })
         });
-        (empty, count)
+        // While winget installs Everything the row is away: a second click starts nothing.
+        let action = (source == SmartSource::NeedsEverything && !self.everything_installing)
+            .then(everything_action_label);
+        (empty, action, count)
+    }
+
+    /// 「启动 Everything」 / 「安装 Everything」 from a smart fence that waits for it (`by`: its
+    /// menu or the row in its empty state): what Settings' Everything card does.
+    pub(super) fn start_or_install_everything(&mut self, by: &'static str) {
+        let installed = pecofence_platform::everything::installed_exe().is_some();
+        tracing::info!(by, installed, "Everything asked for from a smart fence");
+        if installed {
+            self.start_everything();
+        } else {
+            self.install_everything();
+        }
+    }
+
+    /// The row under a smart fence's empty-state text was clicked.
+    pub(super) fn smart_everything_clicked(&mut self, fence: FenceId) {
+        if !self.smart_needs_everything(fence) {
+            tracing::debug!(%fence, "empty-state row clicked: the fence no longer waits for Everything");
+            return;
+        }
+        self.start_or_install_everything("fence row");
     }
 
     /// 智能栅栏 for `fence get` / `fence list`: the search and its last run.
@@ -1020,6 +1046,15 @@ impl App {
             "shown": self.state.fence(id).map_or(0, |f| self.state.items_of(f).len()),
             "query": run.map(|r| r.query.clone()).filter(|q| !q.is_empty()),
         }))
+    }
+}
+
+/// What a smart fence that waits for Everything offers, in its menu and in its empty state.
+pub(super) fn everything_action_label() -> &'static str {
+    if pecofence_platform::everything::installed_exe().is_some() {
+        pecofence_core::i18n::text("启动 Everything")
+    } else {
+        pecofence_core::i18n::text("安装 Everything")
     }
 }
 

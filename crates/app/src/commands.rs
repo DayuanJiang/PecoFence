@@ -376,6 +376,11 @@ pub enum Command {
         fence: FenceId,
         row: usize,
     },
+    /// A click on the row under a fence's empty-state text (a smart fence that needs
+    /// Everything: 「启动 Everything」 / 「安装 Everything」).
+    EmptyActionClicked {
+        fence: FenceId,
+    },
     /// The note editor closed with this text.
     NoteEdited {
         fence: FenceId,
