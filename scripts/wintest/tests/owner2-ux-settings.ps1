@@ -8,14 +8,10 @@
 #   G  a rule moved down: its row and the row under it glide to their places
 #   R  the card that 「Windows 桌面图标」 = 隐藏 brings up grows open, and closes again
 #   S  the switch of a rule slides like every other switch
-#   C  新建智能栅栏: after 创建 the editor goes away as it looked, with no white frame.
-#      NOT in the default parts: it fails today (the editor is white for 3 to 4 frames before
-#      Windows fades it out, in dark mode too). Two changes of SettingsHost::close did not help:
-#      hiding the window before the browser is closed, and destroying the window with the
-#      browser still on it. Run it with $Part = 'C' when that is fixed.
+#   C  新建智能栅栏: after 创建 the editor is gone in one frame, with no white frame before
 # The part is $Part (default: all). $Rec = 1 keeps the frames of M, L, G and R (and of a page
 # switch and a change of fence) in shots\b-<name> for the before/after pictures.
-if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'PMLGRS' }
+if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'PMLGRSC' }
 if (-not (Get-Variable Rec -ErrorAction SilentlyContinue)) { $Rec = '' }
 
 Add-Type @'
@@ -228,7 +224,7 @@ function Fences() { return @(@(PfJson fence list) | Where-Object { $_ -and $_.id
 function LastRow($m) { return (@(MenuRows $m) | Where-Object { $_.text } | Select-Object -Last 1) }
 function PartC() {
   trap { PfTrap $_; continue }
-  Case 'C: 创建 closes the editor as it looked'
+  Case 'C: 创建 closes the editor without a white frame'
   Pf settings set theme dark | Out-Null
   Start-Sleep -Seconds 1
   # 新建智能栅栏…: the last row of 添加到桌面, the last row of a fence's menu.

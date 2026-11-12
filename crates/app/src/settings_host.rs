@@ -506,6 +506,11 @@ impl SettingsHost {
     /// before it closes: closing it sends the window messages (focus, size) whose handling
     /// reads the state.
     pub fn close(self) {
+        // The window goes in one frame, hidden before the browser is closed. With the browser
+        // gone the client area is blank, and Windows faded that blank window out: the smart
+        // fence editor was white for a few frames after 创建 or 取消, in dark mode too.
+        let _ = dwm::set_transitions_disabled(self.window.hwnd(), true);
+        self.window.hide();
         let (webview, controller) = {
             let mut s = self.state.borrow_mut();
             (s.webview.take(), s.controller.take())
