@@ -10,6 +10,8 @@
 #   D  GitHub answers: the site is not asked
 #   E  GitHub answers but the Store notes file of the UI language cannot be read there (French:
 #      the feed has none): the card's line comes from the site's copy
+#   F  installer edition, Update on the card, the download fails (the feed serves no setup): the
+#      About page opens, says so and offers the download page
 # English UI (the card is read by OCR). Debug build (test delays, the settings page over CDP).
 function NoticeWin() { $n = [G]::FindWindowW('PecoFence.Notice', [NullString]::Value); if ($n -ne [IntPtr]::Zero -and [G]::IsWindowVisible($n)) { return $n }; return [IntPtr]::Zero }
 function Lines($re) { return @(PfLogAll | Where-Object { $_ -match $re -and $_ -notmatch 'omitted' } | Sort-Object -Unique) }
@@ -120,6 +122,25 @@ $from = "$(Since 'update: Store notes not read from GitHub; the line of the site
 Check 'French (no Store notes file in the feed): the card''s line comes from the site''s copy' ($card -and $from -match 'found=true' -and $t -match 'Depuis le site') "ocr: $t | $from"
 CloseNotice | Out-Null
 Pf settings set language en | Out-Null
+
+Case 'F: installer edition, the download fails'
+PfQuit
+Set-Content "$PfApp\unins000.exe" 'test'
+Again 8721 8721
+$card = WaitLine 'update card shown' 25
+Start-Sleep -Milliseconds 800
+$n = NoticeWin
+if ($n -ne [IntPtr]::Zero) { $r = Rect $n; [G]::Click($r.R - 70, $r.B - 34) }
+$failed = WaitLine 'update failed' 20
+# Nobody opened Settings: the failed download does.
+$win = WaitWin 'PecoFence.Settings' 20
+$open = $win -ne [IntPtr]::Zero -and (PfSettings)
+$s = if ($open) { Status } else { '' }
+Start-Sleep -Milliseconds 500
+Shot 'f1-download-failed'
+Check 'Update on the card, the setup cannot be downloaded: the About page opens and says so, with the site''s address' ($card -match 'installs=true' -and $failed -and $open -and $s -match 'pecofence\.jiang\.jp' -and (Js "document.querySelector('nav a.sel').dataset.page") -eq 'about') "settings window=$win page: '$s'"
+Check 'Open download page shows there too' ($open -and (SiteButton)) "extra button=$(if ($open) { SiteButton })"
+Remove-Item "$PfApp\unins000.exe" -ErrorAction SilentlyContinue
 
 Case 'cleanup'
 PfQuit

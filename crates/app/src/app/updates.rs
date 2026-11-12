@@ -469,6 +469,12 @@ impl App {
                 }
             };
             self.post_update();
+            // 「更新」 on the card or in the tray menu shows nothing while it downloads: when
+            // that failed, the About page opens, says so and offers the site's download page.
+            if matches!(self.updates.status, Status::DownloadFailed) {
+                tracing::info!("update: the download failed; opening the About page");
+                self.open_settings_page("about", Some("updateCard"));
+            }
         }
         self.show_update_card();
     }
