@@ -358,7 +358,7 @@ function PartH {
   Pf fence refresh 'Whole PC' | Out-Null
   $gone = WaitSmart 'Whole PC' { $s.source -eq 'needsEverything' -and $s.shown -eq 0 } 10
   Start-Sleep -Milliseconds 600
-  $fade = @(PfLogAll | Where-Object { $_ -match 'refill cross-fades' -and (& $t $_) -ge $t0 }) | Select-Object -First 1
+  $fade = @(PfLogAll | Where-Object { $_ -match 'refill cross-fades|replace_items animate=true' -and (& $t $_) -ge $t0 }) | Select-Object -First 1
   Check 'H the icons fade out under the sentence (a cross-fade, no cut)' ($gone -and $fade) "results gone=$gone; log: $(if ($fade) { $fade.Substring([math]::Min(28, $fade.Length)) } else { 'no cross-fade' })"
   PfQuit
   [Anim]::Set($anim)

@@ -229,7 +229,7 @@ Case 'every kind of fence'
 $kinds = @(
   @('Work', 'tab fence', 'Roll up \| Rename \| - \| View \| Sort by \| New \| Paste \| Tabs \| - \| (Fit to content \| )?Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'),
   @('Shared docs', 'folder fence', '^Roll up \| Rename \| Filter… ~ Ctrl\+F \| Open folder in File Explorer .*\| - \| View .*\| - \| (Fit to content \| )?Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'),
-  @('Today', 'note', '^Roll up \| Rename \| - \| Edit note \| - \| Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'),
+  @('Today', 'note', '^Roll up \| Rename \| - \| Edit note \| Add to-do \| - \| Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$'),
   @('Clock', 'clock', '^Roll up \| Rename \| - \| Show seconds \| - \| Lock position and size \| Fence options… \| Delete fence \| - \| Add to desktop$')
 )
 foreach ($k in $kinds) {

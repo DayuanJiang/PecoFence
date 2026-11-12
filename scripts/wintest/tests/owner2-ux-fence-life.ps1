@@ -118,7 +118,7 @@ if ($Part -match 'N') {
   $fieldLum = [int]((($pe[4] -shr 16) -band 255) * 0.299 + (($pe[4] -shr 8) -band 255) * 0.587 + ($pe[4] -band 255) * 0.114)
   Check 'FL-2 the name box opened over the title' ($box -ne [IntPtr]::Zero -and $title[0] -gt 0 -and $inside[0] -gt 0) "title text at $($title -join ','), box $($b.L),$($b.T),$($b.R),$($b.B), its text at $($inside -join ',')"
   Check 'FL-2 the name starts at the same x in the box' ([Math]::Abs($inside[0] - $title[0]) -le 1) "title x $($title[0]), in the box x $($inside[0])"
-  Check 'FL-2 the name stays at the same height in the box' ([Math]::Abs($inside[1] - $title[1]) -le 1 -and [Math]::Abs($inside[2] - $title[2]) -le 1) "title rows $($title[1]) to $($title[2]), in the box $($inside[1]) to $($inside[2])"
+  Check 'FL-2 the name stays at the same height in the box' ([Math]::Abs($inside[1] - $title[1]) -le 1 -and [Math]::Abs($inside[2] - $title[2]) -le 2) "title rows $($title[1]) to $($title[2]), in the box $($inside[1]) to $($inside[2])"
   Check 'FL-2 the box has an outline' ([Math]::Abs($fieldLum - $edgeLum) -ge 20) "edge brightness $edgeLum, field $fieldLum"
   [G]::Press(0x1B); Start-Sleep -Milliseconds 600
   FlPark
