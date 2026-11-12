@@ -1,5 +1,7 @@
 //! The Peek search box: typing during a Peek (or pressing Ctrl twice, when that is on) opens
-//! it in the upper middle of the pointer's screen. The fences dim every icon that does not
+//! it in the upper middle of the pointer's screen, or beside a fence it would cover there (it
+//! takes its place as it opens and once more when the first matches are in, see [`place`]).
+//! The fences dim every icon that does not
 //! match and highlight the matches (`App::update_peek_search`); a list under the box shows the
 //! best matches, the fences' first and then what Everything finds on the whole computer, as
 //! Listary's launcher does. Up / Down (or Ctrl+N / Ctrl+P) move through the list, which scrolls
@@ -119,6 +121,11 @@ const HEADING_SIZE: f32 = 11.5;
 const BAR_H: f32 = 36.0;
 const TABS_H: f32 = 38.0;
 const TAB_PAD: f32 = 12.0;
+/// The box with a full list (nine rows under one heading and the bottom bar): the room it
+/// keeps clear of the fences.
+const FULL_H: f32 = HEIGHT + TABS_H + LIST_GAP + HEADING_H + 9.0 * ROW_H + LIST_GAP * 2.0 + BAR_H;
+/// Space left between the box and a fence it moved away from.
+const AVOID_GAP: f32 = 16.0;
 
 /// One line of the result list.
 pub struct Row {
@@ -334,6 +341,9 @@ struct Session {
     w: i32,
     /// Bottom of the work area: the list stops above it.
     work_bottom: i32,
+    /// The work area of its screen and its usual place there (the upper middle).
+    work: RECT,
+    home: (i32, i32),
     /// Glyph and match count colour (COLORREF).
     dim_color: u32,
     glyph_font: Font,
@@ -623,8 +633,46 @@ fn step_hover(hwnd: HWND) {
     });
 }
 
-/// Opens the box with `text` typed in and gives it the keyboard.
-pub fn open(text: &str, queue: CommandQueue, dark: bool) {
+/// Whether a box `w` x `h` at (`x`, `y`) covers any of `avoid`.
+fn covers(x: i32, y: i32, w: i32, h: i32, avoid: &[RECT]) -> bool {
+    avoid
+        .iter()
+        .any(|r| x < r.right && r.left < x + w && y < r.bottom && r.top < y + h)
+}
+
+/// Where the box goes: `home`, its usual place, unless it would cover one of `avoid` there
+/// (fences, screen pixels). Then the nearest place beside, above or below one of them, `gap`
+/// away, where the box (`w` x `h`, its list included) covers none and lies in the work area
+/// `wa`; `home` after all when there is no such place.
+fn place(home: (i32, i32), w: i32, h: i32, wa: RECT, avoid: &[RECT], gap: i32) -> (i32, i32) {
+    if !covers(home.0, home.1, w, h, avoid) {
+        return home;
+    }
+    let mut best: Option<((i32, i32), i64)> = None;
+    for r in avoid {
+        for (x, y) in [
+            (r.left - gap - w, home.1),
+            (r.right + gap, home.1),
+            (home.0, r.top - gap - h),
+            (home.0, r.bottom + gap),
+        ] {
+            let inside = x >= wa.left && x + w <= wa.right && y >= wa.top && y + h <= wa.bottom;
+            if !inside || covers(x, y, w, h, avoid) {
+                continue;
+            }
+            let (dx, dy) = ((x - home.0) as i64, (y - home.1) as i64);
+            let d = dx * dx + dy * dy;
+            if best.is_none_or(|(_, b)| d < b) {
+                best = Some(((x, y), d));
+            }
+        }
+    }
+    best.map_or(home, |(to, _)| to)
+}
+
+/// Opens the box with `text` typed in and gives it the keyboard. `avoid`: the fences in
+/// sight (screen pixels); the box opens beside them when its usual place would cover one.
+pub fn open(text: &str, queue: CommandQueue, dark: bool, avoid: &[RECT]) {
     close();
     CLASS.with(|c| {
         if c.borrow().is_none() {
@@ -640,8 +688,20 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
     let px = |dip: f32| (dip * dpi as f32 / 96.0).round() as i32;
     let (w, h) = (px(WIDTH), px(HEIGHT) + px(TABS_H));
     let wa = m.work_area;
-    let x = (wa.left + wa.right) / 2 - w / 2;
-    let y = wa.top + ((wa.bottom - wa.top - h) as f32 * TOP_FRACTION) as i32;
+    let home = (
+        (wa.left + wa.right) / 2 - w / 2,
+        wa.top + ((wa.bottom - wa.top - h) as f32 * TOP_FRACTION) as i32,
+    );
+    let full = px(FULL_H).min(wa.bottom - home.1);
+    let (x, y) = place(home, w, full, wa, avoid, px(AVOID_GAP));
+    tracing::debug!(
+        ?home,
+        x,
+        y,
+        fences = avoid.len(),
+        moved = (x, y) != home,
+        "search box: place taken as it opens"
+    );
 
     let handler: MessageHandler = {
         let queue = queue.clone();
@@ -849,6 +909,8 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
             y,
             w,
             work_bottom: wa.bottom,
+            work: wa,
+            home,
             dim_color: if dark { 0x00C5_C5C5 } else { 0x005F_5F5F },
             glyph_font: Font::new(fonts::icon_face(), GLYPH_SIZE, dpi),
             status_font: Font::new(fonts::text_face(), STATUS_SIZE, dpi),
@@ -1611,6 +1673,42 @@ pub fn set_rows(rows: Vec<Row>, selected: Option<usize>, total: usize, scroll: O
     }
 }
 
+/// The first matches are in. `avoid`: the fences that hold them (screen pixels). A box that
+/// covers one of them where it is moves, this once, to the nearest place that covers none
+/// (see [`place`]); it stays when there is no such place. True when it moved.
+pub fn keep_clear(avoid: &[RECT]) -> bool {
+    ACTIVE.with(|a| {
+        let mut a = a.borrow_mut();
+        let Some(s) = a.as_mut() else {
+            return false;
+        };
+        let full = s.px(FULL_H).min(s.work.bottom - s.home.1);
+        if !covers(s.x, s.y, s.w, full, avoid) {
+            tracing::debug!(
+                fences = avoid.len(),
+                "search box: first matches, none covered, it stays"
+            );
+            return false;
+        }
+        let (x, y) = place(s.home, s.w, full, s.work, avoid, s.px(AVOID_GAP));
+        let moved = (x, y) != (s.x, s.y);
+        tracing::debug!(
+            from = ?(s.x, s.y),
+            x,
+            y,
+            fences = avoid.len(),
+            moved,
+            "search box: first matches, it covered a fence that holds some"
+        );
+        if moved {
+            (s.x, s.y) = (x, y);
+            let (_, h) = window::window_rect_size(s.window.hwnd());
+            let _ = s.window.set_bounds(x, y, s.w, h);
+        }
+        moved
+    })
+}
+
 /// How many rows fit between the box and the bottom of the work area when `headings` group
 /// headings are among them (a small screen at a high scale holds fewer than nine).
 pub fn row_room(headings: usize) -> usize {
@@ -1715,6 +1813,42 @@ mod tests {
         assert!(!bar_keys(true).contains('↵'));
         // A row without a file (an action row, 此电脑): only what works there.
         assert_eq!(bar_keys(false), "Enter 打开");
+    }
+
+    fn rect(left: i32, top: i32, right: i32, bottom: i32) -> RECT {
+        RECT {
+            left,
+            top,
+            right,
+            bottom,
+        }
+    }
+
+    /// The box keeps its place in the upper middle unless a fence is under it; then it goes to
+    /// the nearest clear place beside, above or below, and stays when there is none.
+    #[test]
+    fn the_box_moves_aside_for_a_fence() {
+        // 1600 x 852 work area, the box 640 x 562 at (480, 227).
+        let wa = rect(0, 0, 1600, 852);
+        let home = (480, 227);
+        let at = |avoid: &[RECT]| place(home, 640, 562, wa, avoid, 16);
+        // No fence, and fences clear of it (the first run's right columns at 1920 wide).
+        assert_eq!(at(&[]), home);
+        assert_eq!(at(&[rect(1136, 16, 1376, 550)]), home);
+        // The first-run layout at 1600 wide: 文件与文档 from 1088. The box ends 16 px before it.
+        let first_run = [rect(1088, 16, 1328, 550), rect(1344, 16, 1584, 262)];
+        assert_eq!(at(&first_run), (432, 227));
+        // A fence over its left part: to the right of it.
+        assert_eq!(at(&[rect(300, 300, 560, 500)]), (576, 227));
+        // A wide, low fence across the top: the box goes below it.
+        assert_eq!(at(&[rect(200, 40, 1400, 240)]), (480, 256));
+        // Fences left and right of the middle with no room between, beside, above or below.
+        let crowded = [rect(300, 240, 600, 540), rect(1040, 240, 1300, 570)];
+        assert_eq!(at(&crowded), home);
+        // Only the right one holds matches: clear of that one, over the other.
+        assert_eq!(at(&crowded[1..]), (384, 227));
+        // A fence on another screen changes nothing.
+        assert_eq!(at(&[rect(1700, 100, 2000, 400)]), home);
     }
 
     /// Each drive gets a thread of its own (a spin-up holds only its rows); the log names the

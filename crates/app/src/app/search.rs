@@ -68,6 +68,8 @@ pub(super) struct SearchState {
     /// When that query went to Everything, until its answer is in: the smart fences' searches
     /// wait meanwhile (Everything answers one search at a time, a new one cancels the last).
     pub asked_at: Option<Instant>,
+    /// The box had its chance to move away from the fences that hold the first matches.
+    pub placed: bool,
     /// The Open / Save dialog in front when the Peek began.
     pub dialog: Option<isize>,
     /// The window in front when the Peek began (double Ctrl gives the foreground back to it).
@@ -114,7 +116,7 @@ impl App {
             return;
         }
         tracing::info!("search box opened by double Ctrl");
-        crate::peek_search::open("", self.queue.clone(), self.theme_mode == ThemeMode::Dark);
+        self.open_peek_search("");
         self.update_peek_search();
     }
 

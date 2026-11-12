@@ -525,7 +525,7 @@ impl App {
         if crate::peek_search::is_open() {
             crate::peek_search::set_text(text);
         } else {
-            crate::peek_search::open(text, self.queue.clone(), self.theme_mode == ThemeMode::Dark);
+            self.open_peek_search(text);
         }
         self.update_peek_search();
         true
@@ -539,9 +539,28 @@ impl App {
         if crate::peek_search::is_open() {
             crate::peek_search::append(text);
         } else {
-            crate::peek_search::open(text, self.queue.clone(), self.theme_mode == ThemeMode::Dark);
+            self.open_peek_search(text);
         }
         self.update_peek_search();
+    }
+
+    /// Opens the search box with `text`: in the upper middle of the screen, or beside the
+    /// fences in sight when it would cover one there.
+    pub(super) fn open_peek_search(&mut self, text: &str) {
+        let fences = self.fence_plates(|_| true);
+        let dark = self.theme_mode == ThemeMode::Dark;
+        crate::peek_search::open(text, self.queue.clone(), dark, &fences);
+    }
+
+    /// Screen rectangles of the fences in sight that `pick` takes, for the search box to keep
+    /// clear of. A 「桌面」 arranged like the desktop is left out: it has no plate, and its
+    /// window spans all its loose icons, wherever they are.
+    fn fence_plates(&self, pick: impl Fn(&FenceId) -> bool) -> Vec<RECT> {
+        self.fences
+            .iter()
+            .filter(|(id, w)| desktop::is_visible(w.hwnd()) && !w.is_desktop_arranged() && pick(id))
+            .map(|(_, w)| w.rect())
+            .collect()
     }
 
     /// Re-runs the search for the text in the box over every fence, its hidden tabs and rolled-up
@@ -554,6 +573,14 @@ impl App {
         }
         let query = typed.trim().to_lowercase();
         self.rank_fence_matches(&query);
+        // The first matches of this search: a box that covers a fence holding some moves
+        // aside, this once (typing on never moves it).
+        if !self.search.placed && !self.peek_hits.is_empty() {
+            self.search.placed = true;
+            let holding =
+                self.fence_plates(|id| self.peek_hits.iter().any(|(host, _, _)| host == id));
+            crate::peek_search::keep_clear(&holding);
+        }
         self.schedule_everything(typed.trim());
         self.refresh_search_rows();
         crate::peek_search::rows_shown_for_change();

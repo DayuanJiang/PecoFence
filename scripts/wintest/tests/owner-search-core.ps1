@@ -4,9 +4,10 @@
 #       window at the screen's top-left corner, the box opened only when a candidate was taken).
 # PK-4: a list with more matches than rows scrolls: Down past the last row shown, the wheel,
 #       PageDown / PageUp, End / Home, Ctrl+digit on the rows shown, a thumb at the right.
-# Parts (run.sh --var Part=...): A PK-1, B PK-4. Default: all. Record=1 also records
+# PK-3: the box moves aside when it would cover a fence that holds highlighted matches, once.
+# Parts (run.sh --var Part=...): A PK-1, B PK-4, C PK-3. Default: all. Record=1 also records
 # the clips for the report. Keys are pressed with their scan codes, as a keyboard sends them.
-if (-not $Part) { $Part = 'AB' }
+if (-not $Part) { $Part = 'ABC' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
 
@@ -159,16 +160,19 @@ function PartA() {
   ScPress 0x27; Start-Sleep -Milliseconds 700
   $after = @(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -match 'peek key: the keyboard goes into a fence' }).Count
   Check 'Right arrow: the keyboard goes into a fence, no search box' ($after -eq $before + 1 -and -not (BoxRect)) "log lines $before -> $after box=$(RectText (BoxRect))"
-  # A click on an icon, then Delete: the file goes to the Recycle Bin, the Peek stays.
-  $p = ItemPt '工作文件' '通报'
+  # A click on an icon, then Delete: its file goes to the Recycle Bin, the Peek stays. Icons by
+  # their place in the fence: which name stands where depends on the sort order of the day.
+  $n0 = @(Get-ChildItem -LiteralPath $ScDir -File).Count
+  $p = CellPt '工作文件' 6
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 600
   ScPress 0x2E; Start-Sleep -Milliseconds 1500
-  Check 'Delete on a clicked icon deletes it, the Peek stays' (-not (Test-Path -LiteralPath (Join-Path $ScDir '通报.txt')) -and (PeekOn) -and -not (BoxRect)) "file there=$(Test-Path -LiteralPath (Join-Path $ScDir '通报.txt')) peek=$(PeekOn) box=$(RectText (BoxRect))"
-  $p = ItemPt '工作文件' '报表'
+  $n1 = @(Get-ChildItem -LiteralPath $ScDir -File).Count
+  Check 'Delete on a clicked icon deletes it, the Peek stays' ($n1 -eq $n0 - 1 -and (PeekOn) -and -not (BoxRect)) "files in the folder $n0 -> $n1 peek=$(PeekOn) box=$(RectText (BoxRect))"
+  $p = CellPt '工作文件' 2
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 600
   ScPress 0x0D; Start-Sleep -Milliseconds 1800
-  Check 'Enter on a clicked icon opens it and ends the Peek' ((NotepadTitles) -match '报表' -and -not (PeekOn)) "notepad: $(NotepadTitles) peek=$(PeekOn)"
-  Get-Process notepad -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -match '报表' } | Stop-Process -Force
+  Check 'Enter on a clicked icon opens it and ends the Peek' ((NotepadTitles) -match '\.txt - Notepad' -and -not (PeekOn)) "notepad: $(NotepadTitles) peek=$(PeekOn)"
+  Get-Process notepad -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -match '\.txt - Notepad' } | Stop-Process -Force
   Start-Sleep -Milliseconds 500
   $np = (Get-Process notepad | Select-Object -First 1).MainWindowHandle
   $nr = Rect $np
@@ -334,5 +338,78 @@ function PartB() {
   ScClean
 }
 if ($Part -match 'B') { PartB }
+
+# ---------------------------------------------------------------- C: PK-3
+$ScOther = Join-Path $PfDocs 'pf-owner-search-other'
+function ScFenceRect($title) { $w = (FenceGet $title).windowRect; return @{ L = [int]$w.x; T = [int]$w.y; R = [int]($w.x + $w.w); B = [int]($w.y + $w.h) } }
+function ScOverlap($a, $b) { return ($a -and $b -and $a.L -lt $b.R -and $b.L -lt $a.R -and $a.T -lt $b.B -and $b.T -lt $a.B) }
+function PartC() {
+  trap { PfTrap $_; continue }
+  Case 'PK-3 setup'
+  CloseWindows
+  ScSeed
+  if (Test-Path -LiteralPath $ScOther) { [IO.Directory]::Delete($ScOther, $true) }
+  New-Item -ItemType Directory -Force $ScOther | Out-Null
+  foreach ($n in '合同 扫描件.txt', '照片说明.txt', '会议纪要 11月.txt') { Set-Content -LiteralPath (Join-Path $ScOther $n) -Value "sample $n" -Encoding UTF8 }
+  PfStart -Lang zh-CN
+  ClearFences | Out-Null
+  ParkMouse | Out-Null
+  Add-Type -AssemblyName System.Windows.Forms
+  $screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+
+  Case 'PK-3 no fence under the box: the upper middle, as before'
+  Pf fence create --portal $ScDir --title '工作文件' --rect '1180,60,400,420' | Out-Null
+  Start-Sleep -Seconds 2
+  ScSearch
+  $usual = BoxRect
+  Check 'the box is in the middle of the screen, 30 % down' ($usual -and ($usual.L + $usual.R) -eq $screen.Width -and [math]::Abs($usual.T - [int](($screen.Height - 94) * 0.3)) -le 1) "box=$(RectText $usual) work area $($screen.Width)x$($screen.Height)"
+  EndPeekHard
+
+  Case 'PK-3 a fence with matches where the box opens: the box takes the place beside it'
+  # As the first run's 文件与文档 on a 1600 px screen: it starts 32 px left of the box's right edge.
+  Pf fence move '工作文件' --rect '1088,16,420,400' | Out-Null
+  Start-Sleep -Seconds 1
+  $fr = ScFenceRect '工作文件'
+  if ($Record) { RecStart 'PK-3' -X 380 -Y 0 -W 1140 -H 820 -Fps 15; Start-Sleep -Milliseconds 300; RecMark '速览里输入「报」' }
+  ScSearch
+  $b1 = BoxRect
+  Shot 'C1-beside'
+  Check 'the box covers no part of the fence that holds the matches' ($b1 -and -not (ScOverlap $b1 $fr)) "box=$(RectText $b1) fence=$($fr.L),$($fr.T),$($fr.R),$($fr.B)"
+  Check 'it is the nearest such place: 16 px left of the fence, same height, on the screen' ($b1 -and $b1.R -eq $fr.L - 16 -and $b1.T -eq $usual.T -and $b1.L -ge 0) "box=$(RectText $b1) usual place=$(RectText $usual)"
+  if ($Record) { RecMark '接着输入「告」，再删掉' }
+  [G]::Type('告'); Start-Sleep -Milliseconds 900; $b2 = BoxRect
+  [G]::Press(0x08); Start-Sleep -Milliseconds 500; [G]::Press(0x08); Start-Sleep -Milliseconds 700; $b3 = BoxRect
+  [G]::Type('zzzz'); Start-Sleep -Milliseconds 900; $b4 = BoxRect
+  Check 'typing on, deleting and a text without matches do not move the box' ($b1 -and $b2.L -eq $b1.L -and $b2.T -eq $b1.T -and $b3.L -eq $b1.L -and $b3.T -eq $b1.T -and $b4.L -eq $b1.L -and $b4.T -eq $b1.T) "$(RectText $b1) | $(RectText $b2) | $(RectText $b3) | $(RectText $b4)"
+  if ($Record) { Start-Sleep -Milliseconds 500; RecStop }
+  EndPeekHard
+
+  Case 'PK-3 opened empty between two fences: it moves once, when the first matches are in'
+  Pf fence move '工作文件' --rect '1040,240,260,330' | Out-Null
+  Pf fence create --portal $ScOther --title '其他文件' --rect '300,240,300,300' | Out-Null
+  Pf settings set peek.doubleCtrl true | Out-Null
+  Start-Sleep -Seconds 2
+  $fa = ScFenceRect '其他文件'; $fb = ScFenceRect '工作文件'
+  DoubleCtrl; Start-Sleep -Milliseconds 1200
+  $e0 = BoxRect
+  Check 'no clear place for an empty box between the two fences: the usual place' ($e0 -and $e0.L -eq $usual.L -and $e0.T -eq $usual.T -and [M]::BoxText() -eq '') "box=$(RectText $e0) text='$([M]::BoxText())'"
+  [G]::Type('报'); Start-Sleep -Milliseconds 1200
+  $e1 = BoxRect
+  Shot 'C2-first-matches'
+  Check 'the first matches are in 工作文件: the box no longer covers it' ($e1 -and -not (ScOverlap $e1 $fb) -and $e1.R -eq $fb.L - 16) "box=$(RectText $e1) 工作文件=$($fb.L),$($fb.T),$($fb.R),$($fb.B) 其他文件=$($fa.L),$($fa.T),$($fa.R),$($fa.B)"
+  [G]::Press(0x08); Start-Sleep -Milliseconds 600
+  [G]::Type('合同'); Start-Sleep -Milliseconds 1200
+  $e2 = BoxRect
+  Check 'a later search with matches in the other fence leaves the box where it is' ($e2 -and $e1 -and $e2.L -eq $e1.L -and $e2.T -eq $e1.T -and [int](ListLine).total -eq 1) "box=$(RectText $e2) $(ListText)"
+  EndPeekHard
+  Pf settings set peek.doubleCtrl false | Out-Null
+  Check 'the app logged no error' (@(PfLogErrors).Count -eq 0) "$(@(PfLogErrors) | Select-Object -First 2)"
+
+  Case 'PK-3 cleanup'
+  PfQuit
+  ScClean
+  if (Test-Path -LiteralPath $ScOther) { [IO.Directory]::Delete($ScOther, $true) }
+}
+if ($Part -match 'C') { PartC }
 
 [Anim]::Set($ScAnim)
