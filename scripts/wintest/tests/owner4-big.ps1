@@ -4,6 +4,7 @@
 #      action and run goes to C:\pf\run\big.tsv: how long the user waits and what the UI thread
 #      spent it on, read from the app's debug log (`slow message`, `content draw`,
 #      `animation run`). --var Lite=1 leaves out Peek, the file added and removed, and memory.
+#      --var Only=scroll or Only=peek measures those rows alone, right after a start.
 #   R  memory: --var N=1000 (--var Runs=3). Private commit with the small folder alone, with the
 #      big folder's fence open, after scrolling through all of it, and 40 s later.
 #   P  pictures of a fence of 1000 files at rest (three views, three scroll positions, a
@@ -117,7 +118,7 @@ function BgRow($action, $run, $pos, $t0, [int]$items = 0, $note = '') {
     (& $r $drawMax), $drawn, $scroll, $frames, (& $r $work), (& $r $maxFrame), ($cmds -join ' '), $note) -join "`t"
   $row | Add-Content "$PfRun\big.tsv" -Encoding UTF8
   Log "BIG $row"
-  return @{ first = $first; last = $last; busy = $busy; worst = $worst; draws = $draws; labels = $labels; frames = $frames; work = $work; scroll = $scroll; drawMax = $drawMax; drawSum = $drawSum }
+  return @{ first = $first; last = $last; busy = $busy; worst = $worst; draws = $draws; labels = $labels; frames = $frames; work = $work; maxFrame = $maxFrame; scroll = $scroll; drawMax = $drawMax; drawSum = $drawSum }
 }
 # One user action on the running app: the body, then quiet, then the row.
 function BgAct($action, $run, [scriptblock]$body, [int]$items = 0, [int]$min = 900, [int]$max = 20000) {
@@ -196,6 +197,7 @@ function PartM() {
   ParkMouse
   PfQuit
 
+  if (-not $Only) {
   Case "M start and tab, $N files, $View"
   for ($r = 1; $r -le $Runs; $r++) {
     # The small tab was showing when the app quit: the big one is clicked for the first time.
@@ -234,6 +236,29 @@ function PartM() {
     BgAct 'group by time off' $r { Pf fence set $BgBig groupByDate false | Out-Null } 0 | Out-Null
   }
 
+  } else {
+    # --var Only=scroll: the scrolling rows alone. The app starts and the big tab is shown
+    # for the first time, so no name below the first screen is fitted yet.
+    $t0 = BgStart
+    BgStarted 'start, other tab showing' 1 $t0 0 | Out-Null
+    BgOverTab $iBig
+    BgAct 'tab click, first time' 1 { BgPress } $N 1500 60000 | Out-Null
+    ParkMouse; Start-Sleep -Milliseconds 300
+    if ($Only -eq 'peek') {
+      # --var Only=peek: the Peek search rows alone.
+      Case "M Peek search, $N files"
+      for ($r = 1; $r -le $Runs; $r++) {
+        BgAct 'Peek opened' $r { PeekKey } 0 1200 | Out-Null
+        BgAct 'Peek search: a letter typed' $r { [G]::Type('b') } 0 1200 | Out-Null
+        BgAct 'Peek closed (Esc twice)' $r { [G]::Press(0x1B); Start-Sleep -Milliseconds 300; [G]::Press(0x1B) } 0 1200 | Out-Null
+      }
+      PfQuit
+      [Anim]::Set($animWas)
+      Remove-Item -Recurse -Force "$PfRun\bigdata" -ErrorAction SilentlyContinue
+      return
+    }
+  }
+
   Case "M scrolling, $N files, $View"
   $mid = BgMid
   [G]::MoveTo($mid[0], $mid[1]); Start-Sleep -Milliseconds 800
@@ -255,6 +280,13 @@ function PartM() {
     [G]::Press(0x24); Start-Sleep -Milliseconds 900
   }
   if (-not $Lite) { $script:MemScrolled = BgCommit }
+
+  if ($Only -eq 'scroll') {
+    PfQuit
+    [Anim]::Set($animWas)
+    Remove-Item -Recurse -Force "$PfRun\bigdata" -ErrorAction SilentlyContinue
+    return
+  }
 
   Case "M width, $N files, $View"
   ParkMouse
@@ -523,6 +555,24 @@ function PartB() {
   ParkMouse
   $t = BgMedian $tab
   Check 'B1 a click on the tab of a folder of 4000 files shows it within 120 ms (before: about 280 ms, of which 270 ms fit 4000 names)' ($t -ge 0 -and $t -lt 120) "first picture after $([math]::Round($t)) ms (runs $(@($tab | ForEach-Object { [math]::Round($_) }) -join ', ')); names and icon requests $(@($names | ForEach-Object { [math]::Round($_, 1) }) -join ', ') ms"
+  # The first End and Home after the tab is shown again: the rows on the way have no
+  # fitted name yet, and every frame of the glide fits the names it shows.
+  $endMax = @(); $homeMax = @(); $endWork = @()
+  for ($r = 1; $r -le 3; $r++) {
+    BgOverTab $iSmall; BgAct 'B tab click away' $r { BgPress } 0 900 | Out-Null
+    BgOverTab $iBig; BgAct 'B tab click, again' $r { BgPress } 4000 900 | Out-Null
+    [G]::Click($BgX + 40, $BgY + 36 + 40); Start-Sleep -Milliseconds 400
+    $a = BgAct 'B first End' $r { [G]::Press(0x23) } 0 900
+    $endMax += $a.maxFrame
+    if ($a.frames -gt 0) { $endWork += $a.work / $a.frames }
+    $a = BgAct 'B first Home' $r { [G]::Press(0x24) } 0 900
+    $homeMax += $a.maxFrame
+  }
+  ParkMouse
+  $em = BgMedian $endMax; $hm = BgMedian $homeMax
+  # No fix yet: the wrapped names of the icons still take a layout per halving. The bound
+  # only keeps the slowest frame from getting worse than it is.
+  Check 'B4 the first End and Home through 4000 files: the slowest frame stays under 14 ms of work (it is 8 to 10 ms; under 5 ms before the names were fitted when drawn)' ($em -gt 0 -and $em -lt 14 -and $hm -lt 14) "slowest frame: End $($endMax -join ', ') ms, Home $($homeMax -join ', ') ms; mean work per frame of End $(@($endWork | ForEach-Object { [math]::Round($_, 2) }) -join ', ') ms"
   Pf fence set $BgBig layout details | Out-Null
   BgQuiet (BgNow) 1500 30000
   $wide = @()
@@ -568,6 +618,20 @@ function PartB() {
   Check 'B3 a letter typed into the filter of 4000 files lists the folder once and keeps the fence under 28 ms (before: listed and matched three times, 39 to 47 ms)' ((BgMedian $lists) -eq 1 -and (BgMedian $busy) -lt 28) "listings per letter $($lists -join ', '); UI thread $(@($busy | ForEach-Object { [math]::Round($_, 1) }) -join ', ') ms"
   $sm = BgMedian $sorts
   Check 'B3 the name sort of 4000 files takes under 12 ms' ($sm -ge 0 -and $sm -lt 12) "sort $($sorts -join ', ') ms"
+
+  Case 'B5 the search fades are set when the search changes, not at every draw'
+  ParkMouse
+  $fade = @(); $sets = @()
+  for ($r = 1; $r -le 3; $r++) {
+    BgAct 'B Peek opened' $r { PeekKey } 0 1200 | Out-Null
+    $pos = BgLogLen
+    $a = BgAct 'B Peek search: a letter typed' $r { [G]::Type('b') } 0 1200
+    if ($a.frames -gt 0) { $fade += $a.work / $a.frames }
+    $sets += [regex]::Matches((BgLogFrom $pos), 'search fades set for every item').Count
+    BgAct 'B Peek closed' $r { [G]::Press(0x1B); Start-Sleep -Milliseconds 300; [G]::Press(0x1B) } 0 1200 | Out-Null
+  }
+  $fm = BgMedian $fade
+  Check 'B5 a Peek search letter with a fence of 4000 files on screen: the fades of the matches take under 2.6 ms of work per frame, and every item gets its fade set a few times per letter, not once per frame' ($fm -ge 0 -and $fm -lt 2.6 -and (BgMedian $sets) -ge 1 -and (BgMedian $sets) -le 4) "mean work per frame $(@($fade | ForEach-Object { [math]::Round($_, 2) }) -join ', ') ms; sets per letter $($sets -join ', ')"
   PfQuit
   [Anim]::Set($animWas)
   Remove-Item -Recurse -Force "$PfRun\bigdata" -ErrorAction SilentlyContinue
