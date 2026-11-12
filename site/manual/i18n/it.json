@@ -953,7 +953,7 @@
   "停在上面展开的栅栏，鼠标移开后自动收起；单击标题展开的，再单击标题收起；不管选哪种，双击标题或点折叠箭头都能展开和收起": "I riquadri espansi al passaggio del mouse si comprimono quando si allontana; quelli espansi con un clic sul titolo, al clic successivo sul titolo. Qualunque scelta, un doppio clic sul titolo o un clic sulla freccia per comprimere espande e comprime",
   "鼠标停在上面时": "Al passaggio del mouse",
   "展开快慢": "Velocità di espansione",
-  "鼠标停多久栅栏才展开；“默认”跟随 Windows 的鼠标悬停时间": "Quanto a lungo il puntatore resta su un riquadro compresso prima che si espanda; Predefinito segue il tempo di sosta del mouse di Windows",
+  "鼠标停多久栅栏才展开，悬停切换标签页也等这么久；“默认”跟随 Windows 的鼠标悬停时间": "Quanto a lungo il puntatore resta su un riquadro compresso prima che si espanda; il passaggio da una scheda all’altra al passaggio del mouse attende lo stesso tempo; Predefinito segue il tempo di sosta del mouse di Windows",
   "展开时把下面的栅栏推开": "Quando un riquadro si espande, sposta verso il basso quelli sottostanti",
   "收起后它们会回到原位": "Quando il riquadro si comprime, tornano alla posizione originale",
   "鼠标悬停时才显示标题栏": "Mostra la barra del titolo solo al passaggio del mouse",
