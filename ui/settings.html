@@ -2805,6 +2805,11 @@
   let toastTimer, toastUndo = null;
   function toast(t, error = false, undo = null) {
     const el = document.getElementById('toast');
+    // A notice that takes the place of one still on screen comes in again: with only its text
+    // changed in place it does not read as a new notice.
+    if (el.classList.contains('on') && document.getElementById('toastText').textContent !== t) {
+      el.style.transition = 'none'; el.classList.remove('on'); void el.offsetWidth; el.style.transition = '';
+    }
     document.getElementById('toastText').textContent = t;
     el.classList.toggle('error', error);
     toastUndo = undo;

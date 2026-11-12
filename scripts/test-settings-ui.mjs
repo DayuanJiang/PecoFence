@@ -3180,6 +3180,20 @@ async function runTests() {
     assert(await until(() => !bar.classList.contains('on')), 'A notice that nobody points at stays');
     doc = await reset();
   });
+  await test('A notice that replaces one still on screen comes in again; the same notice again does not', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const bar = doc.getElementById('toast'), comingIn = () => moving().some(line => line === '#toast opacity');
+    frame.contentWindow.testHost({ type: 'toast', text: '已保存快照' });
+    assert(bar.classList.contains('on') && comingIn(), 'The first notice does not fade in');
+    assert(await until(() => !comingIn()), 'The first notice never came to rest');
+    frame.contentWindow.testHost({ type: 'toast', text: '已恢复布局' });
+    assert(bar.classList.contains('on') && doc.getElementById('toastText').textContent === '已恢复布局' && comingIn(), 'The second notice changes the text in place');
+    assert(await until(() => !comingIn()), 'The second notice never came to rest');
+    frame.contentWindow.testHost({ type: 'toast', text: '已恢复布局' });
+    assert(bar.classList.contains('on') && !comingIn(), 'The same notice again blinks');
+    doc = await reset();
+  });
   await test('Smart fence editor: when a row is added or removed, the rows under it glide and the new row fades in', async () => {
     doc = await openEditor('fence=new');
     assert(await motionReady(), 'The editor never allowed transitions');
