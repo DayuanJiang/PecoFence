@@ -117,12 +117,13 @@ fn other_programs_module(log: &str) -> Option<&str> {
 }
 
 /// Whether the run of a shareable log ended inside another program's module while it built
-/// Windows' menu for an icon or for a Peek search row (crashlog's `command=ItemMenu`).
+/// Windows' menu for an icon, for a Peek search row or, two seconds after its start, in the
+/// background (crashlog's `command=ItemMenu`, `PeekSearchRowMenu`, `Prewarm`).
 fn crashed_building_menu(log: &str) -> bool {
     other_programs_module(log).is_some()
         && matches!(
             crash_field(log, "command"),
-            Some("ItemMenu" | "PeekSearchRowMenu")
+            Some("ItemMenu" | "PeekSearchRowMenu" | "Prewarm")
         )
 }
 
@@ -761,6 +762,11 @@ mod tests {
         assert!(crashed_building_menu(menu));
         assert!(crashed_building_menu(
             &menu.replace("command=ItemMenu", "command=PeekSearchRowMenu")
+        ));
+        // The same in the menu built in the background after a start (a DLL that faults
+        // while it is loaded gets there first).
+        assert!(crashed_building_menu(
+            &menu.replace("command=ItemMenu", "command=Prewarm")
         ));
         // Another command, or PecoFence's own code under the menu: the menus stay whole.
         assert!(!crashed_building_menu(

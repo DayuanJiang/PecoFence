@@ -9,7 +9,7 @@ use crate::bindings::*;
 use crate::wide::to_wide;
 use std::cell::RefCell;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use windows_core::{Error, Interface, PCSTR, PCWSTR, PWSTR, Result};
 
@@ -33,6 +33,17 @@ const CACHE_DONE: u8 = 2;
 const CACHE_WAIT: Duration = Duration::from_secs(2);
 /// `prepare_handler_cache` got the cache started (its library icon came back).
 static CACHE_READY: AtomicBool = AtomicBool::new(false);
+
+/// The thread on which `prewarm` is building its menu, 0 when none is.
+static PREWARM_THREAD: AtomicU32 = AtomicU32::new(0);
+
+/// Whether the calling thread is `prewarm`'s, in the middle of its menu: a crash here is a
+/// crash while Windows' menu for a file was built, as at a right-click (crashlog's line
+/// says `command=Prewarm`).
+pub(crate) fn prewarming_here() -> bool {
+    // SAFETY: plain FFI call.
+    PREWARM_THREAD.load(Ordering::Relaxed) == unsafe { GetCurrentThreadId() }
+}
 
 /// The shell's context menu object for a set of items plus the command-id range it was given.
 pub struct ShellContextMenu {
@@ -319,6 +330,8 @@ pub fn prewarm(path: std::path::PathBuf, after: Duration) {
             let _loads = LoadWatch::new("Prewarm");
             let started = Instant::now();
             let before = loaded_modules();
+            // SAFETY: plain FFI call.
+            PREWARM_THREAD.store(unsafe { GetCurrentThreadId() }, Ordering::Relaxed);
             let built = (|| -> Result<u32> {
                 let mut menu = ShellContextMenu::for_paths(&[path.as_path()])?;
                 // SAFETY: a menu of our own, destroyed below; ids as the item menu hands out.
@@ -328,6 +341,7 @@ pub fn prewarm(path: std::path::PathBuf, after: Duration) {
                 let _ = unsafe { DestroyMenu(hmenu) };
                 n
             })();
+            PREWARM_THREAD.store(0, Ordering::Relaxed);
             let mut pinned = 0;
             for module in loaded_modules() {
                 if before.contains(&module) {

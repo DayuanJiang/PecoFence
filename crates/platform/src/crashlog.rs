@@ -227,6 +227,12 @@ unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
     // What the UI thread was doing, when it was running a command (another thread may be the
     // one that crashed).
     let command = crate::hangwatch::running_command();
+    // On the thread that builds the item menu in the background, that build is what crashed.
+    let command = if crate::shell_menu::prewarming_here() {
+        Some("Prewarm".to_string())
+    } else {
+        command
+    };
     tracing::error!(
         code = format_args!("{code:#010x}"),
         at = %at,

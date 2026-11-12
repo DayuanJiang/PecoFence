@@ -153,7 +153,7 @@ fn end_if_stuck_in_other_module(thread: u32, stack: (u64, u64), name: &str) {
         return;
     }
     let addresses = thread_stack_addresses(thread, stack);
-    let Some(at) = stuck_in_other_module(&addresses) else {
+    let Some((frame, at)) = stuck_in_other_module(&addresses) else {
         tracing::info!(
             command = name,
             "UI thread still not responding: not inside another program's module, left alone"
@@ -161,12 +161,15 @@ fn end_if_stuck_in_other_module(thread: u32, stack: (u64, u64), name: &str) {
         return;
     };
     let frames = stack_lines(&addresses);
-    // The fields of crashlog's line, so that the next start reads it the same way.
+    // The fields of crashlog's line, so that the next start reads it the same way. `frame`:
+    // which line of `stack` decided (0 is where the thread stands); the scan also yields
+    // older return addresses left on the stack, and one of those far down would be a doubt.
     let owner = "other";
     tracing::error!(
         at = %at,
         command = name,
         module_owner = owner,
+        frame,
         stack = %frames.join("\n"),
         "HANG: ending to restart"
     );
@@ -177,19 +180,20 @@ fn end_if_stuck_in_other_module(thread: u32, stack: (u64, u64), name: &str) {
     }
 }
 
-/// `module+rva` of where the thread is stuck when that is another program's module. Whose
+/// Where the thread is stuck when that is another program's module: the index of that frame
+/// in `addresses` and its `module+rva`. Whose
 /// code it is stuck in: the innermost frame outside Windows' own files (the frames above it
 /// are the system call it waits in). `None` when that frame is PecoFence's or when there is
 /// none.
-fn stuck_in_other_module(addresses: &[u64]) -> Option<String> {
-    for &pc in addresses {
+fn stuck_in_other_module(addresses: &[u64]) -> Option<(usize, String)> {
+    for (frame, &pc) in addresses.iter().enumerate() {
         let Some(module) = crate::crashlog::module_holding(pc) else {
             continue;
         };
         let path = crate::crashlog::module_path(Some(module));
         match crate::crashlog::module_owner(&path) {
             "windows" => continue,
-            "other" => return Some(crate::crashlog::locate_unpinned(pc)),
+            "other" => return Some((frame, crate::crashlog::locate_unpinned(pc))),
             _ => return None,
         }
     }

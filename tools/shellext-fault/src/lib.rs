@@ -7,7 +7,8 @@
 //!   fault.txt  `<entry> [<wait ms>]`: that entry point waits and then reads from an address
 //!              that is never mapped (an access violation), only inside pecofence.exe;
 //!              `<entry> hang`: that entry point never returns
-//! Entry points: DllGetClassObject, Initialize, QueryContextMenu, InvokeCommand, CopyCallback.
+//! Entry points: DllMain (while the DLL is loaded), DllGetClassObject, Initialize,
+//! QueryContextMenu, InvokeCommand, CopyCallback.
 //!
 //! Registered per user by the steps that use it (HKCU\Software\Classes\CLSID\{CLSID} with
 //! InprocServer32, and a `shellex\ContextMenuHandlers` / `shellex\CopyHookHandlers` entry),
@@ -332,6 +333,7 @@ pub unsafe extern "system" fn DllMain(module: isize, reason: u32, _: *mut c_void
     const DLL_PROCESS_ATTACH: u32 = 1;
     if reason == DLL_PROCESS_ATTACH {
         MODULE.store(module, Ordering::Relaxed);
+        enter("DllMain", "");
     }
     1
 }

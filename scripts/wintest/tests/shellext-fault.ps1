@@ -17,6 +17,10 @@
 #   M  after that crash the item menus leave out Windows' part: the notice says so, the same
 #      right-click shows PecoFence's entries with the extension still set to fault, the next
 #      start builds no menu in the background, and the tray menu's entry brings it back
+#   A  an extension that faults whenever its menu is built: that first happens two seconds
+#      after a start, in the menu built in the background; the run is started again with the
+#      Windows part of the item menus off, and a right-click then loads nothing. Before that:
+#      a fault while the DLL is loaded ends nothing, Windows only leaves the extension out
 #   H  a menu extension that never returns: the frozen run says why, ends itself after about
 #      35 s and is started again; that start leaves the Windows part of the menus out
 #   S  a 45 s wait in PecoFence's own code (the test script's `stall`, a debug build:
@@ -27,7 +31,7 @@
 #      sends with a report keeps the DLL's name
 # Parts: run.sh --var Part=D ... (default: all). About 4 minutes.
 $PfAllowLogErrors = $true
-if (-not $Part) { $Part = 'LDCFMHO' }
+if (-not $Part) { $Part = 'LDCFMAHO' }
 trap { PfTrap $_; continue }
 
 Add-Type @'
@@ -486,6 +490,71 @@ if ($dll -and $Part -match 'M') {
   SxClean
 }
 
+if ($dll -and $Part -match 'A') {
+  Case 'A a menu extension that faults in the menu built in the background'
+  ExtDisarm
+  Remove-Item $SxMarker -ErrorAction SilentlyContinue
+  PfStart
+  Pf settings set featureTips false | Out-Null
+  ClearFences | Out-Null
+  SxFence 'SxA' '300,200,520,170' @('sx g1 报告.txt', 'sx g2 预算.txt')
+  PfQuit
+  Start-Sleep -Seconds 2
+  Remove-Item $Stamp -ErrorAction SilentlyContinue
+  # A fault while the DLL is loaded: Windows catches it and fails the load, so PecoFence goes
+  # on and the menu comes without that extension's entry.
+  ExtArm 'DllMain'
+  SxPlain
+  Start-Sleep -Seconds 8
+  $p0 = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
+  $p = CellPt 'SxA' 0
+  [G]::RClick($p[0], $p[1])
+  $m = MenuWin 8
+  $texts = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+  CloseMenus
+  Start-Sleep -Milliseconds 500
+  $p0b = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
+  $crash = @(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -cmatch 'CRASH \(' }).Count
+  Check 'A a fault while the DLL is loaded ends nothing: the menu comes without that extension' ($p0 -and $p0b -and $p0.Id -eq $p0b.Id -and $crash -eq 0 -and $texts -match 'Send to' -and $texts -notmatch 'PF fault test' -and ((ExtCalls) -join ',') -eq 'DllMain') "same process=$($p0 -and $p0b -and $p0.Id -eq $p0b.Id); crash lines=$crash; extension calls: $((ExtCalls) -join ', '); menu: $texts"
+  PfQuit
+  Start-Sleep -Seconds 2
+  # Set to fault whenever its menu is built, before the start: the menu built in the background
+  # two seconds after the start is the first one.
+  ExtArm 'QueryContextMenu'
+  SxPlain
+  $p1 = Get-Process pecofence | Select-Object -First 1
+  $watch = [SxMon]::Watch($p1.Id, 60)
+  Log "watch: $watch"
+  $w = @{}; foreach ($kv in ($watch -split ' ')) { $a = $kv -split '=', 2; $w[$a[0]] = $a[1] }
+  $toast = ToastOcr 'Windows entries' 8
+  Start-Sleep -Seconds 3
+  $prev = "$env:LOCALAPPDATA\PecoFence\pecofence.$PfInst.prev.log"
+  $crashLog = if ([int]$w['new_pid'] -ne 0 -and (Test-Path $prev)) { $prev } else { PfLogPath }
+  $crashLine = @(Get-Content $crashLog -Encoding UTF8 | Where-Object { $_ -cmatch 'CRASH \(unhandled exception\)' }) | Select-Object -Last 1
+  Check 'A the crash line names the extension and the menu built in the background' ($crashLine -match ' at=pf_shellext_fault\.dll\+0x' -and $crashLine -match 'command="?Prewarm' -and $crashLine -match 'module_owner="?other') "$(if ($crashLine -match '(code=.*?) dump=') { $Matches[1] })"
+  $said = SxNewLog 'item menus are built without the Windows part'
+  Check 'A PecoFence is started again with the Windows part of the item menus off' ($w['code'] -eq 'C0000005' -and [int]$w['fences'] -ge 0 -and $said -and (Test-Path $SxMarker) -and $toast -match 'pf_shellext_fault') "exit $($w['exit']) ms after the start was seen, code $($w['code']); new fences $($w['fences']) ms; log: $(if ($said -match '(item menus.*)$') { $Matches[1] }); marker there=$(Test-Path $SxMarker); notice: $toast"
+  # A right-click now, the extension still set to fault.
+  $p2 = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
+  Remove-Item "$ExtDir\calls.log" -ErrorAction SilentlyContinue
+  $p = CellPt 'SxA' 0
+  [G]::RClick($p[0], $p[1])
+  $m = MenuWin 8
+  $texts = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+  CloseMenus
+  Start-Sleep -Milliseconds 500
+  $p3 = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
+  Check 'A a right-click then shows PecoFence''s entries and loads nothing' ($texts -match 'Delete' -and $p2 -and $p3 -and $p2.Id -eq $p3.Id -and @(ExtCalls).Count -eq 0) "same process=$($p2 -and $p3 -and $p2.Id -eq $p3.Id); extension calls: $((ExtCalls) -join ', '); menu: $texts"
+  ExtDisarm
+  if (PfAlive) { PfQuit }
+  Get-Process pecofence, pecofence-watchdog -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 3
+  if (-not [W]::IconsVisible()) { [W]::ToggleIcons(); Start-Sleep -Seconds 1 }
+  Remove-Item $Stamp, $SxMarker -ErrorAction SilentlyContinue
+  Remove-Item "$env:LOCALAPPDATA\PecoFence\crash-*.dmp" -ErrorAction SilentlyContinue
+  SxClean
+}
+
 if ($dll -and $Part -match 'H') {
   Case 'H a menu extension that never returns'
   ExtDisarm
@@ -514,7 +583,7 @@ if ($dll -and $Part -match 'H') {
   $prev = "$env:LOCALAPPDATA\PecoFence\pecofence.$PfInst.prev.log"
   $hungLog = if ([int]$w['new_pid'] -ne 0 -and (Test-Path $prev)) { $prev } else { PfLogPath }
   $line = @(Get-Content $hungLog -Encoding UTF8 | Where-Object { $_ -match 'HANG: ending to restart' }) | Select-Object -Last 1
-  Check 'H the frozen run says where it is stuck and ends itself after about 35 s' ($line -match ' at=pf_shellext_fault\.dll\+0x' -and $line -match 'command="?ItemMenu' -and $w['code'] -eq 'CFFFFFFF' -and [int]$w['exit'] -ge 30000 -and [int]$w['exit'] -le 45000) "exit $($w['exit']) ms after the click, code $($w['code']); log: $(if ($line -match '(HANG: ending.*?) stack=') { $Matches[1] })"
+  Check 'H the frozen run says where it is stuck and ends itself after about 35 s' ($line -match ' at=pf_shellext_fault\.dll\+0x' -and $line -match 'command="?ItemMenu' -and $line -match ' frame=\d+ ' -and $w['code'] -eq 'CFFFFFFF' -and [int]$w['exit'] -ge 30000 -and [int]$w['exit'] -le 45000) "exit $($w['exit']) ms after the click, code $($w['code']); log: $(if ($line -match '(HANG: ending.*?) stack=') { $Matches[1] })"
   Check 'H the watchdog starts PecoFence again' ([int]$w['new_pid'] -ne 0 -and [int]$w['fences'] -ge 0) "new process $($w['born']) ms, its first fence $($w['fences']) ms after the click"
   Start-Sleep -Seconds 3
   $said = SxNewLog 'item menus are built without the Windows part'
