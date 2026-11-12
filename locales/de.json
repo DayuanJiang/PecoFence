@@ -976,7 +976,7 @@
   "{0} 等 {1} 个栅栏": "{0} (in {1} Bereichen)",
   "搜索栅栏里的文件，可以用拼音": "Dateien in den Bereichen suchen",
   "搜索栅栏和整台电脑，可以用拼音": "In Bereichen und am ganzen PC suchen",
-  "PecoFence 上次在生成右键菜单时因 {0} 出错而关闭，这个文件属于其他程序。图标右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里重新打开。点击这里报告问题。": "PecoFence ist beim Aufbau eines Kontextmenüs in {0} abgestürzt, einer Datei eines anderen Programms. Die Windows-Einträge in den Symbolmenüs sind vorerst ausgeschaltet; über das Menü im Infobereich lassen sie sich wieder einschalten. Hier klicken, um das Problem zu melden.",
+  "PecoFence 上次在生成右键菜单时因 {0} 出错而关闭，这个文件属于其他程序。图标右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里重新打开。点击这里报告问题。": "PecoFence ist in {0} (anderes Programm) beim Aufbau eines Menüs abgestürzt. Windows-Einträge in Symbolmenüs sind aus; das Menü im Infobereich schaltet sie wieder ein. Zum Melden hier klicken.",
   "恢复右键菜单里的 Windows 菜单项": "Windows-Einträge in Symbolmenüs wieder einschalten",
   "剪切\tCtrl+X": "Ausschneiden\tStrg+X",
   "复制\tCtrl+C": "Kopieren\tStrg+C"
