@@ -167,6 +167,8 @@
         size(r.box, BOX.w, BOX.h + TABS_H);
         el('div', 'sr-glyph', r.box).innerHTML = MAG;
         r.typed = el('div', 'sr-q', r.box);
+        // the empty box says what can be typed (whole-computer search on, Everything running)
+        r.hint = el('div', 'sr-q sr-hint', r.box, '搜索栅栏和整台电脑，可以用拼音');
         r.caret = el('div', 'sr-caret', r.box);
         el('div', 'sr-line', r.box);
         r.tabbar = el('div', 'sr-tabbar', r.box);
@@ -183,7 +185,7 @@
         ];
         r.bar = el('div', 'sr-bar', r.box);
         r.barKeys = el('div', 'sr-barkeys', r.bar);
-        [['↵', '打开'], ['Ctrl+Enter', '打开所在文件夹'], ['→', '更多操作']].forEach(([k, what]) => {
+        [['Enter', '打开'], ['Ctrl+Enter', '打开所在文件夹'], ['→', '更多操作']].forEach(([k, what]) => {
             el('span', null, r.barKeys, k + ' ' + what);
         });
         r.count = el('div', 'sr-count', r.bar, COUNT.replace('{0}', TOTAL));
@@ -236,8 +238,9 @@
             put(r.box, BOX.x, BOX.y, o, ` scale(${lerp(.98, 1, ramp(t, PEEK_ON, PEEK_ON + .2)).toFixed(4)})`);
             const n = t < TYPE_AT ? 0 : Math.min(r.q.length, 1 + Math.floor((t - TYPE_AT) / TYPE_STEP));
             text(r.typed, r.q.slice(0, n));
+            show(r.hint, n === 0);
             show(r.caret, Math.floor((t - PEEK_ON) / .5) % 2 === 0);
-            r.caret.style.left = (40 + r.typed.offsetWidth + 1) + 'px';
+            r.caret.style.left = (37 + r.typed.offsetWidth) + 'px';
 
             const fenceRows = t >= FENCE_ROWS, evRows = t >= EV_ROWS;
             const sel = t >= DOWN ? 1 : 0;
