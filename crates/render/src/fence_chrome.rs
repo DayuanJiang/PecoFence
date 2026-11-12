@@ -4985,16 +4985,25 @@ impl FenceChrome {
     /// `height` DIPs showing `time` and `date`. A new clock's area shows them at 40 and 14;
     /// another area scales both by its height, at most as far as the wider of the two lines
     /// still fits the width, from 0.6 to 4 times (the date never under 11). The time size is
-    /// whole DIPs, so the text keeps its size while the strings change by a digit.
+    /// whole DIPs, so the text keeps its size while the strings change by a digit. A size the
+    /// width sets is rounded down: rounded up, the line the width was fitted to would be a
+    /// hair too wide, and a long date that has room would give way to the short one.
     pub fn clock_text_sizes(&self, width: f32, height: f32, time: &str, date: &str) -> (f32, f32) {
         let w = (width - 2.0 * CLOCK_FIT_PAD_X).max(1.0);
         let need = crate::text::measure_width(time, &self.clock_time_format)
             .max(crate::text::measure_width(date, &self.clock_date_format))
             .max(1.0);
-        let k = (height / CLOCK_BASE_H)
-            .min(w / need)
+        let (by_height, by_width) = (height / CLOCK_BASE_H, w / need);
+        let k = by_height
+            .min(by_width)
             .clamp(CLOCK_SCALE_MIN, CLOCK_SCALE_MAX);
-        let time = (CLOCK_TIME_DIP * k).round();
+        let time = if by_width < by_height {
+            (CLOCK_TIME_DIP * k)
+                .floor()
+                .max((CLOCK_TIME_DIP * CLOCK_SCALE_MIN).round())
+        } else {
+            (CLOCK_TIME_DIP * k).round()
+        };
         let date = (CLOCK_DATE_DIP * time / CLOCK_TIME_DIP).max(CLOCK_DATE_MIN_DIP);
         (time, date)
     }
