@@ -7,9 +7,12 @@
 #   S  Space selects the icon that only has the keyboard focus, and keeps the selection
 #   L  the tip of a shortcut shows its comment or says where it leads, as File Explorer
 #   K  Left and Right leave the selection alone in the list and details views
+#   E  the only icon of a fence fades out while the empty fence's text fades in (it was a cut)
+#   M  after a rectangle selection the arrow keys go on from the rectangle
+#   N  the name box of a name longer than the box opens on the name's first line
 # Parts: run.sh --var Part=TV ... (default: all). --var Rec=1 also records the parts that move
 # (for before / after animations). Runs on a 1600x900 box at 100 %.
-if (-not $Part) { $Part = 'TVDGSLK' }
+if (-not $Part) { $Part = 'TVDGSLKEMN' }
 trap { PfTrap $_; continue }
 if ($Rec) { . C:\pf\kit\rec.ps1 }
 function UiRec($name, $x, $y, $w, $h) { if ($Rec) { RecStart $name -X $x -Y $y -W $w -H $h -Fps 30 } }
@@ -284,6 +287,109 @@ if ($Part -match 'K') {
   $k4 = UiState 'UiK'
   Check 'K icons: Right goes to the next icon' ($k4.focused -ne $k3.focused) "before [$($k3.focused)], after Right [$($k4.focused)]"
   Pf fence delete UiK | Out-Null; Start-Sleep -Milliseconds 800
+}
+
+if ($Part -match 'E') {
+  Case 'E the only icon of a fence leaves'
+  $ed = 'C:\pf\ui-UiE'
+  New-Item -ItemType Directory -Force $ed | Out-Null
+  Pf fence create --portal $ed --title 'UiE' --rect '860,150,300,220' | Out-Null; Start-Sleep -Seconds 3
+  $we = (FenceGet 'UiE').windowRect
+  $ex = $we.x; $ey = $we.y + 36; $ew = $we.w; $eh = $we.h - 36
+  ParkMouse; Start-Sleep -Milliseconds 500
+  UiRec 'E' ($we.x - 10) ($we.y - 10) ($we.w + 20) ($we.h + 20)
+  Start-Sleep -Milliseconds 300
+  UiMark '第一个文件进入空栅栏'
+  UiFile $ed 'ui first.txt'
+  [Px]::Burst($ex, $ey, $ew, $eh, 1500, 0)
+  $in = UiMoving $ew $eh
+  $n1 = @(@(PfJson item list --fence UiE) | Where-Object { $_ -and $_.name }).Count
+  UiMark '这个文件被删除'
+  Remove-Item -LiteralPath "$ed\ui first.txt" -Force
+  [Px]::Burst($ex, $ey, $ew, $eh, 1500, 0)
+  $out = UiMoving $ew $eh
+  Start-Sleep -Milliseconds 300
+  UiStop
+  $n0 = @(@(PfJson item list --fence UiE) | Where-Object { $_ -and $_.name }).Count
+  Check 'E setup: the file came and went' ($n1 -eq 1 -and $n0 -eq 0) "items after the file came: $n1, after it went: $n0"
+  Check 'E the first icon fades in over several frames' ($in -ge 3) "frames that changed: $in"
+  # The fade is 83 ms, two or three of the frames a burst takes: the app's own line decides.
+  $anim = @(PfLogAll | Where-Object { $_ -match 'replace_items animate=true .*old_len=1 new_len=0' } | Sort-Object -Unique)
+  Check 'E the last icon fades out while the text fades in (it was a cut)' ($anim.Count -ge 1) "the app animated the change: $($anim.Count) log line(s); frames that changed: $out (1 = icon gone and text there in the same frame)"
+  Pf fence delete UiE | Out-Null; Start-Sleep -Milliseconds 800
+}
+
+if ($Part -match 'M') {
+  Case 'M the keyboard after a rectangle selection'
+  UiFence 'UiM' '300,150,500,330' | Out-Null
+  $mn = @(@(PfJson item list --fence UiM) | Where-Object { $_ -and $_.name } | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.name) })
+  # Seven icons: six in the first row, one in the second. The rectangle begins in the empty
+  # part of the second row under the fourth icon and ends on the second icon.
+  $m1 = CellPt 'UiM' 1; $m3 = CellPt 'UiM' 3; $m6 = CellPt 'UiM' 6
+  [G]::MoveTo($m3[0], $m6[1]); Start-Sleep -Milliseconds 200
+  MDown; Start-Sleep -Milliseconds 100
+  Glide $m3[0] $m6[1] $m1[0] $m1[1] 12 30; Start-Sleep -Milliseconds 300
+  MUp; Start-Sleep -Milliseconds 500
+  ParkMouse
+  $a = UiState 'UiM'
+  $wm = (FenceGet 'UiM').windowRect
+  Crop 'M-1-after-rectangle' ($wm.x - 10) ($wm.y - 10) ($wm.w + 20) 240 | Out-Null
+  Check 'M the rectangle selected the second, third and fourth icon' ($a.selected -eq '3') "selected=$($a.selected)"
+  Check 'M the focus is on the selected icon nearest to where the rectangle began (File Explorer)' ($a.focused -eq $mn[3]) "focused=[$($a.focused)], the fourth icon is [$($mn[3])]"
+  [G]::Press(0x27); Start-Sleep -Milliseconds 400
+  $b = UiState 'UiM'
+  Check 'M Right goes on from there: the fifth icon' ($b.selected -eq '1' -and $b.focused -eq $mn[4]) "selected=$($b.selected) focused=[$($b.focused)], the fifth icon is [$($mn[4])] (the first is [$($mn[0])])"
+  # A rectangle over nothing leaves the focus where it is.
+  [G]::MoveTo($m3[0], $m6[1] + 60); Start-Sleep -Milliseconds 200
+  MDown; Start-Sleep -Milliseconds 100
+  Glide $m3[0] ($m6[1] + 60) ($m3[0] + 80) ($m6[1] + 90) 8 30; Start-Sleep -Milliseconds 300
+  MUp; Start-Sleep -Milliseconds 500
+  $c = UiState 'UiM'
+  Check 'M a rectangle over nothing selects nothing and keeps the focus' ($c.selected -eq '0' -and $c.focused -eq $mn[4]) "selected=$($c.selected) focused=[$($c.focused)]"
+  ParkMouse
+  Pf fence delete UiM | Out-Null; Start-Sleep -Milliseconds 800
+}
+
+if ($Part -match 'N') {
+  Case 'N the name box of a very long name'
+  Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class UiEdit {
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowExW(IntPtr parent, IntPtr after, string cls, string title);
+  [DllImport("user32.dll")] static extern IntPtr SendMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
+  // The edit control of a rename box: how many lines its text takes and the first line shown.
+  public static int[] Lines(IntPtr box) {
+    IntPtr e = FindWindowExW(box, IntPtr.Zero, "Edit", null);
+    if (e == IntPtr.Zero) return new int[] { -1, -1 };
+    return new int[] { (int)SendMessageW(e, 0x00BA, IntPtr.Zero, IntPtr.Zero), (int)SendMessageW(e, 0x00CE, IntPtr.Zero, IntPtr.Zero) };
+  }
+}
+'@
+  $nd = 'C:\pf\ui-UiN'
+  New-Item -ItemType Directory -Force $nd | Out-Null
+  UiFile $nd '这是一个名字非常非常长的文件用来看重命名的时候名字框里显示的是名字的开头还是名字的结尾的最终版本第二稿.txt'
+  UiFile $nd '短名字.txt'
+  Pf fence create --portal $nd --title 'UiN' --rect '300,150,500,330' | Out-Null
+  Pf fence set UiN sort name | Out-Null; Start-Sleep -Seconds 3
+  $names = @(@(PfJson item list --fence UiN) | Where-Object { $_ -and $_.name } | ForEach-Object { $_.name })
+  $li = if ($names[0].Length -gt 20) { 0 } else { 1 }
+  $np = CellPt 'UiN' $li
+  [G]::Click($np[0], $np[1]); Start-Sleep -Milliseconds 400
+  [G]::Press(0x71); Start-Sleep -Milliseconds 900
+  $box = WaitWin 'PecoFence.Rename' 3
+  $ln = [UiEdit]::Lines($box)
+  $wn = (FenceGet 'UiN').windowRect
+  Crop 'N-name-box' ($wn.x - 10) ($wn.y - 10) ($wn.w + 20) 260 | Out-Null
+  Check 'N setup: the name takes more lines than the box shows (six)' ($ln[0] -gt 6) "lines of the name: $($ln[0])"
+  Check 'N the box opens on the first line of the name' ($ln[1] -eq 0) "first line shown: $($ln[1]) (0 = the start of the name)"
+  # Typing at the end still brings the caret into view.
+  [G]::Press(0x23); [G]::Type('x'); Start-Sleep -Milliseconds 500
+  $ln2 = [UiEdit]::Lines($box)
+  Check 'N typing at the end shows the caret again' ($ln2[1] -ge 1) "first line shown after End and a letter: $($ln2[1])"
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 500
+  ParkMouse
+  Pf fence delete UiN | Out-Null; Start-Sleep -Milliseconds 800
 }
 
 Case 'cleanup'
