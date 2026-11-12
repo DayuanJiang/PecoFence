@@ -1389,6 +1389,28 @@ impl Legible {
     }
 }
 
+/// The halo under text that is already laid out and sits straight on the wallpaper: a note's,
+/// a script fence's or a clock's on a fully transparent fence (`Theme::text_halo`), where
+/// titles and item names have it. The outline `draw_caption` gives a title, in the halo
+/// colour for `ink`; the text is drawn over it afterwards.
+fn draw_layout_halo(
+    session: &DrawingSession<'_>,
+    theme: &Theme,
+    legible: Option<&Legible>,
+    layout: &TextLayout,
+    at: Vector2,
+    ink: ColorF,
+) {
+    let Some(legible) = legible else {
+        return;
+    };
+    if let Some((halo, width)) = legible.fx(theme, ink, 1.0, false).halo {
+        for (dx, dy) in [(-width, 0.0), (width, 0.0), (0.0, -width), (0.0, width)] {
+            session.draw_text_layout(Vector2::new(at.x + dx, at.y + dy), layout, halo);
+        }
+    }
+}
+
 /// The hairline of a "按时间分组" section header: from 8 DIPs after the caption's end
 /// (`text_end`) to `right`, one device pixel, vertically centred on the band.
 fn draw_group_rule(
@@ -4577,7 +4599,16 @@ impl FenceChrome {
                 let layout = TextLayout::new(footer, &self.note_footer_format, w, f32::MAX)?;
                 let h = layout.metrics().height;
                 let top = (height - h - 8.0).max(0.0);
-                session.draw_text_layout(Vector2::new(NOTE_PAD_X, top), &layout, &secondary);
+                let at = Vector2::new(NOTE_PAD_X, top);
+                draw_layout_halo(
+                    session,
+                    theme,
+                    legible.as_ref(),
+                    &layout,
+                    at,
+                    theme.text_secondary,
+                );
+                session.draw_text_layout(at, &layout, &secondary);
                 (top - 4.0).max(0.0)
             }
             None => height,
@@ -4670,10 +4701,10 @@ impl FenceChrome {
                     }
                 }
             }
-            let brush = if line.todo == Some(true) {
-                &secondary
+            let (brush, ink) = if line.todo == Some(true) {
+                (&secondary, theme.text_secondary)
             } else {
-                &primary
+                (&primary, theme.text_primary)
             };
             if let Some((halo, down)) = &halo {
                 session.draw_text_layout(Vector2::new(row.x, y + down), &row.layout, halo);
@@ -4920,7 +4951,16 @@ impl FenceChrome {
             let layout = TextLayout::new(footer, &self.note_footer_format, w, f32::MAX)?;
             let h = layout.metrics().height;
             let top = (height - h - 8.0).max(0.0);
-            session.draw_text_layout(Vector2::new(NOTE_PAD_X, top), &layout, &secondary);
+            let at = Vector2::new(NOTE_PAD_X, top);
+            draw_layout_halo(
+                session,
+                theme,
+                legible.as_ref(),
+                &layout,
+                at,
+                theme.text_secondary,
+            );
+            session.draw_text_layout(at, &layout, &secondary);
             (top - 4.0).max(0.0)
         } else {
             height
@@ -5256,10 +5296,37 @@ impl FenceChrome {
         let secondary = session.create_solid_brush(theme.text_secondary)?;
         // As wide as the sizes were fitted to, from the texts' left edge.
         let w = (width - 2.0 * CLOCK_FIT_PAD_X).max(1.0);
+        // On a fully transparent fence the text sits on the wallpaper: it gets the halo.
+        let legible = if theme.text_halo {
+            Some(Legible::new(session)?)
+        } else {
+            None
+        };
         let layout = TextLayout::new(time, &fonts.time_format, w, f32::MAX)?;
         let time_h = layout.metrics().height;
-        session.draw_text_layout(Vector2::new(NOTE_PAD_X, 0.0), &layout, &primary);
+        let time_at = Vector2::new(NOTE_PAD_X, 0.0);
+        draw_layout_halo(
+            session,
+            theme,
+            legible.as_ref(),
+            &layout,
+            time_at,
+            theme.text_primary,
+        );
+        session.draw_text_layout(time_at, &layout, &primary);
         let top = time_h + 2.0 * time_dip / CLOCK_TIME_DIP;
+        if legible.is_some() {
+            let date_layout =
+                TextLayout::new(shown_date, &fonts.date_format, w, (height - top).max(0.0))?;
+            draw_layout_halo(
+                session,
+                theme,
+                legible.as_ref(),
+                &date_layout,
+                Vector2::new(NOTE_PAD_X, top),
+                theme.text_secondary,
+            );
+        }
         session.draw_text(
             shown_date,
             &fonts.date_format,

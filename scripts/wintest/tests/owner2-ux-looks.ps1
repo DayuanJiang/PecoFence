@@ -7,8 +7,14 @@
 #   R  tabs at the left (标签栏位置 左侧): a column too short for its tabs keeps rows as tall
 #      as a caption and scrolls, the shown tab in view. The rows were squeezed until the
 #      captions ran into each other (seven tabs in a fence 150 px tall: rows of 10 px).
+#   H  on a fully transparent fence the note text, the clock and the script rows have the halo
+#      that its title and item names have (they had none: on a wallpaper with light and dark
+#      parts a line of a note could not be read).
+#   G  Liquid Glass, dark mode, 不透明度 更厚实, a light wallpaper: the shown tab's caption reads
+#      on its pill. The pill's lens shows the light wallpaper through the dark veil, and the
+#      caption picked for the veil was white on it (2.0 : 1).
 # Default: all.
-if (-not $Part) { $Part = 'TR' }
+if (-not $Part) { $Part = 'TRHG' }
 trap { PfTrap $_; continue }
 
 Add-Type -ReferencedAssemblies System.Drawing @'
@@ -59,7 +65,7 @@ function UlRead($tag, $x, $y, $w, $h) {
   $p = $r -split '\|'
   $inv = [Globalization.CultureInfo]::InvariantCulture
   "$tag`t$($p -join "`t")" | Add-Content "$PfShots\ink.tsv" -Encoding UTF8
-  return [pscustomobject]@{ Contrast = [double]::Parse($p[0], $inv); Dark = ($p[3] -eq 'dark'); Text = "$($p[0]) : 1, text $($p[2]) on $($p[1])" }
+  return [pscustomobject]@{ Contrast = [double]::Parse($p[0], $inv); Dark = ($p[3] -eq 'dark'); Rim = [double]::Parse($p[4], $inv); Text = "$($p[0]) : 1, text $($p[2]) on $($p[1]), halo $($p[4]) : 1" }
 }
 function UlPark() { ParkMouse 1540 780; Start-Sleep -Milliseconds 600 }
 $UlFiles = '季度报告 2026.docx', '笔记.txt', 'a1 新年活动安排与分工.txt'
@@ -136,6 +142,61 @@ if ($Part -match 'T') {
   Pf settings set theme dark | Out-Null
   UlWall 255 255 255 white
   UlClear 'dark mode, white wallpaper' $true
+}
+
+if ($Part -match 'H') {
+  Case 'H: note, clock and script text on a fully transparent fence have the halo'
+  Pf settings set customTheme null | Out-Null
+  Pf settings set themeStyle fluent | Out-Null
+  Pf settings set theme light | Out-Null
+  Set-Content -LiteralPath "$PfRun\rows.ps1" -Encoding UTF8 -Value "'CPU 12 %'`r`n'内存 5.2 GB / 16 GB'"
+  Pf fence create --script "$PfRun\rows.ps1" --title 脚本 --rect '920,100,260,150' | Out-Null
+  UlWall 128 128 128 midgrey
+  Pf fence set --all opacity transparent | Out-Null
+  Start-Sleep -Seconds 3
+  UlPark
+  Shot 'H-transparent-midgrey'
+  $n = (FenceGet '便签').windowRect; $c = (FenceGet '时钟').windowRect; $s = (FenceGet '脚本').windowRect; $p = CellPt '文档' 1
+  $name = UlRead 'H/item name' ($p[0] - 36) ($p[1] + 28) 72 16
+  Check 'H the item name has a halo (as before)' ($name.Rim -ge 1.25) $name.Text
+  foreach ($q in @(@('note text', ($n.x + 14), ($n.y + 38), 100, 18), @('clock time', ($c.x + 14), ($c.y + 44), 130, 40), @('script rows', ($s.x + 14), ($s.y + 40), 150, 20))) {
+    $m = UlRead "H/$($q[0])" $q[1] $q[2] $q[3] $q[4]
+    Check "H the $($q[0]) has a halo" ($m.Rim -ge 1.25) "$($m.Text) (a halo shows from 1.25 : 1)"
+  }
+  Pf fence set --all opacity default | Out-Null
+  Pf fence delete 脚本 | Out-Null
+  Start-Sleep -Milliseconds 800
+}
+
+if ($Part -match 'G') {
+  Case 'G: Liquid Glass, dark mode, 更厚实: the shown tab on a light wallpaper'
+  Pf settings set customTheme null | Out-Null
+  Pf settings set theme dark | Out-Null
+  Pf settings set themeStyle liquidGlass | Out-Null
+  Pf settings set rollUp.switchTabOnHover false | Out-Null
+  # Light, but dark enough under the veil of 更厚实 for the plate to take light text.
+  UlWall 156 186 206 lightblue
+  foreach ($t in '工作', '学习', '娱乐与游戏') { Pf fence create --title $t --rect '920,300,340,150' | Out-Null }
+  Pf fence merge 学习 --into 工作 | Out-Null
+  Pf fence merge 娱乐与游戏 --into 工作 | Out-Null
+  Pf fence set 工作 opacity solid | Out-Null
+  Start-Sleep -Seconds 3
+  UlPark
+  FenceIds
+  $d = DumpOf '工作'
+  $i = [array]::IndexOf(@($d.tabs), $script:IdTitle["$($d.active)"])
+  $tab = $d.rects[$i]
+  Shot 'G-glass-solid-tabs'
+  # The shown tab's caption inside its pill, and a resting tab's on the plate.
+  $m = UlRead 'G/shown tab' ($d.l + $tab[0] + 10) ($d.t + 10) ($tab[1] - 20) 16
+  Check 'G the shown tab reads on its pill' ($m.Contrast -ge 3.9) "$($m.Text) (needs 3.9 : 1); tab $i of $(@($d.tabs) -join ', ')"
+  $j = if ($i -eq 0) { 1 } else { 0 }
+  $rest = $d.rects[$j]
+  $m2 = UlRead 'G/resting tab' ($d.l + $rest[0] + 10) ($d.t + 10) ($rest[1] - 20) 16
+  Check 'G a resting tab reads on the plate' ($m2.Contrast -ge 3.0) "$($m2.Text) (needs 3 : 1)"
+  foreach ($t in '工作', '学习', '娱乐与游戏') { Pf fence delete $t | Out-Null }
+  Pf settings set themeStyle fluent | Out-Null
+  Start-Sleep -Milliseconds 800
 }
 
 if ($Part -match 'R') {
