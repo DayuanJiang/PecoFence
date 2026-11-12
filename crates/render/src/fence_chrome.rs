@@ -2913,7 +2913,7 @@ impl FenceChrome {
     /// The keyboard focus mark on the title row, drawn over a finished [`FenceChrome::draw`]:
     /// the fence has the keyboard and none of its icons can carry the mark (rolled up, or
     /// nothing in it). The icons' FocusVisual around the title row, around the shown tab's
-    /// pill in a strip, or around the column when the tabs stand at the left.
+    /// pill in a strip, or around the shown tab's row when the tabs stand at the left.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_title_focus(
         &self,
@@ -2926,7 +2926,19 @@ impl FenceChrome {
         style: FenceStyle,
     ) -> Result<()> {
         let title_h = theme.title_height.min(height);
-        let row = if tabs.len() > 1 && style.tab_rail > 0.0 {
+        let rail_tab = tabs
+            .iter()
+            .find(|t| t.active)
+            .filter(|_| tabs.len() > 1 && style.tab_rail > 0.0);
+        let row = if let Some(t) = rail_tab {
+            // A row of the column: `x` and `w` are its top and height (`draw_tab_list`).
+            Rect::from_xywh(
+                RAIL_ROW_INSET,
+                t.x,
+                (style.tab_rail - RAIL_ROW_INSET - RAIL_ROW_RIGHT).max(0.0),
+                t.w,
+            )
+        } else if tabs.len() > 1 && style.tab_rail > 0.0 {
             Rect::from_xywh(
                 4.0,
                 4.0,
