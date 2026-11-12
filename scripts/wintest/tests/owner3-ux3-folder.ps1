@@ -80,12 +80,13 @@ function PartP() {
 }
 
 # The columns a details fence shows at a width, read from its rows by Windows' OCR: the dates
-# (11/12/2026) and the type names (PNG File, DOCX File).
+# (11/12/2026, or 2026/11/12 where an earlier job left the box's regional format on zh-CN) and
+# the type names (PNG File, DOCX File).
 function ColsAt($fid, $w, $crop) {
   Pf fence resize $fid --w $w --h 330 | Out-Null; Start-Sleep -Milliseconds 700
   SaveCrop $crop 190 110 ($w + 20) 200
   $t = (OcrText 200 156 $w 280) -replace '\s+', ' '
-  return [pscustomobject]@{ date = ($t -match '\d+/\d+/20\d\d'); type = ($t -match '(?i)\bfile\b|document'); text = $t }
+  return [pscustomobject]@{ date = ($t -match '\d+/\d+/20\d\d|20\d\d[/.\-]\d+[/.\-]\d+'); type = ($t -match '(?i)\bfile\b|document'); text = $t }
 }
 function PartC() {
   trap { PfTrap $_; continue }
