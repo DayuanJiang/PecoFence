@@ -2356,6 +2356,8 @@ impl FenceWindow {
                     from: (r.left, r.top),
                     to: (to.left, to.top),
                     t: v.motion.tween(0.0, 1.0, time, curve, Instant::now()),
+                    time,
+                    curve,
                     begun: false,
                     notify,
                 });

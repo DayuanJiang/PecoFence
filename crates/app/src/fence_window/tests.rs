@@ -1193,6 +1193,34 @@ fn a_dropped_icon_starts_under_its_drag_picture() {
 /// A new icon whose cell another icon is still sliding out of fades in 83 ms later; elsewhere
 /// at once. The delayed fade stays at 0 until then and takes its 167 ms from there.
 #[test]
+fn a_window_glide_keeps_its_own_time_and_curve_from_its_first_frame() {
+    // After a display change the fences glide a quarter of a second, point to point. The
+    // first frame started the clock again with the landing glide's 167 ms, decelerating.
+    let asked = Instant::now();
+    let mut glide = WindowGlide {
+        from: (0, 0),
+        to: (100, 0),
+        t: Tween::new(0.0, 1.0, motion::NORMAL, Curve::PointToPoint, asked),
+        time: motion::NORMAL,
+        curve: Curve::PointToPoint,
+        begun: false,
+        notify: false,
+    };
+    let first = asked + Duration::from_millis(40);
+    assert!(glide.begin(first));
+    assert!(!glide.begin(first + Duration::from_millis(16)));
+    // 200 ms after its first frame it is still on its way; after 250 ms it has arrived.
+    assert!(!glide.at(first + Duration::from_millis(200)).1);
+    assert_eq!(
+        glide.at(first + Duration::from_millis(251)),
+        ((100, 0), true)
+    );
+    // Point to point: half way at half time (decelerating it would be past 80).
+    let ((x, _), _) = glide.at(first + Duration::from_millis(125));
+    assert!((40..=60).contains(&x), "half way at half time: {x}");
+}
+
+#[test]
 fn a_new_icon_waits_for_the_icon_leaving_its_cell() {
     let now = Instant::now();
     assert_eq!(fade_in_start(false, now), now);

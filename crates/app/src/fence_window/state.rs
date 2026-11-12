@@ -49,6 +49,9 @@ pub(super) struct WindowGlide {
     pub(super) from: (i32, i32),
     pub(super) to: (i32, i32),
     pub(super) t: Tween,
+    /// The glide's own time and curve: its clock starts again with its first frame.
+    pub(super) time: Duration,
+    pub(super) curve: Curve,
     /// Its first frame has run (`tick_glide` starts `t` there).
     pub(super) begun: bool,
     /// The app hears the new bounds when the window has arrived (a fence the user dropped);
@@ -57,6 +60,17 @@ pub(super) struct WindowGlide {
 }
 
 impl WindowGlide {
+    /// The first frame of the glide: its clock starts at `now`, with the time and the curve
+    /// it was asked for (a display change: a quarter of a second, point to point; it ran
+    /// 167 ms decelerating, the landing glide's values). True the first time.
+    pub(super) fn begin(&mut self, now: Instant) -> bool {
+        if std::mem::replace(&mut self.begun, true) {
+            return false;
+        }
+        self.t = Tween::new(0.0, 1.0, self.time, self.curve, now);
+        true
+    }
+
     /// Where the window is at `now`, and whether it has arrived.
     pub(super) fn at(&self, now: Instant) -> ((i32, i32), bool) {
         if self.t.is_done(now) {

@@ -125,11 +125,7 @@ impl FrameHandle {
             let g = v.glide.as_mut()?;
             // The glide's clock starts with its first frame: what the caller did after asking
             // for it (an import saves and repaints first) does not eat the motion.
-            if !std::mem::replace(&mut g.begun, true) {
-                g.t = v
-                    .motion
-                    .tween(0.0, 1.0, motion::FAST, Curve::Decelerate, now);
-            }
+            g.begin(now);
             Some(g.at(now))
         }) else {
             return (false, false);
