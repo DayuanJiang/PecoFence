@@ -1002,12 +1002,14 @@ pub(super) fn on_mousewheel(
         // DirectManipulation tracking the fingers; easing each ~5 DIP
         // message would leave the content a glide behind the finger.
         let (layout, view_h) = v.scroll_extent();
+        // A note or a script fence scrolls its lines of text as a list scrolls its rows.
+        let text = v.scrolls_text();
         let step = wheel_step_dip(
             behavior.wheel_lines.get(),
             delta as f32 / msg::WHEEL_DELTA as f32,
-            layout.row_step(),
+            v.scroll_row_step(&layout),
             view_h,
-            matches!(layout, ItemLayout::Grid(_)),
+            matches!(layout, ItemLayout::Grid(_)) && !text,
         );
         if step == 0.0 {
             return Some(0);
@@ -1017,7 +1019,18 @@ pub(super) fn on_mousewheel(
         } else {
             motion::NORMAL
         };
-        v.scroll_to_by_wheel(v.scroll_target() - step, cap);
+        let mut target = v.scroll_target() - step;
+        if text && delta.abs() >= msg::WHEEL_DELTA {
+            // A whole notch ends with a whole line at the top edge (the last position is one
+            // too, see `take_tool_extent`). A step shorter than the way to the next line
+            // keeps its own target, so the wheel always moves the text.
+            let line = v.tool_line_snap(target);
+            if (line - v.scroll_target()).abs() > 0.5 {
+                target = line;
+            }
+            tracing::debug!(fence = %v.active, from = v.scroll_target(), step, to = target, "wheel over a tool fence's text: to a line's top");
+        }
+        v.scroll_to_by_wheel(target, cap);
         if v.scroll_anim.is_none() {
             // Animations off: the offset snapped, draw it now.
             if v.marquee.is_some() {

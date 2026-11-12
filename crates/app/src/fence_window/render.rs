@@ -1158,6 +1158,28 @@ impl FenceViewState {
         });
     }
 
+    /// A note or a script fence is about to draw text that measures `extent`: keeps the
+    /// scroll offset inside it and returns the offset and the overlay scrollbar to draw.
+    fn scroll_tool_text(
+        &mut self,
+        extent: pecofence_render::fence_chrome::ToolTextExtent,
+    ) -> (f32, Option<ScrollbarDraw>) {
+        self.take_tool_extent(extent);
+        let (layout, view_h) = self.scroll_extent();
+        self.scroll_y = self.scroll_y.clamp(0.0, layout.max_scroll(view_h));
+        self.sync_scrollbar_alpha();
+        // The offset rests on whole pixels, a line's top need not: at rest on a line the text
+        // is drawn from that line's own top, on the pixels it has without any scrolling.
+        let near = 0.5 / self.scale() + 0.01;
+        let scroll = self
+            .tool_line_tops
+            .iter()
+            .copied()
+            .find(|top| (top - self.scroll_y).abs() <= near)
+            .unwrap_or(self.scroll_y);
+        (scroll, self.scrollbar_draw_in(&layout, view_h))
+    }
+
     /// 脚本栅栏: the script's output lines and the footer in place of items.
     pub(super) fn redraw_script(&mut self) -> Result<()> {
         let Some(script) = self.script.clone() else {
@@ -1194,6 +1216,10 @@ impl FenceViewState {
         };
         let hover = self.script_hover;
         let text_size = self.text_size;
+        // Rows that do not fit scroll above the footer.
+        let width_dip = self.content_size_px().0 as f32 / scale;
+        let extent = chrome.script_extent(width_dip, text_size, &rows, &script.footer)?;
+        let (scroll, scrollbar) = self.scroll_tool_text(extent);
         let mut hits = Vec::new();
         let ok = self
             .content_panel
@@ -1209,6 +1235,8 @@ impl FenceViewState {
                     hover,
                     hint,
                     &script.footer,
+                    scroll,
+                    scrollbar,
                 )?;
                 Ok(())
             })?;
@@ -1245,12 +1273,17 @@ impl FenceViewState {
         let hint =
             pecofence_core::i18n::text("单击这里写字。行首写 [ ] 的一行是待办，单击方框打勾。");
         let text_size = self.text_size;
+        // Lines that do not fit scroll.
+        let width_dip = self.content_size_px().0 as f32 / scale;
+        let extent = chrome.note_extent(width_dip, text_size, &lines)?;
+        let (scroll, scrollbar) = self.scroll_tool_text(extent);
         let mut boxes = Vec::new();
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
                 boxes = chrome.draw_note(
-                    session, &theme, scale, wd, hd, text_size, &lines, hint, None,
+                    session, &theme, scale, wd, hd, text_size, &lines, hint, None, scroll,
+                    scrollbar,
                 )?;
                 Ok(())
             })?;

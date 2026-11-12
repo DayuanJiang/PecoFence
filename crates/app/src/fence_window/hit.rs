@@ -459,6 +459,13 @@ impl FenceViewState {
     /// The item layout at `width_dip`. Its rows keep their pitch at any fence height; with
     /// 「调整大小时按整行整列对齐」 the viewport shows only the whole rows (`scroll_view_h`).
     pub(super) fn layout(&self, width_dip: f32) -> ItemLayout {
+        if self.scrolls_text() {
+            // A note or a script fence scrolls its text: an empty grid as tall as that text
+            // gives the wheel, the glide and the scrollbar their range.
+            let mut grid = Grid::grouped(self.grid_metrics(), width_dip, 0, &[]);
+            grid.content_height = self.tool_text_h;
+            return ItemLayout::Grid(grid);
+        }
         let spans = self.group_spans();
         let n = self.items.len();
         match self.row_metrics() {

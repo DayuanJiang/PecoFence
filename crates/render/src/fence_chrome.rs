@@ -4092,6 +4092,37 @@ pub struct NoteLineDraw<'a> {
     pub todo: Option<bool>,
 }
 
+/// One line of a note laid out: its wrapped text, where the text starts, its top from the
+/// first line's top (before any scrolling) and its height.
+struct NoteRow {
+    layout: TextLayout,
+    x: f32,
+    y: f32,
+    h: f32,
+}
+
+/// One row of a script fence laid out: its text (none for a separator) and icon, where the
+/// row and its text start, the top of its text from the first row's (before any scrolling)
+/// and its height.
+struct ScriptRowLaid {
+    text: Option<TextLayout>,
+    icon: Option<TextLayout>,
+    x: f32,
+    text_x: f32,
+    y: f32,
+    h: f32,
+}
+
+/// The text of a note or a script fence measured for scrolling: the top of every line of
+/// text as wrapped (from the first one's top; the content rests on one of them), how far
+/// one line of the wheel goes, and the height the content scrolls over.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ToolTextExtent {
+    pub tops: Vec<f32>,
+    pub line_step: f32,
+    pub height: f32,
+}
+
 /// Note layout in surface DIPs: the text inset from the left and right edges and from the top.
 pub const NOTE_PAD_X: f32 = TEXT_LEFT;
 pub const NOTE_PAD_TOP: f32 = 2.0;
@@ -4149,12 +4180,71 @@ impl FenceChrome {
         &self.tool_text[usize::from(size.min(3))]
     }
 
+    /// A note's lines laid out for a content area `width` DIPs wide at 文字大小 `text_size`:
+    /// one row per line, wrapped to the width, and the height of one line of text.
+    fn note_rows(
+        &self,
+        width: f32,
+        text_size: u8,
+        lines: &[NoteLineDraw<'_>],
+    ) -> Result<(Vec<NoteRow>, f32)> {
+        let tt = self.tool_text(text_size);
+        let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        let line_h = TextLayout::new("Ag", &tt.body, w, f32::MAX)?
+            .metrics()
+            .height;
+        let mut rows = Vec::with_capacity(lines.len());
+        let mut y = 0.0;
+        for line in lines {
+            let x = match line.todo {
+                Some(_) => NOTE_PAD_X + tt.todo_room(),
+                None => NOTE_PAD_X,
+            };
+            let text_w = (width - x - NOTE_PAD_X).max(1.0);
+            // An empty line still takes a line's height.
+            let text = if line.text.is_empty() { " " } else { line.text };
+            let layout = TextLayout::new(text, &tt.body, text_w, f32::MAX)?;
+            let h = layout.metrics().height.max(line_h);
+            rows.push(NoteRow { layout, x, y, h });
+            y += h + NOTE_LINE_GAP * tt.k;
+        }
+        Ok((rows, line_h))
+    }
+
+    /// What a note's text takes in a content area `width` DIPs wide (see [`ToolTextExtent`]).
+    /// A note without text (it shows its hint) takes nothing.
+    pub fn note_extent(
+        &self,
+        width: f32,
+        text_size: u8,
+        lines: &[NoteLineDraw<'_>],
+    ) -> Result<ToolTextExtent> {
+        if note_is_empty(lines) {
+            return Ok(ToolTextExtent::default());
+        }
+        let (rows, line_h) = self.note_rows(width, text_size, lines)?;
+        let mut tops = Vec::new();
+        for row in &rows {
+            tops.extend(
+                layout_line_tops(&row.layout, row.h)
+                    .into_iter()
+                    .map(|t| row.y + t),
+            );
+        }
+        Ok(ToolTextExtent {
+            tops,
+            line_step: line_h + NOTE_LINE_GAP * self.tool_text(text_size).k,
+            height: NOTE_PAD_TOP + rows.last().map_or(0.0, |r| r.y + r.h),
+        })
+    }
+
     /// Draws a note's lines from the top left, each wrapped to the width, at 文字大小
     /// `text_size` (0 to 3); a to-do gets a check box before its text, ticked ones in the
     /// accent with their text dimmed. `hint` shows in the secondary colour while the note has
     /// no text. `footer` (a script fence's status line) sits at the bottom in the secondary
-    /// colour and the lines stop above it. Returns each to-do's line index with its check box
-    /// (surface DIPs) for hit-testing.
+    /// colour and the lines stop above it. The lines are moved up by `scroll` DIPs (a note
+    /// taller than its fence), with the overlay `scrollbar` at the right. Returns each
+    /// to-do's line index with its check box (surface DIPs) for hit-testing.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_note(
         &self,
@@ -4167,6 +4257,8 @@ impl FenceChrome {
         lines: &[NoteLineDraw<'_>],
         hint: &str,
         footer: Option<&str>,
+        scroll: f32,
+        scrollbar: Option<ScrollbarDraw>,
     ) -> Result<Vec<(usize, Rect)>> {
         session.clear(ColorF::TRANSPARENT);
         let tt = self.tool_text(text_size);
@@ -4184,10 +4276,7 @@ impl FenceChrome {
             None => height,
         };
         let has_footer = footer.is_some_and(|f| !f.is_empty());
-        if lines
-            .iter()
-            .all(|l| l.text.trim().is_empty() && l.todo.is_none())
-        {
+        if note_is_empty(lines) {
             session.draw_text(
                 hint,
                 &tt.body,
@@ -4201,30 +4290,24 @@ impl FenceChrome {
             );
             return Ok(Vec::new());
         }
-        let line_h = TextLayout::new("Ag", &tt.body, w, f32::MAX)?
-            .metrics()
-            .height;
+        let (rows, line_h) = self.note_rows(width, text_size, lines)?;
         let px = Px::new(scale);
         let todo = TodoBrushes::new(session, theme)?;
         let mut boxes = Vec::new();
-        let mut y = NOTE_PAD_TOP;
-        for (i, line) in lines.iter().enumerate() {
+        for (i, (line, row)) in lines.iter().zip(&rows).enumerate() {
+            let y = NOTE_PAD_TOP + row.y - scroll;
             if y >= height {
                 break;
             }
-            let x = match line.todo {
-                Some(_) => NOTE_PAD_X + tt.todo_room(),
-                None => NOTE_PAD_X,
-            };
-            let text_w = (width - x - NOTE_PAD_X).max(1.0);
-            // An empty line still takes a line's height.
-            let text = if line.text.is_empty() { " " } else { line.text };
-            let layout = TextLayout::new(text, &tt.body, text_w, f32::MAX)?;
-            let h = layout.metrics().height.max(line_h);
+            if y + row.h <= 0.0 {
+                // Scrolled out above the fence.
+                continue;
+            }
             // A wrapped line that runs past the footer's top shows only its rows that fit whole,
             // so no text is drawn over the footer.
-            let _clip = if has_footer && y + h > height {
-                let fit = layout
+            let _clip = if has_footer && y + row.h > height {
+                let fit = row
+                    .layout
                     .hit_test_point(Vector2::new(0.0, height - y))
                     .bounds
                     .top;
@@ -4249,11 +4332,32 @@ impl FenceChrome {
             } else {
                 &primary
             };
-            session.draw_text_layout(Vector2::new(x, y), &layout, brush);
-            y += h + NOTE_LINE_GAP * tt.k;
+            session.draw_text_layout(Vector2::new(row.x, y), &row.layout, brush);
+        }
+        if let Some(bar) = scrollbar {
+            draw_scrollbar(session, theme, &self.sort_glyph_format, width, bar)?;
         }
         Ok(boxes)
     }
+}
+
+/// A note without text: it shows its hint.
+fn note_is_empty(lines: &[NoteLineDraw<'_>]) -> bool {
+    lines
+        .iter()
+        .all(|l| l.text.trim().is_empty() && l.todo.is_none())
+}
+
+/// Tops of the lines `layout` (`height` DIPs high) wraps into, from its own top. The lines
+/// of one paragraph are equally high (a character's own box, which a hit test gives, can
+/// start a little below its line's top).
+fn layout_line_tops(layout: &TextLayout, height: f32) -> Vec<f32> {
+    let mut tops = Vec::new();
+    let lines = layout.metrics().line_count.max(1);
+    for line in 0..lines {
+        tops.push(height * line as f32 / lines as f32);
+    }
+    tops
 }
 
 impl ToolText {
@@ -4269,76 +4373,33 @@ impl ToolText {
 }
 
 impl FenceChrome {
-    /// 脚本栅栏: the rows a script printed, from the top left, each wrapped to the width, at
-    /// 文字大小 `text_size` (0 to 3): a to-do's check box, an icon, the text in its colour;
-    /// `---` a hairline. The row under the pointer (`hover`) gets a plate when it is
-    /// clickable, and an arrow when it opens something. `footer` sits at the bottom and the
-    /// rows stop above it, as in [`Self::draw_note`]. Returns each clickable row's index and
-    /// plate (surface DIPs).
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw_script(
+    /// A script fence's rows laid out for a content area `width` DIPs wide at 文字大小
+    /// `text_size`, and the height of one line of text.
+    fn script_rows(
         &self,
-        session: &DrawingSession<'_>,
-        theme: &Theme,
-        scale: f32,
         width: f32,
-        height: f32,
         text_size: u8,
         rows: &[ScriptRowDraw<'_>],
-        hover: Option<usize>,
-        hint: &str,
-        footer: &str,
-    ) -> Result<Vec<(usize, Rect)>> {
-        session.clear(ColorF::TRANSPARENT);
+    ) -> Result<(Vec<ScriptRowLaid>, f32)> {
         let tt = self.tool_text(text_size);
-        let primary = session.create_solid_brush(theme.text_primary)?;
-        let secondary = session.create_solid_brush(theme.text_secondary)?;
         let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
-        let has_footer = !footer.is_empty();
-        let height = if has_footer {
-            let layout = TextLayout::new(footer, &self.note_footer_format, w, f32::MAX)?;
-            let h = layout.metrics().height;
-            let top = (height - h - 8.0).max(0.0);
-            session.draw_text_layout(Vector2::new(NOTE_PAD_X, top), &layout, &secondary);
-            (top - 4.0).max(0.0)
-        } else {
-            height
-        };
-        if rows.iter().all(|r| {
-            !r.separator && r.text.trim().is_empty() && r.todo.is_none() && r.icon.is_none()
-        }) {
-            session.draw_text(
-                hint,
-                &tt.body,
-                &Rect::from_xywh(
-                    NOTE_PAD_X,
-                    NOTE_PAD_TOP,
-                    w,
-                    (height - NOTE_PAD_TOP).max(0.0),
-                ),
-                &secondary,
-            );
-            return Ok(Vec::new());
-        }
         let line_h = TextLayout::new("Ag", &tt.body, w, f32::MAX)?
             .metrics()
             .height;
-        let px = Px::new(scale);
-        let plate = session.create_solid_brush(with_alpha(theme.text_primary, 0.07))?;
-        let rule = session.create_solid_brush(with_alpha(theme.text_primary, 0.14))?;
-        let todo = TodoBrushes::new(session, theme)?;
         let separator_h = (SCRIPT_SEPARATOR_H * tt.k).round();
         let arrow_w = (SCRIPT_ARROW_W * tt.k).round();
-        let glyph_w = (14.0 * tt.k).round();
-        let mut hits = Vec::new();
-        let mut y = NOTE_PAD_TOP + SCRIPT_ROW_PAD_Y;
-        for (i, row) in rows.iter().enumerate() {
-            if y >= height {
-                break;
-            }
+        let mut laid = Vec::with_capacity(rows.len());
+        let mut y = 0.0;
+        for row in rows {
             if row.separator {
-                let line_y = px.snap(y - SCRIPT_ROW_PAD_Y + separator_h / 2.0);
-                session.fill_rect(&Rect::from_xywh(NOTE_PAD_X, line_y, w, px.hair()), &rule);
+                laid.push(ScriptRowLaid {
+                    text: None,
+                    icon: None,
+                    x: NOTE_PAD_X,
+                    text_x: NOTE_PAD_X,
+                    y,
+                    h: separator_h,
+                });
                 y += separator_h;
                 continue;
             }
@@ -4358,6 +4419,133 @@ impl FenceChrome {
             let text = if row.text.is_empty() { " " } else { row.text };
             let layout = TextLayout::new(text, &tt.body, text_w, f32::MAX)?;
             let h = layout.metrics().height.max(line_h);
+            laid.push(ScriptRowLaid {
+                text: Some(layout),
+                icon,
+                x,
+                text_x,
+                y,
+                h,
+            });
+            y += h + 2.0 * SCRIPT_ROW_PAD_Y;
+        }
+        Ok((laid, line_h))
+    }
+
+    /// What a script fence's rows and `footer` take in a content area `width` DIPs wide (see
+    /// [`ToolTextExtent`]): the rows scroll in the room above the footer. A fence without
+    /// rows (it shows its hint) takes nothing.
+    pub fn script_extent(
+        &self,
+        width: f32,
+        text_size: u8,
+        rows: &[ScriptRowDraw<'_>],
+        footer: &str,
+    ) -> Result<ToolTextExtent> {
+        if script_is_empty(rows) {
+            return Ok(ToolTextExtent::default());
+        }
+        let (laid, line_h) = self.script_rows(width, text_size, rows)?;
+        let mut tops = Vec::new();
+        let mut bottom: f32 = 0.0;
+        for row in &laid {
+            let Some(text) = &row.text else {
+                continue;
+            };
+            tops.extend(layout_line_tops(text, row.h).into_iter().map(|t| row.y + t));
+            bottom = row.y + row.h;
+        }
+        // The room the footer takes at the bottom, as `draw_script` keeps it.
+        let below = if footer.is_empty() {
+            0.0
+        } else {
+            let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+            TextLayout::new(footer, &self.note_footer_format, w, f32::MAX)?
+                .metrics()
+                .height
+                + 12.0
+        };
+        Ok(ToolTextExtent {
+            tops,
+            line_step: line_h + 2.0 * SCRIPT_ROW_PAD_Y,
+            height: NOTE_PAD_TOP + SCRIPT_ROW_PAD_Y + bottom + below,
+        })
+    }
+
+    /// 脚本栅栏: the rows a script printed, from the top left, each wrapped to the width, at
+    /// 文字大小 `text_size` (0 to 3): a to-do's check box, an icon, the text in its colour;
+    /// `---` a hairline. The row under the pointer (`hover`) gets a plate when it is
+    /// clickable, and an arrow when it opens something. `footer` sits at the bottom and the
+    /// rows stop above it, as in [`Self::draw_note`]. The rows are moved up by `scroll` DIPs
+    /// (more rows than the fence holds), with the overlay `scrollbar` at the right. Returns
+    /// each clickable row's index and plate (surface DIPs).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_script(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        scale: f32,
+        width: f32,
+        height: f32,
+        text_size: u8,
+        rows: &[ScriptRowDraw<'_>],
+        hover: Option<usize>,
+        hint: &str,
+        footer: &str,
+        scroll: f32,
+        scrollbar: Option<ScrollbarDraw>,
+    ) -> Result<Vec<(usize, Rect)>> {
+        session.clear(ColorF::TRANSPARENT);
+        let tt = self.tool_text(text_size);
+        let primary = session.create_solid_brush(theme.text_primary)?;
+        let secondary = session.create_solid_brush(theme.text_secondary)?;
+        let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        let has_footer = !footer.is_empty();
+        let height = if has_footer {
+            let layout = TextLayout::new(footer, &self.note_footer_format, w, f32::MAX)?;
+            let h = layout.metrics().height;
+            let top = (height - h - 8.0).max(0.0);
+            session.draw_text_layout(Vector2::new(NOTE_PAD_X, top), &layout, &secondary);
+            (top - 4.0).max(0.0)
+        } else {
+            height
+        };
+        if script_is_empty(rows) {
+            session.draw_text(
+                hint,
+                &tt.body,
+                &Rect::from_xywh(
+                    NOTE_PAD_X,
+                    NOTE_PAD_TOP,
+                    w,
+                    (height - NOTE_PAD_TOP).max(0.0),
+                ),
+                &secondary,
+            );
+            return Ok(Vec::new());
+        }
+        let (laid, line_h) = self.script_rows(width, text_size, rows)?;
+        let px = Px::new(scale);
+        let plate = session.create_solid_brush(with_alpha(theme.text_primary, 0.07))?;
+        let rule = session.create_solid_brush(with_alpha(theme.text_primary, 0.14))?;
+        let todo = TodoBrushes::new(session, theme)?;
+        let glyph_w = (14.0 * tt.k).round();
+        let mut hits = Vec::new();
+        for (i, (row, at)) in rows.iter().zip(&laid).enumerate() {
+            let y = NOTE_PAD_TOP + SCRIPT_ROW_PAD_Y + at.y - scroll;
+            if y >= height {
+                break;
+            }
+            if y + at.h + SCRIPT_ROW_PAD_Y <= 0.0 {
+                // Scrolled out above the fence.
+                continue;
+            }
+            let Some(layout) = &at.text else {
+                let line_y = px.snap(y - SCRIPT_ROW_PAD_Y + at.h / 2.0);
+                session.fill_rect(&Rect::from_xywh(NOTE_PAD_X, line_y, w, px.hair()), &rule);
+                continue;
+            };
+            let h = at.h;
             // A row that runs past the footer's top shows only its lines that fit whole.
             let _clip = if has_footer && y + h > height {
                 let fit = layout
@@ -4390,8 +4578,8 @@ impl FenceChrome {
             if let Some(done) = row.todo {
                 todo.draw(tt, session, px, y, line_h, done);
             }
-            if let Some(icon) = &icon {
-                session.draw_text_layout_color(Vector2::new(x, y), icon, &primary);
+            if let Some(icon) = &at.icon {
+                session.draw_text_layout_color(Vector2::new(at.x, y), icon, &primary);
             }
             let own = match row.color {
                 Some(c) => Some(session.create_solid_brush(c)?),
@@ -4402,7 +4590,7 @@ impl FenceChrome {
                 (None, Some(true)) => &secondary,
                 (None, _) => &primary,
             };
-            session.draw_text_layout_color(Vector2::new(text_x, y), &layout, brush);
+            session.draw_text_layout_color(Vector2::new(at.text_x, y), layout, brush);
             if hovered && row.opens {
                 session.draw_text(
                     OPEN_GLYPH,
@@ -4414,10 +4602,18 @@ impl FenceChrome {
             if row.clickable {
                 hits.push((i, plate_rect));
             }
-            y += h + 2.0 * SCRIPT_ROW_PAD_Y;
+        }
+        if let Some(bar) = scrollbar {
+            draw_scrollbar(session, theme, &self.sort_glyph_format, width, bar)?;
         }
         Ok(hits)
     }
+}
+
+/// A script fence without rows: it shows its hint.
+fn script_is_empty(rows: &[ScriptRowDraw<'_>]) -> bool {
+    rows.iter()
+        .all(|r| !r.separator && r.text.trim().is_empty() && r.todo.is_none() && r.icon.is_none())
 }
 
 /// The brushes of a to-do's check box: its ring, the accent fill and the check mark.

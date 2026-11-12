@@ -248,6 +248,12 @@ pub struct FenceViewState {
     pub(super) clock_date: &'static str,
     /// 文字大小 of a note or script fence: 0 small, 1 normal, 2 large, 3 extra large.
     pub(super) text_size: u8,
+    /// A note's or a script fence's text as last measured (`take_tool_extent`): the height
+    /// its content scrolls over (0 while it shows its hint, or items), the top of each line
+    /// of text from the first one's (the content rests on one of them) and one wheel line.
+    pub(super) tool_text_h: f32,
+    pub(super) tool_line_tops: Vec<f32>,
+    pub(super) tool_line_step: f32,
     /// 脚本栅栏: the fence shown is a script fence with this output and footer.
     pub(super) script: Option<ScriptView>,
     /// Its clickable rows as last drawn: row index and (left, top, right, bottom) in content
