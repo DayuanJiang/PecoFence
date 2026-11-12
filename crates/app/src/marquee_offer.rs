@@ -260,7 +260,8 @@ fn handle(
                 _ => None,
             };
             if let Some(event) = event {
-                desktop::hide_window(hwnd);
+                // The buttons fade out (167 ms) while what the click made fades in; they
+                // were hidden in one frame here. The app keeps them alive meanwhile.
                 close(hwnd, view, None);
                 queue.push(Command::MarqueeOffer(event));
             } else {

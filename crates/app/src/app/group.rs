@@ -108,6 +108,7 @@ impl App {
     /// drag did nothing until it was closed).
     pub(super) fn offer_new_fence(&mut self, rect: RECT) {
         self.marquee_offer = None;
+        self.marquee_offer_leaving = None;
         match crate::marquee_offer::MarqueeOffer::show(&self.ctx, rect) {
             Ok(offer) => self.marquee_offer = Some((offer, rect)),
             Err(e) => tracing::warn!(error = %e, "marquee offer not shown"),
@@ -117,9 +118,14 @@ impl App {
     /// The offer's buttons were clicked or went away (`Command::MarqueeOffer`).
     pub(super) fn on_marquee_offer(&mut self, event: crate::marquee_offer::OfferEvent) {
         use crate::marquee_offer::OfferEvent;
-        let Some((_offer, rect)) = self.marquee_offer.take() else {
+        let Some((offer, rect)) = self.marquee_offer.take() else {
             return;
         };
+        // After a click the buttons fade out by themselves while the fence fades in: they
+        // stay alive until the next rectangle's buttons take their place (`offer_new_fence`).
+        if !matches!(event, OfferEvent::Dismissed(_)) {
+            self.marquee_offer_leaving = Some(offer);
+        }
         // The rectangle that stayed with the buttons goes with them, unless a new rectangle
         // is being drawn already (its band is on screen now).
         if self.marquee_base.is_none() {

@@ -418,6 +418,8 @@ pub struct App {
     undo_waiting: bool,
     /// The 「新建栅栏」 / 「在此显示文件夹…」 buttons after a desktop marquee, with its rectangle.
     marquee_offer: Option<(crate::marquee_offer::MarqueeOffer, RECT)>,
+    /// The buttons that were clicked, fading out (their window hides itself at the end).
+    marquee_offer_leaving: Option<crate::marquee_offer::MarqueeOffer>,
     /// The welcome, what's-new and 对话框跳转 notices may show (not under a test script or
     /// `--exit-after`).
     notices: bool,
@@ -1853,6 +1855,7 @@ impl App {
             undo_notice: None,
             undo_waiting: false,
             marquee_offer: None,
+            marquee_offer_leaving: None,
             notices: args.exit_after_ms.is_none() && args.test_script.is_none(),
             tip_drags: HashMap::new(),
             settings_ring: None,

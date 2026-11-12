@@ -154,9 +154,18 @@ if ($Part -match 'U') {
   # 「＋ 新建栅栏」 is the right one of the two buttons.
   $sw = [Diagnostics.Stopwatch]::StartNew()
   [G]::Click($or.R - 50, [int](($or.T + $or.B) / 2))
-  $boxMs = -1
-  while ($sw.ElapsedMilliseconds -lt 3000) { $bx = [G]::FindWindowW('PecoFence.Rename', 'rename'); if ($bx -ne [IntPtr]::Zero -and [G]::IsWindowVisible($bx)) { $boxMs = $sw.ElapsedMilliseconds; break }; Start-Sleep -Milliseconds 5 }
+  $clickMs = $sw.ElapsedMilliseconds
+  $boxMs = -1; $offerMs = 0
+  while ($sw.ElapsedMilliseconds -lt 3000) {
+    if ([G]::IsWindowVisible($offer)) { $offerMs = $sw.ElapsedMilliseconds - $clickMs }
+    $bx = [G]::FindWindowW('PecoFence.Rename', 'rename')
+    if ($bx -ne [IntPtr]::Zero -and [G]::IsWindowVisible($bx)) { $boxMs = $sw.ElapsedMilliseconds; break }
+    Start-Sleep -Milliseconds 5
+  }
   Start-Sleep -Milliseconds 500
+  # FL-6: the two buttons fade out after the click (167 ms) while the fence fades in; they
+  # were hidden in the frame of the click.
+  Check 'FL-6 the buttons fade out after the click and are gone when the name box is there' ($offerMs -ge 80 -and -not [G]::IsWindowVisible($offer)) "the buttons were on screen until $offerMs ms after the click; visible now: $([G]::IsWindowVisible($offer))"
   # FL-14: the name box opens when the fence has faded in (167 ms). It waited for the whole
   # entrance to be reported (the 250 ms scale and the compositor's answer: about 0.3 s), and
   # what was typed meanwhile went nowhere.
