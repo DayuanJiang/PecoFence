@@ -126,6 +126,7 @@
   "点标签就能切换。点过这个栅栏以后，也可以按 <kbd>Ctrl</kbd>+<kbd>Tab</kbd>。": "Click a tab to switch to it. Once you've clicked in the fence, you can also press <kbd>Ctrl</kbd>+<kbd>Tab</kbd>.",
   "想拆开，就按住标签往下拖。拖出标题栏后，它又变回单独的栅栏，拖到桌面空白处松开就行。": "To split them up again, drag a tab down. Once it leaves the title bar, it's a separate fence again. Drop it on an empty part of the desktop.",
   "把图标拖到某个标签上，它就直接放进那一页。右键标题栏或标签，「标签页」里也有「合并到…」和「拆出为独立栅栏」。": "Drop an icon on a tab to put it straight into that tab. Right-click the title bar or a tab to find “Merge into” and “Detach into its own fence” under “Tabs”.",
+  "合并错了，或者把标签页拖出来又后悔了，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 就回到原样。": "Merged the wrong fences, or pulled a tab out by mistake? Press <kbd>Ctrl</kbd>+<kbd>Z</kbd> and everything is back as it was.",
   "4.2 · 常用技巧": "4.2 · Tips and tricks",
   "双击桌面隐藏栅栏": "Hide fences with a double-click",
   "想看看壁纸，或者截一张干净的桌面，双击一下桌面空白处就行。": "Want to see your wallpaper or take a clean screenshot? Just double-click an empty part of the desktop.",

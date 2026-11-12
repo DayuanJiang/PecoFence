@@ -126,6 +126,7 @@
   "点标签就能切换。点过这个栅栏以后，也可以按 <kbd>Ctrl</kbd>+<kbd>Tab</kbd>。": "Zum Wechseln klickst du auf einen Tab. Hast du den Bereich schon angeklickt, geht es auch mit <kbd>Strg</kbd>+<kbd>Tab</kbd>.",
   "想拆开，就按住标签往下拖。拖出标题栏后，它又变回单独的栅栏，拖到桌面空白处松开就行。": "Zum Trennen ziehst du einen Tab nach unten. Sobald er die Titelleiste verlässt, ist er wieder ein eigener Bereich. Lass ihn einfach auf einer freien Stelle des Desktops los.",
   "把图标拖到某个标签上，它就直接放进那一页。右键标题栏或标签，「标签页」里也有「合并到…」和「拆出为独立栅栏」。": "Ziehst du ein Symbol auf einen Tab, landet es direkt auf dieser Seite. Per Rechtsklick auf die Titelleiste oder einen Tab findest du unter „Tabs“ auch „Zusammenführen mit…“ und „Als eigenen Bereich abtrennen“.",
+  "合并错了，或者把标签页拖出来又后悔了，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 就回到原样。": "Hast du die falschen Bereiche zusammengeführt oder einen Tab aus Versehen herausgezogen, drück <kbd>Ctrl</kbd>+<kbd>Z</kbd>: Alles ist wieder wie vorher.",
   "4.2 · 常用技巧": "4.2 · Praktische Funktionen",
   "双击桌面隐藏栅栏": "Bereiche per Doppelklick ausblenden",
   "想看看壁纸，或者截一张干净的桌面，双击一下桌面空白处就行。": "Für einen Blick aufs Hintergrundbild oder einen aufgeräumten Screenshot genügt ein Doppelklick auf eine freie Stelle des Desktops.",

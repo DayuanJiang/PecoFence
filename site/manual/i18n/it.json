@@ -126,6 +126,7 @@
   "点标签就能切换。点过这个栅栏以后，也可以按 <kbd>Ctrl</kbd>+<kbd>Tab</kbd>。": "Fai clic su una scheda per passare a essa. Dopo aver fatto clic sul riquadro, puoi anche usare <kbd>Ctrl</kbd>+<kbd>Tab</kbd>.",
   "想拆开，就按住标签往下拖。拖出标题栏后，它又变回单独的栅栏，拖到桌面空白处松开就行。": "Per separarli, trascina una scheda verso il basso. Quando esce dalla barra del titolo, torna a essere un riquadro indipendente. Trascinala su una zona vuota del desktop e rilasciala.",
   "把图标拖到某个标签上，它就直接放进那一页。右键标题栏或标签，「标签页」里也有「合并到…」和「拆出为独立栅栏」。": "Trascina un’icona su una scheda per inserirla direttamente in quel riquadro. Fai clic destro sulla barra del titolo o su una scheda: nel menu «Schede» trovi anche «Unisci a…» e «Sposta in un riquadro separato».",
+  "合并错了，或者把标签页拖出来又后悔了，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 就回到原样。": "Se hai unito i riquadri sbagliati o hai staccato una scheda per errore, premi <kbd>Ctrl</kbd>+<kbd>Z</kbd>: tutto torna com’era.",
   "4.2 · 常用技巧": "4.2 · Suggerimenti utili",
   "双击桌面隐藏栅栏": "Nascondi i riquadri con un doppio clic",
   "想看看壁纸，或者截一张干净的桌面，双击一下桌面空白处就行。": "Vuoi vedere lo sfondo o fare uno screenshot del desktop senza icone? Fai doppio clic su una zona vuota del desktop.",

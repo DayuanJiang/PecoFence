@@ -126,6 +126,7 @@
   "点标签就能切换。点过这个栅栏以后，也可以按 <kbd>Ctrl</kbd>+<kbd>Tab</kbd>。": "Cliquez sur un onglet pour l’afficher. Après avoir cliqué dans le groupe, vous pouvez aussi utiliser <kbd>Ctrl</kbd>+<kbd>Tab</kbd>.",
   "想拆开，就按住标签往下拖。拖出标题栏后，它又变回单独的栅栏，拖到桌面空白处松开就行。": "Pour le séparer, faites glisser l’onglet vers le bas. Une fois hors de la barre de titre, il redevient un groupe indépendant : relâchez-le sur une zone vide du Bureau.",
   "把图标拖到某个标签上，它就直接放进那一页。右键标题栏或标签，「标签页」里也有「合并到…」和「拆出为独立栅栏」。": "Faites glisser une icône sur un onglet pour la ranger directement dans cet onglet. Le sous-menu « Onglets » (clic droit sur la barre de titre ou sur un onglet) propose aussi « Fusionner avec… » et « Détacher en groupe indépendant ».",
+  "合并错了，或者把标签页拖出来又后悔了，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 就回到原样。": "Vous avez fusionné les mauvais groupes ou détaché un onglet par erreur ? Appuyez sur <kbd>Ctrl</kbd>+<kbd>Z</kbd> : tout revient comme avant.",
   "4.2 · 常用技巧": "4.2 · Astuces pratiques",
   "双击桌面隐藏栅栏": "Masquer les groupes d’un double-clic",
   "想看看壁纸，或者截一张干净的桌面，双击一下桌面空白处就行。": "Pour admirer votre fond d’écran ou faire une capture d’un Bureau dégagé, double-cliquez simplement sur une zone vide du Bureau.",
