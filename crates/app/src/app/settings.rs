@@ -867,7 +867,11 @@ impl App {
                     let _ = explorer.spawn();
                 }
                 Some("openThemesFolder") => {
+                    // `quiet`: 自定义 was chosen with no theme file yet. The examples are
+                    // written as for the button, without an Explorer window.
+                    let quiet = v.get("quiet").and_then(|q| q.as_bool()).unwrap_or(false);
                     let dir = self.state.themes_dir();
+                    tracing::debug!(quiet, exists = dir.exists(), "settings: themes folder");
                     if !dir.exists() {
                         match std::fs::create_dir_all(&dir) {
                             Ok(()) => write_example_themes(&dir),
@@ -879,10 +883,12 @@ impl App {
                     self.sync_theme_watcher();
                     // The examples were written before the watcher started: list them now.
                     self.push_settings_state();
-                    // The Store package's copy of %APPDATA%, where Explorer can find it.
-                    let _ = std::process::Command::new("explorer.exe")
-                        .arg(crate::state::canonical_path(dir))
-                        .spawn();
+                    if !quiet {
+                        // The Store package's copy of %APPDATA%, where Explorer can find it.
+                        let _ = std::process::Command::new("explorer.exe")
+                            .arg(crate::state::canonical_path(dir))
+                            .spawn();
+                    }
                 }
                 Some("openThemeGuide") => {
                     let _ = shell::shell_execute(Path::new(THEME_GUIDE_URL), None, None);

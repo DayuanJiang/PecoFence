@@ -1045,8 +1045,11 @@
     preview.style.setProperty('--preview-title-align', settings.titleAlign || 'left');
   }
   // 主题风格: Fluent, Liquid Glass or 自定义 (a theme file of the themes folder, `customTheme`).
-  // 自定义 shows its row of files under the tiles and picks the first file at once; with no file
-  // yet the row says how to add one (the tile stays chosen on this page until another is).
+  // 自定义 shows its row of files under the tiles and picks the first file at once. With no file
+  // yet, the host writes the three example themes into a themes folder that does not exist
+  // (`quiet`: no Explorer window) and the first one is used when its list arrives; a folder the
+  // user emptied stays empty and the row says how to add a file (the tile stays chosen on this
+  // page until another is).
   let themeCustomOpen = false;
   function bindThemeStyle() {
     const custom = !!state.settings.customTheme || themeCustomOpen;
@@ -1062,7 +1065,10 @@
             state.settings.customTheme = first;
             bindThemeStyle(); bindCustomTheme();
             commit('customTheme');
-          } else { bindThemeStyle(); bindCustomTheme(); }
+          } else {
+            if (!first) send({ type: 'action', name: 'openThemesFolder', quiet: true });
+            bindThemeStyle(); bindCustomTheme();
+          }
           return;
         }
         themeCustomOpen = false;

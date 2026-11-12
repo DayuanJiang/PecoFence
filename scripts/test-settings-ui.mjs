@@ -85,6 +85,11 @@ function bridge() {
           state.customThemeError = custom && !bases[custom] ? 'unknown key "blurr"' : null;
           state.styleInUse = (custom && bases[custom]) || state.settings.themeStyle || 'fluent';
         }
+        // 自定义 chosen with no theme file: the host writes the examples unless the folder exists.
+        if (message.name === 'openThemesFolder' && message.quiet && !state.customThemes.length && !window.testThemesFolderExists) {
+          state.customThemes = ['大圆角', '暖色', '磨砂玻璃'];
+          setTimeout(window.testRefresh, 0);
+        }
         if (message.name === 'repairIcons' || message.name === 'hideDesktopIcons') {
           state.settings.hideRealIcons = message.name === 'hideDesktopIcons';
           state.desktopIconsHidden = state.settings.hideRealIcons;
@@ -1186,7 +1191,10 @@ async function runTests() {
     current().customThemes = [];
     frame.contentWindow.testRefresh(); await settle();
     const before = frame.contentWindow.testMessages.length;
+    // The themes folder exists and is empty (the user emptied it): nothing is written.
+    frame.contentWindow.testThemesFolderExists = true;
     styleRadio(doc, 'custom').click(); await settle();
+    frame.contentWindow.testThemesFolderExists = false;
     const select = doc.getElementById('customTheme'), help = doc.getElementById('customThemeHelp');
     assert(!doc.getElementById('customThemeRow').hidden && select.disabled && help.textContent.includes('打开主题文件夹'), 'No hint without theme files: ' + help.textContent);
     assert(!frame.contentWindow.testMessages.slice(before).some(m => m.type === 'patchSettings'), 'A setting changed without a theme file');
@@ -2770,6 +2778,24 @@ async function runTests() {
         change(doc, 'nrKind', 'type');
       }
     } finally { frame.style.width = ''; }
+    doc = await reset();
+  });
+
+  await test('自定义 with no themes folder yet: the three example themes are listed at once and the first is used, without the folder button', async () => {
+    doc = await reset();
+    win().testState.customThemes = [];
+    win().testRefresh(); await settle();
+    const before = win().testMessages.length;
+    doc.querySelector('input[name=themeStyle][value=custom]').click(); await settle(); await settle();
+    const sent = win().testMessages.slice(before), select = doc.getElementById('customTheme');
+    assert(sent.some(m => m.name === 'openThemesFolder' && m.quiet === true), 'The page did not ask for the example themes: ' + sent.map(m => m.name || m.type).join());
+    assert([...select.options].map(o => o.text).join() === '大圆角,暖色,磨砂玻璃' && !select.disabled, 'The examples are not listed: ' + [...select.options].map(o => o.text).join());
+    assert(win().testState.settings.customTheme === '大圆角' && select.value === '大圆角', 'The first example is not in use: ' + win().testState.settings.customTheme);
+    assert(doc.getElementById('customThemeHelp').textContent.includes('文件保存后'), 'The hint still asks for a file: ' + doc.getElementById('customThemeHelp').textContent);
+    // The button itself still opens the folder (no quiet flag).
+    const n = win().testMessages.length;
+    doc.getElementById('openThemes').click();
+    assert(win().testMessages.slice(n).some(m => m.name === 'openThemesFolder' && !m.quiet), 'The button no longer opens the folder');
     doc = await reset();
   });
 
