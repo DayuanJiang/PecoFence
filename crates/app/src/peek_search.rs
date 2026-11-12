@@ -98,7 +98,6 @@ const HEIGHT: f32 = 56.0;
 /// The box sits this far down the free height of the work area (0 = top, 0.5 = centre).
 const TOP_FRACTION: f32 = 0.3;
 const PAD: f32 = 18.0;
-const GLYPH_W: f32 = 30.0;
 const GLYPH_SIZE: f32 = 20.0;
 const STATUS_W: f32 = 170.0;
 const STATUS_SIZE: f32 = 15.0;
@@ -755,7 +754,8 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
     });
     let Some(window) = created else { return };
     let _ = dwm::set_corner_preference(window.hwnd(), dwm::CornerPreference::Round);
-    let edit_x = px(PAD + GLYPH_W + 8.0);
+    // The typed text starts where the rows' names start, the magnifier sits over their icons.
+    let edit_x = px(ROW_PAD) + px(ICON) + px(12.0);
     let edit_w = w - edit_x - px(STATUS_W + PAD + 8.0);
     let Ok(ctl) = edit::EditControl::create(
         window.hwnd(),
@@ -769,6 +769,8 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
     ) else {
         return;
     };
+    // No margins of its own: the text starts at the control's left edge.
+    ctl.set_margins(0);
     // In the box above the tabs.
     ctl.set_bounds(edit_x, (px(HEIGHT) - px(EDIT_H)) / 2, edit_w, px(EDIT_H));
     let hwnd = window.hwnd();
@@ -849,15 +851,15 @@ fn paint_box(hwnd: HWND) {
         let box_h = px(HEIGHT);
         p.text(
             RECT {
-                left: px(PAD),
+                left: px(ROW_PAD),
                 top: 0,
-                right: px(PAD + GLYPH_W),
+                right: px(ROW_PAD) + px(ICON),
                 bottom: box_h,
             },
             GLYPH,
             &s.glyph_font,
             s.dim_color,
-            Align::Left,
+            Align::Center,
         );
         p.text(
             RECT {
