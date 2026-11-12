@@ -487,12 +487,11 @@ mod tests {
             }
         }
         assert!(sources.len() >= 30, "only {} texts found", sources.len());
-        // Values as long as real ones: a shortcut, the configuration folder, the name an
-        // unreadable configuration file gets, a file name of 24 characters.
+        // Values as long as real ones: the configuration folder, the name an unreadable
+        // configuration file gets, and 24 characters for the rest (a file name, a shortcut
+        // of four modifiers).
         let values = |source: &str| -> [String; 2] {
-            let first = if source.contains("快捷键") {
-                "Ctrl+Alt+Shift+Space"
-            } else if source.contains("能否写入") {
+            let first = if source.contains("能否写入") {
                 r"C:\Users\me\AppData\Roaming\PecoFence"
             } else if source.contains("改名为") {
                 "config.unreadable-20261112-66600.json"

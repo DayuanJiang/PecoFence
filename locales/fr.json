@@ -26,7 +26,7 @@
   "清除": "Effacer",
   "{0} 已被其他程序占用，请换一个": "{0} est utilisé par une autre application. Choisissez-en un autre.",
   "{0} 已经是“{1}”的快捷键，请换一个": "{0} est déjà le raccourci de « {1} ». Choisissez-en un autre.",
-  "请在设置里给“临时显示 Windows 桌面”换一个快捷键：{0} 已被系统或其他程序占用。": "Changez dans les paramètres le raccourci de « Afficher temporairement le Bureau Windows » : {0} est déjà pris.",
+  "请在设置里给“临时显示 Windows 桌面”换一个快捷键：{0} 已被系统或其他程序占用。": "Changez dans les paramètres le raccourci de « Afficher temporairement le Bureau Windows » : {0} est pris.",
   "新建栅栏": "Nouveau groupe",
   "新栅栏": "Nouveau groupe",
   "新标签页": "Nouvel onglet",
