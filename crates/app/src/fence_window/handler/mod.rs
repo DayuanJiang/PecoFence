@@ -266,6 +266,16 @@ impl FenceWindow {
                 }
                 if is_press(message) {
                     h.queue.push(Command::EndItemSelection { except: hwnd });
+                    // During a Peek F6 gave the keyboard to a card, and now a fence is
+                    // pressed: the fence cannot take the keyboard itself there (the dimmer
+                    // passes the keys on), so the card gives it back to the dimmer.
+                    if h.behavior.floating.get() && crate::notice::key_card_up() {
+                        tracing::debug!(
+                            ?hwnd,
+                            "press in a fence during a Peek: the card gives the keyboard back"
+                        );
+                        h.queue.push(Command::CardKeysBack);
+                    }
                     // A click outside an open note editor saves and closes it. The editor
                     // itself only notices when it loses the focus, and a press on a clock or
                     // a script fence moves no focus.

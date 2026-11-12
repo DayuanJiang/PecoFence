@@ -47,6 +47,11 @@ pub fn is_key_card(hwnd: HWND) -> bool {
     !hwnd.0.is_null() && KEY_CARD.get() == hwnd.0 as isize
 }
 
+/// A card has the keyboard by F6.
+pub fn key_card_up() -> bool {
+    KEY_CARD.get() != 0
+}
+
 /// The `locale` for [`Notice::show`] in the UI language (fonts for Han, kana, Hangul).
 pub fn locale() -> &'static str {
     match pecofence_core::i18n::language().tag() {
@@ -648,6 +653,10 @@ fn handle(
             }
             let mut v = view.borrow_mut();
             if v.card.key_focus() != NoticeHit::None {
+                tracing::debug!(
+                    leaving = v.closing || v.held,
+                    "card lost the keyboard: its focus ring goes"
+                );
                 v.card.set_key_focus(NoticeHit::None);
                 v.redraw();
             }
