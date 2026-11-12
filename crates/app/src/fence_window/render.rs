@@ -1164,18 +1164,26 @@ impl FenceViewState {
     fn script_image_key(&mut self, path: &str, height_dip: f32, scale: f32) -> String {
         const KEPT: usize = 40;
         let bound = ((height_dip * scale).ceil() as u32 * 2).clamp(64, 1024);
-        let stamp = std::fs::metadata(path)
-            .ok()
-            .and_then(|m| Some((m.modified().ok()?, m.len())))
-            .and_then(|(t, len)| {
-                Some((t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs(), len))
-            })
-            .unwrap_or_default();
+        // A picture comes from this computer: a network place is not even asked whether the
+        // file is there (that already signs in to the server, with no click, and the fence
+        // would wait for a slow one at every draw).
+        let network = pecofence_core::script_output::is_network_path(path);
+        let stamp = if network {
+            None
+        } else {
+            std::fs::metadata(path).ok()
+        }
+        .and_then(|m| Some((m.modified().ok()?, m.len())))
+        .and_then(|(t, len)| Some((t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs(), len)))
+        .unwrap_or_default();
         let key = format!("scriptimg:{path}|{}|{}|{bound}", stamp.0, stamp.1);
         if self.script_images.iter().any(|(k, _)| *k == key) {
             return key;
         }
-        let decoded =
+        let decoded = if network {
+            tracing::warn!(path, "script fence picture on a network place: not read");
+            None
+        } else {
             pecofence_platform::wallpaper::decode_scaled(std::path::Path::new(path), bound, bound)
                 .map(|d| Image {
                     width: d.width,
@@ -1183,7 +1191,8 @@ impl FenceViewState {
                     bgra: d.bgra,
                 })
                 .map_err(|e| tracing::warn!(error = %e, path, "script fence picture not decoded"))
-                .ok();
+                .ok()
+        };
         self.script_images.push((key.clone(), decoded));
         while self.script_images.len() > KEPT {
             let (old, _) = self.script_images.remove(0);

@@ -576,7 +576,8 @@ A row with `image=C:\path\cover.jpg` shows that picture, centred, in its own rat
 `height=` DIPs tall (96 by default) and never wider than the fence. It is decoded with WIC at no
 more than twice the size it is drawn, once per file (a file that changes, by its modification time
 or its size, is read again), and the last 40 pictures are kept. A file that cannot be decoded
-draws nothing. The path is written in the line, so it must fit in its 300 characters.
+draws nothing. The file must be on this computer: a picture on a network place
+(`\\server\share\...`) is not read and draws nothing. The path is written in the line, so it must fit in its 300 characters.
 
 ### Fence title
 
