@@ -1176,7 +1176,21 @@ fn paint_box(hwnd: HWND) {
             right: w - pad,
             bottom: h,
         };
-        p.text(bar, &bar_keys(), &s.detail_font, s.dim_color, Align::Left);
+        // Ctrl+Enter and the actions need a file: the two action rows and system items (此电脑)
+        // have none, and the keys do nothing there.
+        let file_row = s.selected.and_then(|i| s.rows.get(i)).is_some_and(|r| {
+            r.glyph.is_none()
+                && r.icon_path
+                    .as_deref()
+                    .is_some_and(|p| !pecofence_platform::shell::is_namespace_path(p))
+        });
+        p.text(
+            bar,
+            &bar_keys(file_row),
+            &s.detail_font,
+            s.dim_color,
+            Align::Left,
+        );
         p.text(
             bar,
             &pecofence_core::i18n::format("{0} 个结果", &[s.total.to_string()]),
@@ -1203,10 +1217,14 @@ pub fn rows_shown_for_change() {
 
 /// 「Enter 打开   Ctrl+Enter 打开所在文件夹   → 更多操作」 in the UI language (the key names as the
 /// actions menu writes them; Enter by its name, as the other keys: the ↵ sign came out of a
-/// fallback font about 5 px high).
-fn bar_keys() -> String {
+/// fallback font about 5 px high). Only 「Enter 打开」 when the highlighted row has no file
+/// (`file_row` false).
+fn bar_keys(file_row: bool) -> String {
     let enter = pecofence_core::i18n::text("键名\x04Enter");
     let open = pecofence_core::i18n::text("打开");
+    if !file_row {
+        return format!("{enter} {open}");
+    }
     let folder = pecofence_core::i18n::text("打开所在文件夹\tCtrl+Enter");
     let (folder, folder_key) = folder.split_once('\t').unwrap_or((folder, "Ctrl+Enter"));
     let more = pecofence_core::i18n::text("更多操作");
@@ -1574,8 +1592,14 @@ mod tests {
     /// The bottom bar names the Enter key in letters, like the keys beside it.
     #[test]
     fn the_bar_writes_enter_by_name() {
-        assert!(bar_keys().starts_with("Enter 打开 "), "{}", bar_keys());
-        assert!(!bar_keys().contains('↵'));
+        assert!(
+            bar_keys(true).starts_with("Enter 打开 "),
+            "{}",
+            bar_keys(true)
+        );
+        assert!(!bar_keys(true).contains('↵'));
+        // A row without a file (an action row, 此电脑): only what works there.
+        assert_eq!(bar_keys(false), "Enter 打开");
     }
 
     /// Each drive gets a thread of its own (a spin-up holds only its rows); the log names the
