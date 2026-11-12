@@ -5087,7 +5087,9 @@ fn layout_selection(layout: &TextLayout, from: usize, to: usize, len: usize) -> 
     let (mut y, mut left) = (ay, ax);
     while out.len() < 512 {
         if y + 0.5 >= by {
-            out.push(Rect::from_xywh(left, y, (bx - left).max(0.0), line_h));
+            // Right-to-left text (Hebrew, Arabic) has its start at the right and its end at
+            // the left: the box runs between the two, whichever is the left one.
+            out.push(Rect::from_xywh(left.min(bx), y, (bx - left).abs(), line_h));
             break;
         }
         // The last character of the line on screen at `y`: its box ends where the line does.
