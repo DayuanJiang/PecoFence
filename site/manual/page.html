@@ -19,6 +19,8 @@
 <script src="demos/rules.js" defer></script>
 <script src="demos/look.js" defer></script>
 <script src="demos/backup.js" defer></script>
+<link rel="stylesheet" href="demos/smart.css">
+<script src="demos/smart.js" defer></script>
 <link rel="stylesheet" href="demos/tabs.css">
 <script src="demos/tabs.js" defer></script>
 <script src="demos/hide.js" defer></script>
@@ -89,6 +91,7 @@
       <li><a href="#peek"><span class="num">4.3</span>速览</a></li>
       <li><a href="#search"><span class="num">4.4</span>搜索图标和文件</a></li>
       <li><a href="#portal"><span class="num">4.5</span>在桌面显示文件夹</a></li>
+      <li><a href="#smart"><span class="num">4.6</span>智能栅栏</a></li>
     </ol>
     </div>
     <div class="toc-group">
@@ -595,6 +598,42 @@
             <p>先输入一个类型名：扩展名（比如 pdf），或者文件夹、文档、图片、视频、音乐、压缩包、程序。框的右边出现「类型：PDF　Tab」这样的提示时按 <kbd>Tab</kbd>，它就变成一个小标签，栅栏只显示这种类型的文件，接着打字还可以筛名字。直接输入 kind:pdf 再打一个空格也一样。在空的框里按退格，小标签就去掉了。</p>
             <p>只想看最近下载的文件？在托盘菜单，或者栅栏右键菜单的「添加到桌面」里，选<b>「新建智能栅栏…」</b>，会打开一个小窗口：点上面的「最近 7 天下载」「最近一周的截图」等模板就填好了条件，也可以自己一行一行加条件，下面马上显示能找到几个文件，点「创建」就好。栅栏里只显示符合条件的文件，新文件会自己出现，文件还在原来的文件夹里。标题前是带放大镜的文件夹图标，标题栏右边的小框里是文件个数。要改条件，右键这个栅栏选「编辑条件…」。</p>
             <p>普通栅栏里双击文件夹，默认用资源管理器打开。想让它也在栅栏里打开，右键标题栏选「栅栏选项…」，打开<b>「双击文件夹或文件夹快捷方式时在此栅栏内打开」</b>。点向上箭头、按 <kbd>Backspace</kbd> 或按鼠标的后退键，栅栏就回到原来的图标。</p>
+          </aside>
+        </div>
+      </div>
+    </article>
+
+    <article class="lesson" data-lesson="smart" id="smart">
+      <header class="lesson-head">
+        <p class="kicker">4.6 · 常用技巧</p>
+        <h2>智能栅栏</h2>
+        <p class="lede">智能栅栏里放的是一条保存下来的搜索，比如最近 7 天下载的文件。符合条件的文件会自己出现在里面，文件本身留在原处。</p>
+      </header>
+      <div class="lesson-body">
+        <figure class="demo">
+          <div class="stage" role="img" aria-label="动画：右键「文件与文档」的标题栏，在「添加到桌面」里选「新建智能栅栏…」，打开一个小窗口；点模板「最近 7 天下载」，名称和条件都填好了，下面写着现在找到 6 个文件；点「创建」，桌面左上方多出一个叫「最近 7 天下载」的栅栏，标题前是带放大镜的文件夹图标，标题栏右边的小框里写着 6，里面是六个文件；随后新下载的「发票.pdf」自己出现在第一格，数字变成 7"></div>
+          <div class="controls">
+            <button class="btn play" type="button" data-play aria-label="暂停">
+              <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.7 2.1a.8.8 0 0 0-1.2.7Z"/></svg>
+            </button>
+            <div class="track" data-track role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="track-fill"></div></div>
+            <button class="btn speed" type="button" data-speed aria-pressed="false">慢放</button>
+          </div>
+        </figure>
+        <div class="side">
+          <ol class="steps">
+            <li data-at="0.3"><span class="n">1</span><p>右键任意一个栅栏的标题栏，在<b>「添加到桌面」</b>里选<b>「新建智能栅栏…」</b>。托盘菜单里也有这一项。</p></li>
+            <li data-at="2.8"><span class="n">2</span><p>在打开的小窗口里点一个模板，比如<b>「最近 7 天下载」</b>，名称和条件就填好了，下面马上写出现在能找到几个文件。也可以自己一行一行加条件。</p></li>
+            <li data-at="4.9"><span class="n">3</span><p>点<b>「创建」</b>，桌面上多出一个栅栏，里面是符合条件的文件，最新的排在前面。标题前是带放大镜的文件夹图标，标题栏右边的小框里是文件个数。</p></li>
+            <li data-at="7.2"><span class="n">4</span><p>以后有新文件符合条件，它会自己出现在这里。文件一直在原来的文件夹里，栅栏只是把它们列出来。</p></li>
+          </ol>
+          <aside class="tip">
+            <h3>小提示</h3>
+            <p>模板一共五个：最近 7 天下载、最近一周的截图、大于 1 GB 的文件、所有 .psd 文件、最近打开的文件。要改条件，右键这个栅栏，选<b>「编辑条件…」</b>。</p>
+            <p>只搜一个文件夹的智能栅栏不需要别的软件。要搜整台电脑，需要免费的文件搜索工具 Everything；没装的话，右键这个栅栏就能安装。</p>
+            <p>智能栅栏里的文件可以打开、拖出去、重命名和删除，但不能往里拖文件。删除智能栅栏不会动任何文件。按 <kbd>F5</kbd> 会马上重新搜一遍。</p>
+            <p>速览搜索列表最后一行的「把这次搜索放到桌面」，也会把这次搜索变成一个智能栅栏。</p>
           </aside>
         </div>
       </div>
