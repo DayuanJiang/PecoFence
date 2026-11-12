@@ -349,6 +349,29 @@ impl App {
         );
     }
 
+    /// 退出 in the tray menu, or for an update: the fences fade out (167 ms) while Explorer
+    /// brings its icons back, and the program ends when they have gone. They were cut off in
+    /// one frame. The end of a Windows session does not wait, and with animations off (or no
+    /// fence on screen) nothing fades. `reason`: the quit's, or that the hold of
+    /// `TIMER_QUIT_FADE` is over.
+    pub(super) fn fade_out_and_quit(&mut self, reason: &'static str) {
+        let fading =
+            reason != "session end" && self.fences.values().fold(false, |any, w| w.retire() | any);
+        tracing::debug!(
+            reason,
+            fading,
+            fences = self.fences.len(),
+            "quit: the fences fade out first"
+        );
+        if fading {
+            let fade = pecofence_render::motion::FAST.as_millis() as u32;
+            // Two frames more, so the last step of the fade is on screen.
+            window::quit_after(fade + 33);
+        } else {
+            window::post_quit(0);
+        }
+    }
+
     /// One compositor frame: advance every fence's client tweens; ask for another frame while
     /// anything still moves.
     pub(super) fn on_frame(&mut self) {

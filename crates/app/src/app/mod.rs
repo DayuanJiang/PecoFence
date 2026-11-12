@@ -215,6 +215,11 @@ const TIMER_CONFIG_LOCKED: usize = 77;
 /// The start hides the Windows desktop icons half way through the fences' fade-in (one shot;
 /// it stays armed while the App is borrowed). See `hide_icons_as_fences_come`.
 const TIMER_START_ICONS: usize = 75;
+/// 退出: the fences start to fade out once File Explorer's icons are about to show (one shot;
+/// it stays armed while the App is borrowed). See `Command::Quit`.
+const TIMER_QUIT_FADE: usize = 97;
+/// How long the fences stay after File Explorer was asked for its icons at 退出.
+const QUIT_HOLD_MS: u32 = 400;
 const CONFIG_LOCKED_RETRY_MS: u32 = 2_000;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
@@ -1130,6 +1135,14 @@ impl App {
                                     {
                                         window::kill_timer(hwnd, TIMER_START_ICONS);
                                         app.hide_icons_after_start();
+                                    }
+                                }
+                                TIMER_QUIT_FADE => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        window::kill_timer(hwnd, TIMER_QUIT_FADE);
+                                        app.fade_out_and_quit("after the hold");
                                     }
                                 }
                                 TIMER_IDLE_TRIM => {
@@ -3076,27 +3089,30 @@ impl App {
             Command::Quit(reason) => {
                 tracing::info!(reason, "quitting");
                 self.state.save_and_wait("quit");
+                let hidden = pecofence_platform::shell_icons::desktop_icons_hidden();
                 if let Some(a) = self.anchor.borrow_mut().as_mut() {
                     a.release_desktop_icons();
                 }
-                // 退出 in the tray menu, or for an update: the fences fade out (167 ms) while
-                // Explorer brings its icons back, and the program ends when they have gone.
-                // They were cut off in one frame. The end of a Windows session does not wait,
-                // and with animations off (or no fence on screen) nothing fades.
-                let fading = reason != "session end"
-                    && self.fences.values().fold(false, |any, w| w.retire() | any);
+                // File Explorer shows its icons about a third of a second after it was asked
+                // (343 ms with Windows' animations on, measured with 45 icons), and the fences
+                // had gone after 167 ms: the desktop was empty in between. The fences stay for
+                // `QUIT_HOLD_MS` first, so that their fade ends after the icons are back.
+                let icons_coming =
+                    hidden && !pecofence_platform::shell_icons::desktop_icons_hidden();
+                let holds = icons_coming
+                    && reason != "session end"
+                    && self.ctx.motion.enabled()
+                    && !self.fences.is_empty();
                 tracing::debug!(
                     reason,
-                    fading,
-                    fences = self.fences.len(),
-                    "quit: the fences fade out first"
+                    icons_coming,
+                    holds,
+                    "quit: the fences wait for File Explorer's icons"
                 );
-                if fading {
-                    let fade = pecofence_render::motion::FAST.as_millis() as u32;
-                    // Two frames more, so the last step of the fade is on screen.
-                    window::quit_after(fade + 33);
+                if holds {
+                    window::set_timer(self.control.hwnd(), TIMER_QUIT_FADE, QUIT_HOLD_MS);
                 } else {
-                    window::post_quit(0);
+                    self.fade_out_and_quit(reason);
                 }
             }
             Command::SettingsActivated => self.query_store_startup(),
