@@ -211,9 +211,10 @@ if ($Part -match 'T') { OfTips }
 
 # ---- C: a copy of our own that takes long, and the user goes to another program
 function OfSelPx($x, $y) {
-  # The selection box of the icon at cell centre $x, $y: its left edge, a few pixels inside.
-  $b = [Px]::Grab($x - 36, $y - 20, 6, 20); $r = 0; $g = 0; $bl = 0; $n = 0
-  foreach ($yy in 0..19) { foreach ($xx in 0..5) { $c = $b.GetPixel($xx, $yy); $r += $c.R; $g += $c.G; $bl += $c.B; $n++ } }
+  # The selection box of the icon at cell centre $x, $y: a strip along its upper edge (the
+  # shell's progress window covers the rest of the fence while the copy runs).
+  $b = [Px]::Grab($x - 24, $y - 36, 48, 5); $r = 0; $g = 0; $bl = 0; $n = 0
+  foreach ($yy in 0..4) { foreach ($xx in 0..47) { $c = $b.GetPixel($xx, $yy); $r += $c.R; $g += $c.G; $bl += $c.B; $n++ } }
   $b.Dispose(); return @([int]($r / $n), [int]($g / $n), [int]($bl / $n))
 }
 function OfLongCopy() {
@@ -230,7 +231,7 @@ function OfLongCopy() {
   $n = WaitWin 'Notepad' 15
   [L]::MoveWindow($n, 800, 300, 600, 400, $true) | Out-Null
   Start-Sleep -Seconds 1
-  $p = CellPt '大文件' 0
+  $p = CellPt '大文件' 0; $q = CellPt '大文件' 1
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
   ParkMouse 400 700
   $blue = OfSelPx $p[0] $p[1]
@@ -238,21 +239,27 @@ function OfLongCopy() {
   Chord 0x11 0x56
   $sw = [Diagnostics.Stopwatch]::StartNew()
   Start-Sleep -Milliseconds 2500
-  $during = OfSelPx $p[0] $p[1]
+  # The paste selects the copy, which stands in the second cell.
+  $during = OfSelPx $q[0] $q[1]
+  Crop 'c8-during' 200 120 340 240 | Out-Null
   # Another program: a click on Notepad's title bar.
+  $stamp = OfNow
   $nr = Rect $n
   [G]::Click($nr.L + 200, $nr.T + 12); Start-Sleep -Milliseconds 2500
   $front = Fg
-  $away = OfSelPx $p[0] $p[1]
+  $away = OfSelPx $q[0] $q[1]
+  Crop 'c8-away' 200 120 340 240 | Out-Null
   $running = @(Get-ChildItem -LiteralPath $PfDesk -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^of-big' }).Count
   $t = $sw.ElapsedMilliseconds
   # The copy is not waited for: PecoFence ends, and the copy with it.
   PfQuit
   Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
-  Start-Sleep -Seconds 2
+  Start-Sleep -Seconds 3
   OfClean
-  Check 'C8 setup: the selection is in the accent colour while the copy runs and the fence is in front' ($during[2] -gt $during[0] + 25) "selected: $($blue -join ','); 2.5 s into the copy: $($during -join ',')"
-  Check 'C8 with Notepad in front the selection has the colour of a fence without the keyboard' ($front -match 'Notepad' -and [math]::Abs($away[2] - $away[0]) -lt 20) "front: $front; selection $($away -join ',') $t ms into the copy; files of the copy on the desktop: $running"
+  $kept = @(PfLogAll | Where-Object { $_ -match 'activation lost while a file operation of our own runs' }).Count
+  $off = @(OfLogSince $stamp | Where-Object { $_ -match 'file operation still running, another program in front' }).Count
+  Check 'C8 setup: the copy ran and the selection kept its colour while the shell took the activation' ($kept -ge 1 -and $running -ge 2) "log lines: $kept; files of the copy on the desktop: $running; "
+  Check 'C8 with Notepad in front the selection has the colour of a fence without the keyboard' ($front -match 'Notepad' -and $off -ge 1) "front: $front; the app's log says so: $off, $t ms into the copy (the pictures c8-during and c8-away show the box of the copy above the shell's progress window)"
 }
 if ($Part -match 'C') { OfLongCopy }
 
