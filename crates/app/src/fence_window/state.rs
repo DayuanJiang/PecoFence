@@ -870,8 +870,10 @@ impl FenceViewState {
     }
 
     /// 便签与待办: a press at client point (`x`, `y`) in a note's text opens the editor with
-    /// the caret where the press was. None when this window shows no note, the point is not
-    /// in its content, or a check box is there (`press_tool_at` takes that press).
+    /// the caret where the press was: the command that does it, which the caller sends at
+    /// once or, for a press on a to-do, on the release (`begin_todo_press`). None when this
+    /// window shows no note, the point is not in its content, or a check box is there
+    /// (`press_tool_at` takes that press).
     pub(super) fn note_press(&self, x: i32, y: i32) -> Option<Command> {
         if self.note.is_none() || self.rolled_up || y < self.content_y || x < self.content_x {
             return None;
