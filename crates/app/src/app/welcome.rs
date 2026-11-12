@@ -228,9 +228,10 @@ impl App {
             .collect()
     }
 
-    pub(super) fn show_welcome(&mut self, which: Welcome) {
+    /// Title, body and button of the card `which` (None: a tip that does not exist).
+    fn welcome_texts(&self, which: &Welcome) -> Option<(String, String, &'static str)> {
         use pecofence_core::i18n::{format, text};
-        let (title, body, action) = match &which {
+        Some(match which {
             Welcome::WhatsNew => (
                 format("PecoFence {0} 的新功能", &["0.3.0".to_string()]),
                 text(
@@ -325,9 +326,7 @@ impl App {
             Welcome::Tip(i) => {
                 let i = *i;
                 let tips = self.tips();
-                let Some(&tip) = tips.get(i) else {
-                    return;
-                };
+                let &tip = tips.get(i)?;
                 let (name, body) = match tip {
                     Tip::Create => (
                         text("新建栅栏"),
@@ -376,20 +375,77 @@ impl App {
                 };
                 (title, body, action)
             }
+        })
+    }
+
+    /// The tip that follows when card `which` got `event` (「下一条」 on a tip that is not the
+    /// last one).
+    pub(super) fn next_tip(
+        &self,
+        which: &Welcome,
+        event: crate::notice::NoticeEvent,
+    ) -> Option<usize> {
+        match which {
+            Welcome::Tip(i)
+                if event == crate::notice::NoticeEvent::Action && i + 1 < self.tips().len() =>
+            {
+                Some(i + 1)
+            }
+            _ => None,
+        }
+    }
+
+    /// 「下一条」 on a tip card: the card stays where it is and takes tip `next`'s texts. A
+    /// card that cannot take them goes and a new one comes, as before.
+    pub(super) fn show_next_tip(&mut self, notice: crate::notice::Notice, next: usize) {
+        let which = Welcome::Tip(next);
+        let swapped = self
+            .welcome_texts(&which)
+            .is_some_and(|(title, body, action)| {
+                notice
+                    .set_content(&title, &body, action, crate::notice::locale())
+                    .map_err(|error| tracing::warn!(%error, "tip card did not take the next tip"))
+                    .is_ok()
+            });
+        tracing::info!(notice = %welcome_kind(&which), swapped, "next tip on the same card");
+        if swapped {
+            self.welcome = Some((notice, which));
+        } else {
+            // Gone before the new card registers its window class.
+            drop(notice);
+            self.show_welcome(which);
+        }
+    }
+
+    pub(super) fn show_welcome(&mut self, which: Welcome) {
+        use pecofence_core::i18n::text;
+        let Some((title, body, action)) = self.welcome_texts(&which) else {
+            return;
         };
         let kind = welcome_kind(&which);
         // The two offers can be turned down; the roll-up tip only informs.
         let secondary = matches!(which, Welcome::FolderTip { .. } | Welcome::RuleTip { .. })
             .then(|| text("不用"));
-        match crate::notice::Notice::show_with(
-            &self.ctx,
-            &title,
-            &body,
-            action,
-            secondary,
-            crate::notice::locale(),
-            &self.notice_avoid_rects(),
-        ) {
+        let locale = crate::notice::locale();
+        let avoid = self.notice_avoid_rects();
+        let shown = match which {
+            // The tips share one card (`show_next_tip`): it is as tall as the tallest of them
+            // from the start, so 「下一条」 changes the texts and not the card's size.
+            Welcome::Tip(_) => {
+                let tallest = (0..self.tips().len())
+                    .filter_map(|i| self.welcome_texts(&Welcome::Tip(i)))
+                    .filter_map(|(t, b, a)| crate::notice::card_height(&t, &b, a, locale).ok())
+                    .fold(0.0, f32::max);
+                tracing::debug!(tallest, "tip cards: one height for all");
+                crate::notice::Notice::show_reserving(
+                    &self.ctx, &title, &body, action, tallest, locale, &avoid,
+                )
+            }
+            _ => crate::notice::Notice::show_with(
+                &self.ctx, &title, &body, action, secondary, locale, &avoid,
+            ),
+        };
+        match shown {
             Ok(notice) => {
                 tracing::info!(notice = %kind, "welcome notice shown");
                 self.welcome = Some((notice, which));

@@ -42,6 +42,13 @@ pub fn locale() -> &'static str {
     }
 }
 
+/// How tall (DIPs) a card with these texts is by itself.
+pub fn card_height(title: &str, body: &str, action: &str, locale: &str) -> Result<f32> {
+    Ok(NoticeCard::new(title, body, action, locale)?
+        .layout()?
+        .height)
+}
+
 /// What the user did with the notice.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NoticeEvent {
@@ -142,16 +149,41 @@ impl Notice {
         locale: &str,
         avoid: &[RECT],
     ) -> Result<Self> {
+        let mut card = NoticeCard::new(title, body, action, locale)?;
+        if let Some(text) = secondary {
+            card = card.with_secondary(text);
+        }
+        Self::show_card(ctx, card, title, avoid)
+    }
+
+    /// [`Self::show`] for the first card of a row that [`Self::set_content`] goes through (the
+    /// tips): the card is at least `min_height` DIPs tall, the height of the tallest one
+    /// ([`card_height`]), so the later ones change its texts and not its size.
+    pub fn show_reserving(
+        ctx: &FenceContext,
+        title: &str,
+        body: &str,
+        action: &str,
+        min_height: f32,
+        locale: &str,
+        avoid: &[RECT],
+    ) -> Result<Self> {
+        let card = NoticeCard::new(title, body, action, locale)?.with_min_height(min_height);
+        Self::show_card(ctx, card, title, avoid)
+    }
+
+    fn show_card(
+        ctx: &FenceContext,
+        card: NoticeCard,
+        title: &str,
+        avoid: &[RECT],
+    ) -> Result<Self> {
         let monitor = monitors::enumerate()
             .into_iter()
             .find(|m| m.primary)
             .ok_or_else(windows_core::Error::empty)?;
         let dpi = monitor.dpi.max(96);
         let scale = dpi as f32 / 96.0;
-        let mut card = NoticeCard::new(title, body, action, locale)?;
-        if let Some(text) = secondary {
-            card = card.with_secondary(text);
-        }
         let layout = card.layout()?;
         let (w, h) = (
             (WIDTH * scale).round() as i32,
@@ -254,6 +286,64 @@ impl Notice {
         // A flyout already open over the corner (the taskbar's hidden icons) stays on top.
         notice.go_below(desktop::foreground_window());
         Ok(notice)
+    }
+
+    /// Puts other texts on the card where it stands (「下一条」: the next tip). The card stays
+    /// on screen with no fade and keeps its size: texts that need less room leave it between
+    /// the text and the button. Only texts that need more make it taller (its bottom edge
+    /// keeps its place); [`Self::show_reserving`] gives the first card that room. The 30 s
+    /// until it leaves by itself start again.
+    pub fn set_content(&self, title: &str, body: &str, action: &str, locale: &str) -> Result<()> {
+        let hwnd = self.window.hwnd();
+        let old = window::window_rect(hwnd);
+        let (rect, dpi) = {
+            let mut v = self.view.borrow_mut();
+            let card =
+                NoticeCard::new(title, body, action, locale)?.with_min_height(v.layout.height);
+            let layout = card.layout()?;
+            let scale = v.dpi as f32 / 96.0;
+            let h = ((layout.height * scale).round() as i32).max(old.bottom - old.top);
+            let rect = RECT {
+                top: old.bottom - h,
+                ..old
+            };
+            // The pointer rests where it clicked: the new card's part under it.
+            let p = window::cursor_pos();
+            let inside =
+                (rect.left..rect.right).contains(&p.x) && (rect.top..rect.bottom).contains(&p.y);
+            v.hover = if inside {
+                layout.hit(
+                    (p.x - rect.left) as f32 / scale,
+                    (p.y - rect.top) as f32 / scale,
+                )
+            } else {
+                NoticeHit::None
+            };
+            v.card = card;
+            v.layout = layout;
+            v.panel.resize(rect.right - rect.left, h)?;
+            v.redraw();
+            (rect, v.dpi)
+        };
+        tracing::debug!(
+            from = ?(old.top, old.bottom),
+            to = ?(rect.top, rect.bottom),
+            grew = rect != old,
+            "notice content swapped in place"
+        );
+        // The borrow is released first: the size change comes back into `handle`.
+        if rect != old {
+            self.window.set_bounds(
+                rect.left,
+                rect.top,
+                rect.right - rect.left,
+                rect.bottom - rect.top,
+            )?;
+            self.view.borrow_mut().shadow.update(rect, dpi);
+        }
+        window::set_title(hwnd, title);
+        self.window.set_timer(TIMER_DISMISS, SHOW_FOR_MS);
+        Ok(())
     }
 
     /// The front window changed: another program's topmost window over the card (the

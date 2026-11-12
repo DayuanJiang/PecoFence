@@ -134,6 +134,11 @@ impl App {
             return;
         }
         if let Some((notice, which)) = self.welcome.take() {
+            // 「下一条」: the card stays and shows the next tip.
+            if let Some(next) = self.next_tip(&which, event) {
+                self.show_next_tip(notice, next);
+                return;
+            }
             // Gone before the next tip registers its window class.
             drop(notice);
             self.on_welcome_notice(which, event);

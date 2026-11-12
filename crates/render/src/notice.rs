@@ -72,6 +72,8 @@ pub struct NoticeCard {
     body: String,
     action: String,
     secondary: Option<String>,
+    /// The card is at least this tall (DIPs): the room goes between the text and the buttons.
+    min_height: f32,
     title_format: TextFormat,
     body_format: TextFormat,
     button_format: TextFormat,
@@ -96,6 +98,7 @@ impl NoticeCard {
             body: body.to_string(),
             action: action.to_string(),
             secondary: None,
+            min_height: 0.0,
             title_format: wrapping(TextFormat::with_locale(
                 font_text(),
                 14.0,
@@ -130,6 +133,13 @@ impl NoticeCard {
         self
     }
 
+    /// Makes the card at least `height` DIPs tall (a row of cards of one size: the tips). The
+    /// buttons stay at the bottom edge.
+    pub fn with_min_height(mut self, height: f32) -> Self {
+        self.min_height = height;
+        self
+    }
+
     pub fn layout(&self) -> Result<NoticeLayout> {
         let text_w = WIDTH - PAD - CLOSE - 8.0;
         let title_h = TextLayout::new(&self.title, &self.title_format, text_w, 1000.0)?
@@ -150,7 +160,7 @@ impl NoticeCard {
             .metrics()
             .width;
         let button_w = (label_w + 24.0).max(BUTTON_MIN_W).min(body_w);
-        let button_top = body.bottom + 16.0;
+        let button_top = (body.bottom + 16.0).max(self.min_height - PAD - BUTTON_H);
         let button = Rect::new(
             WIDTH - PAD - button_w,
             button_top,
