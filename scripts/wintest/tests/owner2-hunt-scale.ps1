@@ -157,6 +157,8 @@ if ($Part -eq 'D') {
     $p = HsWin 'Programs'; $fo = HsWin 'Folders'; $fi = HsWin 'Files and documents'
     $wa = [HsScr]::Work()
     Log "$what Programs $($p.x),$($p.y),$($p.w),$($p.h) Folders $($fo.x),$($fo.y),$($fo.w),$($fo.h) Files $($fi.x),$($fi.y),$($fi.w),$($fi.h) work $($wa -join ',')"
+    ParkMouse 400 400
+    Shot "D $what"
     Check "$what the second fence of the column is one gap under the first" (($fo.y - ($p.y + $p.h)) -eq $gapPx) "gap $($fo.y - ($p.y + $p.h)) px, wanted $gapPx"
     Check "$what the column is one gap from the top and the right edge" ($p.y -eq $gapPx -and ($wa[2] - ($p.x + $p.w)) -eq $gapPx) "top $($p.y), right gap $($wa[2] - ($p.x + $p.w))"
     Check "$what the tall fence keeps the gap to the top and stays off the taskbar" ($fi.y -eq $gapPx -and ($fi.y + $fi.h) -le ($wa[3] - $gapPx)) "top $($fi.y), bottom $($fi.y + $fi.h), work bottom $($wa[3])"
