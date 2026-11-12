@@ -204,7 +204,9 @@
         const p = at(t);
         const time = /^en/.test(lang()) ? ' AM' : '';
 
-        // the row under the pointer (none while a window covers it)
+        // the row under the pointer (none while a window covers it); its plate is lighter while
+        // the button is held, and the row acts when it is let go (the click's moment here)
+        const held = CLICKS.some(c => t >= c.t - .12 && t < c.t);
         let hot = null;
         for (const f of [r.G, r.P]) {
             for (const q of f.rows) {
@@ -212,6 +214,7 @@
                 const on = clickable && p.x >= q.x0 && p.x < q.x1 && p.y >= q.y0 && p.y < q.y1;
                 if (on) hot = q;
                 show(q.plate, on);
+                q.plate.classList.toggle('down', on && held);
                 if (q.go) show(q.go, on);
             }
         }
