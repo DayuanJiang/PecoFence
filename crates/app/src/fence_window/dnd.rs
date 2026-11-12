@@ -152,12 +152,27 @@ pub(super) fn shell_drop_landed(
     landed
 }
 
+thread_local! {
+    /// Windows' `DefaultDropEffect` (`dragdrop::default_drop_effect`), read when a drag enters
+    /// a fence: asked once per drag, not per DragOver.
+    static USER_DEFAULT_EFFECT: std::cell::Cell<Option<DropEffect>> = const { std::cell::Cell::new(None) };
+}
+
+/// A drag enters a fence: Windows' default effect for a plain file drag is read again.
+pub(super) fn note_default_drop_effect() {
+    let effect = dragdrop::default_drop_effect();
+    if USER_DEFAULT_EFFECT.replace(effect) != effect {
+        tracing::debug!(?effect, "Windows' DefaultDropEffect for a plain file drag");
+    }
+}
+
 /// The effect to report for a file drag: Explorer's modifier table (Ctrl copy, Shift move, Alt
-/// or Ctrl+Shift link) clipped to what the source allows, so a COPY|LINK-only source (a zip
-/// folder, a browser's download shelf) gets Copy for a plain drag instead of a Move it never
-/// offered.
+/// or Ctrl+Shift link; without a key the user's `DefaultDropEffect` when Windows has one)
+/// clipped to what the source allows, so a COPY|LINK-only source (a zip folder, a browser's
+/// download shelf) gets Copy for a plain drag instead of a Move it never offered.
 pub(super) fn effect_for(key_state: u32, allowed: u32, same_volume: bool) -> DropEffect {
-    dragdrop::resolve(dragdrop::modifier_effect(key_state, same_volume), allowed)
+    let desired = dragdrop::file_drag_effect(key_state, same_volume, USER_DEFAULT_EFFECT.get());
+    dragdrop::resolve(desired, allowed)
 }
 
 /// The effect for a drop into `folder`: the modifiers decide, except over the Recycle Bin
@@ -686,6 +701,7 @@ impl DropHandler for FenceDropHandler {
     ) -> DropEffect {
         let internal = Self::internal().is_some();
         forget_link_folder();
+        note_default_drop_effect();
         // A drag of only the desktop's own items (This PC, OneDrive) has no paths left: it goes
         // to the shell, which makes their shortcuts.
         let hdrop = dragdrop::has_hdrop(data).then(|| dropped_paths(data, internal));

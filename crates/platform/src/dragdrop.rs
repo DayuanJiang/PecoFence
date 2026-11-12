@@ -77,6 +77,39 @@ pub fn modifier_effect(key_state: u32, same_volume: bool) -> DropEffect {
     }
 }
 
+/// The effect of a file drag where Windows' `DefaultDropEffect` may be set (`user_default`, see
+/// [`default_drop_effect`]): without Ctrl, Shift or Alt the drag has that effect on one volume
+/// and across volumes alike, as in File Explorer; a held key decides as in [`modifier_effect`].
+pub fn file_drag_effect(
+    key_state: u32,
+    same_volume: bool,
+    user_default: Option<DropEffect>,
+) -> DropEffect {
+    match user_default {
+        Some(effect) if key_state & (MK_CONTROL | MK_SHIFT | MK_ALT) == 0 => effect,
+        _ => modifier_effect(key_state, same_volume),
+    }
+}
+
+/// Windows' `DefaultDropEffect` for file-system items, when the user set one: the value under
+/// `HKCR\*` or `HKCR\AllFilesystemObjects` (1 copy, 2 move, 4 create shortcut), which File
+/// Explorer gives a drag without a modifier key instead of "move within a volume, copy across"
+/// (feedback #153). Read from the user's classes, then the machine's, as `HKCR` merges them.
+pub fn default_drop_effect() -> Option<DropEffect> {
+    for class in ["*", "AllFilesystemObjects"] {
+        let key = format!(r"Software\Classes\{class}");
+        for root in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+            match crate::shell::reg_dword(root, &key, "DefaultDropEffect") {
+                Some(1) => return Some(DropEffect::Copy),
+                Some(2) => return Some(DropEffect::Move),
+                Some(4) => return Some(DropEffect::Link),
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
 /// The volume part of `path` for Explorer's same-volume rule: the drive letter, or the
 /// `\\server\share` of a UNC path, lower-cased. None for a path without either.
 pub fn volume_of(path: &std::path::Path) -> Option<String> {
@@ -1535,6 +1568,24 @@ mod effect_tests {
             modifier_effect(MK_RBUTTON | MK_CONTROL, true),
             DropEffect::Copy
         );
+    }
+
+    /// Windows' DefaultDropEffect replaces the plain drag's effect on one volume and across
+    /// volumes; Ctrl, Shift and Alt decide as without it (measured in File Explorer).
+    #[test]
+    fn default_drop_effect_replaces_the_plain_drag_only() {
+        let (mv, cp) = (Some(DropEffect::Move), Some(DropEffect::Copy));
+        assert_eq!(file_drag_effect(0, false, mv), DropEffect::Move);
+        assert_eq!(file_drag_effect(0, true, mv), DropEffect::Move);
+        assert_eq!(file_drag_effect(0, true, cp), DropEffect::Copy);
+        assert_eq!(file_drag_effect(0, false, cp), DropEffect::Copy);
+        assert_eq!(file_drag_effect(MK_LBUTTON, false, mv), DropEffect::Move);
+        assert_eq!(file_drag_effect(MK_CONTROL, false, mv), DropEffect::Copy);
+        assert_eq!(file_drag_effect(MK_ALT, false, mv), DropEffect::Link);
+        assert_eq!(file_drag_effect(MK_SHIFT, true, cp), DropEffect::Move);
+        assert_eq!(file_drag_effect(MK_ALT, true, cp), DropEffect::Link);
+        assert_eq!(file_drag_effect(0, true, None), DropEffect::Move);
+        assert_eq!(file_drag_effect(0, false, None), DropEffect::Copy);
     }
 
     #[test]
