@@ -559,7 +559,9 @@ fn handle(
         let v = view.borrow();
         v.closing || v.held
     };
-    if inert && m != msg::WM_TIMER {
+    // (It still hears that it lost the keyboard: the focus ring of a card answered by keys
+    // goes at once, not with the end of its fade.)
+    if inert && m != msg::WM_TIMER && m != msg::WM_KILLFOCUS {
         return None;
     }
     match m {
