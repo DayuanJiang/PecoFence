@@ -3358,6 +3358,9 @@ async function runTests() {
     w.testState.fences = []; w.testRefresh(); await settle();
     assert(!sel.offsetParent && !count.offsetParent, 'With no fence the empty picker is still there');
     assert(doc.getElementById('fenceEmpty').offsetParent, 'With no fence nothing says how to make one');
+    assert(doc.getElementById('nrTarget').disabled, 'With no fence the empty 目标栅栏 list of a new rule still opens');
+    w.testState.fences = [{ id: 'f1', title: '工作', kind: 'user' }]; w.testRefresh(); await settle();
+    assert(!doc.getElementById('nrTarget').disabled && !sel.closest('.picker').hidden, 'With a fence again the lists stay off');
     doc = await reset();
   });
   await test('A failed update check makes its card taller: what is under it glides down', async () => {

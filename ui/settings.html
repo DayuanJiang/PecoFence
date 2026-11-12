@@ -2220,6 +2220,8 @@
       sel.innerHTML = options;
       if ([...sel.options].some(o => o.value === selected)) sel.value = selected;
     }
+    // No fence a rule could put things into: the list is greyed out instead of opening empty.
+    sel.disabled = !options;
   }
   // An editor's target: the fence `id`, else the desktop fence, where the app routes a rule
   // whose fence is a portal or gone. The same when the fence goes while the editor is open.
