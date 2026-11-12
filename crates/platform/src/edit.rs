@@ -48,6 +48,10 @@ pub const KEY_CONTEXT_MENU: u32 = 0x1_0000;
 /// text menu). Returning true keeps the control's own one-step undo away. Ctrl+Z arrives as
 /// the key.
 pub const KEY_UNDO: u32 = 0x1_0001;
+/// Set in the code a key handler gets for a key pressed with Alt held (a `WM_SYSKEYDOWN`),
+/// beside the virtual key: Alt+Up arrives as `KEY_ALT | 0x26`. Outside the virtual-key range,
+/// so a handler that knows no such key takes none of them.
+pub const KEY_ALT: u32 = 0x2_0000;
 
 pub struct EditControl {
     hwnd: HWND,
@@ -906,6 +910,13 @@ unsafe fn handle(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, refdata: 
             && KEY_HANDLED.with(|e| e.replace((0, 0))) == (hwnd.0 as isize, wparam.0)
         {
             return LRESULT(0);
+        }
+        // A key pressed with Alt held: the handler gets it marked with `KEY_ALT`.
+        if msg == WM_SYSKEYDOWN as u32 && refdata != 0 {
+            let handler: KeyHandler = core::mem::transmute::<usize, KeyHandler>(refdata);
+            if handler(KEY_ALT | wparam.0 as u32) {
+                return LRESULT(0);
+            }
         }
         // 「撤销」 in the control's text menu: the handler's own undo history, if it has one.
         if (msg == WM_UNDO || msg == EM_UNDO) && refdata != 0 {

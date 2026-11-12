@@ -492,6 +492,50 @@ pub fn toggle_line(fence: FenceId, line: usize) {
     put_text(handle, &flipped, moved(anchor), moved(caret));
 }
 
+/// Alt+Shift+Up (`up`) or Alt+Shift+Down: the line with the caret changes places with the
+/// line above or below it. The caret keeps its place in the line (a selection is kept as far
+/// as it lies in that line). One step for Ctrl+Z. Nothing happens on the first line going
+/// up and on the last one going down.
+fn move_line(up: bool) {
+    let Some((handle, fence, _)) = active() else {
+        return;
+    };
+    let raw = handle.text();
+    let text = raw.replace("\r\n", "\n");
+    let units: Vec<u16> = raw.encode_utf16().collect();
+    let (first, last) = handle.selection();
+    let first = note::crlf_to_lf_offset(&units, first);
+    let last = note::crlf_to_lf_offset(&units, last);
+    let anchor = ACTIVE.with(|a| a.borrow().as_ref().map_or(0, |s| s.anchor.get()));
+    let (anchor, caret) = if last == anchor {
+        (last, first)
+    } else {
+        (first, last)
+    };
+    let spans = note::line_spans(&text);
+    let line = spans.iter().rposition(|s| s.start <= caret).unwrap_or(0);
+    let to = if up {
+        line.checked_sub(1)
+    } else {
+        Some(line + 1)
+    };
+    let moved = to.and_then(|to| Some((to, note::move_lines(&text, line, 1, to)?)));
+    tracing::debug!(%fence, line, up, moved = moved.is_some(), "note editor: Alt+Shift+arrow moves the line");
+    let (Some((to, moved)), Some(span)) = (moved, spans.get(line)) else {
+        return;
+    };
+    let Some(start) = note::line_spans(&moved).get(to).map(|s| s.start) else {
+        return;
+    };
+    let place = |at: usize| start + at.saturating_sub(span.start).min(span.len);
+    ACTIVE.with(|a| {
+        if let Some(s) = a.borrow().as_ref() {
+            s.anchor.set(place(anchor));
+        }
+    });
+    put_text(handle, &moved, place(anchor), place(caret));
+}
+
 /// Puts `text` (line breaks are `\n`) into the control in place of what it holds, with the
 /// selection from `anchor` to `caret`.
 fn put_text(handle: edit::EditHandle, text: &str, anchor: usize, caret: usize) {
@@ -555,6 +599,13 @@ fn on_key(vk: u32) -> bool {
     if vk == edit::KEY_UNDO || (ctrl && (vk == VK_Z || vk == VK_Y)) {
         step_history(vk == VK_Y || (vk == VK_Z && shift));
         return true;
+    }
+    // Alt+Shift+Up and Alt+Shift+Down move the line with the caret, as in Word and OneNote.
+    if vk == edit::KEY_ALT | VK_UP || vk == edit::KEY_ALT | VK_DOWN {
+        if shift {
+            move_line(vk == edit::KEY_ALT | VK_UP);
+        }
+        return shift;
     }
     let Some((handle, fence, queue)) = active() else {
         return false;
