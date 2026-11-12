@@ -274,11 +274,12 @@ if ($Part -match 'Q') {
   while ($sw.ElapsedMilliseconds -lt 2500) {
     $t = $sw.ElapsedMilliseconds
     $bs = [Px]::Grab(0, $sy, 1600, $sh)
-    $samples.Add(@($t, [Px]::MaxInk($bs, 8, 80, 0, $sh - 1), [Px]::MaxInk($bs, $fx, $fx + 200, 0, $sh - 1)))
+    $samples.Add(@($t, [Px]::MaxInk($bs, 8, 80, 0, $sh - 1), [Px]::MaxInk($bs, $fx, $fx + 200, 0, $sh - 1), [int][W]::IconsVisible()))
     $bs.Dispose()
   }
   $quit = WaitNoPf 15
-  Log ("FL-4 samples: " + ((@($samples | Where-Object { $_[0] -lt 1200 }) | ForEach-Object { "$($_[0]):$($_[1])/$($_[2])" }) -join ' '))
+  # ms : ink of the Windows icon / ink of the fence / Explorer's icon list shown (1) or hidden.
+  Log ("FL-4 samples: " + ((@($samples | Where-Object { $_[0] -lt 1200 }) | ForEach-Object { "$($_[0]):$($_[1])/$($_[2])/$($_[3])" }) -join ' '))
   # Fading: samples in which the fence shows at part strength, before it has gone.
   $goneAt = @($samples | Where-Object { $_[2] -lt 10 } | Select-Object -First 1)
   $tGone = -1; if ($goneAt.Count) { $tGone = $goneAt[0][0] }
