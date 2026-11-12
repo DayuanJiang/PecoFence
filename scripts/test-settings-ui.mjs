@@ -291,6 +291,15 @@ async function runTests() {
     await settle();
     const message = win.testMessages.filter(m => m.type === 'patchSettings').at(-1);
     assert(message?.settings.idleOpacity === 0.25, 'Dropdown must post a number, not a string');
+    // 查找设置 finds the card by its title, by another name and by one of its choices.
+    const box = doc.getElementById('settingsSearch');
+    const hits = text => {
+      box.value = text; box.dispatchEvent(new win.Event('input', { bubbles: true }));
+      return [...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent);
+    };
+    for (const text of ['不透明度', '淡出', '45%']) assert(hits(text).includes('闲置时的不透明度'), `查找设置 "${text}": ` + hits(text).join(' | '));
+    const icons = [...doc.querySelectorAll('#page-general .card .ic')].map(i => i.textContent);
+    assert(icons.filter(i => i === select().closest('.card').querySelector('.ic').textContent).length === 1, 'The card shares its icon with another card of the page');
     doc = await reset();
   });
   await test('Notification icons render glyphs rather than escaped code text', async () => {
