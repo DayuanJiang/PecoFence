@@ -355,6 +355,25 @@ mod tests {
         assert_eq!(text_in(Language::English, "测试\x04不存在"), "不存在");
     }
 
+    /// The button of the last first-start tip opens the manual. "Manual" alone also reads as
+    /// "by hand" in English, Spanish, Portuguese, French and Italian: there the button says
+    /// what it does. Simplified Chinese keeps 使用手册.
+    #[test]
+    fn the_last_tips_button_says_that_it_opens_the_manual() {
+        let key = "小技巧\x04使用手册";
+        assert_eq!(text_in(Language::SimplifiedChinese, key), "使用手册");
+        assert_eq!(text_in(Language::English, key), "Open the manual");
+        for tag in ["en", "es", "pt-BR", "fr", "it"] {
+            let language = SUPPORTED.iter().copied().find(|l| l.tag() == tag);
+            let language = language.unwrap_or_else(|| panic!("{tag}"));
+            let (button, noun) = (text_in(language, key), text_in(language, "使用手册"));
+            assert!(
+                button != noun && button.to_lowercase().contains(&noun.to_lowercase()),
+                "{tag}: {button}"
+            );
+        }
+    }
+
     #[test]
     fn catalogs_have_matching_keys_and_placeholders() {
         let english = catalog(Language::English);

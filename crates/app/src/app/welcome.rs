@@ -383,7 +383,9 @@ impl App {
                 );
                 let last = i + 1 == tips.len();
                 let action = if last {
-                    text("使用手册")
+                    // The button opens the manual: "Manual" alone also reads as "by hand" in
+                    // English, Spanish, Portuguese, French and Italian.
+                    text("小技巧\x04使用手册")
                 } else {
                     text("下一条")
                 };
