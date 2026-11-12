@@ -6,6 +6,8 @@
 #      修改日期 between 328 and 355 px)
 #   Z  Ctrl+wheel larger and back: the fence is scrolled where it was
 #   H  recordings and pictures for a look (no checks): resize, scroll, views, tab strip
+#   G  more recordings (no checks): the thumb dragged, a sort change while scrolled, files
+#      removed at the end of the content, a rolled fence made wider
 # Default: the parts with checks. Runs on a 1600x900 box at 100 %, Fluent, light mode, grey
 # wallpaper. The test files live in folders under the job's run folder (folder fences), not
 # on the desktop.
@@ -325,6 +327,66 @@ function PartH() {
   Shot 'H4-rolled'
 }
 
+# More recordings for a look (no checks): the thumb dragged, a sort change while scrolled, files
+# removed at the end of the content, a rolled fence made wider.
+function PartG() {
+  trap { PfTrap $_; continue }
+  Case 'G recordings: thumb drag, sort change, files removed, a rolled fence'
+  ClearFences | Out-Null; SmallInbox
+  $root = TestFolder '滚动夹' 34
+  $fid = (PfJson fence create --portal $root --rect '200,120,420,330').fence.id
+  Pf fence rename $fid 资料 | Out-Null
+  Start-Sleep -Seconds 3
+  # The thumb: the pointer rests on the bar until it is wide, then the darkest run below the
+  # arrow button is the thumb.
+  [G]::MoveTo(614, 300); Start-Sleep -Milliseconds 1000
+  $min = 255; $th = 0
+  for ($y = 176; $y -lt 430; $y += 3) { $bm = [Px]::Grab(614, $y, 1, 1); $c = MeanRgb $bm; $bm.Dispose(); $l = ($c[0] + $c[1] + $c[2]) / 3; if ($l -lt $min - 4) { $min = $l; $th = $y } }
+  Log "thumb about y=$th (brightness $min)"
+  RecStart 'G-thumb' -X 180 -Y 100 -W 500 -H 370 -Fps 30
+  [G]::MoveTo(614, $th + 8); Start-Sleep -Milliseconds 300; MDown; Start-Sleep -Milliseconds 150
+  RecMark '按住滑块往下拖'
+  Glide 614 ($th + 8) 614 ($th + 120) 30 30; Start-Sleep -Milliseconds 300
+  RecMark '指针横着离开滚动条'
+  Glide 614 ($th + 120) 660 ($th + 150) 10 30; Start-Sleep -Milliseconds 300
+  RecMark '拖回顶端'
+  Glide 660 ($th + 150) 614 150 20 30; Start-Sleep -Milliseconds 300
+  RecMark '松开'; MUp; Start-Sleep -Milliseconds 800
+  RecStop
+  # A sort change while the fence is scrolled to the middle.
+  [G]::MoveTo(400, 300); Start-Sleep -Milliseconds 300
+  WheelRaw -240; Start-Sleep -Milliseconds 900
+  ParkMouse 1200 820
+  RecStart 'G-sort' -X 180 -Y 100 -W 460 -H 370 -Fps 30
+  RecMark '排序方式改成类型'; Pf fence set $fid sort type | Out-Null; Start-Sleep -Milliseconds 1200
+  RecMark '改回名称'; Pf fence set $fid sort name | Out-Null; Start-Sleep -Milliseconds 1200
+  RecStop
+  # At the end of the content most files are removed: the fence no longer needs its bar.
+  [G]::MoveTo(400, 300); Start-Sleep -Milliseconds 300
+  WheelRaw -1200; Start-Sleep -Milliseconds 1200
+  ParkMouse 1200 820
+  RecStart 'G-removed' -X 180 -Y 100 -W 460 -H 370 -Fps 30
+  RecMark '在内容末尾删掉二十多个文件'
+  Get-ChildItem -LiteralPath $root | Select-Object -Skip 9 | Remove-Item -Force
+  Start-Sleep -Milliseconds 2500
+  RecStop
+  # A rolled fence made wider and narrower by its right edge.
+  Pf fence create --title 卷起来的栅栏名称比较长 --rect '760,120,300,200' | Out-Null
+  Pf fence roll 卷起来的栅栏名称比较长 | Out-Null
+  Start-Sleep -Seconds 2
+  ParkMouse 1200 820
+  $r = Rect (FWin '卷起来的栅栏名称比较长')
+  RecStart 'G-rolled' -X 740 -Y 100 -W 520 -H 120 -Fps 30
+  [G]::MoveTo($r.R - 1, $r.T + 18); Start-Sleep -Milliseconds 300; MDown; Start-Sleep -Milliseconds 150
+  RecMark '卷起的栅栏拖窄'
+  Glide ($r.R - 1) ($r.T + 18) ($r.L + 60) ($r.T + 18) 25 30; Start-Sleep -Milliseconds 300
+  RecMark '拖宽'
+  Glide ($r.L + 60) ($r.T + 18) ($r.R + 150) ($r.T + 18) 25 30; Start-Sleep -Milliseconds 300
+  RecMark '松开'; MUp; Start-Sleep -Milliseconds 900
+  RecStop
+  ParkMouse 1200 820
+}
+
 Case 'setup'
 CloseWindows
 $AnimWas = [Anim]::Get(); [Anim]::Set($true)
@@ -340,6 +402,7 @@ if ($Part -match 'P') { PartP }
 if ($Part -match 'C') { PartC }
 if ($Part -match 'Z') { PartZ }
 if ($Part -match 'H') { PartH }
+if ($Part -match 'G') { PartG }
 
 Case 'end'
 [Anim]::Set($AnimWas)
