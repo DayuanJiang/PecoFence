@@ -553,7 +553,10 @@
   .se-count b { font-weight: 600; }
   .se-count .s { color: var(--text2); font-size: 12px; }
   .se-count button { min-width: 0; height: 26px; font-size: 12px; align-self: flex-start; margin-top: 2px; }
-  .se-count.busy .se-n { opacity: .55; }
+  /* The last number dims while the next count is on its way, but only when that takes a
+     moment: an answer within a quarter of a second leaves it alone, so it does not blink
+     at every pause in typing. */
+  .se-count.busy .se-n { opacity: .55; transition: opacity .083s linear .25s; }
   .se-limit { display: flex; align-items: center; gap: 8px; color: var(--text2); }
   .se-limit select { min-width: max(96px, var(--fit, 0px)); color: var(--text); }
   .se-btns { display: flex; gap: 8px; margin-left: auto; }

@@ -3212,6 +3212,26 @@ async function runTests() {
     assert(growing() === '', 'The card grows again when its page comes in: ' + growing());
     doc = await reset();
   });
+  await test('Smart fence editor: the count dims the old number only when the answer takes a moment', async () => {
+    doc = await openEditor('fence=new');
+    assert(await motionReady(), 'The editor never allowed transitions');
+    const w = doc.getElementById('seWindow'), number = () => w.querySelector('.se-count .se-n');
+    const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const shade = () => Number(ew().getComputedStyle(number()).opacity);
+    seType(rowsOf(doc)[1].querySelector('.se-text'), 'rep');
+    assert(await until(() => number() && /\d/.test(number().textContent)), 'No first count');
+    // The next answer is kept back. The count is asked 350 ms after the key.
+    ew().testHoldCount = true;
+    seType(rowsOf(doc)[1].querySelector('.se-text'), 'repo');
+    await pause(450);
+    assert(w.querySelector('.se-count').classList.contains('busy') && shade() === 1, 'The number dims the moment the count is asked (it blinks when the answer is fast): opacity ' + shade());
+    await pause(450);
+    assert(shade() < 0.7, 'The number is not dimmed while a slow count is on its way: opacity ' + shade());
+    ew().testHoldCount = false;
+    ew().testReceive(ew().testHeld.at(-1));
+    assert(shade() === 1 && !w.querySelector('.se-count').classList.contains('busy'), 'The new number is dim');
+    doc = await reset();
+  });
 
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
