@@ -849,6 +849,17 @@ impl FenceViewState {
         !self.shows_tool() && self.title_count.is_none() && self.filter_tag.is_none()
     }
 
+    /// 「12 项」: the count a rolled fence shows before its chevron, in the interface language.
+    pub(super) fn rolled_count_caption(&self) -> String {
+        pecofence_core::i18n::format("{0} 项", &[self.items.len().to_string()])
+    }
+
+    /// The room that count takes in the title row, as drawn (its text is measured: a count in
+    /// words is wider than 「12 项」).
+    pub(super) fn rolled_count_room(&self) -> f32 {
+        self.chrome.rolled_count_room(&self.rolled_count_caption())
+    }
+
     /// Nothing can be dropped here: a tool fence, or a smart fence (it shows a search).
     pub(super) fn takes_no_drops(&self) -> bool {
         self.shows_tool() || self.refuses_drops

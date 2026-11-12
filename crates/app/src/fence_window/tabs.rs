@@ -523,6 +523,7 @@ impl FenceViewState {
                     width - lock_w,
                     self.tabs.len(),
                     self.deco.title_x(),
+                    self.rolled_count_room(),
                 )
         } else {
             TAB_RIGHT_RESERVE + lock_w

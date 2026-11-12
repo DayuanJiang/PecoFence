@@ -691,7 +691,7 @@ impl FenceViewState {
         // A smart fence shows its count after the name, rolled or not: no second one. A
         // filter tag carries the count too.
         let count = ((rolled || state.count > 0.0) && self.shows_rolled_count())
-            .then(|| pecofence_core::i18n::format("{0} 项", &[format!("{}", self.items.len())]));
+            .then(|| self.rolled_count_caption());
         let title_count = self.title_count.clone();
         let filter_tag = self.filter_tag.clone();
         let opacity = self.material_opacity();

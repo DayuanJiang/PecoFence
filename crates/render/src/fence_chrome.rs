@@ -757,7 +757,8 @@ pub struct TabDraw<'a> {
     pub badge: Option<&'a str>,
 }
 
-/// Width of the "N 项" caption a rolled fence shows before its chevron (DIPs).
+/// Least width of the "N 项" caption a rolled fence shows before its chevron (DIPs); a longer
+/// caption takes what it needs, see [`FenceChrome::rolled_count_room`].
 pub const ROLLED_COUNT_W: f32 = 64.0;
 
 /// Tab match badge (WinUI InfoBadge): 16 DIPs high, 5 DIPs of padding beside the number, 6 DIPs
@@ -840,15 +841,16 @@ pub fn tab_text_inset(theme: &Theme, w: f32, text_w: f32) -> f32 {
 
 /// Counts are secondary: a short collapsed fence must retain space for its title/tabs. A tab
 /// strip that does not fit scrolls, so room for two of its narrowest tabs is enough.
-pub fn header_count_width(width: f32, tabs: usize, title_x: f32) -> f32 {
+/// `count_w` is the room the count's text takes ([`FenceChrome::rolled_count_room`]).
+pub fn header_count_width(width: f32, tabs: usize, title_x: f32, count_w: f32) -> f32 {
     let (left, captions) = if tabs > 1 {
         let shown = tabs.min(2) as f32;
         (8.0, shown * 48.0 + (shown - 1.0) * 4.0)
     } else {
         (title_x, 64.0)
     };
-    if width - left - 44.0 - captions >= ROLLED_COUNT_W {
-        ROLLED_COUNT_W
+    if width - left - 44.0 - captions >= count_w {
+        count_w
     } else {
         0.0
     }
@@ -2163,6 +2165,15 @@ impl FenceChrome {
         &self.group_format
     }
 
+    /// The room a rolled fence's count takes before the chevron: its text and 12 DIPs (the
+    /// 4 DIPs before the chevron and a gap after the name), at least [`ROLLED_COUNT_W`].
+    /// 「Elementos: 128」 is wider than 「128 项」.
+    pub fn rolled_count_room(&self, caption: &str) -> f32 {
+        (crate::text::measure_width(caption, &self.count_format) + 12.0)
+            .ceil()
+            .max(ROLLED_COUNT_W)
+    }
+
     /// Does a tab caption fit its pill of width `w` without ellipsis (tooltip decision)?
     pub fn tab_title_fits(
         &self,
@@ -2843,10 +2854,14 @@ impl FenceChrome {
         // you what is inside (it fades out as the fence expands), unless the user hid it.
         let caption = caption.filter(|_| !style.hide_count_and_chevron);
         let count_a = state.count.clamp(0.0, 1.0) * title_a;
-        let count_w = if caption.is_some() && (rolled_up || count_a > 0.0) {
-            header_count_width(width - lock_w, tabs.len(), deco.title_x())
-        } else {
-            0.0
+        let count_w = match caption {
+            Some(caption) if rolled_up || count_a > 0.0 => header_count_width(
+                width - lock_w,
+                tabs.len(),
+                deco.title_x(),
+                self.rolled_count_room(caption),
+            ),
+            _ => 0.0,
         };
         // The title's ellipsis point moves with the caption fade instead of stepping when
         // the fade ends: the reserve is the caption's width scaled by its alpha (held at the
@@ -5212,12 +5227,29 @@ mod tests {
             header_control_radius(&theme, Rect::from_xywh(0.0, 0.0, 40.0, 2.0)),
             1.0
         );
-        assert_eq!(header_count_width(136.0, 1, 16.0), 0.0);
-        assert_eq!(header_count_width(136.0, 2, 16.0), 0.0);
-        assert_eq!(header_count_width(400.0, 2, 16.0), ROLLED_COUNT_W);
+        assert_eq!(header_count_width(136.0, 1, 16.0, ROLLED_COUNT_W), 0.0);
+        assert_eq!(header_count_width(136.0, 2, 16.0, ROLLED_COUNT_W), 0.0);
+        assert_eq!(
+            header_count_width(400.0, 2, 16.0, ROLLED_COUNT_W),
+            ROLLED_COUNT_W
+        );
         // Six tabs scroll beside the count instead of shrinking under it.
-        assert_eq!(header_count_width(320.0, 6, 16.0), ROLLED_COUNT_W);
-        assert_eq!(header_count_width(200.0, 6, 16.0), 0.0);
+        assert_eq!(
+            header_count_width(320.0, 6, 16.0, ROLLED_COUNT_W),
+            ROLLED_COUNT_W
+        );
+        assert_eq!(header_count_width(200.0, 6, 16.0, ROLLED_COUNT_W), 0.0);
+        // A count in words (German, Russian, Spanish) takes its own width and a gap, so it is
+        // not drawn over the end of a long name; a short one keeps the 64 DIPs.
+        let chrome = FenceChrome::new().unwrap();
+        assert_eq!(chrome.rolled_count_room("12 项"), ROLLED_COUNT_W);
+        let long = chrome.rolled_count_room("Элементов: 128");
+        let text = crate::text::measure_width("Элементов: 128", &chrome.count_format);
+        assert!(
+            long >= text + 12.0 && long > ROLLED_COUNT_W,
+            "{long} for {text}"
+        );
+        assert_eq!(header_count_width(400.0, 1, 16.0, long), long);
     }
 
     #[test]
