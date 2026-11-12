@@ -19,8 +19,10 @@
 <script src="demos/rules.js" defer></script>
 <script src="demos/look.js" defer></script>
 <script src="demos/backup.js" defer></script>
+<link rel="stylesheet" href="demos/dialogs.css">
 <link rel="stylesheet" href="demos/smart.css">
 <script src="demos/smart.js" defer></script>
+<script src="demos/vdesk.js" defer></script>
 <link rel="stylesheet" href="demos/tabs.css">
 <script src="demos/tabs.js" defer></script>
 <script src="demos/hide.js" defer></script>
@@ -92,6 +94,7 @@
       <li><a href="#search"><span class="num">4.4</span>搜索图标和文件</a></li>
       <li><a href="#portal"><span class="num">4.5</span>在桌面显示文件夹</a></li>
       <li><a href="#smart"><span class="num">4.6</span>智能栅栏</a></li>
+      <li><a href="#vdesk"><span class="num">4.7</span>每个虚拟桌面一套栅栏</a></li>
     </ol>
     </div>
     <div class="toc-group">
@@ -634,6 +637,42 @@
             <p>只搜一个文件夹的智能栅栏不需要别的软件。要搜整台电脑，需要免费的文件搜索工具 Everything；没装的话，右键这个栅栏就能安装。</p>
             <p>智能栅栏里的文件可以打开、拖出去、重命名和删除，但不能往里拖文件。删除智能栅栏不会动任何文件。按 <kbd>F5</kbd> 会马上重新搜一遍。</p>
             <p>速览搜索列表最后一行的「把这次搜索放到桌面」，也会把这次搜索变成一个智能栅栏。</p>
+          </aside>
+        </div>
+      </div>
+    </article>
+
+    <article class="lesson" data-lesson="vdesk" id="vdesk">
+      <header class="lesson-head">
+        <p class="kicker">4.7 · 常用技巧</p>
+        <h2>每个虚拟桌面一套栅栏</h2>
+        <p class="lede">用 Windows 的虚拟桌面把工作和娱乐分开时，栅栏也能分开：让一个栅栏只在你选的桌面上显示。</p>
+      </header>
+      <div class="lesson-body">
+        <figure class="demo">
+          <div class="stage" role="img" aria-label="动画：Windows 里有「工作」和「游戏」两个虚拟桌面，现在在「工作」上。右键「游戏」栅栏的标题栏，在「在哪个虚拟桌面显示」里选「游戏」，这个栅栏从当前桌面消失，右下角的通知说它现在只在「游戏」上显示；按 Win+Ctrl+→，整个桌面滑到「游戏」，「游戏」栅栏在那里，标题前有一个任务视图小图标，「工作」栅栏不在，「程序」栅栏两个桌面都有；按 Win+Ctrl+← 回到「工作」桌面"></div>
+          <div class="controls">
+            <button class="btn play" type="button" data-play aria-label="暂停">
+              <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.7 2.1a.8.8 0 0 0-1.2.7Z"/></svg>
+            </button>
+            <div class="track" data-track role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="track-fill"></div></div>
+            <button class="btn speed" type="button" data-speed aria-pressed="false">慢放</button>
+          </div>
+        </figure>
+        <div class="side">
+          <ol class="steps">
+            <li data-at="0.3"><span class="n">1</span><p>右键栅栏的标题栏，在<b>「在哪个虚拟桌面显示」</b>里选一个桌面。这里列出的是 Windows 任务视图里的桌面，比如「工作」和「游戏」。</p></li>
+            <li data-at="2.85"><span class="n">2</span><p>这个栅栏就从当前桌面消失了。右下角的通知会说明它去了哪个桌面。</p></li>
+            <li data-at="4.5"><span class="n">3</span><p>按 <kbd>Win</kbd>+<kbd>Ctrl</kbd>+<kbd>→</kbd> 切到那个桌面，栅栏就在那里。标题前多了一个小图标，表示它只在这个桌面显示。只属于别的桌面的栅栏不在这里；没有指定桌面的栅栏，每个桌面都有。</p></li>
+            <li data-at="7.2"><span class="n">4</span><p>按 <kbd>Win</kbd>+<kbd>Ctrl</kbd>+<kbd>←</kbd> 切回来。</p></li>
+          </ol>
+          <aside class="tip">
+            <h3>小提示</h3>
+            <p>还没有第二个虚拟桌面的话，按 <kbd>Win</kbd>+<kbd>Tab</kbd> 打开任务视图，点「新建桌面」。只有一个虚拟桌面时，菜单里没有「在哪个虚拟桌面显示」这一项。</p>
+            <p>想让以后新建的栅栏都只属于当时所在的桌面，到「设置」→「常规」打开<b>「每个虚拟桌面各用一套栅栏」</b>。</p>
+            <p>想让栅栏回到每个桌面，在同一个菜单里选<b>「所有虚拟桌面」</b>。鼠标停在标题前的小图标上，会显示这个栅栏属于哪个桌面。</p>
+            <p>没放进其他栅栏的图标（「桌面」栅栏）在每个桌面都显示，新文件会落在这里。</p>
           </aside>
         </div>
       </div>
