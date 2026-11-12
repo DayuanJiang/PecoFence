@@ -88,7 +88,8 @@
     border-radius: var(--r-card); background: var(--card); border: 1px solid var(--card-stroke); box-shadow: 0 8px 24px #00000033; }
   .search-list[hidden] { display: none; }
   .search-list [role=option] { padding: 8px 10px; border-radius: var(--r-control); cursor: default; }
-  .search-list [role=option][aria-selected=true], .search-list [role=option]:hover { background: var(--control-hover); }
+  .search-list [role=option]:hover { background: var(--subtle); }
+  .search-list [role=option][aria-selected=true] { background: var(--chosen); }
   .search-list b { display: block; font-weight: 400; font-size: 14px; line-height: 20px; color: var(--text); }
   .search-list small { display: block; color: var(--text2); font-size: 12px; line-height: 16px; }
   .search-list mark { background: none; color: var(--accent); font-weight: 600; }
@@ -1194,7 +1195,8 @@
 
   // 查找设置: every card with a title on every page, read from the page as it is (its language,
   // the cards the current state shows), so nothing has to be kept in step. Every word must
-  // match the card's title, one of its other names, a list choice, its heading or a help line.
+  // match the card's title, one of its other names, a list choice, a button, its heading or a
+  // help line. The user's own rows (rules, snapshots, daily backups) are data, not settings.
   const searchBox = document.getElementById('settingsSearch'), searchList = document.getElementById('settingsSearchList');
   let searchHits = [], searchActive = 0, foundTimer = 0;
   // Other names people search the common settings by ('|' between names; each language has its
@@ -1202,7 +1204,7 @@
   const SEARCH_NAMES = () => [
     ['[data-bind=language]', t("搜索别名\x04界面语言|语言切换|中文|英文|English")],
     ['#desktopPreview', t("搜索别名\x04皮肤|外观|毛玻璃|玻璃|亚克力|主题")],
-    ['[data-bind=theme]', t("搜索别名\x04深色|暗色|夜间|黑暗模式|浅色|亮色|白天")],
+    ['[data-bind=theme]', t("搜索别名\x04深色|暗色|夜间|黑暗模式|浅色|亮色|白天|dark|light")],
     ['[data-bind=labelColor]', t("搜索别名\x04字体颜色|文本颜色|白字|黑字")],
     ['#iconSize', t("搜索别名\x04图标尺寸|大图标|小图标|缩放")],
     ['[data-bind="icons.chameleon"]', t("搜索别名\x04变淡|半透明|褪色|低饱和")],
@@ -1226,7 +1228,10 @@
     ['[data-fence=textSize]', t("搜索别名\x04字体大小|字号|放大文字|看不清")],
     ['[data-bind="rules.keepUpdated"]', t("搜索别名\x04自动整理|自动分类|分类")],
     ['#cfgExport', t("搜索别名\x04备份|迁移|换电脑|恢复设置")],
-    ['#updateAction', t("搜索别名\x04升级|新版本|检查更新")],
+    ['#copyAiPrompt', t("搜索别名\x04命令行|CLI|终端|控制台")],
+    ['#snapSave', t("搜索别名\x04撤销|恢复布局|还原|存档")],
+    ['#updateAction', t("搜索别名\x04升级|新版本|检查更新|关于|版本号")],
+    ['#openManual', t("搜索别名\x04帮助|教程|说明书|文档|关于|版本号")],
   ];
   // The kinds of match of the Peek search (crates/core/src/matcher.rs), best first. Pinyin (a
   // Chinese interface; the host sends the syllables) and the in-order match look only at short
@@ -1295,6 +1300,8 @@
     if (loose && m >= 2) { const r = inOrder(low, term); if (r) return { kind: KIND.fuzzy, ranges: r }; }
     return null;
   }
+  // A button's caption without its icon.
+  const buttonText = b => [...b.childNodes].filter(n => n.nodeType === 3).map(n => n.nodeValue).join('').trim();
   function shownOnItsPage(card) {
     for (let el = card; el && !el.classList.contains('page'); el = el.parentElement) if (el.hidden || el.style.display === 'none') return false;
     return true;
@@ -1310,13 +1317,14 @@
     const hits = [];
     document.querySelectorAll('main section.page .card').forEach((card, order) => {
       const title = card.querySelector('.t')?.textContent.trim();
-      if (!title || !shownOnItsPage(card)) return;
+      if (!title || !shownOnItsPage(card) || card.matches('.rows > .card, #ruleList .card')) return;
       const page = card.closest('section.page');
       let heading = '';
       for (let el = card.closest('.group') || card; el && !heading; el = el.previousElementSibling) if (el.tagName === 'H3') heading = el.textContent;
       // Weight of the field, the text, whether pinyin and the in-order match apply.
       const fields = [[4, title, true], ...(names.get(card) || []).map(x => [3, x, true]),
         ...[...card.querySelectorAll('select:not([hidden]) option')].map(o => [2, o.textContent.trim(), true]),
+        ...[...card.querySelectorAll('button:not([hidden])')].map(b => [2, buttonText(b), true]),
         [1, heading, true], ...[...card.querySelectorAll('.s')].map(d => [1, d.textContent.trim(), false])].filter(f => f[1]);
       let score = 0;
       const titleRanges = [];
@@ -1360,7 +1368,7 @@
   // short texts pinyin looks at); the answer arrives as a `pinyin` message.
   function askPinyin() {
     if (!String(state && state.locale || '').startsWith('zh')) return;
-    const texts = [...document.querySelectorAll('main section.page .card .t, main section.page h3, main section.page option')].map(el => el.textContent);
+    const texts = [...document.querySelectorAll('main section.page .card .t, main section.page h3, main section.page option, main section.page .card button')].map(el => el.textContent);
     for (const [, list] of SEARCH_NAMES()) texts.push(list);
     const chars = [...new Set([...texts.join('')].filter(isCjk))].sort().join('');
     if (chars === pinyinAsked) return;

@@ -2588,6 +2588,47 @@ async function runTests() {
     }
   });
 
+  await test('查找设置: the selected row is tinted in both modes, data rows are not listed, common words find their setting', async () => {
+    const rgb = text => text.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const lum = c => { const [r, g, b] = rgb(c).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+    const ratio = (a, b) => (Math.max(lum(a), lum(b)) + .05) / (Math.min(lum(a), lum(b)) + .05);
+    for (const mode of ['dark', 'light']) {
+      doc = await reset();
+      change(doc, 'language', 'zh-CN');
+      doc.querySelector('[data-bind=theme]').value = mode; doc.querySelector('[data-bind=theme]').dispatchEvent(new (win().Event)('change', { bubbles: true })); await settle();
+      const box = doc.getElementById('settingsSearch'), list = doc.getElementById('settingsSearchList');
+      const type = text => { box.focus(); box.value = text; box.dispatchEvent(new (win().Event)('input', { bubbles: true })); };
+      const titles = () => [...list.querySelectorAll('[role=option] b')].map(b => b.textContent);
+      type('图标');
+      const rows = list.querySelectorAll('[role=option]'), bg = el => win().getComputedStyle(el).backgroundColor;
+      // The list's own fill shows through an unselected row.
+      const contrast = ratio(bg(rows[0]), win().getComputedStyle(list).backgroundColor);
+      assert(contrast >= 1.2, mode + ': the selected row is ' + contrast.toFixed(2) + ' : 1 against the list');
+      assert(bg(rows[1]) === 'rgba(0, 0, 0, 0)', mode + ': an unselected row has a fill');
+      if (mode === 'light') continue;
+      type('快照');
+      assert(titles().includes('把当前布局存为快照') && !titles().includes('Before changes'), 'A snapshot is listed: ' + titles().join(' | '));
+      type('2026');
+      assert(!titles().length, 'A daily backup is listed: ' + titles().join(' | '));
+      type('Documents');
+      assert(!titles().includes('Documents'), 'A rule is listed: ' + titles().join(' | '));
+      for (const [word, title] of [['帮助', '使用手册'], ['教程', '使用手册'], ['关于', '使用手册'], ['版本号', '使用手册'], ['命令行', '让 AI 助手整理桌面'], ['CLI', '让 AI 助手整理桌面'],
+        ['终端', '让 AI 助手整理桌面'], ['撤销', '把当前布局存为快照'], ['dark', '颜色模式'], ['light', '颜色模式'], ['导出', '导出 / 导入配置文件'], ['写法说明', '用自己的脚本']]) {
+        type(word);
+        assert(titles().includes(title), word + ' finds: ' + titles().join(' | '));
+      }
+      box.dispatchEvent(new (win().KeyboardEvent)('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+    }
+    for (const [language, word, title] of [['en', 'help', 'Manual'], ['en', 'command line', 'Let an AI assistant tidy your desktop'], ['ja', 'ヘルプ', null], ['de', 'Hilfe', null], ['ru', 'справка', null]]) {
+      change(doc, 'language', language); await settle();
+      const box = doc.getElementById('settingsSearch');
+      box.focus(); box.value = word; box.dispatchEvent(new (win().Event)('input', { bubbles: true }));
+      const found = [...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent);
+      assert(found.length && (!title || found.includes(title)), language + ' ' + word + ' finds: ' + found.join(' | '));
+    }
+    doc = await reset();
+  });
+
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
   window.testResults = { passed, failed };
