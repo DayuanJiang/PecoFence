@@ -2032,8 +2032,8 @@
   }
 
   function inboxTitle() { const f = (state.fences || []).find(f => f.kind === 'inbox'); return f ? f.title : t("桌面"); }
-  // A portal cannot hold routed items (the app routes such rules to the inbox), so it is shown as one.
-  function fenceTitle(id) { const f = (state.fences || []).find(f => f.id === id); return !f ? t("已删除的栅栏") : f.kind === 'portal' || f.tool ? inboxTitle() : f.title; }
+  // A portal, a tool or a smart fence cannot hold routed items (the app routes such rules to the inbox), so it is shown as one.
+  function fenceTitle(id) { const f = (state.fences || []).find(f => f.id === id); return !f ? t("已删除的栅栏") : f.kind === 'portal' || f.tool || f.smart ? inboxTitle() : f.title; }
   function targetLabel(target) { return tf("“{0}”", target === 'inbox' ? inboxTitle() : (target && target.fence) ? fenceTitle(target.fence) : '?'); }
   const NAME_OPS = {contains:v=>tf("名称包含“{0}”",v),notContains:v=>tf("名称不包含“{0}”",v),startsWith:v=>tf("名称开头是“{0}”",v),endsWith:v=>tf("名称结尾是“{0}”",v),is:v=>tf("名称等于“{0}”",v)};
   const TARGET_OPS = {contains:v=>tf("快捷方式目标包含“{0}”",v),notContains:v=>tf("快捷方式目标不包含“{0}”",v),startsWith:v=>tf("快捷方式目标开头是“{0}”",v),endsWith:v=>tf("快捷方式目标结尾是“{0}”",v),is:v=>tf("快捷方式目标等于“{0}”",v)};
@@ -2089,7 +2089,7 @@
   let editing = null;
   function fillTargets(sel) {
     const selected = sel.value;
-    const options = state.fences.filter(f => f.kind !== 'portal' && !f.tool).map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
+    const options = state.fences.filter(f => f.kind !== 'portal' && !f.tool && !f.smart).map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
     if (sel.innerHTML !== options) {
       sel.innerHTML = options;
       if ([...sel.options].some(o => o.value === selected)) sel.value = selected;

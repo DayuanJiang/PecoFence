@@ -3095,6 +3095,12 @@ impl App {
                 )
                 .hint("Target a virtual fence or `inbox`"));
             }
+            if f.smart.is_some() {
+                return Err(unsupported(
+                    "a smart fence cannot be a rule target (it shows its search, not desktop items)",
+                )
+                .hint("Target a virtual fence or `inbox`"));
+            }
             Target::Fence(id)
         };
         let rule = Rule::new(&name, target, all_of.to_vec());
