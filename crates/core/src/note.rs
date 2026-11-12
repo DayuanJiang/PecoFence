@@ -197,6 +197,35 @@ pub fn toggle(text: &str, index: usize) -> Option<String> {
     found.then_some(out)
 }
 
+/// `text` with its lines `first..first + count` taken out and put back so that the first of
+/// them is line `to` of the result: a to-do dragged to another place. Only these lines
+/// change places; every line break stays where it is in the text (a `\r\n` stays one, and a
+/// note whose last line has no line break still has none). None when the lines are not all
+/// there, `to` is past the place they fit, or they are at `to` already.
+pub fn move_lines(text: &str, first: usize, count: usize, to: usize) -> Option<String> {
+    let (mut lines, mut breaks) = (Vec::new(), Vec::new());
+    for piece in text.split_inclusive('\n') {
+        let line = piece
+            .strip_suffix("\r\n")
+            .or_else(|| piece.strip_suffix('\n'))
+            .unwrap_or(piece);
+        lines.push(line);
+        breaks.push(&piece[line.len()..]);
+    }
+    if count == 0 || to == first || first + count > lines.len() || to + count > lines.len() {
+        return None;
+    }
+    let moved: Vec<&str> = lines.drain(first..first + count).collect();
+    lines.splice(to..to, moved);
+    Some(
+        lines
+            .iter()
+            .zip(breaks)
+            .flat_map(|(l, b)| [*l, b])
+            .collect(),
+    )
+}
+
 /// What Enter does in a to-do of a note that is being edited, as lists do in editors.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TodoEnter {
@@ -667,6 +696,92 @@ mod tests {
         );
         assert_eq!(toggle(text, 0), None);
         assert_eq!(toggle(text, 9), None);
+    }
+
+    #[test]
+    fn move_lines_moves_only_those_lines() {
+        let text = "[ ] 一\n[x] 二\n[ ] 三";
+        // The last to-do to the top, the first one to the end, one step down and up.
+        assert_eq!(
+            move_lines(text, 2, 1, 0).as_deref(),
+            Some("[ ] 三\n[ ] 一\n[x] 二")
+        );
+        assert_eq!(
+            move_lines(text, 0, 1, 2).as_deref(),
+            Some("[x] 二\n[ ] 三\n[ ] 一")
+        );
+        assert_eq!(
+            move_lines(text, 0, 1, 1).as_deref(),
+            Some("[x] 二\n[ ] 一\n[ ] 三")
+        );
+        assert_eq!(
+            move_lines(text, 2, 1, 1).as_deref(),
+            Some("[ ] 一\n[ ] 三\n[x] 二")
+        );
+        // A move back gives the text it was.
+        let moved = move_lines(text, 2, 1, 0).unwrap();
+        assert_eq!(move_lines(&moved, 0, 1, 2).as_deref(), Some(text));
+        // Nothing moves: the place it has, a line that is not there, a place past the end,
+        // no lines, a single to-do, an empty note.
+        assert_eq!(move_lines(text, 1, 1, 1), None);
+        assert_eq!(move_lines(text, 3, 1, 0), None);
+        assert_eq!(move_lines(text, 0, 1, 3), None);
+        assert_eq!(move_lines(text, 0, 0, 1), None);
+        assert_eq!(move_lines("[ ] 一", 0, 1, 0), None);
+        assert_eq!(move_lines("[ ] 一", 0, 1, 1), None);
+        assert_eq!(move_lines("", 0, 1, 0), None);
+        assert_eq!(move_lines("", 0, 1, 1), None);
+        // A line break at the end makes no line and stays at the end.
+        assert_eq!(
+            move_lines("[ ] 一\n[ ] 二\n", 1, 1, 0).as_deref(),
+            Some("[ ] 二\n[ ] 一\n")
+        );
+        assert_eq!(move_lines("[ ] 一\n[ ] 二\n", 0, 1, 2), None);
+        // A long line (the note wraps it on screen) is one line and moves whole.
+        let long = "[ ] 把上周的周报、下周的计划和三张报销单一起发给财务，抄送组长";
+        let wrapped = format!("周会\n{long}\n[ ] 回邮件");
+        assert_eq!(
+            move_lines(&wrapped, 1, 1, 2),
+            Some(format!("周会\n[ ] 回邮件\n{long}"))
+        );
+        // Plain lines between the to-dos keep their order; a to-do can land among them.
+        let mixed = "今天\n[ ] 一\n备注\n明天\n[ ] 二";
+        assert_eq!(
+            move_lines(mixed, 4, 1, 1).as_deref(),
+            Some("今天\n[ ] 二\n[ ] 一\n备注\n明天")
+        );
+        assert_eq!(
+            move_lines(mixed, 1, 1, 2).as_deref(),
+            Some("今天\n备注\n[ ] 一\n明天\n[ ] 二")
+        );
+        assert_eq!(
+            move_lines(mixed, 4, 1, 0).as_deref(),
+            Some("[ ] 二\n今天\n[ ] 一\n备注\n明天")
+        );
+        // Several lines together.
+        assert_eq!(
+            move_lines(mixed, 1, 2, 3).as_deref(),
+            Some("今天\n明天\n[ ] 二\n[ ] 一\n备注")
+        );
+        assert_eq!(move_lines(mixed, 1, 2, 4), None);
+        // The line breaks stay where they are, each as it was written.
+        let crlf = "标题\r\n[ ] 一\r\n- [X] 二\n[] 三";
+        assert_eq!(
+            move_lines(crlf, 3, 1, 1).as_deref(),
+            Some("标题\r\n[] 三\r\n[ ] 一\n- [X] 二")
+        );
+        assert_eq!(
+            move_lines("[ ] 一\r\n[ ] 二\r\n", 0, 1, 1).as_deref(),
+            Some("[ ] 二\r\n[ ] 一\r\n")
+        );
+        // The lines count as `lines` and `toggle` count them.
+        assert_eq!(
+            lines(&move_lines(crlf, 3, 1, 1).unwrap())[1],
+            NoteLine::Todo {
+                done: false,
+                text: "三"
+            }
+        );
     }
 
     #[test]
