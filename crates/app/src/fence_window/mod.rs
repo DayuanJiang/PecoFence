@@ -172,6 +172,15 @@ pub struct Behavior {
     /// Set while a title drag moves windows on a mouse move (`window_drag.rs`): they move at
     /// once and redraw their backdrop for the new place on the next frame instead.
     pub defer_backdrop: std::cell::Cell<bool>,
+    /// Open while the app runs a frame (`App::on_frame`): the smaller sizes the frame's
+    /// height animations ask for and the moves of its push pass. They are applied in one
+    /// batch when the frame has them all, so a fence that rolls up and the fences that
+    /// follow it move in the same composed frame. `None` outside a frame: a position applies
+    /// at once.
+    pub frame_positions: std::cell::RefCell<Option<Vec<window::WindowPos>>>,
+    /// Height animations whose last step is in `frame_positions`, with the rolled state they
+    /// end in: they land (`FrameHandle::land`) once the batch is applied.
+    pub frame_landings: std::cell::RefCell<Vec<(HWND, Option<bool>)>>,
 }
 
 /// A fence window the push pass moved down (or up, out of the way of a fence that expands
@@ -204,6 +213,44 @@ impl Behavior {
     /// The wait before a rolled fence expands under the pointer or a dragged file.
     pub fn hover_open_ms(&self) -> u32 {
         self.hover_speed.get().delay_ms(Tooltip::hover_delay_ms())
+    }
+
+    /// Inside the app's frame: notes `pos` for the frame's batch and returns true. A second
+    /// note for the same window moves the first (a fence that is resized by its animation
+    /// and pushed in the same frame). Outside a frame: false, the caller applies it.
+    pub fn defer_position(&self, pos: window::WindowPos) -> bool {
+        let mut guard = self.frame_positions.borrow_mut();
+        let Some(batch) = guard.as_mut() else {
+            return false;
+        };
+        match batch.iter_mut().find(|p| p.hwnd == pos.hwnd) {
+            Some(p) => {
+                (p.x, p.y) = (pos.x, pos.y);
+                p.size = pos.size.or(p.size);
+            }
+            None => batch.push(pos),
+        }
+        true
+    }
+
+    /// The rectangle `hwnd` has once the frame's batch is applied: what the rest of the frame
+    /// lays out for. Outside a frame, and for a window the frame does not move, its rect now.
+    pub fn frame_rect(&self, hwnd: HWND) -> RECT {
+        let r = window::window_rect(hwnd);
+        let guard = self.frame_positions.borrow();
+        let Some(p) = guard
+            .as_ref()
+            .and_then(|batch| batch.iter().find(|p| p.hwnd == hwnd))
+        else {
+            return r;
+        };
+        let (w, h) = p.size.unwrap_or((r.right - r.left, r.bottom - r.top));
+        RECT {
+            left: p.x,
+            top: p.y,
+            right: p.x + w,
+            bottom: p.y + h,
+        }
     }
 
     /// `rect`, `hwnd`'s window rectangle, without the push shift: what the layout records.

@@ -332,12 +332,16 @@ impl App {
             self.ctx.frames.take_timeouts();
         }
         let mut more = false;
+        // The smaller sizes the height animations ask for and the moves of the push pass are
+        // noted and applied together (`apply_frame_positions`).
+        *self.ctx.behavior.frame_positions.borrow_mut() = Some(Vec::new());
         // Dying windows are ticked too: their shadow fades on the frame clock until the exit
         // fade's completion drops them.
         for w in self.fences.values().chain(self.dying.iter()) {
             more |= w.on_frame(now);
         }
         self.reflow_pushed();
+        self.apply_frame_positions();
         // Peek dimmer: a layered window, so its alpha is a client tween ticked here. The last
         // frame writes the clear alpha before the windows are torn down.
         let mut peek_done = false;
@@ -357,6 +361,62 @@ impl App {
             self.ctx.frames.request();
         } else {
             self.end_frame_run(now);
+        }
+    }
+
+    /// Applies the window positions the frame noted (`Behavior::frame_positions`) in one batch:
+    /// a fence that rolls up (or gets shorter by itself), the fences that follow it and their
+    /// shadows are at their new places in the same composed frame. Then the animations that
+    /// ended land.
+    fn apply_frame_positions(&self) {
+        let behavior = self.ctx.behavior.clone();
+        let noted = behavior
+            .frame_positions
+            .borrow()
+            .clone()
+            .unwrap_or_default();
+        let window_of = |hwnd: HWND| {
+            self.fences
+                .values()
+                .chain(self.dying.iter())
+                .find(|w| w.hwnd() == hwnd)
+        };
+        // While the batch is still open the windows answer with their new rects: the shadow
+        // of a fence that gets smaller is drawn for its new plate.
+        let mut shadows = Vec::new();
+        for p in &noted {
+            let Some(w) = window_of(p.hwnd) else {
+                continue;
+            };
+            if let Some(shadow) = w.frame_handle().shadow_before_batch(p.size.is_some()) {
+                let (at, shadow_at) = (window::window_rect(p.hwnd), window::window_rect(shadow));
+                shadows.push(window::WindowPos {
+                    hwnd: shadow,
+                    x: shadow_at.left + p.x - at.left,
+                    y: shadow_at.top + p.y - at.top,
+                    size: None,
+                });
+            }
+        }
+        let mut positions = behavior
+            .frame_positions
+            .borrow_mut()
+            .take()
+            .unwrap_or_default();
+        positions.extend(shadows);
+        if !positions.is_empty() {
+            tracing::trace!(
+                windows = positions.len(),
+                "frame: window positions in one batch"
+            );
+            // No borrow held: the windows' handlers run synchronously.
+            window::set_window_positions(&positions);
+        }
+        let landings = std::mem::take(&mut *behavior.frame_landings.borrow_mut());
+        for (hwnd, rolled_at_end) in landings {
+            if let Some(w) = window_of(hwnd) {
+                w.frame_handle().land(rolled_at_end);
+            }
         }
     }
 

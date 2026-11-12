@@ -197,15 +197,66 @@ impl FrameHandle {
         let r = window::window_rect(hwnd);
         let w = w.unwrap_or(r.right - r.left);
         let top = top_for_height(upward, &r, h);
+        // Inside the app's frame a size that makes the window smaller waits for the push pass:
+        // the window, its shadow and the fences it pushes then move in one batch, and the
+        // animation lands after it. (A refresh that fell between the resize and the moves
+        // showed a bare strip of wallpaper between the shortened plate and a fence below
+        // that had not followed yet.) A window that grows is resized at once, as before: its
+        // plate is filled for the new size in WM_SIZE, a few ms after the resize, and the
+        // fences it pushes move after that, out from under it. Moved in one batch with the
+        // resize, they stood a step away from the plate's old edge until the fill came.
+        let behavior = self.view.borrow().as_ref().map(|v| v.behavior.clone());
+        let pos = window::WindowPos {
+            hwnd,
+            x: r.left,
+            y: top,
+            size: Some((w, h)),
+        };
+        if w <= r.right - r.left
+            && h <= r.bottom - r.top
+            && let Some(behavior) = behavior
+            && behavior.defer_position(pos)
+        {
+            if done {
+                behavior
+                    .frame_landings
+                    .borrow_mut()
+                    .push((hwnd, rolled_at_end));
+            }
+            return more || !done;
+        }
         let _ = window::set_window_bounds(hwnd, r.left, top, w, h);
         if !done {
             return true;
         }
+        self.land(rolled_at_end);
+        more
+    }
+
+    /// Before the frame's batch of window positions is applied. For a window the batch only
+    /// moves, the shadow window comes back: it moves in the batch. A window the batch resizes
+    /// (it gets smaller) needs a new shadow bitmap, which no batch carries, and Windows spends
+    /// about 5 ms between two resizes of windows (measured on a PC with a GPU): its shadow
+    /// shrinks now, just before the batch, behind the plate that is still at its old size.
+    /// A rolled-up fence left its old shadow outline standing on the wallpaper for that time.
+    pub fn shadow_before_batch(&self, resized: bool) -> Option<HWND> {
+        let mut guard = self.view.borrow_mut();
+        let v = guard.as_mut()?;
+        if resized {
+            v.update_shadow();
+            return None;
+        }
+        Some(v.shadow.hwnd())
+    }
+
+    /// The end of a height animation, once the window has its final size.
+    pub fn land(&self, rolled_at_end: Option<bool>) {
+        let hwnd = self.hwnd();
         // Phase 3: final geometry — lay the frozen content out once and rasterise everything.
         let (queue, behavior) = {
             let mut guard = self.view.borrow_mut();
             let Some(v) = guard.as_mut() else {
-                return more;
+                return;
             };
             v.roll_anim = None;
             v.height_anim = None;
@@ -251,6 +302,5 @@ impl FrameHandle {
             (v.queue.clone(), v.behavior.clone())
         };
         queue_bounds_changed(&queue, &behavior, self.id, hwnd);
-        more
     }
 }

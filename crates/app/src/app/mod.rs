@@ -1728,6 +1728,8 @@ impl App {
                 expand_room: std::cell::RefCell::new(Vec::new()),
                 size_move: std::cell::RefCell::new(None),
                 defer_backdrop: std::cell::Cell::new(false),
+                frame_positions: std::cell::RefCell::new(None),
+                frame_landings: std::cell::RefCell::new(Vec::new()),
             }),
         });
 

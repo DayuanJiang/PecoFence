@@ -223,7 +223,8 @@ impl FenceViewState {
     /// Screen rect of the visible plate: the window, minus a title row that title on hover
     /// has folded away (the shadow casts from this).
     pub(super) fn plate_rect(&self) -> RECT {
-        let mut r = window::window_rect(self.hwnd);
+        // Inside the app's frame: where the frame's batch is about to put the window.
+        let mut r = self.behavior.frame_rect(self.hwnd);
         r.top = (r.top + self.plate_inset_px).min(r.bottom - 1);
         r
     }

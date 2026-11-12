@@ -757,6 +757,59 @@ pub fn set_window_bounds(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) ->
     }
 }
 
+/// A window's new place in a batch ([`set_window_positions`]); without `size` it keeps its own.
+#[derive(Clone, Copy, Debug)]
+pub struct WindowPos {
+    pub hwnd: HWND,
+    pub x: i32,
+    pub y: i32,
+    pub size: Option<(i32, i32)>,
+}
+
+/// Moves/resizes several top-level windows of this thread in one step (`DeferWindowPos`):
+/// Windows applies every position before any of the windows hears of its own, so no composed
+/// frame shows one of them at its new place beside another at its old one. Activation and
+/// z-order stay. One `SetWindowPos` per window when the batch cannot be built.
+pub fn set_window_positions(positions: &[WindowPos]) {
+    let flags = |p: &WindowPos| {
+        let keep = swp::NOACTIVATE | swp::NOZORDER | swp::NOOWNERZORDER;
+        if p.size.is_some() {
+            keep
+        } else {
+            keep | swp::NOSIZE
+        }
+    };
+    // SAFETY: plain FFI calls on caller-supplied HWNDs. A failed DeferWindowPos returns null
+    // and has freed the batch; the windows then move one by one.
+    unsafe {
+        let mut batch = if positions.len() > 1 {
+            BeginDeferWindowPos(positions.len() as i32)
+        } else {
+            HDWP::default()
+        };
+        for p in positions {
+            if batch.0.is_null() {
+                break;
+            }
+            let (w, h) = p.size.unwrap_or_default();
+            batch = DeferWindowPos(batch, p.hwnd, None, p.x, p.y, w, h, flags(p));
+        }
+        if !batch.0.is_null() && EndDeferWindowPos(batch).as_bool() {
+            return;
+        }
+        if positions.len() > 1 {
+            tracing::debug!(
+                windows = positions.len(),
+                "window positions applied one by one: the batch was refused"
+            );
+        }
+        for p in positions {
+            let (w, h) = p.size.unwrap_or_default();
+            let _ = SetWindowPos(p.hwnd, None, p.x, p.y, w, h, flags(p));
+        }
+    }
+}
+
 /// Moves any window's top-left to (`x`, `y`), keeping its size, activation and z-order.
 pub fn move_window_to(hwnd: HWND, x: i32, y: i32) -> Result<()> {
     // SAFETY: plain FFI call on a caller-supplied HWND.
