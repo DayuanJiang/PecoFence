@@ -327,7 +327,8 @@ pub enum Method {
     ConfigExport { path: String },
     /// Replace the configuration with the file at `path` (a `config export` file or a
     /// `config.json`); the current layout is snapshotted first. Result:
-    /// `{changed, imported: path, snapshotId?}`.
+    /// `{changed, imported: path, snapshotId?, scriptsHeld?}` (`scriptsHeld`: how many scripts
+    /// of the file wait until `tools.enabled` is switched on).
     #[serde(rename = "config.import")]
     ConfigImport { path: String },
     /// Daily backups the app keeps beside `config.json` (newest first). Result: `[BackupDto]`.

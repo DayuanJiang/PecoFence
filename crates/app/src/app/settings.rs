@@ -143,8 +143,14 @@ fn changed_settings(old: &pecofence_core::Settings, new: &pecofence_core::Settin
 }
 
 impl App {
-    /// Replaces the configuration wholesale (import / backup) and rebuilds everything.
-    pub(super) fn adopt_config(&mut self, mut cfg: pecofence_core::Config, source: ConfigSource) {
+    /// Replaces the configuration wholesale (import / backup) and rebuilds everything. Returns
+    /// how many scripts of an imported file are held off (the settings page says so in its
+    /// notice, the CLI in its reply).
+    pub(super) fn adopt_config(
+        &mut self,
+        mut cfg: pecofence_core::Config,
+        source: ConfigSource,
+    ) -> usize {
         self.end_peek_now();
         let old_settings = self.state.config.settings.clone();
         let imported = matches!(source, ConfigSource::Import);
@@ -208,8 +214,10 @@ impl App {
             self.settings_toast(pecofence_core::i18n::text(
                 "已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在“小工具”页打开“小工具”开关。",
             ));
+            file_scripts
         } else {
             self.settings_toast(source.done());
+            0
         }
     }
 

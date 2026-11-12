@@ -372,7 +372,9 @@ fails with `limitReached`. Tool fences hold no items (rules, `item move --to` an
 part in tabs (`fence merge` refuses them). Properties about icons (`iconSize`, `layout`,
 `autoHeight` and the like) and `fence fit` are refused for them. `--text` alone implies `--tool note`.
 An imported configuration (`config import`) with script fences switches `tools.enabled` off until
-the user turns it on again; a backup restore keeps it.
+the user turns it on again, and the reply says how many scripts wait (`scriptsHeld`): read them
+before switching it on when the file came from someone else. A snapshot that came with the file
+brings no script paths. A backup restore keeps the switch.
 
 `tools.dialogJump` (Settings › 速览与搜索 › 文件对话框 › 「对话框跳转」, `false` by default) has no fence: an Open,
 Save As or Select Folder dialog of any program jumps to the folder of the File Explorer window or

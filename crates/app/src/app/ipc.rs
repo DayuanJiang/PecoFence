@@ -1467,12 +1467,14 @@ impl App {
         if let Some(id) = snapshot {
             self.state.keep_tool_data_in(id);
         }
-        self.adopt_config(cfg, origin);
-        Ok(mutation(
-            true,
-            snapshot,
-            json!({ key: source.to_string_lossy() }),
-        ))
+        let held = self.adopt_config(cfg, origin);
+        let mut extra = json!({ key: source.to_string_lossy() });
+        // An imported file's scripts wait for the 小工具 switch: the reply says how many, as the
+        // settings page's notice does.
+        if held > 0 {
+            extra["scriptsHeld"] = json!(held);
+        }
+        Ok(mutation(true, snapshot, extra))
     }
 
     fn resolve_snapshot(&self, sel: &str) -> std::result::Result<Uuid, IpcError> {
