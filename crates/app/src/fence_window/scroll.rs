@@ -632,7 +632,16 @@ impl FenceViewState {
     ) -> Option<ScrollbarDraw> {
         let g = self.scrollbar_geometry_in(layout, view_h, self.scroll_y)?;
         let now = Instant::now();
-        let alpha = self.sb_alpha.value_at(now);
+        let mut alpha = self.sb_alpha.value_at(now);
+        if self.sb_arrives {
+            // The bar came with new icons (`replace_items`): as strong as the strongest of
+            // them until they are all in.
+            let arriving = (self.item_motion.values())
+                .filter(|m| !m.alpha.is_done(now))
+                .map(|m| m.alpha.value_at(now))
+                .reduce(f32::max);
+            alpha *= arriving.map_or(1.0, |a| a.clamp(0.0, 1.0));
+        }
         if alpha <= 0.0 {
             return None;
         }

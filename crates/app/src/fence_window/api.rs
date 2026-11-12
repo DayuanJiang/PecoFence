@@ -265,6 +265,7 @@ impl FenceWindow {
             page_repeat: None,
             scrollbar_hot: false,
             sb_width: Tween::at(ScrollbarDraw::REST_WIDTH, Instant::now()),
+            sb_arrives: false,
             sb_alpha: Tween::at(
                 if ctx.behavior.hide_inactive_scrollbar.get() {
                     0.0

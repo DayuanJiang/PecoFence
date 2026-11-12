@@ -427,6 +427,9 @@ pub struct FenceViewState {
     pub(super) sb_width: Tween,
     /// Thumb opacity 0..=1 (83 ms linear; always 1 unless the inactive-scrollbar rule hides it).
     pub(super) sb_alpha: Tween,
+    /// The last list change made the content scroll with icons that fade in: the bar is drawn
+    /// at their strength until they are in.
+    pub(super) sb_arrives: bool,
     /// Track fill + arrow buttons reveal 0..=1 (83 ms linear with the expand / contract).
     pub(super) sb_parts: Tween,
     /// PointerOver fades of the two arrow buttons (83 ms), keyed by `ArrowUp` / `ArrowDown`.

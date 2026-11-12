@@ -308,6 +308,10 @@ impl FenceViewState {
             && self.marquee.as_ref().is_none_or(|m| m.cur == m.start)
             && self.outgoing.is_empty()
             && desktop::is_visible(self.hwnd);
+        // Whether the content already scrolls: a scroll bar that the new icons bring comes
+        // with them (`sb_arrives`).
+        let had_bar = animate && self.scrollbar_geometry().is_some();
+        self.sb_arrives = false;
         let mut old_pos: HashMap<ItemId, CellRect> = if animate {
             let cells = self.cell_origins(width_dip);
             self.items
@@ -701,6 +705,16 @@ impl FenceViewState {
                 old_len,
                 new_len = self.items.len(),
                 "icons leaving fade out"
+            );
+        }
+        // New icons made the content longer than the fence: its scroll bar stood there at
+        // once, about three frames before the icons, which wait for their pictures. It takes
+        // their strength until they are in (`scrollbar_draw_in`).
+        self.sb_arrives = !had_bar && self.item_motion.values().any(|m| !m.alpha.is_done(now));
+        if self.sb_arrives {
+            tracing::debug!(
+                items = self.items.len(),
+                "new icons bring a scroll bar: it fades in with them"
             );
         }
         if !self.item_motion.is_empty() || !self.leaving.is_empty() {
