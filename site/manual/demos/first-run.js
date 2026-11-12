@@ -1,8 +1,8 @@
 // 1.1 第一次打开: the cluttered desktop sorts itself into the first-run fences (state.rs
 // default_fences: 程序 / 文件夹 / 文件与文档 in a column at the right edge; the 桌面 inbox is
-// 像桌面一样排列 on a new configuration, so what no rule takes stands like a desktop icon from
-// the top-left corner), a new file lands in its fence, and quitting from the tray puts the
-// desktop back.
+// 像桌面一样排列 with 自由摆放 on a new configuration, so what no rule takes stays a desktop icon
+// in the column and row it had on the Windows desktop, desktop_import.rs), a new file lands in
+// its fence, and quitting from the tray puts the desktop back.
 (() => {
     'use strict';
     const { E, bezier, ramp, lerp, pathAt, el, put, show, icon, fence, menu, drawMenu, rowY, pointer,
@@ -16,7 +16,7 @@
     const grid = (c, r) => ({ x: 4 + c * 80, y: 4 + r * 88 });
     const FX = 941 - 10 - 246, FH = 111.5;
     const FENCES = ['程序', '文件夹', '文件与文档'].map((title, i) => ({ x: FX, y: 10 + i * (FH + 10), w: 246, h: FH, title }));
-    const INBOX = 3;    // the arranged 桌面: its icons fill the desktop grid from the top-left
+    const INBOX = 3;    // the arranged 桌面: its icons keep their places on the desktop
     // [icon, label, desktop column, row, fence, slot]
     const ITEMS = [
         ['assets/mark.svg', 'PecoFence', 0, 0, 0, 0],
@@ -64,9 +64,10 @@
         r.pulse = el('div', 'ring pulse', r.scene);
         r.note = el('div', 'chip', r.scene);
         r.tb = taskbar(root);
-        trayMenu = menu(r.scene, ['隐藏所有栅栏', '临时显示 Windows 桌面', '新建栅栏', { t: '在桌面显示文件夹', sub: 1 },
-            { t: '速览所有栅栏', key: 'Ctrl+Alt+空格' }, '立即应用整理规则', '-', '恢复显示桌面图标',
-            '修复桌面图标（图标消失时使用）', '发送反馈…', '设置…', '-', '退出 PecoFence'], MENU_W);
+        trayMenu = menu(r.scene, ['隐藏所有栅栏', '临时显示 Windows 桌面', '新建栅栏', '新建便签', { t: '新建小工具', sub: 1 },
+            { t: '在桌面显示文件夹', sub: 1 }, '新建智能栅栏…', { t: '速览所有栅栏', key: 'Ctrl+Alt+空格' },
+            '立即应用整理规则', '-', '恢复显示桌面图标', '修复桌面图标（图标消失时使用）', '发送反馈…', '设置…', '-',
+            '退出 PecoFence'], MENU_W);
         r.menu = trayMenu;
         r.ptr = pointer(r.scene);
         plan();
@@ -88,12 +89,14 @@
         // icons fly into their fences on start and back to the desktop grid on quit
         [...ITEMS, NEW].forEach(([, , c, row, fi, si], i) => {
             const n = r.icons[i];
-            const home = grid(c, row), dest = fi === INBOX ? grid(0, si) : slot(FENCES[fi], si, 3);
+            const home = grid(c, row), dest = fi === INBOX ? home : slot(FENCES[fi], si, 3);   // INBOX: it stays
             const isNew = i === ITEMS.length;
             const inP = isNew ? 1 : fly(PM.clamp01((t - (2.35 + i * .11)) / .62));
             const outP = fly(PM.clamp01((t - (QUIT_AT + .2 + i * .05)) / .55));
             let x, y, o = 1;
-            if (isNew && t < QUIT_AT + .2) {
+            if (fi === INBOX) {
+                ({ x, y } = home);
+            } else if (isNew && t < QUIT_AT + .2) {
                 o = t < NEW_AT ? 0 : ramp(t, NEW_AT, NEW_AT + .167, E.lin);
                 ({ x, y } = dest);
             } else if (outP > 0) {
