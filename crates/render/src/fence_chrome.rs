@@ -5534,21 +5534,22 @@ impl FenceChrome {
         // A cell that reaches into the scrollbar's strip: its plate ends before the thumb (the
         // name does too: a fence that scrolls fits none wider than `ICON_LABEL_SIDE_INSET`).
         rect.right = rect.right.min(content.plates_right).max(rect.left);
-        if alpha >= 1.0 {
-            draw_item_state(
-                session,
-                theme,
-                state,
-                px,
-                rect,
-                cell.hover,
-                cell.selection,
-                content.selection_inactive,
-                cell.pressed,
-                cell.focused,
-                cell.drop_target,
-            );
-        }
+        // A cell that fades in shows its state at the same strength: the box of an icon that
+        // arrives selected (a pasted copy) used to wait for the end of the fade-in and then
+        // stood there in one frame.
+        draw_item_state(
+            session,
+            theme,
+            state,
+            px,
+            rect,
+            cell.hover * alpha,
+            cell.selection * alpha,
+            content.selection_inactive,
+            cell.pressed && alpha >= 1.0,
+            cell.focused && alpha >= 1.0,
+            cell.drop_target * alpha,
+        );
         let icon_x = cell.x + (cell.w - content.icon_size) / 2.0;
         let icon_y = cell.y + content.icon_top;
         draw_item_icon(

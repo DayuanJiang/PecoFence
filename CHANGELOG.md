@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Ctrl+C, Ctrl+V on an icon: the selection box of the copy fades in with the copy. The copy faded in bare and its box stood there in one frame when the fade-in was over; on the freely placed desktop the box came, went for a frame and came again. (The box of an icon was drawn only once the icon was at full strength.)
 - A new file's icon: name and picture come together. The name faded in at once and the picture two to three frames later (it comes from a background thread), in a fence and on the freely placed desktop. The fade-in now waits for the picture (167 ms at most, so a file whose picture takes longer still shows its name).
 - The tip of an icon comes again when the pointer leaves the fence and comes back to the very same point. It stayed away until the pointer had moved by at least a pixel.
 - Settings › 布局与备份: 「尚无每日备份」 has a second line too (a backup is made by itself on the first change of each day, the last 7 are kept), like the empty lists of rules and snapshots.
