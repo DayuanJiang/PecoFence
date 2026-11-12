@@ -196,3 +196,11 @@ o3-peek            4   ec2    release owner3-ux3-peek.ps1
 o3-peek-texts      1   ec2    release owner3-ux3-peek-texts.ps1
 o3-settings        3   vm     debug   owner3-ux3-settings.ps1
 o3-firstrun        4   ec2    release owner3-ux3-firstrun.ps1        --var Part=C
+o3-text            4   ec2    release owner3-ux3-text.ps1
+o3-icons2-A        2   ec2    release owner3-ux3-icons2.ps1          --var Part=A
+o3-icons2-B        1   ec2    release owner3-ux3-icons2.ps1          --var Part=B
+o3-icons2-C        1   ec2    release owner3-ux3-icons2.ps1          --var Part=C
+o3-icons2-D        2   ec2    release owner3-ux3-icons2.ps1          --var Part=D
+o3-notices         2   ec2    release owner3-ux3-notices.ps1         --var Part=NJ
+o3-notices-page    1   ec2    debug   owner3-ux3-notices.ps1         --var Part=W
+o3-folder          5   ec2    release owner3-ux3-folder.ps1
