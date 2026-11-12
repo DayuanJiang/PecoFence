@@ -561,7 +561,61 @@ fn push_cut_out(
     Ok(brush)
 }
 
-/// Ends the layer `push_strip_fade` (or `push_cut_out`) started.
+/// A layer over `bounds` that leaves the span `gap` (from, to; along x, or along y when
+/// `vertical`) clear, with 1 DIP soft edges: what is drawn inside is not drawn under a tab that
+/// is dragged over it. End it with `pop_strip_fade`.
+fn push_span_gap(
+    session: &DrawingSession<'_>,
+    bounds: Rect,
+    gap: (f32, f32),
+    vertical: bool,
+) -> Result<b::ID2D1Brush> {
+    let (start, len) = if vertical {
+        (bounds.top, bounds.height().max(1.0))
+    } else {
+        (bounds.left, bounds.width().max(1.0))
+    };
+    let at = |v: f32| ((v - start) / len).clamp(0.0, 1.0);
+    let point = |v: f32| {
+        if vertical {
+            Vector2::new(bounds.left, v)
+        } else {
+            Vector2::new(v, bounds.top)
+        }
+    };
+    let opaque = ColorF::new(0.0, 0.0, 0.0, 1.0);
+    let gradient = session.create_linear_gradient(
+        point(start),
+        point(start + len),
+        &[
+            GradientStop::new(0.0, opaque),
+            GradientStop::new(at(gap.0 - 1.0), opaque),
+            GradientStop::new(at(gap.0), ColorF::TRANSPARENT),
+            GradientStop::new(at(gap.1), ColorF::TRANSPARENT),
+            GradientStop::new(at(gap.1 + 1.0), opaque),
+            GradientStop::new(1.0, opaque),
+        ],
+    )?;
+    let brush: b::ID2D1Brush = gradient.as_raw_brush().cast()?;
+    let context: b::ID2D1DeviceContext = session.raw().cast()?;
+    let params = b::D2D1_LAYER_PARAMETERS1 {
+        contentBounds: b::D2D_RECT_F {
+            left: bounds.left,
+            top: bounds.top,
+            right: bounds.left + bounds.width(),
+            bottom: bounds.top + bounds.height(),
+        },
+        maskTransform: windows_numerics::Matrix3x2::identity(),
+        opacity: 1.0,
+        opacityBrush: ManuallyDrop::new(Some(brush.clone())),
+        ..Default::default()
+    };
+    unsafe { context.PushLayer(&params, None::<&b::ID2D1Layer>) };
+    drop(ManuallyDrop::into_inner(params.opacityBrush));
+    Ok(brush)
+}
+
+/// Ends the layer `push_strip_fade` (or `push_cut_out`, `push_span_gap`) started.
 fn pop_strip_fade(session: &DrawingSession<'_>, _brush: b::ID2D1Brush) {
     if let Ok(context) = session.raw().cast::<b::ID2D1DeviceContext>() {
         unsafe { context.PopLayer() };
@@ -2944,12 +2998,29 @@ impl FenceChrome {
                     .unwrap_or(theme.accent);
                 marker(x, w, color, title_a)?;
             }
-            // A dragged tab (lens, marker and caption) is always above its neighbours.
+            // A dragged tab (lens, marker and caption) is always above its neighbours, and
+            // what it passes over is not drawn under it: its fill is see-through, and two
+            // names on top of each other read as neither.
+            let mut under_drag = match tabs.iter().find(|t| t.dragging) {
+                Some(d) => {
+                    let (from, to) = tabs
+                        .iter()
+                        .fold((d.x, d.x + d.w), |(a, b), t| (a.min(t.x), b.max(t.x + t.w)));
+                    let bounds = Rect::from_xywh(from, 0.0, to - from, title_h);
+                    Some(push_span_gap(session, bounds, (d.x, d.x + d.w), false)?)
+                }
+                None => None,
+            };
             for tab in tabs
                 .iter()
                 .filter(|t| !t.dragging)
                 .chain(tabs.iter().filter(|t| t.dragging))
             {
+                if tab.dragging
+                    && let Some(brush) = under_drag.take()
+                {
+                    pop_strip_fade(session, brush);
+                }
                 let ta = title_a * tab.alpha.clamp(0.0, 1.0);
                 if ta <= 0.0 {
                     continue;
@@ -3088,6 +3159,9 @@ impl FenceChrome {
                     let text = session.create_solid_brush(with_alpha(on_accent, ta))?;
                     session.draw_text(badge, &self.badge_format, &r, &text);
                 }
+            }
+            if let Some(brush) = under_drag.take() {
+                pop_strip_fade(session, brush);
             }
             if let Some(brush) = strip_fade {
                 pop_strip_fade(session, brush);
@@ -3444,12 +3518,28 @@ impl FenceChrome {
         let folders = tabs.iter().any(|t| t.folder_icon);
         let desktops = tabs.iter().any(|t| t.desktop_icon);
         let text_left = rail_text_left(colored, folders, desktops);
-        // A dragged tab is always above its neighbours.
+        // A dragged tab is always above its neighbours, and the rows it passes over are not
+        // drawn under it (see the title row's strip).
+        let mut under_drag = match tabs.iter().find(|t| t.dragging) {
+            Some(d) => {
+                let (from, to) = tabs
+                    .iter()
+                    .fold((d.x, d.x + d.w), |(a, b), t| (a.min(t.x), b.max(t.x + t.w)));
+                let bounds = Rect::from_xywh(0.0, from, rail_w, to - from);
+                Some(push_span_gap(session, bounds, (d.x, d.x + d.w), true)?)
+            }
+            None => None,
+        };
         for tab in tabs
             .iter()
             .filter(|t| !t.dragging)
             .chain(tabs.iter().filter(|t| t.dragging))
         {
+            if tab.dragging
+                && let Some(brush) = under_drag.take()
+            {
+                pop_strip_fade(session, brush);
+            }
             let ta = tab.alpha.clamp(0.0, 1.0);
             if ta <= 0.0 {
                 continue;
@@ -3591,6 +3681,9 @@ impl FenceChrome {
                 let text = session.create_solid_brush(with_alpha(on_accent, ta))?;
                 session.draw_text(badge, &self.badge_format, &r, &text);
             }
+        }
+        if let Some(brush) = under_drag.take() {
+            pop_strip_fade(session, brush);
         }
         Ok(())
     }
