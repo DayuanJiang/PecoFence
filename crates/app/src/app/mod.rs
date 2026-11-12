@@ -210,6 +210,9 @@ const TIMER_WALLPAPER_READ: usize = 90;
 /// A config file another program held open at start: try to read it again (one shot, re-armed
 /// while it stays locked; see `retry_locked_config`).
 const TIMER_CONFIG_LOCKED: usize = 77;
+/// The start hides the Windows desktop icons half way through the fences' fade-in (one shot;
+/// it stays armed while the App is borrowed). See `hide_icons_as_fences_come`.
+const TIMER_START_ICONS: usize = 75;
 const CONFIG_LOCKED_RETRY_MS: u32 = 2_000;
 const THEMES_SETTLE_MS: u32 = 300;
 const DEVICE_RETRY_MAX_MS: u32 = 30_000;
@@ -451,6 +454,9 @@ pub struct App {
     paste_dups: Vec<PasteDup>,
     /// What the last paste put into its fence, until it is selected there, see `Pasted`.
     pasted: Option<Pasted>,
+    /// The start has shown the fences and waits for their first frame to hide the Windows
+    /// desktop icons (`hide_icons_as_fences_come`).
+    hide_icons_at_frame: bool,
     /// Previous frame's timestamp while an animation runs (frame-gap diagnostics).
     frame_prev: Option<Instant>,
     /// Cadence statistics of the animation run in progress.
@@ -1105,6 +1111,14 @@ impl App {
                                     {
                                         window::kill_timer(hwnd, TIMER_GPU_TRIM);
                                         app.trim_gpu_if_idle();
+                                    }
+                                }
+                                TIMER_START_ICONS => {
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        window::kill_timer(hwnd, TIMER_START_ICONS);
+                                        app.hide_icons_after_start();
                                     }
                                 }
                                 TIMER_IDLE_TRIM => {
@@ -1858,6 +1872,7 @@ impl App {
             shell_drop_claim: None,
             paste_dups: Vec::new(),
             pasted: None,
+            hide_icons_at_frame: false,
             frame_prev: None,
             desktop_arrange_after_frames: false,
             frame_run: FrameRun::default(),
@@ -2143,9 +2158,13 @@ impl App {
             }
             a.keep_icons_hidden = app.state.config.settings.keep_icons_hidden;
             if app.state.config.settings.hide_real_icons && !app.no_hide_icons {
-                // At logon Explorer's desktop may not be ready yet: retried from the anchor's
-                // periodic check; housekeeping tells the user if it never succeeds.
-                a.request_hide_desktop_icons();
+                // The fences show only once the message loop runs (about 0.1 s from here on a
+                // slow PC): icons hidden here left the desktop empty for that long. They go
+                // while the fences come in instead (`hide_icons_as_fences_come`), at the
+                // first frame. At logon Explorer's desktop may not be ready yet: retried from
+                // the anchor's periodic check; housekeeping tells the user if it never succeeds.
+                app.hide_icons_at_frame = true;
+                app.ctx.frames.request();
             } else {
                 a.show_kept_desktop_icons();
             }

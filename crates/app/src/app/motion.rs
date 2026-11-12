@@ -313,10 +313,49 @@ impl App {
         }
     }
 
+    /// The first frame after the start: the fences are on their way in. The Windows desktop
+    /// icons go when that fade is half way (83 ms later; at once with animations off), so the
+    /// desktop is never empty in between and both show together for those few frames only.
+    fn hide_icons_as_fences_come(&mut self) {
+        let fading = self.ctx.motion.enabled();
+        tracing::debug!(
+            fading,
+            "start: first frame, the Windows desktop icons go next"
+        );
+        if fading {
+            let ms = pecofence_render::motion::FASTER.as_millis() as u32;
+            window::set_timer(self.control.hwnd(), TIMER_START_ICONS, ms);
+        } else {
+            self.hide_icons_after_start();
+        }
+    }
+
+    /// Hides the Windows desktop icons for the start (`TIMER_START_ICONS`), unless the setting
+    /// went off or 「临时显示 Windows 桌面」 came on in the meantime.
+    pub(super) fn hide_icons_after_start(&mut self) {
+        let wanted = self.state.config.settings.hide_real_icons
+            && !self.no_hide_icons
+            && !self.windows_desktop;
+        let hidden = wanted
+            && self
+                .anchor
+                .borrow_mut()
+                .as_mut()
+                .is_some_and(|a| a.request_hide_desktop_icons());
+        tracing::info!(
+            wanted,
+            hidden,
+            "start: Windows desktop icons hidden as the fences come in"
+        );
+    }
+
     /// One compositor frame: advance every fence's client tweens; ask for another frame while
     /// anything still moves.
     pub(super) fn on_frame(&mut self) {
         let now = Instant::now();
+        if std::mem::take(&mut self.hide_icons_at_frame) {
+            self.hide_icons_as_fences_come();
+        }
         // Frame cadence diagnostics (debug level): a gap since the previous frame of more than
         // ~1.5 compositor periods, or a slow frame, is what the user perceives as a hitch.
         if let Some(prev) = self.frame_prev.replace(now) {
