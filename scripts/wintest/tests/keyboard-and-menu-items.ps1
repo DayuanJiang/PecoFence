@@ -447,9 +447,12 @@ foreach ($speed in 'fast', 'normal', 'slow') {
 Check 'fast < normal < slow, about 150 / 400 / 1000 ms' ($res['fast'] -gt 0 -and $res['fast'] -lt $res['normal'] - 100 -and $res['normal'] -lt $res['slow'] - 300) "fast=$($res['fast']) normal=$($res['normal']) slow=$($res['slow'])"
 Pf settings set rollUp.hoverSpeed normal | Out-Null
 Pf fence unroll Beta | Out-Null
-Case 'U18 Expand speed on the settings page, only with On hover'
-foreach ($mode in 'hover', 'click') {
-  Pf settings set rollUp.clickToExpand ($mode -eq 'click').ToString().ToLower() | Out-Null
+# The card shows while one of the two hovers it times is on: a rolled fence that expands on hover,
+# or 「鼠标悬停时切换标签页」 (on in a new install).
+Case 'U18 Expand speed on the settings page, with On hover or Switch tabs on hover'
+foreach ($mode in 'hover', 'click', 'click-tabs') {
+  Pf settings set rollUp.clickToExpand ($mode -ne 'hover').ToString().ToLower() | Out-Null
+  Pf settings set rollUp.switchTabOnHover ($mode -ne 'click').ToString().ToLower() | Out-Null
   Pf settings open-ui | Out-Null
   $sw = WaitWin 'PecoFence.Settings' 20; Start-Sleep -Seconds 3
   $sr = Rect $sw; $o = ClientOrigin $sw
@@ -464,12 +467,15 @@ foreach ($mode in 'hover', 'click') {
   Shot "u18-settings-$mode"
   if ($mode -eq 'hover') {
     Check 'On hover: Expand speed sits under How rolled-up fences expand' ($txt -match 'How rolled-up fences expand' -and $txt -match 'Expand speed') "ocr: $txt"
+  } elseif ($mode -eq 'click') {
+    Check 'On a title click, tabs not switched on hover: no Expand speed' ($txt -match 'How rolled-up fences expand' -and $txt -notmatch 'Expand speed') "ocr: $txt"
   } else {
-    Check 'On a title click: no Expand speed' ($txt -match 'How rolled-up fences expand' -and $txt -notmatch 'Expand speed') "ocr: $txt"
+    Check 'On a title click with Switch tabs on hover: Expand speed shows' ($txt -match 'How rolled-up fences expand' -and $txt -match 'Expand speed') "ocr: $txt"
   }
   [L]::PostMessageW($sw, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 1
 }
 Pf settings set rollUp.clickToExpand false | Out-Null
+Pf settings set rollUp.switchTabOnHover true | Out-Null
 }
 
 # Part D: the decision on the marquee offer (U10 option B): two small buttons instead of the menu.

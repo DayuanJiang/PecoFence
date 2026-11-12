@@ -1335,6 +1335,20 @@ async function runTests() {
     assert(list.value === 'click', 'Both on not shown as click');
     change(doc, 'rollExpand', 'hover'); await settle();
   });
+  await test('展开快慢 shows while a rolled fence expands on hover or tabs switch on hover', async () => {
+    const card = doc.getElementById('hoverSpeedCard'), tabs = doc.querySelector('[data-bind="rollUp.switchTabOnHover"]');
+    assert(!card.hidden, 'Hidden with hover expand');
+    change(doc, 'rollExpand', 'click'); await settle();
+    assert(card.hidden, 'Shown with click expand and no tab hover');
+    tabs.click(); await settle();
+    assert(current().settings.rollUp.switchTabOnHover === true && !card.hidden, 'Hidden with the tab hover switch on');
+    change(doc, 'rollExpand', 'double'); await settle();
+    assert(!card.hidden, 'Hidden with double-click expand and the tab hover switch on');
+    tabs.click(); await settle();
+    assert(card.hidden, 'Still shown after the tab hover switch went off');
+    change(doc, 'rollExpand', 'hover'); await settle();
+    assert(!card.hidden, 'Hidden after hover expand came back');
+  });
   await test('常规 has the new headings in order, one card for the Windows desktop shortcut', async () => {
     doc.querySelector('[data-page=general]').click();
     const heads = [...doc.querySelectorAll('#page-general h3')].map(h => h.textContent).join(' / ');

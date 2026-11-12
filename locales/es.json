@@ -722,7 +722,7 @@
   "单击标题时": "Con un clic en el título",
   "只在双击标题或点箭头时": "Solo doble clic o la flecha",
   "展开快慢": "Velocidad al expandir",
-  "鼠标停多久栅栏才展开；“默认”跟随 Windows 的鼠标悬停时间": "Cuánto tiempo debe quedarse el puntero sobre un grupo contraído antes de que se expanda; Predeterminado sigue el tiempo de espera del mouse de Windows",
+  "鼠标停多久栅栏才展开，悬停切换标签页也等这么久；“默认”跟随 Windows 的鼠标悬停时间": "Cuánto tiempo debe quedarse el puntero sobre un grupo contraído antes de que se expanda; el cambio de pestaña al pasar el cursor espera lo mismo; Predeterminado sigue el tiempo de espera del mouse de Windows",
   "快": "Rápida",
   "慢": "Lenta",
   "“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关闭它的“像桌面一样排列”": "Mientras el grupo «Escritorio» se organiza como el escritorio, sus iconos ya están en el escritorio de Windows, así que no se muestra; para mostrarlo también, desactiva primero su «Organizar como el escritorio» en la página «Grupos»",

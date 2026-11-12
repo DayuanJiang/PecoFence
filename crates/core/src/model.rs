@@ -559,7 +559,8 @@ pub enum QuickHideScope {
     FencesOnly,
 }
 
-/// 「展开快慢」 beside 「收起的栅栏怎么展开」: the hover delay before a rolled fence expands.
+/// 「展开快慢」 beside 「收起的栅栏怎么展开」: the hover delay before a rolled fence expands and,
+/// with 「鼠标悬停时切换标签页」, before the tab under the pointer is switched to.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -604,8 +605,9 @@ pub struct RollUpSettings {
     /// while this is on.
     #[serde(default)]
     pub click_to_expand: bool,
-    /// How long the pointer (or a dragged file) rests on a rolled fence before it expands:
-    /// `normal` is Windows' mouse hover time (feedback #98).
+    /// How long the pointer (or a dragged file) rests on a rolled fence before it expands, and
+    /// on a tab before `switch_tab_on_hover` switches to it: `normal` is Windows' mouse hover
+    /// time (feedback #98).
     #[serde(default)]
     pub hover_speed: HoverSpeed,
     /// Draw the title (and tabs) only while the mouse is over the fence; a fence's

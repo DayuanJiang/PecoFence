@@ -722,7 +722,7 @@
   "单击标题时": "D’un clic sur le titre",
   "只在双击标题或点箭头时": "Seulement double-clic ou flèche",
   "展开快慢": "Vitesse de déploiement",
-  "鼠标停多久栅栏才展开；“默认”跟随 Windows 的鼠标悬停时间": "Durée pendant laquelle le pointeur reste sur un groupe replié avant qu’il se déploie ; Par défaut suit le délai de survol de la souris de Windows",
+  "鼠标停多久栅栏才展开，悬停切换标签页也等这么久；“默认”跟随 Windows 的鼠标悬停时间": "Durée pendant laquelle le pointeur reste sur un groupe replié avant qu’il se déploie ; le changement d’onglet au survol attend le même délai ; Par défaut suit le délai de survol de la souris de Windows",
   "快": "Rapide",
   "慢": "Lente",
   "“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关闭它的“像桌面一样排列”": "Tant que le groupe « Bureau » est disposé comme le bureau, ses icônes sont déjà sur le Bureau Windows, il n’est donc pas affiché ; pour l’afficher aussi, désactivez d’abord son option « Disposer comme le bureau » dans la page « Groupes »",

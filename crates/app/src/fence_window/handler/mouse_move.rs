@@ -420,7 +420,8 @@ pub(super) fn on_mousemove(
         | (std::mem::replace(&mut v.tab_hover, tab) != tab);
     let on_control = up || chev || tab.is_some();
     // With 「鼠标悬停时切换标签页」 on, resting on another tab switches to it after the hover
-    // delay; moving onto a different tab restarts the wait.
+    // delay of 「展开快慢」 (the one a rolled fence waits); moving onto a different tab restarts
+    // the wait.
     let switch_to = hover_switch_target(
         tab.filter(|&i| v.tab_fully_shown(i)),
         v.active_index(),
@@ -430,8 +431,10 @@ pub(super) fn on_mousemove(
     );
     if switch_to != v.tab_hover_switch {
         v.tab_hover_switch = switch_to;
-        if switch_to.is_some() {
-            window::set_timer(hwnd, TIMER_TAB_HOVER, Tooltip::hover_delay_ms());
+        if let Some(i) = switch_to {
+            let delay_ms = behavior.hover_open_ms();
+            tracing::debug!(tab = i, delay_ms, "tab hover switch armed");
+            window::set_timer(hwnd, TIMER_TAB_HOVER, delay_ms);
         } else {
             window::kill_timer(hwnd, TIMER_TAB_HOVER);
         }
