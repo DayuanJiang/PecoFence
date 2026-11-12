@@ -170,6 +170,19 @@ pub(super) fn band_range(
     start..end.max(start)
 }
 
+/// Every index of the two `bands` below `count` once, the first band's before the second's:
+/// what a content draw looks at for icons and names instead of every item of the fence.
+pub(super) fn band_indices(
+    bands: &[std::ops::Range<usize>; 2],
+    count: usize,
+) -> impl Iterator<Item = usize> + use<> {
+    let [a, b] = bands.clone();
+    let a = a.start.min(count)..a.end.min(count);
+    let b = b.start.min(count)..b.end.min(count);
+    let first = a.clone();
+    a.chain(b.filter(move |i| !first.contains(i)))
+}
+
 impl FenceViewState {
     /// Opacity multiplier the plate is drawn with. A fully transparent fence draws the
     /// default plate while it shows it (its alpha comes from `plate_reveal`).
@@ -1160,12 +1173,15 @@ impl FenceViewState {
     /// for icons, the name column's text width for rows. `wide_w` is the wider box an icon's
     /// name may take when that shows more of it (`text::fit_lines_wider`), `label_w` again
     /// where there is none. Changing either drops every fitted label. Icons are asked for the
-    /// items `near` the viewport only; the others get theirs when they scroll in (a crowded
-    /// fence would otherwise extract every thumbnail at startup).
+    /// items `near` the viewport only, which all lie in one of the two index `bands`
+    /// (`band_range` around the scroll offset and around where a glide ends); the others get
+    /// theirs when they scroll in (a crowded fence would otherwise extract every thumbnail at
+    /// startup). Names are fitted later still, for the items a draw shows (`fit_drawn`).
     pub(super) fn ensure_icons_and_labels(
         &mut self,
         label_w: f32,
         wide_w: f32,
+        bands: [std::ops::Range<usize>; 2],
         near: impl Fn(usize) -> bool,
     ) {
         let icon_px = (self.icon_dip() * self.scale()).round() as u32;
@@ -1177,7 +1193,6 @@ impl FenceViewState {
             }
             self.unfold_cache = None;
         }
-        let details = self.layout == ViewLayout::Details;
         // Explorer's list and details rows show folders without the preview of their contents.
         let rows = self.layout != ViewLayout::Icons;
         let now = Instant::now();
@@ -1185,10 +1200,12 @@ impl FenceViewState {
         let mut pending = false;
         let (mut together, mut longest) = (0usize, Duration::ZERO);
         let mut icons = self.icons.borrow_mut();
-        // For this pass only: the shell is asked once per extension, and again next time.
-        let mut type_names = fileinfo::TypeNames::default();
-        for (i, item) in self.items.iter_mut().enumerate() {
-            if item.wants_icon(icon_px) && near(i) {
+        for i in band_indices(&bands, self.items.len()) {
+            if !near(i) {
+                continue;
+            }
+            let item = &mut self.items[i];
+            if item.wants_icon(icon_px) {
                 let icon_only = item.icon_only || (rows && item.is_folder);
                 match icons.get(&item.icon_key, &item.path, icon_px, self.dpi, icon_only) {
                     Lookup::Ready(Some(img)) => {
@@ -1256,45 +1273,6 @@ impl FenceViewState {
                     }
                 }
             }
-            if item.label.is_none() {
-                let (label, wide) = match self.layout {
-                    // No lines to fit into. The full name counts as not shortened, so the
-                    // selected item never unfolds.
-                    ViewLayout::Icons if self.label_lines == 0 => (item.name.clone(), false),
-                    ViewLayout::Icons => pecofence_render::text::fit_lines_wider(
-                        &item.name,
-                        &self.chrome.label_format(),
-                        label_w.max(1.0),
-                        wide_w.max(1.0),
-                        self.label_lines as u32,
-                    ),
-                    _ => (
-                        pecofence_render::text::fit_width(
-                            &item.name,
-                            &self.chrome.row_format(),
-                            label_w,
-                        ),
-                        false,
-                    ),
-                };
-                item.label = Some(label);
-                item.label_wide = wide;
-            }
-            if details {
-                if item.date_label.is_none() {
-                    item.date_label = Some(item.date_text());
-                }
-                if item.type_label.is_none() {
-                    item.type_label = Some(
-                        type_names
-                            .get(&item.path, item.is_folder)
-                            .unwrap_or_default(),
-                    );
-                }
-                if item.size_label.is_none() {
-                    item.size_label = Some(item.size_text());
-                }
-            }
         }
         drop(icons);
         self.icons_pending = pending;
@@ -1308,6 +1286,81 @@ impl FenceViewState {
         if started {
             self.frames.request();
         }
+    }
+
+    /// Before a draw of the items `drawn`: each gets its name fitted and, in the details
+    /// view, its date, type and size, unless it has them. A name costs one DirectWrite layout
+    /// or more, and they used to be made for every item of the fence at its first draw: a
+    /// folder of 8000 files laid out 8000 names to show 40, at every tab switch, view change
+    /// and cleared filter. Now a name is fitted when its item is first drawn.
+    pub(super) fn fit_drawn(
+        &mut self,
+        drawn: impl Iterator<Item = usize>,
+        label_w: f32,
+        wide_w: f32,
+    ) {
+        let mut fitted = 0usize;
+        for i in drawn {
+            fitted += self.ensure_texts(i, label_w, wide_w) as usize;
+        }
+        if fitted > 0 {
+            tracing::trace!(
+                fence = %self.fence_id,
+                fitted,
+                items = self.items.len(),
+                "names fitted for the items drawn"
+            );
+        }
+    }
+
+    /// Fits item `i`'s name to `label_w` (`wide_w`: see `ensure_icons_and_labels`) and, for
+    /// the details view, formats its date, type and size, unless it has them. True when the
+    /// name was fitted now.
+    fn ensure_texts(&mut self, i: usize, label_w: f32, wide_w: f32) -> bool {
+        let layout = self.layout;
+        let item = &mut self.items[i];
+        let fit = item.label.is_none();
+        if fit {
+            let (label, wide) = match layout {
+                // No lines to fit into. The full name counts as not shortened, so the
+                // selected item never unfolds.
+                ViewLayout::Icons if self.label_lines == 0 => (item.name.clone(), false),
+                ViewLayout::Icons => pecofence_render::text::fit_lines_wider(
+                    &item.name,
+                    &self.chrome.label_format(),
+                    label_w.max(1.0),
+                    wide_w.max(1.0),
+                    self.label_lines as u32,
+                ),
+                _ => (
+                    pecofence_render::text::fit_width(
+                        &item.name,
+                        &self.chrome.row_format(),
+                        label_w,
+                    ),
+                    false,
+                ),
+            };
+            item.label = Some(label);
+            item.label_wide = wide;
+        }
+        if layout == ViewLayout::Details {
+            if item.date_label.is_none() {
+                item.date_label = Some(item.date_text());
+            }
+            if item.type_label.is_none() {
+                // The shell is asked once per extension for as long as this list is shown.
+                item.type_label = Some(
+                    self.type_names
+                        .get(&item.path, item.is_folder)
+                        .unwrap_or_default(),
+                );
+            }
+            if item.size_label.is_none() {
+                item.size_label = Some(item.size_text());
+            }
+        }
+        fit
     }
 
     /// True when an item near the viewport is still waiting for its icon (as of the last
@@ -1730,11 +1783,9 @@ impl FenceViewState {
         let rows_near = |at: f32| band_range(&layout, count, at - view_h, at + 2.0 * view_h);
         let (here, there) = (rows_near(scroll), rows_near(target));
         let draw_started = Instant::now();
-        self.ensure_icons_and_labels(label_w, wide_w, |i| {
-            (here.contains(&i) || there.contains(&i)) && {
-                let c = grid.cell(i);
-                near(c.y, c.h, scroll) || near(c.y, c.h, target)
-            }
+        self.ensure_icons_and_labels(label_w, wide_w, [here, there], |i| {
+            let c = grid.cell(i);
+            near(c.y, c.h, scroll) || near(c.y, c.h, target)
         });
         let labels_spent = draw_started.elapsed();
 
@@ -1757,6 +1808,9 @@ impl FenceViewState {
                 (y + c.h >= 0.0 && y <= view_h).then_some((i, x, y, alpha))
             })
             .collect();
+        let fit_started = Instant::now();
+        self.fit_drawn(placed.iter().map(|&(i, ..)| i), label_w, wide_w);
+        let labels_spent = labels_spent + fit_started.elapsed();
         let placed_count = placed.len();
         let alphas = self.item_alphas(now, placed.iter().map(|&(i, ..)| i));
         let dragging = self.ole_drag;
@@ -1895,28 +1949,24 @@ impl FenceViewState {
             })?;
         self.note_draw_result(ok);
         self.note_content_fades(now);
-        self.log_content_draw(draw_started, labels_spent, now, placed_count);
+        self.log_content_draw(draw_started, labels_spent, placed_count);
         Ok(())
     }
 
     /// One line per content draw: how many items the fence has, how many were drawn, and
-    /// what the time went to (names and icon requests, the per-item states, the drawing).
-    fn log_content_draw(
-        &self,
-        started: Instant,
-        labels: Duration,
-        prepared: Instant,
-        drawn: usize,
-    ) {
+    /// what the time went to (`labels`: icon requests and fitted names; the rest: the
+    /// per-item states and the drawing).
+    fn log_content_draw(&self, started: Instant, labels: Duration, drawn: usize) {
         let ms = |d: Duration| (d.as_secs_f64() * 100_000.0).round() / 100.0;
+        let spent = started.elapsed();
         tracing::debug!(
             fence = %self.active,
             items = self.items.len(),
             drawn,
             scroll = self.scroll_y.round(),
-            ms = ms(started.elapsed()),
+            ms = ms(spent),
             labels_ms = ms(labels),
-            draw_ms = ms(prepared.elapsed()),
+            draw_ms = ms(spent.saturating_sub(labels)),
             "content draw"
         );
     }
@@ -1955,11 +2005,9 @@ impl FenceViewState {
         let rows_near = |at: f32| band_range(&layout, count, at - view_h, at + 2.0 * view_h);
         let (here, there) = (rows_near(scroll), rows_near(target));
         let draw_started = Instant::now();
-        self.ensure_icons_and_labels(text_w, text_w, |i| {
-            (here.contains(&i) || there.contains(&i)) && {
-                let c = layout.cell(i);
-                near(c.y, c.h, scroll) || near(c.y, c.h, target)
-            }
+        self.ensure_icons_and_labels(text_w, text_w, [here, there], |i| {
+            let c = layout.cell(i);
+            near(c.y, c.h, scroll) || near(c.y, c.h, target)
         });
         let labels_spent = draw_started.elapsed();
 
@@ -1983,6 +2031,9 @@ impl FenceViewState {
                     .then_some((i, y, alpha))
             })
             .collect();
+        let fit_started = Instant::now();
+        self.fit_drawn(placed.iter().map(|&(i, ..)| i), text_w, text_w);
+        let labels_spent = labels_spent + fit_started.elapsed();
         let placed_count = placed.len();
         let alphas = self.item_alphas(now, placed.iter().map(|&(i, ..)| i));
         let dragging = self.ole_drag;
@@ -2156,7 +2207,7 @@ impl FenceViewState {
             })?;
         self.note_draw_result(ok);
         self.note_content_fades(now);
-        self.log_content_draw(draw_started, labels_spent, now, placed_count);
+        self.log_content_draw(draw_started, labels_spent, placed_count);
         Ok(())
     }
 }

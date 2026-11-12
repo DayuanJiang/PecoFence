@@ -134,6 +134,9 @@ pub struct FenceViewState {
     /// The anchor item's unfolded label, cached by (item, cell width, name) so a content redraw
     /// (hover fade, scroll glide, marquee) does not lay the text out again.
     pub(super) unfold_cache: Option<UnfoldCache>,
+    /// The details view's type names by extension, asked from the shell as rows come near the
+    /// viewport (`ensure_texts`); emptied with every new item list (`replace_items`).
+    pub(super) type_names: pecofence_platform::fileinfo::TypeNames,
     /// The last content draw kept the scrollbar's strip clear (the fence scrolled): only for
     /// the debug line when that changes.
     pub(super) strip_kept: bool,

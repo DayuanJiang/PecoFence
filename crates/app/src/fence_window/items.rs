@@ -342,6 +342,8 @@ impl FenceViewState {
             };
         let old_len = self.items.len();
         let old_ids: Vec<ItemId> = self.items.iter().map(|i| i.id).collect();
+        // A new list asks the shell for its type names again (kept items keep theirs below).
+        self.type_names = Default::default();
         // Keep icons / labels for unchanged items.
         let mut old: HashMap<ItemId, ItemView> = self.items.drain(..).map(|i| (i.id, i)).collect();
         let icons = self.icons.borrow();

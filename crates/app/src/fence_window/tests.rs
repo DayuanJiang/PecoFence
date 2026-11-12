@@ -632,6 +632,29 @@ fn band_range_holds_exactly_the_cells_that_cross_the_band() {
     }
 }
 
+/// The items a content draw fits names for and asks icons for: the rows around the scroll
+/// offset and around where a glide ends, each once, however many items the fence has.
+#[test]
+fn a_content_draw_looks_at_the_two_bands_only_whatever_the_item_count() {
+    // The bands overlap while a glide is near its end: no index twice.
+    let seen: Vec<usize> = band_indices(&[10..14, 12..18], 8000).collect();
+    assert_eq!(seen, [10, 11, 12, 13, 14, 15, 16, 17]);
+    // End pressed at the top: the first rows and the last ones, nothing between.
+    let seen: Vec<usize> = band_indices(&[0..3, 7990..7993], 7992).collect();
+    assert_eq!(seen, [0, 1, 2, 7990, 7991]);
+    assert_eq!(band_indices(&[5..5, 5..5], 10).count(), 0);
+    // A viewport of 300 DIPs with one viewport of slack above and below, as the draws take
+    // it: the same number of items in a folder of 60 files and in one of 8000.
+    let near = |count: usize, at: f32| {
+        let grid = ItemLayout::Grid(Grid::new(GridMetrics::for_icon_size(48, 2), 360.0, count));
+        let here = band_range(&grid, count, at - 300.0, at + 600.0);
+        band_indices(&[here.clone(), here], count).count()
+    };
+    assert_eq!(near(8000, 480.0), near(60, 480.0));
+    assert!(near(8000, 480.0) < 60, "{} items", near(8000, 480.0));
+    assert!(near(8000, 96_000.0) < 60, "{} items", near(8000, 96_000.0));
+}
+
 /// Content shift per 60 Hz frame for a wheel turned `n` notches `gap_ms` apart (96 DIP per
 /// notch, the 250 ms wheel cap), until the glide has ended. `carry` false restarts the
 /// decelerate curve at every notch, as before `ScrollGlide::notch`.
