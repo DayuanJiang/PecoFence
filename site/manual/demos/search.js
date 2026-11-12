@@ -1,9 +1,11 @@
 // 4.4 搜索图标和文件 (lesson id search): Ctrl tapped twice (double_ctrl.rs) opens the Peek with
-// its search box (peek_search.rs) in the upper middle of the screen; typing lists the matches
-// under the box. The fence match comes first and lights up in its fence while the other icons
-// fade to 15 %; Everything's whole-computer results follow under their own heading a moment
-// later (search.rs asks Everything after a 120 ms pause), with 「在 Everything 里查看全部结果」
-// last. ↓ moves the selection, Enter opens the row and ends the Peek (the file's app comes up).
+// its search box (peek_search.rs) in the upper middle of the screen: the box, the row of type
+// tabs under it and, once something is typed, the matches in groups (a caption above each
+// group's first row) over a bar with the keys and the number of results. The fence match comes
+// first and lights up in its fence while the other icons fade to 15 %; Everything's
+// whole-computer results follow a moment later (search.rs asks Everything after a 120 ms
+// pause), then the two action rows under 「操作」. Only the selected row shows its Ctrl+digit.
+// ↓ moves the selection, Enter opens the row and ends the Peek (the file's app comes up).
 // Chinese pages type the pinyin initials (hyjl finds 会议记录); the others type the start of
 // the translated word, Japanese and Korean its first two characters.
 (() => {
@@ -23,11 +25,18 @@
     const HIT = [2, 2];                                       // fence 文件与文档, item 会议记录.docx
     // Everything's rows: name, folder (the row's second line), icon
     const FOUND = [['xlsx', '会议记录 2025.xlsx', 'D:\\项目\\2025'], ['docx', '会议记录模板.docx', 'D:\\模板']];
-    const TOTAL = 12;
+    // Everything finds these two and the fence's own file: 「共 3 个」 counts all three, and the
+    // bar's 「3 个结果」 the fence match plus Everything's files, the one in a fence only once.
+    const TOTAL = FOUND.length + 1;
+    // 全部 is written with its catalog context (the app's key 类型\x04全部): the smart fence
+    // editor's 全部 is another word in most languages.
+    const TABS = ['类型\x04全部', '文件夹', '文档', '图片', '视频', '音乐', '压缩包', '程序'];
+    const COUNT = '{0} 个结果';
 
-    // The box (640 DIP in the app) scaled to the stage, rows 44 → 36, the heading 24 → 18.
-    const BOX = { x: 196, y: 52, w: 408, h: 44 };
-    const ROW_H = 36, HEAD_H = 18, GAP = 3, PAD_B = 4;
+    // The box (640 DIP in the app) scaled to the stage: the tabs 38 → 28, rows 44 → 36, a
+    // heading 24 → 18, the bottom bar 36 → 26.
+    const BOX = { x: 196, y: 24, w: 408, h: 44 };
+    const TABS_H = 28, ROW_H = 36, HEAD_H = 18, GAP = 3, BAR_H = 26;
 
     const TAPS = [[.55, .68], [.82, .95]];                    // Ctrl down / up, twice
     const PEEK_ON = .97;
@@ -40,7 +49,10 @@
     const MAG = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.6" cy="6.6" r="4.9" fill="none" ' +
         'stroke="currentColor" stroke-width="1.3"/><path d="m10.2 10.2 4.3 4.3" stroke="currentColor" stroke-width="1.3" ' +
         'stroke-linecap="round"/></svg>';
-    const CAP = (d, extra = '') => `<i><svg viewBox="0 0 10 10" aria-hidden="true"><path d="${d}" fill="none" ` +
+    const PIN = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.6 1.9l4.5 4.5-1.4.5-2.3 2.3.1 3-1.2 1.2-6.7-6.7 ' +
+        '1.2-1.2 3 .1 2.3-2.3zM5.7 10.3l-3.6 3.6" fill="none" stroke="currentColor" stroke-width="1.2" ' +
+        'stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const CAP =(d, extra = '') => `<i><svg viewBox="0 0 10 10" aria-hidden="true"><path d="${d}" fill="none" ` +
         `stroke="currentColor" stroke-width="1" ${extra}/></svg></i>`;
     const CAPS = '<div class="pk-caps">' + CAP('M.5 5h9') + CAP('M1 1h8v8H1z', 'stroke-linejoin="round"') +
         CAP('M.8.8l8.4 8.4M9.2.8 .8 9.2') + '</div>';
@@ -70,20 +82,49 @@
         f.n.prepend(crop);
     }
 
-    function row(parent, { kind, name, detail, key }) {
+    // A row of the list: a file with its icon, or an action with its glyph in the accent
+    // colour. `head` is the caption above the first row of a group, `key` the row's Ctrl+digit.
+    function row(parent, { kind, glyph, name, detail, head, key }) {
+        const caption = head && el('div', 'sr-head', parent, head);
         const n = el('div', 'sr-row', parent);
         const bg = el('div', 'sr-selbg', n);
         if (kind) {
             const img = el('img', null, n);
             img.src = `assets/icons/${kind}.png`;
             img.alt = '';
+        } else {
+            el('div', 'sr-act', n).innerHTML = glyph;
         }
         const nm = el('div', 'sr-name', n);
         const parts = [el('span', null, nm), el('b', null, nm), el('span', null, nm)];
-        el('div', 'sr-detail', n, detail);
-        el('div', 'sr-key', n, 'Ctrl+' + key);
-        if (!kind) n.classList.add('sr-all');
-        return { n, bg, name, parts };
+        const second = el('div', 'sr-detail', n, detail);
+        const hint = el('div', 'sr-key', n, 'Ctrl+' + key);
+        return { n, bg, name, parts, detail: second, hint, head: caption };
+    }
+
+    // The stage's box is narrower for its text than the app's 640 DIPs: a line whose text is
+    // too long in a language takes a smaller font.
+    const shrink = (n, fits) => [10, 9, 8].some(px => {
+        n.style.fontSize = px + 'px';
+        return fits();
+    });
+
+    // The type tabs give up padding before the keys at their right run out of room
+    // (peek_search.rs); the bottom bar keeps its keys clear of the count; a row's second line
+    // shows whole, as it does in the app.
+    function fit(r) {
+        r.rows.forEach(o => {
+            show(o.n, true);
+            shrink(o.detail, () => o.detail.scrollWidth <= o.detail.clientWidth);
+        });
+        shrink(r.tabbar, () => {
+            r.tabs.style.setProperty('--pad', '0px');
+            const spare = BOX.w - 24 - 6 - r.tabKeys.offsetWidth - r.tabs.offsetWidth;
+            const pad = 2 * spare / (4 * TABS.length - 1);
+            r.tabs.style.setProperty('--pad', Math.min(8, Math.max(2, pad)).toFixed(2) + 'px');
+            return pad >= 2;
+        });
+        shrink(r.bar, () => r.barKeys.offsetWidth + r.count.offsetWidth + 10 <= BOX.w - 24);
     }
 
     function sheet(parent) {
@@ -123,17 +164,29 @@
         r.q = query();
         const pinyin = r.q === 'hyjl';
         r.box = el('div', 'sr-box', S);
+        size(r.box, BOX.w, BOX.h + TABS_H);
         el('div', 'sr-glyph', r.box).innerHTML = MAG;
         r.typed = el('div', 'sr-q', r.box);
         r.caret = el('div', 'sr-caret', r.box);
-        r.status = el('div', 'sr-status', r.box);
-        r.line = el('div', 'sr-line', r.box);
-        r.heads = [el('div', 'sr-head', r.box, '栅栏里'), el('div', 'sr-head', r.box, '整台电脑（Everything）')];
+        el('div', 'sr-line', r.box);
+        r.tabbar = el('div', 'sr-tabbar', r.box);
+        r.tabs = el('div', 'sr-tabs', r.tabbar);
+        TABS.forEach((label, i) => el('span', i ? null : 'on', r.tabs, label.split('\x04').pop()));
+        r.tabKeys = el('div', 'sr-tabkeys', r.tabbar, 'Ctrl+Tab');
         r.rows = [
-            row(r.box, { kind: 'docx', name: NAME, detail: FENCES[2].title, key: 1 }),
-            ...FOUND.map(([kind, name, detail], i) => row(r.box, { kind, name, detail, key: i + 2 })),
-            row(r.box, { kind: null, name: '在 Everything 里查看全部结果', detail: '共 {0} 个'.replace('{0}', TOTAL), key: 4 }),
+            row(r.box, { kind: 'docx', name: NAME, detail: FENCES[2].title, head: '栅栏里', key: 1 }),
+            ...FOUND.map(([kind, name, detail], i) => row(r.box, { kind, name, detail, key: i + 2,
+                head: i ? null : '整台电脑（Everything）' })),
+            row(r.box, { glyph: MAG, name: '在 Everything 里查看全部结果', detail: '共 {0} 个'.replace('{0}', TOTAL),
+                head: '操作', key: 4 }),
+            row(r.box, { glyph: PIN, name: '把这次搜索放到桌面', detail: '新建一个智能栅栏，结果跟着文件自动更新', key: 5 }),
         ];
+        r.bar = el('div', 'sr-bar', r.box);
+        r.barKeys = el('div', 'sr-barkeys', r.bar);
+        [['↵', '打开'], ['Ctrl+Enter', '打开所在文件夹'], ['→', '更多操作']].forEach(([k, what]) => {
+            el('span', null, r.barKeys, k + ' ' + what);
+        });
+        r.count = el('div', 'sr-count', r.bar, COUNT.replace('{0}', TOTAL));
         r.rows.forEach((o, i) => {
             const [a, b] = i < 3 ? marks(o.name, r.q, pinyin) : [0, 0];
             const chars = [...o.name];
@@ -175,6 +228,10 @@
         // the box: typed text, the list growing as the fence rows and then Everything's arrive
         const boxOn = t >= PEEK_ON + .03 && t < ENTER + .1;
         if (show(r.box, boxOn)) {
+            if (!r.fitted && r.tabKeys.offsetWidth) {
+                fit(r);
+                r.fitted = true;
+            }
             const o = Math.min(ramp(t, PEEK_ON + .03, PEEK_ON + .13, E.lin), 1 - ramp(t, ENTER, ENTER + .1, E.lin));
             put(r.box, BOX.x, BOX.y, o, ` scale(${lerp(.98, 1, ramp(t, PEEK_ON, PEEK_ON + .2)).toFixed(4)})`);
             const n = t < TYPE_AT ? 0 : Math.min(r.q.length, 1 + Math.floor((t - TYPE_AT) / TYPE_STEP));
@@ -184,28 +241,25 @@
 
             const fenceRows = t >= FENCE_ROWS, evRows = t >= EV_ROWS;
             const sel = t >= DOWN ? 1 : 0;
-            text(r.status, !fenceRows ? '' : evRows ? `${sel + 1} / 3` : '1 / 1');
-            show(r.line, fenceRows);
-            let y = BOX.h + GAP;
-            show(r.heads[0], evRows);
-            if (evRows) {
-                put(r.heads[0], 12, y);
-                y += HEAD_H;
-            }
+            let y = BOX.h + TABS_H + GAP;
             r.rows.forEach((o, i) => {
                 const on = i === 0 ? fenceRows : evRows;
-                if (!show(o.n, on)) return;
-                if (i === 1) {
-                    show(r.heads[1], true);
-                    put(r.heads[1], 12, y, ramp(t, EV_ROWS, EV_ROWS + .12, E.lin));
+                const a = i === 0 ? 1 : ramp(t, EV_ROWS, EV_ROWS + .12, E.lin);
+                if (o.head && show(o.head, on)) {
+                    put(o.head, 12, y, a);
                     y += HEAD_H;
                 }
-                put(o.n, 0, y, i === 0 ? 1 : ramp(t, EV_ROWS, EV_ROWS + .12, E.lin));
+                if (!show(o.n, on)) return;
+                put(o.n, 0, y, a);
                 o.bg.style.opacity = i === sel ? 1 : 0;
+                o.hint.style.opacity = i === sel ? 1 : 0;
                 y += ROW_H;
             });
-            if (!evRows) show(r.heads[1], false);
-            size(r.box, BOX.w, fenceRows ? y + PAD_B : BOX.h);
+            // the bar ends the list; before the first rows the box is the text and the tabs
+            y = fenceRows ? y + 2 * GAP : BOX.h + TABS_H;
+            put(r.bar, 0, y);
+            text(r.count, COUNT.replace('{0}', evRows ? TOTAL : 1));
+            size(r.box, BOX.w, fenceRows ? y + BAR_H : y);
         }
 
         // fences: the match lights up (the current row also gets the focus frame), the rest fade

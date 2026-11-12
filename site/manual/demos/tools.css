@@ -20,8 +20,25 @@
 .sr-glyph svg { position: static; display: block; width: 16px; height: 16px }
 .sr-q { left: 40px; top: 0; font-size: 15px; line-height: 44px; white-space: pre }
 .sr-caret { top: 13px; width: 1px; height: 18px; background: #1e1e1e }
-.sr-status { right: 14px; top: 0; color: #5f5f5f; font-size: 11.5px; line-height: 44px; white-space: nowrap }
 .sr-line { left: 0; right: 0; top: 44px; height: 1px; background: #e0e0e0 }
+
+/* the type tabs: the chosen one in an accent-tinted capsule, the keys at the right end */
+.sr-tabbar {
+    left: 0;
+    right: 0;
+    top: 44px;
+    height: 28px;
+    box-shadow: inset 0 -1px 0 #e0e0e0;
+    color: #5f5f5f;
+    font-size: 10px;
+    line-height: 18px;
+    white-space: nowrap;
+}
+
+.sr-tabs { left: calc(12px - var(--pad, 8px) / 2); top: 5px; display: flex; gap: 1.5px }
+.sr-tabs span { position: static; padding: 0 var(--pad, 8px); border-radius: 9px }
+.sr-tabs .on { background: #d9e8f7; color: #2a5bd7 }
+.sr-tabkeys { right: 12px; top: 5px }
 
 .sr-head {
     left: 0;
@@ -34,8 +51,11 @@
 }
 
 .sr-row { left: 0; right: 0; top: 0; height: 36px }
-.sr-selbg { left: 4px; right: 4px; top: 0; bottom: 0; background: #e3ebfa; opacity: 0 }
+.sr-selbg { left: 4px; right: 4px; top: 0; bottom: 0; border-radius: 3px; background: #e3ebfa; opacity: 0 }
 .sr-row img { left: 12px; top: 10px; width: 16px; height: 16px }
+/* an action row's glyph, in the accent colour where a file has its icon */
+.sr-act { left: 13px; top: 11px; width: 14px; height: 14px; color: #2a5bd7 }
+.sr-act svg { position: static; display: block; width: 14px; height: 14px }
 
 .sr-name {
     left: 37px;
@@ -50,7 +70,6 @@
 
 .sr-name span, .sr-name b { position: static }
 .sr-name b { color: #2a5bd7; font-weight: inherit }
-.sr-all .sr-name { left: 12px }
 
 .sr-detail {
     left: 37px;
@@ -64,8 +83,24 @@
     text-overflow: ellipsis;
 }
 
-.sr-all .sr-detail { left: 12px }
 .sr-key { right: 12px; top: 0; color: #5f5f5f; font-size: 10px; line-height: 36px; white-space: nowrap }
+
+/* the bar that ends the list: what the keys do, and how many results in all */
+.sr-bar {
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 26px;
+    box-shadow: inset 0 1px 0 #e0e0e0;
+    color: #5f5f5f;
+    font-size: 10px;
+    line-height: 26px;
+    white-space: nowrap;
+}
+
+.sr-barkeys { left: 12px; top: 0; display: flex; gap: 14px }
+.sr-barkeys span { position: static }
+.sr-count { right: 12px; top: 0 }
 
 /* A match in its fence: the selection colour; the current row's item fully, with the focus frame. */
 .ico.sr-hit {
