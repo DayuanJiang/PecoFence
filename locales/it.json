@@ -314,6 +314,7 @@
   "尚无快照": "Nessuna istantanea",
   "点上面的“保存快照”，以后可以随时恢复到现在的布局。": "Fai clic su «Salva istantanea» qui sopra per poter tornare in qualsiasi momento al layout attuale.",
   "尚无每日备份": "Nessun backup giornaliero",
+  "每天第一次有改动时自动备份一份，保留最近 7 份。": "Alla prima modifica di ogni giorno viene creato automaticamente un backup; vengono conservati gli ultimi 7.",
   "每日自动备份": "Backup giornaliero automatico",
   "恢复快照：": "Ripristina istantanea: ",
   "删除快照：": "Elimina istantanea: ",

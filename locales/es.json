@@ -308,6 +308,7 @@
   "尚无快照": "Aún no hay instantáneas",
   "点上面的“保存快照”，以后可以随时恢复到现在的布局。": "Pulsa «Guardar instantánea», arriba, y podrás volver cuando quieras a la distribución actual.",
   "尚无每日备份": "Aún no hay copias diarias",
+  "每天第一次有改动时自动备份一份，保留最近 7 份。": "Se crea una copia automáticamente con el primer cambio de cada día; se conservan las 7 últimas.",
   "每日自动备份": "Copia de seguridad automática diaria",
   "恢复快照：": "Restaurar instantánea: ",
   "删除快照：": "Eliminar instantánea: ",

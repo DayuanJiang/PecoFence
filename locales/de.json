@@ -308,6 +308,7 @@
   "尚无快照": "Noch keine Momentaufnahmen",
   "点上面的“保存快照”，以后可以随时恢复到现在的布局。": "Klick oben auf „Momentaufnahme speichern“, dann kannst du jederzeit zum jetzigen Layout zurückkehren.",
   "尚无每日备份": "Noch keine täglichen Sicherungen",
+  "每天第一次有改动时自动备份一份，保留最近 7 份。": "Bei der ersten Änderung eines Tages wird automatisch eine Sicherung angelegt; die letzten 7 bleiben erhalten.",
   "每日自动备份": "Tägliche automatische Sicherung",
   "恢复快照：": "Momentaufnahme wiederherstellen: ",
   "删除快照：": "Momentaufnahme löschen: ",

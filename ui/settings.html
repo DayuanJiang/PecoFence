@@ -2641,7 +2641,7 @@
     const bl = document.getElementById('backupList');
     const backupFocus = focusBookmark(bl);
     const backups = state.backups || [];
-    bl.innerHTML = backups.length ? '' : `<div class="card"><div class="s">${esc(t("尚无每日备份"))}</div></div>`;
+    bl.innerHTML = backups.length ? '' : `<div class="card"><div class="l"><div><div class="t">${esc(t("尚无每日备份"))}</div><div class="s">${esc(t("每天第一次有改动时自动备份一份，保留最近 7 份。"))}</div></div></div></div>`;
     backups.forEach(bk => {
       const div = document.createElement('div');
       div.className = 'card';

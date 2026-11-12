@@ -3345,8 +3345,9 @@ async function runTests() {
   await test('Empty lists say what to do, the fence picker goes with the last fence, and a long fence name ends before the arrow', async () => {
     doc = await reset();
     const w = win();
-    w.testState.rules.list = []; w.testState.snapshots = []; w.testRefresh(); await settle();
-    const rules = doc.getElementById('ruleList').textContent, snaps = doc.getElementById('snapList').textContent;
+    w.testState.rules.list = []; w.testState.snapshots = []; w.testState.backups = []; w.testRefresh(); await settle();
+    const rules = doc.getElementById('ruleList').textContent, snaps = doc.getElementById('snapList').textContent, backups = doc.getElementById('backupList').textContent;
+    assert(backups.includes('尚无每日备份') && backups.includes('7'), 'No daily backups: the list says only: ' + backups);
     assert(rules.includes('尚未添加规则') && rules.includes('快速添加') && rules.includes('新建规则'), 'No rules: the list says only: ' + rules);
     assert(snaps.includes('尚无快照') && snaps.includes('保存快照'), 'No snapshots: the list says only: ' + snaps);
     doc.querySelector('[data-page=fences]').click();
