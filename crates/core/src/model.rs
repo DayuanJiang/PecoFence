@@ -2134,6 +2134,37 @@ impl Config {
         changed
     }
 
+    /// Gives items other ids (`map`: from, to) wherever this configuration names them: the
+    /// item table and the fences of every layout and every snapshot. An imported file's items
+    /// take the ids this PC has for the same files that way, so the snapshots kept from
+    /// before the import still name the icons.
+    pub fn rename_items(&mut self, map: &HashMap<ItemId, ItemId>) {
+        if map.is_empty() {
+            return;
+        }
+        let to = |id: ItemId| map.get(&id).copied().unwrap_or(id);
+        self.items = std::mem::take(&mut self.items)
+            .into_iter()
+            .map(|(id, mut item)| {
+                item.id = to(id);
+                (item.id, item)
+            })
+            .collect();
+        let layouts = self
+            .layouts
+            .iter_mut()
+            .chain(self.snapshots.iter_mut().flat_map(|s| s.layouts.iter_mut()));
+        for fence in layouts.flat_map(|l| l.fences.iter_mut()) {
+            for r in &mut fence.items {
+                r.item_id = to(r.item_id);
+            }
+            fence.desktop_cells = std::mem::take(&mut fence.desktop_cells)
+                .into_iter()
+                .map(|(id, cell)| (to(id), cell))
+                .collect();
+        }
+    }
+
     pub fn fence_mut(&mut self, layout: usize, id: FenceId) -> Option<&mut Fence> {
         self.layouts
             .get_mut(layout)?
@@ -2891,6 +2922,39 @@ mod tests {
         assert_eq!(c.fence_mut(0, bid).unwrap().items, vec![member(y)]);
         assert_eq!(c.layouts[1].fences, clean.fences);
         assert!(!c.drop_duplicates());
+    }
+
+    #[test]
+    fn renamed_items_are_renamed_in_fences_cells_and_snapshots() {
+        let mut c = Config::default();
+        let mut a = Fence::new("A", FenceKind::Virtual, geo());
+        let (x, y, z) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let member = |item_id| ItemRef {
+            item_id,
+            manual_index: None,
+            assigned_by: AssignedBy::User,
+        };
+        a.items = vec![member(x), member(y)];
+        a.desktop_cells.insert(x, [2, 3]);
+        c.layouts.push(Layout {
+            shown: 0,
+            fingerprint: vec![],
+            fences: vec![a],
+        });
+        c.snapshots.push(Snapshot {
+            id: Uuid::new_v4(),
+            name: "s".into(),
+            ts: 1,
+            layouts: c.layouts.clone(),
+            notes: Default::default(),
+            scripts: Default::default(),
+        });
+        c.rename_items(&HashMap::from([(x, z)]));
+        for fence in [&c.layouts[0].fences[0], &c.snapshots[0].layouts[0].fences[0]] {
+            assert_eq!(fence.items, vec![member(z), member(y)]);
+            assert_eq!(fence.desktop_cells.get(&z), Some(&[2, 3]));
+            assert!(!fence.desktop_cells.contains_key(&x));
+        }
     }
 
     #[test]

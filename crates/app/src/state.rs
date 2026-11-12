@@ -396,6 +396,12 @@ impl AppState {
         // only carries layouts); memberships reference item ids either way.
         if config.items.is_empty() {
             config.items = std::mem::take(&mut self.config.items);
+        } else {
+            // The snapshots kept below (the "…前" undo snapshot among them) name icons by the
+            // ids of the current table: the file's items take those ids, and the records of
+            // files the file does not know stay, or restoring such a snapshot would show
+            // its fences without their icons.
+            self.keep_item_ids(&mut config);
         }
         // Snapshots are local history, including the "…前" undo snapshot the caller just took:
         // never let an import / backup file wipe them. The file's own (by id) fill the free
@@ -433,6 +439,49 @@ impl AppState {
         self.opened_folders.clear();
         self.show_own_views();
         self.dirty = true;
+    }
+
+    /// For a configuration about to replace this one: its items take the ids this PC has for
+    /// the same files (a file from another PC names them under its own Desktop folder), and
+    /// the records of files it does not know move into its table.
+    fn keep_item_ids(&mut self, config: &mut Config) {
+        let prefix = |path: &Option<String>| {
+            path.as_deref()
+                .and_then(|p| ItemKey::from_path(p).as_path().map(dir_prefix))
+        };
+        let (theirs, ours) = (
+            prefix(&config.settings.desktop_path),
+            prefix(&self.config.settings.desktop_path),
+        );
+        // The key this PC has for a file of the incoming configuration.
+        let here = |key: &ItemKey| match (key.as_path(), &theirs, &ours) {
+            (Some(path), Some(theirs), Some(ours)) if theirs != ours => path
+                .strip_prefix(theirs.as_str())
+                .map_or_else(|| key.clone(), |rest| ItemKey::Path(format!("{ours}{rest}"))),
+            _ => key.clone(),
+        };
+        let keys: HashSet<ItemKey> = config.items.values().map(|it| here(&it.key)).collect();
+        let map: HashMap<ItemId, ItemId> = config
+            .items
+            .iter()
+            .filter_map(|(id, item)| {
+                let local = *self.catalog.get(&here(&item.key))?;
+                (local != *id && !config.items.contains_key(&local)).then_some((*id, local))
+            })
+            .collect();
+        config.rename_items(&map);
+        let mut kept = 0usize;
+        for (id, item) in std::mem::take(&mut self.config.items) {
+            if !keys.contains(&item.key) && !config.items.contains_key(&id) {
+                config.items.insert(id, item);
+                kept += 1;
+            }
+        }
+        tracing::debug!(
+            renamed = map.len(),
+            kept,
+            "item ids of this PC kept in the incoming configuration"
+        );
     }
 
     // ---- snapshots ---------------------------------------------------------------------------
@@ -3656,6 +3705,51 @@ mod tests {
         state.replace_config(file);
         assert_eq!(state.fences().len(), fences - 1);
         assert!(state.fences().iter().all(|f| f.title != "Dup"));
+    }
+
+    /// The 「导入配置前」 snapshot names icons by id: the items of an imported file take this
+    /// PC's ids for the same files, also when the file names them under another PC's Desktop
+    /// folder, and a file the import does not know keeps its record.
+    #[test]
+    fn an_import_keeps_the_item_ids_the_snapshots_from_before_name() {
+        let mut state = test_state();
+        state.config.settings.desktop_path = Some("C:/Users/Me/Desktop".into());
+        state.sync_desktop(&[desktop_entry("a.txt"), desktop_entry("b.txt")]);
+        let id_of = |s: &AppState, name: &str| {
+            s.item_by_path(Path::new(&format!("C:/Users/Me/Desktop/{name}")))
+                .unwrap()
+        };
+        let (a, b) = (id_of(&state, "a.txt"), id_of(&state, "b.txt"));
+        // The file: another PC's export. It knows a.txt under its own Desktop folder and id,
+        // and has no b.txt.
+        let mut file = state.config.clone();
+        file.settings.desktop_path = Some("C:/Users/Other/Desktop".into());
+        let other = uuid::Uuid::new_v4();
+        let mut item = file.items.remove(&a).unwrap();
+        file.items.remove(&b);
+        item.id = other;
+        item.key = ItemKey::from_path("C:/Users/Other/Desktop/a.txt");
+        item.path = None;
+        file.items.insert(other, item);
+        for f in &mut file.layouts[0].fences {
+            f.items.retain(|r| r.item_id != b);
+            for r in f.items.iter_mut().filter(|r| r.item_id == a) {
+                r.item_id = other;
+            }
+        }
+        let before = state.save_snapshot("before");
+        state.replace_config(file);
+        state.migrate_desktop_path(Path::new("C:/Users/Me/Desktop"));
+        assert_eq!(id_of(&state, "a.txt"), a);
+        assert_eq!(id_of(&state, "b.txt"), b);
+        assert!(state.restore_snapshot(before));
+        let shown: Vec<ItemId> = state
+            .fences()
+            .iter()
+            .flat_map(|f| f.items.iter().map(|r| r.item_id))
+            .collect();
+        assert!(shown.contains(&a) && shown.contains(&b), "{shown:?}");
+        assert!(state.item(a).is_some() && state.item(b).is_some());
     }
 
     /// Issue #24: unplugging the big monitor, working on the laptop, plugging it back in.
