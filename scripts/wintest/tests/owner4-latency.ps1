@@ -10,6 +10,13 @@
 #                     roll, chevron, tab, icon size, wheel, F2, Delete, double-click, quick hide
 #   --var Part=ACT2   notes, a watched folder and its filter, the tray menu, 设置…, Peek and its search
 #   --var Part=WIN    the same pointer and key actions on Windows' own desktop, PecoFence not running
+#   --var Part=SRCH   the Peek's search box at the first letter, with the app's log times beside the grabs
+#   --var Part=ROLL   a row of four rolled fences: the first under the pointer, the next ones after it
+#                     (--var Rec=before|after records the sweep along the row); Part=COL: the same in a column
+#   --var Part=FILL   the hover and selection fills in the first draws after the input, from the app's log
+#   --var Part=MORE   two file changes within 0.4 s, a new match in a smart fence, a page change in the
+#                     settings window, the whole-computer rows of the Peek search (needs Everything)
+#   --var Part=MORE2  the first right-click menu and the first Peek after the app's start
 #   --var Part=CLEAN  removes what an interrupted run left (test files on the desktop and in the Recycle Bin)
 # Every part writes shots\latency.tsv: part, action, case, first answer ms (median and worst of
 # five), complete ms, ms per grab, the single runs and the app's log lines.
@@ -1433,3 +1440,54 @@ function PartMORE2 {
 
 if ($Part -eq 'MORE') { PartMORE }
 if ($Part -eq 'MORE2') { PartMORE2 }
+
+# COL: rolled fences one below the other (the open one pushes the ones below down, so the next
+# title is found from the fence's place at that moment).
+function PartCOL {
+  trap { PfTrap $_; continue }
+  Case 'COL setup: four rolled fences in a column'
+  [Lat]::Tol = 1
+  CloseWindows
+  $script:AnimWas = [Anim]::Get(); [Anim]::Set($true)
+  LtClean
+  PfStart -Script @('sleep 3600000')
+  Start-Sleep -Seconds 2
+  ClearFences
+  Pf settings set rollUp.hoverSpeed normal | Out-Null
+  $links = L4Links 12
+  WaitL4 12
+  foreach ($k in 0..3) {
+    $t = "L4 竖排 $($k + 1)"
+    Pf fence create --title $t --rect "500,$(120 + 48 * $k),300,240" | Out-Null
+    $a = @($links[(3 * $k)..(3 * $k + 2)]); Pf item move @a --to $t | Out-Null
+  }
+  Start-Sleep -Seconds 2
+  foreach ($k in 0..3) { $t = "L4 竖排 $($k + 1)"; Pf fence roll $t | Out-Null; Start-Sleep -Milliseconds 300 }
+  ParkMouse 1300 860; Start-Sleep -Milliseconds 1500
+  $r0 = @(0..3 | ForEach-Object { $w = (FenceGet "L4 竖排 $($_ + 1)").windowRect; "$($w.y)+$($w.h)" }) -join ' '
+  Check 'COL four rolled fences one below the other' ($true) "top+height: $r0"
+
+  Case 'COL the first rolled fence, then the one below it'
+  $log = ''
+  foreach ($k in 1..3) {
+    ParkMouse 1300 860; Start-Sleep -Milliseconds 1800
+    $w = (FenceGet 'L4 竖排 1').windowRect
+    [Lat]::Region($w.x + 20, $w.y + 44, 200, 150)
+    $r = LatWatch 1000 @(0, ($w.x + 120), ($w.y + 18))
+    Add1 'col1' (After $r 0 1000)
+    # Where the second fence's title is now (pushed down by the open one).
+    $w2 = (FenceGet 'L4 竖排 2').windowRect
+    [Lat]::Region($w2.x + 20, $w2.y + 44, 200, 150)
+    $pos = LogPos
+    $r = LatWatch 1000 @(0, ($w2.x + 120), ($w2.y + 18))
+    $m = After $r 0 1000
+    Add1 'col2' $m
+    Start-Sleep -Milliseconds 150
+    if ($k -eq 1) { $log = "second title at y=$($w2.y) | " + (LogLines $pos $r.utc 'hover expand') }
+  }
+  Row 'a rolled fence under the pointer (expands)' 'the first of a column, 展开快慢 默认' 'col1'
+  Row 'the next rolled fence after one expanded under the pointer' 'the one below it in a column' 'col2' $log
+  LtEnd
+}
+
+if ($Part -eq 'COL') { PartCOL }
