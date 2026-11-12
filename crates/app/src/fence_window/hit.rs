@@ -274,17 +274,23 @@ impl FenceViewState {
     /// DIPs and the rolled count's room at the right.
     fn lone_title_row(&self) -> (f32, f32) {
         let width = self.chrome_panel.size_px().0 as f32 / self.scale();
+        // As drawn (`render`, `FenceChrome::draw`): a note, a clock and a script fence show
+        // no count, and a left-aligned title leaves only the count's text free. With the
+        // whole box always kept, a title shown whole got a tip that repeated it, and the name
+        // box of a tool fence's centred or right-aligned title stood up to 64 DIPs left.
         let reserve = if self.roll_target()
             && !self.behavior.hide_count_and_chevron.get()
-            && self.title_count.is_none()
-            && self.filter_tag.is_none()
+            && self.shows_rolled_count()
         {
-            pecofence_render::fence_chrome::header_count_width(
+            let caption = self.rolled_count_caption();
+            let count_w = pecofence_render::fence_chrome::header_count_width(
                 width - self.laid_deco().lock_w(),
                 1,
                 self.deco.title_x(),
-                self.rolled_count_room(),
-            )
+                self.chrome.rolled_count_room(&caption),
+            );
+            self.chrome
+                .rolled_count_reserve(&caption, count_w, self.behavior.title_align.get(), 1)
         } else {
             0.0
         };

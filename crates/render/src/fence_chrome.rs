@@ -2374,6 +2374,24 @@ impl FenceChrome {
             .max(ROLLED_COUNT_W)
     }
 
+    /// What a single title leaves free for the rolled count, whose box is `count_w` wide
+    /// ([`header_count_width`]): a left-aligned title runs on to 12 DIPs before the count's
+    /// text, a centred or right-aligned one keeps the whole box. The drawing and the app's
+    /// hit testing (is the title cut, where does its name box go) both take it from here.
+    pub fn rolled_count_reserve(
+        &self,
+        caption: &str,
+        count_w: f32,
+        align: pecofence_core::TitleAlign,
+        tabs: usize,
+    ) -> f32 {
+        if count_w > 0.0 && tabs <= 1 && matches!(align, pecofence_core::TitleAlign::Left) {
+            (crate::text::measure_width(caption, &self.count_format) + 4.0 + 12.0).min(count_w)
+        } else {
+            count_w
+        }
+    }
+
     /// Does a tab caption fit its pill of width `w` without ellipsis (tooltip decision)?
     pub fn tab_title_fits(
         &self,
@@ -3191,13 +3209,7 @@ impl FenceChrome {
         // cut 40 DIPs early. Centred and right-aligned titles keep the whole box, which the
         // app places their glyphs with (`header_count_width`).
         let count_room = match caption {
-            Some(text)
-                if count_w > 0.0
-                    && tabs.len() <= 1
-                    && matches!(style.title_align, pecofence_core::TitleAlign::Left) =>
-            {
-                (crate::text::measure_width(text, &self.count_format) + 4.0 + 12.0).min(count_w)
-            }
+            Some(text) => self.rolled_count_reserve(text, count_w, style.title_align, tabs.len()),
             _ => count_w,
         };
         let title_reserve = if caption.is_some() {
