@@ -44,6 +44,9 @@ pub struct AppState {
     opened_folders: HashMap<FenceId, OpenedFolder>,
     /// Portals whose folder could not be found at the last read.
     portal_missing: HashSet<FenceId>,
+    /// Fences whose view or sort order just changed with the folder they show
+    /// (`follow_folder_view`), until their window has taken it (`take_folder_view_changed`).
+    folder_view_changed: HashSet<FenceId>,
     /// When the youngest `.tmp` the rules skipped as too new has lasted `TMP_SETTLE_SECS`
     /// (Unix seconds): the App syncs the desktop again then (`take_tmp_settle_at`).
     tmp_settle_at: std::cell::Cell<Option<i64>>,
@@ -267,6 +270,7 @@ impl AppState {
             portal_cwd: HashMap::new(),
             opened_folders: HashMap::new(),
             portal_missing: HashSet::new(),
+            folder_view_changed: HashSet::new(),
             tmp_settle_at: std::cell::Cell::new(None),
             work_areas,
             unplaced: Vec::new(),
@@ -295,6 +299,7 @@ impl AppState {
             }
         }
         state.rebuild_catalog();
+        state.show_own_views();
         if state.config.drop_duplicates() {
             tracing::warn!("duplicate fences or memberships in the configuration dropped");
             state.dirty = true;
@@ -426,6 +431,7 @@ impl AppState {
         self.normalize_tabs();
         self.portal_cwd.clear();
         self.opened_folders.clear();
+        self.show_own_views();
         self.dirty = true;
     }
 
@@ -526,6 +532,7 @@ impl AppState {
             portal_cwd: HashMap::new(),
             opened_folders: HashMap::new(),
             portal_missing: HashSet::new(),
+            folder_view_changed: HashSet::new(),
             tmp_settle_at: std::cell::Cell::new(None),
             work_areas: self.work_areas.clone(),
             unplaced: Vec::new(),
@@ -548,6 +555,7 @@ impl AppState {
         self.normalize_tabs();
         self.portal_cwd.clear();
         self.opened_folders.clear();
+        self.show_own_views();
         self.dirty = true;
     }
 
@@ -1844,6 +1852,62 @@ impl AppState {
         self.portal_missing.contains(&id)
     }
 
+    /// The folder `id` shows away from its own folder or icons, as the key its view and sort
+    /// order are remembered under; None at its own.
+    fn folder_view_key(&self, id: FenceId) -> Option<String> {
+        if !self.can_go_up(id) {
+            return None;
+        }
+        self.portal_path(id)
+            .map(|p| p.to_string_lossy().to_lowercase())
+    }
+
+    /// `id` showed `before` (`folder_view_key`) and may show another folder now: the view and
+    /// sort order of the folder left are remembered and those of the folder shown now come
+    /// back, as File Explorer keeps them per folder (feedback #131). Call before the folder
+    /// is read, which sorts its items.
+    fn follow_folder_view(&mut self, id: FenceId, before: Option<String>) {
+        let now = self.folder_view_key(id);
+        if now == before {
+            return;
+        }
+        let Some(f) = self.fence_mut(id) else {
+            return;
+        };
+        let changed = f.show_folder_view(before.as_deref(), now.as_deref());
+        tracing::debug!(
+            %id,
+            own_before = before.is_none(),
+            own_now = now.is_none(),
+            remembered = f.folder_views.len(),
+            changed,
+            layout = ?f.view.layout,
+            sort = ?f.view.sort,
+            "folder view: the fence shows another folder"
+        );
+        if changed {
+            self.folder_view_changed.insert(id);
+        }
+        self.dirty = true;
+    }
+
+    /// Whether `id`'s view or sort order changed with the folder it shows since the last call.
+    pub fn take_folder_view_changed(&mut self, id: FenceId) -> bool {
+        self.folder_view_changed.remove(&id)
+    }
+
+    /// Every fence shows its own folder or icons (a start, an import, a snapshot): a fence
+    /// that was saved while it showed another folder takes its own view and order again.
+    fn show_own_views(&mut self) {
+        for layout in &mut self.config.layouts {
+            for f in &mut layout.fences {
+                if f.show_own_view() {
+                    tracing::debug!(id = %f.id, "folder view: saved inside a folder, own view again");
+                }
+            }
+        }
+    }
+
     /// Navigates a portal into `dir` (must be inside its root). Returns false if refused.
     pub fn portal_enter(&mut self, id: FenceId, dir: &Path) -> bool {
         let Some(root) = self.folder_root(id) else {
@@ -1857,6 +1921,7 @@ impl AppState {
         let (Some(rk), Some(dk)) = (root_key.as_path(), dir_key.as_path()) else {
             return false;
         };
+        let shown = self.folder_view_key(id);
         if dk == rk {
             self.portal_cwd.remove(&id);
         } else if dk.starts_with(&dir_prefix(rk)) {
@@ -1864,6 +1929,7 @@ impl AppState {
         } else {
             return false;
         }
+        self.follow_folder_view(id, shown);
         self.refresh_portal(id);
         true
     }
@@ -1875,6 +1941,7 @@ impl AppState {
         if self.fence(id).is_none_or(|f| !f.holds_items()) || !dir.is_dir() {
             return false;
         }
+        let shown = self.folder_view_key(id);
         self.portal_cwd.remove(&id);
         let root = folder_path_with_real_case(dir);
         // A drive's root has no name of its own: Explorer titles it "Local Disk (C:)".
@@ -1893,6 +1960,7 @@ impl AppState {
                 opened_by,
             },
         );
+        self.follow_folder_view(id, shown);
         self.refresh_portal(id);
         true
     }
@@ -1917,9 +1985,11 @@ impl AppState {
     /// Leaves the folder opened in regular fence `id`: it shows its own icons again. False when
     /// it shows none.
     fn leave_opened_folder(&mut self, id: FenceId) -> bool {
+        let shown = self.folder_view_key(id);
         if self.opened_folders.remove(&id).is_none() {
             return false;
         }
+        self.follow_folder_view(id, shown);
         self.portal_missing.remove(&id);
         self.evict_portal_members(id);
         true
@@ -1934,7 +2004,9 @@ impl AppState {
         match cur.parent() {
             Some(parent) => self.portal_enter(id, parent),
             None => {
+                let shown = self.folder_view_key(id);
                 self.portal_cwd.remove(&id);
+                self.follow_folder_view(id, shown);
                 self.refresh_portal(id);
                 true
             }
@@ -1943,7 +2015,9 @@ impl AppState {
 
     /// Back to the root folder: a portal's own, or the folder opened in a regular fence.
     pub fn portal_home(&mut self, id: FenceId) -> bool {
+        let shown = self.folder_view_key(id);
         if self.portal_cwd.remove(&id).is_some() {
+            self.follow_folder_view(id, shown);
             self.refresh_portal(id);
             true
         } else {
@@ -2049,7 +2123,9 @@ impl AppState {
             && !cwd.is_dir()
         {
             tracing::info!(%id, folder = %cwd.display(), "portal subfolder vanished; back to root");
+            let shown = self.folder_view_key(id);
             self.portal_cwd.remove(&id);
+            self.follow_folder_view(id, shown);
         }
         let Some(dir) = self.portal_path(id) else {
             return false;
@@ -3391,6 +3467,7 @@ mod tests {
             portal_cwd: HashMap::new(),
             opened_folders: HashMap::new(),
             portal_missing: HashSet::new(),
+            folder_view_changed: HashSet::new(),
             tmp_settle_at: std::cell::Cell::new(None),
             work_areas,
             unplaced: Vec::new(),

@@ -153,3 +153,65 @@ Check 'Shift+Enter in a to-do starts a plain line' ($t -match "(?m)^\[ \] 买菜
 Case 'TD cleanup'
 PfQuit
 }
+
+if ($Part -eq 'FV') {
+Case 'FV setup'
+$root = "$PfRun\资料"
+New-Item -ItemType Directory -Force "$root\照片合集", "$root\合同" | Out-Null
+foreach ($n in '说明.txt', '预算表.txt') { Set-Content -LiteralPath "$root\$n" 'x' }
+foreach ($n in '海边.txt', '山上的日出.txt', '城市.txt') { Set-Content -LiteralPath "$root\照片合集\$n" 'x' }
+foreach ($n in '租房合同.txt', '补充协议.txt') { Set-Content -LiteralPath "$root\合同\$n" 'x' }
+PfStart -Lang 'zh-CN' -Script (DumpScript 500 25 3000)
+Start-Sleep -Seconds 3
+ClearFences
+$r = PfJson fence create --portal $root --title '资料' --rect '300,120,460,300'
+$fid = "$($r.fence.id)"
+Start-Sleep -Seconds 2
+# The view and order the configuration holds for the fence, and the view its window draws
+# (the window's title is the folder shown).
+function FvView($shown) {
+  $f = FenceGet $fid; $d = DumpOf $shown 3
+  return "$($f.layout)/$($f.sort)/$($f.reverse)/window=$("$(DumpVal $d 'layout')".ToLower())"
+}
+function FvCrop($name) { $d = DumpOf '资料' 2; if (-not $d) { $d = DumpOf '照片合集' 2 }; if ($d) { Crop $name ($d.l - 10) ($d.t - 10) ($d.r - $d.l + 20) ($d.b - $d.t + 20) | Out-Null } }
+Pf fence set $fid layout list | Out-Null
+Pf fence set $fid sort name | Out-Null
+Start-Sleep -Milliseconds 800
+$v0 = FvView '资料'
+Check 'the folder fence shows its folder as a list, by name' ($fid -and $v0 -eq 'list/name/False/window=list') "id=$fid view=$v0"
+
+Case 'FV a subfolder gets its own view and order'
+Pf fence open-folder $fid '照片合集' | Out-Null; Start-Sleep -Milliseconds 1200
+$v1 = FvView '照片合集'
+Check 'a subfolder never changed opens in the fence''s own view' ($v1 -eq 'list/name/False/window=list') "view=$v1"
+Pf fence set $fid layout details | Out-Null
+Pf fence set $fid sort date | Out-Null
+Start-Sleep -Milliseconds 800
+$v2 = FvView '照片合集'
+FvCrop 'fv-1-subfolder-details'
+Pf fence up $fid | Out-Null; Start-Sleep -Milliseconds 1200
+$v3 = FvView '资料'
+FvCrop 'fv-2-back-at-the-root'
+Check 'the subfolder was changed to details, by date' ($v2 -eq 'details/date/False/window=details') "view=$v2"
+Check 'back at its own folder the fence shows its own view and order again' ($v3 -eq 'list/name/False/window=list') "view=$v3 (the subfolder had $v2)"
+Pf fence open-folder $fid '合同' | Out-Null; Start-Sleep -Milliseconds 1200
+$v4 = FvView '合同'
+Check 'another subfolder, never changed, opens in the fence''s own view' ($v4 -eq 'list/name/False/window=list') "view=$v4"
+Pf fence up $fid | Out-Null; Start-Sleep -Milliseconds 800
+Pf fence open-folder $fid '照片合集' | Out-Null; Start-Sleep -Milliseconds 1200
+$v5 = FvView '照片合集'
+Check 'the changed subfolder opens in the view and order it was left in' ($v5 -eq 'details/date/False/window=details') "view=$v5"
+
+Case 'FV remembered after a restart'
+PfQuit
+PfStart -Lang 'zh-CN' -Script (DumpScript 500 25 3000)
+Start-Sleep -Seconds 4
+$v6 = FvView '资料'
+Pf fence open-folder $fid '照片合集' | Out-Null; Start-Sleep -Milliseconds 1200
+$v7 = FvView '照片合集'
+Check 'after a restart inside the subfolder the fence starts at its own folder in its own view' ($v6 -eq 'list/name/False/window=list') "view=$v6"
+Check 'the subfolder still opens in its own view' ($v7 -eq 'details/date/False/window=details') "view=$v7"
+
+Case 'FV cleanup'
+PfQuit
+}

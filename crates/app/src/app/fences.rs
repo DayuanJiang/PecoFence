@@ -178,8 +178,11 @@ impl App {
     pub(super) fn refresh_fence(&mut self, id: FenceId) {
         let host = self.state.host_of(id);
         let active = self.state.active_tab_of(host);
+        // The fence shows another folder, which has a view or order of its own (feedback
+        // #131): its items arrive in that view, as a tab's do.
+        let folder_view = self.state.take_folder_view_changed(id);
         if let Some(w) = self.fences.get(&host) {
-            let switching = w.active_fence() != active;
+            let switching = w.active_fence() != active || folder_view;
             w.set_tabs(self.tab_views(host), active);
             if active == id
                 && let Some(f) = self.state.fence(id)
@@ -205,6 +208,10 @@ impl App {
         self.apply_portal_deco(host);
         self.apply_auto_height(host);
         self.sync_hidden_fences();
+        if folder_view {
+            // The settings page shows the view and order of the folder shown now.
+            self.push_settings_state();
+        }
     }
 
     /// 为空时自动隐藏: a fence's window goes with its last item and comes back with the next

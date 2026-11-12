@@ -880,6 +880,63 @@ pub struct FenceView {
     pub icon_align: IconAlign,
 }
 
+/// What a fence remembers for one folder it showed: the view and the sort order, which
+/// File Explorer also keeps per folder (feedback #131).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct FolderView {
+    /// The folder's path in lower case. Empty: the fence's own view and order (of a folder
+    /// fence's own folder, of another fence's icons), kept here while it shows another folder.
+    pub path: String,
+    pub layout: ViewLayout,
+    pub sort: SortMode,
+    #[serde(default)]
+    pub reverse: bool,
+    #[serde(default)]
+    pub group_by_date: bool,
+    #[serde(default)]
+    pub folders_first: bool,
+}
+
+impl FolderView {
+    fn of(path: &str, view: &FenceView) -> Self {
+        Self {
+            path: path.to_string(),
+            layout: view.layout,
+            sort: view.sort,
+            reverse: view.reverse,
+            group_by_date: view.group_by_date,
+            folders_first: view.folders_first,
+        }
+    }
+
+    fn apply(&self, view: &mut FenceView) {
+        view.layout = self.layout;
+        view.sort = self.sort;
+        view.reverse = self.reverse;
+        view.group_by_date = self.group_by_date;
+        view.folders_first = self.folders_first;
+    }
+
+    /// The same view and order, whatever the folder.
+    fn same_view(&self, other: &Self) -> bool {
+        (
+            self.layout,
+            self.sort,
+            self.reverse,
+            self.group_by_date,
+            self.folders_first,
+        ) == (
+            other.layout,
+            other.sort,
+            other.reverse,
+            other.group_by_date,
+            other.folders_first,
+        )
+    }
+}
+
 impl Default for FenceView {
     fn default() -> Self {
         Self {
@@ -1146,6 +1203,11 @@ pub struct Fence {
     /// the registry (`{GUID}`); empty = every desktop. A window with tabs follows its host's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub virtual_desktops: Vec<String>,
+    /// View and sort order of the folders it showed that differ from its own, the one shown
+    /// last at the end, at most [`Fence::MAX_FOLDER_VIEWS`] (see `show_folder_view`). `view`
+    /// is always what the fence shows now.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub folder_views: Vec<FolderView>,
     #[serde(default)]
     pub items: Vec<ItemRef>,
 }
@@ -1179,7 +1241,64 @@ impl Fence {
             tool: None,
             smart: None,
             virtual_desktops: Vec::new(),
+            folder_views: Vec::new(),
             items: Vec::new(),
+        }
+    }
+
+    /// How many folders a fence remembers a view for; the one shown longest ago goes first.
+    pub const MAX_FOLDER_VIEWS: usize = 50;
+
+    /// The fence stops showing `from` and shows `to` (a folder's path in lower case; None:
+    /// its own folder or its own icons). The view and sort order of `from` are remembered
+    /// when they differ from the fence's own, and `view` becomes what was remembered for
+    /// `to`: a folder never changed takes the fence's own. Returns whether `view` changed.
+    pub fn show_folder_view(&mut self, from: Option<&str>, to: Option<&str>) -> bool {
+        let before = FolderView::of("", &self.view);
+        // At its own folder or icons, `view` is the fence's own; away from them it waits in
+        // the entry without a path.
+        let waiting = self.folder_views.iter().find(|v| v.path.is_empty());
+        let own = match (from, waiting) {
+            (Some(_), Some(own)) => own.clone(),
+            _ => before.clone(),
+        };
+        self.folder_views.retain(|v| !v.path.is_empty());
+        if let Some(path) = from {
+            self.folder_views.retain(|v| v.path != path);
+            if !before.same_view(&own) {
+                self.folder_views.push(FolderView::of(path, &self.view));
+            }
+        }
+        let kept = to.and_then(|path| self.folder_views.iter().position(|v| v.path == path));
+        let now = match kept {
+            // Shown last: to the end.
+            Some(i) => {
+                let kept = self.folder_views.remove(i);
+                self.folder_views.push(kept.clone());
+                kept
+            }
+            None => own.clone(),
+        };
+        if self.folder_views.len() > Self::MAX_FOLDER_VIEWS {
+            self.folder_views.remove(0);
+        }
+        if to.is_some() {
+            self.folder_views.insert(0, own);
+        }
+        now.apply(&mut self.view);
+        !now.same_view(&before)
+    }
+
+    /// The fence shows its own folder or icons again without having gone back there (a
+    /// start, an import, a snapshot: where it was is not saved): its own view and order
+    /// return. Returns whether there was one waiting.
+    pub fn show_own_view(&mut self) -> bool {
+        match self.folder_views.iter().position(|v| v.path.is_empty()) {
+            Some(i) => {
+                self.folder_views.remove(i).apply(&mut self.view);
+                true
+            }
+            None => false,
         }
     }
 
@@ -2092,6 +2211,83 @@ pub fn now_unix() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A folder fence keeps view and sort order per folder (feedback #131): a folder whose
+    /// view was changed gets it back, a folder never changed takes the fence's own, and the
+    /// fence's own returns at its own folder.
+    #[test]
+    fn folder_views_follow_the_folder_shown() {
+        let mut f = Fence::new("Docs", FenceKind::FolderPortal, geo());
+        f.view.sort = SortMode::Name;
+        let look = |f: &Fence| (f.view.layout, f.view.sort, f.view.reverse);
+        // Into a subfolder never seen: the fence's own view.
+        assert!(!f.show_folder_view(None, Some(r"c:\docs\a")));
+        assert_eq!(look(&f), (ViewLayout::Icons, SortMode::Name, false));
+        // Changed there, then up: the fence's own again.
+        f.view.layout = ViewLayout::Details;
+        f.view.sort = SortMode::Date;
+        f.view.reverse = true;
+        assert!(f.show_folder_view(Some(r"c:\docs\a"), None));
+        assert_eq!(look(&f), (ViewLayout::Icons, SortMode::Name, false));
+        assert_eq!(f.folder_views.len(), 1);
+        // The fence's own view changed at its own folder; another subfolder takes it.
+        f.view.layout = ViewLayout::List;
+        assert!(!f.show_folder_view(None, Some(r"c:\docs\b")));
+        assert_eq!(look(&f), (ViewLayout::List, SortMode::Name, false));
+        // From there straight into the folder that was changed: what it had.
+        assert!(f.show_folder_view(Some(r"c:\docs\b"), Some(r"c:\docs\a")));
+        assert_eq!(look(&f), (ViewLayout::Details, SortMode::Date, true));
+        // Only folders that differ from the fence's own are kept (and its own while away).
+        let paths: Vec<&str> = f.folder_views.iter().map(|v| v.path.as_str()).collect();
+        assert_eq!(paths, vec!["", r"c:\docs\a"]);
+        // Set back to the fence's own there: forgotten.
+        f.view.layout = ViewLayout::List;
+        f.view.sort = SortMode::Name;
+        f.view.reverse = false;
+        assert!(!f.show_folder_view(Some(r"c:\docs\a"), None));
+        assert!(f.folder_views.is_empty());
+        // The saved file of a fence that was inside a folder: its own view returns at the start.
+        f.show_folder_view(None, Some(r"c:\docs\a"));
+        f.view.layout = ViewLayout::Details;
+        let saved: Fence = serde_json::from_str(&serde_json::to_string(&f).unwrap()).unwrap();
+        let mut loaded = saved;
+        assert!(loaded.show_own_view());
+        assert_eq!(loaded.view.layout, ViewLayout::List);
+        assert!(loaded.folder_views.is_empty());
+        assert!(!loaded.show_own_view());
+        // A configuration from before has no table and reads as before.
+        let mut old = serde_json::to_value(Fence::new("x", FenceKind::Virtual, geo())).unwrap();
+        assert!(old.get("folderViews").is_none());
+        old.as_object_mut().unwrap().remove("folderViews");
+        assert!(
+            serde_json::from_value::<Fence>(old)
+                .unwrap()
+                .folder_views
+                .is_empty()
+        );
+    }
+
+    /// At most `MAX_FOLDER_VIEWS` folders are remembered: the one shown longest ago goes.
+    #[test]
+    fn folder_views_are_bounded() {
+        let mut f = Fence::new("Docs", FenceKind::FolderPortal, geo());
+        let mut from: Option<String> = None;
+        for i in 0..Fence::MAX_FOLDER_VIEWS + 5 {
+            let to = format!(r"c:\docs\{i}");
+            f.show_folder_view(from.as_deref(), Some(&to));
+            f.view.layout = ViewLayout::Details;
+            from = Some(to);
+        }
+        f.show_folder_view(from.as_deref(), None);
+        assert_eq!(f.folder_views.len(), Fence::MAX_FOLDER_VIEWS);
+        assert_eq!(f.folder_views[0].path, r"c:\docs\5");
+        assert_eq!(f.view.layout, ViewLayout::Icons);
+        // Shown again: it moves to the end and is the last to go.
+        f.show_folder_view(None, Some(r"c:\docs\5"));
+        assert_eq!(f.view.layout, ViewLayout::Details);
+        f.show_folder_view(Some(r"c:\docs\5"), None);
+        assert_eq!(f.folder_views.last().unwrap().path, r"c:\docs\5");
+    }
 
     #[test]
     fn search_history_counts_and_ages() {
