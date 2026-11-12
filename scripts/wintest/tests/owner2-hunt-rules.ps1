@@ -119,6 +119,11 @@ if ($Part -match 'R') {
   $r = Pf rule add --name '到智能栅栏' --ext 'hr2s' --to '最近的文档'
   Check 'rule add --to a smart fence is refused' ($r -match '"code":"unsupported"' -and $r -match 'smart fence') ($r -replace '\s+', ' ')
   Check 'no such rule was added' (-not (Rules | Where-Object { $_.name -eq '到智能栅栏' }))
+  # A rule list whose rules point to a fence that is not there: stored, with a warning.
+  $rl = Pf rule list
+  HrUtf8 "$PfRun\hr2-rules-astray.json" ($rl -replace '"fence":\s*"[0-9a-f-]+"', '"fence":"00000000-0000-0000-0000-000000000001"')
+  $imp = Pf rule import "$PfRun\hr2-rules-astray.json"
+  Check 'rule import warns about rules whose fence does not exist' ($imp -match '"warning"' -and $imp -match 'target a fence that does not exist') ($imp -replace '\s+', ' ').Substring(0, [Math]::Min(160, ($imp -replace '\s+', ' ').Length))
   PfQuit
 }
 

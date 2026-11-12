@@ -1118,6 +1118,19 @@ impl App {
                 let before = self.state.config.rules.clone();
                 self.set_rules(rules.clone());
                 let changed = self.state.config.rules != before;
+                // Stored as given, but such a rule files nothing where it says.
+                let astray = rules
+                    .list
+                    .iter()
+                    .filter(|r| {
+                        matches!(r.target, Target::Fence(id) if self.state.routable_fence(id).is_none())
+                    })
+                    .count();
+                if astray > 0 {
+                    self.ipc_warnings.push(format!(
+                        "{astray} rule(s) target a fence that does not exist or holds no desktop items (a folder, tool or smart fence); their matches go to the inbox"
+                    ));
+                }
                 self.push_settings_state();
                 Ok(mutation(
                     changed,
