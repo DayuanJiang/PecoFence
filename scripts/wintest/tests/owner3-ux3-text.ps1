@@ -207,10 +207,13 @@ $c = CRect $w
 [G]::Type(' 西红柿'); Start-Sleep -Milliseconds 300
 [G]::Type(' 鸡蛋'); Start-Sleep -Milliseconds 400
 $typed = [T3]::EdText()
+FCrop 'u1-1-typed' $w
 Chord 0x11 0x5A; Start-Sleep -Milliseconds 400
 $z1 = [T3]::EdText()
+FCrop 'u1-2-ctrl-z' $w
 Chord 0x11 0x5A; Start-Sleep -Milliseconds 400
 $z2 = [T3]::EdText()
+FCrop 'u1-3-ctrl-z-again' $w
 Chord 0x11 0x5A; Start-Sleep -Milliseconds 400
 $z3 = [T3]::EdText()
 Chord 0x11 0x59; Start-Sleep -Milliseconds 400
@@ -266,6 +269,12 @@ $b0 = $boxes[0]; $b1 = $boxes[1]
 [G]::Click($c[0] + [int]$b0[2] + 60, $c[1] + [int](($b0[1] + $b0[3]) / 2)); Start-Sleep -Milliseconds 700
 $open0 = EditorOpen
 [G]::Type('大'); Start-Sleep -Milliseconds 300
+$rest1 = [Px]::Grab($c[0] + [int]$b1[0], $c[1] + [int]$b1[1], 16, 16)
+[G]::MoveTo($c[0] + [int](($b1[0] + $b1[2]) / 2), $c[1] + [int](($b1[1] + $b1[3]) / 2)); Start-Sleep -Milliseconds 500
+$cursorBoxEdit = [T3]::Cursor()
+$hover1 = [Px]::Grab($c[0] + [int]$b1[0], $c[1] + [int]$b1[1], 16, 16)
+$boxDiff = [Px]::Diff($rest1, $hover1, 0, 15, 0, 15)
+Check 'while the note is edited a check box under the pointer keeps the arrow and lights up' ($cursorBoxEdit -eq 'arrow' -and $boxDiff -gt 0.5) "cursor: $cursorBoxEdit; the box differs from the one at rest by $boxDiff"
 [G]::Click($c[0] + [int](($b1[0] + $b1[2]) / 2), $c[1] + [int](($b1[1] + $b1[3]) / 2)); Start-Sleep -Milliseconds 700
 $open1 = EditorOpen
 $k1 = [T3]::EdText()
@@ -299,10 +308,16 @@ $nlinks = if ($raw -and $raw -ne '-') { @($raw -split ';').Count } else { 0 }
 Log "L links=$raw"
 Check 'the two web addresses are links, the file address is none' ($nlinks -eq 2 -and $links[0] -and $links[1] -and -not $links[2]) "links drawn (line:l,t,r,b in DIPs): $raw"
 $l0 = $links[0]
+# A build that draws no links: the place the first address has, so the checks below read it.
+if (-not $l0) { $l0 = @(47.8, 2.0, 204.3, 20.7) }
 $lx = $c[0] + [int](($l0[0] + $l0[2]) / 2); $ly = $c[1] + [int](($l0[1] + $l0[3]) / 2)
 $rx = $c[0] + [int]$l0[0]; $ry = $c[1] + [int]$l0[1]; $rw = [int]($l0[2] - $l0[0]); $rh = [int]($l0[3] - $l0[1])
 $blueRest = [T3]::Blue($rx, $ry, $rw, $rh)
 $bluePlain = [T3]::Blue($c[0] + 14, $ry, [int]$l0[0] - 16, $rh)
+$linkRead = [T3]::Read($rx, $ry, $rw, $rh)
+$wordRead = [T3]::Read($c[0] + 14, $ry, [int]$l0[0] - 16, $rh)
+Log "L link=$linkRead words=$wordRead"
+Check 'the address reads on the plate (3.5 : 1 or more, read from the screen)' ((Ratio $linkRead) -ge 3.5) "address: $linkRead; the words before it: $wordRead"
 FCrop 'l1-link-rest' $w
 Check 'the address is drawn in the accent ink, the words before it are not' ($blueRest -ge 60 -and $bluePlain -eq 0) "blue pixels: address $blueRest, the words before it $bluePlain"
 [G]::MoveTo($lx, $ly); Start-Sleep -Milliseconds 500
