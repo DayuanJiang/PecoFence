@@ -117,6 +117,11 @@ pub struct FenceChrome {
     text_shadows: RefCell<TextShadows>,
     /// Labels and row names shaped for an earlier frame, shared by all fences.
     text_layouts: RefCell<TextLayouts>,
+    /// The rows of the note laid out last, with the key of what they were laid out from
+    /// (`note_rows`). A redraw asks for a note's rows twice (its height, then the drawing) and
+    /// the caret of a note that is being edited redraws it twice a second: a note of 300
+    /// lines took 18 ms for each of those draws on the test box.
+    note_rows_cache: RefCell<Option<(u64, Rc<(Vec<NoteRow>, f32)>)>>,
 }
 
 /// A "按时间分组" section header band in surface DIPs (already scrolled; for rows already
@@ -2164,6 +2169,7 @@ impl FenceChrome {
             clock_fonts: RefCell::default(),
             text_shadows: RefCell::default(),
             text_layouts: RefCell::default(),
+            note_rows_cache: RefCell::default(),
         };
         // Labels follow the desktop's icon-title font from the start (12 px / 16 stays the
         // fallback when the system call fails).
@@ -4677,7 +4683,22 @@ impl FenceChrome {
         width: f32,
         text_size: u8,
         lines: &[NoteLineDraw<'_>],
-    ) -> Result<(Vec<NoteRow>, f32)> {
+    ) -> Result<Rc<(Vec<NoteRow>, f32)>> {
+        // The same lines at the same width and size: the rows laid out last.
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            (width.to_bits(), text_size, lines.len()).hash(&mut h);
+            for line in lines {
+                (line.text, line.todo.is_some()).hash(&mut h);
+            }
+            h.finish()
+        };
+        if let Some((k, rows)) = self.note_rows_cache.borrow().as_ref()
+            && *k == key
+        {
+            return Ok(rows.clone());
+        }
         let tt = self.tool_text(text_size);
         let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
         let line_h = TextLayout::new("Ag", &tt.body, w, f32::MAX)?
@@ -4698,7 +4719,9 @@ impl FenceChrome {
             rows.push(NoteRow { layout, x, y, h });
             y += h + NOTE_LINE_GAP * tt.k;
         }
-        Ok((rows, line_h))
+        let rows = Rc::new((rows, line_h));
+        *self.note_rows_cache.borrow_mut() = Some((key, rows.clone()));
+        Ok(rows)
     }
 
     /// What a note's text takes in a content area `width` DIPs wide (see [`ToolTextExtent`]).
@@ -4712,9 +4735,10 @@ impl FenceChrome {
         if note_is_empty(lines) {
             return Ok(ToolTextExtent::default());
         }
-        let (rows, line_h) = self.note_rows(width, text_size, lines)?;
+        let laid = self.note_rows(width, text_size, lines)?;
+        let (rows, line_h) = (&laid.0, laid.1);
         let mut tops = Vec::new();
-        for row in &rows {
+        for row in rows {
             tops.extend(
                 layout_line_tops(&row.layout, row.h)
                     .into_iter()
@@ -4736,7 +4760,8 @@ impl FenceChrome {
         text_size: u8,
         lines: &[NoteLineDraw<'_>],
     ) -> Result<Vec<(f32, f32)>> {
-        let (rows, _) = self.note_rows(width, text_size, lines)?;
+        let laid = self.note_rows(width, text_size, lines)?;
+        let rows = &laid.0;
         Ok(rows.iter().map(|r| (NOTE_PAD_TOP + r.y, r.h)).collect())
     }
 
@@ -4751,7 +4776,8 @@ impl FenceChrome {
         x: f32,
         y: f32,
     ) -> Result<(usize, usize)> {
-        let (rows, _) = self.note_rows(width, text_size, lines)?;
+        let laid = self.note_rows(width, text_size, lines)?;
+        let rows = &laid.0;
         let gap = NOTE_LINE_GAP * self.tool_text(text_size).k;
         let y = y - NOTE_PAD_TOP;
         // A line owns its text and half the gap above and below it.
@@ -4804,7 +4830,8 @@ impl FenceChrome {
         line: usize,
         at: usize,
     ) -> Result<(f32, f32, f32)> {
-        let (rows, line_h) = self.note_rows(width, text_size, lines)?;
+        let laid = self.note_rows(width, text_size, lines)?;
+        let (rows, line_h) = (&laid.0, laid.1);
         let (Some(row), Some(text)) = (rows.get(line), lines.get(line)) else {
             return Ok((NOTE_PAD_X, NOTE_PAD_TOP, line_h));
         };
@@ -4887,7 +4914,8 @@ impl FenceChrome {
                 return Ok(NoteDrawn::default());
             }
         }
-        let (rows, line_h) = self.note_rows(width, text_size, lines)?;
+        let laid = self.note_rows(width, text_size, lines)?;
+        let (rows, line_h) = (&laid.0, laid.1);
         let px = Px::new(scale);
         let todo = TodoBrushes::new(session, theme)?;
         let selected = match edit {
@@ -6620,7 +6648,8 @@ mod tests {
         );
         assert_eq!(chrome.note_hit(w, 1, &lines, 0.0, -50.0).unwrap(), (0, 0));
         // A selection over the wrapped to-do has a box for each of its lines on screen.
-        let (rows, _) = chrome.note_rows(w, 1, &lines).unwrap();
+        let laid = chrome.note_rows(w, 1, &lines).unwrap();
+        let rows = &laid.0;
         let boxes = layout_selection(&rows[1].layout, 0, len(1), len(1));
         assert_eq!(
             boxes.len(),

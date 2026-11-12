@@ -1805,6 +1805,15 @@ impl FenceViewState {
                 Ok(())
             })?;
         self.note_draw_result(ok);
+        // What a draw of the note costs (a long note is laid out for its height and again
+        // for the drawing, at every blink of the caret too).
+        tracing::debug!(
+            fence = %self.active,
+            lines = lines.len(),
+            editing = marks.is_some(),
+            ms = crate::share_log::millis(now.elapsed()),
+            "note draw"
+        );
         // The frame clock goes on while lines glide or the lifted line's plate fades.
         self.content_busy = self.note_lines_moving(now);
         if self.content_busy {
