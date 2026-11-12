@@ -867,14 +867,12 @@ impl Theme {
         self.title_text.unwrap_or(fallback)
     }
 
-    /// The ink of a link in the text (a web address in a note): the accent in the shade that
-    /// goes with the text as it was picked for the plate, the light shade beside light text
-    /// and the dark one beside dark text. On a plate of middle brightness the accent reads
-    /// worse than the text around it (the light shade 2.2 : 1 on a mid grey, where white has
-    /// 3.9 : 1): there it moves towards the text's colour, as secondary text does.
-    pub fn link_ink(&self) -> ColorF {
+    /// The accent in the shade that goes with the text as it was picked for the plate: the
+    /// light shade beside light text, the dark one beside dark text (in dark mode over a
+    /// bright wallpaper the text is dark, and the mode's own light shade has 1.5 : 1 there).
+    pub fn accent_beside_text(&self) -> ColorF {
         let light_text = self.text_primary.r > 0.5;
-        let accent = if light_text == (self.mode == ThemeMode::Dark) {
+        if light_text == (self.mode == ThemeMode::Dark) {
             self.accent
         } else {
             match self.other_accent {
@@ -882,7 +880,16 @@ impl Theme {
                 None if light_text => Self::dark().accent,
                 None => Self::light().accent,
             }
-        };
+        }
+    }
+
+    /// The ink of a link in the text (a web address in a note): the accent in the shade that
+    /// goes with the text as it was picked for the plate, the light shade beside light text
+    /// and the dark one beside dark text. On a plate of middle brightness the accent reads
+    /// worse than the text around it (the light shade 2.2 : 1 on a mid grey, where white has
+    /// 3.9 : 1): there it moves towards the text's colour, as secondary text does.
+    pub fn link_ink(&self) -> ColorF {
+        let accent = self.accent_beside_text();
         match self.plate {
             Some(plate) => quiet_ink(
                 accent,
@@ -1369,6 +1376,19 @@ mod tests {
         let plate = [plate.r, plate.g, plate.b];
         assert!(contrast_over(link, plate) > contrast_over(dark.accent, plate) + 0.5);
         assert!(link.b > link.r + 0.1, "still blue: {link:?}");
+        // Accent marks (the bar under the shown tab, a ticked box) take the shade that goes
+        // with the text: dark mode over a bright wallpaper has dark text and the dark shade.
+        let on_bright = dark.over_acrylic(&crop_of(&dark, [236, 239, 243]), 1.0, None, None);
+        assert!(
+            on_bright.text_primary.r < 0.5,
+            "dark text on the bright plate"
+        );
+        assert_eq!(on_bright.accent_beside_text(), Theme::light().accent);
+        assert_eq!(on_dark.accent_beside_text(), dark.accent);
+        let bright = on_bright.plate.unwrap();
+        let bright = [bright.r, bright.g, bright.b];
+        assert!(contrast_over(dark.accent, bright) < 2.0);
+        assert!(contrast_over(on_bright.accent_beside_text(), bright) > 3.0);
         // A theme file's secondary text in a colour of its own moves towards its primary
         // text: an opaque brown on a plate of middle brightness stayed at 2.1 : 1.
         let brown = ColorF::from_rgba8(0x6B, 0x4A, 0x2E, 0xFF);

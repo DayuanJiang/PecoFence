@@ -2526,7 +2526,9 @@ impl FenceChrome {
         let layer = push_cut_out(session, slot, center, 7.5)?;
         session.draw_text("\u{E8B7}", &self.title_glyph_format, &slot, folder);
         pop_strip_fade(session, layer);
-        let accent = session.create_solid_brush(with_alpha(theme.accent, alpha))?;
+        // `theme` is the title's foreground: the magnifier takes the accent as a link does,
+        // in the shade that goes with the text picked for the plate.
+        let accent = session.create_solid_brush(with_alpha(theme.link_ink(), alpha))?;
         session.draw_text("\u{E721}", &self.folder_badge_format, &r, &accent);
         let r2 = Rect::from_xywh(r.left + 0.5, r.top, r.width(), r.height());
         session.draw_text("\u{E721}", &self.folder_badge_format, &r2, &accent);
@@ -3253,7 +3255,10 @@ impl FenceChrome {
                     .iter()
                     .find(|t| t.active)
                     .and_then(|t| t.color)
-                    .unwrap_or(theme.accent);
+                    // The accent in the shade that goes with the text picked for the plate,
+                    // as a link has it: the mode's own shade was light on a light plate in
+                    // dark mode over a bright wallpaper (1.5 : 1).
+                    .unwrap_or_else(|| foreground.link_ink());
                 marker(x, w, color, title_a)?;
             }
             // A dragged tab (lens, marker and caption) is always above its neighbours, and
@@ -3337,7 +3342,8 @@ impl FenceChrome {
                     (tab.x, tab.w)
                 };
                 if pill.is_none() && tab.active {
-                    marker(marker_x, marker_w, tab.color.unwrap_or(theme.accent), ta)?;
+                    let color = tab.color.unwrap_or_else(|| foreground.link_ink());
+                    marker(marker_x, marker_w, color, ta)?;
                 } else if !tab.active
                     && let Some(color) = tab.color
                 {
@@ -3475,7 +3481,15 @@ impl FenceChrome {
                 // 智能栅栏: the folder with a magnifier badge, not a button (a smart fence shows
                 // no folder of its own to open).
                 if deco.search_glyph && !deco.up_button {
-                    self.draw_badged_folder(session, theme, slot, x, title_h, title_a, &secondary)?;
+                    self.draw_badged_folder(
+                        session,
+                        &foreground,
+                        slot,
+                        x,
+                        title_h,
+                        title_a,
+                        &secondary,
+                    )?;
                 } else {
                     let box_r = glyph_up_square(x + 8.0, title_h);
                     draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, title_a)?;
@@ -5324,16 +5338,21 @@ struct TodoBrushes {
 
 impl TodoBrushes {
     fn new(session: &DrawingSession<'_>, theme: &Theme) -> Result<Self> {
+        // A ticked box is filled with the accent in the shade that goes with the text picked
+        // for the plate (the light shade was 1.5 : 1 on a light plate in dark mode over a
+        // bright wallpaper); the tick is dark on the light shade and white on the dark one.
+        let accent = theme.accent_beside_text();
         Ok(Self {
             ring: session.create_solid_brush(with_alpha(theme.text_primary, 0.7))?,
             fill: session.create_solid_brush(ColorF::TRANSPARENT)?,
-            accent: session.create_solid_brush(theme.accent)?,
-            check: session.create_solid_brush(match theme.mode {
-                crate::theme::ThemeMode::Dark => ColorF::from_rgba8(0, 0, 0, 0xE6),
-                crate::theme::ThemeMode::Light => ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xFF),
+            accent: session.create_solid_brush(accent)?,
+            check: session.create_solid_brush(if theme.text_primary.r > 0.5 {
+                ColorF::from_rgba8(0, 0, 0, 0xE6)
+            } else {
+                ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xFF)
             })?,
             ink: theme.text_primary,
-            accent_color: theme.accent,
+            accent_color: accent,
         })
     }
 
