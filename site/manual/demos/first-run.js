@@ -14,8 +14,11 @@
 
     // Desktop icon grid (zoom coordinates) and the three fences at the right edge.
     const grid = (c, r) => ({ x: 4 + c * 80, y: 4 + r * 88 });
-    const FX = 941 - 10 - 246, FH = 111.5;
-    const FENCES = ['程序', '文件夹', '文件与文档'].map((title, i) => ({ x: FX, y: 10 + i * (FH + 10), w: 246, h: FH, title }));
+    // The column stands one snapping gap (8 px) from the screen's edges and its fences one gap
+    // apart (state.rs default_fences), drawn as 5 here: the demo's fences are about 0.6 of theirs.
+    const GAP = 5;
+    const FX = 941 - GAP - 246, FH = 111.5;
+    const FENCES = ['程序', '文件夹', '文件与文档'].map((title, i) => ({ x: FX, y: GAP + i * (FH + GAP), w: 246, h: FH, title }));
     const INBOX = 3;    // the arranged 桌面: its icons keep their places on the desktop
     // [icon, label, desktop column, row, fence, slot]
     const ITEMS = [
