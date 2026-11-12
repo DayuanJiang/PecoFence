@@ -525,3 +525,22 @@ impl FenceViewState {
         Some((selection, caret))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::shown_at;
+
+    /// While a to-do is dragged, every other line keeps its order around the place the
+    /// dragged one is shown at.
+    #[test]
+    fn lines_around_a_dragged_todo() {
+        let shown = |from, to| (0..5).map(|j| shown_at(j, from, to)).collect::<Vec<_>>();
+        // The fourth line shown second, the second line shown fourth, a line in its place.
+        assert_eq!(shown(3, 1), [0, 2, 3, 1, 4]);
+        assert_eq!(shown(1, 3), [0, 3, 1, 2, 4]);
+        assert_eq!(shown(2, 2), [0, 1, 2, 3, 4]);
+        // The first line to the end and the last one to the top.
+        assert_eq!(shown(0, 4), [4, 0, 1, 2, 3]);
+        assert_eq!(shown(4, 0), [1, 2, 3, 4, 0]);
+    }
+}
