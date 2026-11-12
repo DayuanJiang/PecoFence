@@ -14,6 +14,9 @@
     };
     window.addEventListener('error', e => report(e.error, e.filename, e.lineno, e.colno));
     window.addEventListener('unhandledrejection', e => report(e.reason, '', 0, 0));
+    // The page stays invisible until it has its state (the `shown` class). A state that never
+    // comes must not leave the window empty.
+    setTimeout(() => document.documentElement.classList.add('shown'), 3000);
   })();
 </script>
 <script src="i18n.js"></script>
@@ -69,6 +72,12 @@
   button, select, .toggle, .tile, summary { cursor: pointer; }
   button:disabled, select:disabled { cursor: default; }
   button, a, select, input, .tile, summary { transition: background-color var(--faster) linear, border-color var(--faster) linear, color var(--faster) linear; }
+  /* The window is on screen before the page is: the host shows its frame at once, in the
+     page's background colour, and brings the browser in when the page says `drawn`. Until
+     that frame the page shows nothing but its background, so that what comes in starts its
+     entrance (page-in, se-in) then and not while the page loads. Invisible, not hidden: the
+     editor's name box takes the keyboard meanwhile. */
+  :root:not(.shown) body > * { opacity: 0; }
   /* The host state lands after the first style pass; switches must not slide into it. */
   :root:not(.ready) *, :root:not(.ready) *::before, :root:not(.ready) *::after { transition: none !important; }
   .ic { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-weight: 400; font-style: normal; }
@@ -139,7 +148,7 @@
   /* A page comes in as the pages of Windows' Settings do: its title stands, what is under it
      rises and fades in (250 ms, decelerating). The rise stays inside the bottom padding of
      main, so a page that fits does not flash a scrollbar. */
-  .page.on > :not(.page-header) { animation: page-in var(--normal) var(--decelerate); }
+  :where(:root.shown) .page.on > :not(.page-header) { animation: page-in var(--normal) var(--decelerate); }
   @keyframes page-in { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
   /* 栅栏: the settings of another fence come in like a page (a name of its own, so that the
      class restarts it). */
@@ -548,6 +557,9 @@
      at the end. The rows scroll; the name above and the count and buttons below stay. */
   body.se-only .app { display: none; }
   #seWindow { display: none; }
+  /* The editor fades in over the window's plain background once it has its fence. */
+  :root.shown #seWindow { animation: se-in var(--fast) var(--decelerate); }
+  @keyframes se-in { from { opacity: 0; } }
   body.se-only #seWindow { display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; padding: 20px 24px 18px; gap: 12px; }
   #seWindow h2 { font-size: 20px; line-height: 28px; margin: 0; font-weight: 600; }
   .se-namel { display: flex; align-items: center; gap: 12px; }
@@ -3402,15 +3414,16 @@
   });
 
   // Transitions come on a frame after a state has been drawn: a single frame would style both
-  // changes together and start them after all. The host shows the window on the first `drawn`,
-  // so it appears with the state's colours and values. `drawn` goes one frame later still: after
-  // two frames the state was not on the page's surface yet in one open of eight, and the window
-  // came up with its plain background, or with the page before the state, for a frame.
+  // changes together and start them after all. Three frames after the first state the page
+  // shows itself (`shown`) and tells the host, which brings the browser into the window's
+  // frame on this `drawn`. The wait is for what the host sends right after the state (the
+  // page to show, the fence, the editor's fence): reported with the first frame, the page
+  // could come in on 常规 and change to the page it was asked for a moment later.
   let drawnSent = false;
   function drawnSoon() {
     requestAnimationFrame(() => requestAnimationFrame(() => {
       document.documentElement.classList.add('ready');
-      if (!drawnSent) { drawnSent = true; requestAnimationFrame(() => send({ type: 'drawn' })); }
+      if (!drawnSent) { drawnSent = true; requestAnimationFrame(() => { document.documentElement.classList.add('shown'); send({ type: 'drawn' }); }); }
     }));
   }
 

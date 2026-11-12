@@ -712,6 +712,16 @@ impl Drop for SingleInstance {
     }
 }
 
+/// Client size of `hwnd` in pixels.
+pub fn client_size_of(hwnd: HWND) -> (i32, i32) {
+    let mut rect = RECT::default();
+    // SAFETY: out-pointer to a local; a window that is gone leaves it empty.
+    unsafe {
+        let _ = GetClientRect(hwnd, &mut rect);
+    }
+    (rect.right - rect.left, rect.bottom - rect.top)
+}
+
 /// Explicitly shows an interactive window, restoring it only if minimized.
 /// SetWindowPos is intentional: a process started hidden must still be able to open
 /// settings later, and reopening an already maximized window must preserve its size.

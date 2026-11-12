@@ -73,12 +73,9 @@ impl App {
             }
             return;
         }
-        if !self.ensure_web_env() {
-            return;
-        }
-        match SettingsHost::open(
+        // The window's frame first: the browser and the page take 0.4 s and more.
+        let frame = SettingsHost::open(
             &self.editor_class,
-            self.web_env.as_ref().unwrap(),
             self.theme_mode,
             self.ctx.theme.borrow().liquid_glass,
             self.queue.clone(),
@@ -86,9 +83,27 @@ impl App {
             editor_title(fence),
             Some(at),
             None,
-        ) {
-            Ok(mut host) => {
-                self.set_host_icons(&mut host);
+        );
+        let opened = frame.and_then(|mut host| {
+            self.set_host_icons(&mut host);
+            host.show_frame();
+            if !self.ensure_web_env() {
+                // The tray has said why; the empty frame goes again.
+                host.close();
+                return Ok(None);
+            }
+            match host.load(self.web_env.as_ref().unwrap()) {
+                Ok(true) => Ok(Some(host)),
+                // Closed by the user meanwhile.
+                Ok(false) => Ok(None),
+                Err(e) => {
+                    host.close();
+                    Err(e)
+                }
+            }
+        });
+        match opened {
+            Ok(Some(host)) => {
                 tracing::info!(by, fence = ?fence, "smart fence editor opened");
                 self.smart_editor = Some(SmartEditor {
                     host,
@@ -97,6 +112,7 @@ impl App {
                     dirty: false,
                 });
             }
+            Ok(None) => {}
             Err(_) if window::quit_posted() => window::post_quit(0),
             Err(e) => tracing::error!(error = %e, "smart fence editor window failed"),
         }
@@ -149,16 +165,16 @@ impl App {
                 if let Some(ed) = &self.smart_editor {
                     ed.post_json(&state);
                     ed.post_json(&editor);
-                    // The window shows once the page has drawn the two (`drawn`).
-                    if first {
-                        ed.host.show_soon();
-                    }
                 }
             }
+            // The page has drawn the two in the window, which stood in the page's background
+            // colour until now.
             Some("drawn") => {
-                if ed.host.show() {
+                if !ed.host.drawn {
+                    ed.host.drawn = true;
+                    ed.host.reveal();
                     let ms = ed.host.opened.elapsed().as_millis() as u64;
-                    tracing::info!(ms, "smart fence editor: page drawn, window shown");
+                    tracing::info!(ms, "smart fence editor: page drawn");
                 }
             }
             Some("modeDrawn") => ed.host.theme_drawn(),

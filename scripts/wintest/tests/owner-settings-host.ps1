@@ -55,12 +55,12 @@ function LastLogMs($what) {
 # the window is visible. Every grab is the desktop as it was (the window is not on screen yet),
 # the finished window (what it shows 2 s later), the finished page fading in (the navigation
 # column, which does not fade and ends with the fence and item counts of the state, is the
-# finished one already), a frame without the state in the right colours (the page's background
-# colour alone, or the page as it is before the state arrives: what WebView2 had drawn last when
-# its window was shown; counted, a failure only when it happens more than once in the 7 opens),
-# or something else: a black client area, the page in the other colour mode. Returns how many
-# grabs are something else, how many have no state yet, when the right page was first on screen
-# and when it had settled (ms after the CLI started), and the app's own numbers.
+# finished one already), the page's background colour alone (the window's frame, which shows at
+# once, before its page: as it should be), the page as it is before the state arrives (built-in
+# values; counted, a failure only when it happens in more than one of the 7 opens), or something
+# else: a black client area, the page in the other colour mode. Returns how many grabs are
+# something else, how many show the page without its state, when the right page was first on
+# screen and when it had settled (ms after the CLI started), and the app's own numbers.
 function OpenFrames($tag) {
   $sw = [Diagnostics.Stopwatch]::StartNew()
   Start-Process "$PfApp\pecofence-cli.exe" -ArgumentList 'settings', 'open-ui' -WindowStyle Hidden | Out-Null
@@ -71,7 +71,7 @@ function OpenFrames($tag) {
   $desk = [Px]::Pixels([Px]::Grab($r.L, $r.T, $w, $hh))
   while ($sw.ElapsedMilliseconds -lt 20000 -and -not [G]::IsWindowVisible($h)) { Start-Sleep -Milliseconds 2 }
   $vis = $sw.ElapsedMilliseconds
-  [Px]::Burst($r.L, $r.T, $w, $hh, 450, 0)
+  [Px]::Burst($r.L, $r.T, $w, $hh, 1500, 0)
   Start-Sleep -Milliseconds 2000
   $final = [Px]::Pixels([Px]::Grab($r.L, $r.T, $w, $hh))
   # The client area without the window's edges and the scrollbar.
@@ -87,7 +87,7 @@ function OpenFrames($tag) {
     if ($dFinal -le 60) { $kinds += "$([Px]::Times[$i]):finished"; if ($firstFinal -lt 0) { $firstFinal = $vis + [Px]::Times[$i] } }
     elseif ($dDesk -le 60) { $kinds += "$([Px]::Times[$i]):desktop" }
     elseif ($dNav -le 40) { $kinds += "$([Px]::Times[$i]):fading in ($dFinal px to go)" }
-    elseif ([OwnerPx]::OffColour($px, $w, $x0, $y0, $x1, $y1, $sheet, 6) -le 60) { $plain++; $kinds += "$([Px]::Times[$i]):background colour only" }
+    elseif ([OwnerPx]::OffColour($px, $w, $x0, $y0, $x1, $y1, $sheet, 6) -le 60) { $kinds += "$([Px]::Times[$i]):background colour only" }
     elseif ($dNav -le 2000) { $plain++; $kinds += "$([Px]::Times[$i]):the page before it has the state (navigation column differs in $dNav px)"; if ($plain -le 2) { [Px]::Frames[$i].Save("$PfShots\open-$tag-no-state-$plain.png") } }
     else {
       $wrong++
@@ -97,10 +97,10 @@ function OpenFrames($tag) {
     }
     if ($firstPage -lt 0 -and $kinds[-1] -match ':(finished|fading)') { $firstPage = $vis + [Px]::Times[$i] }
   }
-  [Px]::Strip("$PfShots\open-$tag-strip.png", 1)
+  [Px]::Strip("$PfShots\open-$tag-strip.png", 3)
   $ready = LastLogMs 'settings: page ready'
-  $drawn = LastLogMs 'settings: page drawn, window shown'
-  Log "open ${tag}: visible after $vis ms, the right page on screen after $firstPage ms, settled after $firstFinal ms (cli start included); app log: page ready $ready ms, window shown $drawn ms; frames: $($kinds -join ' | ')"
+  $drawn = LastLogMs 'settings: page drawn'
+  Log "open ${tag}: visible after $vis ms, the right page on screen after $firstPage ms, settled after $firstFinal ms (cli start included); app log: page ready $ready ms, page drawn $drawn ms; frames: $($kinds -join ' | ')"
   "$tag`t$vis`t$firstPage`t$firstFinal`t$ready`t$drawn`t$wrong`t$plain" | Add-Content "$PfShots\open-times.tsv" -Encoding UTF8
   return @{ wrong = $wrong; plain = $plain; vis = $vis; page = $firstPage; final = $firstFinal; ready = $ready; drawn = $drawn; frames = ($kinds -join ' | ') }
 }
@@ -131,7 +131,7 @@ function PartO() {
   # Seen in every dark mode open when the window was shown on `ready`, in about one open in
   # eight on the software-rendered box when the page said `drawn` two frames after the state,
   # and in none of 28 opens with three frames.
-  Check 'O at most 1 of the 7 opens starts with a frame that has no state yet' ($early -le 1) "$early of 7"
+  Check 'O at most 1 of the 7 opens shows the page before it has its state' ($early -le 1) "$early of 7"
   Check 'O the window shows within 3 s' ($o.vis -lt 3000) "visible after $($o.vis) ms"
   CloseSettings
   (PfLogAll | Where-Object { $_ -match 'settings: ' } | Select-Object -Last 14) | Set-Content "$PfShots\open-log.txt" -Encoding UTF8
@@ -255,7 +255,7 @@ function PartR() {
   $picked = MenuPick '^栅栏选项' $m
   CloseMenus
   $h = WaitWin 'PecoFence.Settings' 20
-  $ok = (CdpOpen) -and [bool](JsWait "document.documentElement.classList.contains('ready')" 20)
+  $ok = (CdpOpen) -and [bool](JsWait "!!document.documentElement && document.documentElement.classList.contains('ready')" 20)
   Start-Sleep -Milliseconds 800
   $now = PageView; $sr = Rect $h
   $overlap = -not ($sr.R -le $fr.x -or $sr.L -ge $fr.x + $fr.w -or $sr.B -le $fr.y -or $sr.T -ge $fr.y + $fr.h)
@@ -278,7 +278,7 @@ function PartR() {
   Shot 'r-rule-card'
   [G]::Click($cr.R - 46, $cr.B - 32); Start-Sleep -Milliseconds 900
   $h = WaitWin 'PecoFence.Settings' 20
-  $ok = (CdpOpen) -and [bool](JsWait "document.documentElement.classList.contains('ready')" 20)
+  $ok = (CdpOpen) -and [bool](JsWait "!!document.documentElement && document.documentElement.classList.contains('ready')" 20)
   Start-Sleep -Milliseconds 800
   $now = PageView
   Shot 'r-card-opens-rules'

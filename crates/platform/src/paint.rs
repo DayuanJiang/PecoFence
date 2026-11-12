@@ -255,6 +255,20 @@ pub fn invalidate(hwnd: HWND) {
     }
 }
 
+/// `WM_ERASEBKGND`: fills the client area with `color` (COLORREF 0x00BBGGRR) on the device
+/// context the message brings (`hdc`, its wParam).
+pub fn erase_background(hwnd: HWND, hdc: usize, color: u32) {
+    // SAFETY: plain GDI calls on the DC of the message being handled; the brush is deleted
+    // right after use.
+    unsafe {
+        let mut rc = RECT::default();
+        let _ = GetClientRect(hwnd, &mut rc);
+        let brush = CreateSolidBrush(COLORREF(color));
+        FillRect(HDC(hdc as *mut core::ffi::c_void), &rc, brush);
+        let _ = DeleteObject(HGDIOBJ(brush.0));
+    }
+}
+
 /// Repaints what was invalidated before this returns (`WM_PAINT` is sent, not queued).
 pub fn update_now(hwnd: HWND) {
     windows_core::link!("user32.dll" "system" fn UpdateWindow(hwnd: HWND) -> windows_core::BOOL);

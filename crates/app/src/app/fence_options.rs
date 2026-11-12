@@ -844,7 +844,8 @@ impl App {
 
     /// Opens the settings window on the 「栅栏」 page with `fence` selected.
     pub(super) fn open_fence_options(&mut self, fence: FenceId) {
-        self.open_settings();
+        // A new window opens beside the fence: its frame shows before the page is there.
+        self.open_settings_beside(self.window_for(fence).map(|w| w.rect()));
         let Some(host) = &self.settings else {
             return;
         };

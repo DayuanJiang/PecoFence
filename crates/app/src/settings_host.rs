@@ -10,7 +10,7 @@ use crate::commands::{Command, CommandQueue};
 use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
 };
-use pecofence_platform::{HWND, RECT, desktop, dwm, monitors, msg};
+use pecofence_platform::{HWND, RECT, desktop, dwm, monitors, msg, paint};
 use pecofence_render::ThemeMode;
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -90,12 +90,17 @@ struct HostState {
     /// A colour mode (and whether Mica is on) the title bar takes when the page says it draws
     /// it (`SettingsHost::theme_drawn`), or after `THEME_FALLBACK_MS`.
     pending_theme: Option<(ThemeMode, bool)>,
+    /// The browser's window stands beside the client area, out of sight, until the page has
+    /// drawn (`SettingsHost::reveal`).
+    parked: bool,
 }
 
-/// `WM_TIMER` id of the host window: shows a window whose page never said `drawn`.
-const SHOW_TIMER: usize = 1;
-/// How long after `ready` a window shows anyway (a script error must not keep it hidden).
-const SHOW_FALLBACK_MS: u32 = 500;
+/// `WM_TIMER` id of the host window: brings in the browser of a page that never said `drawn`.
+const REVEAL_TIMER: usize = 1;
+/// How long after the page was asked for its browser comes in anyway (a script error must not
+/// leave the window empty).
+const REVEAL_FALLBACK_MS: u32 = 3000;
+
 /// `WM_TIMER` id of the host window: the title bar takes a colour mode whose page never said
 /// `modeDrawn`.
 const THEME_TIMER: usize = 2;
@@ -109,8 +114,12 @@ pub struct SettingsHost {
     mica: bool,
     /// The page reported `ready`: messages posted from now on reach its script.
     pub ready: bool,
+    /// The page reported `drawn` once: what it was sent is on screen.
+    pub drawn: bool,
     /// When `open` started: the page's load time goes to the log.
     pub opened: std::time::Instant,
+    kind: HostKind,
+    queue: CommandQueue,
     /// Caption icons (small/big); destroyed with the host.
     icons: Vec<pecofence_platform::tray::OwnedIcon>,
     _registrations: Vec<windows_webview::EventRegistration>,
@@ -125,16 +134,14 @@ impl SettingsHost {
         WindowClass::register(name, ClassOptions::default())
     }
 
-    /// Creates the window and the WebView2 controller and loads the settings page. Page
-    /// messages are forwarded to the command queue as `Command::SettingsMessage` (the editor's
-    /// as `Command::EditorMessage`). The settings open on the primary monitor, the editor on
+    /// Creates the window, still hidden and without its page: `show_frame` puts it on screen
+    /// and `load` brings the page. The settings open on the primary monitor, the editor on
     /// the monitor of `near` (the point its menu opened at), centred on its work area. `last`:
     /// where this run's last settings window was closed (its rectangle and scale); the window
     /// opens there again.
     #[allow(clippy::too_many_arguments)]
     pub fn open(
         class: &WindowClass,
-        env: &WebEnvironment,
         mode: ThemeMode,
         _liquid_glass: bool,
         queue: CommandQueue,
@@ -150,6 +157,7 @@ impl SettingsHost {
             closed_at: None,
             mode,
             pending_theme: None,
+            parked: true,
         }));
 
         let mons = monitors::enumerate();
@@ -191,6 +199,10 @@ impl SettingsHost {
             .map(|p| (p.min_w, p.min_h))
             .unwrap_or(((560.0 * scale) as i32, (420.0 * scale) as i32));
 
+        // A transparent page needs the WebView2 *composition* controller (HWND children cannot be
+        // per-pixel transparent); windows-webview 0.100 only wraps the HWND controller, so the
+        // Mica sheet stays behind an experiment flag and the page paints the theme's base colour.
+        let mica_asked = pecofence_core::brand::var_os("PECOFENCE_SETTINGS_MICA").is_some();
         let handler: MessageHandler = {
             let state = state.clone();
             let queue = queue.clone();
@@ -200,8 +212,9 @@ impl SettingsHost {
                         msg::WM_SIZE => {
                             let w = msg::lo_i16(lparam);
                             let h = msg::hi_i16(lparam);
-                            if let Some(c) = state.borrow().controller.as_ref() {
-                                let _ = c.set_bounds(0, 0, w, h);
+                            let s = state.borrow();
+                            if let Some(c) = s.controller.as_ref() {
+                                let _ = c.set_bounds(if s.parked { w } else { 0 }, 0, w, h);
                                 let _ = c.set_visible(w > 0 && h > 0);
                             }
                             Some(0)
@@ -212,8 +225,15 @@ impl SettingsHost {
                             }
                             Some(0)
                         }
-                        // Never paint the client area: DWM's Mica shows through (and no grey flash).
-                        msg::WM_ERASEBKGND => Some(1),
+                        // The client area has the page's background colour until the page
+                        // covers it (the frame that shows before the page, a strip a resize
+                        // uncovers). Over DWM's Mica it is never painted: Mica shows through.
+                        msg::WM_ERASEBKGND => {
+                            if let (false, Ok(s)) = (mica_asked, state.try_borrow()) {
+                                paint::erase_background(hwnd, wparam, sheet_colorref(s.mode));
+                            }
+                            Some(1)
+                        }
                         msg::WM_GETMINMAXINFO => {
                             // For the monitor the window is on now, which may have another
                             // scale than the one it opened on.
@@ -248,16 +268,12 @@ impl SettingsHost {
                             }
                             Some(0)
                         }
-                        msg::WM_TIMER if wparam == SHOW_TIMER => {
-                            window::kill_timer(hwnd, SHOW_TIMER);
-                            if !desktop::is_visible(hwnd) {
-                                tracing::warn!(
-                                    ?kind,
-                                    "settings: the page did not say it has drawn, window shown anyway"
-                                );
-                                window::show_normal(hwnd);
-                                window::bring_to_front(hwnd);
-                            }
+                        msg::WM_TIMER if wparam == REVEAL_TIMER => {
+                            tracing::warn!(
+                                ?kind,
+                                "settings: the page did not say it has drawn, shown anyway"
+                            );
+                            reveal(hwnd, &state);
                             Some(0)
                         }
                         msg::WM_TIMER if wparam == THEME_TIMER => {
@@ -324,23 +340,89 @@ impl SettingsHost {
         tracing::debug!(?hwnd, "settings: host window created");
         let _ = dwm::set_immersive_dark_mode(hwnd, matches!(mode, ThemeMode::Dark));
         apply_caption(hwnd, mode, false);
-        // A transparent page needs the WebView2 *composition* controller (HWND children cannot be
-        // per-pixel transparent); windows-webview 0.100 only wraps the HWND controller, so the
-        // Mica sheet stays behind an experiment flag and the page paints the theme's base colour.
-        let mica = pecofence_core::brand::var_os("PECOFENCE_SETTINGS_MICA").is_some()
-            && dwm::set_system_backdrop(hwnd, dwm::SystemBackdrop::MainWindow).is_ok();
+        let mica =
+            mica_asked && dwm::set_system_backdrop(hwnd, dwm::SystemBackdrop::MainWindow).is_ok();
         apply_caption(hwnd, mode, mica);
+        Ok(Self {
+            window,
+            state,
+            mica,
+            ready: false,
+            drawn: false,
+            opened,
+            kind,
+            queue,
+            icons: Vec::new(),
+            _registrations: Vec::new(),
+        })
+    }
 
+    /// Puts the window on screen before its page exists: the frame with the title, and the
+    /// client area in the page's background colour (`WM_ERASEBKGND`). The browser needs 0.4 s
+    /// and more for the page, and until then a click on 「设置…」 or 「新建智能栅栏…」 showed
+    /// nothing at all. The page keeps what it holds invisible until it has the state, so what
+    /// follows the plain colour is the finished page.
+    pub fn show_frame(&self) {
+        let hwnd = self.window.hwnd();
+        window::show_normal(hwnd);
+        window::bring_to_front(hwnd);
+        paint::update_now(hwnd);
+        let ms = self.opened.elapsed().as_millis() as u64;
+        tracing::info!(kind = ?self.kind, ms, "settings: window frame shown, the page follows");
+    }
+
+    /// Creates the WebView2 controller in the window and loads the page. Page messages are
+    /// forwarded to the command queue as `Command::SettingsMessage` (the editor's as
+    /// `Command::EditorMessage`). False when the user closed the window while the browser was
+    /// starting (its frame is on screen by then and WebView2's wait handles input).
+    pub fn load(&mut self, env: &WebEnvironment) -> Result<bool> {
+        let (hwnd, kind, mica) = (self.window.hwnd(), self.kind, self.mica);
+        if !desktop::is_window(hwnd) {
+            tracing::info!(?kind, "settings: window closed before the browser started");
+            return Ok(false);
+        }
+        let mode = self.state.borrow().mode;
+        // WebView2 reads this variable when it makes the controller: the browser's window then
+        // has the page's background colour from its first paint on, in a host that is already
+        // on screen. `set_default_background_color` below can only be called once the
+        // controller exists.
+        let bg = page_background(mode, mica);
+        // SAFETY: Windows keeps the environment block behind a lock of its own; no other
+        // thread of this process reads this variable.
+        unsafe {
+            std::env::set_var(
+                "WEBVIEW2_DEFAULT_BACKGROUND_COLOR",
+                format!("{:02X}{:02X}{:02X}{:02X}", bg.a, bg.r, bg.g, bg.b),
+            );
+        }
         // SAFETY: `hwnd` is a live window owned by this thread and outlives the controller
         // (the controller is closed in WM_DESTROY).
-        let controller = unsafe {
+        let created = unsafe {
             env.env
-                .create_controller_for_hwnd(pecofence_platform::hwnd_ptr(hwnd))?
+                .create_controller_for_hwnd(pecofence_platform::hwnd_ptr(hwnd))
         };
-        tracing::debug!("settings: WebView2 controller ready");
+        let controller = match created {
+            Ok(c) => c,
+            // WebView2 gives up with an error when its window goes while it starts.
+            Err(e) if !desktop::is_window(hwnd) => {
+                tracing::info!(?kind, error = %e, "settings: window closed while the browser started");
+                return Ok(false);
+            }
+            Err(e) => return Err(e),
+        };
+        let ms = self.opened.elapsed().as_millis() as u64;
+        tracing::debug!(ms, "settings: WebView2 controller ready");
+        if !desktop::is_window(hwnd) {
+            tracing::info!(?kind, "settings: window closed while the browser started");
+            let _ = controller.close();
+            return Ok(false);
+        }
         let webview = controller.webview()?;
-        let (cw, ch) = window.client_size();
-        controller.set_bounds(0, 0, cw, ch)?;
+        // Beside the client area until the page has drawn (`reveal`): the browser's window is
+        // black until its first frame, and the page as it loads has built-in values, and its
+        // dark colours in light mode for a frame. The host's own background shows meanwhile.
+        let (cw, ch) = self.window.client_size();
+        controller.set_bounds(cw, 0, cw, ch)?;
         // Transparent page over DWM Mica; opaque theme colour when Mica is unavailable.
         controller.set_default_background_color(page_background(mode, mica))?;
         if let Ok(settings) = webview.settings() {
@@ -360,7 +442,7 @@ impl SettingsHost {
 
         let mut registrations = Vec::new();
         {
-            let queue = queue.clone();
+            let queue = self.queue.clone();
             registrations.push(webview.on_web_message_received(move |args| {
                 let json = args.web_message_as_json();
                 queue.push(match kind {
@@ -411,30 +493,26 @@ impl SettingsHost {
             1,
         );
         webview.navigate_to_string(&html)?;
-        tracing::debug!("settings: page navigation submitted");
+        let ms = self.opened.elapsed().as_millis() as u64;
+        tracing::debug!(ms, "settings: page navigation submitted");
 
         {
-            let mut s = state.borrow_mut();
+            let mut s = self.state.borrow_mut();
             s.controller = Some(controller);
             s.webview = Some(webview);
         }
-        // The controller is created while the host is still hidden and stays invisible until
-        // told. The host itself is shown once the page reports `drawn` (`App::on_settings_message`):
-        // shown at once, it was white until WebView2 painted, even in dark mode; shown on
-        // `ready`, it was black for a frame and had the page's built-in values and dark colours
-        // for another.
-        if let Some(c) = state.borrow().controller.as_ref() {
+        self._registrations = registrations;
+        window::set_timer(hwnd, REVEAL_TIMER, REVEAL_FALLBACK_MS);
+        // The browser's window stays invisible until told.
+        if let Some(c) = self.state.borrow().controller.as_ref() {
             let _ = c.set_visible(true);
+            // The window took the keyboard when its frame was shown, before there was a page
+            // to hand it to (`WM_SETFOCUS`).
+            if desktop::foreground_window() == hwnd {
+                let _ = c.move_focus(windows_webview::MoveFocusReason::Programmatic);
+            }
         }
-        Ok(Self {
-            window,
-            state,
-            mica,
-            ready: false,
-            opened,
-            icons: Vec::new(),
-            _registrations: registrations,
-        })
+        Ok(true)
     }
 
     pub fn hwnd(&self) -> HWND {
@@ -453,22 +531,10 @@ impl SettingsHost {
         window::set_title(self.window.hwnd(), title);
     }
 
-    /// The page is loaded and has been sent what it shows: the window appears when the page
-    /// says it has drawn that (`show`), or after `SHOW_FALLBACK_MS` when it never says so.
-    pub fn show_soon(&self) {
-        window::set_timer(self.window.hwnd(), SHOW_TIMER, SHOW_FALLBACK_MS);
-    }
-
-    /// Shows the window for the first time. False when it was showing already.
-    pub fn show(&self) -> bool {
-        let hwnd = self.window.hwnd();
-        window::kill_timer(hwnd, SHOW_TIMER);
-        if desktop::is_visible(hwnd) {
-            return false;
-        }
-        window::show_normal(hwnd);
-        window::bring_to_front(hwnd);
-        true
+    /// The page says it has drawn what it was sent (`drawn`): its browser comes into the
+    /// window, over the plain background the frame showed until now.
+    pub fn reveal(&self) {
+        reveal(self.window.hwnd(), &self.state);
     }
 
     /// 栅栏选项…: moves the window beside `fence` (screen px) on the fence's monitor, on the
@@ -573,6 +639,24 @@ impl SettingsHost {
     }
 }
 
+/// Moves the browser's window from beside the client area into it (once).
+fn reveal(hwnd: HWND, state: &Rc<RefCell<HostState>>) {
+    // The state in use by a message being handled: the timer comes again.
+    let Ok(mut s) = state.try_borrow_mut() else {
+        return;
+    };
+    window::kill_timer(hwnd, REVEAL_TIMER);
+    if !std::mem::take(&mut s.parked) {
+        return;
+    }
+    drop(s);
+    let (w, h) = window::client_size_of(hwnd);
+    if let Some(c) = state.borrow().controller.as_ref() {
+        let _ = c.set_bounds(0, 0, w, h);
+    }
+    tracing::debug!(w, h, "settings: the browser's window moved into the frame");
+}
+
 /// The title bar and the browser's own background take `mode`. The state is not borrowed
 /// while the title bar is repainted (that sends the window messages whose handling reads it).
 fn apply_theme(hwnd: HWND, state: &Rc<RefCell<HostState>>, mode: ThemeMode, mica: bool) {
@@ -603,15 +687,18 @@ fn page_background(mode: ThemeMode, mica: bool) -> windows_webview::Color {
     windows_webview::Color { a: 255, r, g, b }
 }
 
+/// The page's solid background colour as a COLORREF (0x00BBGGRR).
+fn sheet_colorref(mode: ThemeMode) -> u32 {
+    let bg = page_background(mode, false);
+    u32::from(bg.r) | (u32::from(bg.g) << 8) | (u32::from(bg.b) << 16)
+}
+
 /// Match the page sheet so the native caption belongs to the same surface.
 fn apply_caption(hwnd: HWND, mode: ThemeMode, mica: bool) {
     if mica {
         return;
     }
-    let bg = page_background(mode, false);
-    // DWM takes COLORREF (0x00BBGGRR).
-    let c = u32::from(bg.r) | (u32::from(bg.g) << 8) | (u32::from(bg.b) << 16);
-    let _ = dwm::set_caption_color(hwnd, c);
+    let _ = dwm::set_caption_color(hwnd, sheet_colorref(mode));
 }
 
 /// Where the settings window opens on a work area (physical px) at `scale`, and its minimum

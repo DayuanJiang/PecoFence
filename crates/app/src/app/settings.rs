@@ -485,18 +485,21 @@ impl App {
     }
 
     pub(super) fn open_settings(&mut self) {
+        self.open_settings_beside(None);
+    }
+
+    /// Opens the settings window, or brings the open one to the front. `beside`: a fence
+    /// (screen px) a new window opens next to (栅栏选项…).
+    pub(super) fn open_settings_beside(&mut self, beside: Option<RECT>) {
         self.query_store_startup();
         if let Some(h) = &self.settings {
             window::show_normal(h.hwnd());
             window::bring_to_front(h.hwnd());
             return;
         }
-        if !self.ensure_web_env() {
-            return;
-        }
-        match SettingsHost::open(
+        // The window's frame first: the browser and the page take 0.4 s and more.
+        let frame = SettingsHost::open(
             &self.settings_class,
-            self.web_env.as_ref().unwrap(),
             self.theme_mode,
             self.ctx.theme.borrow().liquid_glass,
             self.queue.clone(),
@@ -504,11 +507,30 @@ impl App {
             pecofence_core::i18n::text("PecoFence 设置"),
             None,
             self.settings_kept.closed_at,
-        ) {
-            Ok(mut host) => {
-                self.set_host_icons(&mut host);
-                self.settings = Some(host);
+        );
+        let opened = frame.and_then(|mut host| {
+            self.set_host_icons(&mut host);
+            if let Some(fence) = beside {
+                host.place_beside(fence);
             }
+            host.show_frame();
+            if !self.ensure_web_env() {
+                // The tray has said why; the empty frame goes again.
+                host.close();
+                return Ok(None);
+            }
+            match host.load(self.web_env.as_ref().unwrap()) {
+                Ok(true) => Ok(Some(host)),
+                // Closed by the user meanwhile.
+                Ok(false) => Ok(None),
+                Err(e) => {
+                    host.close();
+                    Err(e)
+                }
+            }
+        });
+        match opened {
+            Ok(host) => self.settings = host,
             Err(_) if window::quit_posted() => window::post_quit(0),
             Err(e) => {
                 tracing::error!(error = %e, "settings window failed");
@@ -853,15 +875,6 @@ impl App {
                 // A reload in the middle of recording a shortcut never says it ended.
                 self.resume_hotkeys();
                 self.push_settings_state();
-                // The window of a first `ready` shows once the page has drawn this state
-                // (`drawn`); a reload's stays as the user left it.
-                if let Some(h) = self
-                    .settings
-                    .as_ref()
-                    .filter(|h| !desktop::is_visible(h.hwnd()))
-                {
-                    h.show_soon();
-                }
                 // Nothing asked for a page (栅栏选项…, a tip's 打开设置, the feedback form):
                 // the page this run's last window was closed on, scrolled as it was.
                 let asked = self.settings_focus_page.is_some()
@@ -885,14 +898,14 @@ impl App {
                 }
                 self.show_pending_feedback();
             }
-            // The page has drawn the state (and the page or fence it was asked for): the
-            // window appears with the right colours and the real values.
+            // The page has drawn the state (and the page or fence it was asked for) in the
+            // window, which stood in the page's background colour until now.
             Some("drawn") => {
-                if let Some(h) = &self.settings
-                    && h.show()
-                {
+                if let Some(h) = self.settings.as_mut().filter(|h| !h.drawn) {
+                    h.drawn = true;
+                    h.reveal();
                     let ms = h.opened.elapsed().as_millis() as u64;
-                    tracing::info!(ms, "settings: page drawn, window shown");
+                    tracing::info!(ms, "settings: page drawn");
                 }
             }
             // The page draws the colour mode it was just sent: the title bar changes with it.
