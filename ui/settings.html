@@ -540,8 +540,14 @@
   .se-fixed .s { color: var(--text2); font-size: 12px; }
   .se-chips { flex: 1 1 200px; display: flex; flex-wrap: wrap; gap: 4px; }
   .se-chips label { position: relative; display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12px; border: 1px solid var(--control-stroke); background: var(--control); cursor: pointer; }
+  .se-chips label { transition: background-color .15s, border-color .15s, color .15s; }
+  .se-chips label:hover { background: var(--control-hover); }
+  .se-chips label:active { background: var(--control-pressed); }
   .se-chips label.on { background: var(--accent); color: var(--on-accent); border-color: transparent; }
-  .se-chips label:focus-within { outline: 2px solid var(--text); outline-offset: 1px; }
+  .se-chips label.on:hover { background: var(--accent-hover); }
+  .se-chips label.on:active { background: color-mix(in srgb, var(--accent) 80%, transparent); }
+  /* The ring is for the keyboard: a chip clicked with the mouse does not get it. */
+  .se-chips label:has(input:focus-visible) { outline: 2px solid var(--text); outline-offset: 1px; }
   .se-chips input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
   .se-row .iconbtn { flex: none; height: 28px; width: 28px; font-size: 12px; border: 1px solid var(--control-stroke); background: var(--control); }
   .se-msg { color: var(--error); font-size: 13px; }
