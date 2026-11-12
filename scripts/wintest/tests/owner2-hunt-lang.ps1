@@ -4,7 +4,9 @@
 #                                                 100 s each; --var Only=menu: the fence menu alone)
 #   run.sh --var Part=D ...   details headings, a rolled fence's count, the filter box and its tag,
 #                             date group captions, the box that asks before a fence is deleted
-#   run.sh --var Part=R ...   checks: a rolled fence's count beside a long name, the filter box's count
+#   run.sh --var Part=E ...   the search box with Everything's rows and the two action rows
+#   run.sh --var Part=R ...   checks: a rolled fence's count beside a long name, the filter box's
+#                             count and offered type, the search box when nothing matches
 #   run.sh --var Part=L ...   checks: texts a window keeps follow a language switch; a long status
 #                             line of a script fence shows whole
 # The crops are named <surface>-<lang>.png; menu texts go to job.log as "TEXT <surface> <lang>: ...".
@@ -318,6 +320,39 @@ if ($Part -match 'R') {
   [G]::Press(0x1B); Start-Sleep -Milliseconds 500
   PfQuit
   foreach ($n in $HrFiles) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue }
+}
+
+if ($Part -match 'E') {
+  # The search box with Everything's rows: the second group heading, the folder line under a name
+  # and the two action rows at the end, in every language.
+  Case 'search box with Everything'
+  . C:\pf\kit\smart.ps1
+  $deep = "$PfRun\Shared docs"
+  Set-Content -LiteralPath (Join-Path $deep 'hlev 季度总结.txt') -Value 'x' -Encoding UTF8
+  Set-Content -LiteralPath (Join-Path $deep 'hlev Geschwindigkeitsbegrenzung.txt') -Value 'x' -Encoding UTF8
+  $evDesk = Join-Path $PfDesk 'hlev 桌面上的.txt'
+  Set-Content -LiteralPath $evDesk -Value 'x' -Encoding UTF8
+  $ev = EvStart
+  PfStart -Lang en
+  Pf settings set theme light | Out-Null
+  Pf settings set tools.everything true | Out-Null
+  Start-Sleep -Seconds 4
+  Check 'Everything runs' $ev ''
+  foreach ($lang in $LangList) {
+    Pf settings set language $lang | Out-Null
+    Start-Sleep -Milliseconds 1500
+    DeskClick 1500 840 | Out-Null
+    PeekKey; Start-Sleep -Milliseconds 900
+    [G]::Type('hlev'); Start-Sleep -Milliseconds 2500
+    HlCropWin "search-everything-$lang" (HlBox) 4
+    # The last row, 「把这次搜索放到桌面」, with the line under it.
+    [G]::Press(0x26); Start-Sleep -Milliseconds 500
+    HlCropWin "search-everything-last-$lang" (HlBox) 4
+    HlEndPeek
+    [G]::Press(0x1B); Start-Sleep -Milliseconds 500
+  }
+  PfQuit
+  Remove-Item -LiteralPath $evDesk -Force -ErrorAction SilentlyContinue
 }
 
 if ($Part -match 'L') {
