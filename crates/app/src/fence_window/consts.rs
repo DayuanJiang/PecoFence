@@ -55,6 +55,13 @@ pub(super) const TIMER_HOVER_SELECT: usize = 47;
 pub(super) const TIMER_CLOCK: usize = 48;
 /// A fence just made has faded in (167 ms): its name box opens (`rename_after_fade_in`).
 pub(super) const TIMER_NAME_BOX: usize = 49;
+/// The activation went away while a file operation of PecoFence's own ran, and the selection
+/// kept its colour (`on_activate`). This timer looks every `ACTIVE_SYNC_MS` whether the
+/// operation is over; then `TIMER_ACTIVE_SYNC_END` fires once, after the shell has given the
+/// activation back (about 0.2 s after the end), and the colour follows the real state again.
+pub(super) const TIMER_ACTIVE_SYNC: usize = 60;
+pub(super) const TIMER_ACTIVE_SYNC_END: usize = 61;
+pub(super) const ACTIVE_SYNC_MS: u32 = 500;
 /// DWM can suspend completion callbacks for fully occluded windows. UI state must still
 /// settle after the longest (250 ms) transition, independently of compositor visibility.
 pub(super) const COMPOSITION_FINISH_MS: u32 = 400;

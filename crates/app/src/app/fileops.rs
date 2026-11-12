@@ -218,6 +218,7 @@ impl App {
         match spawned {
             Ok(_) => {
                 self.fileops_running += 1;
+                crate::fence_window::own_file_op_started();
                 self.fileop_serial = serial;
                 true
             }
@@ -245,6 +246,7 @@ impl App {
         let any = !done.is_empty();
         for (serial, then, result) in done {
             self.fileops_running = self.fileops_running.saturating_sub(1);
+            crate::fence_window::own_file_op_ended();
             self.on_fileop_done(serial, then, result);
         }
         // A Ctrl+Z pressed while an operation was running (`undo_last`): its step is noted now.

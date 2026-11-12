@@ -81,7 +81,11 @@ if ($Part -eq 'A') {
   Start-Sleep -Milliseconds 1200
 
   # The same on the freely placed desktop, where the box of the copy came, went for a frame
-  # and came again. The copy takes the first free place: the one the new file had.
+  # and came again: the shell takes the activation from the fence while it copies the file, so
+  # the box came in the grey of a fence without the keyboard and then turned blue, and half
+  # way between the two it cannot be seen on the wallpaper. The fence now keeps its selection
+  # colour while a file operation of its own runs. The copy takes the first free place: the
+  # one the new file had.
   Case 'A copy pasted on the desktop keeps its selection box once it shows'
   $p = U2Pt '季度预算.fpx'
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 700
@@ -97,10 +101,16 @@ if ($Part -eq 'A') {
   $pic = @($f | ForEach-Object { [Px]::Diff($f[0], $_, 16, 63, 6, 52) })
   $boxEnd = $box[-1]; $picEnd = $pic[-1]
   $first = @(0..($f.Count - 1) | Where-Object { $box[$_] -gt 0.3 * $boxEnd }) | Select-Object -First 1
-  $gone = @($first..($f.Count - 1) | Where-Object { $box[$_] -lt 0.12 * $boxEnd })
+  $gone = @($first..($f.Count - 1) | Where-Object { $box[$_] -lt 0.25 * $boxEnd })
   $around = @($first..([Math]::Min($f.Count - 1, $first + 9)))
+  $log = @(PfLogAll)
+  $at = -1; for ($i = 0; $i -lt $log.Count; $i++) { if ($log[$i] -match 'paste copies files within their folder') { $at = $i } }
+  $after = if ($at -ge 0) { @($log[$at..($log.Count - 1)]) } else { @() }
+  $grey = @($after | Where-Object { $_ -match 'fence active state changed: selection colour.*on=false' })
+  $kept = @($after | Where-Object { $_ -match 'activation lost while a file operation of our own runs' })
   Check 'setup: the copy stands in the free place, selected' ($picEnd -gt 5 -and $boxEnd -gt 2) "change of the picture's place $('{0:N1}' -f $picEnd), of the box strip $('{0:N1}' -f $boxEnd)"
-  Check 'the box does not go again once it shows' ($boxEnd -gt 2 -and $gone.Count -eq 0) "$($gone.Count) frames without the box after frame $first; box strip from there: $(U2Fmt ($around | ForEach-Object { $box[$_] })) ; picture: $(U2Fmt ($around | ForEach-Object { $pic[$_] }))"
+  Check 'the box does not go again once it shows' ($boxEnd -gt 2 -and $gone.Count -eq 0) "$($gone.Count) frames with the box under a quarter of its strength after frame $first; box strip from there: $(U2Fmt ($around | ForEach-Object { $box[$_] })) ; picture: $(U2Fmt ($around | ForEach-Object { $pic[$_] }))"
+  Check 'the fence keeps its selection colour while the file is copied' ($at -ge 0 -and $grey.Count -eq 0 -and $kept.Count -ge 1) "after the paste began: $($grey.Count) changes to the grey of a fence without the keyboard, $($kept.Count) kept"
   foreach ($b in $f) { $b.Dispose() }
   Get-ChildItem -LiteralPath $PfDesk -Filter '*.fpx' | Where-Object { $_.Name -match 'Copy|副本' } | Remove-Item -Force -ErrorAction SilentlyContinue
   Start-Sleep -Milliseconds 1500

@@ -9,19 +9,29 @@ use pecofence_platform::{quicklook, seer};
 // another fence ends it (`Command::EndItemSelection`).
 pub(super) fn on_activate(
     h: &HandlerCtx,
-    _hwnd: HWND,
+    hwnd: HWND,
     wparam: usize,
     lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, .. } = h;
     let inactive = wparam & 0xFFFF == 0;
-    let stays = inactive && {
+    let mut stays = inactive && {
         let other = HWND(lparam as *mut core::ffi::c_void);
         !other.0.is_null() && {
             let cls = desktop::class_name(desktop::root_ancestor(other));
             cls == "PecoFence.Rename" || cls == "#32768"
         }
     };
+    // A paste, a delete or a move of our own is running: the shell takes the activation for
+    // its length and gives it back. The selection keeps its colour; a timer reads the real
+    // state when the operation is over (the user may have gone to another program meanwhile).
+    if inactive && !stays && crate::fence_window::own_file_op_running() {
+        tracing::debug!(
+            "activation lost while a file operation of our own runs: the selection keeps its colour"
+        );
+        window::set_timer(hwnd, TIMER_ACTIVE_SYNC, ACTIVE_SYNC_MS);
+        stays = true;
+    }
     if !stays
         && let Ok(mut guard) = view.try_borrow_mut()
         && let Some(v) = guard.as_mut()

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Ctrl+V and Delete: the selection no longer turns grey for about five frames and then blue again. Windows takes the keyboard from the fence while it copies or deletes the files (about 0.3 s), so the box showed the grey of a fence without the keyboard; on the freely placed desktop the box of a pasted copy came, nearly went and came again. A fence now keeps its selection colour while a file operation of its own runs, and reads the real state again half a second after the operation is over.
 - F2 on an icon: the name no longer goes blank for a frame before the name box shows. The fence drew the icon without its name first and the box was painted a frame later.
 - A file renamed in place and confirmed by a click on an empty part of its fence glides to its new place in the sort order, as it does after Enter. It stood there in one frame (the click's rubber band, not yet moved, switched the motion off).
 - Ctrl+X on an icon, then Esc: the cut is taken back, as on Explorer's desktop (the icon is whole again and still selected, the clipboard is empty; a second Esc ends the selection). Esc used to end the selection and leave the icon faded, with the file still on the clipboard. A click elsewhere leaves the cut as it is, as in Explorer.

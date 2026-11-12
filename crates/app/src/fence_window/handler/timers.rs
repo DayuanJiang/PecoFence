@@ -39,6 +39,36 @@ pub(super) fn on_timer_composition_finish(
     }
 }
 
+/// `TIMER_ACTIVE_SYNC` (`last` false): is the file operation of our own over? Then
+/// `TIMER_ACTIVE_SYNC_END` (`last` true) fires once, half a second later, and the selection
+/// colour follows the real activation again: the fence itself, its name box or a menu in
+/// front means active.
+pub(super) fn on_timer_active_sync(h: &HandlerCtx, hwnd: HWND, last: bool) -> Option<isize> {
+    if !last {
+        if !crate::fence_window::own_file_op_running() {
+            window::kill_timer(hwnd, TIMER_ACTIVE_SYNC);
+            window::set_timer(hwnd, TIMER_ACTIVE_SYNC_END, ACTIVE_SYNC_MS);
+        }
+        return Some(0);
+    }
+    window::kill_timer(hwnd, TIMER_ACTIVE_SYNC_END);
+    let front = desktop::root_ancestor(desktop::foreground_window());
+    let cls = desktop::class_name(front);
+    let active = front == hwnd || cls == "PecoFence.Rename" || cls == "#32768";
+    if let Ok(mut guard) = h.view.try_borrow_mut()
+        && let Some(v) = guard.as_mut()
+    {
+        tracing::debug!(
+            active,
+            "file operation over: the selection colour follows the activation again"
+        );
+        if v.set_active(active) {
+            let _ = v.redraw_content();
+        }
+    }
+    Some(0)
+}
+
 /// A fence just made is at full strength (the 167 ms of its fade-in are over): its name box
 /// opens now, unless a hide has begun meanwhile (the fade's end then drops the request). A
 /// view that is borrowed right now leaves the request to the fade's end, as before.

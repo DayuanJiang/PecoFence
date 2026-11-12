@@ -48,6 +48,25 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 use windows_core::Result;
 
+/// File operations of PecoFence's own that are running (a paste, a delete, a move into a
+/// folder). The shell takes the activation from the fence that owns the operation and gives
+/// it back about 0.3 s later: the selection turned grey for those frames after every Delete
+/// and Ctrl+V (`on_activate` keeps its colour while this is above zero).
+static OWN_FILE_OPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub fn own_file_op_started() {
+    OWN_FILE_OPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn own_file_op_ended() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let _ = OWN_FILE_OPS.fetch_update(Relaxed, Relaxed, |n| n.checked_sub(1));
+}
+
+fn own_file_op_running() -> bool {
+    OWN_FILE_OPS.load(std::sync::atomic::Ordering::Relaxed) > 0
+}
+
 mod api;
 mod consts;
 mod desktop_layout;

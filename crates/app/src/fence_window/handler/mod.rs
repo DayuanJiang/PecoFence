@@ -383,6 +383,12 @@ impl FenceWindow {
                     }
                     msg::WM_TIMER if wparam == TIMER_CLOCK => timers::on_timer_clock(h),
                     msg::WM_TIMER if wparam == TIMER_NAME_BOX => timers::on_timer_name_box(h, hwnd),
+                    msg::WM_TIMER if wparam == TIMER_ACTIVE_SYNC => {
+                        timers::on_timer_active_sync(h, hwnd, false)
+                    }
+                    msg::WM_TIMER if wparam == TIMER_ACTIVE_SYNC_END => {
+                        timers::on_timer_active_sync(h, hwnd, true)
+                    }
                     msg::WM_TIMER if wparam == TIMER_HOVER_SELECT => {
                         timers::on_timer_hover_select(h, hwnd, wparam, lparam)
                     }
