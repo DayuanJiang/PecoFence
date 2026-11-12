@@ -630,7 +630,9 @@ impl FenceViewState {
     /// `old_cw_px` wide before. While the user drags an edge (`interactive`) and the icon grid
     /// gains or loses a column, every icon near the viewport glides from where it is drawn to
     /// its new cell (167 ms decelerate; one already gliding continues from its place), as a
-    /// sort or a delete glides them. A width that keeps the columns moves the cells with the
+    /// sort or a delete glides them. A column change that follows the one before within that
+    /// time (an edge dragged across several column counts) places the icons at once instead
+    /// of gliding them again. A width that keeps the columns moves the cells with the
     /// edge as before, and glides in flight ride along with their target cells. Everything
     /// else snaps: rows (one column at any width), 像桌面一样排列, animations off, a resize
     /// nobody drags.
@@ -687,6 +689,26 @@ impl FenceViewState {
             return;
         }
         let now = Instant::now();
+        // An edge dragged across several column counts: the change before this one came less
+        // than a glide ago, so its icons are still on their way (or would be). A new glide
+        // from there on every change kept all icons in flight, lying across each other, for
+        // as long as the drag went on. They take their cells at once; a single change, and
+        // the first of a run, glide as before.
+        let again = self
+            .column_change_at
+            .replace(now)
+            .is_some_and(|t| now.duration_since(t) < motion::FAST);
+        if again {
+            tracing::debug!(
+                from = og.columns,
+                to = ng.columns,
+                items = self.items.len(),
+                in_flight = self.item_motion.len(),
+                "resize changed the columns again within a glide: icons are placed at once"
+            );
+            self.snap_item_motion();
+            return;
+        }
         // Fewer rows may clamp the scroll offset (the redraw does it): the icons start from
         // the same place on screen.
         let view_h = self.scroll_view_h(&new);

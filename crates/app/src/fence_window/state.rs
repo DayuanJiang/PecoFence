@@ -199,6 +199,9 @@ pub struct FenceViewState {
     pub(super) merge_t: Tween,
     /// Layout motion: items gliding to new cells / fading in, and removed items fading out.
     pub(super) item_motion: HashMap<ItemId, ItemMotion>,
+    /// When an edge drag last changed the column count (`reflow_items`): a change that
+    /// follows within the glide's time places the icons at once.
+    pub(super) column_change_at: Option<Instant>,
     pub(super) leaving: Vec<LeavingItem>,
     /// The filter box changed the filter: when the next `replace_items` brings a whole new
     /// list (a refill, not a rearrangement), it cross-fades instead of cutting.

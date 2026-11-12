@@ -136,7 +136,10 @@ function EdgeRun($name, $edge) {
   Glide ($ex + $dir * 40) $ey ($ex + $dir * 12) $ey 1 15
   Start-Sleep -Milliseconds 800
   RecMark 'two columns fewer'
-  Glide ($ex + $dir * 12) $ey ($ex + $dir * 130) $ey 2 20
+  # One pointer move, so one change of the column count (five to three). In two moves 20 ms
+  # apart it is two changes, and the second one places the icons at once (an edge dragged
+  # across several column counts: tests/owner3-ux3-folder.ps1 part E).
+  Glide ($ex + $dir * 12) $ey ($ex + $dir * 130) $ey 1 20
   Start-Sleep -Milliseconds 800
   RecMark 'release'
   MUp; Start-Sleep -Milliseconds 600

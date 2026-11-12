@@ -163,6 +163,7 @@ impl FenceWindow {
             merge_hint: false,
             merge_t: Tween::at(0.0, Instant::now()),
             item_motion: HashMap::new(),
+            column_change_at: None,
             leaving: Vec::new(),
             fade_next_refill: false,
             drop_landing: None,
