@@ -222,3 +222,5 @@ o4-settings-fonts  2   ec2    debug   owner4-settings.ps1            --var Part=
 o4-todo            4   ec2    release owner4-todo.ps1
 o4-fixes           4   ec2    release owner4-fixes.ps1               --var Part=NHPT
 o4-todo-looks      3   resize release free-placement.ps1             --steps owner4-todo-looks.ps1
+# The night's code reads of the merged branch: one steps file per round of fixes.
+o5-fixes-a         4   ec2    release owner5-fixes-a.ps1
