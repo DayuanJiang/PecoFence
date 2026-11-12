@@ -190,7 +190,9 @@ impl FenceViewState {
             TipTarget::Title => Some(self.title.clone()),
             TipTarget::Count => self.count_tip.clone(),
             TipTarget::Chevron => Some(
-                pecofence_core::i18n::text(if self.roll_target() {
+                // What the click does: during a hover expansion it keeps the fence open
+                // (`CommitExpanded`), so the tip says 「展开」 there too, not 「收起」.
+                pecofence_core::i18n::text(if self.roll_target() || self.peeking {
                     "展开"
                 } else {
                     "收起"
