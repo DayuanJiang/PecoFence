@@ -492,10 +492,10 @@ pub fn toggle_line(fence: FenceId, line: usize) {
     put_text(handle, &flipped, moved(anchor), moved(caret));
 }
 
-/// Alt+Shift+Up (`up`) or Alt+Shift+Down: the line with the caret changes places with the
-/// line above or below it. The caret keeps its place in the line (a selection is kept as far
-/// as it lies in that line). One step for Ctrl+Z. Nothing happens on the first line going
-/// up and on the last one going down.
+/// Alt+Shift+Up (`up`) or Alt+Shift+Down: the line with the caret, or every line the
+/// selection touches, changes places with the line above or below, as in editors. The caret
+/// and the selection go with their lines. One step for Ctrl+Z. Nothing happens when the
+/// first line would go up or the last one down.
 fn move_line(up: bool) {
     let Some((handle, fence, _)) = active() else {
         return;
@@ -513,21 +513,30 @@ fn move_line(up: bool) {
         (first, last)
     };
     let spans = note::line_spans(&text);
-    let line = spans.iter().rposition(|s| s.start <= caret).unwrap_or(0);
-    let to = if up {
-        line.checked_sub(1)
-    } else {
-        Some(line + 1)
+    let line_of = |at: usize| spans.iter().rposition(|s| s.start <= at).unwrap_or(0);
+    let top = line_of(first);
+    // A selection that ends at the very start of a line does not touch that line.
+    let bottom = match line_of(last) {
+        l if l > top && spans.get(l).is_some_and(|s| s.start == last) => l - 1,
+        l => l,
     };
-    let moved = to.and_then(|to| Some((to, note::move_lines(&text, line, 1, to)?)));
-    tracing::debug!(%fence, line, up, moved = moved.is_some(), "note editor: Alt+Shift+arrow moves the line");
-    let (Some((to, moved)), Some(span)) = (moved, spans.get(line)) else {
+    let count = bottom - top + 1;
+    let to = if up {
+        top.checked_sub(1)
+    } else {
+        Some(top + 1)
+    };
+    let moved = to.and_then(|to| Some((to, note::move_lines(&text, top, count, to)?)));
+    tracing::debug!(%fence, line = top, count, up, moved = moved.is_some(), "note editor: Alt+Shift+arrow moves the lines");
+    let (Some((to, moved)), Some(from), Some(end)) = (moved, spans.get(top), spans.get(bottom))
+    else {
         return;
     };
     let Some(start) = note::line_spans(&moved).get(to).map(|s| s.start) else {
         return;
     };
-    let place = |at: usize| start + at.saturating_sub(span.start).min(span.len);
+    // Every place in the moved lines moves as far as their first line's start does.
+    let place = |at: usize| start + at.clamp(from.start, end.start + end.len) - from.start;
     ACTIVE.with(|a| {
         if let Some(s) = a.borrow().as_ref() {
             s.anchor.set(place(anchor));
