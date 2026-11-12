@@ -783,6 +783,46 @@ impl AppState {
             self.dirty = true;
         }
         self.layout = target;
+        self.ensure_inbox();
+    }
+
+    /// A configuration whose fences include no 「桌面」 fence (a file edited by hand, as
+    /// `config check` warns): the files no rule matches would be in no fence and show nowhere.
+    /// It gets one, as a new configuration has it: arranged like the desktop, its own rect in
+    /// the bottom right corner of the first monitor.
+    fn ensure_inbox(&mut self) {
+        if self.fences().iter().any(|f| f.kind == FenceKind::Inbox) {
+            return;
+        }
+        let Some(work) = self.work_areas.first().cloned() else {
+            return;
+        };
+        let gap = self.config.settings.snapping.gap_px.clamp(0, 64);
+        let (w, h) = (
+            (240.0 * work.scale()) as i32,
+            (200.0 * work.scale()) as i32,
+        );
+        let geo = geometry::normalize(
+            PxRect {
+                left: work.right - gap - w,
+                top: work.bottom - gap - h,
+                right: work.right - gap,
+                bottom: work.bottom - gap,
+            },
+            &work,
+        );
+        let mut inbox = Fence::new(
+            pecofence_core::i18n::text("桌面"),
+            FenceKind::Inbox,
+            geo,
+        );
+        inbox.view.icon_size = self.config.settings.icon_size;
+        inbox.desktop_layout = true;
+        inbox.free_placement = true;
+        tracing::warn!(fence = %inbox.id, "the configuration had no desktop fence: one added");
+        let layout = self.layout;
+        self.config.layouts[layout].fences.push(inbox);
+        self.dirty = true;
     }
 
     /// The matched layout takes the connected monitors as they are: one found under another id
@@ -3705,6 +3745,27 @@ mod tests {
         state.replace_config(file);
         assert_eq!(state.fences().len(), fences - 1);
         assert!(state.fences().iter().all(|f| f.title != "Dup"));
+    }
+
+    /// A file without a 「桌面」 fence (edited by hand) gets one, as `config check` says: the
+    /// files no rule matches land in it instead of in no fence.
+    #[test]
+    fn a_configuration_without_a_desktop_fence_gets_one() {
+        let mut state = test_state();
+        let mut file = state.config.clone();
+        file.layouts[0]
+            .fences
+            .retain(|f| f.kind != FenceKind::Inbox);
+        let fences = file.layouts[0].fences.len();
+        state.replace_config(file);
+        assert_eq!(state.fences().len(), fences + 1);
+        let inbox = state.inbox_id().expect("a desktop fence");
+        let report = state.sync_desktop(&[desktop_entry("unknown.xyz")]);
+        assert_eq!(report.added, 1);
+        assert_eq!(state.fence(inbox).unwrap().items.len(), 1);
+        // Once is enough.
+        state.ensure_layout();
+        assert_eq!(state.fences().len(), fences + 1);
     }
 
     /// The 「导入配置前」 snapshot names icons by id: the items of an imported file take this
