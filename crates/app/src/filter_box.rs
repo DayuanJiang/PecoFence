@@ -322,40 +322,35 @@ fn paint_box(hwnd: HWND) {
             p.text(r, &label, &s.count_font, accent_text, paint::Align::Center);
             x = r.right + s.px(4.0);
         }
-        // The count takes the room its text needs: 「Elemente: 128」 is wider than 「128 项」,
-        // and cut short it lost its number.
-        let count_w = s
-            .px(COUNT_W)
-            .max(p.text_width(&s.count, &s.count_font) + s.px(8.0));
-        // The suggestion needs more room at the right than the count.
-        let right = if s.suggest.is_some() {
-            s.px(SUGGEST_W + CLEAR_W + 4.0)
-        } else {
-            count_w + s.px(CLEAR_W + 4.0)
+        // At the right: the count, or in its place the type the text names, taken with Tab.
+        // Either takes the room its text needs: 「Elemente: 128」 is wider than 「128 项」 and
+        // 「Typ: Installationsprogramme  Tab」 than 「类型：安装包  Tab」; cut short, the one
+        // lost its number and the other its key.
+        let (side, least, ink) = match &s.suggest {
+            Some(t) => (
+                format!("{}  Tab", type_filter::label(t)),
+                SUGGEST_W,
+                accent_text,
+            ),
+            None => (s.count.clone(), COUNT_W, dim),
         };
+        let side_w = s
+            .px(least)
+            .max(p.text_width(&side, &s.count_font) + s.px(8.0));
+        let right = side_w + s.px(CLEAR_W + 4.0);
         let ew = (w - x - right).max(s.px(30.0));
         if (x, ew) != s.edit_at.get() {
             s.edit_at.set((x, ew));
             s.edit
                 .set_bounds(x, (h - s.px(EDIT_H)) / 2, ew, s.px(EDIT_H));
         }
-        match &s.suggest {
-            // The type the text names, taken with Tab, in place of the count.
-            Some(t) => p.text(
-                row(w - s.px(SUGGEST_W + CLEAR_W + 2.0), w - s.px(CLEAR_W + 2.0)),
-                &format!("{}  Tab", type_filter::label(t)),
-                &s.count_font,
-                accent_text,
-                paint::Align::Right,
-            ),
-            None => p.text(
-                row(w - count_w - s.px(CLEAR_W + 2.0), w - s.px(CLEAR_W + 2.0)),
-                &s.count,
-                &s.count_font,
-                dim,
-                paint::Align::Right,
-            ),
-        }
+        p.text(
+            row(w - side_w - s.px(CLEAR_W + 2.0), w - s.px(CLEAR_W + 2.0)),
+            &side,
+            &s.count_font,
+            ink,
+            paint::Align::Right,
+        );
         // Cancel (E711): clears the text.
         p.text(
             row(w - s.px(CLEAR_W), w - s.px(4.0)),
