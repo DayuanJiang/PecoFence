@@ -2497,6 +2497,21 @@ impl FenceWindow {
         label_inset(wide)
     }
 
+    /// The colour this fence's names and title are drawn in now, for the name box that takes
+    /// a name's place: the text picked for the plate behind the fence, or 「文字颜色」 白色 /
+    /// 黑色. Icons arranged like the desktop have no plate (white names on the wallpaper, as
+    /// Windows draws them): their box keeps the colour mode's text, like Explorer's.
+    pub fn label_ink(&self, mode: pecofence_render::ThemeMode) -> ColorF {
+        let picked = self.view.borrow().as_ref().and_then(|v| {
+            (!v.bare()).then(|| {
+                v.material_foreground()
+                    .with_label_color(v.behavior.label_color.get())
+                    .text_primary
+            })
+        });
+        picked.unwrap_or(Theme::for_mode(mode).text_primary)
+    }
+
     /// Screen rectangle of an item's label, for the rename popup.
     pub fn item_label_rect(&self, item: ItemId) -> Option<RECT> {
         self.view

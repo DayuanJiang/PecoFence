@@ -331,6 +331,7 @@ impl App {
         // As wide as the name is drawn: a name fitted to the wider box keeps it in the box.
         let inset = w.item_label_inset(item);
         tracing::info!(?rect, centered, inset, "item rename box opened");
+        let ink = w.label_ink(self.theme_mode);
         w.set_renaming(Some(item));
         let label_size = self.ctx.chrome.label_size();
         crate::rename::begin_item_rename(
@@ -344,7 +345,7 @@ impl App {
             select_end,
             centered.then_some(inset),
             self.queue.clone(),
-            self.theme_mode,
+            ink,
         );
     }
 

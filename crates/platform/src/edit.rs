@@ -422,6 +422,12 @@ impl EditControl {
         self.back_color
     }
 
+    /// Gives the text another colour (COLORREF) than `dark` chose: a box over text that is
+    /// drawn in a colour of its own (an item's name). Call it before the control is shown.
+    pub fn set_text_color(&mut self, color: u32) {
+        self.text_color = color;
+    }
+
     pub fn text(&self) -> String {
         window_text(self.hwnd)
     }

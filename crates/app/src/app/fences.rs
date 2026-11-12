@@ -884,7 +884,7 @@ impl App {
                     .unwrap_or_default(),
                 w.rail_row_screen_rect(fence),
                 self.queue.clone(),
-                self.theme_mode,
+                w.label_ink(self.theme_mode),
             );
         }
     }

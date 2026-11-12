@@ -9,7 +9,7 @@ use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
 };
 use pecofence_platform::{HWND, RECT, desktop, dwm, edit, monitors, msg, paint};
-use pecofence_render::ThemeMode;
+use pecofence_render::ColorF;
 use std::cell::RefCell;
 
 const RENAME_CLASS: &str = "PecoFence.Rename";
@@ -71,14 +71,15 @@ struct ItemBox {
 }
 
 /// Opens (or re-targets) the rename popup over `fence_hwnd`'s title bar, or over `row` (screen
-/// rect of the tab's row in a left tab column).
+/// rect of the tab's row in a left tab column). `ink` is the colour the fence's text is drawn
+/// in (see [`box_colors`]).
 pub fn begin_inline_rename(
     fence_hwnd: HWND,
     fence: FenceId,
     current: String,
     row: Option<RECT>,
     queue: CommandQueue,
-    mode: ThemeMode,
+    ink: ColorF,
 ) {
     let r = window::window_rect(fence_hwnd);
     let dpi = monitors::dpi_for_window(fence_hwnd).max(96);
@@ -115,8 +116,27 @@ pub fn begin_inline_rename(
         None,
         None,
         queue,
-        mode,
+        ink,
     );
+}
+
+/// The colours of a name box: the text in the colour of the name the box replaces (`ink`, as
+/// the fence draws it: picked for the plate behind it, or 「文字颜色」 白色 / 黑色), on the field
+/// that colour reads on. Light text gets the dark field, dark text the light one, whatever the
+/// colour mode: in dark mode over a light wallpaper the names are dark on a light plate, and a
+/// dark box was the one dark block in the fence. Returns whether the field is the dark one and
+/// the text colour (a COLORREF, the ink's own alpha blended over the field).
+fn box_colors(ink: ColorF) -> (bool, u32) {
+    let dark = 0.2126 * ink.r + 0.7152 * ink.g + 0.0722 * ink.b > 0.5;
+    let [r, g, b, _] = edit::back_color(dark).to_le_bytes();
+    let over = |c: f32, field: u8| {
+        let a = ink.a.clamp(0.0, 1.0);
+        (c * 255.0 * a + field as f32 * (1.0 - a))
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    let text = u32::from_le_bytes([over(ink.r, r), over(ink.g, g), over(ink.b, b), 0]);
+    (dark, text)
 }
 
 /// How much of an item's editing name the rename box selects (UTF-16 units): the stem only, so
@@ -183,7 +203,8 @@ pub fn has_reserved_char(name: &str) -> bool {
 /// centred under the icon: the box is centred too, wraps the name at the label's width like
 /// the Windows desktop's and is as tall as the name's lines, growing and shrinking while the
 /// user types. `None` is a list or details row: one line over the name column, `text_scale`
-/// (`layout::row_text_scale`) taller with Windows' text size.
+/// (`layout::row_text_scale`) taller with Windows' text size. `ink` is the colour the name is
+/// drawn in (see [`box_colors`]).
 #[allow(clippy::too_many_arguments)]
 pub fn begin_item_rename(
     label_rect: RECT,
@@ -196,7 +217,7 @@ pub fn begin_item_rename(
     select_end: Option<usize>,
     wrap_inset_dip: Option<f32>,
     queue: CommandQueue,
-    mode: ThemeMode,
+    ink: ColorF,
 ) {
     let (r, item_box) = item_box_place(label_rect, dpi, font_dip, text_scale, wrap_inset_dip);
     begin_rename_at(
@@ -208,7 +229,7 @@ pub fn begin_item_rename(
         select_end,
         Some((item_box, font_face)),
         queue,
-        mode,
+        ink,
     );
 }
 
@@ -345,7 +366,7 @@ fn begin_rename_at(
     select_end: Option<usize>,
     item_box: Option<(ItemBox, &str)>,
     queue: CommandQueue,
-    mode: ThemeMode,
+    ink: ColorF,
 ) {
     // An item's box edits its name in the names' own font.
     let font_face = item_box.map(|(_, face)| face);
@@ -357,7 +378,13 @@ fn begin_rename_at(
         }
     });
     let (x, y, w, h) = (r.left, r.top, r.right - r.left, r.bottom - r.top);
-    let dark = mode == ThemeMode::Dark;
+    let (dark, text_color) = box_colors(ink);
+    tracing::debug!(
+        ?ink,
+        dark_field = dark,
+        text = format_args!("{text_color:06x}"),
+        "name box takes the colour of the text it replaces"
+    );
     let framed = item_box.is_some();
 
     let handler: MessageHandler = Box::new(
@@ -424,6 +451,7 @@ fn begin_rename_at(
     let Ok(mut ctl) = ctl else {
         return;
     };
+    ctl.set_text_color(text_color);
     if let Some(face) = font_face {
         ctl.set_font(face, font_dip, dpi);
         ctl.set_margins(0);
@@ -539,10 +567,51 @@ pub fn end_active(commit: bool) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ITEM_BOX_MAX_LINES, has_reserved_char, invalid_file_name, item_box_place,
+        ITEM_BOX_MAX_LINES, box_colors, has_reserved_char, invalid_file_name, item_box_place,
         rename_hidden_suffix, rename_select_len,
     };
     use pecofence_platform::RECT;
+    use pecofence_render::{Image, Theme};
+
+    /// The name box follows the text it replaces: in dark mode over a light wallpaper the
+    /// names are dark on a light plate and so is the box; in light mode over a dark one both
+    /// are light on dark. Where the mode's own text is kept, so are the box's old colours.
+    #[test]
+    fn the_name_box_takes_the_colour_of_the_text_it_replaces() {
+        // The modes' own text: the colours the box always had (COLORREFs, 0x00BBGGRR).
+        assert_eq!(box_colors(Theme::dark().text_primary), (true, 0x00FF_FFFF));
+        assert_eq!(
+            box_colors(Theme::light().text_primary),
+            (false, 0x001B_1B1B)
+        );
+        // Fluent, text picked from the plate: a plain wallpaper as the fence gets it.
+        let crop = |theme: &Theme, grey: u8| {
+            let mut image = Image::solid(32, 24, [grey; 3]);
+            let m = theme.acrylic_tint();
+            image.tint(m.color, m.luminosity_opacity, m.noise, m.chroma);
+            image
+        };
+        let dark = Theme::dark();
+        let on_light = dark.over_acrylic(&crop(&dark, 238), 1.0, None, None);
+        assert_eq!(box_colors(on_light.text_primary), (false, 0x001B_1B1B));
+        let light = Theme::light();
+        let on_dark = light.over_acrylic(&crop(&light, 20), 1.0, None, None);
+        assert_eq!(box_colors(on_dark.text_primary), (true, 0x00FF_FFFF));
+        // Liquid Glass: its navy text on the light field, in both modes.
+        for mode in [Theme::dark(), Theme::light()] {
+            let glass = mode.with_liquid_glass();
+            let picked = glass.over_glass(&Image::solid(16, 16, [238; 3]));
+            assert_eq!(box_colors(picked.text_primary), (false, 0x0036_2013));
+            let picked = glass.over_glass(&Image::solid(16, 16, [20; 3]));
+            assert_eq!(box_colors(picked.text_primary), (true, 0x00FF_FFFF));
+        }
+        // 「文字颜色」 白色 on a light plate, 黑色 on a dark one: the box goes with the text.
+        use pecofence_core::LabelColor;
+        let white = on_light.with_label_color(LabelColor::White);
+        assert_eq!(box_colors(white.text_primary), (true, 0x00FF_FFFF));
+        let black = on_dark.with_label_color(LabelColor::Black);
+        assert_eq!(box_colors(black.text_primary), (false, 0x001B_1B1B));
+    }
 
     /// An icon's name box is centred under the icon, as wide as the label's text plus its
     /// frame (inside the cell at the default icon size), with its first line where the label's
