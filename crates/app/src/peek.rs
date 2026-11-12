@@ -73,6 +73,7 @@ pub fn keeps_peek(other: HWND) -> bool {
         || cls == "PecoFence.Rename"
         || cls == crate::note_edit::NOTE_EDIT_CLASS
         || cls == crate::peek_search::SEARCH_CLASS
+        || crate::notice::is_key_card(other)
 }
 
 /// A key that types a character (letters, digits, the number pad, punctuation): the keys an
@@ -84,6 +85,7 @@ fn typing_key(vk: u32) -> bool {
 pub const PEEK_CLASS: &str = "PecoFence.PeekDimmer";
 const WA_INACTIVE: usize = 0;
 const VK_TAB: u32 = 0x09;
+const VK_F6: u32 = 0x75;
 const VK_LEFT: u32 = 0x25;
 const VK_UP: u32 = 0x26;
 const VK_RIGHT: u32 = 0x27;
@@ -240,6 +242,12 @@ impl PeekOverlay {
                                     queue.push(Command::FocusNextFence {
                                         from: HWND(std::ptr::null_mut()),
                                         back,
+                                    });
+                                    Some(0)
+                                } else if wparam as u32 == VK_F6 {
+                                    // To the card on screen, as F6 in a fence.
+                                    queue.push(Command::CardKeys {
+                                        from: HWND(std::ptr::null_mut()),
                                     });
                                     Some(0)
                                 } else {

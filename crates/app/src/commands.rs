@@ -533,6 +533,14 @@ pub enum Command {
     EditorMessage(String),
     /// The rating notice was clicked or went away (see `notice.rs`).
     Notice(isize, crate::notice::NoticeEvent),
+    /// F6 in fence window `from` (null: in the Peek, before a fence has the keys): the
+    /// keyboard goes to the card on screen, if there is one.
+    CardKeys {
+        from: HWND,
+    },
+    /// F6 or Esc on the card that has the keyboard, or it was closed by a key: the keyboard
+    /// goes back where it came from.
+    CardKeysBack,
     /// Ctrl+Z in a fence (see `app/undo.rs`).
     Undo,
 }

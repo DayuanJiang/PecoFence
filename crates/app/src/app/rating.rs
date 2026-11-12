@@ -170,6 +170,58 @@ impl App {
         }
     }
 
+    /// `Command::CardKeys`: F6 in fence window `from`, or in the Peek (null). The card on
+    /// screen (the undo card first, then a tip or an offer) takes the keyboard; the fence's
+    /// focus mark goes, as when the keyboard leaves it for another fence.
+    pub(super) fn card_takes_keys(&mut self, from: HWND) {
+        let front = desktop::foreground_window();
+        let took = self
+            .undo_notice
+            .iter()
+            .map(|(n, _)| n)
+            .chain(self.notices())
+            .next()
+            .is_some_and(|card| card.take_keyboard());
+        tracing::info!(
+            took,
+            in_fence = !from.0.is_null(),
+            "F6: card asked to take the keyboard"
+        );
+        if !took {
+            return;
+        }
+        if let Some(w) = self.fences.values().find(|w| w.hwnd() == from) {
+            w.keyboard_left();
+        }
+        self.card_keys_back = Some((front, from));
+    }
+
+    /// `Command::CardKeysBack`: the keyboard goes back to the window that had it before F6,
+    /// and the fence it was in shows its focus mark again. Nothing when the user has gone on
+    /// to another window meanwhile.
+    pub(super) fn card_gives_keys_back(&mut self) {
+        let Some((front, from)) = self.card_keys_back.take() else {
+            return;
+        };
+        let on_card = desktop::class_name(desktop::foreground_window()) == "PecoFence.Notice";
+        tracing::info!(on_card, "the keyboard goes back from the card");
+        if !on_card {
+            return;
+        }
+        window::bring_to_front(front);
+        if let Some(w) = self.fences.values().find(|w| w.hwnd() == from) {
+            w.focus_by_keyboard();
+        }
+    }
+
+    /// After a card event: the card that had the keyboard was answered and is leaving (no
+    /// card on screen has it now): the keyboard goes back where it came from.
+    pub(super) fn card_keys_settle(&mut self) {
+        if self.card_keys_back.is_some() && !self.notices().any(|n| n.has_keyboard()) {
+            self.card_gives_keys_back();
+        }
+    }
+
     /// Where the cards on screen stand (screen px): another card keeps clear of them.
     pub(super) fn notice_rects(&self) -> Vec<RECT> {
         self.notices()

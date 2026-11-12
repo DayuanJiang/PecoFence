@@ -433,6 +433,9 @@ pub struct App {
     /// The tip (a first-start tip, the roll-up tip) that an offer took the place of: it comes
     /// back later (`feature_tip_allowed`).
     displaced_tip: Option<welcome::Welcome>,
+    /// F6 gave the keyboard to a card: the window that was in front then, and the fence the
+    /// key was pressed in (null: none), to give the keyboard back to.
+    card_keys_back: Option<(HWND, HWND)>,
     /// The 「已删除栅栏」 or 「已按规则整理」 notice with 撤销, and what it undoes.
     undo_notice: Option<(crate::notice::Notice, undo::UndoNotice)>,
     /// Ctrl+Z was pressed while a file operation was running: it runs when that has finished.
@@ -1911,6 +1914,7 @@ impl App {
             answered_card: None,
             roll_tip_waits: Default::default(),
             displaced_tip: None,
+            card_keys_back: None,
             undo_notice: None,
             undo_waiting: false,
             marquee_offer: None,
@@ -3161,7 +3165,12 @@ impl App {
             }
             Command::SettingsMessage(json) => self.on_settings_message(&json),
             Command::EditorMessage(json) => self.on_editor_message(&json),
-            Command::Notice(card, event) => self.on_notice(card, event),
+            Command::Notice(card, event) => {
+                self.on_notice(card, event);
+                self.card_keys_settle();
+            }
+            Command::CardKeys { from } => self.card_takes_keys(from),
+            Command::CardKeysBack => self.card_gives_keys_back(),
             Command::Undo => self.undo_last("Ctrl+Z"),
         }
     }

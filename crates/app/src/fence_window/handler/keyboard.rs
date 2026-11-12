@@ -148,6 +148,7 @@ pub(super) fn on_keydown(
     const VK_X: u32 = 0x58;
     const VK_Z: u32 = 0x5A;
     const VK_F5: u32 = 0x74;
+    const VK_F6: u32 = 0x75;
     const VK_SPACE: u32 = 0x20;
     let mode = cursor_mode(shift, ctrl);
     // Navigation keys are swallowed while the scrollbar thumb / track /
@@ -230,6 +231,9 @@ pub(super) fn on_keydown(
             back: shift,
         }),
         VK_F5 => queue.push(Command::RefreshFence(v.active)),
+        // F6: to the card on screen (a tip, an offer, the undo card), as F6 goes from pane to
+        // pane in Explorer; nothing without a card.
+        VK_F6 => queue.push(Command::CardKeys { from: hwnd }),
         k if k == msg::VK_F2 => {
             // Several selected: the focused one is renamed, as in Explorer (the first of them
             // when the focus is on none).

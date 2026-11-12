@@ -38,6 +38,13 @@ thread_local! {
     /// The cards' window class, registered with the first card: two cards can show at once
     /// (an undo card above a tip).
     static NOTICE_CLASS: RefCell<Option<WindowClass>> = const { RefCell::new(None) };
+    /// The card that F6 gave the keyboard to (its window, 0 = none), until it loses the focus.
+    static KEY_CARD: std::cell::Cell<isize> = const { std::cell::Cell::new(0) };
+}
+
+/// `hwnd` is the card that F6 gave the keyboard to: the Peek stays open under it.
+pub fn is_key_card(hwnd: HWND) -> bool {
+    !hwnd.0.is_null() && KEY_CARD.get() == hwnd.0 as isize
 }
 
 /// The `locale` for [`Notice::show`] in the UI language (fonts for Han, kana, Hangul).
@@ -336,8 +343,12 @@ impl Notice {
                 v.declined = false;
                 v.start_fade(hwnd, 1.0);
             }
-            let card =
+            let mut card =
                 NoticeCard::new(title, body, action, locale)?.with_min_height(v.layout.height);
+            // The keyboard stays on the card (Enter on 「下一条」): on the new button.
+            if v.card.key_focus() != NoticeHit::None {
+                card.set_key_focus(NoticeHit::Button);
+            }
             let layout = card.layout()?;
             let scale = v.dpi as f32 / 96.0;
             let h = ((layout.height * scale).round() as i32).max(old.bottom - old.top);
@@ -382,6 +393,38 @@ impl Notice {
         window::set_title(hwnd, title);
         self.window.set_timer(TIMER_DISMISS, SHOW_FOR_MS);
         Ok(())
+    }
+
+    /// F6 in a fence or in the Peek: the card takes the keyboard and its button shows the focus
+    /// mark. Tab walks the buttons and ×, Enter and Space press, Esc closes the card, F6 gives
+    /// the keyboard back ([`Command::CardKeysBack`]). False when the card takes no input now
+    /// or Windows did not let it come to the front.
+    pub fn take_keyboard(&self) -> bool {
+        let hwnd = self.window.hwnd();
+        {
+            let v = self.view.borrow();
+            if v.closing || v.held {
+                return false;
+            }
+        }
+        // Before the switch: the Peek's dimmer asks while it is being deactivated.
+        KEY_CARD.set(hwnd.0 as isize);
+        window::bring_to_front(hwnd);
+        let got = desktop::foreground_window() == hwnd;
+        tracing::info!(got, "F6: the keyboard goes to the card");
+        if got {
+            let mut v = self.view.borrow_mut();
+            v.card.set_key_focus(NoticeHit::Button);
+            v.redraw();
+        } else {
+            KEY_CARD.set(0);
+        }
+        got
+    }
+
+    /// A button or × of this card has the keyboard.
+    pub fn has_keyboard(&self) -> bool {
+        self.view.borrow().card.key_focus() != NoticeHit::None
     }
 
     /// The card's window: its events name it ([`Command::Notice`]), and another card keeps
@@ -467,6 +510,20 @@ impl Drop for Notice {
     }
 }
 
+/// The part `hit` was clicked, or pressed with Enter or Space.
+fn press(hwnd: HWND, view: &Rc<RefCell<View>>, queue: &CommandQueue, hit: NoticeHit) {
+    window::kill_timer(hwnd, TIMER_DISMISS);
+    if hit == NoticeHit::Close {
+        fade_out(hwnd, view);
+    } else if hit == NoticeHit::Secondary {
+        view.borrow_mut().declined = true;
+        fade_out(hwnd, view);
+    } else {
+        // What the click opens should not wait for the exit fade.
+        queue.push(Command::Notice(hwnd.0 as isize, NoticeEvent::Action));
+    }
+}
+
 /// × or the timeout: the app hears of it, and drops the notice, once it has faded out.
 fn fade_out(hwnd: HWND, view: &Rc<RefCell<View>>) {
     let mut v = view.borrow_mut();
@@ -545,20 +602,63 @@ fn handle(
             if hit == NoticeHit::None || inert_body {
                 return Some(0);
             }
-            window::kill_timer(hwnd, TIMER_DISMISS);
-            if hit == NoticeHit::Close {
-                fade_out(hwnd, view);
-            } else if hit == NoticeHit::Secondary {
-                view.borrow_mut().declined = true;
-                fade_out(hwnd, view);
-            } else {
-                // What the click opens should not wait for the exit fade.
-                queue.push(Command::Notice(hwnd.0 as isize, NoticeEvent::Action));
+            press(hwnd, view, queue, hit);
+            Some(0)
+        }
+        // The card has the keyboard (F6, `Notice::take_keyboard`).
+        msg::WM_KEYDOWN => {
+            const VK_TAB: u32 = 0x09;
+            const VK_SPACE: u32 = 0x20;
+            const VK_F6: u32 = 0x75;
+            let vk = wparam as u32;
+            let part = view.borrow().card.key_focus();
+            if part == NoticeHit::None {
+                return None;
+            }
+            tracing::debug!(vk, ?part, "key on the card");
+            match vk {
+                VK_TAB => {
+                    let mut v = view.borrow_mut();
+                    let next = v
+                        .layout
+                        .next_key_part(part, window::key_down(msg::VK_SHIFT));
+                    v.card.set_key_focus(next);
+                    v.redraw();
+                }
+                VK_F6 => queue.push(Command::CardKeysBack),
+                k if k == msg::VK_ESCAPE => {
+                    window::kill_timer(hwnd, TIMER_DISMISS);
+                    fade_out(hwnd, view);
+                    queue.push(Command::CardKeysBack);
+                }
+                // A held key presses once.
+                k if (k == msg::VK_RETURN || k == VK_SPACE) && lparam & (1 << 30) == 0 => {
+                    press(hwnd, view, queue, part);
+                    if part != NoticeHit::Button {
+                        queue.push(Command::CardKeysBack);
+                    }
+                }
+                _ => return None,
             }
             Some(0)
         }
+        msg::WM_KILLFOCUS => {
+            if is_key_card(hwnd) {
+                KEY_CARD.set(0);
+            }
+            let mut v = view.borrow_mut();
+            if v.card.key_focus() != NoticeHit::None {
+                v.card.set_key_focus(NoticeHit::None);
+                v.redraw();
+            }
+            None
+        }
         msg::WM_TIMER if wparam == TIMER_DISMISS => {
-            if view.borrow().hover != NoticeHit::None {
+            // A card under the pointer or with the keyboard stays.
+            let v = view.borrow();
+            let in_use = v.hover != NoticeHit::None || v.card.key_focus() != NoticeHit::None;
+            drop(v);
+            if in_use {
                 window::set_timer(hwnd, TIMER_DISMISS, HOVER_RECHECK_MS);
             } else {
                 window::kill_timer(hwnd, TIMER_DISMISS);

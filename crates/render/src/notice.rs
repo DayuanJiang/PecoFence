@@ -65,6 +65,22 @@ impl NoticeLayout {
             NoticeHit::Card
         }
     }
+
+    /// The part Tab moves the keyboard to from `from` (Shift+Tab: `back`), left to right and
+    /// around: the plain button, the accent button, ×.
+    pub fn next_key_part(&self, from: NoticeHit, back: bool) -> NoticeHit {
+        let all = [NoticeHit::Secondary, NoticeHit::Button, NoticeHit::Close];
+        let parts = if self.secondary.is_some() {
+            &all[..]
+        } else {
+            &all[1..]
+        };
+        let n = parts.len();
+        match parts.iter().position(|p| *p == from) {
+            Some(i) => parts[if back { (i + n - 1) % n } else { (i + 1) % n }],
+            None => NoticeHit::Button,
+        }
+    }
 }
 
 pub struct NoticeCard {
@@ -74,6 +90,9 @@ pub struct NoticeCard {
     secondary: Option<String>,
     /// The card is at least this tall (DIPs): the room goes between the text and the buttons.
     min_height: f32,
+    /// The button or × that has the keyboard (F6 moved it to the card): drawn with the focus
+    /// mark of a fence's icons.
+    key_focus: NoticeHit,
     title_format: TextFormat,
     body_format: TextFormat,
     button_format: TextFormat,
@@ -99,6 +118,7 @@ impl NoticeCard {
             action: action.to_string(),
             secondary: None,
             min_height: 0.0,
+            key_focus: NoticeHit::None,
             title_format: wrapping(TextFormat::with_locale(
                 font_text(),
                 14.0,
@@ -131,6 +151,15 @@ impl NoticeCard {
     pub fn with_secondary(mut self, text: &str) -> Self {
         self.secondary = Some(text.to_string());
         self
+    }
+
+    /// The part that has the keyboard, drawn with the focus mark (`NoticeHit::None`: no part).
+    pub fn set_key_focus(&mut self, part: NoticeHit) {
+        self.key_focus = part;
+    }
+
+    pub fn key_focus(&self) -> NoticeHit {
+        self.key_focus
     }
 
     /// Makes the card at least `height` DIPs tall (a row of cards of one size: the tips). The
@@ -325,6 +354,28 @@ impl NoticeCard {
             &layout.close,
             &s.create_solid_brush(theme.text_secondary)?,
         );
+        // The keyboard is on a button or on ×: the focus mark of a fence's icons around it
+        // (2 px outer stroke, 1 px inner stroke).
+        let focused = match self.key_focus {
+            NoticeHit::Button => Some(layout.button),
+            NoticeHit::Secondary => layout.secondary,
+            NoticeHit::Close => Some(layout.close),
+            _ => None,
+        };
+        if let Some(r) = focused {
+            let outer = Rect::new(r.left - 2.0, r.top - 2.0, r.right + 2.0, r.bottom + 2.0);
+            s.draw_rounded_rect(
+                &RoundedRect::uniform(outer, 5.0),
+                &s.create_solid_brush(theme.focus_outer)?,
+                2.0,
+            );
+            let inner = Rect::new(r.left - 0.5, r.top - 0.5, r.right + 0.5, r.bottom + 0.5);
+            s.draw_rounded_rect(
+                &RoundedRect::uniform(inner, 4.0),
+                &s.create_solid_brush(theme.focus_inner)?,
+                1.0,
+            );
+        }
         Ok(())
     }
 }
