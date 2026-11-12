@@ -521,10 +521,9 @@ impl FenceViewState {
     ) -> Option<PressTarget> {
         let p = if let Some(line) = self.note_box_at(x_px, y_px) {
             PressTarget::NoteBox(line)
-        } else if let Some(row) = self.script_row_at(x_px, y_px).filter(|_| !second) {
-            PressTarget::ScriptRow(row)
         } else {
-            return None;
+            let row = self.script_row_at(x_px, y_px).filter(|_| !second)?;
+            PressTarget::ScriptRow(row)
         };
         tracing::debug!(fence = %self.active, target = ?p, second, "tool control pressed");
         self.pressed = Some(p);
