@@ -143,6 +143,9 @@ pub enum Command {
     PortalForward(FenceId),
     /// A click on a folder fence's title glyph at its root folder: Explorer opens the folder.
     OpenPortalFolder(FenceId),
+    /// The pointer came onto a fence that shows a folder: a folder that was renamed or deleted
+    /// since is noticed now, before a click on one of its icons.
+    PortalPointerIn(FenceId),
     /// Tab / Shift+Tab in fence window `from`: the keyboard moves to the next / previous
     /// fence in reading order. A null `from` is the Peek's first Tab or arrow key, which no
     /// fence received: the first fence (the last one for Shift+Tab).

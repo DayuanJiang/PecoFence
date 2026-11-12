@@ -2545,6 +2545,7 @@ impl App {
             Command::PortalForward(fence) => self.portal_forward(fence),
             Command::FocusNextFence { from, back } => self.focus_next_fence(from, back),
             Command::OpenPortalFolder(fence) => self.open_portal_folder(fence, "title glyph"),
+            Command::PortalPointerIn(fence) => self.portal_pointer_in(fence),
             Command::SwitchTab { host, tab } => self.switch_tab(host, tab),
             Command::SetColumnWidths { fence, widths } => {
                 self.state.set_column_widths(fence, widths);

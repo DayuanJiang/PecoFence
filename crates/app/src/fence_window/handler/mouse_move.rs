@@ -29,6 +29,9 @@ pub(super) fn on_mousemove(
     let Some(v) = guard.as_mut() else {
         return Some(0);
     };
+    if !v.mouse_inside && v.is_portal && !v.portal_missing {
+        queue.push(Command::PortalPointerIn(v.active));
+    }
     v.set_mouse_inside(true);
     // A press on a locked fence that turns into a drag: the lock glyph pulses.
     v.note_lock_drag((pt.x, pt.y));

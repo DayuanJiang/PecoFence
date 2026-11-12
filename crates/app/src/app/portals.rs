@@ -58,7 +58,9 @@ impl App {
         w.set_filtered(filtered);
         // The tag's count follows what the fence shows (files come and go).
         self.sync_filter_view(active);
-        w.set_refuses_drops(smart);
+        // A fence that says 找不到此文件夹 has nowhere to put a file: it takes no drop (the
+        // shell's move would fail with a system error).
+        w.set_refuses_drops(smart || (is_portal && self.state.portal_missing(active)));
         if let Some(h) = self.state.fence(host) {
             let title = if active == host {
                 self.filter_title(host, self.state.display_title(h))
