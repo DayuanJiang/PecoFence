@@ -3,7 +3,8 @@
 #   N  notes: a rolled note fence stays open while its note is edited (hover expansion, and
 #      「编辑便签」 from the rolled title's menu opens it first); a press on the scroll bar of a
 #      long note leaves the edit going; selected right-to-left text has its fill; the editor's
-#      control follows the caret after a wheel scroll; what a draw of a 300-line note costs
+#      control follows the caret after a wheel scroll; Shift+Right across the start of a
+#      to-do; what a draw of a 300-line note costs
 #   C  chrome: the chevron's tip during a hover expansion says what the click does; the name
 #      box of a rolled note fence with a right-aligned title stands on the name
 # Runs on a 1600x900 box at 100 %, English interface.
@@ -116,6 +117,22 @@ function AfNotes() {
   $g0.Dispose(); $g1.Dispose()
   [G]::Press(0x1B); Start-Sleep -Milliseconds 800
   Check 'N9 Ctrl+A in a line of Hebrew shows the selection fill' ($n -gt 400) "pixels that changed with the selection: $n"
+
+  # 8: Shift+Right from the end of a line across the start of a to-do: the selection's end
+  # does not stop inside the unseen marker, so the letter typed next takes the whole marker.
+  Case 'N8 Shift+Right across the start of a to-do line'
+  Pf fence create --tool note --title 'Todo' --text "abc`n[ ] milk" --rect '1000,320,320,160' | Out-Null
+  Start-Sleep -Seconds 2
+  [G]::Click(1250, 372); Start-Sleep -Milliseconds 900
+  Chord 0x11 0x24; Start-Sleep -Milliseconds 200
+  [G]::Press(0x23); Start-Sleep -Milliseconds 200
+  [G]::KeyDown(0x10); [G]::Press(0x27); Start-Sleep -Milliseconds 150; [G]::Press(0x27); [G]::KeyUp(0x10)
+  Start-Sleep -Milliseconds 400
+  Crop 'n8-two-shift-right' 1000 320 320 110 | Out-Null
+  [G]::Type('x'); Start-Sleep -Milliseconds 400
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 900
+  $text = AfNoteText 'Todo'
+  Check 'N8 the letter typed after two Shift+Right takes the line break and the whole marker' ($text -eq 'abcxmilk') "note text: [$($text -replace "`n", ' / ')]"
 
   # 13: what one draw of a 300-line note costs while its caret blinks (the note is laid out
   # once and its rows are kept: every draw laid it out twice, 18 ms each on this box).
