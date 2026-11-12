@@ -4,9 +4,12 @@
 //! up and out when it no longer does (83 ms, `layer_fade`).
 
 use crate::layer_fade::FadingLayer;
+use pecofence_platform::frameclock::FrameClock;
 use pecofence_platform::layered::LayeredImage;
 use pecofence_platform::window::{self, ClassOptions, WindowClass};
 use pecofence_platform::{HWND, desktop};
+use std::rc::Rc;
+use std::time::Instant;
 use windows_core::Result;
 
 pub const DRAG_GUIDE_CLASS: &str = "PecoFence.DragGuide";
@@ -75,9 +78,9 @@ struct LineWindow {
 }
 
 impl LineWindow {
-    fn create(class: &WindowClass) -> Result<Self> {
+    fn create(class: &WindowClass, frames: Rc<FrameClock>) -> Result<Self> {
         Ok(Self {
-            layer: FadingLayer::create(class, "drag guide")?,
+            layer: FadingLayer::create(class, "drag guide", frames)?,
             last: None,
         })
     }
@@ -113,20 +116,32 @@ pub struct DragGuides {
     class: WindowClass,
     /// One window per guide on screen, created on first use and reused.
     lines: Vec<LineWindow>,
+    /// The app's frame clock: the guides' fades are ticked on it (`tick`).
+    frames: Rc<FrameClock>,
 }
 
 impl DragGuides {
-    pub fn create() -> Result<Self> {
+    pub fn create(frames: Rc<FrameClock>) -> Result<Self> {
         Ok(Self {
             class: WindowClass::register(DRAG_GUIDE_CLASS, ClassOptions::default())?,
             lines: Vec::new(),
+            frames,
         })
+    }
+
+    /// One frame of the guides' fades. Returns true while one is still on its way.
+    pub fn tick(&mut self, now: Instant) -> bool {
+        let mut more = false;
+        for w in &mut self.lines {
+            more |= w.layer.tick(now);
+        }
+        more
     }
 
     /// Shows `lines` (and hides any others) directly above `moving` in the z-order.
     pub fn show(&mut self, lines: &[GuideLine], dpi: u32, moving: HWND) {
         while self.lines.len() < lines.len() {
-            match LineWindow::create(&self.class) {
+            match LineWindow::create(&self.class, self.frames.clone()) {
                 Ok(w) => self.lines.push(w),
                 Err(e) => {
                     tracing::warn!(error = %e, "drag guide window unavailable");

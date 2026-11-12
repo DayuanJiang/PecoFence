@@ -1704,6 +1704,8 @@ impl App {
                 );
             }))
         };
+        // The drag feedback's fades run on the frame clock too.
+        let feedback_frames = frames.clone();
         let ctx = Rc::new(FenceContext {
             stack: stack.clone(),
             motion,
@@ -1767,12 +1769,12 @@ impl App {
                 ),
                 info_tips: std::cell::Cell::new(pecofence_platform::shell_icons::show_info_tips()),
                 drop_preview: std::cell::RefCell::new(
-                    crate::drop_preview::DropPreview::create()
+                    crate::drop_preview::DropPreview::create(feedback_frames.clone())
                         .map_err(|e| tracing::warn!(error = %e, "drop preview unavailable"))
                         .ok(),
                 ),
                 drag_guides: std::cell::RefCell::new(
-                    crate::drag_guides::DragGuides::create()
+                    crate::drag_guides::DragGuides::create(feedback_frames)
                         .map_err(|e| tracing::warn!(error = %e, "drag guides unavailable"))
                         .ok(),
                 ),

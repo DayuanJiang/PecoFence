@@ -393,6 +393,8 @@ impl App {
             self.end_peek_now();
         }
         more |= self.tick_peek_rest();
+        // The alignment guides and the landing outline of a drag: layered windows as well.
+        more |= self.ctx.behavior.tick_drag_feedback(now);
         let spent = now.elapsed();
         self.frame_run.max_frame = self.frame_run.max_frame.max(spent);
         self.frame_run.work += spent;

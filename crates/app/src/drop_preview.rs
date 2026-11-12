@@ -5,9 +5,12 @@
 //! `layer_fade`).
 
 use crate::layer_fade::FadingLayer;
+use pecofence_platform::frameclock::FrameClock;
 use pecofence_platform::layered::LayeredImage;
 use pecofence_platform::window::{self, ClassOptions, WindowClass};
 use pecofence_platform::{HWND, RECT, desktop};
+use std::rc::Rc;
+use std::time::Instant;
 use windows_core::Result;
 
 pub const DROP_PREVIEW_CLASS: &str = "PecoFence.DropPreview";
@@ -64,9 +67,9 @@ fn render(w: i32, h: i32, scale: f32, radius_dip: f32) -> Vec<u8> {
 }
 
 impl DropPreview {
-    pub fn create() -> Result<Self> {
+    pub fn create(frames: Rc<FrameClock>) -> Result<Self> {
         let class = WindowClass::register(DROP_PREVIEW_CLASS, ClassOptions::default())?;
-        let layer = FadingLayer::create(&class, "drop preview")?;
+        let layer = FadingLayer::create(&class, "drop preview", frames)?;
         Ok(Self {
             _class: class,
             layer,
@@ -108,6 +111,11 @@ impl DropPreview {
 
     pub fn hide(&mut self) {
         self.layer.hide();
+    }
+
+    /// One frame of the outline's fade. Returns true while it is still on its way.
+    pub fn tick(&mut self, now: Instant) -> bool {
+        self.layer.tick(now)
     }
 
     /// The outline's window rect while it is on screen, for test dumps.

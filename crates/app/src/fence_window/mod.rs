@@ -211,6 +211,24 @@ pub struct SizeMove {
 }
 
 impl Behavior {
+    /// One frame of the drag feedback's fades (the alignment guides and the landing outline
+    /// are layered windows: their alpha is a client tween, ticked by `App::on_frame`). Returns
+    /// true while one is still on its way.
+    pub fn tick_drag_feedback(&self, now: Instant) -> bool {
+        let mut more = false;
+        if let Ok(mut preview) = self.drop_preview.try_borrow_mut()
+            && let Some(preview) = preview.as_mut()
+        {
+            more |= preview.tick(now);
+        }
+        if let Ok(mut guides) = self.drag_guides.try_borrow_mut()
+            && let Some(guides) = guides.as_mut()
+        {
+            more |= guides.tick(now);
+        }
+        more
+    }
+
     /// The wait before a rolled fence expands under the pointer or a dragged file, and before
     /// the tab under a resting pointer is switched to.
     pub fn hover_open_ms(&self) -> u32 {
