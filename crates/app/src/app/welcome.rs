@@ -430,6 +430,26 @@ impl App {
         }
     }
 
+    /// The display language changed: the card on screen takes its texts again. It stayed in
+    /// the old language (an English tip under fences named in Chinese) until its button was
+    /// pressed. A card with two buttons keeps its texts: `set_content` knows one button.
+    pub(super) fn retext_welcome_card(&mut self) {
+        let Some((notice, which)) = self.welcome.as_ref() else {
+            return;
+        };
+        if matches!(which, Welcome::FolderTip { .. } | Welcome::RuleTip { .. }) {
+            return;
+        }
+        let Some((title, body, action)) = self.welcome_texts(which) else {
+            return;
+        };
+        let taken = notice
+            .set_content(&title, &body, action, crate::notice::locale())
+            .map_err(|error| tracing::warn!(%error, "card did not take the new language"))
+            .is_ok();
+        tracing::info!(notice = %welcome_kind(which), taken, "card on screen in the new language");
+    }
+
     pub(super) fn show_welcome(&mut self, which: Welcome) {
         use pecofence_core::i18n::text;
         let Some((title, body, action)) = self.welcome_texts(&which) else {

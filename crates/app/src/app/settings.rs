@@ -1550,6 +1550,7 @@ impl App {
         }
         self.push_settings_state();
         self.smart_editor_language_changed();
+        self.retext_welcome_card();
     }
 }
 
