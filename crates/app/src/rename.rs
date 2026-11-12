@@ -556,6 +556,11 @@ fn begin_rename_at(
     if let Some(b) = &item_box {
         // The selection put the caret after the stem: the name still shows from its start.
         fit_item_box(&window, &ctl, b);
+        // Also a name of more lines than the box holds: it opened on its last lines (the
+        // caret's), with the start of the name out of sight. Typing brings the caret back.
+        if b.max_lines > 1 {
+            ctl.scroll_to_top();
+        }
     }
     ACTIVE.with(|a| {
         *a.borrow_mut() = Some(RenameSession {
