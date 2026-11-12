@@ -80,15 +80,22 @@ pub(super) struct FeedbackState {
 /// Whether a shareable log records a crash: the panic hook's `PANIC` or crashlog's line.
 fn log_records_crash(log: &str) -> bool {
     log.lines().any(|line| {
-        line.contains(": PANIC location=") || line.contains(": CRASH (unhandled exception)")
+        line.contains(": PANIC location=")
+            || line.contains(": CRASH (unhandled exception)")
+            || line.contains(HANG_END)
     })
 }
 
-/// A field of crashlog's line in a shareable log (`at`, `module_owner`).
+/// The hang watch's line when it ended a run stuck inside another program's module
+/// (`pecofence_platform::hangwatch`); it has the fields of crashlog's line.
+const HANG_END: &str = ": HANG: ending to restart";
+
+/// A field of crashlog's line, or of the hang watch's, in a shareable log (`at`,
+/// `module_owner`, `command`).
 fn crash_field<'a>(log: &'a str, name: &str) -> Option<&'a str> {
     let line = log
         .lines()
-        .find(|line| line.contains(": CRASH (unhandled exception)"))?;
+        .find(|line| line.contains(": CRASH (unhandled exception)") || line.contains(HANG_END))?;
     line.split_whitespace()
         .find_map(|w| w.strip_prefix(name)?.strip_prefix('='))
 }
@@ -745,6 +752,28 @@ mod tests {
             other_programs_module("t  INFO x: module_owner=other\n"),
             None
         );
+    }
+
+    #[test]
+    fn a_menu_extension_that_ended_the_run_is_recognised() {
+        // A crash inside another program's module while an item menu was built.
+        let menu = "t ERROR pecofence_platform::crashlog: CRASH (unhandled exception) code=0xc0000005 at=qingshellext64.dll+0x1b7b3 command=ItemMenu module_owner=other access=read stack=  qingshellext64.dll+0x1b7b3\n";
+        assert!(crashed_building_menu(menu));
+        assert!(crashed_building_menu(
+            &menu.replace("command=ItemMenu", "command=PeekSearchRowMenu")
+        ));
+        // Another command, or PecoFence's own code under the menu: the menus stay whole.
+        assert!(!crashed_building_menu(
+            &menu.replace("command=ItemMenu", "command=Launch")
+        ));
+        assert!(!crashed_building_menu(
+            &menu.replace("module_owner=other", "module_owner=pecofence")
+        ));
+        // The hang watch's line, when it ended a run stuck in a menu extension, reads the same.
+        let hang = "t ERROR pecofence_platform::hangwatch: HANG: ending to restart at=YunShellExt64.dll+0x4c2 command=ItemMenu module_owner=other stack=  ntdll.dll+0x1\n";
+        assert!(log_records_crash(hang));
+        assert_eq!(other_programs_module(hang), Some("YunShellExt64.dll"));
+        assert!(crashed_building_menu(hang));
     }
 
     #[test]

@@ -1,7 +1,9 @@
 //! Notices when the UI thread stops answering messages for as long as Windows takes before it
 //! calls a program "not responding", and writes to the log which command it was running and
 //! where it was stuck (`module+rva` return addresses, as for a crash), so a report of a freeze
-//! says where.
+//! says where. A thread that stays stuck inside another program's module (a shell extension
+//! that never returns) is not coming back: after 30 more checks the process ends itself, and
+//! the watchdog starts PecoFence again.
 
 use crate::bindings::*;
 use std::sync::Mutex;
@@ -9,6 +11,13 @@ use std::time::{Duration, Instant};
 
 /// Windows marks a window "not responding" after 5 s without messages.
 const HANG_MS: u32 = 5000;
+/// A UI thread still stuck inside another program's module after this many one-second checks
+/// in a row (after the first five seconds) ends the process. A count and no clock: a PC that
+/// slept through a check has failed one check, however long it slept.
+const END_AFTER_CHECKS: u32 = 30;
+/// The exit code of a program Windows closed as not responding; the watchdog starts PecoFence
+/// again after it.
+const NOT_RESPONDING: u32 = 0xCFFF_FFFF;
 /// Enough to reach our own frames below a deep shell call (feedback #109 showed 48, all in
 /// the shell).
 const MAX_FRAMES: usize = 128;
@@ -92,7 +101,13 @@ fn watch(hwnd: HWND, thread: u32, stack: (u64, u64)) {
         );
         let frames = thread_stack(thread, stack);
         tracing::warn!(stack = %frames.join("\n"), "UI thread stack");
-        while answers(hwnd, 1000) == Some(false) {}
+        let mut failed = 0u32;
+        while answers(hwnd, 1000) == Some(false) {
+            failed += 1;
+            if failed.is_multiple_of(END_AFTER_CHECKS) {
+                end_if_stuck_in_other_module(thread, stack, name);
+            }
+        }
         tracing::info!(
             ms = elapsed_ms(started),
             command = name,
@@ -109,7 +124,80 @@ fn watch(hwnd: HWND, thread: u32, stack: (u64, u64)) {
 /// it points into a loaded module right behind a call instruction. Every real frame shows, in
 /// order, but older return addresses left on the stack show between them (in a 7 s test
 /// stall, 24 of 41 frames).
-fn thread_stack(thread: u32, (low, high): (u64, u64)) -> Vec<String> {
+fn thread_stack(thread: u32, stack: (u64, u64)) -> Vec<String> {
+    stack_lines(&thread_stack_addresses(thread, stack))
+}
+
+/// Addresses as the lines of a `stack` log field (`module+rva` each).
+fn stack_lines(addresses: &[u64]) -> Vec<String> {
+    addresses
+        .iter()
+        .map(|&pc| format!("  {}", crate::crashlog::locate_unpinned(pc)))
+        .collect()
+}
+
+/// Ends the process when the UI thread is stuck inside another program's module: nothing
+/// brings it back, and the fences stayed frozen until the user ended PecoFence in Task
+/// Manager (feedback #103, #109). The watchdog starts PecoFence again. Left alone: a wait in
+/// PecoFence's own code or in a Windows file (a slow disk, a busy Explorer), which ends by
+/// itself, and a run under a debugger.
+fn end_if_stuck_in_other_module(thread: u32, stack: (u64, u64), name: &str) {
+    windows_core::link!("kernel32.dll" "system" fn IsDebuggerPresent() -> windows_core::BOOL);
+    windows_core::link!("kernel32.dll" "system" fn TerminateProcess(process: HANDLE, code: u32) -> windows_core::BOOL);
+    // SAFETY: plain FFI call.
+    if unsafe { IsDebuggerPresent() }.as_bool() {
+        tracing::info!(
+            command = name,
+            "UI thread still not responding: left alone under a debugger"
+        );
+        return;
+    }
+    let addresses = thread_stack_addresses(thread, stack);
+    let Some(at) = stuck_in_other_module(&addresses) else {
+        tracing::info!(
+            command = name,
+            "UI thread still not responding: not inside another program's module, left alone"
+        );
+        return;
+    };
+    let frames = stack_lines(&addresses);
+    // The fields of crashlog's line, so that the next start reads it the same way.
+    let owner = "other";
+    tracing::error!(
+        at = %at,
+        command = name,
+        module_owner = owner,
+        stack = %frames.join("\n"),
+        "HANG: ending to restart"
+    );
+    pecofence_core::log_file::written(pecofence_core::log_file::LINE_WAIT);
+    // SAFETY: plain FFI call on this process.
+    unsafe {
+        let _ = TerminateProcess(GetCurrentProcess(), NOT_RESPONDING);
+    }
+}
+
+/// `module+rva` of where the thread is stuck when that is another program's module. Whose
+/// code it is stuck in: the innermost frame outside Windows' own files (the frames above it
+/// are the system call it waits in). `None` when that frame is PecoFence's or when there is
+/// none.
+fn stuck_in_other_module(addresses: &[u64]) -> Option<String> {
+    for &pc in addresses {
+        let Some(module) = crate::crashlog::module_holding(pc) else {
+            continue;
+        };
+        let path = crate::crashlog::module_path(Some(module));
+        match crate::crashlog::module_owner(&path) {
+            "windows" => continue,
+            "other" => return Some(crate::crashlog::locate_unpinned(pc)),
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// [`thread_stack`] as addresses.
+fn thread_stack_addresses(thread: u32, (low, high): (u64, u64)) -> Vec<u64> {
     #[repr(C, align(16))]
     struct Aligned(CONTEXT);
     let mut copy = vec![0u64; STACK_COPY / 8];
@@ -151,7 +239,6 @@ fn thread_stack(thread: u32, (low, high): (u64, u64)) -> Vec<String> {
                 .filter(|&v| after_call(v))
                 .take(MAX_FRAMES),
         )
-        .map(|pc| format!("  {}", crate::crashlog::locate_unpinned(pc)))
         .collect()
 }
 

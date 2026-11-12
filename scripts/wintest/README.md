@@ -200,8 +200,9 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   they are in `$PfExtra` (`C:\pf\extra`). Helper scripts of the kit itself are in `assets/`.
 - Another program's shell extension inside PecoFence: `build.sh` also builds
   `tools/shellext-fault` into `target/wintest-shellext`, a menu handler and copy hook that writes
-  every call to `calls.log` beside the DLL and faults in the entry point named in `fault.txt`,
-  only inside pecofence.exe. `tests/shellext-fault.ps1` (`--extra target/wintest-shellext`)
+  every call to `calls.log` beside the DLL and faults in the entry point named in `fault.txt`
+  (or, with `<entry> hang`, never returns from it), only inside pecofence.exe.
+  `tests/shellext-fault.ps1` (`--extra target/wintest-shellext`)
   registers it for pf alone and removes it again; copy its `ExtRegister` / `ExtArm` for another
   test of that kind.
 - An RDP session starts with Windows' client-area animations off, so PecoFence snaps where a

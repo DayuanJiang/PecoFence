@@ -17,13 +17,17 @@
 #   M  after that crash the item menus leave out Windows' part: the notice says so, the same
 #      right-click shows PecoFence's entries with the extension still set to fault, the next
 #      start builds no menu in the background, and the tray menu's entry brings it back
+#   H  a menu extension that never returns: the frozen run says why, ends itself after about
+#      35 s and is started again; that start leaves the Windows part of the menus out
+#   S  a 45 s wait in PecoFence's own code (the test script's `stall`, a debug build:
+#      run.sh --bin target/wintest-bin-debug --var Part=S) does not end the run
 #   O  a crash in PecoFence's own code (the test script's `crash` line) is left to Windows
 #      Error Reporting as before: Windows records it, the process ends when that is done
 #   L  the log says once per run which operation loaded the extension, and the log a user
 #      sends with a report keeps the DLL's name
 # Parts: run.sh --var Part=D ... (default: all). About 4 minutes.
 $PfAllowLogErrors = $true
-if (-not $Part) { $Part = 'LDCFMO' }
+if (-not $Part) { $Part = 'LDCFMHO' }
 trap { PfTrap $_; continue }
 
 Add-Type @'
@@ -460,6 +464,64 @@ if ($dll -and $Part -match 'M') {
   Remove-Item $Stamp, $SxMarker -ErrorAction SilentlyContinue
   Remove-Item "$env:LOCALAPPDATA\PecoFence\crash-*.dmp" -ErrorAction SilentlyContinue
   SxClean
+}
+
+if ($dll -and $Part -match 'H') {
+  Case 'H a menu extension that never returns'
+  ExtDisarm
+  Remove-Item $SxMarker -ErrorAction SilentlyContinue
+  PfStart
+  Pf settings set featureTips false | Out-Null
+  ClearFences | Out-Null
+  SxFence 'SxH' '300,200,520,170' @('sx h1 报告.txt', 'sx h2 预算.txt')
+  PfQuit
+  Start-Sleep -Seconds 2
+  Remove-Item $Stamp -ErrorAction SilentlyContinue
+  SxPlain
+  Start-Sleep -Seconds 9
+  $p1 = Get-Process pecofence | Select-Object -First 1
+  $p = CellPt 'SxH' 0
+  ExtArm 'QueryContextMenu hang'
+  $t0 = [DateTime]::UtcNow.AddMilliseconds(120)
+  [G]::RClick($p[0], $p[1])
+  $off = [int]([DateTime]::UtcNow - $t0).TotalMilliseconds
+  $watch = [SxMon]::Watch($p1.Id, 90)
+  ExtDisarm
+  Log "watch (its clock starts $off ms after the click): $watch"
+  $w = @{}; foreach ($kv in ($watch -split ' ')) { $a = $kv -split '=', 2; $w[$a[0]] = $a[1] }
+  foreach ($k in 'exit', 'born', 'fences') { if ([int]$w[$k] -ge 0) { $w[$k] = [int]$w[$k] + $off } }
+  $toast = ToastOcr 'Windows entries' 8
+  $prev = "$env:LOCALAPPDATA\PecoFence\pecofence.$PfInst.prev.log"
+  $hungLog = if ([int]$w['new_pid'] -ne 0 -and (Test-Path $prev)) { $prev } else { PfLogPath }
+  $line = @(Get-Content $hungLog -Encoding UTF8 | Where-Object { $_ -match 'HANG: ending to restart' }) | Select-Object -Last 1
+  Check 'H the frozen run says where it is stuck and ends itself after about 35 s' ($line -match ' at=pf_shellext_fault\.dll\+0x' -and $line -match 'command="?ItemMenu' -and $w['code'] -eq 'CFFFFFFF' -and [int]$w['exit'] -ge 30000 -and [int]$w['exit'] -le 45000) "exit $($w['exit']) ms after the click, code $($w['code']); log: $(if ($line -match '(HANG: ending.*?) stack=') { $Matches[1] })"
+  Check 'H the watchdog starts PecoFence again' ([int]$w['new_pid'] -ne 0 -and [int]$w['fences'] -ge 0) "new process $($w['born']) ms, its first fence $($w['fences']) ms after the click"
+  Start-Sleep -Seconds 3
+  $said = SxNewLog 'item menus are built without the Windows part'
+  Check 'H that start leaves the Windows part of the item menus out and says so' ($said -and (Test-Path $SxMarker) -and $toast -match 'pf_shellext_fault') "log: $(if ($said -match '(item menus.*)$') { $Matches[1] }); marker there=$(Test-Path $SxMarker); notice: $toast"
+  if (PfAlive) { PfQuit }
+  Get-Process pecofence, pecofence-watchdog -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 3
+  if (-not [W]::IconsVisible()) { [W]::ToggleIcons(); Start-Sleep -Seconds 1 }
+  Remove-Item $Stamp, $SxMarker -ErrorAction SilentlyContinue
+  SxClean
+}
+
+if ($Part -match 'S') {
+  Case 'S a long wait in PecoFence''s own code'
+  if (-not $PfDebugBuild) { Check 'S runs on a debug build (the test script''s stall line)' $false 'run.sh --bin target/wintest-bin-debug --var Part=S' }
+  PfStart -Script @('sleep 10000', 'stall 45000', 'sleep 3600000')
+  $p1 = Get-Process pecofence | Select-Object -First 1
+  # The stall starts about 5 s from here and lasts 45 s; the hang watch looks again after
+  # 36 s of it.
+  Start-Sleep -Seconds 58
+  $p2 = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
+  $log = @(Get-Content (PfLogPath) -Encoding UTF8)
+  $left = @($log | Where-Object { $_ -match 'still not responding: not inside another program''s module, left alone' }).Count
+  $back = @($log | Where-Object { $_ -match 'UI thread responding again' }) | Select-Object -Last 1
+  $ended = @($log | Where-Object { $_ -match 'HANG: ending to restart' }).Count
+  Check 'S a 45 s wait in PecoFence''s own code does not end the run' ($p1 -and $p2 -and $p1.Id -eq $p2.Id -and $left -ge 1 -and $ended -eq 0 -and $back) "same process=$($p1 -and $p2 -and $p1.Id -eq $p2.Id); left-alone lines=$left; ending lines=$ended; $(if ($back -match '(UI thread responding again.*)$') { $Matches[1] })"
+  PfQuit
 }
 
 if ($Part -match 'O') {

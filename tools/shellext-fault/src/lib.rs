@@ -5,7 +5,8 @@
 //! Beside the DLL:
 //!   calls.log  one line per call: time, host program, process and thread id, entry point
 //!   fault.txt  `<entry> [<wait ms>]`: that entry point waits and then reads from an address
-//!              that is never mapped (an access violation), only inside pecofence.exe
+//!              that is never mapped (an access violation), only inside pecofence.exe;
+//!              `<entry> hang`: that entry point never returns
 //! Entry points: DllGetClassObject, Initialize, QueryContextMenu, InvokeCommand, CopyCallback.
 //!
 //! Registered per user by the steps that use it (HKCU\Software\Classes\CLSID\{CLSID} with
@@ -109,7 +110,14 @@ fn enter(entry: &str, detail: &str) {
     if words.next() != Some(entry) || host() != "pecofence.exe" {
         return;
     }
-    if let Some(ms) = words.next().and_then(|w| w.parse::<u64>().ok()) {
+    let wait = words.next();
+    if wait == Some("hang") {
+        log(entry, "hanging now");
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(3600));
+        }
+    }
+    if let Some(ms) = wait.and_then(|w| w.parse::<u64>().ok()) {
         log(entry, &format!("waiting {ms} ms before the fault"));
         std::thread::sleep(std::time::Duration::from_millis(ms));
     }
