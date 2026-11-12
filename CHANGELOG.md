@@ -238,6 +238,7 @@
 - A change of 「不透明度」 or 「色调」 picks the text colour of the fence again. In dark mode over the Windows 11 wallpaper, a note switched from 「更厚实」 to 「全透明」 kept the white text of its dark plate on the light wallpaper (1.75 : 1), for as long as nothing else changed: the colour stays put near its threshold so that it does not flicker while a fence is moved, and that carried over to the new look.
 - The alignment guides and the white outline of where a dragged fence will land fade in and out. They appeared in one frame when an edge lined up and vanished in one frame at the release, while everything else that comes and goes on a fence fades. Both now take the same 83 ms; with Windows' animations off they still show and go at once.
 - A fence at the top edge of the screen has square top corners. Docked with 「停靠到屏幕顶部」 (or dragged up against the edge), the title row touched the screen edge with its two rounded corners, and the wallpaper showed in two small notches above it. The top corners of the plate, its rim and its shadow are now square while the fence stands at the edge, as a drawer's are where it hangs, and round again as soon as it leaves.
+- A tab pulled out of its fence is under the pointer from the first frame. The new fence faded in like any new fence, so for a frame the tab was nowhere: gone from the strip, not yet drawn, while the white outline of the landing place already showed. The fence in the hand now stands at full strength at once.
 
 ## 0.3.3
 

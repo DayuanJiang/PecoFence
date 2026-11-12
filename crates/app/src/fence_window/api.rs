@@ -413,6 +413,18 @@ impl FenceWindow {
         show_with_fade(&self.view, self.hwnd(), entrance);
     }
 
+    /// Ends a fade-in at once: the window (and its shadow) stand at full strength now. For a
+    /// window the user already holds (a tab torn off by a drag).
+    pub fn show_at_once(&self) {
+        self.with_view(|v| {
+            if v.vis_fade == Some(VisFade::Showing) {
+                v.vis_fade = None;
+                v.reset_root();
+                tracing::debug!(title = %v.title, "fade in ended at once: the window is in the hand");
+            }
+        });
+    }
+
     /// 在哪个虚拟桌面显示: `tip` names the desktops of a window that shows on some of them only
     /// (the Task View glyph before its title, the text its infotip shows); `None` for one on
     /// every desktop.
