@@ -133,6 +133,7 @@
   "想拆开，就按住标签往下拖。拖出标题栏后，它又变回单独的栅栏，拖到桌面空白处松开就行。": "Para separarlos, arrastra la pestaña hacia abajo. En cuanto sale de la barra de título vuelve a ser un grupo independiente; suéltala en una zona vacía del escritorio.",
   "把图标拖到某个标签上，它就直接放进那一页。右键标题栏或标签，「标签页」里也有「合并到…」和「拆出为独立栅栏」。": "Si arrastras un icono sobre una pestaña, va directamente a esa pestaña. Al hacer clic con el botón derecho en la barra de título o en una pestaña, el submenú «Pestañas» también ofrece «Fusionar con…» y «Separar en un grupo independiente».",
   "合并错了，或者把标签页拖出来又后悔了，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 就回到原样。": "Si fusionaste los grupos equivocados o separaste una pestaña sin querer, presiona <kbd>Ctrl</kbd>+<kbd>Z</kbd> y todo vuelve a como estaba.",
+  "不点标签也能切换：鼠标在另一个标签上停一下，就切换过去；切换过一次以后，接着移到旁边的标签上，马上跟着切换。第一下要等多久，由「设置」→「常规」里的「展开快慢」决定；不想要就在同一页关掉「鼠标悬停时切换标签页」。": "También puedes cambiar sin hacer clic: deja el cursor un momento sobre otra pestaña y el grupo cambia a ella; después de ese primer cambio, las pestañas siguientes cambian enseguida en cuanto llevas el cursor a ellas. Cuánto espera la primera lo decide «Velocidad al expandir» en «Configuración» → «General»; si no lo quieres, desactiva «Cambiar de pestaña al pasar el cursor» en la misma página.",
   "4.2 · 常用技巧": "4.2 · Trucos útiles",
   "双击桌面隐藏栅栏": "Ocultar grupos con doble clic",
   "想看看壁纸，或者截一张干净的桌面，双击一下桌面空白处就行。": "¿Quieres ver el fondo de pantalla o hacer una captura del escritorio despejado? Haz doble clic en una zona vacía del escritorio.",

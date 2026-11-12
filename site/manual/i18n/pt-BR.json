@@ -133,6 +133,7 @@
   "想拆开，就按住标签往下拖。拖出标题栏后，它又变回单独的栅栏，拖到桌面空白处松开就行。": "Para separar, arraste a aba para baixo. Fora da barra de título, ela volta a ser um grupo independente; é só soltá-la em um espaço vazio da área de trabalho.",
   "把图标拖到某个标签上，它就直接放进那一页。右键标题栏或标签，「标签页」里也有「合并到…」和「拆出为独立栅栏」。": "Arraste um ícone até uma aba para colocá-lo direto nela. Clicando com o botão direito na barra de título ou em uma aba, o submenu “Abas” também tem “Mesclar com…” e “Separar em um grupo independente”.",
   "合并错了，或者把标签页拖出来又后悔了，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 就回到原样。": "Se você mesclou os grupos errados ou separou uma aba sem querer, pressione <kbd>Ctrl</kbd>+<kbd>Z</kbd> e tudo volta a ser como antes.",
+  "不点标签也能切换：鼠标在另一个标签上停一下，就切换过去；切换过一次以后，接着移到旁边的标签上，马上跟着切换。第一下要等多久，由「设置」→「常规」里的「展开快慢」决定；不想要就在同一页关掉「鼠标悬停时切换标签页」。": "Também dá para trocar sem clicar: pare o mouse por um instante sobre outra aba e o grupo passa para ela; depois dessa primeira troca, as abas seguintes trocam na hora, assim que o mouse chega a elas. Quanto tempo a primeira espera é definido por “Velocidade ao expandir” em “Configurações” → “Geral”; se não quiser isso, desative “Trocar de aba ao passar o mouse” na mesma página.",
   "4.2 · 常用技巧": "4.2 · Dicas úteis",
   "双击桌面隐藏栅栏": "Ocultar grupos com clique duplo",
   "想看看壁纸，或者截一张干净的桌面，双击一下桌面空白处就行。": "Quer ver o papel de parede ou tirar uma captura de tela da área de trabalho limpa? Clique duas vezes em um espaço vazio.",

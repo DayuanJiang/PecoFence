@@ -133,6 +133,7 @@
   "想拆开，就按住标签往下拖。拖出标题栏后，它又变回单独的栅栏，拖到桌面空白处松开就行。": "Pour le séparer, faites glisser l’onglet vers le bas. Une fois hors de la barre de titre, il redevient un groupe indépendant : relâchez-le sur une zone vide du Bureau.",
   "把图标拖到某个标签上，它就直接放进那一页。右键标题栏或标签，「标签页」里也有「合并到…」和「拆出为独立栅栏」。": "Faites glisser une icône sur un onglet pour la ranger directement dans cet onglet. Le sous-menu « Onglets » (clic droit sur la barre de titre ou sur un onglet) propose aussi « Fusionner avec… » et « Détacher en groupe indépendant ».",
   "合并错了，或者把标签页拖出来又后悔了，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 就回到原样。": "Vous avez fusionné les mauvais groupes ou détaché un onglet par erreur ? Appuyez sur <kbd>Ctrl</kbd>+<kbd>Z</kbd> : tout revient comme avant.",
+  "不点标签也能切换：鼠标在另一个标签上停一下，就切换过去；切换过一次以后，接着移到旁边的标签上，马上跟着切换。第一下要等多久，由「设置」→「常规」里的「展开快慢」决定；不想要就在同一页关掉「鼠标悬停时切换标签页」。": "On peut aussi changer d’onglet sans cliquer : laissez le pointeur un instant sur un autre onglet et le groupe y passe ; après ce premier changement, les onglets suivants s’affichent dès que le pointeur arrive dessus. La durée d’attente du premier se règle avec « Vitesse de déploiement » dans « Paramètres » → « Général » ; pour ne plus avoir ce comportement, désactivez « Changer d’onglet au survol » dans la même page.",
   "4.2 · 常用技巧": "4.2 · Astuces pratiques",
   "双击桌面隐藏栅栏": "Masquer les groupes d’un double-clic",
   "想看看壁纸，或者截一张干净的桌面，双击一下桌面空白处就行。": "Pour admirer votre fond d’écran ou faire une capture d’un Bureau dégagé, double-cliquez simplement sur une zone vide du Bureau.",
