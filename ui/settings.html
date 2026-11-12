@@ -1183,15 +1183,27 @@
   function showPage(name) {
     const a = document.querySelector(`nav a[data-page="${name}"]`);
     if (!a || a.classList.contains('sel')) return;
-    document.querySelectorAll('nav a').forEach(x => { x.classList.remove('sel'); x.removeAttribute('aria-current'); });
+    document.querySelectorAll('nav a').forEach(x => { x.classList.remove('sel'); x.removeAttribute('aria-current'); x.tabIndex = -1; });
     a.classList.add('sel');
     a.setAttribute('aria-current', 'page');
+    a.tabIndex = 0;
     document.querySelectorAll('.page').forEach(p => p.classList.toggle('on', p.id === 'page-' + name));
     document.querySelector('main').scrollTop = 0;
     if (name === 'about') requestFeedbackInfo();
     ringFence();
   }
-  document.querySelectorAll('nav a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); showPage(a.dataset.page); }));
+  // The nav is one Tab stop, its selected row. The arrow keys, Home and End move between the
+  // rows, Enter or Space shows a row's page, and the next Tab lands on that page's first control.
+  const navRows = [...document.querySelectorAll('nav a')];
+  navRows.forEach((a, i) => {
+    a.tabIndex = a.classList.contains('sel') ? 0 : -1;
+    a.addEventListener('click', e => { e.preventDefault(); showPage(a.dataset.page); });
+    a.addEventListener('keydown', e => {
+      const to = { ArrowDown: navRows[i + 1], ArrowUp: navRows[i - 1], Home: navRows[0], End: navRows.at(-1) }[e.key];
+      if (to) { e.preventDefault(); to.focus(); }
+      else if (e.key === ' ') { e.preventDefault(); a.click(); }
+    });
+  });
 
   // 查找设置: every card with a title on every page, read from the page as it is (its language,
   // the cards the current state shows), so nothing has to be kept in step. Every word must

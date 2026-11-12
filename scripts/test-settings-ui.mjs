@@ -2629,6 +2629,29 @@ async function runTests() {
     doc = await reset();
   });
 
+  await test('Keyboard: the nav is one Tab stop, arrow keys move in it, Enter or Space shows the page', async () => {
+    doc = await reset();
+    const rows = [...doc.querySelectorAll('nav a')], stops = () => rows.filter(a => a.tabIndex === 0).map(a => a.dataset.page).join();
+    assert(stops() === 'general', 'Tab stops in the nav at the start: ' + stops());
+    rows[0].focus();
+    press(rows[0], 'ArrowDown', 40); assert(doc.activeElement === rows[1], 'Arrow down did not move to the next row');
+    press(rows[1], 'End', 35); assert(doc.activeElement === rows[6], 'End did not move to the last row');
+    press(rows[6], 'ArrowDown', 40); assert(doc.activeElement === rows[6], 'Arrow down left the last row');
+    press(rows[6], 'Home', 36); press(rows[0], 'ArrowUp', 38); assert(doc.activeElement === rows[0], 'Home / Arrow up at the first row');
+    assert(doc.getElementById('page-general').classList.contains('on') && stops() === 'general', 'Arrow keys alone changed the page');
+    press(rows[0], 'ArrowDown', 40); press(rows[1], 'ArrowDown', 40);
+    press(rows[2], ' ', 32);
+    assert(doc.getElementById('page-fences').classList.contains('on'), 'Space did not show the page');
+    assert(stops() === 'fences' && doc.activeElement === rows[2], 'The Tab stop did not follow the page: ' + stops());
+    // What Tab reaches next: the first control after the row that can take the focus.
+    const next = [...doc.querySelectorAll('nav a, main input, main select, main button, main [tabindex]')].filter(el => el.tabIndex >= 0 && el.getClientRects().length);
+    assert(next[next.indexOf(rows[2]) + 1] === doc.getElementById('fenceSel'), 'Tab after the nav does not reach the page');
+    doc.getElementById('settingsSearch').focus();
+    assert(next.indexOf(rows[2]) === 0, 'More than one Tab stop between the search box and the page');
+    doc.querySelector('[data-page=general]').click();
+    assert(stops() === 'general', 'A click did not move the Tab stop: ' + stops());
+  });
+
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
   window.testResults = { passed, failed };
