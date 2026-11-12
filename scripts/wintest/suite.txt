@@ -225,3 +225,5 @@ o4-todo-looks      3   resize release free-placement.ps1             --steps own
 # The night's code reads of the merged branch: one steps file per round of fixes.
 o5-fixes-a         4   ec2    release owner5-fixes-a.ps1
 o5-fixes-b         5   ec2    debug   owner5-fixes-b.ps1
+# 显示托盘图标 (GitHub #209, feedback #145): the switch, and what stays in reach without the icon.
+o6-tray            3   ec2    debug   owner6-tray.ps1
