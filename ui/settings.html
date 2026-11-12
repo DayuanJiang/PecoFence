@@ -618,7 +618,7 @@
       </div>
       <h3>文件对话框</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8DA;</span><div><div class="t">对话框跳转</div><div class="s">打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.dialogJump"></div></div>
-      <div class="card child dj-demo" id="dialogJumpDemo"><div class="dj-head">怎么用</div><div class="dj-body"><div class="dj-pic" aria-hidden="true"></div><ol><li>「打开」对话框停在程序自己选的文件夹</li><li></li><li></li></ol></div><div class="s">也可以在对话框里按 Ctrl+G，或者点一下文件夹栅栏。</div></div>
+      <div class="card child dj-demo" id="dialogJumpDemo"><div class="dj-head">怎么用</div><div class="dj-body"><div class="dj-pic" aria-hidden="true"></div><ol><li>“打开”对话框停在程序自己选的文件夹</li><li></li><li></li></ol></div><div class="s">也可以在对话框里按 Ctrl+G，或者点一下文件夹栅栏。</div></div>
     </section>
 
     <section class="page" id="page-fences">
@@ -740,9 +740,9 @@
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xEA86;</span><div><div class="t">小工具</div><div class="s">关上后，桌面上的小工具都不显示，脚本也全部停下</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.enabled"></div></div>
         <div class="card child"><div class="l"><div><div class="t">便签与待办</div><div class="s">在栅栏里写几行字，单击就能编辑。行首写 [ ] 的一行会变成可以勾选的待办</div></div></div><button class="accent" id="newNote">新建便签</button></div>
-        <div class="card child"><div class="l"><div><div class="t">时钟</div><div class="s">显示时间、日期和星期。右键时钟可以打开「显示秒」</div></div></div><button id="newClock">添加</button></div>
-        <div class="card child"><div class="l"><div><div class="t">天气</div><div class="s">今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选「编辑脚本」，把 Tokyo 换成你的城市</div></div></div><button id="addWeather" data-example="weather">添加</button></div>
-        <div class="card child"><div class="l"><div><div class="t">GitHub 仓库动态</div><div class="s">一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选「编辑脚本」，换成你关心的仓库</div></div></div><button id="addGitHub" data-example="github">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">时钟</div><div class="s">显示时间、日期和星期。右键时钟可以打开“显示秒”</div></div></div><button id="newClock">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">天气</div><div class="s">今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选“编辑脚本”，把 Tokyo 换成你的城市</div></div></div><button id="addWeather" data-example="weather">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">GitHub 仓库动态</div><div class="s">一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选“编辑脚本”，换成你关心的仓库</div></div></div><button id="addGitHub" data-example="github">添加</button></div>
         <div class="card child"><div class="l"><div><div class="t">电脑状态</div><div class="s">一直运行，每 2 秒更新 CPU、内存和每个磁盘的剩余空间。点一行可以复制本机 IP 或打开任务管理器</div></div></div><button id="addStatus" data-example="status">添加</button></div>
         <div class="card child"><div class="l"><div><div class="t">用自己的脚本</div><div class="s">运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里。脚本最多运行 10 秒（一直运行的除外），不弹出窗口。PecoFence 本身不会为脚本联网</div></div></div><div class="actions"><button id="scriptGuide">写法说明</button><button id="newScript">选择脚本…</button></div></div>
       </div>
@@ -2576,8 +2576,8 @@
     let step = 1;
     const draw = () => {
       const folder = t("对话框跳转演示\x04项目资料"), front = step !== 2;
-      steps[1].textContent = tf("切到资源管理器，它正开着「{0}」", folder);
-      steps[2].textContent = tf("切回对话框，它自动跳到「{0}」", folder);
+      steps[1].textContent = tf("切到资源管理器，它正开着“{0}”", folder);
+      steps[2].textContent = tf("切回对话框，它自动跳到“{0}”", folder);
       const ex = win(14, 22, t("资源管理器"), folder, !front, false);
       const dlg = win(136, 46, t("打开"), step === 3 ? folder : t("文档"), front, step === 3);
       const cursor = step === 1 ? '' : `<path class="cursor" transform="translate(${step === 2 ? '60 92' : '230 60'})" d="M0 0 l0 14 l4 -4 l3 7 l3 -1 l-3 -7 l5 0 z"/>`;
@@ -2755,7 +2755,7 @@
         return { cond: { cond: 'idleDays', value: { min: Math.floor(days) } } };
       }
       // 来源 says where a desktop icon came from: nothing a found file has.
-      default: return r.cond.cond === 'origin' ? { error: t("「来源」不能作为智能栅栏的条件，请删掉这一行"), at: q('.se-minus'), lasting: true } : { cond: r.cond };
+      default: return r.cond.cond === 'origin' ? { error: t("“来源”不能作为智能栅栏的条件，请删掉这一行"), at: q('.se-minus'), lasting: true } : { cond: r.cond };
     }
   }
   // The whole search, or { error, at, row } for the first row that is not filled in.
@@ -2783,7 +2783,7 @@
         return ['target', 'created', 'weekday', 'idle'].includes(k) || (k === 'name' && r.name)
           || (r.cond && ((r.cond.cond === 'type' && r.cond.value.some(v => v === 'programs' || v === 'installers')) || r.cond.cond === 'plainFiles' || (r.cond.cond === 'filesOnly' && r.cond.plain)));
       });
-      if (rough) return { error: t("选「任一」时，Everything 语法不能和这一行一起用"), at: rough.querySelector('.se-kind'), row: rough, lasting: true };
+      if (rough) return { error: t("选“任一”时，Everything 语法不能和这一行一起用"), at: rough.querySelector('.se-kind'), row: rough, lasting: true };
     }
     return { spec };
   }

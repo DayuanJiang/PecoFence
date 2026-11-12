@@ -388,4 +388,59 @@ mod tests {
             }
         }
     }
+
+    /// One kind of quotation mark per language: a card that names a fence in “ ” above a
+    /// button named in 「 」 reads as two programs. The source strings (Simplified Chinese)
+    /// are the catalogs' keys.
+    #[test]
+    fn each_language_uses_one_kind_of_quotation_marks() {
+        // The marks a language's strings do not use.
+        let foreign = |language: Language| -> &'static [char] {
+            match language {
+                Language::Japanese | Language::TraditionalChinese => &['“', '”', '‘'],
+                Language::German => &['「', '」', '«', '»', '‘'],
+                Language::French | Language::Spanish | Language::Russian | Language::Italian => {
+                    &['「', '」', '“', '”', '‘']
+                }
+                // English, Korean, Portuguese and the Simplified Chinese source: “ ”.
+                _ => &['「', '」', '«', '»', '‘', '„'],
+            }
+        };
+        for source in catalog(Language::English).keys() {
+            let odd: Vec<char> = source
+                .chars()
+                .filter(|c| foreign(Language::SimplifiedChinese).contains(c))
+                .collect();
+            assert!(odd.is_empty(), "zh-CN: {odd:?} in {source}");
+        }
+        for &language in SUPPORTED {
+            if language == Language::SimplifiedChinese {
+                continue;
+            }
+            for (source, value) in catalog(language) {
+                let odd: Vec<char> = value
+                    .chars()
+                    .filter(|c| foreign(language).contains(c))
+                    .collect();
+                assert!(
+                    odd.is_empty(),
+                    "{}: {odd:?} in {value} ({source})",
+                    language.tag()
+                );
+                // A straight ' after a letter is an apostrophe (it's, d'ora, fences'); one
+                // that starts a word opens a quotation.
+                let chars: Vec<char> = value.chars().collect();
+                for (i, c) in chars.iter().enumerate() {
+                    let opens = *c == '\''
+                        && (i == 0 || !chars[i - 1].is_alphanumeric())
+                        && chars.get(i + 1).is_some_and(|n| n.is_alphanumeric());
+                    assert!(
+                        !opens,
+                        "{}: a straight ' as a quotation mark in {value}",
+                        language.tag()
+                    );
+                }
+            }
+        }
+    }
 }

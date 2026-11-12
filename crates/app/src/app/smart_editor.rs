@@ -330,7 +330,7 @@ impl App {
             ed.post_json(
                 &serde_json::json!({
                     "type": "editorNotice",
-                    "text": pecofence_core::i18n::text("这个栅栏的条件刚在别处改过，按「好」会换成这里的条件"),
+                    "text": pecofence_core::i18n::text("这个栅栏的条件刚在别处改过，按“好”会换成这里的条件"),
                 })
                 .to_string(),
             );

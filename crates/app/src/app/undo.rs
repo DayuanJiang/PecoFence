@@ -390,7 +390,7 @@ impl App {
         match crate::notice::Notice::show(
             &self.ctx,
             &title,
-            pecofence_core::i18n::text("点「撤销」，或在栅栏上按 Ctrl+Z，就能把它找回来。"),
+            pecofence_core::i18n::text("点“撤销”，或在栅栏上按 Ctrl+Z，就能把它找回来。"),
             pecofence_core::i18n::text("撤销"),
             crate::notice::locale(),
             &self.notice_avoid_rects(),
@@ -415,7 +415,7 @@ impl App {
         match crate::notice::Notice::show(
             &self.ctx,
             &title,
-            pecofence_core::i18n::text("点「撤销」，或在栅栏上按 Ctrl+Z，就能把它们放回原处。"),
+            pecofence_core::i18n::text("点“撤销”，或在栅栏上按 Ctrl+Z，就能把它们放回原处。"),
             pecofence_core::i18n::text("撤销"),
             crate::notice::locale(),
             &self.notice_avoid_rects(),

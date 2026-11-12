@@ -276,7 +276,7 @@ impl App {
         else {
             return ScriptView {
                 rows: ScriptRowView::plain(i18n::text(
-                    "还没有选择脚本。右键这个栅栏，选「选择脚本…」。",
+                    "还没有选择脚本。右键这个栅栏，选“选择脚本…”。",
                 )),
                 footer: String::new(),
                 quiet: false,

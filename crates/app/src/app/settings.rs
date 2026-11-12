@@ -177,7 +177,7 @@ impl App {
         self.push_settings_state();
         if scripts_held {
             self.settings_toast(pecofence_core::i18n::text(
-                "已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在「小工具」页打开「小工具」开关。",
+                "已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在“小工具”页打开“小工具”开关。",
             ));
         } else {
             self.settings_toast(source.done());
