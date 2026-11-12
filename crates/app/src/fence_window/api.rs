@@ -1832,7 +1832,15 @@ impl FenceWindow {
                     v.script_rows.clear();
                     v.script_hover = None;
                 }
+                // The first result takes the place of 「正在运行…」 with the content's
+                // cross-fade (83 ms, as a change of view), not in one frame.
+                let first_result = v.script.as_ref().is_some_and(|s| s.quiet)
+                    && script.as_ref().is_some_and(|s| !s.quiet);
                 v.script = script;
+                if first_result && v.content_swap_shows() {
+                    tracing::debug!(fence = %v.active, "script fence: the first result fades in");
+                    v.begin_content_swap(0);
+                }
                 let _ = v.redraw();
             }
         });

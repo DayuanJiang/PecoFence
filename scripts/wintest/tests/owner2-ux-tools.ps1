@@ -471,7 +471,7 @@ Check 'the footer of a 120 px wide script fence ends before the edge' ([int]$ink
 Pf fence delete $sid | Out-Null
 
 Case 'E3 the first run of a slow script'
-[IO.File]::WriteAllText("$sd\六秒.ps1", "Start-Sleep -Seconds 6`r`nWrite-Output '完成'`r`n", $utf8)
+[IO.File]::WriteAllText("$sd\六秒.ps1", "Start-Sleep -Seconds 6`r`nWrite-Output '完成'`r`nWrite-Output '第二行'`r`nWrite-Output '第三行文字'`r`n", $utf8)
 $slow = NewTool '六秒' '420,100,300,160' 'script' "$sd\六秒.ps1"
 Start-Sleep -Milliseconds 2500
 $w = DumpOf '六秒'
@@ -480,7 +480,14 @@ $c = CRect $w
 $body = [UX]::Ink($c[0] + 10, $c[1] + 2, $c[2] - 20, $c[3] - 40, 40) -split ' '
 FCrop 'e3-first-run' $w
 Check 'while the first run goes on the body says so' ([int]$body[0] -ge 60) "text pixels in the body 2.5 s after the fence was made: $($body[0])"
-Start-Sleep -Seconds 6
+# The first result comes in with the content's cross-fade: the third row's place (bare while
+# the script runs) passes through a brightness between the bare plate and the text.
+ParkMouse 700 700
+Start-Sleep -Milliseconds 800
+$seen = [UX]::Watch(700, 700, $c[0] + 16, $c[1] + 56, 70, 18, 5500)
+$vals = @($seen -split ' ' | Where-Object { $_ } | ForEach-Object { [double](($_ -split ':')[1]) })
+$between = @($vals | Where-Object { [math]::Abs($_ - $vals[0]) -ge 0.6 -and [math]::Abs($_ - $vals[-1]) -ge 0.6 }).Count
+Check 'the first result fades in' ($between -ge 1 -and [math]::Abs($vals[-1] - $vals[0]) -ge 2) "brightness of the third row's place while the result arrived (ms:value): $seen"
 Pf fence delete $slow | Out-Null
 }
 
