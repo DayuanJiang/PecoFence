@@ -43,6 +43,10 @@ pub fn back_color(dark: bool) -> u32 {
 /// keyboard). Outside the virtual-key range; returning true keeps the control's own text menu
 /// away. A right-click always gives the text menu.
 pub const KEY_CONTEXT_MENU: u32 = 0x1_0000;
+/// The code a key handler gets when the control is asked to undo by a message (「撤销」 in its
+/// text menu). Returning true keeps the control's own one-step undo away. Ctrl+Z arrives as
+/// the key.
+pub const KEY_UNDO: u32 = 0x1_0001;
 
 pub struct EditControl {
     hwnd: HWND,
@@ -688,9 +692,10 @@ thread_local! {
         std::cell::RefCell::new(std::collections::HashMap::new());
     /// Set while `hint_after` works: the text length it asks for is a message to the control.
     static IN_HINT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// The control whose key handler just acted on Enter: the key's character, which comes
-    /// next, must not break the line as well (a note's control takes line breaks).
-    static ENTER_HANDLED: std::cell::Cell<isize> = const { std::cell::Cell::new(0) };
+    /// The control whose key handler just acted on Enter, Ctrl+Z or Ctrl+Y, and the key's
+    /// character, which comes next: it must not break the line as well (a note's control
+    /// takes line breaks) or undo a second time (the control undoes on Ctrl+Z's character).
+    static KEY_HANDLED: std::cell::Cell<(isize, usize)> = const { std::cell::Cell::new((0, 0)) };
 }
 
 const WM_IME_STARTCOMPOSITION: u32 = 0x010D;
@@ -851,17 +856,36 @@ unsafe fn handle(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, refdata: 
         if msg == WM_KEYDOWN as u32 && refdata != 0 {
             let handler: KeyHandler = core::mem::transmute::<usize, KeyHandler>(refdata);
             let handled = handler(wparam.0 as u32);
-            let enter = handled && wparam.0 == 13;
-            ENTER_HANDLED.with(|e| e.set(if enter { hwnd.0 as isize } else { 0 }));
+            // The character the key sends next: Enter's, Ctrl+Z's, Ctrl+Y's.
+            let follows = match wparam.0 {
+                13 => 13,
+                0x5A => 0x1A,
+                0x59 => 0x19,
+                _ => 0,
+            };
+            KEY_HANDLED.with(|e| {
+                e.set(if handled && follows != 0 {
+                    (hwnd.0 as isize, follows)
+                } else {
+                    (0, 0)
+                })
+            });
             if handled {
                 return LRESULT(0);
             }
         }
         if msg == WM_CHAR as u32
-            && wparam.0 == 13
-            && ENTER_HANDLED.with(|e| e.replace(0)) == hwnd.0 as isize
+            && matches!(wparam.0, 13 | 0x19 | 0x1A)
+            && KEY_HANDLED.with(|e| e.replace((0, 0))) == (hwnd.0 as isize, wparam.0)
         {
             return LRESULT(0);
+        }
+        // 「撤销」 in the control's text menu: the handler's own undo history, if it has one.
+        if (msg == WM_UNDO || msg == EM_UNDO) && refdata != 0 {
+            let handler: KeyHandler = core::mem::transmute::<usize, KeyHandler>(refdata);
+            if handler(KEY_UNDO) {
+                return LRESULT(1);
+            }
         }
         // The menu key and Shift+F10: DefWindowProc sends WM_CONTEXTMENU with lParam -1.
         if msg == WM_CONTEXTMENU as u32 && lparam.0 as u32 == u32::MAX && refdata != 0 {

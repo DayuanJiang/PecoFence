@@ -1144,6 +1144,12 @@ impl App {
 
     /// A click on a to-do's check box.
     pub(super) fn toggle_note_line(&mut self, fence: FenceId, line: usize) {
+        // While the note is edited the tick goes into the editor's text (Ctrl+Z takes it
+        // back); the note gets it when the editor closes.
+        if crate::note_edit::open_for() == Some(fence) {
+            crate::note_edit::toggle_line(fence, line);
+            return;
+        }
         if self.state.toggle_note_line(fence, line) {
             self.push_note(fence);
             self.schedule_save();

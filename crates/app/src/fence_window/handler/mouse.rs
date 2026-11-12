@@ -981,6 +981,13 @@ pub(super) fn note_edit_mouse(
     let v = guard.as_mut()?;
     v.note_edit.as_ref()?;
     let fence = v.active;
+    // A check box stays a check box while the note is edited: the usual press takes it (the
+    // pressed look, the tick on release), and the editor stays open.
+    if matches!(message, msg::WM_LBUTTONDOWN | msg::WM_LBUTTONDBLCLK)
+        && v.note_box_at(x, y).is_some()
+    {
+        return None;
+    }
     match message {
         msg::WM_LBUTTONDOWN | msg::WM_LBUTTONDBLCLK if v.in_note_text(x, y) => {
             let offset = v.note_offset_at(x, y)?;

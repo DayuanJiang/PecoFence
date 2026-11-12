@@ -265,6 +265,90 @@ fn marker(line: &str) -> Option<(usize, usize, bool)> {
 mod tests {
     use super::*;
 
+    /// Types `typed` one character at a time after `state`'s text, the caret at the end.
+    fn type_in(history: &mut EditHistory, state: &mut EditState, typed: &str) {
+        for c in typed.chars() {
+            let mut text = state.0.clone();
+            text.push(c);
+            history.record(state, &text);
+            let end = text.encode_utf16().count();
+            *state = (text, end, end);
+        }
+    }
+
+    #[test]
+    fn edit_history_goes_back_step_by_step_and_forward_again() {
+        let mut history = EditHistory::default();
+        let mut state: EditState = ("买菜".into(), 2, 2);
+        type_in(&mut history, &mut state, " 西红柿 鸡蛋");
+        // Two words typed: two steps (each word with the space before it).
+        assert_eq!(history.depth(), (2, 0));
+        // A paste over a selection is a step of its own.
+        let selected = (state.0.clone(), 0, 2);
+        history.break_run();
+        history.record(&selected, "今天 西红柿 鸡蛋");
+        state = ("今天 西红柿 鸡蛋".into(), 2, 2);
+        // A check box ticked (the text keeps its length) too.
+        history.record(&state, "今天 西红柿 鸡蛋!");
+        history.record(&("今天 西红柿 鸡蛋!".into(), 2, 2), "今天 西红柿 鸡蛋?");
+        let mut now: EditState = ("今天 西红柿 鸡蛋?".into(), 2, 2);
+        let mut seen = Vec::new();
+        while let Some(to) = history.undo(now.clone()) {
+            seen.push(to.0.clone());
+            now = to;
+        }
+        assert_eq!(
+            seen,
+            [
+                "今天 西红柿 鸡蛋!",
+                "今天 西红柿 鸡蛋",
+                "买菜 西红柿 鸡蛋",
+                "买菜 西红柿",
+                "买菜"
+            ]
+        );
+        // The selection comes back with the text.
+        assert_eq!(now, ("买菜".to_string(), 2, 2));
+        // Forward again, every step.
+        let mut forward = Vec::new();
+        while let Some(to) = history.redo(now.clone()) {
+            forward.push(to.0.clone());
+            now = to;
+        }
+        assert_eq!(forward.len(), 5);
+        assert_eq!(now.0, "今天 西红柿 鸡蛋?");
+        // A second Ctrl+Z goes one step further back, it does not redo.
+        let one = history.undo(now.clone()).unwrap();
+        let two = history.undo(one.clone()).unwrap();
+        assert_eq!(
+            (one.0.as_str(), two.0.as_str()),
+            ("今天 西红柿 鸡蛋!", "今天 西红柿 鸡蛋")
+        );
+        // Typing after an undo drops what was undone.
+        let mut state = two;
+        type_in(&mut history, &mut state, "x");
+        assert_eq!(history.depth().1, 0);
+        assert!(history.redo(state.clone()).is_none());
+    }
+
+    #[test]
+    fn edit_history_joins_a_run_of_backspaces_and_breaks_at_a_caret_move() {
+        let mut history = EditHistory::default();
+        let mut state: EditState = ("abcdef".into(), 6, 6);
+        for text in ["abcde", "abcd", "abc"] {
+            history.record(&state, text);
+            state = (text.into(), text.len(), text.len());
+        }
+        assert_eq!(history.depth(), (1, 0));
+        // Typing after deleting is the next step; after a caret move another one.
+        type_in(&mut history, &mut state, "xy");
+        assert_eq!(history.depth(), (2, 0));
+        history.break_run();
+        type_in(&mut history, &mut state, "z");
+        assert_eq!(history.depth(), (3, 0));
+        assert_eq!(history.undo(state.clone()).unwrap().0, "abcxy");
+    }
+
     #[test]
     fn edited_note_lines_and_offsets() {
         let text = "周会\n[ ] 回邮件\n  - [x] done\n";

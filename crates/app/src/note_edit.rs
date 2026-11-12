@@ -9,6 +9,10 @@
 //!
 //! Enter starts a new line. Esc, Ctrl+Enter and a click anywhere else (focus loss, or a
 //! press in a fence window: `Command::EndNoteEdit`) save.
+//!
+//! Undo is the editor's own (`note::EditHistory`): the control keeps one step only, so a
+//! second Ctrl+Z put the change back. Ctrl+Z goes back step by step through what was typed,
+//! pasted, cut and ticked since the editor opened; Ctrl+Y and Ctrl+Shift+Z go forward.
 
 use crate::commands::{Command, CommandQueue};
 use pecofence_core::{FenceId, note};
@@ -33,6 +37,8 @@ const VK_HOME: u32 = 0x24;
 const VK_LEFT: u32 = 0x25;
 const VK_UP: u32 = 0x26;
 const VK_DOWN: u32 = 0x28;
+const VK_Y: u32 = 0x59;
+const VK_Z: u32 = 0x5A;
 
 thread_local! {
     static ACTIVE: RefCell<Option<Session>> = const { RefCell::new(None) };
@@ -87,6 +93,10 @@ struct Session {
     caret_on: Cell<bool>,
     /// Where the control was last moved to within the popup.
     placed: Cell<(i32, i32)>,
+    /// The steps Ctrl+Z and Ctrl+Y go through.
+    history: RefCell<note::EditHistory>,
+    /// The text an undo or redo just put into the control: no new step.
+    restored: RefCell<Option<String>>,
 }
 
 /// What a call needs of the open editor, copied out so that nothing stays borrowed while the
@@ -220,6 +230,8 @@ pub fn open(
             told: RefCell::new(None),
             caret_on: Cell::new(true),
             placed: Cell::new((0, 0)),
+            history: RefCell::new(note::EditHistory::default()),
+            restored: RefCell::new(None),
         })
     });
     if let Some(at) = caret {
@@ -310,6 +322,16 @@ fn tell_fence() {
         let state = (text, anchor, active);
         if s.told.borrow().as_ref() == Some(&state) {
             return;
+        }
+        // The undo history: a changed text makes the state before it a step to go back to
+        // (not the text an undo or redo put in), a moved caret ends a run of typing.
+        if let Some(told) = s.told.borrow().as_ref() {
+            let mut history = s.history.borrow_mut();
+            if told.0 == state.0 {
+                history.break_run();
+            } else if s.restored.borrow_mut().take().as_deref() != Some(state.0.as_str()) {
+                history.record(told, &state.0);
+            }
         }
         tracing::debug!(
             %fence,
@@ -430,6 +452,90 @@ pub fn add_todo(fence: FenceId) {
     }
 }
 
+/// A click on the check box of line `line` of note `fence`, whose editor is open: the box is
+/// ticked or unticked in the editor's text, as a step Ctrl+Z takes back; the selection stays.
+pub fn toggle_line(fence: FenceId, line: usize) {
+    let Some((handle, open, _)) = active() else {
+        return;
+    };
+    if open != fence {
+        return;
+    }
+    let raw = handle.text();
+    let text = raw.replace("\r\n", "\n");
+    let Some(flipped) = note::toggle(&text, line) else {
+        return;
+    };
+    let units: Vec<u16> = raw.encode_utf16().collect();
+    let (first, last) = handle.selection();
+    let first = note::crlf_to_lf_offset(&units, first);
+    let last = note::crlf_to_lf_offset(&units, last);
+    let anchor = ACTIVE.with(|a| a.borrow().as_ref().map_or(0, |s| s.anchor.get()));
+    let (anchor, caret) = if last == anchor {
+        (last, first)
+    } else {
+        (first, last)
+    };
+    tracing::debug!(%fence, line, "note editor: check box clicked");
+    // `[ ]` and `[x]` are equally long; `[]` grows by one.
+    let grown = flipped.encode_utf16().count() as isize - text.encode_utf16().count() as isize;
+    let after_line = note::line_spans(&text)
+        .get(line)
+        .map_or(0, |s| s.start + s.prefix);
+    let moved = |at: usize| {
+        if at >= after_line {
+            (at as isize + grown).max(0) as usize
+        } else {
+            at
+        }
+    };
+    put_text(handle, &flipped, moved(anchor), moved(caret));
+}
+
+/// Puts `text` (line breaks are `\n`) into the control in place of what it holds, with the
+/// selection from `anchor` to `caret`.
+fn put_text(handle: edit::EditHandle, text: &str, anchor: usize, caret: usize) {
+    let shown = text.replace('\n', "\r\n");
+    let units: Vec<u16> = shown.encode_utf16().collect();
+    let all = handle.text().encode_utf16().count();
+    handle.select(0, all);
+    handle.replace_selection(&shown);
+    handle.select(
+        note::lf_to_crlf_offset(&units, anchor),
+        note::lf_to_crlf_offset(&units, caret),
+    );
+}
+
+/// Ctrl+Z (`redo` false) or Ctrl+Y: the editor's text and selection go one step back or
+/// forward in its history. Nothing happens at either end.
+fn step_history(redo: bool) {
+    // What was typed since the control last told is a state of its own.
+    tell_fence();
+    let Some((handle, fence, _)) = active() else {
+        return;
+    };
+    let to = ACTIVE.with(|a| {
+        let a = a.borrow();
+        let s = a.as_ref()?;
+        let now = s.told.borrow().clone()?;
+        let mut history = s.history.borrow_mut();
+        let to = if redo {
+            history.redo(now)
+        } else {
+            history.undo(now)
+        };
+        let (back, forward) = history.depth();
+        tracing::debug!(%fence, redo, found = to.is_some(), back, forward, "note editor: undo history step");
+        let to = to?;
+        *s.restored.borrow_mut() = Some(to.0.clone());
+        s.anchor.set(to.1);
+        Some(to)
+    });
+    if let Some((text, anchor, caret)) = to {
+        put_text(handle, &text, anchor, caret);
+    }
+}
+
 /// Opens the control's text menu (cut, copy, paste, select all) at screen point (`x`, `y`).
 pub fn text_menu(x: i32, y: i32) {
     if let Some((handle, ..)) = active() {
@@ -442,6 +548,12 @@ fn on_key(vk: u32) -> bool {
     let shift = window::key_down(msg::VK_SHIFT);
     if vk == msg::VK_ESCAPE || (vk == msg::VK_RETURN && ctrl) {
         end_active(true);
+        return true;
+    }
+    // Ctrl+Z goes back through the editor's own history, Ctrl+Y and Ctrl+Shift+Z forward;
+    // 「撤销」 in the text menu goes back too.
+    if vk == edit::KEY_UNDO || (ctrl && (vk == VK_Z || vk == VK_Y)) {
+        step_history(vk == VK_Y || (vk == VK_Z && shift));
         return true;
     }
     let Some((handle, fence, queue)) = active() else {
