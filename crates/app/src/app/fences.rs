@@ -1248,8 +1248,13 @@ impl App {
         fits && !self.overlaps_fence(r, gap)
     }
 
+    /// 「桌面」 arranged like the desktop is no obstacle (its window spans its icons, often the
+    /// whole screen, and the icons make way for a fence).
     pub(super) fn overlaps_fence(&self, r: &RECT, gap: i32) -> bool {
         self.fences.values().any(|f| {
+            if f.is_desktop_arranged() {
+                return false;
+            }
             let o = f.footprint_rect();
             r.left < o.right - gap / 2
                 && r.right > o.left + gap / 2
@@ -1319,7 +1324,12 @@ impl App {
         }
         // The free spot nearest to the point: a gap from a fence or the work area's edge, in
         // line with one of its edges, as a fence let go on another one lands.
-        let others: Vec<RECT> = self.fences.values().map(|f| f.footprint_rect()).collect();
+        let others: Vec<RECT> = self
+            .fences
+            .values()
+            .filter(|f| !f.is_desktop_arranged())
+            .map(|f| f.footprint_rect())
+            .collect();
         let area = RECT {
             left: work.left,
             top: work.top,
