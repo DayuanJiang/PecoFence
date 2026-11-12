@@ -109,7 +109,7 @@ struct Request {
 /// this on a worker thread, and [`note_dull_from_ui`] on the UI thread.
 fn note_dull(path: &Path, reason: &'static str, error: Option<i32>, from_shortcut: bool) {
     if let Some(ext) = dull_first_of_its_kind(path, reason, from_shortcut) {
-        describe_dull(path, &ext, reason, error, from_shortcut);
+        describe_dull(path, ext, reason, error, from_shortcut);
     }
 }
 
@@ -123,7 +123,7 @@ fn note_dull_from_ui(path: &Path, reason: &'static str, error: Option<i32>) {
     let path = path.to_path_buf();
     let _ = std::thread::Builder::new()
         .name("pecofence-icon-log".into())
-        .spawn(move || describe_dull(&path, &ext, reason, error, false));
+        .spawn(move || describe_dull(&path, ext, reason, error, false));
 }
 
 /// The debug line of [`note_dull`]; the file's type when this is the first of its type and
@@ -147,7 +147,7 @@ fn dull_first_of_its_kind(
 /// The info line of [`note_dull`]. Reads the disk.
 fn describe_dull(
     path: &Path,
-    ext: &str,
+    ext: String,
     reason: &'static str,
     error: Option<i32>,
     from_shortcut: bool,
@@ -159,7 +159,7 @@ fn describe_dull(
     let target_place = target.as_deref().map(shell::path_place);
     let error = error.map(|e| format!("{:#010x}", e as u32));
     tracing::info!(
-        file_ext = ext,
+        file_ext = ext.as_str(),
         reason,
         from_shortcut,
         place = shell::path_place(path),
