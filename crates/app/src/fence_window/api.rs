@@ -537,7 +537,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={}",
+            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={}",
             v.title,
             v.title_count,
             v.filter_active,
@@ -553,6 +553,7 @@ impl FenceWindow {
             v.anchor_index
                 .and_then(|i| v.items.get(i))
                 .map(|it| &it.name),
+            v.focus_visible,
             desktop::is_visible(v.shadow.hwnd()),
             v.shadow.alpha(),
             v.layout,
@@ -2908,6 +2909,20 @@ impl FenceWindow {
     pub fn take_keyboard(&self) -> bool {
         handler::focus_session(&self.view, self.hwnd());
         desktop::foreground_window() == self.hwnd()
+    }
+
+    /// The keys stopped coming here without a focus message (the Peek ended, whose dimmer
+    /// passed them on): the focus ring goes, as at `WM_KILLFOCUS`; the selection stays.
+    /// Returns whether a ring showed.
+    pub fn keyboard_left(&self) -> bool {
+        let mut ring = false;
+        self.with_view(|v| {
+            ring = std::mem::take(&mut v.focus_visible);
+            if ring && !v.rolled_up {
+                let _ = v.redraw_content();
+            }
+        });
+        ring
     }
 
     /// The icons selected now, in the order shown.

@@ -820,12 +820,22 @@ impl App {
         let anchored = Instant::now();
         // Dropping the windows destroys them (after the fences left the topmost band).
         self.peek = None;
+        // The dimmer had the keyboard and passed the keys on to a fence (Tab, the arrows), so
+        // that fence gets no WM_KILLFOCUS now: its focus ring goes with the Peek. It stayed on
+        // an icon while the keys went to the window that came to the front.
+        let front = desktop::foreground_window();
+        let rings = self
+            .fences
+            .values()
+            .filter(|w| w.hwnd() != front && w.keyboard_left())
+            .count();
         let ms = crate::share_log::millis;
         tracing::debug!(
             search_ms = ms(searched - started),
             redraw_ms = ms(redrawn - searched),
             zorder_ms = ms(anchored - redrawn),
             dimmer_ms = ms(anchored.elapsed()),
+            rings,
             "peek ended"
         );
     }
