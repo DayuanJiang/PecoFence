@@ -98,8 +98,8 @@ fn url_shortcut_names_prefer_the_browser_title() {
     );
 }
 
-/// Peek search matches the shown name or the file name (its extension may be hidden), ignoring
-/// case; namespace items match by their shown name only.
+/// The time limit after which a Peek raises the covered fences without the frame clock's beats
+/// stays clear of a compositor clock's beats and is short enough to matter on a slow clock.
 #[test]
 fn the_peek_raise_limit_leaves_a_compositor_clock_its_beats() {
     use super::peek::{PEEK_RAISE_FRAMES, PEEK_RAISE_LIMIT_MS};
@@ -109,9 +109,11 @@ fn the_peek_raise_limit_leaves_a_compositor_clock_its_beats() {
     // is short enough to matter on a clock whose first beats take 60 to 130 ms.
     let beats_ms = (f64::from(PEEK_RAISE_FRAMES) + 1.0) * 1000.0 / 60.0;
     assert!(f64::from(PEEK_RAISE_LIMIT_MS) >= beats_ms + 10.0);
-    assert!(PEEK_RAISE_LIMIT_MS <= 80);
+    const { assert!(PEEK_RAISE_LIMIT_MS <= 80) };
 }
 
+/// Peek search matches the shown name or the file name (its extension may be hidden), ignoring
+/// case; namespace items match by their shown name only.
 #[test]
 fn peek_search_matches_names_and_hidden_extensions() {
     let search_matches = |name: &str, path: Option<&str>, q: &str| {
