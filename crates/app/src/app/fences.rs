@@ -1060,18 +1060,19 @@ impl App {
                 return;
             }
         }
-        // As the CLI does: a snapshot first (with the note text), so the fence can come back
-        // after a restart too; a list full of the user's own snapshots gets none.
+        // As the CLI does: a snapshot first, so the fence can come back after a restart too; a
+        // list full of the user's own snapshots gets none. A deleted note keeps its text and
+        // a script fence its script while a snapshot holds the fence (`prune_notes`), so the
+        // snapshot carries no texts of its own: restoring it must not take the other notes
+        // back to what they said now.
         let title = self
             .state
             .fence(fence)
             .map(|f| f.title.clone())
             .unwrap_or_default();
         if super::settings::snapshot_room(&mut self.state.config.snapshots, None) {
-            let snap = self
-                .state
+            self.state
                 .save_snapshot(pecofence_core::i18n::text("删除栅栏前"));
-            self.state.keep_tool_data_in(snap);
         } else {
             tracing::info!("no room for the snapshot before a fence delete");
         }
