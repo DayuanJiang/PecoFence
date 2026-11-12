@@ -2,9 +2,10 @@
 # program. The GitHub example of 0.3.0 to 0.3.3 printed an issue's title unchanged, so a title
 # such as "x | run=notepad.exe r=' k=v" became a row that started Notepad on a click.
 #
-# Run with the examples of 0.3.3 as the extra folder (the first fence runs the real GitHub
-# example of 0.3.3 on a canned answer, as an edited copy on a user's disk would):
-#   run.sh --extra crates/app/assets/scripts/old scripts/wintest/tests/owner-script-rows.ps1
+# Run with the example scripts as the extra folder (the first fence runs the real GitHub example
+# of 0.3.3 on a canned answer, as an edited copy on a user's disk would; the last one runs the
+# current example on the same answer):
+#   run.sh --extra crates/app/assets/scripts scripts/wintest/tests/owner-script-rows.ps1
 #
 # Payloads are harmless: Notepad, and .bat files that write a marker file into C:\pf\run.
 # On 0.3.0 to 0.3.3 and on main before the fix the "starts no program" and "refused" checks fail.
@@ -99,7 +100,7 @@ $canned = @'
 ]
 '@
 Set-Content "$PfRun\canned.json" -Value $canned -Encoding UTF8
-$old = "$PfExtra\github.en.0.3.0.ps1"
+$old = "$PfExtra\old\github.en.0.3.0.ps1"
 Check 'the GitHub example of 0.3.3 is in the extra folder' (Test-Path $old) $old
 # The example itself, unchanged (with the byte order mark PecoFence writes); only its request is
 # answered from the canned file.
@@ -276,3 +277,37 @@ Check 'nothing was refused' ((Refusals) -eq $before) "refusals=$((Refusals) - $b
 ParkMouse
 Pf fence delete Allowed | Out-Null
 EndNotepads
+
+# ---- 4. The current GitHub example on the same canned answer: forged titles are plain text
+Case 'the current GitHub example'
+$now = "$PfExtra\github.en.ps1"
+Check 'the current GitHub example is in the extra folder' (Test-Path $now) $now
+Set-Content "$PfRun\github-now.ps1" -Value (Get-Content -Raw -Encoding UTF8 $now) -Encoding UTF8
+$wrap = @"
+function Invoke-RestMethod { Get-Content -Raw -Encoding UTF8 '$PfRun\canned.json' | ConvertFrom-Json }
+. '$PfRun\github-now.ps1'
+"@
+Set-Content "$PfRun\github-canned-now.ps1" -Value $wrap -Encoding UTF8
+Pf fence create --script "$PfRun\github-canned-now.ps1" --title Cleaned --rect '120,110,720,270' | Out-Null
+$w = WaitRows 'Cleaned' 6
+$out = "$((FenceGet 'Cleaned').script.output)"
+$issues = @($out -split "`n" | Where-Object { $_ -match '^#1[1-4]  ' })
+# Text without a bar or a quote, then the script's own parameters: the link to that issue, the
+# icon and the tooltip.
+$odd = @($issues | Where-Object { $_ -notmatch '^#(\d+)  [^|"'']* \| href=https://github\.com/DayuanJiang/PecoFence/issues/\1 icon=\S+ tooltip="[^|"'']*"$' })
+Check 'each issue is a row of plain text with the link to that issue' ($issues.Count -eq 4 -and $odd.Count -eq 0) ($out -replace "`n", ' / ')
+$q = [char]0x2019
+Check 'the forged title shows as text: the bar and the quote are replaced' ($out -match "#12  x ¦ run=notepad\.exe r=$q k=v \| href=") (($issues | Select-Object -Skip 1 -First 1) -join '')
+Shot 'cleaned-fence'
+$at = RowPt 'Cleaned' 3
+if ($at) { [G]::MoveTo($at[0] - 3, $at[1]); Start-Sleep -Milliseconds 200; [G]::MoveTo($at[0], $at[1]); Start-Sleep -Milliseconds 2500 }
+if ($w) { Crop 'cleaned-hover-line3' $w.l $w.t ($w.r - $w.l + 60) ($w.b - $w.t + 40) | Out-Null }
+ParkMouse
+$before = Refusals
+$t0 = Get-Date
+$clicked = ClickRow 'Cleaned' 3
+$edge = 0
+for ($k = 0; $k -lt 40 -and -not $edge; $k++) { Start-Sleep -Milliseconds 250; $edge = @(Get-Process msedge -ErrorAction SilentlyContinue | Where-Object { $_.StartTime -ge $t0 }).Count }
+Check 'a click on it opens the browser, starts no program and is not refused' ($clicked -and $edge -gt 0 -and (Notepads).Count -eq 0 -and (Refusals) -eq $before) "clicked=$clicked new msedge processes=$edge notepad=$((Notepads).Count) refusals=$((Refusals) - $before)"
+Start-Sleep -Seconds 2; EndBrowser; ParkMouse
+Pf fence delete Cleaned | Out-Null

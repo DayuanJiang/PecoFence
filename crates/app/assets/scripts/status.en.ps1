@@ -1,9 +1,11 @@
 # <pecofence.type>streamable</pecofence.type>
+# <pecofence.allow>run</pecofence.allow>
 # PecoFence script fence example: keeps running and shows the computer's state every 2 seconds.
-# The comment above keeps it running. Each line it prints shows at once; after a ~~~ line
+# The first comment above keeps it running. Each line it prints shows at once; after a ~~~ line
 # the next line starts a new screen in place of the old one.
 # color= colours a row, copy= copies text on a click, open= opens a file or folder, run= runs a
-# program.
+# program. Rows start programs only in a script that allows it with the second comment above;
+# this one prints nothing but this computer's own values.
 # This PC's IPv4 address on the network: from a connected adapter with a default gateway (an
 # unplugged adapter can keep an old address, virtual networks have none), Wi-Fi and Ethernet
 # before VPNs, then the one Windows uses first.

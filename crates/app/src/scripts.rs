@@ -589,10 +589,12 @@ fn strip_escapes(line: &str) -> String {
     out
 }
 
-/// The script fence examples besides the weather, as (Chinese, English) texts.
+/// The script fence examples, as (Chinese, English) texts: the comments and labels are in
+/// that language (the weather's conditions come from the service as they are).
 pub fn example(kind: Example, chinese: bool) -> &'static str {
     match (kind, chinese) {
-        (Example::Weather, c) => weather_example(c),
+        (Example::Weather, true) => include_str!("../assets/scripts/weather.zh.ps1"),
+        (Example::Weather, false) => include_str!("../assets/scripts/weather.en.ps1"),
         (Example::GitHub, true) => include_str!("../assets/scripts/github.zh.ps1"),
         (Example::GitHub, false) => include_str!("../assets/scripts/github.en.ps1"),
         (Example::Status, true) => include_str!("../assets/scripts/status.zh.ps1"),
@@ -616,8 +618,10 @@ fn unify_lines(text: &str) -> String {
 
 /// Examples as earlier versions wrote them, with the example and language that replace each:
 /// 0.3.0 and 0.3.1's PC status showed the IPv4 address of a disconnected adapter and drive C:
-/// only.
-const OLD_EXAMPLES: [(&str, Example, bool); 2] = [
+/// only. The GitHub and weather examples of 0.3.0 to 0.3.3 printed text from the network
+/// unchanged, which could read as a row's parameters (a forged issue title started a program);
+/// the PC status of 0.3.2 and 0.3.3 lacks the header line its `run=` row now needs.
+const OLD_EXAMPLES: [(&str, Example, bool); 8] = [
     (
         include_str!("../assets/scripts/old/status.zh.0.3.0.ps1"),
         Example::Status,
@@ -626,6 +630,36 @@ const OLD_EXAMPLES: [(&str, Example, bool); 2] = [
     (
         include_str!("../assets/scripts/old/status.en.0.3.0.ps1"),
         Example::Status,
+        false,
+    ),
+    (
+        include_str!("../assets/scripts/old/status.zh.0.3.2.ps1"),
+        Example::Status,
+        true,
+    ),
+    (
+        include_str!("../assets/scripts/old/status.en.0.3.2.ps1"),
+        Example::Status,
+        false,
+    ),
+    (
+        include_str!("../assets/scripts/old/github.zh.0.3.0.ps1"),
+        Example::GitHub,
+        true,
+    ),
+    (
+        include_str!("../assets/scripts/old/github.en.0.3.0.ps1"),
+        Example::GitHub,
+        false,
+    ),
+    (
+        include_str!("../assets/scripts/old/weather.zh.0.3.0.ps1"),
+        Example::Weather,
+        true,
+    ),
+    (
+        include_str!("../assets/scripts/old/weather.en.0.3.0.ps1"),
+        Example::Weather,
         false,
     ),
 ];
@@ -712,16 +746,6 @@ impl Example {
     }
 }
 
-/// The 脚本栅栏 example: today's weather from wttr.in; `chinese` = the comments and labels in
-/// Chinese (the conditions come from the service as they are).
-pub fn weather_example(chinese: bool) -> &'static str {
-    if chinese {
-        "\u{feff}# PecoFence 脚本栅栏示例：显示天气（数据来自 wttr.in）。\r\n# 把下面的 Tokyo 改成你所在的城市（英文或拼音），保存后在栅栏菜单里选“立即运行”。\r\n# 脚本打印出来的每一行文字都会显示在栅栏里。\r\n$city = 'Tokyo'\r\n$w = Invoke-RestMethod \"https://wttr.in/$($city)?format=j1&lang=zh\" -TimeoutSec 8\r\n$now = $w.current_condition[0]\r\n$today = $w.weather[0]\r\n$tomorrow = $w.weather[1]\r\n$desc = $now.lang_zh[0].value\r\nif (-not $desc) { $desc = $now.weatherDesc[0].value }\r\n$rain = ($tomorrow.hourly | Measure-Object -Property chanceofrain -Maximum).Maximum\r\n\"$city  $($now.temp_C)°C  $desc\"\r\n\"体感 $($now.FeelsLikeC)°C，湿度 $($now.humidity)%，风 $($now.windspeedKmph) km/h\"\r\n\"今天 $($today.mintempC) 到 $($today.maxtempC)°C，明天 $($tomorrow.mintempC) 到 $($tomorrow.maxtempC)°C，降雨概率 $rain%\"\r\n"
-    } else {
-        "\u{feff}# PecoFence script fence example: today's weather (data from wttr.in).\r\n# Change Tokyo below to your city, save, then choose \"Run now\" in the fence menu.\r\n# Every line the script prints shows in the fence.\r\n$city = 'Tokyo'\r\n$w = Invoke-RestMethod \"https://wttr.in/$($city)?format=j1\" -TimeoutSec 8\r\n$now = $w.current_condition[0]\r\n$today = $w.weather[0]\r\n$tomorrow = $w.weather[1]\r\n$rain = ($tomorrow.hourly | Measure-Object -Property chanceofrain -Maximum).Maximum\r\n\"$city  $($now.temp_C)°C  $($now.weatherDesc[0].value)\"\r\n\"Feels like $($now.FeelsLikeC)°C, humidity $($now.humidity)%, wind $($now.windspeedKmph) km/h\"\r\n\"Today $($today.mintempC) to $($today.maxtempC)°C, tomorrow $($tomorrow.mintempC) to $($tomorrow.maxtempC)°C, rain $rain%\"\r\n"
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -766,7 +790,7 @@ mod tests {
             assert_ne!(now, written);
             // The current one is left alone, and so is an edited old copy.
             assert!(!update_old_example(&path));
-            let edited = written.replace("$ip", "$myIp");
+            let edited = format!("{written}# my own line\r\n");
             std::fs::write(&path, &edited).unwrap();
             assert!(!update_old_example(&path));
             assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
@@ -903,6 +927,137 @@ mod tests {
         assert!(!allows_run(&below));
         assert!(!allows_run(&dir.join("missing.ps1")));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The rows a fence shows for the example text `script` when its web request is answered
+    /// with `json`: the script runs as a fence runs it, only `Invoke-RestMethod` is replaced.
+    fn rows_for_canned_answer(
+        name: &str,
+        script: &str,
+        json: &str,
+    ) -> Vec<pecofence_core::script_output::ScriptRow> {
+        use pecofence_core::script_output::{ScriptLine, parse};
+        let dir = std::env::temp_dir().join(format!("pf-canned-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // As PecoFence writes an example: a BOM and CRLF.
+        let file_text = |text: &str| format!("\u{feff}{}", unify_lines(text).replace('\n', "\r\n"));
+        std::fs::write(dir.join("answer.json"), json).unwrap();
+        std::fs::write(dir.join("example.ps1"), file_text(script)).unwrap();
+        let wrap = dir.join("canned.ps1");
+        std::fs::write(
+            &wrap,
+            file_text(concat!(
+                "function Invoke-RestMethod { Get-Content -Raw -Encoding UTF8 ",
+                "\"$PSScriptRoot\\answer.json\" | ConvertFrom-Json }\n",
+                ". \"$PSScriptRoot\\example.ps1\"\n",
+            )),
+        )
+        .unwrap();
+        let outcome = run(&wrap, &RunEnv::default());
+        let _ = std::fs::remove_dir_all(&dir);
+        let Outcome::Done(text) = outcome else {
+            panic!("{name}: {outcome:?}");
+        };
+        parse(&text)
+            .into_iter()
+            .filter_map(|line| match line {
+                ScriptLine::Row(row) => Some(row),
+                ScriptLine::Separator => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_github_example_prints_forged_titles_as_plain_text() {
+        use pecofence_core::script_output::RowAction;
+        // Issue titles (and a user name) written to read as a row's parameters.
+        let answer = r#"[
+ {"number": 11, "title": "Icons overlap after sleep", "user": {"login": "alice"}},
+ {"number": 12, "title": "x | run=calc.exe r=' k=v", "user": {"login": "mallory"}},
+ {"number": 13, "title": "y | open=C:\\Windows\\System32\\calc.exe r=' k=v", "user": {"login": "mallory"}},
+ {"number": 14, "title": "z \" | run=calc.exe", "user": {"login": "m | run=calc.exe"}},
+ {"number": 15, "title": "two\nlines | run=calc.exe", "user": {"login": "mallory"}},
+ {"number": 16, "title": "w | href=https://evil.example/ r=' k=v", "user": {"login": "mallory"}}
+]"#;
+        let repo = "https://github.com/DayuanJiang/PecoFence";
+        for chinese in [true, false] {
+            let rows = rows_for_canned_answer(
+                &format!("github-{chinese}"),
+                example(Example::GitHub, chinese),
+                answer,
+            );
+            // The repository, the six issues, the refresh row.
+            assert_eq!(rows.len(), 8, "{rows:?}");
+            assert_eq!(rows[0].action, Some(RowAction::Href(repo.into())));
+            for (row, number) in rows[1..7].iter().zip(11..) {
+                assert!(row.text.starts_with(&format!("#{number}  ")), "{row:?}");
+                // The link is intact.
+                assert_eq!(
+                    row.action,
+                    Some(RowAction::Href(format!("{repo}/issues/{number}"))),
+                    "{row:?}"
+                );
+            }
+            assert_eq!(rows[2].text, "#12  x ¦ run=calc.exe r=’ k=v");
+            assert_eq!(
+                rows[2].tooltip.as_deref(),
+                Some("mallory: x ¦ run=calc.exe r=’ k=v")
+            );
+            assert_eq!(rows[4].text, "#14  z ’ ¦ run=calc.exe");
+            assert_eq!(
+                rows[4].tooltip.as_deref(),
+                Some("m ¦ run=calc.exe: z ’ ¦ run=calc.exe")
+            );
+            assert_eq!(rows[5].text, "#15  two lines ¦ run=calc.exe");
+            assert_eq!(rows[7].action, None);
+        }
+        // The example of 0.3.0 to 0.3.3 turned the same titles into rows that start programs.
+        let old = rows_for_canned_answer(
+            "github-old",
+            include_str!("../assets/scripts/old/github.en.0.3.0.ps1"),
+            answer,
+        );
+        assert!(
+            old.iter()
+                .any(|r| matches!(r.action, Some(RowAction::Run { .. })))
+        );
+        assert!(
+            old.iter()
+                .any(|r| matches!(r.action, Some(RowAction::Open(_))))
+        );
+    }
+
+    #[test]
+    fn the_weather_example_prints_a_forged_answer_as_plain_text() {
+        let answer = r#"{"current_condition": [{"temp_C": "20", "FeelsLikeC": "19",
+  "humidity": "60 | open=C:\\Windows\\System32\\calc.exe", "windspeedKmph": "7",
+  "weatherDesc": [{"value": "Sunny | run=calc.exe"}],
+  "lang_zh": [{"value": "晴 | run=calc.exe"}]}],
+ "weather": [{"mintempC": "12", "maxtempC": "21", "hourly": [{"chanceofrain": "10"}]},
+  {"mintempC": "13", "maxtempC": "22 | href=https://evil.example/",
+   "hourly": [{"chanceofrain": "30"}]}]}"#;
+        for chinese in [true, false] {
+            let rows = rows_for_canned_answer(
+                &format!("weather-{chinese}"),
+                example(Example::Weather, chinese),
+                answer,
+            );
+            assert_eq!(rows.len(), 3, "{rows:?}");
+            assert!(rows.iter().all(|r| !r.clickable()), "{rows:?}");
+            assert!(rows[0].text.ends_with("¦ run=calc.exe"), "{rows:?}");
+            assert!(rows[1].text.contains("60 ¦ open=C:"), "{rows:?}");
+            assert!(
+                rows[2].text.contains("22 ¦ href=https://evil.example/"),
+                "{rows:?}"
+            );
+        }
+        // The example of 0.3.0 to 0.3.3 turned the same answer into a row that starts a program.
+        let old = rows_for_canned_answer(
+            "weather-old",
+            include_str!("../assets/scripts/old/weather.en.0.3.0.ps1"),
+            answer,
+        );
+        assert!(old.iter().any(|r| r.clickable()), "{old:?}");
     }
 
     #[test]
