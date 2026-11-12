@@ -421,6 +421,12 @@ impl FrameClock {
         self.shared.timeouts.swap(0, Ordering::Relaxed)
     }
 
+    /// Whether a frame is asked for and has not started: something in the app animates. Work
+    /// that can wait (fitting names ahead) stays out of the way of those frames.
+    pub fn armed(&self) -> bool {
+        self.shared.armed.load(Ordering::Acquire)
+    }
+
     /// Asks for one more frame callback. Idempotent within a frame.
     pub fn request(&self) {
         if !self.shared.armed.swap(true, Ordering::AcqRel) {

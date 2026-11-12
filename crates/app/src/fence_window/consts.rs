@@ -78,6 +78,10 @@ pub(super) const FIT_AHEAD_REST_MS: u32 = 300;
 pub(super) const FIT_AHEAD_PAUSE_MS: u32 = 10;
 /// The work of one piece.
 pub(super) const FIT_AHEAD_PIECE: Duration = Duration::from_micros(2500);
+/// How often in a row the fitting may find the fence moving or the user busy before it gives
+/// up until the next content draw (6 s): a fence that animates all the time (a script that
+/// redraws, a held key) must not keep a timer of ours alive for good.
+pub(super) const FIT_AHEAD_WAITS: u8 = 20;
 pub(super) const ACTIVE_SYNC_MS: u32 = 500;
 /// DWM can suspend completion callbacks for fully occluded windows. UI state must still
 /// settle after the longest (250 ms) transition, independently of compositor visibility.

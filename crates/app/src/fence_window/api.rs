@@ -137,6 +137,7 @@ impl FenceWindow {
             type_names: Default::default(),
             fit_ahead_done: false,
             fit_ahead_input: None,
+            fit_ahead_waits: 0,
             strip_kept: false,
             detach_pending: false,
             detach_cancelled: false,

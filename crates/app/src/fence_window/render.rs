@@ -1374,6 +1374,7 @@ impl FenceViewState {
             return;
         }
         self.fit_ahead_input = pecofence_platform::sysparams::last_input_tick();
+        self.fit_ahead_waits = 0;
         window::set_timer(self.hwnd, TIMER_FIT_AHEAD, FIT_AHEAD_REST_MS);
     }
 
@@ -1402,12 +1403,24 @@ impl FenceViewState {
             || self.ole_drag
             || self.marquee.is_some()
             || self.peeking
+            // Another fence's animation, a Peek rising: any frame asked for in the app.
+            || self.frames.armed()
             || window::key_down(msg::VK_LBUTTON);
         if moving || input != self.fit_ahead_input {
             self.fit_ahead_input = input;
+            self.fit_ahead_waits += 1;
+            if self.fit_ahead_waits > FIT_AHEAD_WAITS {
+                tracing::debug!(
+                    fence = %self.fence_id,
+                    moving,
+                    "names fitted ahead: put off until the next content draw"
+                );
+                return;
+            }
             window::set_timer(self.hwnd, TIMER_FIT_AHEAD, FIT_AHEAD_REST_MS);
             return;
         }
+        self.fit_ahead_waits = 0;
         let started = Instant::now();
         let (fitted, left) = self.fit_ahead(started);
         tracing::debug!(

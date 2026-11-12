@@ -144,6 +144,8 @@ pub struct FenceViewState {
     /// When the user last pressed a key or used the mouse, as of the last content draw or
     /// piece (`sysparams::last_input_tick`): a later input puts the next piece off.
     pub(super) fit_ahead_input: Option<u32>,
+    /// How often in a row a piece was put off (`FIT_AHEAD_WAITS`).
+    pub(super) fit_ahead_waits: u8,
     /// The last content draw kept the scrollbar's strip clear (the fence scrolled): only for
     /// the debug line when that changes.
     pub(super) strip_kept: bool,
