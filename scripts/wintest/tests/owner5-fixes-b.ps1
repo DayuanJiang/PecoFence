@@ -16,9 +16,10 @@
 #      stands at once, no cross-fade
 #   T  settings page: after a click on a colour swatch the element under the pointer has no
 #      `title` again (the browser would show its own tip)
+#   C  a double-click on 「下一条」 of the first-start tips goes on by one tip, not by two
 # S, D, P and T drive the settings page over CDP: run them on a debug build.
 # Runs on a 1600x900 box at 100 %.
-if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'SDPKLGT' }
+if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'SDPKLGTC' }
 trap { PfTrap $_; continue }
 
 function O5Tools() { return (PfJson settings get).tools }
@@ -374,6 +375,41 @@ function O5SwatchTip() {
   PfQuit
 }
 
+# ---- C: a double-click on a card's button
+function O5CardDouble() {
+  trap { PfTrap $_; continue }
+  Case 'C a double-click on 下一条 of the first-start tips'
+  # A real first start (no test script, no notices kept): the tips card shows.
+  if (PfAlive) { PfQuit }
+  Remove-Item -Recurse -Force "$PfApp\config", "$PfApp\notices.json" -ErrorAction SilentlyContinue
+  if (-not (Test-Path "$PfApp\pecofence.exe")) { New-Item -ItemType Directory -Force $PfApp | Out-Null; Copy-Item "$PfBin\*" $PfApp -Force }
+  $env:PECOFENCE_INSTANCE = $PfInst
+  $env:RUST_LOG = 'pecofence=debug'
+  [G]::MoveTo(700, 450)
+  Start-Process "$PfApp\pecofence.exe" -ArgumentList '--portable' -WorkingDirectory $PfApp
+  WaitWin 'PecoFence.Control' 20 -Hidden | Out-Null
+  $n = WaitWin 'PecoFence.Notice' 30
+  Start-Sleep -Seconds 2
+  Check 'the first tip shows' ($n -ne [IntPtr]::Zero) "notice=$n"
+  $r = Rect $n
+  $t0 = [L]::Text($n)
+  # The number of the tip a card's title names ("Tip 2/4: ...").
+  function TipNo($title) { if ("$title" -match '(\d+)\s*/\s*\d+') { return [int]$Matches[1] }; return 0 }
+  # The pointer on the button, then two clicks 120 ms apart.
+  [G]::MoveTo($r.R - 46, $r.B - 32); Start-Sleep -Milliseconds 500
+  DoubleClick ($r.R - 46) ($r.B - 32)
+  Start-Sleep -Milliseconds 1200
+  $t1 = [L]::Text([G]::FindWindowW('PecoFence.Notice', [NullString]::Value))
+  $by = (TipNo $t1) - (TipNo $t0)
+  Shot 'c-after-double-click'
+  Check 'C a double-click on 下一条 goes on by one tip' ($by -eq 1) "the double-click went on by $by ($t0 -> $t1)"
+  # A click of its own after that goes on as before.
+  [G]::Click($r.R - 46, $r.B - 32); Start-Sleep -Milliseconds 1200
+  $t2 = [L]::Text([G]::FindWindowW('PecoFence.Notice', [NullString]::Value))
+  Check 'C a click after it shows the next tip' ((TipNo $t2) - (TipNo $t1) -eq 1) "$t1 -> $t2"
+  PfQuit
+}
+
 if ($Part -match 'S') { O5Import }
 if ($Part -match 'D') { O5Deleted }
 if ($Part -match 'P') { O5Place }
@@ -381,6 +417,7 @@ if ($Part -match 'K') { O5AltGr }
 if ($Part -match 'L') { O5LinkTip }
 if ($Part -match 'G') { O5HoverGroup }
 if ($Part -match 'T') { O5SwatchTip }
+if ($Part -match 'C') { O5CardDouble }
 
 Case 'cleanup'
 if (PfAlive) { PfQuit }

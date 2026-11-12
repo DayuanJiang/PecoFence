@@ -92,6 +92,11 @@ struct View {
     /// The button (or ×) the mouse button went down on, until it comes up or the pointer
     /// leaves the card: it shows pressed while the pointer is over it.
     pressed: NoticeHit,
+    /// When the card last took other texts where it stands (`Notice::set_content`). A click
+    /// within the double-click time after it is the second half of a double-click on the
+    /// button that brought them: it would press the new card's button, which stands at the
+    /// same place.
+    swapped: Option<Instant>,
     root: ContainerVisual,
     motion: Rc<Motion>,
     shadow: ShadowWindow,
@@ -134,6 +139,12 @@ impl View {
                 .draw(s, &self.layout, &self.theme, self.hover, self.pressed)
         });
         !matches!(drawn, Ok(false))
+    }
+
+    /// The card took its texts less than a double-click ago (see `swapped`).
+    fn just_swapped(&self) -> bool {
+        let within = pecofence_platform::sysparams::double_click_time_ms();
+        (self.swapped).is_some_and(|at| at.elapsed().as_millis() < u128::from(within))
     }
 
     fn hit(&self, lparam: isize) -> NoticeHit {
@@ -302,6 +313,7 @@ impl Notice {
             dpi,
             hover: NoticeHit::None,
             pressed: NoticeHit::None,
+            swapped: None,
             root,
             motion: ctx.motion.clone(),
             shadow,
@@ -343,6 +355,8 @@ impl Notice {
         let (rect, dpi) = {
             let mut v = self.view.borrow_mut();
             v.held = false;
+            v.swapped = Some(Instant::now());
+            v.pressed = NoticeHit::None;
             if std::mem::take(&mut v.closing) {
                 tracing::debug!("notice was fading out: back for its new content");
                 v.declined = false;
@@ -574,6 +588,10 @@ fn handle(
         msg::WM_MOUSELEAVE => {
             view.borrow_mut().pressed = NoticeHit::None;
             set_hover(NoticeHit::None);
+            Some(0)
+        }
+        msg::WM_LBUTTONDOWN | msg::WM_LBUTTONUP if view.borrow().just_swapped() => {
+            tracing::debug!("click right after the card took its new texts: ignored");
             Some(0)
         }
         msg::WM_LBUTTONDOWN => {
