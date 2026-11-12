@@ -32,14 +32,20 @@ impl App {
     pub(super) fn item_views(&self, fence: &pecofence_core::Fence) -> Vec<ItemView> {
         // 筛选: only what matches the fence's filter.
         let filter = self.fence_filter(fence.id);
-        self.state
-            .items_of(fence)
+        let started = Instant::now();
+        let items = self.state.items_of(fence);
+        let (listed, total) = (started.elapsed(), items.len());
+        let kept: Vec<_> = items
             .into_iter()
             .filter(|it| {
                 filter
                     .as_deref()
                     .is_none_or(|q| filter::filter_keeps(it, q))
             })
+            .collect();
+        let matched = started.elapsed();
+        let views: Vec<ItemView> = kept
+            .into_iter()
             .map(|it| {
                 let path = PathBuf::from(it.path().unwrap_or(""));
                 let (_, icon_only) = crate::icons::icon_key_for(&path, it.is_folder, it.mtime);
@@ -54,7 +60,21 @@ impl App {
                     it.size,
                 )
             })
-            .collect()
+            .collect();
+        // What a list of thousands costs before the window gets it, part by part.
+        if total >= 500 {
+            let ms = crate::share_log::millis;
+            tracing::debug!(
+                fence = %fence.id,
+                items = total,
+                shown = views.len(),
+                sort_ms = ms(listed),
+                filter_ms = ms(matched - listed),
+                views_ms = ms(started.elapsed() - matched),
+                "item list built for the window"
+            );
+        }
+        views
     }
 
     /// Fence menu "新建 ▸": create the file/folder on the real desktop and remember which fence

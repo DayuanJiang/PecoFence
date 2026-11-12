@@ -98,7 +98,7 @@ impl App {
     pub(super) fn prefetch_lnk_targets(&self) {
         let mut asked = 0;
         for f in self.state.fences() {
-            for it in self.state.items_of(f) {
+            for it in self.state.unsorted_items_of(f) {
                 if let Some(p) = it.path()
                     && !it.is_folder
                     && p.to_lowercase().ends_with(".lnk")
@@ -156,7 +156,8 @@ impl App {
 
     /// 筛选: how many items fence `f` shows now and has without its filter.
     fn filter_counts(&self, f: &pecofence_core::Fence) -> (usize, usize) {
-        let items = self.state.items_of(f);
+        // Counted, never shown: without the sort of the whole folder.
+        let items: Vec<&pecofence_core::Item> = self.state.unsorted_items_of(f).collect();
         let shown = match self.fence_filter(f.id) {
             Some(q) => items.iter().filter(|it| filter_keeps(it, &q)).count(),
             None => items.len(),
@@ -166,11 +167,10 @@ impl App {
 
     /// 筛选: the count in the open box ("4 / 31", all of them while the text is empty), and the
     /// tag of a filtered single title once its box is closed (its text, and its count unless
-    /// the smart fence's count capsule shows it already).
-    pub(super) fn sync_filter_view(&self, fence: FenceId) {
-        let Some(f) = self.state.fence(fence) else {
-            return;
-        };
+    /// the smart fence's count capsule shows it already). Returns how many items the fence
+    /// shows when it had to count them.
+    pub(super) fn sync_filter_view(&self, fence: FenceId) -> Option<usize> {
+        let f = self.state.fence(fence)?;
         let text = self.fence_filters.get(&fence).map_or("", |t| t.trim());
         let open = filter_box::active_fence() == Some(fence);
         let host = self.state.host_of(fence);
@@ -178,7 +178,7 @@ impl App {
             if let Some(w) = self.fences.get(&host) {
                 w.set_filter_tag(None);
             }
-            return;
+            return None;
         }
         let (shown, total) = self.filter_counts(f);
         if open {
@@ -208,6 +208,7 @@ impl App {
         if let Some(w) = self.fences.get(&host) {
             w.set_filter_tag(tag);
         }
+        Some(shown)
     }
 
     /// The filter of fence `fence` is now `text` (empty: none): the fence shows what matches.
@@ -230,11 +231,14 @@ impl App {
             w.fade_next_refill();
         }
         self.refresh_fence(fence);
-        self.sync_filter_view(fence);
-        let shown = self
-            .state
-            .fence(fence)
-            .map_or(0, |f| self.item_views(f).len());
+        // The count the box shows, or every item of a fence whose filter is gone. It used to
+        // be counted for this line alone, by listing, sorting and matching the whole folder a
+        // third time at every letter typed.
+        let shown = self.sync_filter_view(fence).unwrap_or_else(|| {
+            self.state
+                .fence(fence)
+                .map_or(0, |f| self.state.unsorted_items_of(f).count())
+        });
         tracing::info!(%fence, why, chars = self.fence_filter(fence).map_or(0, |t| t.chars().count()), shown, "filter changed");
     }
 

@@ -1881,6 +1881,14 @@ impl AppState {
         self.sorted_members(fence, false)
     }
 
+    /// [`Self::items_of`] in no particular order, for callers that count or test the items:
+    /// the order costs a sort of the whole fence.
+    pub fn unsorted_items_of<'s>(&'s self, fence: &Fence) -> impl Iterator<Item = &'s Item> {
+        self.fence_members(fence, false)
+            .into_iter()
+            .map(|(_, it)| it)
+    }
+
     /// [`Self::unsorted_held_items_of`] in display order.
     pub fn held_items_of(&self, fence: &Fence) -> Vec<&Item> {
         self.sorted_members(fence, true)
@@ -1895,9 +1903,7 @@ impl AppState {
                     it.display_name.to_lowercase(),
                 )
             }),
-            SortMode::Name => {
-                items.sort_by(|a, b| natural_cmp(&a.1.display_name, &b.1.display_name))
-            }
+            SortMode::Name => items.sort_by_cached_key(|(_, it)| NaturalKey::of(&it.display_name)),
             SortMode::Type => items.sort_by(|a, b| {
                 let ka = (
                     !a.1.is_folder,
@@ -3440,7 +3446,43 @@ fn ext_of_key(key: &ItemKey) -> String {
 
 /// Case-insensitive natural ordering (digits compared numerically), like Explorer.
 pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    let (a, b) = (a.to_lowercase(), b.to_lowercase());
+    natural_cmp_lowered(&a.to_lowercase(), &b.to_lowercase())
+}
+
+/// A name as [`natural_cmp`] orders it, made lower case once. A sort compares every name a
+/// dozen times, and `natural_cmp` makes two new strings for each comparison: a folder of
+/// 8000 files paid for about 200,000 of them at every listing.
+pub struct NaturalKey(String);
+
+impl NaturalKey {
+    pub fn of(name: &str) -> Self {
+        Self(name.to_lowercase())
+    }
+}
+
+impl Ord for NaturalKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        natural_cmp_lowered(&self.0, &other.0)
+    }
+}
+
+impl PartialOrd for NaturalKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+// Equal as the order has them ("a1" and "a01"), so the three agree.
+impl PartialEq for NaturalKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for NaturalKey {}
+
+/// [`natural_cmp`] of two names that are lower case already.
+fn natural_cmp_lowered(a: &str, b: &str) -> std::cmp::Ordering {
     let mut ai = a.chars().peekable();
     let mut bi = b.chars().peekable();
     loop {
@@ -3590,6 +3632,46 @@ pub(crate) fn portal_item_id(path: &str) -> ItemId {
 mod tests {
     use super::*;
     use pecofence_core::geometry::WorkArea;
+
+    /// The key a name sort caches gives the order `natural_cmp` gives, name for name.
+    #[test]
+    fn a_sort_by_the_cached_key_is_the_natural_order() {
+        let names = [
+            "周报 0012.txt",
+            "周报 12.TXT",
+            "周报 2.txt",
+            "周报 2",
+            "Budget 10.csv",
+            "budget 9.csv",
+            "BUDGET 09.csv",
+            "IMG_0100.png",
+            "img_99.png",
+            "9 lives.md",
+            "10 things.md",
+            "a",
+            "A",
+            "",
+            "项目计划书 最终版 已确认.docx",
+            "项目计划书 最终版.docx",
+            "99999999999999999999999 a",
+            "99999999999999999999998 b",
+        ];
+        for a in names {
+            for b in names {
+                assert_eq!(
+                    NaturalKey::of(a).cmp(&NaturalKey::of(b)),
+                    natural_cmp(a, b),
+                    "{a:?} against {b:?}"
+                );
+            }
+        }
+        let mut by_key = names.to_vec();
+        by_key.sort_by_cached_key(|n| NaturalKey::of(n));
+        let mut by_cmp = names.to_vec();
+        by_cmp.sort_by(|a, b| natural_cmp(a, b));
+        // Names the order holds equal ("a" and "A") stay as they came in both.
+        assert_eq!(by_key, by_cmp);
+    }
 
     fn monitor(id: &str, left: i32, w: i32, h: i32, dpi: u32) -> WorkArea {
         WorkArea {
