@@ -754,6 +754,7 @@ mod tests {
         ITEM_BOX_MAX_LINES, TitlePlace, box_colors, has_reserved_char, invalid_file_name,
         item_box_place, rename_hidden_suffix, rename_select_len, title_box_place,
     };
+    use pecofence_core::TitleAlign;
     use pecofence_platform::RECT;
     use pecofence_render::{Image, Theme};
 
