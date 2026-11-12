@@ -195,13 +195,13 @@ mod tests {
         assert!(image.refill(8, 2, &[1u8; 8 * 2 * 4]));
         assert_eq!(image.size(), (8, 2));
         // Past the room, another width, or pixels that do not match the size: left as it is.
-        assert!(!image.refill(8, 7, &vec![0u8; 8 * 7 * 4]));
+        assert!(!image.refill(8, 7, &[0u8; 8 * 7 * 4]));
         assert!(!image.refill(9, 2, &[0u8; 9 * 2 * 4]));
         assert!(!image.refill(8, 2, &[0u8; 8 * 2 * 4 - 1]));
         assert_eq!(image.size(), (8, 2));
         // `new` leaves no room.
         let mut exact = LayeredImage::new(8, 4, &first).unwrap();
-        assert!(!exact.refill(8, 5, &vec![0u8; 8 * 5 * 4]));
+        assert!(!exact.refill(8, 5, &[0u8; 8 * 5 * 4]));
         assert!(exact.refill(8, 4, &first));
     }
 }
