@@ -16,7 +16,16 @@ const PEEK_LATE_DESKTOP: Duration = Duration::from_millis(1500);
 /// Frames between making a covered fence transparent and raising it over the window that hides
 /// it: the opacity reaches the compositor only when the message loop has run again, and the
 /// fence must not come over the window while it is still opaque on screen.
-const PEEK_RAISE_FRAMES: u8 = 1;
+pub(super) const PEEK_RAISE_FRAMES: u8 = 1;
+/// The longest that wait may take (a window timer, so about 63 ms in effect). A compositor
+/// clock (Windows 11) gives its two beats 25 to 40 ms after the fences were made transparent,
+/// before this, so nothing changes there: the timer finds the fences raised. Windows 10 has
+/// no compositor clock: the frame clock waits in `DwmFlush`, and on a PC without a GPU its
+/// first two beats after a rest took 127 to 174 ms together, so the covered fences were first
+/// seen 232 to 279 ms after the shortcut (60 to 112 ms in 0.3.3, which did not fade). With
+/// the limit they are raised 63 to 67 ms after they were made transparent and seen after 149
+/// to 186 ms; no opaque fence showed before the fade in the Peeks of the guest's checks.
+pub(super) const PEEK_RAISE_LIMIT_MS: u32 = 50;
 /// Frames a faded fence stays transparent after the Peek put it back under the windows. A
 /// change of the z-order reaches the screen a frame or two after a change of opacity does:
 /// made opaque in the same turn, the fence showed for one frame over the window that hides it
@@ -323,6 +332,7 @@ impl App {
                 // come over their window then).
                 p.reopen(now);
                 self.peek_raise_in = Some(0);
+                window::set_timer(self.control.hwnd(), TIMER_PEEK_RAISE, PEEK_RAISE_LIMIT_MS);
                 self.ctx.frames.request();
             } else {
                 self.end_peek("hotkey or tray menu");
@@ -362,6 +372,7 @@ impl App {
         }
         if !held.is_empty() {
             self.peek_raise_in = Some(PEEK_RAISE_FRAMES);
+            window::set_timer(self.control.hwnd(), TIMER_PEEK_RAISE, PEEK_RAISE_LIMIT_MS);
         }
         if animating || !held.is_empty() {
             self.ctx.frames.request();
@@ -396,6 +407,21 @@ impl App {
             "peek: fences hidden by a window fade in with the dimmer"
         );
         held
+    }
+
+    /// `PEEK_RAISE_LIMIT_MS` after the Peek opened: fences that still wait for the frame
+    /// clock's beats are raised now and fade in. Nothing to do when the beats came first, when
+    /// the Peek is closing or over.
+    pub(super) fn peek_raise_overdue(&mut self) {
+        let Some(beats_left) = self.peek_raise_in.take() else {
+            return;
+        };
+        tracing::debug!(
+            beats_left,
+            limit_ms = PEEK_RAISE_LIMIT_MS,
+            "peek: the frame clock is slow to beat; covered fences raised at the limit"
+        );
+        self.raise_peek_held();
     }
 
     /// Frame tick of the Peek's fence fade: counts down to the raise of the held fences, then

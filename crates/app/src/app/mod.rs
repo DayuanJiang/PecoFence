@@ -128,6 +128,9 @@ const TIMER_FRAME_RETRY: usize = 47;
 const TIMER_TEST: usize = 48;
 /// Retry a completed Peek focus handoff if the App is temporarily borrowed.
 const TIMER_PEEK_FOCUS_RETRY: usize = 49;
+/// The longest the Peek's covered fences wait for the frame clock before they are raised
+/// (`App::peek_raise_overdue`).
+const TIMER_PEEK_RAISE: usize = 79;
 /// Low-frequency safety net for changes that did not produce a wallpaper notification.
 const TIMER_WALLPAPER_POLL: usize = 50;
 /// `events.subscribe` diff tick while at least one CLI stream is open (see `ipc.rs`).
@@ -1298,6 +1301,16 @@ impl App {
                                         } else {
                                             window::set_timer(hwnd, TIMER_PEEK_FOCUS_RETRY, 50);
                                         }
+                                    }
+                                }
+                                TIMER_PEEK_RAISE => {
+                                    window::kill_timer(hwnd, TIMER_PEEK_RAISE);
+                                    // Borrowed (a modal loop): the frame clock's beat raises
+                                    // them when it comes.
+                                    if let Ok(mut guard) = cell.try_borrow_mut()
+                                        && let Some(app) = guard.as_mut()
+                                    {
+                                        app.peek_raise_overdue();
                                     }
                                 }
                                 TIMER_TEST => {
