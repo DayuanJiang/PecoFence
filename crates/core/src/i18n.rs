@@ -403,7 +403,9 @@ mod tests {
         for &language in SUPPORTED {
             let text = match language {
                 Language::SimplifiedChinese => source,
-                _ => catalog(language).get(source).expect(language.tag()),
+                _ => catalog(language)
+                    .get(source)
+                    .unwrap_or_else(|| panic!("{}", language.tag())),
             };
             let shown = interpolate(text, std::slice::from_ref(&name));
             assert!(
