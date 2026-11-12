@@ -450,6 +450,8 @@ pub enum Command {
     DesktopMarquee(crate::anchor::MarqueeEvent),
     /// A click elsewhere ended the desktop fence selection.
     ClearFenceSelection,
+    /// Esc in a fence whose icons wait on the clipboard after Ctrl+X: the cut is taken back.
+    CancelCut,
     /// A press in the fence window `except` ends the icon selection of every other fence.
     EndItemSelection {
         except: HWND,

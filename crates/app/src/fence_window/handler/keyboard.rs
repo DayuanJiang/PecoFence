@@ -286,6 +286,12 @@ pub(super) fn on_keydown(
             if v.filter_active {
                 tracing::debug!(selected = ids.len(), "Esc: filter cleared, selection kept");
                 queue.push(Command::ClearFenceFilter(v.active));
+            } else if v.items.iter().any(|it| v.cut.contains(&it.id)) {
+                // Icons of this fence wait on the clipboard after Ctrl+X: Esc takes the cut
+                // back and leaves the selection, as on Explorer's desktop; the next Esc
+                // clears the selection.
+                tracing::debug!(selected = ids.len(), "Esc: cut taken back, selection kept");
+                queue.push(Command::CancelCut);
             } else {
                 v.selected.clear();
                 v.type_ahead.clear();

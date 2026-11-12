@@ -686,6 +686,27 @@ impl App {
         }
     }
 
+    /// Esc after Ctrl+X: the cut is taken back. Explorer's desktop does the same (measured on
+    /// Windows Server 2025: the icon is whole again and the clipboard is empty; a click
+    /// elsewhere leaves both as they are). The clipboard is emptied only while it still
+    /// holds our cut, and never under a paste of it that is still running.
+    pub(super) fn cancel_cut(&mut self) {
+        if self.cut_items.is_empty() || self.cut_paste.is_some() {
+            return;
+        }
+        let ours = clipboard::sequence() == self.cut_clip_seq;
+        tracing::info!(
+            items = self.cut_items.len(),
+            clipboard_emptied = ours,
+            "Esc: cut taken back"
+        );
+        if ours {
+            clipboard::clear();
+        }
+        self.cut_items.clear();
+        self.push_cut_items();
+    }
+
     /// Ctrl+V / 粘贴: the clipboard's files land in `fence` — desktop items change membership,
     /// foreign files move / copy to the desktop (or the portal's folder) first. Pasting copies
     /// into the folder they already live in makes Explorer's "xxx - 副本" duplicates, which go

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Ctrl+X on an icon, then Esc: the cut is taken back, as on Explorer's desktop (the icon is whole again and still selected, the clipboard is empty; a second Esc ends the selection). Esc used to end the selection and leave the icon faded, with the file still on the clipboard. A click elsewhere leaves the cut as it is, as in Explorer.
 - Ctrl+C, Ctrl+V on an icon: the selection box of the copy fades in with the copy. The copy faded in bare and its box stood there in one frame when the fade-in was over; on the freely placed desktop the box came, went for a frame and came again. (The box of an icon was drawn only once the icon was at full strength.)
 - A new file's icon: name and picture come together. The name faded in at once and the picture two to three frames later (it comes from a background thread), in a fence and on the freely placed desktop. The fade-in now waits for the picture (167 ms at most, so a file whose picture takes longer still shows its name).
 - The tip of an icon comes again when the pointer leaves the fence and comes back to the very same point. It stayed away until the pointer had moved by at least a pixel.
