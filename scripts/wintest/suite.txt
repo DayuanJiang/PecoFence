@@ -213,3 +213,9 @@ o4-latency-next    2   ec2    release owner4-latency.ps1             --var Part=
 o4-latency-roll    2   ec2    release owner4-latency.ps1             --var Part=ROLL
 o4-latency-fill    1   ec2    release owner4-latency.ps1             --var Part=FILL
 o4-latency-search  1   ec2    release owner4-latency.ps1             --var Part=SRCH
+o4-open            4   ec2    release owner4-open.ps1
+o4-open-tips       1   ec2    debug   owner4-open.ps1                --var Part=T
+o4-open-accent     1   ec2    release owner4-open.ps1                --extra ui/themes --var Part=A
+o4-big             4   ec2    release owner4-big.ps1
+o4-settings        4   ec2    release owner4-settings.ps1            --var Part=A --var N=5
+o4-settings-fonts  2   ec2    debug   owner4-settings.ps1            --var Part=S
