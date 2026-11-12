@@ -543,6 +543,25 @@ mod tests {
         }
     }
 
+    /// A script fence's footer names the script and says how the last run went; when both do
+    /// not fit, the name is left out. The status of a failed run stays short enough for both
+    /// in a fence 300 px wide (German had 47 characters and lost the name).
+    #[test]
+    fn the_status_of_a_failed_script_leaves_room_for_its_name() {
+        let source = "{0} 运行出错（退出代码 {1}）";
+        let values = ["23:59".to_string(), "1".to_string()];
+        let width =
+            |s: &str| -> usize { s.chars().map(|c| if c >= '\u{2E80}' { 2 } else { 1 }).sum() };
+        for &language in SUPPORTED {
+            let text = match language {
+                Language::SimplifiedChinese => source,
+                _ => &catalog(language)[source],
+            };
+            let shown = interpolate(text, &values);
+            assert!(width(&shown) <= 40, "{}: {shown}", language.tag());
+        }
+    }
+
     /// One kind of quotation mark per language: a card that names a fence in “ ” above a
     /// button named in 「 」 reads as two programs. The source strings (Simplified Chinese)
     /// are the catalogs' keys.

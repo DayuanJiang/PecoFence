@@ -668,7 +668,7 @@
   "1 小时": "1 Stunde",
   "{0} 更新": "Aktualisiert um {0}",
   "{0} 超过 10 秒没有结束，已停止": "Länger als 10 Sekunden gelaufen und um {0} gestoppt",
-  "{0} 运行出错（退出代码 {1}）": "Fehler bei der Ausführung um {0} (Exitcode {1})",
+  "{0} 运行出错（退出代码 {1}）": "Fehler um {0} (Exitcode {1})",
   "不能运行这种文件（支持 .ps1、.py、.cmd、.bat、.js、.exe）": "Dieser Dateityp kann nicht ausgeführt werden (unterstützt: .ps1, .py, .cmd, .bat, .js, .exe)",
   "天气.ps1": "Wetter.ps1",
   "打开脚本所在的文件夹": "Skriptordner öffnen",

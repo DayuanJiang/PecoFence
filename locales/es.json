@@ -668,7 +668,7 @@
   "1 小时": "1 hora",
   "{0} 更新": "Actualizado a las {0}",
   "{0} 超过 10 秒没有结束，已停止": "Tardó más de 10 segundos, detenido a las {0}",
-  "{0} 运行出错（退出代码 {1}）": "Error al ejecutar a las {0} (código de salida {1})",
+  "{0} 运行出错（退出代码 {1}）": "Error a las {0} (código de salida {1})",
   "不能运行这种文件（支持 .ps1、.py、.cmd、.bat、.js、.exe）": "Este tipo de archivo no se puede ejecutar (admitidos: .ps1, .py, .cmd, .bat, .js, .exe)",
   "天气.ps1": "tiempo.ps1",
   "打开脚本所在的文件夹": "Abrir carpeta del script",
