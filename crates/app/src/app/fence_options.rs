@@ -73,6 +73,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "titleSize",
     "textSize",
     "titleOnHover",
+    "transparentOnHover",
     "layout",
     "sort",
     "reverse",
@@ -192,6 +193,8 @@ pub(super) enum FenceProp {
     TextSize(Option<TitleSize>),
     /// None = the global `rollUp.titleOnHover`.
     TitleOnHover(Option<bool>),
+    /// 鼠标移入时保持透明: acts while the opacity is 全透明.
+    TransparentOnHover(bool),
     /// Regular fences: a double-clicked folder opens inside the fence.
     OpenFoldersInside(bool),
     PortalNavigate(bool),
@@ -381,6 +384,7 @@ pub(super) fn parse_fence_prop(
                 _ => return Err(bad(ALLOWED)),
             })
         }
+        "transparentOnHover" => FenceProp::TransparentOnHover(as_bool()?),
         "layout" => {
             const ALLOWED: &[&str] = &["icons", "list", "details"];
             FenceProp::Layout(match as_str(ALLOWED)? {
@@ -794,6 +798,15 @@ impl App {
         self.schedule_save();
     }
 
+    /// 鼠标移入时保持透明: the pointer over a fully transparent fence shows neither its plate
+    /// nor a folded title row.
+    pub(super) fn set_fence_transparent_on_hover(&mut self, fence: FenceId, on: bool) {
+        let host = self.state.host_of(fence);
+        self.state.set_transparent_on_hover(host, on);
+        self.apply_fence_appearance(host);
+        self.schedule_save();
+    }
+
     /// Icon spacing in DIPs.
     pub(super) fn set_fence_spacing(&mut self, fence: FenceId, px: i32) {
         self.state.set_spacing(fence, px);
@@ -946,6 +959,7 @@ impl App {
             // 文字大小 (note and script fences).
             "textSize": size_name(f.appearance.as_ref().and_then(|a| a.text_size)),
             "titleOnHover": title_on_hover,
+            "transparentOnHover": h.appearance.as_ref().is_some_and(|a| a.transparent_on_hover),
             "hideWhenEmpty": f.hide_when_empty,
             "desktopLayout": f.desktop_layout,
             "freePlacement": f.free_placement,
@@ -1073,6 +1087,7 @@ impl App {
             }
             FenceProp::TextSize(size) => self.set_fence_text_size(fence, size),
             FenceProp::TitleOnHover(on) => self.set_fence_title_on_hover(fence, on),
+            FenceProp::TransparentOnHover(on) => self.set_fence_transparent_on_hover(fence, on),
             FenceProp::OpenFoldersInside(on) => self.set_fence_open_folders_inside(fence, on),
             FenceProp::PortalNavigate(on) => self.set_fence_portal_navigate(fence, on),
             FenceProp::PortalTitleIcon(on) => self.set_fence_title_icon(fence, on),

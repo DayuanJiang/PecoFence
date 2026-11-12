@@ -274,6 +274,10 @@ pub struct FenceDto {
     /// `default` (the global `rollUp.titleOnHover`) | `hover` | `always`.
     #[serde(default)]
     pub title_on_hover: String,
+    /// A fully transparent fence (`opacity` `transparent`) stays transparent while the pointer
+    /// is over it: no glass, and a title row hidden by `titleOnHover` stays hidden.
+    #[serde(default)]
+    pub transparent_on_hover: bool,
     /// `icons` | `list` | `details`.
     pub layout: String,
     /// `manual` | `name` | `type` | `date` | `size` | `openCount`.

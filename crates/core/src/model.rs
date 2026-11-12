@@ -1024,6 +1024,11 @@ pub struct AppearanceOverride {
     /// This fence's bar in a tab strip (None = its tint).
     #[serde(default)]
     pub tab_rgb: Option<[u8; 3]>,
+    /// 鼠标移入时保持透明 (GitHub #222): a fully transparent fence (`opacity` 0) looks under
+    /// the pointer as it does at rest: no plate, and a title row folded away by title on
+    /// hover stays away. It does nothing at another opacity.
+    #[serde(default)]
+    pub transparent_on_hover: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -2596,6 +2601,21 @@ mod tests {
         .unwrap();
         assert!(tools.enabled && tools.clock_seconds);
         assert!(FenceTool::Script.enabled(&tools) && FenceTool::Note.enabled(&tools));
+    }
+
+    /// 鼠标移入时保持透明 (GitHub #222) is off in a configuration from before it, and an
+    /// appearance that holds only it is kept.
+    #[test]
+    fn transparent_on_hover_is_off_in_older_files_and_kept_when_on() {
+        let mut a = serde_json::to_value(AppearanceOverride::default()).unwrap();
+        assert_eq!(a["transparentOnHover"], false);
+        a.as_object_mut().unwrap().remove("transparentOnHover");
+        let old: AppearanceOverride = serde_json::from_value(a.clone()).unwrap();
+        assert!(!old.transparent_on_hover);
+        a["transparentOnHover"] = true.into();
+        let on: AppearanceOverride = serde_json::from_value(a).unwrap();
+        assert!(on.transparent_on_hover);
+        assert_ne!(on, AppearanceOverride::default());
     }
 
     #[test]

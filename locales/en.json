@@ -403,6 +403,8 @@
   "这是“{0}”中的一个标签页，外观、锁定和自动高度对整组标签页生效": "This is a tab in “{0}”. Appearance, locking and automatic height apply to the whole tab group",
   "桌面上还没有栅栏。可以从托盘菜单新建，或在桌面空白处拖出一个矩形。": "No fences yet. Use the tray menu or drag a rectangle on the desktop to create one.",
   "全透明：鼠标悬停时才显示玻璃。更透明：底色更淡。更厚实：多一层底色": "Fully transparent: the glass appears only on hover. More transparent: a lighter backing. More opaque: adds a solid backing",
+  "鼠标移入时保持透明": "Stay transparent under the pointer",
+  "鼠标移到栅栏上时，玻璃和隐藏着的标题栏都不出现。按住标题栏原来的位置仍可拖动栅栏，拖动边缘仍可调整大小": "With the pointer over the fence, neither the glass nor a hidden title bar appears. You can still drag the fence where its title bar is, and resize it from its edges",
   "给玻璃染上一层颜色，标签页的色条随之变化": "Tint the glass and matching tab indicators",
   "要跟随色调，请先选一种色调": "To match the tint, choose a tint first",
   "显示标题栏": "Show title bar",

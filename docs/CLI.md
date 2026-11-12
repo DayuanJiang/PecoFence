@@ -186,7 +186,10 @@ tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/normal
 boxes and clickable rows, 12/14/18/24 DIPs; normal by default; other fences refuse it, and a
 clock's text follows the size of its fence instead),
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
-fence; default follows `rollUp.titleOnHover`), `layout` icons/list/details,
+fence; default follows `rollUp.titleOnHover`), `transparentOnHover` (a fence whose `opacity` is
+transparent stays transparent while the pointer is over it: no glass, rim or shadow, and a title
+row hidden by `titleOnHover` stays hidden, though it still moves the fence; off by default; no
+effect at another opacity), `layout` icons/list/details,
 `sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `foldersFirst` (folders above files in a sorted fence), `labelLines` 0/1/2/3 (lines
 of the label under each icon in the icons layout; 0 shows the icons without labels),
 `openFoldersInside` (any fence but a portal: double-clicking a folder, or a shortcut to a folder,

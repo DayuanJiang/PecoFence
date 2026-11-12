@@ -292,6 +292,11 @@ impl App {
             .unwrap_or((None, 1.0));
         w.set_appearance(bd, op);
         w.set_title_on_hover(f.appearance.as_ref().and_then(|a| a.title_on_hover));
+        w.set_transparent_on_hover(
+            f.appearance
+                .as_ref()
+                .is_some_and(|a| a.transparent_on_hover),
+        );
         w.set_style(fence_style_for(&f));
         w.set_text_size(text_size_index(&f));
         if let Some(a) = self.anchor.borrow_mut().as_mut() {

@@ -120,6 +120,7 @@ back and import that file when you return.
 options added after it, and its first save drops them:
 
 - A fence whose 图标对齐 is 右对齐 shows left-aligned.
+- 鼠标移入时保持透明 is off: a fully transparent fence shows its glass under the pointer.
 
 When you return to the later version, set them again, or restore the copy 0.3.3 kept of
 the newer file (see the next section).

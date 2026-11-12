@@ -758,6 +758,7 @@ impl FenceViewState {
         };
         let plate_clear = 1.0 - self.plate_reveal.value_at(now).clamp(0.0, 1.0);
         let shown = (!self.bare()) as u8 as f32;
+        let lock_shown = self.locked && self.pointer_reveals();
         let f = &mut self.chrome_fades;
         f.set(animate, ChromeKey::Title, title_visible as u8 as f32, now);
         f.set(
@@ -774,12 +775,7 @@ impl FenceViewState {
             now,
         );
         f.set(animate, ChromeKey::Count, rolled as u8 as f32, now);
-        f.set(
-            animate,
-            ChromeKey::Lock,
-            (self.locked && self.mouse_inside) as u8 as f32,
-            now,
-        );
+        f.set(animate, ChromeKey::Lock, lock_shown as u8 as f32, now);
         let pulse = self.lock_pulse.map(|t| now.saturating_duration_since(t));
         let lock = lock_alpha(f.value(&ChromeKey::Lock, now), pulse);
         if pulse.is_some_and(|since| since >= LOCK_PULSE) {

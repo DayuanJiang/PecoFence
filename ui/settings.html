@@ -787,6 +787,7 @@
       <h3>外观</h3>
       <div class="card"><div class="l"><span class="ic">&#xE744;</span><div><div class="t">不透明度</div><div class="s">全透明：鼠标悬停时才显示玻璃。更透明：底色更淡。更厚实：多一层底色</div></div></div>
         <select id="fenceOpacity" data-fence="opacity"><option value="transparent">全透明</option><option value="clear">更透明</option><option value="default">默认</option><option value="solid">更厚实</option></select></div>
+      <div class="card" id="fenceTransparentOnHover" hidden><div class="l"><span class="ic">&#xE962;</span><div><div class="t">鼠标移入时保持透明</div><div class="s">鼠标移到栅栏上时，玻璃和隐藏着的标题栏都不出现。按住标题栏原来的位置仍可拖动栅栏，拖动边缘仍可调整大小</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="transparentOnHover"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE790;</span><div><div class="t">色调</div><div class="s">给玻璃染上一层颜色，标签页的色条随之变化</div></div></div>
         <div class="swatches" id="fenceTintSwatches" role="radiogroup"></div>
         <select id="fenceTint" data-fence="tint" hidden><option value="">无</option></select></div>
@@ -2150,6 +2151,8 @@
     const tabPalette = `<option value="">${esc(t("跟随色调"))}</option>` + palette.slice(palette.indexOf('</option>') + 9);
     if (tabSel.innerHTML !== tabPalette) tabSel.innerHTML = tabPalette;
     reveal(document.getElementById('fenceTintTitleOnly'), !!f.tint);
+    // 鼠标移入时保持透明 is about the plate that 全透明 shows under the pointer.
+    reveal(document.getElementById('fenceTransparentOnHover'), f.opacity === 'transparent');
     document.getElementById('fenceTabColor').style.display = f.host || f.tabbed ? '' : 'none';
     document.querySelectorAll('[data-fence]').forEach(el => {
       const prop = el.dataset.fence;

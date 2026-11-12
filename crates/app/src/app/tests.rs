@@ -646,6 +646,7 @@ mod ipc {
             "layout",
             "labelLines",
             "titleOnHover",
+            "transparentOnHover",
             "expandUpward",
             "portalTitleIcon",
         ] {
@@ -737,6 +738,11 @@ mod ipc {
             parse_fence_prop("tintTitleOnly", &json!(true)).unwrap(),
             FenceProp::TintTitleOnly(true)
         );
+        assert_eq!(
+            parse_fence_prop("transparentOnHover", &json!(true)).unwrap(),
+            FenceProp::TransparentOnHover(true)
+        );
+        assert!(parse_fence_prop("transparentOnHover", &json!("on")).is_err());
         assert_eq!(
             parse_fence_prop("iconAlign", &json!("right")).unwrap(),
             FenceProp::IconAlign(pecofence_core::IconAlign::Right)

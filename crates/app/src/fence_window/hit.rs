@@ -438,6 +438,11 @@ impl FenceViewState {
         if self.column_collapsed || self.behavior.hide_count_and_chevron.get() || self.bare() {
             return false;
         }
+        // 鼠标移入时保持透明 with the title row folded away: the chevron is not drawn, and a
+        // click on a button nobody sees would roll the fence up. Its spot is title row.
+        if self.title_row_unseen() {
+            return false;
+        }
         let r = if self.tabs_on_rail() {
             let rows_end = self.rail_rows_end();
             TitleDeco::rail_chevron_box(self.rail_w(), h_px as f32 / scale, rows_end)

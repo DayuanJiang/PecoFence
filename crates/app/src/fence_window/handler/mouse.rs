@@ -13,7 +13,21 @@ pub(super) fn on_setcursor(
     lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, .. } = h;
-    if msg::lo_i16(lparam) as isize != msg::HTCLIENT {
+    let hit = msg::lo_i16(lparam) as isize;
+    if hit == msg::HTCAPTION {
+        // 鼠标移入时保持透明 with the title row folded away: the move cursor over the row
+        // nobody sees says that the fence can be grabbed there.
+        let unseen = view.try_borrow().ok().is_some_and(|g| {
+            g.as_ref()
+                .is_some_and(|v| v.title_row_unseen() && !v.locked)
+        });
+        if unseen {
+            window::set_standard_cursor(StandardCursor::SizeAll);
+            return Some(1);
+        }
+        return None;
+    }
+    if hit != msg::HTCLIENT {
         return None;
     }
     // try_borrow: this arrives re-entrantly from nested loops too.

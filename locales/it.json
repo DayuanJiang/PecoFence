@@ -402,6 +402,8 @@
   "这是“{0}”中的一个标签页，外观、锁定和自动高度对整组标签页生效": "Questa è una scheda di «{0}». Aspetto, blocco e altezza automatica si applicano all’intero gruppo di schede",
   "桌面上还没有栅栏。可以从托盘菜单新建，或在桌面空白处拖出一个矩形。": "Non ci sono ancora riquadri. Creane uno dal menu dell’area di notifica oppure trascina un rettangolo su un’area vuota del desktop.",
   "全透明：鼠标悬停时才显示玻璃。更透明：底色更淡。更厚实：多一层底色": "Completamente trasparente: il vetro appare solo al passaggio del mouse. Più trasparente: uno sfondo più tenue. Meno trasparente: aggiunge uno sfondo pieno",
+  "鼠标移入时保持透明": "Resta trasparente al passaggio del mouse",
+  "鼠标移到栅栏上时，玻璃和隐藏着的标题栏都不出现。按住标题栏原来的位置仍可拖动栅栏，拖动边缘仍可调整大小": "Con il puntatore sul riquadro non compaiono né il vetro né la barra del titolo nascosta. Puoi ancora trascinare il riquadro dal punto in cui si trova la barra del titolo e ridimensionarlo dai bordi",
   "给玻璃染上一层颜色，标签页的色条随之变化": "Applica una tonalità al vetro e alle barre colorate delle schede",
   "要跟随色调，请先选一种色调": "Per seguire la tonalità, selezionane prima una",
   "显示标题栏": "Mostra la barra del titolo",

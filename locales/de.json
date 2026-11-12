@@ -379,6 +379,8 @@
   "这是“{0}”中的一个标签页，外观、锁定和自动高度对整组标签页生效": "Tab in „{0}“: Darstellung, Sperre und automatische Höhe gelten für alle Tabs gemeinsam",
   "桌面上还没有栅栏。可以从托盘菜单新建，或在桌面空白处拖出一个矩形。": "Noch keine Bereiche. Erstelle einen über das Taskleistenmenü oder zieh auf dem Desktop ein Rechteck auf.",
   "全透明：鼠标悬停时才显示玻璃。更透明：底色更淡。更厚实：多一层底色": "Vollständig transparent: Glas erst beim Daraufzeigen. Transparenter: schwächere Grundfarbe. Deckender: zusätzliche Grundfarbe",
+  "鼠标移入时保持透明": "Beim Daraufzeigen transparent bleiben",
+  "鼠标移到栅栏上时，玻璃和隐藏着的标题栏都不出现。按住标题栏原来的位置仍可拖动栅栏，拖动边缘仍可调整大小": "Mit dem Mauszeiger auf dem Bereich erscheinen weder das Glas noch eine ausgeblendete Titelleiste. Du kannst den Bereich weiterhin an der Stelle der Titelleiste ziehen und an den Rändern in der Größe ändern",
   "给玻璃染上一层颜色，标签页的色条随之变化": "Glas und Tab-Markierungen passend einfärben",
   "要跟随色调，请先选一种色调": "Für „Wie Farbton“ zuerst einen Farbton wählen",
   "显示标题栏": "Titelleiste anzeigen",

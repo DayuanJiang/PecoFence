@@ -1790,6 +1790,7 @@ impl App {
             title_size: text("titleSize"),
             text_size: text("textSize"),
             title_on_hover: text("titleOnHover"),
+            transparent_on_hover: flag("transparentOnHover"),
             layout: layout_name(f.view.layout).to_string(),
             sort: sort_name(f.view.sort).to_string(),
             reverse: f.view.reverse,

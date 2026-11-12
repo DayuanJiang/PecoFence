@@ -403,6 +403,8 @@
   "这是“{0}”中的一个标签页，外观、锁定和自动高度对整组标签页生效": "Onglet de « {0} » : l’apparence, le verrouillage et la hauteur automatique s’appliquent à tous ses onglets",
   "桌面上还没有栅栏。可以从托盘菜单新建，或在桌面空白处拖出一个矩形。": "Aucun groupe pour le moment. Créez-en un depuis l’icône de la zone de notification ou en traçant un rectangle sur le Bureau.",
   "全透明：鼠标悬停时才显示玻璃。更透明：底色更淡。更厚实：多一层底色": "Entièrement transparent : le verre n’apparaît qu’au survol. Plus transparent : une couleur de fond plus légère. Plus opaque : ajoute une couleur de fond",
+  "鼠标移入时保持透明": "Rester transparent au survol",
+  "鼠标移到栅栏上时，玻璃和隐藏着的标题栏都不出现。按住标题栏原来的位置仍可拖动栅栏，拖动边缘仍可调整大小": "Quand le pointeur passe sur le groupe, ni le verre ni la barre de titre masquée n’apparaissent. Le groupe se déplace toujours par l’emplacement de sa barre de titre et se redimensionne par ses bords",
   "给玻璃染上一层颜色，标签页的色条随之变化": "Teinter le verre et les indicateurs d’onglets",
   "要跟随色调，请先选一种色调": "Pour « Selon la teinte », choisissez d’abord une teinte",
   "显示标题栏": "Afficher la barre de titre",

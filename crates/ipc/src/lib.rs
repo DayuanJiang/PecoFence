@@ -196,7 +196,7 @@ pub enum Method {
     /// `excludeFromQuickHide`, `opacity` default|clear|solid|transparent, `tint` "#RRGGBB"|null,
     /// `tintTitleOnly`, `tabColor` "#RRGGBB"|null, `titleColor`, `titleSize`
     /// small|normal|large|extraLarge, `textSize` (note and script fences, same values),
-    /// `titleOnHover` default|hover|always, `layout`
+    /// `titleOnHover` default|hover|always, `transparentOnHover`, `layout`
     /// icons|list|details, `sort`, `reverse`, `groupByDate`, `foldersFirst`, `labelLines`
     /// 0|1|2|3, `openFoldersInside`, `portalNavigate`, `portalTitleIcon`, `hideWhenEmpty`,
     /// `desktopLayout`). Result: `{changed, fence}`.

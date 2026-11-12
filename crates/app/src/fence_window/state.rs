@@ -574,6 +574,8 @@ pub struct FenceViewState {
     pub(super) desktop_shape_pending: Option<Vec<RECT>>,
     /// Per-fence title on hover; None follows `Behavior::title_on_hover`.
     pub(super) title_on_hover_override: Option<bool>,
+    /// 鼠标移入时保持透明 (`AppearanceOverride::transparent_on_hover`); see `stays_clear`.
+    pub(super) transparent_on_hover: bool,
     /// Per-fence colour wash / title colour / title size.
     pub(super) style: FenceStyle,
     /// Icon grid spacing in DIPs (FenceView.spacing).

@@ -379,6 +379,8 @@
   "这是“{0}”中的一个标签页，外观、锁定和自动高度对整组标签页生效": "Esta é uma aba de “{0}”; a aparência, o bloqueio e a altura automática valem para todas as abas",
   "桌面上还没有栅栏。可以从托盘菜单新建，或在桌面空白处拖出一个矩形。": "Ainda não há grupos. Crie um pelo menu do ícone na bandeja ou desenhe um retângulo em um espaço vazio da área de trabalho.",
   "全透明：鼠标悬停时才显示玻璃。更透明：底色更淡。更厚实：多一层底色": "Totalmente transparente: o vidro só aparece ao passar o mouse. Mais transparente: uma camada de cor mais suave. Mais opaco: adiciona uma camada de cor",
+  "鼠标移入时保持透明": "Manter transparente ao passar o mouse",
+  "鼠标移到栅栏上时，玻璃和隐藏着的标题栏都不出现。按住标题栏原来的位置仍可拖动栅栏，拖动边缘仍可调整大小": "Com o ponteiro sobre o grupo, nem o vidro nem a barra de título oculta aparecem. Você ainda pode arrastar o grupo pelo lugar da barra de título e redimensioná-lo pelas bordas",
   "给玻璃染上一层颜色，标签页的色条随之变化": "Colorir o vidro e os indicadores das abas",
   "要跟随色调，请先选一种色调": "Para usar “Igual à tonalidade”, escolha uma tonalidade primeiro",
   "显示标题栏": "Mostrar barra de título",

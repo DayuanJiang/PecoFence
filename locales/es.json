@@ -379,6 +379,8 @@
   "这是“{0}”中的一个标签页，外观、锁定和自动高度对整组标签页生效": "Es una pestaña de «{0}»: la apariencia, el bloqueo y la altura automática se aplican a todas sus pestañas",
   "桌面上还没有栅栏。可以从托盘菜单新建，或在桌面空白处拖出一个矩形。": "Aún no hay grupos. Crea uno desde el menú de la bandeja o dibuja un rectángulo en un área vacía del escritorio.",
   "全透明：鼠标悬停时才显示玻璃。更透明：底色更淡。更厚实：多一层底色": "Totalmente transparente: el cristal solo aparece al pasar el cursor. Más transparente: una capa de color más tenue. Más opaco: agrega una capa de color",
+  "鼠标移入时保持透明": "Mantener transparente al pasar el cursor",
+  "鼠标移到栅栏上时，玻璃和隐藏着的标题栏都不出现。按住标题栏原来的位置仍可拖动栅栏，拖动边缘仍可调整大小": "Con el cursor sobre el grupo no aparecen ni el cristal ni la barra de título oculta. Puedes seguir arrastrando el grupo por el lugar de su barra de título y cambiar su tamaño desde los bordes",
   "给玻璃染上一层颜色，标签页的色条随之变化": "Colorear el cristal y los indicadores de pestañas",
   "要跟随色调，请先选一种色调": "Para usar «Según el tinte», elige primero un tinte",
   "显示标题栏": "Mostrar barra de título",

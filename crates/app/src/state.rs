@@ -3033,6 +3033,11 @@ impl AppState {
         self.edit_appearance(id, |a| a.title_on_hover = on);
     }
 
+    /// 鼠标移入时保持透明 of a fully transparent fence.
+    pub fn set_transparent_on_hover(&mut self, id: FenceId, on: bool) {
+        self.edit_appearance(id, |a| a.transparent_on_hover = on);
+    }
+
     /// The tint washes only the title row.
     pub fn set_tint_title_only(&mut self, id: FenceId, on: bool) {
         self.edit_appearance(id, |a| a.tint_title_only = on);

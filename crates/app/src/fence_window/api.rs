@@ -326,6 +326,7 @@ impl FenceWindow {
             desktop_shape_pending: None,
             wanted_layout: ViewLayout::Icons,
             title_on_hover_override: None,
+            transparent_on_hover: false,
             style: FenceStyle::default(),
             spacing: 0,
             icon_align: IconAlign::Left,
@@ -2488,6 +2489,26 @@ impl FenceWindow {
         self.with_view(|v| {
             if v.title_on_hover_override != on {
                 v.title_on_hover_override = on;
+                let _ = v.redraw();
+            }
+        });
+    }
+
+    /// 鼠标移入时保持透明: a fully transparent fence shows neither its plate nor a folded
+    /// title row while the pointer is over it.
+    pub fn set_transparent_on_hover(&self, on: bool) {
+        self.with_view(|v| {
+            if v.transparent_on_hover != on {
+                v.transparent_on_hover = on;
+                tracing::debug!(
+                    fence = %v.title,
+                    on,
+                    acts = v.stays_clear(),
+                    opacity = v.opacity,
+                    pointer_inside = v.mouse_inside,
+                    "stay transparent under the pointer set"
+                );
+                // The text colour goes by what is behind it: the plate may come or go now.
                 let _ = v.redraw();
             }
         });

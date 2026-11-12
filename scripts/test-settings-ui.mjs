@@ -558,9 +558,13 @@ async function runTests() {
     assert(messages().at(-1).id === 'fence-b' && messages().at(-1).prop === 'tabColor' && messages().at(-1).value === '0078D4', 'Tab colour not posted');
     doc.querySelector('#fenceTabColorSwatches [data-value=""]').click(); await settle();
     assert(messages().at(-1).prop === 'tabColor' && messages().at(-1).value === null, 'Following the tint did not post null');
+    assert(!doc.getElementById('fenceTransparentOnHover').hidden && !doc.querySelector('[data-fence=transparentOnHover]').classList.contains('on'), 'Stay-transparent switch not offered for a fully transparent fence, or on');
+    doc.querySelector('[data-fence=transparentOnHover]').click(); await settle();
+    assert(messages().at(-1).id === 'fence-b' && messages().at(-1).prop === 'transparentOnHover' && messages().at(-1).value === true, 'Stay transparent not posted');
     change(doc, 'fenceSel', 'fence-a');
     assert(doc.querySelector('[data-fence=iconAlign]').value === 'left', 'Left icon alignment not shown');
     assert(doc.querySelector('[data-fence=iconAlign] [value=right]'), 'Right icon alignment missing');
+    assert(doc.getElementById('fenceTransparentOnHover').hidden, 'Stay-transparent switch offered for a fence that is not fully transparent');
     change(doc, 'fenceIconAlign', 'center'); await settle();
     assert(messages().at(-1).id === 'fence-a' && messages().at(-1).prop === 'iconAlign' && messages().at(-1).value === 'center', 'Icon alignment not posted');
   });

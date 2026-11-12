@@ -576,7 +576,7 @@ impl FenceViewState {
     /// fence is dragged over it to merge and while the title is being renamed.
     pub(super) fn title_visible_target(&self) -> bool {
         !self.title_on_hover()
-            || self.mouse_inside
+            || self.pointer_reveals()
             || self.roll_target()
             || self.merge_hint
             || self.title_renaming
@@ -585,6 +585,28 @@ impl FenceViewState {
     /// 外观 → 全透明: no plate (glass, tint, rim, shadow) at rest.
     pub(super) fn is_clear(&self) -> bool {
         self.opacity <= 0.0 || self.bare()
+    }
+
+    /// 鼠标移入时保持透明 (GitHub #222) acts: the option is on and the fence is fully
+    /// transparent. The pointer over it then shows nothing the fence hides at rest.
+    pub(super) fn stays_clear(&self) -> bool {
+        self.transparent_on_hover && self.opacity <= 0.0 && !self.bare()
+    }
+
+    /// The pointer is over the fence and shows what the fence hides at rest: the plate of a
+    /// fully transparent fence, a title row folded away by title on hover, the lock glyph.
+    /// Not with 鼠标移入时保持透明, except in a rolled-up fence opened by the pointer (hover
+    /// peek): that one keeps the plate and title row it shows rolled up.
+    pub(super) fn pointer_reveals(&self) -> bool {
+        self.mouse_inside && (!self.stays_clear() || self.peeking)
+    }
+
+    /// The title row is folded away and the pointer does not bring it back
+    /// (鼠标移入时保持透明 with title on hover). The row still moves the fence, and the
+    /// pointer over it takes the move cursor, the only sign of where it is; the roll-up
+    /// chevron, which is not drawn then, takes no click.
+    pub(super) fn title_row_unseen(&self) -> bool {
+        self.stays_clear() && !self.title_visible_target()
     }
 
     /// Whether floating above other windows (Peek) draws this fence differently: a fully
@@ -612,7 +634,7 @@ impl FenceViewState {
             return false;
         }
         !self.is_clear()
-            || self.mouse_inside
+            || self.pointer_reveals()
             || self.shadow.ring().is_some()
             || self.roll_target()
             || self.behavior.floating.get()
