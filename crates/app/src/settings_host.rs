@@ -1007,6 +1007,13 @@ mod tests {
         assert!(checked);
         let stand_ins = SETTINGS_HTML.matches("data-alt=\"&#x").count();
         assert!(stand_ins >= 5, "{stand_ins} icons with a stand-in");
+        // The page skips its own check when the host has done this: a stand-in written in
+        // another form (not `data-alt="&#x…;">&#x…;`, or made by the script) would be missed.
+        assert_eq!(
+            SETTINGS_HTML.matches("data-alt=").count(),
+            stand_ins,
+            "a stand-in the host cannot see"
+        );
         assert_eq!(all.len(), SETTINGS_HTML.len());
         let same = |s: &str| {
             let (alt, icon) = s.split_once(";\">&#x").unwrap();
