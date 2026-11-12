@@ -1009,7 +1009,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             if depth == 0 && spent >= std::time::Duration::from_millis(4) {
                 tracing::debug!(
                     ms = (spent.as_secs_f64() * 10000.0).round() / 10.0,
-                    message = format_args!("{msg:#06x}"),
+                    msg = format_args!("{msg:#06x}"),
                     "slow message"
                 );
             }
