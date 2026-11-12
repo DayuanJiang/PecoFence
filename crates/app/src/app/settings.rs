@@ -1419,6 +1419,18 @@ impl App {
         if let Some(host) = &self.settings {
             host.set_title(pecofence_core::i18n::text("PecoFence 设置"));
         }
+        // Texts a window keeps as text: a script fence's status line, a smart fence's empty
+        // state, the filter tag, the tip of the virtual desktop mark.
+        let hosts: Vec<FenceId> = self.fences.keys().copied().collect();
+        for host in &hosts {
+            self.push_tool_view(*host);
+            self.apply_portal_deco(*host);
+        }
+        self.apply_desktop_visibility("interface language changed");
+        tracing::debug!(
+            windows = hosts.len(),
+            "fence windows got their kept texts in the new language"
+        );
         for window in self.fences.values() {
             window.redraw();
         }
