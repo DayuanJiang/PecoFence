@@ -3266,8 +3266,10 @@
     const tp = se.templates.find(x => x.key === key);
     if (!tp || !tp.spec) return;
     const w = document.getElementById('seWindow');
-    const rows = w.querySelector('.se-rows');
+    const rows = w.querySelector('.se-rows'), tops = rowTops(rows, '.se-row', row => row);
     rows.replaceChildren(...seRowsOf(tp.spec).map(seRow));
+    // The template's rows fade in: they are other rows than before.
+    glideRows(rows, tops, '.se-row', row => row);
     w.querySelector('.se-all').value = 'all';
     w.querySelector('.se-always').hidden = true;
     const limit = w.querySelector('.se-limit select');

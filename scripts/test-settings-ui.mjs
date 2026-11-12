@@ -3207,6 +3207,11 @@ async function runTests() {
     assert(await until(() => rowGlides() === ''), 'The rows never came to rest');
     rowsOf(doc)[1].querySelector('.se-minus').click();
     assert(kindsOf(doc) === 'where,name' && rowGlides() === '1 from below', 'A row removed: ' + (rowGlides() || 'nothing moves'));
+    assert(await until(() => rowGlides() === ''), 'The rows never came to rest after a row was removed');
+    // A template puts other rows there: every one of them fades in.
+    doc.querySelector('#seWindow [data-preset=downloads]').click();
+    const fresh = rowsOf(doc).map((_, i) => i + ' fades in').join(', ');
+    assert(rowsOf(doc).length >= 3 && rowGlides() === fresh, 'A template: ' + (rowGlides() || 'nothing moves') + ' (rows ' + kindsOf(doc) + ')');
     doc = await reset();
   });
   await test('A card that another setting shows grows open and closes; a page that comes in does not replay it', async () => {
