@@ -199,6 +199,7 @@ impl FenceWindow {
             script_rows: Vec::new(),
             script_hover: None,
             script_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
+            script_footer_form: "full",
             note_box_hover: None,
             portal_missing: false,
             empty_override: None,

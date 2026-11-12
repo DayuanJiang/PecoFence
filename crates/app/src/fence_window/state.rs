@@ -273,6 +273,8 @@ pub struct FenceViewState {
     pub(super) script_hover: Option<usize>,
     /// The hover plates of its rows fading in and out, by row index (as `item_hover`).
     pub(super) script_fades: Fades<usize>,
+    /// Which form of the footer was drawn last (`FenceChrome::script_footer`), for the log.
+    pub(super) script_footer_form: &'static str,
     /// 便签与待办: the line whose check box is under the pointer.
     pub(super) note_box_hover: Option<usize>,
     /// The portal's folder could not be found (its empty state says so).

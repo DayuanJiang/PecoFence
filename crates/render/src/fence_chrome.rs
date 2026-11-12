@@ -4755,6 +4755,22 @@ impl FenceChrome {
         Ok((laid, line_h))
     }
 
+    /// A script fence's footer for a content area `width` DIPs wide: `full` (the script's name
+    /// and the status) when it fits on its one line, else `short` (the status alone: the title
+    /// names the fence), cut with an ellipsis when that is too wide as well. The second value
+    /// names the choice for the log.
+    pub fn script_footer(&self, full: &str, short: &str, width: f32) -> (String, &'static str) {
+        let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        if full.is_empty() || crate::text::measure_width(full, &self.note_footer_format) <= w {
+            return (full.to_string(), "full");
+        }
+        let text = if short.is_empty() { full } else { short };
+        (
+            crate::text::fit_width(text, &self.note_footer_format, w),
+            "short",
+        )
+    }
+
     /// What a script fence's rows and `footer` take in a content area `width` DIPs wide (see
     /// [`ToolTextExtent`]): the rows scroll in the room above the footer. A fence without
     /// rows (it shows its hint) takes nothing.

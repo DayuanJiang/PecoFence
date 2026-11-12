@@ -300,6 +300,7 @@ impl App {
                     "还没有选择脚本。右键这个栅栏，选“选择脚本…”。",
                 )),
                 footer: String::new(),
+                footer_short: String::new(),
                 quiet: false,
             };
         };
@@ -315,9 +316,11 @@ impl App {
                 .get(&id)
                 .is_none_or(|begun| begun.elapsed() >= QUIET_RUN);
         let Some((outcome, at)) = self.script_runs.last.get(&id) else {
+            // The first run: the body says that it runs, where the rows will be.
             return ScriptView {
                 rows: Vec::new(),
-                footer: i18n::format("{0} · 正在运行…", &[name]),
+                footer: name,
+                footer_short: String::new(),
                 quiet: true,
             };
         };
@@ -350,10 +353,14 @@ impl App {
                 None,
             ),
         };
-        let status = match (running, status) {
-            (true, _) => i18n::format("{0} · 正在运行…", &[name]),
-            (false, Some(status)) => format!("{name} · {status}"),
-            (false, None) => name,
+        // The status alone, for a fence too narrow for the script's name before it.
+        let (status, short) = match (running, status) {
+            (true, _) => (
+                i18n::format("{0} · 正在运行…", &[name]),
+                i18n::text("正在运行…").to_string(),
+            ),
+            (false, Some(status)) => (format!("{name} · {status}"), status),
+            (false, None) => (name, String::new()),
         };
         // Only a finished run's output is read as rows with actions; an error shows as text.
         let rows = match outcome {
@@ -367,6 +374,7 @@ impl App {
         ScriptView {
             rows,
             footer: status,
+            footer_short: short,
             quiet: false,
         }
     }

@@ -1243,7 +1243,7 @@ impl FenceViewState {
             .collect();
         let chrome = self.chrome.clone();
         let hint = if script.quiet {
-            ""
+            pecofence_core::i18n::text("正在运行…")
         } else {
             pecofence_core::i18n::text("脚本没有输出文字")
         };
@@ -1268,26 +1268,28 @@ impl FenceViewState {
         let text_size = self.text_size;
         // Rows that do not fit scroll above the footer.
         let width_dip = self.content_size_px().0 as f32 / scale;
-        let extent = chrome.script_extent(width_dip, text_size, &rows, &script.footer)?;
+        // A fence too narrow for the footer's line shows the status without the script's name.
+        let (footer, footer_form) =
+            chrome.script_footer(&script.footer, &script.footer_short, width_dip);
+        if footer_form != self.script_footer_form {
+            tracing::debug!(
+                fence = %self.active,
+                width = width_dip.round(),
+                form = footer_form,
+                from = self.script_footer_form,
+                "script footer: the form that fits the width"
+            );
+            self.script_footer_form = footer_form;
+        }
+        let extent = chrome.script_extent(width_dip, text_size, &rows, &footer)?;
         let (scroll, scrollbar) = self.scroll_tool_text(extent);
         let mut hits = Vec::new();
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
                 hits = chrome.draw_script(
-                    session,
-                    &theme,
-                    scale,
-                    wd,
-                    hd,
-                    text_size,
-                    &rows,
-                    &hover,
-                    pressed,
-                    hint,
-                    &script.footer,
-                    scroll,
-                    scrollbar,
+                    session, &theme, scale, wd, hd, text_size, &rows, &hover, pressed, hint,
+                    &footer, scroll, scrollbar,
                 )?;
                 Ok(())
             })?;

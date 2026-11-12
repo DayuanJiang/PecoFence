@@ -489,7 +489,11 @@ impl ItemView {
 pub struct ScriptView {
     pub rows: Vec<ScriptRowView>,
     pub footer: String,
-    /// No "printed no text" hint while the body is empty (the first run has not ended).
+    /// The footer without the script's name (the status alone), shown when the whole line
+    /// does not fit the fence's width; empty when the footer is the name alone.
+    pub footer_short: String,
+    /// The first run has not ended: the empty body says 「正在运行…」 in place of the "printed
+    /// no text" hint.
     pub quiet: bool,
 }
 
