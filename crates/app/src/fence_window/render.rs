@@ -424,6 +424,21 @@ impl FenceViewState {
                 )
             })
             .collect();
+        // While a hover or selection fill fades: what this draw shows of it and how far the
+        // next refresh of the screen is (which refresh first shows the fill after an input).
+        if tracing::enabled!(tracing::Level::DEBUG)
+            && (self.item_hover.busy(now) || self.item_sel.busy(now))
+        {
+            let out: &Vec<(f32, f32, f32, f32)> = &out;
+            let hover = out.iter().map(|a| a.0).fold(0.0, f32::max);
+            let selection = out.iter().map(|a| a.1).fold(0.0, f32::max);
+            tracing::debug!(
+                hover,
+                selection,
+                next_refresh = ?dwm::next_refresh_ms(),
+                "fill drawn"
+            );
+        }
         // Fades that settled at 0 go; ids that left the list were dropped in `replace_items`
         // (no per-draw id set: this runs every frame of a glide).
         self.item_hover.prune(now, |_| true);

@@ -34,9 +34,9 @@ use windows_time::TimeSpan;
 
 /// `ControlFasterAnimationDuration`: fades (hover in/out, tooltip, scrollbar opacity).
 pub const FASTER: Duration = Duration::from_millis(83);
-/// Where a fade-in that answers a click or a key starts, so that its first frame already
-/// shows the answer: from 0 the first frame showed nothing, and a tab's new page or a
-/// filtered list came one frame late.
+/// Where a fade-in that answers the pointer, a click or a key starts, so that its first frame
+/// already shows the answer: from 0 the first frame showed nothing, and a hover fill, a
+/// selection, a tab's new page or a filtered list came one frame late.
 pub const FADE_IN_FIRST: f32 = 0.2;
 /// `ControlFastAnimationDuration`: small moves, exits, collapse, scrollbar expand/contract.
 pub const FAST: Duration = Duration::from_millis(167);
@@ -445,7 +445,10 @@ impl<K: Hash + Eq + Copy> Fades<K> {
     }
 
     /// Drives `key` towards `to` (0 or 1), continuing from wherever it is now. A key that is
-    /// absent rests at 0, so driving it to 0 is a no-op; driving it to 1 starts from 0.
+    /// absent rests at 0, so driving it to 0 is a no-op; driving it to 1 starts a fifth of
+    /// the way in ([`FADE_IN_FIRST`]): the draw that starts the fade shows it. (That draw is
+    /// the one that follows the mouse message; from 0 it painted nothing, and the fill came
+    /// with the next frame.)
     /// `animate` is [`Motion::enabled`]: false snaps to `to`.
     pub fn set(&mut self, animate: bool, key: K, to: f32, now: Instant) {
         match self.map.get_mut(&key) {
@@ -464,8 +467,10 @@ impl<K: Hash + Eq + Copy> Fades<K> {
             None => {
                 if to > 0.0 {
                     let dur = if animate { self.dur_in } else { Duration::ZERO };
-                    self.map
-                        .insert(key, Tween::new(0.0, to, dur, self.curve, now));
+                    self.map.insert(
+                        key,
+                        Tween::new(to * FADE_IN_FIRST, to, dur, self.curve, now),
+                    );
                 }
             }
         }
@@ -599,18 +604,19 @@ mod tests {
         f.set(true, 3, 0.0, t0);
         assert!(f.map.is_empty());
         assert_eq!(f.value(&3, t0), 0.0);
-        // Hover in: 0 -> 1 over dur_in.
+        // Hover in: to 1 over dur_in, and the draw that starts it shows a fifth already.
         f.set(true, 3, 1.0, t0);
         assert!(f.busy(t0));
+        assert!((f.value(&3, t0) - FADE_IN_FIRST).abs() < 1e-3);
         let mid = t0 + Duration::from_millis(50);
-        assert!((f.value(&3, mid) - 0.5).abs() < 1e-3);
+        assert!((f.value(&3, mid) - 0.6).abs() < 1e-3);
         // Same target again: no restart.
         f.set(true, 3, 1.0, mid);
-        assert!((f.value(&3, mid) - 0.5).abs() < 1e-3);
-        // Hover out halfway: continues from 0.5 over dur_out (200 ms).
+        assert!((f.value(&3, mid) - 0.6).abs() < 1e-3);
+        // Hover out halfway: continues from 0.6 over dur_out (200 ms).
         f.set(true, 3, 0.0, mid);
         let q = mid + Duration::from_millis(100);
-        assert!((f.value(&3, q) - 0.25).abs() < 1e-3);
+        assert!((f.value(&3, q) - 0.3).abs() < 1e-3);
         let end = mid + Duration::from_millis(200);
         assert!(!f.busy(end + Duration::from_millis(1)));
         // Prune drops finished fade-outs and rejected keys.
@@ -628,7 +634,7 @@ mod tests {
         let mid = t0 + Duration::from_millis(50);
         f.rekey(&4, 8);
         assert_eq!(f.value(&4, mid), 0.0);
-        assert!((f.value(&8, mid) - 0.5).abs() < 1e-3);
+        assert!((f.value(&8, mid) - 0.6).abs() < 1e-3);
         f.rekey(&2, 6);
         assert_eq!(f.map.len(), 1);
     }
@@ -656,15 +662,15 @@ mod tests {
             }
             assert_eq!(f.busy(at), by_set.busy(at));
         }
-        assert!((f.value(&1, mid + ms(100)) - 0.25).abs() < 1e-3);
+        assert!((f.value(&1, mid + ms(100)) - 0.3).abs() < 1e-3);
         assert_eq!(f.value(&2, mid + ms(100)), 1.0);
         // Called again it restarts nothing, and with animations off it snaps.
         f.release_unless(true, mid + ms(100), |k| *k == 2);
-        assert!((f.value(&1, mid + ms(100)) - 0.25).abs() < 1e-3);
+        assert!((f.value(&1, mid + ms(100)) - 0.3).abs() < 1e-3);
         f.release_unless(false, mid + ms(100), |_| false);
         assert_eq!(f.value(&2, mid + ms(100)), 0.0);
         // Keys already on their way out keep their fade, as with `set`.
-        assert!((f.value(&1, mid + ms(100)) - 0.25).abs() < 1e-3);
+        assert!((f.value(&1, mid + ms(100)) - 0.3).abs() < 1e-3);
         assert!(!f.busy(mid + ms(200)));
     }
 
