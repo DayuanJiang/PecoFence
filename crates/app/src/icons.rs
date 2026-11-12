@@ -105,7 +105,34 @@ struct Request {
 /// type and reason (a desktop of shortcuts would say it per file), at debug level after that:
 /// the type, where the file is and its attributes, and for a shortcut the same of its target.
 /// Never the path. `from_shortcut`: the picture was then read out of the shortcut itself.
+/// The info line reads the disk (the shortcut, attributes, whether the target is there): call
+/// this on a worker thread, and [`note_dull_from_ui`] on the UI thread.
 fn note_dull(path: &Path, reason: &'static str, error: Option<i32>, from_shortcut: bool) {
+    if let Some(ext) = dull_first_of_its_kind(path, reason, from_shortcut) {
+        describe_dull(path, &ext, reason, error, from_shortcut);
+    }
+}
+
+/// [`note_dull`] for the UI thread: the info line, which reads the disk, is written by a
+/// thread of its own. An icon often fails because its disk or share does not answer, and the
+/// fences stood still for as long as Windows took to give up on the path.
+fn note_dull_from_ui(path: &Path, reason: &'static str, error: Option<i32>) {
+    let Some(ext) = dull_first_of_its_kind(path, reason, false) else {
+        return;
+    };
+    let path = path.to_path_buf();
+    let _ = std::thread::Builder::new()
+        .name("pecofence-icon-log".into())
+        .spawn(move || describe_dull(&path, &ext, reason, error, false));
+}
+
+/// The debug line of [`note_dull`]; the file's type when this is the first of its type and
+/// reason (the info line is due).
+fn dull_first_of_its_kind(
+    path: &Path,
+    reason: &'static str,
+    from_shortcut: bool,
+) -> Option<String> {
     static SEEN: OnceLock<Mutex<HashSet<(String, &'static str)>>> = OnceLock::new();
     let ext = shell::log_ext(path);
     let first = SEEN
@@ -114,9 +141,17 @@ fn note_dull(path: &Path, reason: &'static str, error: Option<i32>, from_shortcu
         .unwrap_or_else(|e| e.into_inner())
         .insert((ext.clone(), reason));
     tracing::debug!(path = %path.display(), reason, from_shortcut, first, "icon came back empty, blank or generic");
-    if !first {
-        return;
-    }
+    first.then_some(ext)
+}
+
+/// The info line of [`note_dull`]. Reads the disk.
+fn describe_dull(
+    path: &Path,
+    ext: &str,
+    reason: &'static str,
+    error: Option<i32>,
+    from_shortcut: bool,
+) {
     let target = (ext == "lnk")
         .then(|| shell::shortcut_target_expanded(path))
         .flatten();
@@ -124,7 +159,7 @@ fn note_dull(path: &Path, reason: &'static str, error: Option<i32>, from_shortcu
     let target_place = target.as_deref().map(shell::path_place);
     let error = error.map(|e| format!("{:#010x}", e as u32));
     tracing::info!(
-        file_ext = ext.as_str(),
+        file_ext = ext,
         reason,
         from_shortcut,
         place = shell::path_place(path),
@@ -512,7 +547,7 @@ impl IconCache {
                 }
                 None => {
                     self.stats.failed += 1;
-                    note_dull(&f.req.path, "failed", r.error, false);
+                    note_dull_from_ui(&f.req.path, "failed", r.error);
                 }
             }
             // Thumbnails are not asked again; folders are, though their requests ask for a
