@@ -164,12 +164,6 @@ const ERROR_SHARING_VIOLATION: i32 = 0x8007_0020u32 as i32;
 /// replaces the picture shown.
 const RECHECK_AFTER_START_S: [u64; 3] = [30, 120, 600];
 
-/// Right after the display scale changed the shell can hand back the pictures of the old
-/// scale drawn at the new size: after 200 % to 100 % the 48 px icons were the 96 px ones made
-/// smaller, soft until PecoFence restarted. The icons extracted after a scale change are asked
-/// again at these times (seconds after the change), like after a start at sign-in.
-const RECHECK_AFTER_SCALE_S: [u64; 2] = [5, 20];
-
 struct Ready {
     key: String,
     size_px: u32,
@@ -562,18 +556,6 @@ impl IconCache {
             .iter()
             .map(|s| now + Duration::from_secs(*s))
             .collect();
-    }
-
-    /// Asks the icons and folders extracted from now on again at `RECHECK_AFTER_SCALE_S`
-    /// (passes of a start still to come stay).
-    pub fn recheck_after_scale_change(&mut self) {
-        let now = Instant::now();
-        self.recheck_at.extend(
-            RECHECK_AFTER_SCALE_S
-                .iter()
-                .map(|s| now + Duration::from_secs(*s)),
-        );
-        self.recheck_at.sort();
     }
 
     /// Draw keys (see `draw_key`) of the icons re-checks replaced since the last call.
