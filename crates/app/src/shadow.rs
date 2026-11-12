@@ -324,6 +324,11 @@ pub struct ShadowWindow {
     /// fade drives it so the shadow fades with the plate.
     alpha: u8,
     ring: Option<SelectionRing>,
+    /// While the body's height animates (`keep_upload`): the tallest body the animation
+    /// reaches, and the DIB section the frames' bitmaps go through. A section of its own for
+    /// every frame was up to half of what a roll frame's shadow cost.
+    keep: Option<i32>,
+    canvas: Option<LayeredImage>,
 }
 
 impl ShadowWindow {
@@ -342,7 +347,19 @@ impl ShadowWindow {
             presented: false,
             alpha: 255,
             ring: None,
+            keep: None,
+            canvas: None,
         })
+    }
+
+    /// `Some(h)` while the body's height animates towards at most `h` px: the bitmaps of the
+    /// following `update`s share one DIB section tall enough for that body. `None` when the
+    /// animation is over: the section is let go (the window keeps what was presented).
+    pub fn keep_upload(&mut self, tallest_body: Option<i32>) {
+        self.keep = tallest_body;
+        if tallest_body.is_none() {
+            self.canvas = None;
+        }
     }
 
     pub fn ring(&self) -> Option<SelectionRing> {
@@ -509,16 +526,32 @@ impl ShadowWindow {
             );
         }
         // Presented once; the window keeps the content, so the DIB is released here and
-        // fades go through `set_alpha`.
-        let presented =
-            LayeredImage::new(img.width as i32, img.height as i32, &img.bgra).and_then(|up| {
-                up.present(
-                    self.window.hwnd(),
-                    body.left - pad,
-                    body.top - pad,
-                    self.alpha,
-                )
-            });
+        // fades go through `set_alpha`. While the height animates the section is kept for the
+        // next frame's bitmap instead.
+        let (iw, ih) = (img.width as i32, img.height as i32);
+        let kept = self
+            .canvas
+            .take()
+            .and_then(|mut section| section.refill(iw, ih, &img.bgra).then_some(section));
+        let upload = match kept {
+            Some(section) => Ok(section),
+            None => {
+                let room = self.keep.map_or(ih, |tallest| tallest + pad * 2);
+                LayeredImage::with_room(iw, ih, room, &img.bgra)
+            }
+        };
+        let presented = upload.and_then(|up| {
+            let done = up.present(
+                self.window.hwnd(),
+                body.left - pad,
+                body.top - pad,
+                self.alpha,
+            );
+            if self.keep.is_some() {
+                self.canvas = Some(up);
+            }
+            done
+        });
         self.presented = match presented {
             Ok(()) => true,
             Err(e) => {

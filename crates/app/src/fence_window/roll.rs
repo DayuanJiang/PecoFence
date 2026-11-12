@@ -200,6 +200,16 @@ impl FenceViewState {
         self.shadow_timer = false;
         let r = self.plate_rect();
         let resized = self.shadow.body_size() != Some((r.right - r.left, r.bottom - r.top));
+        // A roll or an auto-height settle brings a new bitmap with every frame: they go
+        // through one DIB section, tall enough for the taller end of the animation.
+        let tallest = self.height_animating().then(|| {
+            let h = r.bottom - r.top;
+            h.max(
+                self.height_target_px()
+                    .map_or(h, |t| t - self.plate_inset_px),
+            )
+        });
+        self.shadow.keep_upload(tallest);
         let started = Instant::now();
         self.shadow.update(r, self.dpi);
         let now = Instant::now();
