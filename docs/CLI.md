@@ -802,8 +802,9 @@ applies `fittingHeight`; `fence set <FENCE> autoHeight true` keeps it applied as
 Windows wallpaper), `pending` (a player window such as Wallpaper Engine or Lively covers it but no
 capture has worked yet; the Windows wallpaper until then), `captured` (the fences show the latest
 capture of the player) or `notCapturable` (the player draws nothing a capture can read, such as
-Wallpaper Engine's scene wallpapers, or came back black three times in a row; the fences show a
-neutral light or dark colour until a capture works again).
+Wallpaper Engine's scene wallpapers, or came back black three times in a row; until a capture
+works again Fluent fences show a neutral light or dark colour and Liquid Glass fences a pane of
+translucent glass that the live wallpaper shows through).
 
 ## Snapshots
 

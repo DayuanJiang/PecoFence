@@ -97,7 +97,7 @@ pub struct LiveWallpaperDto {
     /// `pending`: one does, but no capture of it has worked yet (the Windows wallpaper until
     /// then) | `captured`: the backdrops show its latest capture | `notCapturable`: it draws
     /// nothing a capture can read (Wallpaper Engine scenes, for one), so the backdrops show a
-    /// neutral colour.
+    /// neutral colour (Liquid Glass: a see-through pane of it).
     pub state: String,
 }
 
