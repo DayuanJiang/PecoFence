@@ -218,6 +218,10 @@ impl FenceViewState {
             && !self.ole_drag
             && self.marquee.is_none()
             && self.outgoing.is_empty()
+            // A hover switch that follows another shows the next tab at once (`set_tabs`): its
+            // grouping differs from the last tab's, and a cross-fade started here for the last
+            // tab's icons would bring the overlap back.
+            && !self.place_next_items
             && desktop::is_visible(self.hwnd);
         let (cw, _) = self.content_size_px();
         let width_dip = cw as f32 / self.scale();
