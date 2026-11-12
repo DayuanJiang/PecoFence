@@ -11,7 +11,8 @@
 //!   would help right then: 收起 once the user's new fence makes four fences besides 「桌面」;
 //!   在桌面显示此文件夹 when a folder in a fence is opened for the third time; a rule after
 //!   three files of one extension were dragged into one fence in a run. A card that cannot show
-//!   (another card is up) waits for the next such moment.
+//!   (another card is up) waits for the next such moment; the two offers take the place of the
+//!   收起 card, and that card waits until the name box of the fence just made has closed.
 //!
 //! None of them shows under a test script or `--exit-after`. What was shown is kept in
 //! `notices.json` beside config.json.
@@ -514,8 +515,20 @@ impl App {
     }
 
     /// 功能提示 may show a card now: switched on, not a test run, no other card on screen.
-    fn feature_tip_allowed(&self, what: &'static str) -> bool {
+    /// An offer for what the user just did (the rule, the folder) takes the place of the
+    /// roll-up tip, which only informs: the offer's moment may not come again (three files of
+    /// one kind are dragged into a new fence right after it was made, while its tip is up).
+    fn feature_tip_allowed(&mut self, what: &'static str) -> bool {
         let on = self.state.config.settings.feature_tips;
+        if what != "roll"
+            && self.notices
+            && on
+            && matches!(self.welcome, Some((_, Welcome::RollTip)))
+            && let Some((notice, _)) = self.welcome.take()
+        {
+            tracing::info!(what, "feature tip takes the place of the roll-up tip");
+            notice.leave();
+        }
         let other_card = self.notice_showing();
         let allowed = self.notices && on && !other_card;
         tracing::info!(
