@@ -2592,6 +2592,30 @@ async function runTests() {
     } finally { frame.style.width = ''; frame.style.height = ''; }
     doc = await reset();
   });
+  await test('Smart fence editor: every list has room for its longest option, the kind menus are one column, a choice keeps the width', async () => {
+    // A list the page draws itself is only as wide as its chosen option unless the editor
+    // gives it room: languages with long words show it (the window's own 864 x 621 page).
+    frame.style.width = '864px'; frame.style.height = '621px';
+    try {
+      for (const language of ['it', 'ru', 'de']) {
+        doc = await openEditor('fence=every&language=' + language);
+        const w = doc.getElementById('seWindow'), cv = doc.createElement('canvas').getContext('2d');
+        for (const s of w.querySelectorAll('select')) {
+          const cs = ew().getComputedStyle(s);
+          cv.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+          const longest = [...s.options].map(o => [cv.measureText(o.text).width, o.text]).sort((x, y) => y[0] - x[0])[0];
+          const room = s.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+          assert(longest[0] <= room + 0.5, `${language}: the ${s.className || 'limit'} list is ${s.offsetWidth} px wide, "${longest[1]}" needs ${Math.ceil(longest[0] - room)} px more`);
+        }
+        const kinds = new Set([...w.querySelectorAll('.se-kind')].map(s => s.offsetWidth));
+        assert(kinds.size === 1, language + ': the kind menus differ in width: ' + [...kinds].join(', '));
+        const all = w.querySelector('.se-all'), was = all.offsetWidth;
+        sePick(all, 'any'); await settle();
+        assert(all.offsetWidth === was, `${language}: 全部 / 任一 is ${was} px wide with one choice and ${all.offsetWidth} with the other`);
+      }
+    } finally { frame.style.width = ''; frame.style.height = ''; }
+    doc = await reset();
+  });
 
   // The settings window review of 2026-11-12.
   await test('Drop-down lists: the open list is styled by the page, a closed list keeps the system keys, scrollbars are thin', async () => {

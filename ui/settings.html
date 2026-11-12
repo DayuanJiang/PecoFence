@@ -489,7 +489,7 @@
   .se-presets .chip { height: 28px; font-size: 13px; }
   .se-cap { color: var(--text2); flex: none; }
   .se-match { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .se-match select { min-width: 88px; }
+  .se-match select { min-width: max(88px, var(--fit, 0px)); }
   .se-match .s { color: var(--text2); font-size: 12px; }
   .se-rows { flex: 1 1 auto; min-height: 96px; overflow: auto; display: flex; flex-direction: column; border: 1px solid var(--card-stroke); border-radius: var(--r-card); background: var(--control-alt); }
   .se-row { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 10px; min-height: 48px; box-sizing: border-box; flex: none; }
@@ -497,7 +497,7 @@
   .se-row.bad { background: var(--error-bg); }
   .se-row > .se-kind { flex: none; width: 132px; min-width: 0; }
   .se-val { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
-  .se-val select { min-width: 0; flex: none; }
+  .se-val select { min-width: min(var(--fit, 0px), 100%); flex: none; }
   .se-val input[type=text] { flex: 1 1 140px; min-width: 0; }
   .se-val input[type=number] { width: 84px; min-width: 0; }
   .se-val input[type=time] { width: 104px; min-width: 0; }
@@ -523,7 +523,7 @@
   .se-count button { min-width: 0; height: 26px; font-size: 12px; align-self: flex-start; margin-top: 2px; }
   .se-count.busy .se-n { opacity: .55; }
   .se-limit { display: flex; align-items: center; gap: 8px; color: var(--text2); }
-  .se-limit select { min-width: 96px; color: var(--text); }
+  .se-limit select { min-width: max(96px, var(--fit, 0px)); color: var(--text); }
   .se-btns { display: flex; gap: 8px; margin-left: auto; }
   /* The rows share the list's columns: the kind menus are as wide as their longest option in
      the page language (a fixed 132 px cut «Расположение») and the rest of every row starts at
@@ -531,7 +531,7 @@
   @supports (grid-template-columns: subgrid) {
     .se-rows { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content max-content; grid-auto-rows: max-content; align-content: start; }
     .se-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; }
-    .se-row > .se-kind { width: auto; justify-self: stretch; }
+    .se-row > .se-kind { width: auto; justify-self: stretch; min-width: var(--fit, 0px); }
   }
 </style>
 </head>
@@ -3152,6 +3152,22 @@
     seChanged();
     next.querySelector('.se-pick').focus();
   }
+  // A list the page draws itself (appearance: base-select) is only as wide as its chosen
+  // option, where the system list is as wide as its longest. Each list of the editor gets its
+  // longest option's width as --fit, which the styles take as its least width: the kind menus
+  // stay one column and a row keeps its layout whatever is chosen. One observer follows all
+  // that builds lists (the rows, a template, a language switch).
+  function seFit() {
+    const cv = seFit.cv ||= document.createElement('canvas').getContext('2d');
+    for (const s of document.querySelectorAll('#seWindow select')) {
+      const cs = getComputedStyle(s);
+      cv.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const text = Math.max(0, ...[...s.options].map(o => cv.measureText(o.text).width));
+      const box = cs.boxSizing === 'border-box' ? parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth) : 0;
+      s.style.setProperty('--fit', Math.ceil(text + box + 1) + 'px');
+    }
+  }
+  if (EDITOR && CSS.supports('appearance', 'base-select')) new MutationObserver(seFit).observe(document.getElementById('seWindow'), { childList: true, subtree: true });
   // Enter is 好 (a button takes its own Enter); Esc is 取消.
   if (EDITOR) document.addEventListener('keydown', e => {
     if (!se || e.isComposing) return;
