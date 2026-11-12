@@ -7,9 +7,10 @@
 #   L  an opening drop-down list comes in over a few frames
 #   G  a rule moved down: its row and the row under it glide to their places
 #   R  the card that 「Windows 桌面图标」 = 隐藏 brings up grows open, and closes again
+#   S  the switch of a rule slides like every other switch
 # The part is $Part (default: all). $Rec = 1 keeps the frames of M, L, G and R (and of a page
 # switch and a change of fence) in shots\b-<name> for the before/after pictures.
-if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'PMLGR' }
+if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'PMLGRS' }
 if (-not (Get-Variable Rec -ErrorAction SilentlyContinue)) { $Rec = '' }
 
 Add-Type @'
@@ -191,6 +192,24 @@ function PartR() {
   if ($was -eq 'hide') { PageSet '#desktopIcons' 'hide'; Start-Sleep -Milliseconds 800 }
 }
 if ($Part -match 'R') { PartR }
+
+# ---- S: the switch of a rule slides
+function PartS() {
+  trap { PfTrap $_; continue }
+  Case 'S: the switch of a rule slides'
+  PageClick 'nav a[data-page=rules]'
+  Start-Sleep -Milliseconds 500
+  $was = (Rules)[0].enabled
+  $r = PageRect '#ruleList .rule .toggle'
+  [G]::MoveTo($r.cx, $r.cy); Start-Sleep -Milliseconds 600
+  [Px]::Burst($r.x - 6, $r.y - 6, $r.w + 12, $r.h + 12, 500, 1); SaveBurst 'rule-switch'
+  $b = Between 40
+  Check 'S the host has the rule switched' ((Rules)[0].enabled -ne $was) "enabled was $was, is $((Rules)[0].enabled)"
+  Check 'S the knob is on its way in at least two frames' ($b.count -ge 2) "$($b.count) frames between: $($b.text)"
+  [G]::Click($r.cx, $r.cy); Start-Sleep -Milliseconds 600
+  Check 'S a second click switches it back' ((Rules)[0].enabled -eq $was) "enabled is $((Rules)[0].enabled)"
+}
+if ($Part -match 'S') { PartS }
 
 # ---- recordings for the before/after pictures: a page switch, another fence
 if ($Rec) {
