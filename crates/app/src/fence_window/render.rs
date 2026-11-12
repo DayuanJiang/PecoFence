@@ -1557,8 +1557,10 @@ impl FenceViewState {
             icon_top: grid.metrics.icon_top,
             label_gap: grid.metrics.label_gap,
             scrollbar,
-            // `cells` holds the viewport only; the hint is for a fence without items.
-            empty_text: self.items.is_empty().then(|| self.empty_text()),
+            // `cells` holds the viewport only; the hint is for a fence without items, once
+            // the last ones have faded out.
+            empty_text: (self.items.is_empty() && self.leaving.is_empty())
+                .then(|| self.empty_text()),
             empty_action: self.empty_action_draw(),
             drop_highlight: self.drop_wash.value_at(now),
             marquee: self.marquee_rect_dip(),
@@ -1745,8 +1747,10 @@ impl FenceViewState {
         }));
         let group_headers = group_header_draws(&layout, scroll, metrics.header_h);
         let scrollbar = self.scrollbar_draw_in(&layout, view_h);
-        // `rows` holds the viewport only; the hint is for a fence without items.
-        let empty_text = self.items.is_empty().then(|| self.empty_text());
+        // `rows` holds the viewport only; the hint is for a fence without items, once the
+        // last ones have faded out.
+        let empty_text =
+            (self.items.is_empty() && self.leaving.is_empty()).then(|| self.empty_text());
         let marquee = self.marquee_rect_dip().map(|m| Rect {
             left: m.left,
             top: m.top + metrics.header_h,

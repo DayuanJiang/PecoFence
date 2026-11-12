@@ -44,6 +44,14 @@ pub(super) fn layout_motion_applies(changed: usize, old_len: usize, new_len: usi
     old_len == 0 || changed * 2 <= old_len.max(new_len)
 }
 
+/// A change that only takes icons away, or only brings icons in, is no refill either, however
+/// many they are: 「立即应用」, its undo and a snapshot restore move dozens of icons between
+/// fences at once, and the ones that go fade out as the ones that come fade in. (A refill
+/// swaps ids: it removes and adds.)
+pub(super) fn one_way_change(removed: usize, added: usize) -> bool {
+    (removed == 0) != (added == 0)
+}
+
 /// How long after a drop its icons still count as "just let go here" (`drop_landing`): the
 /// refresh the drop causes follows within a frame or two; anything later is another change.
 pub(super) const DROP_LANDING_MAX: Duration = Duration::from_millis(500);
@@ -270,8 +278,12 @@ impl FenceViewState {
             .filter(|n| !old_pos.contains_key(&n.id) && !landing.contains_key(&n.id))
             .count();
         let changed = old.len() + added;
-        let animate = animate && layout_motion_applies(changed, old_len, self.items.len());
-        if !animate && changed > 0 && layout_motion_applies(changed, old_len, self.items.len()) {
+        // The filter box asks for its own cross-fade of a refill (`fade_refill`): its lists
+        // keep the half rule alone. (`added` counts every item when nothing can animate.)
+        let rearranged = layout_motion_applies(changed, old_len, self.items.len())
+            || (animate && !fade_refill && one_way_change(old.len(), added));
+        let animate = animate && rearranged;
+        if !animate && changed > 0 && rearranged {
             // A genuine rearrangement that snapped instead of gliding: say why.
             tracing::info!(
                 ole_drag = self.ole_drag,
@@ -451,6 +463,14 @@ impl FenceViewState {
             });
         }
         drop(icons);
+        if !self.leaving.is_empty() {
+            tracing::debug!(
+                leaving = self.leaving.len(),
+                old_len,
+                new_len = self.items.len(),
+                "icons leaving fade out"
+            );
+        }
         if !self.item_motion.is_empty() || !self.leaving.is_empty() {
             self.frames.request();
         }

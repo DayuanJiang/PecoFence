@@ -1020,8 +1020,14 @@ fn layout_motion_applies_only_to_rearrangements() {
     assert!(!layout_motion_applies(6, 10, 10));
     assert!(!layout_motion_applies(20, 10, 10));
     assert!(layout_motion_applies(5, 0, 5));
-    // Removing everything still snaps.
+    // Removing everything is no rearrangement by the half rule.
     assert!(!layout_motion_applies(10, 10, 0));
+    // Icons that only leave or only arrive animate whatever their share (「立即应用」 and its
+    // undo); a refill removes and adds.
+    assert!(one_way_change(10, 0));
+    assert!(one_way_change(0, 30));
+    assert!(!one_way_change(10, 10));
+    assert!(!one_way_change(0, 0));
 }
 
 /// An edge dragged from five columns to four: the fifth icon glides from the end of the first
