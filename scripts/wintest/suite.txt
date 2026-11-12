@@ -219,3 +219,4 @@ o4-open-accent     1   ec2    release owner4-open.ps1                --extra ui/
 o4-big             4   ec2    release owner4-big.ps1
 o4-settings        4   ec2    release owner4-settings.ps1            --var Part=A --var N=5
 o4-settings-fonts  2   ec2    debug   owner4-settings.ps1            --var Part=S
+o4-todo            4   ec2    release owner4-todo.ps1
