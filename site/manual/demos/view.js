@@ -76,9 +76,10 @@
     const KEYS = [{ a: 1.05, b: 2.55, keys: ['Ctrl'], down: 1.2, up: 2.5 }];
     const MENU_DELAY = .4;      // SPI_GETMENUSHOWDELAY default
 
+    // menus.rs show_fence_menu (标签页 is there because another fence exists)
     const FENCE_MENU = ['收起', '重命名…', '-', { t: '视图', sub: 1 }, { t: '排序方式', sub: 1 }, { t: '新建', sub: 1 },
-        { t: '粘贴', key: 'Ctrl+V' }, { t: '标签页', sub: 1 }, '锁定位置和大小', '-', '栅栏选项…', '新建栅栏',
-        { t: '在桌面显示文件夹', sub: 1 }, '删除栅栏'];
+        { t: '粘贴', key: 'Ctrl+V' }, { t: '标签页', sub: 1 }, '-', '适应内容大小', '锁定位置和大小', '栅栏选项…', '删除栅栏',
+        '-', { t: '添加到桌面', sub: 1 }];
     const CHECK = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.3 6.3 4.9 8.9 9.8 3.4" fill="none" ' +
         'stroke="#1b2133" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     const CHEVRON_UP = '<svg viewBox="0 0 8 5" aria-hidden="true"><path d="M.7 4.3 4 1l3.3 3.3" fill="none" ' +
@@ -190,9 +191,10 @@
 
         // sort: 250 ms point-to-point glide (shown at 400 ms so it reads)
         const q = ramp(t, SORT_AT + .05, SORT_AT + .45, E.p2p);
-        const details = t >= VIEW_AT;
-        show(r.grid, !details);
-        show(r.det, details);
+        // 详细信息: the old view fades out under the new one (state.rs apply_grid, 83 ms)
+        const dq = ramp(t, VIEW_AT, VIEW_AT + .083, E.lin);
+        if (show(r.grid, dq < 1)) r.grid.style.opacity = 1 - dq;
+        if (show(r.det, dq > 0)) r.det.style.opacity = dq;
         r.icons.forEach((n, i) => {
             n.classList.toggle('icons-s64', big);
             const a = cell(m, MANUAL.indexOf(i)), b = cell(m, BY_TYPE.indexOf(i));
