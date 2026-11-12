@@ -1627,8 +1627,18 @@ pub fn shortcut_target_expanded(path: &Path) -> Option<PathBuf> {
 
 /// What File Explorer's tip of a `.lnk` is made of: its comment (the description field, `None`
 /// when empty) and the path it leads to (`None` for a link to something that is no file or
-/// folder). `None` when the file cannot be read as a shortcut.
+/// folder). `None` when the file cannot be read as a shortcut, and for a link file that is not
+/// on this disk (a cloud file that is only online, offline storage): reading it would fetch
+/// it, and the caller is the UI thread with the pointer resting on the icon.
 pub fn shortcut_tip(path: &Path) -> Option<(Option<String>, Option<PathBuf>)> {
+    let attrs = file_attributes(path);
+    if attrs & ATTRS_NOT_HERE != 0 {
+        tracing::debug!(
+            attrs,
+            "shortcut tip: the link file is not on this disk, not read"
+        );
+        return None;
+    }
     let link = load_shortcut(path)?;
     // SAFETY: the buffer is sized and NUL-terminated.
     let comment = unsafe {
