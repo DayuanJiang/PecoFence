@@ -239,6 +239,7 @@
 - The alignment guides and the white outline of where a dragged fence will land fade in and out. They appeared in one frame when an edge lined up and vanished in one frame at the release, while everything else that comes and goes on a fence fades. Both now take the same 83 ms; with Windows' animations off they still show and go at once.
 - A fence at the top edge of the screen has square top corners. Docked with 「停靠到屏幕顶部」 (or dragged up against the edge), the title row touched the screen edge with its two rounded corners, and the wallpaper showed in two small notches above it. The top corners of the plate, its rim and its shadow are now square while the fence stands at the edge, as a drawer's are where it hangs, and round again as soon as it leaves.
 - A tab pulled out of its fence is under the pointer from the first frame. The new fence faded in like any new fence, so for a frame the tab was nowhere: gone from the strip, not yet drawn, while the white outline of the landing place already showed. The fence in the hand now stands at full strength at once.
+- A notice that has to leave the screen corner because a fence stands there keeps its distance from the fences around it. It took the nearest free place, which could be level with one fence's lower edge and 1 px above the next fence. It now takes the nearest place a margin away from every fence, and where the free room is smaller than that it stands in the middle of the room.
 
 ## 0.3.3
 

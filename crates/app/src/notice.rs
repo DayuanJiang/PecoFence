@@ -221,7 +221,8 @@ impl Notice {
             .iter()
             .any(|a| crate::layout::clearance::overlaps(&corner, a, margin))
         {
-            let spot = crate::layout::clearance::nearest_free(&corner, avoid, &work, margin);
+            // A margin away from every fence where such a spot exists.
+            let spot = crate::layout::clearance::nearest_free_apart(&corner, avoid, &work, margin);
             match spot {
                 Some(r) => tracing::info!(
                     corner = ?(corner.left, corner.top),

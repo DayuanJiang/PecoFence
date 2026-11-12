@@ -1184,6 +1184,50 @@ pub mod clearance {
     /// area with the snapping gap. A candidate pushed back into the work area may sit closer
     /// than the gap, but never on another fence. `None` when there is no such spot.
     pub fn nearest_free(r: &RECT, others: &[RECT], work: &RECT, gap: i32) -> Option<RECT> {
+        nearest_spot(r, others, work, gap, false)
+    }
+
+    /// [`nearest_free`] for a card that should not stand against a fence (a notice): the
+    /// nearest spot that keeps `gap` to every one of `others`. Where there is none, the
+    /// nearest free spot, moved to the middle of the room it has between the fences above and
+    /// below it and then between those beside it, when that room is too small for the gap at
+    /// both ends. (A spot level with one fence's edge could stand 1 px from the next fence.)
+    pub fn nearest_free_apart(r: &RECT, others: &[RECT], work: &RECT, gap: i32) -> Option<RECT> {
+        if let Some(c) = nearest_spot(r, others, work, gap, true) {
+            return Some(c);
+        }
+        let mut c = nearest_spot(r, others, work, gap, false)?;
+        let (w, h) = (c.right - c.left, c.bottom - c.top);
+        let in_columns = |o: &&RECT| o.left < c.right && o.right > c.left;
+        let above = others.iter().filter(in_columns).map(|o| o.bottom);
+        let above = above.filter(|&b| b <= c.top).fold(work.top, i32::max);
+        let below = others.iter().filter(in_columns).map(|o| o.top);
+        let below = below.filter(|&t| t >= c.bottom).fold(work.bottom, i32::min);
+        if below - above < h + 2 * gap {
+            c.top = above + (below - above - h) / 2;
+            c.bottom = c.top + h;
+        }
+        let in_rows = |o: &&RECT| o.top < c.bottom && o.bottom > c.top;
+        let before = others.iter().filter(in_rows).map(|o| o.right);
+        let before = before.filter(|&x| x <= c.left).fold(work.left, i32::max);
+        let after = others.iter().filter(in_rows).map(|o| o.left);
+        let after = after.filter(|&x| x >= c.right).fold(work.right, i32::min);
+        if after - before < w + 2 * gap {
+            c.left = before + (after - before - w) / 2;
+            c.right = c.left + w;
+        }
+        Some(c)
+    }
+
+    /// The candidate of [`nearest_free`] nearest to `r`: one that overlaps none of `others`,
+    /// or with `keep_gap` one that keeps `gap` to each of them.
+    fn nearest_spot(
+        r: &RECT,
+        others: &[RECT],
+        work: &RECT,
+        gap: i32,
+        keep_gap: bool,
+    ) -> Option<RECT> {
         let (w, h) = (r.right - r.left, r.bottom - r.top);
         if w > work.right - work.left || h > work.bottom - work.top {
             return None;
@@ -1204,6 +1248,9 @@ pub mod clearance {
                     bottom: y.clamp(work.top, work.bottom - h) + h,
                 };
                 if others.iter().any(|o| overlaps(&c, o, 0)) {
+                    continue;
+                }
+                if keep_gap && !others.iter().all(|o| apart(&c, o, gap)) {
                     continue;
                 }
                 let (dx, dy) = ((c.left - r.left) as i64, (c.top - r.top) as i64);
@@ -1461,6 +1508,33 @@ mod tests {
         assert_eq!((spot.left, spot.right), (592, 692));
         // Nowhere to go.
         assert_eq!(nearest_free(&rc(10, 10, 110, 110), &[work], &work, 8), None);
+    }
+
+    /// A notice that has to leave its corner keeps the gap to every fence where a spot allows
+    /// it (level with one fence's lower edge it stood 1 px above the next fence), and else
+    /// stands in the middle of the room it has.
+    #[test]
+    fn a_notice_keeps_the_gap_to_the_fences_around_it() {
+        use clearance::{nearest_free, nearest_free_apart};
+        let work = rc(0, 0, 400, 400);
+        let card = rc(184, 284, 384, 384);
+        let side = rc(0, 100, 150, 259);
+        let below = rc(0, 260, 400, 400);
+        // Room for the gap at both ends: 16 px from the fence above and from the one below.
+        let above = rc(0, 0, 400, 90);
+        let fences = [side, below, above];
+        assert_eq!(
+            nearest_free(&card, &fences, &work, 16),
+            Some(rc(184, 159, 384, 259)),
+            "level with the side fence's lower edge: 1 px above the fence below"
+        );
+        let spot = nearest_free_apart(&card, &fences, &work, 16).unwrap();
+        assert!(spot.bottom + 16 <= below.top && spot.top >= above.bottom + 16, "{spot:?}");
+        assert!(spot.left >= side.right + 16, "{spot:?}");
+        // 110 px of room for a 100 px card: 5 px at each end.
+        let above = rc(0, 0, 400, 150);
+        let spot = nearest_free_apart(&card, &[side, below, above], &work, 16).unwrap();
+        assert_eq!((spot.top, spot.bottom), (155, 255));
     }
 
     /// A rolled-up fence (36 px title row, 250 px expanded) is placed by its whole expanded
