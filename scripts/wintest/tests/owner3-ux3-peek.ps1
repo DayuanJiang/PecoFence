@@ -10,8 +10,10 @@
 #   run.sh --var Part=R ...   a smart fence whose searched folder was renamed: the pointer coming
 #                             onto the fence makes it look again at once (it kept the old files
 #                             for up to a minute)
+#   run.sh --var Part=F ...   letters and Backspaces typed 25 ms apart while the box's height is
+#                             on its way: it comes to rest at the height of its list
 # Without --var every part runs.
-if (-not $Part) { $Part = 'SHCR' }
+if (-not $Part) { $Part = 'SFHCR' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
 $U3Files = @('报告.txt', '宝贝计划.txt', '报价单 客户甲.txt', '报销单 10月.txt', '预算表 2026.xlsx', '年度报告 2025 董事会审阅版（含附录）.pdf', '备忘 周会.md', '笔记 读书.txt')
@@ -138,6 +140,48 @@ function U3PartS() {
   $between = @($hs | Where-Object { $_ -lt $h1 -and $_ -gt $h2 } | Select-Object -Unique)
   Check 'animations off: the height changes in one step' ($h2 -lt $h1 -and $between.Count -eq 0) "height $h1 -> $h2, between: $($between -join ' ')"
   [G]::Press(0x1B); U3WaitPeek $false | Out-Null; Start-Sleep -Milliseconds 300
+  [Anim]::Set($anim)
+  PfQuit
+  U3Clean
+}
+
+function U3BoxH2() { $r = Rect (U3Box); return ($r.B - $r.T) }
+function U3PartF() {
+  trap { PfTrap $_; continue }
+  Case 'search box: fast typing while the height is on its way'
+  U3Clean
+  foreach ($n in $U3Files) { DeskFile $n | Out-Null }
+  $anim = [Anim]::Get(); [Anim]::Set($true)
+  PfStart -Lang 'zh-CN'
+  Pf settings set featureTips false | Out-Null
+  ClearFences
+  Pf fence create --title '资料' --rect '60,120,360,400' | Out-Null
+  Start-Sleep -Seconds 2
+  Pf item move @($U3Files | ForEach-Object { "$PfDesk\$_" }) --to '资料' | Out-Null
+  Start-Sleep -Seconds 2
+  [G]::MoveTo(800, 860)
+  # Slowly: the height each text comes to rest at.
+  PeekKey; U3WaitPeek $true | Out-Null; Start-Sleep -Milliseconds 900
+  $slow = @{}; $text = ''
+  foreach ($c in 'b', 'a', 'o', 'x') { [G]::Type($c); $text += $c; Start-Sleep -Milliseconds 700; $slow[$text] = U3BoxH2 }
+  Log "typed slowly: b=$($slow['b']) ba=$($slow['ba']) bao=$($slow['bao']) baox=$($slow['baox'])"
+  [G]::Press(0x1B); U3WaitPeek $false | Out-Null; Start-Sleep -Milliseconds 800
+  PeekKey; U3WaitPeek $true | Out-Null; Start-Sleep -Milliseconds 900
+  foreach ($c in 'b', 'a', 'o', 'x') { [G]::Type($c); Start-Sleep -Milliseconds 25 }
+  Start-Sleep -Milliseconds 700
+  Check 'four letters 25 ms apart: the box rests at its list''s height' ((U3BoxH2) -eq $slow['baox'] -and [M]::BoxText() -eq 'baox') "height $(U3BoxH2), typed slowly $($slow['baox']); text='$([M]::BoxText())'"
+  foreach ($i in 1..3) { [G]::Press(0x08); Start-Sleep -Milliseconds 25 }
+  Start-Sleep -Milliseconds 700
+  Check 'three Backspaces 25 ms apart: the box rests at its list''s height' ((U3BoxH2) -eq $slow['b'] -and [M]::BoxText() -eq 'b') "height $(U3BoxH2), typed slowly $($slow['b']); text='$([M]::BoxText())'"
+  [G]::Type('a'); Start-Sleep -Milliseconds 40; [G]::Press(0x08)
+  Start-Sleep -Milliseconds 700
+  Check 'a letter and its Backspace 40 ms apart: back at the first height' ((U3BoxH2) -eq $slow['b']) "height $(U3BoxH2), typed slowly $($slow['b'])"
+  [G]::KeyDown(0x11); [G]::Press(0x41); [G]::KeyUp(0x11); [G]::Press(0x2E)
+  Start-Sleep -Milliseconds 700
+  $empty = U3BoxH2
+  [G]::Type('b'); Start-Sleep -Milliseconds 700
+  Check 'emptied and typed again: the same height' ((U3BoxH2) -eq $slow['b'] -and $empty -lt $slow['baox']) "height $(U3BoxH2), typed slowly $($slow['b']); the empty box $empty"
+  [G]::Press(0x1B); U3WaitPeek $false | Out-Null; Start-Sleep -Milliseconds 600
   [Anim]::Set($anim)
   PfQuit
   U3Clean
@@ -286,6 +330,7 @@ function U3PartR() {
 }
 
 if ($Part -match 'S') { U3PartS }
+if ($Part -match 'F') { U3PartF }
 if ($Part -match 'H') { U3PartH }
 if ($Part -match 'C') { U3PartC }
 if ($Part -match 'R') { U3PartR }
