@@ -5,6 +5,8 @@ use crate::model::{Anchor, Fence, FenceId, NormGeometry};
 pub const MIN_W_DIP: f32 = 64.0;
 pub const MIN_H_DIP: f32 = 36.0;
 pub const MAX_DIP: f32 = 8192.0;
+/// The widest gap to a screen edge that a fence cut to fit a smaller work area keeps.
+const EDGE_GAP_MAX_DIP: f32 = 16.0;
 
 /// A monitor's work area in physical pixels plus its DPI.
 #[derive(Clone, Debug, PartialEq)]
@@ -141,11 +143,31 @@ pub fn denormalize(geo: &NormGeometry, work: &WorkArea) -> PxRect {
     let s = work.scale();
     let work_w = work.width_dip();
     let work_h = work.height_dip();
-    let w = geo.w.clamp(MIN_W_DIP, MAX_DIP).min(work_w.max(MIN_W_DIP));
-    let h = geo.h.clamp(MIN_H_DIP, MAX_DIP).min(work_h.max(MIN_H_DIP));
-
     let right_gap = geo.work_w - (geo.x + geo.w);
     let bottom_gap = geo.work_h - (geo.y + geo.h);
+    // A fence longer than the work area is cut to fit. One that stood a small gap from an edge
+    // (the first-run column, a fence snapped to the screen edge) keeps the smaller of its two
+    // gaps at both ends instead of touching the screen edge and the taskbar.
+    let edge_gap = |near: f32, far: f32| {
+        let small = |g: &f32| (0.0..=EDGE_GAP_MAX_DIP).contains(g);
+        [near, far]
+            .into_iter()
+            .filter(small)
+            .fold(None, |a: Option<f32>, g| Some(a.map_or(g, |a| a.min(g))))
+            .unwrap_or(0.0)
+    };
+    let (gap_x, gap_y) = (edge_gap(geo.x, right_gap), edge_gap(geo.y, bottom_gap));
+    let fit = |size: f32, min: f32, room: f32, gap: f32| {
+        let size = size.clamp(min, MAX_DIP);
+        if size > room {
+            (room - 2.0 * gap).max(min).min(room.max(min))
+        } else {
+            size
+        }
+    };
+    let w = fit(geo.w, MIN_W_DIP, work_w, gap_x);
+    let h = fit(geo.h, MIN_H_DIP, work_h, gap_y);
+
     let x = match geo.anchor {
         Anchor::LeftTop | Anchor::LeftBottom | Anchor::LeftVCenter => geo.x,
         Anchor::RightTop | Anchor::RightBottom | Anchor::RightVCenter => work_w - right_gap - w,
@@ -160,6 +182,9 @@ pub fn denormalize(geo: &NormGeometry, work: &WorkArea) -> PxRect {
             (geo.y + geo.h / 2.0) / geo.work_h.max(1.0) * work_h - h / 2.0
         }
     };
+    // Cut to fit: between its two gaps.
+    let x = if geo.w > work_w { gap_x } else { x };
+    let y = if geo.h > work_h { gap_y } else { y };
     let x = x.clamp(0.0, (work_w - w).max(0.0));
     let y = y.clamp(0.0, (work_h - h).max(0.0));
 
@@ -476,7 +501,65 @@ mod tests {
         let r = carry_to(&mut fences, &work(96, 1280, 672));
         assert_eq!((r[0].top, r[1].top), (8, 166));
         assert_eq!(r[0].left - r[2].right, 8);
-        assert!(r[2].bottom <= 672);
+        assert_eq!((r[2].top, r[2].bottom), (8, 672 - 8));
+    }
+
+    /// A fence 8 px under the top edge and taller than the new work area is cut to fit with
+    /// 8 px at both ends (it took the whole height, from the screen edge to the taskbar); one
+    /// that stood far from both edges, or flush with one, fills the height as before.
+    #[test]
+    fn a_fence_cut_to_fit_keeps_its_small_gap_to_the_edge() {
+        let at100 = work(96, 1600, 852);
+        let small = work(96, 1280, 672);
+        let tall = normalize(
+            PxRect {
+                left: 1104,
+                top: 8,
+                right: 1344,
+                bottom: 830,
+            },
+            &at100,
+        );
+        let r = denormalize(&tall, &small);
+        assert_eq!((r.top, r.bottom), (8, 664));
+        assert_eq!(r.width(), 240);
+        // 150 %: 8 DIPs are 12 px.
+        let r = denormalize(&tall, &work(144, 1600, 828));
+        assert_eq!((r.top, r.bottom), (12, 816));
+        // Nearer the bottom edge: the same gap at both ends.
+        let low = normalize(
+            PxRect {
+                left: 8,
+                top: 40,
+                right: 248,
+                bottom: 844,
+            },
+            &at100,
+        );
+        let r = denormalize(&low, &small);
+        assert_eq!((r.top, r.bottom), (8, 664));
+        let flush = normalize(
+            PxRect {
+                left: 8,
+                top: 0,
+                right: 248,
+                bottom: 800,
+            },
+            &at100,
+        );
+        let r = denormalize(&flush, &small);
+        assert_eq!((r.top, r.bottom), (0, 672));
+        let middle = normalize(
+            PxRect {
+                left: 8,
+                top: 60,
+                right: 248,
+                bottom: 800,
+            },
+            &at100,
+        );
+        let r = denormalize(&middle, &small);
+        assert_eq!((r.top, r.bottom), (0, 672));
     }
 
     /// Fences on the work area they were saved on, and fences not asked for, stay as they are.
