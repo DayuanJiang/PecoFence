@@ -161,6 +161,7 @@
             <h3>小提示</h3>
             <p>分类按的是整理规则，右键托盘图标选「设置…」，在「整理规则」页就能改。规则都对不上的文件，会放进「桌面」栅栏。</p>
             <p>第一次打开时，右下角会依次显示几条小技巧，点<b>「下一条」</b>往下看，点 × 就关掉。以后在用得上某个功能时，比如栅栏多了、常开同一个文件夹，也会提示一次。不想看到，可以在设置的「常规」页关掉「功能提示」。</p>
+            <p>右下角的卡片也能用键盘回答。卡片在屏幕上时，在栅栏里或速览时按 <kbd>F6</kbd>，键盘就移到卡片的按钮上：按 <kbd>Tab</kbd> 换到下一个按钮或 ×，按 <kbd>Enter</kbd> 按下它，按 <kbd>Esc</kbd> 关掉卡片，再按一次 <kbd>F6</kbd> 回到栅栏。</p>
           </aside>
         </div>
       </div>
@@ -261,6 +262,7 @@
             <h3>小提示</h3>
             <p>不想鼠标一停就展开，可以在「设置」→「常规」→「收起与展开」里把「收起的栅栏怎么展开」改成「单击标题时」，以后点一下标题栏才展开，再点一下就收起。选「鼠标停在上面时」（默认）或「单击标题时」，拖着文件停在收起的标题栏上，它都会展开，方便把文件放进去；选「只在双击标题或点箭头时」，就只能双击标题栏或点箭头展开。</p>
             <p>展开得太快或太慢，可以在它下面的「展开快慢」里选「快」或「慢」。</p>
+            <p>从栅栏菜单里用键盘选「收起」以后，键盘还留在这个栅栏上，标题栏上会有一圈焦点框：按 <kbd>Enter</kbd> 就展开，按 <kbd>Tab</kbd> 去下一个栅栏。</p>
           </aside>
         </div>
       </div>
@@ -1135,6 +1137,7 @@ while ($true) {
                 <tr><th scope="row">按住标题栏拖动</th><td>移动栅栏</td></tr>
                 <tr><th scope="row">拖边或角</th><td>改大小</td></tr>
                 <tr><th scope="row">双击标题栏，或点右边的箭头</th><td>收起或展开</td></tr>
+                <tr><th scope="row">键盘在收起的栅栏上时按 <kbd>Enter</kbd></th><td>展开栅栏</td></tr>
                 <tr><th scope="row">右键标题栏或空白处</th><td>打开栅栏菜单</td></tr>
                 <tr><th scope="row">点一下标题，鼠标留在上面按 <kbd>F2</kbd></th><td>重命名栅栏；在标签上按，就重命名这个标签页</td></tr>
                 <tr><th scope="row"><kbd>Ctrl</kbd>+滚轮</th><td>改图标大小（只在「图标」视图里，锁定的栅栏不变）</td></tr>
@@ -1160,6 +1163,7 @@ while ($true) {
                 <tr><th scope="row">双击标签</th><td>收起或展开</td></tr>
               </tbody>
             </table>
+            <p class="ap-note">用 <kbd>Ctrl</kbd>+<kbd>Tab</kbd> 换了标签页以后，新标签页里看得见的第一个图标会被选中，带着焦点框，接着按方向键就行。</p>
           </section>
 
           <section class="ap-card" aria-labelledby="keys-details">
@@ -1198,6 +1202,7 @@ while ($true) {
                 <tr><th scope="row"><kbd>Ctrl</kbd>+方向键</th><td>只移动焦点框，选择不变。再按 <kbd>Ctrl</kbd>+<kbd>空格</kbd> 选中或取消</td></tr>
                 <tr><th scope="row"><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></th><td>把键盘移到下一个或上一个栅栏</td></tr>
                 <tr><th scope="row">速览时按 <kbd>Tab</kbd> 或方向键</th><td>键盘进到第一个栅栏，选中它的第一个图标</td></tr>
+                <tr><th scope="row">右下角有卡片时按 <kbd>F6</kbd></th><td>把键盘移到卡片的按钮上：<kbd>Tab</kbd> 换按钮，<kbd>Enter</kbd> 按下，<kbd>Esc</kbd> 关掉卡片；再按一次 <kbd>F6</kbd> 回到栅栏</td></tr>
                 <tr><th scope="row">输入名字的开头</th><td>跳到这个图标</td></tr>
                 <tr><th scope="row"><kbd>Esc</kbd></th><td>取消选择</td></tr>
               </tbody>
@@ -1212,7 +1217,7 @@ while ($true) {
                 <tr><th scope="row"><kbd>F2</kbd>，或选中后再点一下名字</th><td>重命名。按 <kbd>Enter</kbd> 确定，<kbd>Esc</kbd> 取消</td></tr>
                 <tr><th scope="row"><kbd>Delete</kbd></th><td>删除到回收站</td></tr>
                 <tr><th scope="row"><kbd>Shift</kbd>+<kbd>Delete</kbd></th><td>永久删除</td></tr>
-                <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>X</kbd></th><td>复制 / 剪切，在资源管理器里也能粘贴</td></tr>
+                <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>X</kbd></th><td>复制 / 剪切，在资源管理器里也能粘贴；剪切后按 <kbd>Esc</kbd> 撤回剪切</td></tr>
                 <tr><th scope="row"><kbd>Alt</kbd>+<kbd>Enter</kbd></th><td>打开属性</td></tr>
                 <tr><th scope="row"><kbd>Shift</kbd>+<kbd>F10</kbd> 或菜单键</th><td>打开右键菜单</td></tr>
                 <tr><th scope="row">按住 <kbd>Shift</kbd> 再右键</th><td>菜单里多出一些 Windows 的选项</td></tr>
