@@ -2675,6 +2675,7 @@
   let update = null;
   const renderUpdate = () => {
     const card = document.getElementById('updateCard');
+    const was = card.offsetHeight;
     card.hidden = !update;
     document.getElementById('updateAutoCard').hidden = !update;
     if (!update) return;
@@ -2700,6 +2701,11 @@
     button.disabled = s === 'checking' || s === 'downloading';
     button.classList.toggle('accent', s === 'available');
     button.onclick = () => send({ type: 'action', name: action });
+    // An answer that needs another line (a failed check) makes the card taller: what stands
+    // under it glides down by as much instead of jumping.
+    const grew = was && card.offsetParent ? card.offsetHeight - was : 0;
+    if (grew && document.documentElement.classList.contains('ready') && !matchMedia('(prefers-reduced-motion: reduce)').matches)
+      for (let el = card.nextElementSibling; el; el = el.nextElementSibling) el.animate([{ transform: `translateY(${-grew}px)` }, { transform: 'none' }], { duration: motion('--fast'), easing: motion('--point-to-point') });
   };
   // Store edition: Windows keeps the startup switch. The states only the user (in Windows'
   // Startup settings) or an administrator can change get a line saying so; a click on the

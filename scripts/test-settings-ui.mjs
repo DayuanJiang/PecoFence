@@ -3360,6 +3360,24 @@ async function runTests() {
     assert(doc.getElementById('fenceEmpty').offsetParent, 'With no fence nothing says how to make one');
     doc = await reset();
   });
+  await test('A failed update check makes its card taller: what is under it glides down', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const w = win(), was = frame.style.width;
+    try {
+      frame.style.width = '944px';
+      doc.querySelector('[data-page=about]').click(); await settle();
+      w.testUpdate({ state: 'checking', version: '', edition: 'installer', hasSetup: true }); await settle();
+      const card = doc.getElementById('updateCard'), next = doc.getElementById('updateAutoCard'), height = card.offsetHeight;
+      assert(height > 0, 'The update card does not show while the check runs');
+      const gliding = () => doc.getAnimations().filter(a => a.effect.target === next && !a.animationName).length;
+      assert(await until(() => !doc.getAnimations().length), 'The page never came to rest');
+      w.testUpdate({ state: 'checkFailed', version: '', edition: 'installer', hasSetup: true });
+      assert(card.offsetHeight > height, 'The failed check no longer needs a second line (the test needs another width)');
+      assert(gliding() === 1, 'The card grew by ' + (card.offsetHeight - height) + ' px and the card under it jumped');
+    } finally { frame.style.width = was; }
+    doc = await reset();
+  });
   await test('The selected page, the rows of 查找设置, a list\'s options and a text box have a look under the pointer and pressed', async () => {
     doc = await reset();
     const selectors = [];
