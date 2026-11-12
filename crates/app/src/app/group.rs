@@ -121,6 +121,11 @@ impl App {
             self.hide_marquee_band();
         }
         tracing::info!(?event, ?rect, "marquee offer answered");
+        // Drawn beside another fence: the same gap as a fence dragged there.
+        let rect = match event {
+            OfferEvent::Dismissed(_) => rect,
+            _ => crate::fence_window::snap_drawn_rect(&self.ctx.behavior, rect),
+        };
         match event {
             OfferEvent::NewFence => self.create_fence_with_rename(rect),
             OfferEvent::ShowFolder => match pecofence_platform::filedialog::pick_folder(

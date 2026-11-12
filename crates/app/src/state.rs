@@ -776,7 +776,9 @@ impl AppState {
             pecofence_core::FenceView::default().label_lines,
         )
         .width_for_columns(3);
-        let gap = 16.0f32;
+        // The snapping gap (`snapping.gapPx`, clamped as `app::settings::snap_gap_dip` does):
+        // the first-run fences stand as far apart as fences the user snaps together later.
+        let gap = self.config.settings.snapping.gap_px.clamp(0, 64) as f32;
         let x = ww - gap - col_w;
         let heights = [240.0f32, 200.0, 240.0];
         let titles = [
@@ -3404,6 +3406,25 @@ mod tests {
             top,
             right: left + w,
             bottom: top + h,
+        }
+    }
+
+    /// The first-run column stands the snapping gap from the screen's top and right edges and
+    /// its fences that gap apart: the gap fences snapped together later keep.
+    #[test]
+    fn the_first_run_fences_stand_a_snapping_gap_apart() {
+        let state = test_state();
+        let gap = state.config.settings.snapping.gap_px;
+        assert_eq!(gap, 8);
+        let rects: Vec<PxRect> = state.fences()[..3]
+            .iter()
+            .map(|f| state.fence_px_rect(f))
+            .collect();
+        assert_eq!(rects[0].top, gap);
+        assert_eq!(rects[0].right, 1920 - gap);
+        for pair in rects.windows(2) {
+            assert_eq!(pair[1].top - pair[0].bottom, gap);
+            assert_eq!(pair[1].left, pair[0].left);
         }
     }
 

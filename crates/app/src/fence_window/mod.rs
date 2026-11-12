@@ -245,6 +245,26 @@ pub fn snap_gap_px(gap_dip: i32, scale: f32) -> i32 {
     (gap_dip as f32 * scale).round() as i32
 }
 
+/// A rectangle the user drew for a new fence, moved as a fence dragged there snaps: the
+/// snapping gap from a fence or screen edge it nearly touches, in line with an edge it nearly
+/// lines up with. Unchanged with snapping off.
+pub fn snap_drawn_rect(behavior: &Behavior, rect: RECT) -> RECT {
+    let mut snapped = rect;
+    if behavior.snapping.get() {
+        let centre = ((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
+        let scale = monitors::query(monitors::monitor_from_point(centre.0, centre.1))
+            .map_or(1.0, |m| m.scale());
+        snap_rect(
+            &mut snapped,
+            HWND::default(),
+            snap_gap_px(behavior.snap_gap_dip.get(), scale),
+            (SNAP_DIST_DIP as f32 * scale) as i32,
+        );
+    }
+    tracing::debug!(drawn = ?rect, ?snapped, "drawn rectangle snapped for a new fence");
+    snapped
+}
+
 /// Queues `FenceBoundsChanged` with `hwnd`'s window rectangle as it is now, the push shift taken
 /// out in the same breath (a push pass running before the command is handled cannot skew it).
 pub(super) fn queue_bounds_changed(

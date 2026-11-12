@@ -1201,10 +1201,11 @@ impl App {
     }
 
     /// Picks a screen rectangle `cols` icon columns wide and `h_dip` tall for a new fence that
-    /// does not overlap any existing fence: beside `near` (right, left, below, above) first,
-    /// then a coarse scan of the work area, finally centred on the point. Result is clamped
-    /// into the work area. The width is taken from the grid metrics, so a new fence shows
-    /// exactly `cols` columns.
+    /// does not overlap any existing fence: beside `near` (right, left, below, above) the
+    /// snapping gap away, then centred on the point, then the free spot nearest to it,
+    /// finally centred on the point over what is there. Result is clamped into the work
+    /// area. The width is taken from the grid metrics, so a new fence shows exactly `cols`
+    /// columns.
     pub(super) fn place_new_fence(
         &self,
         cols: u32,
@@ -1228,7 +1229,11 @@ impl App {
             && r.top >= work.top
             && r.right <= work.right
             && r.bottom <= work.bottom;
-        fits && !self.overlaps_fence(r, (12.0 * work.scale()) as i32)
+        let gap = crate::fence_window::snap_gap_px(
+            settings::snap_gap_dip(&self.state.config.settings.snapping),
+            work.scale(),
+        );
+        fits && !self.overlaps_fence(r, gap)
     }
 
     pub(super) fn overlaps_fence(&self, r: &RECT, gap: i32) -> bool {
@@ -1260,7 +1265,12 @@ impl App {
         };
         let scale = work.scale();
         let (w, h) = ((w_dip * scale) as i32, (h_dip * scale) as i32);
-        let gap = (12.0 * scale) as i32;
+        // One gap on the desktop: the snapping gap (`snapping.gapPx`), the one fences dragged
+        // together keep.
+        let gap = crate::fence_window::snap_gap_px(
+            settings::snap_gap_dip(&self.state.config.settings.snapping),
+            scale,
+        );
         let at = |left: i32, top: i32| RECT {
             left,
             top,
@@ -1279,22 +1289,28 @@ impl App {
         }
         candidates.push(at(x - w / 2, y - h / 2));
         if let Some(r) = candidates.iter().find(|r| self.rect_free(r, &work)) {
+            tracing::debug!(?near, gap, at = ?(r.left, r.top), "new fence placed: first free candidate");
             return *r;
         }
-        // Coarse scan, top-left to bottom-right.
-        let step = (24.0 * scale) as i32;
-        let mut top = work.top + gap;
-        while top + h <= work.bottom {
-            let mut left = work.left + gap;
-            while left + w <= work.right {
-                let r = at(left, top);
-                if !self.overlaps_fence(&r, gap) {
-                    return r;
-                }
-                left += step;
-            }
-            top += step;
+        // The free spot nearest to the point: a gap from a fence or the work area's edge, in
+        // line with one of its edges, as a fence let go on another one lands.
+        let others: Vec<RECT> = self.fences.values().map(|f| f.footprint_rect()).collect();
+        let area = RECT {
+            left: work.left,
+            top: work.top,
+            right: work.right,
+            bottom: work.bottom,
+        };
+        let centred = at(x - w / 2, y - h / 2);
+        if let Some(r) = crate::layout::clearance::nearest_free(&centred, &others, &area, gap) {
+            tracing::debug!(?near, gap, at = ?(r.left, r.top), "new fence placed: nearest free spot");
+            return r;
         }
+        tracing::debug!(
+            ?near,
+            gap,
+            "new fence placed: no free spot, centred on the point"
+        );
         // Everything is covered: centre on the point, clamped into the work area.
         let left = (x - w / 2).clamp(work.left, (work.right - w).max(work.left));
         let top = (y - h / 2).clamp(work.top, (work.bottom - h).max(work.top));
