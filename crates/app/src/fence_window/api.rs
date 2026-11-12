@@ -226,6 +226,8 @@ impl FenceWindow {
             theme,
             glass_dark_text: Cell::new(None),
             plate_halo: Cell::new(false),
+            bare_dark_text: Cell::new(None),
+            content_look: Cell::new(None),
             backdrops: ctx.backdrops.borrow().clone(),
             backdrop_crop: None,
             backdrop_rect: None,
@@ -2724,6 +2726,7 @@ impl FenceWindow {
             let old_ink = v.material_foreground().label_look();
             v.backdrops = backdrops;
             v.glass_dark_text.set(None);
+            v.bare_dark_text.set(None);
             v.plate_halo.set(false);
             v.invalidate_backdrop();
             // The content only follows the backdrop through its ink (as in `on_move`).
@@ -2892,6 +2895,7 @@ impl FenceWindow {
             }
             if v.theme.liquid_glass != theme.liquid_glass || v.theme.mode != theme.mode {
                 v.glass_dark_text.set(None);
+                v.bare_dark_text.set(None);
                 v.plate_halo.set(false);
             }
             v.theme = theme;

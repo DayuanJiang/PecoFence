@@ -338,6 +338,13 @@ pub struct FenceViewState {
     /// Fluent: whether the text had the halo when it was last picked (it keeps its state near
     /// its threshold, like the colour). Reset with `glass_dark_text`.
     pub(super) plate_halo: Cell<bool>,
+    /// Last contrast choice of a fully transparent fence for the bare wallpaper (its plate
+    /// hidden); `glass_dark_text` keeps the one for its plate. Reset with it.
+    pub(super) bare_dark_text: Cell<Option<bool>>,
+    /// The text colour and halo the content was last drawn with (`Theme::label_look`): a
+    /// fully transparent fence draws its content again when its plate comes or goes and the
+    /// pick changes (`redraw_chrome_only`).
+    pub(super) content_look: Cell<Option<(ColorF, bool)>>,
     pub(super) backdrops: Rc<BackdropSets>,
     pub(super) backdrop_crop: Option<Image>,
     /// Screen rect (left, top, width, height) `backdrop_crop` was cut for. While the height

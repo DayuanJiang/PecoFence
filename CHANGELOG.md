@@ -230,6 +230,7 @@
 - The Menu key (or Shift+F10) on an icon opens the menu clear of that icon. With no room under the name, as in the lower half of the screen, Windows slid the menu up and it lay over the icon it was for. It now opens above or beside the icon; a right-click still opens it at the pointer.
 - The rectangle drawn on the bare desktop fades out together with the two buttons under it (「在此显示文件夹…」, 「新建栅栏」). It stood until the buttons had faded and then went in one frame.
 - A fence deleted while another card is up still gets its undo card. While a first-start tip, the update card or the rating offer stood at the corner (30 seconds each, the four tips one after another), 「删除栅栏」 and 「立即应用」 showed no 「撤销」 card at all. The undo card now shows at the nearest free place beside the other card, usually right above it, and each card answers its own buttons.
+- A fully transparent fence (「不透明度」 → 「全透明」) reads on its wallpaper. Its text took the colour that suits the plate, which only shows while the pointer is over the fence. Where the plate and the wallpaper differ in brightness the text was lost: a note, a clock or a script fence in dark mode with the example themes 「暖色」 or 「磨砂玻璃」 was white on a white wallpaper (1.1 : 1), and with the built-in Fluent style in light mode black on a dark photo (2.9 : 1). The text now takes its colour from the wallpaper under the fence, and from the plate for as long as the plate shows.
 
 ## 0.3.3
 

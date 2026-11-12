@@ -193,12 +193,37 @@ impl FenceViewState {
         }
         match &self.backdrop_crop {
             Some(image) if self.is_clear() => {
-                // Captions sit on bare wallpaper at rest, on the default plate while hovered.
-                let foreground =
+                // Captions sit on bare wallpaper at rest, on the default plate while it shows
+                // (the pointer over the fence, rolled up, a Peek): the ink is picked for what
+                // is behind them now. The two agree unless the plate is much darker or
+                // lighter than the wallpaper (a dark theme file over a light wallpaper, light
+                // mode over a dark photo); `redraw_chrome_only` draws the content again then.
+                let on_plate = self.plate_visible_target();
+                // Each of the two keeps its own choice near its threshold.
+                let memory = if on_plate {
+                    &self.glass_dark_text
+                } else {
+                    &self.bare_dark_text
+                };
+                let previous = memory.get();
+                let foreground = if on_plate {
                     self.theme
-                        .over_clear_plate(image, self.style.tint, self.glass_dark_text.get());
-                self.glass_dark_text
-                    .set(Some(foreground.text_primary.r < 0.5));
+                        .over_clear_plate(image, self.style.tint, previous)
+                } else {
+                    self.theme.over_bare_wallpaper(image, previous)
+                };
+                let dark_text = foreground.text_primary.r < 0.5;
+                if previous != Some(dark_text) {
+                    tracing::debug!(
+                        fence = %self.title,
+                        on_plate,
+                        wallpaper = self.theme.wallpaper_brightness(image),
+                        ?previous,
+                        dark_text,
+                        "text colour of a fully transparent fence picked"
+                    );
+                }
+                memory.set(Some(dark_text));
                 foreground
             }
             None if self.is_clear() => Theme {
@@ -1119,6 +1144,18 @@ impl FenceViewState {
 
     /// Redraws the chrome surface only (backdrop/title); the content surface is untouched.
     pub fn redraw_chrome_only(&mut self) -> Result<()> {
+        // A fully transparent fence picks its text for what is behind it: the wallpaper, or
+        // its plate while that shows (`material_foreground`). When the plate comes or goes
+        // and the pick changes with it, the content is drawn again in the new colour.
+        if self.is_clear()
+            && !self.bare()
+            && self
+                .content_look
+                .get()
+                .is_some_and(|look| look != self.material_foreground().label_look())
+        {
+            return self.redraw();
+        }
         self.draw_chrome_panel()
     }
 
@@ -1453,6 +1490,8 @@ impl FenceViewState {
     }
 
     pub(super) fn redraw_content(&mut self) -> Result<()> {
+        self.content_look
+            .set(Some(self.material_foreground().label_look()));
         if self.note.is_some() {
             return self.redraw_note();
         }

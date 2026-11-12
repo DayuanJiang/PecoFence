@@ -477,10 +477,37 @@ impl Theme {
         self.with_ink_of(foreground)
     }
 
-    /// A fully transparent plate (外观 → 全透明): the captions sit on the wallpaper at rest and
-    /// on the default plate while hovered, so the ink is chosen against the tinted backdrop
-    /// sample (the plate the pointer reveals) and every caption gets a halo for the bare
-    /// wallpaper in between.
+    /// A fully transparent plate (外观 → 全透明) while it is hidden: the captions sit on the
+    /// wallpaper itself, so the ink is picked from the wallpaper under the fence (`image` with
+    /// the material's recipe undone), with Liquid Glass's thresholds and hysteresis, and every
+    /// caption gets the halo. The plate of a dark theme over a light wallpaper is dark, and
+    /// the ink picked for that plate was white on the white wallpaper.
+    pub fn over_bare_wallpaper(
+        mut self,
+        image: &crate::Image,
+        previous_dark_text: Option<bool>,
+    ) -> Self {
+        self.text_halo = true;
+        if image.bgra.is_empty() {
+            return self;
+        }
+        let threshold = match previous_dark_text {
+            Some(true) => INK_KEEP_DARK,
+            Some(false) => INK_KEEP_LIGHT,
+            None => INK_NEUTRAL,
+        };
+        let foreground = if self.wallpaper_brightness(image) > threshold {
+            self.ink(ThemeMode::Light)
+        } else {
+            self.ink(ThemeMode::Dark)
+        };
+        self.with_ink_of(foreground)
+    }
+
+    /// A fully transparent plate (外观 → 全透明) while its plate shows (the pointer over the
+    /// fence, rolled up, a Peek): the captions sit on the default plate, so the ink is chosen
+    /// against the tinted backdrop sample (the plate the pointer reveals); every caption
+    /// keeps the halo, which it has on the bare wallpaper ([`Self::over_bare_wallpaper`]).
     pub fn over_clear_plate(
         mut self,
         image: &crate::Image,
@@ -605,19 +632,7 @@ impl Theme {
     /// with the material's recipe ([`crate::Image::tint`]) undone. Liquid Glass's material
     /// leaves the wallpaper as it is. Then the glass layer, the opacity veil and the tint wash.
     fn plate_over(&self, crop: [f32; 3], opacity: f32, tint: Option<ColorF>) -> [f32; 3] {
-        let material = self.material;
-        let a = material.color.a.clamp(0.0, 1.0);
-        let lo = material.luminosity_opacity.clamp(0.0, 1.0);
-        let tint_rgb = [material.color.r, material.color.g, material.color.b];
-        // A nearly flat material keeps too little of the wallpaper to work it out again.
-        let wallpaper = if a < 0.9 && lo < 0.9 {
-            let x = [0, 1, 2].map(|i| (crop[i] - tint_rgb[i] * a) / (1.0 - a));
-            let (lum_x, chroma) = (luma(x), material.chroma.clamp(0.1, 1.5));
-            let lum = (lum_x - luma(tint_rgb) * lo) / (1.0 - lo);
-            x.map(|c| (lum + (c - lum_x) / chroma).clamp(0.0, 1.0))
-        } else {
-            crop
-        };
+        let wallpaper = self.wallpaper_under(crop);
         let glass = crate::fence_chrome::glass_alpha(opacity);
         let mut plate = [0, 1, 2].map(|i| wallpaper[i] + (crop[i] - wallpaper[i]) * glass);
         let mut layer = self.glass_layer_fill;
@@ -635,6 +650,34 @@ impl Theme {
             }
         }
         plate
+    }
+
+    /// The wallpaper itself where the backdrop crop has colour `crop`: the crop with the
+    /// material's recipe ([`crate::Image::tint`]) undone.
+    fn wallpaper_under(&self, crop: [f32; 3]) -> [f32; 3] {
+        let material = self.material;
+        let a = material.color.a.clamp(0.0, 1.0);
+        let lo = material.luminosity_opacity.clamp(0.0, 1.0);
+        let tint_rgb = [material.color.r, material.color.g, material.color.b];
+        // A nearly flat material keeps too little of the wallpaper to work it out again.
+        if a < 0.9 && lo < 0.9 {
+            let x = [0, 1, 2].map(|i| (crop[i] - tint_rgb[i] * a) / (1.0 - a));
+            let (lum_x, chroma) = (luma(x), material.chroma.clamp(0.1, 1.5));
+            let lum = (lum_x - luma(tint_rgb) * lo) / (1.0 - lo);
+            x.map(|c| (lum + (c - lum_x) / chroma).clamp(0.0, 1.0))
+        } else {
+            crop
+        }
+    }
+
+    /// The mean brightness (0..=1) of the wallpaper under `image`, this fence's backdrop crop.
+    pub fn wallpaper_brightness(&self, image: &crate::Image) -> f32 {
+        let (mut sum, mut count) = (0.0, 0);
+        for p in sample_grid(image) {
+            sum += brightness(self.wallpaper_under([p[2], p[1], p[0]].map(|c| c as f32 / 255.0)));
+            count += 1;
+        }
+        sum / count.max(1) as f32
     }
 
     /// Whether dark text reads better over `image` once the plate's own layers (glass layer,
