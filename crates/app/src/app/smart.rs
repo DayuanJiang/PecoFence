@@ -20,6 +20,15 @@ const AGAIN_MS: u32 = 4_000;
 /// Everything answers one search at a time (a new one cancels the one before): the next
 /// fence's search waits for the answer, or this long for one that never comes.
 pub(super) const ANSWER_WAIT: Duration = Duration::from_secs(3);
+/// While a fence waits for Everything, its window is looked for this often: an Everything
+/// started by hand, or after PecoFence at logon, is used within seconds (the once-a-minute run
+/// left the fence asking for it up to a minute longer).
+const WAIT_POLL_MS: u32 = 2_000;
+/// The same look right after 「启动 Everything」 was picked.
+const STARTING_POLL_MS: u32 = 250;
+/// How long the waiting fences say 「正在搜索…」 after 「启动 Everything」; an Everything that is
+/// not there by then did not start, and the row comes back.
+const STARTING_FOR: Duration = Duration::from_secs(10);
 /// The smart fence editor's live count runs as this make-believe fence: it takes its turn with
 /// Everything (after the Peek search, between the fences' own runs) and its workers like a
 /// fence's, and its results go to the editor instead of a fence.
@@ -131,6 +140,11 @@ pub(super) struct SmartState {
     preview_sent: u64,
     /// Everything's total in its last answer to the editor's count.
     preview_total: u32,
+    /// `TIMER_SMART_WAIT` is set: a fence waits for Everything, whose window is looked for.
+    wait_poll: bool,
+    /// When 「启动 Everything」 was picked: until Everything is there (or `STARTING_FOR`) the
+    /// fences that wait for it say 「正在搜索…」, without the row.
+    starting: Option<Instant>,
 }
 
 impl Default for SmartState {
@@ -152,6 +166,8 @@ impl Default for SmartState {
             preview: None,
             preview_sent: 0,
             preview_total: 0,
+            wait_poll: false,
+            starting: None,
         }
     }
 }
@@ -632,6 +648,87 @@ impl App {
         } else if source_changed {
             self.apply_portal_deco(self.state.host_of(id));
         }
+        if source == SmartSource::NeedsEverything {
+            self.poll_for_everything(false);
+        }
+    }
+
+    /// Sets `TIMER_SMART_WAIT`: Everything's window is looked for again soon (`fast`: right
+    /// after 「启动 Everything」), while a fence waits for it.
+    fn poll_for_everything(&mut self, fast: bool) {
+        if self.smart.wait_poll && !fast {
+            return;
+        }
+        self.smart.wait_poll = true;
+        let ms = if fast { STARTING_POLL_MS } else { WAIT_POLL_MS };
+        window::set_timer(self.control.hwnd(), TIMER_SMART_WAIT, ms);
+    }
+
+    /// The fences that wait for Everything.
+    fn smart_waiting_for_everything(&self) -> Vec<FenceId> {
+        self.smart
+            .runs
+            .iter()
+            .filter(|(_, r)| r.source == SmartSource::NeedsEverything)
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    /// `TIMER_SMART_WAIT`: while a fence waits for Everything, an Everything that runs by now
+    /// (and has read its index) gets the fences' searches; else the look is repeated.
+    pub(super) fn look_for_everything(&mut self) {
+        self.smart.wait_poll = false;
+        let waiting = self.smart_waiting_for_everything();
+        if waiting.is_empty() {
+            self.smart.starting = None;
+            return;
+        }
+        let found = everything::find();
+        if found.is_some_and(|i| i.db_loaded()) {
+            tracing::info!(
+                fences = waiting.len(),
+                started_here = self.smart.starting.is_some(),
+                "smart fence: Everything is running now"
+            );
+            self.smart.starting = None;
+            self.run_waiting_smart();
+            self.push_settings_state();
+            return;
+        }
+        let starting = self
+            .smart
+            .starting
+            .is_some_and(|t| t.elapsed() < STARTING_FOR);
+        if self.smart.starting.is_some() && !starting {
+            tracing::info!(
+                found = found.is_some(),
+                "smart fence: Everything did not come up; the fences offer to start it again"
+            );
+            self.smart.starting = None;
+            for id in waiting {
+                self.apply_portal_deco(self.state.host_of(id));
+            }
+        }
+        self.poll_for_everything(starting);
+    }
+
+    /// 「启动 Everything」 was picked: the fences that wait for it say 「正在搜索…」 at once (the
+    /// row stayed as it was for the 2.5 s until the search ran, as if the click had done
+    /// nothing), and search as soon as Everything is there.
+    pub(super) fn smart_everything_starting(&mut self) {
+        let waiting = self.smart_waiting_for_everything();
+        if waiting.is_empty() {
+            return;
+        }
+        tracing::debug!(
+            fences = waiting.len(),
+            "smart fence: Everything is being started; the waiting fences say so"
+        );
+        self.smart.starting = Some(Instant::now());
+        for id in waiting {
+            self.apply_portal_deco(self.state.host_of(id));
+        }
+        self.poll_for_everything(true);
     }
 
     /// Starts and stops the folder watchers of the smart fences: one per folder searched.
@@ -877,6 +974,12 @@ impl App {
             );
         }
         for id in waiting {
+            // Until the answer is in the fence says 「正在搜索…」, no longer that it needs
+            // Everything.
+            if let Some(run) = self.smart.runs.get_mut(&id) {
+                run.source = SmartSource::Waiting;
+            }
+            self.apply_portal_deco(self.state.host_of(id));
             self.run_smart(id, "everything started");
         }
     }
@@ -1006,7 +1109,11 @@ impl App {
             return (None, None, None);
         };
         let run = self.smart.runs.get(&f.id);
-        let source = run.map_or(SmartSource::Waiting, |r| r.source);
+        let source = match run.map_or(SmartSource::Waiting, |r| r.source) {
+            // 「启动 Everything」 was just picked: it is on its way.
+            SmartSource::NeedsEverything if self.smart.starting.is_some() => SmartSource::Waiting,
+            source => source,
+        };
         let empty = Some(match source {
             SmartSource::Waiting => pecofence_core::i18n::text("正在搜索…"),
             // A folder search waits for Everything only for its Everything syntax.

@@ -200,6 +200,8 @@ const TIMER_SMART_READ: usize = 94;
 /// 智能栅栏: a smart fence's watcher saw a change (`WM_APP_SMART_FS`); retried while the App is
 /// borrowed.
 const TIMER_SMART_FS: usize = 95;
+/// 智能栅栏: a fence waits for Everything; its window is looked for again.
+const TIMER_SMART_WAIT: usize = 100;
 /// A folder shown in a fence is gone: look for it again soon (`check_missing_portals`), not
 /// only at the minute's housekeeping.
 const TIMER_PORTAL_BACK: usize = 80;
@@ -1134,6 +1136,7 @@ impl App {
                                 | TIMER_SMART_SOON
                                 | TIMER_SMART_READ
                                 | TIMER_SMART_FS
+                                | TIMER_SMART_WAIT
                                 | lnk_targets::TIMER_LNK_TARGETS
                                 | updates::TIMER_UPDATE_CHECK
                                 | updates::TIMER_UPDATE_CARD
@@ -1157,8 +1160,9 @@ impl App {
                                             TIMER_EVERYTHING => app.send_everything_query(),
                                             TIMER_EVERYTHING_STATUS => {
                                                 // Everything was started or installed: the
-                                                // smart fences waiting for it search now.
-                                                app.run_waiting_smart();
+                                                // smart fences waiting for it search now
+                                                // (once it has read its index).
+                                                app.look_for_everything();
                                                 app.push_settings_state();
                                             }
                                             TIMER_EVERYTHING_SETUP => app.on_everything_setup(
@@ -1172,6 +1176,7 @@ impl App {
                                             TIMER_SMART_SOON => app.run_soon_smart(),
                                             TIMER_SMART_READ => app.drain_smart_reads(),
                                             TIMER_SMART_FS => app.smart_watchers_fired(),
+                                            TIMER_SMART_WAIT => app.look_for_everything(),
                                             lnk_targets::TIMER_LNK_TARGETS => {
                                                 app.lnk_targets_read()
                                             }
