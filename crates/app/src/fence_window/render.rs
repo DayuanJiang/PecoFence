@@ -516,6 +516,27 @@ impl FenceViewState {
         }
     }
 
+    /// The keyboard focus mark is on the title row: the fence has the keyboard by keys and no
+    /// icon can carry the mark (rolled up, an empty tab, the focused icon gone).
+    pub(super) fn title_focus(&self) -> bool {
+        self.focus_visible
+            && self.search.is_none()
+            && (self.roll_target() || self.focus_index().is_none())
+    }
+
+    /// Ends the keyboard focus mark (the keyboard left, a mouse press) and returns whether it
+    /// showed. A mark on the title row is repainted here; one on an icon by the caller's
+    /// content redraw.
+    pub(super) fn end_focus_mark(&mut self) -> bool {
+        let on_title = self.title_focus();
+        let shown = std::mem::take(&mut self.focus_visible);
+        if shown && on_title {
+            tracing::debug!(fence = %self.fence_id, "keyboard focus mark leaves the title row");
+            let _ = self.redraw_chrome_only();
+        }
+        shown
+    }
+
     /// Selection colour blend for this draw: the activation cross-fade, pushed towards neutral
     /// grey (1) while a drag from elsewhere hovers the fence (`drop_inactive`, 83 ms) —
     /// Explorer's view is inactive then and only the drop target reads accent.
@@ -857,6 +878,7 @@ impl FenceViewState {
                 badge: badges[i].as_deref(),
             })
             .collect();
+        let title_focus = self.title_focus();
         let ok = self.chrome_panel.draw(self.dpi, |session, wd, hd| {
             chrome.draw(
                 session,
@@ -880,7 +902,11 @@ impl FenceViewState {
                 deco,
                 state,
                 style,
-            )
+            )?;
+            if title_focus {
+                chrome.draw_title_focus(session, &theme, scale, wd, hd, &tabs, style)?;
+            }
+            Ok(())
         })?;
         self.note_draw_result(ok);
         let inset = (state.plate_top * scale).round() as i32;

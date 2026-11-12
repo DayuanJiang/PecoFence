@@ -278,7 +278,8 @@ impl FrameHandle {
                 if rolled {
                     let had = v.selected.len();
                     let _ = v.end_selection();
-                    v.focus_visible = false;
+                    // The keyboard stays in the fence (it was rolled up by keys): the focus
+                    // mark stays too, on the title row from here on (`title_focus`).
                     v.type_ahead.clear();
                     if had > 0 {
                         tracing::debug!(had, "roll-up landed: the hidden selection is dropped");

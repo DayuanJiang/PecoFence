@@ -51,7 +51,7 @@ pub(super) fn on_killfocus(
     let HandlerCtx { view, .. } = h;
     if let Ok(mut guard) = view.try_borrow_mut()
         && let Some(v) = guard.as_mut()
-        && std::mem::take(&mut v.focus_visible)
+        && v.end_focus_mark()
         && !v.rolled_up
     {
         let _ = v.redraw_content();
@@ -112,6 +112,15 @@ pub(super) fn on_keydown(
     // A rolled-up fence (from the moment it starts to roll up) shows none of its items: a key
     // must not act on a selection nobody can see (Delete sent a hidden file to the Recycle Bin).
     if v.roll_target() && acts_on_items(wparam as u32, ctrl) {
+        // The focus mark is on the title row (`title_focus`): Enter opens the fence again, as
+        // Enter on a focused button presses it. A held key opens once.
+        if vk == msg::VK_RETURN && v.focus_visible && !ctrl {
+            if lparam & (1 << 30) == 0 {
+                tracing::debug!("Enter on the title row of a rolled-up fence: it opens");
+                queue.push(Command::ToggleRollUp(fence_id));
+            }
+            return Some(0);
+        }
         tracing::debug!(
             vk = wparam as u32,
             ctrl,

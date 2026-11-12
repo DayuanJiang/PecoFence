@@ -186,7 +186,7 @@ pub(super) fn on_lbuttondown(
         // Mouse interaction hides the keyboard focus ring (Explorer). The
         // ring lives on the content surface: arms that do not repaint it
         // anyway do so once below (one raster per click).
-        let focus_cleared = std::mem::take(&mut v.focus_visible) && !v.rolled_up;
+        let focus_cleared = v.end_focus_mark() && !v.rolled_up;
         // 筛选: the × of the filter tag clears the filter.
         if v.filter_tag_clear_at(x, y) {
             let fence = v.active;
@@ -747,7 +747,7 @@ pub(super) fn on_lbuttondblclk(
         // A real double-click launches; it never renames.
         v.cancel_pending_rename();
         v.hide_tip();
-        v.focus_visible = false;
+        v.end_focus_mark();
         if let Some(col) = v.divider_hit(x, y) {
             // Explorer: double-clicking a divider sizes the column to fit.
             v.col_drag = None;
@@ -903,7 +903,7 @@ pub(super) fn on_rbuttonup(
         });
         return Some(0);
     }
-    v.focus_visible = false;
+    v.end_focus_mark();
     match v.hit_item(x, y) {
         Some(i) => {
             if !v.selected.contains(&i) {

@@ -2963,7 +2963,7 @@ impl FenceWindow {
     pub fn keyboard_left(&self) -> bool {
         let mut ring = false;
         self.with_view(|v| {
-            ring = std::mem::take(&mut v.focus_visible);
+            ring = v.end_focus_mark();
             if ring && !v.rolled_up {
                 let _ = v.redraw_content();
             }

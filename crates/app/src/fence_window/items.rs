@@ -844,7 +844,8 @@ impl FenceViewState {
         self.selected = remap_indices(old_ids, &new, &self.selected);
         self.anchor_index = self.anchor_index.and_then(map);
         self.range_anchor = self.range_anchor.and_then(map);
-        if self.anchor_index.is_none() {
+        // A rolled-up fence and one with nothing in it keep the mark on their title row.
+        if self.anchor_index.is_none() && !self.roll_target() && !self.items.is_empty() {
             self.focus_visible = false;
         }
         // The user's own Delete took the focused item away: its neighbour takes the focus and

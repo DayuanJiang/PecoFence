@@ -1651,22 +1651,40 @@ fn draw_item_state(
         session.draw_rounded_rect(&px.ring(rect, 4.0), &brushes.sel_stroke, px.hair());
     }
     if focused {
-        // FocusVisual: 2 px outer stroke on the cell edge, 1 px inner stroke just inside it.
-        let o = Rect::from_xywh(
-            rect.left + 1.0,
-            rect.top + 1.0,
-            (rect.right - rect.left - 2.0).max(0.0),
-            (rect.bottom - rect.top - 2.0).max(0.0),
+        draw_focus_visual(
+            session,
+            px,
+            rect,
+            &brushes.focus_outer,
+            &brushes.focus_inner,
         );
-        session.draw_rounded_rect(&RoundedRect::uniform(o, 3.0), &brushes.focus_outer, 2.0);
-        let i = Rect::from_xywh(
-            rect.left + 2.0,
-            rect.top + 2.0,
-            (rect.right - rect.left - 4.0).max(0.0),
-            (rect.bottom - rect.top - 4.0).max(0.0),
-        );
-        session.draw_rounded_rect(&px.ring(i, 2.0), &brushes.focus_inner, px.hair());
     }
+}
+
+/// FocusVisual: 2 px outer stroke on the edge of `rect`, 1 px inner stroke just inside it. The
+/// one keyboard focus mark of a fence: around an icon's cell or a row, and around the title row
+/// when no icon can carry it (`FenceChrome::draw_title_focus`).
+fn draw_focus_visual(
+    session: &DrawingSession<'_>,
+    px: Px,
+    rect: Rect,
+    outer: &Brush,
+    inner: &Brush,
+) {
+    let o = Rect::from_xywh(
+        rect.left + 1.0,
+        rect.top + 1.0,
+        (rect.right - rect.left - 2.0).max(0.0),
+        (rect.bottom - rect.top - 2.0).max(0.0),
+    );
+    session.draw_rounded_rect(&RoundedRect::uniform(o, 3.0), outer, 2.0);
+    let i = Rect::from_xywh(
+        rect.left + 2.0,
+        rect.top + 2.0,
+        (rect.right - rect.left - 4.0).max(0.0),
+        (rect.bottom - rect.top - 4.0).max(0.0),
+    );
+    session.draw_rounded_rect(&px.ring(i, 2.0), inner, px.hair());
 }
 
 /// Fence-wide drop feedback (a drag hovers the fence itself), faded by `alpha`: the accent
@@ -2882,6 +2900,41 @@ impl FenceChrome {
 
     /// Draws the chrome into a `width` x `height` DIP area whose origin is (0, 0). `scale` is
     /// the DIP→device-pixel factor (hairline snapping); `state` carries the sampled fades.
+    /// The keyboard focus mark on the title row, drawn over a finished [`FenceChrome::draw`]:
+    /// the fence has the keyboard and none of its icons can carry the mark (rolled up, or
+    /// nothing in it). The icons' FocusVisual around the title row, around the shown tab's
+    /// pill in a strip, or around the column when the tabs stand at the left.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_title_focus(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        scale: f32,
+        width: f32,
+        height: f32,
+        tabs: &[TabDraw<'_>],
+        style: FenceStyle,
+    ) -> Result<()> {
+        let title_h = theme.title_height.min(height);
+        let row = if tabs.len() > 1 && style.tab_rail > 0.0 {
+            Rect::from_xywh(
+                4.0,
+                4.0,
+                (style.tab_rail - 8.0).max(0.0),
+                (height - 8.0).max(0.0),
+            )
+        } else if let Some(t) = tabs.iter().find(|t| t.active).filter(|_| tabs.len() > 1) {
+            let inset = if theme.liquid_glass { 4.0 } else { 6.0 };
+            Rect::from_xywh(t.x, inset, t.w, (title_h - inset * 2.0).max(0.0))
+        } else {
+            Rect::from_xywh(4.0, 4.0, (width - 8.0).max(0.0), (title_h - 8.0).max(0.0))
+        };
+        let outer = session.create_solid_brush(theme.focus_outer)?;
+        let inner = session.create_solid_brush(theme.focus_inner)?;
+        draw_focus_visual(session, Px::new(scale), row, &outer, &inner);
+        Ok(())
+    }
+
     /// `rolled_up` is the state the fence is rolling to (or resting in) and `roll_t` the roll
     /// progress 0 (expanded) ..= 1 (rolled) that turns the chevron. `bitmaps` holds the
     /// uploaded wallpaper crop and the acrylic noise tile across frames.
