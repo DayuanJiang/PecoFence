@@ -13,7 +13,7 @@
 
 use crate::bindings::*;
 use crate::wide::to_wide;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use windows_core::{PCSTR, PCWSTR};
@@ -117,15 +117,31 @@ fn refresh_interval() -> Duration {
     let (num, den) = (rate.uiNumerator, rate.uiDenominator);
     let refresh = refresh_from_rate(ok, num, den);
     let timer = timer_interval(refresh);
-    tracing::debug!(
-        ok,
-        num,
-        den,
-        refresh_us = refresh.as_micros() as u64,
-        timer_us = timer.as_micros() as u64,
-        "frame clock: refresh interval for the tick timer"
-    );
+    let answer = (u64::from(!ok) << 63)
+        | ((refresh.as_micros() as u64 & 0x7FFF_FFFF) << 32)
+        | (timer.as_micros() as u64 & 0xFFFF_FFFF);
+    if refresh_is_news(&LOGGED_REFRESH, answer) {
+        tracing::debug!(
+            ok,
+            num,
+            den,
+            refresh_us = refresh.as_micros() as u64,
+            timer_us = timer.as_micros() as u64,
+            "frame clock: refresh interval for the tick timer"
+        );
+    }
     timer
+}
+
+/// What [`refresh_interval`] logged last: its line is written when the answer changes. While
+/// the display sleeps the compositor wait fails at once and every frame asks again, which
+/// wrote one line per frame (2,100 lines, 360 KB, in three minutes of animations at debug
+/// level).
+static LOGGED_REFRESH: AtomicU64 = AtomicU64::new(0);
+
+/// Whether `answer` is not what was logged last; it is noted as logged.
+fn refresh_is_news(logged: &AtomicU64, answer: u64) -> bool {
+    logged.swap(answer, Ordering::Relaxed) != answer
 }
 
 /// `num / den` Hz as an interval; [`DEFAULT_REFRESH`] for a failed call and for a rate outside
@@ -467,6 +483,20 @@ mod tests {
 
     fn gaps(starts: &[f64]) -> Vec<f64> {
         starts.windows(2).map(|w| w[1] - w[0]).collect()
+    }
+
+    #[test]
+    fn the_refresh_interval_is_logged_when_it_changes_not_for_every_frame() {
+        let logged = AtomicU64::new(0);
+        // A sleeping display: every frame gets the same answer.
+        let lines = (0..2_000)
+            .filter(|_| refresh_is_news(&logged, 16_667))
+            .count();
+        assert_eq!(lines, 1);
+        // The display comes back at another rate, then sleeps again.
+        assert!(refresh_is_news(&logged, 6_944));
+        assert!(!refresh_is_news(&logged, 6_944));
+        assert!(refresh_is_news(&logged, 16_667));
     }
 
     #[test]
