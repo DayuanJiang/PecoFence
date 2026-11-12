@@ -333,17 +333,17 @@ impl App {
     /// Hides the Windows desktop icons for the start (`TIMER_START_ICONS`), unless the setting
     /// went off or 「临时显示 Windows 桌面」 came on in the meantime.
     pub(super) fn hide_icons_after_start(&mut self) {
-        let wanted = self.state.config.settings.hide_real_icons
+        let asked = self.state.config.settings.hide_real_icons
             && !self.no_hide_icons
             && !self.windows_desktop;
-        let hidden = wanted
+        let hidden = asked
             && self
                 .anchor
                 .borrow_mut()
                 .as_mut()
                 .is_some_and(|a| a.request_hide_desktop_icons());
         tracing::info!(
-            wanted,
+            asked,
             hidden,
             "start: Windows desktop icons hidden as the fences come in"
         );
