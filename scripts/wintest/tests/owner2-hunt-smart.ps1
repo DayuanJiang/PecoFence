@@ -261,7 +261,7 @@ public static class FakeEv {
     keep = Proc;
     WNDCLASS c = new WNDCLASS(); c.proc = keep; c.name = "EVERYTHING_TASKBAR_NOTIFICATION";
     RegisterClassW(ref c);
-    CreateWindowExW(0, c.name, "fake", 0, 0, 0, 0, 0, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+    CreateWindowExW(0, c.name, "", 0, 0, 0, 0, 0, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
     MSG m; while (GetMessageW(out m, IntPtr.Zero, 0, 0) > 0) DispatchMessageW(ref m);
   }
 }
@@ -322,7 +322,10 @@ function PartG {
   Js "(() => { document.querySelector('[data-page=fences]')?.click(); return true; })()" | Out-Null
   Start-Sleep -Milliseconds 800
   $opts = Js "[...document.getElementById('fenceSel').options].map(o => o.textContent).join(' | ')"
+  # The open list, for the picture.
+  PageClick '#fenceSel' | Out-Null; Start-Sleep -Milliseconds 900
   Shot 'g-picker'
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 400
   Check 'G the picker says which fence shows on one desktop only' ($opts -match '游戏存档（只在“游戏”上显示）') "$opts"
   Check 'G and which one is a smart fence' ($opts -match '最近文件（智能栅栏）') "$opts"
   Check 'G a plain fence has its name only' ($opts -match '(^| \| )普通栅栏( \| |$)') "$opts"
