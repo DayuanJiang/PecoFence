@@ -1542,7 +1542,14 @@ impl App {
         } else {
             (win.left - gap - w, win.top)
         };
-        let fences: Vec<RECT> = self.fences.values().map(|f| f.footprint_rect()).collect();
+        // 「桌面」 arranged like the desktop is no obstacle (see `overlaps_fence`): its window
+        // spans its icons, often the whole screen, and every spot counted as on a fence.
+        let fences: Vec<RECT> = self
+            .fences
+            .values()
+            .filter(|f| !f.is_desktop_arranged())
+            .map(|f| f.footprint_rect())
+            .collect();
         // (on a fence, px the window covers, px from the wanted spot): the smallest wins.
         let mut best: Option<((bool, i64, i32), RECT)> = None;
         let (first_left, first_top) = (work.left + gap, work.top + gap);
