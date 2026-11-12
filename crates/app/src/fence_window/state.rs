@@ -532,6 +532,9 @@ pub struct FenceViewState {
     /// Auto-height settle (250 ms point-to-point): the bottom edge glides to the fitting
     /// height. Separate from `roll_anim` so it never blocks hover-peek or the chevron.
     pub(super) height_anim: Option<Tween>,
+    /// An icon size step is giving the fence another height: once the fence has it (`land`),
+    /// the selected item is brought back into view (`FenceWindow::keep_selection_in_view`).
+    pub(super) reveal_after_height: bool,
     /// Whole-window fade in progress and its generation (see `VisFade`).
     pub(super) vis_fade: Option<VisFade>,
     pub(super) vis_gen: usize,
@@ -751,22 +754,8 @@ impl FenceViewState {
         // The view or the cell size changed under a selection (not a tab switch, which brings
         // its own offset): the focused file, else the first selected one, stays on screen, as
         // in Explorer. A view change started at the top and left it out of sight.
-        if restore.is_none()
-            && let Some(i) = self
-                .anchor_index
-                .filter(|i| self.selected.contains(i))
-                .or_else(|| self.selected.iter().min().copied())
-                .filter(|i| *i < self.items.len())
-        {
-            let before = self.scroll_y;
-            self.scroll_into_view(i, false);
-            tracing::debug!(
-                fence = %self.fence_id,
-                item = i,
-                from = before,
-                to = self.scroll_y,
-                "view changed: the selected item is kept in view"
-            );
+        if restore.is_none() {
+            self.reveal_selection();
         }
         if cross_fade {
             // After `take_grid`: the swap draws the new panel once, in the new view.
@@ -777,6 +766,29 @@ impl FenceViewState {
         // goes to it at once; it stayed on the old icon until the fence had its new height.
         self.request_hover_refresh();
         true
+    }
+
+    /// Scrolls the focused item, else the first selected one, into view for the geometry the
+    /// fence has now. Returns whether the offset changed.
+    pub(super) fn reveal_selection(&mut self) -> bool {
+        let Some(i) = self
+            .anchor_index
+            .filter(|i| self.selected.contains(i))
+            .or_else(|| self.selected.iter().min().copied())
+            .filter(|i| *i < self.items.len())
+        else {
+            return false;
+        };
+        let before = self.scroll_y;
+        self.scroll_into_view(i, false);
+        tracing::debug!(
+            fence = %self.fence_id,
+            item = i,
+            from = before,
+            to = self.scroll_y,
+            "view changed: the selected item is kept in view"
+        );
+        self.scroll_y != before
     }
 
     /// Ends the layout motion at once: the geometry it was computed for (cell size, layout,

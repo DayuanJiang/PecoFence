@@ -319,6 +319,7 @@ impl FenceWindow {
             roll_anim: None,
             roll_t: Tween::at(rolled_up as u8 as f32, Instant::now()),
             height_anim: None,
+            reveal_after_height: false,
             vis_fade: None,
             vis_gen: 0,
             vis_deadline: None,
@@ -1967,6 +1968,20 @@ impl FenceWindow {
         if changed {
             self.arrange_desktop(false);
         }
+    }
+
+    /// After an icon size step gave the fence another height: the focused item, else the first
+    /// selected one, is in view at that height too. `set_grid` chose the place for the height
+    /// the fence still had; one that got shorter left the item below its lower edge. A height
+    /// that is still gliding gets it when it lands.
+    pub fn keep_selection_in_view(&self) {
+        self.with_view(|v| {
+            if v.height_animating() {
+                v.reveal_after_height = true;
+            } else if !v.rolled_up && v.reveal_selection() {
+                let _ = v.redraw_content();
+            }
+        });
     }
 
     /// Tab switch, after `set_tabs` and before the incoming tab's items arrive: takes that

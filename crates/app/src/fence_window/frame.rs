@@ -294,7 +294,14 @@ impl FrameHandle {
             // animation, in the pass that redraws everything anyway).
             v.update_backdrop();
             let (w, h) = window::window_rect_size(hwnd);
-            if let Err(e) = v.layout_panels(w, h).and_then(|_| v.redraw()) {
+            if let Err(e) = v.layout_panels(w, h).and_then(|_| {
+                // An icon size step made the fence shorter after its place was chosen: the
+                // selected icon was left below the new lower edge.
+                if std::mem::take(&mut v.reveal_after_height) && !v.rolled_up {
+                    v.reveal_selection();
+                }
+                v.redraw()
+            }) {
                 tracing::error!(error = %e, "redraw after height animation failed");
             }
             v.update_shadow_now();

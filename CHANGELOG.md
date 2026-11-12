@@ -302,6 +302,7 @@
 - A tab whose name gets longer no longer has the next tab's name lying over its end. After a rename, or when a folder tab went into a folder with a longer name, the tab was drawn at its new width at once while the tabs after it slid to their new places over 167 ms, across the end of the new name. When a tab gets wider the strip now stands at its new places at once; tabs that only get narrower still slide together.
 - Peek search: a tab that gets its number of matches no longer has the next tab lying over it. The tab was drawn wider at once while the tabs after it slid to their new places over 167 ms, so for the first frames the next tab's folder mark and name lay across the number. The strip now stands at its new places at once when a tab gets wider, as after a rename; tabs that only get narrower still slide.
 - A fence in 详细信息 dragged wider gets its columns in one order: 大小, then 修改日期, then 类型. Between 328 and 355 px of width it showed 名称, 类型, 大小; a few pixels wider 修改日期 took the place of 类型, and wider again 类型 came back beside it. 类型 now waits until 修改日期 has room (when 修改日期 is hidden in the header's menu, 类型 shows as before).
+- Ctrl+wheel larger and back leaves the selected icon in view. Each step kept the selected icon in view for the height the fence had at that moment, and then the fence got its new height: one that got shorter (a step smaller, or the step back to the size it started from) left the selected icon below its lower edge. The icon is now brought into view again once the fence has its height.
 
 ## 0.3.3
 

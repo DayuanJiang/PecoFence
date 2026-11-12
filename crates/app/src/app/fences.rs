@@ -961,6 +961,12 @@ impl App {
             e.3 = applied;
         }
         self.apply_auto_height(fence);
+        // The grid chose the scroll place for the height the fence had; it has another now.
+        if let Some(w) = self.window_for(fence)
+            && w.active_fence() == fence
+        {
+            w.keep_selection_in_view();
+        }
         self.schedule_save();
     }
 
