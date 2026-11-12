@@ -283,6 +283,8 @@
   #desktopPreview.chameleon .file-icon { filter: saturate(.35); opacity: .65; }
 
   .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* Eleven swatches and the text share one line at the default window width. */
+  .card:has(> .swatches) > .l { flex-basis: 160px; }
   .swatch { width: 28px; height: 28px; min-width: 0; padding: 0; border-radius: 50%; position: relative; background: var(--swatch); border: 1px solid #00000026; }
   .swatch:hover { background: var(--swatch); filter: brightness(1.08); }
   .swatch.none { background: var(--control); border-color: var(--control-strong); }

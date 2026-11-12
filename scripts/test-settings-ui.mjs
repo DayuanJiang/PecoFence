@@ -2652,6 +2652,30 @@ async function runTests() {
     assert(stops() === 'general', 'A click did not move the Tab stop: ' + stops());
   });
 
+  await test('栅栏: the swatches of 色调 and 标签页颜色 stay beside their text at the default window width', async () => {
+    doc = await reset();
+    frame.style.width = '944px';
+    try {
+      win().testState.tintPalette = ['红', '橙', '黄', '绿', '青', '蓝', '紫', '粉', '灰'].map((name, i) => ({ name, hex: ['E74856', 'F7630C', 'FCE100', '10893E', '00B7C3', '0078D4', '8764B8', 'E3008C', '7A7574'][i] }));
+      win().testRefresh(); await settle();
+      doc.querySelector('[data-page=fences]').click();
+      for (const language of ['zh-CN', 'en', 'de', 'ru', 'ja']) {
+        change(doc, 'language', language); await settle();
+        for (const fence of ['fence-a', 'fence-b']) {
+          change(doc, 'fenceSel', fence); await settle();
+          for (const id of ['fenceTintSwatches', 'fenceTabColorSwatches']) {
+            const row = doc.getElementById(id), card = row.closest('.card');
+            if (!card.getClientRects().length) continue;
+            assert(row.children.length === 11, id + ' has ' + row.children.length + ' swatches');
+            const text = card.querySelector('.l').getBoundingClientRect(), box = row.getBoundingClientRect();
+            assert(box.height < 40 && box.top < text.bottom && box.left >= text.right, language + ' ' + id + ': the swatches wrap under the text');
+          }
+        }
+      }
+    } finally { frame.style.width = ''; }
+    doc = await reset();
+  });
+
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
   window.testResults = { passed, failed };
