@@ -46,6 +46,21 @@ fn units(s: &str) -> usize {
     s.encode_utf16().count()
 }
 
+/// Where the moving end of a selection goes when it has stopped inside a to-do's marker
+/// (`[ ] `, which is not shown): on to the start of the line's text when the selection grows
+/// forward, back to the start of the line when it grows backward. None when `active` is not
+/// inside a marker. (Places in UTF-16 units, line breaks are `\n`.)
+pub fn selection_end_out_of_marker(text: &str, anchor: usize, active: usize) -> Option<usize> {
+    let span = line_spans(text)
+        .into_iter()
+        .find(|s| active > s.start && active < s.start + s.prefix.min(s.len))?;
+    Some(if active > anchor {
+        span.start + span.prefix.min(span.len)
+    } else {
+        span.start
+    })
+}
+
 /// The spans of `text`'s lines (line breaks are `\n`).
 pub fn line_spans(text: &str) -> Vec<LineSpan> {
     let mut start = 0;
@@ -564,6 +579,25 @@ mod tests {
         history.record(&("axb".into(), 2, 2), "ab");
         history.record(&("ab".into(), 1, 1), "a");
         assert_eq!(history.depth(), (2, 0));
+    }
+
+    #[test]
+    fn a_selection_does_not_end_inside_a_to_dos_marker() {
+        // 「abc」 and a to-do 「milk」: the caret after 「abc」, Shift+Right twice. The second
+        // press put the end one place into the unseen 「[ ] 」: nothing changed on screen for
+        // three more presses, and a letter typed then left 「abcx ] milk」.
+        let text = "abc\n[ ] milk";
+        // After the line break (the line's start): a place that shows, left alone.
+        assert_eq!(selection_end_out_of_marker(text, 3, 4), None);
+        // Inside the marker going forward: on to the text of the to-do.
+        assert_eq!(selection_end_out_of_marker(text, 3, 5), Some(8));
+        assert_eq!(selection_end_out_of_marker(text, 3, 7), Some(8));
+        assert_eq!(selection_end_out_of_marker(text, 3, 8), None);
+        // Going backward from inside the to-do's text: back to the start of the line.
+        assert_eq!(selection_end_out_of_marker(text, 10, 7), Some(4));
+        assert_eq!(selection_end_out_of_marker(text, 10, 4), None);
+        // A plain line has no marker.
+        assert_eq!(selection_end_out_of_marker(text, 0, 2), None);
     }
 
     #[test]

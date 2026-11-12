@@ -304,6 +304,23 @@ fn tell_fence() {
         handle.select(to, to);
         return;
     }
+    // The moving end of a selection inside a to-do's marker (Shift+Right from the line
+    // before, Shift+Left from the to-do's text): it goes on to where the next place that
+    // shows is, so that every press changes what is seen and typing takes the whole marker.
+    if first != last {
+        let anchor = ACTIVE.with(|a| a.borrow().as_ref().map(|s| s.anchor.get()));
+        if let Some(anchor) = anchor.filter(|a| *a == first || *a == last) {
+            let active = if anchor == first { last } else { first };
+            if let Some(to) = note::selection_end_out_of_marker(&text, anchor, active) {
+                tracing::debug!(%fence, anchor, active, to, "note editor: the selection's end leaves a to-do's marker");
+                handle.select(
+                    note::lf_to_crlf_offset(&units, anchor),
+                    note::lf_to_crlf_offset(&units, to),
+                );
+                return;
+            }
+        }
+    }
     ACTIVE.with(|a| {
         let a = a.borrow();
         let Some(s) = a.as_ref() else {
