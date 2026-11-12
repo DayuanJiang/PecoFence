@@ -648,10 +648,12 @@ function PartB() {
 
 # The folder's tab shown anew: its items are a new list, no name below the first screen fitted.
 function BgFresh($iSmall, $iBig) {
+  # From the top: a tab comes back where it was scrolled to.
+  BgFocus; [G]::Press(0x24); Start-Sleep -Milliseconds 550
   BgOverTab $iSmall; BgPress; Start-Sleep -Milliseconds 350
   BgOverTab $iBig; BgPress; Start-Sleep -Milliseconds 300
 }
-function BgFocus() { [G]::Click($BgX + 40, $BgY + 36 + 40) }
+function BgFocus() { [G]::Click($BgX + 40, $BgY + 36 + 40); Start-Sleep -Milliseconds 60 }
 
 function PartS() {
   trap { PfTrap $_; continue }
@@ -711,7 +713,7 @@ function PartS() {
   BgFresh $iSmall $iBig
   ParkMouse
   $pos = BgLogLen
-  Start-Sleep -Seconds 20
+  Start-Sleep -Seconds 14
   $pieces = [regex]::Matches((BgLogFrom $pos), '(?m)^(\S+Z)\s[^\n]*names fitted ahead while the fence rests[^\n]* fitted=(\d+) left=(\w+) ms=([\d.]+)')
   $fitted = 0; $work = 0.0; $longest = 0.0; $lastAt = 0.0; $firstAt = 0.0
   foreach ($x in $pieces) {
@@ -734,7 +736,7 @@ function PartS() {
   Log "BIGREST $row"
   "REST`t$row" | Add-Content "$PfRun\big.tsv" -Encoding UTF8
   if ($Ahead -ne '0') {
-    Check 'S the names of the whole folder are fitted ahead within 20 s of rest, in pieces of 4 ms at most, and then nothing runs' ($done -and $longest -le 4.0 -and $late -eq 0) $row
+    Check 'S the names of the whole folder are fitted ahead within 14 s of rest, in pieces of 4 ms at most, and then nothing runs' ($done -and $longest -le 4.0 -and $late -eq 0) $row
   }
   PfQuit
   [Anim]::Set($animWas)
