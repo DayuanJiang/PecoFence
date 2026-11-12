@@ -97,7 +97,11 @@ example) is drawn in a fallback font.
 ### Colours
 
 `accent` replaces the Windows accent colour: selected items, the drop highlight and the tab
-marker take it, with the opacity they normally have. The other keys set one colour each.
+marker take it, with the opacity they normally have. Where the wallpaper makes a fence's text
+change to the other colour mode's (dark mode over a bright wallpaper, light mode over a dark
+one), the tab marker, a ticked check box, a smart fence's magnifier and a link take a darker
+or lighter shade of the accent, so that they read beside that text. The other keys set one
+colour each.
 
 | Key | Where it shows |
 |---|---|

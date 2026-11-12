@@ -9,6 +9,8 @@
 #      设置… bring it to the front
 #   T  (a debug build) the tips of the settings page's icon buttons follow the app's colour
 #      mode, whatever Windows' own mode is
+#   A  (--extra ui/themes) the accent of a theme file reaches the bar under the shown tab, a
+#      ticked check box and a link also where the text took the other colour mode's ink
 # Runs on a 1600x900 box at 100 %.
 if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'KMW' }
 trap { PfTrap $_; continue }
@@ -369,8 +371,71 @@ function OoTips() {
 }
 if ($Part -match 'T') { OoTips }
 
+# ---- A: a theme file's accent beside text of the other colour mode
+function OoWall($r, $g, $b) {
+  $bm = New-Object Drawing.Bitmap 32, 32; $gr = [Drawing.Graphics]::FromImage($bm); $gr.Clear([Drawing.Color]::FromArgb($r, $g, $b)); $gr.Dispose()
+  $p = "$PfRun\wall-$r.bmp"; $bm.Save($p, [Drawing.Imaging.ImageFormat]::Bmp); $bm.Dispose()
+  [G]::SystemParametersInfoW(0x14, 0, $p, 3) | Out-Null
+}
+# The most saturated pixel of the title row of fence $title: the bar under the shown tab.
+function OoMark($title) {
+  $w = DumpOf $title 4
+  $b = [Px]::Grab($w.l + 4, $w.t + 2, 180, 34); $best = $null; $sat = -1
+  foreach ($y in 0..33) {
+    foreach ($x in 0..179) {
+      $c = $b.GetPixel($x, $y); $s = [Math]::Max($c.R, [Math]::Max($c.G, $c.B)) - [Math]::Min($c.R, [Math]::Min($c.G, $c.B))
+      if ($s -gt $sat) { $sat = $s; $best = $c }
+    }
+  }
+  $b.Dispose(); return $best
+}
+function OoAccent() {
+  trap { PfTrap $_; continue }
+  Case 'A setup'
+  $script:OoWallWas = (Get-ItemProperty 'HKCU:\Control Panel\Desktop').WallPaper
+  foreach ($n in $OoDocs) { DeskFile $n | Out-Null }
+  PfStart -Lang zh-CN -Script (DumpScript 500 8 3000)
+  Start-Sleep -Seconds 4
+  CloseNotice | Out-Null
+  ClearFences | Out-Null
+  Pf settings set featureTips false | Out-Null
+  Pf settings set tools.enabled true | Out-Null
+  New-Item -ItemType Directory -Force "$PfApp\config\themes" | Out-Null
+  Set-Content -LiteralPath "$PfApp\config\themes\oo-orange.json" -Value '{ "base": "fluent", "accent": "#E8710A" }' -Encoding ASCII
+  if ($PfExtra -and (Test-Path "$PfExtra\warm.json")) { Copy-Item "$PfExtra\warm.json" "$PfApp\config\themes\warm.json" -Force }
+  Pf fence create --title '文档' --rect '200,120,340,240' | Out-Null
+  Pf item move --glob '*.pdf' --to '文档' | Out-Null
+  Pf fence create --title '文字' --rect '200,420,340,200' | Out-Null
+  Pf item move --glob '*.txt' --to '文字' | Out-Null
+  Pf fence merge '文字' --into '文档' | Out-Null
+  Pf fence create --tool note --title '便签' --text "https://example.com/docs 文档`n[x] 续费域名`n[ ] 给安娜打电话" --rect '600,120,320,200' | Out-Null
+  Start-Sleep -Seconds 2
+  ParkMouse 1300 800
+
+  # The bar under the shown tab, a ticked check box and a link take the theme file's accent
+  # in the shade for the text (they took Windows' own accent, blue, where the text had
+  # changed to the other colour mode's because of the wallpaper).
+  foreach ($c in @(@('dark', 236, 239, 243, 'oo-orange'), @('light', 28, 32, 44, 'oo-orange'), @('dark', 236, 239, 243, 'warm'))) {
+    Case "A accent of the theme file $($c[4]): $($c[0]) mode, wallpaper $($c[1]),$($c[2]),$($c[3])"
+    OoWall $c[1] $c[2] $c[3]
+    Pf settings set theme $c[0] | Out-Null
+    Pf settings set customTheme $c[4] --string | Out-Null
+    # PecoFence looks at the wallpaper every 5 seconds.
+    Start-Sleep -Seconds 8
+    ParkMouse 1300 800
+    $m = OoMark '文档'
+    Crop "a-$($c[4])-$($c[0])" 190 110 740 260 | Out-Null
+    Check "A the bar under the shown tab has the theme's hue ($($c[4]), $($c[0]) mode)" ($m.R -gt $m.B + 30) "mark $($m.R),$($m.G),$($m.B)"
+  }
+  Pf settings set customTheme null | Out-Null
+  PfQuit
+}
+if ($Part -match 'A') { OoAccent }
+
 Case 'cleanup'
 if (PfAlive) { PfQuit }
+# The wallpaper the box had.
+if ($null -ne $script:OoWallWas) { [G]::SystemParametersInfoW(0x14, 0, $script:OoWallWas, 3) | Out-Null }
 if ($script:OoTouched) { OoWinMode $script:OoWas }
 Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
 [G]::KeyUp(0x11); [G]::KeyUp(0x12)

@@ -244,7 +244,7 @@ impl Values {
             theme.shadow.offset = Some(v.clamp(0.0, 16.0));
         }
         if let Some(c) = self.accent {
-            theme = theme.with_accent(rgb8(c));
+            theme = theme.with_file_accent(rgb8(c));
         }
         if let Some(c) = self.title_color {
             theme.title_text = Some(c);

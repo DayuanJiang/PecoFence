@@ -1013,6 +1013,37 @@ impl Theme {
         self
     }
 
+    /// A theme file's accent. The selection and the marks take it as it is; beside text of
+    /// the other colour mode (dark mode over a bright wallpaper, light mode over a dark one)
+    /// the marks take its shade for that text ([`Self::accent_beside_text`]), not Windows'
+    /// own accent: the same hue, as dark as the light mode's default accent beside dark text,
+    /// as light as the dark mode's beside light text. An accent that is already darker or
+    /// lighter than that stays as it is.
+    pub fn with_file_accent(self, rgb: [u8; 3]) -> Self {
+        let lighter = self.mode == ThemeMode::Light;
+        let like = if lighter {
+            Self::dark().accent
+        } else {
+            Self::light().accent
+        };
+        let lightness = |c: [f32; 3]| (c[0].max(c[1]).max(c[2]) + c[0].min(c[1]).min(c[2])) / 2.0;
+        let c = rgb.map(|v| v as f32 / 255.0);
+        let (from, to) = (lightness(c), lightness([like.r, like.g, like.b]));
+        let shade = |v: f32| {
+            if lighter && from < to {
+                // Towards white.
+                1.0 - (1.0 - v) * (1.0 - to) / (1.0 - from)
+            } else if !lighter && from > to {
+                // Towards black.
+                v * to / from
+            } else {
+                v
+            }
+        };
+        let other = c.map(|v| (shade(v).clamp(0.0, 1.0) * 255.0).round() as u8);
+        self.with_accent(rgb).with_other_accent(other)
+    }
+
     /// The accent as 8-bit RGB (tray icon, settings page).
     pub fn accent_rgb8(&self) -> [u8; 3] {
         let c = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
@@ -1389,6 +1420,37 @@ mod tests {
         let bright = [bright.r, bright.g, bright.b];
         assert!(contrast_over(dark.accent, bright) < 2.0);
         assert!(contrast_over(on_bright.accent_beside_text(), bright) > 3.0);
+        // A theme file's accent reaches these marks beside the other mode's text too, in the
+        // shade for that text: orange stays orange and reads on the bright plate (Windows'
+        // blue stood there), and the same the other way round.
+        let file =
+            crate::CustomTheme::parse(r##"{ "base": "fluent", "accent": "#E8710A" }"##).unwrap();
+        let themed = file.apply(
+            dark.with_accent([0x60, 0xCD, 0xFF])
+                .with_other_accent([0, 0x5F, 0xB8]),
+        );
+        assert_eq!(themed.accent_rgb8(), [0xE8, 0x71, 0x0A]);
+        let mark = themed
+            .over_acrylic(&crop_of(&themed, [236, 239, 243]), 1.0, None, None)
+            .accent_beside_text();
+        assert!(
+            mark.r > mark.b + 0.4 && mark.r < 0.8,
+            "a dark orange: {mark:?}"
+        );
+        assert!(contrast_over(mark, bright) > 3.0);
+        let own = themed.over_acrylic(&crop_of(&themed, [20, 20, 24]), 1.0, None, None);
+        assert_eq!(own.accent_beside_text(), themed.accent);
+        let themed = file.apply(Theme::light().with_other_accent([0x60, 0xCD, 0xFF]));
+        let on_night = themed.over_acrylic(&crop_of(&themed, [19, 20, 25]), 1.0, None, None);
+        assert!(
+            on_night.text_primary.r > 0.5,
+            "light text on the dark plate"
+        );
+        let mark = on_night.accent_beside_text();
+        assert!(
+            mark.r > mark.b + 0.3 && mark.g > 0.6,
+            "a light orange: {mark:?}"
+        );
         // A theme file's secondary text in a colour of its own moves towards its primary
         // text: an opaque brown on a plate of middle brightness stayed at 2.1 : 1.
         let brown = ColorF::from_rgba8(0x6B, 0x4A, 0x2E, 0xFF);
