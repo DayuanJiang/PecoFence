@@ -74,9 +74,9 @@
   button, a, select, input, .tile, summary { transition: background-color var(--faster) linear, border-color var(--faster) linear, color var(--faster) linear; }
   /* The window is on screen before the page is: the host shows its frame at once, in the
      page's background colour, and brings the browser in when the page says `drawn`. Until
-     that frame the page shows nothing but its background, so that what comes in starts its
-     entrance (page-in, se-in) then and not while the page loads. Invisible, not hidden: the
-     editor's name box takes the keyboard meanwhile. */
+     the frame before that report the page shows nothing but its background, so that what
+     comes in starts its entrance (page-in, se-in) then and not while the page loads.
+     Invisible, not hidden: the editor's name box takes the keyboard meanwhile. */
   :root:not(.shown) body > * { opacity: 0; }
   /* The host state lands after the first style pass; switches must not slide into it. */
   :root:not(.ready) *, :root:not(.ready) *::before, :root:not(.ready) *::after { transition: none !important; }
@@ -3414,16 +3414,17 @@
   });
 
   // Transitions come on a frame after a state has been drawn: a single frame would style both
-  // changes together and start them after all. Three frames after the first state the page
-  // shows itself (`shown`) and tells the host, which brings the browser into the window's
-  // frame on this `drawn`. The wait is for what the host sends right after the state (the
-  // page to show, the fence, the editor's fence): reported with the first frame, the page
-  // could come in on 常规 and change to the page it was asked for a moment later.
+  // changes together and start them after all. In that frame the page also shows itself
+  // (`shown`), and one frame later it tells the host, which brings the browser into the
+  // window's frame on this `drawn`: what comes in has been drawn once, whole, at the start of
+  // its entrance. The wait is for what the host sends right after the state (the page to
+  // show, the fence, the editor's fence): reported with the first frame, the page could come
+  // in on 常规 and change to the page it was asked for a moment later.
   let drawnSent = false;
   function drawnSoon() {
     requestAnimationFrame(() => requestAnimationFrame(() => {
-      document.documentElement.classList.add('ready');
-      if (!drawnSent) { drawnSent = true; requestAnimationFrame(() => { document.documentElement.classList.add('shown'); send({ type: 'drawn' }); }); }
+      document.documentElement.classList.add('ready', 'shown');
+      if (!drawnSent) { drawnSent = true; requestAnimationFrame(() => send({ type: 'drawn' })); }
     }));
   }
 
@@ -3488,7 +3489,12 @@
     else if (m.type === 'showPage') {
       showPage(m.page);
       if (m.focus) document.getElementById(m.focus)?.scrollIntoView({ block: 'center' });
-      else if (m.scroll) document.querySelector('main').scrollTop = m.scroll;
+      else if (m.scroll) {
+        // (The host logs what the page had room for: a place that is not reached shows there.)
+        const main = document.querySelector('main');
+        main.scrollTop = m.scroll;
+        send({ type: 'restored', wanted: m.scroll, top: main.scrollTop, scrollHeight: main.scrollHeight, height: main.clientHeight, width: main.clientWidth });
+      }
     }
     else if (m.type === 'feedbackInfo') {
       fbInfo = m; fbCrash ||= !!m.crashed; renderFeedback();

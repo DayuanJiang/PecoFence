@@ -914,6 +914,18 @@ impl App {
                     h.theme_drawn();
                 }
             }
+            // The page has scrolled to where this run's last window was closed.
+            Some("restored") => {
+                let n = |key: &str| v.get(key).and_then(|x| x.as_f64()).unwrap_or(-1.0);
+                tracing::debug!(
+                    wanted = n("wanted"),
+                    now = n("top"),
+                    scroll_height = n("scrollHeight"),
+                    view_height = n("height"),
+                    view_width = n("width"),
+                    "settings: page scrolled to where it was closed"
+                );
+            }
             // The page shown and how far it is scrolled, kept for the next open in this run.
             Some("view") => {
                 if let Some(page) = v.get("page").and_then(|p| p.as_str()) {

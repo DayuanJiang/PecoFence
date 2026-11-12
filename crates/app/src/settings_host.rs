@@ -214,7 +214,9 @@ impl SettingsHost {
                             let h = msg::hi_i16(lparam);
                             let s = state.borrow();
                             if let Some(c) = s.controller.as_ref() {
-                                let _ = c.set_bounds(if s.parked { w } else { 0 }, 0, w, h);
+                                // (left, top, right, bottom)
+                                let left = if s.parked { w } else { 0 };
+                                let _ = c.set_bounds(left, 0, left + w, h);
                                 let _ = c.set_visible(w > 0 && h > 0);
                             }
                             Some(0)
@@ -421,8 +423,12 @@ impl SettingsHost {
         // Beside the client area until the page has drawn (`reveal`): the browser's window is
         // black until its first frame, and the page as it loads has built-in values, and its
         // dark colours in light mode for a frame. The host's own background shows meanwhile.
+        // It has the client area's size there (`set_bounds` takes left, top, right, bottom): the
+        // page is laid out and drawn as it will be seen. With no width, as it first stood
+        // there, the page was laid out again when it came in: the place it had scrolled to
+        // was lost (207 px became 106) and its first frame could lack the navigation's last row.
         let (cw, ch) = self.window.client_size();
-        controller.set_bounds(cw, 0, cw, ch)?;
+        controller.set_bounds(cw, 0, 2 * cw, ch)?;
         // Transparent page over DWM Mica; opaque theme colour when Mica is unavailable.
         controller.set_default_background_color(page_background(mode, mica))?;
         if let Ok(settings) = webview.settings() {
