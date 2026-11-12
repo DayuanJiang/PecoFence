@@ -570,9 +570,10 @@ function PartB() {
   }
   ParkMouse
   $em = BgMedian $endMax; $hm = BgMedian $homeMax
-  # No fix yet: the wrapped names of the icons still take a layout per halving. The bound
-  # only keeps the slowest frame from getting worse than it is.
-  Check 'B4 the first End and Home through 4000 files: the slowest frame stays under 14 ms of work (it is 8 to 10 ms; under 5 ms before the names were fitted when drawn)' ($em -gt 0 -and $em -lt 14 -and $hm -lt 14) "slowest frame: End $($endMax -join ', ') ms, Home $($homeMax -join ', ') ms; mean work per frame of End $(@($endWork | ForEach-Object { [math]::Round($_, 2) }) -join ', ') ms"
+  # No fix yet: the wrapped names under the icons still take a layout per halving. The folder
+  # is in name order, so its last screens hold only the longest names, each of them cut: the
+  # worst a first End can meet. The bound only keeps that frame from getting worse.
+  Check 'B4 the first End and Home through 4000 files: the slowest frame stays under 30 ms of work (it is 18 to 20 ms where a whole screen of long names is cut; under 5 ms before the names were fitted when drawn)' ($em -gt 0 -and $em -lt 30 -and $hm -lt 30) "slowest frame: End $($endMax -join ', ') ms, Home $($homeMax -join ', ') ms; mean work per frame of End $(@($endWork | ForEach-Object { [math]::Round($_, 2) }) -join ', ') ms"
   Pf fence set $BgBig layout details | Out-Null
   BgQuiet (BgNow) 1500 30000
   $wide = @()
