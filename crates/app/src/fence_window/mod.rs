@@ -431,6 +431,10 @@ pub enum BackdropMode {
 #[derive(Default)]
 pub struct BackdropSets {
     pub acrylic: Rc<Vec<MonitorBackdrop>>,
+    /// The monitors (virtual-screen pixels) whose live wallpaper cannot be read: their
+    /// backdrop is a plain pane colour, and Liquid Glass lets the wallpaper itself show
+    /// through it (`FenceViewState::material_opacity`).
+    pub unreadable: Vec<RECT>,
 }
 
 impl BackdropSets {

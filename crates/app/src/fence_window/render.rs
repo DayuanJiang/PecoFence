@@ -218,6 +218,15 @@ pub(super) fn band_indices(
     a.chain(b.filter(move |i| !first.contains(i)))
 }
 
+/// How opaque the Liquid Glass pane is over a live wallpaper that cannot be read, for a fence
+/// opacity of at most 1 (更厚实 stays opaque): 0.78 at 默认, 0.65 at 更透明 and below. The pane
+/// colour is near white in light mode and a dark slate in dark mode
+/// (`MonitorRecipe::show_neutral`), so the names keep 4.5 to 1 against it over any wallpaper,
+/// a black one under the light pane and a white one under the dark pane included.
+fn unreadable_pane_alpha(opacity: f32) -> f32 {
+    (0.5 + 0.28 * opacity).clamp(0.65, 0.78)
+}
+
 impl FenceViewState {
     /// Opacity multiplier the plate is drawn with. A fully transparent fence draws the
     /// default plate while it shows it (its alpha comes from `plate_reveal`).
@@ -225,9 +234,29 @@ impl FenceViewState {
         let opacity = if self.is_clear() { 1.0 } else { self.opacity };
         if self.behavior.floating.get() && self.theme.liquid_glass {
             opacity.max(1.0)
+        } else if opacity <= 1.0 && self.over_unreadable_wallpaper() {
+            unreadable_pane_alpha(opacity)
         } else {
             opacity
         }
+    }
+
+    /// Liquid Glass on a monitor whose live wallpaper cannot be read
+    /// (`BackdropSets::unreadable`, by the fence's centre): there is no picture to refract, so
+    /// the plate is a see-through pane over the wallpaper itself.
+    pub(super) fn over_unreadable_wallpaper(&self) -> bool {
+        let unreadable = &self.backdrops.unreadable;
+        if !self.theme.liquid_glass || unreadable.is_empty() {
+            return false;
+        }
+        let (x, y, w, h) = self.backdrop_rect.unwrap_or_else(|| {
+            let r = window::window_rect(self.hwnd);
+            (r.left, r.top, r.right - r.left, r.bottom - r.top)
+        });
+        let (cx, cy) = (x + w / 2, y + h / 2);
+        unreadable
+            .iter()
+            .any(|m| cx >= m.left && cx < m.right && cy >= m.top && cy < m.bottom)
     }
 
     /// Drops the text colour choices kept for this plate (`material_foreground` keeps the last
@@ -2432,4 +2461,41 @@ pub(super) fn group_header_draws(
             text: bucket_caption(h.bucket),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod unreadable_pane_tests {
+    use super::unreadable_pane_alpha;
+    use pecofence_render::{Theme, ThemeMode};
+
+    fn luminance(rgb: [f32; 3]) -> f32 {
+        let linear = |c: f32| {
+            if c <= 0.03928 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
+    }
+
+    /// The pane lets the wallpaper through and nobody knows what that wallpaper shows: the
+    /// names still read (4.5 to 1) over the worst one, black under the light pane with its
+    /// dark names and white under the dark pane with its light names, at every opacity.
+    #[test]
+    fn names_read_on_the_pane_over_any_wallpaper() {
+        assert_eq!(unreadable_pane_alpha(1.0), 0.78);
+        assert!((unreadable_pane_alpha(0.55) - 0.654).abs() < 0.001);
+        for (mode, behind) in [(ThemeMode::Light, 0.0), (ThemeMode::Dark, 1.0)] {
+            let theme = Theme::for_mode(mode).with_liquid_glass();
+            let (pane, ink) = (theme.solid_fill, theme.text_primary);
+            for opacity in [0.1, 0.55, 0.8, 1.0] {
+                let alpha = unreadable_pane_alpha(opacity);
+                let shown = [pane.r, pane.g, pane.b].map(|c| alpha * c + (1.0 - alpha) * behind);
+                let (x, y) = (luminance(shown), luminance([ink.r, ink.g, ink.b]));
+                let contrast = (x.max(y) + 0.05) / (x.min(y) + 0.05);
+                assert!(contrast >= 4.5, "{mode:?} at {opacity}: {contrast:.2} to 1");
+            }
+        }
+    }
 }

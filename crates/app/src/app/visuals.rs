@@ -227,10 +227,17 @@ impl MonitorRecipe {
     }
 
     /// Shows a neutral colour instead of the picture: the live wallpaper over it cannot be
-    /// captured, and the Windows wallpaper under it is not what the monitor shows.
-    pub(super) fn show_neutral(&mut self, dark: bool) {
+    /// captured, and the Windows wallpaper under it is not what the monitor shows. Liquid
+    /// Glass draws it as a see-through pane (`unreadable_monitors`) and gives its `pane`
+    /// colour: the theme's solid fill, a milky white in light mode and a dark slate in dark
+    /// mode.
+    pub(super) fn show_neutral(&mut self, dark: bool, pane: Option<pecofence_render::ColorF>) {
         self.path = None;
-        self.background = if dark { [40, 40, 44] } else { [212, 214, 218] };
+        self.background = match pane {
+            Some(c) => [c.r, c.g, c.b].map(|v| (v * 255.0).round() as u8),
+            None if dark => [40, 40, 44],
+            None => [212, 214, 218],
+        };
     }
 
     pub(super) fn rect(&self) -> RECT {
@@ -453,12 +460,24 @@ pub(super) fn monitor_recipes(
             if let Some(image) = l.image.clone() {
                 recipe.show_live(image);
             } else if l.blind {
-                recipe.show_neutral(theme.mode == ThemeMode::Dark);
+                recipe.show_neutral(
+                    theme.mode == ThemeMode::Dark,
+                    theme.liquid_glass.then_some(theme.solid_fill),
+                );
             }
         }
         out.push(recipe);
     }
     out
+}
+
+/// The monitors whose live wallpaper cannot be read: Liquid Glass fences there are drawn as
+/// see-through panes (`BackdropSets::unreadable`).
+pub(super) fn unreadable_monitors(live: &[LiveWallpaper]) -> Vec<RECT> {
+    live.iter()
+        .filter(|l| l.blind && l.image.is_none())
+        .map(|l| l.monitor)
+        .collect()
 }
 
 /// `snapshot`'s signature, plus the monitors whose backdrop shows a live wallpaper's capture
@@ -526,8 +545,17 @@ fn build_snapshot_backdrops(
         // under the old metadata, or a later desktop round trip could resurrect it.
         return Err(pending());
     }
+    let unreadable = unreadable_monitors(live);
+    if !unreadable.is_empty() {
+        tracing::debug!(
+            monitors = unreadable.len(),
+            liquid_glass = theme.liquid_glass,
+            "backdrops: live wallpaper not readable; Liquid Glass panes there are see-through"
+        );
+    }
     Ok(Rc::new(BackdropSets {
         acrylic: Rc::new(backdrops),
+        unreadable,
     }))
 }
 
@@ -714,6 +742,7 @@ impl StartupBackdrops {
         Ok((
             Rc::new(BackdropSets {
                 acrylic: Rc::new(backdrops),
+                ..Default::default()
             }),
             snapshot,
             signature,
@@ -1152,6 +1181,7 @@ impl App {
         );
         let backdrops = Rc::new(BackdropSets {
             acrylic: set.clone(),
+            ..Default::default()
         });
         if !self
             .wallpaper_cache

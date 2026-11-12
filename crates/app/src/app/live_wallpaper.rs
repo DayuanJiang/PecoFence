@@ -4,7 +4,7 @@
 //! is taken again for a new window, after a wallpaper signal, when the desktop comes to the
 //! front, and once a minute while a fence on that monitor can be seen.
 
-use super::visuals::{MonitorRecipe, backdrop_signature, monitor_recipes};
+use super::visuals::{MonitorRecipe, backdrop_signature, monitor_recipes, unreadable_monitors};
 use super::*;
 use crate::commands::WM_APP_LIVE_WALLPAPER;
 use pecofence_platform::live_wallpaper;
@@ -507,6 +507,7 @@ impl App {
             .collect();
         let backdrops = Rc::new(BackdropSets {
             acrylic: Rc::new(set),
+            unreadable: unreadable_monitors(&self.live),
         });
         self.wallpaper_sig = Some(backdrop_signature(&job.snapshot, &self.live));
         *self.ctx.backdrops.borrow_mut() = backdrops.clone();
