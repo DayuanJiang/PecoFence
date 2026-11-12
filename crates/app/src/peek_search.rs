@@ -8,7 +8,10 @@
 //! A right-click on a row highlights it and shows its actions at the pointer, as in Explorer;
 //! a right-click on the typed text gives the text box's own menu. The row or type tab under
 //! the pointer gets a hover fill (it fades in and out as a fence item's), a row also the hand:
-//! a click opens it as Enter does. The highlighted row stays where the keys put it.
+//! a click opens it as Enter does. The highlighted row stays where the keys put it. A
+//! whole-computer row whose folder is too long for the line keeps the drive and the last
+//! folders (the middle gives way to "…"); the pointer resting on such a row shows the full
+//! path in a tip, as Explorer's infotips.
 //!
 //! Windows 11's look: rounded corners (by Windows, where it rounds), group headings (栅栏里,
 //! 整台电脑, 操作), a glyph on the two action rows, the Ctrl+digit of the highlighted row only,
@@ -30,6 +33,7 @@ use pecofence_core::type_filter;
 use pecofence_platform::com::{StaGuard, StaSender, sta_channel};
 use pecofence_platform::fileinfo::{self, FileIcon};
 use pecofence_platform::paint::{self, Align, Font};
+use pecofence_platform::tooltip::Tooltip;
 use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, StandardCursor, Window, WindowBuilder, WindowClass, style,
 };
@@ -77,6 +81,8 @@ pub(crate) fn slow_limit() -> u128 {
 }
 /// Steps the hover fills' fades.
 const TIMER_HOVER: usize = 1;
+/// Shows the full path of the whole-computer row the pointer rests on.
+const TIMER_TIP: usize = 2;
 /// A hover fill fades in and out this long, as a fence item's (the motion tokens' fastest).
 const HOVER_FADE_MS: f32 = 83.0;
 const WA_INACTIVE: usize = 0;
@@ -344,6 +350,8 @@ struct Session {
     hover_level: f32,
     hover_out: Option<(Hover, f32)>,
     hover_tick: Instant,
+    /// The tip with a whole-computer row's full path (made when first needed).
+    tip: Option<Tooltip>,
 }
 
 impl Session {
@@ -413,6 +421,86 @@ impl Session {
     }
 }
 
+/// A whole-computer row: the line under its name is the file's folder.
+fn folder_detail(row: &Row) -> bool {
+    row.icon_path
+        .as_deref()
+        .and_then(Path::parent)
+        .is_some_and(|folder| folder.to_string_lossy() == row.detail)
+}
+
+/// A folder path wider than `room`: its middle gives way to "…", so the drive (or the server
+/// of a network path) and as many of the last folders as fit stay, the last one always (the
+/// end of the path is where results from one tree differ). `width` measures a text.
+fn fit_path(path: &str, room: i32, width: impl Fn(&str) -> i32) -> String {
+    if width(path) <= room {
+        return path.to_string();
+    }
+    let parts: Vec<&str> = path.split('\\').collect();
+    // "C:", or "\\server" (which splits into "", "", "server").
+    let head = if path.starts_with(r"\\") { 3 } else { 1 };
+    if parts.len() < head + 2 {
+        return path.to_string();
+    }
+    let shown = |last: usize| {
+        format!(
+            "{}\\…\\{}",
+            parts[..head].join("\\"),
+            parts[parts.len() - last..].join("\\")
+        )
+    };
+    let mut last = 1;
+    while head + last + 1 < parts.len() && width(&shown(last + 1)) <= room {
+        last += 1;
+    }
+    shown(last)
+}
+
+/// The pointer came to another row or left: the path tip goes, and a whole-computer row gets
+/// one after the time Explorer waits for its infotips.
+fn restart_tip(s: &mut Session, hwnd: HWND) {
+    if let Some(tip) = s.tip.as_mut() {
+        tip.hide();
+    }
+    window::kill_timer(hwnd, TIMER_TIP);
+    if let Some(Hover::Row(i)) = s.hover
+        && s.rows.get(i).is_some_and(folder_detail)
+    {
+        window::set_timer(hwnd, TIMER_TIP, Tooltip::hover_delay_ms());
+    }
+}
+
+/// `TIMER_TIP`: the pointer rested on a whole-computer row: its full path under the pointer.
+fn show_path_tip(hwnd: HWND) {
+    window::kill_timer(hwnd, TIMER_TIP);
+    ACTIVE.with(|a| {
+        let Ok(mut a) = a.try_borrow_mut() else {
+            return;
+        };
+        let Some(s) = a.as_mut() else { return };
+        let Some(Hover::Row(i)) = s.hover else { return };
+        let Some(path) = s
+            .rows
+            .get(i)
+            .filter(|r| folder_detail(r))
+            .and_then(|r| r.icon_path.clone())
+        else {
+            return;
+        };
+        if s.tip.is_none() {
+            s.tip = Tooltip::create(hwnd, s.dark)
+                .map_err(|e| tracing::warn!(error = %e, "search: no tip window for the path"))
+                .ok();
+        }
+        let pt = window::cursor_pos();
+        let below = s.px(22.0);
+        if let Some(tip) = s.tip.as_mut() {
+            tip.show(&path.to_string_lossy(), pt.x, pt.y + below);
+            tracing::debug!(row = i, "search: the row's full path is shown in a tip");
+        }
+    });
+}
+
 /// `back` with `over` laid on it at `level` (0.0 nothing of it, 1.0 all of it), per channel.
 fn mix(back: u32, over: u32, level: f32) -> u32 {
     let channel = |shift: u32| {
@@ -462,6 +550,7 @@ fn set_hover(hwnd: HWND, at: Option<(i32, i32)>) {
             s.hover_out = None;
             s.hover_level = 1.0;
         }
+        restart_tip(s, hwnd);
         tracing::debug!(over = ?target, left = ?left.map(|(t, _)| t), animate, "search: the pointer is over another row or tab");
     });
 }
@@ -568,6 +657,10 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
                     }
                     msg::WM_TIMER if wparam == TIMER_HOVER => {
                         step_hover(hwnd);
+                        Some(0)
+                    }
+                    msg::WM_TIMER if wparam == TIMER_TIP => {
+                        show_path_tip(hwnd);
                         Some(0)
                     }
                     // The hand over a result row, which a click opens (as over a script
@@ -711,6 +804,7 @@ pub fn open(text: &str, queue: CommandQueue, dark: bool) {
             hover_level: 0.0,
             hover_out: None,
             hover_tick: Instant::now(),
+            tip: None,
         })
     });
     window::show_normal(hwnd);
@@ -995,14 +1089,28 @@ fn paint_box(hwnd: HWND) {
                     Align::Left,
                 );
             }
+            // The line under the name runs to the right edge; only the highlighted row keeps
+            // room for its Ctrl+digit. A folder too long for it is cut in the middle.
+            let detail_right = if s.selected == Some(i) && row.shortcut.is_some() {
+                text_right
+            } else {
+                w - pad
+            };
+            let detail = if folder_detail(row) {
+                fit_path(&row.detail, detail_right - text_left, |t| {
+                    p.text_width(t, &s.detail_font)
+                })
+            } else {
+                row.detail.clone()
+            };
             p.text(
                 RECT {
                     left: text_left,
                     top: mid,
-                    right: text_right,
+                    right: detail_right,
                     bottom: bottom - px(4.0),
                 },
-                &row.detail,
+                &detail,
                 &s.detail_font,
                 s.dim_color,
                 Align::Left,
@@ -1315,6 +1423,8 @@ pub fn set_rows(rows: Vec<Row>, selected: Option<usize>, total: usize) {
             let pt = window::screen_to_client(s.window.hwnd(), window::cursor_pos());
             s.hover = s.target_at(pt.x, pt.y);
             s.hover_out = None;
+            let hwnd = s.window.hwnd();
+            restart_tip(s, hwnd);
         }
         tracing::debug!(
             rows = s.rows.len(),
@@ -1411,6 +1521,29 @@ pub fn close() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A long folder keeps its drive and its last folders; the middle goes. One character
+    /// counts as one unit of width here.
+    #[test]
+    fn a_long_folder_path_is_cut_in_the_middle() {
+        let chars = |t: &str| t.chars().count() as i32;
+        let path = r"C:\Users\pf\Documents\项目资料归档\2026 年度\第三季度\客户往来文件\最终版 A";
+        assert_eq!(fit_path(path, 80, chars), path);
+        assert_eq!(
+            fit_path(path, 30, chars),
+            r"C:\…\2026 年度\第三季度\客户往来文件\最终版 A"
+        );
+        assert_eq!(fit_path(path, 12, chars), r"C:\…\最终版 A");
+        // Never without the last folder, also when that alone is too long.
+        assert_eq!(fit_path(path, 5, chars), r"C:\…\最终版 A");
+        // A network path keeps its server.
+        assert_eq!(
+            fit_path(r"\\nas\share\年度归档\照片\旅行", 16, chars),
+            r"\\nas\…\照片\旅行"
+        );
+        // Nothing to leave out: as it is.
+        assert_eq!(fit_path(r"C:\最终确认版本", 4, chars), r"C:\最终确认版本");
+    }
 
     /// The bottom bar names the Enter key in letters, like the keys beside it.
     #[test]
