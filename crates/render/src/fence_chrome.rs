@@ -4941,7 +4941,8 @@ impl FenceChrome {
         Ok(ToolTextExtent {
             tops,
             line_step: line_h + 2.0 * SCRIPT_ROW_PAD_Y,
-            height: NOTE_PAD_TOP + SCRIPT_ROW_PAD_Y + bottom + below,
+            // Under the last row's text, the room its plate takes.
+            height: NOTE_PAD_TOP + bottom + SCRIPT_ROW_PAD_Y + below,
         })
     }
 
@@ -5015,7 +5016,9 @@ impl FenceChrome {
         let glyph_w = (14.0 * tt.k).round();
         let mut hits = Vec::new();
         for (i, (row, at)) in rows.iter().zip(&laid).enumerate() {
-            let y = NOTE_PAD_TOP + SCRIPT_ROW_PAD_Y + at.y - scroll;
+            // The first row's text stands where a note's first line does: the two fences
+            // side by side start their text on one line (the row stood 3 DIPs lower).
+            let y = NOTE_PAD_TOP + at.y - scroll;
             if y >= height {
                 break;
             }
@@ -5048,11 +5051,14 @@ impl FenceChrome {
             } else {
                 None
             };
+            // The first row's plate starts at the content's top edge, a DIP under where the
+            // others' would: its round corners stay whole.
+            let plate_top = (y - SCRIPT_ROW_PAD_Y).max(-scroll);
             let plate_rect = Rect::from_xywh(
                 NOTE_PAD_X - SCRIPT_ROW_PAD_X,
-                y - SCRIPT_ROW_PAD_Y,
+                plate_top,
                 w + 2.0 * SCRIPT_ROW_PAD_X,
-                h + 2.0 * SCRIPT_ROW_PAD_Y,
+                y + h + SCRIPT_ROW_PAD_Y - plate_top,
             );
             // How far this row's plate has faded in.
             let hot = if row.clickable {
