@@ -99,6 +99,18 @@ pub(super) enum Welcome {
     },
 }
 
+/// What the roll-up tip waits for after a fence was made with its name box
+/// (`App::roll_tip_waits`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum RollTipWait {
+    #[default]
+    No,
+    /// The fence fades in; its name box opens after that.
+    Fade,
+    /// The name box is open.
+    NameBox,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Tip {
     Create,
@@ -540,6 +552,50 @@ impl App {
             "feature tip due"
         );
         allowed
+    }
+
+    /// After a fence was made with its name box (`create_fence_with_rename`): the roll-up tip
+    /// comes when the name has been typed. A card that came up beside the box the moment the
+    /// fence appeared took the eye off the name. `after_fade`: the box opens once the fence
+    /// has faded in.
+    pub(super) fn offer_roll_tip_after_name(&mut self, after_fade: bool) {
+        self.roll_tip_waits = if after_fade {
+            RollTipWait::Fade
+        } else if crate::rename::active_target().is_some() {
+            RollTipWait::NameBox
+        } else {
+            RollTipWait::No
+        };
+        tracing::debug!(waits = ?self.roll_tip_waits, "roll tip after a new fence");
+        if self.roll_tip_waits == RollTipWait::No {
+            self.offer_roll_tip();
+        }
+    }
+
+    /// The new fence has faded in and its name box is open, or it got none (see
+    /// `begin_rename_after_fade`): the roll-up tip goes on waiting for the box, or shows.
+    pub(super) fn roll_tip_after_fade(&mut self) {
+        if self.roll_tip_waits != RollTipWait::Fade {
+            return;
+        }
+        if crate::rename::active_target().is_some() {
+            self.roll_tip_waits = RollTipWait::NameBox;
+        } else {
+            self.roll_tip_waits = RollTipWait::No;
+            tracing::debug!("roll tip: the new fence got no name box");
+            self.offer_roll_tip();
+        }
+    }
+
+    /// A name box may have closed (`Command::RenameFence`, or `Command::RedrawAll` for Esc):
+    /// the roll-up tip that waited for it shows.
+    pub(super) fn roll_tip_after_name_box(&mut self) {
+        if self.roll_tip_waits == RollTipWait::NameBox && crate::rename::active_target().is_none()
+        {
+            self.roll_tip_waits = RollTipWait::No;
+            tracing::debug!("roll tip: the name box of the new fence closed");
+            self.offer_roll_tip();
+        }
     }
 
     /// After the user made a fence: the roll-up tip once there are [`ROLL_TIP_FENCES`].

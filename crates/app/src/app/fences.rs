@@ -1082,7 +1082,7 @@ impl App {
             if !after_fade {
                 self.begin_rename(id);
             }
-            self.offer_roll_tip();
+            self.offer_roll_tip_after_name(after_fade);
         }
     }
 
@@ -1097,6 +1097,7 @@ impl App {
         if seen {
             self.begin_rename(fence);
         }
+        self.roll_tip_after_fade();
     }
 
     /// False (with a tray notice) when the layout already holds `MAX_FENCES`.
