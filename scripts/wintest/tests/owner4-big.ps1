@@ -4,6 +4,10 @@
 #      action and run goes to C:\pf\run\big.tsv: how long the user waits and what the UI thread
 #      spent it on, read from the app's debug log (`slow message`, `content draw`,
 #      `animation run`). --var Lite=1 leaves out Peek, the file added and removed, and memory.
+#   R  memory: --var N=1000 (--var Runs=3). Private commit with the small folder alone, with the
+#      big folder's fence open, after scrolling through all of it, and 40 s later.
+#   P  pictures of a fence of 1000 files at rest (three views, three scroll positions, a
+#      filter) in shots\p-*.png, to compare two builds pixel by pixel on the dev box.
 #   E  the same folder in an Explorer window (--var N=1000): open, sort, wheel.
 #   B  one bound per fix (the default).
 if (-not $Part) { $Part = 'B' }
@@ -43,7 +47,8 @@ function BgFolder($name, $n, [switch]$Plain) {
   $words = @('会议记录', '年度预算表', '设计稿 第二版', '合同扫描件', '周报', '项目计划书 最终版 已确认 可以发给客户的那一份',
     'Quarterly report', 'budget', 'Meeting notes from the long planning session in March', 'IMG', '发票', 'release notes draft')
   $exts = @('txt', 'md', 'log', 'csv', 'json', 'ini')
-  $base = (Get-Date).AddDays(-700)
+  # The same dates in every run: the pictures of two builds are compared pixel by pixel.
+  $base = [datetime]'2025-01-01T09:00:00'
   for ($i = 1; $i -le $n; $i++) {
     $p = Join-Path $d ("{0} {1:D4}.{2}" -f $words[$i % $words.Count], $i, $exts[$i % $exts.Count])
     [IO.File]::WriteAllText($p, "big $i" + ('x' * ($i % 97)))
@@ -302,4 +307,105 @@ function PartM() {
   Remove-Item -Recurse -Force "$PfRun\bigdata" -ErrorAction SilentlyContinue
 }
 
+# Wheel notches towards the user over the fence, then the pointer away and the fence at rest.
+function BgNotches([int]$n) {
+  $mid = BgMid
+  [G]::MoveTo($mid[0], $mid[1]); Start-Sleep -Milliseconds 300
+  for ($k = 0; $k -lt [math]::Abs($n); $k++) { [CW]::Wheel($(if ($n -lt 0) { -1 } else { 1 })); Start-Sleep -Milliseconds 60 }
+  Start-Sleep -Milliseconds 900
+  ParkMouse
+  BgQuiet (BgNow) 1200 8000
+}
+function BgPicture($name) { $b = Crop $name $BgX $BgY $BgW $BgH; $b.Dispose() }
+
+function PartP() {
+  trap { PfTrap $_; continue }
+  Case 'P pictures at rest'
+  $animWas = [Anim]::Get(); [Anim]::Set($true)
+  $big = BgFolder 'pictures' 1000
+  PfStart -Lang 'zh-CN'
+  Start-Sleep -Seconds 2
+  ClearFences | Out-Null
+  Pf settings set featureTips false | Out-Null
+  Pf fence create --portal $big --title $BgBig --rect "$BgX,$BgY,$BgW,$BgH" | Out-Null
+  Start-Sleep -Seconds 3
+  foreach ($v in 'icons', 'list', 'details') {
+    Pf fence set $BgBig layout $v | Out-Null
+    ParkMouse
+    BgQuiet (BgNow) 2000 10000
+    BgPicture "p-$v-1-top"
+    BgNotches -5
+    BgPicture "p-$v-2-five-notches"
+    BgNotches -40
+    BgPicture "p-$v-3-forty-five-notches"
+    BgNotches 60
+  }
+  Pf fence set $BgBig layout icons | Out-Null
+  Pf fence set $BgBig groupByDate true | Out-Null
+  ParkMouse
+  BgQuiet (BgNow) 2000 10000
+  BgPicture 'p-grouped-1-top'
+  BgNotches -12
+  BgPicture 'p-grouped-2-twelve-notches'
+  BgNotches 20
+  Pf fence set $BgBig groupByDate false | Out-Null
+  BgQuiet (BgNow) 1500 10000
+  # A filter: the first icon clicked (it stays selected), Ctrl+F, two letters, Enter.
+  [G]::Click($BgX + 40, $BgY + 36 + 40); Start-Sleep -Milliseconds 400
+  Chord 0x11 0x46; Start-Sleep -Milliseconds 700
+  [G]::Type('bu'); Start-Sleep -Milliseconds 900
+  [G]::Press(0x0D); Start-Sleep -Milliseconds 600
+  ParkMouse
+  BgQuiet (BgNow) 2000 10000
+  BgPicture 'p-filter-bu'
+  $shown = (FenceGet $BgBig).filter.shown
+  Check 'P the pictures were taken' (@(Get-ChildItem "$PfShots\p-*.png").Count -eq 12) "pictures $(@(Get-ChildItem "$PfShots\p-*.png").Count), the filter shows $shown"
+  PfQuit
+  [Anim]::Set($animWas)
+  Remove-Item -Recurse -Force "$PfRun\bigdata" -ErrorAction SilentlyContinue
+}
+
+function PartR() {
+  trap { PfTrap $_; continue }
+  Case "R memory, $N files"
+  $big = BgFolder "big$N" $N
+  $small = BgFolder 'small' $BgSmallN -Plain
+  PfStart -Lang 'zh-CN'
+  Start-Sleep -Seconds 2
+  ClearFences | Out-Null
+  Pf settings set featureTips false | Out-Null
+  Pf fence create --portal $small --title $BgSmall --rect '700,80,600,560' | Out-Null
+  Start-Sleep -Seconds 2
+  PfQuit
+  $tx = $BgX + $BgW - 7; $ty = $BgY + 50
+  for ($r = 1; $r -le $Runs; $r++) {
+    $t0 = BgStart
+    WaitWin 'PecoFence.Control' 60 -Hidden | Out-Null
+    BgQuiet $t0 6000 30000
+    $alone = BgCommit
+    Pf fence create --portal $big --title $BgBig --rect "$BgX,$BgY,$BgW,$BgH" | Out-Null
+    BgQuiet (BgNow) 5000 30000
+    $open = BgCommit
+    # Through all of it: the thumb from the top to the bottom in 80 steps, then back.
+    [G]::MoveTo($tx, $ty); Start-Sleep -Milliseconds 500
+    MDown; Start-Sleep -Milliseconds 60; Glide $tx $ty $tx ($BgY + $BgH - 6) 80 40; Start-Sleep -Milliseconds 200
+    Glide $tx ($BgY + $BgH - 6) $tx $ty 80 40; Start-Sleep -Milliseconds 100; MUp
+    ParkMouse
+    BgQuiet (BgNow) 3000 30000
+    $scrolled = BgCommit
+    $later = -1
+    if ($r -eq $Runs) { Start-Sleep -Seconds 40; $later = BgCommit }
+    Pf fence delete $BgBig | Out-Null
+    Start-Sleep -Seconds 2
+    $row = "N=$N run=$r small folder alone=$alone big fence open=$open after scrolling through all=$scrolled 40 s later=$later MB; per 1000 files open=$([math]::Round(($open - $alone) * 1000 / $N, 2)) scrolled=$([math]::Round(($scrolled - $alone) * 1000 / $N, 2)) MB"
+    Log "BIGMEM $row"
+    "MEMR`t$row" | Add-Content "$PfRun\big.tsv" -Encoding UTF8
+    PfQuit
+  }
+  Check 'R memory was read' (@(Get-Content "$PfRun\big.tsv" | Where-Object { $_ -match '^MEMR' }).Count -eq $Runs) ''
+  Remove-Item -Recurse -Force "$PfRun\bigdata" -ErrorAction SilentlyContinue
+}
+
 if ($Part -match 'M') { PartM }
+if ($Part -match 'P') { PartP }
+if ($Part -match 'R') { PartR }
