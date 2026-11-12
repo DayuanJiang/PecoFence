@@ -759,15 +759,52 @@ impl App {
         w.restore_geometry(rect, fence.rolled_up, self.state.fence_expanded_px(fence));
     }
 
+    /// A restore or an import: a fence that only moved (open before and after, the
+    /// same size) travels to its saved place (`FenceWindow::glide_to`, 167 ms decelerate)
+    /// instead of jumping there, as the fences that come back fade in and the ones that go
+    /// fade out. False: the caller places it at once (animations off, rolled up, another
+    /// size, hidden, or already there).
+    fn glide_from_state(&self, fence: &pecofence_core::Fence) -> bool {
+        let Some(w) = self.fences.get(&fence.id) else {
+            return false;
+        };
+        if fence.rolled_up || w.is_rolled() || w.is_desktop_arranged() {
+            return false;
+        }
+        let px = self.state.fence_px_rect(fence);
+        let to = RECT {
+            left: px.left,
+            top: px.top,
+            right: px.right,
+            bottom: px.bottom,
+        };
+        w.set_row_at_bottom(fence.bottom_anchored);
+        let glides = w.glide_to(to);
+        if glides {
+            tracing::debug!(fence = %fence.id, "restored fence glides to its saved place");
+        }
+        glides
+    }
+
     /// Re-applies every fence's saved geometry to its window (after a swap / restore / import).
     pub(super) fn relayout_from_state(&mut self) {
+        self.relayout(false);
+    }
+
+    /// [`Self::relayout_from_state`] for a snapshot restore or an import, which the
+    /// user watches: the fences that only moved glide to their places (`glide_from_state`).
+    pub(super) fn relayout_from_state_gliding(&mut self) {
+        self.relayout(true);
+    }
+
+    fn relayout(&mut self, glide: bool) {
         self.clear_undo("layout replaced");
         self.state.ensure_layout();
         // Restored or imported fences may name virtual desktops that are gone.
         self.follow_desktops_after("fences replaced");
         self.resync_windows();
         for fence in self.state.host_fences() {
-            if self.fences.contains_key(&fence.id) {
+            if self.fences.contains_key(&fence.id) && !(glide && self.glide_from_state(&fence)) {
                 self.place_from_state(&fence);
             }
             self.apply_fence_view(fence.id);

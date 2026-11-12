@@ -1239,7 +1239,7 @@ impl App {
                 // Files that came to the desktop after the snapshot are in none of its
                 // fences: they are filed now, not at the next change on the desktop.
                 self.sync_desktop_if_available("snapshot restored");
-                self.relayout_from_state();
+                self.relayout_from_state_gliding();
                 // Portals restored with the snapshot need enumerating; stale runtime state of
                 // the replaced ones is pruned on the way.
                 self.refresh_portals();
