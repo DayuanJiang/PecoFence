@@ -647,7 +647,7 @@ impl FenceViewState {
             merge_hint: self.merge_t.value_at(now),
             plate_top,
             plate_clear,
-            edge_top: self.edge_top,
+            edge_top: self.edge_top && !self.theme.liquid_glass,
             swap: f.value(&ChromeKey::TitleSwap, now),
             strip_clip: self.tab_strip_clip(),
             lock,
@@ -1043,9 +1043,10 @@ impl FenceViewState {
     }
 
     /// How far above the plate its rounded shape starts, in px: the corner radius while the
-    /// plate's top edge lies on the screen edge (square top corners), else 0.
+    /// plate's top edge lies on the screen edge (square top corners), else 0. Liquid Glass
+    /// keeps its round corners: its lens and bezel are one rounded shape.
     pub(super) fn square_top_px(&self) -> i32 {
-        if self.edge_top && self.plate_inset_px == 0 {
+        if self.edge_top && self.plate_inset_px == 0 && !self.theme.liquid_glass {
             (self.theme.corner_radius * self.scale()).ceil() as i32
         } else {
             0
