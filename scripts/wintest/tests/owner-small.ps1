@@ -165,8 +165,10 @@ function PartHT {
 
   Case 'HT what must not change'
   # Passing over a tab without resting there switches nothing, also with 快.
+  # The pointer stays off the tabs for more than a second first: for a second after a hover
+  # switch the next tab waits only 50 ms (owner4-latency.ps1 part NEXT).
   Pf settings set rollUp.hoverSpeed fast | Out-Null; Start-Sleep -Seconds 1
-  ParkMouse 1560 820; Start-Sleep -Milliseconds 600
+  ParkMouse 1560 820; Start-Sleep -Milliseconds 1400
   $x = HtX $d 0; $y = HtY $d
   [G]::MoveTo($x - 6, $y + 2); Start-Sleep -Milliseconds 30; [G]::MoveTo($x, $y); Start-Sleep -Milliseconds 60
   ParkMouse 1560 820; Start-Sleep -Milliseconds 700
