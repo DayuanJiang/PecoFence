@@ -550,6 +550,8 @@
   .se-chips label:has(input:focus-visible) { outline: 2px solid var(--text); outline-offset: 1px; }
   .se-chips input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
   .se-row .iconbtn { flex: none; height: 28px; width: 28px; font-size: 12px; border: 1px solid var(--control-stroke); background: var(--control); }
+  .se-row .iconbtn:not(:disabled):hover { background: var(--control-hover); }
+  .se-row .iconbtn:not(:disabled):active { background: var(--control-pressed); }
   .se-msg { color: var(--error); font-size: 13px; }
   .se-msg:empty { display: none; }
   .se-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
