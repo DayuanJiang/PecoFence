@@ -1359,6 +1359,7 @@ impl FenceWindow {
                 .zip(v.tab_draw_xs(now))
                 .collect();
             let old_ids: Vec<FenceId> = v.tabs.iter().map(|t| t.id).collect();
+            let old_widths: Vec<f32> = v.tab_rects().iter().map(|(_, w)| *w).collect();
             let had_strip = v.tabs.len() > 1;
             // A new window gets its tabs here for the first time: what it was saved with.
             let first = v.tabs.is_empty();
@@ -1389,6 +1390,22 @@ impl FenceWindow {
                         d.grab_dx += v.tab_scroll.get() - strip_scroll;
                     }
                     v.sync_tab_slides(&prev, now);
+                    // The same tabs in the same order and a pill got wider (a rename, a folder
+                    // tab that went into a folder with a longer name): the pill is drawn at
+                    // its new width at once, so the neighbour that slid away from it lay over
+                    // the end of the new name for the first frames. The strip then stands at
+                    // its new places at once; pills that only got narrower still slide.
+                    let grew = same_set
+                        && old_ids.iter().eq(v.tabs.iter().map(|t| &t.id))
+                        && v
+                            .tab_rects()
+                            .iter()
+                            .zip(&old_widths)
+                            .any(|((_, w), old)| *w > *old + 0.5);
+                    if grew {
+                        tracing::debug!("a tab got wider: the strip stands at its new places");
+                        v.tab_slide.clear();
+                    }
                 } else if !same_set {
                     v.tab_slide.clear();
                     v.tab_settle = None;
