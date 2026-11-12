@@ -466,9 +466,12 @@ impl AppState {
         );
         // The key this PC has for a file of the incoming configuration.
         let here = |key: &ItemKey| match (key.as_path(), &theirs, &ours) {
-            (Some(path), Some(theirs), Some(ours)) if theirs != ours => path
-                .strip_prefix(theirs.as_str())
-                .map_or_else(|| key.clone(), |rest| ItemKey::Path(format!("{ours}{rest}"))),
+            (Some(path), Some(theirs), Some(ours)) if theirs != ours => {
+                path.strip_prefix(theirs.as_str()).map_or_else(
+                    || key.clone(),
+                    |rest| ItemKey::Path(format!("{ours}{rest}")),
+                )
+            }
             _ => key.clone(),
         };
         let keys: HashSet<ItemKey> = config.items.values().map(|it| here(&it.key)).collect();
@@ -809,10 +812,7 @@ impl AppState {
             return;
         };
         let gap = self.config.settings.snapping.gap_px.clamp(0, 64);
-        let (w, h) = (
-            (240.0 * work.scale()) as i32,
-            (200.0 * work.scale()) as i32,
-        );
+        let (w, h) = ((240.0 * work.scale()) as i32, (200.0 * work.scale()) as i32);
         let geo = geometry::normalize(
             PxRect {
                 left: work.right - gap - w,
@@ -822,11 +822,7 @@ impl AppState {
             },
             &work,
         );
-        let mut inbox = Fence::new(
-            pecofence_core::i18n::text("桌面"),
-            FenceKind::Inbox,
-            geo,
-        );
+        let mut inbox = Fence::new(pecofence_core::i18n::text("桌面"), FenceKind::Inbox, geo);
         inbox.view.icon_size = self.config.settings.icon_size;
         inbox.desktop_layout = true;
         inbox.free_placement = true;

@@ -2950,7 +2950,10 @@ mod tests {
             scripts: Default::default(),
         });
         c.rename_items(&HashMap::from([(x, z)]));
-        for fence in [&c.layouts[0].fences[0], &c.snapshots[0].layouts[0].fences[0]] {
+        for fence in [
+            &c.layouts[0].fences[0],
+            &c.snapshots[0].layouts[0].fences[0],
+        ] {
             assert_eq!(fence.items, vec![member(z), member(y)]);
             assert_eq!(fence.desktop_cells.get(&z), Some(&[2, 3]));
             assert!(!fence.desktop_cells.contains_key(&x));
