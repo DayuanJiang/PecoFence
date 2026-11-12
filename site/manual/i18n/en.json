@@ -617,7 +617,7 @@
   "保存快照": "Save snapshot",
   "快照名称（可选）": "Name (optional)",
   "尚无快照": "No snapshots yet",
-  "点上面的“保存快照”，以后可以随时恢复到现在的布局。": "Click “Save snapshot” above, and you can come back to the layout as it is now at any time.",
+  "点上面的“保存快照”，以后可以随时恢复到现在的布局。": "Click “Save snapshot” above, and you can restore the current layout at any time.",
   "{0} 个栅栏": "Fences: {0}",
   "自动保存": "Saved automatically",
   "恢复": "Restore",
