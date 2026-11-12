@@ -97,10 +97,14 @@ impl FenceViewState {
                     let text = item.date_text();
                     item.date_label.get_or_insert(text).clone()
                 }
+                // Rows that were never drawn have no type text yet: asked once per extension
+                // here too (`ensure_texts`), not once per file.
                 DetailColumn::Type => item
                     .type_label
                     .get_or_insert_with(|| {
-                        fileinfo::type_name(&item.path, item.is_folder).unwrap_or_default()
+                        self.type_names
+                            .get(&item.path, item.is_folder)
+                            .unwrap_or_default()
                     })
                     .clone(),
                 _ => {
