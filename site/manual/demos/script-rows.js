@@ -16,11 +16,11 @@
     const D = 10.6;
     const lang = () => document.documentElement.lang || 'zh-CN';
 
-    // A script fence is titled with its file's name (tools.rs create_tool_fence).
+    // An example's fence is titled as its menu line reads (tools.rs add_example); the footer
+    // names the script file.
     const GH_FILE = 'GitHub 动态.ps1', PC_FILE = '电脑状态.ps1';
-    const stem = f => f.replace(/\.ps1$/, '');
-    const GH = { x: 24, y: 18, w: 300, h: 175, title: stem(GH_FILE) };
-    const PC = { x: 24, y: 205, w: 300, h: 214, title: stem(PC_FILE) };
+    const GH = { x: 24, y: 18, w: 300, h: 175, title: 'GitHub 仓库动态' };
+    const PC = { x: 24, y: 205, w: 300, h: 214, title: '电脑状态' };
     const BROWSER = { x: 346, y: 18, w: 432, h: 292 };
     const TASKMGR = { x: 404, y: 150, w: 360, h: 214 };
 
