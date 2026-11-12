@@ -273,23 +273,39 @@ impl FenceViewState {
             .collect();
         drop(icons);
         if !own_slots.is_empty() && !self.items.iter().map(|n| n.id).eq(old_ids.iter().copied()) {
-            // An icon that is new here has no cell yet: the spare one (where a single new icon
-            // goes) until the cells are placed. One slot per item and none to spare, so the
-            // placing that follows always differs from these and fits the window to it.
+            // An icon that is new here: the cell saved for it (one dropped here from another
+            // fence: its landing glide went to the spare cell at the far side of the screen,
+            // unseen, and the icon then appeared in its cell), else the spare one (where a
+            // single new file goes) until the cells are placed. One slot per item and none to
+            // spare, so the placing that follows always differs from these and fits the
+            // window to it.
             let spare = self.desktop_slots.last().copied();
             let kept = self
                 .items
                 .iter()
                 .filter(|n| own_slots.contains_key(&n.id))
                 .count();
+            let saved: HashMap<ItemId, CellRect> = self
+                .items
+                .iter()
+                .filter(|n| !own_slots.contains_key(&n.id))
+                .filter_map(|n| Some((n.id, self.saved_slot(n.id)?)))
+                .collect();
             self.desktop_slots = self
                 .items
                 .iter()
-                .filter_map(|n| own_slots.get(&n.id).copied().or(spare))
+                .filter_map(|n| {
+                    own_slots
+                        .get(&n.id)
+                        .or_else(|| saved.get(&n.id))
+                        .copied()
+                        .or(spare)
+                })
                 .collect();
             tracing::debug!(
                 kept,
                 new = self.items.len() - kept,
+                new_in_saved_cell = saved.len(),
                 gone = old_len - kept,
                 "free placement: icons keep their own cells while the list changes"
             );

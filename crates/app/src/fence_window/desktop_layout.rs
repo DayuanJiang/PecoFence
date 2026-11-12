@@ -530,6 +530,26 @@ impl FenceViewState {
         Some((from, self.desktop_free_sent.clone()?))
     }
 
+    /// 自由摆放: the slot (content DIPs, as `arrange_desktop` makes them) of the cell saved for
+    /// `id`, on the grid of the last placing. An icon that comes from another fence has its
+    /// cell saved before it joins the list (`App::drop_on_free_desktop`), so `replace_items`
+    /// can start it towards that cell instead of the spare one. None without a saved cell or
+    /// a grid.
+    pub(super) fn saved_slot(&self, id: ItemId) -> Option<CellRect> {
+        let area = self.desktop.as_ref()?;
+        let cell = area.free.as_ref()?.get(&id)?;
+        let (grid, _) = self.desktop_free.as_ref()?;
+        let r = grid.rect((i32::from(cell[0]), i32::from(cell[1])));
+        let scale = self.scale();
+        let m = self.grid_metrics();
+        Some(CellRect {
+            x: (r.left - area.work.left) as f32 / scale,
+            y: (r.top - area.work.top) as f32 / scale,
+            w: m.cell_w,
+            h: m.cell_h,
+        })
+    }
+
     /// Whether the icons stay where they are dropped (自由摆放 on an arranged 「桌面」).
     pub(super) fn places_freely(&self) -> bool {
         self.desktop.as_ref().is_some_and(|d| d.free.is_some())

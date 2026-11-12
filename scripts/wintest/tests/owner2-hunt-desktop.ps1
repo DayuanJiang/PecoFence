@@ -178,3 +178,80 @@ if ($Part -eq 'C') {
   HdClean
   Remove-Item -LiteralPath $HdFolder -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+if ($Part -eq 'D') {
+  # 自由摆放: an icon of another fence let go on 「桌面」 (on a loose icon, or on the bare
+  # desktop). Its landing glide went to the spare cell at the far side of the screen, across
+  # bare desktop where the window is cut away: the icon was nowhere for about 170 ms and then
+  # stood in its cell. It now starts towards the cell it was dropped into.
+  Case 'An icon of a fence let go on the desktop is seen at once'
+  CloseWindows
+  Get-Process OpenWith -ErrorAction SilentlyContinue | Stop-Process -Force
+  HdClean
+  $HdTxt = @('读我.txt', '草稿.txt')
+  foreach ($n in $HdTxt) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue }
+  foreach ($n in $HdNames + $HdTxt) { DeskFile $n | Out-Null }
+  [G]::SystemParametersInfoW(0x25, 1, [NullString]::Value, 3) | Out-Null
+  $animWas = [Anim]::Get(); [Anim]::Set($true)
+  PfStart -Lang 'zh-CN'
+  Start-Sleep -Seconds 4
+  CloseNotice | Out-Null
+  $docs = (@(@(PfJson fence list) | Where-Object { $_ -and $_.title -eq '文件与文档' }) | Select-Object -First 1).id
+  function HdPtIn($file) { $o = @(@(PfJson item list --fence $docs) | Where-Object { $_ -and $_.id } | ForEach-Object { $_.fileName }); $i = [array]::IndexOf($o, $file); if ($i -lt 0) { return $null }; return (CellPt $docs $i) }
+  # A loose icon at cell 14,3; the cell left of it (13,3) and the one above it (14,2) are empty.
+  $p = HdPt '图.fpx'; DragTo $p[0] $p[1] 1164 340 20; Start-Sleep -Seconds 1
+  ParkMouse 1100 700
+  # A first start takes the places Windows has the icons at, so the other icons' cells differ
+  # from run to run: the two cells the drops go to must be empty.
+  $taken = @((HdCells).Values | Where-Object { $_ -eq '13,3' -or $_ -eq '14,2' })
+  Check 'setup: the loose icon stands at 14,3, cells 13,3 and 14,2 are empty, both files are in the fence' ((HdCell '图.fpx') -eq '14,3' -and $taken.Count -eq 0 -and (HdPtIn '读我.txt') -and (HdPtIn '草稿.txt')) "图=$(HdCell '图.fpx'); $(HdAll)"
+  # Drags $file from the fence to ($x, $y), rests, lets go. Reads the cell $cell (empty before
+  # the drag) as often as the screen can be read for 400 ms after the release: how many of
+  # the reads in the first 300 ms show it empty, and where the app's log says the landing
+  # glide went.
+  function HdDrop($file, $x, $y, $cell) {
+    trap { PfTrap $_; continue }
+    $c = $cell -split ','; $rx = 4 + [int]$c[0] * 80; $ry = 4 + [int]$c[1] * 96
+    $empty = [Px]::Grab($rx, $ry, 80, 96)
+    $from = HdPtIn $file
+    [G]::MoveTo($from[0], $from[1]); Start-Sleep -Milliseconds 300
+    MDown; Start-Sleep -Milliseconds 250
+    Glide $from[0] $from[1] ($from[0] - 14) ($from[1] + 6) 3 30
+    Glide ($from[0] - 14) ($from[1] + 6) $x $y 20 30
+    Start-Sleep -Milliseconds 600
+    MUp
+    $sw = [Diagnostics.Stopwatch]::StartNew(); $reads = 0; $blank = 0; $first = -1
+    while ($sw.ElapsedMilliseconds -lt 400) {
+      $t = $sw.ElapsedMilliseconds
+      $g = [Px]::Grab($rx, $ry, 80, 96); $d = [Px]::Diff($empty, $g, 0, 79, 0, 95); $g.Dispose()
+      if ($t -le 300) { $reads++; if ($d -lt 3.0) { $blank++ } }
+      if ($d -ge 3.0 -and $first -lt 0) { $first = $t }
+    }
+    Start-Sleep -Milliseconds 900
+    $glide = @(PfLogAll | Where-Object { $_ -match 'dropped icon glides from where it was let go' }) | Select-Object -Last 1
+    $to = if ($glide -match 'to_x=([\d.]+) to_y=([\d.]+)') { @([double]$Matches[1], [double]$Matches[2]) } else { $null }
+    ParkMouse 1100 700
+    return [pscustomobject]@{ cell = (HdCell $file); reads = $reads; blank = $blank; first = $first; to = $to; inCell = ($to -and $to[0] -ge $rx -and $to[0] -lt $rx + 80 -and $to[1] -ge $ry -and $to[1] -lt $ry + 96) }
+  }
+  # On the loose icon: the nearest free cell is the one left of it.
+  $t = HdPt '图.fpx'
+  $a = HdDrop '读我.txt' $t[0] $t[1] '13,3'
+  Shot 'D-on-a-loose-icon'
+  Check 'let go on a loose icon: it lands in the free cell beside it' ($a.cell -eq '13,3') "cell $($a.cell)"
+  Check 'let go on a loose icon: the landing glide goes to that cell' ($a.inCell) "the log's glide target $($a.to -join ','); cell 13,3 is x 1044 to 1124, y 292 to 388"
+  # Measured 2026-11-12 on ec2-7: 5 of 10 reads empty and first seen after 164 ms before, 1 of
+  # 11 and 21 ms after. Two empty reads are allowed for the moment between the drag picture
+  # going and the first frame with the icon.
+  Check 'let go on a loose icon: its cell is not empty after the release' ($a.reads -ge 5 -and $a.blank -le 2 -and $a.first -ge 0 -and $a.first -le 100) "$($a.blank) of $($a.reads) reads in the first 300 ms show the cell empty; first seen $($a.first) ms after the release"
+  # On the bare desktop, in the cell above the loose icon.
+  $b = HdDrop '草稿.txt' 1164 232 '14,2'
+  Shot 'D-on-the-bare-desktop'
+  Check 'let go on the bare desktop: it lands in the cell under it' ($b.cell -eq '14,2') "cell $($b.cell)"
+  # The drag picture rests in this very cell until the release, so a first read can still show
+  # it: only the count of empty reads says something here.
+  # Measured 2026-11-12 on ec2-7: 5 of 11 reads empty before, 1 of 11 after; two are allowed.
+  Check 'let go on the bare desktop: its cell is not empty after the release' ($b.reads -ge 5 -and $b.blank -le 2) "$($b.blank) of $($b.reads) reads in the first 300 ms show the cell empty"
+  [Anim]::Set($animWas)
+  HdClean
+  foreach ($n in $HdTxt) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue }
+}
