@@ -1028,6 +1028,13 @@ impl App {
         );
     }
 
+    /// 「添加待办」 in a note's menu: its editor opens with an empty to-do after the last
+    /// line, the caret in it (feedback #141).
+    pub(super) fn add_note_todo(&mut self, fence: FenceId) {
+        self.edit_note(fence, None);
+        crate::note_edit::add_todo(fence);
+    }
+
     /// The editor of note `fence` holds `text` with this selection now: its window draws
     /// them, and the editor's control follows the caret drawn there (the input method's
     /// window appears at it).

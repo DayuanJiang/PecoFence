@@ -59,6 +59,8 @@ const CMD_FENCE_NEW: u32 = 304;
 const CMD_FENCE_NEW_NOTE: u32 = 307;
 /// 编辑便签 in a note's fence menu.
 const CMD_FENCE_EDIT_NOTE: u32 = 308;
+/// 添加待办 in a note's fence menu.
+const CMD_FENCE_ADD_TODO: u32 = 309;
 /// 显示秒 in a clock's fence menu.
 const CMD_FENCE_CLOCK_SECONDS: u32 = 515;
 /// The fence menu's 新建小工具 submenu: 520..=524.
@@ -150,6 +152,8 @@ mod glyph {
     pub const RENAME: char = '\u{E8AC}';
     /// Edit (a pencil): 编辑便签, 编辑脚本. In Segoe MDL2 Assets too.
     pub const EDIT: char = '\u{E70F}';
+    /// CheckboxComposite (a ticked box): 添加待办. In Segoe MDL2 Assets too.
+    pub const TODO: char = '\u{E73A}';
     pub const FOLDER_OPEN: char = '\u{E838}';
     pub const UP: char = '\u{E74A}';
     pub const HOME: char = '\u{E80F}';
@@ -955,7 +959,14 @@ impl App {
                 false,
                 false,
             )
-            .icon(glyph::EDIT);
+            .icon(glyph::EDIT)
+            .item(
+                CMD_FENCE_ADD_TODO,
+                pecofence_core::i18n::text("添加待办"),
+                false,
+                false,
+            )
+            .icon(glyph::TODO);
         } else if f.tool == Some(pecofence_core::FenceTool::Script) {
             let spec = self.state.config.scripts.get(&fence);
             let has_path = spec.is_some_and(|s| !s.path.is_empty());
@@ -1532,6 +1543,7 @@ impl App {
                 self.apply_settings(settings, "clock menu");
             }
             CMD_FENCE_EDIT_NOTE => self.edit_note(fence, None),
+            CMD_FENCE_ADD_TODO => self.add_note_todo(fence),
             CMD_FENCE_SCRIPT_RUN => self.refresh_script(fence),
             CMD_FENCE_SCRIPT_EDIT => self.edit_script(fence),
             CMD_FENCE_SCRIPT_PICK => self.pick_script_for(fence),

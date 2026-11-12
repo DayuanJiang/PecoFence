@@ -683,6 +683,9 @@ thread_local! {
         std::cell::RefCell::new(std::collections::HashMap::new());
     /// Set while `hint_after` works: the text length it asks for is a message to the control.
     static IN_HINT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The control whose key handler just acted on Enter: the key's character, which comes
+    /// next, must not break the line as well (a note's control takes line breaks).
+    static ENTER_HANDLED: std::cell::Cell<isize> = const { std::cell::Cell::new(0) };
 }
 
 const WM_IME_STARTCOMPOSITION: u32 = 0x010D;
@@ -842,9 +845,18 @@ unsafe fn handle(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM, refdata: 
     unsafe {
         if msg == WM_KEYDOWN as u32 && refdata != 0 {
             let handler: KeyHandler = core::mem::transmute::<usize, KeyHandler>(refdata);
-            if handler(wparam.0 as u32) {
+            let handled = handler(wparam.0 as u32);
+            let enter = handled && wparam.0 == 13;
+            ENTER_HANDLED.with(|e| e.set(if enter { hwnd.0 as isize } else { 0 }));
+            if handled {
                 return LRESULT(0);
             }
+        }
+        if msg == WM_CHAR as u32
+            && wparam.0 == 13
+            && ENTER_HANDLED.with(|e| e.replace(0)) == hwnd.0 as isize
+        {
+            return LRESULT(0);
         }
         // The menu key and Shift+F10: DefWindowProc sends WM_CONTEXTMENU with lParam -1.
         if msg == WM_CONTEXTMENU as u32 && lparam.0 as u32 == u32::MAX && refdata != 0 {

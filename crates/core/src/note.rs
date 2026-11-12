@@ -197,6 +197,52 @@ pub fn toggle(text: &str, index: usize) -> Option<String> {
     found.then_some(out)
 }
 
+/// What Enter does in a to-do of a note that is being edited, as lists do in editors.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TodoEnter {
+    /// A to-do with text: this goes in at the caret, a line break and an empty check box led
+    /// in as the line's own is (its indent, its `- `).
+    NewBox(String),
+    /// A to-do without text: the line's check box (these UTF-16 units of the text) goes and
+    /// the line is a plain one again.
+    RemoveBox(usize, usize),
+}
+
+/// What Enter does with the selection `first..last` (UTF-16 units, line breaks are `\n`) of
+/// `text`: None in a plain line and when the selection starts inside a check box's marker
+/// (the editor breaks the line itself).
+pub fn todo_enter(text: &str, first: usize, last: usize) -> Option<TodoEnter> {
+    let mut start = 0;
+    for line in text.split('\n') {
+        let len = units(line);
+        if first <= start + len {
+            let (lead, end, _) = marker(line)?;
+            let prefix = units(&line[..line.len() - line[end..].trim_start().len()]);
+            if first < start + prefix {
+                return None;
+            }
+            return Some(if prefix == len && first == last {
+                TodoEnter::RemoveBox(start, start + len)
+            } else {
+                TodoEnter::NewBox(format!("\n{}[ ] ", &line[..lead]))
+            });
+        }
+        start += len + 1;
+    }
+    None
+}
+
+/// What 「添加待办」 puts after `text`: an empty check box on a line of its own. Nothing when
+/// the last line already is an empty check box.
+pub fn new_todo_suffix(text: &str) -> &'static str {
+    let last = text.rsplit('\n').next().unwrap_or("");
+    match parse_line(last) {
+        NoteLine::Todo { text: "", .. } => "",
+        _ if last.is_empty() => "[ ] ",
+        _ => "\n[ ] ",
+    }
+}
+
 /// Byte range of the `[ ]` / `[]` / `[x]` marker at the start of `line` (after leading spaces
 /// and an optional `- ` or `* `), and whether it is ticked.
 fn marker(line: &str) -> Option<(usize, usize, bool)> {
@@ -271,6 +317,43 @@ mod tests {
         assert_eq!(selection_by_line(&spans, 4, 4), vec![]);
         // Everything: the empty last line is part of it.
         assert_eq!(selection_by_line(&spans, 0, 24).len(), 3);
+    }
+
+    /// Enter in a to-do starts the next one; in an empty to-do it takes the check box away
+    /// (feedback #141).
+    #[test]
+    fn enter_in_a_todo() {
+        let text = "周会\n[ ] 回邮件\n  - [x] done\n[ ] \n[]";
+        // A plain line: the editor's own line break.
+        assert_eq!(todo_enter(text, 2, 2), None);
+        // At the end and in the middle of a to-do's text, and with a selection in it.
+        let new_box = Some(TodoEnter::NewBox("\n[ ] ".to_string()));
+        assert_eq!(todo_enter(text, 10, 10), new_box);
+        assert_eq!(todo_enter(text, 8, 8), new_box);
+        assert_eq!(todo_enter(text, 7, 10), new_box);
+        // Inside the marker, which is not shown: left to the editor.
+        assert_eq!(todo_enter(text, 5, 5), None);
+        // The new line is led in as the old one, and its box is empty.
+        assert_eq!(
+            todo_enter(text, 23, 23),
+            Some(TodoEnter::NewBox("\n  - [ ] ".to_string()))
+        );
+        // An empty to-do loses its check box, with or without the space after it.
+        assert_eq!(todo_enter(text, 28, 28), Some(TodoEnter::RemoveBox(24, 28)));
+        assert_eq!(todo_enter(text, 31, 31), Some(TodoEnter::RemoveBox(29, 31)));
+        assert_eq!(todo_enter("", 0, 0), None);
+        assert_eq!(todo_enter("[ ] 买菜", 6, 6), new_box);
+    }
+
+    #[test]
+    fn add_todo_appends_an_empty_check_box() {
+        assert_eq!(new_todo_suffix(""), "[ ] ");
+        assert_eq!(new_todo_suffix("周会"), "\n[ ] ");
+        assert_eq!(new_todo_suffix("周会\n"), "[ ] ");
+        assert_eq!(new_todo_suffix("[x] 回邮件"), "\n[ ] ");
+        // The last line is an empty check box already: the caret just goes there.
+        assert_eq!(new_todo_suffix("周会\n[ ] "), "");
+        assert_eq!(new_todo_suffix("[]"), "");
     }
 
     #[test]

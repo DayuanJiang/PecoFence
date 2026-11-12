@@ -93,3 +93,63 @@ Case 'HS cleanup'
 PfQuit
 foreach ($f in $made) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
 }
+
+if ($Part -eq 'TD') {
+Case 'TD setup'
+PfStart -Lang 'zh-CN' -Script (DumpScript 500 25 3000)
+Start-Sleep -Seconds 3
+ClearFences
+$r = PfJson fence create --tool note --title '便签' --text "周会准备`n[ ] 买菜" --rect '300,120,300,240'
+$nid = "$($r.fence.id)"
+Start-Sleep -Seconds 2
+function RqNote() { return ("$((FenceGet $nid).noteText)" -replace "`r", '') }
+function RqEditing() { $h = [G]::FindWindowW('PecoFence.NoteEdit', [NullString]::Value); return ($h -ne [IntPtr]::Zero -and [G]::IsWindowVisible($h)) }
+$w = DumpOf '便签'
+Check 'the note is there' ($nid -and $w) "id=$nid text='$((RqNote) -replace "`n", ' / ')'"
+
+Case 'TD Enter in a to-do'
+# A click on the to-do's line (the second one), End, then Enter, a word, Enter, Enter, a word.
+$p = @([int]($w.l + [double](DumpVal $w 'content_x') + 150), [int]($w.t + [double](DumpVal $w 'content_y') + 43))
+[G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 900
+$open = RqEditing
+[G]::Press(0x23); Start-Sleep -Milliseconds 200
+[G]::Press(0x0D); Start-Sleep -Milliseconds 300
+[G]::Type('milk'); Start-Sleep -Milliseconds 300
+Crop 'td-1-second-todo' ($w.l - 10) ($w.t - 10) ($w.r - $w.l + 20) ($w.b - $w.t + 20) | Out-Null
+[G]::Press(0x0D); Start-Sleep -Milliseconds 300
+[G]::Press(0x0D); Start-Sleep -Milliseconds 300
+[G]::Type('plain'); Start-Sleep -Milliseconds 300
+[G]::Press(0x1B); Start-Sleep -Milliseconds 900
+$t = RqNote
+Check 'Enter in a to-do starts the next line with an empty check box' ($t -match "(?m)^\[ \] milk$") "editor open=$open note: '$($t -replace "`n", ' / ')'"
+Check 'Enter in an empty to-do takes its check box away and stays on the line' ($t -eq "周会准备`n[ ] 买菜`n[ ] milk`nplain") "note: '$($t -replace "`n", ' / ')'"
+
+Case 'TD 添加待办 in the note menu'
+$w = DumpOf '便签'
+[G]::RClick([int](($w.l + $w.r) / 2), $w.t + 14); Start-Sleep -Milliseconds 700
+$m = MenuWin 5
+$texts = MenuTexts $m
+Shot 'td-2-note-menu'
+$pick = MenuPick '^添加待办' $m
+Start-Sleep -Milliseconds 900
+if (-not $pick) { CloseMenus }
+$open = RqEditing
+if ($open) { [G]::Type('call'); Start-Sleep -Milliseconds 300; [G]::Press(0x1B); Start-Sleep -Milliseconds 900 }
+$t = RqNote
+Check 'the note menu has 「添加待办」' ([bool]$pick) "menu: $texts"
+Check '「添加待办」 opens the editor on a new empty to-do at the end' ($open -and $t -eq "周会准备`n[ ] 买菜`n[ ] milk`nplain`n[ ] call") "editor open=$open note: '$($t -replace "`n", ' / ')'"
+
+Case 'TD Shift+Enter is a plain line break'
+$w = DumpOf '便签'
+$p = @([int]($w.l + [double](DumpVal $w 'content_x') + 150), [int]($w.t + [double](DumpVal $w 'content_y') + 43))
+[G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 900
+[G]::Press(0x23); Start-Sleep -Milliseconds 200
+[G]::KeyDown(0x10); [G]::Press(0x0D); [G]::KeyUp(0x10); Start-Sleep -Milliseconds 300
+[G]::Type('note'); Start-Sleep -Milliseconds 300
+[G]::Press(0x1B); Start-Sleep -Milliseconds 900
+$t = RqNote
+Check 'Shift+Enter in a to-do starts a plain line' ($t -match "(?m)^\[ \] 买菜`nnote$") "note: '$($t -replace "`n", ' / ')'"
+
+Case 'TD cleanup'
+PfQuit
+}

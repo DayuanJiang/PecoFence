@@ -642,6 +642,7 @@
   "单击这里写字。行首写 [ ] 的一行是待办，单击方框打勾。": "Click here to write. A line that starts with [ ] is a to-do; click its box to tick it.",
   "便签里的文字会一起删除。": "The text in the note is deleted with it.",
   "编辑便签": "Edit note",
+  "添加待办": "Add to-do",
   "时钟": "Clock",
   "显示秒": "Show seconds",
   "{0} · 正在运行…": "{0} · Running…",

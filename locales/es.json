@@ -642,6 +642,7 @@
   "单击这里写字。行首写 [ ] 的一行是待办，单击方框打勾。": "Haz clic aquí para escribir. Una línea que empieza con [ ] es una tarea; haz clic en su casilla para marcarla.",
   "便签里的文字会一起删除。": "El texto de la nota se eliminará con ella.",
   "编辑便签": "Editar nota",
+  "添加待办": "Añadir tarea",
   "时钟": "Reloj",
   "显示秒": "Mostrar segundos",
   "{0} · 正在运行…": "{0} · En ejecución…",

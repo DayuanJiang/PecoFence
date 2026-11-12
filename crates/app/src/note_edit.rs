@@ -365,6 +365,25 @@ pub fn set_caret(fence: FenceId, offset: usize, extend: bool, word: bool) {
     );
 }
 
+/// 「添加待办」 in the note's menu: an empty to-do after the last line of note `fence`, whose
+/// editor is open, with the caret in it. It goes in as typed text (Ctrl+Z takes it back).
+pub fn add_todo(fence: FenceId) {
+    let Some((handle, open, _)) = active() else {
+        return;
+    };
+    if open != fence {
+        return;
+    }
+    let raw = handle.text();
+    let end = raw.encode_utf16().count();
+    let add = note::new_todo_suffix(&raw.replace("\r\n", "\n"));
+    tracing::debug!(%fence, add, "note editor: to-do added from the menu");
+    handle.select(end, end);
+    if !add.is_empty() {
+        handle.replace_selection(&add.replace('\n', "\r\n"));
+    }
+}
+
 /// Opens the control's text menu (cut, copy, paste, select all) at screen point (`x`, `y`).
 pub fn text_menu(x: i32, y: i32) {
     if let Some((handle, ..)) = active() {
@@ -426,6 +445,36 @@ fn on_key(vk: u32) -> bool {
         if let Some(to) = to {
             set_caret(fence, to, shift, false);
             return true;
+        }
+    }
+    // Enter in a to-do starts the next line with an empty check box, and in a to-do without
+    // text takes the check box away, as lists do in editors (feedback #141). Shift+Enter is
+    // the control's plain line break.
+    if vk == msg::VK_RETURN && !shift {
+        let raw = handle.text();
+        let units: Vec<u16> = raw.encode_utf16().collect();
+        let (first, last) = handle.selection();
+        let text = raw.replace("\r\n", "\n");
+        let does = note::todo_enter(
+            &text,
+            note::crlf_to_lf_offset(&units, first),
+            note::crlf_to_lf_offset(&units, last),
+        );
+        tracing::debug!(%fence, ?does, "note editor: Enter");
+        match does {
+            Some(note::TodoEnter::NewBox(add)) => {
+                handle.replace_selection(&add.replace('\n', "\r\n"));
+                return true;
+            }
+            Some(note::TodoEnter::RemoveBox(from, to)) => {
+                handle.select(
+                    note::lf_to_crlf_offset(&units, from),
+                    note::lf_to_crlf_offset(&units, to),
+                );
+                handle.replace_selection("");
+                return true;
+            }
+            None => {}
         }
     }
     // Backspace right after a to-do's check box takes the check box away: its marker is not
