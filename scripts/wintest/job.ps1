@@ -21,6 +21,15 @@ if (Test-Path -LiteralPath (Join-Path $PfDesk 'EC2 Feedback.url')) {
       Log "desktop: removing what an earlier job left: $($_.Name)"
       Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
     }
+  # The same for Windows' app colour mode: a job that was cut off while it had the box on dark
+  # left the next jobs' pictures dark (2026-11-13: a fade check read a dark search box as "no
+  # fade" twice on one box). Steps that want dark set it themselves.
+  $themeKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+  $apps = (Get-ItemProperty -Path $themeKey -ErrorAction SilentlyContinue).AppsUseLightTheme
+  if ($null -ne $apps -and $apps -eq 0) {
+    Log 'colour mode: an earlier job left Windows on dark for apps: set back to light'
+    Set-ItemProperty -Path $themeKey -Name AppsUseLightTheme -Value 1 -Type DWord
+  }
 }
 . $PfSteps
 Case 'end'
