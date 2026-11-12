@@ -141,7 +141,7 @@ pub(super) struct SettingsKept {
 
 fn snapshot_limit_text() -> String {
     pecofence_core::i18n::format(
-        "快照已达上限（{0} 个），未保存新快照。请删除不需要的快照。",
+        "请删除不需要的快照：快照已达上限（{0} 个），未保存新快照。",
         &[pecofence_core::MAX_SNAPSHOTS.to_string()],
     )
 }
@@ -150,7 +150,7 @@ fn snapshot_limit_text() -> String {
 /// room. Says so, where [`snapshot_limit_text`] only speaks of the snapshot.
 fn not_done_for_snapshot_limit_text() -> String {
     pecofence_core::i18n::format(
-        "快照已达上限（{0} 个），无法先保存当前布局，所以什么都没有改。请删除不需要的快照后再试。",
+        "请删除不需要的快照后再试：快照已达上限（{0} 个），无法先保存当前布局，所以什么都没有改。",
         &[pecofence_core::MAX_SNAPSHOTS.to_string()],
     )
 }
