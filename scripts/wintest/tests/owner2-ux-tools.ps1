@@ -221,6 +221,15 @@ Check 'Enter inside a to-do splits it into two to-dos' ($t -eq "[ ] 西红柿`n[
 [G]::Press(0x1B); Start-Sleep -Milliseconds 700
 $t = NoteText $nid
 Check 'Shift+Enter starts a plain line' ($t -eq "[ ] 西红柿`nx`n[ ] 鸡蛋") "note: $(OneLine $t)"
+# The old way still works: a marker typed on the line Enter began as a to-do is not doubled.
+Pf fence set $nid noteText "[ ] 茶" --string | Out-Null
+Start-Sleep -Milliseconds 700
+[G]::Click($c[0] + [int]$b0[2] + 60, $c[1] + [int](($b0[1] + $b0[3]) / 2)); Start-Sleep -Milliseconds 700
+[G]::Press(0x23); [G]::Press(0x0D); Start-Sleep -Milliseconds 300
+[G]::Type('[ ] 咖啡'); Start-Sleep -Milliseconds 400
+[G]::Press(0x1B); Start-Sleep -Milliseconds 700
+$t = NoteText $nid
+Check 'a marker typed after Enter on a to-do line is not doubled' ($t -eq "[ ] 茶`n[ ] 咖啡") "note: $(OneLine $t)"
 
 Case 'B2 a check box answers the pointer and acts on release'
 Pf fence set $nid noteText "买菜`n[ ] 西红柿`n[x] 鸡蛋" --string | Out-Null
@@ -396,6 +405,23 @@ $after = (PfJson settings get).tools.clockSeconds
 Check 'without the seconds the entry reads 显示秒' ($off -match '(^| )显示秒( |$)') "menu: $off"
 Check 'with the seconds on the entry reads 不显示秒' ($on -match '不显示秒') "menu: $on"
 Check 'picking it takes the seconds away' ($picked -and $after -eq $false) "picked '$picked', tools.clockSeconds=$after"
+Case 'E4 a clock too narrow for its seconds'
+# 86 px: the narrowest a title 「时钟」 lets the mouse make it.
+Pf settings set tools.clockSeconds true | Out-Null
+Pf fence move $cid --rect '100,100,86,150' | Out-Null
+Start-Sleep -Milliseconds 1500
+$w = DumpOf '时钟'
+$c = CRect $w
+# The time's line, from the text's left edge to 4 px before the fence's right edge (its rim).
+$ink = [UX]::Ink($w.l + 16, $c[1] + 2, $w.r - $w.l - 20, 30, 50) -split ' '
+$gap = ($w.r - $w.l - 20) - 1 - [int]$ink[1]
+FCrop 'e4-narrow-clock' $w
+Check 'in an 86 px wide clock the time ends before the edge' ([int]$ink[0] -gt 20 -and $gap -ge 8) "text pixels $($ink[0]), room right of the last one $gap px; time form: $(DumpVal $w 'clock_time')"
+Pf fence move $cid --rect '100,100,240,140' | Out-Null
+Start-Sleep -Milliseconds 1200
+$w = DumpOf '时钟'
+$wide = [UX]::Ink($w.l + 16, $w.t + 38, 200, 50, 50) -split ' '
+Check 'at 240 px the seconds are back' ([int]$wide[1] -ge 100) "the time's last text pixel is $($wide[1]) px from its left edge; time form: $(DumpVal $w 'clock_time')"
 Pf settings set tools.clockSeconds false | Out-Null
 Pf fence delete $cid | Out-Null
 

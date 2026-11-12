@@ -5077,6 +5077,29 @@ impl FenceChrome {
         (time, date)
     }
 
+    /// 时钟与日期: the time a clock area `width` × `height` DIPs has room for at the size
+    /// [`Self::clock_text_sizes`] gives: `time`, else `short` (the same time without its
+    /// seconds; empty when `time` has none), which a clock at its smallest size in a narrow
+    /// fence falls back to. The second value names the choice for the log.
+    pub fn clock_time<'a>(
+        &self,
+        width: f32,
+        height: f32,
+        time: &'a str,
+        short: &'a str,
+        date: &str,
+    ) -> (&'a str, &'static str) {
+        let (time_dip, _) = self.clock_text_sizes(width, height, time, date);
+        let w = (width - 2.0 * CLOCK_FIT_PAD_X).max(1.0);
+        let wide =
+            crate::text::measure_width(time, &self.clock_time_format) * time_dip / CLOCK_TIME_DIP;
+        if short.is_empty() || wide <= w {
+            (time, "full")
+        } else {
+            (short, "short")
+        }
+    }
+
     /// 时钟与日期: the date line a clock area `width` × `height` DIPs has room for on one
     /// line at the size [`Self::clock_text_sizes`] gives: `long`, else `short` (no year, the
     /// short weekday), else none. Without a short date the long one stays. The second value

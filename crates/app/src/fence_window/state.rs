@@ -256,6 +256,9 @@ pub struct FenceViewState {
     /// The clock's date line as last drawn: "long", "short" (no year, the short weekday) or
     /// "none", by what fits the width.
     pub(super) clock_date: &'static str,
+    /// The clock's time as last drawn: "full", or "short" (without its seconds, which did not
+    /// fit the width at the smallest size).
+    pub(super) clock_time: &'static str,
     /// 文字大小 of a note or script fence: 0 small, 1 normal, 2 large, 3 extra large.
     pub(super) text_size: u8,
     /// A note's or a script fence's text as last measured (`take_tool_extent`): the height

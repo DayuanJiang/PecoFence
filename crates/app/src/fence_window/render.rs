@@ -1380,6 +1380,12 @@ impl FenceViewState {
             return Ok(());
         };
         let (time, date, short_date) = pecofence_platform::fileinfo::clock_texts(seconds);
+        // The time without its seconds, for a clock too narrow for them at its smallest size.
+        let time_short = if seconds {
+            pecofence_platform::fileinfo::clock_texts(false).0
+        } else {
+            String::new()
+        };
         let theme = self
             .material_foreground()
             .with_label_color(self.behavior.label_color.get());
@@ -1388,18 +1394,31 @@ impl FenceViewState {
         let mut area = (0.0, 0.0);
         let mut date_shown = self.clock_date;
         let mut date_text = String::new();
+        let mut time_shown = self.clock_time;
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
                 area = (wd, hd);
-                let (shown, which) = chrome.clock_date(wd, hd, &time, &date, &short_date);
+                let (time, which) = chrome.clock_time(wd, hd, &time, &time_short, &date);
+                time_shown = which;
+                let (shown, which) = chrome.clock_date(wd, hd, time, &date, &short_date);
                 date_shown = which;
                 date_text = shown.to_string();
-                sizes = chrome.draw_clock(session, &theme, wd, hd, &time, &date, shown)?;
+                sizes = chrome.draw_clock(session, &theme, wd, hd, time, &date, shown)?;
                 Ok(())
             })?;
         self.note_draw_result(ok);
         self.clock_text = sizes;
+        if time_shown != self.clock_time {
+            tracing::debug!(
+                fence = %self.active,
+                area_w = area.0.round(),
+                time = time_shown,
+                from = self.clock_time,
+                "clock time: with its seconds while they fit the width"
+            );
+            self.clock_time = time_shown;
+        }
         if date_shown != self.clock_date {
             tracing::debug!(
                 fence = %self.active,
