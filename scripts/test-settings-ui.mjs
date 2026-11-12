@@ -3154,6 +3154,29 @@ async function runTests() {
     assert(!moving().some(line => line.startsWith('#settingsSearchList')), 'The list comes in again at every key');
     doc = await reset();
   });
+  await test('The notice with 撤销 stays while the pointer is on it, and leaves after the pointer does', async () => {
+    doc = await reset();
+    // The page's long timers run 100 times faster here: the notice's 6 s are 60 ms.
+    const w = frame.contentWindow, realTimeout = w.setTimeout;
+    w.setTimeout = (run, ms, ...rest) => realTimeout(run, ms >= 1000 ? ms / 100 : ms, ...rest);
+    const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+    doc.querySelector('[data-page=rules]').click();
+    const bar = doc.getElementById('toast');
+    doc.querySelector('#ruleList [data-act=del]').click();
+    assert(bar.classList.contains('on') && bar.classList.contains('undo'), 'No notice with 撤销 after a delete');
+    bar.dispatchEvent(new w.PointerEvent('pointerenter'));
+    await pause(250);
+    assert(bar.classList.contains('on'), 'The notice left while the pointer was on it');
+    bar.dispatchEvent(new w.PointerEvent('pointerleave'));
+    await pause(5);
+    assert(bar.classList.contains('on'), 'The notice left the moment the pointer did');
+    assert(await until(() => !bar.classList.contains('on')), 'The notice never left after the pointer did');
+    // Left alone it goes by itself.
+    doc.querySelector('#ruleList [data-act=del]').click();
+    assert(bar.classList.contains('on'), 'No notice after the second delete');
+    assert(await until(() => !bar.classList.contains('on')), 'A notice that nobody points at stays');
+    doc = await reset();
+  });
 
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';

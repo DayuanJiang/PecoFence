@@ -2771,10 +2771,20 @@
     document.getElementById('toastUndo').hidden = !undo;
     el.classList.toggle('undo', !!undo);
     el.classList.add('on');
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(toastOff, undo ? 6000 : error ? 5000 : 2400);
+    toastLeaveIn(undo ? 6000 : error ? 5000 : 2400);
   }
   function toastOff() { clearTimeout(toastTimer); toastUndo = null; document.getElementById('toast').classList.remove('on', 'undo'); }
+  // The notice with 撤销 stays while the pointer is on it or the focus is on its button, and
+  // for 2 s after: the button must not go away under the pointer.
+  function toastLeaveIn(ms) {
+    const el = document.getElementById('toast');
+    clearTimeout(toastTimer);
+    if (!el.matches(':hover') && !el.contains(document.activeElement)) toastTimer = setTimeout(toastOff, ms);
+  }
+  for (const [hold, release] of [['pointerenter', 'pointerleave'], ['focusin', 'focusout']]) {
+    document.getElementById('toast').addEventListener(hold, () => clearTimeout(toastTimer));
+    document.getElementById('toast').addEventListener(release, () => { if (document.getElementById('toast').classList.contains('on')) toastLeaveIn(2000); });
+  }
   document.getElementById('toastUndo').onclick = () => { const undo = toastUndo; toastOff(); if (undo) undo(); };
 
   function renderWorkspaceSummary(fenceCount, itemCount) {
