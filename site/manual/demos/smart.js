@@ -1,6 +1,6 @@
-// 4.6 智能栅栏 (lesson id smart): 添加到桌面 › 新建智能栅栏… in a fence's menu opens the editor, a small
-// window of its own (ui/settings.html #seWindow): a name, five templates, the conditions row by
-// row and the live count. A click on 「最近 7 天下载」 fills the name and the rows (the Downloads
+// 4.6 智能栅栏 (lesson id smart): 添加到桌面 › 新建智能栅栏… in a fence's menu opens the editor, a
+// window of its own (ui/settings.html #seWindow, 880 x 660 DIP: settings_host.rs): a name, five
+// templates, the conditions row by row and the live count. A click on 「最近 7 天下载」 fills the name and the rows (the Downloads
 // folder with subfolders, the last 7 days, files); 「创建」 makes the fence at the first free spot
 // from the top left, since the spot by the menu is taken (fences.rs place_new_fence). Its title
 // has the folder glyph with a magnifier and the count in a capsule; the files are newest first,
@@ -13,7 +13,7 @@
     const D = 9.8;
     const F0 = { x: 530, y: 24, w: 246, h: 124, title: '文件与文档',
         items: [['pdf', '合同.pdf'], ['docx', '周报.docx'], ['xlsx', '预算.xlsx']] };
-    const WIN = { x: 184, y: 30, w: 432, h: 358 };
+    const WIN = { x: 145, y: 18, w: 510, h: 384 };      // 880 x 660 at 0.58
     // 4 columns x 260 DIP beside the loose icons' column (the first free spot from the top left)
     const S0 = { x: 92, y: 12, w: 324, h: 204, title: '最近 7 天下载' };
     const COLS = 4;
@@ -110,8 +110,10 @@
                 if (timeAfter.trim()) el('span', 'se-dim', g, timeAfter.trim());
             }),
             row(rows, T('类型'), n => {
+                el('span', 'se-dim', n, '是');
                 const g = el('span', 'se-grow', n);
-                ['文件', '程序', '快捷方式', '文档', '图片'].forEach((label, i) => el('span', i ? 'se-chip' : 'se-chip on', g, label));
+                ['文件', '程序', '快捷方式', '文件夹', '文档', '图片', '音乐', '视频', '压缩包', '安装包']
+                    .forEach((label, i) => el('span', i ? 'se-chip' : 'se-chip on', g, label));
             }),
         ];
 
