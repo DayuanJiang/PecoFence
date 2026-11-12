@@ -35,6 +35,9 @@
     SW_SHOWNOACTIVATE
     SW_SHOWNORMAL
     SetWindowPos
+    BeginDeferWindowPos
+    DeferWindowPos
+    EndDeferWindowPos
     SWP_NOACTIVATE
     SWP_NOMOVE
     SWP_NOSIZE
@@ -308,6 +311,7 @@
     CreateWaitableTimerExW
     SetWaitableTimer
     CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+    DwmGetCompositionTimingInfo
     TIMER_ALL_ACCESS
     WAIT_TIMEOUT
     LoadLibraryExW
