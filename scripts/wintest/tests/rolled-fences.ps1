@@ -236,7 +236,10 @@ if ($Part -match 'D') {
 using System; using System.Threading; using System.Diagnostics; using System.Runtime.InteropServices;
 public static class RgRoll {
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
-  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll", EntryPoint = "GetWindowRect")] static extern bool WindowRectRaw(IntPtr h, out RECT r);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetPropW(IntPtr h, string name);
+  // What the user sees of the window: during a roll the window is taller than the fence, and the app notes the part that shows in the window property PecoFence.Shown (height << 16 | width).
+  static bool GetWindowRect(IntPtr h, out RECT r) { bool ok = WindowRectRaw(h, out r); long s = GetPropW(h, "PecoFence.Shown").ToInt64(); if (s != 0) { r.R = r.L + (int)(s & 0xFFFF); r.B = r.T + (int)((s >> 16) & 0xFFFF); } return ok; }
   [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] static extern void mouse_event(uint f, int x, int y, uint d, UIntPtr e);
   public static int Height(IntPtr h) { RECT r; GetWindowRect(h, out r); return r.B - r.T; }

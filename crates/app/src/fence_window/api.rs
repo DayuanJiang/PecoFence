@@ -517,7 +517,8 @@ impl FenceWindow {
         {
             return r;
         }
-        self.window.window_rect()
+        // A roll holds the window larger than the fence the user sees.
+        crate::fence_window::cut_to_shown(self.hwnd(), self.window.window_rect())
     }
 
     /// A display change places every fence in one pass and reads the others' rects while it
@@ -549,7 +550,7 @@ impl FenceWindow {
             Some(VisFade::Showing) => "showing".to_string(),
             Some(VisFade::Hiding { destroy }) => format!("hiding(destroy={destroy})"),
         };
-        let r = self.window.window_rect();
+        let r = self.rect();
         let origin = window::screen_to_client(
             self.hwnd(),
             pecofence_platform::POINT {
@@ -748,7 +749,7 @@ impl FenceWindow {
     pub fn test_size(&self, wmsz: usize, x: i32, y: i32) -> RECT {
         let hwnd = self.hwnd();
         let edges = SizingEdges::from_wmsz(wmsz);
-        let mut r = self.window.window_rect();
+        let mut r = self.rect();
         if edges.left {
             r.left = x;
         } else if edges.right {
@@ -784,7 +785,7 @@ impl FenceWindow {
     }
 
     fn place_window(&self, r: RECT) {
-        let cur = self.window.window_rect();
+        let cur = self.rect();
         let hwnd = self.hwnd();
         let deferred = self.view.borrow_mut().as_mut().is_some_and(|v| {
             v.height_anim = None;
@@ -837,6 +838,7 @@ impl FenceWindow {
             v.finish_content_swap_now();
             v.roll_anim = None;
             v.height_anim = None;
+            crate::fence_window::set_shown(hwnd, None);
             v.peeking = false;
             // A hover peek ended here, not by its roll-up: back among the other fences too.
             if std::mem::take(&mut v.hover_raised) {
@@ -1329,7 +1331,7 @@ impl FenceWindow {
         if !resting || !desktop::is_visible(hwnd) {
             return false;
         }
-        let r = window::window_rect(hwnd);
+        let r = crate::fence_window::shown_rect(hwnd);
         // Inside the title row, where the name starts.
         let (x, y) = (
             r.left + (24.0 * scale) as i32,
@@ -1611,7 +1613,7 @@ impl FenceWindow {
     }
 
     pub fn begin_remote_drag(&self, hwnd: HWND, change: pecofence_core::TabDetach) {
-        let r = window::window_rect(hwnd);
+        let r = crate::fence_window::shown_rect(hwnd);
         let pt = window::cursor_pos();
         let mut started = false;
         self.with_view(|v| {
@@ -2280,7 +2282,7 @@ impl FenceWindow {
             if !v.rolled_up || v.peeking || v.roll_anim.is_some() || v.retired {
                 return None;
             }
-            let (cur_w, _) = window::window_rect_size(v.hwnd);
+            let (cur_w, _) = crate::fence_window::shown_size(v.hwnd);
             let w = if v.tabs_on_rail() {
                 v.rail_dip = v.measure_rail_w();
                 v.rail_px()
@@ -2301,7 +2303,7 @@ impl FenceWindow {
             .window
             .set_bounds(r.left, top_for_height(upward, &r, h), w, h);
         self.with_view(|v| v.update_shadow_now());
-        Some(window::window_rect(self.hwnd()))
+        Some(crate::fence_window::shown_rect(self.hwnd()))
     }
 
     /// Windows a title or tear-off drag driven by this window moves right now (the dragged one
@@ -2336,7 +2338,7 @@ impl FenceWindow {
     /// `glide_to` with its time and curve; `notify`: the app hears the bounds on arrival.
     fn start_glide(&self, to: RECT, time: Duration, curve: Curve, notify: bool) -> bool {
         let hwnd = self.hwnd();
-        let r = self.window.window_rect();
+        let r = self.rect();
         let same_size =
             r.right - r.left == to.right - to.left && r.bottom - r.top == to.bottom - to.top;
         let far = (to.left - r.left).abs() > 2 || (to.top - r.top).abs() > 2;
@@ -2449,7 +2451,7 @@ impl FenceWindow {
             if v.apply_dpi(dpi) {
                 changed = true;
                 v.update_backdrop();
-                let (w, h) = window::window_rect_size(hwnd);
+                let (w, h) = crate::fence_window::shown_size(hwnd);
                 if let Err(e) = v.layout_panels(w, h).and_then(|_| v.redraw()) {
                     tracing::error!(error = %e, "relayout after DPI drift failed");
                 }
@@ -2691,7 +2693,7 @@ impl FenceWindow {
         let mut relayout = force;
         if let Some((rect, changed)) = placed {
             relayout |= changed;
-            let old = window::window_rect(hwnd);
+            let old = crate::fence_window::shown_rect(hwnd);
             if rect != old {
                 if (rect.left, rect.top) != (old.left, old.top) {
                     // The cells are measured from the window's corner: motion in flight was
@@ -2707,7 +2709,7 @@ impl FenceWindow {
         }
         if relayout {
             self.with_view(|v| {
-                let (w, h) = window::window_rect_size(hwnd);
+                let (w, h) = crate::fence_window::shown_size(hwnd);
                 if let Err(e) = v.layout_panels(w, h).and_then(|_| v.redraw()) {
                     tracing::warn!(error = %e, "relayout for 像桌面一样排列 failed");
                 }
@@ -2804,7 +2806,7 @@ impl FenceWindow {
             let floor = v.title_h_px() + 40;
             let full = v.expanded_h_px.max(floor);
             let target = full.min(room_px.max(floor));
-            let cur = window::window_rect_size(v.hwnd).1;
+            let cur = crate::fence_window::shown_size(v.hwnd).1;
             let capped = (target < full).then_some(target);
             if cur == target {
                 v.capped_h_px = capped;
@@ -2965,7 +2967,7 @@ impl FenceWindow {
                 item.icon_stand_in = None;
             }
             v.device_lost = false;
-            let (w, h) = window::window_rect_size(v.hwnd);
+            let (w, h) = crate::fence_window::shown_size(v.hwnd);
             if let Err(e) = v.layout_panels(w, h).and_then(|_| v.redraw()) {
                 tracing::error!(error = %e, "redraw after device recovery failed");
             }
@@ -3212,7 +3214,7 @@ impl FenceWindow {
             }
             v.update_shadow();
             v.invalidate_backdrop();
-            let (w, h) = window::window_rect_size(v.hwnd);
+            let (w, h) = crate::fence_window::shown_size(v.hwnd);
             let _ = v.layout_panels(w, h);
             let _ = v.redraw();
         });

@@ -842,7 +842,7 @@ impl FenceViewState {
     /// Edge auto-scroll bookkeeping for a drag hovering at screen point `pt` (see
     /// `DragScroll`): enters / leaves / re-arms the zone; the scrolling itself runs in `tick`.
     pub(super) fn update_drag_scroll(&mut self, pt: DragPoint) {
-        let r = window::window_rect(self.hwnd);
+        let r = crate::fence_window::shown_rect(self.hwnd);
         let cy = pt.y - r.top;
         let (top, bottom) = self.marquee_band_px();
         let zone_px = (DRAG_SCROLL_ZONE_DIP * self.scale()) as i32;

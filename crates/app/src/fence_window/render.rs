@@ -852,7 +852,7 @@ impl FenceViewState {
             self.lock_press = None;
             return;
         }
-        let r = window::window_rect(self.hwnd);
+        let r = crate::fence_window::shown_rect(self.hwnd);
         let inside = pt.0 >= r.left && pt.0 < r.right && pt.1 >= r.top && pt.1 < r.bottom;
         if lock_drag_refused(press, pt, window::drag_threshold(), inside) {
             self.lock_press = None;
@@ -897,7 +897,7 @@ impl FenceViewState {
         let backdrop = match (self.backdrop_mode(), crop) {
             (BackdropMode::Acrylic, _) if self.theme.liquid_glass && !wallpaper.is_empty() => {
                 let (x, y, w, h) = self.backdrop_rect.unwrap_or_else(|| {
-                    let r = window::window_rect(self.hwnd);
+                    let r = crate::fence_window::shown_rect(self.hwnd);
                     (r.left, r.top, r.right - r.left, r.bottom - r.top)
                 });
                 Backdrop::GpuGlass {
@@ -1076,7 +1076,7 @@ impl FenceViewState {
     /// so the moving bottom edge only reveals or conceals finished pixels. Liquid Glass
     /// instead follows the curved bottom bezel each frame. Returns whether the crop changed.
     pub(super) fn update_backdrop(&mut self) -> bool {
-        let r = window::window_rect(self.hwnd);
+        let r = crate::fence_window::shown_rect(self.hwnd);
         self.update_backdrop_at(r)
     }
 
@@ -2393,7 +2393,7 @@ impl FenceViewState {
             && label_color == pecofence_core::LabelColor::Auto
         {
             let r = self.backdrop_rect.unwrap_or_else(|| {
-                let r = window::window_rect(self.hwnd);
+                let r = crate::fence_window::shown_rect(self.hwnd);
                 (r.left, r.top, r.right - r.left, r.bottom - r.top)
             });
             Some(Backdrop::GpuGlass {

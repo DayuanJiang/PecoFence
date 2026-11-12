@@ -897,7 +897,7 @@ impl FenceViewState {
         if self.tabs.len() < 2 || x_screen == i32::MIN {
             return self.tabs.len();
         }
-        let r = window::window_rect(self.hwnd);
+        let r = crate::fence_window::shown_rect(self.hwnd);
         let along = if self.tabs_on_rail() {
             y_screen.saturating_sub(r.top)
         } else {
@@ -946,7 +946,7 @@ impl FenceViewState {
         let pointer = match (&self.tab_drag, self.merge_pointer) {
             (Some(td), _) if td.moved => Some(td.pointer_x),
             (None, Some((x, _))) if self.merge_gap.is_some() => {
-                let r = window::window_rect(self.hwnd);
+                let r = crate::fence_window::shown_rect(self.hwnd);
                 Some(x.saturating_sub(r.left) as f32 / self.scale())
             }
             _ => None,

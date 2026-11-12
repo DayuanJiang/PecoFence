@@ -1136,7 +1136,7 @@ impl DesktopAnchor {
             .fences
             .iter()
             .filter(|(f, _)| desktop::is_visible(*f))
-            .map(|(f, _)| window::window_rect(*f))
+            .map(|(f, _)| crate::fence_window::shown_rect(*f))
             .collect();
         windows[..host_index].iter().copied().find(|&w| {
             // Nearly every window above the raised desktop is always on top: that test first.
@@ -1424,7 +1424,7 @@ impl DesktopAnchor {
                 if !desktop::is_visible(*f) {
                     return false;
                 }
-                let body = window::window_rect(*f);
+                let body = crate::fence_window::shown_rect(*f);
                 let cast = shadow
                     .filter(|s| desktop::is_visible(*s))
                     .map_or(body, window::window_rect);

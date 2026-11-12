@@ -72,6 +72,12 @@ pub(super) fn on_nchittest(
     let HandlerCtx { view, .. } = h;
     let x = msg::lo_i16(lparam);
     let y = msg::hi_i16(lparam);
+    // During a roll the window is taller than the fence the user sees: a point of the
+    // window outside that part belongs to what lies under it.
+    let shown = crate::fence_window::shown_rect(hwnd);
+    if x < shown.left || x >= shown.right || y < shown.top || y >= shown.bottom {
+        return Some(msg::HTTRANSPARENT);
+    }
     // WindowFromPoint & friends send WM_NCHITTEST synchronously while another
     // arm may hold the borrow: degrade to HTCLIENT instead of panicking.
     let Ok(guard) = view.try_borrow() else {
@@ -80,7 +86,13 @@ pub(super) fn on_nchittest(
     let Some(v) = guard.as_ref() else {
         return Some(msg::HTCLIENT);
     };
-    Some(hit_code(v, &window::window_rect(hwnd), x, y, v.locked))
+    Some(hit_code(
+        v,
+        &crate::fence_window::shown_rect(hwnd),
+        x,
+        y,
+        v.locked,
+    ))
 }
 
 /// What WM_NCHITTEST answers for the screen point (`x`, `y`) of the fence at `rect`. `locked` is
@@ -211,7 +223,7 @@ pub(super) fn on_ncmousemove(
         // A title press on a locked fence that turns into a drag: the lock glyph pulses.
         v.note_lock_drag((msg::lo_i16(lparam), msg::hi_i16(lparam)));
         // Beside a left tab column the column is the title bar (the only caption area there).
-        let top = window::window_rect(hwnd).top;
+        let top = crate::fence_window::shown_rect(hwnd).top;
         let is_title = wparam as isize == msg::HTCAPTION
             && (v.tabs_on_rail() || msg::hi_i16(lparam) - top < v.title_h_px());
         let (item, title) = v.set_hover(None, is_title);
@@ -376,7 +388,7 @@ pub(super) fn on_nclbuttondown(
     queue.push(Command::RaiseFence(hwnd));
     if wparam as isize == msg::HTCAPTION {
         let start = (msg::lo_i16(lparam), msg::hi_i16(lparam));
-        let rect = window::window_rect(hwnd);
+        let rect = crate::fence_window::shown_rect(hwnd);
         let custom = {
             let mut guard = view.borrow_mut();
             if let Some(v) = guard.as_mut() {
@@ -635,6 +647,9 @@ pub(super) fn on_size(h: &HandlerCtx, hwnd: HWND, _wparam: usize, lparam: isize)
     let started = Instant::now();
     let w = msg::lo_i16(lparam);
     let h = msg::hi_i16(lparam);
+    // A roll holds the window larger than what it shows: all of this is for the part
+    // that shows, for the roll's one real resize as for its steps.
+    let (w, h) = crate::fence_window::shown_part(hwnd).unwrap_or((w, h));
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
         // A window created during early logon may have reported 96 DPI
@@ -676,7 +691,7 @@ pub(super) fn on_size(h: &HandlerCtx, hwnd: HWND, _wparam: usize, lparam: isize)
         if tracing::enabled!(target: "pecofence::frame_shape", tracing::Level::TRACE)
             && v.theme.liquid_glass
         {
-            let r = window::window_rect(hwnd);
+            let r = crate::fence_window::shown_rect(hwnd);
             let origin = window::screen_to_client(
                 hwnd,
                 pecofence_platform::POINT {
@@ -767,7 +782,7 @@ pub(super) fn on_entersizemove(
         v.height_anim = None;
         v.glide = None;
     }
-    let (r, pt) = (window::window_rect(hwnd), window::cursor_pos());
+    let (r, pt) = (crate::fence_window::shown_rect(hwnd), window::cursor_pos());
     let caption = move_start.take();
     let (start_x, start_y) = caption.unwrap_or((pt.x, pt.y));
     h.move_cancelled.set(false);
@@ -835,7 +850,7 @@ pub(super) fn on_exitsizemove(
         .replace(None)
         .is_some_and(|m| m.moving && m.hwnd == hwnd);
     hide_drag_feedback(&h.behavior);
-    let rect = window::window_rect(hwnd);
+    let rect = crate::fence_window::shown_rect(hwnd);
     let at_enter = rect_at_enter.get();
     // Cancelled while the pointer was over a monitor with another scale, the move loop can
     // leave the window on that monitor's DPI although it is back on its own (a group drag
@@ -1088,7 +1103,7 @@ pub(super) fn on_sizing(h: &HandlerCtx, hwnd: HWND, wparam: usize, lparam: isize
     let edges = SizingEdges::from_wmsz(wparam);
     let guides = size_among(
         rect,
-        &window::window_rect(hwnd),
+        &crate::fence_window::shown_rect(hwnd),
         edges,
         &rules,
         near.as_ref(),
@@ -1302,7 +1317,7 @@ pub(super) fn on_dpichanged(
     // DPI still changes the optical bezel, root clip and content layout in that case.
     if let Some(v) = view.borrow_mut().as_mut() {
         v.update_backdrop();
-        let (w, h) = window::window_rect_size(hwnd);
+        let (w, h) = crate::fence_window::shown_size(hwnd);
         if let Err(error) = v.layout_panels(w, h).and_then(|_| v.redraw()) {
             tracing::error!(%error, "redraw after DPI change failed");
         }
@@ -1317,7 +1332,7 @@ pub(super) fn on_dpichanged(
         to = new_dpi,
         before = ?edges(before),
         suggested = ?edges(suggested),
-        after = ?edges(window::window_rect(hwnd)),
+        after = ?edges(crate::fence_window::shown_rect(hwnd)),
         placed = placing,
         "fence WM_DPICHANGED"
     );

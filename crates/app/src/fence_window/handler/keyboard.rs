@@ -460,7 +460,7 @@ pub(super) fn on_contextmenu(
     // A rolled-up fence shows no items: the Menu key opens the fence menu there.
     if ids.is_empty() || v.roll_target() {
         // Background menu at the content's top-left.
-        let win = window::window_rect(hwnd);
+        let win = crate::fence_window::shown_rect(hwnd);
         let pad = (8.0 * v.scale()) as i32;
         queue.push(Command::FenceMenu {
             fence: v.active,

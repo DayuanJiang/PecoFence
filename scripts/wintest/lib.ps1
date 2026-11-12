@@ -40,7 +40,10 @@ using System.Drawing;
 public static class G {
   [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr v);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowW(string cls, string title);
-  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll", EntryPoint = "GetWindowRect")] static extern bool WindowRectRaw(IntPtr h, out RECT r);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr GetPropW(IntPtr h, string name);
+  // What the user sees of the window: during a roll the window is taller than the fence, and the app notes the part that shows in the window property PecoFence.Shown (height << 16 | width).
+  public static bool GetWindowRect(IntPtr h, out RECT r) { bool ok = WindowRectRaw(h, out r); long s = GetPropW(h, "PecoFence.Shown").ToInt64(); if (s != 0) { r.R = r.L + (int)(s & 0xFFFF); r.B = r.T + (int)((s >> 16) & 0xFFFF); } return ok; }
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();

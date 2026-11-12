@@ -293,6 +293,7 @@ pub(super) fn on_destroy(
     _lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { anchor, .. } = h;
+    crate::fence_window::set_shown(hwnd, None);
     if let Ok(mut guard) = anchor.try_borrow_mut()
         && let Some(a) = guard.as_mut()
     {

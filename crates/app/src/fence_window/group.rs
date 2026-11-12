@@ -27,7 +27,7 @@ pub(super) fn group_members(behavior: &Behavior, me: HWND) -> Vec<GroupMember> {
         .map(|&(hwnd, fence)| GroupMember {
             hwnd,
             fence,
-            start: window::window_rect(hwnd),
+            start: crate::fence_window::shown_rect(hwnd),
         })
         .collect()
 }
@@ -143,7 +143,7 @@ pub(super) fn place_group(
 /// there. Call with no view borrow held: the members' handlers run synchronously.
 pub(super) fn move_members(members: &[GroupMember], placed: &[RECT]) {
     for (m, r) in members.iter().zip(placed) {
-        let now = window::window_rect(m.hwnd);
+        let now = crate::fence_window::shown_rect(m.hwnd);
         if (now.left, now.top) != (r.left, r.top) {
             let _ = window::move_window_to(m.hwnd, r.left, r.top);
         }

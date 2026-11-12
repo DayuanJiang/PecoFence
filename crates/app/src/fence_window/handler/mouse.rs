@@ -194,7 +194,7 @@ pub(super) fn on_lbuttondown(
         v.lock_press = None;
         let on_locked_edge = v.locked && {
             let pt = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
-            super::nc::lock_refuses(v, &window::window_rect(hwnd), pt.x, pt.y)
+            super::nc::lock_refuses(v, &crate::fence_window::shown_rect(hwnd), pt.x, pt.y)
         };
         let lock_press = |leave_only: bool| {
             let pt = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
@@ -464,7 +464,7 @@ pub(super) fn on_lbuttonup(
         v.remote_drag.take()
     });
     if let Some(drag) = remote {
-        let r = window::window_rect(drag.hwnd);
+        let r = crate::fence_window::shown_rect(drag.hwnd);
         tracing::debug!(
             started = drag.started,
             release = ?(release.x, release.y),

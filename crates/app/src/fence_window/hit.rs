@@ -71,7 +71,7 @@ impl FenceViewState {
         let Some(r) = self.item_label_rect(id) else {
             return false;
         };
-        let win = window::window_rect(self.hwnd);
+        let win = crate::fence_window::shown_rect(self.hwnd);
         let (sx, sy) = (x_px + win.left, y_px + win.top);
         sx >= r.left && sx < r.right && sy >= r.top && sy < r.bottom
     }
@@ -660,7 +660,7 @@ impl FenceViewState {
             ItemLayout::Grid(_) => 0.0,
             ItemLayout::Rows { metrics, .. } => metrics.header_h,
         };
-        let win = window::window_rect(self.hwnd);
+        let win = crate::fence_window::shown_rect(self.hwnd);
         let (left, top) = (win.left + self.content_x, win.top + self.content_y);
         let y = cell.y - self.scroll_y + header;
         Some(RECT {
@@ -679,7 +679,7 @@ impl FenceViewState {
         let width_dip = cw as f32 / scale;
         let layout = self.layout(width_dip);
         let cell = layout.cell(index);
-        let win = window::window_rect(self.hwnd);
+        let win = crate::fence_window::shown_rect(self.hwnd);
         let title_h = self.content_y;
         let (left, top, right, bottom) = match &layout {
             ItemLayout::Grid(grid) => {
@@ -802,7 +802,7 @@ impl FenceViewState {
     /// into, with 向上展开 also only as far as the fences there can make room. The edge that stays
     /// put is the one measured from, so the cap does not grow as the fence does.
     fn bounded_height_px(&self, desired: i32) -> i32 {
-        let rect = window::window_rect(self.hwnd);
+        let rect = crate::fence_window::shown_rect(self.hwnd);
         monitors::query(monitors::monitor_from_window(self.hwnd)).map_or(desired, |monitor| {
             let (above, below) = if self.expand_upward {
                 self.expand_rooms_px()
@@ -841,7 +841,7 @@ impl FenceViewState {
             .find(|(hwnd, ..)| *hwnd == self.hwnd)
             .map(|&(_, above, below)| (above, below));
         kept.unwrap_or_else(|| {
-            let rect = window::window_rect(self.hwnd);
+            let rect = crate::fence_window::shown_rect(self.hwnd);
             monitors::query(monitors::monitor_from_window(self.hwnd))
                 .map_or((i32::MAX, i32::MAX), |m| {
                     (rect.bottom - m.work_area.top, m.work_area.bottom - rect.top)
@@ -867,7 +867,7 @@ impl FenceViewState {
     #[cfg(debug_assertions)]
     pub(super) fn test_item_point(&self, name: &str) -> Option<(i32, i32)> {
         let scale = self.scale();
-        let r = window::window_rect(self.hwnd);
+        let r = crate::fence_window::shown_rect(self.hwnd);
         if let Some(title) = name.strip_prefix("tab:") {
             let i = self.tabs.iter().position(|t| t.title.contains(title))?;
             let (x, w) = *self.tab_rects().get(i)?;

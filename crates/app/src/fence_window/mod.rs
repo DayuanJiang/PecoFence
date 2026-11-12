@@ -131,6 +131,89 @@ pub struct FenceContext {
     pub frames: Rc<FrameClock>,
 }
 
+thread_local! {
+    /// Fence windows that show less than they hold: `(hwnd, w, h, upward)` is the part the
+    /// user sees, hanging from the window's top edge or, `upward`, standing on its bottom
+    /// edge. A roll gives the window the larger of its two sizes once (when an expand starts,
+    /// when a roll-up ends) and moves only this part in the frames between
+    /// (`FrameHandle::on_frame`): the root visual's rounded clip ends the picture there, the
+    /// chrome is drawn for it and the shadow follows it. A new window size in every frame made
+    /// the compositor wait in the draws that followed: 6.5 ms per frame of a roll on a PC with
+    /// a graphics card, 2.3 ms with the window's size left alone.
+    static SHOWN: std::cell::RefCell<Vec<(isize, i32, i32, bool)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// `hwnd` shows `part` (`w`, `h`, `upward`) of its window from now on; `None`: all of it.
+pub fn set_shown(hwnd: HWND, part: Option<(i32, i32, bool)>) {
+    note_shown(hwnd, part);
+    publish_shown(hwnd);
+}
+
+/// [`set_shown`] for the app's own readers only: the picture and the window property follow
+/// with [`publish_shown`] (a step that shows less waits for the frame's batch of positions).
+pub fn note_shown(hwnd: HWND, part: Option<(i32, i32, bool)>) {
+    SHOWN.with(|s| {
+        let mut s = s.borrow_mut();
+        s.retain(|p| p.0 != hwnd.0 as isize);
+        if let Some((w, h, upward)) = part {
+            s.push((hwnd.0 as isize, w, h, upward));
+        }
+    });
+}
+
+/// Tells other programs that ask where the fence is (the test kit) the part it shows: the
+/// window's own rectangle is the larger one.
+pub fn publish_shown(hwnd: HWND) {
+    window::set_window_prop(
+        hwnd,
+        "PecoFence.Shown",
+        shown_part(hwnd).map(|(w, h)| ((h as isize) << 16) | (w as isize & 0xffff)),
+    );
+}
+
+/// The size `hwnd` shows of its window while a roll holds the window larger.
+pub fn shown_part(hwnd: HWND) -> Option<(i32, i32)> {
+    SHOWN.with(|s| {
+        s.borrow()
+            .iter()
+            .find(|p| p.0 == hwnd.0 as isize)
+            .map(|p| (p.1, p.2))
+    })
+}
+
+/// `r`, a rectangle of `hwnd`'s window, cut to the part the window shows.
+pub fn cut_to_shown(hwnd: HWND, r: RECT) -> RECT {
+    let part = SHOWN.with(|s| s.borrow().iter().find(|p| p.0 == hwnd.0 as isize).copied());
+    match part {
+        Some((_, w, h, upward)) => shown_of(r, w, h, upward),
+        None => r,
+    }
+}
+
+/// The part `w` x `h` of the window rectangle `r`: from its top edge down or, `upward`, from
+/// its bottom edge up; from its left edge.
+pub fn shown_of(r: RECT, w: i32, h: i32, upward: bool) -> RECT {
+    RECT {
+        left: r.left,
+        top: if upward { r.bottom - h } else { r.top },
+        right: r.left + w,
+        bottom: if upward { r.bottom } else { r.top + h },
+    }
+}
+
+/// The rectangle of a fence window as the user sees it: the window's rectangle, or the part
+/// of it a roll shows. Everything that asks where a fence is asks this.
+pub fn shown_rect(hwnd: HWND) -> RECT {
+    cut_to_shown(hwnd, window::window_rect(hwnd))
+}
+
+/// The size of [`shown_rect`].
+pub fn shown_size(hwnd: HWND) -> (i32, i32) {
+    let r = shown_rect(hwnd);
+    (r.right - r.left, r.bottom - r.top)
+}
+
 /// Live-tunable behaviour flags shared by all fence windows (mirrors `Settings`).
 pub struct Behavior {
     /// Temporary readability backing while fences float over other applications.
@@ -202,6 +285,10 @@ pub struct Behavior {
     /// Height animations whose last step is in `frame_positions`, with the rolled state they
     /// end in: they land (`FrameHandle::land`) once the batch is applied.
     pub frame_landings: std::cell::RefCell<Vec<(HWND, Option<bool>)>>,
+    /// Rolling fences whose step of this frame shows less of the window: they are drawn for
+    /// it once the batch is applied (`FrameHandle::show_step`), so the fences below never
+    /// stand apart from them.
+    pub frame_shown: std::cell::RefCell<Vec<HWND>>,
     /// A rolled fence expanded under the pointer: the next rolled fence the pointer comes to
     /// waits `TAB_HOVER_NEXT_MS` only (as the tabs of a strip do after a hover switch).
     pub roll_quick: std::cell::Cell<bool>,
@@ -325,15 +412,19 @@ impl Behavior {
             .as_ref()
             .and_then(|batch| batch.iter().find(|p| p.hwnd == hwnd))
         else {
-            return r;
+            return cut_to_shown(hwnd, r);
         };
         let (w, h) = p.size.unwrap_or((r.right - r.left, r.bottom - r.top));
-        RECT {
-            left: p.x,
-            top: p.y,
-            right: p.x + w,
-            bottom: p.y + h,
-        }
+        // A window in a roll shows a part of the place the batch gives it.
+        cut_to_shown(
+            hwnd,
+            RECT {
+                left: p.x,
+                top: p.y,
+                right: p.x + w,
+                bottom: p.y + h,
+            },
+        )
     }
 
     /// `rect`, `hwnd`'s window rectangle, without the push shift: what the layout records.
@@ -359,7 +450,7 @@ impl Behavior {
     /// close `hwnd`'s hover peek (the fence would slide away from under the pointer).
     pub fn holds_open(&self, hwnd: HWND, pt: pecofence_platform::POINT) -> bool {
         self.pushed.borrow().iter().any(|p| {
-            let r = window::window_rect(p.hwnd);
+            let r = crate::fence_window::shown_rect(p.hwnd);
             p.by.contains(&hwnd)
                 && pt.x >= r.left
                 && pt.x < r.right
@@ -406,7 +497,7 @@ pub(super) fn queue_bounds_changed(
 ) {
     queue.push(Command::FenceBoundsChanged {
         fence,
-        rect: behavior.resting_rect(hwnd, window::window_rect(hwnd)),
+        rect: behavior.resting_rect(hwnd, crate::fence_window::shown_rect(hwnd)),
     });
 }
 
