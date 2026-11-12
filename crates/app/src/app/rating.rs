@@ -153,6 +153,7 @@ impl App {
             if let Some(notice) = self.answered_card.take() {
                 notice.leave();
             }
+            self.resume_displaced_tip();
             return;
         }
         if self.update_notice().is_some_and(is) {

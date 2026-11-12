@@ -430,6 +430,9 @@ pub struct App {
     answered_card: Option<crate::notice::Notice>,
     /// The roll-up tip waits for the name box of the fence just made (see `welcome.rs`).
     roll_tip_waits: welcome::RollTipWait,
+    /// The tip (a first-start tip, the roll-up tip) that an offer took the place of: it comes
+    /// back later (`feature_tip_allowed`).
+    displaced_tip: Option<welcome::Welcome>,
     /// The 「已删除栅栏」 or 「已按规则整理」 notice with 撤销, and what it undoes.
     undo_notice: Option<(crate::notice::Notice, undo::UndoNotice)>,
     /// Ctrl+Z was pressed while a file operation was running: it runs when that has finished.
@@ -1907,6 +1910,7 @@ impl App {
             undo: Vec::new(),
             answered_card: None,
             roll_tip_waits: Default::default(),
+            displaced_tip: None,
             undo_notice: None,
             undo_waiting: false,
             marquee_offer: None,

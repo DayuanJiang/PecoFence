@@ -11,8 +11,9 @@
 //!   would help right then: 收起 once the user's new fence makes four fences besides 「桌面」;
 //!   在桌面显示此文件夹 when a folder in a fence is opened for the third time; a rule after
 //!   three files of one extension were dragged into one fence in a run. A card that cannot show
-//!   (another card is up) waits for the next such moment; the two offers take the place of the
-//!   收起 card, and that card waits until the name box of the fence just made has closed.
+//!   (another card is up) waits for the next such moment; the two offers take the place of a
+//!   tip (a first-start tip, the 收起 card), which comes back afterwards, and the 收起 card
+//!   waits until the name box of the fence just made has closed.
 //!
 //! None of them shows under a test script or `--exit-after`. What was shown is kept in
 //! `notices.json` beside config.json.
@@ -547,19 +548,26 @@ impl App {
     }
 
     /// 功能提示 may show a card now: switched on, not a test run, no other card on screen.
-    /// An offer for what the user just did (the rule, the folder) takes the place of the
-    /// roll-up tip, which only informs: the offer's moment may not come again (three files of
-    /// one kind are dragged into a new fence right after it was made, while its tip is up).
+    /// An offer for what the user just did (the rule, the folder) takes the place of a tip
+    /// (a first-start tip, the roll-up tip), which only informs: the offer's moment may not
+    /// come again (three files of one kind are dragged into a new fence while a tip is up).
+    /// The tip comes back: a first-start tip once the offer has been answered
+    /// (`resume_displaced_tip`), the roll-up tip with the next fence the user makes.
     fn feature_tip_allowed(&mut self, what: &'static str) -> bool {
         let on = self.state.config.settings.feature_tips;
         if what != "roll"
             && self.notices
             && on
-            && matches!(self.welcome, Some((_, Welcome::RollTip)))
-            && let Some((notice, _)) = self.welcome.take()
+            && matches!(self.welcome, Some((_, Welcome::RollTip | Welcome::Tip(_))))
+            && let Some((notice, tip)) = self.welcome.take()
         {
-            tracing::info!(what, "feature tip takes the place of the roll-up tip");
+            tracing::info!(
+                what,
+                tip = %welcome_kind(&tip),
+                "feature offer takes the place of a tip, which comes back later"
+            );
             notice.leave();
+            self.displaced_tip = Some(tip);
         }
         let other_card = self.notice_showing();
         let allowed = self.notices && on && !other_card;
@@ -572,6 +580,19 @@ impl App {
             "feature tip due"
         );
         allowed
+    }
+
+    /// A card was answered or has left: the first-start tip that an offer took the place of
+    /// comes back where the tips stopped, once no other card of this kind is up (the card
+    /// 「已添加整理规则」 after 「添加规则」 goes first).
+    pub(super) fn resume_displaced_tip(&mut self) {
+        if self.welcome.is_none()
+            && let Some(Welcome::Tip(i)) = self.displaced_tip
+        {
+            self.displaced_tip = None;
+            tracing::info!(tip = i, "the first-start tip comes back after the offer");
+            self.show_welcome(Welcome::Tip(i));
+        }
     }
 
     /// After a fence was made with its name box (`create_fence_with_rename`): the roll-up tip
@@ -629,11 +650,16 @@ impl App {
             return;
         }
         let mut saved = self.load_notices();
-        if saved.roll_tip_shown || !self.feature_tip_allowed("roll") {
+        // An offer took its place the last time: it shows once more.
+        let again = matches!(self.displaced_tip, Some(Welcome::RollTip));
+        if (saved.roll_tip_shown && !again) || !self.feature_tip_allowed("roll") {
             return;
         }
         self.show_welcome(Welcome::RollTip);
         if self.welcome.is_some() {
+            if again {
+                self.displaced_tip = None;
+            }
             tracing::info!(fences, "roll tip shown");
             saved.roll_tip_shown = true;
             self.save_notices(&saved);
