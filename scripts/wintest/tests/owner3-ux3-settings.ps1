@@ -3,7 +3,7 @@
 #   T  a change of 颜色模式 while the window is open, ten times: the title bar does not change
 #      before the page, and is at most one recorded frame behind it. Before the fix the title
 #      bar was a frame ahead in some of the switches (5 of 22 recorded on the base build, none
-#      of 22 after), so this part can pass on an old build too.
+#      of 42 after), so this part can pass on an old build too.
 #   N  the window made narrower in steps of 16 px: the navigation's width follows it (no step
 #      of 28 or 40 px at 740 and 900 px inside), and its fold to icons at 540 px glides
 #   H  with the real mouse: a text box lightens under the pointer, and the selected page's row
