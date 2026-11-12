@@ -489,7 +489,7 @@
   "闲置至少": "Sem uso há pelo menos",
   "天": "dias",
   "请输入闲置天数": "Informe os dias sem uso",
-  "已添加“{0}”，整理了 {1} 个项目": "“{0}” adicionado; {1} itens organizados",
+  "已添加“{0}”，整理了 {1} 个项目": "“{0}” adicionado. Itens organizados: {1}",
   "“{0}”已存在": "“{0}” já existe",
   "开": "Ativado",
   "关": "Desativado",
