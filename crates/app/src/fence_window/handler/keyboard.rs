@@ -138,6 +138,9 @@ pub(super) fn on_keydown(
     match vk {
         VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN | VK_PRIOR | VK_NEXT | VK_HOME | VK_END if sb_held => {
         }
+        // List and details rows stand in one column: Left and Right have nowhere to go and
+        // leave the selection alone, as in Explorer's details view (they moved it a row).
+        VK_LEFT | VK_RIGHT if v.row_metrics().is_some() => {}
         VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN => {
             let (dx, dy) = match vk {
                 VK_LEFT => (-1, 0),
