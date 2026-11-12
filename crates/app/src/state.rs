@@ -503,10 +503,12 @@ impl AppState {
     pub fn save_snapshot(&mut self, name: &str) -> uuid::Uuid {
         let name = name.trim();
         let name = if name.is_empty() {
-            pecofence_core::i18n::format(
-                "快照 {0}",
-                &[format!("{}", self.config.snapshots.len() + 1)],
-            )
+            // The first 「快照 N」 from the count on that no snapshot has: after a delete the
+            // count alone gave two snapshots the same name.
+            (self.config.snapshots.len() + 1..)
+                .map(|n| pecofence_core::i18n::format("快照 {0}", &[n.to_string()]))
+                .find(|name| !self.config.snapshots.iter().any(|s| s.name == *name))
+                .unwrap_or_default()
         } else {
             name.to_string()
         };
@@ -3696,6 +3698,25 @@ mod tests {
         assert_eq!(state.fence_expanded_px(fa), a_h);
         assert!(fb.rolled_up);
         assert_eq!(state.fence_expanded_px(fb), 300);
+    }
+
+    /// A snapshot saved without a name: 「快照 N」 by the count, or the next number when a
+    /// delete left that name in use.
+    #[test]
+    fn unnamed_snapshots_get_names_of_their_own() {
+        let mut state = test_state();
+        let name = |state: &AppState, id: uuid::Uuid| {
+            let snaps = &state.config.snapshots;
+            snaps.iter().find(|s| s.id == id).unwrap().name.clone()
+        };
+        let first = state.save_snapshot("");
+        let second = state.save_snapshot("  ");
+        assert_ne!(name(&state, first), name(&state, second));
+        state.delete_snapshot(first);
+        let third = state.save_snapshot("");
+        assert_ne!(name(&state, third), name(&state, second));
+        let named = state.save_snapshot(" mine ");
+        assert_eq!(name(&state, named), "mine");
     }
 
     #[test]
