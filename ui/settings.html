@@ -197,7 +197,7 @@
   .toggle.on ~ .switch-label .off-t, .toggle:not(.on) ~ .switch-label .on-t { visibility: hidden; }
   .toggle { width: 40px; height: 20px; border-radius: 10px; border: 1px solid var(--control-strong); position: relative; background: var(--control-alt); flex: none; transition: background-color var(--fast) linear, border-color var(--fast) linear; }
   .toggle::after { content: ""; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 7px; background: var(--text2);
-    transition: transform var(--fast) var(--point-to-point), left var(--faster) linear, top var(--faster) linear, width var(--faster) linear, height var(--faster) linear, background-color var(--fast) linear; }
+    transition: transform var(--fast) var(--point-to-point), left var(--fast) var(--point-to-point), top var(--fast) var(--point-to-point), width var(--fast) var(--point-to-point), height var(--fast) var(--point-to-point), background-color var(--fast) linear; }
   .toggle:hover { background: var(--control-alt-hover); }
   .toggle.on { background: var(--accent); border-color: var(--accent); }
   .toggle.on::after { transform: translateX(20px); background: var(--on-accent); }
