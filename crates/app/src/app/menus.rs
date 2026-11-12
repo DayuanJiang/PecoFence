@@ -195,7 +195,73 @@ mod glyph {
     pub const MONITOR: char = '\u{E7F4}';
     pub const REPAIR: char = '\u{E90F}';
     pub const MESSAGE: char = '\u{E8BD}';
-    pub const EXIT: char = '\u{F3B1}';
+    /// SignOut (F3B1). Segoe MDL2 Assets of Windows 10 1809 does not have it yet (an empty box
+    /// showed beside 退出 PecoFence, #219), so that font shows PowerButton.
+    pub fn exit() -> char {
+        if pecofence_platform::fonts::icon_font_has('\u{F3B1}') {
+            '\u{F3B1}'
+        } else {
+            '\u{E7E8}'
+        }
+    }
+
+    /// Every glyph the menus show, for the test below.
+    #[cfg(test)]
+    pub fn all() -> Vec<char> {
+        vec![
+            CHEVRON_UP,
+            CHEVRON_DOWN,
+            RENAME,
+            FOLDER_OPEN,
+            UP,
+            HOME,
+            VIEW_ALL,
+            SORT,
+            ADD,
+            DOCUMENT,
+            PASTE,
+            SETTING,
+            ADD_TO,
+            NOTE,
+            CLOCK,
+            CODE,
+            PLAY,
+            FOLDER,
+            SEARCH,
+            REFRESH,
+            FILTER,
+            TAB,
+            LOCK,
+            FIT,
+            UNLOCK,
+            DELETE,
+            VIEW,
+            hide(),
+            TASK_VIEW,
+            BROOM,
+            MONITOR,
+            REPAIR,
+            MESSAGE,
+            exit(),
+        ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// A glyph the icon font of this Windows lacks is drawn as an empty box beside the menu
+    /// item (退出 PecoFence on Windows 10 1809, #219).
+    #[test]
+    fn the_icon_font_has_every_menu_glyph() {
+        for glyph in super::glyph::all() {
+            assert!(
+                pecofence_platform::fonts::icon_font_has(glyph),
+                "U+{:04X} is not in {}",
+                glyph as u32,
+                pecofence_platform::fonts::icon_face()
+            );
+        }
+    }
 }
 
 impl App {
@@ -350,7 +416,7 @@ impl App {
                 false,
                 false,
             )
-            .icon(glyph::EXIT);
+            .icon(glyph::exit());
         // A sign-out while a menu is open ends the process before the menu returns, and the
         // menu keeps TIMER_SAVE from saving meanwhile: save pending changes first.
         self.state.save_if_dirty();

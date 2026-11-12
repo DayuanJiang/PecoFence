@@ -158,3 +158,4 @@ owner-drop-effect  3   manual release owner-small.ps1                --var Part=
 # Windows 10 1809 / Server 2019 (build 17763, #219): these fail without their fix only on a box
 # of that build (WINTEST_CONF with a Server 2019 box; each file's header says why).
 tray-menu-keys     1   manual release tray-menu-keys.ps1
+icon-font-gaps     1   manual debug   icon-font-gaps.ps1

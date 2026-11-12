@@ -28,6 +28,19 @@ pub fn font_family_exists(face: &str) -> bool {
 
 /// The family GDI picks for a font named `face`.
 fn resolved_face(face: &str) -> Option<String> {
+    with_font(face, |dc| {
+        let mut buf = [0u16; 64];
+        // SAFETY: `buf` holds the 64 characters its length says.
+        let len = unsafe { GetTextFaceW(dc, buf.len() as i32, Some(PWSTR(buf.as_mut_ptr()))) };
+        (len > 0).then(|| {
+            let actual = from_wide(&buf[..(len as usize).min(buf.len())]);
+            actual.trim_end_matches('\0').to_string()
+        })
+    })
+}
+
+/// Runs `read` with a memory DC that has the font GDI picks for `face` selected.
+fn with_font<R>(face: &str, read: impl FnOnce(HDC) -> Option<R>) -> Option<R> {
     let wide = to_wide(face);
     // SAFETY: every GDI object created here is released before returning.
     unsafe {
@@ -51,20 +64,15 @@ fn resolved_face(face: &str) -> Option<String> {
             (DEFAULT_PITCH | FF_DONTCARE) as u32,
             PCWSTR(wide.as_ptr()),
         );
-        let mut resolved = None;
+        let mut result = None;
         if !font.0.is_null() {
             let old = SelectObject(dc, HGDIOBJ(font.0));
-            let mut buf = [0u16; 64];
-            let len = GetTextFaceW(dc, buf.len() as i32, Some(PWSTR(buf.as_mut_ptr())));
-            if len > 0 {
-                let actual = from_wide(&buf[..(len as usize).min(buf.len())]);
-                resolved = Some(actual.trim_end_matches('\0').to_string());
-            }
+            result = read(dc);
             SelectObject(dc, old);
             let _ = DeleteObject(HGDIOBJ(font.0));
         }
         let _ = DeleteDC(dc);
-        resolved
+        result
     }
 }
 
@@ -122,6 +130,35 @@ pub fn fluent_icons() -> bool {
     icon_face() == "Segoe Fluent Icons"
 }
 
+/// Whether the glyph font has `glyph`. Segoe MDL2 Assets grew with the Windows 10 releases:
+/// the one of version 1809 (font version 1.68) lacks code points the later ones have, and a
+/// glyph a font lacks is drawn as an empty box. True when GDI cannot tell.
+pub fn icon_font_has(glyph: char) -> bool {
+    windows_core::link!("gdi32.dll" "system" fn GetGlyphIndicesW(hdc: HDC, text: PCWSTR, count: i32, indices: *mut u16, flags: u32) -> u32);
+    /// The index of a character the font lacks is 0xFFFF.
+    const GGI_MARK_NONEXISTING_GLYPHS: u32 = 1;
+    let mut buf = [0u16; 2];
+    let text = glyph.encode_utf16(&mut buf);
+    if text.len() != 1 {
+        return true;
+    }
+    with_font(icon_face(), |dc| {
+        let mut index = 0u16;
+        // SAFETY: one character in, room for one glyph index out.
+        let found = unsafe {
+            GetGlyphIndicesW(
+                dc,
+                PCWSTR(text.as_ptr()),
+                1,
+                &mut index,
+                GGI_MARK_NONEXISTING_GLYPHS,
+            )
+        };
+        (found == 1).then_some(index != 0xFFFF)
+    })
+    .unwrap_or(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,5 +170,13 @@ mod tests {
         assert!(font_family_exists("Microsoft YaHei"));
         assert!(!font_family_exists("PecoFence Font That Does Not Exist"));
         assert!(!font_installed("PecoFence Font That Does Not Exist"));
+    }
+
+    #[test]
+    fn the_icon_font_knows_which_glyphs_it_has() {
+        // Setting (the gear) is in every version of both icon fonts; U+F8FF, the last
+        // private-use code point, is in none.
+        assert!(icon_font_has('\u{E713}'));
+        assert!(!icon_font_has('\u{F8FF}'));
     }
 }

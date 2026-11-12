@@ -577,13 +577,13 @@
           <div class="s" id="customThemeHelp"></div>
           <div class="s error" id="customThemeError" aria-live="polite" hidden></div>
         </div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE7A1;</span><div><div class="t">颜色模式</div></div></div>
+      <div class="card"><div class="l"><span class="ic" data-alt="&#xE793;">&#xE7A1;</span><div><div class="t">颜色模式</div></div></div>
         <select data-bind="theme"><option value="followWindowsMode">跟随 Windows 模式</option><option value="followAppMode">跟随应用模式</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8D3;</span><div><div class="t">文字颜色</div><div class="s">图标名称，以及标题颜色为“跟随主题”的栅栏标题和标签页。自动：每个栅栏按它背后壁纸的明暗选深色或浅色</div></div></div>
         <select data-bind="labelColor"><option value="auto">自动</option><option value="white">白色</option><option value="black">黑色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E4;</span><div><div class="t">标题对齐</div></div></div>
         <select data-bind="titleAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE7B1;</span><div><div class="t">自动隐藏滚动条</div><div class="s">鼠标移到栅栏上或滚动时才显示</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideInactiveScrollbar"></div></div>
+      <div class="card"><div class="l"><span class="ic" data-alt="&#xE8CB;">&#xE7B1;</span><div><div class="t">自动隐藏滚动条</div><div class="s">鼠标移到栅栏上或滚动时才显示</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideInactiveScrollbar"></div></div>
       <h3>图标</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">默认图标大小</div><div class="s">新建栅栏时使用，每个栅栏可在“栅栏”页或右键菜单中单独设置</div></div></div>
         <div class="slider"><input type="range" id="iconSize" data-bind="iconSize"></div></div>
@@ -722,9 +722,9 @@
       <div class="card" id="fenceVdCard"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">在哪个虚拟桌面显示</div><div class="s">按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出</div></div></div>
         <select id="fenceVd" aria-label="在哪个虚拟桌面显示"></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面隐藏时保留此栅栏</div><div class="s">其他栅栏隐藏时，这个栅栏仍留在桌面上</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="excludeFromQuickHide"></div></div>
-      <div class="card" id="fenceHideEmpty"><div class="l"><span class="ic">&#xED1A;</span><div><div class="t">为空时自动隐藏</div><div class="s">里面没有图标时就不显示；桌面上一出现新图标，它会自己回来</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="hideWhenEmpty"></div></div>
+      <div class="card" id="fenceHideEmpty"><div class="l"><span class="ic" data-alt="&#xE7B3;">&#xED1A;</span><div><div class="t">为空时自动隐藏</div><div class="s">里面没有图标时就不显示；桌面上一出现新图标，它会自己回来</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="hideWhenEmpty"></div></div>
       <div class="card" id="fenceDesktopLayout"><div class="l"><span class="ic">&#xE80A;</span><div><div class="t">像桌面一样排列</div><div class="s">图标像 Windows 桌面上一样从屏幕左上角一列一列往下排，绕开其他栅栏。关闭后“桌面”变回普通栅栏，可以移动和调整大小</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="desktopLayout"></div></div>
-      <div class="card" id="fenceFreePlacement"><div class="l"><span class="ic">&#xE7C2;</span><div><div class="t">自由摆放</div><div class="s">图标拖到桌面上哪里，就停在哪个格子里，像 Windows 桌面关闭“自动排列图标”时一样。关闭后图标按顺序排列</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="freePlacement"></div></div>
+      <div class="card" id="fenceFreePlacement"><div class="l"><span class="ic" data-alt="&#xE759;">&#xE7C2;</span><div><div class="t">自由摆放</div><div class="s">图标拖到桌面上哪里，就停在哪个格子里，像 Windows 桌面关闭“自动排列图标”时一样。关闭后图标按顺序排列</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="freePlacement"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE74A;</span><div><div class="t">停靠到屏幕顶部</div><div class="s">贴到屏幕顶边并收起，鼠标悬停时展开，像一个下拉抽屉</div></div></div><button id="fenceDock">停靠</button></div>
       <div class="card" id="fenceOpenFolders"><div class="l"><span class="ic">&#xE838;</span><div><div class="t">双击文件夹或文件夹快捷方式时在此栅栏内打开</div><div class="s">在栅栏里显示文件夹的内容，点向上箭头或按 Backspace 回到原来的图标</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="openFoldersInside"></div></div>
       <div id="fencePortalGroup">
@@ -745,7 +745,7 @@
       <div class="card stack"><div class="l"><span class="ic">&#xE8F4;</span><div><div class="t">一键创建栅栏并添加规则</div><div class="s">“待清理”只归拢 30 天没用过的安装包和压缩包，不删除任何文件</div></div></div>
         <div class="chips" id="templates">
           <button class="chip" data-template="images"><span class="ic">&#xEB9F;</span>图片</button><button class="chip" data-template="music"><span class="ic">&#xE8D6;</span>音乐</button><button class="chip" data-template="video"><span class="ic">&#xE714;</span>视频</button><button class="chip" data-template="games"><span class="ic">&#xE7FC;</span>游戏</button>
-          <button class="chip" data-template="archives"><span class="ic">&#xF012;</span>压缩包</button><button class="chip" data-template="installers"><span class="ic">&#xE7B8;</span>安装包</button><button class="chip" data-template="cleanup"><span class="ic">&#xEA99;</span>待清理</button>
+          <button class="chip" data-template="archives"><span class="ic" data-alt="&#xF12B;">&#xF012;</span>压缩包</button><button class="chip" data-template="installers"><span class="ic">&#xE7B8;</span>安装包</button><button class="chip" data-template="cleanup"><span class="ic">&#xEA99;</span>待清理</button>
         </div></div>
       <h3>规则列表</h3>
       <div id="ruleList"></div>
@@ -3269,6 +3269,24 @@
     else if (m.type === 'editorNotice') { if (se) se.notice = m.text; seShowError(m.text); }
     else if (m.type === 'editorCount') seCounted(m);
   });
+  // An icon the icon font of this Windows lacks is drawn as an empty box: Segoe MDL2 Assets on
+  // Windows 10 lacks some glyphs of Segoe Fluent Icons, and its 1809 version lacks more (#219).
+  // Such an icon gives way to the stand-in its data-alt names. Every missing glyph is drawn the
+  // same way, so each icon is compared with a code point no icon font has.
+  (() => {
+    const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    const drawn = ch => {
+      ctx.clearRect(0, 0, 24, 24);
+      ctx.font = '16px "Segoe Fluent Icons", "Segoe MDL2 Assets"';
+      ctx.textBaseline = 'top';
+      ctx.fillText(ch, 2, 2);
+      return ctx.getImageData(0, 0, 24, 24).data.join();
+    };
+    const box = drawn('\uF8FF');
+    for (const el of document.querySelectorAll('.ic[data-alt]')) {
+      if (drawn(el.textContent) === box) el.textContent = el.dataset.alt;
+    }
+  })();
   send({ type: 'ready' });
 })();
 </script>
