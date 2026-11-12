@@ -160,3 +160,4 @@ owner-drop-effect  3   manual release owner-small.ps1                --var Part=
 tray-menu-keys     1   manual release tray-menu-keys.ps1
 icon-font-gaps     1   manual debug   icon-font-gaps.ps1
 dark-title-bar     1   manual release dark-title-bar.ps1
+toast-menu          3   vm     release owner-toast-menu.ps1
