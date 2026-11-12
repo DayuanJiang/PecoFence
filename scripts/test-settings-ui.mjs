@@ -3046,6 +3046,56 @@ async function runTests() {
     assert(doc.documentElement.classList.contains('ready'), 'A state without a change of mode switched the transitions off');
     doc = await reset();
   });
+  await test('A switch: the knob changes colour with its track, not ahead of it', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    doc.querySelector('[data-bind=autostart]').click();
+    const lines = moving().filter(line => line.includes('::after'));
+    assert(lines.some(line => line.endsWith('transform')), 'The knob does not slide: ' + lines.join(', '));
+    assert(lines.some(line => line.endsWith('background-color')), 'The knob takes its new colour at once: ' + lines.join(', '));
+    doc = await reset();
+  });
+  await test('The switch of a rule slides, and its row stays when the host echoes the change', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    doc.querySelector('[data-page=rules]').click();
+    const row = doc.querySelector('#ruleList [data-row-id=rule-a]'), knob = row.querySelector('.toggle');
+    knob.click();
+    assert(moving().some(line => line.includes('::after') && line.endsWith('transform')), 'The knob of a rule does not slide: ' + moving().join(', '));
+    assert(!knob.classList.contains('on') && knob.getAttribute('aria-checked') === 'false' && row.classList.contains('disabled'), 'The row does not show the rule as off');
+    const sent = frame.contentWindow.testMessages.filter(m => m.type === 'setRules').at(-1);
+    assert(sent && sent.rules.list[0].enabled === false, 'The switch was not posted');
+    await settle();
+    assert(doc.querySelector('#ruleList [data-row-id=rule-a]') === row && row.querySelector('.toggle') === knob, 'The echo of the host rebuilt the row');
+    // The row that stayed acts on the newest state.
+    row.querySelector('[data-act=down]').click();
+    await settle();
+    assert([...doc.querySelectorAll('#ruleList [data-row-id]')].map(e => e.dataset.rowId).join() === 'rule-b,rule-a', '下移 on a kept row did not move the rule');
+    assert(current().rules.list.map(r => r.id + ':' + r.enabled).join() === 'rule-b:true,rule-a:false', 'The host has ' + JSON.stringify(current().rules.list.map(r => [r.id, r.enabled])));
+    // A change of another kind (a fence renamed) still redraws the rows.
+    current().fences[0].title = '文档与表格';
+    frame.contentWindow.testRefresh();
+    assert(doc.querySelector('#ruleList [data-row-id=rule-a] .conds').textContent.includes('文档与表格'), 'A renamed target fence did not reach the rule rows');
+    doc = await reset();
+  });
+  await test('栅栏: another fence shows its values at once and the body of the page comes in again', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    doc.querySelector('[data-page=fences]').click();
+    assert(await until(() => !moving().some(line => line.endsWith('page-in'))), 'The page never finished coming in');
+    // 桌面 differs from the first fence in several switches (锁定, 空的时候隐藏, …).
+    change(doc, 'fenceSel', 'inbox');
+    const lines = moving();
+    assert(doc.querySelector('[data-fence=locked]').classList.contains('on'), 'The page does not show the other fence');
+    assert(!lines.some(line => line.includes('toggle')), 'Switches slide to the other fence\'s values: ' + lines.filter(line => line.includes('toggle')).slice(0, 3).join(', '));
+    assert(lines.some(line => line.startsWith('#fenceBody') && line.endsWith('page-in')), 'The body of the page does not come in again: ' + lines.join(', '));
+    assert(await motionReady(), 'Transitions stayed off after the change of fence');
+    // A switch flipped by the user still slides.
+    const knob = [...doc.querySelectorAll('#fenceBody .toggle')].find(el => el.offsetParent);
+    knob.click();
+    assert(moving().some(line => line.includes('::after') && line.endsWith('transform')), 'A switch no longer slides after a change of fence');
+    doc = await reset();
+  });
 
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';

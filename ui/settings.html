@@ -114,6 +114,8 @@
   :is(main, nav, .search-list, textarea, .fb-preview, .se-rows)::-webkit-scrollbar-corner { background: transparent; }
   .page { display: none; } .page.on { display: block; animation: page-in .2s cubic-bezier(.1, .9, .2, 1); anchor-name: --page; }
   @keyframes page-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  /* 栅栏: the settings of another fence come in like a page. */
+  #fenceBody.swap { animation: page-in .2s cubic-bezier(.1, .9, .2, 1); }
   .page-header { margin: 4px 2px 16px; }
   h2 { font: 600 28px/36px "Segoe UI Variable Display", "Segoe UI", var(--font-cjk), sans-serif; margin: 0; }
   h3 { font-size: 14px; line-height: 20px; font-weight: 600; margin: 24px 2px 8px; }
@@ -149,7 +151,7 @@
   .toggle.on ~ .switch-label .off-t, .toggle:not(.on) ~ .switch-label .on-t { visibility: hidden; }
   .toggle { width: 40px; height: 20px; border-radius: 10px; border: 1px solid var(--control-strong); position: relative; background: var(--control-alt); flex: none; transition: background-color .15s, border-color .15s; }
   .toggle::after { content: ""; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 7px; background: var(--text2);
-    transition: transform .15s cubic-bezier(.2, 0, 0, 1), left .15s, top .15s, width .15s, height .15s; }
+    transition: transform .15s cubic-bezier(.2, 0, 0, 1), left .15s, top .15s, width .15s, height .15s, background-color .15s; }
   .toggle:hover { background: var(--control-alt-hover); }
   .toggle.on { background: var(--accent); border-color: var(--accent); }
   .toggle.on::after { transform: translateX(20px); background: var(--on-accent); }
@@ -1892,7 +1894,16 @@
     if (sel.innerHTML !== options) sel.innerHTML = options;
     if (!fences.some(f => f.id === fenceSel)) fenceSel = fences.length ? fences[0].id : null;
     sel.value = fenceSel || '';
-    sel.onchange = () => { fenceSel = sel.value; renderFences(); };
+    sel.onchange = () => {
+      fenceSel = sel.value;
+      // Another fence: its values are drawn at once (a switch that differs must not slide as if
+      // it were being changed), and the body of the page comes in again like a page does.
+      document.documentElement.classList.remove('ready');
+      renderFences();
+      const body = document.getElementById('fenceBody');
+      body.classList.remove('swap'); void body.offsetWidth; body.classList.add('swap');
+      drawnSoon();
+    };
     const f = fenceById(fenceSel);
     document.getElementById('fenceBadge').textContent = tf("{0} 个栅栏", fences.length);
     document.getElementById('fenceEmpty').style.display = f ? 'none' : '';
@@ -2103,13 +2114,25 @@
   }
   // The new-rule form starts open only when there is nothing else on the page to look at.
   let rulesShown = false;
+  // What the rows of the rule list show: the rules, the names of their targets and the language.
+  // A state that shows the same rows leaves them alone, so the host's echo of a switch flipped
+  // here does not rebuild the row (its knob would jump to the end of its slide).
+  let ruleRows = '';
+  const ruleRowsOf = () => editing ? '' : JSON.stringify([state.rules.list, state.rules.list.map(r => [targetLabel(r.target), r.allOf.map(condLabel)]), t("编辑规则")]);
   function renderRules() {
     const list = document.getElementById('ruleList');
+    const rules = state.rules.list;
+    if (editing && !rules.some(r => r.id === editing.id)) editing = null;
+    const rows = ruleRowsOf();
+    if (rulesShown && rows && rows === ruleRows) {
+      fillTargets(document.getElementById('nrTarget'));
+      fillChecks(document.getElementById('nrCond'));
+      return;
+    }
+    ruleRows = rows;
     const focus = focusBookmark(list);
     const typing = editing && editing.form.contains(document.activeElement) ? document.activeElement : null;
     list.innerHTML = '';
-    const rules = state.rules.list;
-    if (editing && !rules.some(r => r.id === editing.id)) editing = null;
     if (!rulesShown) { rulesShown = true; if (!rules.length) openRuleForm(); }
     if (!rules.length) list.innerHTML = `<div class="card"><div class="s">${esc(t("尚未添加规则"))}</div></div>`;
     rules.forEach((r, i) => {
@@ -2131,7 +2154,11 @@
       div.querySelectorAll('[data-act]').forEach(b => {
         const labels = { edit: t("编辑规则"), up: t("上移"), down: t("下移"), toggle: t("启用规则"), del: t("删除规则") };
         b.setAttribute('aria-label', tf("{0}：{1}", labels[b.dataset.act], r.name));
+        const id = r.id;
         b.onclick = () => {
+          // The rule as the newest state has it: rows that stay over a state keep this handler.
+          const rules = state.rules.list, i = rules.findIndex(x => x.id === id), r = rules[i];
+          if (!r) return;
           const act = b.dataset.act;
           if (act === 'edit') {
             editing = { id: r.id, form: ruleForm(r) };
@@ -2139,7 +2166,15 @@
             editing.form.querySelector('.r-name').focus();
             return;
           }
-          if (act === 'toggle') r.enabled = !r.enabled;
+          if (act === 'toggle') {
+            // Flipped in place, so the knob slides like every other switch.
+            r.enabled = !r.enabled;
+            b.classList.toggle('on', r.enabled); b.setAttribute('aria-checked', String(r.enabled));
+            div.classList.toggle('disabled', !r.enabled);
+            ruleRows = ruleRowsOf();
+            send({ type: 'setRules', rules: state.rules });
+            return;
+          }
           if (act === 'del') {
             rules.splice(i, 1);
             // 撤销 puts the rule back at its place with all its fields.
