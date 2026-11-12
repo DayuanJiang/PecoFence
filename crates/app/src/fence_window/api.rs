@@ -225,6 +225,7 @@ impl FenceWindow {
             scroll_restore: None,
             select_after_nav: None,
             tab_switch_by_keys: false,
+            focus_first_after_nav: false,
             user_delete: None,
             scroll_anim: None,
             dpi,
@@ -915,6 +916,7 @@ impl FenceWindow {
             // Selection / focus / hover ride along by item id (`remap_item_state`), so a sort,
             // a reorder drop, a rename or a watcher refresh keeps them on the same items while
             // the layout glide moves those items to their new cells.
+            let keys_here = v.focus_visible;
             v.replace_items(items);
             v.drop_insert = None;
             // The caret's slot index means nothing in the new list.
@@ -939,6 +941,15 @@ impl FenceWindow {
                 v.focus_visible = ring;
                 if !v.rolled_up {
                     v.scroll_into_view(i, false);
+                }
+            } else if v.focus_first_after_nav && !v.items.is_empty() {
+                // Into a folder by keys: its first icon takes the focus mark, not selected
+                // (Enter does nothing until an arrow key or Space picks an icon). A folder
+                // with nothing in it has the mark on the title row meanwhile.
+                v.focus_first_after_nav = false;
+                if keys_here && !v.roll_target() {
+                    tracing::debug!("folder entered by keys: the first icon takes the focus mark");
+                    v.cursor_to(0, CursorMode::FocusOnly);
                 }
             }
             let _ = v.redraw();
@@ -965,6 +976,7 @@ impl FenceWindow {
             v.scroll_anim = None;
             v.scroll_y = 0.0;
             v.select_after_nav = select.map(|id| (id, v.focus_visible));
+            v.focus_first_after_nav = select.is_none() && v.focus_visible;
             if !v.rolled_up
                 && !v.height_animating()
                 && v.motion.enabled()

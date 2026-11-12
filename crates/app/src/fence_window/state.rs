@@ -337,6 +337,9 @@ pub struct FenceViewState {
     /// Ctrl+Tab asked for the tab switch under way: once the new tab's icons are here, the
     /// first one in view takes the selection and the focus mark (`focus_after_tab_keys`).
     pub(super) tab_switch_by_keys: bool,
+    /// The folder shown changed by keys with no icon to select (Enter into a subfolder,
+    /// Alt+Right): the first icon of the folder that arrives takes the focus mark.
+    pub(super) focus_first_after_nav: bool,
     /// The user's own Delete (key or menu) of some items is under way (see `UserDelete`). When
     /// the focused item goes with them, the item that followed it takes the focus and the
     /// selection (`focus_after_delete`).
