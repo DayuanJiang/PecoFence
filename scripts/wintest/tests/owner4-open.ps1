@@ -5,6 +5,7 @@
 #   M  motion (Windows' animations on, recordings): 按时间分组 with many and with few icons, the
 #      scroll bar that new files bring; a look: the hover fill after a press the pointer
 #      jumped to
+#   R  a look (a recording): a new name confirmed by a click on the bare part of the fence
 #   W  the settings window behind another window or minimised: the command line and the tray's
 #      设置… bring it to the front
 #   T  (a debug build) the tips of the settings page's icon buttons follow the app's colour
@@ -248,6 +249,40 @@ function OoMotion() {
   PfQuit
 }
 if ($Part -match 'M') { OoMotion }
+
+# ---- R: a look at a new name confirmed by a click on the bare part of the fence
+function OoRename() {
+  trap { PfTrap $_; continue }
+  Case 'R look: a new name confirmed by a click on the bare part of the fence'
+  $animWas = [Anim]::Get(); [Anim]::Set($true)
+  foreach ($s in $OoStems[0..5]) { DeskFile "$s.fqb" | Out-Null }
+  PfStart -Lang zh-CN
+  Start-Sleep -Seconds 4
+  CloseNotice | Out-Null
+  ClearFences | Out-Null
+  Pf fence create --title '改名' --rect '520,80,420,300' | Out-Null
+  Pf item move --glob '*.fqb' --to '改名' | Out-Null
+  Log ("sort: " + (Pf fence set '改名' sort name))
+  Start-Sleep -Seconds 2
+  ParkMouse 1300 800
+  # The last icon gets a name that sorts first: it glides to the first cell.
+  $p6 = CellPt '改名' 5
+  [G]::Click($p6[0], $p6[1]); Start-Sleep -Milliseconds 500
+  [G]::Press(0x71); Start-Sleep -Milliseconds 1000
+  [G]::Type('aa'); Start-Sleep -Milliseconds 500
+  $g = FenceGet '改名'
+  RecStart 'r-rename' -X 520 -Y 80 -W 420 -H 300 -Fps 30
+  Start-Sleep -Milliseconds 300
+  RecMark '点栅栏空白处确认新名字'
+  [G]::Click($g.windowRect.x + $g.windowRect.w - 30, $g.windowRect.y + $g.windowRect.h - 20)
+  Start-Sleep -Milliseconds 1500
+  RecStop
+  $names = (@(PfJson item list --fence '改名') | Where-Object { $_ -and $_.name } | ForEach-Object { $_.fileName }) -join ' | '
+  Check 'R the renamed file stands first in the fence sorted by name' ($names -like 'aa*') "$names (sort=$($g.sort))"
+  [Anim]::Set($animWas)
+  PfQuit
+}
+if ($Part -match 'R') { OoRename }
 
 # ---- W: the settings window comes to the front
 function OoNotepadFront($n) {
