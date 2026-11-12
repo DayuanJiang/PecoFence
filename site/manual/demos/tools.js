@@ -1,12 +1,13 @@
 // 7.1 便签、时钟和脚本栅栏 (lesson id tools): 设置 → 小工具 (ui/settings.html #page-tools): one
 // 小工具 switch at the top (on), then a list with a button on each row. 「新建便签」 puts a note on
-// the desktop with its editor open (note_edit.rs); a click elsewhere saves, and the lines
-// starting with [ ] become to-dos whose box a click ticks (fence_chrome.rs draw_note: the box
-// fills with the accent, the text turns secondary). 时钟's 「添加」 adds the clock (draw_clock: the
+// the desktop, edited in place (note_edit.rs): the note keeps its look, only a caret blinks, and
+// a line typed as 「[ ] …」 shows its check box at once; a click elsewhere saves, and a click
+// ticks a box (fence_chrome.rs draw_note: the box fills with the accent, the text turns
+// secondary). 时钟's 「添加」 adds the clock (draw_clock: the
 // time large, the long date with the weekday under it); there is one clock at most, so the
-// button then reads 「已在桌面上」, greyed. 天气's 「添加」 adds the weather script fence, named
-// after its file (天气.ps1): 「天气.ps1 · 正在运行…」 until the script's lines come, then
-// 「… · 10:24 更新」 at the bottom.
+// button then reads 「已在桌面上」, greyed. 天气's 「添加」 adds the weather script fence, titled
+// as its menu line (天气); its footer names the file: 「天气.ps1 · 正在运行…」 until the script's
+// lines come, then 「… · 10:24 更新」.
 // The window is the shared settings mock (window.SM, demos/settings-mock.js).
 (() => {
     'use strict';
@@ -21,7 +22,7 @@
     const CLOCK = { x: 532, y: 152, w: 246, h: 94, title: '时钟' };
     const SCRIPT_NAME = '天气.ps1';
     // a script fence is titled with its file's name (tools.rs create_tool_fence)
-    const SCRIPT = { x: 532, y: 254, w: 246, h: 158, title: SCRIPT_NAME.replace(/\.ps1$/, '') };
+    const SCRIPT = { x: 532, y: 254, w: 246, h: 158, title: '天气' };
 
     const lang = () => document.documentElement.lang || 'zh-CN';
     const TODO = '[ ] 交周报\n[ ] 订会议室\n周五前寄出合同';
@@ -52,15 +53,15 @@
         const r = {};
         // the one switch for every tool, on, with the page's glyph; its description wraps to a second
         // line beside the switch, and the rows' text lines up with its text
-        const top = SM.card(g, { ic: '\uEA86', t: '小工具', s: '关上后，桌面上的小工具都不显示，脚本也全部停下', h: 52, textW: g.cardW - 34 - 52 - 24, gap: 1 });
+        const top = SM.card(g, { ic: '\uEA86', t: '小工具', s: '关闭后，桌面上的小工具都不显示，脚本也全部停下', h: 52, textW: g.cardW - 34 - 52 - 24, gap: 1 });
         Object.assign(top.s.style, { whiteSpace: 'normal', textWrap: 'balance', lineHeight: '12px' });
         top.t.style.top = '8px';
         top.s.style.top = '23px';
         SM.drawToggle(SM.toggle(top), true);
         r.newNote = SM.button(row(g, '便签与待办', '在栅栏里写几行字，单击就能编辑。行首写 [ ] 的一行会变成可以勾选的待办'), '新建便签', 64, { accent: true });
-        r.addClock = SM.button(row(g, '时钟', '显示时间、日期和星期。右键时钟可以打开「显示秒」'), '添加', 52);
-        r.addWeather = SM.button(row(g, '天气', '今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选「编辑脚本」，把 Tokyo 换成你的城市'), '添加', 52);
-        SM.button(row(g, 'GitHub 仓库动态', '一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选「编辑脚本」，换成你关心的仓库'), '添加', 52);
+        r.addClock = SM.button(row(g, '时钟', '显示时间、日期和星期。右键时钟可以打开“显示秒”'), '添加', 52);
+        r.addWeather = SM.button(row(g, '天气', '今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选“编辑脚本”，把 Tokyo 换成你的城市'), '添加', 52);
+        SM.button(row(g, 'GitHub 仓库动态', '一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选“编辑脚本”，换成你关心的仓库'), '添加', 52);
         SM.button(row(g, '电脑状态', '一直运行，每 2 秒更新 CPU、内存和每个磁盘的剩余空间。点一行可以复制本机 IP 或打开任务管理器'), '添加', 52);
         const own = row(g, '用自己的脚本', '运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里。脚本最多运行 10 秒（一直运行的除外），不弹出窗口。PecoFence 本身不会为脚本联网', 0);
         const pick = SM.button(own, '选择脚本…', 64);
@@ -97,21 +98,19 @@
         w.foot.textContent = T('{0} 个栅栏 · {1} 个项目').replace('{0}', '5').replace('{1}', '26');
         r.page = toolsPage(w);
 
-        // the note: editor while typing, then its lines
+        // the note: its lines, typed in place; `mark` is how many characters make the check box
         r.N = fence(S, { ...NOTE });
-        r.edit = el('div', 'tl-edit', r.N.body);
-        r.editText = el('div', 'tl-edit-t', r.edit);
-        r.editCaret = el('div', 'tl-caret', r.edit);
-        r.measure = el('span', 'tl-measure', r.edit);
         r.lines = el('div', 'tl-lines', r.N.body);
-        r.todo = noteLines(TODO).map(l => {
-            const n = el('div', 'tl-line' + (l.todo ? ' todo' : ''), r.lines);
+        const raw = TODO.split('\n');
+        r.todo = noteLines(TODO).map((l, i) => {
+            const n = el('div', 'tl-line', r.lines);
             const box = l.todo ? el('div', 'tl-box', n) : null;
             if (box) box.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="m2.6 6.3 2.3 2.3 4.6-4.9" fill="none" ' +
                 'stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-            el('span', null, n, l.text);
-            return { n, box, todo: l.todo };
+            const span = el('span', null, n, l.text);
+            return { n, box, span, todo: l.todo, full: l.text, mark: raw[i].length - l.text.length };
         });
+        r.caret = el('span', 'tl-caret', r.todo[0].n);
 
         // the clock: time large, the long date and the weekday under it
         r.C = fence(S, { ...CLOCK });
@@ -177,22 +176,21 @@
         SM.drawButton(P.newNote, p, t >= NEW_NOTE - .08 && t < NEW_NOTE + .08);
         SM.drawButton(P.addWeather, p, t >= ADD_WEATHER - .08 && t < ADD_WEATHER + .08);
 
-        // the note: the editor opens with it; typed text; a click elsewhere saves and draws the lines
+        // the note is typed in place: the lines as the note draws them and a caret after the last
+        // character; a line shows its check box as soon as 「[ ] 」 is typed. A click elsewhere saves.
         appear(r.N, t, NEW_NOTE + .05);
         const editing = t < SAVE;
-        show(r.edit, editing);
-        show(r.lines, !editing);
-        if (editing) {
-            const typed = SM.typed(t, TYPE_AT, TODO, TYPE_STEP, 1.7);   // longer translations type quicker
-            text(r.editText, typed);
-            const lines = typed.split('\n');
-            const last = lines[lines.length - 1];
-            r.editCaret.style.display = Math.floor((t - NEW_NOTE) / .5) % 2 === 0 ? '' : 'none';
-            // caret after the last typed character: measured with a hidden copy of the last line
-            text(r.measure, last);
-            r.editCaret.style.left = (10 + r.measure.offsetWidth) + 'px';
-            r.editCaret.style.top = (6 + (lines.length - 1) * 17) + 'px';
-        }
+        const typed = editing ? SM.typed(t, TYPE_AT, TODO, TYPE_STEP, 1.7).split('\n') : null;   // longer translations type quicker
+        r.todo.forEach((l, i) => {
+            const part = typed ? typed[i] : '';
+            if (!show(l.n, !typed || part != null)) return;
+            const boxed = l.todo && (!typed || part.length >= l.mark);
+            l.n.classList.toggle('todo', boxed);
+            if (l.box) show(l.box, boxed);
+            text(l.span, !typed ? l.full : boxed ? part.slice(l.mark) : part);
+            if (typed && i === typed.length - 1 && r.caret.parentNode !== l.n) l.n.appendChild(r.caret);
+        });
+        show(r.caret, editing && Math.floor((t - NEW_NOTE) / .5) % 2 === 0);
         r.todo[0].n.classList.toggle('done', t >= TICK);
 
         // the clock
