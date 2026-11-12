@@ -70,19 +70,94 @@ struct ItemBox {
     max_lines: i32,
 }
 
+/// A fence title or a tab's caption as it is drawn (`FenceWindow::title_text_place`): `x` px
+/// from the window's left edge to the start of its text, the height of its row in px, its
+/// size in DIPs and its font (a theme's face, else the built-in one; the weight).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TitlePlace {
+    pub x: i32,
+    pub row_h: i32,
+    pub font_dip: f32,
+    pub face: Option<String>,
+    pub weight: i32,
+}
+
+/// The name box over a title: its screen rectangle and where its edit sits in it. The text
+/// starts where the title's does, on a line in the middle of the title row, so the name does
+/// not move when the box opens (it stood 4 px left of the title and 5 px above it, in a
+/// 14 DIP regular font whatever the title's size and weight). `r` is the fence window.
+fn title_box_place(r: RECT, dpi: u32, title: &TitlePlace) -> (RECT, ItemBox) {
+    let scale = dpi.max(96) as f32 / 96.0;
+    let px = |dip: f32| (dip * scale).round() as i32;
+    // As an item's box: the 1 px border and 3 DIPs at the sides, the border and 1 DIP above,
+    // 1 DIP and the 2 DIP accent line below.
+    let (pad_x, pad_top, pad_bottom) = (px(3.0) + 1, px(1.0) + 1, px(3.0));
+    let h = (pad_top + px(title.font_dip * 4.0 / 3.0) + pad_bottom).min(title.row_h);
+    let left = r.left + title.x - pad_x;
+    let top = r.top + (title.row_h - h) / 2;
+    // Up to the count and the chevron at the right, as before.
+    let right = (r.right - px(44.0)).max(left + px(80.0));
+    let rect = RECT {
+        left,
+        top,
+        right,
+        bottom: top + h,
+    };
+    let item_box = ItemBox {
+        pad_x,
+        edit_x: pad_x,
+        pad_top,
+        pad_bottom,
+        line_h: 0,
+        max_lines: 1,
+    };
+    (rect, item_box)
+}
+
 /// Opens (or re-targets) the rename popup over `fence_hwnd`'s title bar, or over `row` (screen
-/// rect of the tab's row in a left tab column). `ink` is the colour the fence's text is drawn
-/// in (see [`box_colors`]).
+/// rect of the tab's row in a left tab column). `title` is the title or tab caption the box
+/// replaces, where the fence can say where its text is: the box then sits on that text, in its
+/// font (a tab's box on its own tab; it opened at the left end of the row, over the first
+/// tab). `ink` is the colour the fence's text is drawn in (see [`box_colors`]).
 pub fn begin_inline_rename(
     fence_hwnd: HWND,
     fence: FenceId,
     current: String,
     row: Option<RECT>,
+    title: Option<TitlePlace>,
     queue: CommandQueue,
     ink: ColorF,
 ) {
     let r = window::window_rect(fence_hwnd);
     let dpi = monitors::dpi_for_window(fence_hwnd).max(96);
+    if row.is_none()
+        && let Some(title) = title
+    {
+        let (rect, item_box) = title_box_place(r, dpi, &title);
+        // The built-in title faces: the Small optical size under 13 DIPs, as the title.
+        let built_in = if title.font_dip < 13.0 {
+            pecofence_platform::fonts::small_face()
+        } else {
+            pecofence_platform::fonts::text_face()
+        };
+        tracing::debug!(%fence, ?rect, ?title, "name box opens on the title's text");
+        begin_rename_at(
+            rect,
+            dpi,
+            title.font_dip,
+            RenameTarget::Fence(fence),
+            current,
+            None,
+            Some((
+                item_box,
+                title.face.as_deref().unwrap_or(built_in),
+                title.weight,
+            )),
+            queue,
+            ink,
+        );
+        return;
+    }
     let scale = dpi as f32 / 96.0;
     let h = (24.0 * scale) as i32;
     let rect = match row {
@@ -227,7 +302,7 @@ pub fn begin_item_rename(
         RenameTarget::Item(item),
         current,
         select_end,
-        Some((item_box, font_face)),
+        Some((item_box, font_face, 400)),
         queue,
         ink,
     );
@@ -364,13 +439,14 @@ fn begin_rename_at(
     target: RenameTarget,
     current: String,
     select_end: Option<usize>,
-    item_box: Option<(ItemBox, &str)>,
+    item_box: Option<(ItemBox, &str, i32)>,
     queue: CommandQueue,
     ink: ColorF,
 ) {
-    // An item's box edits its name in the names' own font.
-    let font_face = item_box.map(|(_, face)| face);
-    let item_box = item_box.map(|(b, _)| b);
+    // An item's box edits its name in the names' own font (face, weight), a title's in the
+    // title's.
+    let font = item_box.map(|(_, face, weight)| (face, weight));
+    let item_box = item_box.map(|(b, _, _)| b);
     end_active(false);
     CLASS.with(|c| {
         if c.borrow().is_none() {
@@ -452,8 +528,8 @@ fn begin_rename_at(
         return;
     };
     ctl.set_text_color(text_color);
-    if let Some(face) = font_face {
-        ctl.set_font(face, font_dip, dpi);
+    if let Some((face, weight)) = font {
+        ctl.set_font_weight(face, font_dip, dpi, weight);
         ctl.set_margins(0);
     }
     let item_box = item_box.map(|b| ItemBox {
@@ -567,8 +643,8 @@ pub fn end_active(commit: bool) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ITEM_BOX_MAX_LINES, box_colors, has_reserved_char, invalid_file_name, item_box_place,
-        rename_hidden_suffix, rename_select_len,
+        ITEM_BOX_MAX_LINES, TitlePlace, box_colors, has_reserved_char, invalid_file_name,
+        item_box_place, rename_hidden_suffix, rename_select_len, title_box_place,
     };
     use pecofence_platform::RECT;
     use pecofence_render::{Image, Theme};
@@ -616,6 +692,51 @@ mod tests {
     /// An icon's name box is centred under the icon, as wide as the label's text plus its
     /// frame (inside the cell at the default icon size), with its first line where the label's
     /// was; a row's box keeps the name column and one line.
+    /// The name box of a fence: its text starts at the title's x (16 DIPs, more behind an
+    /// icon) and its one line is in the middle of the 36 DIP title row, at 100 % and 150 %.
+    /// It was a 24 DIP box 8 DIPs from the left and 4 from the top, its text 4 px left of the
+    /// title's and 5 px above it.
+    #[test]
+    fn a_fences_name_box_sits_on_the_title_text() {
+        let fence = RECT {
+            left: 8,
+            top: 8,
+            right: 308,
+            bottom: 248,
+        };
+        let title = |x: i32, row_h: i32, font_dip: f32| TitlePlace {
+            x,
+            row_h,
+            font_dip,
+            face: None,
+            weight: 600,
+        };
+        let (r, b) = title_box_place(fence, 96, &title(16, 36, 14.0));
+        // Text at box.left + edit_x: the title's 8 + 16.
+        assert_eq!(r.left + b.edit_x, 24);
+        assert_eq!(
+            (r.top, r.bottom),
+            (14, 38),
+            "24 px box in the middle of 8..44"
+        );
+        assert_eq!(r.right, 308 - 44);
+        assert_eq!(b.max_lines, 1);
+        let big = RECT {
+            left: 12,
+            top: 12,
+            right: 462,
+            bottom: 372,
+        };
+        let (r, b) = title_box_place(big, 144, &title(24, 54, 18.0));
+        assert_eq!(r.left + b.edit_x, 36);
+        assert_eq!(
+            r.top - 12,
+            12 + 54 - r.bottom,
+            "the same room above and below"
+        );
+        assert!(r.bottom - r.top <= 54);
+    }
+
     #[test]
     fn an_icons_name_box_is_centred_and_stays_in_its_cell() {
         // The label area of a 48 px icon's cell at 100 %: the cell's 80 px, 8 px inset.

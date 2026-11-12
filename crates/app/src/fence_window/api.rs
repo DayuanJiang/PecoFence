@@ -2603,6 +2603,45 @@ impl FenceWindow {
         picked.unwrap_or(Theme::for_mode(mode).text_primary)
     }
 
+    /// The title of `fence` as it is drawn, for its name box (`rename::begin_inline_rename`):
+    /// where its text starts, its row's height, its size and its font. A lone title aligned
+    /// left, or a tab in the title row (its caption is centred in its pill). None for a
+    /// centred or right-aligned lone title, a tab with a glyph and the left tab column: their
+    /// box keeps its own place.
+    pub fn title_text_place(&self, fence: FenceId) -> Option<crate::rename::TitlePlace> {
+        const SIZES: [f32; 4] = [12.0, 14.0, 16.0, 18.0];
+        let guard = self.view.borrow();
+        let v = guard.as_ref()?;
+        if v.bare() || v.tabs_on_rail() {
+            return None;
+        }
+        let (face, weight) = v.chrome.title_font();
+        let (x, size) = if v.tabs.len() > 1 {
+            let i = v.tabs.iter().position(|t| t.id == fence)?;
+            // A glyph before the caption (a portal's folder, Task View) moves it off centre.
+            if v.tabs[i].folder_icon || v.tabs[i].desktop_icon {
+                return None;
+            }
+            let (x, w) = *v.tab_rects().get(i)?;
+            let size = v.tabs[i].title_size.min(3);
+            let caption =
+                pecofence_render::text::measure_width(&v.tabs[i].title, &v.chrome.tab_format(size));
+            // The pill is the caption and 8 DIPs at each side, or wider (48 at least).
+            (x + ((w - caption) / 2.0).max(8.0), size)
+        } else if v.behavior.title_align.get() == pecofence_core::TitleAlign::Left {
+            (v.deco.title_x(), v.style.title_size.min(3))
+        } else {
+            return None;
+        };
+        Some(crate::rename::TitlePlace {
+            x: (x * v.scale()).round() as i32,
+            row_h: v.title_h_px(),
+            font_dip: SIZES[usize::from(size)],
+            face,
+            weight,
+        })
+    }
+
     /// Screen rectangle of an item's label, for the rename popup.
     pub fn item_label_rect(&self, item: ItemId) -> Option<RECT> {
         self.view

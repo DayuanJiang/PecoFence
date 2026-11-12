@@ -207,7 +207,7 @@ impl EditControl {
             if hwnd.0.is_null() {
                 return Err(Error::from_thread());
             }
-            let font = make_font(crate::fonts::text_face(), font_dip, dpi);
+            let font = make_font(crate::fonts::text_face(), font_dip, dpi, FW_NORMAL);
             SendMessageW(hwnd, WM_SETFONT as u32, WPARAM(font.0 as usize), LPARAM(1));
             let brush = CreateSolidBrush(COLORREF(back_color));
             let _ = SetWindowSubclass(hwnd, Some(subclass_proc), 1, on_key as usize);
@@ -257,9 +257,14 @@ impl EditControl {
     /// a box over text that is drawn in another font (an item's name). The margins follow the
     /// new font again.
     pub fn set_font(&mut self, face: &str, font_dip: f32, dpi: u32) {
+        self.set_font_weight(face, font_dip, dpi, FW_NORMAL);
+    }
+
+    /// [`Self::set_font`] with a weight (400 regular, 600 semibold): a box over a title.
+    pub fn set_font_weight(&mut self, face: &str, font_dip: f32, dpi: u32, weight: i32) {
         // SAFETY: plain GDI and message calls; the old font goes once the control has the new.
         unsafe {
-            let font = make_font(face, font_dip, dpi);
+            let font = make_font(face, font_dip, dpi, weight);
             if font.0.is_null() {
                 return;
             }
@@ -583,7 +588,7 @@ pub fn caret_blink_ms() -> Option<u32> {
 ///
 /// # Safety
 /// A plain GDI call; the caller owns the font and deletes it.
-unsafe fn make_font(face: &str, font_dip: f32, dpi: u32) -> HFONT {
+unsafe fn make_font(face: &str, font_dip: f32, dpi: u32, weight: i32) -> HFONT {
     let face = to_wide(face);
     // SAFETY: the face buffer outlives the call.
     unsafe {
@@ -592,7 +597,7 @@ unsafe fn make_font(face: &str, font_dip: f32, dpi: u32) -> HFONT {
             0,
             0,
             0,
-            FW_NORMAL,
+            weight,
             0,
             0,
             0,

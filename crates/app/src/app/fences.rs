@@ -936,6 +936,7 @@ impl App {
                     .map(|f| f.title.clone())
                     .unwrap_or_default(),
                 w.rail_row_screen_rect(fence),
+                w.title_text_place(fence),
                 self.queue.clone(),
                 w.label_ink(self.theme_mode),
             );

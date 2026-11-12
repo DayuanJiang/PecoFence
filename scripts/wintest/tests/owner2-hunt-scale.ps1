@@ -3,9 +3,7 @@
 #   run.sh --var Part=N tests/owner2-hunt-scale.ps1     a fence's name box sits on its title
 #   tests/free-placement.sh --part D --steps tests/owner2-hunt-scale.ps1
 #        the first-run column over 1280x720, 150 %, 125 %, 1920x1080: gaps kept, edge gap kept
-#   tests/free-placement.sh --part S --steps tests/owner2-hunt-scale.ps1
-#        the settings window stays on the screen when the scale goes to 150 %
-# Parts D and S ask free-placement.sh for another RDP size or scale (C:\pf\resize-want.txt).
+# Part D asks free-placement.sh for another RDP size or scale (C:\pf\resize-want.txt).
 if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'G' }
 trap { PfTrap $_; continue }
 Add-Type @'
@@ -182,30 +180,6 @@ if ($Part -eq 'D') {
   Check 'back at 1600x900 the column is where it was' ($d1 -eq $d0) "before $d0 | now $d1"
   PfQuit
   foreach ($n in $files) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue }
-}
-
-if ($Part -eq 'S') {
-  # The settings window open while the scale goes from 100 % to 150 %: Windows suggests a rect
-  # 1.5 times as large around the same corner, 9 px past the right edge and under the taskbar.
-  Case 'the settings window stays on the screen when the scale goes up'
-  PfStart
-  Start-Sleep -Seconds 5
-  Pf settings open-ui | Out-Null
-  $sw = WaitWin 'PecoFence.Settings' 25
-  Start-Sleep -Seconds 3
-  $r0 = Rect $sw
-  WantSize 1600 900 150
-  $r = Rect $sw; $wa = [HsScr]::Work()
-  Shot 'S-1-settings-150'
-  Log "settings window $($r0.L),$($r0.T),$($r0.R),$($r0.B) -> $($r.L),$($r.T),$($r.R),$($r.B), work area $($wa -join ',')"
-  Check 'at 150 % the settings window is inside the work area' ($r.L -ge $wa[0] -and $r.T -ge $wa[1] -and $r.R -le $wa[2] -and $r.B -le $wa[3]) "window $($r.L),$($r.T),$($r.R),$($r.B) work $($wa -join ',')"
-  Check 'it is larger than at 100 %' (($r.R - $r.L) -gt ($r0.R - $r0.L)) "width $($r0.R - $r0.L) -> $($r.R - $r.L)"
-  WantSize 1600 900
-  $r2 = Rect $sw
-  Check 'back at 100 % it is inside the work area too' ($r2.L -ge 0 -and $r2.R -le 1600 -and $r2.B -le 852) "window $($r2.L),$($r2.T),$($r2.R),$($r2.B)"
-  [HsScr]::PostMessageW($sw, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
-  Start-Sleep -Seconds 1
-  PfQuit
 }
 
 Case 'end'

@@ -2192,6 +2192,12 @@ impl FenceChrome {
         self.label_font.borrow().line_h
     }
 
+    /// The titles' font: the theme's face (None: the built-in Segoe UI Variable) and weight.
+    pub fn title_font(&self) -> (Option<String>, i32) {
+        let fonts = self.title_fonts.borrow();
+        (fonts.face.clone(), fonts.weight)
+    }
+
     /// Title at 12 / 14 / 16 / 18 px for the per-fence "title size" option (0 to 3).
     pub fn title_format(&self, size: u8) -> Ref<'_, TextFormat> {
         Ref::map(self.title_fonts.borrow(), |f| {
