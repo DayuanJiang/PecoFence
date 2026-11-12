@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A new file's icon: name and picture come together. The name faded in at once and the picture two to three frames later (it comes from a background thread), in a fence and on the freely placed desktop. The fade-in now waits for the picture (167 ms at most, so a file whose picture takes longer still shows its name).
 - The tip of an icon comes again when the pointer leaves the fence and comes back to the very same point. It stayed away until the pointer had moved by at least a pixel.
 - Settings › 布局与备份: 「尚无每日备份」 has a second line too (a backup is made by itself on the first change of each day, the last 7 are kept), like the empty lists of rules and snapshots.
 - Settings › 关于: a click on 「检查更新」 no longer makes the card's title jump. At rest the card shows 「更新」 alone; 「正在检查更新…」 then came under it and the title jumped up by half a line. The title now glides there and the status line fades in.

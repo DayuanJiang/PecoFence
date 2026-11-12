@@ -74,6 +74,11 @@ pub(super) fn fade_in_start(vacated: bool, now: Instant) -> Instant {
     if vacated { now + motion::FASTER } else { now }
 }
 
+/// How long a new icon's fade-in waits for its picture at most. A picture that is not in the
+/// cache comes from the worker a few frames later: the name used to fade in alone and the
+/// picture after it. A file whose picture takes longer shows its name after this wait.
+pub(super) const ICON_WAIT_MAX: Duration = motion::FAST;
+
 /// Index-keyed per-item state carried across a list refresh by item identity: `old` / `new`
 /// are the ids before and after, `index` an index into `old`. Items that vanished map to None
 /// (Explorer / ListView keep selection and focus by item, not by slot, across sorts, drops,
@@ -307,6 +312,7 @@ impl FenceViewState {
                     n.icon = o.icon;
                     n.icon_px = o.icon_px;
                     n.icon_fade = o.icon_fade;
+                    n.fade_waits = o.fade_waits;
                     n.icon_waited = o.icon_waited;
                     n.icon_stand_in = o.icon_stand_in;
                     n.label = o.label;
@@ -473,7 +479,8 @@ impl FenceViewState {
             .collect();
         let mut motion: HashMap<ItemId, ItemMotion> = HashMap::new();
         let (mut landed, mut waited) = (0usize, 0usize);
-        for (n, c) in self.items.iter().zip(cells) {
+        let wait_for_icon = self.motion.enabled();
+        for (n, c) in self.items.iter_mut().zip(cells) {
             // A motion still in flight continues from where it is, not from the old slot.
             let prev = self.item_motion.remove(&n.id);
             if let Some(&(lx, ly)) = landing.get(&n.id) {
@@ -539,8 +546,14 @@ impl FenceViewState {
                     // 83 ms later, so the two names do not lie on top of each other (WinUI
                     // staggers the add after the reposition the same way).
                     let waits = vacated.contains(&cell_key(c.x, c.y));
-                    let start = fade_in_start(waits, now);
+                    let mut start = fade_in_start(waits, now);
                     waited += waits as usize;
+                    // Name and picture come together: the fade-in is held until the picture
+                    // is there (`ensure_icons_and_labels` starts it), `ICON_WAIT_MAX` at most.
+                    if wait_for_icon && n.icon.is_none() {
+                        n.fade_waits = Some(start);
+                        start += ICON_WAIT_MAX;
+                    }
                     motion.insert(
                         n.id,
                         ItemMotion {

@@ -412,6 +412,9 @@ pub struct ItemView {
     icon_waited: bool,
     /// Bitmap opacity 0 → 1 (167 ms linear) after an asynchronous icon arrived.
     icon_fade: Option<Tween>,
+    /// A new item whose fade-in waits for its picture (`ICON_WAIT_MAX`): the moment the fade
+    /// would have started without the wait. Taken when the picture is there.
+    fade_waits: Option<Instant>,
     /// `icon` is the picture the item showed under its previous icon key (a rename changes a
     /// per-file key, a save a by-content one) and stays up until the new one arrives: the
     /// draw key it is uploaded under, so it is never cached under the new key's.
@@ -496,6 +499,7 @@ impl ItemView {
             icon_failed: false,
             icon_waited: false,
             icon_fade: None,
+            fade_waits: None,
             icon_stand_in: None,
         }
     }

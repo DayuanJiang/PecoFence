@@ -1120,6 +1120,7 @@ impl FenceViewState {
         let now = Instant::now();
         let mut started = false;
         let mut pending = false;
+        let (mut together, mut longest) = (0usize, Duration::ZERO);
         let mut icons = self.icons.borrow_mut();
         // For this pass only: the shell is asked once per extension, and again next time.
         let mut type_names = fileinfo::TypeNames::default();
@@ -1131,7 +1132,27 @@ impl FenceViewState {
                         item.icon = Some(img);
                         item.icon_px = icon_px;
                         item.icon_stand_in = None;
-                        if item.icon_waited {
+                        // A new item that held its fade-in for the picture: both come now, as
+                        // one fade.
+                        let held = item.fade_waits.take().and_then(|start| {
+                            let m = self.item_motion.get_mut(&item.id)?;
+                            (m.alpha.value_at(now) <= 0.0).then(|| {
+                                m.alpha = self.motion.tween(
+                                    0.0,
+                                    1.0,
+                                    motion::FAST,
+                                    Curve::Linear,
+                                    start.max(now),
+                                );
+                                now.saturating_duration_since(start)
+                            })
+                        });
+                        if let Some(waited) = held {
+                            together += 1;
+                            longest = longest.max(waited);
+                            item.icon_waited = false;
+                            started = true;
+                        } else if item.icon_waited {
                             // Delivered by the worker: cross-fade over the loading tile (167 ms
                             // linear); a synchronous cache hit shows at once.
                             item.icon_waited = false;
@@ -1145,6 +1166,20 @@ impl FenceViewState {
                     }
                     Lookup::Ready(None) => {
                         item.icon_failed = true;
+                        // No picture will come: the name waits no longer.
+                        if let Some(start) = item.fade_waits.take()
+                            && let Some(m) = self.item_motion.get_mut(&item.id)
+                            && m.alpha.value_at(now) <= 0.0
+                        {
+                            m.alpha = self.motion.tween(
+                                0.0,
+                                1.0,
+                                motion::FAST,
+                                Curve::Linear,
+                                start.max(now),
+                            );
+                            started = true;
+                        }
                         // No picture for the new key: the stand-in goes too (the glyph shows).
                         if item.icon_stand_in.take().is_some() {
                             item.icon = None;
@@ -1200,6 +1235,13 @@ impl FenceViewState {
         }
         drop(icons);
         self.icons_pending = pending;
+        if together > 0 {
+            tracing::debug!(
+                icons = together,
+                waited_ms = longest.as_millis() as u64,
+                "new icons fade in with their pictures"
+            );
+        }
         if started {
             self.frames.request();
         }
