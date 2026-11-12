@@ -905,7 +905,7 @@ impl App {
                 .icon(glyph::SEARCH);
                 if off {
                     menu.tip(pecofence_core::i18n::text(
-                        "这个栅栏的条件是“任一”，筛选没法和它合成一个搜索，所以不能存。",
+                        "这个栅栏的条件是“任一”，筛选不能存为智能栅栏。",
                     ));
                 }
             }

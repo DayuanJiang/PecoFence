@@ -981,7 +981,7 @@
   "“来源”不能作为智能栅栏的条件，请删掉这一行": "«Origine» non può essere una condizione di un riquadro intelligente. Rimuovi questa riga",
   "至少要有一行位置": "Serve almeno una riga di posizione",
   "这个栅栏的条件刚在别处改过，按“好”会换成这里的条件": "Le condizioni di questo riquadro sono appena cambiate altrove; «OK» le sostituisce con quelle di qui",
-  "这个栅栏的条件是“任一”，筛选没法和它合成一个搜索，所以不能存。": "Le condizioni di questo riquadro usano «una di» e il filtro non si può unire a esse in una sola ricerca, quindi non si può salvare.",
+  "这个栅栏的条件是“任一”，筛选不能存为智能栅栏。": "Le condizioni di questo riquadro usano «una di», quindi il filtro non si può salvare come riquadro intelligente.",
   "更多操作": "Altre azioni",
   "操作": "Azioni",
   "{0} 个结果": "Risultati: {0}",
