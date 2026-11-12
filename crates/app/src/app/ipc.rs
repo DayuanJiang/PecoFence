@@ -640,7 +640,7 @@ impl App {
                 // Persist before replying so the caller can rely on the file; the deferred
                 // save the mutation scheduled is redundant now.
                 window::kill_timer(self.control.hwnd(), TIMER_SAVE);
-                if self.state.is_dirty() && !self.state.save_if_dirty() {
+                if !self.state.save_and_wait("cli") {
                     response = add_warning(response, "applied but not saved: see the log");
                 }
             }

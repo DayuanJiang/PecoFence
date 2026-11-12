@@ -47,6 +47,35 @@ skipped. Run it as the background command. A new steps file gets a line in `suit
 main) and the release a user upgrades from (`--old v0.2.5`), and unpacks the CI build into
 `bin/` for `--bin`.
 
+## How much to test
+
+Two sizes (the owner's rule, 2026-11-12). The whole suite is about 220 box-minutes (35 minutes on
+six boxes, 80 on three), so it runs at a few fixed points; every other change gets the short pass.
+
+**Short pass**: every change, one box, 15 minutes at most.
+
+1. On the dev box: `cargo fmt --all -- --check`, `cargo clippy --target x86_64-pc-windows-msvc
+   --workspace --all-targets -- -D warnings`, `cargo test -p pecofence-core`.
+2. `unit.sh`: all unit tests in the desktop session, about a minute.
+3. The steps file written for the change, on main and on the branch (`run.sh --bin <a build of
+   main>`): its new checks fail before and pass after.
+4. The suite lines of the features the change touches: `suite.sh --only '^(name|name)$'`.
+
+**Whole suite** (`suite.sh`): once, on the final commit, at these points only.
+
+- Before a release is tagged.
+- After a round of several branches is merged, on the merged result.
+- For a change in code that every feature runs through, where no set of lines can be named: the
+  message loop and command queue, the desktop anchor, the render stack, the layout engine, the
+  configuration format.
+
+The short pass is enough for a fix in one feature, for changes after a review (rerun the related
+lines), for a failed job that was fixed (rerun it and the related lines), and for changes to
+documentation or tests alone.
+
+Sessions that wait for a whole suite share one run: the session that runs it next merges the
+others' commits into a temporary test merge and sends each of them the failures in its area.
+
 ## Rules for test rounds
 
 - **Make sure the end of `run.sh` reaches whoever waits for it.** It returns when every job is

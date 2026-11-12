@@ -586,6 +586,8 @@ impl App {
             None
         };
         let previous = self.share_log(pecofence_core::brand::PREVIOUS_SHARE_LOG);
+        // The newest lines may still be with the log's writer thread (a busy disk).
+        pecofence_core::log_file::written(pecofence_core::log_file::LINE_WAIT);
         let current = self
             .read_share_log(pecofence_core::brand::SHARE_LOG)
             // The report still says why it has no log.

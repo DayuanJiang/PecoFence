@@ -97,6 +97,8 @@ polish-paste-B     2   ec2    release polish-paste.ps1               --var Part=
 polish-paste-C     2   ec2    release polish-paste.ps1               --var Part=C
 # Part D copies a 6 GB file: the box needs 12 GB free.
 polish-paste-D     2   ec2    release polish-paste.ps1               --var Part=D
+big-copy-save-A    2   ec2    release big-copy-save.ps1              --var Part=A
+big-copy-save-B    1   ec2    release big-copy-save.ps1              --var Part=B
 polish-undo        2   ec2    release polish-undo.ps1
 polish-undo-C      1   ec2    debug   polish-undo.ps1                --var Part=C
 polish-undo-D      1   ec2    release polish-undo.ps1                --var Part=D
