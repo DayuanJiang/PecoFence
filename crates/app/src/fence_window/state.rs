@@ -251,8 +251,8 @@ pub struct FenceViewState {
     pub(super) note_edit: Option<NoteEditView>,
     /// A press in the edited note's text is held: moving the pointer selects.
     pub(super) note_drag: bool,
-    /// The press held in a note that is not being edited: a click that opens the editor on
-    /// its release, or a to-do that follows the pointer to another place (`TodoDrag`).
+    /// The press held on a to-do of a note that is not being edited: a click on its
+    /// release, or the line follows the pointer to another place (`TodoDrag`).
     pub(super) todo_drag: Option<TodoDrag>,
     /// Lines of the note on their way to their places after a to-do moved: the line and the
     /// top it is drawn at (content DIPs before scrolling; 167 ms).

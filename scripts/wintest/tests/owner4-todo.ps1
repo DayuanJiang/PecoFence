@@ -1,8 +1,10 @@
 # Owner round 2026-11-12, fourth batch: a to-do of a note is moved by dragging it, zh-CN.
 # Parts (run.sh --var Part=...; D, C and K without it):
 #   D  the drag: the third to-do above the first, by the check box, ended with Esc, released
-#      outside the fence, dropped under a plain line, in a locked fence; the saved text after each
-#   C  a press without a move is the click it was: the editor opens on the release with the caret
+#      outside the fence, dropped under a plain line, in a locked fence, taken back with Ctrl+Z;
+#      the saved text after each
+#   C  a press without a move is the click it was: on a to-do the editor opens on the release (on
+#      other text on the press, as before) with the caret
 #      at the press, a check box ticks, a web address opens, a double-click takes a word, a drag
 #      inside the open editor selects
 #   K  Alt+Shift+Down and Alt+Shift+Up move the line with the caret while the note is edited;
@@ -224,8 +226,19 @@ $edUp = EditorOpen
 [G]::Type('大'); Start-Sleep -Milliseconds 300
 $typed = [T4]::EdText()
 [G]::Press(0x1B); Start-Sleep -Milliseconds 700
-Check 'the editor opens when the button is released, not while it is held' (-not $edHeld -and $edUp) "editor while held: $edHeld; after the release: $edUp"
+Check 'on a to-do the editor opens when the button is released, not while it is held' (-not $edHeld -and $edUp) "editor while held: $edHeld; after the release: $edUp"
 Check 'the caret is where the press was: a click after the first to-do''s text, and the character typed ends that line' ($typed -eq "[ ] 西红柿大`n[ ] 鸡蛋 牛奶 面包`n周报 https://example.com/wiki 详见") "editor: $(OneLine $typed)"
+# The third line is plain text: nothing can be dragged there, and the editor opens on the press.
+$w = Fresh $nid $T1; $c = CRect $w; $boxes = Rects $w 'note_boxes'
+$y2 = $c[1] + [int]((($boxes[1][1] + $boxes[1][3]) / 2) + ($boxes[1][1] - $boxes[0][1]))
+[G]::MoveTo($c[0] + 24, $y2); Start-Sleep -Milliseconds 300
+MDown; Start-Sleep -Milliseconds 400
+$edPlain = EditorOpen
+MUp; Start-Sleep -Milliseconds 400
+[G]::Type('好'); Start-Sleep -Milliseconds 300
+$typed2 = [T4]::EdText()
+[G]::Press(0x1B); Start-Sleep -Milliseconds 700
+Check 'on a line that is no to-do the editor opens on the press, as it did' ($edPlain -and (@($typed2 -split "`n")[2] -match '好')) "editor while held: $edPlain; editor: $(OneLine $typed2)"
 
 Case 'C2 a click on a check box ticks it, a click on a web address opens it'
 $w = Fresh $nid $T1; $c = CRect $w; $boxes = Rects $w 'note_boxes'

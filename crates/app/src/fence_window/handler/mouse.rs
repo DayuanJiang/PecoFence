@@ -313,18 +313,22 @@ pub(super) fn on_lbuttondown(
         // a release over it.
         if v.press_tool_at(x, y, false).is_some() {
             // On a to-do's check box or web address: a drag from there moves the line.
-            v.begin_todo_press(x, y, None);
+            let _ = v.begin_todo_press(x, y, None);
             drop(guard);
             window::set_capture(hwnd);
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
-        // A note's text: the editor opens on the release, at the place of the press. Until
-        // then the press may become the drag of a to-do (`TodoDrag`).
+        // A note's text: the editor opens with the caret at the press. On a to-do it opens
+        // on the release, since the press may become a drag of the line (`TodoDrag`); on
+        // other text, where nothing can be dragged, at once.
         if let Some(cmd) = v.note_press(x, y) {
-            v.begin_todo_press(x, y, Some(cmd));
+            let at_once = v.begin_todo_press(x, y, Some(cmd));
             drop(guard);
-            window::set_capture(hwnd);
+            match at_once {
+                Some(cmd) => queue.push(cmd),
+                None => window::set_capture(hwnd),
+            }
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }

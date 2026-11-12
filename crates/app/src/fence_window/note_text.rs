@@ -40,17 +40,17 @@ fn whole_char(text: &str, offset: usize) -> usize {
     }
 }
 
-/// 便签与待办: the press held in a note that is not being edited. Released where it was
-/// pressed it is the click it always was (`click`: the editor opens with the caret there; a
-/// check box or a web address is `pressed`'s). On a to-do (`from`) it becomes a drag once
-/// the pointer leaves the system's drag threshold: the line follows the pointer up and down,
-/// the lines it passes make room, and the release leaves it where it is shown.
+/// 便签与待办: the press held on a to-do of a note that is not being edited. Released where
+/// it was pressed it is the click it always was (`click`: the editor opens with the caret
+/// there; a check box or a web address is `pressed`'s). Once the pointer leaves the system's
+/// drag threshold it is a drag: the line follows the pointer up and down, the lines it
+/// passes make room, and the release leaves it where it is shown.
 pub(super) struct TodoDrag {
     /// Client point of the press.
     pub(super) start: (i32, i32),
     pub(super) click: Option<Command>,
-    /// The pressed to-do's line in the note's text. None on a plain line, which stays put.
-    pub(super) from: Option<usize>,
+    /// The pressed to-do's line in the note's text.
+    pub(super) from: usize,
     /// The line it is shown at (it changes as the to-do passes its neighbours).
     pub(super) to: usize,
     /// The pointer left the drag threshold: the line is lifted.
@@ -82,7 +82,7 @@ impl FenceViewState {
     /// shown at, the pointer's y and the pointer's y minus the line's top at the press.
     fn lifted_todo(&self) -> Option<(usize, usize, f32, f32)> {
         let d = self.todo_drag.as_ref().filter(|d| d.moved && !d.outside)?;
-        Some((d.from?, d.to, d.pointer_y, d.grab_dy))
+        Some((d.from, d.to, d.pointer_y, d.grab_dy))
     }
 
     /// The note's text as it is shown: while a to-do is dragged, with that line at the
@@ -230,38 +230,45 @@ impl FenceViewState {
     }
 
     /// Button-down in a note that is not being edited, at client point (`x`, `y`). `click`
-    /// is what the release of a press that never moved does (the editor opens); None for a
-    /// press on a check box or a web address, which `pressed` holds and which only the drag
-    /// of a to-do takes over. The caller takes the mouse capture.
-    pub(super) fn begin_todo_press(&mut self, x: i32, y: i32, click: Option<Command>) {
-        let line = self.todo_line_at(y);
-        if line.is_none() && click.is_none() {
-            return;
-        }
+    /// is what a click there does (the editor opens); None for a press on a check box or a
+    /// web address, which `pressed` holds. On a to-do the press is held here: its click
+    /// waits for the release, since the press may become a drag of the line (the caller
+    /// takes the mouse capture). Anywhere else nothing can be dragged and `click` comes
+    /// back to be done at once, as it always was.
+    pub(super) fn begin_todo_press(
+        &mut self,
+        x: i32,
+        y: i32,
+        click: Option<Command>,
+    ) -> Option<Command> {
+        let Some((line, grab_dy)) = self.todo_line_at(y) else {
+            return click;
+        };
         tracing::debug!(
             fence = %self.active,
-            todo = ?line.map(|l| l.0),
+            line,
             opens_editor = click.is_some(),
-            "note pressed: the click waits for the release"
+            "to-do pressed: the click waits for the release"
         );
         self.todo_drag = Some(TodoDrag {
             start: (x, y),
             click,
-            from: line.map(|l| l.0),
-            to: line.map_or(0, |l| l.0),
+            from: line,
+            to: line,
             moved: false,
             outside: false,
-            grab_dy: line.map_or(0.0, |l| l.1),
+            grab_dy,
             pointer_y: 0.0,
         });
+        None
     }
 
-    /// The pointer moved to client point (`x`, `y`) with a note press held. None while the
-    /// press is still a click (inside the drag threshold, or on a plain line); Some(true)
-    /// on the move that lifts the to-do, Some(false) while it follows the pointer.
+    /// The pointer moved to client point (`x`, `y`) with a to-do press held. None while the
+    /// press is still a click (inside the drag threshold); Some(true) on the move that
+    /// lifts the to-do, Some(false) while it follows the pointer.
     pub(super) fn todo_drag_move(&mut self, x: i32, y: i32) -> Option<bool> {
         let d = self.todo_drag.as_ref()?;
-        let from = d.from?;
+        let from = d.from;
         let started = !d.moved;
         if started {
             let (tx, ty) = window::drag_threshold();
@@ -349,7 +356,7 @@ impl FenceViewState {
         if !d.moved {
             return d.click.filter(|_| commit);
         }
-        let from = d.from?;
+        let from = d.from;
         let to = if commit && !d.outside { d.to } else { from };
         let moved = self
             .note
