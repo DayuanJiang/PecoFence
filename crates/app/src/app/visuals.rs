@@ -211,11 +211,11 @@ pub(super) struct MonitorRecipe {
 impl MonitorRecipe {
     /// Shows `capture` instead of the picture. A capture is a still picture: through clear
     /// glass it would not line up with the video moving around the fence, so Liquid Glass
-    /// frosts it like Fluent does, and drops the detail the frost hides.
+    /// frosts it. Less than acrylic does (see `LIVE_FROST_DIP`), and at the glass's own
+    /// resolution: the capture is what the fence shows, so its detail is kept.
     pub(super) fn show_live(&mut self, capture: Arc<Image>) {
         if let Some(blur) = self.frost_blur {
             self.tint.blur_sigma_dip = blur;
-            self.downscale = 4;
         }
         self.live = Some(capture);
     }
@@ -361,6 +361,12 @@ impl MonitorRecipe {
     }
 }
 
+/// Liquid Glass frosts a live wallpaper capture so a still frame does not clash with the
+/// wallpaper moving around the fence. Softer than acrylic's 30 DIP: the capture is accurate
+/// now that a window without a redirection bitmap is read with Windows.Graphics.Capture, and
+/// the wallpaper should still be recognisable through the glass.
+const LIVE_FROST_DIP: f32 = 16.0;
+
 /// One recipe per live monitor of `snapshot`, with the captures of `live` wallpapers.
 pub(super) fn monitor_recipes(
     theme: &Theme,
@@ -439,9 +445,7 @@ pub(super) fn monitor_recipes(
             downscale: if theme.liquid_glass { 2 } else { 4 },
             decode_divisor: if theme.liquid_glass { 1 } else { 2 },
             live: None,
-            frost_blur: theme.liquid_glass.then_some(
-                pecofence_render::backdrop::MicaTint::ACRYLIC_DARK.blur_sigma_dip * scale,
-            ),
+            frost_blur: theme.liquid_glass.then_some(LIVE_FROST_DIP * scale),
         };
         if let Some(l) = live.iter().find(|l| l.monitor == m.rect) {
             if let Some(image) = l.image.clone() {
