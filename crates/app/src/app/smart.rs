@@ -33,9 +33,9 @@ const STARTING_POLL_MS: u32 = 250;
 /// not there by then did not start, and the row comes back.
 const STARTING_FOR: Duration = Duration::from_secs(10);
 /// How long an Everything that is there but says its index is not read yet is waited for (a
-/// search sent before that finds nothing); after it the search is sent anyway, as it was
-/// 2.5 s after 「启动 Everything」 before the index was asked about.
-const INDEX_WAIT: Duration = Duration::from_secs(3);
+/// search sent before that finds nothing); after it the search is sent anyway, and this
+/// Everything is no longer asked to wait for (`SmartState::index_unknown`).
+const INDEX_WAIT: Duration = Duration::from_secs(10);
 /// The smart fence editor's live count runs as this make-believe fence: it takes its turn with
 /// Everything (after the Peek search, between the fences' own runs) and its workers like a
 /// fence's, and its results go to the editor instead of a fence.
@@ -160,6 +160,9 @@ pub(super) struct SmartState {
     starting: Option<Instant>,
     /// When the look for Everything first saw its window (see `INDEX_WAIT`).
     seen: Option<Instant>,
+    /// Everything was there for `INDEX_WAIT` without saying that its index is read: it is not
+    /// waited for again (until it says so once).
+    index_unknown: bool,
 }
 
 impl Default for SmartState {
@@ -184,6 +187,7 @@ impl Default for SmartState {
             wait_poll: false,
             starting: None,
             seen: None,
+            index_unknown: false,
         }
     }
 }
@@ -263,7 +267,19 @@ impl App {
             tracing::debug!(%id, why, "smart fence: its results are being worked out; it runs again after them");
             return;
         }
-        if let Some(instance) = everything::find() {
+        let mut instance = everything::find();
+        // At sign-in Everything may be there before it has read its index, and a search sent
+        // then finds nothing: the fence said 「没有符合条件的文件。」 until the next once-a-minute
+        // run. Such an Everything counts as not running for the first search (a folder is read
+        // by PecoFence, a whole-computer fence waits), and the look for Everything sends the
+        // search once the index is read (`look_for_everything`).
+        if why == "startup" && !self.smart.index_unknown && instance.is_some_and(|i| !i.db_loaded())
+        {
+            tracing::info!(%id, "smart fence: Everything has not read its index yet; it is waited for");
+            self.smart.seen.get_or_insert_with(Instant::now);
+            instance = None;
+        }
+        if let Some(instance) = instance {
             // The Peek search waits for Everything's answer: it goes first.
             if self.peek_waits_for_everything() {
                 if !self.smart.waiting.contains(&id) {
@@ -674,7 +690,8 @@ impl App {
             self.apply_portal_deco(self.state.host_of(id));
         }
         if source == SmartSource::NeedsEverything {
-            self.poll_for_everything(false);
+            // Soon when Everything is there already and only reads its index.
+            self.poll_for_everything(self.smart.seen.is_some());
         }
     }
 
@@ -713,6 +730,10 @@ impl App {
         // an Everything that is busy.
         let found = everything::running().then(everything::find).flatten();
         let loaded = found.is_some_and(|i| i.db_loaded());
+        if loaded {
+            self.smart.index_unknown = false;
+        }
+        let was_seen = self.smart.seen.is_some();
         let seen_for = match found {
             Some(_) => Some(self.smart.seen.get_or_insert_with(Instant::now).elapsed()),
             None => {
@@ -720,7 +741,19 @@ impl App {
                 None
             }
         };
-        if loaded || seen_for.is_some_and(|d| d >= INDEX_WAIT) {
+        // Everything came or went: the waiting fences say 「正在搜索…」 while it is there.
+        if was_seen != self.smart.seen.is_some() {
+            for id in &waiting {
+                self.apply_portal_deco(self.state.host_of(*id));
+            }
+        }
+        // An Everything that never says its index is read (a version that does not answer the
+        // question) is waited for once, `INDEX_WAIT` long, and searched at once from then on.
+        let waited = seen_for.is_some_and(|d| d >= INDEX_WAIT || self.smart.index_unknown);
+        if waited && !loaded {
+            self.smart.index_unknown = true;
+        }
+        if loaded || waited {
             tracing::info!(
                 fences = waiting.len(),
                 started_here = self.smart.starting.is_some(),
@@ -1163,8 +1196,13 @@ impl App {
         };
         let run = self.smart.runs.get(&f.id);
         let source = match run.map_or(SmartSource::Waiting, |r| r.source) {
-            // 「启动 Everything」 was just picked: it is on its way.
-            SmartSource::NeedsEverything if self.smart.starting.is_some() => SmartSource::Waiting,
+            // 「启动 Everything」 was just picked, or Everything is there and reads its index: it
+            // is on its way.
+            SmartSource::NeedsEverything
+                if self.smart.starting.is_some() || self.smart.seen.is_some() =>
+            {
+                SmartSource::Waiting
+            }
             source => source,
         };
         let empty = Some(match source {

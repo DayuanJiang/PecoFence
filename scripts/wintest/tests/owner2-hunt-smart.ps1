@@ -1,5 +1,5 @@
 # Smart fences and fences per virtual desktop: what the hunt of 2026-11-12 found (Everything is
-# installed on the box, see smart.ps1). --var Part=A, B, C, D or E runs one part (default: all).
+# installed on the box, see smart.ps1). --var Part=A to F runs one part (default: all).
 #   A  a smart fence that waits for Everything: started outside PecoFence, Everything is found
 #      within seconds; a click on 「启动 Everything」 changes the fence at once
 #   B  a smart fence whose folder is gone says that the folder cannot be found
@@ -7,7 +7,9 @@
 #   D  without Everything a new file shows in a smart fence within half a second
 #   E  a fence that comes to a desktop (its own was closed, or it was set to show here) does not
 #      land on a fence that stands at the same spot there
-if (-not $Part) { $Part = 'ABCDE' }
+#   F  PecoFence starts while Everything is there but has not read its index (a stand-in window
+#      that answers like one): the fence is not left empty until the next once-a-minute search
+if (-not $Part) { $Part = 'ABCDEF' }
 $HsDir = "$PfDocs\智能栅栏检查"
 function HsFiles() {
   Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
@@ -215,3 +217,87 @@ function PartE {
   VdOnlyOne
 }
 if ($Part -match 'E') { PartE }
+
+# A stand-in for an Everything that is running but has not read its index: a window of
+# Everything's class that names itself 1.4, says "not loaded" (EVERYTHING_IPC_IS_DB_LOADED) and
+# answers every search with an empty list, as Everything does until its index is read.
+$HsFake = @'
+Add-Type @"
+using System; using System.Runtime.InteropServices;
+public static class FakeEv {
+  delegate IntPtr WndProc(IntPtr h, uint m, IntPtr w, IntPtr l);
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] struct WNDCLASS { public uint style; public WndProc proc; public int a, b; public IntPtr inst, icon, cursor, brush; public string menu, name; }
+  [StructLayout(LayoutKind.Sequential)] struct MSG { public IntPtr h; public uint m; public IntPtr w, l; public uint t; public int x, y; }
+  [StructLayout(LayoutKind.Sequential)] struct CDS { public IntPtr id; public int size; public IntPtr data; }
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern ushort RegisterClassW(ref WNDCLASS c);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr CreateWindowExW(uint ex, string cls, string name, uint style, int x, int y, int w, int h, IntPtr parent, IntPtr menu, IntPtr inst, IntPtr p);
+  [DllImport("user32.dll")] static extern IntPtr DefWindowProcW(IntPtr h, uint m, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] static extern int GetMessageW(out MSG m, IntPtr h, uint a, uint b);
+  [DllImport("user32.dll")] static extern IntPtr DispatchMessageW(ref MSG m);
+  [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] static extern IntPtr SendMessageTimeoutW(IntPtr h, uint m, IntPtr w, ref CDS l, uint f, uint ms, out IntPtr r);
+  static WndProc keep;
+  static IntPtr Proc(IntPtr h, uint m, IntPtr w, IntPtr l) {
+    if (m == 0x400) { int q = (int)w; return (IntPtr)(q == 0 ? 1 : q == 1 ? 4 : 0); }
+    if (m == 0x4A) {
+      CDS c = (CDS)Marshal.PtrToStructure(l, typeof(CDS));
+      if ((int)c.id == 18 && c.size >= 8) { PostMessageW(h, 0x8001, (IntPtr)Marshal.ReadInt32(c.data, 0), (IntPtr)Marshal.ReadInt32(c.data, 4)); return (IntPtr)1; }
+      return IntPtr.Zero;
+    }
+    if (m == 0x8001) {
+      // EVERYTHING_IPC_LIST2 with no items: totitems, numitems, offset, request_flags (name, path), sort_type.
+      IntPtr buf = Marshal.AllocHGlobal(20);
+      for (int i = 0; i < 20; i += 4) Marshal.WriteInt32(buf, i, i == 12 ? 3 : i == 16 ? 14 : 0);
+      CDS r = new CDS(); r.id = l; r.size = 20; r.data = buf; IntPtr res;
+      SendMessageTimeoutW(w, 0x4A, h, ref r, 2, 2000, out res);
+      Marshal.FreeHGlobal(buf);
+      return IntPtr.Zero;
+    }
+    return DefWindowProcW(h, m, w, l);
+  }
+  public static void Run() {
+    keep = Proc;
+    WNDCLASS c = new WNDCLASS(); c.proc = keep; c.name = "EVERYTHING_TASKBAR_NOTIFICATION";
+    RegisterClassW(ref c);
+    CreateWindowExW(0, c.name, "fake", 0, 0, 0, 0, 0, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+    MSG m; while (GetMessageW(out m, IntPtr.Zero, 0, 0) > 0) DispatchMessageW(ref m);
+  }
+}
+"@
+[FakeEv]::Run()
+'@
+function PartF {
+  trap { PfTrap $_; continue }
+  Case 'F: setup: a whole-computer fence that finds a file'
+  CloseWindows
+  HsFiles
+  EvStart | Out-Null
+  PfStart -Lang en -Script (DumpScript 500 20)
+  ClearFences
+  Pf fence create --title 'Whole PC' --everything '会议纪要' --rect '60,60,440,220' | Out-Null
+  Check 'F the fence shows the file' (WaitSmart 'Whole PC' { $s.source -eq 'everything' -and $s.shown -ge 1 } 15) (SmartLine 'Whole PC')
+  PfQuit
+  EvStop | Out-Null
+
+  Case 'F: PecoFence starts while Everything has not read its index'
+  $file = "$PfRun\fake-everything.ps1"
+  $HsFake | Set-Content -LiteralPath $file -Encoding UTF8
+  $fake = Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $file -WindowStyle Hidden -PassThru
+  for ($i = 0; $i -lt 50 -and -not (EvRunning); $i++) { Start-Sleep -Milliseconds 200 }
+  Check 'F the stand-in for a loading Everything is up' (EvRunning) "pid=$($fake.Id)"
+  PfStart -Lang '' -Script (DumpScript 500 20)
+  [G]::MoveTo(1200, 800); Start-Sleep -Milliseconds 500
+  $words = FenceWords 'Whole PC' 'f-loading'
+  Shot 'f-loading'
+  Check 'F the fence does not say that no file matches' ($words -notmatch 'No files match' -and (DumpOf 'Whole PC').raw -match 'title_count=None') "words='$words' $(SmartLine 'Whole PC')"
+  # The real Everything takes over (the stand-in goes, as if the index were read now).
+  Stop-Process -Id $fake.Id -Force -ErrorAction SilentlyContinue
+  $t0 = Get-Date
+  $started = EvStart
+  $ok = WaitSmart 'Whole PC' { $s.source -eq 'everything' -and $s.shown -ge 1 } 12
+  Check 'F the file shows within 12 s of the index being there' ($started -and $ok) "after $([math]::Round(((Get-Date) - $t0).TotalSeconds, 1)) s: $(SmartLine 'Whole PC')"
+  PfQuit
+  Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.Id -eq $fake.Id } | Stop-Process -Force -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force $HsDir -ErrorAction SilentlyContinue
+}
+if ($Part -match 'F') { PartF }
