@@ -236,6 +236,7 @@
 - Liquid Glass with 「更厚实」: the name of the current tab reads on its pill. In dark mode over a light wallpaper the plate is dark and the pill, whose lens shows the wallpaper through it, is light; the name was white as on the plate around it (2.2 : 1). It now takes the colour that suits the pill (7.5 : 1).
 - A rolled-up fence shows more of a long title. The count at its right (「3 项」) kept a box of 64 px for a text of 22 px, so the title ended 53 px before it. A left-aligned title now runs on to about 16 px before the count.
 - A change of 「不透明度」 or 「色调」 picks the text colour of the fence again. In dark mode over the Windows 11 wallpaper, a note switched from 「更厚实」 to 「全透明」 kept the white text of its dark plate on the light wallpaper (1.75 : 1), for as long as nothing else changed: the colour stays put near its threshold so that it does not flicker while a fence is moved, and that carried over to the new look.
+- The alignment guides and the white outline of where a dragged fence will land fade in and out. They appeared in one frame when an edge lined up and vanished in one frame at the release, while everything else that comes and goes on a fence fades. Both now take the same 83 ms; with Windows' animations off they still show and go at once.
 
 ## 0.3.3
 

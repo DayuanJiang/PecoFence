@@ -997,9 +997,23 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 /// A 1x1 layered popup that the mouse passes through and that never takes focus: the base of
 /// the drop preview, the marquee, the drag guides and the fence shadows.
 pub fn create_click_through(class: &WindowClass, title: &str) -> Result<Window> {
-    let handler: MessageHandler = Box::new(|_hwnd, message, _wparam, _lparam| match message {
+    create_click_through_with(class, title, |_| {})
+}
+
+/// [`create_click_through`] for a window that animates itself: `on_timer` runs for every
+/// `WM_TIMER` of the window (a fade of its constant alpha).
+pub fn create_click_through_with(
+    class: &WindowClass,
+    title: &str,
+    on_timer: impl Fn(HWND) + 'static,
+) -> Result<Window> {
+    let handler: MessageHandler = Box::new(move |hwnd, message, _wparam, _lparam| match message {
         crate::msg::WM_MOUSEACTIVATE => Some(crate::msg::MA_NOACTIVATE),
         crate::msg::WM_NCHITTEST => Some(crate::msg::HTTRANSPARENT),
+        crate::msg::WM_TIMER => {
+            on_timer(hwnd);
+            Some(0)
+        }
         crate::msg::WM_DESTROY => Some(0),
         _ => None,
     });
