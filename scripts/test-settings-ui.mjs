@@ -2757,6 +2757,30 @@ async function runTests() {
     } finally { frame.style.width = ''; }
   });
 
+  await test('A card description that wraps does not leave a few characters alone on its last line', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=layout]').click(); await settle();
+    const text = doc.getElementById('cfgExport').closest('.card').querySelector('.s');
+    // The width of each line of the description.
+    const lines = () => {
+      const range = doc.createRange(); range.selectNodeContents(text);
+      const rows = [];
+      for (const box of range.getClientRects()) {
+        const last = rows[rows.length - 1];
+        if (last && Math.abs(last.top - box.top) < 4) last.right = Math.max(last.right, box.right);
+        else rows.push({ top: box.top, left: box.left, right: box.right });
+      }
+      return rows.map(row => row.right - row.left);
+    };
+    try {
+      for (let width = 720; width <= 1000; width += 20) {
+        frame.style.width = width + 'px'; await settle();
+        const rows = lines(), room = text.getBoundingClientRect().width;
+        assert(rows.length < 2 || rows[rows.length - 1] > 0.3 * room, width + ' px: the last line of the 导出 / 导入 description is ' + Math.round(rows[rows.length - 1]) + ' px of ' + Math.round(room));
+      }
+    } finally { frame.style.width = ''; }
+  });
+
   await test('The nav at the smallest window size: no sideways scrolling, the search box fits, long page names keep their height', async () => {
     doc = await reset();
     frame.style.width = '704px'; frame.style.height = '441px';

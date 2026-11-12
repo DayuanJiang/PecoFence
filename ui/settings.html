@@ -138,7 +138,9 @@
   .card .l > div { min-width: 0; }
   .card .l > .ic { font-size: 20px; width: 20px; line-height: 20px; flex: none; text-align: center; color: var(--text); }
   .card .t { font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
-  .card .s { color: var(--text2); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
+  /* balance: a description that wraps gets lines of about the same length. Filled line by line,
+     102 of them (all 11 languages) ended in a stub such as 「份快照」 alone on the last line. */
+  .card .s { color: var(--text2); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; text-wrap: balance; }
   .card .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; max-width: 100%; }
   /* Controls that wrap under a long description stay on the right, as in Windows Settings. */
   .card:not(.stack) > :not(.l):not(.s) { margin-left: auto; }
