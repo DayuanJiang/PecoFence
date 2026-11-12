@@ -470,7 +470,7 @@
     .tile .mini-fence { backdrop-filter: none; background: var(--card); }
     .preview-glass { display: none; }
   }
-  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } ::details-content { transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } ::details-content { transition: none !important; } ::picker(select) { transition: none !important; } }
   @media (forced-colors: active) {
     .card { border-color: CanvasText; }
     .toggle, .swatch, .slider input, .slider-ticks { forced-color-adjust: none; }
