@@ -781,7 +781,24 @@ impl AppState {
             // fences the first pass found no spot for.
             std::mem::take(&mut self.unplaced)
         } else {
-            self.config.carry_fences(source, target)
+            let unplaced = self.config.carry_fences(source, target);
+            // Fences snapped together go to the new work area as one piece: placed one by
+            // one, each by its own anchor, a column or a pair comes apart.
+            let gap = self.config.settings.snapping.gap_px.clamp(0, 64) as f32;
+            let kept = pecofence_core::geometry::keep_groups_together(
+                &mut self.config.layouts[target].fences,
+                &unplaced,
+                &self.work_areas,
+                gap,
+            );
+            tracing::debug!(
+                layout = target,
+                from_layout = source,
+                without_spot = unplaced.len(),
+                kept,
+                "fences without a spot here: snapped groups carried as one piece"
+            );
+            unplaced
         };
         // A spot on a monitor that is not connected is no spot (older versions cloned a whole
         // layout onto a new monitor set).
