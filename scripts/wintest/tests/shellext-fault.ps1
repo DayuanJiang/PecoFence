@@ -8,8 +8,8 @@
 #      Delete, Shift+Delete, the item menu's Delete, several files at once, a folder fence and
 #      a folder still delete, and Ctrl+Z brings a deleted file back
 #   F  a fault while the item menu is built (the shell loads every menu extension for it): the
-#      crash line and the next start's notice name the DLL, the watchdog starts PecoFence again
-#      and the layout is as before
+#      crash line and the next start's notice name the DLL, the process is gone within half a
+#      second of that line, the watchdog starts PecoFence again and the layout is as before
 # Parts: run.sh --var Part=D ... (default: all). About 3 minutes.
 $PfAllowLogErrors = $true
 if (-not $Part) { $Part = 'DF' }
@@ -248,14 +248,18 @@ if ($dll -and $Part -match 'F') {
   # A change a second before the fault must still be there afterwards.
   Pf fence create --title 'SxKeep' --rect '900,500,300,150' | Out-Null
   Start-Sleep -Milliseconds 300
-  ExtArm 'QueryContextMenu'
-  $t0 = [DateTime]::UtcNow
   $p = CellPt 'SxM' 0
+  ExtArm 'QueryContextMenu'
+  # One clock: t0 is the moment the right button is let go (RClick moves, waits 80 ms,
+  # presses, waits 40 ms, releases); the watch's times are moved onto it.
+  $t0 = [DateTime]::UtcNow.AddMilliseconds(120)
   [G]::RClick($p[0], $p[1])
+  $off = [int]([DateTime]::UtcNow - $t0).TotalMilliseconds
   $watch = [SxMon]::Watch($p1.Id, 90)
   ExtDisarm
-  Log "watch: $watch"
+  Log "watch (its clock starts $off ms after the click): $watch"
   $w = @{}; foreach ($kv in ($watch -split ' ')) { $a = $kv -split '=', 2; $w[$a[0]] = $a[1] }
+  foreach ($k in 'exit', 'born', 'fences') { if ([int]$w[$k] -ge 0) { $w[$k] = [int]$w[$k] + $off } }
   $toast = ToastOcr 'crashed' 8
   $restarted = [int]$w['new_pid'] -ne 0
   $prev = "$env:LOCALAPPDATA\PecoFence\pecofence.$PfInst.prev.log"
@@ -264,6 +268,10 @@ if ($dll -and $Part -match 'F') {
   $crashMs = if ($crashLine) { [int]((LogTime $crashLine) - $t0).TotalMilliseconds } else { -1 }
   Check 'F the crash line names the extension as another program''s file' ($crashLine -match ' at=pf_shellext_fault\.dll\+0x' -and $crashLine -match 'module_owner="?other') "crash line $crashMs ms after the click: $(if ($crashLine -match '(code=.*?) dump=') { $Matches[1] })"
   Check 'F the process ends with the exception''s code and the watchdog starts PecoFence again' ($w['code'] -eq 'C0000005' -and $restarted -and [int]$w['fences'] -ge 0) "after the click: exit $($w['exit']) ms (code $($w['code'])), new process $($w['born']) ms, its first fence $($w['fences']) ms"
+  # Left to Windows Error Reporting, the dead process stayed 1 to 2 s on this box (about 50 s
+  # on the PC of GitHub #167).
+  $dead = [int]$w['exit'] - $crashMs
+  Check 'F the process is gone within half a second of its crash line' ($crashMs -ge 0 -and [int]$w['exit'] -ge 0 -and $dead -lt 500) "crash line at $crashMs ms, exit at $($w['exit']) ms: $dead ms"
   if ($restarted) {
     $new = @(Get-Content (PfLogPath) -Encoding UTF8)
     $said = @($new | Where-Object { $_ -match 'the crash was inside another program''s module' }) | Select-Object -Last 1

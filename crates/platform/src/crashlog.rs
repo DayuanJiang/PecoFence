@@ -100,6 +100,7 @@ fn module_path(module: Option<HMODULE>) -> String {
 }
 
 windows_core::link!("kernel32.dll" "system" fn GetSystemWindowsDirectoryW(buffer: windows_core::PWSTR, size: u32) -> u32);
+windows_core::link!("kernel32.dll" "system" fn TerminateProcess(process: HANDLE, code: u32) -> windows_core::BOOL);
 
 /// Who ships the module at `path`: `windows`, `pecofence` (next to the program) or `other`,
 /// another program's DLL that loaded into PecoFence (a shell extension, an input method, a
@@ -241,6 +242,15 @@ unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
     );
     // The process ends when this returns: the line has to be in the file by then.
     pecofence_core::log_file::written(pecofence_core::log_file::EXIT_WAIT);
+    // The process ends here, with the exception's code as its exit code: the watchdog reads
+    // that code and starts PecoFence again. Returning to Windows instead hands the crash to
+    // Windows Error Reporting, and the dead process stayed, with its fences on screen, until
+    // that report was done: 1 to 2 s on a test box, about 50 s on a user's PC (GitHub #167).
+    // The dump and the log line above hold what such a report would.
+    // SAFETY: plain FFI call on this process.
+    unsafe {
+        let _ = TerminateProcess(GetCurrentProcess(), code);
+    }
     EXCEPTION_CONTINUE_SEARCH
 }
 
