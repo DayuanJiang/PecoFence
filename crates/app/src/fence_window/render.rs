@@ -533,6 +533,14 @@ impl FenceViewState {
     /// end value, so nothing changes visually) and folds the caret away once it has faded out.
     pub(super) fn prune_content_motion(&mut self, now: Instant) {
         let sliding = !self.item_motion.is_empty();
+        // The scroll bar that new icons brought (`sb_arrives`) follows them until the first is
+        // fully in. The ones that started later go on by themselves.
+        if self.sb_arrives
+            && (self.item_motion.values()).any(|m| m.alpha.origin() < 1.0 && m.alpha.is_done(now))
+        {
+            tracing::debug!("the first new icon is in: the scroll bar stops following the rest");
+            self.sb_arrives = false;
+        }
         self.item_motion.retain(|_, m| !m.done(now));
         if sliding && self.item_motion.is_empty() {
             // The icons have come to rest: the one under a resting pointer may be another now

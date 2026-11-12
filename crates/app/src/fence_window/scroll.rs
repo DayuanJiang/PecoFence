@@ -635,11 +635,8 @@ impl FenceViewState {
         let mut alpha = self.sb_alpha.value_at(now);
         if self.sb_arrives {
             // The bar came with new icons (`replace_items`): as strong as the strongest of
-            // them until they are all in.
-            let arriving = (self.item_motion.values())
-                .filter(|m| !m.alpha.is_done(now))
-                .map(|m| m.alpha.value_at(now))
-                .reduce(f32::max);
+            // them until the first of them is in (`prune_content_motion` ends it then).
+            let arriving = arriving_strength(self.item_motion.values().map(|m| &m.alpha), now);
             alpha *= arriving.map_or(1.0, |a| a.clamp(0.0, 1.0));
         }
         if alpha <= 0.0 {
@@ -978,4 +975,19 @@ impl FenceViewState {
                 .last_scroll
                 .is_some_and(|t| t.elapsed().as_millis() < SCROLLBAR_LINGER_MS as u128)
     }
+}
+
+/// The strength a scroll bar that came with new icons takes from them: that of the strongest
+/// icon that fades in. One that is fully in counts as such, so the bar stays whole while icons
+/// whose pictures came later (or that waited for a cell to be left) are still fading in: with
+/// only the unfinished ones counted, the bar dropped back to their strength and came in a
+/// second time. None when no icon fades in.
+pub(super) fn arriving_strength<'a>(
+    fades: impl Iterator<Item = &'a Tween>,
+    now: Instant,
+) -> Option<f32> {
+    fades
+        .filter(|a| a.origin() < 1.0)
+        .map(|a| a.value_at(now))
+        .reduce(f32::max)
 }

@@ -735,6 +735,35 @@ fn a_list_change_moves_only_the_icons_near_the_viewport() {
     assert!(moving(8000) < 40, "{} glides", moving(8000));
 }
 
+/// A scroll bar that came with new icons is as strong as the strongest of them, and stays
+/// whole once the first is in: a picture that arrived 100 ms later is at 40 % then.
+#[test]
+fn a_scroll_bar_that_new_icons_bring_does_not_drop_back_to_the_later_ones() {
+    let t0 = Instant::now();
+    let fade = |start: Instant| Tween::new(0.0, 1.0, motion::FAST, Curve::Linear, start);
+    // A text file whose picture was cached, a photo whose thumbnail came 100 ms later, and an
+    // icon that only slides (no fade).
+    let (text, photo) = (fade(t0), fade(t0 + Duration::from_millis(100)));
+    let slides = Tween::at(1.0, t0);
+    let at = |ms: u64| {
+        let now = t0 + Duration::from_millis(ms);
+        arriving_strength([&text, &photo, &slides].into_iter(), now).unwrap()
+    };
+    assert!(
+        (at(83) - 83.0 / 167.0).abs() < 0.02,
+        "follows the first icon: {}",
+        at(83)
+    );
+    // The first icon is in: the bar is whole, also while the photo is still at 42 %.
+    assert_eq!(at(170), 1.0);
+    assert_eq!(at(260), 1.0);
+    // Never weaker than a frame before.
+    let frames: Vec<f32> = (0..20).map(|i| at(i * 16)).collect();
+    assert!(frames.windows(2).all(|w| w[1] >= w[0]), "{frames:?}");
+    // Nothing fades in: the bar is not held back.
+    assert_eq!(arriving_strength([&slides].into_iter(), t0), None);
+}
+
 /// Content shift per 60 Hz frame for a wheel turned `n` notches `gap_ms` apart (96 DIP per
 /// notch, the 250 ms wheel cap), until the glide has ended. `carry` false restarts the
 /// decelerate curve at every notch, as before `ScrollGlide::notch`.
