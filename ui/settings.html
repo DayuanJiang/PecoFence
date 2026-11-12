@@ -90,6 +90,9 @@
   .search-list { position: fixed; z-index: 60; width: 380px; max-width: calc(100vw - 24px); max-height: min(470px, calc(100vh - 80px)); overflow: auto; padding: 4px;
     border-radius: var(--r-card); background: var(--card); border: 1px solid var(--card-stroke); box-shadow: 0 8px 24px #00000033; }
   .search-list[hidden] { display: none; }
+  /* An opening list (查找设置, a drop-down) drops 8 px into place and fades in; it closes at once. */
+  .search-list { transition: opacity .083s linear, transform .167s cubic-bezier(0, 0, 0, 1); }
+  @starting-style { .search-list:not([hidden]) { opacity: 0; transform: translateY(-8px); } }
   .search-list [role=option] { padding: 8px 10px; border-radius: var(--r-control); cursor: default; }
   .search-list [role=option]:hover { background: var(--subtle); }
   .search-list [role=option][aria-selected=true] { background: var(--chosen); }
@@ -213,6 +216,8 @@
     select[hidden] { display: none; }
     ::picker(select) { margin: 4px 0; padding: 4px; border: 1px solid var(--tip-stroke); border-radius: 8px; background: var(--tip); color: var(--text); box-shadow: var(--shadow);
       scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+    ::picker(select) { transition: opacity .083s linear, transform .167s cubic-bezier(0, 0, 0, 1); }
+    @starting-style { ::picker(select):popover-open { opacity: 0; transform: translateY(-8px); } }
     select option { display: flex; align-items: center; min-height: 36px; padding: 0 11px; border-radius: 4px; background: transparent; white-space: nowrap; cursor: default; }
     select option::checkmark { display: none; }
     select option:hover, select option:focus { background: var(--subtle); }

@@ -3140,6 +3140,20 @@ async function runTests() {
     }
     doc = await reset();
   });
+  await test('The 查找设置 list fades in when it opens, and typing on does not replay it', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const box = doc.getElementById('settingsSearch');
+    const type = text => { box.value = text; box.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true })); };
+    box.focus();
+    type('自');
+    const opening = moving().filter(line => line.startsWith('#settingsSearchList'));
+    assert(!doc.getElementById('settingsSearchList').hidden && opening.some(line => line.endsWith('opacity')) && opening.some(line => line.endsWith('transform')), 'The list appears in one frame: ' + opening.join(', '));
+    assert(await until(() => !moving().some(line => line.startsWith('#settingsSearchList'))), 'The list never came to rest');
+    type('自动');
+    assert(!moving().some(line => line.startsWith('#settingsSearchList')), 'The list comes in again at every key');
+    doc = await reset();
+  });
 
   document.getElementById('summary').textContent = `${passed} passed; ${failed} failed`;
   document.title = failed ? 'FAIL — settings UI regressions' : 'PASS — settings UI regressions';
