@@ -839,6 +839,7 @@
   "最近打开的文件": "Zuletzt geöffnete Dateien",
   "正在搜索…": "Suche läuft…",
   "没有符合条件的文件。": "Keine passenden Dateien.",
+  "显示最新的 {0} 个，共找到 {1} 个": "Die neuesten {0} von {1} gefundenen",
   "筛选“{0}”": "„{0}“ filtern",
   "{0} · 筛选：{1}": "{0} · Filter: {1}",
   "没有符合筛选的文件。": "Keine Dateien passen zum Filter.",
