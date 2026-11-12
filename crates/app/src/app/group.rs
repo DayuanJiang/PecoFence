@@ -118,6 +118,20 @@ impl App {
     /// The offer's buttons were clicked or went away (`Command::MarqueeOffer`).
     pub(super) fn on_marquee_offer(&mut self, event: crate::marquee_offer::OfferEvent) {
         use crate::marquee_offer::OfferEvent;
+        // The buttons fade out by themselves: the rectangle they belong to fades with them
+        // (it stood to the end of their fade and went in one frame), unless a new rectangle
+        // is being drawn already.
+        if let OfferEvent::Fading(opacity) = event {
+            if self.marquee_base.is_none()
+                && self.marquee_draws_band
+                && let Some((_, rect)) = self.marquee_offer.as_ref()
+            {
+                let rect = *rect;
+                let strength = (crate::marquee_band::OFFERED as u32 * opacity as u32 / 255) as u8;
+                self.show_marquee_band(rect, strength);
+            }
+            return;
+        }
         let Some((offer, rect)) = self.marquee_offer.take() else {
             return;
         };
@@ -147,7 +161,7 @@ impl App {
                 Ok(None) => tracing::info!("show folder here: no folder picked"),
                 Err(e) => tracing::warn!(error = %e, "folder picker failed"),
             },
-            OfferEvent::Dismissed(_) => {}
+            OfferEvent::Dismissed(_) | OfferEvent::Fading(_) => {}
         }
     }
 

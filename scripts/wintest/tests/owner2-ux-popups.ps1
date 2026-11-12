@@ -14,8 +14,10 @@
 #                             added rule takes its place where it stands (the app runs without
 #                             a test script here: the offer does not show under one)
 #   run.sh --var Part=K ...   the Menu key on an icon: the menu opens clear of the icon
+#   run.sh --var Part=O ...   the two offer buttons after a rectangle on the bare desktop: the
+#                             rectangle fades out with them (it went in one frame after them)
 # Without --var every part runs. Record=1 also records the clips for the report.
-if (-not $Part) { $Part = 'NSTRMCK' }
+if (-not $Part) { $Part = 'NSTRMCKO' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
 $UpFiles = @('预算表 2026.xlsx', '会议纪要 11月.txt', '年度报告 2025 董事会审阅版（含附录）.pdf', '报告.txt', 'a.md')
@@ -485,6 +487,57 @@ function UpPartK() {
   UpClean
 }
 
+function UpPartO() {
+  trap { PfTrap $_; continue }
+  Case 'offer buttons: the rectangle fades with them'
+  UpClean
+  $anim = [Anim]::Get(); [Anim]::Set($true)
+  PfStart -Lang 'zh-CN'
+  Pf settings set featureTips false | Out-Null
+  ClearFences
+  Start-Sleep -Seconds 1
+  $fr = FreeRect 340 220 700 500
+  $x0 = $fr[0] + 10; $y0 = $fr[1] + 10; $x1 = $fr[0] + 310; $y1 = $fr[1] + 190
+  RecStart 'O-offer' -X ($fr[0] - 20) -Y ($fr[1] - 20) -W 400 -H 300 -Fps 30
+  RecMark 'drag a rectangle on the bare desktop'
+  [G]::MoveTo($x0, $y0); Start-Sleep -Milliseconds 150
+  MDown; Glide $x0 $y0 $x1 $y1 12 20; Start-Sleep -Milliseconds 100; MUp
+  Start-Sleep -Milliseconds 800
+  $o = [G]::FindWindowW('PecoFence.MarqueeOffer', [NullString]::Value); $or = Rect $o
+  Check 'the two buttons show under the rectangle' ($o -ne [IntPtr]::Zero -and [G]::IsWindowVisible($o)) "buttons $($or.L),$($or.T),$($or.R),$($or.B)"
+  RecMark 'the pointer leaves; the buttons go after 3 s'
+  [G]::MoveTo($fr[0] - 200, $fr[1] + 100)
+  Start-Sleep -Milliseconds 4300
+  RecStop
+  # Per frame: a patch on the left button's plate, and the rectangle's top line (the brightest
+  # of a few rows around it, in the middle of the edge, clear of the pointer's path).
+  $fs = UpFrames 'O-offer'
+  $bx = $or.L - ($fr[0] - 20) + 8; $by = $or.T - ($fr[1] - 20) + 6
+  $ex = 20 + 10 + 150; $ey = 20 + 10
+  $series = @(); $rows = @()
+  foreach ($f in $fs) {
+    $b = UpLum $f.B.GetPixel($bx, $by)
+    $e = 0; foreach ($dy in -2..2) { $e = [Math]::Max($e, (UpLum $f.B.GetPixel($ex, $ey + $dy))) }
+    $rows += @{ T = $f.T; B = $b; E = $e }
+  }
+  foreach ($f in $fs) { $f.B.Dispose() }
+  $last = $rows[$rows.Count - 1]
+  $shown = $rows | Where-Object { $_.T -gt 1500 -and $_.T -lt 2500 } | Select-Object -First 1
+  # Frames in which the line is partly there: clearly fainter than while it showed, clearly not gone.
+  $span = [Math]::Abs($shown.E - $last.E)
+  $half = @($rows | Where-Object { $_.T -gt 2500 -and [Math]::Abs($_.E - $shown.E) -gt ($span * 0.2) -and [Math]::Abs($_.E - $last.E) -gt ($span * 0.2) })
+  $btnGone = ($rows | Where-Object { $_.T -gt 2500 -and [Math]::Abs($_.B - $last.B) -le 6 } | Select-Object -First 1).T
+  $lineGone = ($rows | Where-Object { $_.T -gt 2500 -and [Math]::Abs($_.E - $last.E) -le ($span * 0.2) } | Select-Object -First 1).T
+  $row = "line while shown $($shown.E), gone $($last.E); frames with the line half faded: $($half.Count); buttons gone at $btnGone ms, line gone at $lineGone ms"
+  Log ("offer frames (ms:button/line): " + (($rows | Where-Object { $_.T -gt 3000 } | ForEach-Object { "$($_.T):$($_.B)/$($_.E)" }) -join ' '))
+  Check 'the rectangle''s line can be told from the desktop' ($span -ge 20) $row
+  Check 'the rectangle fades out (a frame with its line half faded)' ($half.Count -ge 1) $row
+  Check 'the rectangle is gone when the buttons are' ($lineGone -le $btnGone + 40) $row
+  [Anim]::Set($anim)
+  PfQuit
+  UpClean
+}
+
 if ($Part -match 'N') { UpPartN }
 if ($Part -match 'S') { UpPartS }
 if ($Part -match 'T') { UpPartT }
@@ -492,3 +545,4 @@ if ($Part -match 'R') { UpPartR }
 if ($Part -match 'M') { UpPartM }
 if ($Part -match 'C') { UpPartC }
 if ($Part -match 'K') { UpPartK }
+if ($Part -match 'O') { UpPartO }
