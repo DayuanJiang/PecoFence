@@ -115,6 +115,11 @@ fn snapshot_limit_text() -> String {
     )
 }
 
+/// The pages of the settings window's navigation (`data-page` in `ui/settings.html`).
+const SETTINGS_PAGES: &[&str] = &[
+    "general", "layout", "fences", "rules", "peek", "tools", "about",
+];
+
 /// The names of the top-level settings that differ (`hideRealIcons,quickHide`): field names of
 /// `Settings`, never their values (a path, a hotkey).
 fn changed_settings(old: &pecofence_core::Settings, new: &pecofence_core::Settings) -> String {
@@ -156,6 +161,11 @@ impl App {
         }
         if pecofence_platform::process::is_packaged() {
             new_settings.autostart = old_settings.autostart;
+        }
+        // 发送使用统计 moves only by the user's hand: an imported file or a backup keeps it as
+        // it is. The saved files read after a lock hold the user's own choice.
+        if !matches!(source, ConfigSource::Unlocked) {
+            new_settings.usage_stats = old_settings.usage_stats;
         }
         self.sync_desktop_if_available("config adopted");
         self.relayout_from_state();
@@ -735,6 +745,13 @@ impl App {
                 self.show_pending_feedback();
             }
             Some("setFence") => self.on_set_fence(&v),
+            // Usage statistics: a page of the navigation was shown.
+            Some("page") => {
+                let name = v.get("name").and_then(|n| n.as_str());
+                if let Some(page) = SETTINGS_PAGES.iter().find(|page| Some(**page) == name) {
+                    pecofence_core::usage::event_with("settings.page", page);
+                }
+            }
             Some("ringFence") => {
                 let host = v
                     .get("id")
@@ -761,6 +778,7 @@ impl App {
                 {
                     Some(Ok(rules)) => {
                         tracing::info!(rules = rules.list.len(), "rules saved from page");
+                        pecofence_core::usage::event_with("settings.set", "rules");
                         self.set_rules(rules);
                     }
                     Some(Err(e)) => {
@@ -1232,12 +1250,24 @@ impl App {
                 "per-desktop fences switched"
             );
         }
+        if by == "settings" {
+            // Usage statistics: which settings the page changed, by their paths; never a value.
+            let rules = &self.state.config.rules;
+            let before = pecofence_core::usage::settings_report(&old, rules);
+            for (path, value) in pecofence_core::usage::settings_report(&new, rules) {
+                if before.get(&path) != Some(&value) {
+                    pecofence_core::usage::event_named("settings.set", &path);
+                }
+            }
+        }
         // 「调整大小时按整行整列对齐」 switched on keeps every rectangle: the rows fill any
         // height with whole icons (redrawn above), and rounding would undo fences lined up.
         self.state.config.settings = new;
         self.refresh_language();
         self.state.mark_dirty();
         self.schedule_save();
+        // 发送使用统计 switched: off stops the recording and deletes `usage.json`.
+        self.sync_usage();
         self.sync_peek_hotkey();
         self.sync_windows_desktop_hotkey();
         self.sync_dialog_jump();

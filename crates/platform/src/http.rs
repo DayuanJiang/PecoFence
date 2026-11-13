@@ -1,5 +1,5 @@
-//! HTTPS GET through WinHTTP (the system proxy and Windows' TLS), so the updater needs no
-//! HTTP crate. Blocking: call from a worker thread.
+//! HTTPS GET and POST through WinHTTP (the system proxy and Windows' TLS), so the updater and
+//! the usage statistics need no HTTP crate. Blocking: call from a worker thread.
 
 use crate::wide::to_wide;
 use core::ffi::c_void;
@@ -80,11 +80,58 @@ fn split_url(url: &str) -> Result<(bool, &str, u16, &str), String> {
 /// GETs `url` (following redirects) and returns the body of a 200 response, at most `limit`
 /// bytes. `headers` are extra request lines such as `Accept: …`, separated by `\r\n`.
 pub fn get(url: &str, user_agent: &str, headers: &str, limit: usize) -> Result<Vec<u8>, String> {
+    match request("GET", url, user_agent, headers, &[], limit)? {
+        (200, body) => Ok(body),
+        (status, _) => Err(format!("HTTP {status} from {url}")),
+    }
+}
+
+/// POSTs `body` to `url` and returns the HTTP status of the answer. `headers` as for [`get`].
+/// An error is a request that got no answer.
+pub fn post(url: &str, user_agent: &str, headers: &str, body: &[u8]) -> Result<u32, String> {
+    request("POST", url, user_agent, headers, body, 64 * 1024).map(|(status, _)| status)
+}
+
+/// The SHA-256 of `data` in lowercase hex, for a header that carries the hash of a body.
+pub fn sha256_hex(data: &[u8]) -> String {
+    use crate::bindings::{BCRYPT_SHA256_ALG_HANDLE, BCryptHash};
+    let mut hash = [0u8; 32];
+    // SAFETY: `hash` is a live buffer of the length passed, the length of a SHA-256. Should
+    // Windows refuse, the zeros left in it are a hash the receiver turns down.
+    let _ = unsafe {
+        BCryptHash(
+            BCRYPT_SHA256_ALG_HANDLE,
+            None,
+            data,
+            hash.as_mut_ptr(),
+            hash.len() as u32,
+        )
+    };
+    hash.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Sends `verb` for `url` with `body`; returns the status and, for a 200, the response's body
+/// (at most `limit` bytes).
+fn request(
+    verb: &str,
+    url: &str,
+    user_agent: &str,
+    headers: &str,
+    body: &[u8],
+    limit: usize,
+) -> Result<(u32, Vec<u8>), String> {
     let started = Instant::now();
     let (secure, host, port, path) = split_url(url)?;
     let (agent, host, path) = (to_wide(user_agent), to_wide(host), to_wide(path));
-    let verb = to_wide("GET");
-    // SAFETY: the wide strings outlive the calls; handles close in reverse order on drop.
+    let verb = to_wide(verb);
+    let length = u32::try_from(body.len()).map_err(|_| "the request body is too large")?;
+    let data = if body.is_empty() {
+        core::ptr::null()
+    } else {
+        body.as_ptr().cast()
+    };
+    // SAFETY: the wide strings and `body` outlive the calls; handles close in reverse order
+    // on drop.
     unsafe {
         let session = Handle::new(
             WinHttpOpen(
@@ -123,7 +170,7 @@ pub fn get(url: &str, user_agent: &str, headers: &str, limit: usize) -> Result<V
             (PCWSTR(extra.as_ptr()), u32::MAX)
         };
         check(
-            WinHttpSendRequest(request.0, extra_ptr, extra_len, core::ptr::null(), 0, 0, 0),
+            WinHttpSendRequest(request.0, extra_ptr, extra_len, data, length, length, 0),
             "WinHttpSendRequest",
         )?;
         check(
@@ -144,7 +191,7 @@ pub fn get(url: &str, user_agent: &str, headers: &str, limit: usize) -> Result<V
             "WinHttpQueryHeaders",
         )?;
         if status != 200 {
-            return Err(format!("HTTP {status} from {url}"));
+            return Ok((status, Vec::new()));
         }
         let mut body = Vec::new();
         let mut chunk = vec![0u8; 64 * 1024];
@@ -160,7 +207,7 @@ pub fn get(url: &str, user_agent: &str, headers: &str, limit: usize) -> Result<V
                 "WinHttpReadData",
             )?;
             if read == 0 {
-                return Ok(body);
+                return Ok((status, body));
             }
             body.extend_from_slice(&chunk[..read as usize]);
             if body.len() > limit {

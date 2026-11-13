@@ -644,6 +644,9 @@ impl App {
                     response = add_warning(response, "applied but not saved: see the log");
                 }
             }
+            if response.ok {
+                pecofence_core::usage::event_named("cli", &method);
+            }
             let spent = started.elapsed();
             // One by one from 50 ms, as for slow commands: a script listing items every few
             // seconds filled the feedback logs with 10 to 25 ms requests.

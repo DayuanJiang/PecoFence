@@ -193,6 +193,10 @@ pub struct Settings {
     /// one request to GitHub's latest release; a new version is announced once.
     #[serde(default = "default_true")]
     pub auto_check_updates: bool,
+    /// 发送使用统计: which features are used and in which order, with the version, the Windows
+    /// version and a random install number (`usage.rs`). No names, paths or typed text.
+    #[serde(default = "default_true")]
+    pub usage_stats: bool,
     /// Unused (see [`UNUSED_SETTINGS`]).
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(skip))]
@@ -422,6 +426,7 @@ impl Default for Settings {
             per_desktop_fences: false,
             feature_tips: true,
             auto_check_updates: true,
+            usage_stats: true,
             show_real_icons_when_fences_hidden: false,
             snapping: SnappingSettings::default(),
             zorder: ZOrderSetting::InsertAboveHost,

@@ -337,7 +337,7 @@ impl App {
         // menu keeps TIMER_SAVE from saving meanwhile: save pending changes first.
         self.state.save_if_dirty();
         let owner = self.control.hwnd();
-        let cmd = self.track_menu(|| menu.show(owner, x, y));
+        let cmd = self.track_menu("tray", || menu.show(owner, x, y));
         match cmd {
             CMD_TOGGLE_FENCES => self.toggle_all_fences("tray menu"),
             CMD_WINDOWS_DESKTOP => self.set_windows_desktop(!self.windows_desktop, "tray menu"),
@@ -382,7 +382,7 @@ impl App {
             .unwrap_or(self.control.hwnd());
         // Saved first, as for the tray menu.
         self.state.save_if_dirty();
-        let cmd = self.track_menu(|| menu.show_context(owner, x, y));
+        let cmd = self.track_menu("item", || menu.show_context(owner, x, y));
         if let Some(sm) = shell_menu.as_ref()
             && sm.contains(cmd)
         {
@@ -1278,7 +1278,7 @@ impl App {
             .unwrap_or(self.control.hwnd());
         // Saved first, as for the tray menu.
         self.state.save_if_dirty();
-        let cmd = self.track_menu(|| menu.show_context(owner, x, y));
+        let cmd = self.track_menu("fence", || menu.show_context(owner, x, y));
         tracing::info!(cmd, "fence menu closed");
         match cmd {
             CMD_FENCE_ROLL => self.toggle_roll(host),
@@ -1515,7 +1515,7 @@ impl App {
             .unwrap_or(self.control.hwnd());
         // Saved first, as for the tray menu.
         self.state.save_if_dirty();
-        let cmd = self.track_menu(|| menu.show_context(owner, x, y));
+        let cmd = self.track_menu("columns", || menu.show_context(owner, x, y));
         match cmd {
             CMD_COL_DATE | CMD_COL_TYPE | CMD_COL_SIZE => {
                 let i = match cmd {

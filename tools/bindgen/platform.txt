@@ -410,6 +410,9 @@
     TOKEN_QUERY
     ConvertSidToStringSidW
     LocalFree
+    // usage statistics: the SHA-256 of a report, which the service wants in a header
+    BCryptHash
+    BCRYPT_SHA256_ALG_HANDLE
 
     // ---- misc
     MessageBoxW

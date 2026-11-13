@@ -977,6 +977,11 @@ impl App {
                 }
             }
         }
+        // Usage statistics: which option of a fence the page set, never its value. A dragged
+        // slider counts once, at its release.
+        if !is_live_tick(v) {
+            pecofence_core::usage::event_named("settings.fence", prop);
+        }
         self.push_settings_state();
     }
 
