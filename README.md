@@ -112,6 +112,25 @@ Grab what you need, then press **Esc** to return.
 
 ![Peek brings your fences above an application; a click outside or opening a file returns to it.](docs/assets/peek.gif)
 
+### A fence that fills itself.
+
+A smart fence shows the live result of a saved search. Pick a template such as
+**Downloads of the last 7 days** and click **Create**: new files that match show up by
+themselves, and the files stay where they are.
+
+![New smart fence… in a fence's menu opens a small window; the template Downloads of the last 7 days fills in the conditions; Create puts a fence with six files on the desktop, and a new download appears in it by itself.](docs/assets/smart.gif)
+
+### Notes, a clock and your own scripts.
+
+Add them in **Settings → Tools**: a note whose lines that start with `[ ]` become to-dos, a clock
+with the date, and script fences that show what a script prints, such as the weather.
+
+![In Settings, New note puts a note on the desktop and a click ticks its first to-do; Add puts a clock beside it, then a fence with the weather in Tokyo.](docs/assets/tools.gif)
+
+More in the manual: [a set of fences for each virtual desktop](https://pecofence.jiang.jp/manual/#vdesk) ([GIF](docs/assets/vdesk.gif)),
+[desktop icons that stay where you put them](https://pecofence.jiang.jp/manual/#free-place) ([GIF](docs/assets/free-place.gif)) and
+[Ctrl+Z to take back the last step](https://pecofence.jiang.jp/manual/#undo) ([GIF](docs/assets/undo.gif)).
+
 <sub>Animations from the <a href="https://pecofence.jiang.jp/manual/">user manual</a>. GIFs loop automatically.</sub>
 
 ## Small details that add up
@@ -149,7 +168,7 @@ The Microsoft Store edition is signed by Microsoft, updates automatically and ne
 <details>
 <summary><strong>Requirements, configuration and a few useful notes</strong></summary>
 
-- Windows 10 22H2, or Windows 11 22H2 or later. Settings needs the Microsoft Edge WebView2 Runtime. Windows 11 includes it; on Windows 10 install it from Microsoft if Settings does not open.
+- Windows 10 1809 or later (the Microsoft Store edition: 2004 or later), or Windows 11 22H2 or later. Settings needs the Microsoft Edge WebView2 Runtime. Windows 11 includes it; on Windows 10 install it from Microsoft if Settings does not open.
 - The first launch creates four fences in your selected language: Programs, Folders, Files and documents, and Desktop. Windows desktop icons are restored when you exit.
 - Configuration lives in `%APPDATA%\PecoFence\config.json`. Launch with `--portable` to keep it in a `config` folder beside the executable.
 - The ZIP and the installer are unsigned. If Windows SmartScreen appears on first launch, choose **More info → Run anyway**.
@@ -174,7 +193,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io/), certifi
 
 Only the files that GitHub Actions builds from a version tag of this repository are signed, and every signing request is approved by hand.
 
-**Privacy:** PecoFence checks GitHub for updates and sends [usage statistics](docs/USAGE_STATS.md) to the PecoFence service. Both can be switched off in **Settings › About**. A message you send from **Feedback** goes to the PecoFence feedback service. The Settings window runs on Microsoft Edge WebView2, which follows the [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement).
+**Privacy:** PecoFence checks GitHub for updates and sends [usage statistics](docs/USAGE_STATS.md) to the PecoFence service. Both can be switched off in **Settings › About**. The update check contacts the GitHub API and, only when GitHub does not answer, the PecoFence website (pecofence.jiang.jp). It sends nothing but the request itself, which names the PecoFence version. A message you send from **Feedback** goes to the PecoFence feedback service. The Settings window runs on Microsoft Edge WebView2, which follows the [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement).
 
 ---
 

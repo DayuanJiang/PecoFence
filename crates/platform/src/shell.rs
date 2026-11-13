@@ -1006,11 +1006,146 @@ pub fn add_link_overlay(image: &mut ShellImage, size_px: u32) {
 
 /// The icon file and index of the shell's shortcut arrow.
 fn link_overlay_source() -> Option<(PathBuf, i32)> {
+    stock_icon_source(SIID_LINK)
+}
+
+/// `SIID_DOCNOASSOC` and `SIID_APPLICATION` (shellapi.h): the white page of a file without an
+/// icon, and the window of a program without one.
+const SIID_DOCNOASSOC: i32 = 0;
+const SIID_APPLICATION: i32 = 2;
+
+/// Why `image`, a picture the shell handed back for a file, is no picture of the file: `blank`
+/// (every pixel transparent), `generic` (the white page of a file without an icon) or
+/// `generic_program` (the window of a program without one). The shell hands the last two back
+/// without an error when it could not read the file's icon. None for any other picture. The
+/// two stock pictures are extracted once per size on each worker thread.
+pub fn dull_icon(image: &ShellImage) -> Option<&'static str> {
+    if image.bgra.as_chunks::<4>().0.iter().all(|p| p[3] == 0) {
+        return Some("blank");
+    }
+    thread_local! {
+        static STOCK: std::cell::RefCell<std::collections::HashMap<(i32, u32), Option<ShellImage>>> =
+            Default::default();
+    }
+    let size_px = image.width.max(image.height);
+    STOCK.with_borrow_mut(|stock| {
+        [
+            (SIID_DOCNOASSOC, "generic"),
+            (SIID_APPLICATION, "generic_program"),
+        ]
+        .into_iter()
+        .find(|(siid, _)| {
+            stock
+                .entry((*siid, size_px))
+                .or_insert_with(|| {
+                    let (file, index) = stock_icon_source(*siid)?;
+                    icon_file_image(&file, index, size_px)
+                })
+                .as_ref()
+                .is_some_and(|s| same_picture(image, s))
+        })
+        .map(|(_, reason)| reason)
+    })
+}
+
+/// The two images show one picture: the same size, and channels no further apart than two
+/// extractions of one icon are (2 levels on average).
+fn same_picture(a: &ShellImage, b: &ShellImage) -> bool {
+    a.width == b.width
+        && a.height == b.height
+        && a.bgra.len() == b.bgra.len()
+        && a.bgra
+            .iter()
+            .zip(&b.bgra)
+            .map(|(x, y)| u64::from(x.abs_diff(*y)))
+            .sum::<u64>()
+            <= a.bgra.len() as u64 * 2
+}
+
+/// File attributes of a cloud file that is not on this disk: reading it makes its program
+/// download it (`RECALL_ON_OPEN`, `RECALL_ON_DATA_ACCESS`).
+const ATTRS_RECALL: u32 = 0x4_0000 | 0x40_0000;
+/// File attributes that say reading the file fetches it first: offline storage
+/// (`FILE_ATTRIBUTE_OFFLINE`), or such a cloud file.
+const ATTRS_NOT_HERE: u32 = 0x1000 | ATTRS_RECALL;
+
+/// The file attributes of `path` (of a link itself, not of what it points to); 0 when they
+/// cannot be read.
+pub fn file_attributes(path: &Path) -> u32 {
+    std::fs::symlink_metadata(path).map_or(0, |m| m.file_attributes())
+}
+
+/// The extension of `path` for the log: in lower case when it is 1 to 10 ASCII letters and
+/// digits (`lnk`, `exe`), `other` for any other (it could say anything), `none` without one.
+pub fn log_ext(path: &Path) -> String {
+    match path.extension().map(|e| e.to_string_lossy().to_lowercase()) {
+        None => "none".to_string(),
+        Some(e) if (1..=10).contains(&e.len()) && e.bytes().all(|b| b.is_ascii_alphanumeric()) => e,
+        Some(_) => "other".to_string(),
+    }
+}
+
+/// `text` with its `%NAME%` environment variables filled in; one that is not set stays as
+/// written.
+fn expand_env(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find('%') {
+        let after = &rest[start + 1..];
+        let Some(end) = after.find('%') else { break };
+        out.push_str(&rest[..start]);
+        match std::env::var(&after[..end]) {
+            Ok(value) => out.push_str(&value),
+            Err(_) => {
+                out.push('%');
+                out.push_str(&after[..end]);
+                out.push('%');
+            }
+        }
+        rest = &after[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The icon of shortcut `path` read out of the shortcut itself, for when the shell hands back a
+/// blank or generic picture for it: the icon the shortcut names (its icon location), else the
+/// icon of its target. None when neither file is on this disk (gone, offline, a cloud file that
+/// would have to be fetched) or when the target's icon is blank or generic too. A shortcut that
+/// is itself a cloud file not on this disk is not read: that would download it.
+pub fn shortcut_icon(path: &Path, size_px: u32) -> Option<ShellImage> {
+    if file_attributes(path) & ATTRS_RECALL != 0 {
+        return None;
+    }
+    let link = load_shortcut(path)?;
+    let here = |p: &Path| p.is_absolute() && p.exists() && file_attributes(p) & ATTRS_NOT_HERE == 0;
+    let mut buf = [0u16; 1024];
+    let mut index = 0i32;
+    // SAFETY: the buffer is sized and NUL-terminated.
+    let named =
+        unsafe { link.GetIconLocation(PWSTR(buf.as_mut_ptr()), buf.len() as i32, &mut index) }
+            .is_ok()
+            .then(|| PathBuf::from(expand_env(&crate::wide::from_wide(&buf))))
+            .filter(|file| here(file));
+    if let Some(image) = named.and_then(|file| icon_file_image(&file, index, size_px)) {
+        return Some(image);
+    }
+    let target = PathBuf::from(shortcut_path(&link, 0)?);
+    if !here(&target) {
+        return None;
+    }
+    shell_image(&target, size_px, true)
+        .ok()
+        .filter(|image| dull_icon(image).is_none())
+}
+
+/// The icon file and index of one of the shell's stock icons.
+fn stock_icon_source(siid: i32) -> Option<(PathBuf, i32)> {
     // SAFETY: plain-data struct; all-zero is a valid value.
     let mut info: StockIconInfo = unsafe { std::mem::zeroed() };
     info.size = size_of::<StockIconInfo>() as u32;
     // SAFETY: `info` is a live out-struct of the declared size.
-    unsafe { SHGetStockIconInfo(SIID_LINK, SHGSI_ICONLOCATION, &mut info) }
+    unsafe { SHGetStockIconInfo(siid, SHGSI_ICONLOCATION, &mut info) }
         .ok()
         .ok()?;
     let len = info.path.iter().position(|&c| c == 0).unwrap_or(0);
@@ -1238,6 +1373,52 @@ pub fn recycle_unrecorded(path: &Path) -> Result<bool> {
     }
 }
 
+/// Deletes `paths` as Explorer's Delete key does: to the Recycle Bin with a record in Windows'
+/// undo list, or for good with `permanent` (Shift+Delete), with Windows' own questions,
+/// progress and error boxes. Paths that are gone already are left out. Blocks like
+/// [`transfer_to_folder`]; false when the user said no or cancelled.
+///
+/// The items' `delete` verb (`shell_menu`) ends in the same file operation, but for a verb
+/// the shell first loads the menu extension of every installed program, also when no menu is
+/// shown, and a fault in one of them ended PecoFence at the press of Delete (GitHub #167,
+/// #178). The file operation itself loads none of them.
+pub fn delete_items(paths: &[PathBuf], owner: Option<HWND>, permanent: bool) -> Result<bool> {
+    const FOFX_RECYCLEONDELETE: u32 = 0x0008_0000;
+    // Ask before an item that does not fit the bin is deleted for good, as Explorer does.
+    const FOF_WANTNUKEWARNING: u32 = 0x4000;
+    // SAFETY: COM calls on objects created here; the caller's thread has COM initialized.
+    unsafe {
+        let op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL as u32)?;
+        let mut flags = FOF_WANTNUKEWARNING;
+        if !permanent {
+            flags |= FOFX_RECYCLEONDELETE | (FOF_ALLOWUNDO | FOFX_ADDUNDORECORD) as u32;
+        }
+        op.SetOperationFlags(flags).ok()?;
+        if let Some(h) = owner {
+            let _ = op.SetOwnerWindow(h);
+        }
+        let mut queued = 0;
+        for item in paths.iter().filter_map(|p| shell_item(p).ok()) {
+            op.DeleteItem(&item, None).ok()?;
+            queued += 1;
+        }
+        if queued == 0 {
+            return Err(E_FAIL.into());
+        }
+        let performed = op.PerformOperations();
+        // No in Windows' question and Cancel in its error box fail the operation too: report
+        // that as a cancel, not an error.
+        if op.GetAnyOperationsAborted().is_ok_and(|b| b.as_bool())
+            || performed == COPYENGINE_E_USER_CANCELLED
+            || performed == E_CANCELLED
+        {
+            return Ok(false);
+        }
+        performed.ok()?;
+        Ok(true)
+    }
+}
+
 /// The name `path` gets in the folder [`transfer_to_folder`] moves or copies it to.
 pub fn transferred_name(path: &Path) -> Option<std::ffi::OsString> {
     recycled_original_name(path)
@@ -1417,6 +1598,44 @@ pub fn shell_execute(path: &Path, verb: Option<&str>, owner: Option<HWND>) -> Re
     result
 }
 
+#[link(name = "shlwapi")]
+unsafe extern "system" {
+    // Not in the generated bindings.
+    fn AssocIsDangerous(assoc: PCWSTR) -> windows_core::BOOL;
+}
+
+#[link(name = "shell32")]
+unsafe extern "system" {
+    // Not in the generated bindings.
+    fn SHObjectProperties(
+        hwnd: HWND,
+        object_type: u32,
+        object_name: PCWSTR,
+        property_page: PCWSTR,
+    ) -> windows_core::BOOL;
+}
+
+/// Opens the property sheet of the file or folder `path`, as 属性 does, without the item's
+/// menu: the `properties` verb goes through that menu, and the shell loads every menu
+/// extension for it. For when the Windows part of the item menus is off after a crash in one.
+/// False when the sheet could not be opened.
+pub fn show_properties_sheet(path: &Path, owner: HWND) -> bool {
+    const SHOP_FILEPATH: u32 = 2;
+    let file = path_wide(path);
+    // SAFETY: the string is NUL-terminated and outlives the call.
+    unsafe { SHObjectProperties(owner, SHOP_FILEPATH, PCWSTR(file.as_ptr()), PCWSTR::null()) }
+        .as_bool()
+}
+
+/// Windows classes files of this extension (without the dot) as dangerous to open: programs,
+/// scripts, shortcuts, installers and the like (`AssocIsDangerous`, what the "Open File -
+/// Security Warning" asks about).
+pub fn is_dangerous_type(ext: &str) -> bool {
+    let ext = to_wide(&format!(".{ext}"));
+    // SAFETY: the string outlives the call.
+    unsafe { AssocIsDangerous(PCWSTR(ext.as_ptr())) }.as_bool()
+}
+
 /// Resolves a `.lnk` file's target path (raw, unexpanded), or `None`.
 pub fn shortcut_target(path: &Path) -> Option<String> {
     shortcut_info(path).map(|(target, _)| target)
@@ -1427,6 +1646,33 @@ pub fn shortcut_target(path: &Path) -> Option<String> {
 pub fn shortcut_target_expanded(path: &Path) -> Option<PathBuf> {
     let link = load_shortcut(path)?;
     shortcut_path(&link, 0).map(PathBuf::from)
+}
+
+/// What File Explorer's tip of a `.lnk` is made of: its comment (the description field, `None`
+/// when empty) and the path it leads to (`None` for a link to something that is no file or
+/// folder). `None` when the file cannot be read as a shortcut, and for a link file that is not
+/// on this disk (a cloud file that is only online, offline storage): reading it would fetch
+/// it, and the caller is the UI thread with the pointer resting on the icon.
+pub fn shortcut_tip(path: &Path) -> Option<(Option<String>, Option<PathBuf>)> {
+    let attrs = file_attributes(path);
+    if attrs & ATTRS_NOT_HERE != 0 {
+        tracing::debug!(
+            attrs,
+            "shortcut tip: the link file is not on this disk, not read"
+        );
+        return None;
+    }
+    let link = load_shortcut(path)?;
+    // SAFETY: the buffer is sized and NUL-terminated.
+    let comment = unsafe {
+        let mut text = [0u16; 1024];
+        link.GetDescription(PWSTR(text.as_mut_ptr()), text.len() as i32)
+            .ok()
+            .ok()
+            .map(|_| crate::wide::from_wide(&text).trim().to_string())
+            .filter(|c| !c.is_empty())
+    };
+    Some((comment, shortcut_path(&link, 0).map(PathBuf::from)))
 }
 
 /// A `.lnk`'s target path and its command-line arguments (`None` when it has none).
@@ -1847,6 +2093,37 @@ mod move_tests {
             std::fs::canonicalize(&folder).unwrap()
         );
         let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    /// The log keeps a file's type, never a word a user put after the last dot.
+    #[test]
+    fn log_ext_keeps_plain_extensions_only() {
+        for (path, ext) in [
+            (r"C:\Users\x\Desktop\Chrome.LNK", "lnk"),
+            (r"C:\x\setup.exe", "exe"),
+            (r"C:\x\notes", "none"),
+            (r"C:\x\letter.to anna", "other"),
+            (r"C:\x\报告.文档", "other"),
+            (r"C:\x\a.abcdefghijk", "other"),
+        ] {
+            assert_eq!(log_ext(Path::new(path)), ext, "{path}");
+        }
+    }
+
+    /// A shortcut's icon location may name its file through an environment variable.
+    #[test]
+    fn expand_env_fills_in_set_variables() {
+        // SAFETY: a variable of this test's own; no other thread reads it.
+        unsafe { std::env::set_var("PECOFENCE_TEST_ICON_DIR", r"C:\Icons") };
+        assert_eq!(
+            expand_env(r"%PECOFENCE_TEST_ICON_DIR%\app.ico"),
+            r"C:\Icons\app.ico"
+        );
+        assert_eq!(
+            expand_env(r"%PECOFENCE_NOT_SET_1%\a%b"),
+            r"%PECOFENCE_NOT_SET_1%\a%b"
+        );
+        assert_eq!(expand_env(r"C:\plain\50%.ico"), r"C:\plain\50%.ico");
     }
 
     /// The Link drop effect writes Explorer's `<stem> - 快捷方式.lnk` (folders keep their full

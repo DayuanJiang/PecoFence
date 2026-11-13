@@ -9,19 +9,29 @@ use pecofence_platform::{quicklook, seer};
 // another fence ends it (`Command::EndItemSelection`).
 pub(super) fn on_activate(
     h: &HandlerCtx,
-    _hwnd: HWND,
+    hwnd: HWND,
     wparam: usize,
     lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, .. } = h;
     let inactive = wparam & 0xFFFF == 0;
-    let stays = inactive && {
+    let mut stays = inactive && {
         let other = HWND(lparam as *mut core::ffi::c_void);
         !other.0.is_null() && {
             let cls = desktop::class_name(desktop::root_ancestor(other));
             cls == "PecoFence.Rename" || cls == "#32768"
         }
     };
+    // A paste, a delete or a move of our own is running: the shell takes the activation for
+    // its length and gives it back. The selection keeps its colour; a timer reads the real
+    // state when the operation is over (the user may have gone to another program meanwhile).
+    if inactive && !stays && crate::fence_window::own_file_op_running() {
+        tracing::debug!(
+            "activation lost while a file operation of our own runs: the selection keeps its colour"
+        );
+        window::set_timer(hwnd, TIMER_ACTIVE_SYNC, ACTIVE_SYNC_MS);
+        stays = true;
+    }
     if !stays
         && let Ok(mut guard) = view.try_borrow_mut()
         && let Some(v) = guard.as_mut()
@@ -41,7 +51,7 @@ pub(super) fn on_killfocus(
     let HandlerCtx { view, .. } = h;
     if let Ok(mut guard) = view.try_borrow_mut()
         && let Some(v) = guard.as_mut()
-        && std::mem::take(&mut v.focus_visible)
+        && v.end_focus_mark()
         && !v.rolled_up
     {
         let _ = v.redraw_content();
@@ -78,9 +88,39 @@ pub(super) fn on_keydown(
     if !deletes && !matches!(vk, msg::VK_SHIFT | msg::VK_CONTROL | msg::VK_MENU) {
         v.forget_user_delete("another key was pressed");
     }
+    // F2 while the pointer is on the title row and no icon is selected (none to see, in a
+    // rolled-up fence): the name box of the fence, or of the tab under the pointer (#184).
+    // With Explorer's single-click open, where pointing is selecting, the title the pointer
+    // is on comes before an icon selected earlier.
+    let pointing = h.behavior.single_click.get();
+    if vk == msg::VK_F2 && v.title_hover && (ids.is_empty() || v.roll_target() || pointing) {
+        let pt = window::screen_to_client(hwnd, window::cursor_pos());
+        let fence = v
+            .tab_at(pt.x, pt.y)
+            .and_then(|i| v.tabs.get(i))
+            .map_or(v.active, |t| t.id);
+        tracing::debug!(
+            %fence,
+            rolled = v.roll_target(),
+            selected = ids.len(),
+            pointing,
+            "F2 on the title row: fence name box"
+        );
+        queue.push(Command::EditFenceName(fence));
+        return Some(0);
+    }
     // A rolled-up fence (from the moment it starts to roll up) shows none of its items: a key
     // must not act on a selection nobody can see (Delete sent a hidden file to the Recycle Bin).
     if v.roll_target() && acts_on_items(wparam as u32, ctrl) {
+        // The focus mark is on the title row (`title_focus`): Enter opens the fence again, as
+        // Enter on a focused button presses it. A held key opens once.
+        if vk == msg::VK_RETURN && v.focus_visible && !ctrl {
+            if lparam & (1 << 30) == 0 {
+                tracing::debug!("Enter on the title row of a rolled-up fence: it opens");
+                queue.push(Command::ToggleRollUp(fence_id));
+            }
+            return Some(0);
+        }
         tracing::debug!(
             vk = wparam as u32,
             ctrl,
@@ -108,6 +148,7 @@ pub(super) fn on_keydown(
     const VK_X: u32 = 0x58;
     const VK_Z: u32 = 0x5A;
     const VK_F5: u32 = 0x74;
+    const VK_F6: u32 = 0x75;
     const VK_SPACE: u32 = 0x20;
     let mode = cursor_mode(shift, ctrl);
     // Navigation keys are swallowed while the scrollbar thumb / track /
@@ -117,6 +158,9 @@ pub(super) fn on_keydown(
     match vk {
         VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN | VK_PRIOR | VK_NEXT | VK_HOME | VK_END if sb_held => {
         }
+        // List and details rows stand in one column: Left and Right have nowhere to go and
+        // leave the selection alone, as in Explorer's details view (they moved it a row).
+        VK_LEFT | VK_RIGHT if v.row_metrics().is_some() => {}
         VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN => {
             let (dx, dy) = match vk {
                 VK_LEFT => (-1, 0),
@@ -173,6 +217,8 @@ pub(super) fn on_keydown(
             } else {
                 (cur + 1) % n
             };
+            // By keyboard: the new tab shows where the keyboard is (`focus_after_tab_keys`).
+            v.tab_switch_by_keys = true;
             queue.push(Command::SwitchTab {
                 host: fence_id,
                 tab: v.tabs[next].id,
@@ -185,6 +231,9 @@ pub(super) fn on_keydown(
             back: shift,
         }),
         VK_F5 => queue.push(Command::RefreshFence(v.active)),
+        // F6: to the card on screen (a tip, an offer, the undo card), as F6 goes from pane to
+        // pane in Explorer; nothing without a card.
+        VK_F6 => queue.push(Command::CardKeys { from: hwnd }),
         k if k == msg::VK_F2 => {
             // Several selected: the focused one is renamed, as in Explorer (the first of them
             // when the focus is on none).
@@ -248,6 +297,13 @@ pub(super) fn on_keydown(
                 finish_drag_cancel(c, &h.view, queue, &h.behavior);
                 return Some(0);
             }
+            // A to-do dragged in a note goes back to its place.
+            if v.todo_drag.as_ref().is_some_and(|d| d.moved) {
+                let _ = v.end_todo_drag(false);
+                drop(guard);
+                window::release_capture();
+                return Some(0);
+            }
             // A divider drag: the column gets its width back and the selection stays
             // (Explorer).
             if let Some(cd) = v.col_drag.take() {
@@ -262,6 +318,16 @@ pub(super) fn on_keydown(
             if v.filter_active {
                 tracing::debug!(selected = ids.len(), "Esc: filter cleared, selection kept");
                 queue.push(Command::ClearFenceFilter(v.active));
+            } else if v.items.iter().any(|it| v.cut.contains(&it.id))
+                // A paste of the cut that is still running keeps the cut (`cancel_cut`): Esc
+                // then clears the selection, as it does without a cut.
+                && !crate::fence_window::own_file_op_running()
+            {
+                // Icons of this fence wait on the clipboard after Ctrl+X: Esc takes the cut
+                // back and leaves the selection, as on Explorer's desktop; the next Esc
+                // clears the selection.
+                tracing::debug!(selected = ids.len(), "Esc: cut taken back, selection kept");
+                queue.push(Command::CancelCut);
             } else {
                 v.selected.clear();
                 v.type_ahead.clear();
@@ -309,6 +375,13 @@ pub(super) fn on_char(h: &HandlerCtx, _hwnd: HWND, wparam: usize, lparam: isize)
     // QuickLook, whichever runs (Seer when both do), as on the desktop and in Explorer (nothing
     // without them); a held Space does not repeat it.
     if ch == ' ' && !v.typing_ahead() && !window::key_down(msg::VK_SHIFT) {
+        // On an item that has the keyboard focus but is not selected (Ctrl+arrows went there):
+        // Space selects it too, as in Explorer and on the desktop.
+        if v.select_focused() {
+            tracing::debug!("Space: the focused item was not selected, now it is");
+            let _ = v.redraw_content();
+            return Some(0);
+        }
         if lparam & (1 << 30) == 0
             && let Some(path) = v.preview_path()
             && !seer::toggle(path)
@@ -413,6 +486,11 @@ pub(super) fn on_contextmenu(
             (p.x, p.y)
         }
     };
+    // With no room under the name the menu opens beside the icon: Windows slid it up over
+    // the icon it is for.
+    if let Some(cell) = v.item_cell_rect(item) {
+        pecofence_platform::tray::keep_clear_next(cell);
+    }
     queue.push(Command::ItemMenu {
         fence: v.active,
         items: ids,

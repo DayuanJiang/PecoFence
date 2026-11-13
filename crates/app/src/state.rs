@@ -44,6 +44,9 @@ pub struct AppState {
     opened_folders: HashMap<FenceId, OpenedFolder>,
     /// Portals whose folder could not be found at the last read.
     portal_missing: HashSet<FenceId>,
+    /// Fences whose view or sort order just changed with the folder they show
+    /// (`follow_folder_view`), until their window has taken it (`take_folder_view_changed`).
+    folder_view_changed: HashSet<FenceId>,
     /// When the youngest `.tmp` the rules skipped as too new has lasted `TMP_SETTLE_SECS`
     /// (Unix seconds): the App syncs the desktop again then (`take_tmp_settle_at`).
     tmp_settle_at: std::cell::Cell<Option<i64>>,
@@ -180,6 +183,12 @@ fn saver_for(store: &ConfigStore) -> ConfigSaver {
                 tracing::info!(ms, "config saved; the disk kept the save waiting")
             }
             Ok(()) => tracing::debug!(ms, path = %primary.display(), "config saved"),
+            // config.json holds every change: no "cannot save" notice for the backup copy.
+            Err(e) if e.config_written() => tracing::warn!(
+                error = %e.error,
+                ms,
+                "config saved; the daily backup copy could not be written"
+            ),
             // Where config.json and its temp file really are: one inside the Store
             // package's copy of %APPDATA% and one outside would explain a refused rename.
             Err(e) => {
@@ -254,6 +263,9 @@ impl AppState {
                 .language
                 .resolve(pecofence_platform::locale::ui_language()),
         );
+        // Before any fence is placed: a snapping gap wider than 16 counts as "at the screen
+        // edge" for a fence as tall as the screen (`geometry::set_edge_gap_max`).
+        pecofence_core::geometry::set_edge_gap_max(config.settings.snapping.gap_px);
         let mut state = Self {
             config,
             saver: saver_for(&store),
@@ -267,6 +279,7 @@ impl AppState {
             portal_cwd: HashMap::new(),
             opened_folders: HashMap::new(),
             portal_missing: HashSet::new(),
+            folder_view_changed: HashSet::new(),
             tmp_settle_at: std::cell::Cell::new(None),
             work_areas,
             unplaced: Vec::new(),
@@ -309,6 +322,7 @@ impl AppState {
             }
         }
         state.rebuild_catalog();
+        state.show_own_views();
         if state.config.drop_duplicates() {
             tracing::warn!("duplicate fences or memberships in the configuration dropped");
             state.dirty = true;
@@ -328,6 +342,11 @@ impl AppState {
 
     pub fn config_path(&self) -> PathBuf {
         self.store.primary_path()
+    }
+
+    /// While this file exists, item menus leave out Windows' part (`feedback.rs`).
+    pub fn windows_menu_marker(&self) -> PathBuf {
+        self.store.dir().join("windows-menu-off.marker")
     }
 
     /// The folder custom themes are read from (see `pecofence_render::CustomTheme`).
@@ -400,6 +419,12 @@ impl AppState {
         // only carries layouts); memberships reference item ids either way.
         if config.items.is_empty() {
             config.items = std::mem::take(&mut self.config.items);
+        } else {
+            // The snapshots kept below (the "…前" undo snapshot among them) name icons by the
+            // ids of the current table: the file's items take those ids, and the records of
+            // files the file does not know stay, or restoring such a snapshot would show
+            // its fences without their icons.
+            self.keep_item_ids(&mut config);
         }
         // Snapshots are local history, including the "…前" undo snapshot the caller just took:
         // never let an import / backup file wipe them. The file's own (by id) fill the free
@@ -425,6 +450,11 @@ impl AppState {
         for (id, spec) in std::mem::take(&mut self.config.scripts) {
             config.scripts.entry(id).or_insert(spec);
         }
+        // An export leaves the search history out: the files opened most from the search box
+        // on this PC stay ranked first.
+        if config.search_history.is_empty() {
+            config.search_history = std::mem::take(&mut self.config.search_history);
+        }
         config.drop_duplicates();
         pecofence_core::config_store::clamp_sizes(&mut config);
         pecofence_core::config_store::repair_unc_portals(&mut config);
@@ -435,7 +465,54 @@ impl AppState {
         self.normalize_tabs();
         self.portal_cwd.clear();
         self.opened_folders.clear();
+        self.show_own_views();
         self.dirty = true;
+    }
+
+    /// For a configuration about to replace this one: its items take the ids this PC has for
+    /// the same files (a file from another PC names them under its own Desktop folder), and
+    /// the records of files it does not know move into its table.
+    fn keep_item_ids(&mut self, config: &mut Config) {
+        let prefix = |path: &Option<String>| {
+            path.as_deref()
+                .and_then(|p| ItemKey::from_path(p).as_path().map(dir_prefix))
+        };
+        let (theirs, ours) = (
+            prefix(&config.settings.desktop_path),
+            prefix(&self.config.settings.desktop_path),
+        );
+        // The key this PC has for a file of the incoming configuration.
+        let here = |key: &ItemKey| match (key.as_path(), &theirs, &ours) {
+            (Some(path), Some(theirs), Some(ours)) if theirs != ours => {
+                path.strip_prefix(theirs.as_str()).map_or_else(
+                    || key.clone(),
+                    |rest| ItemKey::Path(format!("{ours}{rest}")),
+                )
+            }
+            _ => key.clone(),
+        };
+        let keys: HashSet<ItemKey> = config.items.values().map(|it| here(&it.key)).collect();
+        let map: HashMap<ItemId, ItemId> = config
+            .items
+            .iter()
+            .filter_map(|(id, item)| {
+                let local = *self.catalog.get(&here(&item.key))?;
+                (local != *id && !config.items.contains_key(&local)).then_some((*id, local))
+            })
+            .collect();
+        config.rename_items(&map);
+        let mut kept = 0usize;
+        for (id, item) in std::mem::take(&mut self.config.items) {
+            if !keys.contains(&item.key) && !config.items.contains_key(&id) {
+                config.items.insert(id, item);
+                kept += 1;
+            }
+        }
+        tracing::debug!(
+            renamed = map.len(),
+            kept,
+            "item ids of this PC kept in the incoming configuration"
+        );
     }
 
     // ---- snapshots ---------------------------------------------------------------------------
@@ -443,10 +520,12 @@ impl AppState {
     pub fn save_snapshot(&mut self, name: &str) -> uuid::Uuid {
         let name = name.trim();
         let name = if name.is_empty() {
-            pecofence_core::i18n::format(
-                "快照 {0}",
-                &[format!("{}", self.config.snapshots.len() + 1)],
-            )
+            // The first 「快照 N」 from the count on that no snapshot has: after a delete the
+            // count alone gave two snapshots the same name.
+            (self.config.snapshots.len() + 1..)
+                .map(|n| pecofence_core::i18n::format("快照 {0}", &[n.to_string()]))
+                .find(|name| !self.config.snapshots.iter().any(|s| s.name == *name))
+                .unwrap_or_default()
         } else {
             name.to_string()
         };
@@ -535,6 +614,7 @@ impl AppState {
             portal_cwd: HashMap::new(),
             opened_folders: HashMap::new(),
             portal_missing: HashSet::new(),
+            folder_view_changed: HashSet::new(),
             tmp_settle_at: std::cell::Cell::new(None),
             work_areas: self.work_areas.clone(),
             unplaced: Vec::new(),
@@ -557,6 +637,7 @@ impl AppState {
         self.normalize_tabs();
         self.portal_cwd.clear();
         self.opened_folders.clear();
+        self.show_own_views();
         self.dirty = true;
     }
 
@@ -717,7 +798,24 @@ impl AppState {
             // fences the first pass found no spot for.
             std::mem::take(&mut self.unplaced)
         } else {
-            self.config.carry_fences(source, target)
+            let unplaced = self.config.carry_fences(source, target);
+            // Fences snapped together go to the new work area as one piece: placed one by
+            // one, each by its own anchor, a column or a pair comes apart.
+            let gap = self.config.settings.snapping.gap_px.clamp(0, 64) as f32;
+            let kept = pecofence_core::geometry::keep_groups_together(
+                &mut self.config.layouts[target].fences,
+                &unplaced,
+                &self.work_areas,
+                gap,
+            );
+            tracing::debug!(
+                layout = target,
+                from_layout = source,
+                without_spot = unplaced.len(),
+                kept,
+                "fences without a spot here: snapped groups carried as one piece"
+            );
+            unplaced
         };
         // A spot on a monitor that is not connected is no spot (older versions cloned a whole
         // layout onto a new monitor set).
@@ -735,6 +833,39 @@ impl AppState {
             self.dirty = true;
         }
         self.layout = target;
+        self.ensure_inbox();
+    }
+
+    /// A configuration whose fences include no 「桌面」 fence (a file edited by hand, as
+    /// `config check` warns): the files no rule matches would be in no fence and show nowhere.
+    /// It gets one, as a new configuration has it: arranged like the desktop, its own rect in
+    /// the bottom right corner of the first monitor.
+    fn ensure_inbox(&mut self) {
+        if self.fences().iter().any(|f| f.kind == FenceKind::Inbox) {
+            return;
+        }
+        let Some(work) = self.work_areas.first().cloned() else {
+            return;
+        };
+        let gap = self.config.settings.snapping.gap_px.clamp(0, 64);
+        let (w, h) = ((240.0 * work.scale()) as i32, (200.0 * work.scale()) as i32);
+        let geo = geometry::normalize(
+            PxRect {
+                left: work.right - gap - w,
+                top: work.bottom - gap - h,
+                right: work.right - gap,
+                bottom: work.bottom - gap,
+            },
+            &work,
+        );
+        let mut inbox = Fence::new(pecofence_core::i18n::text("桌面"), FenceKind::Inbox, geo);
+        inbox.view.icon_size = self.config.settings.icon_size;
+        inbox.desktop_layout = true;
+        inbox.free_placement = true;
+        tracing::warn!(fence = %inbox.id, "the configuration had no desktop fence: one added");
+        let layout = self.layout;
+        self.config.layouts[layout].fences.push(inbox);
+        self.dirty = true;
     }
 
     /// The matched layout takes the connected monitors as they are: one found under another id
@@ -790,7 +921,9 @@ impl AppState {
             pecofence_core::FenceView::default().label_lines,
         )
         .width_for_columns(3);
-        let gap = 16.0f32;
+        // The snapping gap (`snapping.gapPx`, clamped as `app::settings::snap_gap_dip` does):
+        // the first-run fences stand as far apart as fences the user snaps together later.
+        let gap = self.config.settings.snapping.gap_px.clamp(0, 64) as f32;
         let x = ww - gap - col_w;
         let heights = [240.0f32, 200.0, 240.0];
         let titles = [
@@ -1404,11 +1537,13 @@ impl AppState {
                 crate::icons::icon_key_for(&entry.path, entry.is_folder, entry.mtime);
             if let Some(&id) = self.catalog.get(&key) {
                 seen.insert(id);
+                let mut returned = false;
                 if let Some(item) = self.config.items.get_mut(&id) {
                     let mut changed = false;
                     if item.orphaned_since.is_some() {
                         item.orphaned_since = None;
                         changed = true;
+                        returned = true;
                     }
                     if item.mtime != entry.mtime || item.icon_key != icon_key {
                         item.mtime = entry.mtime;
@@ -1435,6 +1570,38 @@ impl AppState {
                     if changed {
                         report.updated += 1;
                         self.dirty = true;
+                    }
+                }
+                // A file that went and came back, kept for its cell on the freely placed 「桌面」
+                // (see the orphans below), where the default or a rule had put it: the rules
+                // place it as they place a new file. Where that is the fence it is in, it
+                // stands in its cell again.
+                if returned && in_fence.contains(&id) && !self.placed_by_user(id) {
+                    let (decision, facts) = self.route_decision(entry);
+                    let from = self.config.fence_of_item(self.layout, id);
+                    let target = self.target_fence(decision);
+                    // The decision is logged as a new file's is (what the rules saw, which
+                    // rule matched, where the file goes), also when the file keeps its fence:
+                    // a shortcut made again under the name of one deleted before left no
+                    // line that said why it stood where it stood.
+                    self.log_route(
+                        "returned file",
+                        facts.as_ref(),
+                        decision,
+                        target.as_ref(),
+                        &mut logged,
+                    );
+                    if let Some((fence, by)) = target
+                        && from != Some(fence)
+                        && self.config.assign(self.layout, id, fence, by).is_some()
+                    {
+                        tracing::info!(%fence, "a returned desktop file is placed by the rules again");
+                        report.updated += 1;
+                        if shown.contains(&fence) {
+                            arrived.push((fence, id));
+                        }
+                    } else {
+                        tracing::debug!(fence = ?from, "a returned desktop file keeps its fence and place");
                     }
                 }
                 // An item that exists but is in no fence (e.g. its fence was deleted, or a .tmp
@@ -1554,6 +1721,24 @@ impl AppState {
             .filter(|r| r.assigned_by == AssignedBy::User)
             .map(|r| r.item_id)
             .collect();
+        // 自由摆放: an icon's cell on the desktop is its place as the user sees it, whether he
+        // dropped it there or left it where it came. A file that goes and comes back (Delete
+        // then Ctrl+Z, a restore from the Recycle Bin, a program that saves by deleting the
+        // file and writing it again, the Recycle Bin while Windows shows its own icons)
+        // returns to that cell, so its record stays like a hand-placed one's.
+        let free_cells: HashSet<ItemId> = self
+            .config
+            .layouts
+            .iter()
+            .flat_map(|l| &l.fences)
+            .filter(|f| f.desktop_layout && f.free_placement)
+            .flat_map(|f| {
+                f.desktop_cells
+                    .keys()
+                    .copied()
+                    .filter(|id| f.contains_item(*id))
+            })
+            .collect();
         let (mut placed, mut aged) = (0usize, 0usize);
         let mut to_remove = Vec::new();
         let mut kept: Vec<(i64, ItemId)> = Vec::new();
@@ -1570,7 +1755,7 @@ impl AppState {
                     now
                 }
             };
-            if !placed_by_user.contains(id) {
+            if !placed_by_user.contains(id) && !free_cells.contains(id) {
                 placed += 1;
                 to_remove.push(*id);
             } else if now - since > ORPHAN_GC_SECS {
@@ -1725,6 +1910,14 @@ impl AppState {
         self.sorted_members(fence, false)
     }
 
+    /// [`Self::items_of`] in no particular order, for callers that count or test the items:
+    /// the order costs a sort of the whole fence.
+    pub fn unsorted_items_of<'s>(&'s self, fence: &Fence) -> impl Iterator<Item = &'s Item> {
+        self.fence_members(fence, false)
+            .into_iter()
+            .map(|(_, it)| it)
+    }
+
     /// [`Self::unsorted_held_items_of`] in display order.
     pub fn held_items_of(&self, fence: &Fence) -> Vec<&Item> {
         self.sorted_members(fence, true)
@@ -1739,9 +1932,7 @@ impl AppState {
                     it.display_name.to_lowercase(),
                 )
             }),
-            SortMode::Name => {
-                items.sort_by(|a, b| natural_cmp(&a.1.display_name, &b.1.display_name))
-            }
+            SortMode::Name => items.sort_by_cached_key(|(_, it)| NaturalKey::of(&it.display_name)),
             SortMode::Type => items.sort_by(|a, b| {
                 let ka = (
                     !a.1.is_folder,
@@ -1851,6 +2042,62 @@ impl AppState {
         self.portal_missing.contains(&id)
     }
 
+    /// The folder `id` shows away from its own folder or icons, as the key its view and sort
+    /// order are remembered under; None at its own.
+    fn folder_view_key(&self, id: FenceId) -> Option<String> {
+        if !self.can_go_up(id) {
+            return None;
+        }
+        self.portal_path(id)
+            .map(|p| p.to_string_lossy().to_lowercase())
+    }
+
+    /// `id` showed `before` (`folder_view_key`) and may show another folder now: the view and
+    /// sort order of the folder left are remembered and those of the folder shown now come
+    /// back, as File Explorer keeps them per folder (feedback #131). Call before the folder
+    /// is read, which sorts its items.
+    fn follow_folder_view(&mut self, id: FenceId, before: Option<String>) {
+        let now = self.folder_view_key(id);
+        if now == before {
+            return;
+        }
+        let Some(f) = self.fence_mut(id) else {
+            return;
+        };
+        let changed = f.show_folder_view(before.as_deref(), now.as_deref());
+        tracing::debug!(
+            %id,
+            own_before = before.is_none(),
+            own_now = now.is_none(),
+            remembered = f.folder_views.len(),
+            changed,
+            layout = ?f.view.layout,
+            sort = ?f.view.sort,
+            "folder view: the fence shows another folder"
+        );
+        if changed {
+            self.folder_view_changed.insert(id);
+        }
+        self.dirty = true;
+    }
+
+    /// Whether `id`'s view or sort order changed with the folder it shows since the last call.
+    pub fn take_folder_view_changed(&mut self, id: FenceId) -> bool {
+        self.folder_view_changed.remove(&id)
+    }
+
+    /// Every fence shows its own folder or icons (a start, an import, a snapshot): a fence
+    /// that was saved while it showed another folder takes its own view and order again.
+    fn show_own_views(&mut self) {
+        for layout in &mut self.config.layouts {
+            for f in &mut layout.fences {
+                if f.show_own_view() {
+                    tracing::debug!(id = %f.id, "folder view: saved inside a folder, own view again");
+                }
+            }
+        }
+    }
+
     /// Navigates a portal into `dir` (must be inside its root). Returns false if refused.
     pub fn portal_enter(&mut self, id: FenceId, dir: &Path) -> bool {
         let Some(root) = self.folder_root(id) else {
@@ -1864,6 +2111,7 @@ impl AppState {
         let (Some(rk), Some(dk)) = (root_key.as_path(), dir_key.as_path()) else {
             return false;
         };
+        let shown = self.folder_view_key(id);
         if dk == rk {
             self.portal_cwd.remove(&id);
         } else if dk.starts_with(&dir_prefix(rk)) {
@@ -1871,6 +2119,7 @@ impl AppState {
         } else {
             return false;
         }
+        self.follow_folder_view(id, shown);
         self.refresh_portal(id);
         true
     }
@@ -1882,6 +2131,7 @@ impl AppState {
         if self.fence(id).is_none_or(|f| !f.holds_items()) || !dir.is_dir() {
             return false;
         }
+        let shown = self.folder_view_key(id);
         self.portal_cwd.remove(&id);
         let root = folder_path_with_real_case(dir);
         // A drive's root has no name of its own: Explorer titles it "Local Disk (C:)".
@@ -1900,6 +2150,7 @@ impl AppState {
                 opened_by,
             },
         );
+        self.follow_folder_view(id, shown);
         self.refresh_portal(id);
         true
     }
@@ -1924,9 +2175,11 @@ impl AppState {
     /// Leaves the folder opened in regular fence `id`: it shows its own icons again. False when
     /// it shows none.
     fn leave_opened_folder(&mut self, id: FenceId) -> bool {
+        let shown = self.folder_view_key(id);
         if self.opened_folders.remove(&id).is_none() {
             return false;
         }
+        self.follow_folder_view(id, shown);
         self.portal_missing.remove(&id);
         self.evict_portal_members(id);
         true
@@ -1941,7 +2194,9 @@ impl AppState {
         match cur.parent() {
             Some(parent) => self.portal_enter(id, parent),
             None => {
+                let shown = self.folder_view_key(id);
                 self.portal_cwd.remove(&id);
+                self.follow_folder_view(id, shown);
                 self.refresh_portal(id);
                 true
             }
@@ -1950,7 +2205,9 @@ impl AppState {
 
     /// Back to the root folder: a portal's own, or the folder opened in a regular fence.
     pub fn portal_home(&mut self, id: FenceId) -> bool {
+        let shown = self.folder_view_key(id);
         if self.portal_cwd.remove(&id).is_some() {
+            self.follow_folder_view(id, shown);
             self.refresh_portal(id);
             true
         } else {
@@ -2056,7 +2313,9 @@ impl AppState {
             && !cwd.is_dir()
         {
             tracing::info!(%id, folder = %cwd.display(), "portal subfolder vanished; back to root");
+            let shown = self.folder_view_key(id);
             self.portal_cwd.remove(&id);
+            self.follow_folder_view(id, shown);
         }
         let Some(dir) = self.portal_path(id) else {
             return false;
@@ -2206,6 +2465,15 @@ impl AppState {
             .get(&id)
             .is_some_and(|it| it.orphaned_since.is_none())
             .then_some(id)
+    }
+
+    /// Whether the user put the item into the fence it is in (on this monitor setup).
+    fn placed_by_user(&self, id: ItemId) -> bool {
+        self.config.layouts[self.layout]
+            .fences
+            .iter()
+            .flat_map(|f| &f.items)
+            .any(|r| r.item_id == id && r.assigned_by == AssignedBy::User)
     }
 
     /// Re-keys an item after a rename so it stays in its fence. Returns false if unknown.
@@ -2779,6 +3047,11 @@ impl AppState {
         self.edit_appearance(id, |a| a.title_on_hover = on);
     }
 
+    /// 鼠标移入时保持透明 of a fully transparent fence.
+    pub fn set_transparent_on_hover(&mut self, id: FenceId, on: bool) {
+        self.edit_appearance(id, |a| a.transparent_on_hover = on);
+    }
+
     /// The tint washes only the title row.
     pub fn set_tint_title_only(&mut self, id: FenceId, on: bool) {
         self.edit_appearance(id, |a| a.tint_title_only = on);
@@ -2981,6 +3254,22 @@ impl AppState {
         }
     }
 
+    /// Moves line `from` of note `id` to line `to`; false when the text has no such lines.
+    pub fn move_note_line(&mut self, id: FenceId, from: usize, to: usize) -> bool {
+        let moved = self
+            .note_text(id)
+            .and_then(|text| pecofence_core::note::move_lines(text, from, 1, to));
+        tracing::info!(%id, from, to, moved = moved.is_some(), "note line moved");
+        match moved {
+            Some(new) => {
+                self.config.notes.insert(id, new);
+                self.dirty = true;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// "快速添加": a fence for `template` at `rect` plus its rules, inserted ahead of the
     /// existing rules so they win over the broader first-run presets (an installer is also a
     /// program). `Err(existing)` when the template was added before; `existing` is the fence
@@ -3097,6 +3386,8 @@ impl AppState {
         let inbox = self.inbox_id();
         let layout = self.layout;
         let mut fence = d.fence;
+        // Deleted while it showed another folder: it comes back at its own, in its own view.
+        fence.show_own_view();
         let in_inbox = |state: &Self, item: ItemId| {
             state.config.items.contains_key(&item)
                 && state.config.fence_of_item(layout, item) == inbox
@@ -3205,7 +3496,43 @@ fn ext_of_key(key: &ItemKey) -> String {
 
 /// Case-insensitive natural ordering (digits compared numerically), like Explorer.
 pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    let (a, b) = (a.to_lowercase(), b.to_lowercase());
+    natural_cmp_lowered(&a.to_lowercase(), &b.to_lowercase())
+}
+
+/// A name as [`natural_cmp`] orders it, made lower case once. A sort compares every name a
+/// dozen times, and `natural_cmp` makes two new strings for each comparison: a folder of
+/// 8000 files paid for about 200,000 of them at every listing.
+pub struct NaturalKey(String);
+
+impl NaturalKey {
+    pub fn of(name: &str) -> Self {
+        Self(name.to_lowercase())
+    }
+}
+
+impl Ord for NaturalKey {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        natural_cmp_lowered(&self.0, &other.0)
+    }
+}
+
+impl PartialOrd for NaturalKey {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+// Equal as the order has them ("a1" and "a01"), so the three agree.
+impl PartialEq for NaturalKey {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for NaturalKey {}
+
+/// [`natural_cmp`] of two names that are lower case already.
+fn natural_cmp_lowered(a: &str, b: &str) -> std::cmp::Ordering {
     let mut ai = a.chars().peekable();
     let mut bi = b.chars().peekable();
     loop {
@@ -3356,6 +3683,46 @@ mod tests {
     use super::*;
     use pecofence_core::geometry::WorkArea;
 
+    /// The key a name sort caches gives the order `natural_cmp` gives, name for name.
+    #[test]
+    fn a_sort_by_the_cached_key_is_the_natural_order() {
+        let names = [
+            "周报 0012.txt",
+            "周报 12.TXT",
+            "周报 2.txt",
+            "周报 2",
+            "Budget 10.csv",
+            "budget 9.csv",
+            "BUDGET 09.csv",
+            "IMG_0100.png",
+            "img_99.png",
+            "9 lives.md",
+            "10 things.md",
+            "a",
+            "A",
+            "",
+            "项目计划书 最终版 已确认.docx",
+            "项目计划书 最终版.docx",
+            "99999999999999999999999 a",
+            "99999999999999999999998 b",
+        ];
+        for a in names {
+            for b in names {
+                assert_eq!(
+                    NaturalKey::of(a).cmp(&NaturalKey::of(b)),
+                    natural_cmp(a, b),
+                    "{a:?} against {b:?}"
+                );
+            }
+        }
+        let mut by_key = names.to_vec();
+        by_key.sort_by_cached_key(|n| NaturalKey::of(n));
+        let mut by_cmp = names.to_vec();
+        by_cmp.sort_by(|a, b| natural_cmp(a, b));
+        // Names the order holds equal ("a" and "A") stay as they came in both.
+        assert_eq!(by_key, by_cmp);
+    }
+
     fn monitor(id: &str, left: i32, w: i32, h: i32, dpi: u32) -> WorkArea {
         WorkArea {
             device_path: id.into(),
@@ -3398,6 +3765,7 @@ mod tests {
             portal_cwd: HashMap::new(),
             opened_folders: HashMap::new(),
             portal_missing: HashSet::new(),
+            folder_view_changed: HashSet::new(),
             tmp_settle_at: std::cell::Cell::new(None),
             work_areas,
             unplaced: Vec::new(),
@@ -3418,6 +3786,25 @@ mod tests {
             top,
             right: left + w,
             bottom: top + h,
+        }
+    }
+
+    /// The first-run column stands the snapping gap from the screen's top and right edges and
+    /// its fences that gap apart: the gap fences snapped together later keep.
+    #[test]
+    fn the_first_run_fences_stand_a_snapping_gap_apart() {
+        let state = test_state();
+        let gap = state.config.settings.snapping.gap_px;
+        assert_eq!(gap, 8);
+        let rects: Vec<PxRect> = state.fences()[..3]
+            .iter()
+            .map(|f| state.fence_px_rect(f))
+            .collect();
+        assert_eq!(rects[0].top, gap);
+        assert_eq!(rects[0].right, 1920 - gap);
+        for pair in rects.windows(2) {
+            assert_eq!(pair[1].top - pair[0].bottom, gap);
+            assert_eq!(pair[1].left, pair[0].left);
         }
     }
 
@@ -3511,6 +3898,25 @@ mod tests {
         assert_eq!(state.fence_expanded_px(fb), 300);
     }
 
+    /// A snapshot saved without a name: 「快照 N」 by the count, or the next number when a
+    /// delete left that name in use.
+    #[test]
+    fn unnamed_snapshots_get_names_of_their_own() {
+        let mut state = test_state();
+        let name = |state: &AppState, id: uuid::Uuid| {
+            let snaps = &state.config.snapshots;
+            snaps.iter().find(|s| s.id == id).unwrap().name.clone()
+        };
+        let first = state.save_snapshot("");
+        let second = state.save_snapshot("  ");
+        assert_ne!(name(&state, first), name(&state, second));
+        state.delete_snapshot(first);
+        let third = state.save_snapshot("");
+        assert_ne!(name(&state, third), name(&state, second));
+        let named = state.save_snapshot(" mine ");
+        assert_eq!(name(&state, named), "mine");
+    }
+
     #[test]
     fn an_imported_file_never_pushes_local_snapshots_out() {
         let snap = |name: String, ts: i64| pecofence_core::Snapshot {
@@ -3565,6 +3971,72 @@ mod tests {
         state.replace_config(file);
         assert_eq!(state.fences().len(), fences - 1);
         assert!(state.fences().iter().all(|f| f.title != "Dup"));
+    }
+
+    /// A file without a 「桌面」 fence (edited by hand) gets one, as `config check` says: the
+    /// files no rule matches land in it instead of in no fence.
+    #[test]
+    fn a_configuration_without_a_desktop_fence_gets_one() {
+        let mut state = test_state();
+        let mut file = state.config.clone();
+        file.layouts[0]
+            .fences
+            .retain(|f| f.kind != FenceKind::Inbox);
+        let fences = file.layouts[0].fences.len();
+        state.replace_config(file);
+        assert_eq!(state.fences().len(), fences + 1);
+        let inbox = state.inbox_id().expect("a desktop fence");
+        let report = state.sync_desktop(&[desktop_entry("unknown.xyz")]);
+        assert_eq!(report.added, 1);
+        assert_eq!(state.fence(inbox).unwrap().items.len(), 1);
+        // Once is enough.
+        state.ensure_layout();
+        assert_eq!(state.fences().len(), fences + 1);
+    }
+
+    /// The 「导入配置前」 snapshot names icons by id: the items of an imported file take this
+    /// PC's ids for the same files, also when the file names them under another PC's Desktop
+    /// folder, and a file the import does not know keeps its record.
+    #[test]
+    fn an_import_keeps_the_item_ids_the_snapshots_from_before_name() {
+        let mut state = test_state();
+        state.config.settings.desktop_path = Some("C:/Users/Me/Desktop".into());
+        state.sync_desktop(&[desktop_entry("a.txt"), desktop_entry("b.txt")]);
+        let id_of = |s: &AppState, name: &str| {
+            s.item_by_path(Path::new(&format!("C:/Users/Me/Desktop/{name}")))
+                .unwrap()
+        };
+        let (a, b) = (id_of(&state, "a.txt"), id_of(&state, "b.txt"));
+        // The file: another PC's export. It knows a.txt under its own Desktop folder and id,
+        // and has no b.txt.
+        let mut file = state.config.clone();
+        file.settings.desktop_path = Some("C:/Users/Other/Desktop".into());
+        let other = uuid::Uuid::new_v4();
+        let mut item = file.items.remove(&a).unwrap();
+        file.items.remove(&b);
+        item.id = other;
+        item.key = ItemKey::from_path("C:/Users/Other/Desktop/a.txt");
+        item.path = None;
+        file.items.insert(other, item);
+        for f in &mut file.layouts[0].fences {
+            f.items.retain(|r| r.item_id != b);
+            for r in f.items.iter_mut().filter(|r| r.item_id == a) {
+                r.item_id = other;
+            }
+        }
+        let before = state.save_snapshot("before");
+        state.replace_config(file);
+        state.migrate_desktop_path(Path::new("C:/Users/Me/Desktop"));
+        assert_eq!(id_of(&state, "a.txt"), a);
+        assert_eq!(id_of(&state, "b.txt"), b);
+        assert!(state.restore_snapshot(before));
+        let shown: Vec<ItemId> = state
+            .fences()
+            .iter()
+            .flat_map(|f| f.items.iter().map(|r| r.item_id))
+            .collect();
+        assert!(shown.contains(&a) && shown.contains(&b), "{shown:?}");
+        assert!(state.item(a).is_some() && state.item(b).is_some());
     }
 
     /// Issue #24: unplugging the big monitor, working on the laptop, plugging it back in.
@@ -4677,6 +5149,50 @@ mod tests {
         assert_eq!(state.fence(c).unwrap().virtual_desktops, bound);
         state.attach_tab(c, inbox);
         assert!(state.fence(c).unwrap().virtual_desktops.is_empty());
+    }
+
+    /// 自由摆放: a file with a cell on the freely placed 「桌面」 that goes and comes back (Delete
+    /// then Ctrl+Z, a save by delete and create) stands in its cell again, also one the default
+    /// put there. It took the first free cell, far from where the user had dropped it.
+    #[test]
+    fn a_file_that_comes_back_returns_to_its_cell_on_the_freely_placed_desktop() {
+        use pecofence_core::rules::Rule;
+        let mut state = test_state();
+        let inbox = state.inbox_id().unwrap();
+        let both = [desktop_entry("loose.xyz"), desktop_entry("other.xyz")];
+        let path = PathBuf::from("C:/Users/Me/Desktop/loose.xyz");
+        state.sync_desktop(&both);
+        let id = state.item_id_for_path(&path).unwrap();
+        let stays = state
+            .item_id_for_path(&PathBuf::from("C:/Users/Me/Desktop/other.xyz"))
+            .unwrap();
+        assert_eq!(state.config.fence_of_item(0, id), Some(inbox));
+        assert!(!state.placed_by_user(id));
+        assert!(state.set_desktop_cells(inbox, &[(id, [6, 3]), (stays, [0, 0])]));
+        // Gone: the record and the cell stay.
+        state.sync_desktop(&both[1..]);
+        assert!(state.config.items[&id].orphaned_since.is_some());
+        // Back: the same icon, in the same fence and cell.
+        state.sync_desktop(&both);
+        assert_eq!(state.item_id_for_path(&path), Some(id));
+        assert!(state.config.items[&id].orphaned_since.is_none());
+        assert_eq!(state.config.fence_of_item(0, id), Some(inbox));
+        let cells = &state.fence(inbox).unwrap().desktop_cells;
+        assert_eq!(cells.get(&id), Some(&[6, 3]));
+        // Away again, and a rule that takes such files is added meanwhile: back, the rules
+        // place it as they place a new file. The file that never left stays on the desktop.
+        state.sync_desktop(&both[1..]);
+        let other = state.new_fence("其它", rect(0, 0, 300, 200)).unwrap();
+        let rule = Rule::new("其它", Target::Fence(other), vec![Cond::PlainFiles]);
+        state.config.rules.list.push(rule);
+        state.sync_desktop(&both);
+        assert_eq!(state.item_id_for_path(&path), Some(id));
+        assert_eq!(state.config.fence_of_item(0, id), Some(other));
+        assert_eq!(state.config.fence_of_item(0, stays), Some(inbox));
+        // Without 自由摆放 the record of a file the default placed goes at once, as before.
+        state.set_free_placement(inbox, false);
+        state.sync_desktop(&both[..1]);
+        assert!(!state.config.items.contains_key(&stays));
     }
 
     /// Fence review S13: deleting many files a rule or the default placed must not grow the

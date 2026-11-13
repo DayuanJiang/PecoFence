@@ -105,6 +105,20 @@ Everything は無料のファイル検索ツールです。設定で Everything 
 
 ![フェンスをアプリの手前に表示し、外側をクリックするかファイルを開くとアプリに戻る様子。](../assets/peek.gif)
 
+### 自動で更新されるフェンス
+
+スマートフェンスは、保存した検索の結果をいつも最新で表示します。**過去 7 日間のダウンロード**などのテンプレートを選んで**作成**をクリックすると、条件に合う新しいファイルが自動で現れます。ファイルは元の場所のままです。
+
+![フェンスのメニューで New smart fence… を選ぶと小さなウィンドウが開き、テンプレート Downloads of the last 7 days で条件が入力され、Create をクリックすると 6 つのファイルが入ったフェンスがデスクトップにでき、新しくダウンロードしたファイルが自動でそこに現れる様子。](../assets/smart.gif)
+
+### メモ、時計、自分のスクリプト
+
+**設定 → ツール**から追加できます。メモでは `[ ]` で始まる行が ToDo になり、時計は日付も表示し、スクリプトフェンスは天気などスクリプトが出力したテキストを表示します。
+
+![設定で New note をクリックするとデスクトップにメモができ、クリックで最初の ToDo にチェックが付き、Add をクリックするとその隣に時計が、続いて東京の天気を表示するフェンスができる様子。](../assets/tools.gif)
+
+マニュアルではほかにも、[仮想デスクトップごとのフェンス](https://pecofence.jiang.jp/ja/manual/#vdesk)（[GIF](../assets/vdesk.gif)）、[置いた場所にそのまま残るデスクトップのアイコン](https://pecofence.jiang.jp/ja/manual/#free-place)（[GIF](../assets/free-place.gif)）、[直前の操作を元に戻す Ctrl+Z](https://pecofence.jiang.jp/ja/manual/#undo)（[GIF](../assets/undo.gif)）を紹介しています。
+
 <sub><a href="https://pecofence.jiang.jp/ja/manual/">マニュアル</a>のアニメーションです。GIF は自動でループします。</sub>
 
 ## 毎日の使い心地を変える、小さなこだわり
@@ -141,7 +155,7 @@ Microsoft Store 版は Microsoft によって署名され、自動で更新さ�
 <details>
 <summary><strong>動作環境、設定ファイルの場所、知っておきたいこと</strong></summary>
 
-- Windows 10 22H2、または Windows 11 22H2 以降が対象です。設定画面には Microsoft Edge WebView2 Runtime が必要です。Windows 11 には標準で含まれていますが、Windows 10 で設定が開かない場合は Microsoft のサイトからインストールしてください。
+- Windows 10 1809 以降（Microsoft Store 版は 2004 以降）、または Windows 11 22H2 以降が対象です。設定画面には Microsoft Edge WebView2 Runtime が必要です。Windows 11 には標準で含まれていますが、Windows 10 で設定が開かない場合は Microsoft のサイトからインストールしてください。
 - 初回起動時に、選択した言語で「アプリ」「フォルダー」「ファイルとドキュメント」「デスクトップ」の 4 つのフェンスが作成されます。終了すると、Windows のデスクトップアイコンは元どおり表示されます。
 - 設定は `%APPDATA%\PecoFence\config.json` に保存されます。`--portable` を付けて起動すると、実行ファイルの隣にある `config` フォルダーに保存されます。
 - ポータブル版とインストーラーはコード署名されていません。初回起動時に Windows SmartScreen が表示された場合は**詳細情報 → 実行**を選んでください。
@@ -165,7 +179,7 @@ PecoFence は Apache 2.0 ライセンスで公開されています。訳文の�
 
 署名するのは、このリポジトリのバージョンタグから GitHub Actions がビルドしたファイルだけです。署名のたびに手作業で承認しています。
 
-**プライバシー：** PecoFence は GitHub でアップデートを確認し、[使用状況の統計](../USAGE_STATS.md)を PecoFence のサービスに送信します。どちらも**設定 › このアプリについて**でオフにできます。**フィードバック**から送った内容は PecoFence のフィードバック サービスに届きます。設定画面は Microsoft Edge WebView2 で動いており、[Microsoft のプライバシーに関する声明](https://privacy.microsoft.com/privacystatement)が適用されます。
+**プライバシー：** PecoFence は GitHub でアップデートを確認し、[使用状況の統計](../USAGE_STATS.md)を PecoFence のサービスに送信します。どちらも**設定 › このアプリについて**でオフにできます。アップデートの確認では GitHub の API に接続します。GitHub から応答がないときに限り、PecoFence のサイト（pecofence.jiang.jp）に接続します。このとき送るのはリクエストそのもの（PecoFence のバージョン番号を含みます）だけです。**フィードバック**から送った内容は PecoFence のフィードバック サービスに届きます。設定画面は Microsoft Edge WebView2 で動いており、[Microsoft のプライバシーに関する声明](https://privacy.microsoft.com/privacystatement)が適用されます。
 
 ---
 

@@ -59,6 +59,11 @@ pub unsafe fn BCryptHash(
     }
 }
 #[inline]
+pub unsafe fn BeginDeferWindowPos(nnumwindows: i32) -> HDWP {
+    windows_core::link!("user32.dll" "system" fn BeginDeferWindowPos(nnumwindows : i32) -> HDWP);
+    unsafe { BeginDeferWindowPos(nnumwindows) }
+}
+#[inline]
 pub unsafe fn BeginPaint(hwnd: HWND, lppaint: *mut PAINTSTRUCT) -> HDC {
     windows_core::link!("user32.dll" "system" fn BeginPaint(hwnd : HWND, lppaint : *mut PAINTSTRUCT) -> HDC);
     unsafe { BeginPaint(hwnd, lppaint as _) }
@@ -521,6 +526,31 @@ pub unsafe fn DefWindowProcW(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARA
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
 #[inline]
+pub unsafe fn DeferWindowPos(
+    hwinposinfo: HDWP,
+    hwnd: HWND,
+    hwndinsertafter: Option<HWND>,
+    x: i32,
+    y: i32,
+    cx: i32,
+    cy: i32,
+    uflags: u32,
+) -> HDWP {
+    windows_core::link!("user32.dll" "system" fn DeferWindowPos(hwinposinfo : HDWP, hwnd : HWND, hwndinsertafter : HWND, x : i32, y : i32, cx : i32, cy : i32, uflags : u32) -> HDWP);
+    unsafe {
+        DeferWindowPos(
+            hwinposinfo,
+            hwnd,
+            hwndinsertafter.unwrap_or(core::mem::zeroed()) as _,
+            x,
+            y,
+            cx,
+            cy,
+            uflags,
+        )
+    }
+}
+#[inline]
 pub unsafe fn DeleteDC(hdc: HDC) -> windows_core::BOOL {
     windows_core::link!("gdi32.dll" "system" fn DeleteDC(hdc : HDC) -> windows_core::BOOL);
     unsafe { DeleteDC(hdc) }
@@ -634,6 +664,14 @@ pub unsafe fn DwmFlush() -> windows_core::HRESULT {
     unsafe { DwmFlush() }
 }
 #[inline]
+pub unsafe fn DwmGetCompositionTimingInfo(
+    hwnd: HWND,
+    ptiminginfo: *mut DWM_TIMING_INFO,
+) -> windows_core::HRESULT {
+    windows_core::link!("dwmapi.dll" "system" fn DwmGetCompositionTimingInfo(hwnd : HWND, ptiminginfo : *mut DWM_TIMING_INFO) -> windows_core::HRESULT);
+    unsafe { DwmGetCompositionTimingInfo(hwnd, ptiminginfo as _) }
+}
+#[inline]
 pub unsafe fn DwmGetWindowAttribute(
     hwnd: HWND,
     dwattribute: u32,
@@ -665,6 +703,11 @@ pub unsafe fn DwmSetWindowAttribute(
 pub unsafe fn EmptyClipboard() -> windows_core::BOOL {
     windows_core::link!("user32.dll" "system" fn EmptyClipboard() -> windows_core::BOOL);
     unsafe { EmptyClipboard() }
+}
+#[inline]
+pub unsafe fn EndDeferWindowPos(hwinposinfo: HDWP) -> windows_core::BOOL {
+    windows_core::link!("user32.dll" "system" fn EndDeferWindowPos(hwinposinfo : HDWP) -> windows_core::BOOL);
+    unsafe { EndDeferWindowPos(hwinposinfo) }
 }
 #[inline]
 pub unsafe fn EndPaint(hwnd: HWND, lppaint: *const PAINTSTRUCT) -> windows_core::BOOL {
@@ -2841,6 +2884,11 @@ pub unsafe fn UpdateLayeredWindow(
     }
 }
 #[inline]
+pub unsafe fn UpdateWindow(hwnd: HWND) -> windows_core::BOOL {
+    windows_core::link!("user32.dll" "system" fn UpdateWindow(hwnd : HWND) -> windows_core::BOOL);
+    unsafe { UpdateWindow(hwnd) }
+}
+#[inline]
 pub unsafe fn WaitForMultipleObjects(
     lphandles: &[HANDLE],
     bwaitall: bool,
@@ -4012,7 +4060,54 @@ pub const DWMWCP_DONOTROUND: DWM_WINDOW_CORNER_PREFERENCE = 1;
 pub const DWMWCP_ROUND: DWM_WINDOW_CORNER_PREFERENCE = 2;
 pub const DWMWCP_ROUNDSMALL: DWM_WINDOW_CORNER_PREFERENCE = 3;
 pub type DWMWINDOWATTRIBUTE = i32;
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct DWM_FRAME_COUNT(pub u64);
 pub type DWM_SYSTEMBACKDROP_TYPE = i32;
+#[repr(C, packed(1))]
+#[derive(Clone, Copy, Default)]
+pub struct DWM_TIMING_INFO {
+    pub cbSize: u32,
+    pub rateRefresh: UNSIGNED_RATIO,
+    pub qpcRefreshPeriod: QPC_TIME,
+    pub rateCompose: UNSIGNED_RATIO,
+    pub qpcVBlank: QPC_TIME,
+    pub cRefresh: DWM_FRAME_COUNT,
+    pub cDXRefresh: u32,
+    pub qpcCompose: QPC_TIME,
+    pub cFrame: DWM_FRAME_COUNT,
+    pub cDXPresent: u32,
+    pub cRefreshFrame: DWM_FRAME_COUNT,
+    pub cFrameSubmitted: DWM_FRAME_COUNT,
+    pub cDXPresentSubmitted: u32,
+    pub cFrameConfirmed: DWM_FRAME_COUNT,
+    pub cDXPresentConfirmed: u32,
+    pub cRefreshConfirmed: DWM_FRAME_COUNT,
+    pub cDXRefreshConfirmed: u32,
+    pub cFramesLate: DWM_FRAME_COUNT,
+    pub cFramesOutstanding: u32,
+    pub cFrameDisplayed: DWM_FRAME_COUNT,
+    pub qpcFrameDisplayed: QPC_TIME,
+    pub cRefreshFrameDisplayed: DWM_FRAME_COUNT,
+    pub cFrameComplete: DWM_FRAME_COUNT,
+    pub qpcFrameComplete: QPC_TIME,
+    pub cFramePending: DWM_FRAME_COUNT,
+    pub qpcFramePending: QPC_TIME,
+    pub cFramesDisplayed: DWM_FRAME_COUNT,
+    pub cFramesComplete: DWM_FRAME_COUNT,
+    pub cFramesPending: DWM_FRAME_COUNT,
+    pub cFramesAvailable: DWM_FRAME_COUNT,
+    pub cFramesDropped: DWM_FRAME_COUNT,
+    pub cFramesMissed: DWM_FRAME_COUNT,
+    pub cRefreshNextDisplayed: DWM_FRAME_COUNT,
+    pub cRefreshNextPresented: DWM_FRAME_COUNT,
+    pub cRefreshesDisplayed: DWM_FRAME_COUNT,
+    pub cRefreshesPresented: DWM_FRAME_COUNT,
+    pub cRefreshStarted: DWM_FRAME_COUNT,
+    pub cPixelsReceived: u64,
+    pub cPixelsDrawn: u64,
+    pub cBuffersEmpty: DWM_FRAME_COUNT,
+}
 pub type DWM_WINDOW_CORNER_PREFERENCE = i32;
 pub const DWPOS_CENTER: DESKTOP_WALLPAPER_POSITION = 0;
 pub const DWPOS_FILL: DESKTOP_WALLPAPER_POSITION = 4;
@@ -4279,6 +4374,7 @@ pub struct HDC(pub *mut core::ffi::c_void);
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct HDROP(pub *mut core::ffi::c_void);
+pub type HDWP = HANDLE;
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct HENHMETAFILE(pub *mut core::ffi::c_void);
@@ -18352,6 +18448,9 @@ pub type PTRANSLATE_ADDRESS_ROUTINE64 = Option<
 >;
 pub type PWCHAR = *mut u16;
 pub const QDC_ONLY_ACTIVE_PATHS: i32 = 2;
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct QPC_TIME(pub u64);
 pub type QUERY_USER_NOTIFICATION_STATE = i32;
 pub const QUNS_BUSY: QUERY_USER_NOTIFICATION_STATE = 2;
 pub const QUNS_PRESENTATION_MODE: QUERY_USER_NOTIFICATION_STATE = 4;
@@ -19037,6 +19136,12 @@ pub type TYMED = i32;
 pub const TYMED_HGLOBAL: TYMED = 1;
 pub const TokenUser: TOKEN_INFORMATION_CLASS = 1;
 pub const ULW_ALPHA: i32 = 2;
+#[repr(C, packed(1))]
+#[derive(Clone, Copy, Default)]
+pub struct UNSIGNED_RATIO {
+    pub uiNumerator: u32,
+    pub uiDenominator: u32,
+}
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct USAGE(pub u16);

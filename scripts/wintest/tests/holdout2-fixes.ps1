@@ -112,7 +112,7 @@ PfQuit
 $t = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.ffffffZ')
 Add-Content (ShareLog) "$t ERROR pecofence_platform::crashlog: CRASH (unhandled exception) code=0xc0000005 at=ExplorerPatcher.amd64.dll+0xc0c1 module_owner=other module_version=26100.8457.70.3 access=write stack=  ExplorerPatcher.amd64.dll+0xc0c1" -Encoding UTF8
 PfStart
-$toast = ToastOcr 'PecoFence (crashed|closed)' 8
+$toast = ToastOcr 'ExplorerPatcher' 8
 Shot '11-notice'
 $seen = PfWaitLog 'previous run crashed' 5
 $ep = PfWaitLog 'the crash was inside ExplorerPatcher' 2
@@ -198,7 +198,7 @@ Check 'a normal start hides the Windows icons and starts the watchdog' ($p1 -and
 # A crash within the first minute is not restarted (it would crash again): wait past it.
 Start-Sleep -Seconds 58
 $ended = [Th]::Terminate($p1.Id, [uint32]3221225477)
-# The watchdog shows the Windows icons, then starts PecoFence again (which hides them again).
+# The watchdog starts PecoFence again first; the Windows icons show only if that start fails.
 $shownAt = -1; $p2 = $null; $t = [Diagnostics.Stopwatch]::StartNew()
 while ($t.ElapsedMilliseconds -lt 15000 -and -not $p2) {
   if ($shownAt -lt 0 -and [W]::IconsVisible()) { $shownAt = $t.ElapsedMilliseconds }
@@ -211,7 +211,7 @@ $fences = VisFences
 $items = @(PfJson item list).Count
 $restartLine = (Get-Content (PfLogPath) -TotalCount 40 -Encoding UTF8 | Where-Object { $_ -match 'restarted_after_crash' }) | Select-Object -First 1
 Shot '54-restarted'
-Check 'after the crash (exit code 0xC0000005, run over a minute) the watchdog shows the Windows icons' ($ended -eq 1 -and $shownAt -ge 0) "ended=$ended icons shown after $shownAt ms"
+Check 'after the crash (exit code 0xC0000005, run over a minute) the watchdog starts PecoFence again, and the Windows icons do not show in between' ($ended -eq 1 -and $p2 -and $shownAt -lt 0) "ended=$ended started again after $startedAt ms, icons shown after $shownAt ms (-1: never)"
 Check 'and starts PecoFence again, which shows its fences and icons and hides the Windows icons again' ($p2 -and $fences -ge 1 -and $items -ge 1 -and -not [W]::IconsVisible() -and $restartLine -match 'restarted_after_crash=0xC0000005') "new pid=$($p2.Id) after $startedAt ms, fences=$fences items=$items | $(if ($restartLine) { $restartLine.Substring([math]::Max(0, $restartLine.IndexOf('restarted_after_crash'))) })"
 # Ended from Task Manager (exit code 1) after a minute: not started again.
 Start-Sleep -Seconds 52

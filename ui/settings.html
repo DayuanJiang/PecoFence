@@ -14,6 +14,9 @@
     };
     window.addEventListener('error', e => report(e.error, e.filename, e.lineno, e.colno));
     window.addEventListener('unhandledrejection', e => report(e.reason, '', 0, 0));
+    // The page stays invisible until it has its state (the `shown` class). A state that never
+    // comes must not leave the window empty.
+    setTimeout(() => document.documentElement.classList.add('shown'), 3000);
   })();
 </script>
 <script src="i18n.js"></script>
@@ -28,17 +31,22 @@
     --control: #ffffff0f; --control-hover: #ffffff15; --control-pressed: #ffffff08; --control-disabled: #ffffff0a;
     --control-stroke: #ffffff12; --control-stroke-bottom: #ffffff0a; --control-strong: #9a9a9a;
     --control-alt: #0000001a; --control-alt-hover: #ffffff0b; --thumb: #454545; --tip: #2c2c2c; --tip-stroke: #ffffff17;
-    --subtle: #ffffff0f; --subtle-pressed: #ffffff0a; --scroll-thumb: #ffffff5c;
+    --subtle: #ffffff0f; --subtle-pressed: #ffffff0a; --scroll-thumb: #ffffff5c; --chosen: color-mix(in srgb, var(--accent) 14%, var(--card));
+    --chosen-hover: color-mix(in srgb, var(--accent) 20%, var(--card)); --chosen-pressed: color-mix(in srgb, var(--accent) 9%, var(--card));
     --accent: #60cdff; --accent-hover: #60cdffe6; --on-accent: #000000;
     --ok: #6ccb5f; --ok-bg: #393d1b; --error: #ff99a4; --error-bg: #442726; --caution: #fce100; --caution-bg: #433519;
     --shadow: 0 8px 16px #00000042; --brand: #8098f2;
     --r-card: 4px; --r-control: 4px; --glass-highlight: transparent;
+    /* The app's motion language (crates/render/src/motion.rs): its four durations and its
+       curves. Every transition and animation of the page takes its time and curve from here. */
+    --faster: 83ms; --fast: 167ms; --normal: 250ms; --slow: 333ms;
+    --decelerate: cubic-bezier(0, 0, 0, 1); --accelerate: cubic-bezier(1, 0, 1, 1); --point-to-point: cubic-bezier(.55, .55, 0, 1); --collapse: cubic-bezier(1, 1, 0, 1);
     --wall: radial-gradient(120% 110% at 12% 0%, #6f93d8 0%, transparent 58%), radial-gradient(90% 110% at 100% 100%, #c98a78 0%, transparent 55%), linear-gradient(160deg, #34467a, #1f2744);
     --mini-panel: #2020209e; --mini-stroke: #ffffff1f; --glass-panel: #ffffff03; --glass-label-shadow: 0 1px 3px #0009;
     --chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='m2.5 4.25 3.5 3.5 3.5-3.5' fill='none' stroke='%23cfcfcf' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
   }
   :root.light { color-scheme: light;
-    --text: #1b1b1b; --text2: #5d5d5d; --text3: #8a8a8a; --text-disabled: #a0a0a0;
+    --text: #1b1b1b; --text2: #5d5d5d; --text3: #6e6e6e; --text-disabled: #a0a0a0;
     --sheet: #f3f3f3; --card: #fbfbfb; --card-stroke: #0000000f; --line: #0000000f;
     --control: #ffffffb3; --control-hover: #f9f9f980; --control-pressed: #f9f9f94d; --control-disabled: #f9f9f94d;
     --control-stroke: #0000000f; --control-stroke-bottom: #00000029; --control-strong: #8a8a8a;
@@ -63,51 +71,89 @@
   button, select, input, textarea { font: inherit; color: inherit; }
   button, select, .toggle, .tile, summary { cursor: pointer; }
   button:disabled, select:disabled { cursor: default; }
-  button, a, select, input, .tile, summary { transition: background-color .15s, border-color .15s, color .15s; }
+  button, a, select, input, .tile, summary { transition: background-color var(--faster) linear, border-color var(--faster) linear, color var(--faster) linear; }
+  /* The window is on screen before the page is: the host shows its frame at once, in the
+     page's background colour, and brings the browser in when the page says `drawn`. Until
+     the frame before that report the page shows nothing but its background, so that what
+     comes in starts its entrance (page-in, se-in) then and not while the page loads.
+     Invisible, not hidden: the editor's name box takes the keyboard meanwhile. */
+  :root:not(.shown) body > * { opacity: 0; }
   /* The host state lands after the first style pass; switches must not slide into it. */
   :root:not(.ready) *, :root:not(.ready) *::before, :root:not(.ready) *::after { transition: none !important; }
   .ic { font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-weight: 400; font-style: normal; }
   :focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
-  .app { display: grid; grid-template-columns: 240px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }
+  /* A window between 740 and 900 px wide: the navigation (172 to 240 px), its rows and the
+     page's margins follow the window's width, so nothing jumps while the window is dragged
+     narrower or wider. --room is how far the window is over 740 px, up to 160. */
+  :root { --room: clamp(0px, 100vw - 740px, 160px); }
+  .app { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); height: 100%; }
 
-  nav { padding: 12px 8px 16px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
-  .brand { display: flex; align-items: center; gap: 12px; padding: 8px 12px 20px; }
+  nav { width: calc(172px + var(--room) * .425); padding: 12px 8px 16px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; overflow-x: hidden; }
+  /* Under 541 px the navigation folds to its icons: that one step glides (see "fold"). What
+     is in it stands as it will at the end meanwhile, so the names neither wrap nor slide. */
+  .app.folding nav > * { width: var(--nav-inner); align-self: flex-start; }
+  .app.folding nav > .nav-search { width: calc(var(--nav-inner) - 8px); }
+  .brand { display: flex; align-items: center; gap: 12px; padding: 8px 12px 20px calc(10px + var(--room) * .0125); }
   .brand-mark { width: 24px; height: 24px; flex: none; color: var(--brand); }
   .brand-name { font-size: 15px; line-height: 20px; font-weight: 600; }
-  nav a { display: flex; align-items: center; gap: 16px; min-height: 36px; padding: 8px 12px; border-radius: var(--r-control); color: var(--text); text-decoration: none; position: relative; }
+  nav a { display: flex; flex: none; align-items: center; gap: calc(12px + var(--room) * .025); min-height: 36px; padding: 8px calc(10px + var(--room) * .0125); border-radius: var(--r-control); color: var(--text); text-decoration: none; position: relative; }
   nav a .ic { font-size: 16px; width: 16px; flex: none; text-align: center; }
-  nav a:hover, nav a.sel { background: var(--subtle); }
+  nav a:hover { background: var(--subtle); }
   nav a:active { background: var(--subtle-pressed); color: var(--text2); }
-  nav a.sel::before { content: ""; position: absolute; left: 0; top: 50%; width: 3px; height: 16px; margin-top: -8px; border-radius: 2px; background: var(--accent); }
+  /* The selected page: a tint and the accent colour for its icon and name (mixed with the text
+     colour, so that any Windows accent reads on the tint). The weight stays, so a long page name
+     wraps the same way whether or not its row is selected. */
+  nav a.sel { background: color-mix(in srgb, var(--accent) 14%, transparent); color: color-mix(in srgb, var(--accent) 70%, var(--text)); }
+  /* The selected row answers the pointer too: a stronger tint under it, a weaker one pressed. */
+  nav a.sel:hover { background: color-mix(in srgb, var(--accent) 20%, transparent); }
+  nav a.sel:active { background: color-mix(in srgb, var(--accent) 9%, transparent); }
   /* 查找设置: the box under the brand; its list floats over the page (the nav scrolls, so the
      list is fixed to the window and placed under the box). */
   .nav-search { position: relative; margin: 0 4px 12px; }
-  .nav-search input { width: 100%; min-width: 0; padding-right: 32px; }
+  .nav-search input[type=text] { width: 100%; min-width: 0; padding-right: 32px; }
   .nav-search .ic { position: absolute; right: 10px; top: 8px; font-size: 14px; color: var(--text2); pointer-events: none; }
   .search-list { position: fixed; z-index: 60; width: 380px; max-width: calc(100vw - 24px); max-height: min(470px, calc(100vh - 80px)); overflow: auto; padding: 4px;
     border-radius: var(--r-card); background: var(--card); border: 1px solid var(--card-stroke); box-shadow: 0 8px 24px #00000033; }
   .search-list[hidden] { display: none; }
+  /* An opening list (查找设置, a drop-down) drops 8 px into place and fades in; it closes at once. */
+  .search-list { transition: opacity var(--faster) linear, transform var(--fast) var(--decelerate); }
+  @starting-style { .search-list:not([hidden]) { opacity: 0; transform: translateY(-8px); } }
   .search-list [role=option] { padding: 8px 10px; border-radius: var(--r-control); cursor: default; }
-  .search-list [role=option][aria-selected=true], .search-list [role=option]:hover { background: var(--control-hover); }
+  .search-list [role=option]:hover { background: var(--subtle); }
+  .search-list [role=option]:active { background: var(--subtle-pressed); }
+  .search-list [role=option][aria-selected=true] { background: var(--chosen); }
+  .search-list [role=option][aria-selected=true]:hover { background: var(--chosen-hover); }
+  .search-list [role=option][aria-selected=true]:active { background: var(--chosen-pressed); }
   .search-list b { display: block; font-weight: 400; font-size: 14px; line-height: 20px; color: var(--text); }
   .search-list small { display: block; color: var(--text2); font-size: 12px; line-height: 16px; }
   .search-list mark { background: none; color: var(--accent); font-weight: 600; }
   .search-list .none { padding: 8px 10px; color: var(--text2); font-size: 13px; }
-  /* A picked result: tinted for a moment, then it fades (no animation, so the tint also shows
-     with reduced motion, where transitions are off and it just goes). */
+  /* A picked result: tinted for a moment, then it fades over the longest of the app's times
+     (no animation, so the tint also shows with reduced motion, where transitions are off and
+     it just goes). */
   .card.found { background: color-mix(in srgb, var(--accent) 16%, var(--card)); border-color: var(--accent); }
-  .card.fading { transition: background-color .8s ease-out, border-color .8s ease-out; }
+  .card.fading { transition: background-color var(--slow) linear, border-color var(--slow) linear; }
   .nav-footer { margin-top: auto; padding: 16px 12px 0; color: var(--text3); font-size: 12px; line-height: 16px; }
   .nav-footer p { margin: 0; }
 
-  main { min-width: 0; padding: 24px 40px 40px 32px; overflow-y: auto; scrollbar-gutter: stable; }
+  main { min-width: 0; padding: calc(20px + var(--room) * .025) calc(24px + var(--room) * .1) calc(32px + var(--room) * .05) calc(20px + var(--room) * .075); overflow-y: auto; scrollbar-gutter: stable; }
   main > section { max-width: 1000px; margin: 0 auto; }
-  main::-webkit-scrollbar { width: 12px; }
-  main::-webkit-scrollbar-thumb { min-height: 40px; background-color: var(--scroll-thumb); border: 4px solid transparent; background-clip: padding-box; border-radius: 6px; }
-  main:hover::-webkit-scrollbar-thumb { border-width: 3px; }
-  main::-webkit-scrollbar-thumb:hover { background-color: var(--control-strong); }
-  .page { display: none; } .page.on { display: block; animation: page-in .2s cubic-bezier(.1, .9, .2, 1); anchor-name: --page; }
-  @keyframes page-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  /* One thin scrollbar for everything that scrolls. */
+  :is(main, nav, .search-list, textarea, .fb-preview, .se-rows)::-webkit-scrollbar { width: 12px; height: 12px; }
+  :is(main, nav, .search-list, textarea, .fb-preview, .se-rows)::-webkit-scrollbar-thumb { min-height: 40px; background-color: var(--scroll-thumb); border: 4px solid transparent; background-clip: padding-box; border-radius: 6px; }
+  :is(main, nav, .search-list, textarea, .fb-preview, .se-rows):hover::-webkit-scrollbar-thumb { border-width: 3px; }
+  :is(main, nav, .search-list, textarea, .fb-preview, .se-rows)::-webkit-scrollbar-thumb:hover { background-color: var(--control-strong); }
+  :is(main, nav, .search-list, textarea, .fb-preview, .se-rows)::-webkit-scrollbar-corner { background: transparent; }
+  .page { display: none; } .page.on { display: block; anchor-name: --page; }
+  /* A page comes in as the pages of Windows' Settings do: its title stands, what is under it
+     rises and fades in (250 ms, decelerating). The rise stays inside the bottom padding of
+     main, so a page that fits does not flash a scrollbar. */
+  :where(:root.shown) .page.on > :not(.page-header) { animation: page-in var(--normal) var(--decelerate); }
+  @keyframes page-in { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+  /* 栅栏: the settings of another fence come in like a page (a name of its own, so that the
+     class restarts it). */
+  #fenceBody.swap { animation: fence-in var(--normal) var(--decelerate); }
+  @keyframes fence-in { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
   .page-header { margin: 4px 2px 16px; }
   h2 { font: 600 28px/36px "Segoe UI Variable Display", "Segoe UI", var(--font-cjk), sans-serif; margin: 0; }
   h3 { font-size: 14px; line-height: 20px; font-weight: 600; margin: 24px 2px 8px; }
@@ -121,12 +167,29 @@
   .card .l > div { min-width: 0; }
   .card .l > .ic { font-size: 20px; width: 20px; line-height: 20px; flex: none; text-align: center; color: var(--text); }
   .card .t { font-size: 14px; line-height: 20px; overflow-wrap: anywhere; }
-  .card .s { color: var(--text2); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; }
+  /* balance: a description that wraps gets lines of about the same length. Filled line by line,
+     102 of them (all 11 languages) ended in a stub such as 「份快照」 alone on the last line. */
+  .card .s { color: var(--text2); font-size: 12px; line-height: 16px; overflow-wrap: anywhere; text-wrap: balance; }
+  /* A title that wraps does not leave one character or a short word alone on its last line. */
+  .card .t { text-wrap: pretty; }
   .card .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; max-width: 100%; }
   /* Controls that wrap under a long description stay on the right, as in Windows Settings. */
   .card:not(.stack) > :not(.l):not(.s) { margin-left: auto; }
+  /* A row that a master switch greys out changes with that switch, not ahead of it. */
+  .card .t, .card .s, .switch-label { transition: color var(--fast) linear; }
   .card.disabled .t, .card.disabled .s { color: var(--text-disabled); }
   .card.disabled button.accent:disabled { color: var(--text-disabled); background: var(--control-disabled); border-color: var(--control-stroke); }
+  /* A card or row that another setting shows or hides (see reveal()): it grows open and closes
+     with the expander's timing, so what is under it glides instead of jumping. `hidden` is set
+     at once; the row stays drawn until it has closed. Its content is clipped while it moves and
+     free again at rest (the value bubble of a slider stands above its card). */
+  .reveal { interpolate-size: allow-keywords;
+    transition: height var(--slow) var(--decelerate), min-height var(--slow) var(--decelerate), padding var(--slow) var(--decelerate), border-width var(--slow) var(--decelerate), opacity var(--fast) linear,
+      overflow 0s var(--slow) allow-discrete, display var(--slow) allow-discrete; }
+  .reveal[hidden] { display: none; overflow: clip; height: 0; min-height: 0; padding-top: 0; padding-bottom: 0; border-top-width: 0; border-bottom-width: 0; opacity: 0;
+    transition: height var(--fast) var(--accelerate), min-height var(--fast) var(--accelerate), padding var(--fast) var(--accelerate), border-width var(--fast) var(--accelerate), opacity var(--fast) linear,
+      overflow 0s allow-discrete, display var(--fast) allow-discrete; }
+  @starting-style { .reveal:not([hidden]) { overflow: clip; height: 0; min-height: 0; padding-top: 0; padding-bottom: 0; border-top-width: 0; border-bottom-width: 0; opacity: 0; } }
   /* A master setting and the rows that only matter while it is on share one surface. */
   .group { display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
   .group > .card, .rows > .card { margin: 0; border-radius: 0; }
@@ -141,9 +204,9 @@
   .switch-label { order: -1; display: grid; justify-items: end; color: var(--text); }
   .switch-label > span { grid-area: 1 / 1; }
   .toggle.on ~ .switch-label .off-t, .toggle:not(.on) ~ .switch-label .on-t { visibility: hidden; }
-  .toggle { width: 40px; height: 20px; border-radius: 10px; border: 1px solid var(--control-strong); position: relative; background: var(--control-alt); flex: none; transition: background-color .15s, border-color .15s; }
+  .toggle { width: 40px; height: 20px; border-radius: 10px; border: 1px solid var(--control-strong); position: relative; background: var(--control-alt); flex: none; transition: background-color var(--fast) linear, border-color var(--fast) linear; }
   .toggle::after { content: ""; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 7px; background: var(--text2);
-    transition: transform .15s cubic-bezier(.2, 0, 0, 1), left .15s, top .15s, width .15s, height .15s; }
+    transition: transform var(--fast) var(--point-to-point), left var(--fast) var(--point-to-point), top var(--fast) var(--point-to-point), width var(--fast) var(--point-to-point), height var(--fast) var(--point-to-point), background-color var(--fast) linear; }
   .toggle:hover { background: var(--control-alt-hover); }
   .toggle.on { background: var(--accent); border-color: var(--accent); }
   .toggle.on::after { transform: translateX(20px); background: var(--on-accent); }
@@ -165,7 +228,7 @@
   .slider input { position: relative; z-index: 1; display: block; width: 100%; height: 32px; margin: 0; appearance: none; background: transparent; cursor: pointer; }
   .slider input::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(to right, var(--accent) var(--fill, 0), var(--control-strong) var(--fill, 0)); }
   .slider input::-webkit-slider-thumb { appearance: none; box-sizing: border-box; width: 20px; height: 20px; margin-top: -8px; border-radius: 50%;
-    border: 4px solid var(--thumb); background: var(--accent); box-shadow: 0 0 0 1px var(--control-stroke), 0 1px 2px #00000040; transition: border-width .1s; }
+    border: 4px solid var(--thumb); background: var(--accent); box-shadow: 0 0 0 1px var(--control-stroke), 0 1px 2px #00000040; transition: border-width var(--faster) linear; }
   .slider input:hover::-webkit-slider-thumb { border-width: 3px; }
   .slider input:active::-webkit-slider-thumb { border-width: 5px; }
   .slider-ticks { position: absolute; left: 10px; right: 10px; top: 21px; height: 6px; pointer-events: none; }
@@ -175,33 +238,70 @@
   .slider-ticks > .on { background: var(--text); } .slider-ticks > .on b { color: var(--text); font-weight: 600; }
   /* The value over the thumb while it is dragged or has keyboard focus: a WinUI tooltip. */
   .slider-bubble { position: absolute; z-index: 2; top: -30px; transform: translateX(-50%); padding: 3px 10px; border-radius: 6px; border: 1px solid var(--tip-stroke);
-    background: var(--tip); box-shadow: 0 4px 12px #00000040; font-size: 12px; line-height: 16px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .083s; }
+    background: var(--tip); box-shadow: 0 4px 12px #00000040; font-size: 12px; line-height: 16px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity var(--faster) linear; }
   .slider-bubble::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 10px; height: 10px; transform: translateX(-50%) rotate(45deg);
     background: var(--tip); border: solid var(--tip-stroke); border-width: 0 1px 1px 0; }
   .slider-bubble b { position: relative; z-index: 1; font-weight: 600; }
   .slider-bubble small { position: relative; z-index: 1; font-size: inherit; color: var(--accent); }
   .slider-bubble small::before { content: "·"; margin: 0 6px; color: var(--text2); }
   .slider-track.live .slider-bubble, .slider input:focus-visible ~ .slider-bubble { opacity: 1; }
+  /* The tip of an icon button or of a cut text, drawn by the page (`pageTip` in the script) in
+     the colours of the slider's value tip. */
+  #pageTip { position: fixed; z-index: 70; left: 0; top: 0; max-width: 320px; padding: 5px 9px 7px; border-radius: 4px; border: 1px solid var(--tip-stroke); background: var(--tip);
+    color: var(--text); box-shadow: 0 4px 8px #00000024; font-size: 12px; line-height: 16px; overflow-wrap: anywhere; pointer-events: none; opacity: 0; visibility: hidden;
+    transition: opacity var(--faster) linear, visibility 0s var(--faster); }
+  #pageTip.on { opacity: 1; visibility: visible; transition: opacity var(--faster) linear; }
 
   input[type=time], input[type=text], input[type=number], input[type=email], select, button { height: 32px; border-radius: var(--r-control); background: var(--control);
     border: 1px solid var(--control-stroke); border-bottom-color: var(--control-stroke-bottom); font-size: 14px; max-width: 100%; }
   select { appearance: none; padding: 0 32px 0 11px; min-width: 160px; background-image: var(--chevron); background-repeat: no-repeat; background-position: right 10px center; }
   select:hover, button:hover { background-color: var(--control-hover); }
   select option { background: var(--card); color: var(--text); }
+  /* The open list in the page's own style, where the runtime can style it (WebView2 135 and
+     later; an older one skips this block and keeps the system list). The closed box stays as
+     it is, with the chevron as its background image. The keys of a closed list are kept by
+     the script (see "closed lists"). */
+  @supports (appearance: base-select) {
+    select, ::picker(select) { appearance: base-select; }
+    /* A choice too long for its box ends before the arrow (the box clips at its content edge). */
+    select { align-items: center; white-space: nowrap; overflow: clip; overflow-clip-margin: content-box; }
+    select::picker-icon { display: none; }
+    select[hidden] { display: none; }
+    ::picker(select) { margin: 4px 0; padding: 4px; border: 1px solid var(--tip-stroke); border-radius: 8px; background: var(--tip); color: var(--text); box-shadow: var(--shadow);
+      scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
+    ::picker(select) { transition: opacity var(--faster) linear, transform var(--fast) var(--decelerate); }
+    @starting-style { ::picker(select):popover-open { opacity: 0; transform: translateY(-8px); } }
+    /* The open list is never wider than the window: a choice too long for it (a fence name can
+       have 120 characters) wraps inside the list instead of running off the window's edge. */
+    ::picker(select) { max-width: calc(100vw - 16px); }
+    select option { display: flex; align-items: center; min-height: 36px; padding: 6px 11px; border-radius: 4px; background: transparent; white-space: normal; overflow-wrap: anywhere; cursor: default; }
+    select option::checkmark { display: none; }
+    select option:hover, select option:focus { background: var(--subtle); }
+    select option:active { background: var(--subtle-pressed); }
+    select option:checked { background: var(--chosen); font-weight: 600; }
+    select option:checked:hover { background: var(--chosen-hover); }
+    select option:checked:active { background: var(--chosen-pressed); }
+    select option:disabled { color: var(--text-disabled); background: transparent; }
+  }
   input[type=text], input[type=time], input[type=number], input[type=email] { padding: 0 11px; min-width: 160px; user-select: text; }
   textarea { display: block; min-height: 96px; height: 96px; padding: 6px 11px; resize: vertical; border-radius: var(--r-control); background: var(--control);
     border: 1px solid var(--control-stroke); border-bottom-color: var(--control-stroke-bottom); font-size: 14px; line-height: 20px; user-select: text; }
+  :is(input[type=text], input[type=time], input[type=number], input[type=email], textarea):where(:enabled):hover { background-color: var(--control-hover); }
   input[type=text]:focus, input[type=time]:focus, input[type=number]:focus, input[type=email]:focus, textarea:focus { outline: none; border-bottom: 2px solid var(--accent); background-color: var(--card); }
-  input::placeholder { color: var(--text3); }
+  input::placeholder, textarea::placeholder { color: var(--text2); }
   button { padding: 0 12px; min-width: 96px; }
   button:active, select:active { background-color: var(--control-pressed); color: var(--text2); }
   button:disabled, select:disabled { color: var(--text-disabled); background-color: var(--control-disabled); border-color: var(--control-stroke); }
   button.accent { background: var(--accent); color: var(--on-accent); border-color: transparent; }
   button.accent:hover { background: var(--accent-hover); }
+  /* Pressed, as in WinUI: the accent at 80 % under dimmed text. */
+  button.accent:active, button[aria-pressed=true]:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 80%, transparent); color: color-mix(in srgb, var(--on-accent) 60%, transparent); }
   .iconbtn { width: 32px; min-width: 0; padding: 0; background: transparent; border-color: transparent; font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets"; font-size: 16px; }
   .iconbtn:hover { background: var(--subtle); }
+  .iconbtn:active { background: var(--subtle-pressed); }
   .iconbtn:disabled { background: transparent; border-color: transparent; }
   .iconbtn[data-act=del]:hover { color: var(--error); background: var(--error-bg); }
+  .iconbtn[data-act=del]:active { background: color-mix(in srgb, var(--error-bg) 60%, transparent); }
 
   /* Peek shortcut: key caps in a box that records the next combination (styled as a focused
      text box meanwhile); the quick choices are toggle buttons. */
@@ -210,7 +310,7 @@
   .hotkey-box { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 200px; padding: 0 10px 0 4px; }
   .hotkey-box .keys { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
   .hotkey-box kbd { font: 600 12px/22px "Segoe UI Variable Text", "Segoe UI", var(--font-cjk), sans-serif; min-width: 26px; padding: 0 7px; border-radius: 3px; text-align: center; color: var(--on-accent); background: var(--accent); }
-  .hotkey-box .prompt { padding: 0 7px; color: var(--text3); }
+  .hotkey-box .prompt { padding: 0 7px; color: var(--text2); }
   .hotkey-box .ic { font-size: 14px; color: var(--text2); }
   .hotkey-box.recording, .hotkey-box.recording:hover { background-color: var(--card); border-bottom: 2px solid var(--accent); }
   .hotkey-box.recording .ic { visibility: hidden; }
@@ -220,22 +320,31 @@
   .hotkey-win input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
   .disabled .hotkey-win { color: var(--text-disabled); }
   .card .s.error { color: var(--error); } .card .s.caution { color: var(--caution); }
+  #toolsHeld { white-space: pre-line; margin-top: 4px; }
+  /* A line that waits (正在检查更新…, 正在下载新版本…) has the small ring Windows shows beside such
+     a line: three quarters of a circle in the accent colour, one turn a second. With Windows'
+     animations off it stands still. */
+  .card .s.busy::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-inline-end: 6px; vertical-align: -2px; border: 1.5px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: ring-turn calc(var(--slow) * 3) linear infinite; }
+  @keyframes ring-turn { to { transform: rotate(360deg); } }
   button[aria-pressed=true] { background: var(--accent); color: var(--on-accent); border-color: transparent; }
   button[aria-pressed=true]:hover { background: var(--accent-hover); }
   button[aria-pressed=true]:disabled { background: var(--control-disabled); color: var(--text-disabled); border-color: var(--control-stroke); }
 
   /* Theme style tiles double as the live preview of the icon settings below them. */
-  .style-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; padding-left: 40px; }
+  .style-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; padding-left: 40px; }
   .theme-files { display: flex; flex-direction: column; gap: 6px; padding-left: 40px; } .theme-files[hidden] { display: none; }
   .theme-files .actions { justify-content: flex-start; }
-  .tile { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 8px 8px 10px; border-radius: 6px;
+  .card .s.style-note { padding-left: 40px; } .card .s.style-note[hidden] { display: none; }
+  .tile { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 6px 6px 10px; border-radius: 6px;
     border: 1px solid var(--control-stroke); background: var(--control); }
   .tile:hover { background: var(--control-hover); }
+  .tile:active { background: var(--control-pressed); }
   .tile:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
   .tile:has(input:focus-visible) { outline: 2px solid var(--text); outline-offset: 1px; }
   .tile input { position: absolute; opacity: 0; pointer-events: none; }
-  .tile .cap { display: flex; align-items: center; gap: 8px; padding: 0 2px; }
-  .tile .cap::before { content: ""; width: 16px; height: 16px; flex: none; border-radius: 50%; border: 1px solid var(--control-strong); background: var(--control-alt); transition: border-width .12s; }
+  /* A caption that needs two lines breaks at a space (after the dot), never inside a word. */
+  .tile .cap { display: flex; align-items: center; gap: 5px; word-break: keep-all; overflow-wrap: anywhere; }
+  .tile .cap::before { content: ""; width: 16px; height: 16px; flex: none; border-radius: 50%; border: 1px solid var(--control-strong); background: var(--control-alt); transition: border-width var(--faster) linear; }
   .tile:has(input:checked) .cap::before { border: 5px solid var(--accent); background: var(--on-accent); }
   .shot { position: relative; height: 112px; border-radius: 4px; overflow: hidden; display: grid; place-items: center;
     background: repeating-linear-gradient(0deg, transparent 0 23px, #ffffff0d 23px 24px), repeating-linear-gradient(90deg, transparent 0 23px, #ffffff0d 23px 24px), var(--wall); }
@@ -254,7 +363,7 @@
   .tile-glass .preview-title { text-shadow: var(--glass-label-shadow); }
   .mini-items { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 8px 10px 10px; min-height: 52px; }
   .file-icon { width: var(--preview-icon-size, 26px); height: var(--preview-icon-size, 26px); position: relative; display: grid; place-items: center; border-radius: 5px; font-size: 13px; flex: none;
-    color: #eef7ff; background: #749cca; box-shadow: inset 0 1px 0 #ffffff5c, 0 3px 6px #00000012; transition: width .2s, height .2s, opacity .2s; }
+    color: #eef7ff; background: #749cca; box-shadow: inset 0 1px 0 #ffffff5c, 0 3px 6px #00000012; transition: width var(--fast) var(--point-to-point), height var(--fast) var(--point-to-point), opacity var(--fast) linear; }
   .file-icon.folder { background: #d1ac65; } .file-icon.sheet { background: #689d88; }
   /* Three tiles in a narrow window: two icons fit the small preview, the third would be cut. */
   .tile { container-type: inline-size; }
@@ -263,8 +372,12 @@
   #desktopPreview.chameleon .file-icon { filter: saturate(.35); opacity: .65; }
 
   .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* Eleven swatches and the text share one line at the default window width. */
+  .card:has(> .swatches) > .l { flex-basis: 160px; }
   .swatch { width: 28px; height: 28px; min-width: 0; padding: 0; border-radius: 50%; position: relative; background: var(--swatch); border: 1px solid #00000026; }
   .swatch:hover { background: var(--swatch); filter: brightness(1.08); }
+  /* Pressed (by the mouse or by Space): darker, and it keeps its colour. */
+  .swatch:active { background: var(--swatch); filter: brightness(.88); }
   .swatch.none { background: var(--control); border-color: var(--control-strong); }
   .swatch.none::after { content: ""; position: absolute; left: 50%; top: 4px; bottom: 4px; width: 1.5px; margin-left: -.75px; background: var(--text2); transform: rotate(45deg); }
   .swatch.custom:not(.set), .swatch.custom:not(.set):hover { background: conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
@@ -289,13 +402,14 @@
   details.card > summary { display: flex; align-items: center; gap: 16px; min-height: 66px; padding: 12px 16px; list-style: none; border-radius: inherit; }
   details.card > summary::-webkit-details-marker { display: none; }
   details.card > summary:hover { background: var(--subtle); }
-  details.card > summary .chev { font-size: 12px; color: var(--text2); transition: transform .15s; }
+  details.card > summary:active { background: var(--subtle-pressed); }
+  details.card > summary .chev { font-size: 12px; color: var(--text2); transition: transform var(--fast) var(--collapse); }
   details.card[open] > summary { border-bottom: 1px solid var(--line); border-radius: var(--r-card) var(--r-card) 0 0; }
-  details.card[open] > summary .chev { transform: rotate(180deg); }
+  details.card[open] > summary .chev { transform: rotate(180deg); transition: transform var(--slow) var(--decelerate); }
   /* WinUI Expander motion: opens over 333 ms decelerating, closes over 167 ms accelerating.
      Only closing delays content-visibility; opening shows the fields at once so they can take focus. */
-  details.card::details-content { block-size: 0; overflow-y: clip; transition: block-size .167s cubic-bezier(1, 1, 0, 1), content-visibility .167s allow-discrete; }
-  details.card[open]::details-content { block-size: auto; transition: block-size .333s cubic-bezier(0, 0, 0, 1); }
+  details.card::details-content { block-size: 0; overflow-y: clip; transition: block-size var(--fast) var(--collapse), content-visibility var(--fast) allow-discrete; }
+  details.card[open]::details-content { block-size: auto; transition: block-size var(--slow) var(--decelerate); }
   .newrule { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; padding: 16px 16px 0 56px; }
   .newrule label { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--text2); font-size: 12px; line-height: 16px; }
   .newrule > label > input, .newrule > label > select { width: 100%; min-width: 0; color: var(--text); }
@@ -315,8 +429,9 @@
   .cond-list-h + .cond > .c-and { display: none; }
   .c-box { display: flex; align-items: flex-start; gap: 8px; padding: 10px 8px 10px 12px; border-radius: var(--r-card); background: var(--subtle); border: 1px solid var(--card-stroke); }
   .c-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; }
-  .c-main > .c-kind-l { flex: 0 1 240px; display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--text2); font-size: 12px; line-height: 16px; }
-  .c-kind-l > select { width: 100%; min-width: 0; color: var(--text); }
+  /* The type list is as wide as its choice (at least 240 px); the value moves below a long one. */
+  .c-main > .c-kind-l { flex: 0 1 auto; display: flex; min-width: min(240px, 100%); max-width: 100%; flex-direction: column; gap: 6px; color: var(--text2); font-size: 12px; line-height: 16px; }
+  .c-kind-l > select { field-sizing: content; width: auto; min-width: 0; max-width: 100%; color: var(--text); }
   .c-val { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .c-cap { color: var(--text2); font-size: 12px; line-height: 16px; }
   .c-val label { display: flex; min-width: 0; }
@@ -325,6 +440,10 @@
   .c-val > .cats, .c-none { padding-top: 6px; }
   .c-fixed { padding-top: 6px; }
   .c-val .cats label { white-space: nowrap; } .c-val .cats input[type=number] { width: 104px; }
+  /* 文件类型 and 星期几: check boxes in columns as wide as the longest caption (see checkColumns). */
+  .c-val > .c-cats, .c-val > .c-week { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--check-col, 96px)), 1fr)); gap: 8px 12px; }
+  .c-val > .c-week { --check-col: var(--week-col, 72px); }
+  .c-val.wide { flex-basis: 100%; }
   .c-none, .c-fixed .s { color: var(--text2); font-size: 12px; line-height: 16px; }
   .c-fixed { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
   /* A box without its ✕ keeps the room for it, so every box lays out the same way. */
@@ -341,7 +460,8 @@
 
   /* Fences page: the fence picker frames the page instead of posing as a setting. */
   .picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 2px 6px; }
-  .picker select { min-width: 260px; }
+  .picker[hidden] { display: none; }
+  .picker select { min-width: min(260px, 100%); max-width: min(100%, 460px); }
   .fence-dot { width: 14px; height: 14px; flex: none; border-radius: 50%; border: 1px solid var(--control-strong); }
   .picker-count { margin-left: auto; color: var(--text3); font-size: 12px; }
   .picker-note { margin: 0 2px 20px; color: var(--text2); font-size: 12px; line-height: 16px; }
@@ -371,21 +491,22 @@
 
   /* Centred over the content column (the visible page), not the whole window. */
   .infobar { position: fixed; z-index: 5; left: 16px; right: 16px; left: anchor(--page left, 16px); right: anchor(--page right, 16px); width: fit-content; margin: 0 auto; bottom: 24px; transform: translateY(8px); min-height: 48px; border-radius: var(--r-card); background: var(--ok-bg); border: 1px solid var(--card-stroke); box-shadow: var(--shadow);
-    padding: 13px 16px; overflow-wrap: anywhere; display: flex; gap: 12px; align-items: center; opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none; }
+    padding: 13px 16px; overflow-wrap: anywhere; display: flex; gap: 12px; align-items: center; opacity: 0; transition: opacity var(--fast) linear, transform var(--fast) var(--accelerate); pointer-events: none; }
   .infobar .ic::before { content: "\E73E"; font-size: 16px; color: var(--ok); }
-  .infobar.on { opacity: 1; transform: none; }
+  /* It comes in decelerating and leaves accelerating, as what enters and leaves on the fences does. */
+  .infobar.on { opacity: 1; transform: none; transition: opacity var(--fast) linear, transform var(--fast) var(--decelerate); }
   .infobar.error { background: var(--error-bg); } .infobar.error .ic::before { content: "\E783"; color: var(--error); }
+  /* With 撤销 (a rule or a snapshot was deleted) the bar takes clicks; the button leaves with the bar. */
+  .infobar.on.undo { pointer-events: auto; } .infobar button { flex: none; min-width: 72px; margin: -6px -4px -6px 4px; }
+  .infobar:not(.on) button { visibility: hidden; transition: visibility 0s var(--fast); }
 
-  @media (max-width: 900px) {
-    .app { grid-template-columns: 200px minmax(0, 1fr); } main { padding: 20px 24px 32px 20px; }
-  }
   @media (max-width: 740px) {
-    .app { grid-template-columns: 172px minmax(0, 1fr); }
-    nav a { gap: 12px; padding: 8px 10px; } .brand { padding-left: 10px; }
     .newrule { grid-template-columns: minmax(0, 1fr); }
   }
+  /* The smallest window (441 px inside): the seven pages fit without a scrollbar. */
+  @media (max-height: 520px) { .brand { padding-bottom: 8px; } .nav-footer { display: none; } }
   @media (max-width: 540px) {
-    .app { grid-template-columns: 56px minmax(0, 1fr); } nav { padding: 12px 6px; }
+    nav { width: 56px; padding: 12px 6px; }
     .brand { justify-content: center; padding: 8px 0 16px; }
     .brand-name, .nav-text, .nav-footer, .nav-search { display: none; } nav a { justify-content: center; padding: 8px 0; }
     main { padding: 16px 12px 24px; } .card { padding: 12px; } .card.child, .rows > .card { padding-left: 12px; }
@@ -400,7 +521,7 @@
     .tile .mini-fence { backdrop-filter: none; background: var(--card); }
     .preview-glass { display: none; }
   }
-  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } ::details-content { transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } ::details-content { transition: none !important; } ::picker(select) { transition: none !important; } }
   @media (forced-colors: active) {
     .card { border-color: CanvasText; }
     .toggle, .swatch, .slider input, .slider-ticks { forced-color-adjust: none; }
@@ -427,7 +548,6 @@
   .dj-demo .dj-pic { flex: none; border-radius: var(--r-control); background: var(--dj-panel); padding: 6px; line-height: 0; }
   .dj-demo ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; color: var(--text2); }
   .dj-demo li.on { color: var(--text); font-weight: 600; }
-  .dj-demo > .s { margin-top: 10px; }
   .dj-pic .w { fill: var(--dj-win); stroke: var(--dj-line); }
   .dj-pic .w.front { stroke: var(--accent); stroke-width: 2; }
   .dj-pic .bar { fill: var(--dj-bar); }
@@ -445,6 +565,9 @@
      at the end. The rows scroll; the name above and the count and buttons below stay. */
   body.se-only .app { display: none; }
   #seWindow { display: none; }
+  /* The editor fades in over the window's plain background once it has its fence. */
+  :root.shown #seWindow { animation: se-in var(--fast) var(--decelerate); }
+  @keyframes se-in { from { opacity: 0; } }
   body.se-only #seWindow { display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; padding: 20px 24px 18px; gap: 12px; }
   #seWindow h2 { font-size: 20px; line-height: 28px; margin: 0; font-weight: 600; }
   .se-namel { display: flex; align-items: center; gap: 12px; }
@@ -454,7 +577,7 @@
   .se-presets .chip { height: 28px; font-size: 13px; }
   .se-cap { color: var(--text2); flex: none; }
   .se-match { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .se-match select { min-width: 88px; }
+  .se-match select { min-width: max(88px, var(--fit, 0px)); }
   .se-match .s { color: var(--text2); font-size: 12px; }
   .se-rows { flex: 1 1 auto; min-height: 96px; overflow: auto; display: flex; flex-direction: column; border: 1px solid var(--card-stroke); border-radius: var(--r-card); background: var(--control-alt); }
   .se-row { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 10px; min-height: 48px; box-sizing: border-box; flex: none; }
@@ -462,7 +585,7 @@
   .se-row.bad { background: var(--error-bg); }
   .se-row > .se-kind { flex: none; width: 132px; min-width: 0; }
   .se-val { flex: 1; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
-  .se-val select { min-width: 0; flex: none; }
+  .se-val select { min-width: min(var(--fit, 0px), 100%); flex: none; }
   .se-val input[type=text] { flex: 1 1 140px; min-width: 0; }
   .se-val input[type=number] { width: 84px; min-width: 0; }
   .se-val input[type=time] { width: 104px; min-width: 0; }
@@ -473,23 +596,43 @@
   .se-fixed .s { color: var(--text2); font-size: 12px; }
   .se-chips { flex: 1 1 200px; display: flex; flex-wrap: wrap; gap: 4px; }
   .se-chips label { position: relative; display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12px; border: 1px solid var(--control-stroke); background: var(--control); cursor: pointer; }
+  .se-chips label { transition: background-color var(--faster) linear, border-color var(--faster) linear, color var(--faster) linear; }
+  .se-chips label:hover { background: var(--control-hover); }
+  .se-chips label:active { background: var(--control-pressed); }
   .se-chips label.on { background: var(--accent); color: var(--on-accent); border-color: transparent; }
-  .se-chips label:focus-within { outline: 2px solid var(--text); outline-offset: 1px; }
+  .se-chips label.on:hover { background: var(--accent-hover); }
+  .se-chips label.on:active { background: color-mix(in srgb, var(--accent) 80%, transparent); }
+  /* The ring is for the keyboard: a chip clicked with the mouse does not get it. */
+  .se-chips label:has(input:focus-visible) { outline: 2px solid var(--text); outline-offset: 1px; }
   .se-chips input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
   .se-row .iconbtn { flex: none; height: 28px; width: 28px; font-size: 12px; border: 1px solid var(--control-stroke); background: var(--control); }
+  .se-row .iconbtn:not(:disabled):hover { background: var(--control-hover); }
+  .se-row .iconbtn:not(:disabled):active { background: var(--control-pressed); }
   .se-msg { color: var(--error); font-size: 13px; }
   .se-msg:empty { display: none; }
   .se-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; }
   .se-count { flex: 1 1 180px; display: flex; align-items: center; gap: 10px; min-width: 0; }
-  .se-count > div { display: flex; flex-direction: column; min-width: 0; }
+  /* A text that needs two lines breaks into two of about one length (no last word alone). */
+  .se-count > div { display: flex; flex-direction: column; min-width: 0; text-wrap: balance; }
   .se-count .ic { color: var(--accent); }
   .se-count b { font-weight: 600; }
   .se-count .s { color: var(--text2); font-size: 12px; }
   .se-count button { min-width: 0; height: 26px; font-size: 12px; align-self: flex-start; margin-top: 2px; }
-  .se-count.busy .se-n { opacity: .55; }
+  /* The last number dims while the next count is on its way, but only when that takes a
+     moment: an answer within a quarter of a second leaves it alone, so it does not blink
+     at every pause in typing. */
+  .se-count.busy .se-n { opacity: .55; transition: opacity var(--faster) linear var(--normal); }
   .se-limit { display: flex; align-items: center; gap: 8px; color: var(--text2); }
-  .se-limit select { min-width: 96px; color: var(--text); }
+  .se-limit select { min-width: max(96px, var(--fit, 0px)); color: var(--text); }
   .se-btns { display: flex; gap: 8px; margin-left: auto; }
+  /* The rows share the list's columns: the kind menus are as wide as their longest option in
+     the page language (a fixed 132 px cut «Расположение») and the rest of every row starts at
+     one edge. A WebView2 older than 117 has no subgrid and keeps the fixed width. */
+  @supports (grid-template-columns: subgrid) {
+    .se-rows { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content max-content; grid-auto-rows: max-content; align-content: start; }
+    .se-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; }
+    .se-row > .se-kind { width: auto; justify-self: stretch; min-width: var(--fit, 0px); }
+  }
 </style>
 </head>
 <body>
@@ -529,18 +672,19 @@
             <span class="shot" aria-hidden="true"><span class="mini-fence"><span class="preview-title">工作空间</span><span class="mini-items"><span class="file-icon folder ic">&#xE8B7;</span><span class="file-icon ic">&#xE8A5;</span><span class="file-icon sheet ic">&#xE9F9;</span></span></span></span>
             <span class="cap">自定义 · 主题文件</span></label>
         </div>
+        <div class="s style-note" id="liveWallpaperNote" aria-live="polite" hidden></div>
         <div class="theme-files" id="customThemeRow" hidden>
           <div class="actions"><select id="customTheme" aria-label="主题文件"></select><button id="openThemes">打开主题文件夹</button><button id="themeGuide">写法说明</button></div>
           <div class="s" id="customThemeHelp"></div>
           <div class="s error" id="customThemeError" aria-live="polite" hidden></div>
         </div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE7A1;</span><div><div class="t">颜色模式</div></div></div>
+      <div class="card"><div class="l"><span class="ic" data-alt="&#xE793;">&#xE7A1;</span><div><div class="t">颜色模式</div></div></div>
         <select data-bind="theme"><option value="followWindowsMode">跟随 Windows 模式</option><option value="followAppMode">跟随应用模式</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8D3;</span><div><div class="t">文字颜色</div><div class="s">图标名称，以及标题颜色为“跟随主题”的栅栏标题和标签页。自动：每个栅栏按它背后壁纸的明暗选深色或浅色</div></div></div>
         <select data-bind="labelColor"><option value="auto">自动</option><option value="white">白色</option><option value="black">黑色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E4;</span><div><div class="t">标题对齐</div></div></div>
         <select data-bind="titleAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE7B1;</span><div><div class="t">自动隐藏滚动条</div><div class="s">鼠标移到栅栏上或滚动时才显示</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideInactiveScrollbar"></div></div>
+      <div class="card"><div class="l"><span class="ic" data-alt="&#xE8CB;">&#xE7B1;</span><div><div class="t">自动隐藏滚动条</div><div class="s">鼠标移到栅栏上或滚动时才显示</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideInactiveScrollbar"></div></div>
       <h3>图标</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">默认图标大小</div><div class="s">新建栅栏时使用，每个栅栏可在“栅栏”页或右键菜单中单独设置</div></div></div>
         <div class="slider"><input type="range" id="iconSize" data-bind="iconSize"></div></div>
@@ -551,16 +695,20 @@
         <div class="card child"><div class="l"><div><div class="t">图标着色强度</div></div></div>
           <select id="iconTintStrength"><option value="0.35">弱</option><option value="0.6">中</option><option value="0.9">强</option></select></div>
       </div>
-      <div class="card"><div class="l"><span class="ic">&#xE793;</span><div><div class="t">图标融入背景（Chameleon）</div><div class="s">降低图标饱和度和不透明度，让桌面看起来更清爽</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="icons.chameleon"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE793;</span><div><div class="t">图标融入背景</div><div class="s">降低图标饱和度和不透明度，让桌面看起来更清爽</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="icons.chameleon"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE71B;</span><div><div class="t">显示快捷方式箭头</div><div class="s">和 Windows 桌面一样，在快捷方式图标的左下角显示小箭头</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="icons.shortcutArrows"></div></div>
       <h3>桌面与启动</h3>
       <div class="card"><div class="l"><span class="ic">&#xE7E8;</span><div><div class="t">随 Windows 启动</div><div class="s" hidden></div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="autostart"></div></div>
       <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE90E;</span><div><div class="t">显示托盘图标</div><div class="s">关闭后，任务栏角落不再显示 PecoFence 的图标，有通知要提醒你时才暂时出现。要打开设置，再启动一次 PecoFence；要退出，点下面的“退出”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="showTrayIcon"></div></div>
+        <div class="card child" id="quitCard" hidden><div class="l"><div><div class="t">退出 PecoFence</div><div class="s">托盘图标隐藏后，从这里退出</div></div></div><button id="quitApp">退出</button></div>
+      </div>
+      <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t" id="desktopIconsTitle">Windows 桌面图标</div><div class="s" id="desktopIconsHelp"></div></div></div>
           <select id="desktopIcons" aria-labelledby="desktopIconsTitle" aria-describedby="desktopIconsHelp"><option value="hide">隐藏，项目放在栅栏里</option><option value="showWithInbox">显示，也显示“桌面”栅栏</option><option value="showNoInbox">显示，不显示“桌面”栅栏</option></select></div>
-        <div class="card child" id="keepIconsCard"><div class="l"><div><div class="t">关闭 PecoFence 时保持 Windows 桌面图标隐藏</div><div class="s">登录时 Windows 会先显示桌面图标，等 PecoFence 启动后才隐藏。打开后，退出或注销时图标保持隐藏，下次登录就不会闪现；PecoFence 没有运行时，桌面上不显示图标。要让图标重新显示，右键桌面，选“查看”→“显示桌面图标”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="keepIconsHidden"></div></div>
+        <div class="card child" id="keepIconsCard"><div class="l"><div><div class="t">退出 PecoFence 时保持 Windows 桌面图标隐藏</div><div class="s">打开后，下次登录时桌面图标不会闪现。PecoFence 没有运行时桌面上没有图标；要恢复，右键桌面选“查看”→“显示桌面图标”</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="keepIconsHidden"></div></div>
       </div>
-      <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时显示“新建栅栏”按钮</div><div class="s">矩形没有碰到任何栅栏时，在它的右下角显示“新建栅栏”和“在此显示文件夹…”两个小按钮，不点的话几秒后消失；关闭后拖出矩形只用来框选，仍可从托盘菜单新建栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时显示“新建栅栏”按钮</div><div class="s">在矩形右下角显示“新建栅栏”和“在此显示文件夹…”，几秒后消失。关闭后拖出矩形只用来框选</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
       <div class="card" id="perDesktopCard"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">每个虚拟桌面各用一套栅栏</div><div class="s">打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="perDesktopFences"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE82F;</span><div><div class="t">功能提示</div><div class="s">用得上某个功能时提示一次，例如栅栏多了可以收起、常开的文件夹可以放到桌面上。每条只出现一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="featureTips"></div></div>
       <h3>隐藏栅栏</h3>
@@ -577,7 +725,7 @@
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE70D;</span><div><div class="t" id="rollExpandTitle">收起的栅栏怎么展开</div><div class="s">停在上面展开的栅栏，鼠标移开后自动收起；单击标题展开的，再单击标题收起；不管选哪种，双击标题或点折叠箭头都能展开和收起</div></div></div>
           <select id="rollExpand" aria-labelledby="rollExpandTitle"><option value="hover">鼠标停在上面时</option><option value="click">单击标题时</option><option value="double">只在双击标题或点箭头时</option></select></div>
-        <div class="card child" id="hoverSpeedCard"><div class="l"><div><div class="t" id="hoverSpeedTitle">展开快慢</div><div class="s">鼠标停多久栅栏才展开；“默认”跟随 Windows 的鼠标悬停时间</div></div></div>
+        <div class="card child" id="hoverSpeedCard"><div class="l"><div><div class="t" id="hoverSpeedTitle">展开快慢</div><div class="s">鼠标停多久才展开栅栏，悬停切换标签页也等这么久。刚展开或切换过一个后，接着移到的下一个不用等。“默认”跟随 Windows 的鼠标悬停时间</div></div></div>
           <select data-bind="rollUp.hoverSpeed" aria-labelledby="hoverSpeedTitle"><option value="fast">快</option><option value="normal">默认</option><option value="slow">慢</option></select></div>
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE74B;</span><div><div class="t">展开时把下面的栅栏推开</div><div class="s">收起后它们会回到原位</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.pushNeighbors"></div></div>
@@ -586,7 +734,7 @@
       <div class="card"><div class="l"><span class="ic">&#xE70E;</span><div><div class="t">隐藏标题栏右侧的项目数和折叠箭头</div><div class="s">标题栏只显示名称；双击标题或用右键菜单收起和展开</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideCountAndChevron"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE90C;</span><div><div class="t">标签栏位置</div><div class="s">有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列</div></div></div>
         <select data-bind="tabBar"><option value="top">顶部</option><option value="left">左侧</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE7C3;</span><div><div class="t">鼠标悬停时切换标签页</div><div class="s">鼠标在标签页上停留片刻就切换过去，不用点击</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.switchTabOnHover"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE7C3;</span><div><div class="t">鼠标悬停时切换标签页</div><div class="s">鼠标在标签页上停留片刻就切换过去，不用点击；切换过一次后，再移到别的标签页上会马上切换</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.switchTabOnHover"></div></div>
       <h3>吸附与对齐</h3>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE8E3;</span><div><div class="t">移动栅栏时吸附对齐</div><div class="s">拖动时吸附到其他栅栏、屏幕边缘和屏幕中线；按住 Alt 可暂时不吸附</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="snapping.enabled"></div></div>
@@ -618,14 +766,14 @@
       </div>
       <h3>文件对话框</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8DA;</span><div><div class="t">对话框跳转</div><div class="s">打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.dialogJump"></div></div>
-      <div class="card child dj-demo" id="dialogJumpDemo"><div class="dj-head">怎么用</div><div class="dj-body"><div class="dj-pic" aria-hidden="true"></div><ol><li>「打开」对话框停在程序自己选的文件夹</li><li></li><li></li></ol></div><div class="s">也可以在对话框里按 Ctrl+G，或者点一下文件夹栅栏。</div></div>
+      <div class="card child dj-demo" id="dialogJumpDemo"><div class="dj-head">怎么用</div><div class="dj-body"><div class="dj-pic" aria-hidden="true"></div><ol><li>“打开”对话框停在程序自己选的文件夹</li><li></li><li></li></ol></div></div>
     </section>
 
     <section class="page" id="page-fences">
       <header class="page-header"><h2>栅栏</h2></header>
       <div class="picker"><span class="fence-dot" id="fenceDot" aria-hidden="true"></span><select id="fenceSel" aria-label="选择栅栏"></select><span class="picker-count" id="fenceBadge"></span></div>
       <p class="picker-note" id="fenceHostNote">外观、锁定和自动高度对整组标签页生效</p>
-      <div class="card" id="fenceEmpty" style="display:none"><div class="s">桌面上还没有栅栏。可以从托盘菜单新建，或在桌面空白处拖出一个矩形。</div></div>
+      <div class="card" id="fenceEmpty" style="display:none"><div class="s" id="fenceEmptyText">桌面上还没有栅栏。可以从托盘菜单新建，或在桌面空白处拖出一个矩形。</div></div>
       <div id="fenceBody">
       <div class="card"><div class="l"><span class="ic">&#xE8AC;</span><div><div class="t">栅栏名称</div></div></div>
         <input type="text" id="fenceTitle" data-fence="title" maxlength="120"></div>
@@ -637,12 +785,13 @@
       <div class="card"><div class="l"><span class="ic">&#xE721;</span><div><div class="t">标题前显示放大镜</div><div class="s">一眼看出这个栅栏会自己更新</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="portalTitleIcon"></div></div>
       </div>
       <h3>外观</h3>
-      <div class="card"><div class="l"><span class="ic">&#xE744;</span><div><div class="t">不透明度</div><div class="s">默认：透出桌面。更厚实：多一层底色。全透明：鼠标悬停时才显示玻璃。</div></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE744;</span><div><div class="t">不透明度</div><div class="s">全透明：鼠标悬停时才显示玻璃。更透明：底色更淡。更厚实：多一层底色</div></div></div>
         <select id="fenceOpacity" data-fence="opacity"><option value="transparent">全透明</option><option value="clear">更透明</option><option value="default">默认</option><option value="solid">更厚实</option></select></div>
+      <div class="card" id="fenceTransparentOnHover" hidden><div class="l"><span class="ic">&#xE962;</span><div><div class="t">鼠标移入时保持透明</div><div class="s">鼠标移到栅栏上时，玻璃和隐藏着的标题栏都不出现。按住标题栏原来的位置仍可拖动栅栏，拖动边缘仍可调整大小</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="transparentOnHover"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE790;</span><div><div class="t">色调</div><div class="s">给玻璃染上一层颜色，标签页的色条随之变化</div></div></div>
         <div class="swatches" id="fenceTintSwatches" role="radiogroup"></div>
         <select id="fenceTint" data-fence="tint" hidden><option value="">无</option></select></div>
-      <div class="card" id="fenceTintTitleOnly"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">只给标题栏上色</div><div class="s">关掉的话，整个栅栏都会染上色调</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="tintTitleOnly"></div></div>
+      <div class="card" id="fenceTintTitleOnly"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">只给标题栏上色</div><div class="s">关闭后，整个栅栏都会染上色调</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="tintTitleOnly"></div></div>
       <div class="card" id="fenceTabColor"><div class="l"><span class="ic">&#xE7C3;</span><div><div class="t">标签页颜色</div><div class="s">标签页文字下方那条色条的颜色，方便区分同一个栅栏里的标签页</div></div></div>
         <div class="swatches" id="fenceTabColorSwatches" role="radiogroup"></div>
         <select id="fenceTabColorSel" data-fence="tabColor" hidden><option value="">跟随色调</option></select></div>
@@ -652,18 +801,26 @@
         <select id="fenceTitleSize" data-fence="titleSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
       <div class="card" id="fenceTextSize"><div class="l"><span class="ic">&#xE70B;</span><div><div class="t">文字大小</div><div class="s">栅栏里文字的大小</div></div></div>
         <select id="fenceTextSizeSel" data-fence="textSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">显示标题栏</div><div class="s">鼠标悬停时显示：平时收起标题行，指针移到栅栏上才出现</div></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">显示标题栏</div><div class="s">鼠标悬停时显示：平时隐藏标题栏，鼠标移到栅栏上才出现</div></div></div>
         <select id="fenceTitleOnHover" data-fence="titleOnHover"><option value="default">跟随常规设置</option><option value="always">始终显示</option><option value="hover">鼠标悬停时显示</option></select></div>
       <div id="fenceLayoutGroup">
       <h3>布局</h3>
+      <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t">视图</div></div></div>
+        <select id="fenceLayout" data-fence="layout"><option value="icons">图标</option><option value="list">列表</option><option value="details">详细信息</option></select></div>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE8CB;</span><div><div class="t">排序方式</div></div></div>
+          <select id="fenceSort" data-fence="sort"><option value="manual">手动</option><option value="name">按名称</option><option value="type">按类型</option><option value="date">按修改日期</option><option value="size">按大小</option><option value="openCount">按打开次数</option></select></div>
+        <div class="card child"><div class="l"><div><div class="t">倒序</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="reverse"></div></div>
+        <div class="card child"><div class="l"><div><div class="t">文件夹优先</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="foldersFirst"></div></div>
+      </div>
       <div class="card"><div class="l"><span class="ic">&#xE8B9;</span><div><div class="t">图标大小</div><div class="s">也可以在栅栏内按住 Ctrl 滚动鼠标滚轮</div></div></div>
         <div class="slider"><input type="range" id="fenceIconSize" data-fence="iconSize"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xF0E2;</span><div><div class="t">图标间距</div><div class="s">图标之间的距离，以“标准”为基准</div></div></div>
         <div class="slider"><input type="range" id="fenceSpacing" data-fence="spacingPx"></div></div>
       <div class="card" id="fenceNameLines"><div class="l"><span class="ic">&#xE8C1;</span><div><div class="t">图标名称</div><div class="s">不显示时只显示图标，鼠标悬停在图标上可以看到名称</div></div></div>
         <select id="fenceLabelLines" data-fence="labelLines"><option value="0"></option><option value="1"></option><option value="2"></option><option value="3"></option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE8E3;</span><div><div class="t">图标对齐</div><div class="s">一行排不满时，居中把空出的宽度平分到左右两边；只用于图标视图</div></div></div>
-        <select id="fenceIconAlign" data-fence="iconAlign"><option value="left">左对齐</option><option value="center">居中</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8E3;</span><div><div class="t">图标对齐</div><div class="s">一行排不满时，居中把空出的宽度平分到左右两边；右对齐让每一行从右边排起；只用于图标视图</div></div></div>
+        <select id="fenceIconAlign" data-fence="iconAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div>
       </div>
       <h3>行为</h3>
       <div class="card"><div class="l"><span class="ic">&#xE72E;</span><div><div class="t">锁定位置和大小</div><div class="s">边框不再可拖动缩放；标题仍可点击、右键、双击。鼠标移到栅栏上时，标题栏里会显示一个锁的图标</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="locked"></div></div>
@@ -671,9 +828,9 @@
       <div class="card" id="fenceVdCard"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">在哪个虚拟桌面显示</div><div class="s">按 Win+Ctrl+左右键切换虚拟桌面时，不属于那个桌面的栅栏会淡出</div></div></div>
         <select id="fenceVd" aria-label="在哪个虚拟桌面显示"></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面隐藏时保留此栅栏</div><div class="s">其他栅栏隐藏时，这个栅栏仍留在桌面上</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="excludeFromQuickHide"></div></div>
-      <div class="card" id="fenceHideEmpty"><div class="l"><span class="ic">&#xED1A;</span><div><div class="t">为空时自动隐藏</div><div class="s">里面没有图标时就不显示；桌面上一出现新图标，它会自己回来</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="hideWhenEmpty"></div></div>
+      <div class="card" id="fenceHideEmpty"><div class="l"><span class="ic" data-alt="&#xE7B3;">&#xED1A;</span><div><div class="t">为空时自动隐藏</div><div class="s">里面没有图标时就不显示；桌面上一出现新图标，它会自己回来</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="hideWhenEmpty"></div></div>
       <div class="card" id="fenceDesktopLayout"><div class="l"><span class="ic">&#xE80A;</span><div><div class="t">像桌面一样排列</div><div class="s">图标像 Windows 桌面上一样从屏幕左上角一列一列往下排，绕开其他栅栏。关闭后“桌面”变回普通栅栏，可以移动和调整大小</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="desktopLayout"></div></div>
-      <div class="card" id="fenceFreePlacement"><div class="l"><span class="ic">&#xE7C2;</span><div><div class="t">自由摆放</div><div class="s">图标拖到桌面上哪里，就停在哪个格子里，像 Windows 桌面关掉“自动排列图标”时一样。关闭后图标按顺序排列</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="freePlacement"></div></div>
+      <div class="card" id="fenceFreePlacement"><div class="l"><span class="ic" data-alt="&#xE759;">&#xE7C2;</span><div><div class="t">自由摆放</div><div class="s">图标拖到桌面上哪里，就停在哪个格子里，像 Windows 桌面关闭“自动排列图标”时一样。关闭后图标按顺序排列</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="freePlacement"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE74A;</span><div><div class="t">停靠到屏幕顶部</div><div class="s">贴到屏幕顶边并收起，鼠标悬停时展开，像一个下拉抽屉</div></div></div><button id="fenceDock">停靠</button></div>
       <div class="card" id="fenceOpenFolders"><div class="l"><span class="ic">&#xE838;</span><div><div class="t">双击文件夹或文件夹快捷方式时在此栅栏内打开</div><div class="s">在栅栏里显示文件夹的内容，点向上箭头或按 Backspace 回到原来的图标</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="openFoldersInside"></div></div>
       <div id="fencePortalGroup">
@@ -686,15 +843,15 @@
 
     <section class="page" id="page-rules">
       <header class="page-header"><h2>整理规则</h2></header>
-      <div class="card"><div class="l"><span class="ic">&#xE8CB;</span><div><div class="t">新项目出现在桌面时自动归类</div><div class="s">先看快捷方式目标规则，再按列表顺序匹配；都不符合的放进“桌面”栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rules.keepUpdated"></div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE718;</span><div><div class="t">没有命中规则的项目</div><div class="s">应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏</div></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8CB;</span><div><div class="t">新项目出现在桌面时自动归类</div><div class="s">条件是“快捷方式目标包含”的规则先匹配，其余按列表顺序；都不符合的放进“桌面”栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rules.keepUpdated"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE718;</span><div><div class="t">不符合任何规则的项目</div><div class="s">应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏</div></div></div>
         <select data-bind="rules.unmatched"><option value="defaultTarget">回到“桌面”栅栏</option><option value="stay">留在当前栅栏</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8AB;</span><div><div class="t">立即对桌面上的全部项目应用规则</div><div class="s">手动放进栅栏的项目保持原位</div></div></div><button id="applyRules">立即应用</button></div>
       <h3>快速添加</h3>
       <div class="card stack"><div class="l"><span class="ic">&#xE8F4;</span><div><div class="t">一键创建栅栏并添加规则</div><div class="s">“待清理”只归拢 30 天没用过的安装包和压缩包，不删除任何文件</div></div></div>
         <div class="chips" id="templates">
           <button class="chip" data-template="images"><span class="ic">&#xEB9F;</span>图片</button><button class="chip" data-template="music"><span class="ic">&#xE8D6;</span>音乐</button><button class="chip" data-template="video"><span class="ic">&#xE714;</span>视频</button><button class="chip" data-template="games"><span class="ic">&#xE7FC;</span>游戏</button>
-          <button class="chip" data-template="archives"><span class="ic">&#xF012;</span>压缩包</button><button class="chip" data-template="installers"><span class="ic">&#xE7B8;</span>安装包</button><button class="chip" data-template="cleanup"><span class="ic">&#xEA99;</span>待清理</button>
+          <button class="chip" data-template="archives"><span class="ic" data-alt="&#xF12B;">&#xF012;</span>压缩包</button><button class="chip" data-template="installers"><span class="ic">&#xE7B8;</span>安装包</button><button class="chip" data-template="cleanup"><span class="ic">&#xEA99;</span>待清理</button>
         </div></div>
       <h3>规则列表</h3>
       <div id="ruleList"></div>
@@ -738,11 +895,11 @@
       <header class="page-header"><h2>小工具</h2></header>
       <p class="page-lede">便签、时钟和脚本放在栅栏里，和普通栅栏一样可以移动、吸附和收起。</p>
       <div class="group">
-        <div class="card"><div class="l"><span class="ic">&#xEA86;</span><div><div class="t">小工具</div><div class="s">关上后，桌面上的小工具都不显示，脚本也全部停下</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.enabled"></div></div>
+        <div class="card"><div class="l"><span class="ic">&#xEA86;</span><div><div class="t">小工具</div><div class="s">关闭后，桌面上的小工具都不显示，脚本也全部停下</div><div class="s caution" id="toolsHeld" hidden></div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.enabled"></div></div>
         <div class="card child"><div class="l"><div><div class="t">便签与待办</div><div class="s">在栅栏里写几行字，单击就能编辑。行首写 [ ] 的一行会变成可以勾选的待办</div></div></div><button class="accent" id="newNote">新建便签</button></div>
-        <div class="card child"><div class="l"><div><div class="t">时钟</div><div class="s">显示时间、日期和星期。右键时钟可以打开「显示秒」</div></div></div><button id="newClock">添加</button></div>
-        <div class="card child"><div class="l"><div><div class="t">天气</div><div class="s">今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选「编辑脚本」，把 Tokyo 换成你的城市</div></div></div><button id="addWeather" data-example="weather">添加</button></div>
-        <div class="card child"><div class="l"><div><div class="t">GitHub 仓库动态</div><div class="s">一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选「编辑脚本」，换成你关心的仓库</div></div></div><button id="addGitHub" data-example="github">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">时钟</div><div class="s">显示时间、日期和星期。右键时钟可以打开“显示秒”</div></div></div><button id="newClock">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">天气</div><div class="s">今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选“编辑脚本”，把 Tokyo 换成你的城市</div></div></div><button id="addWeather" data-example="weather">添加</button></div>
+        <div class="card child"><div class="l"><div><div class="t">GitHub 仓库动态</div><div class="s">一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选“编辑脚本”，换成你关心的仓库</div></div></div><button id="addGitHub" data-example="github">添加</button></div>
         <div class="card child"><div class="l"><div><div class="t">电脑状态</div><div class="s">一直运行，每 2 秒更新 CPU、内存和每个磁盘的剩余空间。点一行可以复制本机 IP 或打开任务管理器</div></div></div><button id="addStatus" data-example="status">添加</button></div>
         <div class="card child"><div class="l"><div><div class="t">用自己的脚本</div><div class="s">运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里。脚本最多运行 10 秒（一直运行的除外），不弹出窗口。PecoFence 本身不会为脚本联网</div></div></div><div class="actions"><button id="scriptGuide">写法说明</button><button id="newScript">选择脚本…</button></div></div>
       </div>
@@ -760,7 +917,7 @@
         <div class="actions"><select id="swapA" aria-label="第一个显示器"></select><select id="swapB" aria-label="第二个显示器"></select><button id="swapDo">交换</button></div></div>
       <h3>备份</h3>
       <div class="group">
-        <div class="card"><div class="l"><span class="ic">&#xE78C;</span><div><div class="t">导出 / 导入配置文件</div><div class="s">导出为 JSON 以便迁移到另一台电脑；导入前会自动保存一份快照</div></div></div>
+        <div class="card"><div class="l"><span class="ic">&#xE78C;</span><div><div class="t">导出 / 导入配置文件</div><div class="s">导出为 JSON 以便迁移到另一台电脑；导入前自动保存快照</div></div></div>
           <div class="actions"><button id="cfgExport">导出…</button><button id="cfgImport">导入…</button></div></div>
         <div class="card"><div class="l"><span class="ic">&#xE8A5;</span><div><div class="t">配置文件</div><div class="s"><code id="cfgPath"></code></div></div></div><button id="openCfg">打开配置文件夹</button></div>
         <div class="rows" id="backupList"></div>
@@ -773,7 +930,7 @@
         <svg class="brand-mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M27 8H14a6 6 0 0 0-6 6v13M37 8h13a6 6 0 0 1 6 6v13M8 37v13a6 6 0 0 0 6 6h13M56 37v13a6 6 0 0 1-6 6H37" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/><rect x="22" y="22" width="8" height="8" rx="2" fill="currentColor"/><rect x="35" y="22" width="8" height="8" rx="2" fill="currentColor" opacity=".65"/><rect x="22" y="35" width="8" height="8" rx="2" fill="currentColor" opacity=".65"/><rect x="35" y="35" width="8" height="8" rx="2" fill="currentColor"/></svg>
         <div><div class="name">PecoFence <span id="ver"></span></div><div class="s">开源的 Windows 桌面整理工具</div><div class="s">Apache 2.0 许可证</div><div class="s" id="memDetail">—</div></div>
       </div>
-      <div class="card" id="updateCard" hidden><div class="l"><span class="ic">&#xE895;</span><div><div class="t">更新</div><div class="s" id="updateStatus"></div></div></div><button id="updateAction"></button></div>
+      <div class="card" id="updateCard" hidden><div class="l"><span class="ic">&#xE895;</span><div><div class="t">更新</div><div class="s" id="updateStatus"></div></div></div><div class="actions"><button id="updateSite" hidden>打开下载页</button><button id="updateAction"></button></div></div>
       <div class="card" id="updateAutoCard" hidden><div class="l"><span class="ic">&#xE823;</span><div><div class="t">自动检查更新</div><div class="s">每天检查一次有没有新版本，有新版本时提醒一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="autoCheckUpdates"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE9D2;</span><div><div class="t">帮助改进 PecoFence</div><div class="s">发送使用统计</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="usageStats"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE897;</span><div><div class="t">使用手册</div><div class="s">每个功能都有动画演示</div></div></div><button id="openManual">打开</button></div>
@@ -801,15 +958,17 @@
       <div class="fb-foot"><div class="s">反馈只会发给 PecoFence 开发者。</div>
         <button type="button" class="accent" id="fbSend"><span class="idle">发送</span><span class="busy">正在发送…</span></button></div>
       <h3>疑难解答</h3>
-      <div class="card"><div class="l"><span class="ic">&#xE90F;</span><div><div class="t">Windows 桌面图标</div><div class="s" id="desktopIconsStatus"></div></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE90F;</span><div><div class="t">修复 Windows 桌面图标</div><div class="s" id="desktopIconsStatus"></div></div></div>
         <div class="actions"><button id="repairIcons">恢复显示桌面图标</button><button id="hideIconsAgain">重新隐藏桌面图标</button></div></div>
     </section>
   </main>
 </div>
 <div id="seWindow"></div>
-<div class="infobar" id="toast" role="status"><span class="ic" aria-hidden="true"></span><span id="toastText"></span></div>
+<div class="infobar" id="toast" role="status"><span class="ic" aria-hidden="true"></span><span id="toastText"></span><button id="toastUndo" hidden>撤销</button></div>
 <script>
 (() => {
+  // (Read by scripts/wintest/tests/owner4-settings.ps1, like the mark at the script's end.)
+  performance.mark('pf-script');
   const i18n = window.PecoFenceI18n;
   const t = i18n.text, tf = i18n.format;
   // Windows 11 switches carry an On/Off caption; clicking it toggles like the switch itself.
@@ -1001,6 +1160,16 @@
     // A custom theme's base style comes with the host's next state.
     const glass = settings.customTheme ? state.styleInUse === 'liquidGlass' : settings.themeStyle === 'liquidGlass';
     document.documentElement.classList.toggle('liquid-glass', glass);
+    // Liquid Glass over a live wallpaper (the host's `liveWallpaper`): how the fences look
+    // there and why. A wallpaper whose picture cannot be read gives a see-through pane, one
+    // that can be read a frosted still picture.
+    const live = glass ? state.liveWallpaper : null, note = document.getElementById('liveWallpaperNote');
+    note.hidden = !live;
+    note.textContent = !live ? '' : live.readable
+      ? t("动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”")
+      : live.player
+        ? tf("{0} 的壁纸画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响", live.player)
+        : t("这种动态壁纸的画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响");
     preview.classList.toggle('chameleon', !!settings.icons.chameleon);
     preview.style.setProperty('--preview-icon-size', previewIconPx(settings.iconSize || 48) + 'px');
     preview.style.setProperty('--preview-tint', settings.icons.tintRgb ? '#' + rgbToHex(settings.icons.tintRgb) : 'transparent');
@@ -1008,8 +1177,11 @@
     preview.style.setProperty('--preview-title-align', settings.titleAlign || 'left');
   }
   // 主题风格: Fluent, Liquid Glass or 自定义 (a theme file of the themes folder, `customTheme`).
-  // 自定义 shows its row of files under the tiles and picks the first file at once; with no file
-  // yet the row says how to add one (the tile stays chosen on this page until another is).
+  // 自定义 shows its row of files under the tiles and picks the first file at once. With no file
+  // yet, the host writes the three example themes into a themes folder that does not exist
+  // (`quiet`: no Explorer window) and the first one is used when its list arrives; a folder the
+  // user emptied stays empty and the row says how to add a file (the tile stays chosen on this
+  // page until another is).
   let themeCustomOpen = false;
   function bindThemeStyle() {
     const custom = !!state.settings.customTheme || themeCustomOpen;
@@ -1025,7 +1197,10 @@
             state.settings.customTheme = first;
             bindThemeStyle(); bindCustomTheme();
             commit('customTheme');
-          } else { bindThemeStyle(); bindCustomTheme(); }
+          } else {
+            if (!first) send({ type: 'action', name: 'openThemesFolder', quiet: true });
+            bindThemeStyle(); bindCustomTheme();
+          }
           return;
         }
         themeCustomOpen = false;
@@ -1035,7 +1210,7 @@
         commit('themeStyle');
       };
     });
-    document.getElementById('customThemeRow').hidden = !custom;
+    reveal(document.getElementById('customThemeRow'), custom);
   }
   // The theme files of the themes folder; a chosen file that is gone stays listed with its error.
   function bindCustomTheme() {
@@ -1060,7 +1235,7 @@
     select.disabled = !names.length;
     document.getElementById('customThemeHelp').textContent = names.length
       ? t("主题文件放在 themes 文件夹里，文件保存后栅栏立即更新")
-      : t("themes 文件夹里还没有主题文件：点“打开主题文件夹”放进去，或者看“写法说明”自己写一个");
+      : t("themes 文件夹是空的。点“打开主题文件夹”放入主题文件，或看“写法说明”");
     select.onchange = () => {
       state.settings.customTheme = select.value || null;
       bindThemeStyle();
@@ -1156,20 +1331,41 @@
   function showPage(name) {
     const a = document.querySelector(`nav a[data-page="${name}"]`);
     if (!a || a.classList.contains('sel')) return;
-    document.querySelectorAll('nav a').forEach(x => { x.classList.remove('sel'); x.removeAttribute('aria-current'); });
+    document.querySelectorAll('nav a').forEach(x => { x.classList.remove('sel'); x.removeAttribute('aria-current'); x.tabIndex = -1; });
     a.classList.add('sel');
     a.setAttribute('aria-current', 'page');
+    a.tabIndex = 0;
     document.querySelectorAll('.page').forEach(p => p.classList.toggle('on', p.id === 'page-' + name));
     document.querySelector('main').scrollTop = 0;
     send({ type: 'page', name });
     if (name === 'about') requestFeedbackInfo();
     ringFence();
+    viewSoon();
   }
-  document.querySelectorAll('nav a').forEach(a => a.addEventListener('click', e => { e.preventDefault(); showPage(a.dataset.page); }));
+  // The nav is one Tab stop, its selected row. The arrow keys, Home and End move between the
+  // rows, Enter or Space shows a row's page, and the next Tab lands on that page's first control.
+  const navRows = [...document.querySelectorAll('nav a')];
+  navRows.forEach((a, i) => {
+    a.tabIndex = a.classList.contains('sel') ? 0 : -1;
+    a.addEventListener('click', e => { e.preventDefault(); showPage(a.dataset.page); });
+    a.addEventListener('keydown', e => {
+      const to = { ArrowDown: navRows[i + 1], ArrowUp: navRows[i - 1], Home: navRows[0], End: navRows.at(-1) }[e.key];
+      if (to) { e.preventDefault(); to.focus(); }
+      else if (e.key === ' ') { e.preventDefault(); a.click(); }
+    });
+  });
+  // The host is told which page shows and how far it is scrolled: the window opens there again.
+  let viewTimer;
+  function viewSoon() {
+    clearTimeout(viewTimer);
+    viewTimer = setTimeout(() => send({ type: 'view', page: document.querySelector('nav a.sel').dataset.page, scroll: document.querySelector('main').scrollTop }), 150);
+  }
+  if (!EDITOR) document.querySelector('main').addEventListener('scroll', viewSoon, { passive: true });
 
   // 查找设置: every card with a title on every page, read from the page as it is (its language,
   // the cards the current state shows), so nothing has to be kept in step. Every word must
-  // match the card's title, one of its other names, a list choice, its heading or a help line.
+  // match the card's title, one of its other names, a list choice, a button, its heading or a
+  // help line. The user's own rows (rules, snapshots, daily backups) are data, not settings.
   const searchBox = document.getElementById('settingsSearch'), searchList = document.getElementById('settingsSearchList');
   let searchHits = [], searchActive = 0, foundTimer = 0;
   // Other names people search the common settings by ('|' between names; each language has its
@@ -1177,11 +1373,12 @@
   const SEARCH_NAMES = () => [
     ['[data-bind=language]', t("搜索别名\x04界面语言|语言切换|中文|英文|English")],
     ['#desktopPreview', t("搜索别名\x04皮肤|外观|毛玻璃|玻璃|亚克力|主题")],
-    ['[data-bind=theme]', t("搜索别名\x04深色|暗色|夜间|黑暗模式|浅色|亮色|白天")],
+    ['[data-bind=theme]', t("搜索别名\x04深色|暗色|夜间|黑暗模式|浅色|亮色|白天|dark|light")],
     ['[data-bind=labelColor]', t("搜索别名\x04字体颜色|文本颜色|白字|黑字")],
     ['#iconSize', t("搜索别名\x04图标尺寸|大图标|小图标|缩放")],
-    ['[data-bind="icons.chameleon"]', t("搜索别名\x04变淡|半透明|褪色|低饱和")],
+    ['[data-bind="icons.chameleon"]', t("搜索别名\x04变淡|半透明|褪色|低饱和|Chameleon")],
     ['[data-bind=autostart]', t("搜索别名\x04开机|开机启动|自启|自动启动|登录时启动")],
+    ['[data-bind=showTrayIcon]', t("搜索别名\x04托盘|系统托盘|通知区域|任务栏图标|隐藏图标|右下角|tray")],
     ['#desktopIcons', t("搜索别名\x04隐藏桌面图标|显示桌面图标|系统图标|原来的图标")],
     ['[data-bind=featureTips]', t("搜索别名\x04小技巧|提示卡片|新手提示|引导")],
     ['[data-bind="quickHide.enabled"]', t("搜索别名\x04一键隐藏|快速隐藏|隐藏全部")],
@@ -1201,7 +1398,10 @@
     ['[data-fence=textSize]', t("搜索别名\x04字体大小|字号|放大文字|看不清")],
     ['[data-bind="rules.keepUpdated"]', t("搜索别名\x04自动整理|自动分类|分类")],
     ['#cfgExport', t("搜索别名\x04备份|迁移|换电脑|恢复设置")],
-    ['#updateAction', t("搜索别名\x04升级|新版本|检查更新")],
+    ['#copyAiPrompt', t("搜索别名\x04命令行|CLI|终端|控制台")],
+    ['#snapSave', t("搜索别名\x04撤销|恢复布局|还原|存档")],
+    ['#updateAction', t("搜索别名\x04升级|新版本|检查更新|关于|版本号")],
+    ['#openManual', t("搜索别名\x04帮助|教程|说明书|文档|关于|版本号")],
   ];
   // The kinds of match of the Peek search (crates/core/src/matcher.rs), best first. Pinyin (a
   // Chinese interface; the host sends the syllables) and the in-order match look only at short
@@ -1270,6 +1470,8 @@
     if (loose && m >= 2) { const r = inOrder(low, term); if (r) return { kind: KIND.fuzzy, ranges: r }; }
     return null;
   }
+  // A button's caption without its icon.
+  const buttonText = b => [...b.childNodes].filter(n => n.nodeType === 3).map(n => n.nodeValue).join('').trim();
   function shownOnItsPage(card) {
     for (let el = card; el && !el.classList.contains('page'); el = el.parentElement) if (el.hidden || el.style.display === 'none') return false;
     return true;
@@ -1285,13 +1487,14 @@
     const hits = [];
     document.querySelectorAll('main section.page .card').forEach((card, order) => {
       const title = card.querySelector('.t')?.textContent.trim();
-      if (!title || !shownOnItsPage(card)) return;
+      if (!title || !shownOnItsPage(card) || card.matches('.rows > .card, #ruleList .card')) return;
       const page = card.closest('section.page');
       let heading = '';
       for (let el = card.closest('.group') || card; el && !heading; el = el.previousElementSibling) if (el.tagName === 'H3') heading = el.textContent;
       // Weight of the field, the text, whether pinyin and the in-order match apply.
       const fields = [[4, title, true], ...(names.get(card) || []).map(x => [3, x, true]),
         ...[...card.querySelectorAll('select:not([hidden]) option')].map(o => [2, o.textContent.trim(), true]),
+        ...[...card.querySelectorAll('button:not([hidden])')].map(b => [2, buttonText(b), true]),
         [1, heading, true], ...[...card.querySelectorAll('.s')].map(d => [1, d.textContent.trim(), false])].filter(f => f[1]);
       let score = 0;
       const titleRanges = [];
@@ -1335,7 +1538,7 @@
   // short texts pinyin looks at); the answer arrives as a `pinyin` message.
   function askPinyin() {
     if (!String(state && state.locale || '').startsWith('zh')) return;
-    const texts = [...document.querySelectorAll('main section.page .card .t, main section.page h3, main section.page option')].map(el => el.textContent);
+    const texts = [...document.querySelectorAll('main section.page .card .t, main section.page h3, main section.page option, main section.page .card button')].map(el => el.textContent);
     for (const [, list] of SEARCH_NAMES()) texts.push(list);
     const chars = [...new Set([...texts.join('')].filter(isCjk))].sort().join('');
     if (chars === pinyinAsked) return;
@@ -1387,7 +1590,7 @@
     foundTimer = setTimeout(() => {
       card.classList.add('fading');
       card.classList.remove('found');
-      foundTimer = setTimeout(() => card.classList.remove('fading'), 900);
+      foundTimer = setTimeout(() => card.classList.remove('fading'), motion('--slow') + 100);
     }, 1500);
     const control = card.querySelector('.toggle:not([aria-disabled=true]), select:not([hidden]):not(:disabled), button:not(:disabled), input:not([type=hidden]):not(:disabled)');
     if (control) control.focus({ preventScroll: true });
@@ -1413,9 +1616,101 @@
     if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); searchBox.focus(); searchBox.select(); }
   });
 
+  // A time (a number of ms) or a curve of the app's motion language: the page's CSS variables
+  // (--faster, --fast, --normal, --slow; --decelerate, --accelerate, --point-to-point).
+  const motion = name => { const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return v.endsWith('ms') ? parseFloat(v) : v; };
+  // "fold": at 540 px the navigation folds to its icons, or opens again. That one step glides
+  // (between 740 and 900 px the width follows the window by itself): from the width it had on
+  // the other side of the step to the one it has now, over what is in it at its final width.
+  matchMedia('(max-width: 540px)').addEventListener('change', e => {
+    if (!document.documentElement.classList.contains('ready') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const app = document.querySelector('.app'), nav = app.querySelector('nav'), css = getComputedStyle(nav);
+    nav.style.setProperty('--nav-inner', nav.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight) + 'px');
+    app.classList.add('folding');
+    nav.animate([{ width: (e.matches ? 172 : 56) + 'px' }, { width: nav.offsetWidth + 'px' }], { duration: motion('--fast'), easing: motion('--point-to-point') })
+      .finished.then(() => app.classList.remove('folding'), () => {});
+  });
+  // A row of the navigation shows its name as a tip only while the navigation is folded to its
+  // icons (as WinUI's NavigationView does in its compact mode): beside the name itself the tip
+  // said the same word again. The tip's text is the row's aria-label, which follows the language.
+  const navTipQuiet = el => el.matches('nav a') && !matchMedia('(max-width: 540px)').matches;
+  // Every tip (`title`) is drawn by the page, in the page's colours. The browser draws its own
+  // tips in Windows' colour mode: a white box on the dark page of an app set to 深色 while
+  // Windows is light, a dark one on the light page the other way round. While the pointer is
+  // on an element its `title` is taken off, so the browser shows nothing (the text stays as
+  // the element's aria-label), and it is put back when the pointer leaves. The tip comes
+  // after Windows' hover time (400 ms) above the element, under it when there is no room.
+  const pageTip = document.createElement('div');
+  pageTip.id = 'pageTip';
+  pageTip.setAttribute('role', 'tooltip');
+  document.body.append(pageTip);
+  let tipOn = null, tipWait = 0;
+  const hidePageTip = () => { clearTimeout(tipWait); pageTip.classList.remove('on'); };
+  function endPageTip() {
+    hidePageTip();
+    if (!tipOn) return;
+    if (!tipOn.el.hasAttribute('title')) tipOn.el.setAttribute('title', tipOn.text);
+    if (tipOn.named) tipOn.el.removeAttribute('aria-label');
+    tipOn = null;
+  }
+  document.addEventListener('pointerover', e => {
+    if (tipOn && tipOn.el.contains(e.target)) return;
+    endPageTip();
+    const el = e.target.closest ? e.target.closest('[title]') : null;
+    if (!el || !el.title) return;
+    tipOn = { el, text: el.title, named: !el.hasAttribute('aria-label') };
+    if (tipOn.named) el.setAttribute('aria-label', tipOn.text);
+    el.removeAttribute('title');
+    if (navTipQuiet(el)) return;
+    tipWait = setTimeout(() => {
+      if (!tipOn || !tipOn.el.isConnected) return;
+      pageTip.textContent = tipOn.text;
+      const r = tipOn.el.getBoundingClientRect(), w = pageTip.offsetWidth, h = pageTip.offsetHeight;
+      const x = Math.max(4, Math.min(innerWidth - w - 4, r.left + r.width / 2 - w / 2));
+      const y = r.top - h - 6 >= 4 ? r.top - h - 6 : r.bottom + 6;
+      pageTip.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+      pageTip.classList.add('on');
+    }, 400);
+  });
+  document.addEventListener('pointerout', e => { if (tipOn && !tipOn.el.contains(e.relatedTarget)) endPageTip(); });
+  // A script that draws an element again writes its `title` back while the pointer is still
+  // on it (a colour swatch after a click): it is taken off again and kept as the tip's text,
+  // or the browser showed its own tip after all.
+  new MutationObserver(() => {
+    if (!tipOn || !tipOn.el.hasAttribute('title')) return;
+    tipOn.text = tipOn.el.title;
+    tipOn.el.removeAttribute('title');
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['title'], subtree: true });
+  // A press, a key or the wheel hides the tip, as Windows' tips go; the browser's own stays away.
+  for (const ev of ['pointerdown', 'keydown', 'wheel']) addEventListener(ev, hidePageTip, true);
   const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
   const set = (obj, path, v) => { const ks = path.split('.'); let o = obj; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]]; o[ks[ks.length - 1]] = v; };
+  // Shows or hides a card that depends on another setting, with a motion (the .reveal rules).
+  // The class is there only for the change itself: a page that comes in must not replay it.
+  function reveal(el, show) {
+    if (el.hidden === !show) return;
+    el.classList.add('reveal');
+    el.hidden = !show;
+    clearTimeout(el.revealTimer);
+    el.revealTimer = setTimeout(() => el.classList.remove('reveal'), motion('--slow') + 67);
+  }
   const keyToggle = (el) => { el.onkeydown = (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); el.click(); } }; };
+  // closed lists: a styled list (appearance: base-select) opens on an arrow key and ignores
+  // Home and End, where the system list changes the choice in place. Keep the system's keys.
+  if (CSS.supports('appearance', 'base-select')) document.addEventListener('keydown', e => {
+    const s = e.target;
+    if (!(s instanceof HTMLSelectElement) || s.matches(':open') || e.altKey || e.ctrlKey || e.metaKey) return;
+    const options = [...s.options].filter(o => !o.disabled), i = options.indexOf(s.selectedOptions[0]);
+    const next = { ArrowDown: options[i + 1], ArrowRight: options[i + 1], ArrowUp: options[i - 1], ArrowLeft: options[i - 1],
+      Home: options[0], PageUp: options[0], End: options.at(-1), PageDown: options.at(-1) };
+    if (!(e.key in next)) return;
+    e.preventDefault();
+    const option = next[e.key];
+    if (!option || option.selected) return;
+    option.selected = true;
+    s.dispatchEvent(new Event('input', { bubbles: true }));
+    s.dispatchEvent(new Event('change', { bubbles: true }));
+  });
 
   function bindAll() {
     document.querySelectorAll('[data-bind]').forEach(el => {
@@ -1451,6 +1746,11 @@
     const clock = document.getElementById('newClock');
     clock.disabled = clocks > 0;
     clock.textContent = clocks ? t("已在桌面上") : t("添加");
+    // Scripts of an imported configuration wait for the switch: its card says so and lists
+    // them, so what would start is read before the switch is turned on.
+    const held = state.heldScripts || [], heldEl = document.getElementById('toolsHeld');
+    heldEl.hidden = !held.length;
+    heldEl.textContent = held.length ? [t("已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在“小工具”页打开“小工具”开关。"), ...held].join('\n') : '';
     renderEverything();
   }
   // 搜索整台电脑 › Everything's state from the host: running (version, pinyin), installed,
@@ -1483,6 +1783,11 @@
       else { el.tabIndex = on ? 0 : -1; el.setAttribute('aria-disabled', String(!on)); }
     }
     renderPeekHotkey();
+    renderHoverSpeed();
+    // 「退出 PecoFence」 is in the tray menu: its card shows while the icon is hidden.
+    reveal(document.getElementById('quitCard'), !state.settings.showTrayIcon);
+    // While the icon is hidden no text sends the user to its menu.
+    document.getElementById('fenceEmptyText').textContent = state.settings.showTrayIcon ? t("桌面上还没有栅栏。可以从托盘菜单新建，或在桌面空白处拖出一个矩形。") : t("桌面上还没有栅栏。可以在桌面空白处拖出一个矩形来新建。");
   }
 
   // The 快捷键 boxes (速览栅栏, 临时显示 Windows 桌面): a box records the next combination, the
@@ -1597,7 +1902,7 @@
     const on = !!state.settings.peek.enabled, double = !!state.settings.peek.doubleCtrl;
     document.getElementById('peekHotkeyCard').classList.toggle('disabled', !on);
     if (!on) peekCustom = false;
-    document.getElementById('peekHotkeyEdit').hidden = !peekCustom;
+    reveal(document.getElementById('peekHotkeyEdit'), peekCustom);
     peekRecorder.render();
     const choices = p.presets.map(k => [keyValue(k), k.keys.join(' + ')]);
     if (!p.presets.some(k => sameKey(k, p.chosen))) choices.push([keyValue(p.chosen), p.chosen.keys.join(' + ')]);
@@ -1638,7 +1943,7 @@
     const w = state.windowsDesktopHotkey;
     if (!w) return null;
     const taken = w.chosen && !w.registered;
-    return { on: true, keys: w.chosen && w.chosen.keys, help: taken ? tf("{0} 已被其他程序占用，请换一个", w.chosen.label) : t("按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复；托盘菜单里也有这一项"), tone: taken ? 'error' : '' };
+    return { on: true, keys: w.chosen && w.chosen.keys, help: taken ? tf("{0} 已被其他程序占用，请换一个", w.chosen.label) : state.settings.showTrayIcon ? t("按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复；托盘菜单里也有这一项") : t("按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复"), tone: taken ? 'error' : '' };
   });
   function renderWindowsDesktopHotkey() {
     const w = state && state.windowsDesktopHotkey;
@@ -1769,7 +2074,14 @@
   // answers with a fresh state, so nothing here mutates `state` itself.
   let fenceSel = null;
   const fenceById = (id) => (state.fences || []).find(f => f.id === id);
-  const fenceOption = (f) => f.title + (f.kind === 'portal' ? t("（文件夹）") : f.kind === 'inbox' ? t("（桌面）") : '') + (f.host ? tf("（{0} 的标签页）", f.host) : '');
+  // The desktops of a fence that shows only on some of them (nothing with a single desktop,
+  // where the page hides that choice too).
+  const fenceDesktops = (f) => {
+    const all = state.virtualDesktops || [], bound = (f.virtualDesktops || []).map(k => k.toLowerCase());
+    const names = all.length > 1 ? all.filter(d => bound.includes(d.id.toLowerCase())).map(d => d.name) : [];
+    return names.length ? tf("（只在“{0}”上显示）", names.join(t("、"))) : '';
+  };
+  const fenceOption = (f) => f.title + (f.smart ? t("（智能栅栏）") : f.kind === 'portal' ? t("（文件夹栅栏）") : f.kind === 'inbox' && f.title !== t("桌面") ? t("（桌面）") : '') + (f.host ? tf("（{0} 的标签页）", f.host) : '') + fenceDesktops(f);
   // A slider's live ticks resize the fence without the cell snap; its release snaps once.
   const setFence = (id, prop, value, live) => send({ type: 'setFence', id, prop, value, ...(live && { live }) });
   function ensureOption(sel, value, label) {
@@ -1786,9 +2098,20 @@
     if (sel.innerHTML !== options) sel.innerHTML = options;
     if (!fences.some(f => f.id === fenceSel)) fenceSel = fences.length ? fences[0].id : null;
     sel.value = fenceSel || '';
-    sel.onchange = () => { fenceSel = sel.value; renderFences(); };
+    sel.onchange = () => {
+      fenceSel = sel.value;
+      // Another fence: its values are drawn at once (a switch that differs must not slide as if
+      // it were being changed), and the body of the page comes in again like a page does.
+      document.documentElement.classList.remove('ready');
+      renderFences();
+      const body = document.getElementById('fenceBody');
+      body.classList.remove('swap'); void body.offsetWidth; body.classList.add('swap');
+      drawnSoon();
+    };
     const f = fenceById(fenceSel);
     document.getElementById('fenceBadge').textContent = tf("{0} 个栅栏", fences.length);
+    // No fence: nothing to pick, the card under the title says how to make one.
+    sel.closest('.picker').hidden = !fences.length;
     document.getElementById('fenceEmpty').style.display = f ? 'none' : '';
     document.getElementById('fenceBody').style.display = f ? '' : 'none';
     document.getElementById('fenceHostNote').style.display = f && (f.host || f.tabbed) ? '' : 'none';
@@ -1807,14 +2130,14 @@
     renderSmart(f);
     // A tool fence (小工具) never holds icons: hiding it while empty would hide it for good.
     document.getElementById('fenceHideEmpty').style.display = f.tool ? 'none' : '';
-    // Icon size, spacing, names, alignment and auto height are about icons.
+    // View, order, icon size, spacing, names, alignment and auto height are about icons.
     document.getElementById('fenceLayoutGroup').style.display = f.tool ? 'none' : '';
     document.getElementById('fenceAutoHeight').style.display = f.tool ? 'none' : '';
     // 文字大小: notes and script fences (a clock's text follows the fence size).
     document.getElementById('fenceTextSize').style.display = f.tool && (f.tool.kind === 'note' || f.tool.kind === 'script') ? '' : 'none';
     document.getElementById('fenceDesktopLayout').style.display = f.kind === 'inbox' ? '' : 'none';
     // 自由摆放 is a way of 像桌面一样排列 (a 「桌面」 with tabs stays a fence).
-    document.getElementById('fenceFreePlacement').style.display = f.kind === 'inbox' && f.desktopLayout && !f.tabbed ? '' : 'none';
+    reveal(document.getElementById('fenceFreePlacement'), f.kind === 'inbox' && !!f.desktopLayout && !f.tabbed);
     // List and Details rows keep the name on one line, so the setting does nothing there and is
     // greyed. 像桌面一样排列 shows icons whatever the fence's view (a 「桌面」 with tabs stays a fence).
     const nameLines = [t("图标名称\x04不显示"), t("图标名称\x04一行"), t("图标名称\x04两行"), t("图标名称\x04三行")];
@@ -1831,7 +2154,9 @@
     const tabSel = document.querySelector('[data-fence=tabColor]');
     const tabPalette = `<option value="">${esc(t("跟随色调"))}</option>` + palette.slice(palette.indexOf('</option>') + 9);
     if (tabSel.innerHTML !== tabPalette) tabSel.innerHTML = tabPalette;
-    document.getElementById('fenceTintTitleOnly').style.display = f.tint ? '' : 'none';
+    reveal(document.getElementById('fenceTintTitleOnly'), !!f.tint);
+    // 鼠标移入时保持透明 is about the plate that 全透明 shows under the pointer.
+    reveal(document.getElementById('fenceTransparentOnHover'), f.opacity === 'transparent');
     document.getElementById('fenceTabColor').style.display = f.host || f.tabbed ? '' : 'none';
     document.querySelectorAll('[data-fence]').forEach(el => {
       const prop = el.dataset.fence;
@@ -1926,8 +2251,8 @@
   }
 
   function inboxTitle() { const f = (state.fences || []).find(f => f.kind === 'inbox'); return f ? f.title : t("桌面"); }
-  // A portal cannot hold routed items (the app routes such rules to the inbox), so it is shown as one.
-  function fenceTitle(id) { const f = (state.fences || []).find(f => f.id === id); return !f ? t("已删除的栅栏") : f.kind === 'portal' || f.tool ? inboxTitle() : f.title; }
+  // A portal, a tool or a smart fence cannot hold routed items (the app routes such rules to the inbox), so it is shown as one.
+  function fenceTitle(id) { const f = (state.fences || []).find(f => f.id === id); return !f ? t("已删除的栅栏") : f.kind === 'portal' || f.tool || f.smart ? inboxTitle() : f.title; }
   function targetLabel(target) { return tf("“{0}”", target === 'inbox' ? inboxTitle() : (target && target.fence) ? fenceTitle(target.fence) : '?'); }
   const NAME_OPS = {contains:v=>tf("名称包含“{0}”",v),notContains:v=>tf("名称不包含“{0}”",v),startsWith:v=>tf("名称开头是“{0}”",v),endsWith:v=>tf("名称结尾是“{0}”",v),is:v=>tf("名称等于“{0}”",v)};
   const TARGET_OPS = {contains:v=>tf("快捷方式目标包含“{0}”",v),notContains:v=>tf("快捷方式目标不包含“{0}”",v),startsWith:v=>tf("快捷方式目标开头是“{0}”",v),endsWith:v=>tf("快捷方式目标结尾是“{0}”",v),is:v=>tf("快捷方式目标等于“{0}”",v)};
@@ -1976,6 +2301,26 @@
     const fallback = list.id === 'ruleList' ? 'nrName' : 'snapName';
     (control || document.getElementById(fallback))?.focus({ preventScroll: true });
   }
+  // A list that is drawn again shows what changed: a row that stood elsewhere glides from there
+  // to its place (--fast, the fences' point-to-point curve), a row that was not there fades in,
+  // and what stands under the list glides by as much as the list grew or shrank (or the rows
+  // on their way would lie over it).
+  // rowTops(list) before the list changes, glideRows(list, tops) after. Nothing moves the first
+  // time, on a page that is not shown, while transitions are off, or with animations off.
+  // A list that is rebuilt knows its rows by data-row-id; the smart fence editor keeps its row
+  // elements and passes them as they are (rows '.se-row', key = the element).
+  const rowTops = (list, rows = '[data-row-id]', key = el => el.dataset.rowId) =>
+    Object.assign(new Map([...list.querySelectorAll(rows)].map(el => [key(el), el.offsetTop])), { height: list.offsetHeight });
+  function glideRows(list, tops, rows = '[data-row-id]', key = el => el.dataset.rowId) {
+    if (!tops.size || !list.offsetParent || !document.documentElement.classList.contains('ready') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    list.querySelectorAll(rows).forEach(el => {
+      const was = tops.get(key(el)), dy = was === undefined ? 0 : was - el.offsetTop;
+      if (was === undefined) el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: motion('--fast') });
+      else if (dy) el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: motion('--fast'), easing: motion('--point-to-point') });
+    });
+    const grew = list.offsetHeight - tops.height;
+    if (grew) for (let el = list.nextElementSibling; el; el = el.nextElementSibling) el.animate([{ transform: `translateY(${-grew}px)` }, { transform: 'none' }], { duration: motion('--fast'), easing: motion('--point-to-point') });
+  }
   const openRuleForm = () => { document.getElementById('nrPanel').open = true; };
   // The listed rule open for editing: its row shows `form` (kept across re-renders, so a state
   // refresh does not lose what was typed) until Save, Cancel or Esc. One at a time: the other
@@ -1983,11 +2328,13 @@
   let editing = null;
   function fillTargets(sel) {
     const selected = sel.value;
-    const options = state.fences.filter(f => f.kind !== 'portal' && !f.tool).map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
+    const options = state.fences.filter(f => f.kind !== 'portal' && !f.tool && !f.smart).map(f => `<option value="${esc(f.id)}">${esc(f.title)}</option>`).join('');
     if (sel.innerHTML !== options) {
       sel.innerHTML = options;
       if ([...sel.options].some(o => o.value === selected)) sel.value = selected;
     }
+    // No fence a rule could put things into: the list is greyed out instead of opening empty.
+    sel.disabled = !options;
   }
   // An editor's target: the fence `id`, else the desktop fence, where the app routes a rule
   // whose fence is a portal or gone. The same when the fence goes while the editor is open.
@@ -1997,15 +2344,27 @@
   }
   // The new-rule form starts open only when there is nothing else on the page to look at.
   let rulesShown = false;
+  // What the rows of the rule list show: the rules, the names of their targets and the language.
+  // A state that shows the same rows leaves them alone, so the host's echo of a switch flipped
+  // here does not rebuild the row (its knob would jump to the end of its slide).
+  let ruleRows = '';
+  const ruleRowsOf = () => editing ? '' : JSON.stringify([state.rules.list, state.rules.list.map(r => [targetLabel(r.target), r.allOf.map(condLabel)]), t("编辑规则")]);
   function renderRules() {
     const list = document.getElementById('ruleList');
-    const focus = focusBookmark(list);
-    const typing = editing && editing.form.contains(document.activeElement) ? document.activeElement : null;
-    list.innerHTML = '';
     const rules = state.rules.list;
     if (editing && !rules.some(r => r.id === editing.id)) editing = null;
+    const rows = ruleRowsOf();
+    if (rulesShown && rows && rows === ruleRows) {
+      fillTargets(document.getElementById('nrTarget'));
+      fillChecks(document.getElementById('nrCond'));
+      return;
+    }
+    ruleRows = rows;
+    const focus = focusBookmark(list), tops = rowTops(list);
+    const typing = editing && editing.form.contains(document.activeElement) ? document.activeElement : null;
+    list.innerHTML = '';
     if (!rulesShown) { rulesShown = true; if (!rules.length) openRuleForm(); }
-    if (!rules.length) list.innerHTML = `<div class="card"><div class="s">${esc(t("尚未添加规则"))}</div></div>`;
+    if (!rules.length) list.innerHTML = `<div class="card"><div class="l"><div><div class="t">${esc(t("尚未添加规则"))}</div><div class="s">${esc(t("点上面“快速添加”里的一类，或在下面的“新建规则”里自己写一条。"))}</div></div></div></div>`;
     rules.forEach((r, i) => {
       const div = document.createElement('div');
       div.dataset.rowId = r.id;
@@ -2025,7 +2384,11 @@
       div.querySelectorAll('[data-act]').forEach(b => {
         const labels = { edit: t("编辑规则"), up: t("上移"), down: t("下移"), toggle: t("启用规则"), del: t("删除规则") };
         b.setAttribute('aria-label', tf("{0}：{1}", labels[b.dataset.act], r.name));
+        const id = r.id;
         b.onclick = () => {
+          // The rule as the newest state has it: rows that stay over a state keep this handler.
+          const rules = state.rules.list, i = rules.findIndex(x => x.id === id), r = rules[i];
+          if (!r) return;
           const act = b.dataset.act;
           if (act === 'edit') {
             editing = { id: r.id, form: ruleForm(r) };
@@ -2033,8 +2396,23 @@
             editing.form.querySelector('.r-name').focus();
             return;
           }
-          if (act === 'toggle') r.enabled = !r.enabled;
-          if (act === 'del') rules.splice(i, 1);
+          if (act === 'toggle') {
+            // Flipped in place, so the knob slides like every other switch.
+            r.enabled = !r.enabled;
+            b.classList.toggle('on', r.enabled); b.setAttribute('aria-checked', String(r.enabled));
+            div.classList.toggle('disabled', !r.enabled);
+            ruleRows = ruleRowsOf();
+            send({ type: 'setRules', rules: state.rules });
+            return;
+          }
+          if (act === 'del') {
+            rules.splice(i, 1);
+            // 撤销 puts the rule back at its place with all its fields.
+            toast(tf("已删除规则“{0}”", r.name), false, () => {
+              state.rules.list.splice(Math.min(i, state.rules.list.length), 0, r);
+              send({ type: 'setRules', rules: state.rules }); renderRules();
+            });
+          }
           if (act === 'up' && i > 0) { rules.splice(i - 1, 0, rules.splice(i, 1)[0]); }
           if (act === 'down' && i < rules.length - 1) { rules.splice(i + 1, 0, rules.splice(i, 1)[0]); }
           send({ type: 'setRules', rules: state.rules }); renderRules();
@@ -2044,6 +2422,7 @@
       list.appendChild(div);
     });
     if (typing) typing.focus({ preventScroll: true }); else restoreFocus(list, focus);
+    glideRows(list, tops);
     fillTargets(document.getElementById('nrTarget'));
     fillChecks(document.getElementById('nrCond'));
   }
@@ -2128,6 +2507,14 @@
       default: return v.value !== '' && quoteFor(v.value) !== null; // name tests, shortcut target
     }
   }
+  // The width of a check box column: the longest caption of the page language, with its box.
+  function checkColumns() {
+    const pen = document.createElement('canvas').getContext('2d');
+    pen.font = getComputedStyle(document.body).font;
+    for (const [name, labels] of [['--check-col', CATS()], ['--week-col', WEEKDAYS()]]) {
+      document.documentElement.style.setProperty(name, Math.ceil(Math.max(...labels.map(l => pen.measureText(l[1]).width))) + 28 + 'px');
+    }
+  }
   function fillChecks(block) {
     const cats = block.querySelector('.c-cats'), week = block.querySelector('.c-week');
     if (!cats.children.length) cats.innerHTML = CATS().map(([k, l]) => `<label><input type="checkbox" value="${k}">${l}</label>`).join('');
@@ -2181,6 +2568,7 @@
     updateDel(panel);
   };
   const WEEKDAYS = () => [['0',t("周一")],['1',t("周二")],['2',t("周三")],['3',t("周四")],['4',t("周五")],['5',t("周六")],['6',t("周日")]];
+  checkColumns();
   function updateKind(block = document.getElementById('nrCond')) {
     if (block.cond) return;
     const k = block.querySelector('.c-kind').value;
@@ -2188,6 +2576,8 @@
     const noValue = ['type','folders','files','plain','time','weekday','size','idle'];
     show('c-value', !noValue.includes(k));
     show('c-cats', k === 'type'); show('c-time', k === 'time'); show('c-week', k === 'weekday'); show('c-size', k === 'size'); show('c-idle', k === 'idle');
+    // Check boxes take the whole row under the type list, so they stand in more columns.
+    block.querySelector('.c-val').classList.toggle('wide', k === 'type' || k === 'weekday');
     show('c-none', ['folders','files','plain'].includes(k));
     const ph = { ext: 'png, jpg', contains: t("示例\x04截图"), notContains: t("示例\x04备份"), startsWith: 'IMG_', endsWith: '_final', exact: 'todo.txt, notes.md', glob: '*.png', target: 'steam' };
     block.querySelector('.c-text').placeholder = ph[k] || '';
@@ -2335,14 +2725,14 @@
   document.getElementById('swapDo').onclick = () => { const a = document.getElementById('swapA').value, b = document.getElementById('swapB').value; if (a && b && a !== b) send({ type: 'action', name: 'swapMonitors', a, b }); else toast(t("请选择两个不同的显示器"), true); };
   function renderLayout() {
     const sl = document.getElementById('snapList');
-    const focus = focusBookmark(sl);
+    const focus = focusBookmark(sl), tops = rowTops(sl);
     const snaps = state.snapshots || [];
-    sl.innerHTML = snaps.length ? '' : `<div class="card"><div class="s">${esc(t("尚无快照"))}</div></div>`;
+    sl.innerHTML = snaps.length ? '' : `<div class="card"><div class="l"><div><div class="t">${esc(t("尚无快照"))}</div><div class="s">${esc(t("点上面的“保存快照”，以后可以随时恢复到现在的布局。"))}</div></div></div></div>`;
     snaps.slice().reverse().forEach(sn => {
       const div = document.createElement('div');
       div.className = 'card';
       div.dataset.rowId = sn.id;
-      div.innerHTML = `<div class="l"><div><div class="t">${esc(sn.name)}</div><div class="s">${esc(sn.date)} · ${esc(tf("{0} 个栅栏", sn.fenceCount))}</div></div></div>
+      div.innerHTML = `<div class="l"><div><div class="t">${esc(sn.name)}</div><div class="s">${esc(sn.date)} · ${esc(tf("{0} 个栅栏", sn.fenceCount))}${sn.auto ? ' · ' + esc(t("自动保存")) : ''}</div></div></div>
         <div class="actions"><button data-act="restore">${esc(t("恢复"))}</button><button class="iconbtn" title="${esc(t("删除"))}" data-act="del">&#xE74D;</button></div>`;
       div.querySelector('[data-act=restore]').onclick = () => send({ type: 'action', name: 'restoreSnapshot', id: sn.id });
       div.querySelector('[data-act=del]').onclick = () => send({ type: 'action', name: 'deleteSnapshot', id: sn.id });
@@ -2351,6 +2741,7 @@
       sl.appendChild(div);
     });
     restoreFocus(sl, focus);
+    glideRows(sl, tops);
     const mons = state.monitors || [];
     document.getElementById('swapHeading').style.display = mons.length >= 2 ? '' : 'none';
     document.getElementById('swapCard').style.display = mons.length >= 2 ? '' : 'none';
@@ -2360,7 +2751,7 @@
     const bl = document.getElementById('backupList');
     const backupFocus = focusBookmark(bl);
     const backups = state.backups || [];
-    bl.innerHTML = backups.length ? '' : `<div class="card"><div class="s">${esc(t("尚无每日备份"))}</div></div>`;
+    bl.innerHTML = backups.length ? '' : `<div class="card"><div class="l"><div><div class="t">${esc(t("尚无每日备份"))}</div><div class="s">${esc(t("每天第一次有改动时自动备份一份，保留最近 7 份。"))}</div></div></div></div>`;
     backups.forEach(bk => {
       const div = document.createElement('div');
       div.className = 'card';
@@ -2397,11 +2788,14 @@
   document.getElementById('openThemes').onclick = () => send({ type: 'action', name: 'openThemesFolder' });
   document.getElementById('themeGuide').onclick = () => send({ type: 'action', name: 'openThemeGuide' });
   document.getElementById('repairIcons').onclick = () => send({ type: 'action', name: 'repairIcons' });
+  document.getElementById('quitApp').onclick = () => send({ type: 'action', name: 'quit' });
 
-  // 关于 → 更新: an installed copy downloads and runs the new setup, a ZIP opens the release page.
+  // 关于 → 更新: an installed copy downloads and runs the new setup, a ZIP opens the release page
+  // (the site's download section when the release was read from the site's copy).
   let update = null;
   const renderUpdate = () => {
     const card = document.getElementById('updateCard');
+    const was = card.offsetHeight, title = card.querySelector('.t'), titleTop = title.getBoundingClientRect().top;
     card.hidden = !update;
     document.getElementById('updateAutoCard').hidden = !update;
     if (!update) return;
@@ -2413,9 +2807,14 @@
       : s === 'upToDate' ? t("已是最新版本")
       : s === 'available' ? (install ? tf("有新版本 {0}。安装时 PecoFence 会先退出，装好后自动重新打开。", version) : tf("有新版本 {0}", version))
       : s === 'downloading' ? t("正在下载新版本…")
-      : s === 'checkFailed' ? t("检查更新失败，请稍后再试")
-      : s === 'downloadFailed' ? t("下载失败，请稍后再试")
+      : s === 'checkFailed' ? t("请稍后再试，或到 pecofence.jiang.jp 下载最新版本：没能连上 GitHub 和 PecoFence 网站，检查不了更新。")
+      : s === 'downloadFailed' ? t("请稍后再试，或到 pecofence.jiang.jp 下载最新版本：没能下载新版本。")
       : '';
+    status.classList.toggle('busy', s === 'checking' || s === 'downloading');
+    // A failed check or download: the site's download page is one click away.
+    const site = document.getElementById('updateSite');
+    site.hidden = s !== 'checkFailed' && s !== 'downloadFailed';
+    site.onclick = () => send({ type: 'action', name: 'openDownloadPage' });
     const button = document.getElementById('updateAction');
     const offered = s === 'available' || s === 'downloading';
     const action = !offered ? 'checkUpdate' : install ? 'installUpdate' : 'openReleasePage';
@@ -2423,6 +2822,18 @@
     button.disabled = s === 'checking' || s === 'downloading';
     button.classList.toggle('accent', s === 'available');
     button.onclick = () => send({ type: 'action', name: action });
+    // An answer that needs another line (a failed check) makes the card taller: what stands
+    // under it glides down by as much instead of jumping.
+    if (!was || !card.offsetParent || !document.documentElement.classList.contains('ready') || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const grew = card.offsetHeight - was, glide = { duration: motion('--fast'), easing: motion('--point-to-point') };
+    if (grew) for (let el = card.nextElementSibling; el; el = el.nextElementSibling) el.animate([{ transform: `translateY(${-grew}px)` }, { transform: 'none' }], glide);
+    // The status line that comes under the title (at rest the card has the title alone)
+    // moves the title up by half a line: the title glides there and the status fades in.
+    const rose = titleTop - title.getBoundingClientRect().top;
+    if (rose) {
+      title.animate([{ transform: `translateY(${rose}px)` }, { transform: 'none' }], glide);
+      status.animate([{ opacity: 0 }, { opacity: 1 }], { duration: motion('--fast') });
+    }
   };
   // Store edition: Windows keeps the startup switch. The states only the user (in Windows'
   // Startup settings) or an administrator can change get a line saying so; a click on the
@@ -2454,10 +2865,10 @@
       hide: t("桌面项目只显示在栅栏里，没有归类的放进“桌面”栅栏；回收站等系统图标也在“桌面”栅栏里"),
       showWithInbox: t("Windows 桌面照常显示图标，没有归类的项目同时出现在“桌面”栅栏里"),
       showNoInbox: arranged
-        ? t("“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关掉它的“像桌面一样排列”")
+        ? t("“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关闭它的“像桌面一样排列”")
         : t("没有归类的项目只留在 Windows 桌面上，不显示“桌面”栅栏"),
     }[value];
-    document.getElementById('keepIconsCard').hidden = value !== 'hide';
+    reveal(document.getElementById('keepIconsCard'), value === 'hide');
     select.onchange = () => {
       const settings = state.settings;
       settings.hideRealIcons = select.value === 'hide';
@@ -2469,16 +2880,20 @@
   // 收起与展开 › 收起的栅栏怎么展开: hover (hoverPeek), one title click (clickToExpand, which
   // overrides hover) or neither (double-click or the chevron). A click keeps hoverPeek on, as the
   // old switch did: a file dragged onto a rolled title still opens the fence (dnd.rs).
+  // 展开快慢 is the hover delay of a rolled fence (「鼠标停在上面时」) and of
+  // 「鼠标悬停时切换标签页」: shown while either is on.
+  function renderHoverSpeed() {
+    const r = state.settings.rollUp;
+    reveal(document.getElementById('hoverSpeedCard'), !!((r.hoverPeek && !r.clickToExpand) || r.switchTabOnHover));
+  }
   function bindRollExpand() {
     const r = state.settings.rollUp, select = document.getElementById('rollExpand');
     select.value = r.clickToExpand ? 'click' : r.hoverPeek ? 'hover' : 'double';
-    // 展开快慢 is the hover delay: only with 「鼠标停在上面时」.
-    document.getElementById('hoverSpeedCard').hidden = select.value !== 'hover';
+    renderHoverSpeed();
     select.onchange = () => {
       const roll = state.settings.rollUp;
       roll.clickToExpand = select.value === 'click';
       roll.hoverPeek = select.value !== 'double';
-      document.getElementById('hoverSpeedCard').hidden = select.value !== 'hover';
       commit('rollUp');
     };
   }
@@ -2513,9 +2928,10 @@
     if (crash) { fbCrash = true; document.querySelector('input[name=fbKind][value=bug]').checked = true; }
     showPage('about');
     requestFeedbackInfo();
-    document.getElementById('feedbackHeading').scrollIntoView({ block: 'start' });
-    // page-in still holds the page 8 px lower: scroll that much less, or the heading ends up cut off.
-    document.querySelector('main').scrollTop -= new DOMMatrixReadOnly(getComputedStyle(document.getElementById('page-about')).transform).m42;
+    const heading = document.getElementById('feedbackHeading');
+    heading.scrollIntoView({ block: 'start' });
+    // page-in still holds what is under the page's title lower: scroll that much less, or the heading ends up cut off.
+    document.querySelector('main').scrollTop -= new DOMMatrixReadOnly(getComputedStyle(heading.closest('#page-about > *')).transform).m42;
     renderFeedback();
     fbMessage.focus({ preventScroll: true });
   }
@@ -2558,8 +2974,36 @@
   };
   renderFeedback();
 
-  let toastTimer;
-  function toast(t, error = false) { const el = document.getElementById('toast'); document.getElementById('toastText').textContent = t; el.classList.toggle('error', error); el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), error ? 5000 : 2400); }
+  // `undo`: the bar carries 「撤销」 for 6 s, which runs it (a rule or a snapshot was deleted).
+  let toastTimer, toastUndo = null;
+  function toast(t, error = false, undo = null) {
+    const el = document.getElementById('toast');
+    // A notice that takes the place of one still on screen comes in again: with only its text
+    // changed in place it does not read as a new notice.
+    if (el.classList.contains('on') && document.getElementById('toastText').textContent !== t) {
+      el.style.transition = 'none'; el.classList.remove('on'); void el.offsetWidth; el.style.transition = '';
+    }
+    document.getElementById('toastText').textContent = t;
+    el.classList.toggle('error', error);
+    toastUndo = undo;
+    document.getElementById('toastUndo').hidden = !undo;
+    el.classList.toggle('undo', !!undo);
+    el.classList.add('on');
+    toastLeaveIn(undo ? 6000 : error ? 5000 : 2400);
+  }
+  function toastOff() { clearTimeout(toastTimer); toastUndo = null; document.getElementById('toast').classList.remove('on', 'undo'); }
+  // The notice with 撤销 stays while the pointer is on it or the focus is on its button, and
+  // for 2 s after: the button must not go away under the pointer.
+  function toastLeaveIn(ms) {
+    const el = document.getElementById('toast');
+    clearTimeout(toastTimer);
+    if (!el.matches(':hover') && !el.contains(document.activeElement)) toastTimer = setTimeout(toastOff, ms);
+  }
+  for (const [hold, release] of [['pointerenter', 'pointerleave'], ['focusin', 'focusout']]) {
+    document.getElementById('toast').addEventListener(hold, () => clearTimeout(toastTimer));
+    document.getElementById('toast').addEventListener(release, () => { if (document.getElementById('toast').classList.contains('on')) toastLeaveIn(2000); });
+  }
+  document.getElementById('toastUndo').onclick = () => { const undo = toastUndo; toastOff(); if (undo) undo(); };
 
   function renderWorkspaceSummary(fenceCount, itemCount) {
     document.getElementById('workspaceSummary').textContent = tf("{0} 个栅栏 · {1} 个项目", fenceCount, itemCount);
@@ -2578,8 +3022,8 @@
     let step = 1;
     const draw = () => {
       const folder = t("对话框跳转演示\x04项目资料"), front = step !== 2;
-      steps[1].textContent = tf("切到资源管理器，它正开着「{0}」", folder);
-      steps[2].textContent = tf("切回对话框，它自动跳到「{0}」", folder);
+      steps[1].textContent = tf("切到资源管理器，它正开着“{0}”", folder);
+      steps[2].textContent = tf("切回对话框，它自动跳到“{0}”", folder);
       const ex = win(14, 22, t("资源管理器"), folder, !front, false);
       const dlg = win(136, 46, t("打开"), step === 3 ? folder : t("文档"), front, step === 3);
       const cursor = step === 1 ? '' : `<path class="cursor" transform="translate(${step === 2 ? '60 92' : '230 60'})" d="M0 0 l0 14 l4 -4 l3 7 l3 -1 l-3 -7 l5 0 z"/>`;
@@ -2757,7 +3201,7 @@
         return { cond: { cond: 'idleDays', value: { min: Math.floor(days) } } };
       }
       // 来源 says where a desktop icon came from: nothing a found file has.
-      default: return r.cond.cond === 'origin' ? { error: t("「来源」不能作为智能栅栏的条件，请删掉这一行"), at: q('.se-minus'), lasting: true } : { cond: r.cond };
+      default: return r.cond.cond === 'origin' ? { error: t("“来源”不能作为智能栅栏的条件，请删掉这一行"), at: q('.se-minus'), lasting: true } : { cond: r.cond };
     }
   }
   // The whole search, or { error, at, row } for the first row that is not filled in.
@@ -2785,7 +3229,7 @@
         return ['target', 'created', 'weekday', 'idle'].includes(k) || (k === 'name' && r.name)
           || (r.cond && ((r.cond.cond === 'type' && r.cond.value.some(v => v === 'programs' || v === 'installers')) || r.cond.cond === 'plainFiles' || (r.cond.cond === 'filesOnly' && r.cond.plain)));
       });
-      if (rough) return { error: t("选「任一」时，Everything 语法不能和这一行一起用"), at: rough.querySelector('.se-kind'), row: rough, lasting: true };
+      if (rough) return { error: t("选“任一”时，Everything 语法不能和这一行一起用"), at: rough.querySelector('.se-kind'), row: rough, lasting: true };
     }
     return { spec };
   }
@@ -2814,13 +3258,17 @@
       const list = el.parentElement;
       if (list.children.length < 2) return;
       const near = el.nextElementSibling || el.previousElementSibling;
+      const tops = rowTops(list, '.se-row', row => row);
       el.remove();
+      glideRows(list, tops, '.se-row', row => row);
       seChanged();
       near.querySelector('.se-minus').focus();
     };
     q('.se-plus').onclick = () => {
       const next = seRow({ kind: 'name', op: 'contains' });
+      const tops = rowTops(el.parentElement, '.se-row', row => row);
       el.after(next);
+      glideRows(el.parentElement, tops, '.se-row', row => row);
       seChanged();
       next.querySelector('.se-text').focus();
     };
@@ -2991,8 +3439,10 @@
     const tp = se.templates.find(x => x.key === key);
     if (!tp || !tp.spec) return;
     const w = document.getElementById('seWindow');
-    const rows = w.querySelector('.se-rows');
+    const rows = w.querySelector('.se-rows'), tops = rowTops(rows, '.se-row', row => row);
     rows.replaceChildren(...seRowsOf(tp.spec).map(seRow));
+    // The template's rows fade in: they are other rows than before.
+    glideRows(rows, tops, '.se-row', row => row);
     w.querySelector('.se-all').value = 'all';
     w.querySelector('.se-always').hidden = true;
     const limit = w.querySelector('.se-limit select');
@@ -3023,6 +3473,22 @@
     seChanged();
     next.querySelector('.se-pick').focus();
   }
+  // A list the page draws itself (appearance: base-select) is only as wide as its chosen
+  // option, where the system list is as wide as its longest. Each list of the editor gets its
+  // longest option's width as --fit, which the styles take as its least width: the kind menus
+  // stay one column and a row keeps its layout whatever is chosen. One observer follows all
+  // that builds lists (the rows, a template, a language switch).
+  function seFit() {
+    const cv = seFit.cv ||= document.createElement('canvas').getContext('2d');
+    for (const s of document.querySelectorAll('#seWindow select')) {
+      const cs = getComputedStyle(s);
+      cv.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      const text = Math.max(0, ...[...s.options].map(o => cv.measureText(o.text).width));
+      const box = cs.boxSizing === 'border-box' ? parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth) : 0;
+      s.style.setProperty('--fit', Math.ceil(text + box + 1) + 'px');
+    }
+  }
+  if (EDITOR && CSS.supports('appearance', 'base-select')) new MutationObserver(seFit).observe(document.getElementById('seWindow'), { childList: true, subtree: true });
   // Enter is 好 (a button takes its own Enter); Esc is 取消.
   if (EDITOR) document.addEventListener('keydown', e => {
     if (!se || e.isComposing) return;
@@ -3033,6 +3499,21 @@
       seSave();
     }
   });
+
+  // Transitions come on a frame after a state has been drawn: a single frame would style both
+  // changes together and start them after all. In that frame the page also shows itself
+  // (`shown`), and one frame later it tells the host, which brings the browser into the
+  // window's frame on this `drawn`: what comes in has been drawn once, whole, at the start of
+  // its entrance. The wait is for what the host sends right after the state (the page to
+  // show, the fence, the editor's fence): reported with the first frame, the page could come
+  // in on 常规 and change to the page it was asked for a moment later.
+  let drawnSent = false;
+  function drawnSoon() {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      document.documentElement.classList.add('ready', 'shown');
+      if (!drawnSent) { drawnSent = true; requestAnimationFrame(() => send({ type: 'drawn' })); }
+    }));
+  }
 
   if (wv) wv.addEventListener('message', e => {
     const m = e.data;
@@ -3054,12 +3535,21 @@
           });
         }
         relabelConds();
+        checkColumns();
         switchLabels();
         document.getElementById('iconTint').setAttribute('aria-label', t("图标着色"));
         document.getElementById('iconTintStrength').setAttribute('aria-label', t("图标着色强度"));
       }
       state.settings.themeStyle ||= 'fluent';
+      // Another colour mode or accent lands in one frame: the cards and the text change at
+      // once, so the controls must not fade behind them (drawnSoon allows transitions again).
+      const root = document.documentElement;
+      const modeChanged = root.classList.contains('light') !== (m.themeMode === 'light');
+      if (modeChanged || (m.accent && root.style.getPropertyValue('--accent') !== m.accent)) root.classList.remove('ready');
       document.documentElement.classList.toggle('light', m.themeMode === 'light');
+      // The host holds the title bar's change until this report, which goes out in the frame
+      // that draws the new colours: the title bar and the page change together.
+      if (modeChanged) requestAnimationFrame(() => send({ type: 'modeDrawn' }));
       if (m.accent) {
         document.documentElement.style.setProperty('--accent', m.accent);
         document.documentElement.style.setProperty('--accent-hover', m.accent + 'E6');
@@ -3067,7 +3557,7 @@
       // The smart fence editor takes the language and the theme; the editor message brings the rest.
       if (EDITOR) {
         if (languageChanged) seRelabel();
-        requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add('ready')));
+        drawnSoon();
         return;
       }
       document.getElementById('ver').textContent = 'v' + m.version;
@@ -3077,9 +3567,7 @@
       document.getElementById('cfgPath').textContent = m.configPath;
       bindAll(); bindThemeStyle(); bindCustomTheme(); bindDesktopIcons(); bindRollExpand(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); renderTools(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderStartupNote(); renderWindowsDesktopHotkey();
       update = m.update; renderUpdate();
-      // Transitions come on a frame after this state has been drawn: a single frame would style
-      // both changes together and start them after all.
-      requestAnimationFrame(() => requestAnimationFrame(() => document.documentElement.classList.add('ready')));
+      drawnSoon();
     } else if (m.type === 'workspaceSummary') {
       if (!state) return;
       state.itemCount = m.itemCount;
@@ -3088,13 +3576,19 @@
     else if (m.type === 'showPage') {
       showPage(m.page);
       if (m.focus) document.getElementById(m.focus)?.scrollIntoView({ block: 'center' });
+      else if (m.scroll) {
+        // (The host logs what the page had room for: a place that is not reached shows there.)
+        const main = document.querySelector('main');
+        main.scrollTop = m.scroll;
+        send({ type: 'restored', wanted: m.scroll, top: main.scrollTop, scrollHeight: main.scrollHeight, height: main.clientHeight, width: main.clientWidth });
+      }
     }
     else if (m.type === 'feedbackInfo') {
       fbInfo = m; fbCrash ||= !!m.crashed; renderFeedback();
       if (fbSendPending) { fbSendPending = false; fbSend.click(); }
     }
     else if (m.type === 'showFeedback') showFeedback(!!m.crash);
-    else if (m.type === 'toast') toast(m.text, !!m.error);
+    else if (m.type === 'toast') toast(m.text, !!m.error, m.undo ? () => send({ type: 'action', name: m.undo }) : null);
     else if (m.type === 'pickedColor') pickedColor(m.target, m.hex);
     else if (m.type === 'update') { update = m.update; renderUpdate(); }
     else if (m.type === 'peekHotkeyResult') { peekRecorder.result(m); renderPeekHotkey(); }
@@ -3106,6 +3600,28 @@
     else if (m.type === 'editorNotice') { if (se) se.notice = m.text; seShowError(m.text); }
     else if (m.type === 'editorCount') seCounted(m);
   });
+  // An icon the icon font of this Windows lacks is drawn as an empty box: Segoe MDL2 Assets on
+  // Windows 10 lacks some glyphs of Segoe Fluent Icons, and its 1809 version lacks more (#219).
+  // Such an icon gives way to the stand-in its data-alt names. Every missing glyph is drawn the
+  // same way, so each icon is compared with a code point no icon font has.
+  // The host does this before it hands the document over, and says so (PECOFENCE_ICONS): it
+  // asks Windows which glyphs the two fonts have. Drawing a glyph that no font has makes the
+  // browser set up fonts of the system in search of it, about 14 ms on each opening.
+  if (!window.PECOFENCE_ICONS) (() => {
+    const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+    const drawn = ch => {
+      ctx.clearRect(0, 0, 24, 24);
+      ctx.font = '16px "Segoe Fluent Icons", "Segoe MDL2 Assets"';
+      ctx.textBaseline = 'top';
+      ctx.fillText(ch, 2, 2);
+      return ctx.getImageData(0, 0, 24, 24).data.join();
+    };
+    const box = drawn('\uF8FF');
+    for (const el of document.querySelectorAll('.ic[data-alt]')) {
+      if (drawn(el.textContent) === box) el.textContent = el.dataset.alt;
+    }
+  })();
+  performance.mark('pf-ready');
   send({ type: 'ready' });
 })();
 </script>

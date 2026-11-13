@@ -29,6 +29,12 @@ pub(super) enum UndoStep {
     },
     /// A fence deleted from its menu.
     Deleted(Box<DeletedFence>),
+    /// A fence sent away from the current virtual desktop (its menu, Settings): the desktops
+    /// its window showed on before (empty: every desktop).
+    Desktops { fence: FenceId, before: Vec<String> },
+    /// A fence made by hand (the rectangle's button, a fence's or the tray's menu): Ctrl+Z
+    /// takes it away again while nothing would go with it (no icons, no rule, no note text).
+    NewFence(FenceId),
     /// Icons 「立即应用」 sorted: where each was, grouped by the fence it went to.
     Refiled {
         id: u64,
@@ -36,6 +42,16 @@ pub(super) enum UndoStep {
     },
     /// A file renamed in a fence (renamed directly, so Windows' undo list does not hold it).
     Renamed { from: PathBuf, to: PathBuf },
+    /// A to-do dragged to another line of a note, or ticked by a click on its check box,
+    /// while the note is not being edited (`what` for the log): the note's text before and
+    /// after. Ctrl+Z puts the text back while the note still reads as the step left it; once
+    /// it was changed in another way the step is spent, so nothing written since is lost.
+    NoteLine {
+        fence: FenceId,
+        before: String,
+        after: String,
+        what: &'static str,
+    },
     /// Folders or files made from a fence (made directly too): Ctrl+Z moves them to the
     /// Recycle Bin, as Explorer's own undo of 新建 does, without a record in Windows' undo list
     /// (a record would be the newest one there, and the next step handed to Windows would
@@ -52,6 +68,20 @@ pub(super) enum UndoStep {
     /// A file operation nothing can undo (a permanent delete): Ctrl+Z says so and stops there,
     /// rather than put back an older step the user did not mean.
     Permanent { what: &'static str },
+    /// A fence dragged by its title onto another fence's title: it became a tab there. `tabs`
+    /// are the tabs its own window had (itself among them, in strip order), `before` where that
+    /// window stood before the drag (its expanded rect, device px).
+    Merged {
+        fence: FenceId,
+        tabs: Vec<FenceId>,
+        before: RECT,
+    },
+    /// A tab dragged out of its window, or split out from the tab menu. `settled` once the
+    /// drag that tore it off has ended: until then the new window's move is part of this step.
+    Split {
+        change: Box<pecofence_core::TabDetach>,
+        settled: bool,
+    },
 }
 
 /// What the notice's 撤销 undoes.
@@ -61,6 +91,8 @@ pub(super) enum UndoNotice {
     Deleted(FenceId),
     /// The 「立即应用」 step of this id.
     Refiled(u64),
+    /// The fence sent to another virtual desktop.
+    Desktops(FenceId),
 }
 
 /// Ids of the 「立即应用」 steps, so the notice undoes its own one.
@@ -72,10 +104,15 @@ impl UndoStep {
             Self::Bounds { .. } => "bounds",
             Self::Items { .. } => "items",
             Self::Deleted(_) => "deleted fence",
+            Self::Desktops { .. } => "virtual desktops",
+            Self::NewFence(_) => "new fence",
             Self::Refiled { .. } => "rules applied",
             Self::Renamed { .. } => "rename",
+            Self::NoteLine { what, .. } => what,
             Self::Created { .. } => "new item",
             Self::Shell { what } | Self::Permanent { what } => what,
+            Self::Merged { .. } => "merge into tabs",
+            Self::Split { .. } => "tab split out",
         }
     }
 }
@@ -93,6 +130,24 @@ impl App {
         }
     }
 
+    /// A to-do of note `fence` was dragged to another line or ticked (`what`): the note's
+    /// text until then and since. A drag gives the fence the keyboard, so a Ctrl+Z right
+    /// after it lands here.
+    pub(super) fn note_line_for_undo(
+        &mut self,
+        fence: FenceId,
+        before: String,
+        after: String,
+        what: &'static str,
+    ) {
+        self.push_undo(UndoStep::NoteLine {
+            fence,
+            before,
+            after,
+            what,
+        });
+    }
+
     /// The whole layout was replaced: no step applies to it any more.
     pub(super) fn clear_undo(&mut self, why: &'static str) {
         if !self.undo.is_empty() {
@@ -104,6 +159,16 @@ impl App {
 
     /// A user move or resize of `fence` that left `before` (its expanded rect until then).
     pub(super) fn note_bounds_for_undo(&mut self, fence: FenceId, before: RECT) {
+        // The drag that tore this tab off ends here: where the new window was let go belongs
+        // to the split, which Ctrl+Z takes back as a whole.
+        if let Some(UndoStep::Split { change, settled }) = self.undo.last_mut()
+            && change.tab == fence
+            && !*settled
+        {
+            *settled = true;
+            tracing::debug!(%fence, "undo: the torn-off tab's move stays part of its split");
+            return;
+        }
         let now = Instant::now();
         if let Some(UndoStep::Bounds { at, rects }) = self.undo.last_mut()
             && now.duration_since(*at) < SAME_GESTURE
@@ -117,6 +182,65 @@ impl App {
             at: now,
             rects: vec![(fence, before)],
         });
+    }
+
+    /// `fence` was dropped on another fence's title and is a tab there now. The drag noted
+    /// where its window stood before (a Bounds step): that step becomes the merge's, so Ctrl+Z
+    /// splits the fence out again at that place. A merge that no move of the window preceded
+    /// (a tab torn off and dropped on another strip in one drag) is covered by its split.
+    pub(super) fn note_merge_for_undo(&mut self, fence: FenceId, tabs: &[FenceId]) {
+        let Some(UndoStep::Bounds { rects, .. }) = self.undo.last_mut() else {
+            tracing::debug!(%fence, "undo: merge not noted, no move of the window before it");
+            return;
+        };
+        let Some(i) = rects.iter().position(|(f, _)| *f == fence) else {
+            tracing::debug!(%fence, "undo: merge not noted, the last move was another fence's");
+            return;
+        };
+        let (_, before) = rects.remove(i);
+        if rects.is_empty() {
+            self.undo.pop();
+        }
+        self.push_undo(UndoStep::Merged {
+            fence,
+            tabs: tabs.to_vec(),
+            before,
+        });
+    }
+
+    /// `fence`, a window of its own until now, was merged into another from the tab menu's
+    /// 合并到…: Ctrl+Z splits it out again where it stood (`before`, its expanded rect).
+    pub(super) fn note_menu_merge_for_undo(
+        &mut self,
+        fence: FenceId,
+        tabs: &[FenceId],
+        before: RECT,
+    ) {
+        self.push_undo(UndoStep::Merged {
+            fence,
+            tabs: tabs.to_vec(),
+            before,
+        });
+    }
+
+    /// A tab left its window (`change`), by a drag (`from_drag`) or from the tab menu.
+    pub(super) fn note_split_for_undo(
+        &mut self,
+        change: pecofence_core::TabDetach,
+        from_drag: bool,
+    ) {
+        self.push_undo(UndoStep::Split {
+            change: Box::new(change),
+            settled: !from_drag,
+        });
+    }
+
+    /// The tear-off was cancelled (Esc, the right button): its step goes with it.
+    pub(super) fn drop_split_step(&mut self, tab: FenceId) {
+        if matches!(self.undo.last(), Some(UndoStep::Split { change, .. }) if change.tab == tab) {
+            self.undo.pop();
+            tracing::debug!(%tab, "undo: the cancelled tear-off is no step");
+        }
     }
 
     /// Desktop icons the user moved into `to` from `places` (see `AppState::item_places`).
@@ -133,6 +257,12 @@ impl App {
 
     pub(super) fn note_deleted_for_undo(&mut self, deleted: DeletedFence) {
         self.push_undo(UndoStep::Deleted(Box::new(deleted)));
+    }
+
+    /// The user made `fence` by hand. Without a step of its own, Ctrl+Z right after it undid
+    /// whatever came before (an older move of another fence).
+    pub(super) fn note_new_fence_for_undo(&mut self, fence: FenceId) {
+        self.push_undo(UndoStep::NewFence(fence));
     }
 
     /// The user renamed a file in a fence, `from` to `to`.
@@ -233,6 +363,7 @@ impl App {
         let Some(i) = self.undo.iter().rposition(|s| match (s, target) {
             (UndoStep::Deleted(d), UndoNotice::Deleted(fence)) => d.fence.id == fence,
             (UndoStep::Refiled { id, .. }, UndoNotice::Refiled(want)) => *id == want,
+            (UndoStep::Desktops { fence, .. }, UndoNotice::Desktops(want)) => *fence == want,
             _ => false,
         }) else {
             tracing::info!(?target, "no longer undoable");
@@ -280,10 +411,41 @@ impl App {
                     .undo_notice
                     .as_ref()
                     .is_some_and(|(_, t)| *t == UndoNotice::Deleted(id))
+                    && let Some((notice, _)) = self.undo_notice.take()
+                {
+                    notice.leave();
+                }
+                usize::from(back)
+            }
+            UndoStep::Desktops { fence, before } => {
+                let back = self.state.fence(fence).is_some()
+                    && self.set_fence_desktops(fence, before, "undo");
+                if self
+                    .undo_notice
+                    .as_ref()
+                    .is_some_and(|(_, t)| *t == UndoNotice::Desktops(fence))
                 {
                     self.undo_notice = None;
                 }
+                if back {
+                    self.push_settings_state();
+                }
                 usize::from(back)
+            }
+            UndoStep::NewFence(fence) => {
+                // Still there and still empty: it goes as it came. With icons, a rule or a
+                // note's text in it by now the step is spent; 删除栅栏 in its menu asks.
+                let empty =
+                    self.state.fence(fence).is_some() && self.delete_fence_prompt(fence).is_none();
+                tracing::info!(%fence, empty, "new fence undone");
+                if empty {
+                    let gone = self.window_for(fence).map(|w| w.rect());
+                    self.delete_fence(fence);
+                    if let Some(gone) = gone {
+                        self.keyboard_to_nearest_fence(gone);
+                    }
+                }
+                usize::from(empty)
             }
             UndoStep::Refiled { id, places } => {
                 let mut n = 0;
@@ -306,8 +468,9 @@ impl App {
                     .undo_notice
                     .as_ref()
                     .is_some_and(|(_, t)| *t == UndoNotice::Refiled(id))
+                    && let Some((notice, _)) = self.undo_notice.take()
                 {
-                    self.undo_notice = None;
+                    notice.leave();
                 }
                 n
             }
@@ -333,6 +496,19 @@ impl App {
                     }
                 }
             }
+            UndoStep::NoteLine {
+                fence,
+                before,
+                after,
+                what,
+            } => {
+                let unchanged = self.state.note_text(fence) == Some(after.as_str());
+                tracing::info!(%fence, unchanged, what, "note step undone");
+                if unchanged && self.state.set_note_text(fence, &before) {
+                    self.push_note(fence);
+                }
+                usize::from(unchanged)
+            }
             UndoStep::Created { items } => {
                 let count = items.len();
                 tracing::info!(count, first = ?items.first(), "new items undone: to the Recycle Bin");
@@ -344,11 +520,69 @@ impl App {
                 self.toast(pecofence_core::i18n::text("永久删除的文件无法撤销。").to_string());
                 0
             }
+            UndoStep::Merged {
+                fence,
+                tabs,
+                before,
+            } => usize::from(self.undo_merge(fence, &tabs, before)),
+            UndoStep::Split { change, .. } => usize::from(self.undo_split(*change)),
         };
         tracing::info!(kind, from, done, left = self.undo.len(), "undone");
         if done > 0 {
             self.schedule_save();
         }
+    }
+
+    /// Takes a merge by drag back: `fence` leaves the window it was dropped on, gets the tabs
+    /// it brought along again and stands where it stood before the drag. A fence that is no
+    /// tab any more (split out by hand since) only moves back there.
+    fn undo_merge(&mut self, fence: FenceId, tabs: &[FenceId], before: RECT) -> bool {
+        if self.state.fence(fence).is_none() {
+            tracing::info!(%fence, "merge not undone: the fence is gone");
+            return false;
+        }
+        let host = self.state.host_of(fence);
+        if host != fence {
+            let (x, y) = ((before.left + before.right) / 2, before.top);
+            if self.detach_tab(fence, x, y, false).is_none() {
+                tracing::info!(%fence, %host, "merge not undone: the tab could not leave");
+                return false;
+            }
+            // The tabs its window had, in their order (those still in the window it left).
+            let mut brought = 0;
+            for (k, tab) in tabs.iter().enumerate() {
+                if *tab != fence
+                    && self.state.host_of(*tab) == host
+                    && self.state.attach_tab(*tab, fence)
+                {
+                    self.state.reorder_tab(fence, *tab, k);
+                    brought += 1;
+                }
+            }
+            if brought > 0 {
+                self.state.set_active_tab(fence, fence);
+                self.resync_windows();
+                self.apply_fence_view(host);
+                self.apply_fence_view(fence);
+            }
+            tracing::debug!(%fence, %host, brought, "undo: merged fence split out again");
+        }
+        self.put_fence_at(fence, before)
+    }
+
+    /// Takes a split back: the tab returns to its window at the place it had in the strip. A
+    /// tab that the same drag dropped on another window leaves that one first.
+    fn undo_split(&mut self, change: pecofence_core::TabDetach) -> bool {
+        let tab = change.tab;
+        if self.state.fence(tab).is_some() && self.state.host_of(tab) != tab {
+            let _ = self.state.detach_tab(tab);
+        }
+        let back = self.cancel_tab_detach(change);
+        tracing::debug!(%tab, back, "undo: split-out tab back in its window");
+        if back {
+            self.give_keyboard(self.state.host_of(tab), "undo of a split");
+        }
+        back
     }
 
     /// Moves `fence` back to `rect` (its expanded rect) the way `fence move` does. False when
@@ -378,22 +612,56 @@ impl App {
         true
     }
 
-    /// After a delete from the fence menu: 「已删除栅栏“X”」 with 撤销, unless another notice
-    /// is up (Ctrl+Z still undoes it then).
+    /// An undo card is up and something newer can be undone: the card takes the newer texts
+    /// where it stands and its 撤销 undoes `target` (Ctrl+Z still reaches the older step after
+    /// it). False when no undo card is up or it cannot take the texts.
+    fn retarget_undo_notice(&mut self, title: &str, body: &str, target: UndoNotice) -> bool {
+        let Some((notice, shown)) = self.undo_notice.as_mut() else {
+            return false;
+        };
+        let action = pecofence_core::i18n::text("撤销");
+        match notice.set_content(title, body, action, crate::notice::locale()) {
+            Ok(()) => {
+                tracing::info!(from = ?*shown, to = ?target, "undo notice names the newer step");
+                *shown = target;
+                true
+            }
+            Err(error) => {
+                tracing::warn!(%error, "undo notice did not take the newer step");
+                false
+            }
+        }
+    }
+
+    /// What the undo card keeps clear of: the fences, and a card of another kind that is up
+    /// (a tip, the update card, the rating offer). The delete used to get no card then.
+    fn undo_notice_avoid_rects(&self) -> Vec<RECT> {
+        let cards = self.notice_rects();
+        if !cards.is_empty() {
+            tracing::info!(cards = cards.len(), "undo notice shows beside another card");
+        }
+        let mut avoid = self.notice_avoid_rects();
+        avoid.extend(cards);
+        avoid
+    }
+
+    /// After a delete from the fence menu: 「已删除栅栏“X”」 with 撤销. The card of an earlier
+    /// undo offer takes the new texts; beside another kind of card (a tip, the update card) it
+    /// shows at the nearest free place.
     pub(super) fn offer_undo_delete(&mut self, fence: FenceId, title: &str) {
-        if self.notice_showing() {
-            tracing::info!("undo notice not shown: another notice is up");
+        let title = pecofence_core::i18n::format("已删除栅栏“{0}”", &[title.to_string()]);
+        let body = pecofence_core::i18n::text("点“撤销”，或在栅栏上按 Ctrl+Z，就能把它找回来。");
+        if self.retarget_undo_notice(&title, body, UndoNotice::Deleted(fence)) {
             return;
         }
         self.undo_notice = None;
-        let title = pecofence_core::i18n::format("已删除栅栏“{0}”", &[title.to_string()]);
         match crate::notice::Notice::show(
             &self.ctx,
             &title,
-            pecofence_core::i18n::text("点「撤销」，或在栅栏上按 Ctrl+Z，就能把它找回来。"),
+            body,
             pecofence_core::i18n::text("撤销"),
             crate::notice::locale(),
-            &self.notice_avoid_rects(),
+            &self.undo_notice_avoid_rects(),
         ) {
             Ok(notice) => {
                 tracing::info!(%fence, "undo notice shown");
@@ -403,26 +671,67 @@ impl App {
         }
     }
 
-    /// After 「立即应用」 moved `moved` icons (step `id`): 「已按规则整理 N 个项目」 with 撤销, unless
-    /// another notice is up (Ctrl+Z still undoes it then). Returns whether it is shown.
+    /// After 「立即应用」 moved `moved` icons (step `id`): 「已按规则整理 N 个项目」 with 撤销. The
+    /// card of an earlier undo offer takes the new texts; beside another kind of card it shows
+    /// at the nearest free place. Returns whether it is shown.
     pub(super) fn offer_undo_refiled(&mut self, id: u64, moved: usize) -> bool {
+        let title = pecofence_core::i18n::format("已按规则整理 {0} 个项目", &[moved.to_string()]);
+        let body =
+            pecofence_core::i18n::text("点“撤销”，或在栅栏上按 Ctrl+Z，就能把它们放回原处。");
+        if self.retarget_undo_notice(&title, body, UndoNotice::Refiled(id)) {
+            return true;
+        }
+        self.undo_notice = None;
+        match crate::notice::Notice::show(
+            &self.ctx,
+            &title,
+            body,
+            pecofence_core::i18n::text("撤销"),
+            crate::notice::locale(),
+            &self.undo_notice_avoid_rects(),
+        ) {
+            Ok(notice) => {
+                tracing::info!(moved, "undo notice shown for the rules applied");
+                self.undo_notice = Some((notice, UndoNotice::Refiled(id)));
+                true
+            }
+            Err(error) => {
+                tracing::warn!(%error, "undo notice not shown");
+                false
+            }
+        }
+    }
+
+    /// Fence `fence` was sent away from the current virtual desktop; its window showed on
+    /// `before` until then.
+    pub(super) fn note_desktops_for_undo(&mut self, fence: FenceId, before: Vec<String>) {
+        self.push_undo(UndoStep::Desktops { fence, before });
+    }
+
+    /// After a fence was sent to another virtual desktop from its menu or Settings: 「“X”现在
+    /// 只在“Y”上显示」 with 撤销, unless another notice is up (Ctrl+Z still undoes it then).
+    /// Returns whether it is shown.
+    pub(super) fn offer_undo_desktops(&mut self, fence: FenceId, title: &str, on: &str) -> bool {
         if self.notice_showing() {
             tracing::info!("undo notice not shown: another notice is up");
             return false;
         }
         self.undo_notice = None;
-        let title = pecofence_core::i18n::format("已按规则整理 {0} 个项目", &[moved.to_string()]);
+        let head = pecofence_core::i18n::format(
+            "“{0}”现在只在“{1}”上显示",
+            &[title.to_string(), on.to_string()],
+        );
         match crate::notice::Notice::show(
             &self.ctx,
-            &title,
-            pecofence_core::i18n::text("点「撤销」，或在栅栏上按 Ctrl+Z，就能把它们放回原处。"),
+            &head,
+            pecofence_core::i18n::text("切换到那个虚拟桌面就能看到它；点“撤销”让它回到这个桌面。"),
             pecofence_core::i18n::text("撤销"),
             crate::notice::locale(),
             &self.notice_avoid_rects(),
         ) {
             Ok(notice) => {
-                tracing::info!(moved, "undo notice shown for the rules applied");
-                self.undo_notice = Some((notice, UndoNotice::Refiled(id)));
+                tracing::info!(%fence, "undo notice shown for the fence sent to another desktop");
+                self.undo_notice = Some((notice, UndoNotice::Desktops(fence)));
                 true
             }
             Err(error) => {

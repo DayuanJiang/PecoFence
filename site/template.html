@@ -46,6 +46,10 @@
   <symbol id="i-note" viewBox="0 0 24 24"><path d="M15 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10Z"/><path d="M15 21v-4a2 2 0 0 1 2-2h4M7 8h10M7 12h6"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
   <symbol id="i-code" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3m5 0h5"/></symbol>
+  <symbol id="i-smart" viewBox="0 0 24 24"><path d="M21 11V9a2 2 0 0 0-2-2h-6l-3-4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6"/><circle cx="16.5" cy="16.5" r="3.5"/><path d="m19 19 2.5 2.5"/></symbol>
+  <symbol id="i-desktops" viewBox="0 0 24 24"><rect x="7" y="3" width="14" height="11" rx="2"/><path d="M5 7.5H4.5A1.5 1.5 0 0 0 3 9v9.5A1.5 1.5 0 0 0 4.5 20H16a1.5 1.5 0 0 0 1.5-1.5V17"/></symbol>
+  <symbol id="i-place" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3 9 6m3-3 3 3m-3 15-3-3m3 3 3-3M3 12l3-3m-3 3 3 3m15-3-3-3m3 3-3 3"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M8 5 3 10l5 5"/><path d="M3 10h11a6 6 0 0 1 0 12h-3"/></symbol>
   <symbol id="i-jump" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M8 14h7m-2.5-2.5L15 14l-2.5 2.5"/></symbol>
 </svg>
 {{header}}
@@ -97,6 +101,14 @@
         <div class="tools-heading">
           <h3>{{t:tools.heading}}</h3>
           <p>{{t:tools.intro}}</p>
+          <a class="text-link" href="manual/#tools">{{t:features.guide}}<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        </div>
+        <div class="tools-media feature-media clip">
+          <video aria-label="{{t:tools.heading}}" controls muted loop playsinline preload="none" poster="{{root}}assets/tools.jpg" width="1290" height="726">
+            <source src="{{root}}assets/tools.mp4" type="video/mp4">
+            <img class="poster" src="{{root}}assets/tools.jpg" alt="{{t:tools.heading}}" width="1290" height="726">
+          </video>
+          <iframe class="feature-demo" title="{{t:tools.heading}}" data-src="manual/?only=tools&amp;embed" loading="lazy" hidden></iframe>
         </div>
         <dl class="details">
 {{tools}}

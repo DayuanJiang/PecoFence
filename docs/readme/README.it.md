@@ -113,6 +113,26 @@ Prendi quello che ti serve, poi premi **Esc** per tornare indietro.
 
 ![La vista rapida porta i riquadri sopra un’applicazione; un clic fuori dai riquadri o l’apertura di un file riporta all’applicazione.](../assets/peek.gif)
 
+### Un riquadro che si riempie da solo.
+
+Un riquadro intelligente mostra sempre aggiornato il risultato di una ricerca salvata. Scegli un
+modello come **Download degli ultimi 7 giorni** e fai clic su **Crea**: i nuovi file che
+corrispondono compaiono da soli, e i file restano dove sono.
+
+![New smart fence… nel menu di un riquadro apre una piccola finestra; il modello Downloads of the last 7 days compila le condizioni; Create mette sul desktop un riquadro con sei file, e un nuovo download vi compare da solo.](../assets/smart.gif)
+
+### Note, un orologio e i tuoi script.
+
+Aggiungili da **Impostazioni → Strumenti**: una nota in cui le righe che iniziano con `[ ]`
+diventano attività da spuntare, un orologio con la data e riquadri script che mostrano ciò che
+stampa uno script, per esempio il meteo.
+
+![Nelle Impostazioni, New note mette una nota sul desktop e un clic spunta la sua prima attività; Add le affianca un orologio, poi un riquadro con il meteo di Tokyo.](../assets/tools.gif)
+
+Nel manuale trovi anche: [riquadri per ogni desktop virtuale](https://pecofence.jiang.jp/it/manual/#vdesk) ([GIF](../assets/vdesk.gif)),
+[icone del desktop che restano dove le metti](https://pecofence.jiang.jp/it/manual/#free-place) ([GIF](../assets/free-place.gif)) e
+[Ctrl+Z per annullare l’ultima operazione](https://pecofence.jiang.jp/it/manual/#undo) ([GIF](../assets/undo.gif)).
+
 <sub>Animazioni dal <a href="https://pecofence.jiang.jp/it/manual/">manuale</a>. Le GIF si ripetono automaticamente.</sub>
 
 ## Piccoli dettagli che fanno la differenza
@@ -150,7 +170,7 @@ L’edizione Microsoft Store è firmata da Microsoft, si aggiorna automaticament
 <details>
 <summary><strong>Requisiti, configurazione e qualche nota utile</strong></summary>
 
-- Windows 10 22H2, oppure Windows 11 22H2 o versioni successive. Le Impostazioni richiedono Microsoft Edge WebView2 Runtime. È già incluso in Windows 11; su Windows 10 installalo dal sito di Microsoft se le Impostazioni non si aprono.
+- Windows 10 1809 o versioni successive (edizione Microsoft Store: 2004 o successive), oppure Windows 11 22H2 o versioni successive. Le Impostazioni richiedono Microsoft Edge WebView2 Runtime. È già incluso in Windows 11; su Windows 10 installalo dal sito di Microsoft se le Impostazioni non si aprono.
 - Al primo avvio vengono creati quattro riquadri nella lingua scelta: Programmi, Cartelle, File e documenti e Desktop. Le icone del desktop di Windows ricompaiono quando esci.
 - La configurazione si trova in `%APPDATA%\PecoFence\config.json`. Avvia il programma con `--portable` per tenerla in una cartella `config` accanto all’eseguibile.
 - Lo ZIP e il programma d’installazione non sono firmati. Se al primo avvio compare Windows SmartScreen, scegli **Ulteriori informazioni → Esegui comunque**.
@@ -175,7 +195,7 @@ Firma del codice gratuita offerta da [SignPath.io](https://about.signpath.io/), 
 
 Vengono firmati solo i file che GitHub Actions compila da un tag di versione di questo repository. Ogni firma viene approvata a mano.
 
-**Privacy:** PecoFence controlla gli aggiornamenti su GitHub e invia [statistiche di utilizzo](../USAGE_STATS.md) al servizio di PecoFence. Entrambe le funzioni si possono disattivare in **Impostazioni › Informazioni**. Quello che invii da **Feedback** arriva al servizio di feedback di PecoFence. La finestra delle impostazioni usa Microsoft Edge WebView2, a cui si applica l'[Informativa sulla privacy di Microsoft](https://privacy.microsoft.com/privacystatement).
+**Privacy:** PecoFence controlla gli aggiornamenti su GitHub e invia [statistiche di utilizzo](../USAGE_STATS.md) al servizio di PecoFence. Entrambe le funzioni si possono disattivare in **Impostazioni › Informazioni**. Il controllo degli aggiornamenti contatta l'API di GitHub e, solo se GitHub non risponde, il sito di PecoFence (pecofence.jiang.jp). Durante il controllo non viene inviato nulla oltre alla richiesta stessa, che indica la versione di PecoFence. Quello che invii da **Feedback** arriva al servizio di feedback di PecoFence. La finestra delle impostazioni usa Microsoft Edge WebView2, a cui si applica l'[Informativa sulla privacy di Microsoft](https://privacy.microsoft.com/privacystatement).
 
 ---
 

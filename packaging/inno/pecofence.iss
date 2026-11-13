@@ -40,9 +40,11 @@ UsePreviousAppDir=yes
 DisableProgramGroupPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; Windows 10 2004 (build 19041) and later, as the Store package; 20H2 to 22H2 and LTSC 2021
-; (19042 to 19045) are the same release with enablement packages.
-MinVersion=10.0.19041
+; Windows 10 1809 (build 17763: LTSC 2019, Server 2019) and later. 1809 is the first build
+; with the Composition clip the fences are drawn with (CompositionGeometricClip); PecoFence
+; was tested there on a Server 2019 box (#219). The Store package stays at 2004 (build
+; 19041): its manifest uses uap10 attributes, and LTSC 2019 has no Store.
+MinVersion=10.0.17763
 SetupIconFile=..\..\crates\app\assets\pecofence.ico
 UninstallDisplayIcon={app}\pecofence.exe
 OutputBaseFilename=pecofence-v{#AppVersion}-x64-setup

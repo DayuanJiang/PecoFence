@@ -7,7 +7,8 @@
 #            setup edition turns autostart on, which Defender flags on unsigned builds)
 #   build    release or debug (the settings page over CDP needs debug)
 #   file     the steps file in tests/
-#   options  run.sh options; @installers is the folder from installers.sh (--installers)
+#   options  run.sh options; @installers is the folder from installers.sh (--installers),
+#            @shellext the folder with the test shell extension that build.sh makes
 #
 # name             min where  build   file                           options
 matrix             5   ec2    release 186-matrix.ps1
@@ -30,6 +31,8 @@ watchdog           5   ec2    release watchdog-restart.ps1
 desktop-input-A    2   ec2    release desktop-clicks-and-focus.ps1   --var Part=A
 desktop-input-B    3   ec2    release desktop-clicks-and-focus.ps1   --var Part=B
 desktop-input-C    3   ec2    release desktop-clicks-and-focus.ps1   --var Part=C
+showdesk-nofocus   1   ec2    release show-desktop-window-without-focus.ps1
+showdesk-dblclick  1   vm     release owner-showdesktop-dblclick.ps1
 explorer-freeze    2   ec2    release explorer-busy.ps1              --var Part=freeze
 explorer-burst     3   ec2    release explorer-busy.ps1              --var Part=burst
 explorer-start     3   ec2    release explorer-busy.ps1              --var Part=start
@@ -66,6 +69,7 @@ peek-chinese       4   ec2    debug   peek-chinese-input.ps1
 update-check       6   ec2    debug   update-check.ps1
 smart-filter       1   ec2    release smart-filter.ps1
 smart-fallback     2   ec2    release smart-fallback.ps1
+smart-idle-log     1   ec2    release smart-idle-log.ps1
 smart-perf         1   ec2    release smart-perf.ps1
 smart-settings     1   ec2    debug   smart-settings.ps1
 smart-editor-A     3   ec2    debug   smart-editor.ps1               --var Part=A
@@ -120,4 +124,122 @@ polish-quit-name   1   ec2    release polish-quit-namebox.ps1
 polish-peek        3   ec2    release polish-peek.ps1
 polish-ink-AD      3   ec2    release polish-ink.ps1                 --var Part=AD
 polish-ink-BC      4   ec2    release polish-ink.ps1                 --var Part=BC
+polish-tool-place  2   ec2    release polish-tool-place.ps1
+# Owner round 2026-11-12: one steps file per fix package (owner-notices' N part needs the exe's
+# version resource: build.sh embeds it; its E part and the editor's B part need Everything).
+owner-tools-A      1   ec2    release owner-tools.ps1                --var Part=A
+owner-tools-B      1   ec2    release owner-tools.ps1                --var Part=B
+owner-tools-C      1   ec2    release owner-tools.ps1                --var Part=C
+owner-tools-I      1   ec2    release owner-tools.ps1                --var Part=I
+owner-notices      2   ec2    release owner-notices.ps1
+owner-search-core  2   ec2    release owner-search-core.ps1
+owner-search-look  2   ec2    release owner-search-polish.ps1
+owner-glass-looks  3   ec2    release owner-glass-looks.ps1
+owner-frames-A     2   ec2    release owner-frame-pacing.ps1         --var Part=A
+owner-frames-B     2   ec2    release owner-frame-pacing.ps1         --var Part=B
+owner-settings-open 2  ec2    release owner-settings-host.ps1        --var Part=OK
+owner-settings-page 2  ec2    debug   owner-settings-host.ps1        --var Part=RDK
+owner-settings-ui  1   ec2    debug   owner-settings-ui.ps1
+owner-editor-A     2   ec2    debug   owner-smart-editor.ps1         --var Part=A
+owner-editor-B     2   ec2    debug   owner-smart-editor.ps1         --var Part=B
+shellext-delete    2   ec2    release shellext-fault.ps1             --extra @shellext --var Part=D
+shellext-crash     2   ec2    release shellext-fault.ps1             --extra @shellext --var Part=F
+shellext-log       1   ec2    release shellext-fault.ps1             --extra @shellext --var Part=L
+shellext-copy      1   ec2    release shellext-fault.ps1             --extra @shellext --var Part=C
+shellext-menu-off  2   ec2    release shellext-fault.ps1             --extra @shellext --var Part=M
+shellext-own-crash 1   ec2    release shellext-fault.ps1             --extra @shellext --var Part=O
+shellext-load      1   ec2    release shellext-fault.ps1             --extra @shellext --var Part=A
+shellext-hang      2   ec2    release shellext-fault.ps1             --extra @shellext --var Part=H
+shellext-stall     2   ec2    debug   shellext-fault.ps1             --extra @shellext --var Part=S
+owner-script-rows  2   ec2    release owner-script-rows.ps1          --extra crates/app/assets/scripts
+owner-hover-tabs   2   ec2    release owner-small.ps1                --var Part=HT
+owner-right-drag   2   ec2    release owner-small.ps1                --var Part=RD
+owner-drop-effect  3   manual release owner-small.ps1                --var Part=DDT
+# Windows 10 1809 / Server 2019 (build 17763, #219): these fail without their fix only on a box
+# of that build (WINTEST_CONF with a Server 2019 box; each file's header says why).
+tray-menu-keys     1   manual release tray-menu-keys.ps1
+icon-font-gaps     1   manual debug   icon-font-gaps.ps1
+dark-title-bar     1   manual release dark-title-bar.ps1
+toast-menu          3   vm     release owner-toast-menu.ps1
+# Owner round 2026-11-12, second batch (UI, UX and motion hunts): one steps file per group.
+o2-update          3   ec2    debug   owner2-update.ps1
+o2-requests-HS     2   ec2    release owner2-requests.ps1            --var Part=HS
+o2-requests-TD     2   ec2    release owner2-requests.ps1            --var Part=TD
+o2-requests-FV     2   ec2    release owner2-requests.ps1            --var Part=FV
+o2-requests-page   2   ec2    debug   owner2-requests.ps1            --var Part=FVS
+o2-hardening       3   ec2    release owner2-hardening.ps1
+o2-lang            4   ec2    release owner2-hunt-lang.ps1
+o2-tabs            4   ec2    release owner2-hunt-tabs.ps1
+o2-smart           4   ec2    release owner2-hunt-smart.ps1
+o2-smart-page      2   ec2    debug   owner2-hunt-smart.ps1          --var Part=G
+o2-rules           4   ec2    release owner2-hunt-rules.ps1
+o2-rules-page      2   ec2    debug   owner2-hunt-rules.ps1          --var Part=P
+o2-desktop         4   ec2    release owner2-hunt-desktop.ps1
+o2-scale           3   ec2    release owner2-hunt-scale.ps1
+o2-fence-life      4   ec2    release owner2-ux-fence-life.ps1
+o2-items           4   ec2    release owner2-ux-items.ps1
+o2-popups          5   ec2    release owner2-ux-popups.ps1
+o2-tools           4   ec2    release owner2-ux-tools.ps1
+o2-settings        3   vm     debug   owner2-ux-settings.ps1
+o2-looks           5   vm     release owner2-ux-looks.ps1
+# Owner round 2026-11-12, third batch (UI, UX and motion leftovers): one steps file per group.
+o3-chrome          4   ec2    release owner3-ux3-chrome.ps1
+o3-chrome-scale    3   resize release free-placement.ps1             --steps owner3-ux3-chrome-scale.ps1
+o3-icons-A         2   ec2    release owner3-ux3-icons.ps1           --var Part=A
+o3-icons-B         2   ec2    release owner3-ux3-icons.ps1           --var Part=B
+o3-icons-C         1   ec2    release owner3-ux3-icons.ps1           --var Part=C
+o3-icons-D         2   ec2    release owner3-ux3-icons.ps1           --var Part=D
+o3-icons-E         1   ec2    release owner3-ux3-icons.ps1           --var Part=E
+o3-icons-F         1   ec2    release owner3-ux3-icons.ps1           --var Part=F
+o3-icons-G         1   ec2    release owner3-ux3-icons.ps1           --var Part=G
+o3-peek            4   ec2    release owner3-ux3-peek.ps1
+o3-peek-texts      1   ec2    release owner3-ux3-peek-texts.ps1
+o3-settings        3   vm     debug   owner3-ux3-settings.ps1
+o3-firstrun        4   ec2    release owner3-ux3-firstrun.ps1        --var Part=C
+o3-text            4   ec2    release owner3-ux3-text.ps1
+o3-icons2-A        2   ec2    release owner3-ux3-icons2.ps1          --var Part=A
+o3-icons2-B        1   ec2    release owner3-ux3-icons2.ps1          --var Part=B
+o3-icons2-C        1   ec2    release owner3-ux3-icons2.ps1          --var Part=C
+o3-icons2-D        2   ec2    release owner3-ux3-icons2.ps1          --var Part=D
+o3-notices         2   ec2    release owner3-ux3-notices.ps1         --var Part=NJ
+o3-notices-page    1   ec2    debug   owner3-ux3-notices.ps1         --var Part=W
+o3-folder          5   ec2    release owner3-ux3-folder.ps1
+o3-keys            4   ec2    release owner3-ux3-keys.ps1
+o3-looks           4   ec2    release owner3-ux3-looks.ps1           --extra ui/themes --var Look=fluent-dark-bright,glass-light-dark
+o3-icons3          2   ec2    release owner3-ux3-icons3.ps1          --var Part=F
+o3-windows         4   vm     debug   owner3-ux3-windows.ps1
+# Owner round, the night of 2026-11-12: latency of everyday actions (each part holds one bound).
+o4-latency-next    2   ec2    release owner4-latency.ps1             --var Part=NEXT
+o4-latency-roll    2   ec2    release owner4-latency.ps1             --var Part=ROLL
+o4-latency-fill    1   ec2    release owner4-latency.ps1             --var Part=FILL
+o4-latency-search  1   ec2    release owner4-latency.ps1             --var Part=SRCH
+o4-open            4   ec2    release owner4-open.ps1
+o4-open-tips       1   ec2    debug   owner4-open.ps1                --var Part=T
+o4-open-accent     1   ec2    release owner4-open.ps1                --extra ui/themes --var Part=A
+o4-big             4   ec2    release owner4-big.ps1
+o4-settings        4   ec2    release owner4-settings.ps1            --var Part=A --var N=5
+o4-settings-fonts  2   ec2    debug   owner4-settings.ps1            --var Part=S
+o4-todo            4   ec2    release owner4-todo.ps1
+o4-fixes           4   ec2    release owner4-fixes.ps1               --var Part=NHPT
+o4-todo-looks      3   resize release free-placement.ps1             --steps owner4-todo-looks.ps1
+# The night's code reads of the merged branch: one steps file per round of fixes.
+o5-fixes-a         4   ec2    release owner5-fixes-a.ps1
+o5-fixes-b         5   ec2    debug   owner5-fixes-b.ps1
+# 显示托盘图标 (GitHub #209, feedback #145): the switch, and what stays in reach without the icon.
+o6-tray            3   ec2    debug   owner6-tray.ps1
+# Liquid Glass over a live wallpaper whose picture cannot be read (feedback #134 and four more):
+# the see-through pane and the card, then the line on the settings page.
+o6-livewall        4   ec2    release owner6-livewall.ps1
+o6-livewall-page   3   ec2    debug   owner6-livewall.ps1            --var Part=P
+o6-livewall-card   3   ec2    release owner6-livewall.ps1            --var Part=C
+o8-pane-tint       2   ec2    release owner8-pane-tint.ps1
+# The shell menu prewarm with a shortcut to a folder, a dead share and a missing drive first in
+# path order: an Administrator has to put the file on the public desktop first (the file's header).
+o8-prewarm         2   manual release owner8-prewarm.ps1
+# 图标对齐 右对齐 and 鼠标移入时保持透明 (GitHub #222): the fences, the two options in 栅栏选项,
+# and 右对齐 at 150 %.
+o6-align           4   ec2    release owner6-align.ps1
+o6-align-page      3   ec2    debug   owner6-align.ps1               --var Part=P
+o6-align-scale     3   resize release free-placement.ps1             --part S --steps owner6-align.ps1
+# Usage statistics: operations appear in usage.json, nothing typed does, an upload, the switch.
 usage-stats        4   ec2    release usage.ps1

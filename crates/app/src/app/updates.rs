@@ -2,6 +2,11 @@
 //! itself. Checking and downloading run on a worker thread. An installed copy then starts the
 //! new setup and exits; setup waits for it, installs and starts PecoFence again.
 //!
+//! A check asks GitHub's API first. Without a good answer within `ANSWER_WAIT` (a network that
+//! cannot reach GitHub, an error, a rate limit) it asks the project's website for its copy of
+//! the latest release (`update.json`); a release read there opens the site's download section
+//! as its page. When both fail, the page names the site's address and offers 「打开下载页」.
+//!
 //! 自动检查更新 (Settings → 关于, on by default; the installer and ZIP editions, never the Store
 //! edition, a named test instance only with the test feed): about a minute after start and then
 //! once a day the same request runs by itself. Offline, an error or a rate limit only logs a line
@@ -17,7 +22,13 @@ use pecofence_core::updates::{self, Release};
 /// A named test instance's release API (`http://127.0.0.1:` only, and only with
 /// `PECOFENCE_INSTANCE`): the updater's end-to-end test serves a release from a local server.
 const URL_VAR: &str = "PECOFENCE_UPDATE_URL";
+/// The test feed's stand-in for the site's `update.json` (`http://127.0.0.1:` only; without it
+/// the file is asked for at the test feed's own origin).
+const SITE_URL_VAR: &str = "PECOFENCE_UPDATE_SITE_URL";
 const MAX_RELEASE_JSON: usize = 1024 * 1024;
+/// How long each request of a check may take. WinHTTP's own timeouts let a network that cannot
+/// reach GitHub hang for up to a minute; after this long the check goes on to the site's file.
+const ANSWER_WAIT: std::time::Duration = std::time::Duration::from_secs(8);
 /// The automatic check, a card that waits, the check after a resume (`TIMER_UPDATE_CHECK`,
 /// `TIMER_UPDATE_CARD`, `TIMER_UPDATE_RESUME`); retried while the App is borrowed.
 pub(super) const TIMER_UPDATE_CHECK: usize = 97;
@@ -80,7 +91,7 @@ fn test_feed() -> bool {
 /// The release page in the browser (the ZIP edition's download, 「查看新功能」).
 fn open_release_page(page: &str) {
     match shell::shell_execute(Path::new(page), None, None) {
-        Ok(_) => tracing::info!("update: release page opened"),
+        Ok(_) => tracing::info!(page, "update: release page opened"),
         Err(e) => tracing::warn!(error = %e, "opening the release page failed"),
     }
 }
@@ -141,28 +152,86 @@ pub(super) fn user_agent() -> String {
     format!("PecoFence/{}", env!("CARGO_PKG_VERSION"))
 }
 
-/// The release API and the prefix its files must be downloaded from.
-fn source(test_instance: bool) -> (String, String) {
+/// The release API, the prefix its files must be downloaded from, and the site's copy of the
+/// latest release.
+fn source(test_instance: bool) -> (String, String, String) {
     match pecofence_core::brand::var(URL_VAR) {
         Ok(url) if test_instance && url.starts_with("http://127.0.0.1:") => {
             let origin = url.split('/').take(3).collect::<Vec<_>>().join("/") + "/";
-            (url, origin)
+            let site = pecofence_core::brand::var(SITE_URL_VAR)
+                .ok()
+                .filter(|u| u.starts_with("http://127.0.0.1:"))
+                .unwrap_or_else(|| format!("{origin}update.json"));
+            (url, origin, site)
         }
-        _ => (updates::latest_release_url(), updates::download_base()),
+        _ => (
+            updates::latest_release_url(),
+            updates::download_base(),
+            updates::site_update_url(),
+        ),
     }
 }
 
-/// The latest release; for a newer one also the first point of its Store notes in the UI
-/// language `ui_language` (one more request, only then; a failure only loses that line).
+/// `http::get` of one of a check's small files, waited for at most `ANSWER_WAIT`: the request
+/// runs on a thread of its own, and one that got no answer in time ends by itself later.
+fn get_in_time(url: &str, headers: &'static str) -> std::result::Result<Vec<u8>, String> {
+    let (answer, waiting) = std::sync::mpsc::channel();
+    let address = url.to_string();
+    std::thread::Builder::new()
+        .name("pecofence-update-get".into())
+        .spawn(move || {
+            let _ = answer.send(pecofence_platform::http::get(
+                &address,
+                &user_agent(),
+                headers,
+                MAX_RELEASE_JSON,
+            ));
+        })
+        .map_err(|e| e.to_string())?;
+    waiting.recv_timeout(ANSWER_WAIT).unwrap_or_else(|_| {
+        Err(format!(
+            "no answer from {url} within {} s",
+            ANSWER_WAIT.as_secs()
+        ))
+    })
+}
+
+/// The site's copy of the latest release (`update.json` at `site`), with the card's line in the
+/// UI language `ui_language`.
+fn site_copy(site: &str, base: &str, ui_language: &str) -> std::result::Result<Release, String> {
+    let body = get_in_time(site, "")?;
+    updates::parse_site_update(&String::from_utf8_lossy(&body), base, ui_language)
+}
+
+/// The latest release: from GitHub's API, or from the site's copy when the API gives no good
+/// answer in time. For a newer one from GitHub also the first point of its Store notes in the
+/// UI language `ui_language` (one more request, only then: GitHub's raw file, or the site's
+/// copy of the same version when that file cannot be read; a failure only loses that line).
 fn check(test_instance: bool, ui_language: &str) -> std::result::Result<Done, String> {
-    let (url, base) = source(test_instance);
-    let body = pecofence_platform::http::get(
-        &url,
-        &user_agent(),
-        "Accept: application/vnd.github+json",
-        MAX_RELEASE_JSON,
-    )?;
-    let mut release = updates::parse_release(&String::from_utf8_lossy(&body), &base)?;
+    let (url, base, site) = source(test_instance);
+    let started = Instant::now();
+    let github = get_in_time(&url, "Accept: application/vnd.github+json")
+        .and_then(|body| updates::parse_release(&String::from_utf8_lossy(&body), &base));
+    let mut release = match github {
+        Ok(release) => release,
+        Err(first) => {
+            tracing::info!(
+                error = %first,
+                waited_ms = started.elapsed().as_millis() as u64,
+                "update: no answer from GitHub; asking the site"
+            );
+            let release = site_copy(&site, &base, ui_language)
+                .map_err(|second| format!("GitHub: {first}; the site: {second}"))?;
+            tracing::info!(
+                version = %release.version,
+                line = release.store_line.is_some(),
+                waited_ms = started.elapsed().as_millis() as u64,
+                "update: answer from the site"
+            );
+            let newer = updates::is_newer(&release.version, env!("CARGO_PKG_VERSION"));
+            return Ok(Done::Checked(newer.then_some(release)));
+        }
+    };
     if !updates::is_newer(&release.version, env!("CARGO_PKG_VERSION")) {
         return Ok(Done::Checked(None));
     }
@@ -174,21 +243,33 @@ fn check(test_instance: bool, ui_language: &str) -> std::result::Result<Done, St
     };
     match updates::store_notes_url(&raw_base, &release.version, ui_language) {
         None => tracing::info!(ui_language, "update: no Store notes for this language"),
-        Some(notes) => {
-            match pecofence_platform::http::get(&notes, &user_agent(), "", MAX_RELEASE_JSON) {
-                Ok(bytes) => {
-                    release.store_line =
-                        updates::store_notes_line(&String::from_utf8_lossy(&bytes));
+        Some(notes) => match get_in_time(&notes, "") {
+            Ok(bytes) => {
+                release.store_line = updates::store_notes_line(&String::from_utf8_lossy(&bytes));
+                tracing::info!(
+                    found = release.store_line.is_some(),
+                    "update: Store notes read"
+                );
+            }
+            // GitHub's raw files are out of reach on many networks that reach its API: the
+            // site's copy holds the same line while it is of the same version.
+            Err(e) => match site_copy(&site, &base, ui_language) {
+                Ok(copy) if copy.version == release.version => {
+                    release.store_line = copy.store_line;
                     tracing::info!(
+                        error = %e,
                         found = release.store_line.is_some(),
-                        "update: Store notes read"
+                        "update: Store notes not read from GitHub; the line of the site's copy"
                     );
                 }
-                Err(e) => {
-                    tracing::info!(error = %e, "update: Store notes not read; the card says something general")
+                Ok(copy) => {
+                    tracing::info!(error = %e, site_version = %copy.version, "update: Store notes not read, the site's copy is of another version; the card says something general")
                 }
-            }
-        }
+                Err(second) => {
+                    tracing::info!(error = %e, site = %second, "update: Store notes not read; the card says something general")
+                }
+            },
+        },
     }
     Ok(Done::Checked(Some(release)))
 }
@@ -314,6 +395,10 @@ impl App {
                 self.run_update_job(Status::Downloading(release), move || download(&job_release));
             }
             ("openReleasePage", Status::Available(release)) => open_release_page(&release.page),
+            // 「打开下载页」 beside a failed check or download: the site's download section.
+            ("openDownloadPage", _) => open_release_page(&updates::site_download_page(
+                pecofence_core::i18n::language().tag(),
+            )),
             _ => {}
         }
     }
@@ -384,6 +469,12 @@ impl App {
                 }
             };
             self.post_update();
+            // 「更新」 on the card or in the tray menu runs with Settings closed: when the
+            // download failed, the About page opens, says so and offers the site's download page.
+            if matches!(self.updates.status, Status::DownloadFailed) {
+                tracing::info!("update: the download failed; opening the About page");
+                self.open_settings_page("about", Some("updateCard"));
+            }
         }
         self.show_update_card();
     }
@@ -444,6 +535,11 @@ impl App {
         self.updates.found.as_ref().map(|r| r.version.clone())
     }
 
+    /// The new setup is downloading (the tray item says so meanwhile).
+    pub(super) fn update_downloading(&self) -> bool {
+        matches!(self.updates.status, Status::Downloading(_))
+    }
+
     /// 「更新」 (the tray item, the card): the installer edition downloads and installs, the ZIP
     /// edition opens the download page.
     pub(super) fn update_now(&mut self, by: &'static str) {
@@ -464,6 +560,14 @@ impl App {
         }
         let install = self.update_edition() == Some("installer") && release.setup.is_some();
         tracing::info!(by, installs = install, version = %release.version, "update: update now");
+        // Nothing else shows until setup starts, and on a slow line that takes minutes.
+        if install && let Some(tray) = &self.tray {
+            tray.show_info(
+                "PecoFence",
+                pecofence_core::i18n::text("正在下载新版本…"),
+                false,
+            );
+        }
         self.on_update_action(if install {
             "installUpdate"
         } else {
@@ -621,7 +725,9 @@ impl App {
     /// The card's buttons: 「更新」 / 「去下载」, 「查看新功能」 (the release page); × or the
     /// timeout leave it for later (the tray item stays).
     pub(super) fn on_update_notice(&mut self, event: crate::notice::NoticeEvent) {
-        self.updates.notice = None;
+        if let Some(notice) = self.updates.notice.take() {
+            notice.leave();
+        }
         self.record_update_card(event != crate::notice::NoticeEvent::Dismissed);
         match event {
             crate::notice::NoticeEvent::Action => self.update_now("update card"),

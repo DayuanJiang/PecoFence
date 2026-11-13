@@ -107,6 +107,20 @@ Everything 是免費的檔案搜尋工具，在設定裡開啟 Everything 搜尋
 
 ![用快速鍵預覽圍欄，讓圍欄顯示在應用程式上方；點一下圍欄外面或開啟檔案，就回到應用程式。](../assets/peek.gif)
 
+### 會自己更新的圍欄
+
+智慧圍欄顯示一個儲存下來的搜尋的最新結果。選一個範本，例如**最近 7 天下載**，再點**建立**：符合條件的新檔案會自己出現，檔案留在原來的位置。
+
+![在圍欄選單裡選 New smart fence…，開啟一個小視窗；點範本 Downloads of the last 7 days，條件就填好了；點 Create，桌面上多出一個圍欄，裡面有六個檔案；新下載的檔案自己出現在裡面。](../assets/smart.gif)
+
+### 便箋、時鐘和你自己的腳本
+
+在**設定 → 小工具**裡新增：便箋裡以 `[ ]` 開頭的行會變成待辦，時鐘顯示時間和日期，腳本圍欄顯示腳本輸出的文字，例如天氣。
+
+![在設定裡點 New note，桌面上多出一張便箋，點一下就替第一項待辦打勾；點 Add，旁邊多出一個時鐘，再多出一個顯示東京天氣的圍欄。](../assets/tools.gif)
+
+使用手冊裡還有：[每個虛擬桌面一套圍欄](https://pecofence.jiang.jp/zh-TW/manual/#vdesk)（[動畫](../assets/vdesk.gif)）、[散放的桌面圖示放哪裡就在哪裡](https://pecofence.jiang.jp/zh-TW/manual/#free-place)（[動畫](../assets/free-place.gif)）和[按 Ctrl+Z 復原上一步](https://pecofence.jiang.jp/zh-TW/manual/#undo)（[動畫](../assets/undo.gif)）。
+
 <sub>動畫取自<a href="https://pecofence.jiang.jp/zh-TW/manual/">使用手冊</a>，會自動重複播放。</sub>
 
 ## 好用之處藏在細節裡
@@ -144,7 +158,7 @@ Microsoft Store 版由微軟簽署、自動更新，不會出現 SmartScreen 提
 <details>
 <summary><strong>系統需求、設定檔位置與使用說明</strong></summary>
 
-- 支援 Windows 10 22H2，以及 Windows 11 22H2 以上版本。設定面板需要 Microsoft Edge WebView2 Runtime，Windows 11 已內建，Windows 10 若無法開啟設定請從微軟官網安裝。
+- 支援 Windows 10 1809 以上版本（Microsoft Store 版需要 2004 以上），以及 Windows 11 22H2 以上版本。設定面板需要 Microsoft Edge WebView2 Runtime，Windows 11 已內建，Windows 10 若無法開啟設定請從微軟官網安裝。
 - 第一次執行時，會依所選語言建立「程式」「資料夾」「檔案與文件」和「桌面」四個圍欄。結束程式時，Windows 桌面圖示會恢復顯示。
 - 設定儲存在 `%APPDATA%\PecoFence\config.json`。以 `--portable` 啟動，可改為儲存在程式旁的 `config` 資料夾。
 - 免安裝版與安裝程式都沒有程式碼簽章。首次執行若出現 Windows SmartScreen 提示，請點選**其他資訊 → 仍要執行**。
@@ -168,7 +182,7 @@ Microsoft Store 版由微軟簽署、自動更新，不會出現 SmartScreen 提
 
 只有 GitHub Actions 從本儲存庫的版本標籤建置出來的檔案才會簽章。每一次簽章都要人工核准。
 
-**隱私：** PecoFence 會到 GitHub 檢查更新，並向 PecoFence 的服務傳送[使用統計](../USAGE_STATS.md)。兩項都可以在**設定 › 關於**裡關閉。在**意見回饋**裡傳送的內容會送到 PecoFence 的意見回饋服務。設定視窗基於 Microsoft Edge WebView2，適用 [Microsoft 隱私權聲明](https://privacy.microsoft.com/privacystatement)。
+**隱私：** PecoFence 會到 GitHub 檢查更新，並向 PecoFence 的服務傳送[使用統計](../USAGE_STATS.md)。兩項都可以在**設定 › 關於**裡關閉。檢查更新時，它會連到 GitHub 的 API；只有 GitHub 沒有回應時，才改為連到 PecoFence 的網站（pecofence.jiang.jp）。這時除了請求本身（其中帶有 PecoFence 的版本號），不會傳送任何資訊。在**意見回饋**裡傳送的內容會送到 PecoFence 的意見回饋服務。設定視窗基於 Microsoft Edge WebView2，適用 [Microsoft 隱私權聲明](https://privacy.microsoft.com/privacystatement)。
 
 ---
 

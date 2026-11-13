@@ -1,49 +1,49 @@
-// 5.2 让 AI 帮你配置: the request is pasted into a coding agent, which reads pecofence-cli skill and
+// 2.1 让 AI 帮你配置: the request is pasted into a coding agent, which reads pecofence-cli skill and
 // describe, looks at the fences, backs up (config export + snapshot save, as in the site's sample),
-// then switches the theme and the fences' opacity; the running app changes as each command lands.
-// Commands follow docs/CLI.md; replies are the compact JSON the CLI prints to a pipe (keys sorted,
-// shortened with …).
+// then switches the theme style to Liquid Glass and the fences' opacity to 更透明; the running app
+// changes as each command lands. Commands follow docs/CLI.md; replies are the compact JSON the CLI
+// prints to a pipe (keys sorted, shortened with …). The 「桌面」 of a new installation has no
+// plate: its icons are the loose ones at the top-left corner, which neither change touches.
 (() => {
     'use strict';
-    const { E, ramp, lerp, pathAt, el, put, size, show, local, icon, fence, pointer, drawPointer, drawKeys,
-        taskbar, loopFade, T } = PM;
+    const { E, ramp, lerp, pathAt, el, put, size, show, local, deskCell, icon, fence, pointer, drawPointer,
+        drawKeys, taskbar, loopFade } = PM;
 
     const D = 11.0;
-    const TERM = { x: 18, y: 14, w: 408, h: 394 };
-    const VIEW_H = TERM.h - 42 - 60;                         // transcript viewport above the input
+    const TERM = { x: 96, y: 14, w: 408, h: 394 };
+    const VIEW_H = TERM.h - 42 - 68;                         // transcript viewport above the input
     const FENCES = [
-        { x: 448, y: 40, w: 168, h: 204, title: '程序', c: 2,
-            items: [['url', '项目主页'], ['exe', '截图工具'], ['url', '在线文档'], ['exe', '录屏']] },
-        { x: 624, y: 40, w: 168, h: 204, title: '文件与文档', c: 2,
+        { x: 530, y: 40, w: 246, h: 124, title: '程序',
+            items: [['url', '项目主页'], ['exe', '截图工具'], ['url', '在线文档']] },
+        { x: 530, y: 176, w: 246, h: 204, title: '文件与文档',
             items: [['pdf', '合同.pdf'], ['docx', '周报.docx'], ['xlsx', '预算.xlsx'], ['txt', '待办.txt']] },
-        { x: 448, y: 252, w: 344, h: 124, title: '桌面', c: 4,
-            items: [['folder', '素材'], ['folder', '照片'], ['txt', '安装日志.log']] },
     ];
+    const DESKTOP = [['folder', '素材'], ['folder', '照片'], ['txt', '安装日志.log']];
 
-    // FEATURES.md, AI + CLI: the suggested request
-    const PROMPT = '先阅读 pecofence-cli skill 和 pecofence-cli describe，查看并备份我的配置，再切换为深色模式，把所有栅栏调得更透明。';
+    // the lesson's example request (the side column's 「可以这样写」)
+    const PROMPT = '先阅读 pecofence-cli skill 和 pecofence-cli describe，查看并备份我的配置，再把主题风格换成 Liquid Glass，把所有栅栏调得更透明。';
     const CLICK_AT = .9, PASTE_AT = 1.25, SEND_AT = 1.95;
     // [start, args, reply, seconds until the reply]
     const CMDS = [
-        [2.45, 'skill', '# pecofence-cli …', .3],
+        [2.45, 'skill', '--- name: pecofence-cli …', .3],
         [2.95, 'describe', '{"cli":…,"commands":[…],…}', .3],
         [3.5, 'fence list --fields title,opacity', '[{"opacity":"default","title":"程序"},{"opacity":"default","title":"文件与文档"},…]', .32],
         [4.15, 'config export "C:\\Users\\me\\pecofence-before-ai.json"', '{"bytes":12873,"path":"C:\\\\Users\\\\me\\\\pecofence-before-ai.json"}', .32],
         [4.8, 'snapshot save before-ai', '{"changed":true,"snapshot":{"fenceCount":3,…}}', .3],
-        [5.7, 'settings set theme dark', '{"changed":true,"settings":{…}}', .32],
+        [5.7, 'settings set themeStyle liquidGlass', '{"changed":true,"settings":{…}}', .32],
         [6.95, 'fence set --all opacity clear', '{"changed":true,"results":[{"changed":true,…},…]}', .5],
     ];
     const DONE_AT = 8.2;
-    const DONE = '改好了：先备份了配置，然后换成深色模式，所有栅栏也调得更透明了。';
-    // The app applies each mutation when its call arrives: the theme at once, opacity one fence
+    const DONE = '改好了：先备份了配置，然后把主题风格换成了 Liquid Glass，所有栅栏也调得更透明了。';
+    // The app applies each mutation when its call arrives: the style at once, opacity one fence
     // per call (fence set --all runs one call at a time).
-    const DARK_AT = CMDS[5][0] + CMDS[5][3];
+    const STYLE_AT = CMDS[5][0] + CMDS[5][3];
     const CLEAR_AT = i => CMDS[6][0] + .14 + i * .12;
 
     const PATH = [
         [0, 610, 398], [0.3, 610, 398],
-        [0.85, 190, 384], [2.3, 190, 384],                     // click into the input, paste, send
-        [3.0, 436, 400], [D, 436, 400],
+        [0.85, 268, 384], [2.3, 268, 384],                     // click into the input, paste, send
+        [3.0, 514, 400], [D, 514, 400],
     ];
     const KEYS = [{ a: 1.02, b: 1.5, keys: ['Ctrl', 'V'], down: PASTE_AT - .03 }, { a: 1.68, b: 2.15, keys: ['Enter'], down: SEND_AT - .02 }];
 
@@ -92,34 +92,29 @@
         return { log, you, rows, done, input, typed, caret };
     }
 
-    // Glass, rim, shadow and text of a fence between light (d = 0) and dark (d = 1), and between
-    // 默认 and 更透明 (c = 1: the glass opacity multiplier 0.55, model.rs OPACITY_CLEAR).
-    const mix = (a, b, q) => a.map((v, i) => lerp(v, b[i], q));
-    const rgba = (c, k = 1) => `rgba(${c[0].toFixed(0)}, ${c[1].toFixed(0)}, ${c[2].toFixed(0)}, ${(c[3] * k).toFixed(3)})`;
-    function glass(f, d, c) {
-        const k = lerp(1, .55, c);
-        const top = mix([255, 255, 255, .44], [34, 38, 54, .72], d), bottom = mix([246, 243, 251, .34], [27, 30, 44, .66], d);
-        const s = f.n.style;
-        s.background = `linear-gradient(180deg, ${rgba(top, k)}, ${rgba(bottom, k)})`;
-        s.boxShadow = `inset 0 0 0 1px rgba(255, 255, 255, ${lerp(.62, .15, d) * lerp(1, .75, c)}), ` +
-            `inset 0 1px 0 rgba(255, 255, 255, ${lerp(.9, .3, d) * lerp(1, .8, c)}), ` +
-            `0 0 0 .5px rgba(70, 58, 110, ${lerp(.2, .32, d)}), 0 10px 26px rgba(66, 46, 104, ${.15 * lerp(1, .7, c)})`;
-        const ink = mix([27, 33, 51], [255, 255, 255], d);
-        s.setProperty('--xa-ink', `rgb(${ink.map(v => v.toFixed(0)).join(', ')})`);
-        s.setProperty('--xa-halo', `0 0 6px rgba(255, 255, 255, ${(.7 * (1 - d)).toFixed(3)}), 0 1px 2px rgba(0, 0, 0, ${(.55 * d).toFixed(3)})`);
-    }
-
     function build(root) {
         const r = {};
         el('div', 'wall', root);
         r.scene = el('div', 'scene', root);
         const S = r.scene;
+        DESKTOP.forEach(([k, l], i) => {
+            const n = icon(S, k, l), s = deskCell(0, i);
+            n.classList.add('desk');
+            put(n, s.x, s.y);
+        });
         r.term = terminal(S);
+        // the fences' plates as layers under the title and icons, as in the look lesson
+        // (settings.css): Fluent and Liquid Glass cross-fade
         r.fences = FENCES.map(f => {
             const x = fence(S, { ...f });
-            x.n.classList.add('xa-fence');
+            x.n.classList.add('set-f');
+            x.fluent = el('div', 'set-pf', null);
+            x.liquid = el('div', 'set-plg', null);
+            el('div', 'set-plg-rim', x.liquid);
+            el('div', 'set-plg-hi', x.liquid);
+            x.n.prepend(x.fluent, x.liquid);
             f.items.forEach(([k, l], i) => {
-                const s = local(i, f.c);
+                const s = local(i, 3);
                 put(icon(x.body, k, l), s.x, s.y);
             });
             return x;
@@ -179,9 +174,13 @@
         }
         m.log.style.transform = `translateY(${(-y).toFixed(2)}px)`;
 
-        // the desktop follows: dark theme, then 更透明 fence by fence
-        const dark = ramp(t, DARK_AT, DARK_AT + .15, E.lin);
-        r.fences.forEach((f, i) => glass(f, dark, ramp(t, CLEAR_AT(i), CLEAR_AT(i) + .15, E.lin)));
+        // the desktop follows: every fence turns to Liquid Glass, then 更透明 fence by fence
+        // (the glass at 0.55 of its strength, fence_options.rs OPACITY_CLEAR)
+        const liquid = ramp(t, STYLE_AT, STYLE_AT + .2);
+        r.fences.forEach((f, i) => {
+            f.fluent.style.opacity = 1 - liquid;
+            f.liquid.style.opacity = liquid * lerp(1, .55, ramp(t, CLEAR_AT(i), CLEAR_AT(i) + .15, E.lin));
+        });
 
         drawKeys(r.keys, t, KEYS);
         drawPointer(r.ptr, t, p, { clicks: [{ t: CLICK_AT }], at: u => pathAt(u, PATH) });

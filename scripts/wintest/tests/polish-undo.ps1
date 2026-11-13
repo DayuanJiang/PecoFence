@@ -290,8 +290,24 @@ if ($Part -match 'E') {
   $moved = FRect 'UA'
   $before = (@(UFiles | ForEach-Object { $_.Name }) | Sort-Object) -join ' | '
   function UndoLines() { return @(PfLogAll | Where-Object { $_ -match 'undone|undo waits|nothing to undo' -and $_ -notmatch '<omitted>' }).Count }
-  # Windows' delete can hold the keyboard for the moment it runs, and the Ctrl+Z then never
-  # reaches the fence: such a try proves nothing, so the files are put back and it is tried again.
+  # Windows' delete has the keyboard while it runs, from its first milliseconds on: a Ctrl+Z
+  # that comes later never reaches the fence. So the keys go to Windows in one call and sit in
+  # the queue behind each other, as from a fast hand: the fence gets the Ctrl+Z right after it
+  # started the delete. A try in which it still did not arrive proves nothing: the files are
+  # put back and it is tried again.
+  Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class UBurst {
+  [StructLayout(LayoutKind.Explicit, Size=40)] struct KI { [FieldOffset(0)] public uint type; [FieldOffset(8)] public ushort vk; [FieldOffset(12)] public uint flags; }
+  [DllImport("user32.dll")] static extern uint SendInput(uint n, KI[] i, int size);
+  public static uint DeleteThenCtrlZ() {
+    ushort[] vk = { 0x2E, 0x2E, 0x11, 0x5A, 0x5A, 0x11 }; bool[] up = { false, true, false, false, true, true };
+    var i = new KI[6];
+    for (int k = 0; k < 6; k++) { i[k].type = 1; i[k].vk = vk[k]; i[k].flags = up[k] ? 2u : 0u; }
+    return SendInput(6, i, 40);
+  }
+}
+'@
   $reached = $false
   $tries = 0
   foreach ($try in 1..4) {
@@ -300,7 +316,7 @@ if ($Part -match 'E') {
     Chord 0x11 0x41; Start-Sleep -Milliseconds 400
     $n0 = UndoLines
     # Delete and Ctrl+Z with no pause: the shell's delete of several items is still running.
-    [G]::Press(0x2E); Chord 0x11 0x5A
+    [UBurst]::DeleteThenCtrlZ() | Out-Null
     Start-Sleep -Milliseconds 1200
     if ((UndoLines) -gt $n0) { $reached = $true; break }
     Undo

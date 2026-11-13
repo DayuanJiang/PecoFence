@@ -134,6 +134,10 @@ impl FenceWindow {
             title_renaming: false,
             rename_after_fade: None,
             unfold_cache: None,
+            type_names: Default::default(),
+            fit_ahead_done: false,
+            fit_ahead_input: None,
+            fit_ahead_waits: 0,
             strip_kept: false,
             detach_pending: false,
             detach_cancelled: false,
@@ -154,6 +158,7 @@ impl FenceWindow {
             chrome_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             drop_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             search: None,
+            search_fades_for: None,
             search_dim: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             search_expanded: false,
             search_scroll: HashMap::new(),
@@ -163,6 +168,7 @@ impl FenceWindow {
             merge_hint: false,
             merge_t: Tween::at(0.0, Instant::now()),
             item_motion: HashMap::new(),
+            column_change_at: None,
             leaving: Vec::new(),
             fade_next_refill: false,
             drop_landing: None,
@@ -184,23 +190,42 @@ impl FenceWindow {
             col_drag: None,
             is_portal: false,
             note: None,
+            note_edit: None,
+            note_drag: false,
+            todo_drag: None,
+            note_slide: Vec::new(),
+            note_lift: None,
             note_boxes: Vec::new(),
+            note_links: Vec::new(),
             clock: None,
             clock_text: (0.0, 0.0),
             clock_text_logged: (0.0, 0.0),
+            clock_date: "long",
+            clock_time: "full",
+            tool_text_h: 0.0,
+            tool_line_tops: Vec::new(),
+            tool_line_step: 0.0,
             text_size: 1,
             script: None,
             script_rows: Vec::new(),
             script_hover: None,
+            script_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
+            script_footer_form: "full",
+            note_box_hover: None,
+            note_link_hover: None,
             portal_missing: false,
             empty_override: None,
+            empty_action: None,
+            empty_action_hover: false,
             title_count: None,
+            count_tip: None,
             filter_active: false,
             filter_tag: None,
             refuses_drops: false,
             label_w: 0.0,
             label_wide_w: 0.0,
             icons_pending: false,
+            empty_text_h: None,
             hover: None,
             title_hover: false,
             selected: HashSet::new(),
@@ -208,12 +233,16 @@ impl FenceWindow {
             scroll_memory: HashMap::new(),
             scroll_restore: None,
             select_after_nav: None,
+            tab_switch_by_keys: false,
+            focus_first_after_nav: false,
             user_delete: None,
             scroll_anim: None,
             dpi,
             theme,
             glass_dark_text: Cell::new(None),
             plate_halo: Cell::new(false),
+            bare_dark_text: Cell::new(None),
+            content_look: Cell::new(None),
             backdrops: ctx.backdrops.borrow().clone(),
             backdrop_crop: None,
             backdrop_rect: None,
@@ -244,6 +273,7 @@ impl FenceWindow {
             page_repeat: None,
             scrollbar_hot: false,
             sb_width: Tween::at(ScrollbarDraw::REST_WIDTH, Instant::now()),
+            sb_arrives: false,
             sb_alpha: Tween::at(
                 if ctx.behavior.hide_inactive_scrollbar.get() {
                     0.0
@@ -267,10 +297,15 @@ impl FenceWindow {
             tip_anchor: (0, 0),
             tip_armed: false,
             tip_move_at: None,
+            hand_moved: Vec::new(),
             cut: HashSet::new(),
             wheel_zoom_accum: 0,
             wheel_tab_accum: 0,
             tab_hover_switch: None,
+            tab_hover_quick: false,
+            tab_strip_left: None,
+            tab_swap_at_once: false,
+            place_next_items: false,
             auto_height,
             rail_grow: false,
             locked: false,
@@ -283,6 +318,7 @@ impl FenceWindow {
             opacity: 1.0,
             desktop: None,
             desktop_slots: Vec::new(),
+            desktop_slots_moved: false,
             desktop_free: None,
             desktop_free_sent: None,
             desktop_band_base: None,
@@ -290,6 +326,7 @@ impl FenceWindow {
             desktop_shape_pending: None,
             wanted_layout: ViewLayout::Icons,
             title_on_hover_override: None,
+            transparent_on_hover: false,
             style: FenceStyle::default(),
             spacing: 0,
             icon_align: IconAlign::Left,
@@ -300,6 +337,7 @@ impl FenceWindow {
             roll_anim: None,
             roll_t: Tween::at(rolled_up as u8 as f32, Instant::now()),
             height_anim: None,
+            reveal_after_height: false,
             vis_fade: None,
             vis_gen: 0,
             vis_deadline: None,
@@ -328,11 +366,14 @@ impl FenceWindow {
             plate_reveal: Tween::at(1.0, Instant::now()),
             plate_inset_px: 0,
             plate_alpha: 1.0,
+            edge_top: false,
             peeking: false,
             hover_raised: false,
             peek_blocked: false,
             capped_h_px: None,
             glide: None,
+            defer_place: false,
+            pending_place: None,
             placing: false,
             behavior: ctx.behavior.clone(),
         };
@@ -393,6 +434,18 @@ impl FenceWindow {
     /// ago: new, torn off, new portal) adds the Fluent 0.97 → 1 scale. No-op when visible.
     pub fn show(&self, entrance: bool) {
         show_with_fade(&self.view, self.hwnd(), entrance);
+    }
+
+    /// Ends a fade-in at once: the window (and its shadow) stand at full strength now. For a
+    /// window the user already holds (a tab torn off by a drag).
+    pub fn show_at_once(&self) {
+        self.with_view(|v| {
+            if v.vis_fade == Some(VisFade::Showing) {
+                v.vis_fade = None;
+                v.reset_root();
+                tracing::debug!(title = %v.title, "fade in ended at once: the window is in the hand");
+            }
+        });
     }
 
     /// 在哪个虚拟桌面显示: `tip` names the desktops of a window that shows on some of them only
@@ -458,7 +511,30 @@ impl FenceWindow {
     }
 
     pub fn rect(&self) -> RECT {
+        // During a display change's pass: where the window is about to glide to.
+        if let Ok(guard) = self.view.try_borrow()
+            && let Some(r) = guard.as_ref().and_then(|v| v.pending_place)
+        {
+            return r;
+        }
         self.window.window_rect()
+    }
+
+    /// A display change places every fence in one pass and reads the others' rects while it
+    /// does. With `on`, a placement that only moves this window (same size, in sight,
+    /// animations on) is kept instead of carried out, and `rect` answers with it; `on` false
+    /// ends that, and the window glides from where it stands to the place it was given
+    /// (250 ms), so the fences travel to their new places together instead of jumping.
+    pub fn defer_moves(&self, on: bool) {
+        let pending = self.view.borrow_mut().as_mut().and_then(|v| {
+            v.defer_place = on;
+            v.pending_place.take()
+        });
+        if let Some(to) = pending
+            && !self.start_glide(to, motion::NORMAL, Curve::PointToPoint, false)
+        {
+            self.place_window(to);
+        }
     }
 
     /// One-line state summary for `--test-script dump`: what the compositor shows (root
@@ -482,7 +558,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={}",
+            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={}",
             v.title,
             v.title_count,
             v.filter_active,
@@ -498,6 +574,7 @@ impl FenceWindow {
             v.anchor_index
                 .and_then(|i| v.items.get(i))
                 .map(|it| &it.name),
+            v.focus_visible,
             desktop::is_visible(v.shadow.hwnd()),
             v.shadow.alpha(),
             v.layout,
@@ -531,6 +608,12 @@ impl FenceWindow {
             v.clock_text.0,
             v.clock_text.1,
             dump_rects(&v.note_boxes),
+            dump_rects(
+                &v.note_links
+                    .iter()
+                    .map(|&(line, _, r)| (line, r))
+                    .collect::<Vec<_>>(),
+            ),
             dump_rects(&v.script_rows),
             v.off_desktop,
             v.desktop_tip,
@@ -543,6 +626,8 @@ impl FenceWindow {
             v.filter_tag_fit(),
             // The Peek is fading this fence with its dimmer.
             v.peek_faded,
+            v.clock_date,
+            v.clock_time,
         )
     }
 
@@ -625,6 +710,15 @@ impl FenceWindow {
             // The pointer entering (x = 1) / leaving (x = 0) the fence without a real cursor:
             // title on hover and 全透明 react as they do to WM_MOUSEMOVE / WM_MOUSELEAVE.
             "hover" => self.with_view(|v| v.set_mouse_inside(x != 0)),
+            // The hover look of the item at client point (x, y) without a real cursor, kept
+            // until the cursor next passes over the fence (x < 0 takes it off). A "move"
+            // asks for WM_MOUSELEAVE, which comes at once while the cursor is elsewhere.
+            "hover-item" => self.with_view(|v| {
+                let hit = if x < 0 { None } else { v.hit_item(x, y) };
+                if v.set_hover(hit, false).0 {
+                    let _ = v.redraw_content();
+                }
+            }),
             _ => {
                 let (message, key, point) = match action {
                     "down" => (msg::WM_LBUTTONDOWN, 1, (x, y)),
@@ -690,11 +784,29 @@ impl FenceWindow {
     }
 
     fn place_window(&self, r: RECT) {
-        self.with_view(|v| {
+        let cur = self.window.window_rect();
+        let hwnd = self.hwnd();
+        let deferred = self.view.borrow_mut().as_mut().is_some_and(|v| {
             v.height_anim = None;
+            // The height glide an icon size step waited for is over: its "selection back in
+            // view" does not wait for some later glide.
+            v.reveal_after_height = false;
             v.glide = None;
-            v.placing = true;
+            let moves_only = (cur.left, cur.top) != (r.left, r.top)
+                && cur.right - cur.left == r.right - r.left
+                && cur.bottom - cur.top == r.bottom - r.top;
+            let defer = v.defer_place
+                && moves_only
+                && v.motion.enabled()
+                && !v.retired
+                && desktop::is_visible(hwnd);
+            v.pending_place = defer.then_some(r);
+            v.placing = !defer;
+            defer
         });
+        if deferred {
+            return;
+        }
         let _ = self
             .window
             .set_bounds(r.left, r.top, r.right - r.left, r.bottom - r.top);
@@ -822,6 +934,7 @@ impl FenceWindow {
             // Selection / focus / hover ride along by item id (`remap_item_state`), so a sort,
             // a reorder drop, a rename or a watcher refresh keeps them on the same items while
             // the layout glide moves those items to their new cells.
+            let keys_here = v.focus_visible;
             v.replace_items(items);
             v.drop_insert = None;
             // The caret's slot index means nothing in the new list.
@@ -846,6 +959,15 @@ impl FenceWindow {
                 v.focus_visible = ring;
                 if !v.rolled_up {
                     v.scroll_into_view(i, false);
+                }
+            } else if v.focus_first_after_nav && !v.items.is_empty() {
+                // Into a folder by keys: its first icon takes the focus mark, not selected
+                // (Enter does nothing until an arrow key or Space picks an icon). A folder
+                // with nothing in it has the mark on the title row meanwhile.
+                v.focus_first_after_nav = false;
+                if keys_here && !v.roll_target() {
+                    tracing::debug!("folder entered by keys: the first icon takes the focus mark");
+                    v.cursor_to(0, CursorMode::FocusOnly);
                 }
             }
             let _ = v.redraw();
@@ -872,12 +994,25 @@ impl FenceWindow {
             v.scroll_anim = None;
             v.scroll_y = 0.0;
             v.select_after_nav = select.map(|id| (id, v.focus_visible));
+            v.focus_first_after_nav = select.is_none() && v.focus_visible;
             if !v.rolled_up
                 && !v.height_animating()
                 && v.motion.enabled()
                 && desktop::is_visible(v.hwnd)
             {
                 v.begin_content_swap(dir);
+                // The title names the folder shown: its name and glyph fade in while the
+                // icons cross-fade (a single title, or the shown tab's caption: the tab keeps
+                // its pill as it is).
+                let now = Instant::now();
+                v.chrome_fades.snap(ChromeKey::TitleSwap, 1.0, now);
+                v.chrome_fades.set(true, ChromeKey::TitleSwap, 0.0, now);
+                v.frames.request();
+                tracing::debug!(
+                    dir,
+                    tabs = v.tabs.len(),
+                    "folder navigation: the title fades in with the icons"
+                );
             }
         });
     }
@@ -899,6 +1034,7 @@ impl FenceWindow {
                 v.item_sel.rekey(&old, new);
                 v.drop_fades.rekey(&old, new);
                 v.search_dim.rekey(&old, new);
+                v.search_fades_for = None;
                 if v.renaming == Some(old) {
                     v.renaming = Some(new);
                 }
@@ -1010,10 +1146,31 @@ impl FenceWindow {
             } else {
                 Vec::new()
             };
+            let old_widths: Vec<f32> = if tabs_changed {
+                v.tab_rects().iter().map(|(_, w)| *w).collect()
+            } else {
+                Vec::new()
+            };
             v.search = marks;
+            v.search_fades_for = None;
             if tabs_changed {
                 if v.tab_drag.is_none() {
                     v.sync_tab_slides(&prev, now);
+                    // A pill that got wider (a new badge, one more digit) is drawn at its new
+                    // width at once: the tabs after it would slide across its end for the
+                    // first frames. As after a rename, the strip then stands at its new
+                    // places at once; pills that only got narrower still slide.
+                    let grew = v
+                        .tab_rects()
+                        .iter()
+                        .zip(&old_widths)
+                        .any(|((_, w), old)| *w > *old + 0.5);
+                    if grew {
+                        tracing::debug!(
+                            "a tab got its match badge: the strip stands at its new places"
+                        );
+                        v.tab_slide.clear();
+                    }
                 }
                 let _ = v.redraw_chrome_only();
             }
@@ -1135,10 +1292,13 @@ impl FenceWindow {
         });
     }
 
-    /// A fence just made: its name box opens when the fade-in running now has ended (the
-    /// window then asks with `Command::BeginFenceRename`), so the box does not float fully
-    /// opaque on a fence that is still nearly transparent. False when no fade-in runs
-    /// (animations off, a batch the compositor refused): the caller opens the box at once.
+    /// A fence just made: its name box opens when the fade-in running now has brought it to
+    /// full strength (the window then asks with `Command::BeginFenceRename`), so the box does
+    /// not float fully opaque on a fence that is still nearly transparent. That is after the
+    /// 167 ms of the fade (`TIMER_NAME_BOX`); the entrance's scale runs on to 250 ms and the
+    /// compositor reports the whole of it later still (about 0.3 s after the click), which is
+    /// when the box used to open: keys typed until then went nowhere. False when no fade-in
+    /// runs (animations off, a batch the compositor refused): the caller opens the box at once.
     pub fn rename_after_fade_in(&self) -> bool {
         let mut guard = self.view.borrow_mut();
         let Some(v) = guard.as_mut() else {
@@ -1146,18 +1306,22 @@ impl FenceWindow {
         };
         let fading = v.vis_fade == Some(VisFade::Showing);
         v.rename_after_fade = fading.then(Instant::now);
+        if fading {
+            window::set_timer(v.hwnd, TIMER_NAME_BOX, motion::FAST.as_millis() as u32);
+        }
         fading
     }
 
     /// Whether the user sees the start of the title row, where the name box opens: the window
-    /// is shown on this virtual desktop, no hide is under way, and what lies at that spot of
+    /// is shown on this virtual desktop, no hide is under way (a fade-in may still run: the
+    /// name box of a new fence opens at its end), and what lies at that spot of
     /// the screen is this window (a window that covers the fence, as after a Peek has ended,
     /// would get the topmost box on top of itself).
     pub fn title_on_screen(&self) -> bool {
         let hwnd = self.hwnd();
         let (resting, scale) = match self.view.borrow().as_ref() {
             Some(v) => (
-                !v.retired && !v.off_desktop && v.vis_fade.is_none(),
+                !v.retired && !v.off_desktop && !matches!(v.vis_fade, Some(VisFade::Hiding { .. })),
                 v.scale(),
             ),
             None => return false,
@@ -1215,6 +1379,7 @@ impl FenceWindow {
                 item.label = None;
             }
             v.unfold_cache = None;
+            v.fit_ahead_done = false;
             v.snap_item_motion();
             let _ = v.redraw();
         });
@@ -1247,6 +1412,9 @@ impl FenceWindow {
             let same_set = v.tabs.len() == tabs.len()
                 && v.tabs.iter().all(|t| tabs.iter().any(|n| n.id == t.id));
             let active_changed = v.active != active;
+            // Asked for by the hover switch on its way: for this call only. A switch whose tab
+            // was closed or moved away before it ran left the mark for the next click on a tab.
+            let at_once = std::mem::take(&mut v.tab_swap_at_once);
             let old_active = v.active;
             let old_idx = v.tabs.iter().position(|t| t.id == v.active);
             let new_idx = tabs.iter().position(|t| t.id == active);
@@ -1261,6 +1429,7 @@ impl FenceWindow {
                 .zip(v.tab_draw_xs(now))
                 .collect();
             let old_ids: Vec<FenceId> = v.tabs.iter().map(|t| t.id).collect();
+            let old_widths: Vec<f32> = v.tab_rects().iter().map(|(_, w)| *w).collect();
             let had_strip = v.tabs.len() > 1;
             // A new window gets its tabs here for the first time: what it was saved with.
             let first = v.tabs.is_empty();
@@ -1291,6 +1460,21 @@ impl FenceWindow {
                         d.grab_dx += v.tab_scroll.get() - strip_scroll;
                     }
                     v.sync_tab_slides(&prev, now);
+                    // The same tabs in the same order and a pill got wider (a rename, a folder
+                    // tab that went into a folder with a longer name): the pill is drawn at
+                    // its new width at once, so the neighbour that slid away from it lay over
+                    // the end of the new name for the first frames. The strip then stands at
+                    // its new places at once; pills that only got narrower still slide.
+                    let grew = same_set
+                        && old_ids.iter().eq(v.tabs.iter().map(|t| &t.id))
+                        && v.tab_rects()
+                            .iter()
+                            .zip(&old_widths)
+                            .any(|((_, w), old)| *w > *old + 0.5);
+                    if grew {
+                        tracing::debug!("a tab got wider: the strip stands at its new places");
+                        v.tab_slide.clear();
+                    }
                 } else if !same_set {
                     v.tab_slide.clear();
                     v.tab_settle = None;
@@ -1340,7 +1524,16 @@ impl FenceWindow {
                 // A real switch between two existing tabs (click, Ctrl+Tab) — not creation,
                 // merge, detach or closing the active tab — gets the content swap and the pill
                 // glide. Rolled / animating fences and animations-off snap as before.
-                if let (Some(o), Some(n)) = (old_idx, new_idx)
+                if at_once {
+                    // A hover switch that follows another: the page and the pill stand at
+                    // once, and a swap still on its way ends. The list that follows is
+                    // placed whole too: without a swap under way, a tab with nothing in it
+                    // made `replace_items` fade the icons of the page before it out one by
+                    // one over the text of the empty fence, and those of the page after it in.
+                    v.finish_content_swap_now();
+                    v.pill_anim = None;
+                    v.place_next_items = true;
+                } else if let (Some(o), Some(n)) = (old_idx, new_idx)
                     && o != n
                     && !v.rolled_up
                     && !v.height_animating()
@@ -1552,17 +1745,37 @@ impl FenceWindow {
     /// What the fence says while it shows nothing (`empty`: a smart fence searching, finding
     /// nothing or needing Everything, a filter matching nothing; None = the usual text) and a
     /// smart fence's count in its capsule at the right of the title row (`count`, "6"; None
-    /// for any other fence).
-    pub fn set_status_view(&self, empty: Option<&'static str>, count: Option<String>) {
+    /// for any other fence). `action` is the label of a clickable row under the text (a smart
+    /// fence that needs Everything: 「启动 Everything」); a click on it arrives as
+    /// `Command::EmptyActionClicked`.
+    pub fn set_status_view(
+        &self,
+        empty: Option<&'static str>,
+        action: Option<&'static str>,
+        count: Option<String>,
+    ) {
         self.with_view(|v| {
-            if v.empty_override == empty && v.title_count == count {
+            if v.empty_override == empty && v.empty_action == action && v.title_count == count {
                 return;
             }
             v.empty_override = empty;
+            v.empty_action = action;
+            v.empty_action_hover = false;
             v.title_count = count;
             let _ = v.redraw_chrome_only();
             if v.items.is_empty() && !v.rolled_up {
                 let _ = v.redraw_content();
+            }
+        });
+    }
+
+    /// The infotip of a smart fence's count capsule (None: the capsule has none). A count such
+    /// as 「200+」 did not say what the plus stands for.
+    pub fn set_count_tip(&self, tip: Option<String>) {
+        self.with_view(|v| {
+            if v.count_tip != tip {
+                tracing::debug!(title = %v.title, tip = tip.is_some(), "count capsule: infotip set");
+                v.count_tip = tip;
             }
         });
     }
@@ -1596,6 +1809,11 @@ impl FenceWindow {
             .unwrap_or(self.id)
     }
 
+    /// How many items the window shows (of `active_fence`, after its filter).
+    pub fn item_count(&self) -> usize {
+        self.view.borrow().as_ref().map_or(0, |v| v.items.len())
+    }
+
     /// Item whose inline rename edit this window currently shows (see `set_renaming`).
     pub fn renaming_item(&self) -> Option<ItemId> {
         self.view.borrow().as_ref().and_then(|v| v.renaming)
@@ -1606,31 +1824,114 @@ impl FenceWindow {
     pub fn set_note(&self, text: Option<String>) {
         self.with_view(|v| {
             if v.note != text {
+                // Another text than the one shown: a to-do dragged in the old one, and its
+                // lines' glides, end. The text of an editor that closes is the one shown: a
+                // to-do pressed with Alt in that editor stays held.
+                let shown = v.note_edit.as_ref().map(|e| e.text.as_str());
+                if shown != text.as_deref() {
+                    v.todo_drag = None;
+                    v.note_slide.clear();
+                    v.note_lift = None;
+                }
                 v.note = text;
                 v.note_boxes.clear();
+                v.note_links.clear();
+                v.note_link_hover = None;
                 let _ = v.redraw();
             }
         });
     }
 
+    /// 便签与待办: the note shown is being edited: its text, selection and caret are drawn from
+    /// `edit` in place of the stored note, and the line with the caret is scrolled into
+    /// view. None = the editor closed.
+    pub fn set_note_edit(&self, edit: Option<NoteEditView>) {
+        self.with_view(|v| {
+            if v.note_edit == edit {
+                return;
+            }
+            let moved = match (&v.note_edit, &edit) {
+                (Some(old), Some(new)) => old.text != new.text || old.active != new.active,
+                (None, Some(_)) => true,
+                _ => false,
+            };
+            v.note_edit = edit;
+            if v.note_edit.is_none() {
+                v.note_drag = false;
+                // A hover expansion that the editor held open counts down again.
+                v.resume_peek_close();
+            }
+            if moved {
+                v.note_caret_into_view();
+            }
+            let _ = v.redraw_content();
+        });
+    }
+
+    /// The caret of the note being edited here shows or hides (its blink).
+    pub fn set_note_caret_on(&self, on: bool) {
+        self.with_view(|v| {
+            if let Some(e) = v.note_edit.as_mut()
+                && e.caret_on != on
+            {
+                e.caret_on = on;
+                let _ = v.redraw_content();
+            }
+        });
+    }
+
+    /// The caret of the note being edited here, in screen px: its x, its top and its height.
+    pub fn note_caret_screen(&self) -> Option<(i32, i32, i32)> {
+        let r = self.rect();
+        let view = self.view.borrow();
+        let v = view.as_ref()?;
+        let (x, top, h) = v.note_caret_dip()?;
+        let scale = v.scale();
+        Some((
+            r.left + v.content_x + (x * scale).round() as i32,
+            r.top + v.content_y + ((top - v.scroll_y) * scale).round() as i32,
+            (h * scale).round() as i32,
+        ))
+    }
+
+    /// The place in the text one line on screen above (`dir` < 0) or below the caret of the
+    /// note being edited here.
+    pub fn note_offset_vertical(&self, dir: i8) -> Option<usize> {
+        self.view.borrow().as_ref()?.note_offset_vertical(dir)
+    }
+
     /// A script's copy action uses a short, non-activating tip beside the pointer.
     pub fn show_script_copy_result(&self, index: usize, copied: bool) {
+        let text = if copied {
+            pecofence_core::i18n::text("已复制")
+        } else {
+            pecofence_core::i18n::text("复制失败，请重试")
+        };
+        self.show_script_row_tip(index, text, 2000);
+    }
+
+    /// A click on a script row that would start a program, in a script whose header does not
+    /// allow that: the tip beside the pointer says so and names the line to add.
+    pub fn show_script_row_refused(&self, index: usize) {
+        // The line to add goes on a line of its own, so the tip does not break it in two.
+        let text = pecofence_core::i18n::format(
+            "这个脚本不能启动程序。要允许，在脚本开头的注释里加上：{0}",
+            &["\n<pecofence.allow>run</pecofence.allow>".to_string()],
+        );
+        // Long enough to read both sentences.
+        let secs = pecofence_platform::sysparams::message_duration_secs().max(8);
+        self.show_script_row_tip(index, &text, secs * 1000);
+    }
+
+    /// `text` in a non-activating tip beside the pointer for `ms`, as the result of a click
+    /// on script row `index`.
+    fn show_script_row_tip(&self, index: usize, text: &str, ms: u32) {
         self.with_view(|v| {
             v.hide_tip();
             v.tip_target = Some(TipTarget::ScriptRow(index));
-            let text = if copied {
-                pecofence_core::i18n::text("已复制")
-            } else {
-                pecofence_core::i18n::text("复制失败，请重试")
-            };
-            let pt = window::cursor_pos();
-            let scale = v.scale();
-            v.show_tip_text_at(
-                text,
-                pt.x + (12.0 * scale).round() as i32,
-                pt.y + (20.0 * scale).round() as i32,
-            );
-            window::set_timer(v.hwnd, TIMER_TIP_HIDE, 2000);
+            let (x, y, above) = pointer_tip_place(v.scale());
+            v.show_tip_text_at(text, x, y, above);
+            window::set_timer(v.hwnd, TIMER_TIP_HIDE, ms);
         });
     }
 
@@ -1646,6 +1947,25 @@ impl FenceWindow {
         });
     }
 
+    /// 时钟与日期: the system time, the time zone or the region's time format changed. A clock
+    /// shown here draws the new time now and ticks at the new boundaries; true when it did.
+    /// These broadcasts are sent, not posted: one that arrives while the view is in use
+    /// leaves the clock to its own next tick.
+    pub fn clock_changed(&self) -> bool {
+        let Ok(mut guard) = self.view.try_borrow_mut() else {
+            return false;
+        };
+        let Some(v) = guard.as_mut().filter(|v| v.clock.is_some()) else {
+            return false;
+        };
+        v.arm_clock();
+        let shows = !v.rolled_up && !v.retired && pecofence_platform::desktop::is_visible(v.hwnd);
+        if shows {
+            let _ = v.redraw_content();
+        }
+        shows
+    }
+
     /// 脚本栅栏: the fence being shown is a script fence showing `script`; None = it shows items.
     pub fn set_script(&self, script: Option<ScriptView>) {
         self.with_view(|v| {
@@ -1654,7 +1974,15 @@ impl FenceWindow {
                     v.script_rows.clear();
                     v.script_hover = None;
                 }
+                // The first result takes the place of 「正在运行…」 with the content's
+                // cross-fade (83 ms, as a change of view), not in one frame.
+                let first_result = v.script.as_ref().is_some_and(|s| s.quiet)
+                    && script.as_ref().is_some_and(|s| !s.quiet);
                 v.script = script;
+                if first_result && v.content_swap_shows() {
+                    tracing::debug!(fence = %v.active, "script fence: the first result fades in");
+                    v.begin_content_swap(0);
+                }
                 let _ = v.redraw();
             }
         });
@@ -1705,6 +2033,20 @@ impl FenceWindow {
         }
     }
 
+    /// After an icon size step gave the fence another height: the focused item, else the first
+    /// selected one, is in view at that height too. `set_grid` chose the place for the height
+    /// the fence still had; one that got shorter left the item below its lower edge. A height
+    /// that is still gliding gets it when it lands.
+    pub fn keep_selection_in_view(&self) {
+        self.with_view(|v| {
+            if v.height_animating() {
+                v.reveal_after_height = true;
+            } else if !v.rolled_up && v.reveal_selection() {
+                let _ = v.redraw_content();
+            }
+        });
+    }
+
     /// Tab switch, after `set_tabs` and before the incoming tab's items arrive: takes that
     /// tab's grid without drawing the outgoing items again. The new items are then drawn, and
     /// their icons extracted, at their own size and in their own cells from the first frame.
@@ -1738,9 +2080,7 @@ impl FenceWindow {
             if v.group_by_date == on {
                 return;
             }
-            v.group_by_date = on;
-            // The cells a running glide was computed for no longer exist.
-            v.snap_item_motion();
+            v.regroup(on);
             let _ = v.redraw_content();
         });
     }
@@ -1771,6 +2111,14 @@ impl FenceWindow {
                 }
             }
         }
+    }
+
+    /// Rolled up and at rest or rolling up: not open by a hover expansion.
+    pub fn rests_rolled(&self) -> bool {
+        self.view
+            .borrow()
+            .as_ref()
+            .is_some_and(|v| v.roll_target() && !v.peeking)
     }
 
     /// Ends a peek without rolling back (the fence stays expanded).
@@ -1982,6 +2330,11 @@ impl FenceWindow {
     /// there. False when the caller should place it at once: animations off, a hidden window,
     /// another size, or 2 px or less to go.
     pub fn glide_to(&self, to: RECT) -> bool {
+        self.start_glide(to, motion::FAST, Curve::Decelerate, true)
+    }
+
+    /// `glide_to` with its time and curve; `notify`: the app hears the bounds on arrival.
+    fn start_glide(&self, to: RECT, time: Duration, curve: Curve, notify: bool) -> bool {
         let hwnd = self.hwnd();
         let r = self.window.window_rect();
         let same_size =
@@ -1996,14 +2349,18 @@ impl FenceWindow {
                 to = ?(to.left, to.top),
                 same_size,
                 glide,
-                "dropped fence goes to its landing place"
+                by_user = notify,
+                "fence goes to its landing place"
             );
             if glide {
                 v.glide = Some(WindowGlide {
                     from: (r.left, r.top),
                     to: (to.left, to.top),
-                    t: v.motion
-                        .tween(0.0, 1.0, motion::FAST, Curve::Decelerate, Instant::now()),
+                    t: v.motion.tween(0.0, 1.0, time, curve, Instant::now()),
+                    time,
+                    curve,
+                    begun: false,
+                    notify,
                 });
                 v.frames.request();
             }
@@ -2111,6 +2468,11 @@ impl FenceWindow {
             if v.backdrop_override != backdrop || (v.opacity - opacity).abs() > f32::EPSILON {
                 v.backdrop_override = backdrop;
                 v.opacity = opacity;
+                // The text colour is picked afresh for the new plate. The choice it keeps
+                // near its threshold is for a plate that moves over the wallpaper: carried
+                // over a change of 不透明度, a note in dark mode kept the white text of
+                // 更厚实 on the light plate of 默认 or 全透明.
+                v.forget_text_choice("opacity");
                 apply_system_backdrop(
                     v.hwnd,
                     v.backdrop_mode(),
@@ -2132,11 +2494,35 @@ impl FenceWindow {
         });
     }
 
+    /// 鼠标移入时保持透明: a fully transparent fence shows neither its plate nor a folded
+    /// title row while the pointer is over it.
+    pub fn set_transparent_on_hover(&self, on: bool) {
+        self.with_view(|v| {
+            if v.transparent_on_hover != on {
+                v.transparent_on_hover = on;
+                tracing::debug!(
+                    fence = %v.title,
+                    on,
+                    acts = v.stays_clear(),
+                    opacity = v.opacity,
+                    pointer_inside = v.mouse_inside,
+                    "stay transparent under the pointer set"
+                );
+                // The text colour goes by what is behind it: the plate may come or go now.
+                let _ = v.redraw();
+            }
+        });
+    }
+
     /// Per-fence colour wash, title colour and title size.
     pub fn set_style(&self, style: FenceStyle) {
         self.with_view(|v| {
             if v.style != style {
                 let previous_ink = v.material_foreground().label_look();
+                // A new 色调 changes the plate too: the text colour is picked afresh.
+                if v.style.tint != style.tint || v.style.tint_title_only != style.tint_title_only {
+                    v.forget_text_choice("tint");
+                }
                 v.style = style;
                 if previous_ink != v.material_foreground().label_look() {
                     let _ = v.redraw();
@@ -2263,16 +2649,55 @@ impl FenceWindow {
             .is_ok_and(|g| g.as_ref().is_some_and(|v| v.bare()))
     }
 
+    /// 自由摆放: icons of another fence were let go at `at` on the bare desktop; they are about
+    /// to join this 「桌面」 and arrive from where they were let go
+    /// (`FenceViewState::note_landing_at`).
+    pub fn note_desktop_landing(&self, at: &DesktopDrop) {
+        self.with_view(|v| v.note_landing_at(&at.centres));
+    }
+
+    /// 自由摆放: icons of this 「桌面」 were moved by hand and let go at `at`; their new cells are
+    /// about to be placed (see `FenceViewState::hand_moved`).
+    pub fn note_hand_move(&self, at: &DesktopDrop) {
+        self.with_view(|v| v.hand_moved = at.centres.iter().map(|c| c.0).collect());
+    }
+
+    /// 自由摆放: icons of this 「桌面」 were moved by hand and let go at `at`; their new cells are
+    /// placed. They settle into them from where they were let go
+    /// (`FenceViewState::land_moved_icons`).
+    pub fn land_moved_icons(&self, at: &DesktopDrop) {
+        self.with_view(|v| {
+            if v.land_moved_icons(&at.centres) {
+                v.sync_desktop_shape(true);
+                let _ = v.redraw_content();
+            }
+        });
+    }
+
     /// Re-places the desktop cells (items added or removed, area changed) and fits the window
     /// to them; `force` relayouts even when nothing moved (the look changed).
     fn arrange_desktop(&self, force: bool) {
         let hwnd = self.hwnd();
         let mut placed = None;
-        self.with_view(|v| placed = v.arrange_desktop());
+        self.with_view(|v| {
+            let before = v.desktop_slots_by_id();
+            placed = v.arrange_desktop();
+            // The same icons in other cells glide there; the window then reaches to where
+            // they come from (the second placing takes their ways in).
+            if matches!(placed, Some((_, true))) && v.glide_to_new_slots(&before) {
+                placed = v.arrange_desktop().map(|(rect, _)| (rect, true));
+            }
+        });
         let mut relayout = force;
         if let Some((rect, changed)) = placed {
             relayout |= changed;
-            if rect != window::window_rect(hwnd) {
+            let old = window::window_rect(hwnd);
+            if rect != old {
+                if (rect.left, rect.top) != (old.left, old.top) {
+                    // The cells are measured from the window's corner: motion in flight was
+                    // computed for the old one.
+                    self.with_view(|v| v.snap_item_motion());
+                }
                 self.place_window(rect);
                 relayout = true;
             }
@@ -2423,6 +2848,88 @@ impl FenceWindow {
         label_inset(wide)
     }
 
+    /// The colour this fence's names and title are drawn in now, for the name box that takes
+    /// a name's place: the text picked for the plate behind the fence, or 「文字颜色」 白色 /
+    /// 黑色. Icons arranged like the desktop have no plate (white names on the wallpaper, as
+    /// Windows draws them): their box keeps the colour mode's text, like Explorer's.
+    pub fn label_ink(&self, mode: pecofence_render::ThemeMode) -> ColorF {
+        let picked = self.view.borrow().as_ref().and_then(|v| {
+            (!v.bare()).then(|| {
+                v.material_foreground()
+                    .with_label_color(v.behavior.label_color.get())
+                    .text_primary
+            })
+        });
+        picked.unwrap_or(Theme::for_mode(mode).text_primary)
+    }
+
+    /// The title of `fence` as it is drawn, for its name box (`rename::begin_inline_rename`):
+    /// where its text starts, its row's height, its size and its font. A lone title (centred
+    /// or right-aligned: with the room it is aligned in, which its box takes) or a tab in the
+    /// title row (its caption is centred in its pill, after its glyphs), or a row of the left
+    /// tab column (`x` then counts from the row's left edge, `rail_row_screen_rect`).
+    pub fn title_text_place(&self, fence: FenceId) -> Option<crate::rename::TitlePlace> {
+        const SIZES: [f32; 4] = [12.0, 14.0, 16.0, 18.0];
+        let guard = self.view.borrow();
+        let v = guard.as_ref()?;
+        if v.bare() {
+            return None;
+        }
+        let (face, weight) = v.chrome.title_font();
+        let px = |dip: f32| (dip * v.scale()).round() as i32;
+        if v.tabs_on_rail() {
+            // A row of the left tab column, as drawn: the caption after the colour dot and
+            // the glyphs any tab has, semibold for the shown tab of an expanded fence.
+            let i = v.tabs.iter().position(|t| t.id == fence)?;
+            let (_, h) = *v.tab_rects().get(i)?;
+            let x = pecofence_render::fence_chrome::rail_text_left(
+                v.tabs.iter().any(|t| t.color.is_some()),
+                v.tabs.iter().any(|t| t.folder_icon),
+                v.tabs.iter().any(|t| t.desktop_icon),
+            );
+            let shown = fence == v.active && !v.column_collapsed;
+            return Some(crate::rename::TitlePlace {
+                x: px(x),
+                row_h: px(h),
+                font_dip: SIZES[usize::from(v.tabs[i].title_size.min(3))],
+                face,
+                weight: if shown { weight } else { 400 },
+                aligned: None,
+            });
+        }
+        let align = v.behavior.title_align.get();
+        let (x, size, aligned) = if v.tabs.len() > 1 {
+            let i = v.tabs.iter().position(|t| t.id == fence)?;
+            let t = &v.tabs[i];
+            let (x, w) = *v.tab_rects().get(i)?;
+            let size = t.title_size.min(3);
+            // As drawn: centred in the pill, after a glyph (a portal's folder, Task View).
+            let dx = v.chrome.tab_caption_text_x(
+                &v.theme,
+                w,
+                &t.title,
+                size,
+                (t.folder_icon, t.desktop_icon),
+                v.tab_badge(t.id).as_deref(),
+            );
+            (x + dx, size, None)
+        } else if align == pecofence_core::TitleAlign::Left {
+            (v.deco.title_x(), v.style.title_size.min(3), None)
+        } else {
+            let (x, end, (from, to)) = v.lone_title_text_span();
+            let aligned = Some((align, px(end), (px(from), px(to))));
+            (x, v.style.title_size.min(3), aligned)
+        };
+        Some(crate::rename::TitlePlace {
+            x: px(x),
+            row_h: v.title_h_px(),
+            font_dip: SIZES[usize::from(size)],
+            face,
+            weight,
+            aligned,
+        })
+    }
+
     /// Screen rectangle of an item's label, for the rename popup.
     pub fn item_label_rect(&self, item: ItemId) -> Option<RECT> {
         self.view
@@ -2472,6 +2979,7 @@ impl FenceWindow {
             let old_ink = v.material_foreground().label_look();
             v.backdrops = backdrops;
             v.glass_dark_text.set(None);
+            v.bare_dark_text.set(None);
             v.plate_halo.set(false);
             v.invalidate_backdrop();
             // The content only follows the backdrop through its ink (as in `on_move`).
@@ -2533,12 +3041,56 @@ impl FenceWindow {
         handler::focus_session(&self.view, self.hwnd());
     }
 
+    /// After a tab switch: when Ctrl+Tab asked for it, the keyboard's place shows in the new
+    /// tab as after Tab into a fence. The first icon in view is selected with the focus mark
+    /// (the tab keeps the scroll place it had); a tab with nothing in it carries the mark on
+    /// its caption. A switch by mouse leaves the new tab without a selection, as before.
+    pub fn focus_after_tab_keys(&self) {
+        self.with_view(|v| {
+            if !std::mem::take(&mut v.tab_switch_by_keys) {
+                return;
+            }
+            let first = (!v.items.is_empty() && !v.roll_target()).then(|| {
+                let (layout, _) = v.scroll_extent();
+                let top = v.scroll_target();
+                (0..v.items.len())
+                    .find(|i| layout.cell(*i).y >= top)
+                    .unwrap_or(0)
+            });
+            tracing::debug!(
+                fence = %v.active,
+                items = v.items.len(),
+                ?first,
+                "Ctrl+Tab: the focus mark goes to the new tab"
+            );
+            match first {
+                Some(i) => v.cursor_to(i, CursorMode::Select),
+                None => v.focus_visible = true,
+            }
+            let _ = v.redraw();
+        });
+    }
+
     /// The window takes the keyboard as a click on it would, with the selection left as it is
     /// (its title's name box closed, or the fence beside it was deleted from its menu). Returns
     /// whether it is the foreground window now. Call with no borrow of the view held.
     pub fn take_keyboard(&self) -> bool {
         handler::focus_session(&self.view, self.hwnd());
         desktop::foreground_window() == self.hwnd()
+    }
+
+    /// The keys stopped coming here without a focus message (the Peek ended, whose dimmer
+    /// passed them on): the focus ring goes, as at `WM_KILLFOCUS`; the selection stays.
+    /// Returns whether a ring showed.
+    pub fn keyboard_left(&self) -> bool {
+        let mut ring = false;
+        self.with_view(|v| {
+            ring = v.end_focus_mark();
+            if ring && !v.rolled_up {
+                let _ = v.redraw_content();
+            }
+        });
+        ring
     }
 
     /// The icons selected now, in the order shown.
@@ -2586,7 +3138,11 @@ impl FenceWindow {
     /// on the Windows desktop do.
     pub fn end_item_selection(&self) {
         self.with_view(|v| {
-            if v.end_selection() {
+            // The keyboard is elsewhere too. During a Peek no focus message says so (the
+            // dimmer passes the keys on): the focus mark would stay behind on this fence's
+            // title row when Tab goes on to the next fence.
+            let ring = v.end_focus_mark() && !v.rolled_up;
+            if v.end_selection() || ring {
                 let _ = v.redraw_content();
             }
         });
@@ -2640,6 +3196,7 @@ impl FenceWindow {
             }
             if v.theme.liquid_glass != theme.liquid_glass || v.theme.mode != theme.mode {
                 v.glass_dark_text.set(None);
+                v.bare_dark_text.set(None);
                 v.plate_halo.set(false);
             }
             v.theme = theme;

@@ -517,6 +517,7 @@ mod tests {
                 image: Image::solid(pixels, 1, [1, 2, 3]),
                 gpu: None,
             }]),
+            ..Default::default()
         })
     }
 
@@ -585,6 +586,7 @@ mod tests {
         .into_gpu_backed(8, || None);
         let set = Rc::new(BackdropSets {
             acrylic: Rc::new(vec![full]),
+            ..Default::default()
         });
         let mut cache = BackdropCache::with_limits(4, 1024);
         cache.insert("a".into(), set.clone());

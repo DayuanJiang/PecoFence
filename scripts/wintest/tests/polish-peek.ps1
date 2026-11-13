@@ -6,6 +6,10 @@
 # MF-12: `pecofence-cli fence fit` glides to the new height like 适应内容大小 in the fence menu.
 # Parts (run.sh --var Part=...): A the fade (dimmer on and off, animations off), B every way a
 # Peek ends, C the CLI fit. Default: all. Record=1 also records the clips for the report.
+# T (not in the default) times ten Peeks: when the covered fence is first seen and fully there
+# after the key, and from the app's log when it was made transparent and when it began to fade.
+# PkBuild=<folder> runs the build in that folder of --extra instead of the job's (several builds
+# in one boot of a guest).
 if (-not $Part) { $Part = 'ABC' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
@@ -156,6 +160,11 @@ GreyWallpaper
 foreach ($n in $PkNames) { New-Item -ItemType Directory -Force (Join-Path $PfDesk $n) | Out-Null }
 Set-Content -LiteralPath (Join-Path $PfDesk 'pk 说明文件.txt') -Value 'peek fade' -Encoding ASCII
 $AnimWas = [Anim]::Get(); [Anim]::Set($true)
+if ($PkBuild) {
+  New-Item -ItemType Directory -Force $PfApp | Out-Null
+  Copy-Item "$PfExtra\$PkBuild\*" $PfApp -Force
+  Log "build ${PkBuild}: $((Get-FileHash "$PfApp\pecofence.exe").Hash.Substring(0, 12))"
+}
 PfStart -Script (DumpScript 250 20)
 ClearFences | Out-Null
 $CoverX = 120; $CoverY = 80; $CoverW = 620; $CoverH = 560
@@ -215,6 +224,34 @@ function PkSummary($runs) {
     (($runs | ForEach-Object { $_.openAt }) -join '/'), (($runs | ForEach-Object { $_.fullAt }) -join '/'),
     ($runs | Measure-Object openFlash -Maximum).Maximum, ($runs | Measure-Object closeFlash -Maximum).Maximum,
     ($runs | Measure-Object partMin -Minimum).Minimum, ($runs | Measure-Object visMin -Minimum).Minimum)
+}
+
+if ($Part -match 'T') {
+  Case 'T ten Peeks over a covered fence, timed'
+  $runs = @(1..10 | ForEach-Object { PkCycle "T$_" })
+  $sum = PkSummary $runs
+  Start-Sleep -Milliseconds 1500
+  # The app's own times: the Peek opens, the covered fence is made transparent, it is raised and
+  # begins to fade in (builds before the fade log none of the last two).
+  $open = @(); $clear = @(); $fade = @(); $late = 0
+  foreach ($line in @(PfLogAll)) {
+    if ($line -match 'fences redrawn for the Peek floating=true') { $open += LogTime $line }
+    elseif ($line -match 'peek fade: fence made transparent before its raise title=Covered') { $clear += LogTime $line }
+    elseif ($line -match 'peek fade started title=Covered to=1') { $fade += LogTime $line }
+    elseif ($line -match 'covered fences raised at the limit') { $late++ }
+  }
+  $toClear = @(); $toFade = @()
+  foreach ($c in $clear) {
+    $o = @($open | Where-Object { $_ -le $c }) | Select-Object -Last 1
+    $f = @($fade | Where-Object { $_ -ge $c }) | Select-Object -First 1
+    if ($o) { $toClear += [int]($c - $o).TotalMilliseconds }
+    if ($f) { $toFade += [int]($f - $c).TotalMilliseconds }
+  }
+  $d = "$sum; app log: Peeks opened $($open.Count); transparent $($toClear -join '/') ms after the Peek opened; raised and fading $($toFade -join '/') ms after that; raised by the limit instead of the frame clock: $late"
+  Log "T $d"
+  Check 'T: ten Peeks were timed and the covered fence was fully there in each' ($runs.Count -eq 10 -and (($runs | Measure-Object openFull -Minimum).Minimum -gt 0.9 * $Ref[0])) $d
+  Check 'T: the covered fence never shows opaque before it fades in' (($runs | Measure-Object openFlash -Maximum).Maximum -lt 0.2 * $Ref[0]) $d
+  PkAfter 'after ten timed Peeks'
 }
 
 if ($Part -match 'A') {

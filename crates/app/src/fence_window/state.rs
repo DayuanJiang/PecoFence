@@ -49,9 +49,28 @@ pub(super) struct WindowGlide {
     pub(super) from: (i32, i32),
     pub(super) to: (i32, i32),
     pub(super) t: Tween,
+    /// The glide's own time and curve: its clock starts again with its first frame.
+    pub(super) time: Duration,
+    pub(super) curve: Curve,
+    /// Its first frame has run (`tick_glide` starts `t` there).
+    pub(super) begun: bool,
+    /// The app hears the new bounds when the window has arrived (a fence the user dropped);
+    /// false for a place the app itself chose and has recorded (a display change).
+    pub(super) notify: bool,
 }
 
 impl WindowGlide {
+    /// The first frame of the glide: its clock starts at `now`, with the time and the curve
+    /// it was asked for (a display change: a quarter of a second, point to point; it ran
+    /// 167 ms decelerating, the landing glide's values). True the first time.
+    pub(super) fn begin(&mut self, now: Instant) -> bool {
+        if std::mem::replace(&mut self.begun, true) {
+            return false;
+        }
+        self.t = Tween::new(0.0, 1.0, self.time, self.curve, now);
+        true
+    }
+
     /// Where the window is at `now`, and whether it has arrived.
     pub(super) fn at(&self, now: Instant) -> ((i32, i32), bool) {
         if self.t.is_done(now) {
@@ -115,8 +134,9 @@ pub struct FenceViewState {
     /// Drag dwell timer: the rolled-fence unroll is armed.
     pub(super) drag_peek_armed: bool,
     /// Client point of a plain right button press, which took the capture: the release opens a
-    /// menu only when it pairs with one here and the pointer stayed on it (a right drag onto
-    /// another item or fence opens nothing, and a cancel press records none).
+    /// menu only when it pairs with one here and the pointer stayed on it (a right drag that
+    /// starts on an icon becomes the shell drag and takes this, one from anywhere else opens
+    /// nothing, and a cancel press records none).
     pub(super) rbutton_press: Option<(i32, i32)>,
     /// Item whose inline rename edit is open: its label stays folded under the edit box.
     pub(super) renaming: Option<ItemId>,
@@ -128,6 +148,18 @@ pub struct FenceViewState {
     /// The anchor item's unfolded label, cached by (item, cell width, name) so a content redraw
     /// (hover fade, scroll glide, marquee) does not lay the text out again.
     pub(super) unfold_cache: Option<UnfoldCache>,
+    /// The details view's type names by extension, asked from the shell as rows come near the
+    /// viewport (`ensure_texts`); emptied with every new item list (`replace_items`).
+    pub(super) type_names: pecofence_platform::fileinfo::TypeNames,
+    /// Every item has its fitted name (and, in the details view, its column texts): the
+    /// fitting ahead has nothing left and its timer is off. Cleared wherever names are dropped
+    /// or the list changes.
+    pub(super) fit_ahead_done: bool,
+    /// When the user last pressed a key or used the mouse, as of the last content draw or
+    /// piece (`sysparams::last_input_tick`): a later input puts the next piece off.
+    pub(super) fit_ahead_input: Option<u32>,
+    /// How often in a row a piece was put off (`FIT_AHEAD_WAITS`).
+    pub(super) fit_ahead_waits: u8,
     /// The last content draw kept the scrollbar's strip clear (the fence scrolled): only for
     /// the debug line when that changes.
     pub(super) strip_kept: bool,
@@ -173,6 +205,9 @@ pub struct FenceViewState {
     pub(super) drop_fades: Fades<ItemId>,
     /// Peek search marks (None = no search) and the per-item dimming they fade (83 ms).
     pub(super) search: Option<SearchMarks>,
+    /// The hover, drop target, drag and animation state the search fades of every item were
+    /// last set for (`item_alphas`); None when the marks or the item list changed since.
+    pub(super) search_fades_for: Option<(Option<usize>, Option<usize>, bool, bool)>,
     pub(super) search_dim: Fades<ItemId>,
     /// A Peek search holds this fence open (a hover peek that does not close until the search
     /// has no matches here any more).
@@ -193,6 +228,9 @@ pub struct FenceViewState {
     pub(super) merge_t: Tween,
     /// Layout motion: items gliding to new cells / fading in, and removed items fading out.
     pub(super) item_motion: HashMap<ItemId, ItemMotion>,
+    /// When an edge drag last changed the column count (`reflow_items`): a change that
+    /// follows within the glide's time places the icons at once.
+    pub(super) column_change_at: Option<Instant>,
     pub(super) leaving: Vec<LeavingItem>,
     /// The filter box changed the filter: when the next `replace_items` brings a whole new
     /// list (a refill, not a rearrangement), it cross-fades instead of cutting.
@@ -235,16 +273,45 @@ pub struct FenceViewState {
     /// 便签与待办: the fence shown is a note with this text, drawn in place of items (None =
     /// it shows items).
     pub(super) note: Option<String>,
+    /// The note is being edited: what its editor holds, drawn in place of `note`.
+    pub(super) note_edit: Option<NoteEditView>,
+    /// A press in the edited note's text is held: moving the pointer selects.
+    pub(super) note_drag: bool,
+    /// The press held on a to-do of a note that is not being edited: a click on its
+    /// release, or the line follows the pointer to another place (`TodoDrag`).
+    pub(super) todo_drag: Option<TodoDrag>,
+    /// Lines of the note on their way to their places after a to-do moved: the line and the
+    /// top it is drawn at (content DIPs before scrolling; 167 ms).
+    pub(super) note_slide: Vec<(usize, Tween)>,
+    /// The line drawn lifted and how much of its plate shows: it comes while the to-do is
+    /// dragged and goes while the released line settles.
+    pub(super) note_lift: Option<(usize, Tween)>,
     /// The note's to-do check boxes as last drawn: line index and (left, top, right, bottom)
     /// in content DIPs.
     pub(super) note_boxes: Vec<(usize, [f32; 4])>,
+    /// The note's web addresses as last drawn (none while it is edited): the line, the
+    /// address's start in the line's text (UTF-16 units), and one box (left, top, right,
+    /// bottom) in content DIPs per line on screen the address runs over.
+    pub(super) note_links: Vec<(usize, usize, [f32; 4])>,
     /// 时钟与日期: the fence shown is a clock; true = with seconds. None = it shows items.
     pub(super) clock: Option<bool>,
     /// The clock's time and date text sizes (DIPs) as last drawn, and as last logged.
     pub(super) clock_text: (f32, f32),
     pub(super) clock_text_logged: (f32, f32),
+    /// The clock's date line as last drawn: "long", "short" (no year, the short weekday) or
+    /// "none", by what fits the width.
+    pub(super) clock_date: &'static str,
+    /// The clock's time as last drawn: "full", or "short" (without its seconds, which did not
+    /// fit the width at the smallest size).
+    pub(super) clock_time: &'static str,
     /// 文字大小 of a note or script fence: 0 small, 1 normal, 2 large, 3 extra large.
     pub(super) text_size: u8,
+    /// A note's or a script fence's text as last measured (`take_tool_extent`): the height
+    /// its content scrolls over (0 while it shows its hint, or items), the top of each line
+    /// of text from the first one's (the content rests on one of them) and one wheel line.
+    pub(super) tool_text_h: f32,
+    pub(super) tool_line_tops: Vec<f32>,
+    pub(super) tool_line_step: f32,
     /// 脚本栅栏: the fence shown is a script fence with this output and footer.
     pub(super) script: Option<ScriptView>,
     /// Its clickable rows as last drawn: row index and (left, top, right, bottom) in content
@@ -252,13 +319,29 @@ pub struct FenceViewState {
     pub(super) script_rows: Vec<(usize, [f32; 4])>,
     /// The clickable row under the pointer.
     pub(super) script_hover: Option<usize>,
+    /// The hover plates of its rows fading in and out, by row index (as `item_hover`).
+    pub(super) script_fades: Fades<usize>,
+    /// Which form of the footer was drawn last (`FenceChrome::script_footer`), for the log.
+    pub(super) script_footer_form: &'static str,
+    /// 便签与待办: the line whose check box is under the pointer.
+    pub(super) note_box_hover: Option<usize>,
+    /// 便签与待办: the web address under the pointer (its line and start).
+    pub(super) note_link_hover: Option<(usize, usize)>,
     /// The portal's folder could not be found (its empty state says so).
     pub(super) portal_missing: bool,
     /// The empty-state text in place of the usual one (a smart fence's state, a filter that
     /// matches nothing), and a smart fence's count in its capsule at the right ("6"; see
     /// `FenceWindow::set_status_view`).
     pub(super) empty_override: Option<&'static str>,
+    /// The label of a clickable row under that text (`set_status_view`: a smart fence
+    /// that needs Everything offers to start or install it).
+    pub(super) empty_action: Option<&'static str>,
+    /// The pointer is over that row.
+    pub(super) empty_action_hover: bool,
     pub(super) title_count: Option<String>,
+    /// What the count capsule's infotip says (`FenceWindow::set_count_tip`): a count with a
+    /// "+" shows the newest files only, and this says of how many. None: no infotip.
+    pub(super) count_tip: Option<String>,
     /// 筛选: the fence is filtered right now (Esc clears it).
     pub(super) filter_active: bool,
     /// 筛选: the tag of a filtered single title once its box closed: the type (「类型：PDF」, or
@@ -273,6 +356,9 @@ pub struct FenceViewState {
     /// An item near the viewport was still waiting for its icon at the last content draw
     /// (`ensure_icons_and_labels`): a delivered batch then redraws this window.
     pub(super) icons_pending: bool,
+    /// Height (DIPs) of the content when the fence was last drawn empty: the text of an
+    /// empty fence stays where it stood then while it fades out under arriving icons.
+    pub(super) empty_text_h: Option<f32>,
     pub(super) hover: Option<usize>,
     pub(super) title_hover: bool,
     pub(super) selected: HashSet<usize>,
@@ -289,6 +375,12 @@ pub struct FenceViewState {
     /// Portal 上一级: the folder just left, which the parent's `set_items` selects and scrolls
     /// into view (Explorer), with the focus ring if it was showing.
     pub(super) select_after_nav: Option<(ItemId, bool)>,
+    /// Ctrl+Tab asked for the tab switch under way: once the new tab's icons are here, the
+    /// first one in view takes the selection and the focus mark (`focus_after_tab_keys`).
+    pub(super) tab_switch_by_keys: bool,
+    /// The folder shown changed by keys with no icon to select (Enter into a subfolder,
+    /// Alt+Right): the first icon of the folder that arrives takes the focus mark.
+    pub(super) focus_first_after_nav: bool,
     /// The user's own Delete (key or menu) of some items is under way (see `UserDelete`). When
     /// the focused item goes with them, the item that followed it takes the focus and the
     /// selection (`focus_after_delete`).
@@ -305,6 +397,13 @@ pub struct FenceViewState {
     /// Fluent: whether the text had the halo when it was last picked (it keeps its state near
     /// its threshold, like the colour). Reset with `glass_dark_text`.
     pub(super) plate_halo: Cell<bool>,
+    /// Last contrast choice of a fully transparent fence for the bare wallpaper (its plate
+    /// hidden); `glass_dark_text` keeps the one for its plate. Reset with it.
+    pub(super) bare_dark_text: Cell<Option<bool>>,
+    /// The text colour and halo the content was last drawn with (`Theme::label_look`): a
+    /// fully transparent fence draws its content again when its plate comes or goes and the
+    /// pick changes (`redraw_chrome_only`).
+    pub(super) content_look: Cell<Option<(ColorF, bool, ColorF)>>,
     pub(super) backdrops: Rc<BackdropSets>,
     pub(super) backdrop_crop: Option<Image>,
     /// Screen rect (left, top, width, height) `backdrop_crop` was cut for. While the height
@@ -366,6 +465,9 @@ pub struct FenceViewState {
     pub(super) sb_width: Tween,
     /// Thumb opacity 0..=1 (83 ms linear; always 1 unless the inactive-scrollbar rule hides it).
     pub(super) sb_alpha: Tween,
+    /// The last list change made the content scroll with icons that fade in: the bar is drawn
+    /// at their strength until they are in.
+    pub(super) sb_arrives: bool,
     /// Track fill + arrow buttons reveal 0..=1 (83 ms linear with the expand / contract).
     pub(super) sb_parts: Tween,
     /// PointerOver fades of the two arrow buttons (83 ms), keyed by `ArrowUp` / `ArrowDown`.
@@ -394,8 +496,13 @@ pub struct FenceViewState {
     /// comctl32, a move to the same point neither arms nor re-targets the tip: Windows sends
     /// one after a click, when a window appears or when the content moves under a resting
     /// pointer. A tip that a click, a key or the wheel hid comes back only when the pointer
-    /// really moves.
+    /// really moves. Forgotten when the pointer leaves the window for another point
+    /// (`on_mouseleave`), so a pointer that comes back to the very point gets its tip.
     pub(super) tip_move_at: Option<(i32, i32)>,
+    /// 自由摆放: the icons the user is moving by hand right now. The placing of their new
+    /// cells leaves them out of its glide (`glide_to_new_slots`): they arrive from where they
+    /// were let go (`land_moved_icons`), not from their old cells.
+    pub(super) hand_moved: Vec<ItemId>,
     /// Items on the clipboard via 剪切 (drawn at half alpha like Explorer).
     pub(super) cut: HashSet<ItemId>,
     /// Ctrl+wheel accumulator (touchpads deliver fractional notches).
@@ -404,6 +511,15 @@ pub struct FenceViewState {
     pub(super) wheel_tab_accum: i32,
     /// The tab TIMER_TAB_HOVER will switch to while the pointer stays on it.
     pub(super) tab_hover_switch: Option<usize>,
+    /// A hover switched a tab of this strip: the next tabs wait `TAB_HOVER_NEXT_MS` only.
+    pub(super) tab_hover_quick: bool,
+    /// When the pointer left the tabs while `tab_hover_quick` (`TAB_HOVER_NEXT_KEEP`).
+    pub(super) tab_strip_left: Option<Instant>,
+    /// The hover switch on its way followed another: its content is placed without the swap.
+    pub(super) tab_swap_at_once: bool,
+    /// That switch has placed its tab: the item list that follows stands at once
+    /// (`replace_items` takes this).
+    pub(super) place_next_items: bool,
     /// Fence height follows the item grid (FenceView.auto_height).
     pub(super) auto_height: bool,
     /// The left tab column appeared or grew (a tab joined, a caption changed, 标签栏位置): the
@@ -440,6 +556,9 @@ pub struct FenceViewState {
     /// The cells of the items (and one more for a drop after the last), content-local DIPs,
     /// from `arrange_desktop`.
     pub(super) desktop_slots: Vec<CellRect>,
+    /// `replace_items` placed the cells of a new item list itself (the glide needs them) and
+    /// they moved: the next `arrange_desktop` reports that, so the window is fitted and drawn.
+    pub(super) desktop_slots_moved: bool,
     /// 自由摆放: the grid the icons stand on and the cell (column, row) of each item, from
     /// `arrange_desktop`; None while the icons are arranged in columns.
     pub(super) desktop_free: Option<(super::desktop_layout::FreeGrid, Vec<(i32, i32)>)>,
@@ -455,6 +574,8 @@ pub struct FenceViewState {
     pub(super) desktop_shape_pending: Option<Vec<RECT>>,
     /// Per-fence title on hover; None follows `Behavior::title_on_hover`.
     pub(super) title_on_hover_override: Option<bool>,
+    /// 鼠标移入时保持透明 (`AppearanceOverride::transparent_on_hover`); see `stays_clear`.
+    pub(super) transparent_on_hover: bool,
     /// Per-fence colour wash / title colour / title size.
     pub(super) style: FenceStyle,
     /// Icon grid spacing in DIPs (FenceView.spacing).
@@ -475,6 +596,9 @@ pub struct FenceViewState {
     /// Auto-height settle (250 ms point-to-point): the bottom edge glides to the fitting
     /// height. Separate from `roll_anim` so it never blocks hover-peek or the chevron.
     pub(super) height_anim: Option<Tween>,
+    /// An icon size step is giving the fence another height: once the fence has it (`land`),
+    /// the selected item is brought back into view (`FenceWindow::keep_selection_in_view`).
+    pub(super) reveal_after_height: bool,
     /// Whole-window fade in progress and its generation (see `VisFade`).
     pub(super) vis_fade: Option<VisFade>,
     pub(super) vis_gen: usize,
@@ -526,6 +650,10 @@ pub struct FenceViewState {
     /// and the shadow follow them (`sync_plate_shape`).
     pub(super) plate_inset_px: i32,
     pub(super) plate_alpha: f32,
+    /// The window's top edge lies on the top edge of its monitor's work area (docked to the
+    /// top, or dragged there): the top corners of the plate and of its shadow are square
+    /// there and round again when the fence leaves (`sync_edge_top`).
+    pub(super) edge_top: bool,
     /// Temporarily expanded by hovering a rolled fence (state stays "rolled" for persistence).
     pub(super) peeking: bool,
     /// A hover peek (or a file drag) opened it and raised it above the other fences
@@ -543,6 +671,11 @@ pub struct FenceViewState {
     /// Let go over another fence: the window glides from where it was dropped to the free
     /// spot it lands on (`FenceWindow::glide_to`), ticked by the frame clock.
     pub(super) glide: Option<WindowGlide>,
+    /// A display change places every fence in one pass (`FenceWindow::defer_moves`): while
+    /// this is set, a placement that only moves the window waits in `pending_place` and the
+    /// window glides there when the pass is over.
+    pub(super) defer_place: bool,
+    pub(super) pending_place: Option<RECT>,
     /// The app is placing the window (`FenceWindow::place_window`, a cancelled drag put back):
     /// the rect it sets is already in the target monitor's pixels, so a WM_DPICHANGED sent
     /// inside that SetWindowPos (a move onto a monitor with another scale) must not scale it
@@ -600,6 +733,7 @@ impl FenceViewState {
             item.label = None;
         }
         self.unfold_cache = None;
+        self.fit_ahead_done = false;
     }
 
     /// The grid the fence asks for; its layout is the fence's own (`wanted_layout`).
@@ -646,6 +780,8 @@ impl FenceViewState {
             }
             self.unfold_cache = None;
         }
+        // Another view has other texts (the columns of the details view).
+        self.fit_ahead_done = false;
     }
 
     /// Lays the items out for `grid` at once, also when only the shown layout changes (像桌面一样
@@ -682,12 +818,44 @@ impl FenceViewState {
         }
         self.take_grid(grid);
         self.snap_item_motion();
+        // The view or the cell size changed under a selection (not a tab switch, which brings
+        // its own offset): the focused file, else the first selected one, stays on screen, as
+        // in Explorer. A view change started at the top and left it out of sight.
+        if restore.is_none() {
+            self.reveal_selection();
+        }
         if cross_fade {
             // After `take_grid`: the swap draws the new panel once, in the new view.
             self.begin_content_swap(0);
         }
         let _ = self.redraw();
+        // Another icon is under the resting pointer now (a Ctrl+wheel step): the hover fill
+        // goes to it at once; it stayed on the old icon until the fence had its new height.
+        self.request_hover_refresh();
         true
+    }
+
+    /// Scrolls the focused item, else the first selected one, into view for the geometry the
+    /// fence has now. Returns whether the offset changed.
+    pub(super) fn reveal_selection(&mut self) -> bool {
+        let Some(i) = self
+            .anchor_index
+            .filter(|i| self.selected.contains(i))
+            .or_else(|| self.selected.iter().min().copied())
+            .filter(|i| *i < self.items.len())
+        else {
+            return false;
+        };
+        let before = self.scroll_y;
+        self.scroll_into_view(i, false);
+        tracing::debug!(
+            fence = %self.fence_id,
+            item = i,
+            from = before,
+            to = self.scroll_y,
+            "view changed: the selected item is kept in view"
+        );
+        self.scroll_y != before
     }
 
     /// Ends the layout motion at once: the geometry it was computed for (cell size, layout,
@@ -717,10 +885,9 @@ impl FenceViewState {
         self.desktop.is_some()
     }
 
-    /// 便签与待办: what a press at client point (`x`, `y`) in a note's content does: tick the
-    /// to-do whose check box (with a little slack) is under it, else open the editor. None
-    /// when this window shows no note or the point is not in its content.
-    pub(super) fn note_press(&self, x: i32, y: i32) -> Option<Command> {
+    /// 便签与待办: the line of the to-do whose check box (with a little slack) is at client
+    /// point (`x`, `y`).
+    pub(super) fn note_box_at(&self, x: i32, y: i32) -> Option<usize> {
         if self.note.is_none() || self.rolled_up || y < self.content_y || x < self.content_x {
             return None;
         }
@@ -728,18 +895,53 @@ impl FenceViewState {
         let cx = (x - self.content_x) as f32 / scale;
         let cy = (y - self.content_y) as f32 / scale;
         const SLACK: f32 = 4.0;
-        let fence = self.active;
-        let line = self
-            .note_boxes
+        self.note_boxes
             .iter()
             .find(|(_, r)| {
                 cx >= r[0] - SLACK && cx < r[2] + SLACK && cy >= r[1] - SLACK && cy < r[3] + SLACK
             })
-            .map(|&(line, _)| line);
-        Some(match line {
-            Some(line) => Command::ToggleNoteLine { fence, line },
-            None => Command::EditNote { fence },
+            .map(|&(line, _)| line)
+    }
+
+    /// 便签与待办: a press at client point (`x`, `y`) in a note's text opens the editor with
+    /// the caret where the press was: the command that does it, which the caller sends at
+    /// once or, for a press on a to-do, on the release (`begin_todo_press`). None when this
+    /// window shows no note, the point is not in its content, or a check box is there
+    /// (`press_tool_at` takes that press).
+    pub(super) fn note_press(&self, x: i32, y: i32) -> Option<Command> {
+        if self.note.is_none() || self.rolled_up || y < self.content_y || x < self.content_x {
+            return None;
+        }
+        // A check box ticks, a web address opens (the second click of a double-click on one
+        // does nothing more).
+        if self.note_box_at(x, y).is_some() || self.note_link_at(x, y).is_some() {
+            return None;
+        }
+        Some(Command::EditNote {
+            fence: self.active,
+            caret: self.note_offset_at(x, y),
         })
+    }
+
+    /// 便签与待办: the web address (its line and start) at client point (`x`, `y`) of a note
+    /// that is not being edited.
+    pub(super) fn note_link_at(&self, x: i32, y: i32) -> Option<(usize, usize)> {
+        if self.note.is_none()
+            || self.note_edit.is_some()
+            || self.rolled_up
+            || y < self.content_y
+            || x < self.content_x
+            || self.scrollbar_hit(x, y).is_some()
+        {
+            return None;
+        }
+        let scale = self.scale();
+        let cx = (x - self.content_x) as f32 / scale;
+        let cy = (y - self.content_y) as f32 / scale;
+        self.note_links
+            .iter()
+            .find(|(_, _, r)| cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3])
+            .map(|&(line, start, _)| (line, start))
     }
 
     /// 脚本栅栏: the clickable row at client point (`x`, `y`).
@@ -756,13 +958,53 @@ impl FenceViewState {
             .map(|&(row, _)| row)
     }
 
-    /// 脚本栅栏: a press on a clickable row runs what it asks for.
-    pub(super) fn script_press(&self, x: i32, y: i32) -> Option<Command> {
-        let row = self.script_row_at(x, y)?;
-        Some(Command::ScriptRowClicked {
-            fence: self.active,
-            row,
-        })
+    /// The empty state's action row as drawn now: only under the text the app set (a drag
+    /// over the fence says 「松开即可放入」 alone).
+    pub(super) fn empty_action_draw(&self) -> Option<EmptyAction<'static>> {
+        let label = self.empty_action?;
+        (self.items.is_empty() && !self.drop_hover && self.empty_override.is_some()).then_some(
+            EmptyAction {
+                label,
+                hover: self.empty_action_hover,
+            },
+        )
+    }
+
+    /// The empty state's action row is under the client point.
+    pub(super) fn empty_action_at(&self, x: i32, y: i32) -> bool {
+        let Some(action) = self.empty_action_draw() else {
+            return false;
+        };
+        if self.rolled_up || x < self.content_x || y < self.content_y {
+            return false;
+        }
+        let scale = self.scale();
+        let cx = (x - self.content_x) as f32 / scale;
+        let cy = (y - self.content_y) as f32 / scale;
+        let (w, h) = self.content_size_px();
+        let header_h = self.row_metrics().map_or(0.0, |m| m.header_h);
+        self.chrome
+            .empty_action_rect(
+                self.empty_text(),
+                action.label,
+                w as f32 / scale,
+                h as f32 / scale,
+                header_h,
+            )
+            .is_some_and(|r| cx >= r.left && cx < r.right && cy >= r.top && cy < r.bottom)
+    }
+
+    /// A press on the empty state's action row: the app does what the row says.
+    pub(super) fn empty_action_press(&self, x: i32, y: i32) -> Option<Command> {
+        self.empty_action_at(x, y)
+            .then_some(Command::EmptyActionClicked { fence: self.active })
+    }
+
+    /// The pointer moved to the client point (None: it left the window): the action row
+    /// lights up under it. True when that changed, and the content needs a redraw.
+    pub(super) fn hover_empty_action(&mut self, at: Option<(i32, i32)>) -> bool {
+        let over = at.is_some_and(|(x, y)| self.empty_action_at(x, y));
+        std::mem::replace(&mut self.empty_action_hover, over) != over
     }
 
     /// The fence shown is a tool (小工具) in place of items: it takes no drops, merges or
@@ -775,6 +1017,17 @@ impl FenceViewState {
     /// fence (its capsule counts) or a filter tag (it carries the count).
     pub(super) fn shows_rolled_count(&self) -> bool {
         !self.shows_tool() && self.title_count.is_none() && self.filter_tag.is_none()
+    }
+
+    /// 「12 项」: the count a rolled fence shows before its chevron, in the interface language.
+    pub(super) fn rolled_count_caption(&self) -> String {
+        pecofence_core::i18n::format("{0} 项", &[self.items.len().to_string()])
+    }
+
+    /// The room that count takes in the title row, as drawn (its text is measured: a count in
+    /// words is wider than 「12 项」).
+    pub(super) fn rolled_count_room(&self) -> f32 {
+        self.chrome.rolled_count_room(&self.rolled_count_caption())
     }
 
     /// Nothing can be dropped here: a tool fence, or a smart fence (it shows a search).

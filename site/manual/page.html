@@ -19,6 +19,11 @@
 <script src="demos/rules.js" defer></script>
 <script src="demos/look.js" defer></script>
 <script src="demos/backup.js" defer></script>
+<link rel="stylesheet" href="demos/dialogs.css">
+<script src="demos/undo.js" defer></script>
+<link rel="stylesheet" href="demos/smart.css">
+<script src="demos/smart.js" defer></script>
+<script src="demos/vdesk.js" defer></script>
 <link rel="stylesheet" href="demos/tabs.css">
 <script src="demos/tabs.js" defer></script>
 <script src="demos/hide.js" defer></script>
@@ -28,6 +33,7 @@
 <link rel="stylesheet" href="demos/icons.css">
 <script src="demos/items.js" defer></script>
 <script src="demos/view.js" defer></script>
+<script src="demos/free-place.js" defer></script>
 <link rel="stylesheet" href="demos/peek.css">
 <script src="demos/peek.js" defer></script>
 <script src="demos/portal.js" defer></script>
@@ -77,6 +83,7 @@
       <li><a href="#items"><span class="num">3.1</span>在栅栏之间移动图标</a></li>
       <li><a href="#view"><span class="num">3.2</span>视图、图标大小和排序</a></li>
       <li><a href="#rules"><span class="num">3.3</span>自动整理规则</a></li>
+      <li><a href="#free-place"><span class="num">3.4</span>自由摆放桌面图标</a></li>
     </ol>
     </div>
     <div class="toc-group">
@@ -87,6 +94,8 @@
       <li><a href="#peek"><span class="num">4.3</span>速览</a></li>
       <li><a href="#search"><span class="num">4.4</span>搜索图标和文件</a></li>
       <li><a href="#portal"><span class="num">4.5</span>在桌面显示文件夹</a></li>
+      <li><a href="#smart"><span class="num">4.6</span>智能栅栏</a></li>
+      <li><a href="#vdesk"><span class="num">4.7</span>每个虚拟桌面一套栅栏</a></li>
     </ol>
     </div>
     <div class="toc-group">
@@ -100,6 +109,7 @@
     <h2>布局与备份</h2>
     <ol>
       <li><a href="#backup"><span class="num">6.1</span>布局快照和备份</a></li>
+      <li><a href="#undo"><span class="num">6.2</span>按 Ctrl+Z 撤销</a></li>
     </ol>
     </div>
     <div class="toc-group">
@@ -130,7 +140,7 @@
       </header>
       <div class="lesson-body">
         <figure class="demo">
-          <div class="stage" role="img" aria-label="动画：双击打开 PecoFence，桌面图标飞进右边的三个栅栏，没有分到类的「安装日志.log」排到屏幕左上角；新文件自动进了「文件与文档」；从托盘菜单退出后，图标回到桌面原来的位置"></div>
+          <div class="stage" role="img" aria-label="动画：双击打开 PecoFence，桌面图标飞进右边的三个栅栏，没有分到类的「安装日志.log」留在原来的位置；新文件自动进了「文件与文档」；从托盘菜单退出后，图标回到桌面原来的位置"></div>
           <div class="controls">
             <button class="btn play" type="button" data-play aria-label="暂停">
               <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
@@ -143,7 +153,7 @@
         <div class="side">
           <ol class="steps">
             <li data-at="0.3"><span class="n">1</span><p>打开 PecoFence，从开始菜单或桌面快捷方式打开都行。</p></li>
-            <li data-at="1.8"><span class="n">2</span><p>第一次打开时，它会在屏幕右边建好三个栅栏，把桌面图标按类型放进去。其他图标归「桌面」栅栏：这个栅栏不显示标题和边框，图标像 Windows 桌面上一样，从屏幕左上角一列一列往下排。</p></li>
+            <li data-at="1.8"><span class="n">2</span><p>第一次打开时，它会在屏幕右边建好三个栅栏，把桌面图标按类型放进去。没分到类的图标留在原来的位置，像 Windows 桌面上一样。它们归「桌面」栅栏，这个栅栏不显示标题和边框。</p></li>
             <li data-at="4.9"><span class="n">3</span><p>以后桌面上有了新文件，也会自动放进对应的栅栏。</p></li>
             <li data-at="6.9"><span class="n">4</span><p>想恢复原样，就右键托盘图标（任务栏右下角的 PecoFence 图标，没看到就先点 <b>^</b>），选<b>「退出 PecoFence」</b>。文件一直在桌面文件夹里，PecoFence 只是把它们放进栅栏显示。</p></li>
           </ol>
@@ -151,6 +161,8 @@
             <h3>小提示</h3>
             <p>分类按的是整理规则，右键托盘图标选「设置…」，在「整理规则」页就能改。规则都对不上的文件，会放进「桌面」栅栏。</p>
             <p>第一次打开时，右下角会依次显示几条小技巧，点<b>「下一条」</b>往下看，点 × 就关掉。以后在用得上某个功能时，比如栅栏多了、常开同一个文件夹，也会提示一次。不想看到，可以在设置的「常规」页关掉「功能提示」。</p>
+            <p>小技巧还没看完时，如果轮到「让新文件自动进来」或「把常用的文件夹放到桌面上」这样的提示，它会先显示；你点了它的按钮或关掉它以后，小技巧接着往下。</p>
+            <p>右下角的卡片也能用键盘回答。卡片在屏幕上时，在栅栏里或速览时按 <kbd>F6</kbd>，键盘就移到卡片的按钮上：按 <kbd>Tab</kbd> 换到下一个按钮或 ×，按 <kbd>Enter</kbd> 或 <kbd>空格</kbd> 按下它，按 <kbd>Esc</kbd> 关掉卡片，再按一次 <kbd>F6</kbd> 回到栅栏。</p>
           </aside>
         </div>
       </div>
@@ -164,7 +176,7 @@
       </header>
       <div class="lesson-body">
         <figure class="demo">
-          <div class="stage" role="img" aria-label="动画：在桌面上拖出一个框，新建栅栏，把周报拖进去，再把栅栏改名为「工作」"></div>
+          <div class="stage" role="img" aria-label="动画：在桌面上拖出一个框，松开后点框右下角的「新建栅栏」，新栅栏的标题变成输入框，输入「工作」后按 Enter，再把桌面上的周报拖进去"></div>
           <div class="controls">
             <button class="btn play" type="button" data-play aria-label="暂停">
               <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
@@ -176,14 +188,16 @@
         </figure>
         <div class="side">
           <ol class="steps">
-            <li data-at="0.3"><span class="n">1</span><p>在桌面空白处按住鼠标，拖出一个框。框不要碰到已有的栅栏。</p></li>
+            <li data-at="0.3"><span class="n">1</span><p>在桌面空白处按住鼠标，拖出一个框。框不要碰到已有的栅栏和图标。</p></li>
             <li data-at="2.5"><span class="n">2</span><p>松开鼠标，点框右下角的<b>「新建栅栏」</b>。</p></li>
-            <li data-at="3.9"><span class="n">3</span><p>把图标拖进新栅栏。</p></li>
-            <li data-at="6.7"><span class="n">4</span><p>右键标题栏，选<b>「重命名…」</b>，输入名字后按 <kbd>Enter</kbd>。</p></li>
+            <li data-at="3.7"><span class="n">3</span><p>新栅栏的标题会自己变成输入框，直接输入名字，再按 <kbd>Enter</kbd>。</p></li>
+            <li data-at="5.8"><span class="n">4</span><p>把图标拖进新栅栏。</p></li>
           </ol>
           <aside class="tip">
             <h3>小提示</h3>
             <p>也可以右键某个栅栏的标题栏，在「添加到桌面」里选「新建栅栏」，新栅栏会放在它旁边的空位上。托盘菜单里也有「新建栅栏」。</p>
+            <p>以后想改名，就右键栅栏的标题栏，选「重命名…」；或者点一下标题，鼠标留在标题上按 <kbd>F2</kbd>。</p>
+            <p>刚建的栅栏不想要了，趁它还空着按 <kbd>Ctrl</kbd>+<kbd>Z</kbd>，它就没了。</p>
           </aside>
         </div>
       </div>
@@ -248,7 +262,8 @@
           <aside class="tip">
             <h3>小提示</h3>
             <p>不想鼠标一停就展开，可以在「设置」→「常规」→「收起与展开」里把「收起的栅栏怎么展开」改成「单击标题时」，以后点一下标题栏才展开，再点一下就收起。选「鼠标停在上面时」（默认）或「单击标题时」，拖着文件停在收起的标题栏上，它都会展开，方便把文件放进去；选「只在双击标题或点箭头时」，就只能双击标题栏或点箭头展开。</p>
-            <p>展开得太快或太慢，可以在它下面的「展开快慢」里选「快」或「慢」。</p>
+            <p>展开得太快或太慢，可以在它下面的「展开快慢」里选「快」或「慢」。这里选的是第一个栅栏要等多久：一个收起的栅栏在鼠标下展开以后，接着移到的下一个收起的栅栏几乎马上展开，一排收起的栅栏可以一路看过去。</p>
+            <p>从栅栏菜单里用键盘选「收起」以后，键盘还留在这个栅栏上，标题栏上会有一圈焦点框：按 <kbd>Enter</kbd> 就展开，按 <kbd>Tab</kbd> 去下一个栅栏。</p>
           </aside>
         </div>
       </div>
@@ -262,7 +277,7 @@
       </header>
       <div class="lesson-body">
         <figure class="demo">
-          <div class="stage" role="img" aria-label="动画：在 AI 编程助手里粘贴需求并发送；助手先运行 pecofence-cli skill 和 pecofence-cli describe，查看栅栏，导出配置并保存布局快照，再切换为深色模式、把所有栅栏调得更透明；右边桌面上的栅栏随之变暗、变透明"></div>
+          <div class="stage" role="img" aria-label="动画：在 AI 编程助手里粘贴需求并发送；助手先运行 pecofence-cli skill 和 pecofence-cli describe，查看栅栏，导出配置并保存布局快照，再把主题风格换成 Liquid Glass、把所有栅栏调得更透明；右边桌面上的栅栏随之变成液态玻璃，再变得更透明"></div>
           <div class="controls">
             <button class="btn play" type="button" data-play aria-label="暂停">
               <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
@@ -283,7 +298,7 @@
               <h3>可以这样写</h3>
               <button class="xa-copy" type="button"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.6"/><path d="M10.5 3.5v-.4A1.6 1.6 0 0 0 8.9 1.5H4.1a1.6 1.6 0 0 0-1.6 1.6v4.8a1.6 1.6 0 0 0 1.6 1.6h.4"/></svg><span>复制</span></button>
             </div>
-            <p>先阅读 pecofence-cli skill 和 pecofence-cli describe，查看并备份我的配置，再切换为深色模式，把所有栅栏调得更透明。</p>
+            <p>先阅读 pecofence-cli skill 和 pecofence-cli describe，查看并备份我的配置，再把主题风格换成 Liquid Glass，把所有栅栏调得更透明。</p>
           </div>
           <aside class="tip">
             <h3>小提示</h3>
@@ -301,7 +316,7 @@
       </header>
       <div class="lesson-body">
         <figure class="demo">
-          <div class="stage" role="img" aria-label="动画：把合同.pdf 从「文件与文档」拖进「工作」，目标栅栏亮起并提示「移动到 工作」；按住 Ctrl 选中报价单和方案，一起拖进「工作」；再把合同.pdf 拖到桌面空白处，它回到「桌面」栅栏"></div>
+          <div class="stage" role="img" aria-label="动画：把合同.pdf 从「文件与文档」拖进「工作」，目标栅栏亮起并提示「移动到 工作」，一条竖线标出它会排在哪里，松开后它就排在两个图标之间；按住 Ctrl 选中报价单和方案，一起拖到「工作」的空白处，它们排在最后；再把合同.pdf 拖到桌面空白处，它留在桌面上，停在松开的那一格"></div>
           <div class="controls">
             <button class="btn play" type="button" data-play aria-label="暂停">
               <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
@@ -315,11 +330,12 @@
           <ol class="steps">
             <li data-at="0.3"><span class="n">1</span><p>按住图标，拖进另一个栅栏再松开。目标栅栏会亮起来，并提示「移动到 工作」。要是提示里是某个文件夹的名字，松开后文件会真的移进那个文件夹。</p></li>
             <li data-at="3.1"><span class="n">2</span><p>想一次移好几个，先按住 <kbd>Ctrl</kbd> 逐个点选，或者在栅栏空白处拖出一个框，再一起拖走。</p></li>
-            <li data-at="7.0"><span class="n">3</span><p>拖到桌面空白处松开，图标会放回「桌面」栅栏。</p></li>
+            <li data-at="7.0"><span class="n">3</span><p>拖到桌面空白处松开，图标就离开栅栏，留在桌面上，停在松开的那一格。</p></li>
           </ol>
           <aside class="tip">
             <h3>小提示</h3>
             <p>不想拖，也可以右键图标，在「移动到栅栏」里选一个栅栏。</p>
+            <p>0.3.2 以前装的 PecoFence，「桌面」还是一个带标题的栅栏，拖到桌面空白处的图标会放回这个栅栏。</p>
           </aside>
         </div>
       </div>
@@ -351,7 +367,8 @@
           </ol>
           <aside class="tip">
             <h3>小提示</h3>
-            <p>「视图」菜单里也能直接选图标大小。排序方式是「手动」时，新出现的图标排在最后，和 Windows 桌面一样；从别的栅栏拖进来的图标，在哪两个图标之间松手就插在哪里，拖的时候会显示一条插入线。在详细信息视图里，点列标题就能按这一列排序，再点一次倒过来。</p>
+            <p>「视图」菜单里也能直接选图标大小。排序方式是「手动」时，新出现的图标排在最后，和 Windows 桌面一样；从别的栅栏拖进来的图标，在哪两个图标之间松手就插在哪里，拖的时候会显示一条插入线。在详细信息视图里，点列标题就能按这一列排序，再点一次倒过来。视图和排序方式也能在「设置」→「栅栏」里改。</p>
+            <p>在详细信息视图里，栅栏窄时只显示名称，拖宽以后依次多出大小、修改日期和类型。图标超过 12 个、排序后大半都要换位置时，图标不再一个个滑过去，新的顺序直接淡入。</p>
           </aside>
         </div>
       </div>
@@ -365,7 +382,7 @@
       </header>
       <div class="lesson-body">
         <figure class="demo">
-          <div class="stage" role="img" aria-label="动画：在设置的「整理规则」页新建规则「发票」：名称包含「发票」的放进「报销」，新规则排到列表最前面；桌面上新出现的发票自动进了「报销」；点「立即应用」后，原来在「文件与文档」里的发票也移了过去"></div>
+          <div class="stage" role="img" aria-label="动画：在设置的「整理规则」页新建规则「发票」：名称包含「发票」的放进「报销」，新规则排到列表最前面；桌面上新出现的发票自动进了「报销」；点「立即应用」后，原来在「文件与文档」里的发票也移了过去，屏幕右下角出现带「撤销」的卡片"></div>
           <div class="controls">
             <button class="btn play" type="button" data-play aria-label="暂停">
               <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
@@ -384,8 +401,44 @@
           </ol>
           <aside class="tip">
             <h3>小提示</h3>
-            <p>托盘菜单里的「立即应用整理规则」效果一样。想一步建好栅栏和规则，可以用「快速添加」里的按钮。点「添加条件」可以给一条规则再加条件，全部符合的才放进目标栅栏。规则右边的「编辑」用来修改，「上移」和「下移」用来调整顺序。</p>
+            <p>托盘菜单里的「立即应用整理规则」效果一样。想一步建好栅栏和规则，可以用「快速添加」里的按钮。点「添加条件」可以给一条规则再加条件，全部符合的才放进目标栅栏。规则右边的「编辑」用来修改，「上移」和「下移」用来调整顺序。删错了规则，右下角会出现一张带「撤销」的卡片，点一下规则就回来。</p>
+            <p>一个栅栏都没有时，「目标栅栏」是灰的，先新建一个栅栏再来。规则列表还空着时，列表里写着怎么添加第一条。</p>
             <p>更快的办法：右键一个文件，选<b>「以后把 .pdf 文件都放到这里」</b>（菜单里显示的是这个文件的扩展名）。以后这种文件会自动放进这个栅栏。</p>
+          </aside>
+        </div>
+      </div>
+    </article>
+
+    <article class="lesson" data-lesson="free-place" id="free-place">
+      <header class="lesson-head">
+        <p class="kicker">3.4 · 整理图标</p>
+        <h2>自由摆放桌面图标</h2>
+        <p class="lede">没放进栅栏的图标，和 Windows 桌面上的一样，想放哪就拖到哪。</p>
+      </header>
+      <div class="lesson-body">
+        <figure class="demo">
+          <div class="stage" role="img" aria-label="动画：没放进栅栏的四个图标排在屏幕左上角；把「预算.xlsx」拖到桌面中间松开，它停在那一格，再把「待办.txt」拖到它旁边；桌面上新出现的「安装日志.log」放进左上角第一个空格子；右键「预算.xlsx」，菜单里「像桌面一样排列」和「自由摆放」前面都有勾，点一下「自由摆放」，图标按顺序排回左上角，再点一次，它们回到刚才摆的位置"></div>
+          <div class="controls">
+            <button class="btn play" type="button" data-play aria-label="暂停">
+              <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.7 2.1a.8.8 0 0 0-1.2.7Z"/></svg>
+            </button>
+            <div class="track" data-track role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="track-fill"></div></div>
+            <button class="btn speed" type="button" data-speed aria-pressed="false">慢放</button>
+          </div>
+        </figure>
+        <div class="side">
+          <ol class="steps">
+            <li data-at="0.3"><span class="n">1</span><p>没放进栅栏的图标排在屏幕左上角，没有标题也没有边框。按住一个，拖到桌面空白处。</p></li>
+            <li data-at="2.55"><span class="n">2</span><p>松开鼠标，图标就停在这一格，重启以后也不变。再拖一个，放在它旁边。</p></li>
+            <li data-at="5.6"><span class="n">3</span><p>以后桌面上出现的新文件，如果没有被整理规则放进栅栏，就放进从左上角数起的第一个空格子。</p></li>
+            <li data-at="7.2"><span class="n">4</span><p>右键其中一个图标，菜单里的<b>「自由摆放」</b>前面有个勾。点一下关掉，图标就按顺序排回左上角；再点一次，它们回到你摆的位置。</p></li>
+          </ol>
+          <aside class="tip">
+            <h3>小提示</h3>
+            <p>这些图标属于「桌面」栅栏。新装的 PecoFence 会把它<b>「像桌面一样排列」</b>并打开<b>「自由摆放」</b>。0.3.2 以前装的 PecoFence，「桌面」还是一个带标题的普通栅栏：右键它的标题栏，先点「像桌面一样排列」，再点「自由摆放」。</p>
+            <p>一次拖几个图标，它们会保持彼此的位置。把栅栏挪到图标上面，被盖住的图标会让到最近的空格子。</p>
+            <p>这两个开关也在「设置」→「栅栏」里，选「桌面」就能看到。关掉「像桌面一样排列」，「桌面」就变回普通栅栏，可以移动和调整大小。</p>
           </aside>
         </div>
       </div>
@@ -419,6 +472,8 @@
           <aside class="tip">
             <h3>小提示</h3>
             <p>把图标拖到某个标签上，它就直接放进那一页。右键标题栏或标签，「标签页」里也有「合并到…」和「拆出为独立栅栏」。</p>
+            <p>合并错了，或者把标签页拖出来又后悔了，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 就回到原样。</p>
+            <p>不点标签也能切换：鼠标在另一个标签上停一下，就切换过去；切换过一次以后，接着移到旁边的标签上，马上跟着切换。第一下要等多久，由「设置」→「常规」里的「展开快慢」决定；不想要就在同一页关掉「鼠标悬停时切换标签页」。</p>
           </aside>
         </div>
       </div>
@@ -452,6 +507,7 @@
           <aside class="tip">
             <h3>小提示</h3>
             <p>隐藏以后，托盘菜单里这一项会变成「显示所有栅栏」。不想双击桌面时隐藏，可以在「设置」→「常规」里关掉「双击桌面空白处隐藏或显示栅栏」。</p>
+            <p>栅栏隐藏着的时候新建一个栅栏或便签，所有栅栏会一起回来。</p>
           </aside>
         </div>
       </div>
@@ -513,10 +569,11 @@
             <li data-at="0.3"><span class="n">1</span><p>速览时直接打字，搜索框就会出现。在「设置」→「速览与搜索」把<b>「快捷键」</b>选成<b>「双击 Ctrl」</b>以后，随时快速按两下 <kbd>Ctrl</kbd> 就能打开速览和搜索框，再按两下就关上。</p></li>
             <li data-at="1.4"><span class="n">2</span><p>输入名字里的几个字，框下面就列出找到的图标和它所在的栅栏，栅栏里的这个图标也会亮起来。中文名可以用拼音找，全拼和首字母都行，比如输入 <code>hyjl</code> 就能找到「会议记录」。</p></li>
             <li data-at="2.3"><span class="n">3</span><p>在「设置」→「速览与搜索」里打开<b>「速览搜索也找整台电脑（Everything）」</b>以后，下面还会列出整台电脑上找到的文件。Everything 是一个免费的文件搜索工具，开关下面的<b>「安装 Everything」</b>会帮你装好。</p></li>
-            <li data-at="3.5"><span class="n">4</span><p>按 <kbd>↓</kbd> 或 <kbd>↑</kbd> 选一行，按 <kbd>Enter</kbd> 打开，速览随之结束。按 <kbd>Ctrl</kbd>+<kbd>1</kbd> 到 <kbd>Ctrl</kbd>+<kbd>9</kbd> 可以直接打开对应的那一行，选中的那一行右边写着它的按键。列表最下面一栏写着常用的按键和找到几个结果。</p></li>
+            <li data-at="3.5"><span class="n">4</span><p>按 <kbd>↓</kbd> 或 <kbd>↑</kbd> 选一行，按 <kbd>Enter</kbd> 打开，速览随之结束。按 <kbd>Ctrl</kbd>+<kbd>1</kbd> 到 <kbd>Ctrl</kbd>+<kbd>9</kbd> 可以直接打开对应的那一行，选中的那一行右边写着它的按键。找到的超过九个时，列表可以滚动：在最后一行再按 <kbd>↓</kbd>，或者滚动滚轮，就能看到后面的。列表最下面一栏写着常用的按键和找到几个结果。</p></li>
           </ol>
           <aside class="tip">
             <h3>小提示</h3>
+            <p>想只看一种文件，点搜索框下面的类型，比如「文件夹」或「图片」，也可以按 <kbd>Ctrl</kbd>+<kbd>Tab</kbd> 换到下一种。</p>
             <p>按 <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 打开所在的文件夹。在一行上点右键，或者光标在最后时按 <kbd>→</kbd>，可以选择打开、打开所在文件夹、复制路径，或者用 Windows 的右键菜单。</p>
             <p>从搜索里打开得越多的项目，下次排得越靠前。这份记录留在这台电脑上，导出的配置里没有它。想用拼音找整台电脑上的文件，需要 Everything 1.5，「安装 Everything」装的就是这个版本。</p>
           </aside>
@@ -532,7 +589,7 @@
       </header>
       <div class="lesson-body">
         <figure class="demo">
-          <div class="stage" role="img" aria-label="动画：右键「文件夹」栅栏里的「工作资料」，选「在桌面显示此文件夹」，旁边多出一个文件夹栅栏，显示这个文件夹的内容；双击「合同」进入子文件夹，标题变成「合同」，左边出现向上箭头，点它回到上一级；把「报价单.xlsx」从「桌面」栅栏拖进来，文件移进了这个文件夹"></div>
+          <div class="stage" role="img" aria-label="动画：右键「文件夹」栅栏里的「工作资料」，选「在桌面显示此文件夹」，旁边多出一个文件夹栅栏，显示这个文件夹的内容；双击「合同」进入子文件夹，标题变成「合同」，左边出现向上箭头，点它回到上一级；把桌面上的「报价单.xlsx」拖进来，文件移进了这个文件夹"></div>
           <div class="controls">
             <button class="btn play" type="button" data-play aria-label="暂停">
               <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
@@ -553,11 +610,85 @@
             <h3>小提示</h3>
             <p>托盘菜单里的「在桌面显示文件夹」可以直接选文档、下载、图片等文件夹。把文件从这里拖到普通栅栏或桌面上，文件会移到桌面。不想要了就右键标题栏选「删除栅栏」，文件夹和里面的文件都还在。</p>
             <p>在最上层的文件夹里，单击标题前的小文件夹图标，就用资源管理器打开这个文件夹。</p>
+            <p>在子文件夹里改了视图或排序方式，只对这个文件夹有效，和资源管理器一样：回到上一级还是原来的样子，下次再进这个子文件夹，还是你改过的样子。</p>
             <p>也可以在桌面空白处拖出一个框，松开后点框右下角的<b>「在此显示文件夹…」</b>，文件夹栅栏就放在框的位置。</p>
             <p>文件夹里的东西多时，在栅栏里按 <kbd>Ctrl</kbd>+<kbd>F</kbd>，或者右键标题栏选「筛选…」，标题栏变成搜索框，打字就只显示名字对得上的文件，可以用拼音首字母，框的右边写着找到几个。按 <kbd>Enter</kbd> 收起搜索框，标题栏右边会留一个小标签；点上面的 × 或按 <kbd>Esc</kbd> 恢复全部。</p>
             <p>先输入一个类型名：扩展名（比如 pdf），或者文件夹、文档、图片、视频、音乐、压缩包、程序。框的右边出现「类型：PDF　Tab」这样的提示时按 <kbd>Tab</kbd>，它就变成一个小标签，栅栏只显示这种类型的文件，接着打字还可以筛名字。直接输入 kind:pdf 再打一个空格也一样。在空的框里按退格，小标签就去掉了。</p>
             <p>只想看最近下载的文件？在托盘菜单，或者栅栏右键菜单的「添加到桌面」里，选<b>「新建智能栅栏…」</b>，会打开一个小窗口：点上面的「最近 7 天下载」「最近一周的截图」等模板就填好了条件，也可以自己一行一行加条件，下面马上显示能找到几个文件，点「创建」就好。栅栏里只显示符合条件的文件，新文件会自己出现，文件还在原来的文件夹里。标题前是带放大镜的文件夹图标，标题栏右边的小框里是文件个数。要改条件，右键这个栅栏选「编辑条件…」。</p>
             <p>普通栅栏里双击文件夹，默认用资源管理器打开。想让它也在栅栏里打开，右键标题栏选「栅栏选项…」，打开<b>「双击文件夹或文件夹快捷方式时在此栅栏内打开」</b>。点向上箭头、按 <kbd>Backspace</kbd> 或按鼠标的后退键，栅栏就回到原来的图标。</p>
+          </aside>
+        </div>
+      </div>
+    </article>
+
+    <article class="lesson" data-lesson="smart" id="smart">
+      <header class="lesson-head">
+        <p class="kicker">4.6 · 常用技巧</p>
+        <h2>智能栅栏</h2>
+        <p class="lede">智能栅栏里放的是一条保存下来的搜索，比如最近 7 天下载的文件。符合条件的文件会自己出现在里面，文件本身留在原处。</p>
+      </header>
+      <div class="lesson-body">
+        <figure class="demo">
+          <div class="stage" role="img" aria-label="动画：右键「文件与文档」的标题栏，在「添加到桌面」里选「新建智能栅栏…」，打开一个小窗口；点模板「最近 7 天下载」，名称和条件都填好了，下面写着现在找到 6 个文件；点「创建」，桌面左上方多出一个叫「最近 7 天下载」的栅栏，标题前是带放大镜的文件夹图标，标题栏右边的小框里写着 6，里面是六个文件；随后新下载的「发票.pdf」自己出现在第一格，数字变成 7"></div>
+          <div class="controls">
+            <button class="btn play" type="button" data-play aria-label="暂停">
+              <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.7 2.1a.8.8 0 0 0-1.2.7Z"/></svg>
+            </button>
+            <div class="track" data-track role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="track-fill"></div></div>
+            <button class="btn speed" type="button" data-speed aria-pressed="false">慢放</button>
+          </div>
+        </figure>
+        <div class="side">
+          <ol class="steps">
+            <li data-at="0.3"><span class="n">1</span><p>右键任意一个栅栏的标题栏，在<b>「添加到桌面」</b>里选<b>「新建智能栅栏…」</b>。托盘菜单里也有这一项。</p></li>
+            <li data-at="2.8"><span class="n">2</span><p>在打开的小窗口里点一个模板，比如<b>「最近 7 天下载」</b>，名称和条件就填好了，下面马上写出现在能找到几个文件。也可以自己一行一行加条件。</p></li>
+            <li data-at="4.9"><span class="n">3</span><p>点<b>「创建」</b>，桌面上多出一个栅栏，里面是符合条件的文件，最新的排在前面。标题前是带放大镜的文件夹图标，标题栏右边的小框里是文件个数。</p></li>
+            <li data-at="7.2"><span class="n">4</span><p>以后有新文件符合条件，它会自己出现在这里。文件一直在原来的文件夹里，栅栏只是把它们列出来。</p></li>
+          </ol>
+          <aside class="tip">
+            <h3>小提示</h3>
+            <p>模板一共五个：最近 7 天下载、最近一周的截图、大于 1 GB 的文件、所有 .psd 文件、最近打开的文件。要改条件，右键这个栅栏，选<b>「编辑条件…」</b>。</p>
+            <p>符合条件的文件比「最多显示」的个数多时（默认 200 个），栅栏只显示最新的那些，小框里的数字后面带一个加号，比如「200+」。鼠标停在这个数字上，会提示一共找到多少个。</p>
+            <p>只搜一个文件夹的智能栅栏不需要别的软件。要搜整台电脑，需要免费的文件搜索工具 Everything。它没装或者没在运行时，栅栏里会有一行<b>「安装 Everything」</b>或<b>「启动 Everything」</b>，点一下就行。</p>
+            <p>智能栅栏里的文件可以打开、拖出去、重命名和删除，但不能往里拖文件。删除智能栅栏不会动任何文件。按 <kbd>F5</kbd> 会马上重新搜一遍。</p>
+            <p>速览搜索列表最后一行的「把这次搜索放到桌面」，也会把这次搜索变成一个智能栅栏。</p>
+          </aside>
+        </div>
+      </div>
+    </article>
+
+    <article class="lesson" data-lesson="vdesk" id="vdesk">
+      <header class="lesson-head">
+        <p class="kicker">4.7 · 常用技巧</p>
+        <h2>每个虚拟桌面一套栅栏</h2>
+        <p class="lede">用 Windows 的虚拟桌面把工作和娱乐分开时，栅栏也能分开：让一个栅栏只在你选的桌面上显示。</p>
+      </header>
+      <div class="lesson-body">
+        <figure class="demo">
+          <div class="stage" role="img" aria-label="动画：Windows 里有「工作」和「游戏」两个虚拟桌面，现在在「工作」上。右键「游戏」栅栏的标题栏，在「在哪个虚拟桌面显示」里选「游戏」，这个栅栏从当前桌面消失，右下角带「撤销」的卡片说它现在只在「游戏」上显示；按 Win+Ctrl+→，整个桌面滑到「游戏」，「游戏」栅栏在那里，标题前有一个任务视图小图标，「工作」栅栏不在，「程序」栅栏两个桌面都有；按 Win+Ctrl+← 回到「工作」桌面"></div>
+          <div class="controls">
+            <button class="btn play" type="button" data-play aria-label="暂停">
+              <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.7 2.1a.8.8 0 0 0-1.2.7Z"/></svg>
+            </button>
+            <div class="track" data-track role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="track-fill"></div></div>
+            <button class="btn speed" type="button" data-speed aria-pressed="false">慢放</button>
+          </div>
+        </figure>
+        <div class="side">
+          <ol class="steps">
+            <li data-at="0.3"><span class="n">1</span><p>右键栅栏的标题栏，在<b>「在哪个虚拟桌面显示」</b>里选一个桌面。这里列出的是 Windows 任务视图里的桌面，比如「工作」和「游戏」。</p></li>
+            <li data-at="2.85"><span class="n">2</span><p>这个栅栏就从当前桌面消失了。右下角的卡片会说明它去了哪个桌面。选错了，点卡片上的<b>「撤销」</b>，或者在任意一个栅栏上按 <kbd>Ctrl</kbd>+<kbd>Z</kbd>，它就回到这个桌面。</p></li>
+            <li data-at="4.5"><span class="n">3</span><p>按 <kbd>Win</kbd>+<kbd>Ctrl</kbd>+<kbd>→</kbd> 切到那个桌面，栅栏就在那里。标题前多了一个小图标，表示它只在这个桌面显示。只属于别的桌面的栅栏不在这里；没有指定桌面的栅栏，每个桌面都有。</p></li>
+            <li data-at="7.2"><span class="n">4</span><p>按 <kbd>Win</kbd>+<kbd>Ctrl</kbd>+<kbd>←</kbd> 切回来。</p></li>
+          </ol>
+          <aside class="tip">
+            <h3>小提示</h3>
+            <p>还没有第二个虚拟桌面的话，按 <kbd>Win</kbd>+<kbd>Tab</kbd> 打开任务视图，点「新建桌面」。只有一个虚拟桌面时，菜单里没有「在哪个虚拟桌面显示」这一项。</p>
+            <p>想让以后新建的栅栏都只属于当时所在的桌面，到「设置」→「常规」打开<b>「每个虚拟桌面各用一套栅栏」</b>。</p>
+            <p>想让栅栏回到每个桌面，在同一个菜单里选<b>「所有虚拟桌面」</b>。鼠标停在标题前的小图标上，会显示这个栅栏属于哪个桌面。</p>
+            <p>没放进其他栅栏的图标（「桌面」栅栏）在每个桌面都显示，新文件会落在这里。</p>
           </aside>
         </div>
       </div>
@@ -590,7 +721,7 @@
           </ol>
           <aside class="tip">
             <h3>小提示</h3>
-            <p>「标题颜色」可以选白色、黑色或跟随色调。想用深色模式，在「常规」页改「颜色模式」。想自己调玻璃、颜色和字体，在「主题风格」里选「自定义 · 主题文件」，点「写法说明」看怎么写主题文件。</p>
+            <p>「标题颜色」可以选白色、黑色或跟随色调。想用深色模式，在「常规」页改「颜色模式」。想自己调玻璃、颜色和字体，在「主题风格」里选「自定义 · 主题文件」，点「写法说明」看怎么写主题文件。开着 Wallpaper Engine 这类动态壁纸时，Liquid Glass 可能读不到壁纸画面，栅栏会显示成一块半透明的玻璃，这时可以改用 Fluent。</p>
           </aside>
         </div>
       </div>
@@ -636,7 +767,7 @@
       </header>
       <div class="lesson-body">
         <figure class="demo">
-          <div class="stage" role="img" aria-label="动画：右键托盘图标打开设置，在「布局与备份」页输入名字保存快照；随后把两个栅栏拖到桌面空白处；点快照右边的「恢复」，栅栏回到保存时的样子，列表里多了一份「恢复快照前」"></div>
+          <div class="stage" role="img" aria-label="动画：右键托盘图标打开设置，在「布局与备份」页输入名字保存快照；随后把两个栅栏拖到桌面空白处；点快照右边的「恢复」，栅栏回到保存时的样子，页面底部的提示里有「撤销」，列表里多了一份标着「自动保存」的「恢复快照前」"></div>
           <div class="controls">
             <button class="btn play" type="button" data-play aria-label="暂停">
               <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
@@ -651,12 +782,50 @@
             <li data-at="0.3"><span class="n">1</span><p>右键托盘图标，选<b>「设置…」</b>，打开<b>「布局与备份」</b>。</p></li>
             <li data-at="3.15"><span class="n">2</span><p>给快照起个名字（也可以不填），点<b>「保存快照」</b>。</p></li>
             <li data-at="5.25"><span class="n">3</span><p>之后栅栏怎么挪都没关系。</p></li>
-            <li data-at="8.4"><span class="n">4</span><p>点快照右边的<b>「恢复」</b>，栅栏的位置、大小和里面的图标都会回到保存时的样子。列表里还会多出一份「恢复快照前」，后悔了可以用它退回去。</p></li>
+            <li data-at="8.4"><span class="n">4</span><p>点快照右边的<b>「恢复」</b>，栅栏的位置、大小和里面的图标都会回到保存时的样子。页面底部的提示「已恢复快照」上有<b>「撤销」</b>，6 秒内点它就退回去。列表里还会多出一份「恢复快照前」，后悔了可以用它退回去。</p></li>
           </ol>
           <aside class="tip">
             <h3>小提示</h3>
-            <p>快照只管栅栏布局。设置和整理规则可以用「导出…」存成文件，换电脑时再「导入…」。PecoFence 每天还会自动备份一份完整配置，保留最近 7 份；恢复备份会把设置和规则也换掉。</p>
+            <p>快照只管栅栏布局。设置和整理规则可以用「导出…」存成文件，换电脑时再「导入…」。PecoFence 每天还会自动备份一份完整配置，保留最近 7 份；恢复备份会把设置和规则也换掉。PecoFence 自己存的快照标着「自动保存」；快照最多 20 份，满了以后只会去掉最旧的自动快照，你自己存的不动。删错了快照，页面底部的提示里也有「撤销」。</p>
+            <p>命令行工具改动之前自动存的快照（比如 AI 助手替你改配置时），在列表里叫「命令行操作前」。</p>
             <p>拖错了栅栏、改错了大小、把图标拖进了别的栅栏，或者删错了栅栏，点一下栅栏的标题再按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 就能撤销。在栅栏里改错了文件名、误删了文件、把文件拖进了文件夹、粘贴或新建了文件，也是按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销，每按一次退回最近的一步；用 <kbd>Shift</kbd>+<kbd>Delete</kbd> 永久删除的文件找不回来。从栅栏菜单删除栅栏后，右下角还会出现一张带<b>「撤销」</b>的卡片，并自动存一份「删除栅栏前」快照。</p>
+          </aside>
+        </div>
+      </div>
+    </article>
+
+    <article class="lesson" data-lesson="undo" id="undo">
+      <header class="lesson-head">
+        <p class="kicker">6.2 · 布局与备份</p>
+        <h2>按 Ctrl+Z 撤销</h2>
+        <p class="lede">栅栏拖错了地方、图标放错了栅栏、栅栏删错了，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 就退回去。</p>
+      </header>
+      <div class="lesson-body">
+        <figure class="demo">
+          <div class="stage" role="img" aria-label="动画：把「工作」栅栏拖到了别处，按 Ctrl+Z，它回到原处；把「合同.pdf」从「文件与文档」拖进「工作」，再按 Ctrl+Z，它回到「文件与文档」里原来的位置；右键「工作」的标题栏选「删除栅栏」，在询问的对话框里点「是」，栅栏消失，里面的两个图标回到桌面左上角，右下角出现「已删除栅栏“工作”」的卡片；点卡片上的「撤销」，栅栏和图标都回来了"></div>
+          <div class="controls">
+            <button class="btn play" type="button" data-play aria-label="暂停">
+              <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
+              <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.8v10.4a.8.8 0 0 0 1.2.7l8.4-5.2a.8.8 0 0 0 0-1.4L5.7 2.1a.8.8 0 0 0-1.2.7Z"/></svg>
+            </button>
+            <div class="track" data-track role="slider" tabindex="0" aria-label="播放进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="track-fill"></div></div>
+            <button class="btn speed" type="button" data-speed aria-pressed="false">慢放</button>
+          </div>
+        </figure>
+        <div class="side">
+          <ol class="steps">
+            <li data-at="0.3"><span class="n">1</span><p>栅栏拖到了不想放的地方，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd>，它就回到原处。刚拖过的栅栏已经在接收键盘，不用再点它。</p></li>
+            <li data-at="4.0"><span class="n">2</span><p>图标拖进了别的栅栏，也是按 <kbd>Ctrl</kbd>+<kbd>Z</kbd>，它回到原来的栅栏和位置。</p></li>
+            <li data-at="7.4"><span class="n">3</span><p>右键标题栏，选<b>「删除栅栏」</b>。栅栏里有图标时会先问一句，点<b>「是」</b>以后栅栏就删掉了，里面的图标回到桌面。</p></li>
+            <li data-at="9.8"><span class="n">4</span><p>右下角出现「已删除栅栏“工作”」的卡片。点<b>「撤销」</b>，或者在任意一个栅栏上按 <kbd>Ctrl</kbd>+<kbd>Z</kbd>，栅栏连同里面的图标一起回来。</p></li>
+          </ol>
+          <aside class="tip">
+            <h3>小提示</h3>
+            <p>每按一次 <kbd>Ctrl</kbd>+<kbd>Z</kbd>，退回最近的一步，最多能退 20 步。按之前先点一下栅栏，点标题栏、边框或里面都行。</p>
+            <p>在栅栏里改错了文件名、把文件删进了回收站、新建了文件夹、把文件拖进了文件夹，也都能撤销。用 <kbd>Shift</kbd>+<kbd>Delete</kbd> 永久删除的文件找不回来，这时会提示「永久删除的文件无法撤销。」</p>
+            <p>刚新建的空栅栏、合并成标签页的栅栏、拖出来的标签页、送到别的虚拟桌面的栅栏，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 也都回到原样。</p>
+            <p>在「设置」→「整理规则」里点「立即应用」以后，右下角也会出现带「撤销」的卡片。</p>
+            <p>退出 PecoFence、导入配置、恢复备份或快照以后，之前的步骤就不能撤销了。想留一条更长的退路，先存一份<a href="#backup">布局快照</a>。</p>
           </aside>
         </div>
       </div>
@@ -670,7 +839,7 @@
       </header>
       <div class="lesson-body">
         <figure class="demo">
-          <div class="stage" role="img" aria-label="动画：设置的「小工具」页最上面的「小工具」开关开着；点「便签与待办」右边的「新建便签」，桌面上出现一个便签，打了三行字；点别处保存后，行首写了 [ ] 的两行变成待办，点第一行的方框打上勾；点「时钟」右边的「添加」，出现一个显示时间和日期的时钟，按钮变成灰色的「已在桌面上」；点「天气」右边的「添加」，出现「天气」栅栏，片刻后显示东京的天气"></div>
+          <div class="stage" role="img" aria-label="动画：设置的「小工具」页最上面的「小工具」开关开着；点「便签与待办」右边的「新建便签」，桌面上出现一个便签，打了三行字：第二行行首写了 [ ]，马上显示成待办的方框，按 Enter 后第三行自己带上了方框；点别处保存，再点第一个方框打上勾；点「时钟」右边的「添加」，出现一个显示时间和日期的时钟，按钮变成灰色的「已在桌面上」；点「天气」右边的「添加」，出现「天气」栅栏，片刻后显示东京的天气"></div>
           <div class="controls">
             <button class="btn play" type="button" data-play aria-label="暂停">
               <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
@@ -683,13 +852,18 @@
         <div class="side">
           <ol class="steps">
             <li data-at="0.3"><span class="n">1</span><p>打开「设置」→<b>「小工具」</b>（右键托盘图标，选<b>「设置…」</b>），点「便签与待办」右边的<b>「新建便签」</b>。桌面上多出一个便签，直接打字就行，按 <kbd>Enter</kbd> 换行。</p></li>
-            <li data-at="3.0"><span class="n">2</span><p>点别处就保存了。行首写 <code>[ ]</code> 的一行会变成待办，点前面的方框打上勾，再点一次取消。以后想改，单击便签里的文字。</p></li>
-            <li data-at="4.6"><span class="n">3</span><p>点「时钟」右边的<b>「添加」</b>，桌面上多出一个时钟，显示时间、日期和星期。桌面上只放一个时钟，按钮随后变成灰色的「已在桌面上」。想看到秒，右键时钟，选<b>「显示秒」</b>。</p></li>
+            <li data-at="3.0"><span class="n">2</span><p>行首打 <code>[ ]</code> 和一个空格，这一行马上变成待办，前面出现方框。在待办后面按 <kbd>Enter</kbd>，下一行自己带上方框；不想再列了，在空的待办上再按一次 <kbd>Enter</kbd>。右键便签选<b>「添加待办」</b>，也能加一条。点别处就保存了。点方框打上勾，再点一次取消。以后想改，单击便签里的文字，光标就出现在你点的地方。</p></li>
+            <li data-at="4.6"><span class="n">3</span><p>点「时钟」右边的<b>「添加」</b>，桌面上多出一个时钟，显示时间、日期和星期。桌面上只放一个时钟，按钮随后变成灰色的「已在桌面上」。想看到秒，右键时钟，选<b>「显示秒」</b>；秒显示出来以后，这一项写的是<b>「不显示秒」</b>。</p></li>
             <li data-at="5.8"><span class="n">4</span><p>点「天气」右边的<b>「添加」</b>，桌面上多出一个脚本栅栏。它定时运行一个小脚本，把脚本打印的文字显示出来，这个例子显示的是东京的天气。</p></li>
           </ol>
           <aside class="tip">
             <h3>小提示</h3>
-            <p>小工具和普通栅栏一样，可以拖动、改大小和收起。托盘菜单里，还有栅栏右键菜单的「添加到桌面」里，也有<b>「新建便签」</b>，时钟、天气这些在它下面的<b>「新建小工具」</b>里。</p>
+            <p>小工具和普通栅栏一样，可以拖动、改大小和收起。托盘菜单里，还有栅栏右键菜单的「添加到桌面」里，也有<b>「新建便签」</b>，时钟、天气这些在它下面的<b>「新建小工具」</b>里。从栅栏的菜单新建的小工具，出现在那个栅栏旁边。</p>
+            <p>便签和脚本栅栏里的文字放不下时，滚动滚轮就能看到后面的。时钟窄到放不下完整的日期时，会换成短的写法，比如「11月12日 周四」。</p>
+            <p>编辑便签时，按 <kbd>Ctrl</kbd>+<kbd>Z</kbd> 一步一步往回退，按 <kbd>Ctrl</kbd>+<kbd>Y</kbd> 再往前。编辑时点方框也能打勾，不用先点别处。</p>
+            <p>想调整待办的先后，按住一条待办的文字上下拖，别的行会让开，松开它就留在那里。拖错了，松开前按 <kbd>Esc</kbd>，松开后按 <kbd>Ctrl</kbd>+<kbd>Z</kbd>。编辑便签时，按 <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd> 或 <kbd>↓</kbd> 把光标所在的一行上移或下移。</p>
+            <p>正在编辑便签时想拖动待办，先按住 <kbd>Alt</kbd> 再拖：编辑随即结束，已经打的字会保存。选中了几行时，<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd> 或 <kbd>↓</kbd> 把这几行一起移动。没在编辑时打错了勾，点一下便签的标题再按 <kbd>Ctrl</kbd>+<kbd>Z</kbd>。</p>
+            <p>便签里以 http:// 或 https:// 开头的网址是链接，点一下就在浏览器里打开。编辑便签时它是普通文字，可以照常修改。</p>
             <p>字太小看不清时，把时钟拖大一点，时间和日期就跟着变大。便签和脚本栅栏也能放大文字：右键选<b>「栅栏选项…」</b>，在<b>「文字大小」</b>里选「大」或「特大」。</p>
             <p>想看别的城市，右键「天气」栅栏，选<b>「编辑脚本」</b>，在记事本里把 Tokyo 改成你所在的城市，保存后再选<b>「立即运行」</b>。在<b>「运行间隔」</b>里可以选多久运行一次，从 1 分钟到 3 小时。想用自己的脚本，看<a href="#write-scripts">「自己写脚本栅栏」</a>。</p>
             <p>最上面的<b>「小工具」</b>开关关上以后，桌面上的小工具都不显示，脚本也全部停下。再打开，它们回到原来的位置。PecoFence 本身不为脚本栅栏联网。导入的配置里有脚本栅栏时，「小工具」开关会先关上，等你确认脚本可信以后再打开。</p>
@@ -706,7 +880,7 @@
       </header>
       <div class="lesson-body">
         <figure class="demo">
-          <div class="stage" role="img" aria-label="动画：桌面上有「GitHub 动态」和「电脑状态」两个脚本栅栏。鼠标移到一个 PR 那一行，这一行亮起浅色的底，指针变成小手，右边出现小箭头，随后显示提示；点一下，浏览器打开这个 PR。再点「刷新」，栅栏底部先显示正在运行，再显示新的更新时间。「电脑状态」里的数字每 2 秒变一次；点「本机 IP」那一行，IP 地址就复制好了，鼠标旁边出现「已复制」；最后点「打开任务管理器」，任务管理器打开"></div>
+          <div class="stage" role="img" aria-label="动画：桌面上有「GitHub 仓库动态」和「电脑状态」两个脚本栅栏。鼠标移到一个 PR 那一行，这一行亮起浅色的底，指针变成小手，右边出现小箭头，随后显示提示；点一下，浏览器打开这个 PR。再点「刷新」，栅栏底部先显示正在运行，再显示新的更新时间。「电脑状态」里的数字每 2 秒变一次；点「本机 IP」那一行，IP 地址就复制好了，鼠标旁边出现「已复制」；最后点「打开任务管理器」，任务管理器打开"></div>
           <div class="controls">
             <button class="btn play" type="button" data-play aria-label="暂停">
               <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/></svg>
@@ -726,6 +900,7 @@
           </ol>
           <aside class="tip">
             <h3>小提示</h3>
+            <p>按下鼠标时这一行会再亮一点，松开才真的打开或运行。按错了行，按住鼠标移到别处再松开，就什么都不会发生。待办的方框也一样。</p>
             <p>想让自己的脚本也这样，在打印的一行后面加一条竖线，再写上参数，比如 <code>打开主页 | href=https://example.com</code>。所有参数的写法见<a href="#write-scripts">「自己写脚本栅栏」</a>。</p>
             <p>想看示例是怎么写的，右键栅栏，选<b>「编辑脚本」</b>，脚本会在记事本里打开。在 GitHub 仓库动态的脚本里，把仓库名换成你关心的仓库就行。</p>
           </aside>
@@ -782,9 +957,9 @@
                 <tr><th scope="col">写法</th><th scope="col">作用</th></tr>
               </thead>
               <tbody>
-                <tr><td><code>href=网址</code></td><td>点一下，用浏览器打开这个网址</td></tr>
-                <tr><td><code>open=路径</code></td><td>点一下，打开这个文件或文件夹。没写盘符的路径，从脚本所在的文件夹算起</td></tr>
-                <tr><td><code>run=程序 param1=参数</code></td><td>点一下，不弹窗口运行这个程序。参数依次写成 <code>param1=</code>、<code>param2=</code>…</td></tr>
+                <tr><td><code>href=网址</code></td><td>点一下，用浏览器打开这个网址。网址要以 <code>http://</code> 或 <code>https://</code> 开头</td></tr>
+                <tr><td><code>open=路径</code></td><td>点一下，打开这个文件夹，或者这台电脑上的普通文档，比如文本、图片、PDF；也可以写 <code>http://</code> 或 <code>https://</code> 开头的网址。没写盘符的路径，从脚本所在的文件夹算起</td></tr>
+                <tr><td><code>run=程序 param1=参数</code></td><td>点一下，不弹窗口运行这个程序。参数依次写成 <code>param1=</code>、<code>param2=</code>…。脚本开头要先写上允许启动程序的那一行，见下面的「让一行启动程序」</td></tr>
                 <tr><td><code>copy=文字</code></td><td>点一下，把这段文字复制下来</td></tr>
                 <tr><td><code>action=值</code></td><td>点一下，带着这个值再运行一次脚本，见下一段</td></tr>
                 <tr><td><code>refresh=true</code></td><td>点完以后，脚本再运行一次。可以和上面任何一个一起写</td></tr>
@@ -796,6 +971,23 @@
               </tbody>
             </table>
             <p>一行里写了好几个能点的参数时，只算第一个，顺序是 href、open、run、copy、action。这种写法来自 macOS 的菜单栏工具 SwiftBar。</p>
+          </section>
+
+          <section class="ws-sec">
+            <h3>让一行启动程序</h3>
+            <p>带 <code>run=</code> 的行，只有脚本自己允许时才会启动程序。在脚本开头的注释里写上这一行：</p>
+<pre class="ws-code"><code># &lt;pecofence.allow&gt;run&lt;/pecofence.allow&gt;
+"打开任务管理器 | run=taskmgr.exe"</code></pre>
+            <p>没有这一行时，点带 <code>run=</code> 的行什么也不会启动。<code>open=</code> 只打开文件夹、这台电脑上的普通文档和网址，程序、脚本、快捷方式和网络上的位置都打不开。<code>href=</code> 只打开 <code>http://</code> 和 <code>https://</code> 开头的网址。点了打不开的一行，鼠标旁边会出现提示，告诉你要加哪一行。<code>copy=</code>、<code>action=</code> 和 <code>refresh=true</code> 不需要这一行。在批处理文件里，把这一行写在 <code>::</code> 后面。</p>
+            <p>要这样做的原因：栅栏分不出一行里哪些是脚本自己写的参数，哪些是脚本从别处拿来、照样打印出来的文字。</p>
+          </section>
+
+          <section class="ws-sec">
+            <h3>打印别处拿来的文字之前，先清理</h3>
+            <p>从网络上取来的文字（标题、用户名、天气预报），或者别人能改的文件里的文字，可能带着竖线、引号和换行。照原样打印，它们会被当成这一行的参数，或者变成另外一行。打印之前先把这些字符换掉，链接用你信得过的部分拼出来：</p>
+<pre class="ws-code"><code>function Clean($text) { "$text" -replace '\|', '¦' -replace '[\r\n]+', ' ' -replace '["'']', [char]0x2019 }
+"#$([int]$i.number)  $(Clean $i.title) | href=https://github.com/$repo/issues/$([int]$i.number)"</code></pre>
+            <p>没写允许启动程序那一行的脚本也要清理：假冒的 <code>href=</code> 仍然能把这一下点击带到别的网页，假冒的 <code>copy=</code> 会把它自己的文字放进剪贴板。写了那一行的脚本，每一个这样的值都要清理，因为 PecoFence 对这种脚本不再拦任何参数。</p>
           </section>
 
           <section class="ws-sec">
@@ -840,7 +1032,7 @@ while ($true) {
 
           <section class="ws-sec">
             <h3>出错了怎么办</h3>
-            <p>脚本出错时，栅栏里显示错误信息的第一行，底部写明退出代码。找不到脚本文件、不能运行这种文件、没装运行它的程序（比如 Python），栅栏里也都会写明。改好脚本以后，右键栅栏选「立即运行」再试一次。</p>
+            <p>脚本出错时，栅栏的第一行用红字写出错在哪里（错误信息的第一行；Python 脚本是报错的最后一行），下面照常显示脚本出错前打印的内容，底部写明退出代码。找不到脚本文件、不能运行这种文件、没装运行它的程序（比如 Python），栅栏里也都会写明。改好脚本以后，右键栅栏选「立即运行」再试一次。</p>
           </section>
         </div>
 
@@ -954,9 +1146,12 @@ while ($true) {
                 <tr><th scope="row">按住标题栏拖动</th><td>移动栅栏</td></tr>
                 <tr><th scope="row">拖边或角</th><td>改大小</td></tr>
                 <tr><th scope="row">双击标题栏，或点右边的箭头</th><td>收起或展开</td></tr>
+                <tr><th scope="row">键盘在收起的栅栏上时按 <kbd>Enter</kbd></th><td>展开栅栏</td></tr>
                 <tr><th scope="row">右键标题栏或空白处</th><td>打开栅栏菜单</td></tr>
+                <tr><th scope="row">点一下标题，鼠标留在上面按 <kbd>F2</kbd></th><td>重命名栅栏；在标签上按，就重命名这个标签页</td></tr>
                 <tr><th scope="row"><kbd>Ctrl</kbd>+滚轮</th><td>改图标大小（只在「图标」视图里，锁定的栅栏不变）</td></tr>
                 <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>V</kbd></th><td>把复制的文件粘贴进来</td></tr>
+                <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Z</kbd></th><td>撤销在栅栏里做的最近一步：拖动栅栏、改大小、移动图标、新建或删除栅栏、合并或拆出标签页、改名、删除文件等</td></tr>
                 <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></th><td>新建文件夹</td></tr>
                 <tr><th scope="row"><kbd>F5</kbd></th><td>刷新图标，智能栅栏重新搜索</td></tr>
                 <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>F</kbd></th><td>在文件夹栅栏或智能栅栏里筛选</td></tr>
@@ -977,6 +1172,7 @@ while ($true) {
                 <tr><th scope="row">双击标签</th><td>收起或展开</td></tr>
               </tbody>
             </table>
+            <p class="ap-note">用 <kbd>Ctrl</kbd>+<kbd>Tab</kbd> 换了标签页以后，新标签页里看得见的第一个图标会被选中，带着焦点框，接着按方向键就行。</p>
           </section>
 
           <section class="ap-card" aria-labelledby="keys-details">
@@ -1015,6 +1211,7 @@ while ($true) {
                 <tr><th scope="row"><kbd>Ctrl</kbd>+方向键</th><td>只移动焦点框，选择不变。再按 <kbd>Ctrl</kbd>+<kbd>空格</kbd> 选中或取消</td></tr>
                 <tr><th scope="row"><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></th><td>把键盘移到下一个或上一个栅栏</td></tr>
                 <tr><th scope="row">速览时按 <kbd>Tab</kbd> 或方向键</th><td>键盘进到第一个栅栏，选中它的第一个图标</td></tr>
+                <tr><th scope="row">右下角有卡片时按 <kbd>F6</kbd></th><td>把键盘移到卡片的按钮上：<kbd>Tab</kbd> 换按钮，<kbd>Enter</kbd> 或 <kbd>空格</kbd> 按下，<kbd>Esc</kbd> 关掉卡片；再按一次 <kbd>F6</kbd> 回到栅栏</td></tr>
                 <tr><th scope="row">输入名字的开头</th><td>跳到这个图标</td></tr>
                 <tr><th scope="row"><kbd>Esc</kbd></th><td>取消选择</td></tr>
               </tbody>
@@ -1029,7 +1226,7 @@ while ($true) {
                 <tr><th scope="row"><kbd>F2</kbd>，或选中后再点一下名字</th><td>重命名。按 <kbd>Enter</kbd> 确定，<kbd>Esc</kbd> 取消</td></tr>
                 <tr><th scope="row"><kbd>Delete</kbd></th><td>删除到回收站</td></tr>
                 <tr><th scope="row"><kbd>Shift</kbd>+<kbd>Delete</kbd></th><td>永久删除</td></tr>
-                <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>X</kbd></th><td>复制 / 剪切，在资源管理器里也能粘贴</td></tr>
+                <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>X</kbd></th><td>复制 / 剪切，在资源管理器里也能粘贴；剪切后按 <kbd>Esc</kbd> 撤回剪切</td></tr>
                 <tr><th scope="row"><kbd>Alt</kbd>+<kbd>Enter</kbd></th><td>打开属性</td></tr>
                 <tr><th scope="row"><kbd>Shift</kbd>+<kbd>F10</kbd> 或菜单键</th><td>打开右键菜单</td></tr>
                 <tr><th scope="row">按住 <kbd>Shift</kbd> 再右键</th><td>菜单里多出一些 Windows 的选项</td></tr>
@@ -1087,9 +1284,14 @@ while ($true) {
             <table class="ap-table" aria-labelledby="keys-note">
               <tbody>
                 <tr><th scope="row">单击文字</th><td>编辑便签</td></tr>
-                <tr><th scope="row"><kbd>Enter</kbd></th><td>编辑时换行</td></tr>
+                <tr><th scope="row"><kbd>Enter</kbd></th><td>编辑时换行；在待办后面，下一行自己带上方框</td></tr>
+                <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></th><td>编辑时退回一步 / 再往前一步</td></tr>
                 <tr><th scope="row"><kbd>Esc</kbd>、<kbd>Ctrl</kbd>+<kbd>Enter</kbd>，或点别处</th><td>保存</td></tr>
-                <tr><th scope="row">单击待办前面的方框</th><td>打勾或取消</td></tr>
+                <tr><th scope="row">单击待办前面的方框</th><td>打勾或取消，编辑时也可以</td></tr>
+                <tr><th scope="row">拖动一条待办</th><td>把它挪到别的位置；松开前按 <kbd>Esc</kbd> 放回原处</td></tr>
+                <tr><th scope="row"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd></th><td>编辑时把光标所在的一行或选中的几行上移 / 下移</td></tr>
+                <tr><th scope="row">按住 <kbd>Alt</kbd> 拖动一条待办</th><td>编辑时也能拖动；编辑随即结束并保存</td></tr>
+                <tr><th scope="row">单击网址</th><td>在浏览器里打开；编辑时网址是普通文字</td></tr>
               </tbody>
             </table>
           </section>
@@ -1127,11 +1329,11 @@ while ($true) {
         </section>
         <section class="ap-q">
           <h3>桌面图标全不见了怎么办？</h3>
-          <p>PecoFence 运行时会隐藏 Windows 自己的桌面图标，图标都显示在栅栏里。要是退出后图标没回来，右键桌面，选<b>「查看」</b>→<b>「显示桌面图标」</b>就行。打开了<b>「关闭 PecoFence 时保持 Windows 桌面图标隐藏」</b>的话，卸载 Microsoft Store 版或删掉便携版以后，图标也要这样找回。PecoFence 开着时，也可以右键托盘图标，选<b>「修复桌面图标（图标消失时使用）」</b>。</p>
+          <p>PecoFence 运行时会隐藏 Windows 自己的桌面图标，图标都显示在栅栏里。要是退出后图标没回来，右键桌面，选<b>「查看」</b>→<b>「显示桌面图标」</b>就行。打开了<b>「退出 PecoFence 时保持 Windows 桌面图标隐藏」</b>的话，卸载 Microsoft Store 版或删掉便携版以后，图标也要这样找回。PecoFence 开着时，也可以右键托盘图标，选<b>「修复桌面图标（图标消失时使用）」</b>。</p>
         </section>
         <section class="ap-q">
           <h3>退出或卸载以后，桌面会变成什么样？</h3>
-          <p>退出后栅栏消失，桌面图标重新显示出来，和用 PecoFence 之前一样。如果在「设置」→「常规」里打开了<b>「关闭 PecoFence 时保持 Windows 桌面图标隐藏」</b>，退出后图标会保持隐藏，安装版卸载时会让它们重新显示；Microsoft Store 版和便携版不会，卸载或删除之前先关掉这个开关再退出。卸载只删除程序本身，桌面上的文件不受影响。安装版卸载后设置还留着，Microsoft Store 版会连设置一起删掉，需要的话先导出配置。便携版没有卸载程序：先在「设置」→「常规」关掉<b>「随 Windows 启动」</b>，退出后再删掉文件夹。</p>
+          <p>退出后栅栏消失，桌面图标重新显示出来，和用 PecoFence 之前一样。如果在「设置」→「常规」里打开了<b>「退出 PecoFence 时保持 Windows 桌面图标隐藏」</b>，退出后图标会保持隐藏，安装版卸载时会让它们重新显示；Microsoft Store 版和便携版不会，卸载或删除之前先关掉这个开关再退出。卸载只删除程序本身，桌面上的文件不受影响。安装版卸载后设置还留着，Microsoft Store 版会连设置一起删掉，需要的话先导出配置。便携版没有卸载程序：先在「设置」→「常规」关掉<b>「随 Windows 启动」</b>，退出后再删掉文件夹。</p>
         </section>
         <section class="ap-q">
           <h3>按 <kbd>Win</kbd>+<kbd>D</kbd> 时，栅栏会消失吗？</h3>
@@ -1162,6 +1364,10 @@ while ($true) {
           <p>默认就会随 Windows 启动，开关在「设置」→「常规」→<b>「随 Windows 启动」</b>。用 <code>--portable</code> 启动的便携版不会自己设置，要手动打开这个开关。Microsoft Store 版也用这个开关。要是在 Windows 设置的<b>「应用」</b>→<b>「启动」</b>页或任务管理器里关掉过 PecoFence，就只能在那里重新打开，这时点开关会打开那一页。</p>
         </section>
         <section class="ap-q">
+          <h3>怎么隐藏托盘图标？</h3>
+          <p>到「设置」→「常规」，关掉<b>「显示托盘图标」</b>，任务栏右下角就不再显示 PecoFence 的图标。图标隐藏以后，想打开设置，就再启动一次 PecoFence（比如从开始菜单）；想退出，就在这个开关下面点<b>「退出」</b>。PecoFence 有通知时，图标会暂时出现，通知消失后再隐藏。</p>
+        </section>
+        <section class="ap-q">
           <h3>速览的快捷键按了没反应？</h3>
           <p>右键托盘图标，「速览所有栅栏」后面显示的就是现在能用的快捷键。你选的快捷键被系统或别的程序占用时，PecoFence 会自动换一个能用的，并弹出提示。后面什么都没写，说明速览关掉了，或者快捷键全被占了，这时直接点这个菜单项也行。选了「双击 Ctrl」的话，那里写的是「双击 Ctrl」，全屏的游戏或视频在前面时它不响应。开关和快捷键都在「设置」→<b>「速览与搜索」</b>里。<b>「快捷键」</b>列表里是你选的那个，它被占用时，「快捷键」下面的小字会写明现在用的是哪一个。想换就在列表里另选一个，或者选<b>「自定义…」</b>，按下新的组合键。</p>
         </section>
@@ -1171,11 +1377,12 @@ while ($true) {
         </section>
         <section class="ap-q">
           <h3>脚本栅栏会运行什么？</h3>
-          <p>脚本栅栏运行的是你自己选的脚本文件，每次最多 10 秒，不弹出窗口，脚本启动的程序也会跟着结束。脚本里写明要一直运行的，会一直运行到栅栏删掉、「小工具」开关关上或者 PecoFence 退出。点栅栏里的一行时，做的也是脚本写好的事：打开网页或文件，运行它写明的程序，或者再运行一次脚本。PecoFence 本身不为脚本栅栏联网。别人分享的配置里可能带着脚本栅栏，所以导入的配置里有脚本栅栏时，「小工具」开关会先关上并给出提示。你看过脚本、确认可信以后，再到「设置」→「小工具」把它打开。脚本的写法见<a href="#write-scripts">「自己写脚本栅栏」</a>。</p>
+          <p>脚本栅栏运行的是你自己选的脚本文件，每次最多 10 秒，不弹出窗口，脚本启动的程序也会跟着结束。脚本里写明要一直运行的，会一直运行到栅栏删掉、「小工具」开关关上或者 PecoFence 退出。点栅栏里的一行时，做的也是脚本写好的事：打开网页、文件夹或文档，复制文字，或者再运行一次脚本。要让一行启动程序，脚本开头必须写着允许启动程序的那一行，没有这一行，点了也不会启动。PecoFence 本身不为脚本栅栏联网。别人分享的配置里可能带着脚本栅栏，所以导入的配置里有脚本栅栏时，「小工具」开关会先关上并给出提示。你看过脚本、确认可信以后，再到「设置」→「小工具」把它打开。脚本的写法见<a href="#write-scripts">「自己写脚本栅栏」</a>。</p>
         </section>
         <section class="ap-q">
           <h3>怎么知道有没有新版本？</h3>
-          <p>安装版和 ZIP 版每天自己检查一次 GitHub 上有没有新版本。有新版本时，屏幕右下角会出现一张卡片，同一个版本只出现一次；托盘菜单最上面也会多一项<b>「更新到 …」</b>，点它就能更新：安装版会下载新的安装包并自动装好，ZIP 版会打开下载页。不想自动检查，就到「设置」→「关于」关掉<b>「自动检查更新」</b>，那里的<b>「检查更新」</b>按钮随时可以手动检查。Microsoft Store 版由 Store 负责更新。</p>
+          <p>安装版和 ZIP 版每天自己检查一次 GitHub 上有没有新版本；只有 GitHub 没有回答时，才改问 PecoFence 自己的网站（pecofence.jiang.jp）。检查时除了请求本身，不发送任何信息。有新版本时，屏幕右下角会出现一张卡片，同一个版本只出现一次；托盘菜单最上面也会多一项<b>「更新到 …」</b>，点它就能更新：安装版会下载新的安装包并自动装好，ZIP 版会打开下载页。不想自动检查，就到「设置」→「关于」关掉<b>「自动检查更新」</b>，那里的<b>「检查更新」</b>按钮随时可以手动检查；GitHub 和网站都连不上时，旁边会多出<b>「打开下载页」</b>，点它到网站上下载。Microsoft Store 版由 Store 负责更新。</p>
+          <p>点「检查更新」以后，「正在检查更新…」前面有个小圆环在转，表示还在等回答，最多要等 16 秒左右。</p>
         </section>
         <section class="ap-q">
           <h3>遇到问题怎么反馈？</h3>
