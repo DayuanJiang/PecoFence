@@ -32,7 +32,7 @@ first day of an installation the report also goes out once, 30 minutes after the
 | `windows`, `language` | The Windows build and PecoFence's display language. |
 | `settings` | The settings that are a switch, a choice from a list or a number, under their names in `config.json`. A setting that holds text (a custom theme, a shortcut, a tint colour) appears only as `"set"` or `"unset"`. |
 | `state` | How many fences, tabs, folder fences, smart fences, tool fences, rules and items there are. |
-| `health` | How long the last start took, the memory in use, and whether the run before a start of that day crashed or was cut off. |
+| `health` | How long the last start took, the most memory the program held that day, and whether the run before a start of that day crashed or was cut off. |
 | `events` | What was used that day, in order: the second of the day, a name from the list below, and for some names a second word. At most 2,000 a day. |
 
 Between uploads the reports wait in `usage.json`, in `%LOCALAPPDATA%\PecoFence` (beside the

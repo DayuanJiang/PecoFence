@@ -136,7 +136,7 @@ impl App {
         if on == recorder::today().is_some() {
             return None;
         }
-        tracing::info!(on, "usage statistics switched");
+        tracing::info!(on, "usage statistics: recording");
         if on {
             let saved = std::fs::read_to_string(&run.file).unwrap_or_default();
             let last_app = recorder::start(&saved, local_now);
@@ -216,8 +216,9 @@ impl App {
             "rules": config.rules.list.len(),
             "items": config.items.len(),
         });
+        // The private commit: the working set is handed back whenever the program is idle.
         let memory_mb = pecofence_platform::memstats::MemoryStats::current()
-            .map_or(0, |m| m.private_working_set >> 20);
+            .map_or(0, |m| m.private_commit as u64 >> 20);
         let (startup_ms, crashed) = (run.startup_ms, !self.previous_run_ended_normally());
         let edition = feedback::install_kind(self.portable);
         let windows = format!("10.0.{}", desktop::os_build());
@@ -230,6 +231,8 @@ impl App {
             report.state = state;
             // Whether a start of the day found that the run before it crashed or was cut off.
             let crashed = crashed || report.health["crashed"] == true;
+            // The most the program held at one of the day's writes.
+            let memory_mb = memory_mb.max(report.health["memoryMB"].as_u64().unwrap_or(0));
             report.health = serde_json::json!({
                 "startupMs": startup_ms, "memoryMB": memory_mb, "crashed": crashed,
             });
