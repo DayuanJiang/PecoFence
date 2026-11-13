@@ -1565,6 +1565,8 @@ impl App {
             self.gpu_baseline = None;
         }
         tracing::info!(?mode, ?style, accent = ?accent.map(|a| a.accent), "theme refreshed");
+        // The card that offers Fluent leaves at once when the user chose Fluent elsewhere.
+        self.retire_live_wallpaper_card();
     }
 
     /// Global icon tint / chameleon / shortcut arrows changed: flush the caches and let icons

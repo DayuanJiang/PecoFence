@@ -226,6 +226,21 @@ fn shows_pane(opacity: Option<f32>, desktop_arranged: bool) -> bool {
     !desktop_arranged && opacity > 0.0 && opacity <= 1.0
 }
 
+/// Why the live wallpaper card no longer says what the user sees (None: it still does): the
+/// look is not Liquid Glass, or no monitor's live wallpaper is unreadable any more. A player
+/// that is missing for a moment (`LIVE_GONE_AFTER`) keeps its entry, and the card.
+fn live_card_outdated(liquid_glass: bool, live: &[LiveWallpaper]) -> Option<&'static str> {
+    if !liquid_glass {
+        Some("the look is Fluent")
+    } else if live.is_empty() {
+        Some("the player ended")
+    } else if !live.iter().any(|l| l.blind) {
+        Some("the wallpaper can be read")
+    } else {
+        None
+    }
+}
+
 /// The foreground window's rectangle when it belongs to another program than Explorer and this
 /// one. The fences sit under other programs' windows: it hides the fences inside it, and a
 /// maximized or full-screen window every fence on its monitor.
@@ -311,9 +326,40 @@ impl App {
             self.live_told_page = now;
             self.push_settings_state();
         }
+        self.retire_live_wallpaper_card();
         if let Some(note) = note.filter(|n| n.unreadable) {
             self.offer_live_wallpaper_card(note);
         }
+    }
+
+    /// The card on screen says the fences are see-through panes and offers Fluent. Once that
+    /// no longer holds (the look is Fluent, the player ended, its picture can be read) it
+    /// leaves; it was not answered, so nothing is kept in `notices.json`. Called after every
+    /// wallpaper check and when the look changes.
+    pub(super) fn retire_live_wallpaper_card(&mut self) {
+        if !matches!(
+            self.welcome,
+            Some((_, welcome::Welcome::LiveWallpaper { .. }))
+        ) {
+            return;
+        }
+        let liquid_glass = self.ctx.theme.borrow().liquid_glass;
+        let Some(reason) = live_card_outdated(liquid_glass, &self.live) else {
+            return;
+        };
+        tracing::info!(
+            reason,
+            "live wallpaper card leaves: what it says no longer holds; not kept as answered"
+        );
+        if let Some((notice, _)) = self.welcome.take() {
+            notice.leave();
+        }
+    }
+
+    /// The live wallpaper card's button would switch a look the card no longer describes (see
+    /// `retire_live_wallpaper_card`: it leaves at the next check).
+    pub(super) fn live_card_outdated(&self) -> Option<&'static str> {
+        live_card_outdated(self.ctx.theme.borrow().liquid_glass, &self.live)
     }
 
     /// Liquid Glass fences on a monitor whose live wallpaper cannot be read are frosted panes:
@@ -720,6 +766,44 @@ mod tests {
         assert!(!shows_pane(Some(1.6), false));
         assert!(!shows_pane(None, true));
         assert!(!shows_pane(Some(0.55), true));
+    }
+
+    #[test]
+    fn the_card_is_outdated_once_its_reason_is_gone() {
+        let entry = |blind, missing: bool| LiveWallpaper {
+            monitor: RECT {
+                left: 0,
+                top: 0,
+                right: 1920,
+                bottom: 1080,
+            },
+            hwnd: 1,
+            since: Instant::now(),
+            missing: missing.then(Instant::now),
+            image: None,
+            attempted: None,
+            reported: None,
+            empty: 0,
+            blind,
+        };
+        // Liquid Glass over a player whose picture cannot be read: the card holds, also in
+        // the moment a player's window is missing between two wallpapers.
+        assert_eq!(live_card_outdated(true, &[entry(true, false)]), None);
+        assert_eq!(live_card_outdated(true, &[entry(true, true)]), None);
+        assert_eq!(
+            live_card_outdated(true, &[entry(false, false), entry(true, false)]),
+            None
+        );
+        // The user chose Fluent; the player ended; its picture can be read now.
+        assert_eq!(
+            live_card_outdated(false, &[entry(true, false)]),
+            Some("the look is Fluent")
+        );
+        assert_eq!(live_card_outdated(true, &[]), Some("the player ended"));
+        assert_eq!(
+            live_card_outdated(true, &[entry(false, false)]),
+            Some("the wallpaper can be read")
+        );
     }
 
     #[test]

@@ -5,6 +5,10 @@
 #       readable on it, light and dark mode; the clear glass comes back when the player ends
 #     the card: comes once, 「保留 Liquid Glass」 keeps the look, not again for the same player
 #       (a second start of the player, a restart of PecoFence), 「改用 Fluent」 switches the look
+#   run.sh --var Part=C tests/owner6-livewall.ps1            (release build, about 3 minutes)
+#     the card leaves once what it says no longer holds (Fluent chosen elsewhere, the player
+#       ended) and is not kept as answered; it waits while no fence shows the pane (only a
+#       更厚实 or a 全透明 fence, during a Peek)
 #   run.sh --bin target/wintest-bin-debug --var Part=P ...   (settings page over CDP)
 #     the line under 主题风格 shows for an unreadable and for a readable player and goes with
 #       the player and with Fluent
@@ -222,6 +226,71 @@ Crop "fluent-$Lng" 400 120 780 320 | Out-Null
 Start-Sleep -Seconds 8
 Check 'Fluent: no card comes' ((NoticeWin) -eq [IntPtr]::Zero -and (NoticesJson) -match 'standin.exe') "card='$(NoticeTitle)' notices=$(NoticesJson)"
 Log (@(PfLogAll | Where-Object { $_ -match 'live wallpaper card|LiveWallpaper|not readable; Liquid Glass' }) -join "`n")
+}
+
+if ($Part -eq 'C') {
+# The card says "the fences are see-through panes now, use Fluent instead?". It leaves once that
+# no longer holds, without being kept as answered, and it comes only while a fence shows the pane.
+function CardWaits() { return "$(@(PfLogAll | Where-Object { $_ -match 'live wallpaper card due' }) | Select-Object -Last 1)" -replace '^\S+\s+\S+\s+\S+\s+', '' }
+function WaitNoNotice($sec = 12) {
+  for ($i = 0; $i -lt $sec * 5; $i++) { if ((NoticeWin) -eq [IntPtr]::Zero) { return $true }; Start-Sleep -Milliseconds 200 }
+  return $false
+}
+Case 'the card leaves once what it says no longer holds'
+PfStartPlain
+ParkMouse
+PlayerStart @('--still')
+$s = WaitState 'notCapturable' 40
+$n = WaitNotice 15
+Check 'the card is up over the see-through pane' ($s -eq 'notCapturable' -and (NoticeTitle) -eq $TCard) "state=$s card='$(NoticeTitle)'"
+Pf settings set themeStyle fluent | Out-Null
+Start-Sleep -Seconds 3
+Shot "fluent-chosen-$Lng"
+Check 'Fluent chosen elsewhere: the card leaves at once, not kept as answered' ((NoticeWin) -eq [IntPtr]::Zero -and (NoticesJson) -notmatch 'standin.exe') "card='$(NoticeTitle)' notices=$(NoticesJson)"
+Pf settings set themeStyle liquidGlass | Out-Null
+$n = WaitNotice 20
+Check 'Liquid Glass again: the card is back (it was not answered)' ((NoticeTitle) -eq $TCard) "card='$(NoticeTitle)'"
+PlayerStop
+$gone = WaitNoNotice 14
+Shot "player-ended-$Lng"
+Check 'the player ended: the card leaves, the look stays, not kept as answered' ($gone -and (Pf settings get themeStyle) -match 'liquidGlass' -and (NoticesJson) -notmatch 'standin.exe') "card='$(NoticeTitle)' themeStyle=$(Pf settings get themeStyle) notices=$(NoticesJson)"
+Log (@(PfLogAll | Where-Object { $_ -match 'live wallpaper card' }) -join "`n")
+
+Case 'the card waits while no fence shows the pane'
+Pf fence set Glass opacity solid | Out-Null
+# The card of the case above may have timed out meanwhile on a build that kept it: start with
+# no player answered for.
+$np = NoticesPath
+PfQuit
+if (Test-Path $np) { (Get-Content $np -Raw) -replace '"standin.exe"', '' | Set-Content $np -Encoding ASCII }
+PfStartPlain
+ParkMouse
+PlayerStart @('--still')
+$s = WaitState 'notCapturable' 40
+Start-Sleep -Seconds 12
+Shot "solid-only-$Lng"
+Check 'only a 更厚实 fence (its glass stays opaque): no card' ($s -eq 'notCapturable' -and (NoticeWin) -eq [IntPtr]::Zero) "state=$s card='$(NoticeTitle)' | $(CardWaits)"
+Pf fence set Glass opacity transparent | Out-Null
+Start-Sleep -Seconds 8
+Check 'only a 全透明 fence (no glass at rest): no card' ((NoticeWin) -eq [IntPtr]::Zero) "card='$(NoticeTitle)' | $(CardWaits)"
+# During a Peek the glass is opaque: the fence at 默认 does not count until the Peek ends.
+[G]::MoveTo(1300, 700)
+PeekKey
+Start-Sleep -Milliseconds 1200
+Pf fence set Glass opacity default | Out-Null
+Start-Sleep -Seconds 8
+$dim = [G]::FindWindowW('PecoFence.PeekDimmer', [NullString]::Value)
+$held = $dim -ne [IntPtr]::Zero -and [G]::IsWindowVisible($dim)
+Check 'during a Peek: no card' ($held -and (NoticeWin) -eq [IntPtr]::Zero) "peek up=$held card='$(NoticeTitle)' | $(CardWaits)"
+PeekKey
+Start-Sleep -Milliseconds 800
+ParkMouse
+$n = WaitNotice 20
+ShotNotice "card-after-wait-$Lng"
+Check 'the Peek ended, the fence at 默认 shows the pane: the card comes' ((NoticeTitle) -eq $TCard) "card='$(NoticeTitle)' | $(CardWaits)"
+ClickPlain
+Check 'answered with 保留 Liquid Glass: kept in notices.json as before' ((WaitGoneWin 'PecoFence.Notice' 4) -and (NoticesJson) -match 'standin.exe') "card='$(NoticeTitle)' notices=$(NoticesJson)"
+Log (@(PfLogAll | Where-Object { $_ -match 'live wallpaper card' }) -join "`n")
 }
 
 if ($Part -eq 'P') {

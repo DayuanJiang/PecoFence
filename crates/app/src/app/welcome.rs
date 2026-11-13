@@ -610,6 +610,15 @@ impl App {
                 self.add_ext_rule(fence, &ext, self.control.hwnd())
             }
             Welcome::LiveWallpaper { .. } => {
+                // Pressed in the seconds before the next wallpaper check takes an outdated
+                // card away: the look it offered to replace is not on screen any more.
+                if let Some(reason) = self.live_card_outdated() {
+                    tracing::info!(
+                        reason,
+                        "live wallpaper card: its button was pressed on an outdated card; the look stays"
+                    );
+                    return;
+                }
                 // As the Fluent tile of the settings page does: a theme file goes too.
                 let mut new = self.state.config.settings.clone();
                 new.theme_style = pecofence_core::ThemeStyle::Fluent;
