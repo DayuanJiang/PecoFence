@@ -9,7 +9,8 @@
 #      Glass: no plate, no folded title row; the icons keep their own hover fill; the unseen
 #      title row still moves the fence (move cursor), the edges still resize it, the roll-up
 #      chevron takes no click; a rolled-up fence shows its plate and title as before. In a
-#      Peek, where its glass shows, the pointer brings the title row.
+#      Peek, where its glass shows, the pointer brings the title row; the lock mark and the
+#      title row that are not drawn give no infotip.
 #   P  the two options in 栅栏选项 (a debug build: run.sh --bin target/wintest-bin-debug --var
 #      Part=P): 右对齐 is in the 图标对齐 list; 鼠标移入时保持透明 shows only while 不透明度
 #      is 全透明, and both reach the fence.
@@ -131,6 +132,19 @@ function OaEdgeMark($fence, $from, $to, $name) {
   $n = @($d | Where-Object { $_ - $d[0] -gt 40 }).Count
   Log "edge mark $name of '$fence': change per column, 6 px in to the edge: $($d -join ' ') -> $n columns"
   return @($n, ($d -join ' '))
+}
+# Rests the pointer on a point: does PecoFence show an infotip there within 3 s?
+function OaTip($x, $y, $name) {
+  ParkMouse 1300 700; Start-Sleep -Milliseconds 400
+  [G]::MoveTo($x - 4, $y); Start-Sleep -Milliseconds 120; [G]::MoveTo($x, $y)
+  $up = $false
+  for ($i = 0; $i -lt 12 -and -not $up; $i++) {
+    Start-Sleep -Milliseconds 250
+    $up = @([W]::Tops('tooltips_class32') | Where-Object { [W]::ProcOf($_) -eq 'pecofence' }).Count -gt 0
+  }
+  Crop $name ($x - 260) ($y - 40) 420 150 | Out-Null
+  ParkMouse 1300 700; Start-Sleep -Milliseconds 400
+  return $up
 }
 $OaNames = @('oa 1 报告', 'oa 2 预算表', 'oa 3 会议纪要与分工', 'oa 4 图', 'oa 5 季度计划', 'oa 6 清单', 'oa 7 合同扫描件')
 
@@ -425,6 +439,26 @@ if ($Part -match 'T') {
       $dAfter = [Oa]::Diff($rest2, $after)
       Check 'T in a Peek the pointer over the fence brings its title row, and the chevron takes clicks' ($peekOn -and $dPk -gt 300 -and $hcPk -eq 1) "Peek on=$peekOn; $dPk of $($wr.w * 36) px of the title row differ from the row without the pointer; hit at the chevron=$hcPk (1 a button, 2 caption)"
       Check 'T after the Peek the pointer in the fence shows nothing again' ($dAfter -eq 0) "$dAfter px differ from the fence at rest"
+      # No infotip for what is not drawn. The lock mark shows only under a pointer that brings
+      # it; with the switch on the pointer brings nothing, so its spot says nothing either.
+      $idT = (FenceGet 'OaT').id
+      Pf fence set OaT titleOnHover always | Out-Null
+      Pf fence set OaT locked true | Out-Null; Start-Sleep -Milliseconds 1000
+      $lp = @([int]($wr.x + $wr.w - 44), [int]($wr.y + 18))
+      $tipLock = OaTip $lp[0] $lp[1] 'T-8-tip-lock-switch-on'
+      Pf fence set OaT transparentOnHover false | Out-Null; Start-Sleep -Milliseconds 800
+      $tipLockOff = OaTip $lp[0] $lp[1] 'T-8-tip-lock-switch-off'
+      Pf fence set OaT transparentOnHover true | Out-Null
+      Pf fence set OaT locked false | Out-Null; Start-Sleep -Milliseconds 800
+      Check 'T the lock mark that is not drawn has no infotip (switch off: the mark comes under the pointer, with its infotip)' (-not $tipLock -and $tipLockOff) "infotip at the lock's spot: switch on=$tipLock, switch off=$tipLockOff"
+      # A title too long for the row has an infotip with all of it while the row is drawn
+      # (显示标题栏 始终显示); the folded row that the pointer does not bring has none.
+      Pf fence rename $idT '季度报告与预算表以及会议纪要和分工安排还有合同扫描件的归档栅栏' | Out-Null; Start-Sleep -Milliseconds 1200
+      $tipTitleShown = OaTip $tp[0] $tp[1] 'T-9-tip-title-row-shown'
+      Pf fence set $idT titleOnHover hover | Out-Null; Start-Sleep -Milliseconds 1200
+      $tipTitle = OaTip $tp[0] $tp[1] 'T-9-tip-title-row-unseen'
+      Pf fence rename $idT 'OaT' | Out-Null; Start-Sleep -Milliseconds 1000
+      Check 'T the title row that is not drawn gives no infotip of the cut title (drawn, the cut title has one)' (-not $tipTitle -and $tipTitleShown) "infotip on the title row: row unseen=$tipTitle, row shown=$tipTitleShown; title back to '$((FenceGet $idT).title)'"
       $first = $false
     }
   }

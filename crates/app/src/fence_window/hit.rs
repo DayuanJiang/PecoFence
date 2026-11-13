@@ -473,9 +473,14 @@ impl FenceViewState {
 
     /// Is the client-pixel point on the lock glyph of a locked fence (its infotip says how to
     /// unlock)? The glyph's slot before the chevron, as drawn; a fence collapsed to its left
-    /// tab column shows none.
+    /// tab column shows none, and neither does one whose glyph the pointer does not bring
+    /// (鼠标移入时保持透明).
     pub(super) fn lock_glyph_at(&self, x_px: i32, y_px: i32) -> bool {
-        if !self.laid_deco().locked || self.bare() || self.column_collapsed {
+        if !self.laid_deco().locked
+            || self.bare()
+            || self.column_collapsed
+            || !self.pointer_reveals()
+        {
             return false;
         }
         let scale = self.scale();

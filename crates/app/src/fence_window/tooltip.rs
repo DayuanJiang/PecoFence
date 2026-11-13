@@ -83,6 +83,11 @@ impl FenceViewState {
         y_px: i32,
         hit: Option<usize>,
     ) -> Option<TipTarget> {
+        // 鼠标移入时保持透明 with the title row folded away: nothing of the row (filter tag,
+        // up button, Task View glyph, tabs) is drawn, so nothing in it has an infotip.
+        if self.title_row_unseen() {
+            return hit.map(TipTarget::Item);
+        }
         if self.cut_filter_tag_at(x_px, y_px) {
             return Some(TipTarget::FilterTag);
         }

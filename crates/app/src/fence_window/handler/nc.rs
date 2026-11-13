@@ -233,7 +233,11 @@ pub(super) fn on_ncmousemove(
                 y: msg::hi_i16(lparam),
             },
         );
-        let tip = if v.desktop_glyph_at(pt.x, pt.y) {
+        let tip = if v.title_row_unseen() {
+            // 鼠标移入时保持透明 with the title row folded away: nothing of the row is drawn,
+            // so nothing in it has an infotip.
+            None
+        } else if v.desktop_glyph_at(pt.x, pt.y) {
             Some(TipTarget::Desktops)
         } else if v.lock_glyph_at(pt.x, pt.y) {
             Some(TipTarget::Lock)
