@@ -260,7 +260,10 @@ impl App {
         }
         // 发送使用统计 moves only by the user's hand: an imported file or a backup keeps it as
         // it is. The saved files read after a lock hold the user's own choice.
-        if !matches!(source, ConfigSource::Unlocked) {
+        if matches!(source, ConfigSource::Unlocked) {
+            // Switched off while the files were held (Setup's unticked box, the user's click).
+            new_settings.usage_stats &= old_settings.usage_stats;
+        } else {
             new_settings.usage_stats = old_settings.usage_stats;
         }
         self.sync_desktop_if_available("config adopted");
@@ -272,6 +275,9 @@ impl App {
         // cells update exactly as if the user had changed them on the page.
         self.state.config.settings = old_settings;
         self.apply_settings(new_settings, "import");
+        // Settings equal to the ones before (defaults stood in for held files) end
+        // `apply_settings` early: the recording follows the switch here.
+        self.sync_usage();
         // apply_settings only refreshes on a visual / icon diff; a wholesale swap (per-fence
         // tint, layouts) needs these regardless.
         self.sync_peek_hotkey();

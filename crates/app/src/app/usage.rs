@@ -110,6 +110,15 @@ impl App {
             startup_ms: self.started.elapsed().as_millis() as u64,
         });
         let Some(last_app) = self.sync_usage() else {
+            // Off before this start (unticked in Setup, say): a file an earlier installation
+            // left in the folder goes too, with its install number.
+            if !self.state.config.settings.usage_stats
+                && self.state.locked_config.is_none()
+                && let Some(run) = &self.usage
+                && std::fs::remove_file(&run.file).is_ok()
+            {
+                tracing::info!("usage statistics: off at this start, usage.json deleted");
+            }
             return;
         };
         recorder::event_with(

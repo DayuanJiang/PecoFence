@@ -771,6 +771,8 @@ fn not_recorded(cmd: &Command) -> bool {
             | Command::WindowGone(_)
             | Command::FadeOutDone(_)
             | Command::SettingsActivated
+            // One for every frame while the 「新建栅栏」 button fades away by itself.
+            | Command::MarqueeOffer(crate::marquee_offer::OfferEvent::Fading(_))
             // Many during one drag or one turn of the wheel.
             | Command::MergeHint { .. }
             | Command::DesktopMarquee(_)

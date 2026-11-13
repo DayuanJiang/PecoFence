@@ -121,6 +121,8 @@ options added after it, and its first save drops them:
 
 - A fence whose 图标对齐 is 右对齐 shows left-aligned.
 - 鼠标移入时保持透明 is off: a fully transparent fence shows its glass under the pointer.
+- 0.3.3 always shows the tray icon and forgets 显示托盘图标: a hidden icon is back and stays when
+  you return to the later version. Hide it again in Settings › 常规.
 - 0.3.3 sends no usage statistics and forgets the switch 「帮助改进 PecoFence」: if you had turned it
   off, it is on again when you return to the later version. Turn it off again in Settings › 关于.
 
