@@ -1019,5 +1019,7 @@
   "保留 Liquid Glass": "Liquid Glass behalten",
   "{0} 的壁纸画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "Das Bild des Hintergrunds von {0} lässt sich nicht lesen, deshalb sind Liquid-Glass-Bereiche im Moment halbdurchsichtiges Glas ohne Lichtbrechung. Wenn der Live-Hintergrund beendet ist, sehen sie wieder aus wie sonst; Fluent ist nicht betroffen",
   "这种动态壁纸的画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "Das Bild eines solchen Live-Hintergrunds lässt sich nicht lesen, deshalb sind Liquid-Glass-Bereiche im Moment halbdurchsichtiges Glas ohne Lichtbrechung. Wenn der Live-Hintergrund beendet ist, sehen sie wieder aus wie sonst; Fluent ist nicht betroffen",
-  "动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”": "Während ein Live-Hintergrund läuft, ist Liquid Glass Milchglas aus einem Standbild des Hintergrunds. Soll der Hintergrund selbst durchscheinen, stell auf der Seite „Bereiche“ die Deckkraft auf „Transparenter“"
+  "动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”": "Während ein Live-Hintergrund läuft, ist Liquid Glass Milchglas aus einem Standbild des Hintergrunds. Soll der Hintergrund selbst durchscheinen, stell auf der Seite „Bereiche“ die Deckkraft auf „Transparenter“",
+  "帮助改进 PecoFence": "Hilf mit, PecoFence zu verbessern",
+  "发送使用统计": "Nutzungsstatistiken senden"
 }

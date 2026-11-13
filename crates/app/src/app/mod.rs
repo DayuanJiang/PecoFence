@@ -90,6 +90,7 @@ mod testscript;
 mod tools;
 mod undo;
 mod updates;
+mod usage;
 mod vdesktops;
 mod visuals;
 mod wallpaper_refresh;
@@ -354,6 +355,8 @@ pub struct App {
     gpu_rebuilt: Option<Instant>,
     /// `--test-script` state while a script runs.
     test: Option<testscript::TestScript>,
+    /// 发送使用统计: set in a run that may record (`usage.rs`).
+    usage: Option<usage::Usage>,
     /// Selection kept by a Ctrl / Shift desktop marquee in progress (empty for a plain one);
     /// `None` between marquees.
     marquee_base: Option<Vec<(HWND, FenceId)>>,
@@ -736,6 +739,57 @@ fn command_name(cmd: &Command) -> String {
     s.split(['{', '(', ' ']).next().unwrap_or("").to_string()
 }
 
+/// Commands the usage statistics leave out. Every other command is recorded under its name.
+fn not_recorded(cmd: &Command) -> bool {
+    matches!(
+        cmd,
+        // The program queues these for itself: after an animation or a layout pass, on a
+        // timer, for a window that opened, closed, was pressed or came under the pointer,
+        // with a worker's answer.
+        Command::FenceBoundsChanged { .. }
+            | Command::DesktopCellsPlaced { .. }
+            | Command::DesktopIconsAtRest
+            | Command::BeginFenceRename(_)
+            | Command::EndItemRename { .. }
+            | Command::FocusFence(_)
+            | Command::RaiseFence(_)
+            | Command::RaiseForHover(_)
+            | Command::EndHoverRaise(_)
+            | Command::PortalPointerIn(_)
+            | Command::EndItemSelection { .. }
+            | Command::EndNoteEdit
+            | Command::CardKeysBack
+            | Command::ClearFenceSelection
+            | Command::PeekDragStarted
+            | Command::PeekDragEnded { .. }
+            | Command::PeekSearchFaded
+            | Command::NoteCaretBlink { .. }
+            | Command::SmartResults { .. }
+            | Command::EverythingResults { .. }
+            | Command::DeviceLost
+            | Command::RedrawAll
+            | Command::WindowGone(_)
+            | Command::FadeOutDone(_)
+            | Command::SettingsActivated
+            // Many during one drag or one turn of the wheel.
+            | Command::MergeHint { .. }
+            | Command::DesktopMarquee(_)
+            | Command::PeekSearchScroll(_)
+            // One for every typed character or move of the caret in a note.
+            | Command::PeekSearchType(_)
+            | Command::PeekSearchChanged
+            | Command::FenceFilterText { .. }
+            | Command::EditorMessage(_)
+            | Command::NoteEditState { .. }
+            | Command::NoteCaret { .. }
+            | Command::NoteCaretLine { .. }
+            // Recorded where they are handled: `settings.page`, `settings.set`,
+            // `settings.fence`, `exit`.
+            | Command::SettingsMessage(_)
+            | Command::Quit(_)
+    )
+}
+
 /// The App as the control window's procedure takes it: busy while a menu or dialog holds it,
 /// and also while the anchor's own handlers (its sentinel's timer and raw input, the foreground
 /// hook, a fence's TaskbarCreated) hold the anchor without it. Those wait on Explorer with the
@@ -1076,6 +1130,7 @@ impl App {
                             if let Ok(mut guard) = cell.try_borrow_mut()
                                 && let Some(app) = guard.as_mut()
                             {
+                                pecofence_core::usage::event_with("hotkey", "peek");
                                 app.toggle_peek();
                             }
                             Some(0)
@@ -1086,11 +1141,13 @@ impl App {
                                 && let Ok(mut guard) = cell.try_borrow_mut()
                                 && let Some(app) = guard.as_mut()
                             {
+                                pecofence_core::usage::event_with("hotkey", "double_ctrl");
                                 app.search_by_double_ctrl();
                             }
                             None
                         }
                         msg::WM_HOTKEY if wparam as i32 == crate::dialog_jump::HOTKEY_ID => {
+                            pecofence_core::usage::event_with("hotkey", "dialog_jump");
                             crate::dialog_jump::on_hotkey();
                             Some(0)
                         }
@@ -1098,6 +1155,7 @@ impl App {
                             if let Ok(mut guard) = cell.try_borrow_mut()
                                 && let Some(app) = guard.as_mut()
                             {
+                                pecofence_core::usage::event_with("hotkey", "windows_desktop");
                                 app.set_windows_desktop(!app.windows_desktop, "hotkey");
                             }
                             Some(0)
@@ -1110,6 +1168,7 @@ impl App {
                                 if let Ok(mut guard) = cell.try_borrow_mut()
                                     && let Some(app) = guard.as_mut()
                                 {
+                                    pecofence_core::usage::event_with("tray", "menu");
                                     app.show_tray_menu(ev.x, ev.y);
                                 }
                             } else if (ev.event == tray::TRAY_EVENT_SELECT
@@ -1117,6 +1176,7 @@ impl App {
                                 && let Ok(mut guard) = cell.try_borrow_mut()
                                 && let Some(app) = guard.as_mut()
                             {
+                                pecofence_core::usage::event_with("tray", "click");
                                 app.open_settings();
                             } else if ev.event == tray::TRAY_EVENT_BALLOONUSERCLICK
                                 && let Ok(mut guard) = cell.try_borrow_mut()
@@ -1631,6 +1691,7 @@ impl App {
                                 if let Some(a) = app.anchor.borrow_mut().as_mut() {
                                     a.release_desktop_icons();
                                 }
+                                app.save_usage();
                             } else {
                                 // The session may end before the menu or dialog returns.
                                 if let Some(anchor) = session_anchor.get()
@@ -2023,6 +2084,7 @@ impl App {
             gpu_baseline: None,
             gpu_rebuilt: None,
             test: None,
+            usage: None,
             marquee_base: None,
             marquee_band: None,
             marquee_draws_band: false,
@@ -2364,6 +2426,7 @@ impl App {
             icons_hidden = pecofence_platform::shell_icons::desktop_icons_hidden(),
             "startup done"
         );
+        app.begin_usage(&args, after_explorer_s);
         // The first item menu would load every installed program's menu extensions while the
         // user waits for it: load them in the background once things have settled. Not after a
         // run that crashed or stopped: one of them may have been the cause, and loading it at
@@ -2517,6 +2580,7 @@ impl App {
         }
         self.offer_rating_if_due();
         self.log_memory();
+        self.usage_minute();
     }
 
     /// One line with the process's memory: on the first housekeeping tick, then hourly, and
@@ -2584,6 +2648,9 @@ impl App {
                 // the first frame of any animation it started (time-based tweens then appear
                 // to jump ahead): name it.
                 let name = command_name(&cmd);
+                if !not_recorded(&cmd) {
+                    pecofence_core::usage::event_named(&name, "");
+                }
                 match name.as_str() {
                     "ExternalDrop" | "ExternalUrlDrop" | "ShellDrop" | "DropIntoFolder" => {
                         self.activity.drops += 1
@@ -3337,6 +3404,8 @@ impl App {
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.release_desktop_icons();
         }
+        pecofence_core::usage::event("exit");
+        self.save_usage();
         self.tray = None;
     }
 }

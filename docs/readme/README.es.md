@@ -193,7 +193,7 @@ Firma de código gratuita de [SignPath.io](https://about.signpath.io/), con cert
 
 Solo se firman los archivos que GitHub Actions compila a partir de una etiqueta de versión de este repositorio. Cada firma se aprueba a mano.
 
-**Privacidad:** este programa no transfiere ninguna información a otros sistemas en red, salvo que lo pida expresamente el usuario o la persona que lo instala o lo usa. **Buscar actualizaciones** consulta la API de GitHub y, solo si GitHub no responde, el sitio web de PecoFence (pecofence.jiang.jp). No se envía nada más que la propia solicitud, que indica la versión de PecoFence. Lo que envías desde **Comentarios** llega al servicio de comentarios de PecoFence. La ventana de configuración funciona con Microsoft Edge WebView2, al que se aplica la [Declaración de privacidad de Microsoft](https://privacy.microsoft.com/privacystatement).
+**Privacidad:** PecoFence busca actualizaciones en GitHub y envía [estadísticas de uso](../USAGE_STATS.md) al servicio de PecoFence. Las dos cosas se pueden desactivar en **Configuración › Acerca de**. La búsqueda de actualizaciones consulta la API de GitHub y, solo si GitHub no responde, el sitio web de PecoFence (pecofence.jiang.jp). En esa búsqueda no se envía nada más que la propia solicitud, que indica la versión de PecoFence. Lo que envías desde **Comentarios** llega al servicio de comentarios de PecoFence. La ventana de configuración funciona con Microsoft Edge WebView2, al que se aplica la [Declaración de privacidad de Microsoft](https://privacy.microsoft.com/privacystatement).
 
 ---
 

@@ -1019,5 +1019,7 @@
   "保留 Liquid Glass": "Seguir con Liquid Glass",
   "{0} 的壁纸画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "La imagen del fondo de {0} no se puede leer, así que los grupos Liquid Glass son por ahora un cristal translúcido sin refracción. Vuelven a la normalidad al cerrar el fondo animado; Fluent no se ve afectado",
   "这种动态壁纸的画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "La imagen de este tipo de fondo animado no se puede leer, así que los grupos Liquid Glass son por ahora un cristal translúcido sin refracción. Vuelven a la normalidad al cerrar el fondo animado; Fluent no se ve afectado",
-  "动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”": "Mientras se reproduce un fondo animado, Liquid Glass es un cristal esmerilado hecho con una imagen fija del fondo. Para que se vea el propio fondo, pon la opacidad en Más transparente en la página Grupos"
+  "动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”": "Mientras se reproduce un fondo animado, Liquid Glass es un cristal esmerilado hecho con una imagen fija del fondo. Para que se vea el propio fondo, pon la opacidad en Más transparente en la página Grupos",
+  "帮助改进 PecoFence": "Ayudar a mejorar PecoFence",
+  "发送使用统计": "Enviar estadísticas de uso"
 }

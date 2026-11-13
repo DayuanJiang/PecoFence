@@ -644,6 +644,9 @@ impl App {
                 if !self.state.save_and_wait("cli") {
                     response = add_warning(response, "applied but not saved: see the log");
                 }
+                // Usage statistics: requests that change something. A script that asks for
+                // the fences every few seconds would fill the day's list.
+                pecofence_core::usage::event_named("cli", &method);
             }
             let spent = started.elapsed();
             // One by one from 50 ms, as for slow commands: a script listing items every few

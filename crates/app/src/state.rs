@@ -290,6 +290,20 @@ impl AppState {
             current_desktop: None,
             locked_config: report.locked,
         };
+        // Setup's 「发送使用统计」 box was unticked on a first installation: the configuration may
+        // not exist yet then, so Setup left `usage.off` (`ApplyUsageStatsTask` in
+        // `packaging/inno/pecofence.iss`). The statistics are off from this start on. While
+        // another program holds the configuration files open nothing is saved, so the file
+        // stays for the next start.
+        if !portable
+            && let Some(marker) = crate::log_dir().map(|dir| dir.join("usage.off"))
+            && marker.exists()
+        {
+            state.config.settings.usage_stats = false;
+            state.dirty = true;
+            let removed = state.locked_config.is_none() && std::fs::remove_file(&marker).is_ok();
+            tracing::info!(removed, "usage statistics switched off: unticked in setup");
+        }
         // A newer version saved this file: what it keeps that this one does not know (the text
         // of a newer kind of fence, say) goes at this version's first save. A copy stays in the
         // backups for when the newer version comes back (docs/UPGRADING.md).

@@ -11,6 +11,11 @@ PATH and does not write a startup entry itself. **Start with Windows** is on by
 default: PecoFence registers it when it runs, and the switch is in Settings. The
 entry always points to the copy that ran last.
 
+At a first installation the options page also has **Send usage statistics to help
+improve PecoFence**, ticked by default; the same switch is in Settings > About
+([what is sent](https://github.com/DayuanJiang/PecoFence/blob/main/docs/USAGE_STATS.md)).
+A silent installation without it adds `/MERGETASKS="!usagestats"`.
+
 ## Program files and user data
 
 The wizard can choose a different installation folder. Keep the program files in

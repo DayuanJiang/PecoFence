@@ -77,7 +77,7 @@ pub(super) fn resume_check_ms() -> u32 {
     check_delays()[3]
 }
 
-fn unix_now() -> i64 {
+pub(super) fn unix_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64)
@@ -148,7 +148,7 @@ fn download_dir() -> PathBuf {
         .join("update")
 }
 
-fn user_agent() -> String {
+pub(super) fn user_agent() -> String {
     format!("PecoFence/{}", env!("CARGO_PKG_VERSION"))
 }
 

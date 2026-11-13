@@ -311,6 +311,7 @@ opens the settings window then, where 「退出 PecoFence」 is under the switch
 `autoCheckUpdates` (「自动检查更新」, installer and ZIP editions: a check of GitHub's latest release,
 or of the website's copy of it when GitHub gives no answer,
 about a minute after start and then once a day, and a card once per new version; default on),
+`usageStats` (「帮助改进 PecoFence」: [usage statistics](USAGE_STATS.md); default on),
 `autostart`, `peek.enabled`, `peek.doubleCtrl` (`true` makes
 Peek open by pressing Ctrl twice quickly, with its search box, instead of the shortcut, which stays
 saved but is not registered; setting `peek.hotkey` or `peek.customHotkey` turns it off; works only

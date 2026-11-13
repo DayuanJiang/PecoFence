@@ -17,6 +17,7 @@ pub mod script_output;
 pub mod smart;
 pub mod type_filter;
 pub mod updates;
+pub mod usage;
 pub mod vdesk;
 
 pub use config_store::{ConfigSaver, ConfigStore, Lint, LintLevel, LoadOutcome};

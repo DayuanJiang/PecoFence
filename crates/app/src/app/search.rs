@@ -879,7 +879,7 @@ impl App {
             y,
             "search actions menu shown"
         );
-        let cmd = self.track_menu(|| menu.show_context(owner, x, y));
+        let cmd = self.track_menu("search_row", || menu.show_context(owner, x, y));
         if let Some(sm) = shell_menu.as_ref()
             && sm.contains(cmd)
         {

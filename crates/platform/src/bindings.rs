@@ -38,6 +38,27 @@ pub unsafe fn AttachThreadInput(
     unsafe { AttachThreadInput(idattach, idattachto, fattach.into()) }
 }
 #[inline]
+pub unsafe fn BCryptHash(
+    halgorithm: BCRYPT_ALG_HANDLE,
+    pbsecret: Option<&[u8]>,
+    pbinput: &[u8],
+    pboutput: *mut u8,
+    cboutput: u32,
+) -> windows_core::NTSTATUS {
+    windows_core::link!("bcrypt.dll" "system" fn BCryptHash(halgorithm : BCRYPT_ALG_HANDLE, pbsecret : *const u8, cbsecret : u32, pbinput : *const u8, cbinput : u32, pboutput : *mut u8, cboutput : u32) -> windows_core::NTSTATUS);
+    unsafe {
+        BCryptHash(
+            halgorithm as _,
+            pbsecret.map_or(core::ptr::null(), |slice| slice.as_ptr()),
+            pbsecret.map_or(0, |slice| slice.len().try_into().unwrap()),
+            pbinput.as_ptr(),
+            pbinput.len().try_into().unwrap(),
+            pboutput as _,
+            cboutput,
+        )
+    }
+}
+#[inline]
 pub unsafe fn BeginDeferWindowPos(nnumwindows: i32) -> HDWP {
     windows_core::link!("user32.dll" "system" fn BeginDeferWindowPos(nnumwindows : i32) -> HDWP);
     unsafe { BeginDeferWindowPos(nnumwindows) }
@@ -3097,6 +3118,10 @@ pub const AddrMode1616: ADDRESS_MODE = 0;
 pub const AddrMode1632: ADDRESS_MODE = 1;
 pub const AddrModeFlat: ADDRESS_MODE = 3;
 pub const AddrModeReal: ADDRESS_MODE = 2;
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct BCRYPT_ALG_HANDLE(pub *mut core::ffi::c_void);
+pub const BCRYPT_SHA256_ALG_HANDLE: BCRYPT_ALG_HANDLE = BCRYPT_ALG_HANDLE(65 as _);
 pub const BHID_DataObject: windows_core::GUID =
     windows_core::GUID::from_u128(0xb8c0bd9f_ed24_455c_83e6_d5390c4fe8c4);
 pub const BHID_EnumItems: windows_core::GUID =
