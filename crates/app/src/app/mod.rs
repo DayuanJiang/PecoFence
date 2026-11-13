@@ -2369,15 +2369,31 @@ impl App {
         // user waits for it: load them in the background once things have settled. Not after a
         // run that crashed or stopped: one of them may have been the cause, and loading it at
         // every start would bring that back each time instead of at a right-click.
-        let file = app
+        // Which file it is decides which extensions get loaded: a shortcut's menu brings the
+        // most (a web link's has a dozen entries less, and the first right-click on a shortcut
+        // then still waits for the rest). The items are a hash map, so "the first one" was
+        // another file at every start: take the paths in order and a shortcut before the rest.
+        let mut paths: Vec<&str> = app
             .state
             .config
             .items
             .values()
             .filter_map(|it| it.path())
+            .collect();
+        paths.sort_unstable();
+        let is_shortcut = |p: &&&str| p.to_ascii_lowercase().ends_with(".lnk");
+        let file = paths
+            .iter()
+            .filter(is_shortcut)
             .take(32)
+            .chain(paths.iter().take(32))
             .map(PathBuf::from)
             .find(|p| p.is_file());
+        tracing::info!(
+            file = ?file.as_ref().and_then(|p| p.extension()),
+            items = paths.len(),
+            "shell menu prewarm: the file it is made for, by kind"
+        );
         match file {
             _ if !app.previous_run_ended_normally() => {
                 tracing::info!("shell menu not prewarmed: the previous run did not end normally");
