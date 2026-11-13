@@ -3,8 +3,9 @@
 # is POSTed about a minute after the start with x-amz-content-sha256 = the SHA-256 of the body,
 # and forgotten after the 2xx answer; a report 30 days old is dropped unsent (the service takes
 # none older than a week); a few operations appear in usage.json and
-# nothing typed does, nor a CLI request that only reads; switching the setting off deletes the
-# file, and switching it on again makes a new install number; without the variable nothing is
+# nothing typed does, nor a CLI request that only reads; the New fence button that leaves by
+# itself is one event; switching the setting off deletes the file, a file found at a start with
+# the setting off goes too, and switching it on again makes a new install number; without the variable nothing is
 # recorded. The job keeps the file of the first run as usage-after-run.json.
 function UsageFile() { return "$PfApp\config\usage.json" }
 function Reports() {
@@ -71,6 +72,19 @@ $box = [M]::BoxText()
 Check 'the search took the typed text and opened the file' ($box -eq 'zqplan' -and (NotepadTitles) -like '*zqplan*') "box='$box' notepad=$(NotepadTitles)"
 Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
 for ($i = 0; $i -lt 3 -and [M]::BoxText() -ne $null; $i++) { [G]::Press(0x1B); Start-Sleep -Milliseconds 400 }
+# A box on the empty desktop: the 「新建栅栏」 button shows, nobody clicks it, it leaves by itself.
+$fr = FreeRect 240 200 900 300
+$script:Offer = [IntPtr]::Zero
+if ($fr) {
+  DragTo ($fr[0] + 20) ($fr[1] + 20) ($fr[0] + 190) ($fr[1] + 150) 12
+  for ($i = 0; $i -lt 40 -and $script:Offer -eq [IntPtr]::Zero; $i++) {
+    $o = [G]::FindWindowW('PecoFence.MarqueeOffer', [NullString]::Value)
+    if ($o -ne [IntPtr]::Zero -and [G]::IsWindowVisible($o)) { $script:Offer = $o } else { Start-Sleep -Milliseconds 100 }
+  }
+  ParkMouse
+  Start-Sleep -Seconds 5
+}
+Check 'a box on the empty desktop brought the New fence button, and it left by itself' ($script:Offer -ne [IntPtr]::Zero -and -not [G]::IsWindowVisible($script:Offer)) "rect=$fr offer=$($script:Offer)"
 
 Case 'the earlier day is sent about a minute after the start'
 for ($i = 0; $i -lt 100 -and -not (Test-Path "$PfRun\usage-head-1.txt"); $i++) { Start-Sleep -Seconds 1 }
@@ -93,6 +107,8 @@ $ev = @(Events)
 Check 'the day the listener took and the old one are gone; today''s report goes on with the same number' ($days.Count -eq 1 -and $days[0].id -eq $script:OldId -and $days[0].day -eq (Get-Date -Format 'yyyy-MM-dd')) "days=$($days.Count) $($days | ForEach-Object { $_.day })"
 Check 'the operations are there in order' ((($ev -join ',') -match 'start after_update,.*cli settings\.patch,.*hotkey peek,.*peek_search_open,.*exit$')) ($ev -join ',')
 Check 'nothing typed, no file name, no per-character event, no CLI request that only reads' ($text -and $text -notmatch 'zqplan' -and $text -notmatch 'peek_search_type|peek_search_changed|fences\.list') ($ev -join ',')
+$offers = @($ev | Where-Object { $_ -like 'marquee_offer*' }).Count
+Check 'the button that left by itself is one event, not one for every frame of its fade' ($offers -ge 1 -and $offers -le 2) "marquee_offer x $offers"
 Check 'the report says the version, the settings and the counts' ($days[0].app -match '^\d+\.\d+\.\d+' -and $days[0].settings.hideRealIcons -is [bool] -and $days[0].state.fences -ge 1 -and $days[0].health.startupMs -gt 0) "app=$($days[0].app) state=$($days[0].state | ConvertTo-Json -Compress) health=$($days[0].health | ConvertTo-Json -Compress)"
 
 Case 'switching it off deletes the file; on again, a new number'
@@ -103,6 +119,13 @@ $gone = -not (Test-Path (UsageFile))
 Pf fence list | Out-Null
 PfQuit
 Check 'off: usage.json is deleted at once, and the run that follows writes none' ($gone -and -not (Test-Path (UsageFile))) "gone=$gone"
+# Off before a start (Setup's unticked box): a file an earlier installation left goes at the start.
+[IO.File]::WriteAllText((UsageFile), '[' + $seed.Replace('DAY', $script:Yesterday) + ']')
+PfStart
+Start-Sleep -Seconds 2
+$left = Test-Path (UsageFile)
+PfQuit
+Check 'off at a start: a usage.json left in the folder is deleted' (-not $left -and -not (Test-Path (UsageFile))) "left=$left"
 PfStart
 Pf settings set usageStats true | Out-Null
 PfQuit
