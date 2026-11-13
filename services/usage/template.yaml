@@ -1,0 +1,254 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  PecoFence usage statistics, the receiving side: CloudFront in front of a Lambda function that
+  writes each report to a private bucket, and an Athena table over the bucket. Deployed by
+  deploy.sh to ap-northeast-1; see README.md.
+
+Parameters:
+  WebAclArn:
+    Type: String
+    Default: ''
+    Description: >-
+      The web ACL that deploy.sh creates in us-east-1 (where CloudFront's web ACLs live). When
+      given, it is attached to the distribution and the distribution is subscribed to
+      CloudFront's flat-rate Free plan. Empty: no web ACL, pay-as-you-go.
+
+Conditions:
+  FreePlan: !Not [!Equals [!Ref WebAclArn, '']]
+
+Resources:
+  # One object per installation and day: day=YYYY-MM-DD/<id>.json. Athena's query results go
+  # to athena-results/.
+  Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub pecofence-usage-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: delete-reports-after-180-days
+            Status: Enabled
+            ExpirationInDays: 180
+          - Id: delete-athena-results-after-30-days
+            Status: Enabled
+            Prefix: athena-results/
+            ExpirationInDays: 30
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/pecofence-usage
+      RetentionInDays: 30
+
+  # The function may write reports to the bucket and its own log, nothing more.
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: pecofence-usage-lambda
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: write-reports-and-log
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub ${Bucket.Arn}/day=*
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt LogGroup.Arn
+
+  Function:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: pecofence-usage
+      Runtime: nodejs24.x
+      Architectures: [arm64]
+      Handler: index.handler
+      MemorySize: 128
+      Timeout: 10
+      # At most two reports are handled at a time; more are answered 429 and the app tries
+      # again at its next start.
+      ReservedConcurrentExecutions: 2
+      Role: !GetAtt Role.Arn
+      LoggingConfig:
+        LogGroup: !Ref LogGroup
+      Environment:
+        Variables:
+          BUCKET: !Ref Bucket
+      # A placeholder: deploy.sh uploads src/index.mjs after the stack is up.
+      Code:
+        ZipFile: |
+          exports.handler = async () => ({ statusCode: 503 });
+
+  # The function's address. AWS_IAM: only a signed request is let in, and the two permissions
+  # below let nobody but the distribution sign one. Called directly it answers 403.
+  Url:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt Function.Arn
+      AuthType: AWS_IAM
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: pecofence-usage
+        Description: Signs the requests CloudFront sends to the pecofence-usage function
+        OriginAccessControlOriginType: lambda
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # What the app posts to. CloudFront signs each request for the function; for a POST the
+  # sender has to put the SHA-256 of the body into the header x-amz-content-sha256.
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: pecofence-usage
+        Enabled: true
+        HttpVersion: http2
+        IPV6Enabled: true
+        WebACLId: !If [FreePlan, !Ref WebAclArn, !Ref AWS::NoValue]
+        Origins:
+          - Id: function
+            # The host of https://<id>.lambda-url.<region>.on.aws/
+            DomainName: !Select [2, !Split ['/', !GetAtt Url.FunctionUrl]]
+            OriginAccessControlId: !Ref OriginAccessControl
+            CustomOriginConfig:
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols: [TLSv1.2]
+        DefaultCacheBehavior:
+          TargetOriginId: function
+          ViewerProtocolPolicy: https-only
+          AllowedMethods: [GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE]
+          # Two of AWS's managed policies (the Free plan allows no others): CachingDisabled,
+          # and AllViewerExceptHostHeader, which passes the sender's headers on to the function.
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+          OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+
+  InvokeUrlPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Function
+      Action: lambda:InvokeFunctionUrl
+      FunctionUrlAuthType: AWS_IAM
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+
+  InvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Function
+      Action: lambda:InvokeFunction
+      InvokedViaFunctionUrl: true
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+
+  # CloudFront's flat-rate Free plan: 0 USD a month, no charges for traffic above its allowance
+  # (1 million requests, 100 GB), the web ACL included.
+  Plan:
+    Type: AWS::PricingPlanManager::Subscription
+    Condition: FreePlan
+    Properties:
+      PlanFamily: CloudFront
+      PlanTier: FREE
+      ResourceArns:
+        - !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}
+        - !Ref WebAclArn
+
+  Database:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: pecofence_usage
+        Description: PecoFence usage statistics
+
+  # One row per installation and day. The partitions are projected from the object keys, so
+  # none has to be added. settings, state and health are JSON texts: read a value with
+  # json_extract_scalar(settings, '$.theme'). An event is [second of the day, name, key].
+  Table:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref Database
+      TableInput:
+        Name: reports
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: json
+          projection.enabled: 'true'
+          projection.day.type: date
+          projection.day.format: yyyy-MM-dd
+          projection.day.range: 2026-11-01,NOW+1DAYS
+          projection.day.interval: '1'
+          projection.day.interval.unit: DAYS
+          storage.location.template: !Sub s3://${Bucket}/day=${!day}/
+        PartitionKeys:
+          - Name: day
+            Type: string
+        StorageDescriptor:
+          Location: !Sub s3://${Bucket}/
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              # Keep the names inside settings, state and health as sent (hideRealIcons).
+              case.insensitive: 'false'
+              ignore.malformed.json: 'true'
+          Columns:
+            - { Name: v, Type: int }
+            - { Name: id, Type: string }
+            - { Name: app, Type: string }
+            - { Name: edition, Type: string }
+            - { Name: windows, Type: string }
+            - { Name: language, Type: string }
+            - { Name: settings, Type: string }
+            - { Name: state, Type: string }
+            - { Name: health, Type: string }
+            - { Name: events, Type: 'array<array<string>>' }
+
+  # Athena queries run in this workgroup: it sends their results to athena-results/ in the
+  # bucket and stops a query that would read more than 1 GB.
+  WorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: pecofence-usage
+      Description: Queries over the PecoFence usage reports
+      RecursiveDeleteOption: true
+      WorkGroupConfiguration:
+        EnforceWorkGroupConfiguration: true
+        PublishCloudWatchMetricsEnabled: false
+        BytesScannedCutoffPerQuery: 1073741824
+        ResultConfiguration:
+          OutputLocation: !Sub s3://${Bucket}/athena-results/
+
+Outputs:
+  Endpoint:
+    Description: The address the app posts its reports to
+    Value: !Sub https://${Distribution.DomainName}/usage
+  DistributionId:
+    Value: !Ref Distribution
+  FunctionUrl:
+    Description: The function's own address; it answers 403 to everything but the distribution
+    Value: !GetAtt Url.FunctionUrl
+  Bucket:
+    Value: !Ref Bucket
