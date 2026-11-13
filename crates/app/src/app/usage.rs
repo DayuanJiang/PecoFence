@@ -9,7 +9,7 @@ use pecofence_core::usage as recorder;
 use std::sync::PoisonError;
 
 /// Where the reports go: `POST <USAGE_URL>/usage`.
-const USAGE_URL: &str = "https://usage.invalid";
+const USAGE_URL: &str = "https://dipg04t9bhh01.cloudfront.net";
 /// A test's own listener in place of `USAGE_URL`, taken only when it starts with
 /// `http://127.0.0.1:`. With it a test run records and sends.
 const URL_VAR: &str = "PECOFENCE_USAGE_URL";
@@ -30,8 +30,9 @@ static FILE_LOCK: Mutex<()> = Mutex::new(());
 pub(super) struct Usage {
     file: PathBuf,
     url: String,
-    /// The local day on which the earlier days were last sent.
-    sent_on: String,
+    /// The local day at the last look (`usage_minute`), and when the days before it go out.
+    day: String,
+    due: Option<Instant>,
     /// When this run made the install number: today's report goes out once,
     /// `FIRST_DAY_UPLOAD` later.
     made_id: Option<Instant>,
@@ -102,7 +103,8 @@ impl App {
         self.usage = Some(Usage {
             file: dir.join(FILE_NAME),
             url: test_url.unwrap_or_else(|| USAGE_URL.to_string()),
-            sent_on: String::new(),
+            day: String::new(),
+            due: None,
             made_id: None,
             written: Instant::now(),
             startup_ms: self.started.elapsed().as_millis() as u64,
@@ -155,7 +157,7 @@ impl App {
 
     /// Once a minute. A worker writes `usage.json` when something changed, every
     /// `WRITE_EVERY` at most, and first sends what is due: the earlier days at a start and
-    /// when the local date changes, a new installation's first day `FIRST_DAY_UPLOAD` after
+    /// after the local date changed, a new installation's first day `FIRST_DAY_UPLOAD` after
     /// its start.
     pub(super) fn usage_minute(&mut self) {
         let Some((day, unsaved)) = recorder::today() else {
@@ -164,15 +166,26 @@ impl App {
         let Some(run) = self.usage.as_mut() else {
             return;
         };
+        if day != run.day {
+            // At a start the earlier days go out now. When the date changes while the program
+            // runs, a random 1 to 60 minutes later: the service takes two reports at a time,
+            // and midnight comes to every PC of a time zone at once.
+            let wait = match run.day.is_empty() {
+                true => 0,
+                false => 60 + (uuid::Uuid::new_v4().as_u128() % 3541) as u64,
+            };
+            run.due = Some(Instant::now() + Duration::from_secs(wait));
+            run.day = day;
+        }
         let today = run
             .made_id
             .is_some_and(|at| at.elapsed() >= FIRST_DAY_UPLOAD);
-        let send = today || day != run.sent_on;
+        let send = today || run.due.is_some_and(|due| Instant::now() >= due);
         if !send && !(unsaved && run.written.elapsed() >= WRITE_EVERY) {
             return;
         }
         if send {
-            run.sent_on = day;
+            run.due = None;
         }
         if today {
             run.made_id = None;

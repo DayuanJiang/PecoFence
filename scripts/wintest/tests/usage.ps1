@@ -1,9 +1,11 @@
 # 发送使用统计 (docs/USAGE_STATS.md). A test run records only when PECOFENCE_USAGE_URL names a
-# local listener, so the steps start one. They check: an earlier day's report waiting in
-# usage.json is POSTed about a minute after the start with x-amz-content-sha256 = the SHA-256
-# of the body, and forgotten after the 2xx answer; a few operations appear in usage.json and
-# nothing typed does; switching the setting off deletes the file, and switching it on again
-# makes a new install number; without the variable nothing is recorded.
+# local listener, so the steps start one. They check: yesterday's report waiting in usage.json
+# is POSTed about a minute after the start with x-amz-content-sha256 = the SHA-256 of the body,
+# and forgotten after the 2xx answer; a report 30 days old is dropped unsent (the service takes
+# none older than a week); a few operations appear in usage.json and
+# nothing typed does, nor a CLI request that only reads; switching the setting off deletes the
+# file, and switching it on again makes a new install number; without the variable nothing is
+# recorded. The job keeps the file of the first run as usage-after-run.json.
 function UsageFile() { return "$PfApp\config\usage.json" }
 function Reports() {
   $t = Get-Content (UsageFile) -Raw -ErrorAction SilentlyContinue
@@ -50,13 +52,16 @@ while ($true) {
 $script:Srv = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$PfRun\serve-usage.ps1", '-Port', '8733' -WindowStyle Hidden -PassThru
 $script:OldId = '0123456789abcdef0123456789abcdef'
 New-Item -ItemType Directory -Force "$PfApp\config" | Out-Null
-[IO.File]::WriteAllText((UsageFile), '[{"v":1,"id":"' + $script:OldId + '","day":"2020-01-01","app":"0.0.1","events":[[60,"start","by_hand"]]}]')
+$script:Yesterday = (Get-Date).AddDays(-1).ToString('yyyy-MM-dd')
+$seed = '{"v":1,"id":"' + $script:OldId + '","day":"DAY","app":"0.0.1","settings":{},"state":{},"health":{},"events":[[60,"start","by_hand"]]}'
+[IO.File]::WriteAllText((UsageFile), '[' + $seed.Replace('DAY', (Get-Date).AddDays(-30).ToString('yyyy-MM-dd')) + ',' + $seed.Replace('DAY', $script:Yesterday) + ']')
 Set-Content "$PfDesk\zqplan notes.txt" 'sample'
 $env:PECOFENCE_USAGE_URL = 'http://127.0.0.1:8733'
 PfStart
 Check 'the listener runs and PecoFence starts' ($script:Srv -and -not $script:Srv.HasExited -and (PfAlive)) ''
 
 Case 'a few operations: the CLI, the Peek shortcut, a search that opens a file'
+# PfStart set the language (`cli settings.patch`); a list changes nothing and is not recorded.
 Pf fence list | Out-Null
 DeskClick 1500 820 | Out-Null
 PeekKey; Start-Sleep -Milliseconds 800
@@ -74,19 +79,20 @@ $head = Get-Content "$PfRun\usage-head-1.txt" -Raw -ErrorAction SilentlyContinue
 $sent = Get-Content "$PfRun\usage-body-1.json" -Raw -ErrorAction SilentlyContinue
 $hash = if ($sent) { (Get-FileHash "$PfRun\usage-body-1.json" -Algorithm SHA256).Hash.ToLower() } else { '' }
 $said = if ($head -match '(?im)^x-amz-content-sha256:\s*([0-9a-f]{64})\s*$') { $Matches[1] } else { '' }
-Check 'one POST /usage with a JSON body' ($head -match '^POST /usage HTTP/1\.1' -and $head -match '(?im)^Content-Type:\s*application/json\s*$' -and -not (Test-Path "$PfRun\usage-head-2.txt")) "$head"
+Check 'one POST /usage with a JSON body, none for the report 30 days old' ($head -match '^POST /usage HTTP/1\.1' -and $head -match '(?im)^Content-Type:\s*application/json\s*$' -and -not (Test-Path "$PfRun\usage-head-2.txt")) "$head"
 Check 'x-amz-content-sha256 is the SHA-256 of the body' ($hash -and $said -eq $hash) "header=$said body=$hash"
 $report = if ($sent) { $sent | ConvertFrom-Json } else { $null }
-Check 'the body is the report of the earlier day' ($report.id -eq $script:OldId -and $report.day -eq '2020-01-01' -and $report.v -eq 1) "$sent"
+Check 'the body is yesterday''s report' ($report.id -eq $script:OldId -and $report.day -eq $script:Yesterday -and $report.v -eq 1) "$sent"
 
 Case 'usage.json after the run'
 PfQuit
+Copy-Item (UsageFile) "$PfRun\usage-after-run.json" -ErrorAction SilentlyContinue
 $text = Get-Content (UsageFile) -Raw -ErrorAction SilentlyContinue
 $days = @(Reports)
 $ev = @(Events)
-Check 'the day the listener took is gone; today''s report goes on with the same number' ($days.Count -eq 1 -and $days[0].id -eq $script:OldId -and $days[0].day -eq (Get-Date -Format 'yyyy-MM-dd')) "days=$($days.Count) $($days | ForEach-Object { $_.day })"
-Check 'the operations are there in order' ((($ev -join ',') -match 'start after_update,.*cli fences\.list,.*hotkey peek,.*peek_search_open,.*exit$')) ($ev -join ',')
-Check 'nothing typed, no file name, no per-character event' ($text -and $text -notmatch 'zqplan' -and $text -notmatch 'peek_search_type|peek_search_changed') ($ev -join ',')
+Check 'the day the listener took and the old one are gone; today''s report goes on with the same number' ($days.Count -eq 1 -and $days[0].id -eq $script:OldId -and $days[0].day -eq (Get-Date -Format 'yyyy-MM-dd')) "days=$($days.Count) $($days | ForEach-Object { $_.day })"
+Check 'the operations are there in order' ((($ev -join ',') -match 'start after_update,.*cli settings\.patch,.*hotkey peek,.*peek_search_open,.*exit$')) ($ev -join ',')
+Check 'nothing typed, no file name, no per-character event, no CLI request that only reads' ($text -and $text -notmatch 'zqplan' -and $text -notmatch 'peek_search_type|peek_search_changed|fences\.list') ($ev -join ',')
 Check 'the report says the version, the settings and the counts' ($days[0].app -match '^\d+\.\d+\.\d+' -and $days[0].settings.hideRealIcons -is [bool] -and $days[0].state.fences -ge 1 -and $days[0].health.startupMs -gt 0) "app=$($days[0].app) state=$($days[0].state | ConvertTo-Json -Compress) health=$($days[0].health | ConvertTo-Json -Compress)"
 
 Case 'switching it off deletes the file; on again, a new number'

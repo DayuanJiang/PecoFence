@@ -35,8 +35,8 @@ pub fn event_named(name: &str, key: &str) {
 
 /// A day keeps this many events (about 110 KB); what comes after them is not recorded.
 pub const MAX_EVENTS: usize = 2000;
-/// Days the service has not taken yet are kept, this many at most beside today's.
-pub const MAX_UNSENT_DAYS: usize = 7;
+/// A day the service has not taken yet is kept this many days. The service refuses older ones.
+pub const KEEP_DAYS: i64 = 7;
 
 /// Tells the local date (`2026-11-14`) and the second of that day.
 pub type Clock = fn() -> (String, u32);
@@ -81,15 +81,21 @@ impl Recorder {
         let (day, second) = (self.clock)();
         if self.days.last().is_none_or(|report| report.day != day) {
             let id = self.days.last().map_or_else(new_id, |r| r.id.clone());
+            let today = day_number(&day);
+            let kept = |then| today.is_some_and(|now| (0..=KEEP_DAYS).contains(&(now - then)));
+            self.days
+                .retain(|report| day_number(&report.day).is_some_and(kept));
+            // The service takes objects here, also from a day that ends before the app set them.
+            let empty = || json!({});
             self.days.push(Report {
                 v: 1,
                 id,
                 day,
+                settings: empty(),
+                state: empty(),
+                health: empty(),
                 ..Report::default()
             });
-            if self.days.len() > MAX_UNSENT_DAYS + 1 {
-                self.days.remove(0);
-            }
             self.unsaved = true;
         }
         let today = self.days.len() - 1;
@@ -136,6 +142,15 @@ fn snake(name: &str) -> String {
         out.push(c.to_ascii_lowercase());
     }
     out
+}
+
+/// The days from 1970-01-01 to a date written `2026-11-14`.
+fn day_number(day: &str) -> Option<i64> {
+    let mut parts = day.split('-');
+    let year = parts.next()?.parse().ok()?;
+    let month = parts.next()?.parse().ok()?;
+    let day = parts.next()?.parse().ok()?;
+    Some(crate::CivilDate::new(year, month, day).day_number())
 }
 
 /// A new install number: 32 hex digits, 122 of its bits random.
@@ -378,6 +393,7 @@ mod tests {
             second.app, "",
             "what a day says beside its events is set anew"
         );
+        assert_eq!(json!([second.settings, second.state]), json!([{}, {}]));
         let waiting = unsent(false);
         assert_eq!(waiting.len(), 1);
         assert_eq!(waiting[0].0, "2026-11-14");
@@ -391,17 +407,20 @@ mod tests {
         sent("2026-11-14");
         assert_eq!(dates(), ["2026-11-15"]);
 
-        // Days nobody took: the oldest go, MAX_UNSENT_DAYS stay beside today's.
+        // Days nobody took are kept KEEP_DAYS days, then they go unsent.
         for day in 16..=24 {
             at(&format!("2026-11-{day}"), 0);
             event("start");
         }
         let kept = dates();
-        assert_eq!(kept.len(), MAX_UNSENT_DAYS + 1);
+        assert_eq!(kept.len(), 8);
         assert_eq!(
             (kept[0].as_str(), kept[7].as_str()),
             ("2026-11-17", "2026-11-24")
         );
+        at("2026-12-02", 0);
+        event("start");
+        assert_eq!(dates(), ["2026-12-02"]);
 
         // Switched off, then on again without a usable file: a new number.
         stop();

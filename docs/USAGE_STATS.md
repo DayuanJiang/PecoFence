@@ -11,9 +11,10 @@ same choice on its options page at a first installation.
 ## What a report holds
 
 There is one report per installation and day. PecoFence sends a day's report once, after the day
-has ended: at its next start, or when the date changes while it runs. A day that could not be
-sent is tried again at the next start or day change, and dropped after seven later days. On the
-first day of an installation the report also goes out once, 30 minutes after the start.
+has ended: at its next start, or within an hour after the date changes while it runs. A day
+that could not be sent is tried again at the next start or day change, and dropped when it is
+more than seven days old. On the first day of an installation the report also goes out once, 30
+minutes after the start.
 
 ```json
 { "v": 1, "id": "5f0c2a9e7b1d4c38a6e0f1b2c3d4e5f6", "day": "2026-11-14",
@@ -44,6 +45,9 @@ every five minutes while it runs.
 - File names, paths, fence titles, note texts, search words and anything else you typed.
 - The keys of your shortcuts and the names of your themes.
 - Anything about the feedback form.
+
+The service ([`services/usage`](../services/usage/README.md)) does not store the IP address a
+report came from, and deletes reports after 180 days.
 
 ## Switching it off
 
@@ -85,19 +89,13 @@ from a few central places of the program:
   `desktop_layout`, `free_placement`, `note_text`, `script_path`, `script_interval`,
   `smart_folder`, `smart_match`, `smart_subfolders`, `smart_within_days`, `smart_conditions`,
   `smart_name`, `smart_everything`, `smart_limit`, `virtual_desktops`, `dock_top`.
-- **`cli`**, for a request of `pecofence-cli` (or of a second start of PecoFence, which opens
-  the settings) that succeeded, with the method: `status.get`, `monitors.list`,
-  `virtual_desktops.list`, `fences.list`, `fences.get`, `items.list`, `settings.get`,
-  `rules.get`, `snapshots.list`, `fences.create`, `fences.delete`, `fences.rename`,
-  `fences.refresh`, `fences.up`, `fences.forward`, `fences.open_folder`, `fences.set_bounds`,
-  `fences.move_to_monitor`, `fences.set_option`, `fences.fit`, `fences.roll`,
-  `fences.dock_top`, `fences.merge`, `fences.detach`, `fences.set_visible`,
-  `fences.open_options`, `items.move`, `items.plan_move`, `items.rename`, `settings.patch`,
-  `rules.set`, `rules.add`, `rules.remove`, `rules.enable`, `rules.move`, `rules.apply`,
-  `snapshots.save`, `snapshots.restore`, `snapshots.plan_restore`, `snapshots.delete`,
-  `config.export`, `config.import`, `backups.list`, `backups.restore`, `peek.start`,
-  `peek.end`, `peek.search`, `windows_desktop.start`, `windows_desktop.end`,
-  `settings.open_ui`, `events.subscribe`.
+- **`cli`**, for a request of `pecofence-cli` that changed something, with the method:
+  `fences.create`, `fences.delete`, `fences.rename`, `fences.refresh`, `fences.set_bounds`,
+  `fences.move_to_monitor`, `fences.set_option`, `fences.fit`, `fences.roll`, `fences.dock_top`,
+  `fences.merge`, `fences.detach`, `fences.set_visible`, `items.move`, `items.rename`,
+  `settings.patch`, `rules.set`, `rules.add`, `rules.remove`, `rules.enable`, `rules.move`,
+  `rules.apply`, `snapshots.save`, `snapshots.restore`, `snapshots.delete`, `config.import`,
+  `backups.restore`.
 - **A command of the program**, one name for each thing a click, a key or a drop asks it to
   do: `fence_dropped` (a fence was moved), `toggle_roll_up`, `fit_to_content`,
   `commit_expanded`, `launch_item`, `move_items`, `reorder_items`, `drop_into_folder`,
