@@ -11,7 +11,15 @@
 //!   would help right then: 收起 once the user's new fence makes four fences besides 「桌面」;
 //!   在桌面显示此文件夹 when a folder in a fence is opened for the third time; a rule after
 //!   three files of one extension were dragged into one fence in a run. A card that cannot show
-//!   (another card is up) waits for the next such moment.
+//!   (another card is up) waits for the next such moment; the two offers take the place of a
+//!   tip (a first-start tip, the 收起 card), which comes back afterwards, and the 收起 card
+//!   waits until the name box of the fence just made has closed.
+//!
+//! - Liquid Glass over a live wallpaper whose picture cannot be read (Wallpaper Engine's scene
+//!   wallpapers): one card says what the fences look like and why, with 「改用 Fluent」 and
+//!   「保留 Liquid Glass」, once per player (`live_wallpaper::offer_live_wallpaper_card`). It
+//!   waits while another card is up, and an offer takes its place like a tip's; it then comes
+//!   back at a later wallpaper check.
 //!
 //! None of them shows under a test script or `--exit-after`. What was shown is kept in
 //! `notices.json` beside config.json.
@@ -42,6 +50,9 @@ struct Saved {
     /// offered once more a day later.
     update_card_unseen: String,
     update_card_unseen_at: i64,
+    /// The live wallpaper players whose card was answered, closed or timed out
+    /// (`LiveNote::key`): it does not come again for them.
+    live_wallpaper_told: Vec<String>,
 }
 
 /// What the update card did for which version (kept in `notices.json`; the app keeps a copy
@@ -96,6 +107,37 @@ pub(super) enum Welcome {
         fence: String,
         already: bool,
     },
+    /// Liquid Glass fences are see-through panes: the picture of the live wallpaper played by
+    /// `player` (None: one without a known name) cannot be read. `key` is what
+    /// `notices.json` remembers the player by.
+    LiveWallpaper {
+        player: Option<&'static str>,
+        key: String,
+    },
+}
+
+/// What the card 「已添加整理规则」 says while 新项目出现在桌面时自动归类 is off (`{0}`: the
+/// extension, `{1}`: the fence): how the rule gets applied now, by a way that exists. The tray
+/// menu's entry is named only while the icon is there (「显示托盘图标」); with the icon hidden
+/// it is 「立即应用」 on the page the card's own button opens.
+fn rule_added_while_off(tray_icon: bool) -> &'static str {
+    if tray_icon {
+        "“新项目出现在桌面时自动归类”现在是关闭的：打开它，或从托盘菜单选“立即应用整理规则”，{0} 文件才会放进“{1}”。规则在“设置”→“整理规则”里修改。"
+    } else {
+        "“新项目出现在桌面时自动归类”现在是关闭的：打开它，或点“设置”→“整理规则”里的“立即应用”，{0} 文件才会放进“{1}”。规则也在那里修改。"
+    }
+}
+
+/// What the roll-up tip waits for after a fence was made with its name box
+/// (`App::roll_tip_waits`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum RollTipWait {
+    #[default]
+    No,
+    /// The fence fades in; its name box opens after that.
+    Fade,
+    /// The name box is open.
+    NameBox,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -129,6 +171,11 @@ impl App {
             unseen: saved.update_card_unseen,
             unseen_at: saved.update_card_unseen_at,
         }
+    }
+
+    /// The players the live wallpaper card was answered for.
+    pub(super) fn load_live_card_told(&self) -> Vec<String> {
+        self.load_notices().live_wallpaper_told
     }
 
     pub(super) fn save_update_card_record(&self, record: &UpdateCardRecord) {
@@ -228,13 +275,14 @@ impl App {
             .collect()
     }
 
-    pub(super) fn show_welcome(&mut self, which: Welcome) {
+    /// Title, body and button of the card `which` (None: a tip that does not exist).
+    fn welcome_texts(&self, which: &Welcome) -> Option<(String, String, &'static str)> {
         use pecofence_core::i18n::{format, text};
-        let (title, body, action) = match &which {
+        Some(match which {
             Welcome::WhatsNew => (
                 format("PecoFence {0} 的新功能", &["0.3.0".to_string()]),
                 text(
-                    "· 速览时直接打字搜索，支持拼音\n· 「打开/保存」对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n对话框跳转要在设置里开启。",
+                    "· 速览时直接打字搜索，支持拼音\n· “打开/保存”对话框能跳到资源管理器里正开着的文件夹\n· 小工具：便签和待办、时钟、脚本栅栏\n对话框跳转要在设置里开启。",
                 )
                 .to_string(),
                 text("打开设置"),
@@ -245,9 +293,9 @@ impl App {
                     |n| n.to_string_lossy().into_owned(),
                 );
                 (
-                    format("让对话框跳到「{0}」？", std::slice::from_ref(&name)),
+                    format("让对话框跳到“{0}”？", std::slice::from_ref(&name)),
                     format(
-                        "资源管理器里正开着「{0}」。PecoFence 可以让这个对话框跳过去，以后从资源管理器切回对话框时也会自动跳。",
+                        "资源管理器里正开着“{0}”。PecoFence 可以让这个对话框跳过去，以后从资源管理器切回对话框时也会自动跳。",
                         &[name],
                     ),
                     text("跳过去并开启"),
@@ -256,7 +304,7 @@ impl App {
             Welcome::DialogJumpOn => (
                 text("对话框跳转已开启").to_string(),
                 text(
-                    "以后从资源管理器切回「打开/保存」对话框，对话框会自动跳到资源管理器里开着的文件夹。按 Ctrl+G 也能跳。不需要的话，可以在「设置」→「速览与搜索」里关掉。",
+                    "以后从资源管理器切回“打开/保存”对话框，对话框会自动跳到资源管理器里开着的文件夹。按 Ctrl+G 也能跳。不需要的话，可以在“设置”→“速览与搜索”里关闭。",
                 )
                 .to_string(),
                 text("设置…"),
@@ -279,7 +327,7 @@ impl App {
             Welcome::FolderTip { name, .. } => (
                 text("把常用的文件夹放到桌面上").to_string(),
                 format(
-                    "你常从栅栏打开「{0}」。右键它 → 在桌面显示此文件夹，就能直接在桌面上浏览里面的文件。",
+                    "你常从栅栏打开“{0}”。右键它 → 在桌面显示此文件夹，就能直接在桌面上浏览里面的文件。",
                     std::slice::from_ref(name),
                 ),
                 text("试一试"),
@@ -293,7 +341,7 @@ impl App {
                 (
                     text("让新文件自动进来").to_string(),
                     format(
-                        "你把 {0} 个 {1} 文件拖进了「{2}」。以后新的 {1} 文件也自动放到这里吗？",
+                        "你把 {0} 个 {1} 文件拖进了“{2}”。以后新的 {1} 文件也自动放到这里吗？",
                         &[count.to_string(), ext.clone(), title],
                     ),
                     text("添加规则"),
@@ -316,23 +364,35 @@ impl App {
                     )
                 } else {
                     format(
-                        "“新项目出现在桌面时自动归类”现在是关闭的：打开它，或从托盘菜单选“立即应用整理规则”，{0} 文件才会放进“{1}”。规则在“设置”→“整理规则”里修改。",
+                        rule_added_while_off(self.state.config.settings.show_tray_icon),
                         &[ext.clone(), fence.clone()],
                     )
                 },
                 text("打开整理规则"),
             ),
+            Welcome::LiveWallpaper { player, .. } => (
+                text("Liquid Glass 换成了半透明玻璃").to_string(),
+                match player {
+                    Some(name) => format(
+                        "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取 {0} 的壁纸画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。",
+                        &[name.to_string()],
+                    ),
+                    None => text(
+                        "栅栏现在是一块半透明的玻璃，壁纸从后面透出来。Windows 不让其他程序读取这种动态壁纸的画面，清透玻璃的折射效果做不出来。Fluent 风格用不到壁纸画面。",
+                    )
+                    .to_string(),
+                },
+                text("改用 Fluent"),
+            ),
             Welcome::Tip(i) => {
                 let i = *i;
                 let tips = self.tips();
-                let Some(&tip) = tips.get(i) else {
-                    return;
-                };
+                let &tip = tips.get(i)?;
                 let (name, body) = match tip {
                     Tip::Create => (
                         text("新建栅栏"),
                         text(
-                            "在桌面空白处按住鼠标拖出一个框，松开后点框右下角的「新建栅栏」。文件还在原来的位置。",
+                            "在桌面空白处按住鼠标拖出一个框，松开后点框右下角的“新建栅栏”。文件还在原来的位置。",
                         )
                         .to_string(),
                     ),
@@ -370,26 +430,130 @@ impl App {
                 );
                 let last = i + 1 == tips.len();
                 let action = if last {
-                    text("使用手册")
+                    // The button opens the manual: "Manual" alone also reads as "by hand" in
+                    // English, Spanish, Portuguese, French and Italian.
+                    text("小技巧\x04使用手册")
                 } else {
                     text("下一条")
                 };
                 (title, body, action)
             }
+        })
+    }
+
+    /// The tip that follows when card `which` got `event` (「下一条」 on a tip that is not the
+    /// last one).
+    pub(super) fn next_tip(
+        &self,
+        which: &Welcome,
+        event: crate::notice::NoticeEvent,
+    ) -> Option<usize> {
+        match which {
+            Welcome::Tip(i)
+                if event == crate::notice::NoticeEvent::Action && i + 1 < self.tips().len() =>
+            {
+                Some(i + 1)
+            }
+            _ => None,
+        }
+    }
+
+    /// 「下一条」 on a tip card: the card stays where it is and takes tip `next`'s texts. A
+    /// card that cannot take them goes and a new one comes, as before.
+    pub(super) fn show_next_tip(&mut self, notice: crate::notice::Notice, next: usize) {
+        let which = Welcome::Tip(next);
+        let swapped = self
+            .welcome_texts(&which)
+            .is_some_and(|(title, body, action)| {
+                notice
+                    .set_content(&title, &body, action, crate::notice::locale())
+                    .map_err(|error| tracing::warn!(%error, "tip card did not take the next tip"))
+                    .is_ok()
+            });
+        tracing::info!(notice = %welcome_kind(&which), swapped, "next tip on the same card");
+        if swapped {
+            self.welcome = Some((notice, which));
+        } else {
+            // Gone before the new card registers its window class.
+            drop(notice);
+            self.show_welcome(which);
+        }
+    }
+
+    /// The display language changed: the card on screen takes its texts again. It stayed in
+    /// the old language (an English tip under fences named in Chinese) until its button was
+    /// pressed. A card with two buttons keeps its texts: `set_content` knows one button.
+    pub(super) fn retext_welcome_card(&mut self) {
+        let Some((notice, which)) = self.welcome.as_ref() else {
+            return;
+        };
+        if matches!(
+            which,
+            Welcome::FolderTip { .. } | Welcome::RuleTip { .. } | Welcome::LiveWallpaper { .. }
+        ) {
+            return;
+        }
+        let Some((title, body, action)) = self.welcome_texts(which) else {
+            return;
+        };
+        let taken = notice
+            .set_content(&title, &body, action, crate::notice::locale())
+            .map_err(|error| tracing::warn!(%error, "card did not take the new language"))
+            .is_ok();
+        tracing::info!(notice = %welcome_kind(which), taken, "card on screen in the new language");
+    }
+
+    pub(super) fn show_welcome(&mut self, which: Welcome) {
+        use pecofence_core::i18n::text;
+        let Some((title, body, action)) = self.welcome_texts(&which) else {
+            return;
         };
         let kind = welcome_kind(&which);
-        // The two offers can be turned down; the roll-up tip only informs.
-        let secondary = matches!(which, Welcome::FolderTip { .. } | Welcome::RuleTip { .. })
-            .then(|| text("不用"));
-        match crate::notice::Notice::show_with(
-            &self.ctx,
-            &title,
-            &body,
-            action,
-            secondary,
-            crate::notice::locale(),
-            &self.notice_avoid_rects(),
-        ) {
+        // The two offers can be turned down; the roll-up tip only informs. The live wallpaper
+        // card names both looks.
+        let secondary = match which {
+            Welcome::FolderTip { .. } | Welcome::RuleTip { .. } => Some(text("不用")),
+            Welcome::LiveWallpaper { .. } => Some(text("保留 Liquid Glass")),
+            _ => None,
+        };
+        let locale = crate::notice::locale();
+        // The card whose button brought this one up takes the new texts where it stands: the
+        // old card went and the new one faded in from nothing, a blink at the same place. (A
+        // card with two buttons is made anew.)
+        if let Some(notice) = self.answered_card.take() {
+            if secondary.is_none()
+                && notice
+                    .set_content(&title, &body, action, locale)
+                    .map_err(
+                        |error| tracing::warn!(%error, "answered card did not take the next card"),
+                    )
+                    .is_ok()
+            {
+                tracing::info!(notice = %kind, "welcome notice shown on the card just answered");
+                self.welcome = Some((notice, which));
+                return;
+            }
+            notice.leave();
+        }
+        let avoid = self.notice_avoid_rects();
+        let shown = match which {
+            // The tips share one card (`show_next_tip`): it is as tall as the tallest of them
+            // from the start, so 「下一条」 changes the texts and not the card's size.
+            Welcome::Tip(_) => {
+                let tallest = (0..self.tips().len())
+                    .filter_map(|i| self.welcome_texts(&Welcome::Tip(i)))
+                    .filter_map(|(t, b, a)| crate::notice::card_height(&t, &b, a, locale).ok())
+                    .fold(0.0, f32::max);
+                tracing::debug!(tallest, "tip cards: one height for all");
+                crate::notice::Notice::show_reserving(
+                    &self.ctx, &title, &body, action, tallest, locale, &avoid,
+                )
+            }
+            _ => crate::notice::Notice::show_with(
+                &self.ctx, &title, &body, action, secondary, locale, &avoid,
+            ),
+        };
+        match shown {
             Ok(notice) => {
                 tracing::info!(notice = %kind, "welcome notice shown");
                 self.welcome = Some((notice, which));
@@ -401,6 +565,15 @@ impl App {
     /// The welcome notice `which` was clicked, closed or timed out.
     pub(super) fn on_welcome_notice(&mut self, which: Welcome, event: crate::notice::NoticeEvent) {
         tracing::info!(notice = %welcome_kind(&which), ?event, "welcome notice answered");
+        if let Welcome::LiveWallpaper { key, .. } = &which {
+            // Whatever the answer (a button, ×, the timeout): not again for this player.
+            let mut saved = self.load_notices();
+            if !saved.live_wallpaper_told.contains(key) {
+                saved.live_wallpaper_told.push(key.clone());
+                self.save_notices(&saved);
+            }
+            self.live_card_told = Some(saved.live_wallpaper_told);
+        }
         if event != crate::notice::NoticeEvent::Action {
             return;
         }
@@ -436,12 +609,61 @@ impl App {
             Welcome::RuleTip { fence, ext, .. } => {
                 self.add_ext_rule(fence, &ext, self.control.hwnd())
             }
+            Welcome::LiveWallpaper { .. } => {
+                // Pressed in the seconds before the next wallpaper check takes an outdated
+                // card away: the look it offered to replace is not on screen any more.
+                if let Some(reason) = self.live_card_outdated() {
+                    tracing::info!(
+                        reason,
+                        "live wallpaper card: its button was pressed on an outdated card; the look stays"
+                    );
+                    return;
+                }
+                // As the Fluent tile of the settings page does: a theme file goes too.
+                let mut new = self.state.config.settings.clone();
+                new.theme_style = pecofence_core::ThemeStyle::Fluent;
+                new.custom_theme = None;
+                self.apply_settings(new, "live wallpaper card");
+            }
         }
     }
 
     /// 功能提示 may show a card now: switched on, not a test run, no other card on screen.
-    fn feature_tip_allowed(&self, what: &'static str) -> bool {
+    /// An offer for what the user just did (the rule, the folder) takes the place of a tip
+    /// (a first-start tip, the roll-up tip), which only informs: the offer's moment may not
+    /// come again (three files of one kind are dragged into a new fence while a tip is up).
+    /// The tip comes back: a first-start tip once the offer has been answered
+    /// (`resume_displaced_tip`), the roll-up tip with the next fence the user makes.
+    fn feature_tip_allowed(&mut self, what: &'static str) -> bool {
         let on = self.state.config.settings.feature_tips;
+        // Another card besides the tip (the undo card, the update or the rating card) keeps
+        // the offer away in any case: the tip then stays. It used to leave first, the offer
+        // did not show, and the first-start tips did not come back in that run.
+        let others = self.notices().count() > usize::from(self.welcome.is_some());
+        if what != "roll"
+            && self.notices
+            && on
+            && !others
+            && matches!(
+                self.welcome,
+                Some((
+                    _,
+                    Welcome::RollTip | Welcome::Tip(_) | Welcome::LiveWallpaper { .. }
+                ))
+            )
+            && let Some((notice, tip)) = self.welcome.take()
+        {
+            tracing::info!(
+                what,
+                tip = %welcome_kind(&tip),
+                "feature offer takes the place of a tip, which comes back later"
+            );
+            notice.leave();
+            // The live wallpaper card comes back by itself at a later wallpaper check.
+            if !matches!(tip, Welcome::LiveWallpaper { .. }) {
+                self.displaced_tip = Some(tip);
+            }
+        }
         let other_card = self.notice_showing();
         let allowed = self.notices && on && !other_card;
         tracing::info!(
@@ -453,6 +675,62 @@ impl App {
             "feature tip due"
         );
         allowed
+    }
+
+    /// A card was answered or has left: the first-start tip that an offer took the place of
+    /// comes back where the tips stopped, once no other card of this kind is up (the card
+    /// 「已添加整理规则」 after 「添加规则」 goes first).
+    pub(super) fn resume_displaced_tip(&mut self) {
+        if self.welcome.is_none()
+            && let Some(Welcome::Tip(i)) = self.displaced_tip
+        {
+            self.displaced_tip = None;
+            tracing::info!(tip = i, "the first-start tip comes back after the offer");
+            self.show_welcome(Welcome::Tip(i));
+        }
+    }
+
+    /// After a fence was made with its name box (`create_fence_with_rename`): the roll-up tip
+    /// comes when the name has been typed. A card that came up beside the box the moment the
+    /// fence appeared took the eye off the name. `after_fade`: the box opens once the fence
+    /// has faded in.
+    pub(super) fn offer_roll_tip_after_name(&mut self, after_fade: bool) {
+        self.roll_tip_waits = if after_fade {
+            RollTipWait::Fade
+        } else if crate::rename::active_target().is_some() {
+            RollTipWait::NameBox
+        } else {
+            RollTipWait::No
+        };
+        tracing::debug!(waits = ?self.roll_tip_waits, "roll tip after a new fence");
+        if self.roll_tip_waits == RollTipWait::No {
+            self.offer_roll_tip();
+        }
+    }
+
+    /// The new fence has faded in and its name box is open, or it got none (see
+    /// `begin_rename_after_fade`): the roll-up tip goes on waiting for the box, or shows.
+    pub(super) fn roll_tip_after_fade(&mut self) {
+        if self.roll_tip_waits != RollTipWait::Fade {
+            return;
+        }
+        if crate::rename::active_target().is_some() {
+            self.roll_tip_waits = RollTipWait::NameBox;
+        } else {
+            self.roll_tip_waits = RollTipWait::No;
+            tracing::debug!("roll tip: the new fence got no name box");
+            self.offer_roll_tip();
+        }
+    }
+
+    /// A name box may have closed (`Command::RenameFence`, or `Command::RedrawAll` for Esc):
+    /// the roll-up tip that waited for it shows.
+    pub(super) fn roll_tip_after_name_box(&mut self) {
+        if self.roll_tip_waits == RollTipWait::NameBox && crate::rename::active_target().is_none() {
+            self.roll_tip_waits = RollTipWait::No;
+            tracing::debug!("roll tip: the name box of the new fence closed");
+            self.offer_roll_tip();
+        }
     }
 
     /// After the user made a fence: the roll-up tip once there are [`ROLL_TIP_FENCES`].
@@ -467,11 +745,16 @@ impl App {
             return;
         }
         let mut saved = self.load_notices();
-        if saved.roll_tip_shown || !self.feature_tip_allowed("roll") {
+        // An offer took its place the last time: it shows once more.
+        let again = matches!(self.displaced_tip, Some(Welcome::RollTip));
+        if (saved.roll_tip_shown && !again) || !self.feature_tip_allowed("roll") {
             return;
         }
         self.show_welcome(Welcome::RollTip);
         if self.welcome.is_some() {
+            if again {
+                self.displaced_tip = None;
+            }
             tracing::info!(fences, "roll tip shown");
             saved.roll_tip_shown = true;
             self.save_notices(&saved);
@@ -515,6 +798,9 @@ impl App {
         if self.welcome.is_some() {
             saved.folder_tip_shown = true;
             self.save_notices(&saved);
+        } else {
+            // The offer's card could not be made: the tip it took the place of comes back.
+            self.resume_displaced_tip();
         }
     }
 
@@ -603,6 +889,8 @@ impl App {
         if self.welcome.is_some() {
             saved.rule_tip_shown = true;
             self.save_notices(&saved);
+        } else {
+            self.resume_displaced_tip();
         }
     }
 
@@ -636,5 +924,39 @@ fn welcome_kind(which: &Welcome) -> String {
         Welcome::FolderTip { .. } => "FolderTip".into(),
         Welcome::RuleTip { count, .. } => format!("RuleTip(count={count})"),
         Welcome::RuleAdded { already, .. } => format!("RuleAdded(already={already})"),
+        Welcome::LiveWallpaper { key, .. } => format!("LiveWallpaper({key})"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rule_added_while_off;
+    use pecofence_core::i18n::{Language, SUPPORTED, catalog};
+
+    /// With 「显示托盘图标」 off there is no tray menu to choose from: the card names the
+    /// button of the 整理规则 page, in every language (a text without a translation would show
+    /// in Chinese, and one that is the old text's translation would still name the tray).
+    #[test]
+    fn the_rule_card_names_the_tray_menu_only_while_the_icon_is_there() {
+        let (shown, hidden) = (rule_added_while_off(true), rule_added_while_off(false));
+        assert!(shown.contains("托盘菜单"));
+        assert!(!hidden.contains("托盘") && hidden.contains("“立即应用”"));
+        for &language in SUPPORTED {
+            if language == Language::SimplifiedChinese {
+                continue;
+            }
+            let texts = catalog(language);
+            let hidden_text = texts
+                .get(hidden)
+                .unwrap_or_else(|| panic!("{}", language.tag()));
+            let apply_now = texts
+                .get("立即应用")
+                .unwrap_or_else(|| panic!("{}", language.tag()));
+            assert!(
+                hidden_text.contains(apply_now.as_str()) && Some(hidden_text) != texts.get(shown),
+                "{}: {hidden_text}",
+                language.tag()
+            );
+        }
     }
 }

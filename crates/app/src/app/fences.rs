@@ -160,8 +160,21 @@ impl App {
             a.reanchor("windows resynced");
         }
         let mut shown = false;
-        for w in self.fences.values() {
+        for (id, w) in &self.fences {
             if !before.contains(&w.hwnd()) {
+                // The fences are hidden (a double-click on the desktop, 「隐藏所有栅栏」,
+                // 「临时显示 Windows 桌面」): a window that comes meanwhile waits with them. It
+                // used to show alone (a fence with 「为空时自动隐藏」 that got a file, say). A
+                // fence the user makes shows them all (`show_new_fence`).
+                let held = self
+                    .anchor
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|a| a.quick_hides(w.hwnd(), self.windows_desktop));
+                if held {
+                    tracing::debug!(fence = %id, "new window while the fences are hidden: it stays hidden with them");
+                    continue;
+                }
                 w.show(true);
                 shown = true;
             }
@@ -175,11 +188,33 @@ impl App {
         self.push_settings_state();
     }
 
+    /// Shows a fence the user just made (tray menu, a box drawn on the desktop, the command
+    /// line, a new note, tool, folder or smart fence). When the fences are hidden, they all
+    /// come back with it: the new one used to show alone, with the tray menu still offering
+    /// 「显示所有栅栏」.
+    pub(super) fn show_new_fence(&mut self, id: FenceId) {
+        let hidden = self
+            .anchor
+            .borrow()
+            .as_ref()
+            .is_some_and(|a| a.fences_hidden());
+        if let Some(w) = self.fences.get(&id) {
+            w.show(true);
+        }
+        if hidden {
+            tracing::info!(fence = %id, "a fence was made while the fences were hidden: they all show again");
+            self.toggle_all_fences("a fence was made");
+        }
+    }
+
     pub(super) fn refresh_fence(&mut self, id: FenceId) {
         let host = self.state.host_of(id);
         let active = self.state.active_tab_of(host);
+        // The fence shows another folder, which has a view or order of its own (feedback
+        // #131): its items arrive in that view, as a tab's do.
+        let folder_view = self.state.take_folder_view_changed(id);
         if let Some(w) = self.fences.get(&host) {
-            let switching = w.active_fence() != active;
+            let switching = w.active_fence() != active || folder_view;
             w.set_tabs(self.tab_views(host), active);
             if active == id
                 && let Some(f) = self.state.fence(id)
@@ -205,6 +240,10 @@ impl App {
         self.apply_portal_deco(host);
         self.apply_auto_height(host);
         self.sync_hidden_fences();
+        if folder_view {
+            // The settings page shows the view and order of the folder shown now.
+            self.push_settings_state();
+        }
     }
 
     /// 为空时自动隐藏: a fence's window goes with its last item and comes back with the next
@@ -253,6 +292,11 @@ impl App {
             .unwrap_or((None, 1.0));
         w.set_appearance(bd, op);
         w.set_title_on_hover(f.appearance.as_ref().and_then(|a| a.title_on_hover));
+        w.set_transparent_on_hover(
+            f.appearance
+                .as_ref()
+                .is_some_and(|a| a.transparent_on_hover),
+        );
         w.set_style(fence_style_for(&f));
         w.set_text_size(text_size_index(&f));
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
@@ -588,7 +632,17 @@ impl App {
         let before: HashMap<FenceId, RECT> =
             self.fences.iter().map(|(id, w)| (*id, w.rect())).collect();
         let from_layout = self.state.layout;
-        self.state.work_areas = work_areas();
+        let fresh = work_areas();
+        // The same monitors at the same places and scales: only a work area moved (the taskbar
+        // hid itself or came back).
+        let same_monitors = fresh.len() == self.state.work_areas.len()
+            && fresh.iter().zip(&self.state.work_areas).all(|(a, b)| {
+                a.device_path == b.device_path
+                    && a.dpi == b.dpi
+                    && (a.mon_left, a.mon_top, a.mon_right, a.mon_bottom)
+                        == (b.mon_left, b.mon_top, b.mon_right, b.mon_bottom)
+            });
+        self.state.work_areas = fresh;
         let layouts = self.state.config.layouts.len();
         self.state.ensure_layout();
         log_monitors(&self.state.work_areas);
@@ -603,6 +657,11 @@ impl App {
         let unplaced = self.state.unplaced.clone();
         // A different monitor set may select a different layout: sync windows first.
         self.sync_fence_windows();
+        // Fences that only move (the taskbar hid itself, another resolution at the same scale)
+        // glide to their new places once all of them are placed, instead of jumping.
+        for w in self.fences.values() {
+            w.defer_moves(true);
+        }
         for fence in self.state.fences().to_vec() {
             if self.fences.contains_key(&fence.id) {
                 // State, not the window: sync_fence_windows has just made the window agree, and
@@ -619,9 +678,17 @@ impl App {
             w.repaint_shadow();
         }
         // Wallpaper regions moved with the monitors: rebuild the backdrops unconditionally.
-        self.refresh_visuals(true);
+        // With the same monitors the wallpaper behind the fences is the one they have: built
+        // again (0.15 s without a graphics card) it would only hold the fences back before
+        // they glide; each one takes its new part of it as it moves.
+        tracing::debug!(same_monitors, "display change: backdrops");
+        self.refresh_visuals(!same_monitors);
         // 像桌面一样排列: the new work area (and the fences placed again on it).
         self.arrange_desktop_fence();
+        // Everything above has read the new places: now the windows travel there.
+        for w in self.fences.values() {
+            w.defer_moves(false);
+        }
     }
 
     /// One line per fence after a display change: where its window was (`from`), where the
@@ -690,8 +757,25 @@ impl App {
             return;
         }
         self.end_peek_now();
+        self.end_rename_before_hide(reason);
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.toggle_fences_hidden_by(reason);
+        }
+    }
+
+    /// The fences are about to hide by a menu, a shortcut or the command line (no click took
+    /// the keyboard away): an open name box of an icon or a fence ends first and keeps what
+    /// was typed, as a click elsewhere ends it. The box stayed alone on the wallpaper where
+    /// the icon had been, and Enter there still renamed the file.
+    pub(super) fn end_rename_before_hide(&mut self, reason: &'static str) {
+        let hidden = self
+            .anchor
+            .borrow()
+            .as_ref()
+            .is_some_and(|a| a.fences_hidden());
+        if !hidden && crate::rename::active_target().is_some() {
+            tracing::debug!(reason, "the fences hide: the open name box ends first");
+            crate::rename::end_active(true);
         }
     }
 
@@ -752,15 +836,52 @@ impl App {
         w.restore_geometry(rect, fence.rolled_up, self.state.fence_expanded_px(fence));
     }
 
+    /// A restore or an import: a fence that only moved (open before and after, the
+    /// same size) travels to its saved place (`FenceWindow::glide_to`, 167 ms decelerate)
+    /// instead of jumping there, as the fences that come back fade in and the ones that go
+    /// fade out. False: the caller places it at once (animations off, rolled up, another
+    /// size, hidden, or already there).
+    fn glide_from_state(&self, fence: &pecofence_core::Fence) -> bool {
+        let Some(w) = self.fences.get(&fence.id) else {
+            return false;
+        };
+        if fence.rolled_up || w.is_rolled() || w.is_desktop_arranged() {
+            return false;
+        }
+        let px = self.state.fence_px_rect(fence);
+        let to = RECT {
+            left: px.left,
+            top: px.top,
+            right: px.right,
+            bottom: px.bottom,
+        };
+        w.set_row_at_bottom(fence.bottom_anchored);
+        let glides = w.glide_to(to);
+        if glides {
+            tracing::debug!(fence = %fence.id, "restored fence glides to its saved place");
+        }
+        glides
+    }
+
     /// Re-applies every fence's saved geometry to its window (after a swap / restore / import).
     pub(super) fn relayout_from_state(&mut self) {
+        self.relayout(false);
+    }
+
+    /// [`Self::relayout_from_state`] for a snapshot restore or an import, which the
+    /// user watches: the fences that only moved glide to their places (`glide_from_state`).
+    pub(super) fn relayout_from_state_gliding(&mut self) {
+        self.relayout(true);
+    }
+
+    fn relayout(&mut self, glide: bool) {
         self.clear_undo("layout replaced");
         self.state.ensure_layout();
         // Restored or imported fences may name virtual desktops that are gone.
         self.follow_desktops_after("fences replaced");
         self.resync_windows();
         for fence in self.state.host_fences() {
-            if self.fences.contains_key(&fence.id) {
+            if self.fences.contains_key(&fence.id) && !(glide && self.glide_from_state(&fence)) {
                 self.place_from_state(&fence);
             }
             self.apply_fence_view(fence.id);
@@ -845,6 +966,12 @@ impl App {
             e.3 = applied;
         }
         self.apply_auto_height(fence);
+        // The grid chose the scroll place for the height the fence had; it has another now.
+        if let Some(w) = self.window_for(fence)
+            && w.active_fence() == fence
+        {
+            w.keep_selection_in_view();
+        }
         self.schedule_save();
     }
 
@@ -883,8 +1010,9 @@ impl App {
                     .map(|f| f.title.clone())
                     .unwrap_or_default(),
                 w.rail_row_screen_rect(fence),
+                w.title_text_place(fence),
                 self.queue.clone(),
-                self.theme_mode,
+                w.label_ink(self.theme_mode),
             );
         }
     }
@@ -947,9 +1075,7 @@ impl App {
         }
         let id = self.state.new_fence(title, rect)?;
         self.resync_windows();
-        if let Some(w) = self.fences.get(&id) {
-            w.show(true);
-        }
+        self.show_new_fence(id);
         self.schedule_save();
         Some(id)
     }
@@ -957,6 +1083,7 @@ impl App {
     /// A fence made from a menu: its title opens for editing, as Explorer's 新建文件夹 does.
     pub(super) fn create_fence_with_rename(&mut self, rect: RECT) {
         if let Some(id) = self.create_fence_at(rect, None) {
+            self.note_new_fence_for_undo(id);
             // The name box opens once the fence has faded in (at once without a fade).
             let after_fade = self
                 .fences
@@ -966,7 +1093,7 @@ impl App {
             if !after_fade {
                 self.begin_rename(id);
             }
-            self.offer_roll_tip();
+            self.offer_roll_tip_after_name(after_fade);
         }
     }
 
@@ -981,6 +1108,7 @@ impl App {
         if seen {
             self.begin_rename(fence);
         }
+        self.roll_tip_after_fade();
     }
 
     /// False (with a tray notice) when the layout already holds `MAX_FENCES`.
@@ -995,12 +1123,17 @@ impl App {
         false
     }
 
-    /// `fence`'s window takes the keyboard (see `Command::FocusFence`). A name box that is
-    /// open now keeps it: taking the foreground from it would close it. A fence under another
+    /// `fence`'s window takes the keyboard (see `Command::FocusFence`). A name box or a note
+    /// editor that is open now keeps it: taking the foreground from it would close it. A fence under another
     /// program's window does not take it either (see `fence_in_sight`).
     pub(super) fn give_keyboard(&mut self, fence: FenceId, why: &'static str) {
         if crate::rename::active_target().is_some() {
             tracing::debug!(%fence, why, "keyboard stays with the open name box");
+            return;
+        }
+        if crate::note_edit::is_open() {
+            // The click that closed one note's editor opened another's.
+            tracing::debug!(%fence, why, "keyboard stays with the open note editor");
             return;
         }
         let Some(w) = self.window_for(fence) else {
@@ -1018,7 +1151,7 @@ impl App {
     /// the keyboard, so the Ctrl+Z the delete notice suggests reaches PecoFence at once
     /// instead of the taskbar or the desktop. 「桌面」 arranged like the desktop spans the
     /// screen, so it comes after every fence with a plate.
-    fn keyboard_to_nearest_fence(&mut self, gone: RECT) {
+    pub(super) fn keyboard_to_nearest_fence(&mut self, gone: RECT) {
         let centre = |r: &RECT| ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
         let (gx, gy) = centre(&gone);
         let nearest = self
@@ -1048,23 +1181,25 @@ impl App {
                 return;
             }
         }
-        // As the CLI does: a snapshot first (with the note text), so the fence can come back
-        // after a restart too; a list full of the user's own snapshots gets none.
+        // As the CLI does: a snapshot first, so the fence can come back after a restart too; a
+        // list full of the user's own snapshots gets none. A deleted note keeps its text and
+        // a script fence its script while a snapshot holds the fence (`prune_notes`), so the
+        // snapshot carries no texts of its own: restoring it must not take the other notes
+        // back to what they said now.
         let title = self
             .state
             .fence(fence)
             .map(|f| f.title.clone())
             .unwrap_or_default();
         if super::settings::snapshot_room(&mut self.state.config.snapshots, None) {
-            let snap = self
-                .state
+            self.state
                 .save_snapshot(pecofence_core::i18n::text("删除栅栏前"));
-            self.state.keep_tool_data_in(snap);
         } else {
             tracing::info!("no room for the snapshot before a fence delete");
         }
         // Where its window is, before the window goes (a tab's window stays).
         let gone = self.window_for(fence).map(|w| w.rect());
+        self.note_icons_return_to_desktop(fence);
         let Some(deleted) = self.state.delete_fence_keeping(fence) else {
             return;
         };
@@ -1079,7 +1214,7 @@ impl App {
     /// What deleting `fence` takes with it, as a question; None when nothing would be lost (no
     /// icons of its own, no rule pointing at it). A folder portal's items are the folder's
     /// files and stay on disk, so only its rules count.
-    fn delete_fence_prompt(&self, fence: FenceId) -> Option<String> {
+    pub(super) fn delete_fence_prompt(&self, fence: FenceId) -> Option<String> {
         use pecofence_core::i18n;
         let f = self.state.fence(fence)?;
         let icons = if f.kind == FenceKind::FolderPortal {
@@ -1133,9 +1268,52 @@ impl App {
 
     /// Deletes a fence (or a tab); a deleted host's next tab takes its place and keeps the rest.
     pub(super) fn delete_fence(&mut self, fence: FenceId) {
+        self.note_icons_return_to_desktop(fence);
         if self.state.delete_fence(fence) {
             self.after_fence_deleted(fence);
         }
+    }
+
+    /// `fence` is about to be deleted and its icons go back to 「桌面」. Arranged like the
+    /// desktop, 「桌面」 lets them arrive from where they stood in the fence, as an icon dropped
+    /// on the desktop arrives from the pointer (`FenceWindow::note_desktop_landing`). They
+    /// used to fade in at their places while the fence faded out somewhere else, and nothing
+    /// on screen said that these were the fence's icons. An icon that is not in view in the
+    /// fence (scrolled away, rolled up, another tab) starts from the middle of its window.
+    fn note_icons_return_to_desktop(&self, fence: FenceId) {
+        let (Some(f), Some(inbox)) = (self.state.fence(fence), self.state.inbox_id()) else {
+            return;
+        };
+        let (Some(from), Some(to)) = (self.window_for(fence), self.fences.get(&inbox)) else {
+            return;
+        };
+        if fence == inbox || !f.holds_items() || f.items.is_empty() || !to.is_desktop_arranged() {
+            return;
+        }
+        let r = from.rect();
+        let middle = ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+        // The middle of an icon's cell is about 12 px above its name.
+        let centres: Vec<(ItemId, (i32, i32))> = f
+            .items
+            .iter()
+            .map(|rec| {
+                let at = from
+                    .item_label_rect(rec.item_id)
+                    .filter(|l| l.left >= r.left && l.right <= r.right)
+                    .filter(|l| l.top >= r.top && l.bottom <= r.bottom)
+                    .map_or(middle, |l| ((l.left + l.right) / 2, l.top - 12));
+                (rec.item_id, at)
+            })
+            .collect();
+        tracing::debug!(
+            %fence,
+            icons = centres.len(),
+            "fence deleted: its icons arrive at the desktop from where they stood"
+        );
+        to.note_desktop_landing(&crate::commands::DesktopDrop {
+            cursor: middle,
+            centres,
+        });
     }
 
     fn after_fence_deleted(&mut self, fence: FenceId) {
@@ -1171,7 +1349,13 @@ impl App {
                 + (r.right - r.left),
             bottom: wa.top + h,
         };
-        w.set_bounds(rect);
+        // It glides to the top edge while it rolls up (167 ms both); it used to stand there
+        // in the next frame.
+        let glides = w.glide_to(rect);
+        tracing::debug!(%fence, glides, from = ?(r.left, r.top), to = ?(rect.left, rect.top), "dock to top");
+        if !glides {
+            w.set_bounds(rect);
+        }
         let expanded = if w.is_rolled() {
             w.expanded_height_px()
         } else {
@@ -1201,10 +1385,11 @@ impl App {
     }
 
     /// Picks a screen rectangle `cols` icon columns wide and `h_dip` tall for a new fence that
-    /// does not overlap any existing fence: beside `near` (right, left, below, above) first,
-    /// then a coarse scan of the work area, finally centred on the point. Result is clamped
-    /// into the work area. The width is taken from the grid metrics, so a new fence shows
-    /// exactly `cols` columns.
+    /// does not overlap any existing fence: beside `near` (right, left, below, above; without
+    /// one, the fence under the point) the snapping gap away, then centred on the point, then
+    /// the free spot nearest to it, finally centred on the point over what is there. Result
+    /// is clamped into the work area. The width is taken from the grid metrics, so a new
+    /// fence shows exactly `cols` columns.
     pub(super) fn place_new_fence(
         &self,
         cols: u32,
@@ -1228,11 +1413,20 @@ impl App {
             && r.top >= work.top
             && r.right <= work.right
             && r.bottom <= work.bottom;
-        fits && !self.overlaps_fence(r, (12.0 * work.scale()) as i32)
+        let gap = crate::fence_window::snap_gap_px(
+            settings::snap_gap_dip(&self.state.config.settings.snapping),
+            work.scale(),
+        );
+        fits && !self.overlaps_fence(r, gap)
     }
 
+    /// 「桌面」 arranged like the desktop is no obstacle (its window spans its icons, often the
+    /// whole screen, and the icons make way for a fence).
     pub(super) fn overlaps_fence(&self, r: &RECT, gap: i32) -> bool {
         self.fences.values().any(|f| {
+            if f.is_desktop_arranged() {
+                return false;
+            }
             let o = f.footprint_rect();
             r.left < o.right - gap / 2
                 && r.right > o.left + gap / 2
@@ -1260,13 +1454,31 @@ impl App {
         };
         let scale = work.scale();
         let (w, h) = ((w_dip * scale) as i32, (h_dip * scale) as i32);
-        let gap = (12.0 * scale) as i32;
+        // One gap on the desktop: the snapping gap (`snapping.gapPx`), the one fences dragged
+        // together keep.
+        let gap = crate::fence_window::snap_gap_px(
+            settings::snap_gap_dip(&self.state.config.settings.snapping),
+            scale,
+        );
         let at = |left: i32, top: i32| RECT {
             left,
             top,
             right: left + w,
             bottom: top + h,
         };
+        // A menu opened on a fence that names no source (a tool, a smart fence): that fence.
+        let near = near.or_else(|| {
+            self.fences
+                .iter()
+                .find(|(_, f)| {
+                    let r = f.footprint_rect();
+                    !f.is_desktop_arranged()
+                        && pecofence_platform::desktop::is_visible(f.hwnd())
+                        && (r.left..r.right).contains(&x)
+                        && (r.top..r.bottom).contains(&y)
+                })
+                .map(|(id, _)| *id)
+        });
         let mut candidates = Vec::new();
         if let Some(src) = near
             .and_then(|id| self.fences.get(&id))
@@ -1279,26 +1491,134 @@ impl App {
         }
         candidates.push(at(x - w / 2, y - h / 2));
         if let Some(r) = candidates.iter().find(|r| self.rect_free(r, &work)) {
+            tracing::debug!(?near, gap, at = ?(r.left, r.top), "new fence placed: first free candidate");
             return *r;
         }
-        // Coarse scan, top-left to bottom-right.
-        let step = (24.0 * scale) as i32;
-        let mut top = work.top + gap;
-        while top + h <= work.bottom {
-            let mut left = work.left + gap;
-            while left + w <= work.right {
-                let r = at(left, top);
-                if !self.overlaps_fence(&r, gap) {
-                    return r;
-                }
-                left += step;
-            }
-            top += step;
+        // The free spot nearest to the point: a gap from a fence or the work area's edge, in
+        // line with one of its edges, as a fence let go on another one lands.
+        let others: Vec<RECT> = self
+            .fences
+            .values()
+            .filter(|f| !f.is_desktop_arranged())
+            .map(|f| f.footprint_rect())
+            .collect();
+        let area = RECT {
+            left: work.left,
+            top: work.top,
+            right: work.right,
+            bottom: work.bottom,
+        };
+        let centred = at(x - w / 2, y - h / 2);
+        if let Some(r) = crate::layout::clearance::nearest_free(&centred, &others, &area, gap) {
+            tracing::debug!(?near, gap, at = ?(r.left, r.top), "new fence placed: nearest free spot");
+            return r;
         }
+        tracing::debug!(
+            ?near,
+            gap,
+            "new fence placed: no free spot, centred on the point"
+        );
         // Everything is covered: centre on the point, clamped into the work area.
         let left = (x - w / 2).clamp(work.left, (work.right - w).max(work.left));
         let top = (y - h / 2).clamp(work.top, (work.bottom - h).max(work.top));
         at(left, top)
+    }
+
+    /// A place for a new fence of `w_dip` x `h_dip` that the window `win` does not cover (the
+    /// settings window, whose page made the fence): on the window's monitor, beside the window
+    /// on the side with more room, level with its top. When a fence is there or the work area
+    /// ends before it, the spots one gap apart from that one are compared (from a gap inside
+    /// the work area's left and top edges, as the scan of `place_new_fence_dip`): off every
+    /// fence first, then the one the window covers least, then the nearest. None when the
+    /// window covers half or more of every spot (it is maximized).
+    pub(super) fn place_clear_of(&self, w_dip: f32, h_dip: f32, win: RECT) -> Option<RECT> {
+        let work = self.work_area_at((win.left + win.right) / 2, (win.top + win.bottom) / 2)?;
+        let scale = work.scale();
+        let (w, h) = ((w_dip * scale) as i32, (h_dip * scale) as i32);
+        let gap = ((12.0 * scale) as i32).max(1);
+        // To other fences: the snapping gap, as everywhere a new fence is placed.
+        let fence_gap = crate::fence_window::snap_gap_px(
+            settings::snap_gap_dip(&self.state.config.settings.snapping),
+            scale,
+        );
+        let right_side = work.right - win.right >= win.left - work.left;
+        let (want_left, want_top) = if right_side {
+            (win.right + gap, win.top)
+        } else {
+            (win.left - gap - w, win.top)
+        };
+        // 「桌面」 arranged like the desktop is no obstacle (see `overlaps_fence`): its window
+        // spans its icons, often the whole screen, and every spot counted as on a fence.
+        let fences: Vec<RECT> = self
+            .fences
+            .values()
+            .filter(|f| !f.is_desktop_arranged())
+            .map(|f| f.footprint_rect())
+            .collect();
+        // (on a fence, px the window covers, px from the wanted spot): the smallest wins.
+        let mut best: Option<((bool, i64, i32), RECT)> = None;
+        let (first_left, first_top) = (work.left + gap, work.top + gap);
+        let mut top = first_top + (want_top - first_top).rem_euclid(gap);
+        while top + h <= work.bottom {
+            let mut left = first_left + (want_left - first_left).rem_euclid(gap);
+            while left + w <= work.right {
+                let (right, bottom) = (left + w, top + h);
+                let covered = i64::from((right.min(win.right) - left.max(win.left)).max(0))
+                    * i64::from((bottom.min(win.bottom) - top.max(win.top)).max(0));
+                if covered * 2 < i64::from(w) * i64::from(h) {
+                    // The snapping gap to every fence.
+                    let on_fence = fences.iter().any(|o| {
+                        left < o.right + fence_gap
+                            && right > o.left - fence_gap
+                            && top < o.bottom + fence_gap
+                            && bottom > o.top - fence_gap
+                    });
+                    let far = (left - want_left).abs() + (top - want_top).abs();
+                    let key = (on_fence, covered, far);
+                    if best.is_none_or(|(b, _)| key < b) {
+                        let rect = RECT {
+                            left,
+                            top,
+                            right,
+                            bottom,
+                        };
+                        best = Some((key, rect));
+                    }
+                }
+                left += gap;
+            }
+            top += gap;
+        }
+        let window = (win.left, win.top, win.right, win.bottom);
+        let work = (work.left, work.top, work.right, work.bottom);
+        let Some(((on_fence, covered, far), r)) = best else {
+            tracing::info!(
+                ?window,
+                ?work,
+                size = ?(w, h),
+                "new fence from the settings page: no spot its window leaves mostly clear, placed as from a menu"
+            );
+            return None;
+        };
+        let reason = match (on_fence, covered, far) {
+            (false, 0, 0) => "beside the window",
+            (false, 0, _) => "the nearest free spot the window leaves clear",
+            (false, ..) => "no free spot clear of the window: the one it covers least",
+            (true, ..) => "no spot off the fences: the one the window covers least",
+        };
+        tracing::info!(
+            ?window,
+            ?work,
+            size = ?(w, h),
+            fences = fences.len(),
+            want_at = ?(want_left, want_top),
+            side = if right_side { "right" } else { "left" },
+            rect = ?(r.left, r.top, r.right, r.bottom),
+            covered_px = covered,
+            reason,
+            "new fence from the settings page placed clear of its window"
+        );
+        Some(r)
     }
 
     /// Rolls up an open fence and expands a rolled one. A roll still in flight counts as the

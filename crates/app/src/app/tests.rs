@@ -98,6 +98,20 @@ fn url_shortcut_names_prefer_the_browser_title() {
     );
 }
 
+/// The time limit after which a Peek raises the covered fences without the frame clock's beats
+/// stays clear of a compositor clock's beats and is short enough to matter on a slow clock.
+#[test]
+fn the_peek_raise_limit_leaves_a_compositor_clock_its_beats() {
+    use super::peek::{PEEK_RAISE_FRAMES, PEEK_RAISE_LIMIT_MS};
+    // A compositor clock paces frames at 60 Hz or faster (a slower one gets a frame from the
+    // timer between its ticks), so the beats the covered fences wait for come within 40 ms.
+    // The limit stays clear of them, or the timer would raise the fences on every PC, and it
+    // is short enough to matter on a clock whose first beats take 60 to 130 ms.
+    let beats_ms = (f64::from(PEEK_RAISE_FRAMES) + 1.0) * 1000.0 / 60.0;
+    assert!(f64::from(PEEK_RAISE_LIMIT_MS) >= beats_ms + 10.0);
+    const { assert!(PEEK_RAISE_LIMIT_MS <= 80) };
+}
+
 /// Peek search matches the shown name or the file name (its extension may be hidden), ignoring
 /// case; namespace items match by their shown name only.
 #[test]
@@ -632,6 +646,7 @@ mod ipc {
             "layout",
             "labelLines",
             "titleOnHover",
+            "transparentOnHover",
             "expandUpward",
             "portalTitleIcon",
         ] {
@@ -722,6 +737,15 @@ mod ipc {
         assert_eq!(
             parse_fence_prop("tintTitleOnly", &json!(true)).unwrap(),
             FenceProp::TintTitleOnly(true)
+        );
+        assert_eq!(
+            parse_fence_prop("transparentOnHover", &json!(true)).unwrap(),
+            FenceProp::TransparentOnHover(true)
+        );
+        assert!(parse_fence_prop("transparentOnHover", &json!("on")).is_err());
+        assert_eq!(
+            parse_fence_prop("iconAlign", &json!("right")).unwrap(),
+            FenceProp::IconAlign(pecofence_core::IconAlign::Right)
         );
         assert_eq!(
             parse_fence_prop("titleSize", &json!("extraLarge")).unwrap(),
@@ -966,18 +990,35 @@ mod ipc {
     }
 
     #[test]
-    fn auto_snapshot_makes_room_by_pruning_its_own_kind_only() {
+    fn auto_snapshot_makes_room_by_dropping_automatic_snapshots_only() {
         // Full list: MAX-2 user snapshots plus two auto ones. Pruning to KEPT-1 (= 2) removes
-        // nothing, so there is no room: no snapshot, no eviction.
+        // nothing; the oldest automatic one gives its slot, as on the settings page.
         let mut list: Vec<Snapshot> = (0..MAX_SNAPSHOTS - 2)
             .map(|i| snap(&format!("mine {i}"), i as i64))
             .collect();
+        let users: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
         list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}a"), 100));
+        let oldest_auto = list.last().unwrap().id;
         list.push(snap(&format!("{AUTO_SNAPSHOT_PREFIX}b"), 101));
+        assert!(auto_snapshot_slot(&mut list, None));
+        assert_eq!(list.len(), MAX_SNAPSHOTS - 1);
+        assert!(list.iter().all(|s| s.id != oldest_auto));
+        assert!(users.iter().all(|u| list.iter().any(|s| s.id == *u)));
+
+        // Full list with one automatic snapshot of the settings page: it gives its slot too
+        // (the CLI went on without a safety snapshot before), unless it is the one to restore.
+        let mut list: Vec<Snapshot> = (0..MAX_SNAPSHOTS - 1)
+            .map(|i| snap(&format!("mine {i}"), i as i64))
+            .collect();
+        list.push(snap(pecofence_core::i18n::text("恢复快照前"), 100));
+        let page_auto = list.last().unwrap().id;
         let before: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
-        assert!(!auto_snapshot_slot(&mut list, None));
+        assert!(!auto_snapshot_slot(&mut list, Some(page_auto)));
         let after: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
-        assert_eq!(after, before, "nothing may be evicted when no slot opens");
+        assert_eq!(after, before, "the snapshot to restore stays");
+        assert!(auto_snapshot_slot(&mut list, None));
+        assert_eq!(list.len(), MAX_SNAPSHOTS - 1);
+        assert!(list.iter().all(|s| s.id != page_auto));
 
         // Three auto snapshots in a full list: the oldest goes, a slot opens, every user
         // snapshot survives.
@@ -1007,6 +1048,16 @@ mod ipc {
         let mut list = vec![snap("mine", 1)];
         assert!(auto_snapshot_slot(&mut list, None));
         assert_eq!(list.len(), 1);
+    }
+
+    #[test]
+    fn the_page_names_the_command_lines_safety_snapshots() {
+        use super::super::settings::snapshot_label;
+        assert_eq!(
+            snapshot_label("auto-cli-2026-11-12 04:45:20"),
+            pecofence_core::i18n::text("命令行操作前")
+        );
+        assert_eq!(snapshot_label("我的布局"), "我的布局");
     }
 
     #[test]
@@ -1075,4 +1126,76 @@ mod ipc {
         let after: Vec<uuid::Uuid> = list.iter().map(|s| s.id).collect();
         assert_eq!(after, before);
     }
+}
+
+/// The shell menu prewarm is made for the first shortcut that leads to a file on a fixed local
+/// drive: Windows builds a shortcut's menu from its target's, so a shortcut to a folder, to a
+/// network place or to a drive that is not there is left alone, and the disk is asked about a
+/// target on a fixed drive only.
+#[test]
+fn the_shell_menu_prewarm_takes_a_shortcut_to_a_local_file() {
+    use super::{prewarm_passes_over, prewarm_pick};
+    use std::path::Path;
+    let target = |p: &'static str| Some(Path::new(p));
+    let file = |_: &Path| Some(true);
+    let folder = |_: &Path| Some(false);
+    let nothing = |_: &Path| None;
+    let never = |_: &Path| -> Option<bool> { panic!("the disk is asked for a fixed drive only") };
+    assert_eq!(
+        prewarm_passes_over(target(r"C:\Windows\notepad.exe"), "fixed", file),
+        None
+    );
+    assert_eq!(
+        prewarm_passes_over(target(r"C:\Users"), "fixed", folder),
+        Some("target is a folder")
+    );
+    assert_eq!(
+        prewarm_passes_over(target(r"C:\gone\a.exe"), "fixed", nothing),
+        Some("target is missing")
+    );
+    assert_eq!(
+        prewarm_passes_over(target(r"\\server\share\a.exe"), "unc", never),
+        Some("target on a network share")
+    );
+    assert_eq!(
+        prewarm_passes_over(target(r"Z:\a.exe"), "network", never),
+        Some("target on a network drive")
+    );
+    assert_eq!(
+        prewarm_passes_over(target(r"Q:\none\a.exe"), "unknown", never),
+        Some("target on a drive that is not there")
+    );
+    assert_eq!(
+        prewarm_passes_over(target(r"E:\a.exe"), "removable", never),
+        Some("target on a removable drive")
+    );
+    assert_eq!(
+        prewarm_passes_over(None, "unknown", never),
+        Some("no target path")
+    );
+
+    let paths = |names: &[&str]| -> Vec<PathBuf> { names.iter().map(PathBuf::from).collect() };
+    let shortcuts = paths(&["!a.lnk", "b.lnk", "c.lnk", "d.lnk"]);
+    let files = paths(&["gone.txt", "e.txt", "f.txt"]);
+    let there = |p: &Path| p != Path::new("gone.txt");
+    // The first shortcut that fits, in order; the ones before it with their reasons.
+    let odd = |p: &Path| match p.to_str() {
+        Some("!a.lnk") => Some("target is a folder"),
+        Some("b.lnk") => Some("target on a network share"),
+        _ => None,
+    };
+    let (file, passed) = prewarm_pick(&shortcuts, &files, odd, there);
+    assert_eq!(file, Some((Path::new("c.lnk"), "shortcut")));
+    assert_eq!(passed, ["target is a folder", "target on a network share"]);
+    // Every shortcut fits: the first one, as before.
+    let (file, passed) = prewarm_pick(&shortcuts, &files, |_| None, there);
+    assert_eq!(file, Some((Path::new("!a.lnk"), "shortcut")));
+    assert!(passed.is_empty());
+    // No shortcut fits: the first other file that is there.
+    let (file, passed) = prewarm_pick(&shortcuts, &files, |_| Some("target is a folder"), there);
+    assert_eq!(file, Some((Path::new("e.txt"), "plain file")));
+    assert_eq!(passed.len(), 4);
+    // Nothing fits: no prewarm.
+    let (file, _) = prewarm_pick(&shortcuts, &[], |_| Some("no target path"), there);
+    assert_eq!(file, None);
 }

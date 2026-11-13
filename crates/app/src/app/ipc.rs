@@ -439,12 +439,13 @@ fn auto_snapshot_name() -> String {
 
 /// Pure half of [`App::auto_snapshot`]: prunes `auto-cli-*` entries down to
 /// `AUTO_SNAPSHOTS_KEPT - 1` (making room for the one about to be taken) and reports whether
-/// a slot under `MAX_SNAPSHOTS` is free. `false` means the list is full of snapshots the user
-/// saved, which an automatic one must never evict. `protect` survives the pruning (see
-/// [`prune_auto_snapshots`]).
+/// a slot under `MAX_SNAPSHOTS` is free. A list still full then loses its oldest automatic
+/// snapshot (the page's 「…前」 ones count too), as on the settings page (`snapshot_room`).
+/// `false` means the list is full of snapshots the user saved, which an automatic one must
+/// never evict. `protect` survives the pruning (see [`prune_auto_snapshots`]).
 pub(super) fn auto_snapshot_slot(snapshots: &mut Vec<Snapshot>, protect: Option<Uuid>) -> bool {
     prune_auto_snapshots(snapshots, AUTO_SNAPSHOTS_KEPT.saturating_sub(1), protect);
-    snapshots.len() < pecofence_core::MAX_SNAPSHOTS
+    super::settings::snapshot_room(snapshots, protect)
 }
 
 /// How long a queued request stays runnable: the client's timeout, but never under
@@ -1117,6 +1118,19 @@ impl App {
                 let before = self.state.config.rules.clone();
                 self.set_rules(rules.clone());
                 let changed = self.state.config.rules != before;
+                // Stored as given, but such a rule files nothing where it says.
+                let astray = rules
+                    .list
+                    .iter()
+                    .filter(|r| {
+                        matches!(r.target, Target::Fence(id) if self.state.routable_fence(id).is_none())
+                    })
+                    .count();
+                if astray > 0 {
+                    self.ipc_warnings.push(format!(
+                        "{astray} rule(s) target a fence that does not exist or holds no desktop items (a folder, tool or smart fence); their matches go to the inbox"
+                    ));
+                }
                 self.push_settings_state();
                 Ok(mutation(
                     changed,
@@ -1235,13 +1249,23 @@ impl App {
                     None
                 };
                 self.end_peek_now();
-                self.relayout_from_state();
+                // Files that came to the desktop after the snapshot are in none of its
+                // fences: they are filed now, not at the next change on the desktop.
+                self.sync_desktop_if_available("snapshot restored");
+                self.relayout_from_state_gliding();
                 // Portals restored with the snapshot need enumerating; stale runtime state of
                 // the replaced ones is pruned on the way.
                 self.refresh_portals();
+                // Scripts of an imported configuration that the snapshot brought back wait
+                // for the 小工具 switch, as after the import.
+                let held = self.hold_switch_for_held_scripts("snapshot restored by the CLI");
                 self.schedule_save();
                 self.push_settings_state();
-                Ok(mutation(true, backup, json!({ "restored": target })))
+                let mut extra = json!({ "restored": target });
+                if held > 0 {
+                    extra["scriptsHeld"] = json!(held);
+                }
+                Ok(mutation(true, backup, extra))
             }
             Method::SnapshotsPlanRestore { id } => {
                 let target = self.resolve_snapshot(id)?;
@@ -1391,7 +1415,22 @@ impl App {
     }
 
     /// `config.export`: the complete configuration as pretty JSON at an absolute path.
+    /// While another program holds the configuration files open, the fences on show are a
+    /// stand-in that is never saved: an import would be gone once the files are read, and an
+    /// export would write the stand-in.
+    fn config_unlocked(&self) -> std::result::Result<(), IpcError> {
+        match &self.state.locked_config {
+            Some(path) => Err(unsupported(format!(
+                "{} is held open by another program; PecoFence shows a stand-in until it can read it",
+                path.display()
+            ))
+            .hint("Try again once the tray notice says the configuration was read")),
+            None => Ok(()),
+        }
+    }
+
     fn ipc_config_export(&mut self, path: &str) -> IpcResult {
+        self.config_unlocked()?;
         let target = absolute_path(path)?;
         if target.is_dir() {
             return Err(IpcError::new(
@@ -1454,6 +1493,7 @@ impl App {
         key: &str,
         origin: super::settings::ConfigSource,
     ) -> IpcResult {
+        self.config_unlocked()?;
         let cfg = pecofence_core::ConfigStore::parse_file(source).map_err(|e| {
             IpcError::new(
                 ErrorCode::ValidationFailed,
@@ -1467,12 +1507,14 @@ impl App {
         if let Some(id) = snapshot {
             self.state.keep_tool_data_in(id);
         }
-        self.adopt_config(cfg, origin);
-        Ok(mutation(
-            true,
-            snapshot,
-            json!({ key: source.to_string_lossy() }),
-        ))
+        let held = self.adopt_config(cfg, origin);
+        let mut extra = json!({ key: source.to_string_lossy() });
+        // An imported file's scripts wait for the 小工具 switch: the reply says how many, as the
+        // settings page's notice does.
+        if held > 0 {
+            extra["scriptsHeld"] = json!(held);
+        }
+        Ok(mutation(true, snapshot, extra))
     }
 
     fn resolve_snapshot(&self, sel: &str) -> std::result::Result<Uuid, IpcError> {
@@ -1748,6 +1790,7 @@ impl App {
             title_size: text("titleSize"),
             text_size: text("textSize"),
             title_on_hover: text("titleOnHover"),
+            transparent_on_hover: flag("transparentOnHover"),
             layout: layout_name(f.view.layout).to_string(),
             sort: sort_name(f.view.sort).to_string(),
             reverse: f.view.reverse,
@@ -2192,6 +2235,21 @@ impl App {
         }
         let requested = rect;
         if let Some(tool) = tool {
+            if self.held_scripts_wait() {
+                // A new tool fence turns 小工具 on, and the switch starts every script.
+                let held = self.state.config.held_scripts();
+                return Err(IpcError::new(
+                    ErrorCode::Unsupported,
+                    format!(
+                        "小工具 is off and {} script(s) of an imported configuration wait for it: {}",
+                        held.len(),
+                        held.join(", ")
+                    ),
+                )
+                .hint(
+                    "Read the scripts; `pecofence-cli settings set tools.enabled true` starts them and allows new tool fences",
+                ));
+            }
             let rect = rect.map(rect_to_win);
             let id = self
                 .create_tool_fence(tool, title, rect, cx, cy)
@@ -3086,6 +3144,12 @@ impl App {
             if f.tool.is_some() {
                 return Err(unsupported(
                     "a tool fence (note, clock, script) cannot be a rule target (it holds no desktop items)",
+                )
+                .hint("Target a virtual fence or `inbox`"));
+            }
+            if f.smart.is_some() {
+                return Err(unsupported(
+                    "a smart fence cannot be a rule target (it shows its search, not desktop items)",
                 )
                 .hint("Target a virtual fence or `inbox`"));
             }

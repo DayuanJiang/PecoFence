@@ -143,6 +143,9 @@ pub enum Command {
     PortalForward(FenceId),
     /// A click on a folder fence's title glyph at its root folder: Explorer opens the folder.
     OpenPortalFolder(FenceId),
+    /// The pointer came onto a fence: a folder it shows, or a folder a smart fence searches,
+    /// that was renamed or deleted since is noticed now, before a click on one of its icons.
+    PortalPointerIn(FenceId),
     /// Tab / Shift+Tab in fence window `from`: the keyboard moves to the next / previous
     /// fence in reading order. A null `from` is the Peek's first Tab or arrow key, which no
     /// fence received: the first fence (the last one for Shift+Tab).
@@ -205,6 +208,9 @@ pub enum Command {
     DesktopCellsPlaced {
         fence: FenceId,
     },
+    /// 像桌面一样排列: the icons of 「桌面」 that glided or faded out are at rest; its window,
+    /// which reached to them meanwhile, fits its cells again.
+    DesktopIconsAtRest,
     /// Files dropped from Explorer onto a fence with the effect the drop reported (Explorer's
     /// modifier table: Ctrl copy, Alt / Ctrl+Shift shortcut, otherwise move).
     ExternalDrop {
@@ -283,6 +289,9 @@ pub enum Command {
     /// A fence just made has faded in: its title opens for editing
     /// (`FenceWindow::rename_after_fade_in`).
     BeginFenceRename(FenceId),
+    /// F2 while the pointer is on a fence's title row: its name box opens, as 「重命名…」 in
+    /// its menu does.
+    EditFenceName(FenceId),
     /// F2 / menu on a single selected item: open the inline rename popup.
     RenameItem {
         fence: FenceId,
@@ -300,7 +309,7 @@ pub enum Command {
     EndItemRename {
         commit: bool,
     },
-    /// Delete key: hand the selection to the shell's `delete` verb (Recycle Bin, confirmations).
+    /// Delete key: hand the selection to the shell's delete (Recycle Bin, confirmations).
     /// `permanent` = Shift held (Explorer's Shift+Delete skips the Recycle Bin).
     DeleteItems {
         fence: FenceId,
@@ -309,8 +318,9 @@ pub enum Command {
     },
     /// A composition surface reported `DXGI_ERROR_DEVICE_REMOVED`: rebuild the render stack.
     DeviceLost,
-    /// The name box over this fence's title closed while it had the keyboard (Enter or Esc):
-    /// the fence takes the keyboard, so the next key reaches it and not the taskbar.
+    /// The name box over this fence's title, or the editor of this note, closed while it had
+    /// the keyboard (Enter or Esc): the fence takes the keyboard, so the next key reaches it
+    /// and not the taskbar.
     FocusFence(FenceId),
     DeleteFence(FenceId),
     NewFence {
@@ -362,20 +372,77 @@ pub enum Command {
     FenceFilterClosed(FenceId),
     /// Esc in a filtered fence, or 清除筛选 in its menu: the fence shows everything again.
     ClearFenceFilter(FenceId),
-    /// A click on a note's text: open its editor.
+    /// A click on a note's text: open its editor, the caret at that place of the text
+    /// (UTF-16 units).
     EditNote {
         fence: FenceId,
+        caret: Option<usize>,
     },
     /// A click on a to-do's check box in a note.
     ToggleNoteLine {
         fence: FenceId,
         line: usize,
     },
+    /// A to-do of a note was dragged from line `from` to line `to` of its text.
+    MoveNoteLine {
+        fence: FenceId,
+        from: usize,
+        to: usize,
+    },
+    /// A click on a web address in a note's text (not while it is edited): its line and its
+    /// start in the line's text (UTF-16 units).
+    OpenNoteLink {
+        fence: FenceId,
+        line: usize,
+        start: usize,
+    },
     /// 脚本栅栏: a click on a clickable row of the script's output.
     ScriptRowClicked {
         fence: FenceId,
         row: usize,
     },
+    /// A click on the row under a fence's empty-state text (a smart fence that needs
+    /// Everything: 「启动 Everything」 / 「安装 Everything」).
+    EmptyActionClicked {
+        fence: FenceId,
+    },
+    /// The note editor holds this text and selection now (UTF-16 units, line breaks `\n`;
+    /// the caret is at `active`): the note's fence draws them.
+    NoteEditState {
+        fence: FenceId,
+        text: String,
+        anchor: usize,
+        active: usize,
+    },
+    /// The caret of the note being edited shows or hides (its blink).
+    NoteCaretBlink {
+        fence: FenceId,
+        on: bool,
+    },
+    /// The mouse in the text of the note being edited: the caret goes to `offset` (`extend`
+    /// keeps the other end of the selection, `word` takes the word there).
+    NoteCaret {
+        fence: FenceId,
+        offset: usize,
+        extend: bool,
+        word: bool,
+    },
+    /// Up or Down in the note editor: the caret goes one line on screen up (`dir` < 0) or
+    /// down, as the fence wraps the text.
+    NoteCaretLine {
+        fence: FenceId,
+        dir: i8,
+        extend: bool,
+    },
+    /// A right-click in the text of the note being edited: the editor's own text menu opens
+    /// at this screen point.
+    NoteEditMenu {
+        x: i32,
+        y: i32,
+    },
+    /// A press in a fence window while a note editor is open: the editor saves and closes
+    /// (a tool fence takes no focus, so the editor would not notice the click).
+    EndNoteEdit,
     /// The note editor closed with this text.
     NoteEdited {
         fence: FenceId,
@@ -389,6 +456,8 @@ pub enum Command {
     DesktopMarquee(crate::anchor::MarqueeEvent),
     /// A click elsewhere ended the desktop fence selection.
     ClearFenceSelection,
+    /// Esc in a fence whose icons wait on the clipboard after Ctrl+X: the cut is taken back.
+    CancelCut,
     /// A press in the fence window `except` ends the icon selection of every other fence.
     EndItemSelection {
         except: HWND,
@@ -409,8 +478,15 @@ pub enum Command {
     PeekSearchType(String),
     /// The Peek search box text changed.
     PeekSearchChanged,
+    /// The box of a search that ended has faded out: it can be dropped.
+    PeekSearchFaded,
     /// Up / Down in the search box: highlight the previous (-1) or next (+1) match.
     PeekSearchStep(i32),
+    /// PageUp / PageDown in the search box: highlight the row this many pages up (-1) or down
+    /// (+1), stopping at the ends; `i32::MIN` / `i32::MAX`: the first / last row (Home / End).
+    PeekSearchPage(i32),
+    /// The wheel over the search list: scroll it by this many rows (down is positive).
+    PeekSearchScroll(i32),
     /// Enter in the search box: open the highlighted match.
     PeekSearchOpen,
     /// A click on a row of the search list, or its Ctrl+digit: open that row.
@@ -462,7 +538,15 @@ pub enum Command {
     /// JSON message from the smart fence editor's page.
     EditorMessage(String),
     /// The rating notice was clicked or went away (see `notice.rs`).
-    Notice(crate::notice::NoticeEvent),
+    Notice(isize, crate::notice::NoticeEvent),
+    /// F6 in fence window `from` (null: in the Peek, before a fence has the keys): the
+    /// keyboard goes to the card on screen, if there is one.
+    CardKeys {
+        from: HWND,
+    },
+    /// F6 or Esc on the card that has the keyboard, or it was closed by a key: the keyboard
+    /// goes back where it came from.
+    CardKeysBack,
     /// Ctrl+Z in a fence (see `app/undo.rs`).
     Undo,
 }

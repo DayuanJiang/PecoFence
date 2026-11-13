@@ -152,12 +152,27 @@ pub(super) fn shell_drop_landed(
     landed
 }
 
+thread_local! {
+    /// Windows' `DefaultDropEffect` (`dragdrop::default_drop_effect`), read when a drag enters
+    /// a fence: asked once per drag, not per DragOver.
+    static USER_DEFAULT_EFFECT: std::cell::Cell<Option<DropEffect>> = const { std::cell::Cell::new(None) };
+}
+
+/// A drag enters a fence: Windows' default effect for a plain file drag is read again.
+pub(super) fn note_default_drop_effect() {
+    let effect = dragdrop::default_drop_effect();
+    if USER_DEFAULT_EFFECT.replace(effect) != effect {
+        tracing::debug!(?effect, "Windows' DefaultDropEffect for a plain file drag");
+    }
+}
+
 /// The effect to report for a file drag: Explorer's modifier table (Ctrl copy, Shift move, Alt
-/// or Ctrl+Shift link) clipped to what the source allows, so a COPY|LINK-only source (a zip
-/// folder, a browser's download shelf) gets Copy for a plain drag instead of a Move it never
-/// offered.
+/// or Ctrl+Shift link; without a key the user's `DefaultDropEffect` when Windows has one)
+/// clipped to what the source allows, so a COPY|LINK-only source (a zip folder, a browser's
+/// download shelf) gets Copy for a plain drag instead of a Move it never offered.
 pub(super) fn effect_for(key_state: u32, allowed: u32, same_volume: bool) -> DropEffect {
-    dragdrop::resolve(dragdrop::modifier_effect(key_state, same_volume), allowed)
+    let desired = dragdrop::file_drag_effect(key_state, same_volume, USER_DEFAULT_EFFECT.get());
+    dragdrop::resolve(desired, allowed)
 }
 
 /// The effect for a drop into `folder`: the modifiers decide, except over the Recycle Bin
@@ -191,6 +206,30 @@ pub(super) fn right_drag_choices(candidates: &[DropEffect], allowed: u32) -> Vec
         .into_iter()
         .filter(|e| candidates.contains(e) && e.to_raw() & allowed != 0)
         .collect()
+}
+
+/// A right-button drop of a fence's icons into `folder` (None: a folder fence): Explorer's
+/// menu decides, with `effect` as its default; the Recycle Bin only offers 移动到当前位置.
+fn right_drop_into_folder(
+    hwnd: HWND,
+    pt: DragPoint,
+    effect: DropEffect,
+    folder: Option<&Path>,
+    allowed: u32,
+) -> DropEffect {
+    let candidates: &[DropEffect] =
+        if folder.is_some_and(pecofence_platform::shell::is_recycle_bin_path) {
+            &[DropEffect::Move]
+        } else {
+            &[DropEffect::Move, DropEffect::Copy, DropEffect::Link]
+        };
+    let chosen = right_drag_menu(hwnd, pt, effect, &right_drag_choices(candidates, allowed));
+    tracing::debug!(
+        ?effect,
+        ?chosen,
+        "right-button drop of a fence's icons into a folder"
+    );
+    chosen
 }
 
 pub(super) const CMD_RDRAG_MOVE: u32 = 1;
@@ -623,9 +662,12 @@ impl FenceDropHandler {
                 .unwrap_or_else(|| v.title.clone())
         };
         // A reorder inside its own fence takes the icons nowhere else: the badge alone, without
-        // "移动到 <this fence>".
-        let reorder =
-            spot.insert.is_some() && internal.as_ref().is_some_and(|d| d.from == v.active);
+        // "移动到 <this fence>". So does a loose icon moved to another place of the freely
+        // placed 「桌面」 (no insertion mark there): it read 「移动到 桌面」 on the desktop it
+        // was on already.
+        let own = internal.as_ref().is_some_and(|d| d.from == v.active);
+        let own_place = v.places_freely() && spot.folder.is_none() && spot.tab.is_none();
+        let reorder = own && (spot.insert.is_some() || own_place);
         let description = if reorder {
             (DropImage::Move, "", String::new())
         } else {
@@ -686,6 +728,7 @@ impl DropHandler for FenceDropHandler {
     ) -> DropEffect {
         let internal = Self::internal().is_some();
         forget_link_folder();
+        note_default_drop_effect();
         // A drag of only the desktop's own items (This PC, OneDrive) has no paths left: it goes
         // to the shell, which makes their shortcuts.
         let hdrop = dragdrop::has_hdrop(data).then(|| dropped_paths(data, internal));
@@ -944,7 +987,13 @@ impl DropHandler for FenceDropHandler {
                         // Only a folder target honours the modifiers (our own source offers
                         // every effect, so `allowed` never clips them).
                         let paths = filter_folder_paths(d.paths, &folder);
-                        let effect = folder_effect(Some(&folder), key_state, allowed, same_volume);
+                        let mut effect =
+                            folder_effect(Some(&folder), key_state, allowed, same_volume);
+                        if right && effect != DropEffect::None && !paths.is_empty() {
+                            drop_image(effect);
+                            effect =
+                                right_drop_into_folder(hwnd, pt, effect, Some(&folder), allowed);
+                        }
                         let (Some(mode), false) = (transfer_mode(effect), paths.is_empty()) else {
                             break 'resolve DropEffect::None;
                         };
@@ -1004,7 +1053,11 @@ impl DropHandler for FenceDropHandler {
                         // The target is a portal, a folder: the modifiers decide (Ctrl copies,
                         // Alt links) as for a drop onto a folder item.
                         let paths = filter_folder_paths(d.paths, &dest);
-                        let effect = folder_effect(None, key_state, allowed, same_volume);
+                        let mut effect = folder_effect(None, key_state, allowed, same_volume);
+                        if right && effect != DropEffect::None && !paths.is_empty() {
+                            drop_image(effect);
+                            effect = right_drop_into_folder(hwnd, pt, effect, None, allowed);
+                        }
                         let (Some(mode), false) = (transfer_mode(effect), paths.is_empty()) else {
                             break 'resolve DropEffect::None;
                         };
@@ -1187,6 +1240,96 @@ impl FenceViewState {
             "drop landing noted: the icons start where they were let go"
         );
         self.drop_landing = Some((Instant::now(), from));
+    }
+
+    /// 自由摆放: icons of another fence were let go on the bare desktop beside this 「桌面」. The
+    /// drag source ends that drop (`handler/mouse_move.rs`), so this window's drop handler,
+    /// which notes the landing for icons let go on its cells, never saw it. `centres` are the
+    /// icons' centres on screen when let go: they arrive from there too, instead of fading in.
+    /// A landing noted for this drop already (let go on a cell) stays.
+    pub(super) fn note_landing_at(&mut self, centres: &[(ItemId, (i32, i32))]) {
+        if !self.motion.enabled() || self.rolled_up {
+            return;
+        }
+        if self
+            .drop_landing
+            .as_ref()
+            .is_some_and(|(at, _)| at.elapsed() < super::items::DROP_LANDING_MAX)
+        {
+            return;
+        }
+        let r = window::window_rect(self.hwnd);
+        let scale = self.scale();
+        let (cw, _) = self.content_size_px();
+        let fixed = self.layout(cw as f32 / scale).fixed_top();
+        let from: HashMap<ItemId, (f32, f32)> = centres
+            .iter()
+            .map(|(id, (sx, sy))| {
+                let x = (sx - r.left - self.content_x) as f32 / scale;
+                let y = (sy - r.top - self.content_y) as f32 / scale - fixed + self.scroll_y;
+                (*id, (x, y))
+            })
+            .collect();
+        tracing::debug!(
+            icons = from.len(),
+            "drop landing noted for icons let go on the bare desktop"
+        );
+        self.drop_landing = Some((Instant::now(), from));
+    }
+
+    /// 自由摆放: icons of this 「桌面」 itself were moved by hand; `centres` are their centres on
+    /// screen when let go, and their new cells are placed already. Each one glides from there
+    /// into its cell (167 ms decelerate, as an icon dropped into a fence arrives): it used to
+    /// stand in the cell in the next frame, up to half a cell from where it was let go. The
+    /// list does not change, so `replace_items` never sees this move. Returns whether any
+    /// icon glides.
+    pub(super) fn land_moved_icons(&mut self, centres: &[(ItemId, (i32, i32))]) -> bool {
+        self.hand_moved.clear();
+        if !self.motion.enabled() || self.rolled_up || !desktop::is_visible(self.hwnd) {
+            return false;
+        }
+        let r = window::window_rect(self.hwnd);
+        let scale = self.scale();
+        let (cw, _) = self.content_size_px();
+        let layout = self.layout(cw as f32 / scale);
+        let fixed = layout.fixed_top();
+        let now = Instant::now();
+        let mut gliding = 0usize;
+        for (id, (sx, sy)) in centres {
+            let Some(i) = self.items.iter().position(|it| it.id == *id) else {
+                continue;
+            };
+            let c = layout.cell(i);
+            let x = (sx - r.left - self.content_x) as f32 / scale;
+            let y = (sy - r.top - self.content_y) as f32 / scale - fixed + self.scroll_y;
+            let (fx, fy) = super::items::landing_origin(x, y, &c);
+            if (fx - c.x).abs() <= 0.5 && (fy - c.y).abs() <= 0.5 {
+                // Let go right on its cell: no way to go (and none from its old cell, which
+                // the placing of the new cells started).
+                self.item_motion.remove(id);
+                continue;
+            }
+            let glide = |from: f32, to: f32| {
+                self.motion
+                    .tween(from, to, motion::FAST, Curve::Decelerate, now)
+            };
+            let m = super::items::ItemMotion {
+                x: glide(fx, c.x),
+                y: glide(fy, c.y),
+                alpha: Tween::at(1.0, now),
+            };
+            self.item_motion.insert(*id, m);
+            gliding += 1;
+        }
+        tracing::debug!(
+            icons = centres.len(),
+            gliding,
+            "free placement: icons moved by hand settle into their cells from where they were let go"
+        );
+        if gliding > 0 {
+            self.frames.request();
+        }
+        gliding > 0
     }
 
     /// Insertion index for reordering at a client-pixel point: only in a 手动-sorted virtual
@@ -1557,6 +1700,8 @@ impl FenceViewState {
                     label_gap: grid.metrics.label_gap,
                     scrollbar: None,
                     empty_text: None,
+                    empty_text_height: None,
+                    empty_action: None,
                     drop_highlight: 0.0,
                     marquee: None,
                     insert_caret: None,
@@ -1625,6 +1770,8 @@ impl FenceViewState {
                     header_pressed: None,
                     scrollbar: None,
                     empty_text: None,
+                    empty_text_height: None,
+                    empty_action: None,
                     drop_highlight: 0.0,
                     marquee: None,
                     insert_caret: None,

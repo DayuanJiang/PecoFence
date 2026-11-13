@@ -85,8 +85,9 @@ def main():
     parser.add_argument("--stills-only", action="store_true")
     parser.add_argument("--languages", nargs="*", default=sorted(HERO_TEXT),
                         help="hero images to render (default: every language)")
-    parser.add_argument("--gifs", nargs="*", default=["search", "dialog-jump", "tabs", "peek"],
-                        help="manual lessons to export as GIFs (default: all four)")
+    parser.add_argument("--gifs", nargs="*", default=["search", "dialog-jump", "tabs", "peek", "smart", "tools", "vdesk",
+                                                      "free-place", "undo"],
+                        help="manual lessons to export as GIFs (default: all nine)")
     args = parser.parse_args()
     OUTPUT.mkdir(parents=True, exist_ok=True)
     for language in args.languages:

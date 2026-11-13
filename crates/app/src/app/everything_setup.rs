@@ -219,6 +219,9 @@ impl App {
                 }
                 let started = cmd.spawn();
                 tracing::info!(exe = %exe.display(), ok = started.is_ok(), "Everything started");
+                if started.is_ok() {
+                    self.smart_everything_starting();
+                }
             }
             None => tracing::warn!("Everything start: no Everything.exe found"),
         }

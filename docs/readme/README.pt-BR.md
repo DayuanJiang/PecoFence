@@ -112,6 +112,25 @@ Pegue o que precisa e pressione **Esc** para voltar.
 
 ![O recurso Espiar traz os grupos por cima de um aplicativo; um clique fora ou abrir um arquivo volta ao aplicativo.](../assets/peek.gif)
 
+### Um grupo que se enche sozinho.
+
+Um grupo inteligente mostra sempre atualizado o resultado de uma pesquisa salva. Escolha um modelo como
+**Downloads dos últimos 7 dias** e clique em **Criar**: os arquivos novos que correspondem aparecem
+sozinhos, e os arquivos ficam onde estão.
+
+![New smart fence… no menu de um grupo abre uma janela pequena; o modelo Downloads of the last 7 days preenche as condições; Create coloca na área de trabalho um grupo com seis arquivos, e um download novo aparece nele sozinho.](../assets/smart.gif)
+
+### Notas, um relógio e seus próprios scripts.
+
+Adicione em **Configurações → Ferramentas**: uma nota em que as linhas que começam com `[ ]` viram tarefas,
+um relógio com a data e grupos de script que mostram o que um script imprime, como o clima.
+
+![Nas Configurações, New note coloca uma nota na área de trabalho e um clique marca a primeira tarefa dela; Add coloca um relógio ao lado e depois um grupo com o clima em Tóquio.](../assets/tools.gif)
+
+Mais no manual: [grupos separados para cada área de trabalho virtual](https://pecofence.jiang.jp/pt-BR/manual/#vdesk) ([GIF](../assets/vdesk.gif)),
+[ícones da área de trabalho que ficam onde você os coloca](https://pecofence.jiang.jp/pt-BR/manual/#free-place) ([GIF](../assets/free-place.gif)) e
+[Ctrl+Z para desfazer o último passo](https://pecofence.jiang.jp/pt-BR/manual/#undo) ([GIF](../assets/undo.gif)).
+
 <sub>Animações do <a href="https://pecofence.jiang.jp/pt-BR/manual/">manual</a>. Os GIFs se repetem automaticamente.</sub>
 
 ## Pequenos detalhes que fazem diferença no dia a dia
@@ -149,7 +168,7 @@ A versão da Microsoft Store é assinada pela Microsoft, atualiza sozinha e nunc
 <details>
 <summary><strong>Requisitos, configuração e algumas observações úteis</strong></summary>
 
-- Windows 10 22H2, ou Windows 11 22H2 ou mais recente. O Microsoft Edge WebView2 Runtime é necessário para as Configurações. O Windows 11 já o inclui; no Windows 10, instale-o pelo site da Microsoft se as Configurações não abrirem.
+- Windows 10 1809 ou mais recente (versão da Microsoft Store: 2004 ou mais recente), ou Windows 11 22H2 ou mais recente. O Microsoft Edge WebView2 Runtime é necessário para as Configurações. O Windows 11 já o inclui; no Windows 10, instale-o pelo site da Microsoft se as Configurações não abrirem.
 - Na primeira execução são criados os grupos “Programas”, “Pastas”, “Arquivos e documentos” e “Área de trabalho” no idioma escolhido. Os ícones da área de trabalho do Windows voltam a aparecer quando você sai.
 - A configuração fica em `%APPDATA%\PecoFence\config.json`. Inicie com `--portable` para mantê-la em uma pasta `config` ao lado do executável.
 - O ZIP e o instalador não são assinados. Se o Windows SmartScreen aparecer na primeira execução, escolha **Mais informações → Executar assim mesmo**.
@@ -174,7 +193,7 @@ Assinatura de código gratuita fornecida pela [SignPath.io](https://about.signpa
 
 Só são assinados os arquivos que o GitHub Actions compila a partir de uma tag de versão deste repositório. Cada assinatura é aprovada manualmente.
 
-**Privacidade:** este programa não transfere nenhuma informação para outros sistemas em rede, a menos que o usuário ou a pessoa que o instala ou opera peça isso expressamente. **Verificar atualizações** consulta a API do GitHub. O que você envia em **Comentários** vai para o serviço de comentários do PecoFence. A janela de configurações roda no Microsoft Edge WebView2, ao qual se aplica a [Declaração de Privacidade da Microsoft](https://privacy.microsoft.com/privacystatement).
+**Privacidade:** este programa não transfere nenhuma informação para outros sistemas em rede, a menos que o usuário ou a pessoa que o instala ou opera peça isso expressamente. **Verificar atualizações** consulta a API do GitHub e, somente se o GitHub não responder, o site do PecoFence (pecofence.jiang.jp). Nada é enviado além da própria solicitação, que informa a versão do PecoFence. O que você envia em **Comentários** vai para o serviço de comentários do PecoFence. A janela de configurações roda no Microsoft Edge WebView2, ao qual se aplica a [Declaração de Privacidade da Microsoft](https://privacy.microsoft.com/privacystatement).
 
 ---
 

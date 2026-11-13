@@ -1,5 +1,5 @@
 // 1.3 移动和调整大小: drag a title (snaps level with the other fence + guide), drag an edge
-// (snaps to the neighbour's edge + guide), drag a corner (icons reflow into more columns).
+// (snaps to the neighbour's edge + guide), drag a corner (icons glide into more columns).
 (() => {
     'use strict';
     const { E, ramp, lerp, clamp01, pathAt, spans, spanFade, el, put, show, cols, local, icon, fence,
@@ -89,7 +89,7 @@
         r.topSpans = spans(D, t => layout(t).top);
         r.edgeSpans = spans(D, t => layout(t).edge);
         r.cornerSpans = spans(D, t => layout(t).corner);
-        // column changes of B while its corner is dragged, for the 250 ms reflow slide
+        // column changes of B while its corner is dragged, for the reflow glide
         r.colChanges = [[0, cols(B0.w)]];
         for (let t = 0; t <= D; t += 1 / 120) {
             const c = cols(layout(t).B.w);
@@ -108,15 +108,16 @@
             const s = local(i, 3);
             put(n, s.x, s.y);
         });
-        let k = 0;
-        r.colChanges.forEach(([ct], i) => {
-            if (t >= ct) k = i;
-        });
-        const now = r.colChanges[k][1];
-        // Resizing snaps icons to their new cells (nc.rs on_size → snap_item_motion): no slide.
+        // A dragged edge that changes the column count glides the icons to their new cells
+        // (items.rs reflow_items: 167 ms decelerate; one already gliding goes on from its place).
         r.bIcons.forEach((n, i) => {
-            const b = local(i, now);
-            put(n, b.x, b.y);
+            let s = local(i, r.colChanges[0][1]);
+            for (const [ct, c] of r.colChanges.slice(1)) {
+                if (t < ct) break;
+                const b = local(i, c), q = ramp(t, ct, ct + .167);
+                s = { x: lerp(s.x, b.x, q), y: lerp(s.y, b.y, q) };
+            }
+            put(n, s.x, s.y);
         });
 
         // guides: tops level after the move, bottoms level while resizing

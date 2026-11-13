@@ -117,6 +117,14 @@ pub struct Snapshot {
 
 pub const MAX_SNAPSHOTS: usize = 20;
 
+/// Note texts and scripts by fence, kept apart from the configuration for a while (see
+/// [`Config::tool_data_of`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ToolData {
+    pub notes: HashMap<FenceId, String>,
+    pub scripts: HashMap<FenceId, ScriptSpec>,
+}
+
 /// Settings the file keeps but no version acts on (planned options that were never built).
 /// They stay in `config.json` because older versions require them to read the file; the CLI
 /// hides them from `settings get` / the schema and refuses to set them.
@@ -193,6 +201,12 @@ pub struct Settings {
     /// one request to GitHub's latest release; a new version is announced once.
     #[serde(default = "default_true")]
     pub auto_check_updates: bool,
+    /// 显示托盘图标: PecoFence's icon in the taskbar's notification area. Off keeps it out,
+    /// except for the seconds a notification of PecoFence shows, while the item menus wait
+    /// to get their Windows part back after a crash (the entry is in the icon's menu), and
+    /// while none of Peek's shortcuts can be registered (速览所有栅栏 is in that menu).
+    #[serde(default = "default_true")]
+    pub show_tray_icon: bool,
     /// Unused (see [`UNUSED_SETTINGS`]).
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(skip))]
@@ -233,7 +247,8 @@ pub struct Settings {
 #[serde(rename_all = "camelCase")]
 pub struct ToolSettings {
     /// 小工具: note, clock and script fences. Off hides them all and stops every script; an
-    /// imported configuration with script fences switches it off until the user turns it on.
+    /// imported configuration with script fences switches it off until the user turns it on
+    /// (see `ScriptSpec::held`).
     #[serde(default = "default_true")]
     pub enabled: bool,
     /// Clock fences show the seconds too (and redraw every second instead of every minute);
@@ -275,6 +290,11 @@ pub struct ScriptSpec {
     #[serde(default = "ScriptSpec::default_interval")]
     #[cfg_attr(feature = "schema", schemars(range(min = 1, max = 1440)))]
     pub interval_minutes: u32,
+    /// The script came with an imported configuration and the user has not turned 小工具 on
+    /// for it yet: it never runs while this is set, whatever the switch says. It stays set in
+    /// snapshots and backups that keep the script.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub held: bool,
 }
 
 impl ScriptSpec {
@@ -288,6 +308,7 @@ impl ScriptSpec {
         Self {
             path: path.to_string(),
             interval_minutes: Self::default_interval(),
+            held: false,
         }
     }
 }
@@ -422,6 +443,7 @@ impl Default for Settings {
             per_desktop_fences: false,
             feature_tips: true,
             auto_check_updates: true,
+            show_tray_icon: true,
             show_real_icons_when_fences_hidden: false,
             snapping: SnappingSettings::default(),
             zorder: ZOrderSetting::InsertAboveHost,
@@ -559,7 +581,8 @@ pub enum QuickHideScope {
     FencesOnly,
 }
 
-/// 「展开快慢」 beside 「收起的栅栏怎么展开」: the hover delay before a rolled fence expands.
+/// 「展开快慢」 beside 「收起的栅栏怎么展开」: the hover delay before a rolled fence expands and,
+/// with 「鼠标悬停时切换标签页」, before the tab under the pointer is switched to.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -604,8 +627,9 @@ pub struct RollUpSettings {
     /// while this is on.
     #[serde(default)]
     pub click_to_expand: bool,
-    /// How long the pointer (or a dragged file) rests on a rolled fence before it expands:
-    /// `normal` is Windows' mouse hover time (feedback #98).
+    /// How long the pointer (or a dragged file) rests on a rolled fence before it expands, and
+    /// on a tab before `switch_tab_on_hover` switches to it: `normal` is Windows' mouse hover
+    /// time (feedback #98).
     #[serde(default)]
     pub hover_speed: HoverSpeed,
     /// Draw the title (and tabs) only while the mouse is over the fence; a fence's
@@ -874,8 +898,67 @@ pub struct FenceView {
     #[serde(default)]
     pub folders_first: bool,
     /// 图标对齐 (#154): where a row of icons that does not fill the width sits (icons view only).
-    #[serde(default)]
+    /// The file keeps it in two keys (see `icon_align_keys`).
+    #[serde(flatten, with = "icon_align_keys")]
+    #[cfg_attr(feature = "schema", schemars(with = "icon_align_keys::IconAlignKeys"))]
     pub icon_align: IconAlign,
+}
+
+/// What a fence remembers for one folder it showed: the view and the sort order, which
+/// File Explorer also keeps per folder (feedback #131).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct FolderView {
+    /// The folder's path in lower case. Empty: the fence's own view and order (of a folder
+    /// fence's own folder, of another fence's icons), kept here while it shows another folder.
+    pub path: String,
+    pub layout: ViewLayout,
+    pub sort: SortMode,
+    #[serde(default)]
+    pub reverse: bool,
+    #[serde(default)]
+    pub group_by_date: bool,
+    #[serde(default)]
+    pub folders_first: bool,
+}
+
+impl FolderView {
+    fn of(path: &str, view: &FenceView) -> Self {
+        Self {
+            path: path.to_string(),
+            layout: view.layout,
+            sort: view.sort,
+            reverse: view.reverse,
+            group_by_date: view.group_by_date,
+            folders_first: view.folders_first,
+        }
+    }
+
+    fn apply(&self, view: &mut FenceView) {
+        view.layout = self.layout;
+        view.sort = self.sort;
+        view.reverse = self.reverse;
+        view.group_by_date = self.group_by_date;
+        view.folders_first = self.folders_first;
+    }
+
+    /// The same view and order, whatever the folder.
+    fn same_view(&self, other: &Self) -> bool {
+        (
+            self.layout,
+            self.sort,
+            self.reverse,
+            self.group_by_date,
+            self.folders_first,
+        ) == (
+            other.layout,
+            other.sort,
+            other.reverse,
+            other.group_by_date,
+            other.folders_first,
+        )
+    }
 }
 
 impl Default for FenceView {
@@ -899,7 +982,9 @@ impl Default for FenceView {
 
 /// 图标对齐 of the icons view: a row that does not fill the fence width starts at the left
 /// edge, or sits in the middle with the leftover width split on both sides (the last, shorter
-/// row too). List and details rows always start at the left.
+/// row too). 右对齐 (GitHub #222) fills every row from the right edge: the first icon of a row
+/// stands at the right, the next one to its left, so the first column runs down the right
+/// edge of the fence. List and details rows always start at the left.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -907,6 +992,7 @@ pub enum IconAlign {
     #[default]
     Left,
     Center,
+    Right,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
@@ -938,6 +1024,11 @@ pub struct AppearanceOverride {
     /// This fence's bar in a tab strip (None = its tint).
     #[serde(default)]
     pub tab_rgb: Option<[u8; 3]>,
+    /// 鼠标移入时保持透明 (GitHub #222): a fully transparent fence (`opacity` 0) looks under
+    /// the pointer as it does at rest: no plate, and a title row folded away by title on
+    /// hover stays away. It does nothing at another opacity.
+    #[serde(default)]
+    pub transparent_on_hover: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -997,6 +1088,44 @@ impl Spacing {
 /// presets only reads as before. Reading prefers `spacingPx`. A number edited by hand is clamped
 /// to the range and rounded down to the step; a value of another type (a float, a string) fails
 /// to load like any other type error.
+/// 图标对齐 as the file holds it. `iconAlign` is 左对齐 or 居中, the two values versions up to
+/// 0.3.3 know: any other value there makes them refuse the whole file. 右对齐 is the key
+/// `iconAlignRight`, which they ignore, so they show such a fence left-aligned.
+mod icon_align_keys {
+    use super::IconAlign;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    #[derive(Serialize, Deserialize)]
+    #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+    #[serde(rename_all = "camelCase")]
+    pub struct IconAlignKeys {
+        /// `left` or `center` (`right` is read too).
+        #[serde(default)]
+        icon_align: IconAlign,
+        /// 右对齐: every row fills from the right edge. It wins over `iconAlign`.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        icon_align_right: bool,
+    }
+
+    pub fn serialize<S: Serializer>(align: &IconAlign, s: S) -> Result<S::Ok, S::Error> {
+        let right = *align == IconAlign::Right;
+        IconAlignKeys {
+            icon_align: if right { IconAlign::Left } else { *align },
+            icon_align_right: right,
+        }
+        .serialize(s)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<IconAlign, D::Error> {
+        let keys = IconAlignKeys::deserialize(d)?;
+        Ok(if keys.icon_align_right {
+            IconAlign::Right
+        } else {
+            keys.icon_align
+        })
+    }
+}
+
 mod spacing_keys {
     use super::Spacing;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -1144,6 +1273,11 @@ pub struct Fence {
     /// the registry (`{GUID}`); empty = every desktop. A window with tabs follows its host's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub virtual_desktops: Vec<String>,
+    /// View and sort order of the folders it showed that differ from its own, the one shown
+    /// last at the end, at most [`Fence::MAX_FOLDER_VIEWS`] (see `show_folder_view`). `view`
+    /// is always what the fence shows now.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub folder_views: Vec<FolderView>,
     #[serde(default)]
     pub items: Vec<ItemRef>,
 }
@@ -1177,7 +1311,64 @@ impl Fence {
             tool: None,
             smart: None,
             virtual_desktops: Vec::new(),
+            folder_views: Vec::new(),
             items: Vec::new(),
+        }
+    }
+
+    /// How many folders a fence remembers a view for; the one shown longest ago goes first.
+    pub const MAX_FOLDER_VIEWS: usize = 50;
+
+    /// The fence stops showing `from` and shows `to` (a folder's path in lower case; None:
+    /// its own folder or its own icons). The view and sort order of `from` are remembered
+    /// when they differ from the fence's own, and `view` becomes what was remembered for
+    /// `to`: a folder never changed takes the fence's own. Returns whether `view` changed.
+    pub fn show_folder_view(&mut self, from: Option<&str>, to: Option<&str>) -> bool {
+        let before = FolderView::of("", &self.view);
+        // At its own folder or icons, `view` is the fence's own; away from them it waits in
+        // the entry without a path.
+        let waiting = self.folder_views.iter().find(|v| v.path.is_empty());
+        let own = match (from, waiting) {
+            (Some(_), Some(own)) => own.clone(),
+            _ => before.clone(),
+        };
+        self.folder_views.retain(|v| !v.path.is_empty());
+        if let Some(path) = from {
+            self.folder_views.retain(|v| v.path != path);
+            if !before.same_view(&own) {
+                self.folder_views.push(FolderView::of(path, &self.view));
+            }
+        }
+        let kept = to.and_then(|path| self.folder_views.iter().position(|v| v.path == path));
+        let now = match kept {
+            // Shown last: to the end.
+            Some(i) => {
+                let kept = self.folder_views.remove(i);
+                self.folder_views.push(kept.clone());
+                kept
+            }
+            None => own.clone(),
+        };
+        if self.folder_views.len() > Self::MAX_FOLDER_VIEWS {
+            self.folder_views.remove(0);
+        }
+        if to.is_some() {
+            self.folder_views.insert(0, own);
+        }
+        now.apply(&mut self.view);
+        !now.same_view(&before)
+    }
+
+    /// The fence shows its own folder or icons again without having gone back there (a
+    /// start, an import, a snapshot: where it was is not saved): its own view and order
+    /// return. Returns whether there was one waiting.
+    pub fn show_own_view(&mut self) -> bool {
+        match self.folder_views.iter().position(|v| v.path.is_empty()) {
+            Some(i) => {
+                self.folder_views.remove(i).apply(&mut self.view);
+                true
+            }
+            None => false,
         }
     }
 
@@ -1828,6 +2019,41 @@ impl Config {
         last_shown(&self.layouts)
     }
 
+    /// The note texts and scripts of the tool fences in `snapshot`'s layouts, as the
+    /// configuration has them now. A deleted snapshot's undo keeps them: `prune_notes` drops
+    /// them with the next save when nothing else has those fences.
+    pub fn tool_data_of(&self, snapshot: &Snapshot) -> ToolData {
+        let ids: HashSet<FenceId> = snapshot
+            .layouts
+            .iter()
+            .flat_map(|l| l.fences.iter())
+            .filter(|f| f.tool.is_some())
+            .map(|f| f.id)
+            .collect();
+        let pick = |id: &FenceId| ids.contains(id);
+        ToolData {
+            notes: (self.notes.iter())
+                .filter(|(id, _)| pick(id))
+                .map(|(id, text)| (*id, text.clone()))
+                .collect(),
+            scripts: (self.scripts.iter())
+                .filter(|(id, _)| pick(id))
+                .map(|(id, spec)| (*id, spec.clone()))
+                .collect(),
+        }
+    }
+
+    /// Puts back what [`Self::tool_data_of`] kept; texts and scripts the configuration still
+    /// has (they may have been edited since) stay as they are.
+    pub fn put_back_tool_data(&mut self, data: ToolData) {
+        for (id, text) in data.notes {
+            self.notes.entry(id).or_insert(text);
+        }
+        for (id, spec) in data.scripts {
+            self.scripts.entry(id).or_insert(spec);
+        }
+    }
+
     /// Drops the text of notes and the scripts of script fences no layout and no snapshot has
     /// a fence for any more (a snapshot that still has the fence brings it back with them).
     /// Returns how many went.
@@ -1849,6 +2075,55 @@ impl Config {
         self.notes.retain(|id, _| notes.contains(id));
         self.scripts.retain(|id, _| scripts.contains(id));
         before - self.notes.len() - self.scripts.len()
+    }
+
+    /// Marks every script of this configuration as held (see [`ScriptSpec::held`]): it is a
+    /// file from someone else about to be imported. Returns how many have a path to run.
+    pub fn hold_scripts(&mut self) -> usize {
+        let mut held = 0;
+        for spec in self.scripts.values_mut().filter(|s| !s.path.is_empty()) {
+            spec.held = true;
+            held += 1;
+        }
+        held
+    }
+
+    /// The paths of the held scripts whose fence is in a layout: what would start once the
+    /// user allows them. Sorted, so a notice lists them in one order.
+    pub fn held_scripts(&self) -> Vec<&str> {
+        let mut paths: Vec<&str> = self
+            .layouts
+            .iter()
+            .flat_map(|l| l.fences.iter())
+            .filter(|f| f.tool == Some(FenceTool::Script))
+            .filter_map(|f| self.scripts.get(&f.id))
+            .filter(|s| s.held && !s.path.is_empty())
+            .map(|s| s.path.as_str())
+            .collect();
+        paths.sort_unstable();
+        paths.dedup();
+        paths
+    }
+
+    /// The user turned 小工具 on knowingly: the held scripts whose fence is in a layout may
+    /// run from now on. Those only a snapshot still has stay held. Returns how many were let go.
+    pub fn allow_held_scripts(&mut self) -> usize {
+        let shown: HashSet<FenceId> = self
+            .layouts
+            .iter()
+            .flat_map(|l| l.fences.iter())
+            .map(|f| f.id)
+            .collect();
+        let mut allowed = 0;
+        for (_, spec) in self
+            .scripts
+            .iter_mut()
+            .filter(|(id, s)| s.held && shown.contains(id))
+        {
+            spec.held = false;
+            allowed += 1;
+        }
+        allowed
     }
 
     /// Makes `index` the layout shown last; false when it already was.
@@ -2013,6 +2288,37 @@ impl Config {
         changed
     }
 
+    /// Gives items other ids (`map`: from, to) wherever this configuration names them: the
+    /// item table and the fences of every layout and every snapshot. An imported file's items
+    /// take the ids this PC has for the same files that way, so the snapshots kept from
+    /// before the import still name the icons.
+    pub fn rename_items(&mut self, map: &HashMap<ItemId, ItemId>) {
+        if map.is_empty() {
+            return;
+        }
+        let to = |id: ItemId| map.get(&id).copied().unwrap_or(id);
+        self.items = std::mem::take(&mut self.items)
+            .into_iter()
+            .map(|(id, mut item)| {
+                item.id = to(id);
+                (item.id, item)
+            })
+            .collect();
+        let layouts = self
+            .layouts
+            .iter_mut()
+            .chain(self.snapshots.iter_mut().flat_map(|s| s.layouts.iter_mut()));
+        for fence in layouts.flat_map(|l| l.fences.iter_mut()) {
+            for r in &mut fence.items {
+                r.item_id = to(r.item_id);
+            }
+            fence.desktop_cells = std::mem::take(&mut fence.desktop_cells)
+                .into_iter()
+                .map(|(id, cell)| (to(id), cell))
+                .collect();
+        }
+    }
+
     pub fn fence_mut(&mut self, layout: usize, id: FenceId) -> Option<&mut Fence> {
         self.layouts
             .get_mut(layout)?
@@ -2090,6 +2396,83 @@ pub fn now_unix() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A folder fence keeps view and sort order per folder (feedback #131): a folder whose
+    /// view was changed gets it back, a folder never changed takes the fence's own, and the
+    /// fence's own returns at its own folder.
+    #[test]
+    fn folder_views_follow_the_folder_shown() {
+        let mut f = Fence::new("Docs", FenceKind::FolderPortal, geo());
+        f.view.sort = SortMode::Name;
+        let look = |f: &Fence| (f.view.layout, f.view.sort, f.view.reverse);
+        // Into a subfolder never seen: the fence's own view.
+        assert!(!f.show_folder_view(None, Some(r"c:\docs\a")));
+        assert_eq!(look(&f), (ViewLayout::Icons, SortMode::Name, false));
+        // Changed there, then up: the fence's own again.
+        f.view.layout = ViewLayout::Details;
+        f.view.sort = SortMode::Date;
+        f.view.reverse = true;
+        assert!(f.show_folder_view(Some(r"c:\docs\a"), None));
+        assert_eq!(look(&f), (ViewLayout::Icons, SortMode::Name, false));
+        assert_eq!(f.folder_views.len(), 1);
+        // The fence's own view changed at its own folder; another subfolder takes it.
+        f.view.layout = ViewLayout::List;
+        assert!(!f.show_folder_view(None, Some(r"c:\docs\b")));
+        assert_eq!(look(&f), (ViewLayout::List, SortMode::Name, false));
+        // From there straight into the folder that was changed: what it had.
+        assert!(f.show_folder_view(Some(r"c:\docs\b"), Some(r"c:\docs\a")));
+        assert_eq!(look(&f), (ViewLayout::Details, SortMode::Date, true));
+        // Only folders that differ from the fence's own are kept (and its own while away).
+        let paths: Vec<&str> = f.folder_views.iter().map(|v| v.path.as_str()).collect();
+        assert_eq!(paths, vec!["", r"c:\docs\a"]);
+        // Set back to the fence's own there: forgotten.
+        f.view.layout = ViewLayout::List;
+        f.view.sort = SortMode::Name;
+        f.view.reverse = false;
+        assert!(!f.show_folder_view(Some(r"c:\docs\a"), None));
+        assert!(f.folder_views.is_empty());
+        // The saved file of a fence that was inside a folder: its own view returns at the start.
+        f.show_folder_view(None, Some(r"c:\docs\a"));
+        f.view.layout = ViewLayout::Details;
+        let saved: Fence = serde_json::from_str(&serde_json::to_string(&f).unwrap()).unwrap();
+        let mut loaded = saved;
+        assert!(loaded.show_own_view());
+        assert_eq!(loaded.view.layout, ViewLayout::List);
+        assert!(loaded.folder_views.is_empty());
+        assert!(!loaded.show_own_view());
+        // A configuration from before has no table and reads as before.
+        let mut old = serde_json::to_value(Fence::new("x", FenceKind::Virtual, geo())).unwrap();
+        assert!(old.get("folderViews").is_none());
+        old.as_object_mut().unwrap().remove("folderViews");
+        assert!(
+            serde_json::from_value::<Fence>(old)
+                .unwrap()
+                .folder_views
+                .is_empty()
+        );
+    }
+
+    /// At most `MAX_FOLDER_VIEWS` folders are remembered: the one shown longest ago goes.
+    #[test]
+    fn folder_views_are_bounded() {
+        let mut f = Fence::new("Docs", FenceKind::FolderPortal, geo());
+        let mut from: Option<String> = None;
+        for i in 0..Fence::MAX_FOLDER_VIEWS + 5 {
+            let to = format!(r"c:\docs\{i}");
+            f.show_folder_view(from.as_deref(), Some(&to));
+            f.view.layout = ViewLayout::Details;
+            from = Some(to);
+        }
+        f.show_folder_view(from.as_deref(), None);
+        assert_eq!(f.folder_views.len(), Fence::MAX_FOLDER_VIEWS);
+        assert_eq!(f.folder_views[0].path, r"c:\docs\5");
+        assert_eq!(f.view.layout, ViewLayout::Icons);
+        // Shown again: it moves to the end and is the last to go.
+        f.show_folder_view(None, Some(r"c:\docs\5"));
+        assert_eq!(f.view.layout, ViewLayout::Details);
+        f.show_folder_view(Some(r"c:\docs\5"), None);
+        assert_eq!(f.folder_views.last().unwrap().path, r"c:\docs\5");
+    }
 
     #[test]
     fn search_history_counts_and_ages() {
@@ -2220,6 +2603,69 @@ mod tests {
         assert!(FenceTool::Script.enabled(&tools) && FenceTool::Note.enabled(&tools));
     }
 
+    /// 鼠标移入时保持透明 (GitHub #222) is off in a configuration from before it, and an
+    /// appearance that holds only it is kept.
+    #[test]
+    fn transparent_on_hover_is_off_in_older_files_and_kept_when_on() {
+        let mut a = serde_json::to_value(AppearanceOverride::default()).unwrap();
+        assert_eq!(a["transparentOnHover"], false);
+        a.as_object_mut().unwrap().remove("transparentOnHover");
+        let old: AppearanceOverride = serde_json::from_value(a.clone()).unwrap();
+        assert!(!old.transparent_on_hover);
+        a["transparentOnHover"] = true.into();
+        let on: AppearanceOverride = serde_json::from_value(a).unwrap();
+        assert!(on.transparent_on_hover);
+        assert_ne!(on, AppearanceOverride::default());
+    }
+
+    #[test]
+    fn a_deleted_snapshot_keeps_its_note_texts_and_scripts_for_the_undo() {
+        let mut c = Config::default();
+        let mut note = Fence::new("n", FenceKind::Virtual, note_geo());
+        note.tool = Some(FenceTool::Note);
+        let mut script = Fence::new("s", FenceKind::Virtual, note_geo());
+        script.tool = Some(FenceTool::Script);
+        let (note_id, script_id) = (note.id, script.id);
+        c.notes.insert(note_id, "[ ] milk".into());
+        c.scripts.insert(script_id, ScriptSpec::new("C:/s/a.ps1"));
+        // Both fences were deleted: only the snapshot taken before still has them.
+        c.layouts.push(Layout {
+            fingerprint: Vec::new(),
+            fences: Vec::new(),
+            shown: 1,
+        });
+        c.snapshots.push(Snapshot {
+            id: Uuid::new_v4(),
+            name: "删除栅栏前".into(),
+            ts: 0,
+            layouts: vec![Layout {
+                fingerprint: Vec::new(),
+                fences: vec![note, script],
+                shown: 1,
+            }],
+            notes: Default::default(),
+            scripts: Default::default(),
+        });
+        assert_eq!(c.prune_notes(), 0);
+        // The snapshot is deleted on the page; the save that follows drops the text and the
+        // script, as it should for a snapshot that stays deleted.
+        let gone = c.snapshots.remove(0);
+        let kept = c.tool_data_of(&gone);
+        assert_eq!(c.prune_notes(), 2);
+        assert!(c.notes.is_empty() && c.scripts.is_empty());
+        // 撤销: the snapshot comes back with what its fences showed.
+        c.snapshots.push(gone);
+        c.put_back_tool_data(kept);
+        assert_eq!(c.prune_notes(), 0);
+        assert_eq!(c.notes.get(&note_id).map(String::as_str), Some("[ ] milk"));
+        assert_eq!(c.scripts[&script_id].path, "C:/s/a.ps1");
+        // A text written since the delete is not overwritten by the undo.
+        let mut other = ToolData::default();
+        other.notes.insert(note_id, "old".into());
+        c.put_back_tool_data(other);
+        assert_eq!(c.notes[&note_id], "[ ] milk");
+    }
+
     #[test]
     fn note_text_goes_with_the_last_fence_and_snapshot() {
         let mut c = Config::default();
@@ -2248,6 +2694,67 @@ mod tests {
         c.snapshots.clear();
         assert_eq!(c.prune_notes(), 1);
         assert!(c.notes.is_empty());
+    }
+
+    #[test]
+    fn imported_scripts_stay_held_until_the_user_allows_those_on_show() {
+        let script_fence = |title: &str| {
+            let mut f = Fence::new(title, FenceKind::Virtual, note_geo());
+            f.tool = Some(FenceTool::Script);
+            f
+        };
+        let (shown, in_snapshot, unset) = (script_fence("a"), script_fence("b"), script_fence("c"));
+        let mut c = Config::default();
+        c.scripts
+            .insert(shown.id, ScriptSpec::new("C:/s/shown.ps1"));
+        c.scripts
+            .insert(in_snapshot.id, ScriptSpec::new("C:/s/snap.cmd"));
+        c.scripts.insert(unset.id, ScriptSpec::new(""));
+        c.layouts.push(Layout {
+            fingerprint: Vec::new(),
+            fences: vec![shown.clone(), unset.clone()],
+            shown: 1,
+        });
+        c.snapshots.push(Snapshot {
+            id: Uuid::new_v4(),
+            name: "s".into(),
+            ts: 0,
+            layouts: vec![Layout {
+                fingerprint: Vec::new(),
+                fences: vec![in_snapshot.clone()],
+                shown: 1,
+            }],
+            notes: Default::default(),
+            scripts: Default::default(),
+        });
+        assert!(c.held_scripts().is_empty());
+        // The file is imported: every script with a path is held, the fence without one has
+        // nothing to hold.
+        assert_eq!(c.hold_scripts(), 2);
+        assert!(c.scripts[&shown.id].held && c.scripts[&in_snapshot.id].held);
+        assert!(!c.scripts[&unset.id].held);
+        assert_eq!(c.held_scripts(), ["C:/s/shown.ps1"]);
+        // The mark is written to the file (snapshots and backups keep it) and only when set.
+        let json = serde_json::to_value(&c.scripts[&shown.id]).unwrap();
+        assert_eq!(json["held"], true);
+        assert!(
+            serde_json::to_value(ScriptSpec::new("x"))
+                .unwrap()
+                .get("held")
+                .is_none()
+        );
+        let back: ScriptSpec = serde_json::from_value(json).unwrap();
+        assert!(back.held);
+        // The user turns 小工具 on: the script on show may run, the one only a snapshot has
+        // stays held for the day that snapshot is restored.
+        assert_eq!(c.allow_held_scripts(), 1);
+        assert!(!c.scripts[&shown.id].held && c.scripts[&in_snapshot.id].held);
+        assert!(c.held_scripts().is_empty());
+        // That snapshot restored: its script is on show and still held.
+        c.layouts[0].fences.push(in_snapshot.clone());
+        assert_eq!(c.held_scripts(), ["C:/s/snap.cmd"]);
+        assert_eq!(c.allow_held_scripts(), 1);
+        assert_eq!(c.allow_held_scripts(), 0);
     }
 
     #[test]
@@ -2350,7 +2857,9 @@ mod tests {
         assert!(obj.remove("featureTips").is_some());
         assert!(obj.remove("hideInboxWhenIconsShown").is_some());
         assert!(obj.remove("keepIconsHidden").is_some());
+        assert!(obj.remove("showTrayIcon").is_some());
         let legacy: Settings = serde_json::from_value(json).unwrap();
+        assert!(legacy.show_tray_icon);
         assert!(legacy.offer_new_fence);
         assert!(legacy.feature_tips);
         assert!(!legacy.hide_inbox_when_icons_shown);
@@ -2388,6 +2897,41 @@ mod tests {
             assert_eq!(json["labelColor"], "white");
             assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
         }
+    }
+
+    /// 图标对齐 右对齐 (GitHub #222) is written as `iconAlignRight` beside an `iconAlign` that
+    /// versions up to 0.3.3 read (`left`), and read back.
+    #[test]
+    fn right_alignment_is_written_in_a_key_of_its_own() {
+        let mut v = serde_json::to_value(FenceView::default()).unwrap();
+        assert_eq!(v["iconAlign"], "left");
+        assert!(v.get("iconAlignRight").is_none(), "written only for 右对齐");
+        let right = FenceView {
+            icon_align: IconAlign::Right,
+            ..Default::default()
+        };
+        let file = serde_json::to_value(&right).unwrap();
+        assert_eq!(
+            (&file["iconAlign"], &file["iconAlignRight"]),
+            (&"left".into(), &true.into())
+        );
+        let back: FenceView = serde_json::from_value(file).unwrap();
+        assert_eq!(back.icon_align, IconAlign::Right);
+        // 居中 as before, and a `right` in the old key is read too.
+        v["iconAlign"] = "center".into();
+        let centre: FenceView = serde_json::from_value(v.clone()).unwrap();
+        assert_eq!(centre.icon_align, IconAlign::Center);
+        assert_eq!(
+            serde_json::to_value(&centre).unwrap()["iconAlign"],
+            "center"
+        );
+        v["iconAlign"] = "right".into();
+        let view: FenceView = serde_json::from_value(v.clone()).unwrap();
+        assert_eq!(view.icon_align, IconAlign::Right);
+        // A file from before 图标对齐 existed has neither key.
+        v.as_object_mut().unwrap().remove("iconAlign");
+        let old: FenceView = serde_json::from_value(v).unwrap();
+        assert_eq!(old.icon_align, IconAlign::Left);
     }
 
     /// Settings from before `rollUp.hideCountAndChevron` keep the count and chevron; the switch
@@ -2693,6 +3237,42 @@ mod tests {
         assert_eq!(c.fence_mut(0, bid).unwrap().items, vec![member(y)]);
         assert_eq!(c.layouts[1].fences, clean.fences);
         assert!(!c.drop_duplicates());
+    }
+
+    #[test]
+    fn renamed_items_are_renamed_in_fences_cells_and_snapshots() {
+        let mut c = Config::default();
+        let mut a = Fence::new("A", FenceKind::Virtual, geo());
+        let (x, y, z) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let member = |item_id| ItemRef {
+            item_id,
+            manual_index: None,
+            assigned_by: AssignedBy::User,
+        };
+        a.items = vec![member(x), member(y)];
+        a.desktop_cells.insert(x, [2, 3]);
+        c.layouts.push(Layout {
+            shown: 0,
+            fingerprint: vec![],
+            fences: vec![a],
+        });
+        c.snapshots.push(Snapshot {
+            id: Uuid::new_v4(),
+            name: "s".into(),
+            ts: 1,
+            layouts: c.layouts.clone(),
+            notes: Default::default(),
+            scripts: Default::default(),
+        });
+        c.rename_items(&HashMap::from([(x, z)]));
+        for fence in [
+            &c.layouts[0].fences[0],
+            &c.snapshots[0].layouts[0].fences[0],
+        ] {
+            assert_eq!(fence.items, vec![member(z), member(y)]);
+            assert_eq!(fence.desktop_cells.get(&z), Some(&[2, 3]));
+            assert!(!fence.desktop_cells.contains_key(&x));
+        }
     }
 
     #[test]

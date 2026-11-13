@@ -76,8 +76,9 @@ MenuPick '^Show seconds' $h | Out-Null
 Start-Sleep -Seconds 1
 Check 'Show seconds turns tools.clockSeconds on' ((Tools).clockSeconds -eq $true)
 $h = FenceMenu $c
-$sec = @(MenuRows $h) | Where-Object { $_.text -match '^Show seconds' } | Select-Object -First 1
-Check 'reopened, Show seconds is ticked' ($sec -and ($sec.state -band 8)) "state=$($sec.state)"
+# An entry with an icon shows no tick: with the seconds on it reads what a click does now.
+$sec = @(MenuRows $h) | Where-Object { $_.text -match '^Hide seconds' } | Select-Object -First 1
+Check 'reopened, the entry reads Hide seconds' ($null -ne $sec) (MenuTexts $h)
 Shot 't02-clock-menu'
 CloseMenus
 

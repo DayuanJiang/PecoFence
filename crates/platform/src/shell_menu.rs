@@ -9,7 +9,7 @@ use crate::bindings::*;
 use crate::wide::to_wide;
 use std::cell::RefCell;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 use windows_core::{Error, Interface, PCSTR, PCWSTR, PWSTR, Result};
 
@@ -33,6 +33,17 @@ const CACHE_DONE: u8 = 2;
 const CACHE_WAIT: Duration = Duration::from_secs(2);
 /// `prepare_handler_cache` got the cache started (its library icon came back).
 static CACHE_READY: AtomicBool = AtomicBool::new(false);
+
+/// The thread on which `prewarm` is building its menu, 0 when none is.
+static PREWARM_THREAD: AtomicU32 = AtomicU32::new(0);
+
+/// Whether the calling thread is `prewarm`'s, in the middle of its menu: a crash here is a
+/// crash while Windows' menu for a file was built, as at a right-click (crashlog's line
+/// says `command=Prewarm`).
+pub(crate) fn prewarming_here() -> bool {
+    // SAFETY: plain FFI call.
+    PREWARM_THREAD.load(Ordering::Relaxed) == unsafe { GetCurrentThreadId() }
+}
 
 /// The shell's context menu object for a set of items plus the command-id range it was given.
 pub struct ShellContextMenu {
@@ -190,13 +201,14 @@ impl ShellContextMenu {
 }
 
 impl ShellContextMenu {
-    /// Runs the shell command whose canonical verb is `verb` (`delete`, `cut`, `copy`,
-    /// `properties`) without showing a menu, the way Explorer runs Delete or Ctrl+C on its
-    /// selection: the menu is only prepared for invoking (CMF_OPTIMIZEFORINVOKE) and the verb
-    /// goes by name. Building the whole menu to look the verb up loaded every menu extension
-    /// and took up to a second per key press on a PC with many of them (feedback #108). Fails
-    /// when the items do not offer the verb. `shift` = Shift held (Shift+Delete deletes
-    /// permanently).
+    /// Runs the shell command whose canonical verb is `verb` (`properties`) without showing a
+    /// menu, the way Explorer runs Alt+Enter on its selection: the menu is only prepared for
+    /// invoking (CMF_OPTIMIZEFORINVOKE) and the verb goes by name. Building the whole menu to
+    /// look the verb up took up to a second per key press on a PC with many menu extensions
+    /// (feedback #108). The shell still loads every menu extension and calls it with that
+    /// flag, so Delete, cut and copy go through `shell::delete_items` and
+    /// `clipboard::set_files` instead. Fails when the items do not offer the verb. `shift` =
+    /// Shift held.
     pub fn invoke_verb(&self, verb: &str, owner: HWND, pt: POINT, shift: bool) -> Result<()> {
         // SAFETY: temporary menu owned and destroyed here.
         let hmenu = unsafe { CreatePopupMenu() };
@@ -296,15 +308,20 @@ pub fn prepare_handler_cache() {
     }
 }
 
-/// Builds the shell's menu for the file `path` once on a worker thread, `after` from now, and
+/// Builds the shell's menu for one file once on a worker thread, `after` from now, and
 /// drops it unseen: the first item menu after a start loads every menu extension of the
 /// installed programs, which took 0.5 to 0.9 s on a PC with many of them (the later menus 60 to
 /// 180 ms), and that loading is done here instead. The modules it loaded are pinned: the
 /// worker's COM apartment would unload the extensions again when it ends, while those the UI
 /// thread loads stay anyway. Only once `prepare_handler_cache` got the handler cache started,
 /// and only for a file: a folder's menu runs Windows' 「包含到库中」 helper, where the 0.2.4
-/// freeze started (see there).
-pub fn prewarm(path: std::path::PathBuf, after: Duration) {
+/// freeze started (see there). A shortcut's menu is built from its target's, so a shortcut to
+/// a folder is a folder here: `pick` chooses the file on the worker (it may read shortcut
+/// targets and ask the disk; COM is initialized), None when no file fits.
+pub fn prewarm(
+    pick: impl FnOnce() -> Option<std::path::PathBuf> + Send + 'static,
+    after: Duration,
+) {
     let spawned = std::thread::Builder::new()
         .name("shell menu prewarm".into())
         .spawn(move || {
@@ -315,8 +332,15 @@ pub fn prewarm(path: std::path::PathBuf, after: Duration) {
                 return;
             }
             let _sta = crate::com::OleGuard::init();
+            let Some(path) = pick() else {
+                tracing::info!("shell menu not prewarmed: no file on the desktop fits");
+                return;
+            };
+            let _loads = LoadWatch::new("Prewarm");
             let started = Instant::now();
             let before = loaded_modules();
+            // SAFETY: plain FFI call.
+            PREWARM_THREAD.store(unsafe { GetCurrentThreadId() }, Ordering::Relaxed);
             let built = (|| -> Result<u32> {
                 let mut menu = ShellContextMenu::for_paths(&[path.as_path()])?;
                 // SAFETY: a menu of our own, destroyed below; ids as the item menu hands out.
@@ -326,6 +350,7 @@ pub fn prewarm(path: std::path::PathBuf, after: Duration) {
                 let _ = unsafe { DestroyMenu(hmenu) };
                 n
             })();
+            PREWARM_THREAD.store(0, Ordering::Relaxed);
             let mut pinned = 0;
             for module in loaded_modules() {
                 if before.contains(&module) {
@@ -351,6 +376,48 @@ pub fn prewarm(path: std::path::PathBuf, after: Duration) {
         });
     if let Err(e) = spawned {
         tracing::warn!(error = %e, "shell menu prewarm thread failed to start");
+    }
+}
+
+/// Says in the log which modules of other programs an operation brought into this process:
+/// `shell extension loaded module=RarExt64.dll by=ItemMenu`, once per module per run. Made
+/// before the operation (an item menu, a launch, a cut or copy), it reports when dropped.
+/// Every feedback log then tells which extensions that PC has and what loads them.
+pub struct LoadWatch {
+    by: &'static str,
+    before: Vec<HMODULE>,
+}
+
+impl LoadWatch {
+    pub fn new(by: &'static str) -> Self {
+        Self {
+            by,
+            before: loaded_modules(),
+        }
+    }
+}
+
+impl Drop for LoadWatch {
+    fn drop(&mut self) {
+        static LOGGED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        let by = self.by;
+        for module in loaded_modules() {
+            if self.before.contains(&module) {
+                continue;
+            }
+            let path = crate::crashlog::module_path(Some(module));
+            if crate::crashlog::module_owner(&path) != "other" {
+                continue;
+            }
+            let file = path.rsplit(['\\', '/']).next().unwrap_or(&path).to_string();
+            let mut logged = LOGGED.lock().unwrap_or_else(|e| e.into_inner());
+            if logged.iter().any(|l| l.eq_ignore_ascii_case(&file)) {
+                continue;
+            }
+            logged.push(file.clone());
+            drop(logged);
+            tracing::info!(module = %file, by, "shell extension loaded");
+        }
     }
 }
 

@@ -113,6 +113,26 @@ en cours. Prenez ce qu’il vous faut, puis appuyez sur **Échap** pour y reveni
 
 ![L’aperçu des groupes affiche les groupes du Bureau au-dessus d’une application ; un clic à côté ou l’ouverture d’un fichier ramène à l’application.](../assets/peek.gif)
 
+### Un groupe qui se remplit tout seul.
+
+Un groupe intelligent affiche en direct le résultat d’une recherche enregistrée. Choisissez un
+modèle comme **Téléchargements des 7 derniers jours** et cliquez sur **Créer** : les nouveaux
+fichiers qui correspondent apparaissent d’eux-mêmes, et les fichiers restent à leur place.
+
+![New smart fence… dans le menu d’un groupe ouvre une petite fenêtre ; le modèle Downloads of the last 7 days remplit les conditions ; Create place sur le Bureau un groupe avec six fichiers, et un nouveau téléchargement y apparaît de lui-même.](../assets/smart.gif)
+
+### Des notes, une horloge et vos propres scripts.
+
+Ajoutez-les dans **Paramètres → Outils** : une note dont les lignes commençant par `[ ]` deviennent
+des tâches à cocher, une horloge avec la date et des groupes de script qui affichent ce qu’imprime
+un script, la météo par exemple.
+
+![Dans les Paramètres, New note place une note sur le Bureau et un clic coche sa première tâche ; Add place une horloge à côté, puis un groupe avec la météo à Tokyo.](../assets/tools.gif)
+
+À voir aussi dans le manuel : [des groupes pour chaque bureau virtuel](https://pecofence.jiang.jp/fr/manual/#vdesk) ([GIF](../assets/vdesk.gif)),
+[des icônes du Bureau qui restent là où vous les posez](https://pecofence.jiang.jp/fr/manual/#free-place) ([GIF](../assets/free-place.gif)) et
+[Ctrl+Z pour annuler la dernière action](https://pecofence.jiang.jp/fr/manual/#undo) ([GIF](../assets/undo.gif)).
+
 <sub>Animations tirées du <a href="https://pecofence.jiang.jp/fr/manual/">manuel</a>. Les GIF bouclent automatiquement.</sub>
 
 ## Les petits détails qui changent le quotidien
@@ -150,7 +170,7 @@ La version Microsoft Store est signée par Microsoft, se met à jour automatique
 <details>
 <summary><strong>Configuration requise, réglages et quelques remarques utiles</strong></summary>
 
-- Windows 10 22H2, ou Windows 11 22H2 ou version ultérieure. Microsoft Edge WebView2 Runtime est nécessaire pour les Paramètres. Windows 11 l'inclut ; sous Windows 10, installez-le depuis Microsoft si les Paramètres ne s'ouvrent pas.
+- Windows 10 1809 ou version ultérieure (version Microsoft Store : 2004 ou ultérieure), ou Windows 11 22H2 ou version ultérieure. Microsoft Edge WebView2 Runtime est nécessaire pour les Paramètres. Windows 11 l'inclut ; sous Windows 10, installez-le depuis Microsoft si les Paramètres ne s'ouvrent pas.
 - Au premier lancement, PecoFence crée les groupes Applications, Dossiers, Fichiers et documents et Bureau dans la langue de votre choix. Les icônes du Bureau Windows réapparaissent quand vous quittez.
 - La configuration est enregistrée dans `%APPDATA%\PecoFence\config.json`. Lancez l’application avec `--portable` pour la garder dans un dossier `config` à côté de l’exécutable.
 - Le ZIP et le programme d’installation ne sont pas signés. Si Windows SmartScreen s’affiche au premier lancement, choisissez **Informations complémentaires → Exécuter quand même**.
@@ -175,7 +195,7 @@ Signature de code gratuite fournie par [SignPath.io](https://about.signpath.io/)
 
 Seuls les fichiers que GitHub Actions compile à partir d'un tag de version de ce dépôt sont signés. Chaque signature est approuvée à la main.
 
-**Confidentialité :** ce programme ne transmet aucune information à d'autres systèmes en réseau, sauf si l'utilisateur ou la personne qui l'installe ou l'utilise le demande expressément. **Rechercher des mises à jour** interroge l'API GitHub. Ce que vous envoyez depuis **Commentaires** arrive au service de commentaires de PecoFence. La fenêtre des paramètres repose sur Microsoft Edge WebView2, soumis à la [déclaration de confidentialité de Microsoft](https://privacy.microsoft.com/privacystatement).
+**Confidentialité :** ce programme ne transmet aucune information à d'autres systèmes en réseau, sauf si l'utilisateur ou la personne qui l'installe ou l'utilise le demande expressément. **Rechercher des mises à jour** interroge l'API GitHub et, seulement si GitHub ne répond pas, le site de PecoFence (pecofence.jiang.jp). Rien n'est envoyé hormis la requête elle-même, qui indique la version de PecoFence. Ce que vous envoyez depuis **Commentaires** arrive au service de commentaires de PecoFence. La fenêtre des paramètres repose sur Microsoft Edge WebView2, soumis à la [déclaration de confidentialité de Microsoft](https://privacy.microsoft.com/privacystatement).
 
 ---
 

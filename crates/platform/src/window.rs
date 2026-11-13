@@ -464,6 +464,33 @@ pub fn key_down_async(vk: u32) -> bool {
     unsafe { GetAsyncKeyState(vk as i32) < 0 }
 }
 
+/// Brings this thread's key state up to date when it still has a mouse button down that is up
+/// by now; true when that was the case. Windows ignores the keyboard in a popup menu for as
+/// long as a button counts as held, so a menu that starts in that state takes neither Esc nor
+/// the arrow keys until a click in it. On Windows 10 1809 that happened to the tray menu after
+/// a right-click on the tray icon (#219): the button went up in Explorer's window and this
+/// thread had not read that yet. Reading the queue once does it (nothing is removed from it).
+pub fn sync_mouse_buttons() -> bool {
+    /// `PeekMessageW`: look, leave the message in the queue.
+    const PM_NOREMOVE: u32 = 0;
+    let stale = |vk: i32| key_down(vk as u32) && !key_down_async(vk as u32);
+    if !stale(VK_LBUTTON) && !stale(VK_RBUTTON) {
+        return false;
+    }
+    let mut msg = MSG::default();
+    // SAFETY: plain FFI call with a valid out-pointer.
+    unsafe {
+        let _ = PeekMessageW(
+            &mut msg,
+            None,
+            WM_MOUSEMOVE as u32,
+            WM_MOUSEMOVE as u32,
+            PM_NOREMOVE,
+        );
+    }
+    true
+}
+
 /// Is `vk` down now, or was it pressed since the previous call? The "since" part is best
 /// effort (another program's query can take it), but it catches a press shorter than the
 /// caller's polling interval most of the time. Call once to forget earlier presses.
@@ -571,6 +598,15 @@ pub fn window_rect_size(hwnd: HWND) -> (i32, i32) {
     (r.right - r.left, r.bottom - r.top)
 }
 
+/// Paints what is waiting to be painted in the window and its children now, instead of when
+/// the message loop is next idle (`UpdateWindow`).
+pub fn paint_now(hwnd: HWND) {
+    // SAFETY: plain FFI call.
+    unsafe {
+        let _ = UpdateWindow(hwnd);
+    }
+}
+
 /// Brings a window to the foreground (activating it).
 pub fn bring_to_front(hwnd: HWND) {
     // SAFETY: plain FFI call.
@@ -611,7 +647,8 @@ pub fn quit_posted() -> bool {
     QUIT_POSTED.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Posts WM_QUIT to the calling (UI) thread after `ms` milliseconds (test tooling).
+/// Posts WM_QUIT to the calling (UI) thread after `ms` milliseconds (test tooling, and 退出
+/// once the fences have faded out).
 pub fn quit_after(ms: u32) {
     // SAFETY: plain FFI call.
     let thread = unsafe { GetCurrentThreadId() };
@@ -673,6 +710,16 @@ impl Drop for SingleInstance {
             let _ = CloseHandle(self.0);
         }
     }
+}
+
+/// Client size of `hwnd` in pixels.
+pub fn client_size_of(hwnd: HWND) -> (i32, i32) {
+    let mut rect = RECT::default();
+    // SAFETY: out-pointer to a local; a window that is gone leaves it empty.
+    unsafe {
+        let _ = GetClientRect(hwnd, &mut rect);
+    }
+    (rect.right - rect.left, rect.bottom - rect.top)
 }
 
 /// Explicitly shows an interactive window, restoring it only if minimized.
@@ -754,6 +801,59 @@ pub fn set_window_bounds(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) ->
             swp::NOACTIVATE | swp::NOZORDER | swp::NOOWNERZORDER,
         )
         .ok()
+    }
+}
+
+/// A window's new place in a batch ([`set_window_positions`]); without `size` it keeps its own.
+#[derive(Clone, Copy, Debug)]
+pub struct WindowPos {
+    pub hwnd: HWND,
+    pub x: i32,
+    pub y: i32,
+    pub size: Option<(i32, i32)>,
+}
+
+/// Moves/resizes several top-level windows of this thread in one step (`DeferWindowPos`):
+/// Windows applies every position before any of the windows hears of its own, so no composed
+/// frame shows one of them at its new place beside another at its old one. Activation and
+/// z-order stay. One `SetWindowPos` per window when the batch cannot be built.
+pub fn set_window_positions(positions: &[WindowPos]) {
+    let flags = |p: &WindowPos| {
+        let keep = swp::NOACTIVATE | swp::NOZORDER | swp::NOOWNERZORDER;
+        if p.size.is_some() {
+            keep
+        } else {
+            keep | swp::NOSIZE
+        }
+    };
+    // SAFETY: plain FFI calls on caller-supplied HWNDs. A failed DeferWindowPos returns null
+    // and has freed the batch; the windows then move one by one.
+    unsafe {
+        let mut batch = if positions.len() > 1 {
+            BeginDeferWindowPos(positions.len() as i32)
+        } else {
+            HDWP::default()
+        };
+        for p in positions {
+            if batch.0.is_null() {
+                break;
+            }
+            let (w, h) = p.size.unwrap_or_default();
+            batch = DeferWindowPos(batch, p.hwnd, None, p.x, p.y, w, h, flags(p));
+        }
+        if !batch.0.is_null() && EndDeferWindowPos(batch).as_bool() {
+            return;
+        }
+        if positions.len() > 1 {
+            tracing::debug!(
+                windows = positions.len(),
+                "window positions applied one by one: the batch was refused"
+            );
+        }
+        for p in positions {
+            let (w, h) = p.size.unwrap_or_default();
+            let _ = SetWindowPos(p.hwnd, None, p.x, p.y, w, h, flags(p));
+        }
     }
 }
 
@@ -880,6 +980,11 @@ pub fn post_quit(code: i32) {
     unsafe { PostQuitMessage(code) };
 }
 
+thread_local! {
+    /// How many window messages are being handled inside one another on this thread.
+    static MESSAGE_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     // SAFETY: GWLP_USERDATA holds either null or a `Box<State>` we installed. The handler is
     // an `Rc<dyn Fn>` cloned before the call, so re-entrant messages (and even destruction of
@@ -895,7 +1000,19 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
         if !state.is_null() {
             let handler = (*state).handler.clone();
+            // How long the outermost message kept the thread: what a user waits for.
+            let depth = MESSAGE_DEPTH.with(|d| d.replace(d.get() + 1));
+            let started = std::time::Instant::now();
             handled = handler(hwnd, msg, wparam.0, lparam.0);
+            MESSAGE_DEPTH.with(|d| d.set(depth));
+            let spent = started.elapsed();
+            if depth == 0 && spent >= std::time::Duration::from_millis(4) {
+                tracing::debug!(
+                    ms = (spent.as_secs_f64() * 10000.0).round() / 10.0,
+                    msg = format_args!("{msg:#06x}"),
+                    "slow message"
+                );
+            }
         }
 
         if msg == WM_NCDESTROY as u32 {

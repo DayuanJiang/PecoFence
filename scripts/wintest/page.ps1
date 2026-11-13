@@ -115,7 +115,11 @@ function PfSettings([string]$ReadyJs = 'true') {
   if ($h -eq [IntPtr]::Zero) { return $false }
   if (-not $PfDebugBuild) { Start-Sleep -Seconds 6; return $true }
   if (-not (CdpOpen)) { return $false }
-  return [bool](JsWait "document.documentElement.classList.contains('ready') && ($ReadyJs)" 20)
+  # The window's frame is on screen before its page: the document may not be there yet, and
+  # the browser comes into the frame a frame or two after the page is ready.
+  $ok = [bool](JsWait "!!document.documentElement && document.documentElement.classList.contains('ready') && ($ReadyJs)" 20)
+  Start-Sleep -Milliseconds 150
+  return $ok
 }
 
 # The smart fence editor's window once it is open and, on a debug build, its page over CDP
@@ -125,6 +129,8 @@ function EditorWin($sec = 20) {
   if ($h -eq [IntPtr]::Zero -or -not $PfDebugBuild) { return $h }
   if (-not (CdpOpen -Editor)) { return [IntPtr]::Zero }
   if (-not (JsWait "!!document.querySelector('#seWindow .se-row')" 15)) { return [IntPtr]::Zero }
+  # The browser comes into the window's frame a few frames after the page has its rows.
+  Start-Sleep -Milliseconds 150
   return $h
 }
 # How many editor windows are shown (there is at most one).

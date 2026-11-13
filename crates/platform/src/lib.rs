@@ -66,6 +66,7 @@ pub mod frameclock;
 pub mod hangwatch;
 pub mod hotkey;
 pub mod http;
+pub mod ime;
 pub mod job;
 pub mod layered;
 pub mod live_capture;

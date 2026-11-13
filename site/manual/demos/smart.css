@@ -1,0 +1,102 @@
+/* The smart fence lesson: a miniature of the editor window (ui/settings.html #seWindow, light
+   theme) and the marks of a smart fence (magnifier on the folder glyph, the count capsule). */
+
+.se-win {
+    left: 0;
+    top: 0;
+    border-radius: 8px;
+    background: #f3f3f3;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .12), 0 16px 34px rgba(30, 24, 60, .26);
+    font-size: 10px;
+    line-height: 14px;
+    color: #1b1b1b;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    z-index: 2;
+}
+
+/* The page is laid out in normal flow so that longer translations move what follows. */
+.se-win div, .se-win span, .se-win b, .se-win img, .se-win svg { position: relative }
+
+.se-cap { flex: none; display: flex; align-items: center; gap: 6px; height: 24px; padding-left: 9px; font-size: 9.5px }
+.se-cap img { width: 11px; height: 11px }
+.se-cap span { flex: 1 }
+.se-capb { flex: none; width: 30px; height: 24px; display: grid; place-items: center }
+.se-capb svg { width: 8px; height: 8px; color: #333 }
+
+.se-page { flex: 1; display: flex; flex-direction: column; gap: 8px; padding: 6px 16px 12px; min-height: 0 }
+.se-h { font-size: 14px; line-height: 20px; font-weight: 600 }
+.se-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap }
+.se-dim { color: #5d5d5d }
+
+.se-in, .se-sel, .se-btn, .se-chip {
+    box-sizing: border-box;
+    height: 20px;
+    padding: 0 7px;
+    border-radius: 3px;
+    background: #fbfbfb;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1), inset 0 -1px 0 rgba(0, 0, 0, .12);
+    line-height: 20px;
+    white-space: nowrap;
+}
+
+.se-in { flex: 1; min-width: 0; overflow: hidden }
+.se-in.focus { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1), inset 0 -2px 0 var(--win-accent) }
+.se-in .se-dim { color: #8a8a8a }
+.se-sel { display: flex; align-items: center; gap: 8px; flex: none }
+.se-sel::after { content: ""; width: 4px; height: 4px; border-right: 1px solid #5d5d5d; border-bottom: 1px solid #5d5d5d; transform: translateY(-1.5px) rotate(45deg) }
+.se-chip { flex: none; height: 18px; padding: 0 8px; border-radius: 9px; line-height: 18px; font-size: 9.5px }
+.se-chip.hot { background: #f0f0f0 }
+.se-chip.on { background: var(--win-accent); box-shadow: none; color: #fff }
+.se-btn { flex: none; min-width: 52px; text-align: center }
+.se-btn.acc { background: #0067c0; box-shadow: none; color: #fff }
+.se-btn.acc.hot { background: #1a74c4 }
+
+.se-rows {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-radius: 5px;
+    background: #f9f9f9;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08);
+    overflow: hidden;
+}
+
+.se-row { flex: none; display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 7px; box-sizing: border-box }
+.se-row + .se-row { box-shadow: inset 0 1px 0 rgba(0, 0, 0, .07) }
+.se-row > .se-sel:first-child { width: 84px; justify-content: space-between }
+.se-row .se-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #5d5d5d }
+.se-row .se-grow { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px 5px; flex-wrap: wrap }
+.se-pm { flex: none; width: 18px; height: 18px; border-radius: 3px; background: #fbfbfb; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1); text-align: center; line-height: 17px; color: #444 }
+
+/* the list's scrollbar, when a language's texts make the rows taller than the list */
+.se-win .se-scrollbar { position: absolute; right: 2px; top: 3px; bottom: 3px; width: 3px; border-radius: 2px; background: rgba(0, 0, 0, .07) }
+.se-win .se-scrollbar i { position: absolute; left: 0; right: 0; top: 0; border-radius: 2px; background: rgba(0, 0, 0, .4) }
+
+.se-foot { flex: none; display: flex; align-items: center; gap: 8px }
+.se-count { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px }
+.se-count svg { flex: none; width: 11px; height: 11px; color: var(--win-accent) }
+.se-count b { font-weight: 600 }
+.se-count .se-dim { display: block; font-size: 9px; line-height: 12px }
+
+/* A smart fence's title: the folder glyph with an accent magnifier at its lower right, and the
+   number of files in a grey capsule at the right end of the title row */
+
+.sm-glyph { left: 13px; top: 9px; width: 16px; height: 14px; color: rgba(27, 33, 51, .72) }
+.sm-glyph svg { position: static; display: block; width: 16px; height: 14px }
+
+.sm-count {
+    right: 38px;
+    top: 9px;
+    min-width: 8px;
+    height: 14px;
+    padding: 0 5px;
+    border-radius: 7px;
+    background: rgba(27, 33, 51, .1);
+    color: rgba(27, 33, 51, .72);
+    font-size: 10px;
+    line-height: 14px;
+    text-align: center;
+}

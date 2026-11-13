@@ -1,0 +1,14 @@
+[package]
+name = "pf_shellext_fault"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+# A test DLL of its own, outside the app's workspace.
+[workspace]
+
+[profile.release]
+panic = "abort"

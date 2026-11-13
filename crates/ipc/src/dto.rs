@@ -97,7 +97,7 @@ pub struct LiveWallpaperDto {
     /// `pending`: one does, but no capture of it has worked yet (the Windows wallpaper until
     /// then) | `captured`: the backdrops show its latest capture | `notCapturable`: it draws
     /// nothing a capture can read (Wallpaper Engine scenes, for one), so the backdrops show a
-    /// neutral colour.
+    /// neutral colour (Liquid Glass: a see-through pane of it).
     pub state: String,
 }
 
@@ -231,7 +231,8 @@ pub struct FenceDto {
     /// `normal` (compact -12, loose 16).
     #[serde(default)]
     pub spacing_px: i32,
-    /// `left` | `center`: where a row of icons that does not fill the width sits (icons view).
+    /// `left` | `center` | `right`: where a row of icons that does not fill the width sits;
+    /// `right` fills every row from the right edge (icons view).
     #[serde(default)]
     pub icon_align: String,
     pub auto_height: bool,
@@ -273,6 +274,10 @@ pub struct FenceDto {
     /// `default` (the global `rollUp.titleOnHover`) | `hover` | `always`.
     #[serde(default)]
     pub title_on_hover: String,
+    /// A fully transparent fence (`opacity` `transparent`) stays transparent while the pointer
+    /// is over it: no glass, and a title row hidden by `titleOnHover` stays hidden.
+    #[serde(default)]
+    pub transparent_on_hover: bool,
     /// `icons` | `list` | `details`.
     pub layout: String,
     /// `manual` | `name` | `type` | `date` | `size` | `openCount`.

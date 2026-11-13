@@ -113,7 +113,12 @@ fn rc_source(ico: &Path) -> String {
     let version = env::var("CARGO_PKG_VERSION").unwrap_or_default();
     let name = env::var("CARGO_PKG_NAME").unwrap_or_default();
     let description = env::var("CARGO_PKG_DESCRIPTION").unwrap_or_default();
-    let description = if description.is_empty() {
+    // Windows shows the file description as the program's name: the source line of its
+    // notifications, Task Manager's process list, Settings > Apps > Startup. The app is
+    // "PecoFence" there; the watchdog keeps its sentence, which tells the two processes apart.
+    let description = if name == "pecofence" {
+        "PecoFence".to_string()
+    } else if description.is_empty() {
         name.clone()
     } else {
         description

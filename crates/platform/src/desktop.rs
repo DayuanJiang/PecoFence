@@ -503,6 +503,56 @@ pub fn mask_alt_release() {
     }
 }
 
+/// Explorer's desktop windows from the top of the z-order down, for the log: every visible
+/// top-level `Progman` / `WorkerW` of the shell's process as `Class#handle`, with `(icons)` on
+/// the one that holds the icon view and `+N` for N visible windows of other programs directly
+/// inside it (a live wallpaper's player). Windows 10 and Windows 11 up to 23H2 make and destroy
+/// the `WorkerW` ones when the desktop is raised or lowered and when the wallpaper layer is
+/// split off: a log without them could not tell which window a wallpaper that went black for a
+/// moment (#187) belonged to. Class names, handles and counts only.
+pub fn describe_desktop_windows() -> String {
+    let explorer = window_pid(shell_window());
+    let mut out = String::new();
+    for hwnd in top_level_windows() {
+        if explorer == 0 || !is_visible(hwnd) || window_pid(hwnd) != explorer {
+            continue;
+        }
+        let class = class_name(hwnd);
+        if class != "Progman" && class != "WorkerW" {
+            continue;
+        }
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(&format!("{class}#{:x}", hwnd.0 as usize));
+        if !find_child(hwnd, "SHELLDLL_DefView").0.is_null() {
+            out.push_str("(icons)");
+        }
+        let mut foreign = 0;
+        // SAFETY: plain FFI enumeration of the window's direct children.
+        let mut child = unsafe { FindWindowExW(Some(hwnd), None, PCWSTR::null(), PCWSTR::null()) };
+        while !child.0.is_null() {
+            if is_visible(child) && window_pid(child) != explorer {
+                foreign += 1;
+            }
+            // SAFETY: as above, from the child found last.
+            child =
+                unsafe { FindWindowExW(Some(hwnd), Some(child), PCWSTR::null(), PCWSTR::null()) };
+        }
+        if foreign > 0 {
+            out.push_str(&format!("+{foreign}"));
+        }
+    }
+    out
+}
+
+/// Whether `hwnd` is maximized.
+pub fn is_zoomed(hwnd: HWND) -> bool {
+    windows_core::link!("user32.dll" "system" fn IsZoomed(hwnd: HWND) -> windows_core::BOOL);
+    // SAFETY: plain FFI call; tolerates stale handles.
+    unsafe { IsZoomed(hwnd).as_bool() }
+}
+
 /// Human-readable z-order dump around the fences, for spike logs.
 pub fn describe_zorder(interesting: &[HWND], all_visible: bool) -> String {
     let mut lines = Vec::new();

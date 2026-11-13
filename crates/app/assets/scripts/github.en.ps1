@@ -4,6 +4,9 @@
 # needed (GitHub answers up to 60 times an hour).
 # Each line is "text | key=value": href= opens a URL, icon= goes before the text, tooltip= shows
 # while the pointer rests on the row.
+# Titles and names come from the network and anyone can write them. Clean takes out what a row
+# would read as its parameters (| " ' and line breaks) before they are printed.
+function Clean($text) { "$text" -replace '\|', '¦' -replace '[\r\n]+', ' ' -replace '["'']', [char]0x2019 }
 $repo = 'DayuanJiang/PecoFence'
 $items = Invoke-RestMethod "https://api.github.com/repos/$repo/issues?state=open&per_page=6" `
   -Headers @{ 'User-Agent' = 'PecoFence' } -TimeoutSec 8
@@ -11,8 +14,10 @@ $items = Invoke-RestMethod "https://api.github.com/repos/$repo/issues?state=open
 "---"
 foreach ($i in $items) {
   $icon = if ($i.pull_request) { '🔀' } else { '🟢' }
-  $title = $i.title -replace '"', "'"
-  "#$($i.number)  $title | href=$($i.html_url) icon=$icon tooltip=""$($i.user.login): $title"""
+  $number = [int]$i.number
+  $title = Clean $i.title
+  # The link is built from the number (GitHub sends a pull request's number on to its page).
+  "#$number  $title | href=https://github.com/$repo/issues/$number icon=$icon tooltip=""$(Clean $i.user.login): $title"""
 }
 "---"
 "Refresh | refresh=true icon=🔄"

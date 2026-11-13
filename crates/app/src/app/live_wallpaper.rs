@@ -4,7 +4,7 @@
 //! is taken again for a new window, after a wallpaper signal, when the desktop comes to the
 //! front, and every ten seconds while a fence on that monitor can be seen.
 
-use super::visuals::{MonitorRecipe, backdrop_signature, monitor_recipes};
+use super::visuals::{MonitorRecipe, backdrop_signature, monitor_recipes, unreadable_monitors};
 use super::*;
 use crate::commands::WM_APP_LIVE_WALLPAPER;
 use pecofence_platform::{live_capture, live_wallpaper};
@@ -64,7 +64,8 @@ pub(super) struct LiveWallpaper {
     /// Empty captures of `hwnd` in a row once it settled.
     empty: u32,
     /// `hwnd` cannot be captured (nothing can read the window, or `BLIND_AFTER` empty captures):
-    /// the backdrop shows a neutral colour, not an old capture or the Windows wallpaper under it.
+    /// the backdrop shows a neutral colour (Fluent) or a see-through pane (Liquid Glass), not an
+    /// old capture or the Windows wallpaper under it.
     pub(super) blind: bool,
 }
 
@@ -179,6 +180,68 @@ fn capture_and_build(work: Vec<(MonitorRecipe, Option<isize>)>) -> Result<Built>
     Ok((built, empty))
 }
 
+/// What the card and the settings page say about the live wallpaper under Liquid Glass fences.
+pub(super) struct LiveNote {
+    /// Its picture cannot be read (the fences are see-through panes); else they show a frosted
+    /// capture.
+    pub(super) unreadable: bool,
+    /// The player as a user knows it (None: not one of the known ones).
+    pub(super) player: Option<&'static str>,
+    /// What `notices.json` remembers the player by: that name, else its program file, else
+    /// its window class.
+    pub(super) key: String,
+    monitor: RECT,
+}
+
+/// The player's name as a user knows it, from its window class and program file. Wallpaper
+/// Engine: its two program files and its `WPE...` window classes. Lively plays videos in mpv
+/// and web pages in players of its own, all started from its folder (`Lively Wallpaper`, the
+/// Store package's `...LivelyWallpaper_...`): that folder, or one of its own program files
+/// (`Lively.exe`, `Lively.Player.CefSharp.exe` and the like, 1.x's `livelywpf.exe`). Anything
+/// else has no name: another program called `wallpaper...`, a Windows user called lively.
+fn player_name(class: &str, exe: Option<&Path>) -> Option<&'static str> {
+    let exe = exe.map(|p| p.to_string_lossy().to_ascii_lowercase());
+    let mut parts = exe.as_deref().unwrap_or_default().rsplit('\\');
+    let file = parts.next().unwrap_or_default();
+    let lively_folder =
+        |part: &str| part.contains("livelywallpaper") || part.contains("lively wallpaper");
+    if class.starts_with("WPE") || matches!(file, "wallpaper32.exe" | "wallpaper64.exe") {
+        Some("Wallpaper Engine")
+    } else if matches!(file, "lively.exe" | "livelywpf.exe")
+        || file.starts_with("lively.player")
+        || lively_folder(file)
+        || parts.any(lively_folder)
+    {
+        Some("Lively Wallpaper")
+    } else {
+        None
+    }
+}
+
+/// A fence with this opacity setting (`AppearanceOverride::opacity`, None: 默认) shows the
+/// see-through pane over a live wallpaper that cannot be read: not the fence arranged like the
+/// desktop (it has no plate), not a fully transparent one (no plate until the pointer is over
+/// it), not a 更厚实 one (its plate stays opaque: `material_opacity`).
+fn shows_pane(opacity: Option<f32>, desktop_arranged: bool) -> bool {
+    let opacity = opacity.unwrap_or(1.0);
+    !desktop_arranged && opacity > 0.0 && opacity <= 1.0
+}
+
+/// Why the live wallpaper card no longer says what the user sees (None: it still does): the
+/// look is not Liquid Glass, or no monitor's live wallpaper is unreadable any more. A player
+/// that is missing for a moment (`LIVE_GONE_AFTER`) keeps its entry, and the card.
+fn live_card_outdated(liquid_glass: bool, live: &[LiveWallpaper]) -> Option<&'static str> {
+    if !liquid_glass {
+        Some("the look is Fluent")
+    } else if live.is_empty() {
+        Some("the player ended")
+    } else if !live.iter().any(|l| l.blind) {
+        Some("the wallpaper can be read")
+    } else {
+        None
+    }
+}
+
 /// The foreground window's rectangle when it belongs to another program than Explorer and this
 /// one. The fences sit under other programs' windows: it hides the fences inside it, and a
 /// maximized or full-screen window every fence on its monitor.
@@ -221,6 +284,146 @@ impl App {
                 }
             })
             .collect()
+    }
+
+    /// The live wallpaper the Liquid Glass fences are over: one whose picture cannot be read
+    /// first, else one they show a frosted capture of. None in Fluent, which has its plate
+    /// either way, and for a player whose window is gone (its monitor keeps its backdrop for
+    /// `LIVE_GONE_AFTER`: there is nobody to name).
+    pub(super) fn live_wallpaper_note(&self) -> Option<LiveNote> {
+        if !self.ctx.theme.borrow().liquid_glass {
+            return None;
+        }
+        let mut here = self.live.iter().filter(|l| l.missing.is_none());
+        let live = (here.clone().find(|l| l.blind)).or_else(|| here.find(|l| l.image.is_some()))?;
+        let hwnd = HWND(live.hwnd as *mut core::ffi::c_void);
+        let class = desktop::class_name(hwnd);
+        let exe = pecofence_platform::process::image_path(desktop::window_pid(hwnd));
+        let player = player_name(&class, exe.as_deref());
+        let file = exe.as_deref().and_then(|p| p.file_name());
+        let key = match (player, file) {
+            (Some(name), _) => name.to_string(),
+            (None, Some(file)) => file.to_string_lossy().to_ascii_lowercase(),
+            (None, None) => class,
+        };
+        Some(LiveNote {
+            unreadable: live.blind,
+            player,
+            key,
+            monitor: live.monitor,
+        })
+    }
+
+    /// After a wallpaper check or a capture: the settings page's line under 主题风格 follows
+    /// the live wallpaper's state, and the card that says why is offered.
+    pub(super) fn tell_live_wallpaper(&mut self) {
+        let note = self.live_wallpaper_note();
+        let now = note.as_ref().map(|n| (n.unreadable, n.player));
+        if now != self.live_told_page {
+            tracing::debug!(
+                ?now,
+                "live wallpaper under Liquid Glass changed; the settings page follows"
+            );
+            self.live_told_page = now;
+            self.push_settings_state();
+        }
+        self.retire_live_wallpaper_card();
+        if let Some(note) = note.filter(|n| n.unreadable) {
+            self.offer_live_wallpaper_card(note);
+        }
+    }
+
+    /// The card on screen says the fences are see-through panes and offers Fluent. Once that
+    /// no longer holds (the look is Fluent, the player ended, its picture can be read) it
+    /// leaves; it was not answered, so nothing is kept in `notices.json`. Called after every
+    /// wallpaper check and when the look changes.
+    pub(super) fn retire_live_wallpaper_card(&mut self) {
+        if !matches!(
+            self.welcome,
+            Some((_, welcome::Welcome::LiveWallpaper { .. }))
+        ) {
+            return;
+        }
+        let liquid_glass = self.ctx.theme.borrow().liquid_glass;
+        let Some(reason) = live_card_outdated(liquid_glass, &self.live) else {
+            return;
+        };
+        tracing::info!(
+            reason,
+            "live wallpaper card leaves: what it says no longer holds; not kept as answered"
+        );
+        if let Some((notice, _)) = self.welcome.take() {
+            notice.leave();
+        }
+    }
+
+    /// The live wallpaper card's button would switch a look the card no longer describes (see
+    /// `retire_live_wallpaper_card`: it leaves at the next check).
+    pub(super) fn live_card_outdated(&self) -> Option<&'static str> {
+        live_card_outdated(self.ctx.theme.borrow().liquid_glass, &self.live)
+    }
+
+    /// Liquid Glass fences on a monitor whose live wallpaper cannot be read are frosted panes:
+    /// one card says why and offers Fluent, once per player (`notices.json` keeps the players
+    /// it was answered for). It waits while another card is up or no fence shows the pane on
+    /// that monitor right then (see `shows_pane`; none does during a Peek, when the glass is
+    /// opaque), and comes at a later check.
+    fn offer_live_wallpaper_card(&mut self, note: LiveNote) {
+        if !self.notices {
+            return;
+        }
+        if self.live_card_told.is_none() {
+            self.live_card_told = Some(self.load_live_card_told());
+        }
+        if (self.live_card_told.iter().flatten()).any(|key| *key == note.key) {
+            return;
+        }
+        let m = note.monitor;
+        // By the fence's centre, as the pane itself (`over_unreadable_wallpaper`).
+        let shown = self.fences.iter().any(|(id, w)| {
+            let h = w.hwnd();
+            let f = window::window_rect(h);
+            let (cx, cy) = ((f.left + f.right) / 2, (f.top + f.bottom) / 2);
+            desktop::is_visible(h)
+                && !desktop::is_cloaked(h)
+                && cx >= m.left
+                && cx < m.right
+                && cy >= m.top
+                && cy < m.bottom
+                && self.state.fence(*id).is_some_and(|f| {
+                    shows_pane(
+                        f.appearance.as_ref().and_then(|a| a.opacity),
+                        w.is_desktop_arranged(),
+                    )
+                })
+        });
+        let waits = if self.ctx.behavior.floating.get() {
+            "the fences are up in a Peek, their glass opaque"
+        } else if !shown {
+            "no fence shows the pane on that monitor"
+        } else if self.notice_showing() {
+            "another card is up"
+        } else {
+            ""
+        };
+        if waits != self.live_card_waits {
+            self.live_card_waits = waits;
+            // `reason`: the shareable log keeps that field's fixed words.
+            let reason = waits;
+            tracing::info!(player = ?note.player, key = %note.key, reason, "live wallpaper card due");
+        }
+        if !waits.is_empty() {
+            return;
+        }
+        self.show_welcome(welcome::Welcome::LiveWallpaper {
+            player: note.player,
+            key: note.key.clone(),
+        });
+        if self.welcome.is_none() {
+            // The card could not be made (the log says why): not at every check of this run.
+            tracing::debug!(key = %note.key, "live wallpaper card not shown; not tried again in this run");
+            self.live_card_told.get_or_insert_default().push(note.key);
+        }
     }
 
     /// Follows which monitors a live wallpaper covers (`live_wallpaper::windows`, ~30 us). A
@@ -507,12 +710,14 @@ impl App {
             .collect();
         let backdrops = Rc::new(BackdropSets {
             acrylic: Rc::new(set),
+            unreadable: unreadable_monitors(&self.live),
         });
         self.wallpaper_sig = Some(backdrop_signature(&job.snapshot, &self.live));
         *self.ctx.backdrops.borrow_mut() = backdrops.clone();
         for window in self.fences.values() {
             window.set_backdrops(backdrops.clone());
         }
+        self.tell_live_wallpaper();
     }
 }
 
@@ -548,5 +753,116 @@ mod tests {
         assert_eq!(live_wallpaper_state(&live, monitor(1920)), "notCapturable");
         assert_eq!(live_wallpaper_state(&live, monitor(3840)), "pending");
         assert_eq!(live_wallpaper_state(&live, monitor(-1920)), "none");
+    }
+
+    #[test]
+    fn the_card_counts_only_fences_that_show_the_pane() {
+        // 默认 and 更透明 show the see-through pane.
+        assert!(shows_pane(None, false));
+        assert!(shows_pane(Some(1.0), false));
+        assert!(shows_pane(Some(0.55), false));
+        // 全透明 has no plate, 更厚实 stays opaque, the fence arranged like the desktop has
+        // no plate at any opacity.
+        assert!(!shows_pane(Some(0.0), false));
+        assert!(!shows_pane(Some(1.6), false));
+        assert!(!shows_pane(None, true));
+        assert!(!shows_pane(Some(0.55), true));
+    }
+
+    #[test]
+    fn the_card_is_outdated_once_its_reason_is_gone() {
+        let entry = |blind, missing: bool| LiveWallpaper {
+            monitor: RECT {
+                left: 0,
+                top: 0,
+                right: 1920,
+                bottom: 1080,
+            },
+            hwnd: 1,
+            since: Instant::now(),
+            missing: missing.then(Instant::now),
+            image: None,
+            attempted: None,
+            reported: None,
+            empty: 0,
+            blind,
+        };
+        // Liquid Glass over a player whose picture cannot be read: the card holds, also in
+        // the moment a player's window is missing between two wallpapers.
+        assert_eq!(live_card_outdated(true, &[entry(true, false)]), None);
+        assert_eq!(live_card_outdated(true, &[entry(true, true)]), None);
+        assert_eq!(
+            live_card_outdated(true, &[entry(false, false), entry(true, false)]),
+            None
+        );
+        // The user chose Fluent; the player ended; its picture can be read now.
+        assert_eq!(
+            live_card_outdated(false, &[entry(true, false)]),
+            Some("the look is Fluent")
+        );
+        assert_eq!(live_card_outdated(true, &[]), Some("the player ended"));
+        assert_eq!(
+            live_card_outdated(true, &[entry(false, false)]),
+            Some("the wallpaper can be read")
+        );
+    }
+
+    #[test]
+    fn the_card_names_the_players_users_know() {
+        let exe = |p: &'static str| Some(Path::new(p));
+        // Wallpaper Engine: its scene window, a clone window, either program file.
+        for (class, path) in [
+            (
+                "WPEDesktopDX11Window",
+                r"C:\Steam\steamapps\common\wallpaper_engine\wallpaper64.exe",
+            ),
+            (
+                "WPECloneView",
+                r"C:\Steam\steamapps\common\wallpaper_engine\wallpaper32.exe",
+            ),
+            ("Other", r"D:\wallpaper_engine\wallpaper64.exe"),
+        ] {
+            assert_eq!(player_name(class, exe(path)), Some("Wallpaper Engine"));
+        }
+        assert_eq!(
+            player_name("WPEDesktopDX11Window", None),
+            Some("Wallpaper Engine")
+        );
+        // Lively: mpv and its own players run from its folder.
+        let lively = r"C:\Program Files\WindowsApps\12030rocksdanister.LivelyWallpaper_2.1\Build\plugins\mpv\mpv.exe";
+        assert_eq!(player_name("mpv", exe(lively)), Some("Lively Wallpaper"));
+        // Its installer's folder, and its own program files wherever they are.
+        for path in [
+            r"C:\Program Files\Lively Wallpaper\plugins\mpv\mpv.exe",
+            r"C:\Users\me\AppData\Local\Programs\Lively Wallpaper\plugins\cef\Lively.Player.CefSharp.exe",
+            r"D:\Portable\lively\plugins\webview2\Lively.Player.WebView2.exe",
+            r"D:\Portable\lively\Lively.exe",
+            r"D:\Portable\old\livelywpf.exe",
+        ] {
+            assert_eq!(
+                player_name("Other", exe(path)),
+                Some("Lively Wallpaper"),
+                "{path}"
+            );
+        }
+        // Any other player has no name: the card says 动态壁纸.
+        assert_eq!(
+            player_name("PfLiveStandIn", exe(r"C:\pf\run\standin.exe")),
+            None
+        );
+        assert_eq!(player_name("mpv", exe(r"C:\Tools\mpv\mpv.exe")), None);
+        // Look-alikes: other programs called wallpaper..., a Windows user or a folder called
+        // lively, a program whose name only begins like Lively's.
+        for path in [
+            r"C:\Program Files\WallpaperTool\wallpaper.exe",
+            r"C:\Tools\wallpaperchanger.exe",
+            r"C:\Tools\wallpaper64helper.exe",
+            r"C:\Users\lively\Tools\mpv\mpv.exe",
+            r"C:\Users\lively\AppData\Local\Other\player.exe",
+            r"D:\lively\mpv.exe",
+            r"C:\Tools\livelyhood.exe",
+        ] {
+            assert_eq!(player_name("Other", exe(path)), None, "{path}");
+        }
     }
 }

@@ -356,7 +356,9 @@ impl App {
                 let Some((title_h, rest_h)) = w.resting_heights_px() else {
                     continue;
                 };
-                let r = w.rect();
+                // In a frame: the size its animation asked for in this frame (applied with the
+                // moves below, in one batch).
+                let r = self.ctx.behavior.frame_rect(hwnd);
                 let h = r.bottom - r.top;
                 if h <= 0 {
                     continue;
@@ -431,7 +433,16 @@ impl App {
         let mut moved = false;
         for s in &slots {
             if s.y != s.top {
-                let _ = window::move_window_to(s.hwnd, s.left, s.y);
+                let pos = window::WindowPos {
+                    hwnd: s.hwnd,
+                    x: s.left,
+                    y: s.y,
+                    size: None,
+                };
+                // In a frame it moves in the frame's batch, with the fence that pushes it.
+                if !self.ctx.behavior.defer_position(pos) {
+                    let _ = window::move_window_to(s.hwnd, s.left, s.y);
+                }
                 moved = true;
             }
             if s.y == s.base {
@@ -516,7 +527,7 @@ impl App {
             if !upward && room_below.is_none() {
                 continue;
             }
-            let r = w.rect();
+            let r = self.ctx.behavior.frame_rect(w.hwnd());
             let Some(wa) = self.work_area_at((r.left + r.right) / 2, (r.top + r.bottom) / 2) else {
                 continue;
             };

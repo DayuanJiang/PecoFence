@@ -77,6 +77,9 @@ pub(super) enum ChromeKey {
     /// A tab that just joined the strip (merge, re-attach): 1 → 0 is its fade-in remainder,
     /// so the pill draws at alpha `1 - value` (Fluent Fade In, 83 ms linear).
     TabNew(FenceId),
+    /// A lone title that just changed with the folder shown: 1 → 0 is the remainder of the
+    /// fade-in of its name and glyph, in step with the icons' cross-fade.
+    TitleSwap,
 }
 
 /// The selected anchor's unfolded label: `text` is the full name fitted to `MAX_UNFOLD_LINES`
@@ -167,6 +170,67 @@ pub(super) fn band_range(
     start..end.max(start)
 }
 
+/// The order in which the items get their names while the fence rests: the rows in `view`,
+/// then outward from them, below and above in turn, `near` items each way; then the last
+/// `far` items of the list from its end (where End jumps) and its first `far` (Home); then
+/// outward again over everything left. Every index below `count` once.
+pub(super) fn fit_ahead_order(
+    count: usize,
+    view: std::ops::Range<usize>,
+    near: usize,
+    far: usize,
+) -> Vec<usize> {
+    let (start, end) = (view.start.min(count), view.end.min(count));
+    let mut order = Vec::with_capacity(count);
+    let mut taken = vec![false; count];
+    let mut take = |i: usize| {
+        if i < count && !taken[i] {
+            taken[i] = true;
+            order.push(i);
+        }
+    };
+    let outward = |from: usize, to: usize, take: &mut dyn FnMut(usize)| {
+        for d in from..to {
+            take(end + d);
+            if start > d {
+                take(start - 1 - d);
+            }
+        }
+    };
+    (start..end).for_each(&mut take);
+    outward(0, near, &mut take);
+    (0..far.min(count)).for_each(|d| take(count - 1 - d));
+    (0..far.min(count)).for_each(&mut take);
+    outward(near, count, &mut take);
+    order
+}
+
+/// Every index of the two `bands` below `count` once, the first band's before the second's:
+/// what a content draw looks at for icons and names instead of every item of the fence.
+pub(super) fn band_indices(
+    bands: &[std::ops::Range<usize>; 2],
+    count: usize,
+) -> impl Iterator<Item = usize> + use<> {
+    let [a, b] = bands.clone();
+    let a = a.start.min(count)..a.end.min(count);
+    let b = b.start.min(count)..b.end.min(count);
+    let first = a.clone();
+    a.chain(b.filter(move |i| !first.contains(i)))
+}
+
+/// How opaque the Liquid Glass pane is over a live wallpaper that cannot be read, for a fence
+/// opacity of at most 1 (更厚实 stays opaque): 0.78 at 默认, 0.65 at 更透明 and below. The pane
+/// colour is near white in light mode and a dark slate in dark mode
+/// (`MonitorRecipe::show_neutral`), so the names keep 4.5 to 1 against it over any wallpaper,
+/// a black one under the light pane and a white one under the dark pane included.
+/// `dark_tinted`: the fence has a 色调 in dark mode. The wash lies over the pane at 22 %
+/// whatever the pane's alpha and a light one (黄, 青) lightens the dark pane, so the pane is
+/// 0.74 at least there; the light pane keeps 4.5 to 1 under every preset as it is.
+fn unreadable_pane_alpha(opacity: f32, dark_tinted: bool) -> f32 {
+    let floor = if dark_tinted { 0.74 } else { 0.65 };
+    (0.5 + 0.28 * opacity).clamp(floor, 0.78)
+}
+
 impl FenceViewState {
     /// Opacity multiplier the plate is drawn with. A fully transparent fence draws the
     /// default plate while it shows it (its alpha comes from `plate_reveal`).
@@ -174,9 +238,46 @@ impl FenceViewState {
         let opacity = if self.is_clear() { 1.0 } else { self.opacity };
         if self.behavior.floating.get() && self.theme.liquid_glass {
             opacity.max(1.0)
+        } else if opacity <= 1.0 && self.over_unreadable_wallpaper() {
+            let dark_tinted =
+                self.style.tint.is_some() && self.theme.mode == pecofence_render::ThemeMode::Dark;
+            unreadable_pane_alpha(opacity, dark_tinted)
         } else {
             opacity
         }
+    }
+
+    /// Liquid Glass on a monitor whose live wallpaper cannot be read
+    /// (`BackdropSets::unreadable`, by the fence's centre): there is no picture to refract, so
+    /// the plate is a see-through pane over the wallpaper itself.
+    pub(super) fn over_unreadable_wallpaper(&self) -> bool {
+        let unreadable = &self.backdrops.unreadable;
+        if !self.theme.liquid_glass || unreadable.is_empty() {
+            return false;
+        }
+        let (x, y, w, h) = self.backdrop_rect.unwrap_or_else(|| {
+            let r = window::window_rect(self.hwnd);
+            (r.left, r.top, r.right - r.left, r.bottom - r.top)
+        });
+        let (cx, cy) = (x + w / 2, y + h / 2);
+        unreadable
+            .iter()
+            .any(|m| cx >= m.left && cx < m.right && cy >= m.top && cy < m.bottom)
+    }
+
+    /// Drops the text colour choices kept for this plate (`material_foreground` keeps the last
+    /// one near its threshold): the plate itself changed (`what`), so the next pick starts
+    /// from the neutral threshold.
+    pub(super) fn forget_text_choice(&self, what: &str) {
+        tracing::debug!(
+            fence = %self.title,
+            what,
+            dark_text = ?self.glass_dark_text.get(),
+            "text colour choice dropped: the plate changed"
+        );
+        self.glass_dark_text.set(None);
+        self.bare_dark_text.set(None);
+        self.plate_halo.set(false);
     }
 
     /// Adapt content to the clear plate instead of darkening the whole wallpaper.
@@ -190,12 +291,37 @@ impl FenceViewState {
         }
         match &self.backdrop_crop {
             Some(image) if self.is_clear() => {
-                // Captions sit on bare wallpaper at rest, on the default plate while hovered.
-                let foreground =
+                // Captions sit on bare wallpaper at rest, on the default plate while it shows
+                // (the pointer over the fence, rolled up, a Peek): the ink is picked for what
+                // is behind them now. The two agree unless the plate is much darker or
+                // lighter than the wallpaper (a dark theme file over a light wallpaper, light
+                // mode over a dark photo); `redraw_chrome_only` draws the content again then.
+                let on_plate = self.plate_visible_target();
+                // Each of the two keeps its own choice near its threshold.
+                let memory = if on_plate {
+                    &self.glass_dark_text
+                } else {
+                    &self.bare_dark_text
+                };
+                let previous = memory.get();
+                let foreground = if on_plate {
                     self.theme
-                        .over_clear_plate(image, self.style.tint, self.glass_dark_text.get());
-                self.glass_dark_text
-                    .set(Some(foreground.text_primary.r < 0.5));
+                        .over_clear_plate(image, self.style.tint, previous)
+                } else {
+                    self.theme.over_bare_wallpaper(image, previous)
+                };
+                let dark_text = foreground.text_primary.r < 0.5;
+                if previous != Some(dark_text) {
+                    tracing::debug!(
+                        fence = %self.title,
+                        on_plate,
+                        wallpaper = self.theme.wallpaper_brightness(image),
+                        ?previous,
+                        dark_text,
+                        "text colour of a fully transparent fence picked"
+                    );
+                }
+                memory.set(Some(dark_text));
                 foreground
             }
             None if self.is_clear() => Theme {
@@ -312,6 +438,7 @@ impl FenceViewState {
         self.item_sel.clear();
         self.drop_fades.clear();
         self.search_dim.clear();
+        self.search_fades_for = None;
     }
 
     /// Syncs the per-item hover / selection / drop-target / search-dim fades from the logical
@@ -329,7 +456,22 @@ impl FenceViewState {
         let animate = self.motion.enabled();
         let dragging = self.ole_drag;
         if let Some(m) = &self.search {
-            for (i, it) in self.items.iter().enumerate() {
+            // Every item's fades take their targets from the marks, the item list, the hover
+            // and the drop target. Setting a fade to the target it has does nothing, so they
+            // are set when one of those changed, not at every draw: a fence of 8000 files
+            // set 32 000 fades in each frame of the matches' fade-in.
+            let inputs = (self.hover, self.drop_item, dragging, animate);
+            let stale = self.search_fades_for != Some(inputs);
+            if stale {
+                tracing::debug!(
+                    fence = %self.fence_id,
+                    items = self.items.len(),
+                    matches = m.matches.len(),
+                    "search fades set for every item"
+                );
+            }
+            self.search_fades_for = Some(inputs);
+            for (i, it) in self.items.iter().enumerate().filter(|_| stale) {
                 let hit = m.matches.contains(&it.id);
                 let hover = (self.hover == Some(i) && !dragging && !hit) as u8 as f32;
                 let sel = if m.current == Some(it.id) {
@@ -368,6 +510,7 @@ impl FenceViewState {
             self.drop_fades
                 .release_unless(animate, now, |id| Some(*id) == drop);
             self.search_dim.release_unless(animate, now, |_| false);
+            self.search_fades_for = None;
         }
         let out = drawn
             .map(|i| {
@@ -381,6 +524,21 @@ impl FenceViewState {
                 )
             })
             .collect();
+        // While a hover or selection fill fades: what this draw shows of it and how far the
+        // next refresh of the screen is (which refresh first shows the fill after an input).
+        if tracing::enabled!(tracing::Level::DEBUG)
+            && (self.item_hover.busy(now) || self.item_sel.busy(now))
+        {
+            let out: &Vec<(f32, f32, f32, f32)> = &out;
+            let hover = out.iter().map(|a| a.0).fold(0.0, f32::max);
+            let selection = out.iter().map(|a| a.1).fold(0.0, f32::max);
+            tracing::debug!(
+                hover,
+                selection,
+                next_refresh = ?dwm::next_refresh_ms(),
+                "fill drawn"
+            );
+        }
         // Fades that settled at 0 go; ids that left the list were dropped in `replace_items`
         // (no per-draw id set: this runs every frame of a glide).
         self.item_hover.prune(now, |_| true);
@@ -410,6 +568,14 @@ impl FenceViewState {
     /// end value, so nothing changes visually) and folds the caret away once it has faded out.
     pub(super) fn prune_content_motion(&mut self, now: Instant) {
         let sliding = !self.item_motion.is_empty();
+        // The scroll bar that new icons brought (`sb_arrives`) follows them until the first is
+        // fully in. The ones that started later go on by themselves.
+        if self.sb_arrives
+            && (self.item_motion.values()).any(|m| m.alpha.origin() < 1.0 && m.alpha.is_done(now))
+        {
+            tracing::debug!("the first new icon is in: the scroll bar stops following the rest");
+            self.sb_arrives = false;
+        }
         self.item_motion.retain(|_, m| !m.done(now));
         if sliding && self.item_motion.is_empty() {
             // The icons have come to rest: the one under a resting pointer may be another now
@@ -417,7 +583,18 @@ impl FenceViewState {
             tracing::debug!("layout motion ended: hover refresh requested");
             self.request_hover_refresh();
         }
+        let leaving = !self.leaving.is_empty();
         self.leaving.retain(|l| !l.alpha.is_done(now));
+        if self.bare()
+            && ((sliding && self.item_motion.is_empty()) || (leaving && self.leaving.is_empty()))
+        {
+            // 像桌面一样排列: the window's shape held the way of the gliding icons and the
+            // places of the leaving ones (`desktop_shape`); now it is the cells again.
+            tracing::debug!("desktop icons at rest: the window takes the shape of its cells");
+            self.sync_desktop_shape(true);
+            // And its size, which reached to them (`arrange_desktop`).
+            self.queue.push(Command::DesktopIconsAtRest);
+        }
         for item in &mut self.items {
             if item.icon_fade.is_some_and(|t| t.is_done(now)) {
                 item.icon_fade = None;
@@ -462,6 +639,27 @@ impl FenceViewState {
         }
     }
 
+    /// The keyboard focus mark is on the title row: the fence has the keyboard by keys and no
+    /// icon can carry the mark (rolled up, an empty tab, the focused icon gone).
+    pub(super) fn title_focus(&self) -> bool {
+        self.focus_visible
+            && self.search.is_none()
+            && (self.roll_target() || self.focus_index().is_none())
+    }
+
+    /// Ends the keyboard focus mark (the keyboard left, a mouse press) and returns whether it
+    /// showed. A mark on the title row is repainted here; one on an icon by the caller's
+    /// content redraw.
+    pub(super) fn end_focus_mark(&mut self) -> bool {
+        let on_title = self.title_focus();
+        let shown = std::mem::take(&mut self.focus_visible);
+        if shown && on_title {
+            tracing::debug!(fence = %self.fence_id, "keyboard focus mark leaves the title row");
+            let _ = self.redraw_chrome_only();
+        }
+        shown
+    }
+
     /// Selection colour blend for this draw: the activation cross-fade, pushed towards neutral
     /// grey (1) while a drag from elsewhere hovers the fence (`drop_inactive`, 83 ms) —
     /// Explorer's view is inactive then and only the drop target reads accent.
@@ -476,6 +674,51 @@ impl FenceViewState {
     }
 
     /// Empty-state caption for the fence being shown.
+    /// The empty fence's text for a draw at `now`, with how strongly it shows: whole in a
+    /// fence without items, and the rest of what the icons at the edge of empty show (the
+    /// last one fading out, the first ones fading in), so text and icon cross-fade. The text
+    /// stood there in the frame the last icon vanished, and was gone a frame before the first
+    /// icon began to show. None once an icon is at full strength.
+    pub(super) fn empty_text_draw(&self, now: Instant) -> Option<(&'static str, f32)> {
+        // An item that is not fading in is at full strength: the usual case, without a look
+        // at every item.
+        if self.item_motion.len() < self.items.len() {
+            return None;
+        }
+        let leaving = self.leaving.iter().map(|l| l.alpha.value_at(now));
+        let arriving = self.items.iter().map(|it| {
+            self.item_motion
+                .get(&it.id)
+                .map_or(1.0, |m| m.alpha.value_at(now))
+        });
+        let shown = leaving
+            .chain(arriving)
+            .fold(0.0f32, f32::max)
+            .clamp(0.0, 1.0);
+        (shown < 1.0).then(|| (self.empty_text(), 1.0 - shown))
+    }
+
+    /// The content height the text of an empty fence is placed by, when it is not the
+    /// present one: the height the fence had while it was empty, for the text that fades out
+    /// under arriving icons. A fence of automatic height grows with them: the text jumped
+    /// down in one frame and lay across the names of the first row.
+    pub(super) fn empty_text_height(&mut self, now: Instant) -> Option<f32> {
+        let now_h = self.content_size_px().1 as f32 / self.scale();
+        if self.items.is_empty() {
+            self.empty_text_h = Some(now_h);
+            return None;
+        }
+        // Only while the text still shows: a fence that has its icons draws none.
+        self.empty_text_draw(now)?;
+        let kept = self.empty_text_h.filter(|h| (h - now_h).abs() > 0.5)?;
+        tracing::debug!(
+            kept,
+            now_h,
+            "the text of an empty fence stays where it stood"
+        );
+        Some(kept)
+    }
+
     pub(super) fn empty_text(&self) -> &'static str {
         if self.bare() {
             // An empty desktop shows nothing.
@@ -521,6 +764,7 @@ impl FenceViewState {
         };
         let plate_clear = 1.0 - self.plate_reveal.value_at(now).clamp(0.0, 1.0);
         let shown = (!self.bare()) as u8 as f32;
+        let lock_shown = self.locked && self.pointer_reveals();
         let f = &mut self.chrome_fades;
         f.set(animate, ChromeKey::Title, title_visible as u8 as f32, now);
         f.set(
@@ -537,12 +781,7 @@ impl FenceViewState {
             now,
         );
         f.set(animate, ChromeKey::Count, rolled as u8 as f32, now);
-        f.set(
-            animate,
-            ChromeKey::Lock,
-            (self.locked && self.mouse_inside) as u8 as f32,
-            now,
-        );
+        f.set(animate, ChromeKey::Lock, lock_shown as u8 as f32, now);
         let pulse = self.lock_pulse.map(|t| now.saturating_duration_since(t));
         let lock = lock_alpha(f.value(&ChromeKey::Lock, now), pulse);
         if pulse.is_some_and(|since| since >= LOCK_PULSE) {
@@ -580,6 +819,8 @@ impl FenceViewState {
             merge_hint: self.merge_t.value_at(now),
             plate_top,
             plate_clear,
+            edge_top: self.edge_top && !self.theme.liquid_glass,
+            swap: f.value(&ChromeKey::TitleSwap, now),
             strip_clip: self.tab_strip_clip(),
             lock,
         }
@@ -691,7 +932,7 @@ impl FenceViewState {
         // A smart fence shows its count after the name, rolled or not: no second one. A
         // filter tag carries the count too.
         let count = ((rolled || state.count > 0.0) && self.shows_rolled_count())
-            .then(|| pecofence_core::i18n::format("{0} 项", &[format!("{}", self.items.len())]));
+            .then(|| self.rolled_count_caption());
         let title_count = self.title_count.clone();
         let filter_tag = self.filter_tag.clone();
         let opacity = self.material_opacity();
@@ -777,6 +1018,7 @@ impl FenceViewState {
                 badge: badges[i].as_deref(),
             })
             .collect();
+        let title_focus = self.title_focus();
         let ok = self.chrome_panel.draw(self.dpi, |session, wd, hd| {
             chrome.draw(
                 session,
@@ -800,7 +1042,12 @@ impl FenceViewState {
                 deco,
                 state,
                 style,
-            )
+            )?;
+            // Not on a title row that is folded away (「鼠标悬停时才显示标题栏」).
+            if title_focus && (rolled || state.title > 0.0) {
+                chrome.draw_title_focus(session, &theme, scale, wd, hd, &tabs, style)?;
+            }
+            Ok(())
         })?;
         self.note_draw_result(ok);
         let inset = (state.plate_top * scale).round() as i32;
@@ -961,26 +1208,71 @@ impl FenceViewState {
     /// starts at the plate top: a title row folded away by title on hover is cut off too.
     pub(super) fn update_shape_clip(&self, w: i32, h: i32) -> Result<()> {
         let inset = self.plate_inset_px.clamp(0, (h - 1).max(0));
+        // Square top corners at the screen edge: the rounded clip starts above the window.
+        let up = self.square_top_px();
         self.motion.clip_rounded_at(
             &self.root,
-            inset as f32,
+            (inset - up) as f32,
             w as f32,
-            (h - inset) as f32,
+            (h - inset + up) as f32,
             self.theme.corner_radius * self.scale(),
         )?;
         Ok(())
+    }
+
+    /// How far above the plate its rounded shape starts, in px: the corner radius while the
+    /// plate's top edge lies on the screen edge (square top corners), else 0. Liquid Glass
+    /// keeps its round corners: its lens and bezel are one rounded shape.
+    pub(super) fn square_top_px(&self) -> i32 {
+        if self.edge_top && self.plate_inset_px == 0 && !self.theme.liquid_glass {
+            (self.theme.corner_radius * self.scale()).ceil() as i32
+        } else {
+            0
+        }
+    }
+
+    /// Is the window's top edge on the top edge of its monitor's work area?
+    fn at_edge_top(&self) -> bool {
+        let r = self.behavior.frame_rect(self.hwnd);
+        monitors::query(monitors::monitor_from_point((r.left + r.right) / 2, r.top))
+            .is_some_and(|m| r.top <= m.work_area.top)
+    }
+
+    /// Before a draw for a new size: notes whether the top edge lies on the screen edge.
+    pub(super) fn note_edge_top(&mut self) {
+        self.edge_top = self.at_edge_top();
+    }
+
+    /// After a move: a fence that reached the top edge of the screen gets square top corners
+    /// (plate, rim and shadow), one that left it its round ones.
+    pub(super) fn sync_edge_top(&mut self) {
+        let at_edge = self.at_edge_top();
+        if at_edge == self.edge_top {
+            return;
+        }
+        self.edge_top = at_edge;
+        tracing::debug!(fence = %self.fence_id, at_edge, "top corners follow the screen edge");
+        let (w, h) = self.chrome_panel.size_px();
+        if let Err(error) = self.update_shape_clip(w, h) {
+            tracing::warn!(%error, "plate clip update failed");
+        }
+        let _ = self.redraw_chrome_only();
+        self.update_shadow_now();
     }
 
     /// `label_w` is the width the label must fit: the cell width less the room beside the name
     /// for icons, the name column's text width for rows. `wide_w` is the wider box an icon's
     /// name may take when that shows more of it (`text::fit_lines_wider`), `label_w` again
     /// where there is none. Changing either drops every fitted label. Icons are asked for the
-    /// items `near` the viewport only; the others get theirs when they scroll in (a crowded
-    /// fence would otherwise extract every thumbnail at startup).
+    /// items `near` the viewport only, which all lie in one of the two index `bands`
+    /// (`band_range` around the scroll offset and around where a glide ends); the others get
+    /// theirs when they scroll in (a crowded fence would otherwise extract every thumbnail at
+    /// startup). Names are fitted later still, for the items a draw shows (`fit_drawn`).
     pub(super) fn ensure_icons_and_labels(
         &mut self,
         label_w: f32,
         wide_w: f32,
+        bands: [std::ops::Range<usize>; 2],
         near: impl Fn(usize) -> bool,
     ) {
         let icon_px = (self.icon_dip() * self.scale()).round() as u32;
@@ -991,23 +1283,48 @@ impl FenceViewState {
                 item.label = None;
             }
             self.unfold_cache = None;
+            self.fit_ahead_done = false;
         }
-        let details = self.layout == ViewLayout::Details;
         // Explorer's list and details rows show folders without the preview of their contents.
         let rows = self.layout != ViewLayout::Icons;
         let now = Instant::now();
         let mut started = false;
         let mut pending = false;
+        let (mut together, mut longest) = (0usize, Duration::ZERO);
         let mut icons = self.icons.borrow_mut();
-        for (i, item) in self.items.iter_mut().enumerate() {
-            if item.wants_icon(icon_px) && near(i) {
+        for i in band_indices(&bands, self.items.len()) {
+            if !near(i) {
+                continue;
+            }
+            let item = &mut self.items[i];
+            if item.wants_icon(icon_px) {
                 let icon_only = item.icon_only || (rows && item.is_folder);
                 match icons.get(&item.icon_key, &item.path, icon_px, self.dpi, icon_only) {
                     Lookup::Ready(Some(img)) => {
                         item.icon = Some(img);
                         item.icon_px = icon_px;
                         item.icon_stand_in = None;
-                        if item.icon_waited {
+                        // A new item that held its fade-in for the picture: both come now, as
+                        // one fade.
+                        let held = item.fade_waits.take().and_then(|start| {
+                            let m = self.item_motion.get_mut(&item.id)?;
+                            (m.alpha.value_at(now) <= 0.0).then(|| {
+                                m.alpha = self.motion.tween(
+                                    0.0,
+                                    1.0,
+                                    motion::FAST,
+                                    Curve::Linear,
+                                    start.max(now),
+                                );
+                                now.saturating_duration_since(start)
+                            })
+                        });
+                        if let Some(waited) = held {
+                            together += 1;
+                            longest = longest.max(waited);
+                            item.icon_waited = false;
+                            started = true;
+                        } else if item.icon_waited {
                             // Delivered by the worker: cross-fade over the loading tile (167 ms
                             // linear); a synchronous cache hit shows at once.
                             item.icon_waited = false;
@@ -1021,6 +1338,20 @@ impl FenceViewState {
                     }
                     Lookup::Ready(None) => {
                         item.icon_failed = true;
+                        // No picture will come: the name waits no longer.
+                        if let Some(start) = item.fade_waits.take()
+                            && let Some(m) = self.item_motion.get_mut(&item.id)
+                            && m.alpha.value_at(now) <= 0.0
+                        {
+                            m.alpha = self.motion.tween(
+                                0.0,
+                                1.0,
+                                motion::FAST,
+                                Curve::Linear,
+                                start.max(now),
+                            );
+                            started = true;
+                        }
                         // No picture for the new key: the stand-in goes too (the glyph shows).
                         if item.icon_stand_in.take().is_some() {
                             item.icon = None;
@@ -1034,48 +1365,197 @@ impl FenceViewState {
                     }
                 }
             }
-            if item.label.is_none() {
-                let (label, wide) = match self.layout {
-                    // No lines to fit into. The full name counts as not shortened, so the
-                    // selected item never unfolds.
-                    ViewLayout::Icons if self.label_lines == 0 => (item.name.clone(), false),
-                    ViewLayout::Icons => pecofence_render::text::fit_lines_wider(
-                        &item.name,
-                        &self.chrome.label_format(),
-                        label_w.max(1.0),
-                        wide_w.max(1.0),
-                        self.label_lines as u32,
-                    ),
-                    _ => (
-                        pecofence_render::text::fit_width(
-                            &item.name,
-                            &self.chrome.row_format(),
-                            label_w,
-                        ),
-                        false,
-                    ),
-                };
-                item.label = Some(label);
-                item.label_wide = wide;
-            }
-            if details {
-                if item.date_label.is_none() {
-                    item.date_label = Some(item.date_text());
-                }
-                if item.type_label.is_none() {
-                    item.type_label =
-                        Some(fileinfo::type_name(&item.path, item.is_folder).unwrap_or_default());
-                }
-                if item.size_label.is_none() {
-                    item.size_label = Some(item.size_text());
-                }
-            }
         }
         drop(icons);
         self.icons_pending = pending;
+        if together > 0 {
+            tracing::debug!(
+                icons = together,
+                waited_ms = longest.as_millis() as u64,
+                "new icons fade in with their pictures"
+            );
+        }
         if started {
             self.frames.request();
         }
+    }
+
+    /// Before a draw of the items `drawn`: each gets its name fitted and, in the details
+    /// view, its date, type and size, unless it has them. A name costs one DirectWrite layout
+    /// or more, and they used to be made for every item of the fence at its first draw: a
+    /// folder of 8000 files laid out 8000 names to show 40, at every tab switch, view change
+    /// and cleared filter. Now a name is fitted when its item is first drawn.
+    pub(super) fn fit_drawn(
+        &mut self,
+        drawn: impl Iterator<Item = usize>,
+        label_w: f32,
+        wide_w: f32,
+    ) {
+        let mut fitted = 0usize;
+        for i in drawn {
+            fitted += self.ensure_texts(i, label_w, wide_w) as usize;
+        }
+        if fitted > 0 {
+            tracing::trace!(
+                fence = %self.fence_id,
+                fitted,
+                items = self.items.len(),
+                "names fitted for the items drawn"
+            );
+        }
+    }
+
+    /// After a content draw: while names are missing, the fitting ahead is due once nothing
+    /// has been drawn for `FIT_AHEAD_REST_MS` (every draw sets the timer anew, so a glide or
+    /// a fade keeps putting it off).
+    pub(super) fn arm_fit_ahead(&mut self) {
+        if self.fit_ahead_done || self.items.is_empty() {
+            return;
+        }
+        self.fit_ahead_input = pecofence_platform::sysparams::last_input_tick();
+        self.fit_ahead_waits = 0;
+        window::set_timer(self.hwnd, TIMER_FIT_AHEAD, FIT_AHEAD_REST_MS);
+    }
+
+    /// `TIMER_FIT_AHEAD`: one piece of names fitted ahead, if the fence rests. A fence that
+    /// is rolled up, hidden or retired does nothing and waits for its next draw; one that
+    /// moves, or whose user just pressed a key or moved the mouse, looks again after the
+    /// rest time; one with names left goes on after a short pause; one with every name
+    /// fitted stops, and no timer is left.
+    pub(super) fn fit_ahead_tick(&mut self) {
+        window::kill_timer(self.hwnd, TIMER_FIT_AHEAD);
+        if self.fit_ahead_done
+            || self.retired
+            || self.rolled_up
+            || self.label_w <= 0.0
+            || !desktop::is_visible(self.hwnd)
+        {
+            return;
+        }
+        let input = pecofence_platform::sysparams::last_input_tick();
+        let moving = self.scroll_anim.is_some()
+            || !self.item_motion.is_empty()
+            || !self.leaving.is_empty()
+            || !self.outgoing.is_empty()
+            || self.roll_anim.is_some()
+            || self.content_busy
+            || self.ole_drag
+            || self.marquee.is_some()
+            || self.peeking
+            // Another fence's animation, a Peek rising: any frame asked for in the app.
+            || self.frames.armed()
+            || window::key_down(msg::VK_LBUTTON);
+        if moving || input != self.fit_ahead_input {
+            self.fit_ahead_input = input;
+            self.fit_ahead_waits += 1;
+            if self.fit_ahead_waits > FIT_AHEAD_WAITS {
+                tracing::debug!(
+                    fence = %self.fence_id,
+                    moving,
+                    "names fitted ahead: put off until the next content draw"
+                );
+                return;
+            }
+            window::set_timer(self.hwnd, TIMER_FIT_AHEAD, FIT_AHEAD_REST_MS);
+            return;
+        }
+        self.fit_ahead_waits = 0;
+        let started = Instant::now();
+        let (fitted, left) = self.fit_ahead(started);
+        tracing::debug!(
+            fence = %self.fence_id,
+            items = self.items.len(),
+            fitted,
+            left,
+            ms = (started.elapsed().as_secs_f64() * 100_000.0).round() / 100.0,
+            "names fitted ahead while the fence rests"
+        );
+        if left {
+            window::set_timer(self.hwnd, TIMER_FIT_AHEAD, FIT_AHEAD_PAUSE_MS);
+        } else {
+            self.fit_ahead_done = true;
+        }
+    }
+
+    /// Fits names in the order of `fit_ahead_order` until `FIT_AHEAD_PIECE` has passed since
+    /// `started`: how many were fitted, and whether any are left.
+    fn fit_ahead(&mut self, started: Instant) -> (usize, bool) {
+        let (cw, _) = self.content_size_px();
+        let layout = self.layout(cw as f32 / self.scale());
+        let view_h = self.scroll_view_h(&layout);
+        let count = self.items.len();
+        let view = band_range(
+            &layout,
+            count,
+            self.scroll_y - 1.0,
+            self.scroll_y + view_h + 1.0,
+        );
+        let screen = view.len().max(1);
+        let (label_w, wide_w) = (self.label_w, self.label_wide_w);
+        let details = self.layout == ViewLayout::Details;
+        let mut fitted = 0usize;
+        for i in fit_ahead_order(count, view, 2 * screen, 6 * screen) {
+            let it = &self.items[i];
+            if it.label.is_some() && (!details || it.size_label.is_some()) {
+                continue;
+            }
+            if started.elapsed() >= FIT_AHEAD_PIECE {
+                return (fitted, true);
+            }
+            self.ensure_texts(i, label_w, wide_w);
+            fitted += 1;
+        }
+        (fitted, false)
+    }
+
+    /// Fits item `i`'s name to `label_w` (`wide_w`: see `ensure_icons_and_labels`) and, for
+    /// the details view, formats its date, type and size, unless it has them. True when the
+    /// name was fitted now.
+    fn ensure_texts(&mut self, i: usize, label_w: f32, wide_w: f32) -> bool {
+        let layout = self.layout;
+        let item = &mut self.items[i];
+        let fit = item.label.is_none();
+        if fit {
+            let (label, wide) = match layout {
+                // No lines to fit into. The full name counts as not shortened, so the
+                // selected item never unfolds.
+                ViewLayout::Icons if self.label_lines == 0 => (item.name.clone(), false),
+                ViewLayout::Icons => pecofence_render::text::fit_lines_wider(
+                    &item.name,
+                    &self.chrome.label_format(),
+                    label_w.max(1.0),
+                    wide_w.max(1.0),
+                    self.label_lines as u32,
+                ),
+                _ => (
+                    pecofence_render::text::fit_width(
+                        &item.name,
+                        &self.chrome.row_format(),
+                        label_w,
+                    ),
+                    false,
+                ),
+            };
+            item.label = Some(label);
+            item.label_wide = wide;
+        }
+        if layout == ViewLayout::Details {
+            if item.date_label.is_none() {
+                item.date_label = Some(item.date_text());
+            }
+            if item.type_label.is_none() {
+                // The shell is asked once per extension for as long as this list is shown.
+                item.type_label = Some(
+                    self.type_names
+                        .get(&item.path, item.is_folder)
+                        .unwrap_or_default(),
+                );
+            }
+            if item.size_label.is_none() {
+                item.size_label = Some(item.size_text());
+            }
+        }
+        fit
     }
 
     /// True when an item near the viewport is still waiting for its icon (as of the last
@@ -1086,6 +1566,18 @@ impl FenceViewState {
 
     /// Redraws the chrome surface only (backdrop/title); the content surface is untouched.
     pub fn redraw_chrome_only(&mut self) -> Result<()> {
+        // A fully transparent fence picks its text for what is behind it: the wallpaper, or
+        // its plate while that shows (`material_foreground`). When the plate comes or goes
+        // and the pick changes with it, the content is drawn again in the new colour.
+        if self.is_clear()
+            && !self.bare()
+            && self
+                .content_look
+                .get()
+                .is_some_and(|look| look != self.material_foreground().label_look())
+        {
+            return self.redraw();
+        }
         self.draw_chrome_panel()
     }
 
@@ -1158,6 +1650,28 @@ impl FenceViewState {
         });
     }
 
+    /// A note or a script fence is about to draw text that measures `extent`: keeps the
+    /// scroll offset inside it and returns the offset and the overlay scrollbar to draw.
+    fn scroll_tool_text(
+        &mut self,
+        extent: pecofence_render::fence_chrome::ToolTextExtent,
+    ) -> (f32, Option<ScrollbarDraw>) {
+        self.take_tool_extent(extent);
+        let (layout, view_h) = self.scroll_extent();
+        self.scroll_y = self.scroll_y.clamp(0.0, layout.max_scroll(view_h));
+        self.sync_scrollbar_alpha();
+        // The offset rests on whole pixels, a line's top need not: at rest on a line the text
+        // is drawn from that line's own top, on the pixels it has without any scrolling.
+        let near = 0.5 / self.scale() + 0.01;
+        let scroll = self
+            .tool_line_tops
+            .iter()
+            .copied()
+            .find(|top| (top - self.scroll_y).abs() <= near)
+            .unwrap_or(self.scroll_y);
+        (scroll, self.scrollbar_draw_in(&layout, view_h))
+    }
+
     /// 脚本栅栏: the script's output lines and the footer in place of items.
     pub(super) fn redraw_script(&mut self) -> Result<()> {
         let Some(script) = self.script.clone() else {
@@ -1188,31 +1702,62 @@ impl FenceViewState {
             .collect();
         let chrome = self.chrome.clone();
         let hint = if script.quiet {
-            ""
+            pecofence_core::i18n::text("正在运行…")
         } else {
             pecofence_core::i18n::text("脚本没有输出文字")
         };
-        let hover = self.script_hover;
+        // The hover plates fade like an icon's: the row under the pointer in, the others out.
+        let now = Instant::now();
+        let animate = self.motion.enabled();
+        let hovered = self.script_hover;
+        if let Some(row) = hovered {
+            self.script_fades.set(animate, row, 1.0, now);
+        }
+        self.script_fades
+            .release_unless(animate, now, |row| hovered == Some(*row));
+        let hover: Vec<(usize, f32)> = (0..rows.len())
+            .map(|row| (row, self.script_fades.value(&row, now)))
+            .filter(|(_, a)| *a > 0.0)
+            .collect();
+        self.script_fades.prune(now, |row| *row < rows.len());
+        let pressed = match self.pressed {
+            Some(PressTarget::ScriptRow(row)) if self.press_inside => Some(row),
+            _ => None,
+        };
         let text_size = self.text_size;
+        // Rows that do not fit scroll above the footer.
+        let width_dip = self.content_size_px().0 as f32 / scale;
+        // A fence too narrow for the footer's line shows the status without the script's name.
+        let (footer, footer_form) =
+            chrome.script_footer(&script.footer, &script.footer_short, width_dip);
+        if footer_form != self.script_footer_form {
+            tracing::debug!(
+                fence = %self.active,
+                width = width_dip.round(),
+                form = footer_form,
+                from = self.script_footer_form,
+                "script footer: the form that fits the width"
+            );
+            self.script_footer_form = footer_form;
+        }
+        let extent = chrome.script_extent(width_dip, text_size, &rows, &footer)?;
+        let (scroll, scrollbar) = self.scroll_tool_text(extent);
         let mut hits = Vec::new();
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
                 hits = chrome.draw_script(
-                    session,
-                    &theme,
-                    scale,
-                    wd,
-                    hd,
-                    text_size,
-                    &rows,
-                    hover,
-                    hint,
-                    &script.footer,
+                    session, &theme, scale, wd, hd, text_size, &rows, &hover, pressed, hint,
+                    &footer, scroll, scrollbar,
                 )?;
                 Ok(())
             })?;
         self.note_draw_result(ok);
+        // The frame clock goes on until the plates have faded.
+        self.content_busy = self.script_fades.busy(now);
+        if self.content_busy {
+            self.frames.request();
+        }
         self.script_rows = hits
             .into_iter()
             .map(|(row, r)| (row, [r.left, r.top, r.right, r.bottom]))
@@ -1222,21 +1767,25 @@ impl FenceViewState {
 
     /// 便签与待办: the note's lines in place of items.
     pub(super) fn redraw_note(&mut self) -> Result<()> {
-        let Some(text) = self.note.clone() else {
+        if self.note.is_none() {
+            return Ok(());
+        }
+        // A dragged to-do changes places with the lines the pointer has passed.
+        self.reorder_dragged_todo(Instant::now());
+        // While the note is edited, the editor's text with its selection and caret; while a
+        // to-do is dragged, the text with that line where it has got to.
+        let marks = self.note_edit_marks();
+        let Some(text) = self
+            .note_edit
+            .as_ref()
+            .map(|e| e.text.clone())
+            .or_else(|| self.note_shown())
+        else {
             return Ok(());
         };
-        use pecofence_core::note::NoteLine;
-        use pecofence_render::fence_chrome::NoteLineDraw;
-        let lines: Vec<NoteLineDraw<'_>> = pecofence_core::note::lines(&text)
-            .into_iter()
-            .map(|l| match l {
-                NoteLine::Text(text) => NoteLineDraw { text, todo: None },
-                NoteLine::Todo { done, text } => NoteLineDraw {
-                    text,
-                    todo: Some(done),
-                },
-            })
-            .collect();
+        let now = Instant::now();
+        let moving = self.note_drag_draw(now);
+        let lines = super::note_text::note_draw_lines(&text, marks.is_some());
         let scale = self.scale();
         let theme = self
             .material_foreground()
@@ -1245,19 +1794,79 @@ impl FenceViewState {
         let hint =
             pecofence_core::i18n::text("单击这里写字。行首写 [ ] 的一行是待办，单击方框打勾。");
         let text_size = self.text_size;
-        let mut boxes = Vec::new();
+        // Lines that do not fit scroll.
+        let width_dip = self.content_size_px().0 as f32 / scale;
+        let extent = chrome.note_extent(width_dip, text_size, &lines)?;
+        let (scroll, scrollbar) = self.scroll_tool_text(extent);
+        // The check box under the pointer, or the one held (while the pointer is on it).
+        let hot = match self.pressed {
+            Some(PressTarget::NoteBox(line)) => self.press_inside.then_some((line, true)),
+            _ => self.note_box_hover.map(|line| (line, false)),
+        };
+        // The web address under the pointer, or the one held (while the pointer is on it).
+        let link_hot = match self.pressed {
+            Some(PressTarget::NoteLink(line, start)) => self.press_inside.then_some((line, start)),
+            _ => self.note_link_hover,
+        };
+        let mut drawn = pecofence_render::fence_chrome::NoteDrawn::default();
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
-                boxes = chrome.draw_note(
-                    session, &theme, scale, wd, hd, text_size, &lines, hint, None,
+                let edit = marks.as_ref().map(|(selection, caret)| {
+                    pecofence_render::fence_chrome::NoteEditDraw {
+                        caret: *caret,
+                        selection,
+                    }
+                });
+                let drag = moving.as_ref().map(|(offsets, lifted)| {
+                    pecofence_render::fence_chrome::NoteDragDraw {
+                        offsets,
+                        lifted: *lifted,
+                    }
+                });
+                drawn = chrome.draw_note(
+                    session,
+                    &theme,
+                    scale,
+                    wd,
+                    hd,
+                    text_size,
+                    &lines,
+                    hint,
+                    None,
+                    scroll,
+                    scrollbar,
+                    edit.as_ref(),
+                    hot,
+                    link_hot,
+                    drag.as_ref(),
                 )?;
                 Ok(())
             })?;
         self.note_draw_result(ok);
-        self.note_boxes = boxes
+        // What a draw of the note costs (a long note is laid out for its height and again
+        // for the drawing, at every blink of the caret too).
+        tracing::debug!(
+            fence = %self.active,
+            lines = lines.len(),
+            editing = marks.is_some(),
+            ms = crate::share_log::millis(now.elapsed()),
+            "note draw"
+        );
+        // The frame clock goes on while lines glide or the lifted line's plate fades.
+        self.content_busy = self.note_lines_moving(now);
+        if self.content_busy {
+            self.frames.request();
+        }
+        self.note_boxes = drawn
+            .boxes
             .into_iter()
             .map(|(line, r)| (line, [r.left, r.top, r.right, r.bottom]))
+            .collect();
+        self.note_links = drawn
+            .links
+            .into_iter()
+            .map(|(line, start, r)| (line, start, [r.left, r.top, r.right, r.bottom]))
             .collect();
         Ok(())
     }
@@ -1267,22 +1876,61 @@ impl FenceViewState {
         let Some(seconds) = self.clock else {
             return Ok(());
         };
-        let (time, date) = pecofence_platform::fileinfo::clock_texts(seconds);
+        let (time, date, short_date) = pecofence_platform::fileinfo::clock_texts(seconds);
+        // For a clock too narrow for the time at its smallest size: the time without its
+        // seconds, then without the AM / PM marker of a 12 hour format too.
+        let time_short = if seconds {
+            pecofence_platform::fileinfo::clock_texts(false).0
+        } else {
+            String::new()
+        };
+        let time_plain = pecofence_platform::fileinfo::clock_time_plain();
         let theme = self
             .material_foreground()
             .with_label_color(self.behavior.label_color.get());
         let chrome = self.chrome.clone();
         let mut sizes = self.clock_text;
         let mut area = (0.0, 0.0);
+        let mut date_shown = self.clock_date;
+        let mut date_text = String::new();
+        let mut time_shown = self.clock_time;
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
                 area = (wd, hd);
-                sizes = chrome.draw_clock(session, &theme, wd, hd, &time, &date)?;
+                let shorter = [time_short.as_str(), time_plain.as_str()];
+                let (time, which) = chrome.clock_time(wd, hd, &time, &shorter, &date);
+                time_shown = which;
+                let (shown, which) = chrome.clock_date(wd, hd, time, &date, &short_date);
+                date_shown = which;
+                date_text = shown.to_string();
+                sizes = chrome.draw_clock(session, &theme, wd, hd, time, &date, shown)?;
                 Ok(())
             })?;
         self.note_draw_result(ok);
         self.clock_text = sizes;
+        if time_shown != self.clock_time {
+            tracing::debug!(
+                fence = %self.active,
+                area_w = area.0.round(),
+                time = time_shown,
+                from = self.clock_time,
+                "clock time: with its seconds while they fit the width"
+            );
+            self.clock_time = time_shown;
+        }
+        if date_shown != self.clock_date {
+            tracing::debug!(
+                fence = %self.active,
+                area_w = area.0.round(),
+                date_dip = sizes.1,
+                date = date_shown,
+                text = %date_text,
+                from = self.clock_date,
+                "clock date: the form that fits the width on one line"
+            );
+            self.clock_date = date_shown;
+        }
         // Once per size the user ends up with: not on every step of a resize drag (the end of
         // the drag draws the clock again).
         if sizes != self.clock_text_logged && self.behavior.size_move.borrow().is_none() {
@@ -1302,6 +1950,8 @@ impl FenceViewState {
     }
 
     pub(super) fn redraw_content(&mut self) -> Result<()> {
+        self.content_look
+            .set(Some(self.material_foreground().label_look()));
         if self.note.is_some() {
             return self.redraw_note();
         }
@@ -1353,15 +2003,16 @@ impl FenceViewState {
         let count = self.items.len();
         let rows_near = |at: f32| band_range(&layout, count, at - view_h, at + 2.0 * view_h);
         let (here, there) = (rows_near(scroll), rows_near(target));
-        self.ensure_icons_and_labels(label_w, wide_w, |i| {
-            (here.contains(&i) || there.contains(&i)) && {
-                let c = grid.cell(i);
-                near(c.y, c.h, scroll) || near(c.y, c.h, target)
-            }
+        let draw_started = Instant::now();
+        self.ensure_icons_and_labels(label_w, wide_w, [here, there], |i| {
+            let c = grid.cell(i);
+            near(c.y, c.h, scroll) || near(c.y, c.h, target)
         });
+        let labels_spent = draw_started.elapsed();
 
         let now = Instant::now();
         self.prune_content_motion(now);
+        let empty_text_height = self.empty_text_height(now);
         self.sync_scrollbar_alpha();
         // Only the cells in the viewport are prepared (`draw_content` skips the others anyway);
         // an item gliding in from outside counts where it is drawn.
@@ -1378,6 +2029,10 @@ impl FenceViewState {
                 (y + c.h >= 0.0 && y <= view_h).then_some((i, x, y, alpha))
             })
             .collect();
+        let fit_started = Instant::now();
+        self.fit_drawn(placed.iter().map(|&(i, ..)| i), label_w, wide_w);
+        let labels_spent = labels_spent + fit_started.elapsed();
+        let placed_count = placed.len();
         let alphas = self.item_alphas(now, placed.iter().map(|&(i, ..)| i));
         let dragging = self.ole_drag;
         let cut = self.cut.clone();
@@ -1483,8 +2138,9 @@ impl FenceViewState {
             icon_top: grid.metrics.icon_top,
             label_gap: grid.metrics.label_gap,
             scrollbar,
-            // `cells` holds the viewport only; the hint is for a fence without items.
-            empty_text: self.items.is_empty().then(|| self.empty_text()),
+            empty_text: self.empty_text_draw(now),
+            empty_text_height,
+            empty_action: self.empty_action_draw(),
             drop_highlight: self.drop_wash.value_at(now),
             marquee: self.marquee_rect_dip(),
             insert_caret: self.insert_caret_dip(0.0),
@@ -1514,7 +2170,27 @@ impl FenceViewState {
             })?;
         self.note_draw_result(ok);
         self.note_content_fades(now);
+        self.log_content_draw(draw_started, labels_spent, placed_count);
+        self.arm_fit_ahead();
         Ok(())
+    }
+
+    /// One line per content draw: how many items the fence has, how many were drawn, and
+    /// what the time went to (`labels`: icon requests and fitted names; the rest: the
+    /// per-item states and the drawing).
+    fn log_content_draw(&self, started: Instant, labels: Duration, drawn: usize) {
+        let ms = |d: Duration| (d.as_secs_f64() * 100_000.0).round() / 100.0;
+        let spent = started.elapsed();
+        tracing::debug!(
+            fence = %self.active,
+            items = self.items.len(),
+            drawn,
+            scroll = self.scroll_y.round(),
+            ms = ms(spent),
+            labels_ms = ms(labels),
+            draw_ms = ms(spent.saturating_sub(labels)),
+            "content draw"
+        );
     }
 
     /// List / Details: rows below an optional fixed header.
@@ -1550,15 +2226,16 @@ impl FenceViewState {
         let count = self.items.len();
         let rows_near = |at: f32| band_range(&layout, count, at - view_h, at + 2.0 * view_h);
         let (here, there) = (rows_near(scroll), rows_near(target));
-        self.ensure_icons_and_labels(text_w, text_w, |i| {
-            (here.contains(&i) || there.contains(&i)) && {
-                let c = layout.cell(i);
-                near(c.y, c.h, scroll) || near(c.y, c.h, target)
-            }
+        let draw_started = Instant::now();
+        self.ensure_icons_and_labels(text_w, text_w, [here, there], |i| {
+            let c = layout.cell(i);
+            near(c.y, c.h, scroll) || near(c.y, c.h, target)
         });
+        let labels_spent = draw_started.elapsed();
 
         let now = Instant::now();
         self.prune_content_motion(now);
+        let empty_text_height = self.empty_text_height(now);
         self.sync_scrollbar_alpha();
         // Only the rows in the viewport are prepared (`draw_rows` skips the others anyway); a
         // row gliding in from outside counts where it is drawn.
@@ -1576,6 +2253,10 @@ impl FenceViewState {
                     .then_some((i, y, alpha))
             })
             .collect();
+        let fit_started = Instant::now();
+        self.fit_drawn(placed.iter().map(|&(i, ..)| i), text_w, text_w);
+        let labels_spent = labels_spent + fit_started.elapsed();
+        let placed_count = placed.len();
         let alphas = self.item_alphas(now, placed.iter().map(|&(i, ..)| i));
         let dragging = self.ole_drag;
         let cut = self.cut.clone();
@@ -1670,8 +2351,7 @@ impl FenceViewState {
         }));
         let group_headers = group_header_draws(&layout, scroll, metrics.header_h);
         let scrollbar = self.scrollbar_draw_in(&layout, view_h);
-        // `rows` holds the viewport only; the hint is for a fence without items.
-        let empty_text = self.items.is_empty().then(|| self.empty_text());
+        let empty_text = self.empty_text_draw(now);
         let marquee = self.marquee_rect_dip().map(|m| Rect {
             left: m.left,
             top: m.top + metrics.header_h,
@@ -1696,6 +2376,8 @@ impl FenceViewState {
             header_pressed,
             scrollbar,
             empty_text,
+            empty_text_height,
+            empty_action: self.empty_action_draw(),
             drop_highlight: self.drop_wash.value_at(now),
             marquee,
             insert_caret: self.insert_caret_dip(metrics.header_h),
@@ -1747,6 +2429,8 @@ impl FenceViewState {
             })?;
         self.note_draw_result(ok);
         self.note_content_fades(now);
+        self.log_content_draw(draw_started, labels_spent, placed_count);
+        self.arm_fit_ahead();
         Ok(())
     }
 }
@@ -1779,4 +2463,72 @@ pub(super) fn group_header_draws(
             text: bucket_caption(h.bucket),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod unreadable_pane_tests {
+    use super::unreadable_pane_alpha;
+    use pecofence_render::{Theme, ThemeMode};
+
+    fn luminance(rgb: [f32; 3]) -> f32 {
+        let linear = |c: f32| {
+            if c <= 0.03928 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
+    }
+
+    /// The nine 色调 presets (`TINT_PALETTE` in app/fence_options.rs), 红 to 灰.
+    const TINTS: [[u8; 3]; 9] = [
+        [0xE7, 0x48, 0x56],
+        [0xF7, 0x63, 0x0C],
+        [0xFF, 0xB9, 0x00],
+        [0x10, 0x89, 0x3E],
+        [0x00, 0xB7, 0xC3],
+        [0x00, 0x78, 0xD4],
+        [0x87, 0x64, 0xB8],
+        [0xE3, 0x00, 0x8C],
+        [0x7A, 0x75, 0x74],
+    ];
+
+    /// The pane lets the wallpaper through and nobody knows what that wallpaper shows: the
+    /// names still read (4.5 to 1) over the worst one, black under the light pane with its
+    /// dark names and white under the dark pane with its light names, at every opacity,
+    /// without a 色调 and with each preset. Composed as `fence_chrome::draw_plate` draws it:
+    /// the pane at its alpha, the glass layer at the same share, the tint wash at 22 %.
+    #[test]
+    fn names_read_on_the_pane_over_any_wallpaper() {
+        assert_eq!(unreadable_pane_alpha(1.0, false), 0.78);
+        assert!((unreadable_pane_alpha(0.55, false) - 0.654).abs() < 0.001);
+        let tints = TINTS.map(|t| Some(t.map(|c| c as f32 / 255.0)));
+        for (mode, behind) in [(ThemeMode::Light, 0.0), (ThemeMode::Dark, 1.0)] {
+            let theme = Theme::for_mode(mode).with_liquid_glass();
+            let (pane, layer, ink) = (theme.solid_fill, theme.glass_layer_fill, theme.text_primary);
+            for tint in std::iter::once(None).chain(tints) {
+                for opacity in [0.1, 0.55, 0.8, 1.0] {
+                    let dark_tinted = tint.is_some() && mode == ThemeMode::Dark;
+                    let alpha = unreadable_pane_alpha(opacity, dark_tinted);
+                    let mut shown =
+                        [pane.r, pane.g, pane.b].map(|c| alpha * c + (1.0 - alpha) * behind);
+                    for (s, l) in shown.iter_mut().zip([layer.r, layer.g, layer.b]) {
+                        *s += (l - *s) * layer.a * alpha;
+                    }
+                    if let Some(t) = tint {
+                        for (s, t) in shown.iter_mut().zip(t) {
+                            *s += (t - *s) * 0.22;
+                        }
+                    }
+                    let (x, y) = (luminance(shown), luminance([ink.r, ink.g, ink.b]));
+                    let contrast = (x.max(y) + 0.05) / (x.min(y) + 0.05);
+                    assert!(
+                        contrast >= 4.5,
+                        "{mode:?}, tint {tint:?} at {opacity}: {contrast:.2} to 1"
+                    );
+                }
+            }
+        }
+    }
 }

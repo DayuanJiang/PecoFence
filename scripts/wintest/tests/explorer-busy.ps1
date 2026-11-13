@@ -317,10 +317,16 @@ if ($Part -eq 'start') {
     $ping = "CLI slowest $max ms of $($lat.Count), last slow answer ended $slowUntil ms after the fences showed"
     while ([Xw]::Frozen) { Start-Sleep -Milliseconds 200 }
     Start-Sleep -Seconds 3
+    # Explorer hides its icons when it gets to PecoFence's request. It can still be busy with
+    # the 1400 files here (2026-11-13, a box made the same night: no answer to anything for
+    # more than 25 s in the first run, the request out and waiting all the time): the check
+    # waits for it, a minute at most, and says how long.
+    $late = 0
+    while ($late -lt 60000 -and [W]::IconsVisible()) { Start-Sleep -Milliseconds 250; $late += 250 }
     $icons = [W]::IconsVisible()
     $hid = @(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -match 'desktop icons (hidden|already|hide out|toggle answered|toggle not done)|not hidden yet|adopting|wallpaper read' })
     $fade = @(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -match 'fade finished' }) | Select-Object -First 2
-    $line = "explorer stuck=$stuck; first fence shown after $shownAt ms; $ping; Windows icons visible now=$icons; $(($hid | ForEach-Object { $_ -replace '^\S+\s+\S+\s+', '' }) -join ' | ')"
+    $line = "explorer stuck=$stuck; first fence shown after $shownAt ms; $ping; Windows icons visible now=$icons (waited $late ms more for Explorer); $(($hid | ForEach-Object { $_ -replace '^\S+\s+\S+\s+', '' }) -join ' | ')"
     Log "P2 $line"
     Log "P2 fade: $(($fade | ForEach-Object { $_ -replace '^\S+\s+', '' }) -join ' | ')"
     Check "P2 $k the fences answer within 1 s of showing" ($max -lt 1000) $line

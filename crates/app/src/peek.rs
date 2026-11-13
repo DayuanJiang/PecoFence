@@ -13,7 +13,7 @@ use crate::commands::{Command, CommandQueue, WM_APP_PEEK_FOCUSED};
 use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
 };
-use pecofence_platform::{HWND, desktop, monitors, msg};
+use pecofence_platform::{HWND, desktop, ime, monitors, msg};
 use pecofence_render::motion::{self, Curve, Motion, Tween};
 use std::time::{Duration, Instant};
 use windows_core::Result;
@@ -61,7 +61,8 @@ fn send_to_key_fence(message: u32, wparam: usize, lparam: isize) -> bool {
 }
 
 /// Focus went from a Peek window to `other`. A fence (click inside its content), another
-/// dimmer, the rename popup or the search box keeps the peek; anything else ends it.
+/// dimmer, the rename popup, the note editor's popup (a click into a note to write in it) or
+/// the search box keeps the peek; anything else ends it.
 pub fn keeps_peek(other: HWND) -> bool {
     if other.0.is_null() {
         return true;
@@ -70,12 +71,21 @@ pub fn keeps_peek(other: HWND) -> bool {
     cls == anchor::FENCE_CLASS
         || cls == PEEK_CLASS
         || cls == "PecoFence.Rename"
+        || cls == crate::note_edit::NOTE_EDIT_CLASS
         || cls == crate::peek_search::SEARCH_CLASS
+        || crate::notice::is_key_card(other)
+}
+
+/// A key that types a character (letters, digits, the number pad, punctuation): the keys an
+/// input method starts a word with. Space, Backspace, Enter and the arrows are not.
+fn typing_key(vk: u32) -> bool {
+    matches!(vk, 0x30..=0x39 | 0x41..=0x5A | 0x60..=0x6F | 0xBA..=0xC0 | 0xDB..=0xDF | 0xE2)
 }
 
 pub const PEEK_CLASS: &str = "PecoFence.PeekDimmer";
 const WA_INACTIVE: usize = 0;
 const VK_TAB: u32 = 0x09;
+const VK_F6: u32 = 0x75;
 const VK_LEFT: u32 = 0x25;
 const VK_UP: u32 = 0x26;
 const VK_RIGHT: u32 = 0x27;
@@ -159,6 +169,9 @@ impl PeekOverlay {
                 // First half of a character beyond U+FFFF (an emoji): WM_CHAR brings each
                 // UTF-16 unit on its own.
                 let high_surrogate = std::cell::Cell::new(None);
+                // The input method composes on the dimmer for the rest of this Peek (a key
+                // typed again for the search box came back here).
+                let ime_stays = std::cell::Cell::new(false);
                 Box::new(
                     move |hwnd: HWND, message: u32, wparam: usize, lparam: isize| {
                         match message {
@@ -174,6 +187,41 @@ impl PeekOverlay {
                                 if wparam as u32 == msg::VK_ESCAPE && lparam & (1 << 30) == 0 =>
                             {
                                 queue.push(Command::EndPeek("Esc pressed"));
+                                Some(0)
+                            }
+                            // A key the input method took (the first letter of a Chinese or
+                            // Japanese word): left here, the word would be composed in the input
+                            // method's own window at the screen's corner and the box would open
+                            // only once a candidate is taken. The composition is dropped and the
+                            // key typed again: the box opens empty first and has the keyboard
+                            // when that key is read, so the word is composed at the box's caret.
+                            // A key typed again that still comes here (no box, or it did not get
+                            // the keyboard) leaves this Peek's keys to the input method, as before.
+                            msg::WM_KEYDOWN if wparam as u32 == ime::VK_PROCESSKEY => {
+                                if ime::typed_again() {
+                                    ime_stays.set(true);
+                                }
+                                let vk = ime::key_taken(hwnd, lparam);
+                                let to_box = !ime_stays.get()
+                                    && typing_key(vk)
+                                    && !window::key_down(msg::VK_CONTROL)
+                                    && !window::key_down(msg::VK_MENU)
+                                    && !crate::peek_search::is_open();
+                                if !to_box {
+                                    tracing::debug!(
+                                        typing = typing_key(vk),
+                                        stays = ime_stays.get(),
+                                        "peek key taken by the input method: left to it"
+                                    );
+                                    return send_to_key_fence(message, wparam, lparam).then_some(0);
+                                }
+                                let cancelled = ime::cancel_composition(hwnd);
+                                ime::type_again(vk, lparam);
+                                tracing::debug!(
+                                    cancelled,
+                                    "peek key taken by the input method: typed again for the search box"
+                                );
+                                queue.push(Command::PeekSearchType(String::new()));
                                 Some(0)
                             }
                             // The other keys work on the clicked fence's icons. Letters still
@@ -194,6 +242,12 @@ impl PeekOverlay {
                                     queue.push(Command::FocusNextFence {
                                         from: HWND(std::ptr::null_mut()),
                                         back,
+                                    });
+                                    Some(0)
+                                } else if wparam as u32 == VK_F6 {
+                                    // To the card on screen, as F6 in a fence.
+                                    queue.push(Command::CardKeys {
+                                        from: HWND(std::ptr::null_mut()),
                                     });
                                     Some(0)
                                 } else {

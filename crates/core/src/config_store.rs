@@ -109,6 +109,17 @@ impl std::fmt::Display for SaveError {
     }
 }
 
+/// [`SaveError::step`] of the day's backup copy, written after config.json.
+const DAILY_BACKUP_STEP: &str = "daily backup";
+
+impl SaveError {
+    /// config.json itself is written and holds every change: only the day's backup copy
+    /// could not be written. To log, not to tell the user that changes will be lost.
+    pub fn config_written(&self) -> bool {
+        self.step == DAILY_BACKUP_STEP
+    }
+}
+
 impl std::error::Error for SaveError {}
 
 #[derive(Clone)]
@@ -365,7 +376,7 @@ impl ConfigStore {
                 return Err(at("replace config.json")(e));
             }
         }
-        self.daily_backup(&json).map_err(at("daily backup"))?;
+        self.daily_backup(&json).map_err(at(DAILY_BACKUP_STEP))?;
         Ok(())
     }
 
@@ -541,8 +552,9 @@ impl SaverShared {
         let started = Instant::now();
         let result = self.store.save(cfg);
         let took = started.elapsed();
-        // Before `done`: it may tell the owner's thread, which then asks `take_failed`.
-        self.lock().failed = result.is_err();
+        // Before `done`: it may tell the owner's thread, which then asks `take_failed`. A
+        // write that only missed the day's backup copy saved every change: not failed.
+        self.lock().failed = result.as_ref().is_err_and(|e| !e.config_written());
         (self.done)(took, &result);
         self.lock().writing = false;
         self.changed.notify_all();
@@ -1136,6 +1148,24 @@ mod tests {
             *steps.lock().unwrap(),
             [Some("create folder"), Some("create folder"), None]
         );
+    }
+
+    /// config.json is written but the day's backup copy cannot be: the changes are saved, so
+    /// the write does not count as failed (the owner logs it and shows no "cannot save").
+    #[test]
+    fn a_save_that_only_misses_the_daily_backup_is_no_failed_save() {
+        let store = ConfigStore::new(tmpdir("saver-backup-only"));
+        fs::create_dir_all(store.dir()).unwrap();
+        // A file where the backups folder should be.
+        fs::write(store.backups_dir(), "x").unwrap();
+        let error = store.save(&titled("a")).unwrap_err();
+        assert!(error.config_written(), "{error}");
+        assert_eq!(saved_title(&store), "a");
+        let saver = ConfigSaver::new(store.clone(), Box::new(|_, _| {}));
+        saver.save(titled("b"));
+        saver.wait();
+        assert!(!saver.take_failed());
+        assert_eq!(saved_title(&store), "b");
     }
 
     #[test]

@@ -92,7 +92,7 @@ fn describe(addr: u64, module: Option<HMODULE>) -> String {
 }
 
 /// The full path of `module` (`None`: the program itself).
-fn module_path(module: Option<HMODULE>) -> String {
+pub(crate) fn module_path(module: Option<HMODULE>) -> String {
     let mut name = [0u16; 260];
     // SAFETY: buffer of the stated length.
     let n = unsafe { GetModuleFileNameW(module, windows_core::PWSTR(name.as_mut_ptr()), 260) };
@@ -100,11 +100,12 @@ fn module_path(module: Option<HMODULE>) -> String {
 }
 
 windows_core::link!("kernel32.dll" "system" fn GetSystemWindowsDirectoryW(buffer: windows_core::PWSTR, size: u32) -> u32);
+windows_core::link!("kernel32.dll" "system" fn TerminateProcess(process: HANDLE, code: u32) -> windows_core::BOOL);
 
 /// Who ships the module at `path`: `windows`, `pecofence` (next to the program) or `other`,
 /// another program's DLL that loaded into PecoFence (a shell extension, an input method, a
 /// hook). The next start names an `other` module in its notice (feedback #97, GitHub #167).
-fn module_owner(path: &str) -> &'static str {
+pub(crate) fn module_owner(path: &str) -> &'static str {
     let mut dir = [0u16; 260];
     // SAFETY: buffer of the stated length.
     let n = unsafe { GetSystemWindowsDirectoryW(windows_core::PWSTR(dir.as_mut_ptr()), 260) };
@@ -226,6 +227,12 @@ unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
     // What the UI thread was doing, when it was running a command (another thread may be the
     // one that crashed).
     let command = crate::hangwatch::running_command();
+    // On the thread that builds the item menu in the background, that build is what crashed.
+    let command = if crate::shell_menu::prewarming_here() {
+        Some("Prewarm".to_string())
+    } else {
+        command
+    };
     tracing::error!(
         code = format_args!("{code:#010x}"),
         at = %at,
@@ -241,6 +248,18 @@ unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
     );
     // The process ends when this returns: the line has to be in the file by then.
     pecofence_core::log_file::written(pecofence_core::log_file::EXIT_WAIT);
+    // A crash inside another program's module ends the process here, with the exception's code
+    // as its exit code: the watchdog reads that code and starts PecoFence again. Returning to
+    // Windows instead hands the crash to Windows Error Reporting, and the dead process stayed,
+    // with its fences on screen, until that report was done: 1 to 2 s on a test box, about
+    // 50 s on a user's PC (GitHub #167). A crash in PecoFence's own code or in a Windows file
+    // still goes that way, so Windows records and reports it.
+    if owner == Some("other") {
+        // SAFETY: plain FFI call on this process.
+        unsafe {
+            let _ = TerminateProcess(GetCurrentProcess(), code);
+        }
+    }
     EXCEPTION_CONTINUE_SEARCH
 }
 

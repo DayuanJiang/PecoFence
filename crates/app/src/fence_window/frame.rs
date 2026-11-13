@@ -33,6 +33,10 @@ impl FenceViewState {
             content = true;
             more = true;
         }
+        if self.todo_autoscroll(now) {
+            content = true;
+            more = true;
+        }
         if self.tab_strip_autoscroll(now) {
             more = true;
         }
@@ -117,12 +121,13 @@ impl FrameHandle {
     /// the window moved in this frame and whether the glide goes on.
     fn tick_glide(&self, now: Instant) -> (bool, bool) {
         let hwnd = self.hwnd();
-        let Some((to, done)) = self
-            .view
-            .borrow()
-            .as_ref()
-            .and_then(|v| v.glide.map(|g| g.at(now)))
-        else {
+        let Some((to, done)) = self.view.borrow_mut().as_mut().and_then(|v| {
+            let g = v.glide.as_mut()?;
+            // The glide's clock starts with its first frame: what the caller did after asking
+            // for it (an import saves and repaints first) does not eat the motion.
+            g.begin(now);
+            Some(g.at(now))
+        }) else {
             return (false, false);
         };
         let r = window::window_rect(hwnd);
@@ -131,9 +136,9 @@ impl FrameHandle {
             let _ = window::move_window_to(hwnd, to.0, to.1);
         }
         if done {
-            let handles = self.view.borrow_mut().as_mut().map(|v| {
-                v.glide = None;
-                (v.queue.clone(), v.behavior.clone())
+            let handles = self.view.borrow_mut().as_mut().and_then(|v| {
+                let notify = v.glide.take().is_some_and(|g| g.notify);
+                notify.then(|| (v.queue.clone(), v.behavior.clone()))
             });
             if let Some((queue, behavior)) = handles {
                 queue_bounds_changed(&queue, &behavior, self.id, hwnd);
@@ -197,15 +202,66 @@ impl FrameHandle {
         let r = window::window_rect(hwnd);
         let w = w.unwrap_or(r.right - r.left);
         let top = top_for_height(upward, &r, h);
+        // Inside the app's frame a size that makes the window smaller waits for the push pass:
+        // the window, its shadow and the fences it pushes then move in one batch, and the
+        // animation lands after it. (A refresh that fell between the resize and the moves
+        // showed a bare strip of wallpaper between the shortened plate and a fence below
+        // that had not followed yet.) A window that grows is resized at once, as before: its
+        // plate is filled for the new size in WM_SIZE, a few ms after the resize, and the
+        // fences it pushes move after that, out from under it. Moved in one batch with the
+        // resize, they stood a step away from the plate's old edge until the fill came.
+        let behavior = self.view.borrow().as_ref().map(|v| v.behavior.clone());
+        let pos = window::WindowPos {
+            hwnd,
+            x: r.left,
+            y: top,
+            size: Some((w, h)),
+        };
+        if w <= r.right - r.left
+            && h <= r.bottom - r.top
+            && let Some(behavior) = behavior
+            && behavior.defer_position(pos)
+        {
+            if done {
+                behavior
+                    .frame_landings
+                    .borrow_mut()
+                    .push((hwnd, rolled_at_end));
+            }
+            return more || !done;
+        }
         let _ = window::set_window_bounds(hwnd, r.left, top, w, h);
         if !done {
             return true;
         }
+        self.land(rolled_at_end);
+        more
+    }
+
+    /// Before the frame's batch of window positions is applied. For a window the batch only
+    /// moves, the shadow window comes back: it moves in the batch. A window the batch resizes
+    /// (it gets smaller) needs a new shadow bitmap, which no batch carries, and Windows spends
+    /// about 5 ms between two resizes of windows (measured on a PC with a GPU): its shadow
+    /// shrinks now, just before the batch, behind the plate that is still at its old size.
+    /// A rolled-up fence left its old shadow outline standing on the wallpaper for that time.
+    pub fn shadow_before_batch(&self, resized: bool) -> Option<HWND> {
+        let mut guard = self.view.borrow_mut();
+        let v = guard.as_mut()?;
+        if resized {
+            v.update_shadow();
+            return None;
+        }
+        Some(v.shadow.hwnd())
+    }
+
+    /// The end of a height animation, once the window has its final size.
+    pub fn land(&self, rolled_at_end: Option<bool>) {
+        let hwnd = self.hwnd();
         // Phase 3: final geometry — lay the frozen content out once and rasterise everything.
         let (queue, behavior) = {
             let mut guard = self.view.borrow_mut();
             let Some(v) = guard.as_mut() else {
-                return more;
+                return;
             };
             v.roll_anim = None;
             v.height_anim = None;
@@ -222,7 +278,8 @@ impl FrameHandle {
                 if rolled {
                     let had = v.selected.len();
                     let _ = v.end_selection();
-                    v.focus_visible = false;
+                    // The keyboard stays in the fence (it was rolled up by keys): the focus
+                    // mark stays too, on the title row from here on (`title_focus`).
                     v.type_ahead.clear();
                     if had > 0 {
                         tracing::debug!(had, "roll-up landed: the hidden selection is dropped");
@@ -238,7 +295,14 @@ impl FrameHandle {
             // animation, in the pass that redraws everything anyway).
             v.update_backdrop();
             let (w, h) = window::window_rect_size(hwnd);
-            if let Err(e) = v.layout_panels(w, h).and_then(|_| v.redraw()) {
+            if let Err(e) = v.layout_panels(w, h).and_then(|_| {
+                // An icon size step made the fence shorter after its place was chosen: the
+                // selected icon was left below the new lower edge.
+                if std::mem::take(&mut v.reveal_after_height) && !v.rolled_up {
+                    v.reveal_selection();
+                }
+                v.redraw()
+            }) {
                 tracing::error!(error = %e, "redraw after height animation failed");
             }
             v.update_shadow_now();
@@ -251,6 +315,5 @@ impl FrameHandle {
             (v.queue.clone(), v.behavior.clone())
         };
         queue_bounds_changed(&queue, &behavior, self.id, hwnd);
-        more
     }
 }

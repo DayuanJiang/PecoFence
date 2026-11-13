@@ -1,53 +1,68 @@
-// 1.2 新建栅栏: marquee on the empty desktop → the 新建栅栏 button at its corner → drag an icon in → rename.
+// 1.2 新建栅栏: marquee on the empty desktop → the 新建栅栏 button at its corner (the box stays,
+// fainter, while the buttons are offered) → the new fence fades in and its title opens as the
+// name box → type the name, Enter → drag a loose desktop icon in.
 (() => {
     'use strict';
-    const { E, ramp, lerp, inside, pathAt, firstWhen, el, put, show, text, slot, icon, fence, menu, drawMenu,
-        pointer, drawPointer, drawKeys, taskbar, loopFade, T } = PM;
+    const { E, ramp, lerp, inside, pathAt, firstWhen, el, put, show, text, slot, deskCell, icon, fence,
+        pointer, drawPointer, drawKeys, taskbar, loopFade, T, TITLE_H } = PM;
 
     const D = 11.6;
+    // the box drawn on the desktop, then the fence in its place
+    const NEU = { x: 150, y: 96, w: 324, h: 180, title: '新栅栏' };
+    const X1 = NEU.x + NEU.w, Y1 = NEU.y + NEU.h;
+    // 「桌面」 of a new installation: loose icons from the top-left corner, no title, no border
+    const DESK = [['pdf', '合同.pdf'], ['docx', '周报.docx'], ['xlsx', '预算.xlsx'], ['txt', '待办.txt'], ['folder', '素材']];
+    const PICK = 1;                                     // 周报.docx goes into the new fence
+    const GRAB = { x: deskCell(0, PICK).x + 39, y: deskCell(0, PICK).y + 24 };
     const PATH = [
         [0, 560, 400], [0.3, 560, 400],
-        [1.0, 318, 56], [1.2, 318, 56],          // marquee start
-        [2.4, 642, 236], [2.7, 642, 236],        // marquee end, release
-        [3.1, 592, 257], [3.4, 592, 257],        // 新建栅栏 at the box's corner
-        [4.5, 151, 244], [4.8, 151, 244],        // grab 周报.docx
-        [6.0, 400, 205], [6.7, 400, 205],        // drop into the new fence
-        [7.3, 372, 74], [7.6, 372, 74],          // right-click its title
-        [8.0, 430, 121], [8.35, 430, 121],       // 重命名…
-        [8.9, 548, 150], [D, 548, 150],
+        [1.0, NEU.x, NEU.y], [1.2, NEU.x, NEU.y],           // marquee start
+        [2.4, X1, Y1], [2.7, X1, Y1],                       // marquee end, release
+        [3.1, X1 - 50, Y1 + 21], [5.8, X1 - 50, Y1 + 21],   // 新建栅栏 at the box's corner; rests while the name is typed
+        [6.7, GRAB.x, GRAB.y], [6.9, GRAB.x, GRAB.y],       // grab 周报.docx on the desktop
+        [8.1, 400, 196], [8.6, 400, 196],                   // let go in the new fence
+        [9.3, 560, 340], [D, 560, 340],
     ];
-    const CLICKS = [{ t: 3.3 }, { t: 7.45, right: true }, { t: 8.2 }];
-    const PRESSES = [[1.2, 2.5], [4.8, 6.1]];
-    const CHIPS = [[1.2, 2.4, '按住拖动'], [4.8, 6.0, '拖进新栅栏', 16, -30], [7.3, 7.58, '右键标题栏', -30, -48], [8.7, 9.5, '输入名字']];
-    const KEYS = [{ a: 9.35, b: 10.1, keys: ['Enter'], down: 9.65 }];
+    const RELEASE = 2.5, DRAG = 6.9, DROP_AT = 8.3;
+    const CLICKS = [{ t: 3.3 }];
+    const PRESSES = [[1.2, RELEASE], [DRAG, DROP_AT]];
     // The two small buttons under the box's bottom-right corner (right edges lined up).
-    const OFFER = { right: 642, y: 243, a: 2.55, b: 3.36 };
-    const MENU2 = { x: 374, y: 76, a: 7.5, b: 8.24 };
-    const DROP_AT = 6.1;
+    const OFFER = { right: X1, y: Y1 + 7, a: 2.55, b: 3.36 };
+    // create_fence_with_rename: the fence fades in, then its title opens as the name box with
+    // the name selected; typing replaces it
+    const FADE = 3.4, EDIT = [3.7, 5.4], TYPE = [4.5, 4.8];
+    const CHIPS = [[1.2, 2.4, '按住拖动'], [3.9, 5.0, '输入名字', NEU.x + 128, NEU.y + 5, 'abs'],
+        [DRAG, 8.1, '拖进新栅栏', 16, -30]];
+    const KEYS = [{ a: 5.0, b: 5.8, keys: ['Enter'], down: 5.35 }];
 
     function build(root) {
         const r = {};
         el('div', 'wall', root);
         r.scene = el('div', 'scene', root);
         const S = r.scene;
-        r.prog = fence(S, { x: 28, y: 40, w: 246, h: 124, title: '程序' });
-        r.desk = fence(S, { x: 28, y: 184, w: 246, h: 204, title: '桌面' });
-        r.neu = fence(S, { x: 318, y: 56, w: 324, h: 180, title: '新栅栏' });
+        r.prog = fence(S, { x: 530, y: 24, w: 246, h: 124, title: '程序' });
+        r.neu = fence(S, { ...NEU });
+        r.caret = el('div', 'icons-caret', S);
 
         [['url', '项目主页'], ['exe', '截图工具'], ['url', '在线文档']].forEach(([k, l], i) => {
             const s = slot(r.prog, i, 3);
             put(icon(S, k, l), s.x, s.y);
         });
-        r.deskIcons = [['pdf', '合同.pdf'], ['docx', '周报.docx'], ['xlsx', '预算.xlsx'], ['txt', '待办.txt'], ['folder', '素材']]
-            .map(([k, l]) => icon(S, k, l));
-        r.moved = icon(S, 'docx', '周报.docx');
+        r.deskIcons = DESK.map(([k, l]) => {
+            const n = icon(S, k, l);
+            n.classList.add('desk');
+            return n;
+        });
+        r.moved = icon(S, ...DESK[PICK]);
 
         r.marquee = el('div', 'marquee', S);
-        r.ghost = icon(S, 'docx', '周报.docx');
-        r.ghost.classList.add('ghost');
+        r.ghost = icon(S, ...DESK[PICK]);
+        r.ghost.classList.add('desk', 'ghost');
         r.badge = el('div', 'badge', S);
+        // the fence has its name by then (the name is a literal of its own, as everywhere else)
         r.badge.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6h8M6.5 2.8 9.7 6 6.5 9.2" ' +
-            'fill="none" stroke="#1663c7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>移动到 <b>新栅栏</b>';
+            'fill="none" stroke="#1663c7" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+            T('移动到 %1').replace('%1', '<b>' + '工作' + '</b>');
         r.offer = el('div', 'offer', S);
         const folderBtn = el('div', 'sec', r.offer);
         folderBtn.innerHTML = '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="M1.5 3.5h4l1.2 1.3h5.8v6.7h-11z" ' +
@@ -56,14 +71,15 @@
         r.newBtn = el('div', 'acc', r.offer);
         el('span', 'plus', r.newBtn, '+');
         el('span', null, r.newBtn, '新建栅栏');
-        r.menu2 = menu(S, ['收起', '重命名…', '-', { t: '视图', sub: 1 }, { t: '排序方式', sub: 1 }, { t: '新建', sub: 1 },
-            { t: '粘贴', key: 'Ctrl+V', dis: 1 }, { t: '标签页', sub: 1 }, '-', '锁定位置和大小', '栅栏选项…', '删除栅栏', '-',
-            { t: '添加到桌面', sub: 1 }], 196);
         r.keys = el('div', 'keys', S);
         r.ptr = pointer(S);
         taskbar(root);
 
-        r.enterNeu = firstWhen(4.8, DROP_AT, t => inside(pathAt(t, PATH), r.neu));
+        // when the dragged icon comes over the new fence (highlight, badge) and over its item
+        // area (insertion line)
+        const body = { x: NEU.x, y: NEU.y + TITLE_H, w: NEU.w, h: NEU.h - TITLE_H };
+        r.enterNeu = firstWhen(DRAG, DROP_AT, t => inside(pathAt(t, PATH), NEU));
+        r.enterBody = firstWhen(DRAG, DROP_AT, t => inside(pathAt(t, PATH), body));
         return r;
     }
 
@@ -71,12 +87,15 @@
         r.scene.style.opacity = loopFade(t, D, looped);
         const p = pathAt(t, PATH);
 
-        // 1. marquee, drawn by PecoFence while the desktop icons are hidden
-        if (show(r.marquee, t >= 1.22 && t < 2.58)) {
-            const x0 = 318, y0 = 56, x1 = Math.max(x0, p.x), y1 = Math.max(y0, p.y);
-            r.marquee.style.width = (x1 - x0) + 'px';
-            r.marquee.style.height = (y1 - y0) + 'px';
-            put(r.marquee, x0, y0, 1 - ramp(t, 2.5, 2.58, E.lin));
+        // 1. marquee, drawn by PecoFence while the desktop icons are hidden. After the release it
+        //    stays at half strength for as long as the buttons are offered (marquee_band.rs
+        //    OFFERED) and goes with them.
+        if (show(r.marquee, t >= 1.22 && t < OFFER.b + .1)) {
+            const drawn = t < RELEASE;
+            const x1 = drawn ? Math.max(NEU.x, p.x) : X1, y1 = drawn ? Math.max(NEU.y, p.y) : Y1;
+            r.marquee.style.width = (x1 - NEU.x) + 'px';
+            r.marquee.style.height = (y1 - NEU.y) + 'px';
+            put(r.marquee, NEU.x, NEU.y, (drawn ? 1 : .5) * (1 - ramp(t, OFFER.b, OFFER.b + .08, E.lin)));
         }
 
         // 2. the buttons at the box's corner (they take no keyboard), then the fence fades in
@@ -87,54 +106,53 @@
             // the pointer reaches 新建栅栏 at 3.1 s (PATH)
             r.newBtn.classList.toggle('hot', t >= 3.05 && t < OFFER.b);
         }
-        if (show(r.neu.n, t >= 3.4)) {
-            const o = ramp(t, 3.4, 3.62);
-            put(r.neu.n, r.neu.x, r.neu.y, o, ` scale(${lerp(.965, 1, o)})`);
+        if (show(r.neu.n, t >= FADE)) {
+            const o = ramp(t, FADE, FADE + .22);
+            put(r.neu.n, NEU.x, NEU.y, o, ` scale(${lerp(.965, 1, o)})`);
         }
-        r.neu.hint.style.opacity = 1 - ramp(t, DROP_AT, DROP_AT + .1, E.lin);
-        // render.rs empty_text: an empty fence under a drag says 松开即可放入
-        text(r.neu.hint, t >= r.enterNeu && t < DROP_AT + .1 ? T('松开即可放入') : T('将项目拖到此处'));
 
-        // 3. drag 周报.docx from 桌面 into the new fence
-        const dragging = t >= 4.8 && t < DROP_AT;
-        r.deskIcons.forEach((n, i) => {
-            const a = slot(r.desk, i, 3);
-            if (i === 1) {
-                put(n, a.x, a.y, 1 - ramp(t, DROP_AT, DROP_AT + .083, E.lin));
-                n.classList.toggle('sel', dragging);
-            } else if (i > 1) {
-                const b = slot(r.desk, i - 1, 3), q = ramp(t, DROP_AT + .05, DROP_AT + .3, E.p2p);
-                put(n, lerp(a.x, b.x, q), lerp(a.y, b.y, q));
-            } else {
-                put(n, a.x, a.y);
-            }
-        });
-        if (show(r.moved, t >= DROP_AT)) {
-            const s = slot(r.neu, 0, 4);
-            put(r.moved, s.x, s.y, ramp(t, DROP_AT + .02, DROP_AT + .19, E.lin));
-        }
-        if (show(r.ghost, t >= 4.92 && t < DROP_AT)) put(r.ghost, p.x - 39, p.y - 24, .72);
-        const over = t >= r.enterNeu && t < DROP_AT;
-        r.neu.drop.style.opacity = over ? ramp(t, r.enterNeu, r.enterNeu + .083, E.lin)
-            : t >= DROP_AT ? 1 - ramp(t, DROP_AT, DROP_AT + .167, E.lin) : 0;
-        if (show(r.badge, over)) put(r.badge, p.x + 2, p.y + 34);
-
-        // 4. right-click the title → 重命名… → type → Enter
-        drawMenu(r.menu2, t, MENU2.x, MENU2.y, MENU2.a, MENU2.b, p);
-        const editing = t >= 8.3 && t < 9.7;
+        // 3. the name box opens by itself once the fence has faded in: type → Enter
+        const editing = t >= EDIT[0] && t < EDIT[1];
         show(r.neu.edit, editing);
         show(r.neu.name, !editing);
         if (editing) {
-            const caret = Math.floor((t - 8.3) / .5) % 2 === 0 ? '<span class="caret"></span>' : '';
-            const html = t < 8.85 ? '<span class="sel">新栅栏</span>'
-                : (t < 9.05 ? '工' : '工作') + caret;
+            const caret = Math.floor((t - EDIT[0]) / .5) % 2 === 0 ? '<span class="caret"></span>' : '';
+            const html = t < TYPE[0] ? '<span class="sel">新栅栏</span>'
+                : (t < TYPE[1] ? '工' : '工作') + caret;
             if (r.neu.edit.innerHTML !== html) r.neu.edit.innerHTML = html;
         }
-        text(r.neu.name, t >= 9.7 ? '工作' : T('新栅栏'));
+        text(r.neu.name, t >= EDIT[1] ? '工作' : T('新栅栏'));
+
+        // 4. drag 周报.docx from the desktop into the fence. The other loose icons keep their
+        //    cells (自由摆放); the dropped one glides from where it was let go to its cell
+        //    (167 ms, no fade).
+        const dragging = t >= DRAG && t < DROP_AT;
+        r.deskIcons.forEach((n, i) => {
+            const c = deskCell(0, i);
+            put(n, c.x, c.y, i === PICK ? 1 - ramp(t, DROP_AT, DROP_AT + .083, E.lin) : 1);
+            n.classList.toggle('sel', i === PICK && dragging);
+        });
+        const cell = slot(NEU, 0, 4);
+        if (show(r.moved, t >= DROP_AT)) {
+            const from = pathAt(DROP_AT, PATH), q = ramp(t, DROP_AT, DROP_AT + .167);
+            put(r.moved, lerp(from.x - 39, cell.x, q), lerp(from.y - 24, cell.y, q));
+        }
+        if (show(r.ghost, t >= DRAG + .12 && t < DROP_AT)) put(r.ghost, p.x - 39, p.y - 24, .72);
+
+        // drop feedback of the fence: highlight, insertion line at the first cell, the hint's
+        // text (render.rs empty_text: an empty fence under a drag says 松开即可放入) and the badge
+        const over = t >= r.enterNeu && t < DROP_AT;
+        r.neu.drop.style.opacity = over ? ramp(t, r.enterNeu, r.enterNeu + .083, E.lin)
+            : t >= DROP_AT ? 1 - ramp(t, DROP_AT, DROP_AT + .167, E.lin) : 0;
+        put(r.caret, cell.x, cell.y, t < DROP_AT ? ramp(t, r.enterBody, r.enterBody + .083, E.lin)
+            : 1 - ramp(t, DROP_AT, DROP_AT + .083, E.lin));
+        r.neu.hint.style.opacity = 1 - ramp(t, DROP_AT, DROP_AT + .1, E.lin);
+        text(r.neu.hint, t >= r.enterNeu && t < DROP_AT + .1 ? T('松开即可放入') : T('将项目拖到此处'));
+        if (show(r.badge, over)) put(r.badge, p.x + 2, p.y + 34);
 
         drawKeys(r.keys, t, KEYS);
         drawPointer(r.ptr, t, p, { clicks: CLICKS, presses: PRESSES, chips: CHIPS, at: u => pathAt(u, PATH) });
     }
 
-    PM.register('create', { duration: D, poster: 6.4, build, render });
+    PM.register('create', { duration: D, poster: 8.2, build, render });
 })();
