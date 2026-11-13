@@ -9,7 +9,7 @@ use pecofence_core::usage as recorder;
 use std::sync::PoisonError;
 
 /// Where the reports go: `POST <USAGE_URL>/usage`.
-const USAGE_URL: &str = "https://dipg04t9bhh01.cloudfront.net";
+const USAGE_URL: &str = "https://usage.pecofence.jiang.jp";
 /// A test's own listener in place of `USAGE_URL`, taken only when it starts with
 /// `http://127.0.0.1:`. With it a test run records and sends.
 const URL_VAR: &str = "PECOFENCE_USAGE_URL";
