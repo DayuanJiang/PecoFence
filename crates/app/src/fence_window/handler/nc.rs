@@ -218,6 +218,11 @@ pub(super) fn on_ncmousemove(
         if title {
             let _ = v.redraw_chrome_only();
         }
+        // Explorer's single-click open: a rest on the title gives the fence the keyboard after
+        // the hover time (`on_timer_hover_select`), so F2 there reaches it.
+        if title && is_title && behavior.single_click.get() {
+            window::set_timer(hwnd, TIMER_HOVER_SELECT, Tooltip::hover_delay_ms());
+        }
         // The Task View glyph of a single title lies on the caption: its infotip (the desktops
         // the fence shows on) is armed here, as is a cut filter tag's (the whole filter);
         // elsewhere on the caption no infotip shows.
@@ -228,13 +233,24 @@ pub(super) fn on_ncmousemove(
                 y: msg::hi_i16(lparam),
             },
         );
-        let tip = if v.desktop_glyph_at(pt.x, pt.y) {
+        let tip = if v.title_row_unseen() {
+            // 鼠标移入时保持透明 with the title row folded away: nothing of the row is drawn,
+            // so nothing in it has an infotip.
+            None
+        } else if v.desktop_glyph_at(pt.x, pt.y) {
             Some(TipTarget::Desktops)
         } else if v.lock_glyph_at(pt.x, pt.y) {
             Some(TipTarget::Lock)
+        } else if v.cut_filter_tag_at(pt.x, pt.y) {
+            Some(TipTarget::FilterTag)
+        } else if v.count_tip.is_some() && v.count_capsule_at(pt.x, pt.y) {
+            Some(TipTarget::Count)
         } else {
-            v.cut_filter_tag_at(pt.x, pt.y)
-                .then_some(TipTarget::FilterTag)
+            // A title cut short with an ellipsis: the caption shows all of it, as a cut tab
+            // caption does. A rolled-up fence that the resting pointer is about to expand
+            // shows none: the tip would come up over the icons as they appear.
+            let expands = v.rolled_up && !v.behavior.click_to_expand.get();
+            (is_title && !expands && v.lone_title_cut()).then_some(TipTarget::Title)
         };
         v.update_tip_target(tip, pt.x, pt.y);
         if item && !v.rolled_up {
@@ -257,8 +273,9 @@ pub(super) fn on_ncmousemove(
             && !menu_open.get()
             && !peek_armed.replace(true)
         {
-            window::set_timer(hwnd, TIMER_PEEK_OPEN, behavior.hover_open_ms());
+            window::set_timer(hwnd, TIMER_PEEK_OPEN, behavior.peek_open_wait_ms());
         }
+        behavior.note_rolled_title_pointer(v.rolled_up || v.peeking);
         if v.peeking {
             window::kill_timer(hwnd, TIMER_PEEK_CLOSE);
         }
@@ -308,7 +325,13 @@ pub(super) fn on_ncmouseleave(
         // (WM_MOUSEMOVE decides over the client area).
         if matches!(
             v.tip_target,
-            Some(TipTarget::Desktops | TipTarget::FilterTag | TipTarget::Lock)
+            Some(
+                TipTarget::Desktops
+                    | TipTarget::FilterTag
+                    | TipTarget::Lock
+                    | TipTarget::Title
+                    | TipTarget::Count
+            )
         ) {
             v.hide_tip();
         }
@@ -316,6 +339,9 @@ pub(super) fn on_ncmouseleave(
         // message can come after the WM_MOUSEMOVE there, which already counted the row as
         // hovered, and clearing it hid the chevron until the pointer moved again.
         let c = window::screen_to_client(hwnd, pt);
+        if (v.rolled_up || v.peeking) && !(inside && v.title_row_at(c.x, c.y)) {
+            h.behavior.note_rolled_title_pointer(false);
+        }
         if v.title_hover && !(inside && v.title_row_at(c.x, c.y)) {
             v.title_hover = false;
             let _ = v.redraw_chrome_only();
@@ -345,6 +371,7 @@ pub(super) fn on_nclbuttondown(
     // loop (SC_MOVE caption press or SC_SIZE edge press alike).
     window::kill_timer(hwnd, TIMER_PEEK_OPEN);
     peek_armed.set(false);
+    behavior.roll_quick.set(false);
     if let Some(v) = view.borrow_mut().as_mut() {
         v.suppress_dblclk = false;
         v.hide_tip();
@@ -563,6 +590,7 @@ pub(super) fn on_ncrbuttondown(
     _lparam: isize,
 ) -> Option<isize> {
     h.ncrbutton_press.set(true);
+    h.behavior.roll_quick.set(false);
     None
 }
 
@@ -614,16 +642,25 @@ pub(super) fn on_size(h: &HandlerCtx, hwnd: HWND, _wparam: usize, lparam: isize)
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
         // A window created during early logon may have reported 96 DPI
-        // before the display settled; re-read it on every size change.
-        let dpi_changed = v.apply_dpi(monitors::dpi_for_window(hwnd));
+        // before the display settled; re-read it on every size change. Not while the app
+        // places the window: it has set the scale of the monitor the window goes to
+        // (`restore_geometry`), and Windows reports the old one for the window until the
+        // WM_DPICHANGED that follows. Taking it here set the scale three times for one scale
+        // change (new, old, new), dropping every icon and label each time.
+        let dpi_changed = !v.placing && v.apply_dpi(monitors::dpi_for_window(hwnd));
+        v.note_edge_top();
         v.update_backdrop();
         let crop_done = Instant::now();
+        // The parts of an animated step's draw, for the `resize stages` line.
+        let (mut clip_us, mut surface_us) = (0, 0);
         let drawn = if v.height_animating() {
             // Frame-clock resize: the content surface is frozen at its
             // expanded size; only the chrome (backdrop, rim) follows.
-            v.update_shape_clip(w, h)
-                .and_then(|_| v.chrome_panel.resize(w, h))
-                .and_then(|_| v.draw_chrome_panel())
+            let clipped = v.update_shape_clip(w, h);
+            clip_us = crop_done.elapsed().as_micros();
+            let resized = clipped.and_then(|_| v.chrome_panel.resize(w, h));
+            surface_us = crop_done.elapsed().as_micros() - clip_us;
+            resized.and_then(|_| v.draw_chrome_panel())
         } else {
             // The cell grid is re-laid out for the new width: an edge the user drags glides
             // the icons to their new cells when the column count changes; any other resize
@@ -672,7 +709,12 @@ pub(super) fn on_size(h: &HandlerCtx, hwnd: HWND, _wparam: usize, lparam: isize)
             w, h,
             crop_us = crop_done.duration_since(started).as_micros(),
             draw_us = draw_done.duration_since(crop_done).as_micros(),
+            // Of `draw_us` in a step of a height animation: the rounded clip and the
+            // chrome surface's new size; the rest is the chrome's redraw (`surface draw`).
+            clip_us,
+            surface_us,
             shadow_us = draw_done.elapsed().as_micros(),
+            animating = v.height_animating(),
             "resize stages"
         );
     }
@@ -696,6 +738,7 @@ pub(super) fn on_move(
         } else {
             v.refresh_backdrop();
         }
+        v.sync_edge_top();
         v.update_shadow();
     }
     Some(0)

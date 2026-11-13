@@ -14,6 +14,7 @@ mod fence_window;
 mod filter_box;
 mod icons;
 mod ipc_server;
+mod layer_fade;
 mod layout;
 mod marquee_band;
 mod marquee_offer;

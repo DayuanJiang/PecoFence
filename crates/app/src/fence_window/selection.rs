@@ -109,8 +109,10 @@ pub(super) fn drag_selection(selected: &mut HashSet<usize>, item: usize) {
 }
 
 /// The control the mouse button is held on. Items and tabs act on press (selection / switch,
-/// as in Explorer); the up button, the roll-up chevron and header cells are buttons that fire
-/// on release inside the same control and show the WinUI pressed fill meanwhile.
+/// as in Explorer); the up button, the roll-up chevron, header cells, a note's check boxes
+/// (by line) and a script fence's clickable rows (by row) are buttons that fire on release
+/// inside the same control and show the WinUI pressed fill meanwhile; so is a web address
+/// in a note (by line and start).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum PressTarget {
     Item(usize),
@@ -118,6 +120,9 @@ pub(super) enum PressTarget {
     Header(DetailColumn),
     Up,
     Chevron,
+    NoteBox(usize),
+    NoteLink(usize, usize),
+    ScriptRow(usize),
 }
 
 /// How a keyboard navigation key moves the cursor (Explorer): plain = select the target,
@@ -231,6 +236,21 @@ impl FenceViewState {
         self.focus_visible = true;
     }
 
+    /// Space: the focused item joins the selection when it is not selected yet (File Explorer
+    /// keeps what was selected). Returns whether it did (false: no focus, or the focused item
+    /// is already selected).
+    pub(super) fn select_focused(&mut self) -> bool {
+        let Some(a) = self.anchor_index.filter(|a| *a < self.items.len()) else {
+            return false;
+        };
+        if self.rolled_up || !self.selected.insert(a) {
+            return false;
+        }
+        self.range_anchor = Some(a);
+        self.focus_visible = true;
+        true
+    }
+
     /// Moves the selection anchor by (dx, dy) cells (see [`CursorMode`]).
     pub(super) fn move_cursor(&mut self, dx: i32, dy: i32, mode: CursorMode) {
         if self.items.is_empty() {
@@ -264,11 +284,49 @@ impl FenceViewState {
     /// Releasing while the band was still edge-auto-scrolling leaves the offset between
     /// pixels, so it snaps here; the caller's redraw paints the snapped offset.
     pub(super) fn end_marquee(&mut self) -> bool {
-        let had = self.marquee.take().is_some();
-        if had {
-            self.snap_scroll();
+        let Some(m) = self.marquee.take() else {
+            return false;
+        };
+        self.focus_after_marquee(&m);
+        self.snap_scroll();
+        true
+    }
+
+    /// The keyboard goes on from a rectangle selection: the focus and the Shift anchor move to
+    /// the selected item nearest to where the rectangle began, as in File Explorer (there,
+    /// Down after a rectangle drawn from file 3 to file 6 selects file 4). They stayed on the
+    /// item that had the focus before, often none, so the next arrow key started at the first
+    /// icon of the fence. A rectangle that selected nothing leaves them alone.
+    fn focus_after_marquee(&mut self, m: &MarqueeState) {
+        if self.selected.is_empty() {
+            return;
         }
-        had
+        let scale = self.scale();
+        let (layout, _) = self.scroll_extent();
+        // Where the rectangle began, in unscrolled content DIPs (as `marquee_rect_dip`).
+        let x = (m.start.0 - self.content_x) as f32 / scale;
+        let y = (m.start.1 - self.content_y) as f32 / scale - layout.fixed_top() + m.start_scroll;
+        let away = |i: usize| {
+            let c = layout.cell(i);
+            let dx = (c.x - x).max(x - (c.x + c.w)).max(0.0);
+            let dy = (c.y - y).max(y - (c.y + c.h)).max(0.0);
+            dx * dx + dy * dy
+        };
+        let nearest = self
+            .selected
+            .iter()
+            .copied()
+            .filter(|i| *i < self.items.len())
+            .min_by(|a, b| away(*a).total_cmp(&away(*b)).then(a.cmp(b)));
+        if let Some(i) = nearest {
+            tracing::debug!(
+                selected = self.selected.len(),
+                focus = i,
+                "rectangle selection ended: the focus goes to the item nearest to its start"
+            );
+            self.anchor_index = Some(i);
+            self.range_anchor = Some(i);
+        }
     }
 
     /// PageUp / PageDown: moves the anchor one viewport of rows (same column), scrolling a
@@ -416,7 +474,11 @@ impl FenceViewState {
     /// Redraws the surface that shows `p`'s pressed look.
     pub(super) fn redraw_for_press(&mut self, p: PressTarget) {
         match p {
-            PressTarget::Item(_) | PressTarget::Header(_) => {
+            PressTarget::Item(_)
+            | PressTarget::Header(_)
+            | PressTarget::NoteBox(_)
+            | PressTarget::NoteLink(..)
+            | PressTarget::ScriptRow(_) => {
                 if !self.rolled_up {
                     let _ = self.redraw_content();
                 }
@@ -442,6 +504,33 @@ impl FenceViewState {
         } else {
             return None;
         };
+        self.pressed = Some(p);
+        self.press_inside = true;
+        self.press_origin = (x_px, y_px);
+        self.redraw_for_press(p);
+        Some(p)
+    }
+
+    /// Button-down on a note's check box or on a script fence's clickable row: like the
+    /// buttons above, they show the press and act on a release over the same control, so a
+    /// press can be taken back by sliding off. `second` is the second press of a
+    /// double-click, which a script row does not take (a link opens once). The caller takes
+    /// the mouse capture.
+    pub(super) fn press_tool_at(
+        &mut self,
+        x_px: i32,
+        y_px: i32,
+        second: bool,
+    ) -> Option<PressTarget> {
+        let p = if let Some(line) = self.note_box_at(x_px, y_px) {
+            PressTarget::NoteBox(line)
+        } else if let Some((line, start)) = self.note_link_at(x_px, y_px).filter(|_| !second) {
+            PressTarget::NoteLink(line, start)
+        } else {
+            let row = self.script_row_at(x_px, y_px).filter(|_| !second)?;
+            PressTarget::ScriptRow(row)
+        };
+        tracing::debug!(fence = %self.active, target = ?p, second, "tool control pressed");
         self.pressed = Some(p);
         self.press_inside = true;
         self.press_origin = (x_px, y_px);
@@ -475,8 +564,14 @@ impl FenceViewState {
         self.win_active = on;
         let to = if on { 0.0 } else { 1.0 };
         let now = Instant::now();
+        tracing::debug!(
+            fence = %self.fence_id,
+            on,
+            selected = self.selected.len(),
+            "fence active state changed: selection colour"
+        );
         if self.selected.is_empty() || !self.motion.enabled() {
-            self.selection_inactive = Tween::at(to, now);
+            self.snap_selection_colour(to, now);
         } else {
             self.selection_inactive
                 .retarget(to, motion::FAST, Curve::Linear, now);
@@ -507,8 +602,37 @@ impl FenceViewState {
             || !self.selection_inactive.is_done(now)
             || self.selection_inactive.target() != 0.0;
         self.win_active = true;
-        self.selection_inactive = Tween::at(0.0, now);
+        self.snap_selection_colour(0.0, now);
         changed && !self.selected.is_empty() && !self.rolled_up
+    }
+
+    /// The selection takes the colour `to` (0 accent, 1 neutral) without a cross-fade. A
+    /// selection that was just ended is still on screen while it fades out (83 ms): it keeps
+    /// the colour it had, and the new colour comes when it is gone. A click on the desktop
+    /// ended the selection of a fence without the keyboard and made the fence active in the
+    /// same moment: the fading grey box turned accent, a bright flash of two frames.
+    fn snap_selection_colour(&mut self, to: f32, now: Instant) {
+        let from = self.selection_inactive.value_at(now);
+        let leaving =
+            self.selected.is_empty() && self.motion.enabled() && !self.item_sel.is_empty();
+        self.selection_inactive = if leaving && (from - to).abs() > 0.01 {
+            tracing::debug!(
+                fence = %self.fence_id,
+                from,
+                to,
+                "selection colour waits for the ended selection to fade out"
+            );
+            // Starts when the fade-out is over and is done a moment later.
+            Tween::new(
+                from,
+                to,
+                Duration::from_millis(1),
+                Curve::Linear,
+                now + motion::FASTER,
+            )
+        } else {
+            Tween::at(to, now)
+        };
     }
 
     /// Tracks the mouse entering / leaving the window as a whole; redraws the chrome when the

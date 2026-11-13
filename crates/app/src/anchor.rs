@@ -253,6 +253,10 @@ pub enum MarqueeEvent {
     Released(RECT),
     /// Another window took the foreground mid-drag: the marquee ends where it was.
     Cancelled,
+    /// The double-click that hides and shows the fences came during 「临时显示 Windows 桌面」:
+    /// the App, which owns that mode, ends it (the anchor showing the fences by itself left
+    /// them over Windows' own icons, with the fences kept on quick hide still away).
+    DoubleClickInWindowsDesktop,
 }
 
 fn marquee_rect(a: POINT, b: POINT) -> RECT {
@@ -342,6 +346,12 @@ pub struct DesktopAnchor {
     /// go back to when the peek ends.
     hover_raised: Vec<(HWND, usize)>,
     show_desktop_active: bool,
+    /// When show desktop began (how long it lasted goes into the log when it ends).
+    show_desktop_since: Option<Instant>,
+    /// During show desktop: the program's window that shows over the raised desktop where a
+    /// fence is (`program_window_over_raised_desktop`). The fences lie under it, above the
+    /// desktop, and float again when it is gone.
+    show_desktop_under: Option<isize>,
     retry_step: usize,
     _hook: Option<WinEventHook>,
     quick: QuickHide,
@@ -349,6 +359,9 @@ pub struct DesktopAnchor {
     /// `Settings::keep_icons_hidden`: exit leaves the icons hidden (`release_desktop_icons`).
     pub keep_icons_hidden: bool,
     pub quick_hide_enabled: bool,
+    /// 「临时显示 Windows 桌面」 is on (the App sets it with its own flag): every fence is away
+    /// and Windows' icons show.
+    pub windows_desktop: bool,
     /// Presses, drags and releases on the empty desktop (fence selection / new fence).
     pub on_marquee: Option<Box<dyn Fn(MarqueeEvent)>>,
     /// Fence windows (as raw handles) that stay visible during quick hide.
@@ -535,12 +548,15 @@ impl DesktopAnchor {
             fences: Vec::new(),
             hover_raised: Vec::new(),
             show_desktop_active: false,
+            show_desktop_since: None,
+            show_desktop_under: None,
             retry_step: 0,
             _hook: hook,
             quick: QuickHide::default(),
             icons: DesktopIcons::new(),
             keep_icons_hidden: false,
             quick_hide_enabled,
+            windows_desktop: false,
             on_marquee: None,
             quick_hide_excluded: std::collections::HashSet::new(),
             off_desktop: std::collections::HashSet::new(),
@@ -876,7 +892,10 @@ impl DesktopAnchor {
             self.place_topmost_band();
             return;
         }
-        if self.show_desktop_active && self.behavior == ShowDesktopBehavior::KeepVisible {
+        if self.show_desktop_active
+            && self.behavior == ShowDesktopBehavior::KeepVisible
+            && self.show_desktop_under.is_none()
+        {
             tracing::debug!(
                 reason,
                 "reanchor during show desktop: reordering in topmost band"
@@ -886,7 +905,13 @@ impl DesktopAnchor {
         }
         let resolved = desktop::resolve_icon_host(self.generation);
         if resolved != self.host {
-            tracing::info!(reason, old = ?self.host, new = ?resolved, "icon host changed");
+            tracing::info!(
+                reason,
+                old = ?self.host,
+                new = ?resolved,
+                layers = %desktop::describe_desktop_windows(),
+                "icon host changed"
+            );
             self.host = resolved;
         } else {
             tracing::debug!(reason, "reanchor");
@@ -1064,6 +1089,7 @@ impl DesktopAnchor {
         if !self.show_desktop_active {
             if Self::desktop_is_raised_over_us(host) && self.is_desktop_window(foreground) {
                 self.show_desktop_active = true;
+                self.show_desktop_since = Some(Instant::now());
                 if let Some(callback) = self.on_desktop_front.as_ref() {
                     callback();
                 }
@@ -1072,11 +1098,13 @@ impl DesktopAnchor {
                     ShowDesktopBehavior::KeepVisible => tracing::info!(
                         reason,
                         ?host_kind,
+                        layers = %desktop::describe_desktop_windows(),
                         "show desktop: floating the fences above the raised desktop"
                     ),
                     ShowDesktopBehavior::HideWithDesktop => tracing::info!(
                         reason,
                         ?host_kind,
+                        layers = %desktop::describe_desktop_windows(),
                         "show desktop: fences stay behind the raised desktop"
                     ),
                 }
@@ -1090,14 +1118,75 @@ impl DesktopAnchor {
         }
     }
 
+    /// A window of another program that shows over the raised desktop where a fence is, while
+    /// the desktop still has the foreground: one shown without being activated. Explorer leaves
+    /// it above the raised desktop, and the fences, floating in the topmost band, covered it
+    /// until it came to the front (measured with a stand-in window on Windows 10 19045,
+    /// Windows 11 26300 and Server 2025). A black window then looks like a wallpaper gone
+    /// black with only the icons and the taskbar left, which is what #187 describes after
+    /// opening a file with WPS Office; WPS itself was not tested. The fences go under such a
+    /// window (`show_desktop_under`). Windows that are always on top were over the desktop
+    /// before and do not count, nor do overlays, tool windows and Windows' own surfaces.
+    fn program_window_over_raised_desktop(&self, host: Option<IconHost>) -> Option<HWND> {
+        let host = host?;
+        let windows = desktop::top_level_windows();
+        let host_index = windows.iter().position(|&w| w == host.host)?;
+        let own = std::process::id();
+        let fences: Vec<RECT> = self
+            .fences
+            .iter()
+            .filter(|(f, _)| desktop::is_visible(*f))
+            .map(|(f, _)| window::window_rect(*f))
+            .collect();
+        windows[..host_index].iter().copied().find(|&w| {
+            // Nearly every window above the raised desktop is always on top: that test first.
+            let ex = desktop::ex_style(w);
+            let overlay = ex & style::EX_LAYERED != 0 && ex & style::EX_TRANSPARENT != 0;
+            if desktop::is_topmost(w)
+                || overlay
+                || ex & (style::EX_TOOLWINDOW | style::EX_NOACTIVATE) != 0
+                || !desktop::has_visible_surface(w)
+                || desktop::window_pid(w) == own
+                || self.is_desktop_window(w)
+            {
+                return false;
+            }
+            let class = desktop::class_name(w);
+            if class == SHELL_CORE_WINDOW || is_shell_popup(&class) {
+                return false;
+            }
+            let rect = desktop::frame_rect(w).unwrap_or_else(|| window::window_rect(w));
+            fences
+                .iter()
+                .any(|f| crate::layout::clearance::overlaps(&rect, f, 0))
+        })
+    }
+
     /// Leaves the topmost band straight into the fences' place above the desktop: the windows
     /// Windows restores (and the one that came to the front) stay above them. Taking the topmost
     /// flag away first put the fences over every window until the next check.
     fn end_show_desktop(&mut self, reason: &'static str) {
         self.show_desktop_active = false;
+        self.show_desktop_under = None;
         self.topmost_refused = false;
         let front = desktop::root_ancestor(desktop::foreground_window());
-        tracing::info!(reason, class = %desktop::class_name(front), "show desktop ended");
+        // A wallpaper that "went black" while a program opened after show desktop (#187) may be
+        // Explorer rebuilding its desktop windows or the program's own window under fences
+        // that still floated (the second was reproduced with a stand-in window, the report's
+        // own program was not tested): how long show desktop lasted, whether that window is
+        // maximized and what Explorer's desktop windows are now tell the two apart.
+        let lasted_ms = self
+            .show_desktop_since
+            .take()
+            .map_or(0, |t| t.elapsed().as_millis() as u64);
+        tracing::info!(
+            reason,
+            class = %desktop::class_name(front),
+            front_zoomed = desktop::is_zoomed(front),
+            lasted_ms,
+            layers = %desktop::describe_desktop_windows(),
+            "show desktop ended"
+        );
         self.reanchor(reason);
     }
 
@@ -1296,7 +1385,10 @@ impl DesktopAnchor {
     /// holds the whole fence (the part of it in its own monitor's work area).
     pub fn covered_fences(&self) -> Vec<HWND> {
         // Fences kept over the raised desktop are in the topmost band: nothing covers them.
-        if self.show_desktop_active && self.behavior == ShowDesktopBehavior::KeepVisible {
+        if self.show_desktop_active
+            && self.behavior == ShowDesktopBehavior::KeepVisible
+            && self.show_desktop_under.is_none()
+        {
             return Vec::new();
         }
         let Some(host) = self.host else {
@@ -1386,6 +1478,12 @@ impl DesktopAnchor {
         }
         tracing::debug!(count, "covered fences raised into the peek band");
         true
+    }
+
+    /// The fences the running Peek made visible although they are hidden (隐藏所有栅栏): they
+    /// are hidden again when it ends.
+    pub fn peek_shown_fences(&self) -> Vec<HWND> {
+        self.peek_shown.clone()
     }
 
     /// Peek (Fences Win+Space): float every fence into the topmost band above `over` (the
@@ -1480,13 +1578,39 @@ impl DesktopAnchor {
         if self.show_desktop_active {
             if resolved != self.host {
                 // Windows 10: the WorkerW the icons moved into is the raised desktop.
-                tracing::info!(reason, old = ?self.host, new = ?resolved, "icon host changed");
+                tracing::info!(
+                    reason,
+                    old = ?self.host,
+                    new = ?resolved,
+                    layers = %desktop::describe_desktop_windows(),
+                    "icon host changed"
+                );
                 self.host = resolved;
             }
-            if self.behavior == ShowDesktopBehavior::KeepVisible
-                && !self.fences.iter().all(|(f, _)| desktop::is_topmost(*f))
-            {
-                self.place_topmost_band();
+            if self.behavior == ShowDesktopBehavior::KeepVisible {
+                let under = self.program_window_over_raised_desktop(resolved);
+                let key = under.map(|w| w.0 as isize);
+                if key != self.show_desktop_under {
+                    self.show_desktop_under = key;
+                    match under {
+                        Some(by) => tracing::info!(
+                            window = ?by,
+                            class = %desktop::class_name(by),
+                            "show desktop: a program's window shows over the raised desktop; the fences go under it"
+                        ),
+                        None => tracing::info!(
+                            "show desktop: that window is gone; the fences float again"
+                        ),
+                    }
+                }
+                if under.is_some() {
+                    // Out of the topmost band into their place above the desktop: under it.
+                    if self.fences.iter().any(|(f, _)| desktop::is_topmost(*f)) {
+                        self.reanchor(reason);
+                    }
+                } else if !self.fences.iter().all(|(f, _)| desktop::is_topmost(*f)) {
+                    self.place_topmost_band();
+                }
             }
             return;
         }
@@ -1586,6 +1710,14 @@ impl DesktopAnchor {
         if let Some((interval_ms, first)) =
             self.quick.desktop_press(Instant::now(), pt, limit, slop)
         {
+            if self.windows_icon_selected() {
+                tracing::info!(
+                    ?pt,
+                    interval_ms,
+                    "double-click on one of Windows' own desktop icons (it is selected); no quick hide"
+                );
+                return;
+            }
             tracing::info!(
                 ?pt,
                 interval_ms,
@@ -1632,6 +1764,12 @@ impl DesktopAnchor {
             return false;
         }
         self.quick.seen.taken += 1;
+        tracing::debug!(
+            ?pt,
+            hit = %desktop::class_name(hit),
+            top = %desktop::class_name(root),
+            "press taken as one on the bare desktop"
+        );
         if !self.quick.fences_hidden {
             self.quick.marquee_origin = Some(pt);
             self.quick.marquee_live = false;
@@ -1641,6 +1779,22 @@ impl DesktopAnchor {
             });
         }
         true
+    }
+
+    /// The Windows icons show and one of them is selected: the double-click just seen was on
+    /// that icon. Its first click selected it, and a click on the bare desktop selects none.
+    /// `on_icon` does not catch every press on an icon: Explorer's list view marks the icon
+    /// under the pointer when the pointer moves onto it, drops the mark when a window comes
+    /// over the pointer, and does not set it again when that window goes away (closed, or
+    /// show desktop) while the pointer rests where it was. A double-click on the icon then
+    /// passed as one on the bare desktop and hid every fence (measured on Windows 10 19045
+    /// and Windows 11 26300).
+    fn windows_icon_selected(&self) -> bool {
+        !shell_icons::desktop_icons_hidden()
+            && self
+                .host
+                .and_then(|h| shell_icons::desktop_selected_count(h.def_view))
+                .is_some_and(|n| n > 0)
     }
 
     /// The pointer moved with the button down since a press on the bare desktop: past the drag
@@ -1718,6 +1872,14 @@ impl DesktopAnchor {
 
     /// Quick hide's double-click on the empty desktop.
     pub fn toggle_fences_hidden(&mut self) {
+        if self.windows_desktop {
+            // Showing the fences here would leave Windows' icons under them and the mode on.
+            tracing::info!(
+                "double-click on the desktop during the temporary Windows desktop; the App ends it"
+            );
+            self.emit_marquee(MarqueeEvent::DoubleClickInWindowsDesktop);
+            return;
+        }
         self.toggle_fences_hidden_by("double-click on the desktop");
     }
 
@@ -1845,8 +2007,9 @@ impl DesktopAnchor {
         self.icons.left_hidden = false;
     }
 
-    /// Starts `pecofence-watchdog.exe` (next to our exe) so a crash still restores the icons.
-    fn spawn_watchdog(&mut self) {
+    /// Starts `pecofence-watchdog.exe` (next to our exe): after a crash it starts PecoFence
+    /// again, and it shows the icons PecoFence hid when no PecoFence runs afterwards.
+    pub fn spawn_watchdog(&mut self) {
         // One per run: it checks the marker when we exit, whatever happened before.
         if !self.icons.watchdogs.is_empty() {
             return;
@@ -1974,6 +2137,12 @@ impl DesktopAnchor {
         match id {
             TIMER_ANCHOR_CHECK => self.ensure_anchored("periodic check"),
             TIMER_FOREGROUND_POLL => {
+                // While the fences float over the raised desktop, a program's window that shows
+                // without taking the foreground comes with no event of ours: found here, it is
+                // under the fences for about a quarter of a second, not until the 2 s check.
+                if self.show_desktop_active && self.behavior == ShowDesktopBehavior::KeepVisible {
+                    self.ensure_anchored("show desktop poll");
+                }
                 // Windows 10 reports no foreground change when Win+Ctrl+Left/Right shows another
                 // virtual desktop, and the desktop comes to the front only with the first click on
                 // it: that click went unseen and the first double-click hid nothing. The current

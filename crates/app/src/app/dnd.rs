@@ -142,7 +142,7 @@ impl App {
         });
     }
 
-    /// Files dropped on the Recycle Bin item: the shell's `delete` verb, as when dropping on
+    /// Files dropped on the Recycle Bin item: the shell's delete, as when dropping on
     /// Explorer's own bin (its confirmation dialog; Shift held = permanent).
     fn recycle_paths(&mut self, paths: Vec<PathBuf>, owner_fence: FenceId) {
         let owner = self

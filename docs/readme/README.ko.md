@@ -107,6 +107,20 @@ AI와 스크립트를 위한 인터페이스: `describe`는 명령 목록과 JSO
 
 ![펜스 미리 보기로 펜스를 앱 위에 띄우고, 바깥을 클릭하거나 파일을 열면 앱으로 돌아가는 모습.](../assets/peek.gif)
 
+### 스스로 채워지는 펜스
+
+스마트 펜스는 저장해 둔 검색의 최신 결과를 보여 줍니다. **최근 7일 다운로드** 같은 템플릿을 고르고 **만들기**를 클릭하면 조건에 맞는 새 파일이 저절로 나타나고, 파일은 원래 자리에 그대로 있습니다.
+
+![펜스 메뉴에서 New smart fence…를 선택하면 작은 창이 열리고, Downloads of the last 7 days 템플릿이 조건을 채우며, Create를 클릭하면 파일 여섯 개가 든 펜스가 바탕 화면에 생기고, 새로 내려받은 파일이 그 안에 저절로 나타나는 모습.](../assets/smart.gif)
+
+### 메모, 시계, 직접 만든 스크립트
+
+**설정 → 도구**에서 추가하세요. 메모에서 `[ ]`로 시작하는 줄은 할 일이 되고, 시계는 날짜도 함께 보여 주며, 스크립트 펜스는 날씨처럼 스크립트가 출력한 텍스트를 보여 줍니다.
+
+![설정에서 New note를 클릭하면 바탕 화면에 메모가 생기고, 클릭 한 번으로 첫 번째 할 일이 체크되며, Add를 클릭하면 그 옆에 시계가, 이어서 도쿄 날씨를 보여 주는 펜스가 생기는 모습.](../assets/tools.gif)
+
+사용 설명서에는 [가상 데스크톱마다 펜스](https://pecofence.jiang.jp/ko/manual/#vdesk)([GIF](../assets/vdesk.gif)), [놓은 자리에 그대로 있는 바탕 화면 아이콘](https://pecofence.jiang.jp/ko/manual/#free-place)([GIF](../assets/free-place.gif)), [마지막 작업을 되돌리는 Ctrl+Z](https://pecofence.jiang.jp/ko/manual/#undo)([GIF](../assets/undo.gif))도 나와 있습니다.
+
 <sub><a href="https://pecofence.jiang.jp/ko/manual/">사용 설명서</a>에 있는 애니메이션입니다. GIF는 자동으로 반복 재생됩니다.</sub>
 
 ## 작은 디테일이 매일을 편하게
@@ -144,7 +158,7 @@ Microsoft Store 버전은 Microsoft가 서명하고 자동으로 업데이트되
 <details>
 <summary><strong>요구 사항, 설정 위치, 알아 두면 좋은 점</strong></summary>
 
-- Windows 10 22H2 또는 Windows 11 22H2 이상에서 동작합니다. 설정 화면에는 Microsoft Edge WebView2 Runtime이 필요합니다. Windows 11에는 포함되어 있고, Windows 10에서 설정이 열리지 않으면 Microsoft 사이트에서 설치하세요.
+- Windows 10 1809 이상(Microsoft Store 버전은 2004 이상) 또는 Windows 11 22H2 이상에서 동작합니다. 설정 화면에는 Microsoft Edge WebView2 Runtime이 필요합니다. Windows 11에는 포함되어 있고, Windows 10에서 설정이 열리지 않으면 Microsoft 사이트에서 설치하세요.
 - 처음 실행하면 선택한 언어로 “프로그램”, “폴더”, “파일 및 문서”, “바탕 화면” 펜스가 만들어집니다. 종료하면 Windows 바탕 화면 아이콘이 다시 표시됩니다.
 - 설정은 `%APPDATA%\PecoFence\config.json`에 저장됩니다. `--portable`로 실행하면 실행 파일 옆의 `config` 폴더에 보관합니다.
 - 포터블 빌드와 설치 프로그램은 코드 서명이 되어 있지 않습니다. 첫 실행 때 Windows SmartScreen이 나타나면 **추가 정보 → 실행**을 선택하세요.
@@ -169,7 +183,7 @@ PecoFence는 Apache 2.0 라이선스로 공개되어 있습니다. 더 정확한
 
 이 저장소의 버전 태그에서 GitHub Actions가 빌드한 파일만 서명합니다. 서명할 때마다 직접 승인합니다.
 
-**개인정보:** 사용자나 이 프로그램을 설치하거나 사용하는 사람이 명시적으로 요청하지 않는 한, 이 프로그램은 다른 네트워크 시스템으로 어떤 정보도 보내지 않습니다. **업데이트 확인**을 누르면 GitHub API에 연결합니다. **피드백**에서 보낸 내용은 PecoFence 피드백 서비스로 전달됩니다. 설정 창은 Microsoft Edge WebView2로 실행되며 [Microsoft 개인정보처리방침](https://privacy.microsoft.com/privacystatement)이 적용됩니다.
+**개인정보:** 사용자나 이 프로그램을 설치하거나 사용하는 사람이 명시적으로 요청하지 않는 한, 이 프로그램은 다른 네트워크 시스템으로 어떤 정보도 보내지 않습니다. **업데이트 확인**을 누르면 GitHub API에 연결합니다. GitHub에서 응답이 없을 때에만 PecoFence 웹사이트(pecofence.jiang.jp)에 연결합니다. 요청 자체(PecoFence 버전 번호 포함) 외에는 아무것도 보내지 않습니다. **피드백**에서 보낸 내용은 PecoFence 피드백 서비스로 전달됩니다. 설정 창은 Microsoft Edge WebView2로 실행되며 [Microsoft 개인정보처리방침](https://privacy.microsoft.com/privacystatement)이 적용됩니다.
 
 ---
 

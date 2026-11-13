@@ -14,7 +14,7 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN',
-    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
+    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, showTrayIcon: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
@@ -56,6 +56,9 @@ const fixture = {
   everything: { state: 'missing' },
 };
 
+// 排序方式 of each fence, as the host sends it.
+fixture.fences.forEach((f, i) => Object.assign(f, { sort: i === 1 ? 'date' : 'manual', reverse: i === 1, foldersFirst: i === 2 }));
+
 function bridge() {
   const state = JSON.parse(document.getElementById('fixture').textContent);
   const catalogs = JSON.parse(document.getElementById('fixture-catalogs').textContent);
@@ -64,6 +67,8 @@ function bridge() {
   window.testSummary = (itemCount) => receive({ data: { type: 'workspaceSummary', fenceCount: state.fences.length, itemCount } });
   window.testRefresh = () => receive({ data: structuredClone(state) });
   window.testUpdate = (update) => receive({ data: { type: 'update', update } });
+  // Any other message of the host (a notice, showPage).
+  window.testHost = (data) => receive({ data });
   window.testState = state;
   // The real page is a data: URL, not a secure context: secure-only APIs are missing there.
   delete Crypto.prototype.randomUUID;
@@ -84,6 +89,11 @@ function bridge() {
           const bases = { 'Frosted Glass': 'liquidGlass', Warm: 'fluent' }, custom = state.settings.customTheme;
           state.customThemeError = custom && !bases[custom] ? 'unknown key "blurr"' : null;
           state.styleInUse = (custom && bases[custom]) || state.settings.themeStyle || 'fluent';
+        }
+        // 自定义 chosen with no theme file: the host writes the examples unless the folder exists.
+        if (message.name === 'openThemesFolder' && message.quiet && !state.customThemes.length && !window.testThemesFolderExists) {
+          state.customThemes = ['大圆角', '暖色', '磨砂玻璃'];
+          setTimeout(window.testRefresh, 0);
         }
         if (message.name === 'repairIcons' || message.name === 'hideDesktopIcons') {
           state.settings.hideRealIcons = message.name === 'hideDesktopIcons';
@@ -170,7 +180,20 @@ function bridge() {
           state.pickedColors = { ...state.pickedColors, [message.target]: '123456' };
           setTimeout(() => receive({ data: { type: 'pickedColor', target: message.target, hex: '123456' } }), 0);
         }
-        if (message.name === 'deleteSnapshot') state.snapshots = state.snapshots.filter(s => s.id !== message.id);
+        // Mirror the host: a deleted snapshot is kept for the notice's 撤销, which puts it back
+        // at its place.
+        if (message.name === 'deleteSnapshot') {
+          const at = state.snapshots.findIndex(s => s.id === message.id);
+          if (at >= 0) {
+            const [gone] = state.snapshots.splice(at, 1);
+            window.testDeletedSnapshot = { at, gone };
+            setTimeout(() => receive({ data: { type: 'toast', text: '已删除快照“' + gone.name + '”', undo: 'restoreDeletedSnapshot' } }), 0);
+          }
+        }
+        if (message.name === 'restoreDeletedSnapshot' && window.testDeletedSnapshot) {
+          state.snapshots.splice(window.testDeletedSnapshot.at, 0, window.testDeletedSnapshot.gone);
+          window.testDeletedSnapshot = null;
+        }
         if (['ready', 'patchSettings', 'setRules', 'setFence'].includes(message.type) || message.type === 'action') {
           setTimeout(window.testRefresh, 0);
         }
@@ -245,7 +268,10 @@ async function runTests() {
     return frame.contentDocument;
   };
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
+  // /?only=<text> runs the tests whose name contains the text (those that start with a reset).
+  const only = new URLSearchParams(location.search).get('only');
   const test = async (name, run) => {
+    if (only && !name.includes(only)) return;
     const li = document.createElement('li');
     try { await run(); li.textContent = 'PASS — ' + name; li.className = 'pass'; passed++; }
     catch (error) { li.textContent = 'FAIL — ' + name + ': ' + error.message; li.className = 'fail'; failed++; }
@@ -461,14 +487,14 @@ async function runTests() {
     doc.querySelector('[data-page=fences]').click();
     const sel = doc.getElementById('fenceSel');
     assert(sel.options.length === 4, 'Fence list incomplete');
-    assert([...sel.options].map(o => o.textContent).join('|') === 'Documents|Images（Documents 的标签页）|Desktop（桌面）|Portal（文件夹）', 'Fence labels wrong: ' + [...sel.options].map(o => o.textContent).join('|'));
+    assert([...sel.options].map(o => o.textContent).join('|') === 'Documents（只在“Games”上显示）|Images（Documents 的标签页）|Desktop（桌面）|Portal（文件夹栅栏）', 'Fence labels wrong: ' + [...sel.options].map(o => o.textContent).join('|'));
     assert(doc.getElementById('fencePortalGroup').style.display === 'none', 'Portal options shown for an ordinary fence');
     assert(doc.getElementById('fenceHideEmpty').style.display === '', 'Hide-when-empty not offered for an ordinary fence');
     assert(doc.getElementById('fenceDesktopLayout').style.display === 'none', 'Desktop layout offered for an ordinary fence');
-    assert(doc.getElementById('fenceFreePlacement').style.display === 'none', 'Free placement offered for an ordinary fence');
+    assert(doc.getElementById('fenceFreePlacement').hidden, 'Free placement offered for an ordinary fence');
     const fenceHideNote = doc.querySelector('#fenceHideEmpty .s').textContent;
     assert(doc.getElementById('fenceOpenFolders').style.display === '' && !doc.querySelector('[data-fence=openFoldersInside]').classList.contains('on'), 'Open-folders-inside missing or on for an ordinary fence');
-    assert(doc.getElementById('fenceTintTitleOnly').style.display === 'none', 'Title-only tint offered without a tint');
+    assert(doc.getElementById('fenceTintTitleOnly').hidden, 'Title-only tint offered without a tint');
     assert(doc.getElementById('fenceTabColor').style.display === 'none', 'Tab colour offered for a fence without tabs');
     assert(doc.querySelector('[data-fence=titleColor] [value=tint]').disabled, 'Follow-tint offered without a tint');
     const tintHint = doc.getElementById('fenceTitleColor').closest('.card').querySelector('.s');
@@ -479,10 +505,10 @@ async function runTests() {
     assert(doc.querySelector('[data-fence=expandUpward]').classList.contains('on'), 'Expand upward not shown');
     assert(doc.getElementById('fenceHideEmpty').style.display === '' && doc.querySelector('[data-fence=hideWhenEmpty]').classList.contains('on'), 'Inbox hide-when-empty not shown');
     assert(doc.getElementById('fenceDesktopLayout').style.display === '' && doc.querySelector('[data-fence=desktopLayout]').classList.contains('on'), 'Inbox desktop layout not shown');
-    assert(doc.getElementById('fenceFreePlacement').style.display === '' && !doc.querySelector('[data-fence=freePlacement]').classList.contains('on'), 'Inbox free placement not shown, or on');
+    assert(!doc.getElementById('fenceFreePlacement').hidden && !doc.querySelector('[data-fence=freePlacement]').classList.contains('on'), 'Inbox free placement not shown, or on');
     assert(doc.querySelector('#fenceHideEmpty .s').textContent !== fenceHideNote, 'Inbox hide-when-empty note is the one of other fences');
     assert(doc.querySelector('[data-fence=openFoldersInside]').classList.contains('on'), 'Open-folders-inside state not shown');
-    assert(doc.getElementById('fenceTintTitleOnly').style.display === '' && doc.querySelector('[data-fence=tintTitleOnly]').classList.contains('on'), 'Title-only tint not shown');
+    assert(!doc.getElementById('fenceTintTitleOnly').hidden && doc.querySelector('[data-fence=tintTitleOnly]').classList.contains('on'), 'Title-only tint not shown');
     assert(doc.querySelector('[data-fence=tint]').value === '0078D4', 'Palette tint not selected');
     assert(doc.querySelector('[data-fence=titleColor]').value === 'tint' && !doc.querySelector('[data-fence=titleColor] [value=tint]').disabled, 'Follow-tint title not shown');
     assert(doc.querySelector('[data-fence=titleSize]').value === 'large', 'Title size not shown');
@@ -532,8 +558,13 @@ async function runTests() {
     assert(messages().at(-1).id === 'fence-b' && messages().at(-1).prop === 'tabColor' && messages().at(-1).value === '0078D4', 'Tab colour not posted');
     doc.querySelector('#fenceTabColorSwatches [data-value=""]').click(); await settle();
     assert(messages().at(-1).prop === 'tabColor' && messages().at(-1).value === null, 'Following the tint did not post null');
+    assert(!doc.getElementById('fenceTransparentOnHover').hidden && !doc.querySelector('[data-fence=transparentOnHover]').classList.contains('on'), 'Stay-transparent switch not offered for a fully transparent fence, or on');
+    doc.querySelector('[data-fence=transparentOnHover]').click(); await settle();
+    assert(messages().at(-1).id === 'fence-b' && messages().at(-1).prop === 'transparentOnHover' && messages().at(-1).value === true, 'Stay transparent not posted');
     change(doc, 'fenceSel', 'fence-a');
     assert(doc.querySelector('[data-fence=iconAlign]').value === 'left', 'Left icon alignment not shown');
+    assert(doc.querySelector('[data-fence=iconAlign] [value=right]'), 'Right icon alignment missing');
+    assert(doc.getElementById('fenceTransparentOnHover').hidden, 'Stay-transparent switch offered for a fence that is not fully transparent');
     change(doc, 'fenceIconAlign', 'center'); await settle();
     assert(messages().at(-1).id === 'fence-a' && messages().at(-1).prop === 'iconAlign' && messages().at(-1).value === 'center', 'Icon alignment not posted');
   });
@@ -595,11 +626,11 @@ async function runTests() {
     inbox.desktopLayout = false; frame.contentWindow.testRefresh();
     assert(greyed() && note() === '只用于图标视图', 'Details inbox: labels card not greyed');
     // 自由摆放 is part of 像桌面一样排列: no card while that is off.
-    assert(doc.getElementById('fenceFreePlacement').style.display === 'none', 'Free placement offered while the inbox is not arranged');
+    assert(doc.getElementById('fenceFreePlacement').hidden, 'Free placement offered while the inbox is not arranged');
     // A 「桌面」 with tabs stays a fence and shows its own view.
     inbox.desktopLayout = true; inbox.tabbed = true; frame.contentWindow.testRefresh();
     assert(greyed(), 'Tabbed inbox in details: labels card not greyed');
-    assert(doc.getElementById('fenceFreePlacement').style.display === 'none', 'Free placement offered for a tabbed inbox');
+    assert(doc.getElementById('fenceFreePlacement').hidden, 'Free placement offered for a tabbed inbox');
     delete inbox.tabbed; delete inbox.freePlacement; inbox.layout = 'icons'; frame.contentWindow.testRefresh();
     assert(!greyed(), 'Labels card stays greyed after the inbox shows icons again');
     change(doc, 'fenceSel', 'fence-a');
@@ -1186,7 +1217,10 @@ async function runTests() {
     current().customThemes = [];
     frame.contentWindow.testRefresh(); await settle();
     const before = frame.contentWindow.testMessages.length;
+    // The themes folder exists and is empty (the user emptied it): nothing is written.
+    frame.contentWindow.testThemesFolderExists = true;
     styleRadio(doc, 'custom').click(); await settle();
+    frame.contentWindow.testThemesFolderExists = false;
     const select = doc.getElementById('customTheme'), help = doc.getElementById('customThemeHelp');
     assert(!doc.getElementById('customThemeRow').hidden && select.disabled && help.textContent.includes('打开主题文件夹'), 'No hint without theme files: ' + help.textContent);
     assert(!frame.contentWindow.testMessages.slice(before).some(m => m.type === 'patchSettings'), 'A setting changed without a theme file');
@@ -1216,6 +1250,38 @@ async function runTests() {
     styleRadio(doc, 'fluent').click(); await settle();
     assert(current().settings.customTheme === null && error.hidden, 'A built-in tile did not clear the theme and its error');
     assert(styleRadio(doc, 'fluent').checked, 'The built-in style is not checked again');
+  });
+  await test('Liquid Glass over a live wallpaper: one line under 主题风格 says how the fences look and why', async () => {
+    doc = await reset();
+    const note = () => doc.getElementById('liveWallpaperNote');
+    const host = async live => { current().liveWallpaper = live; frame.contentWindow.testRefresh(); await settle(); };
+    assert(note().hidden && !note().textContent, 'The line shows without a live wallpaper');
+    // Fluent has its plate either way: no line.
+    await host({ readable: false, player: 'Wallpaper Engine' });
+    assert(note().hidden, 'Fluent shows the line');
+    styleRadio(doc, 'liquidGlass').click(); await settle();
+    frame.contentWindow.testRefresh(); await settle();
+    // A player whose picture cannot be read, with a name and without one.
+    assert(!note().hidden && note().textContent.startsWith('Wallpaper Engine 的壁纸画面读不到，Liquid Glass 栅栏现在是半透明玻璃'), 'No line for an unreadable live wallpaper: ' + note().textContent);
+    assert(note().getBoundingClientRect().left === doc.getElementById('desktopPreview').getBoundingClientRect().left, 'The line does not start under the tiles');
+    await host({ readable: false, player: null });
+    assert(note().textContent.startsWith('这种动态壁纸的画面读不到'), 'A player without a name: ' + note().textContent);
+    // One that can be read: frosted, and 更透明 lets the wallpaper through.
+    await host({ readable: true, player: 'Lively Wallpaper' });
+    assert(note().textContent.includes('磨砂玻璃') && note().textContent.endsWith('把不透明度改成“更透明”'), 'The readable case: ' + note().textContent);
+    // In the page's language.
+    await host({ readable: false, player: 'Wallpaper Engine' });
+    change(doc, 'language', 'en'); await settle();
+    assert(note().textContent.startsWith('The picture of the Wallpaper Engine wallpaper cannot be read'), 'Not translated: ' + note().textContent);
+    change(doc, 'language', 'zh-CN'); await settle();
+    // The player ends, or the style goes to Fluent: the line goes.
+    await host(null);
+    assert(note().hidden && !note().textContent, 'The line stays after the live wallpaper ended');
+    await host({ readable: false, player: 'Wallpaper Engine' });
+    assert(!note().hidden, 'The line does not come back with the player');
+    styleRadio(doc, 'fluent').click(); await settle();
+    frame.contentWindow.testRefresh(); await settle();
+    assert(note().hidden, 'The line stays in Fluent');
   });
   await test('The theme buttons ask the host for the folder and the guide', async () => {
     doc.getElementById('openThemes').click(); doc.getElementById('themeGuide').click(); await settle();
@@ -1293,6 +1359,38 @@ async function runTests() {
     assert(current().settings.featureTips === false, 'Feature tips switch did not post');
     tips.click(); await settle();
   });
+  await test('显示托盘图标: the switch, the 退出 card while it is off, and the search', async () => {
+    doc = await reset();
+    const tray = doc.querySelector('[data-bind=showTrayIcon]'), quit = doc.getElementById('quitCard');
+    const heading = (() => { let h = tray.closest('.group'); while (h && h.tagName !== 'H3') h = h.previousElementSibling; return h && h.textContent; })();
+    assert(heading === '桌面与启动', 'The switch is not under 桌面与启动: ' + heading);
+    assert(tray.getAttribute('aria-checked') === 'true' && quit.hidden, 'On by default, without the 退出 card: ' + tray.getAttribute('aria-checked') + ' ' + quit.hidden);
+    // The 栅栏 page without fences and 临时显示 Windows 桌面 name the tray menu only while the icon is there.
+    const trayTexts = () => [doc.getElementById('fenceEmptyText').textContent, doc.getElementById('wdHotkeyHelp').textContent];
+    assert(trayTexts().every(s => s.includes('托盘菜单')), 'With the icon shown the two texts name the tray menu: ' + trayTexts().join(' | '));
+    tray.click(); await settle();
+    assert(current().settings.showTrayIcon === false, 'The switch did not post');
+    assert(!quit.hidden && quit.querySelector('.t').textContent === '退出 PecoFence', 'No 退出 card while the icon is hidden');
+    assert(trayTexts().every(s => !s.includes('托盘')) && trayTexts()[0] === '桌面上还没有栅栏。可以在桌面空白处拖出一个矩形来新建。' && trayTexts()[1] === '按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复', 'While the icon is hidden a text sends the user to the tray menu: ' + trayTexts().join(' | '));
+    doc.getElementById('quitApp').click();
+    const last = frame.contentWindow.testMessages.at(-1);
+    assert(last.type === 'action' && last.name === 'quit', '退出 did not ask the host to quit: ' + JSON.stringify(last));
+    tray.click(); await settle();
+    assert(current().settings.showTrayIcon === true && quit.hidden, 'Switched on again, the 退出 card stays');
+    assert(trayTexts().every(s => s.includes('托盘菜单')), 'Switched on again, the two texts do not name the tray menu: ' + trayTexts().join(' | '));
+    const box = doc.getElementById('settingsSearch');
+    const esc = () => box.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+    const find = word => {
+      box.value = word; box.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true }));
+      return [...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent);
+    };
+    for (const word of ['托盘', 'tray', '通知区域', '任务栏图标']) assert(find(word).includes('显示托盘图标'), word + ' does not find the switch: ' + find(word).join(' | '));
+    esc();
+    change(doc, 'language', 'en'); await settle();
+    for (const word of ['tray', 'notification area', 'systray']) assert(find(word).includes('Show tray icon'), word + ' does not find the switch: ' + find(word).join(' | '));
+    esc();
+    change(doc, 'language', 'zh-CN'); await settle();
+  });
   await test('收起的栅栏怎么展开 is one list for hover, click and double-click', async () => {
     const list = doc.getElementById('rollExpand');
     assert(!doc.querySelector('[data-bind="rollUp.hoverPeek"]') && !doc.querySelector('[data-bind="rollUp.clickToExpand"]'), 'The old switches are still there');
@@ -1308,6 +1406,20 @@ async function runTests() {
     frame.contentWindow.testRefresh(); await settle();
     assert(list.value === 'click', 'Both on not shown as click');
     change(doc, 'rollExpand', 'hover'); await settle();
+  });
+  await test('展开快慢 shows while a rolled fence expands on hover or tabs switch on hover', async () => {
+    const card = doc.getElementById('hoverSpeedCard'), tabs = doc.querySelector('[data-bind="rollUp.switchTabOnHover"]');
+    assert(!card.hidden, 'Hidden with hover expand');
+    change(doc, 'rollExpand', 'click'); await settle();
+    assert(card.hidden, 'Shown with click expand and no tab hover');
+    tabs.click(); await settle();
+    assert(current().settings.rollUp.switchTabOnHover === true && !card.hidden, 'Hidden with the tab hover switch on');
+    change(doc, 'rollExpand', 'double'); await settle();
+    assert(!card.hidden, 'Hidden with double-click expand and the tab hover switch on');
+    tabs.click(); await settle();
+    assert(card.hidden, 'Still shown after the tab hover switch went off');
+    change(doc, 'rollExpand', 'hover'); await settle();
+    assert(!card.hidden, 'Hidden after hover expand came back');
   });
   await test('常规 has the new headings in order, one card for the Windows desktop shortcut', async () => {
     doc.querySelector('[data-page=general]').click();
@@ -1336,7 +1448,7 @@ async function runTests() {
     const wd = rows()[titles().indexOf('临时显示 Windows 桌面')];
     assert(wd.querySelector('small').textContent.startsWith('常规 › 隐藏栅栏 · ') && wd.querySelector('small mark'), 'Path or snippet missing: ' + wd.textContent);
     // A card its page hides now (the keep switch while the Windows icons show) stays out.
-    assert(!titles().includes('关闭 PecoFence 时保持 Windows 桌面图标隐藏'), 'A hidden card was listed');
+    assert(!titles().includes('退出 PecoFence 时保持 Windows 桌面图标隐藏'), 'A hidden card was listed');
     // ↓ and Enter open the pick on its page, tinted, with the focus on its control.
     const target = titles().indexOf('为空时自动隐藏');
     for (let i = 0; i < target; i++) key(box, 'ArrowDown', 40);
@@ -1973,7 +2085,12 @@ async function runTests() {
     button.click(); assert(lastAction() === 'checkUpdate', 'Check not requested');
     await show({ ...installer, state: 'checking', version: null });
     assert(button.disabled && status.textContent === '正在检查更新…', 'Checking state wrong');
+    // The line that waits has a ring that turns, one that stands still without animations.
+    const ring = () => doc.getAnimations().filter(a => a.animationName === 'ring-turn' && a.effect.target === status && a.effect.pseudoElement === '::before');
+    assert(status.classList.contains('busy') && ring().length === 1 && ring()[0].effect.getComputedTiming().iterations === Infinity, '正在检查更新…: no ring turns beside the line');
+    assert(frame.contentWindow.getComputedStyle(status, '::before').width === '12px', 'The ring is not 12 px');
     await show({ ...installer, state: 'available' });
+    assert(!status.classList.contains('busy') && ring().length === 0, 'The ring stays after the check has ended');
     assert(status.textContent.startsWith('有新版本 0.1.4。') && button.textContent === '下载并安装' && button.classList.contains('accent'), 'Available (installer) wrong: ' + status.textContent);
     button.click(); assert(lastAction() === 'installUpdate', 'Install not requested');
     await show({ ...installer, state: 'downloading' });
@@ -1984,13 +2101,13 @@ async function runTests() {
     assert(status.textContent === '有新版本 0.1.4' && button.textContent === '打开下载页', 'ZIP card wrong: ' + status.textContent);
     button.click(); assert(lastAction() === 'openReleasePage', 'Release page not requested');
     await show({ ...installer, state: 'downloadFailed', version: null });
-    assert(status.textContent === '下载失败，请稍后再试' && button.textContent === '检查更新', 'Download failure wrong');
+    assert(status.textContent === '请稍后再试，或到 pecofence.jiang.jp 下载最新版本：没能下载新版本。' && button.textContent === '检查更新', 'Download failure wrong');
     await show({ ...installer, state: 'checkFailed', version: null });
-    assert(status.textContent === '检查更新失败，请稍后再试' && button.textContent === '检查更新', 'Check failure wrong');
+    assert(status.textContent === '请稍后再试，或到 pecofence.jiang.jp 下载最新版本：没能连上 GitHub 和 PecoFence 网站，检查不了更新。' && button.textContent === '检查更新', 'Check failure wrong');
     frame.contentWindow.testRefresh(); await settle();
-    assert(status.textContent === '检查更新失败，请稍后再试', 'State refresh lost the update card');
+    assert(status.textContent === '请稍后再试，或到 pecofence.jiang.jp 下载最新版本：没能连上 GitHub 和 PecoFence 网站，检查不了更新。', 'State refresh lost the update card');
     change(doc, 'language', 'en'); await settle();
-    assert(status.textContent === "Couldn't check for updates. Try again later." && button.textContent === 'Check for updates', 'English card wrong: ' + status.textContent);
+    assert(status.textContent === "Try again later, or get the latest version from pecofence.jiang.jp: couldn't reach GitHub or the PecoFence website to check for updates." && button.textContent === 'Check for updates', 'English card wrong: ' + status.textContent);
   });
 
   await test('Feedback page shows what will be sent and posts the report', async () => {
@@ -2433,7 +2550,7 @@ async function runTests() {
     const asked = posted('editorCount').length;
     assert(w.querySelector('.se-count').textContent.includes('Everything 语法不能和这一行一起用'), 'The count does not say why: ' + w.querySelector('.se-count').textContent);
     w.querySelector('.se-ok').click(); await settle();
-    assert(!saved() && w.querySelector('.se-msg').textContent === '选「任一」时，Everything 语法不能和这一行一起用' && rowsOf(doc)[2].classList.contains('bad'), 'Saved or the row not marked: ' + w.querySelector('.se-msg').textContent);
+    assert(!saved() && w.querySelector('.se-msg').textContent === '选“任一”时，Everything 语法不能和这一行一起用' && rowsOf(doc)[2].classList.contains('bad'), 'Saved or the row not marked: ' + w.querySelector('.se-msg').textContent);
     for (const [kind, ok] of [['target', false], ['ext', true]]) {
       sePick(rowsOf(doc)[2].querySelector('.se-kind'), kind); await settle();
       if (kind === 'target' || kind === 'ext') seType(rowsOf(doc)[2].querySelector('.se-text'), 'x');
@@ -2496,7 +2613,7 @@ async function runTests() {
     doc = await openEditor('fence=odd');
     const w = doc.getElementById('seWindow');
     await new Promise(r => setTimeout(r, 420));
-    assert(w.querySelector('.se-count').textContent.includes('「来源」不能作为智能栅栏的条件'), 'The count does not name the origin row: ' + w.querySelector('.se-count').textContent);
+    assert(w.querySelector('.se-count').textContent.includes('“来源”不能作为智能栅栏的条件'), 'The count does not name the origin row: ' + w.querySelector('.se-count').textContent);
     w.querySelector('.se-ok').click(); await settle();
     const origin = rowsOf(doc).find(r => r.dataset.kind === 'keep' && r.textContent.includes('来源'));
     assert(!saved() && origin.classList.contains('bad') && w.querySelector('.se-msg').textContent.includes('请删掉这一行'), 'The origin row was not named');
@@ -2516,7 +2633,7 @@ async function runTests() {
   await test('Smart fence editor: a change made elsewhere stays said until 好 or 取消; plain files count as a rough row', async () => {
     doc = await openEditor('fence=dl');
     const w = doc.getElementById('seWindow');
-    ew().testReceive({ type: 'editorNotice', text: '这个栅栏的条件刚在别处改过，按「好」会换成这里的条件' }); await settle();
+    ew().testReceive({ type: 'editorNotice', text: '这个栅栏的条件刚在别处改过，按“好”会换成这里的条件' }); await settle();
     seType(w.querySelector('.se-name'), 'typed after');
     await new Promise(r => setTimeout(r, 420));
     assert(w.querySelector('.se-msg').textContent.includes('刚在别处改过'), 'The notice went with the next edit: ' + w.querySelector('.se-msg').textContent);
@@ -2564,6 +2681,881 @@ async function runTests() {
         assert(w2.querySelector('h2').textContent === ew().PecoFenceI18n.text('编辑智能栅栏'), language + ': title not translated');
       }
     } finally { frame.style.width = ''; frame.style.height = ''; }
+    doc = await reset();
+  });
+  await test('Smart fence editor: every list has room for its longest option, the kind menus are one column, a choice keeps the width', async () => {
+    // A list the page draws itself is only as wide as its chosen option unless the editor
+    // gives it room: languages with long words show it (the window's own 864 x 621 page).
+    frame.style.width = '864px'; frame.style.height = '621px';
+    try {
+      for (const language of ['it', 'ru', 'de']) {
+        doc = await openEditor('fence=every&language=' + language);
+        const w = doc.getElementById('seWindow'), cv = doc.createElement('canvas').getContext('2d');
+        for (const s of w.querySelectorAll('select')) {
+          const cs = ew().getComputedStyle(s);
+          cv.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+          const longest = [...s.options].map(o => [cv.measureText(o.text).width, o.text]).sort((x, y) => y[0] - x[0])[0];
+          const room = s.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+          assert(longest[0] <= room + 0.5, `${language}: the ${s.className || 'limit'} list is ${s.offsetWidth} px wide, "${longest[1]}" needs ${Math.ceil(longest[0] - room)} px more`);
+        }
+        const kinds = new Set([...w.querySelectorAll('.se-kind')].map(s => s.offsetWidth));
+        assert(kinds.size === 1, language + ': the kind menus differ in width: ' + [...kinds].join(', '));
+        const all = w.querySelector('.se-all'), was = all.offsetWidth;
+        sePick(all, 'any'); await settle();
+        assert(all.offsetWidth === was, `${language}: 全部 / 任一 is ${was} px wide with one choice and ${all.offsetWidth} with the other`);
+      }
+    } finally { frame.style.width = ''; frame.style.height = ''; }
+    doc = await reset();
+  });
+
+  // The settings window review of 2026-11-12.
+  await test('Drop-down lists: the open list is styled by the page, a closed list keeps the system keys, scrollbars are thin', async () => {
+    doc = await reset();
+    if (!win().CSS.supports('appearance', 'base-select')) return;
+    const align = doc.querySelector('[data-bind=titleAlign]'), css = el => win().getComputedStyle(el);
+    assert(css(align).appearance === 'base-select', 'The list is not styled by the page');
+    assert(css(align.options[0]).minHeight === '36px', 'Rows of an open list are not 36 px: ' + css(align.options[0]).minHeight);
+    assert(css(doc.getElementById('iconTint')).display === 'none', 'A hidden list shows');
+    assert(align.getBoundingClientRect().height === 32 && align.getBoundingClientRect().width === 160, 'The closed box changed size');
+    align.focus();
+    press(align, 'ArrowDown'); assert(align.value === 'center', 'Arrow down on a closed list: ' + align.value);
+    press(align, 'End'); assert(align.value === 'right', 'End on a closed list: ' + align.value);
+    press(align, 'ArrowDown'); assert(align.value === 'right', 'Arrow down past the last choice: ' + align.value);
+    press(align, 'ArrowUp'); press(align, 'Home'); assert(align.value === 'left', 'Home on a closed list: ' + align.value);
+    assert(win().testMessages.at(-1).settings.titleAlign === 'left' && win().testMessages.filter(m => m.type === 'patchSettings').length === 4, 'Each key that changed the choice saves once');
+    press(align, 'ArrowDown', 40, { altKey: true }); assert(align.value === 'left', 'Alt+Down belongs to the list (it opens it)');
+    for (const sel of ['nav', '.search-list', 'textarea', '.fb-preview']) {
+      assert(win().getComputedStyle(doc.querySelector(sel), '::-webkit-scrollbar').width === '12px', sel + ' has the default scrollbar');
+    }
+  });
+
+  await test('查找设置: the selected row is tinted in both modes, data rows are not listed, common words find their setting', async () => {
+    const rgb = text => text.match(/[\d.]+/g).slice(0, 3).map(v => text.startsWith('color(') ? v * 255 : Number(v));
+    const lum = c => { const [r, g, b] = rgb(c).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+    const ratio = (a, b) => (Math.max(lum(a), lum(b)) + .05) / (Math.min(lum(a), lum(b)) + .05);
+    for (const mode of ['dark', 'light']) {
+      doc = await reset();
+      change(doc, 'language', 'zh-CN');
+      doc.querySelector('[data-bind=theme]').value = mode; doc.querySelector('[data-bind=theme]').dispatchEvent(new (win().Event)('change', { bubbles: true })); await settle();
+      const box = doc.getElementById('settingsSearch'), list = doc.getElementById('settingsSearchList');
+      const type = text => { box.focus(); box.value = text; box.dispatchEvent(new (win().Event)('input', { bubbles: true })); };
+      const titles = () => [...list.querySelectorAll('[role=option] b')].map(b => b.textContent);
+      type('图标');
+      const rows = list.querySelectorAll('[role=option]'), bg = el => win().getComputedStyle(el).backgroundColor;
+      // The list's own fill shows through an unselected row.
+      const contrast = ratio(bg(rows[0]), win().getComputedStyle(list).backgroundColor);
+      assert(contrast >= 1.2, mode + ': the selected row is ' + contrast.toFixed(2) + ' : 1 against the list');
+      assert(bg(rows[1]) === 'rgba(0, 0, 0, 0)', mode + ': an unselected row has a fill');
+      if (mode === 'light') continue;
+      type('快照');
+      assert(titles().includes('把当前布局存为快照') && !titles().includes('Before changes'), 'A snapshot is listed: ' + titles().join(' | '));
+      type('2026');
+      assert(!titles().length, 'A daily backup is listed: ' + titles().join(' | '));
+      type('Documents');
+      assert(!titles().includes('Documents'), 'A rule is listed: ' + titles().join(' | '));
+      for (const [word, title] of [['帮助', '使用手册'], ['教程', '使用手册'], ['关于', '使用手册'], ['版本号', '使用手册'], ['命令行', '让 AI 助手整理桌面'], ['CLI', '让 AI 助手整理桌面'],
+        ['终端', '让 AI 助手整理桌面'], ['撤销', '把当前布局存为快照'], ['dark', '颜色模式'], ['light', '颜色模式'], ['导出', '导出 / 导入配置文件'], ['写法说明', '用自己的脚本']]) {
+        type(word);
+        assert(titles().includes(title), word + ' finds: ' + titles().join(' | '));
+      }
+      box.dispatchEvent(new (win().KeyboardEvent)('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
+    }
+    for (const [language, word, title] of [['en', 'help', 'Manual'], ['en', 'command line', 'Let an AI assistant tidy your desktop'], ['ja', 'ヘルプ', null], ['de', 'Hilfe', null], ['ru', 'справка', null]]) {
+      change(doc, 'language', language); await settle();
+      const box = doc.getElementById('settingsSearch');
+      box.focus(); box.value = word; box.dispatchEvent(new (win().Event)('input', { bubbles: true }));
+      const found = [...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent);
+      assert(found.length && (!title || found.includes(title)), language + ' ' + word + ' finds: ' + found.join(' | '));
+    }
+    doc = await reset();
+  });
+
+  await test('Keyboard: the nav is one Tab stop, arrow keys move in it, Enter or Space shows the page', async () => {
+    doc = await reset();
+    const rows = [...doc.querySelectorAll('nav a')], stops = () => rows.filter(a => a.tabIndex === 0).map(a => a.dataset.page).join();
+    assert(stops() === 'general', 'Tab stops in the nav at the start: ' + stops());
+    rows[0].focus();
+    press(rows[0], 'ArrowDown', 40); assert(doc.activeElement === rows[1], 'Arrow down did not move to the next row');
+    press(rows[1], 'End', 35); assert(doc.activeElement === rows[6], 'End did not move to the last row');
+    press(rows[6], 'ArrowDown', 40); assert(doc.activeElement === rows[6], 'Arrow down left the last row');
+    press(rows[6], 'Home', 36); press(rows[0], 'ArrowUp', 38); assert(doc.activeElement === rows[0], 'Home / Arrow up at the first row');
+    assert(doc.getElementById('page-general').classList.contains('on') && stops() === 'general', 'Arrow keys alone changed the page');
+    press(rows[0], 'ArrowDown', 40); press(rows[1], 'ArrowDown', 40);
+    press(rows[2], ' ', 32);
+    assert(doc.getElementById('page-fences').classList.contains('on'), 'Space did not show the page');
+    assert(stops() === 'fences' && doc.activeElement === rows[2], 'The Tab stop did not follow the page: ' + stops());
+    // What Tab reaches next: the first control after the row that can take the focus.
+    const next = [...doc.querySelectorAll('nav a, main input, main select, main button, main [tabindex]')].filter(el => el.tabIndex >= 0 && el.getClientRects().length);
+    assert(next[next.indexOf(rows[2]) + 1] === doc.getElementById('fenceSel'), 'Tab after the nav does not reach the page');
+    doc.getElementById('settingsSearch').focus();
+    assert(next.indexOf(rows[2]) === 0, 'More than one Tab stop between the search box and the page');
+    doc.querySelector('[data-page=general]').click();
+    assert(stops() === 'general', 'A click did not move the Tab stop: ' + stops());
+  });
+
+  await test('栅栏: the swatches of 色调 and 标签页颜色 stay beside their text at the default window width', async () => {
+    doc = await reset();
+    frame.style.width = '944px';
+    try {
+      win().testState.tintPalette = ['红', '橙', '黄', '绿', '青', '蓝', '紫', '粉', '灰'].map((name, i) => ({ name, hex: ['E74856', 'F7630C', 'FCE100', '10893E', '00B7C3', '0078D4', '8764B8', 'E3008C', '7A7574'][i] }));
+      win().testRefresh(); await settle();
+      doc.querySelector('[data-page=fences]').click();
+      for (const language of ['zh-CN', 'en', 'de', 'ru', 'ja']) {
+        change(doc, 'language', language); await settle();
+        for (const fence of ['fence-a', 'fence-b']) {
+          change(doc, 'fenceSel', fence); await settle();
+          for (const id of ['fenceTintSwatches', 'fenceTabColorSwatches']) {
+            const row = doc.getElementById(id), card = row.closest('.card');
+            if (!card.getClientRects().length) continue;
+            assert(row.children.length === 11, id + ' has ' + row.children.length + ' swatches');
+            const text = card.querySelector('.l').getBoundingClientRect(), box = row.getBoundingClientRect();
+            assert(box.height < 40 && box.top < text.bottom && box.left >= text.right, language + ' ' + id + ': the swatches wrap under the text');
+          }
+        }
+      }
+    } finally { frame.style.width = ''; }
+    doc = await reset();
+  });
+
+  await test('主题风格: a tile caption that wraps breaks after the dot, never inside the Chinese name', async () => {
+    doc = await reset();
+    try {
+      const text = [...doc.querySelector('.tile-glass .cap').childNodes].find(n => n.nodeType === 3);
+      const lineOf = i => { const r = doc.createRange(); r.setStart(text, i); r.setEnd(text, i + 1); return Math.round(r.getBoundingClientRect().top); };
+      const at = text.nodeValue.indexOf('液态玻璃');
+      assert(at > 0, 'Caption changed: ' + text.nodeValue);
+      for (let width = 720; width <= 1000; width += 10) {
+        frame.style.width = width + 'px'; await settle();
+        assert(lineOf(at) === lineOf(at + 3), width + ' px: 液态玻璃 is split over two lines');
+      }
+    } finally { frame.style.width = ''; }
+  });
+
+  await test('A card description that wraps does not leave a few characters alone on its last line', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=layout]').click(); await settle();
+    const text = doc.getElementById('cfgExport').closest('.card').querySelector('.s');
+    // The width of each line of the description.
+    const lines = () => {
+      const range = doc.createRange(); range.selectNodeContents(text);
+      const rows = [];
+      for (const box of range.getClientRects()) {
+        const last = rows[rows.length - 1];
+        if (last && Math.abs(last.top - box.top) < 4) last.right = Math.max(last.right, box.right);
+        else rows.push({ top: box.top, left: box.left, right: box.right });
+      }
+      return rows.map(row => row.right - row.left);
+    };
+    try {
+      for (let width = 720; width <= 1000; width += 20) {
+        frame.style.width = width + 'px'; await settle();
+        const rows = lines(), room = text.getBoundingClientRect().width;
+        assert(rows.length < 2 || rows[rows.length - 1] > 0.3 * room, width + ' px: the last line of the 导出 / 导入 description is ' + Math.round(rows[rows.length - 1]) + ' px of ' + Math.round(room));
+      }
+    } finally { frame.style.width = ''; }
+  });
+
+  await test('The nav at the smallest window size: no sideways scrolling, the search box fits, long page names keep their height', async () => {
+    doc = await reset();
+    frame.style.width = '704px'; frame.style.height = '441px';
+    try {
+      for (const language of ['zh-CN', 'de', 'ru', 'fr']) {
+        change(doc, 'language', language); await settle();
+        const nav = doc.querySelector('nav'), box = doc.getElementById('settingsSearch');
+        assert(win().getComputedStyle(nav).overflowX === 'hidden' && nav.scrollWidth <= nav.clientWidth, language + ': the nav scrolls sideways');
+        assert(box.getBoundingClientRect().right <= nav.getBoundingClientRect().left + nav.clientWidth, language + ': the search box is cut');
+        assert(win().getComputedStyle(box).paddingRight === '32px', language + ': the text runs under the magnifier');
+        for (const a of nav.querySelectorAll('a')) assert(a.scrollHeight <= a.clientHeight, language + ': ' + a.textContent.trim() + ' is squeezed');
+        if (language === 'zh-CN') assert(nav.scrollHeight <= nav.clientHeight, 'zh-CN: the nav needs a scrollbar (' + nav.scrollHeight + ' in ' + nav.clientHeight + ')');
+      }
+    } finally { frame.style.width = ''; frame.style.height = ''; }
+    doc = await reset();
+  });
+
+  await test('Placeholders and small grey text have a contrast of at least 4.5 : 1 in both modes', async () => {
+    const parse = text => { const n = text.match(/[\d.]+/g).map(Number); return { r: n[0], g: n[1], b: n[2], a: n.length > 3 ? n[3] : 1 }; };
+    const over = (top, under) => ({ r: top.r * top.a + under.r * (1 - top.a), g: top.g * top.a + under.g * (1 - top.a), b: top.b * top.a + under.b * (1 - top.a), a: 1 });
+    const lum = c => { const [r, g, b] = [c.r, c.g, c.b].map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+    // What is behind an element: its ancestors' fills over each other, down to the sheet.
+    const behind = el => {
+      const fills = [];
+      for (let e = el; e; e = e.parentElement) { const c = parse(win().getComputedStyle(e).backgroundColor); if (c.a > 0) fills.push(c); if (c.a === 1) break; }
+      return fills.reverse().reduce((under, top) => over(top, under), { r: 0, g: 0, b: 0, a: 1 });
+    };
+    const ratio = (el, pseudo) => {
+      const back = behind(el), text = over(parse(win().getComputedStyle(el, pseudo).color), back);
+      return (Math.max(lum(text), lum(back)) + .05) / (Math.min(lum(text), lum(back)) + .05);
+    };
+    for (const mode of ['dark', 'light']) {
+      doc = await reset();
+      doc.querySelector('[data-bind=theme]').value = mode; doc.querySelector('[data-bind=theme]').dispatchEvent(new (win().Event)('change', { bubbles: true })); await settle();
+      for (const page of ['general', 'fences', 'rules', 'layout', 'about']) {
+        doc.querySelector(`[data-page=${page}]`).click();
+        if (page === 'rules') doc.getElementById('nrPanel').open = true;
+        const texts = [...[...doc.querySelectorAll('nav input, main .page.on input[placeholder], main .page.on textarea[placeholder]')].map(el => [el, '::placeholder', el.placeholder]),
+          ...[...doc.querySelectorAll('#workspaceSummary, main .page.on .picker-count, main .page.on .fb-count, main .page.on .hotkey-box .prompt')].map(el => [el, undefined, el.textContent]),
+          ...[...doc.querySelectorAll('main .page.on #ruleList .rule')].map(el => [el, '::before', 'rule number'])];
+        for (const [el, pseudo, name] of texts) {
+          if (!el.getClientRects().length) continue;
+          const value = ratio(el, pseudo);
+          assert(value >= 4.5, `${mode} ${page}: "${name}" is ${value.toFixed(2)} : 1`);
+        }
+      }
+    }
+    doc = await reset();
+  });
+
+  await test('Rule editor: the chosen condition type is shown whole in every language and the check boxes stand in columns', async () => {
+    doc = await reset();
+    frame.style.width = '944px';
+    try {
+      rulesPage(doc);
+      const kind = doc.getElementById('nrKind'), pen = doc.createElement('canvas').getContext('2d');
+      for (const language of ['zh-CN', 'ja', 'en', 'de', 'ru', 'it']) {
+        change(doc, 'language', language); await settle();
+        rulesPage(doc);
+        for (const option of kind.options) {
+          change(doc, 'nrKind', option.value);
+          pen.font = win().getComputedStyle(kind).font;
+          const need = pen.measureText(option.text).width + 11 + 32, has = kind.getBoundingClientRect().width;
+          assert(has >= need - 1, `${language}: "${option.text}" needs ${Math.round(need)} px and has ${Math.round(has)}`);
+          assert(kind.getBoundingClientRect().right <= kind.closest('.c-main').getBoundingClientRect().right + 1, language + ': the type list leaves its box');
+        }
+        for (const [value, id] of [['type', 'nrCats'], ['weekday', 'nrWeek']]) {
+          change(doc, 'nrKind', value);
+          const boxes = [...doc.querySelectorAll('#' + id + ' label')].map(l => l.getBoundingClientRect()), area = doc.getElementById(id).getBoundingClientRect();
+          const lefts = [...new Set(boxes.map(b => Math.round(b.left)))], firstRow = boxes.filter(b => Math.round(b.top) === Math.round(boxes[0].top)).map(b => Math.round(b.left));
+          assert(lefts.every(x => firstRow.includes(x)), `${language} ${id}: the check boxes are not in columns: ${lefts} / ${firstRow}`);
+          boxes.forEach((b, i) => {
+            assert(b.right <= area.right + 1, `${language} ${id}: a caption leaves the box`);
+            const next = boxes[i + 1];
+            assert(!next || Math.round(next.top) !== Math.round(b.top) || b.right <= next.left, `${language} ${id}: two captions overlap`);
+          });
+        }
+        change(doc, 'nrKind', 'type');
+      }
+    } finally { frame.style.width = ''; }
+    doc = await reset();
+  });
+
+  await test('自定义 with no themes folder yet: the three example themes are listed at once and the first is used, without the folder button', async () => {
+    doc = await reset();
+    win().testState.customThemes = [];
+    win().testRefresh(); await settle();
+    const before = win().testMessages.length;
+    doc.querySelector('input[name=themeStyle][value=custom]').click(); await settle(); await settle();
+    const sent = win().testMessages.slice(before), select = doc.getElementById('customTheme');
+    assert(sent.some(m => m.name === 'openThemesFolder' && m.quiet === true), 'The page did not ask for the example themes: ' + sent.map(m => m.name || m.type).join());
+    assert([...select.options].map(o => o.text).join() === '大圆角,暖色,磨砂玻璃' && !select.disabled, 'The examples are not listed: ' + [...select.options].map(o => o.text).join());
+    assert(win().testState.settings.customTheme === '大圆角' && select.value === '大圆角', 'The first example is not in use: ' + win().testState.settings.customTheme);
+    assert(doc.getElementById('customThemeHelp').textContent.includes('文件保存后'), 'The hint still asks for a file: ' + doc.getElementById('customThemeHelp').textContent);
+    // The button itself still opens the folder (no quiet flag).
+    const n = win().testMessages.length;
+    doc.getElementById('openThemes').click();
+    assert(win().testMessages.slice(n).some(m => m.name === 'openThemesFolder' && !m.quiet), 'The button no longer opens the folder');
+    doc = await reset();
+  });
+
+  await test('Wording: one kind of quotation mark, 关闭 for a switch that is off, plain names in the fence picker, no two cards with one name', async () => {
+    doc = await reset();
+    win().testState.fences.find(f => f.kind === 'inbox').title = '桌面';
+    win().testRefresh(); await settle();
+    const text = [...doc.querySelectorAll('nav, main')].map(el => el.textContent).join('\n')
+      + [...doc.querySelectorAll('main [title], main [placeholder], main [aria-label]')].map(el => ['title', 'placeholder', 'aria-label'].map(a => el.getAttribute(a) || '').join('\n')).join('\n');
+    for (const word of ['「', '」', '关掉', '关上', '标题行', '指针', 'Chameleon', '没有命中']) assert(!text.includes(word), 'The page still says ' + word + ': …' + text.slice(Math.max(0, text.indexOf(word) - 20), text.indexOf(word) + 20) + '…');
+    const titles = [...doc.querySelectorAll('main .card .t')].map(el => el.textContent.trim());
+    assert(titles.filter(x => x === 'Windows 桌面图标').length === 1 && titles.includes('修复 Windows 桌面图标'), 'Two cards are named Windows 桌面图标');
+    assert(titles.includes('退出 PecoFence 时保持 Windows 桌面图标隐藏') && titles.includes('不符合任何规则的项目') && titles.includes('图标融入背景'), 'Titles: ' + titles.join(' | '));
+    const help = title => [...doc.querySelectorAll('main .card')].find(c => c.querySelector('.t')?.textContent.trim() === title).querySelector('.s').textContent;
+    assert(help('退出 PecoFence 时保持 Windows 桌面图标隐藏').length <= 75, 'The help of the keep-hidden switch has ' + help('退出 PecoFence 时保持 Windows 桌面图标隐藏').length + ' characters');
+    assert(help('在桌面空白处拖出矩形时显示“新建栅栏”按钮').length <= 50, 'The help of the new-fence button has ' + help('在桌面空白处拖出矩形时显示“新建栅栏”按钮').length + ' characters');
+    assert(/^全透明.*更透明.*更厚实/.test(help('不透明度')), '不透明度 does not explain its choices in order: ' + help('不透明度'));
+    assert(!doc.querySelector('#dialogJumpDemo > .s'), 'The demo repeats the help of 对话框跳转');
+    const options = () => [...doc.getElementById('fenceSel').options].map(o => o.text);
+    assert(options().includes('桌面') && options().includes('Portal（文件夹栅栏）') && !options().some(o => o.includes('（文件夹）')), 'Fence picker: ' + options().join(' | '));
+    win().testState.fences.find(f => f.kind === 'inbox').title = '杂物';
+    win().testRefresh(); await settle();
+    assert(options().includes('杂物（桌面）'), 'A renamed 桌面 fence is not marked: ' + options().join(' | '));
+    const box = doc.getElementById('settingsSearch');
+    box.focus(); box.value = 'chameleon'; box.dispatchEvent(new (win().Event)('input', { bubbles: true }));
+    assert([...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent).includes('图标融入背景'), 'Chameleon no longer finds 图标融入背景');
+    change(doc, 'language', 'en'); await settle();
+    assert([...doc.querySelectorAll('main .card .t')].some(el => el.textContent.trim() === 'Show the Windows desktop temporarily'), 'English: for now');
+    doc = await reset();
+  });
+
+  await test('栅栏 page: 视图 and 排序方式 show the chosen fence and change it, in every language, and the search finds them', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=fences]').click();
+    const view = doc.getElementById('fenceLayout'), sort = doc.getElementById('fenceSort');
+    const toggle = prop => doc.querySelector(`#page-fences .toggle[data-fence=${prop}]`), fence = id => win().testState.fences.find(f => f.id === id);
+    assert(view && sort && toggle('reverse') && toggle('foldersFirst'), 'The cards are missing');
+    assert(view.closest('#fenceLayoutGroup') && view.closest('.card').querySelector('.t').textContent === '视图' && sort.closest('.card').querySelector('.t').textContent === '排序方式', 'The cards are not under 布局');
+    assert(view.value === 'icons' && sort.value === 'manual' && !toggle('reverse').classList.contains('on'), 'fence-a: ' + view.value + ' ' + sort.value);
+    change(doc, 'fenceSel', 'fence-b'); await settle();
+    assert(view.value === 'list' && sort.value === 'date' && toggle('reverse').classList.contains('on') && !toggle('foldersFirst').classList.contains('on'), 'fence-b: ' + view.value + ' ' + sort.value);
+    assert([...sort.options].map(o => o.text).join() === '手动,按名称,按类型,按修改日期,按大小,按打开次数' && [...view.options].map(o => o.text).join() === '图标,列表,详细信息', 'Choices differ from the fence menu');
+    change(doc, 'fenceSort', 'name'); change(doc, 'fenceLayout', 'details'); toggle('reverse').click(); toggle('foldersFirst').click(); await settle();
+    const sent = win().testMessages.filter(m => m.type === 'setFence' && m.id === 'fence-b').slice(-4).map(m => m.prop + '=' + m.value).join();
+    assert(sent === 'sort=name,layout=details,reverse=false,foldersFirst=true', 'Sent: ' + sent);
+    assert(fence('fence-b').sort === 'name' && fence('fence-b').layout === 'details' && fence('fence-a').sort === 'manual', 'Another fence changed');
+    // A tool fence holds no icons: no view, no order.
+    fence('fence-a').tool = { kind: 'note' }; win().testRefresh(); await settle();
+    change(doc, 'fenceSel', 'fence-a'); await settle();
+    assert(!view.getClientRects().length && !sort.getClientRects().length, 'A note fence shows 视图 and 排序方式');
+    change(doc, 'fenceSel', 'fence-b'); await settle();
+    const box = doc.getElementById('settingsSearch'), found = () => [...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent);
+    const type = text => { box.focus(); box.value = text; box.dispatchEvent(new (win().Event)('input', { bubbles: true })); };
+    type('排序'); assert(found()[0] === '排序方式', '排序 finds: ' + found().join(' | '));
+    type('视图'); assert(found()[0] === '视图', '视图 finds: ' + found().join(' | '));
+    type('倒序'); assert(found()[0] === '倒序', '倒序 finds: ' + found().join(' | '));
+    const catalogs = JSON.parse(doc.getElementById('fixture-catalogs').textContent);
+    for (const language of Object.keys(catalogs)) {
+      change(doc, 'language', language); await settle();
+      const texts = [view.closest('.card').querySelector('.t'), sort.closest('.card').querySelector('.t'), toggle('reverse').closest('.card').querySelector('.t'), toggle('foldersFirst').closest('.card').querySelector('.t'), ...view.options, ...sort.options].map(el => el.textContent);
+      assert(texts.join() === ['视图', '排序方式', '倒序', '文件夹优先', '图标', '列表', '详细信息', '手动', '按名称', '按类型', '按修改日期', '按大小', '按打开次数'].map(k => catalogs[language][k]).join(), language + ': ' + texts.join(' | '));
+    }
+    doc = await reset();
+  });
+
+  await test('The nav marks the selected page with a tint and the accent colour, without a bar at the row edge', async () => {
+    // A computed colour over what is behind it: rgb(…) / rgba(…), or color(srgb … / a) for a color-mix().
+    const parse = (text, under = [0, 0, 0]) => {
+      const n = text.match(/[\d.]+/g).map(Number), a = n.length > 3 ? n[3] : 1;
+      return n.slice(0, 3).map((v, i) => (text.startsWith('color(') ? v * 255 : v) * a + under[i] * (1 - a));
+    };
+    const lum = c => { const [r, g, b] = c.map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+    const ratio = (a, b) => (Math.max(lum(a), lum(b)) + .05) / (Math.min(lum(a), lum(b)) + .05);
+    for (const mode of ['dark', 'light']) {
+      doc = await reset();
+      doc.querySelector('[data-bind=theme]').value = mode; doc.querySelector('[data-bind=theme]').dispatchEvent(new (win().Event)('change', { bubbles: true })); await settle();
+      const rows = [...doc.querySelectorAll('nav a')], css = (el, pseudo) => win().getComputedStyle(el, pseudo);
+      const heights = rows.map(a => a.getBoundingClientRect().height);
+      doc.querySelector('[data-page=layout]').click();
+      // The rows' colours change over 150 ms.
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const sel = doc.querySelector('nav a.sel'), other = rows[0];
+      assert(sel.dataset.page === 'layout' && ['none', 'normal'].includes(css(sel, '::before').content), mode + ': the selected row still has a bar: ' + css(sel, '::before').content);
+      for (const a of rows) for (const side of ['Left', 'Right', 'Top', 'Bottom']) assert(css(a)['border' + side + 'Width'] === '0px', mode + ': a nav row has a border');
+      const sheet = parse(css(doc.body).backgroundColor), tint = parse(css(sel).backgroundColor, sheet);
+      assert(css(other).backgroundColor === 'rgba(0, 0, 0, 0)' && ratio(tint, sheet) >= 1.2, mode + ': the tint is ' + ratio(tint, sheet).toFixed(2) + ' : 1 against the sheet');
+      assert(css(sel).color !== css(other).color && css(sel.querySelector('.ic')).color === css(sel).color, mode + ': the selected name and icon are not in the accent colour');
+      assert(ratio(parse(css(sel).color), tint) >= 4.5, mode + ': the selected name is ' + ratio(parse(css(sel).color), tint).toFixed(2) + ' : 1 on its tint');
+      assert(rows.map(a => a.getBoundingClientRect().height).join() === heights.join(), mode + ': a row changed height when selected');
+    }
+    doc = await reset();
+  });
+
+  await test('Deleting a rule shows a notice with 撤销 that puts the rule back at its place', async () => {
+    doc = await reset();
+    rulesPage(doc);
+    const before = structuredClone(current().rules.list);
+    const toast = doc.getElementById('toast'), undo = doc.getElementById('toastUndo');
+    const clickable = () => frame.contentWindow.getComputedStyle(toast).pointerEvents === 'auto';
+    assert(undo.hidden && !clickable(), 'The notice bar takes clicks before any delete');
+    doc.querySelector('#ruleList [data-act=del]').click(); await settle();
+    assert(current().rules.list.length === before.length - 1 && current().rules.list[0].id === 'rule-b', 'One click did not delete the rule');
+    assert(toast.classList.contains('on') && doc.getElementById('toastText').textContent === '已删除规则“Documents”', 'No notice names the deleted rule: ' + doc.getElementById('toastText').textContent);
+    assert(!undo.hidden && visible(undo) && clickable(), '撤销 is not shown or cannot be clicked');
+    undo.click(); await settle();
+    assert(JSON.stringify(current().rules.list) === JSON.stringify(before), 'The rule did not come back at its place with all its fields: ' + JSON.stringify(current().rules.list));
+    assert(ruleCount(doc) === before.length && !toast.classList.contains('on') && !clickable(), 'The list or the notice did not follow the undo');
+    // The second of two, then the first: each undo puts back the rule of its own notice only.
+    doc.querySelectorAll('#ruleList [data-act=del]')[1].click(); await settle();
+    doc.querySelector('#ruleList [data-act=del]').click(); await settle();
+    assert(current().rules.list.length === 0 && doc.getElementById('toastText').textContent === '已删除规则“Documents”', 'The second delete did not replace the notice');
+    undo.click(); await settle();
+    assert(current().rules.list.length === 1 && current().rules.list[0].id === 'rule-a', 'Undo did not put back the rule deleted last');
+    // A notice without an undo has no button and lets clicks through.
+    doc.querySelector('#ruleList [data-act=del]').click(); await settle();
+    frame.contentWindow.testHost({ type: 'toast', text: '已保存快照' }); await settle();
+    assert(undo.hidden && !clickable() && toast.classList.contains('on'), 'A plain notice kept 撤销');
+    assert(current().rules.list.length === 0, 'A plain notice brought the rule back');
+  });
+  await test('Deleting a snapshot: the notice of the host carries 撤销, which asks the host to put it back', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=layout]').click();
+    const undo = doc.getElementById('toastUndo');
+    doc.querySelector('#snapList [data-act=del]').click(); await settle();
+    assert(current().snapshots.length === 0 && !doc.querySelector('#snapList [data-row-id]'), 'One click did not delete the snapshot');
+    assert(doc.getElementById('toast').classList.contains('on') && doc.getElementById('toastText').textContent === '已删除快照“Before changes”' && !undo.hidden,
+      'No notice with 撤销 names the snapshot: ' + doc.getElementById('toastText').textContent);
+    undo.click(); await settle();
+    assert(frame.contentWindow.testMessages.filter(m => m.name === 'restoreDeletedSnapshot').length === 1, '撤销 did not ask the host once: ' + JSON.stringify(frame.contentWindow.testMessages.slice(-3)));
+    assert(current().snapshots.length === 1 && doc.querySelector('#snapList [data-row-id=snapshot-a]'), 'The snapshot did not come back');
+    assert(!doc.getElementById('toast').classList.contains('on'), 'The notice stayed after 撤销');
+  });
+  await test('The page tells the host once that it has drawn the state', async () => {
+    doc = await reset();
+    const sent = type => frame.contentWindow.testMessages.filter(m => m.type === type);
+    // The page sends it two frames after a state. A headless run with a virtual clock may draw
+    // no frame between two timers, so the frames of this window come by timer from here on:
+    // whether the first state's frames came or not, one more state leaves exactly one drawn.
+    frame.contentWindow.requestAnimationFrame = callback => setTimeout(callback, 0);
+    frame.contentWindow.testRefresh();
+    for (let i = 0; i < 3; i++) await settle();
+    assert(sent('drawn').length === 1, 'drawn was not sent once after the first states: ' + sent('drawn').length);
+    const all = frame.contentWindow.testMessages;
+    assert(all.findIndex(m => m.type === 'drawn') > all.findIndex(m => m.type === 'ready'), 'drawn came before ready');
+    assert(doc.documentElement.classList.contains('ready'), 'drawn came before the page allowed transitions');
+    frame.contentWindow.testRefresh();
+    for (let i = 0; i < 3; i++) await settle();
+    assert(sent('drawn').length === 1, 'A later state sent drawn again');
+  });
+  await test('The page tells the host which page it shows and how far it is scrolled, and goes back there', async () => {
+    doc = await reset();
+    const sent = type => frame.contentWindow.testMessages.filter(m => m.type === type);
+    const until = async ok => { for (let i = 0; i < 50 && !ok(); i++) await settle(); return ok(); };
+    doc.querySelector('[data-page=fences]').click();
+    doc.querySelector('main').scrollTop = 120;
+    doc.querySelector('main').dispatchEvent(new frame.contentWindow.Event('scroll'));
+    assert(await until(() => sent('view').some(m => m.page === 'fences' && m.scroll === 120)), 'The page and its scroll offset were not reported: ' + JSON.stringify(sent('view')));
+    assert(sent('view').at(-1).page === 'fences' && sent('view').at(-1).scroll === 120, 'The last report is not the page as it is: ' + JSON.stringify(sent('view').at(-1)));
+    // A reopened window: the host asks for that page and offset. Without an offset the page
+    // starts at the top.
+    doc = await reset();
+    frame.contentWindow.testHost({ type: 'showPage', page: 'fences', scroll: 120 });
+    assert(doc.querySelector('nav a.sel').dataset.page === 'fences' && doc.querySelector('main').scrollTop === 120, 'showPage did not restore the page and its scroll offset: ' + doc.querySelector('main').scrollTop);
+    frame.contentWindow.testHost({ type: 'showPage', page: 'general' });
+    assert(doc.querySelector('nav a.sel').dataset.page === 'general' && doc.querySelector('main').scrollTop === 0, 'showPage without an offset did not start at the top');
+    doc = await reset();
+  });
+
+  // ---- motion (owner round 2026-11-12): what moves, and what must not, after a gesture.
+  // The transitions and animations running right now, as "element property" lines.
+  const moving = () => doc.getAnimations().map(a => {
+    const target = a.effect.target;
+    return (target.id ? '#' + target.id : target.tagName.toLowerCase() + '.' + target.className) + (a.effect.pseudoElement || '') + ' ' + (a.transitionProperty || a.animationName);
+  });
+  const until = async ok => { for (let i = 0; i < 50 && !ok(); i++) await settle(); return ok(); };
+  const motionReady = () => until(() => doc.documentElement.classList.contains('ready'));
+  await test('A colour mode switch lands in one frame: no control fades behind the page', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    Object.assign(current(), { themeMode: 'light', accent: '#005FB8' });
+    current().settings.theme = 'light';
+    frame.contentWindow.testRefresh();
+    const fading = moving().filter(line => line.includes('color'));
+    assert(doc.documentElement.classList.contains('light'), 'The page did not switch to light');
+    assert(fading.length === 0, fading.length + ' colours fade after the switch: ' + fading.slice(0, 4).join(', '));
+    assert(await motionReady(), 'Transitions stayed off after the switch');
+    // The same mode again leaves the transitions on.
+    frame.contentWindow.testRefresh();
+    assert(doc.documentElement.classList.contains('ready'), 'A state without a change of mode switched the transitions off');
+    doc = await reset();
+  });
+  await test('A switch: the knob changes colour with its track, not ahead of it', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    doc.querySelector('[data-bind=autostart]').click();
+    const lines = moving().filter(line => line.includes('::after'));
+    assert(lines.some(line => line.endsWith('transform')), 'The knob does not slide: ' + lines.join(', '));
+    assert(lines.some(line => line.endsWith('background-color')), 'The knob takes its new colour at once: ' + lines.join(', '));
+    doc = await reset();
+  });
+  await test('The switch of a rule slides, and its row stays when the host echoes the change', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    doc.querySelector('[data-page=rules]').click();
+    const row = doc.querySelector('#ruleList [data-row-id=rule-a]'), knob = row.querySelector('.toggle');
+    knob.click();
+    assert(moving().some(line => line.includes('::after') && line.endsWith('transform')), 'The knob of a rule does not slide: ' + moving().join(', '));
+    assert(!knob.classList.contains('on') && knob.getAttribute('aria-checked') === 'false' && row.classList.contains('disabled'), 'The row does not show the rule as off');
+    const sent = frame.contentWindow.testMessages.filter(m => m.type === 'setRules').at(-1);
+    assert(sent && sent.rules.list[0].enabled === false, 'The switch was not posted');
+    await settle();
+    assert(doc.querySelector('#ruleList [data-row-id=rule-a]') === row && row.querySelector('.toggle') === knob, 'The echo of the host rebuilt the row');
+    // The row that stayed acts on the newest state.
+    row.querySelector('[data-act=down]').click();
+    await settle();
+    assert([...doc.querySelectorAll('#ruleList [data-row-id]')].map(e => e.dataset.rowId).join() === 'rule-b,rule-a', '下移 on a kept row did not move the rule');
+    assert(current().rules.list.map(r => r.id + ':' + r.enabled).join() === 'rule-b:true,rule-a:false', 'The host has ' + JSON.stringify(current().rules.list.map(r => [r.id, r.enabled])));
+    // A change of another kind (a fence renamed) still redraws the rows.
+    current().fences[0].title = '文档与表格';
+    frame.contentWindow.testRefresh();
+    assert(doc.querySelector('#ruleList [data-row-id=rule-a] .conds').textContent.includes('文档与表格'), 'A renamed target fence did not reach the rule rows');
+    doc = await reset();
+  });
+  await test('栅栏: another fence shows its values at once and the body of the page comes in again', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    doc.querySelector('[data-page=fences]').click();
+    assert(await until(() => !moving().some(line => line.endsWith('page-in'))), 'The page never finished coming in');
+    // 桌面 differs from the first fence in several switches (锁定, 空的时候隐藏, …).
+    change(doc, 'fenceSel', 'inbox');
+    const lines = moving();
+    assert(doc.querySelector('[data-fence=locked]').classList.contains('on'), 'The page does not show the other fence');
+    assert(!lines.some(line => line.includes('toggle')), 'Switches slide to the other fence\'s values: ' + lines.filter(line => line.includes('toggle')).slice(0, 3).join(', '));
+    assert(lines.some(line => line.startsWith('#fenceBody') && line.endsWith('fence-in')), 'The body of the page does not come in again: ' + lines.join(', '));
+    assert(await motionReady(), 'Transitions stayed off after the change of fence');
+    // A switch flipped by the user still slides.
+    const knob = [...doc.querySelectorAll('#fenceBody .toggle')].find(el => el.offsetParent);
+    knob.click();
+    assert(moving().some(line => line.includes('::after') && line.endsWith('transform')), 'A switch no longer slides after a change of fence');
+    doc = await reset();
+  });
+  // Rows gliding or fading in after their list was drawn again: "row id, first keyframe".
+  const glides = () => doc.getAnimations().filter(a => !a.transitionProperty && !a.animationName && a.effect.target.dataset.rowId).map(a => {
+    const from = a.effect.getKeyframes()[0];
+    return a.effect.target.dataset.rowId + ' ' + (from.transform && from.transform !== 'none' ? (from.transform.includes('(-') ? 'from above' : 'from below') : 'fades in');
+  }).sort().join(', ');
+  await test('A rule moved, deleted or put back: the rows glide to their places and a new row fades in', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    doc.querySelector('[data-page=rules]').click();
+    const row = id => doc.querySelector(`#ruleList [data-row-id=${id}]`);
+    assert(glides() === '', 'Rows move on the first look at the page: ' + glides());
+    row('rule-a').querySelector('[data-act=down]').click();
+    assert(glides() === 'rule-a from above, rule-b from below', '下移: ' + (glides() || 'nothing moves'));
+    await settle();
+    row('rule-b').querySelector('[data-act=del]').click();
+    assert(glides() === 'rule-a from below', '删除: ' + (glides() || 'nothing moves'));
+    // What stands under the list comes up with it (the rows on their way would lie over it).
+    const under = doc.getAnimations().filter(a => !a.transitionProperty && !a.animationName && a.effect.target.id === 'nrPanel').map(a => a.effect.getKeyframes()[0].transform);
+    assert(under.length === 1 && /^translateY\(\d/.test(under[0]), '删除: 「新建规则」 under the list does not glide up: ' + under.join());
+    await settle();
+    doc.getElementById('toastUndo').click();
+    assert(glides() === 'rule-a from above, rule-b fades in', '撤销: ' + (glides() || 'nothing moves'));
+    assert(await until(() => glides() === ''), 'The rows never came to rest: ' + glides());
+    // A snapshot saved: it comes in at the top and the older one glides down.
+    doc.querySelector('[data-page=layout]').click();
+    current().snapshots.push({ id: 'snapshot-b', name: '整理之后', date: '2026-11-12', fenceCount: 4 });
+    frame.contentWindow.testRefresh();
+    assert(glides() === 'snapshot-a from above, snapshot-b fades in', 'A new snapshot: ' + (glides() || 'nothing moves'));
+    doc = await reset();
+  });
+  await test('A page switch: the title stands, what is under it rises 24 px and fades in over 250 ms', async () => {
+    doc = await reset();
+    for (const name of ['layout', 'tools', 'about']) {
+      doc.querySelector(`[data-page=${name}]`).click();
+      const page = doc.getElementById('page-' + name), main = doc.querySelector('main');
+      const rising = doc.getAnimations().filter(a => a.animationName === 'page-in');
+      assert(rising.length > 0 && rising.every(a => a.effect.target.parentElement === page), name + ': the parts under the title do not come in (' + rising.length + ' animations)');
+      assert(!rising.some(a => a.effect.target.matches('.page-header')), name + ': the title moves with the page');
+      const from = rising[0].effect.getKeyframes()[0];
+      assert(rising[0].effect.getComputedTiming().duration === 250 && from.transform === 'translateY(24px)' && from.opacity === '0', name + ': ' + rising[0].effect.getComputedTiming().duration + ' ms from ' + from.transform);
+      // The rise must not make the page taller for its time (a scrollbar would flash).
+      const during = main.scrollHeight;
+      rising.forEach(a => a.finish());
+      assert(main.scrollHeight === during, name + ': the page is ' + (during - main.scrollHeight) + ' px taller while it comes in');
+    }
+    doc = await reset();
+  });
+  await test('The 查找设置 list fades in when it opens, and typing on does not replay it', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const box = doc.getElementById('settingsSearch');
+    const type = text => { box.value = text; box.dispatchEvent(new frame.contentWindow.Event('input', { bubbles: true })); };
+    box.focus();
+    type('自');
+    const opening = moving().filter(line => line.startsWith('#settingsSearchList'));
+    assert(!doc.getElementById('settingsSearchList').hidden && opening.some(line => line.endsWith('opacity')) && opening.some(line => line.endsWith('transform')), 'The list appears in one frame: ' + opening.join(', '));
+    assert(await until(() => !moving().some(line => line.startsWith('#settingsSearchList'))), 'The list never came to rest');
+    type('自动');
+    assert(!moving().some(line => line.startsWith('#settingsSearchList')), 'The list comes in again at every key');
+    doc = await reset();
+  });
+  await test('The notice with 撤销 stays while the pointer is on it, and leaves after the pointer does', async () => {
+    doc = await reset();
+    // The page's long timers run 100 times faster here: the notice's 6 s are 60 ms.
+    const w = frame.contentWindow, realTimeout = w.setTimeout;
+    w.setTimeout = (run, ms, ...rest) => realTimeout(run, ms >= 1000 ? ms / 100 : ms, ...rest);
+    const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+    doc.querySelector('[data-page=rules]').click();
+    const bar = doc.getElementById('toast');
+    doc.querySelector('#ruleList [data-act=del]').click();
+    assert(bar.classList.contains('on') && bar.classList.contains('undo'), 'No notice with 撤销 after a delete');
+    bar.dispatchEvent(new w.PointerEvent('pointerenter'));
+    await pause(250);
+    assert(bar.classList.contains('on'), 'The notice left while the pointer was on it');
+    bar.dispatchEvent(new w.PointerEvent('pointerleave'));
+    await pause(5);
+    assert(bar.classList.contains('on'), 'The notice left the moment the pointer did');
+    assert(await until(() => !bar.classList.contains('on')), 'The notice never left after the pointer did');
+    // Left alone it goes by itself.
+    doc.querySelector('#ruleList [data-act=del]').click();
+    assert(bar.classList.contains('on'), 'No notice after the second delete');
+    assert(await until(() => !bar.classList.contains('on')), 'A notice that nobody points at stays');
+    doc = await reset();
+  });
+  await test('A notice that replaces one still on screen comes in again; the same notice again does not', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const bar = doc.getElementById('toast'), comingIn = () => moving().some(line => line === '#toast opacity');
+    frame.contentWindow.testHost({ type: 'toast', text: '已保存快照' });
+    assert(bar.classList.contains('on') && comingIn(), 'The first notice does not fade in');
+    assert(await until(() => !comingIn()), 'The first notice never came to rest');
+    frame.contentWindow.testHost({ type: 'toast', text: '已恢复布局' });
+    assert(bar.classList.contains('on') && doc.getElementById('toastText').textContent === '已恢复布局' && comingIn(), 'The second notice changes the text in place');
+    assert(await until(() => !comingIn()), 'The second notice never came to rest');
+    frame.contentWindow.testHost({ type: 'toast', text: '已恢复布局' });
+    assert(bar.classList.contains('on') && !comingIn(), 'The same notice again blinks');
+    doc = await reset();
+  });
+  await test('Smart fence editor: when a row is added or removed, the rows under it glide and the new row fades in', async () => {
+    doc = await openEditor('fence=new');
+    assert(await motionReady(), 'The editor never allowed transitions');
+    // "row index, where it comes from" for every row that is moving.
+    const rowGlides = () => doc.getAnimations().filter(a => !a.transitionProperty && !a.animationName && a.effect.target.classList.contains('se-row')).map(a => {
+      const from = a.effect.getKeyframes()[0];
+      return rowsOf(doc).indexOf(a.effect.target) + (from.transform && from.transform !== 'none' ? (from.transform.includes('(-') ? ' from above' : ' from below') : ' fades in');
+    }).sort().join(', ');
+    rowsOf(doc)[0].querySelector('.se-plus').click();
+    assert(kindsOf(doc) === 'where,name,name' && rowGlides() === '1 fades in, 2 from above', 'A row added: ' + (rowGlides() || 'nothing moves'));
+    assert(await until(() => rowGlides() === ''), 'The rows never came to rest');
+    rowsOf(doc)[1].querySelector('.se-minus').click();
+    assert(kindsOf(doc) === 'where,name' && rowGlides() === '1 from below', 'A row removed: ' + (rowGlides() || 'nothing moves'));
+    assert(await until(() => rowGlides() === ''), 'The rows never came to rest after a row was removed');
+    // A template puts other rows there: every one of them fades in.
+    doc.querySelector('#seWindow [data-preset=downloads]').click();
+    const fresh = rowsOf(doc).map((_, i) => i + ' fades in').join(', ');
+    assert(rowsOf(doc).length >= 3 && rowGlides() === fresh, 'A template: ' + (rowGlides() || 'nothing moves') + ' (rows ' + kindsOf(doc) + ')');
+    doc = await reset();
+  });
+  await test('A card that another setting shows grows open and closes; a page that comes in does not replay it', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const card = doc.getElementById('keepIconsCard'), growing = () => moving().filter(line => line.startsWith('#keepIconsCard')).join(', ');
+    assert(card.hidden && growing() === '', 'The card of 「隐藏」 shows, or moves, before the list is changed: ' + growing());
+    change(doc, 'desktopIcons', 'hide');
+    assert(!card.hidden && growing().includes('height'), 'The card appears in one frame: ' + (growing() || 'nothing moves'));
+    assert(await until(() => growing() === ''), 'The card never came to rest');
+    assert(card.getBoundingClientRect().height >= 52, 'The open card is ' + card.getBoundingClientRect().height + ' px tall');
+    change(doc, 'desktopIcons', 'showNoInbox');
+    assert(card.hidden && growing().includes('height') && frame.contentWindow.getComputedStyle(card).display !== 'none', 'The card is gone in one frame: ' + (growing() || 'nothing moves'));
+    assert(await until(() => frame.contentWindow.getComputedStyle(card).display === 'none'), 'The closed card stays drawn');
+    // Shown again, then away to another page and back after its motion: nothing grows.
+    change(doc, 'desktopIcons', 'hide');
+    assert(await until(() => !card.classList.contains('reveal')), 'The card keeps its motion class');
+    doc.querySelector('[data-page=fences]').click();
+    doc.querySelector('[data-page=general]').click();
+    assert(growing() === '', 'The card grows again when its page comes in: ' + growing());
+    // 栅栏: a tint brings up 「只给标题栏上色」 the same way; another fence shows it without a motion.
+    doc.querySelector('[data-page=fences]').click();
+    const tintCard = doc.getElementById('fenceTintTitleOnly'), tintGrows = () => moving().some(line => line.startsWith('#fenceTintTitleOnly') && line.endsWith('height'));
+    assert(tintCard.hidden, '「只给标题栏上色」 shows for a fence without a tint');
+    change(doc, 'fenceTint', '0078D4');
+    await settle();
+    assert(!tintCard.hidden && tintGrows(), '「只给标题栏上色」 appears in one frame');
+    assert(await until(() => !tintGrows() && !tintCard.classList.contains('reveal')), 'The tint card never came to rest');
+    change(doc, 'fenceSel', 'fence-b');
+    assert(tintCard.hidden && !tintGrows(), 'Another fence closes the card with a motion');
+    doc = await reset();
+  });
+  await test('A row that its master switch greys out fades with that switch', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const row = doc.querySelector('[data-bind="snapping.guideLines"]').closest('.card');
+    doc.querySelector('[data-bind="snapping.enabled"]').click();
+    assert(row.classList.contains('disabled'), '显示对齐参考线 is not greyed out while 吸附 is off');
+    const fading = doc.getAnimations().filter(a => a.transitionProperty === 'color' && row.contains(a.effect.target)).map(a => a.effect.target.className);
+    assert(fading.includes('t') && fading.includes('switch-label'), 'The text of the row turns grey in one frame while its switch fades: ' + fading.join());
+    doc = await reset();
+  });
+  await test('The arrow of 「新建规则」 turns for as long as its body opens or closes', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    doc.querySelector('[data-page=rules]').click();
+    const panel = doc.getElementById('nrPanel');
+    const turn = () => doc.getAnimations().filter(a => a.transitionProperty === 'transform' && a.effect.target.classList.contains('chev')).map(a => a.effect.getComputedTiming().duration).join();
+    panel.open = true;
+    assert(turn() === '333', 'Opening: the arrow turns in ' + (turn() || 'no time') + ' ms, the body opens in 333');
+    assert(await until(() => turn() === ''), 'The arrow never came to rest');
+    panel.open = false;
+    assert(turn() === '167', 'Closing: the arrow turns in ' + (turn() || 'no time') + ' ms, the body closes in 167');
+    doc = await reset();
+  });
+  await test('Smart fence editor: the count dims the old number only when the answer takes a moment', async () => {
+    doc = await openEditor('fence=new');
+    assert(await motionReady(), 'The editor never allowed transitions');
+    const w = doc.getElementById('seWindow'), number = () => w.querySelector('.se-count .se-n');
+    const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const shade = () => Number(ew().getComputedStyle(number()).opacity);
+    seType(rowsOf(doc)[1].querySelector('.se-text'), 'rep');
+    assert(await until(() => number() && /\d/.test(number().textContent)), 'No first count');
+    // The next answer is kept back. The count is asked 350 ms after the key.
+    ew().testHoldCount = true;
+    seType(rowsOf(doc)[1].querySelector('.se-text'), 'repo');
+    await pause(450);
+    assert(w.querySelector('.se-count').classList.contains('busy') && shade() === 1, 'The number dims the moment the count is asked (it blinks when the answer is fast): opacity ' + shade());
+    await pause(450);
+    assert(shade() < 0.7, 'The number is not dimmed while a slow count is on its way: opacity ' + shade());
+    ew().testHoldCount = false;
+    ew().testReceive(ew().testHeld.at(-1));
+    assert(shade() === 1 && !w.querySelector('.se-count').classList.contains('busy'), 'The new number is dim');
+    doc = await reset();
+  });
+  await test('The navigation follows the window\'s width between 740 and 900 px, and its fold to icons glides', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const was = frame.style.width;
+    try {
+      const nav = doc.querySelector('nav'), width = () => nav.getBoundingClientRect().width;
+      const card = () => doc.querySelector('.page.on .card').getBoundingClientRect().left;
+      let last = null, worst = 0, worstAt = 0;
+      for (let w = 960; w >= 548; w -= 8) {
+        frame.style.width = w + 'px'; await settle();
+        const now = [width(), card()];
+        const step = last ? Math.max(Math.abs(now[0] - last[0]), Math.abs(now[1] - last[1])) : 0;
+        if (step > worst) { worst = step; worstAt = w; }
+        last = now;
+      }
+      assert(worst <= 5, 'Between two window widths 8 px apart the navigation or the cards\' left edge moves by ' + worst + ' px (at ' + worstAt + ' px)');
+      frame.style.width = '900px'; await settle();
+      assert(width() === 240, 'At 900 px the navigation is ' + width() + ' px wide');
+      frame.style.width = '740px'; await settle();
+      assert(width() === 172, 'At 740 px the navigation is ' + width() + ' px wide');
+      const glide = () => doc.getAnimations().filter(a => a.effect.target === nav).map(a => a.effect.getComputedTiming().duration).join();
+      frame.style.width = '544px'; await settle();
+      frame.style.width = '536px'; await settle();
+      assert(glide() === '167', 'Folding to icons: the navigation\'s width glides for ' + (glide() || 'no time') + ' ms');
+      assert(await until(() => glide() === '') && width() === 56, 'Folded, the navigation is ' + width() + ' px wide');
+      frame.style.width = '544px'; await settle();
+      assert(glide() === '167', 'Opening again: the navigation\'s width glides for ' + (glide() || 'no time') + ' ms');
+      assert(await until(() => glide() === '') && width() === 172 && !doc.querySelector('.app').classList.contains('folding'), 'Open again, the navigation is ' + width() + ' px wide');
+    } finally { frame.style.width = was; }
+    doc = await reset();
+  });
+  await test('Empty lists say what to do, the fence picker goes with the last fence, and a long fence name ends before the arrow', async () => {
+    doc = await reset();
+    const w = win();
+    w.testState.rules.list = []; w.testState.snapshots = []; w.testState.backups = []; w.testRefresh(); await settle();
+    const rules = doc.getElementById('ruleList').textContent, snaps = doc.getElementById('snapList').textContent, backups = doc.getElementById('backupList').textContent;
+    assert(backups.includes('尚无每日备份') && backups.includes('7'), 'No daily backups: the list says only: ' + backups);
+    assert(rules.includes('尚未添加规则') && rules.includes('快速添加') && rules.includes('新建规则'), 'No rules: the list says only: ' + rules);
+    assert(snaps.includes('尚无快照') && snaps.includes('保存快照'), 'No snapshots: the list says only: ' + snaps);
+    doc.querySelector('[data-page=fences]').click();
+    w.testState.fences[0].title = '二〇二六年第四季度项目资料与设计稿归档（请勿删除，等待审核通过后再整理）ABCDEFGHIJKLMNOPQRSTUVWXYZ'; w.testRefresh(); await settle();
+    const sel = doc.getElementById('fenceSel'), count = doc.getElementById('fenceBadge'), box = sel.getBoundingClientRect();
+    assert(box.width <= 460, 'A long fence name makes the picker ' + Math.round(box.width) + ' px wide');
+    assert(count.getBoundingClientRect().top < box.bottom, 'The number of fences wrapped under the picker');
+    assert(!w.CSS.supports('appearance: base-select') || w.getComputedStyle(sel).overflowClipMargin.includes('content-box'), 'The name runs under the arrow of the list: ' + w.getComputedStyle(sel).overflowClipMargin);
+    assert(!w.CSS.supports('appearance: base-select') || w.getComputedStyle(sel.options[0]).whiteSpace === 'normal', 'A name longer than the window cannot wrap in the open list');
+    w.testState.fences = []; w.testRefresh(); await settle();
+    assert(!sel.offsetParent && !count.offsetParent, 'With no fence the empty picker is still there');
+    assert(doc.getElementById('fenceEmpty').offsetParent, 'With no fence nothing says how to make one');
+    assert(doc.getElementById('nrTarget').disabled, 'With no fence the empty 目标栅栏 list of a new rule still opens');
+    w.testState.fences = [{ id: 'f1', title: '工作', kind: 'user' }]; w.testRefresh(); await settle();
+    assert(!doc.getElementById('nrTarget').disabled && !sel.closest('.picker').hidden, 'With a fence again the lists stay off');
+    doc = await reset();
+  });
+  await test('The update card: its title glides when a check\'s status line comes under it, and what is under a failed check\'s taller card glides down', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const w = win(), was = frame.style.width;
+    try {
+      frame.style.width = '944px';
+      doc.querySelector('[data-page=about]').click(); await settle();
+      w.testUpdate({ state: 'checking', version: '', edition: 'installer', hasSetup: true }); await settle();
+      const card = doc.getElementById('updateCard'), next = doc.getElementById('updateAutoCard'), height = card.offsetHeight;
+      assert(height > 0, 'The update card does not show while the check runs');
+      const gliding = () => doc.getAnimations().filter(a => a.effect.target === next && !a.animationName).length;
+      assert(await until(() => !doc.getAnimations().filter(a => a.animationName !== 'ring-turn').length), 'The page never came to rest');
+      // At rest the card has its title alone; the status line of a check moves the title up.
+      const title = card.querySelector('.t'), rising = () => doc.getAnimations().filter(a => a.effect.target === title && !a.animationName && !a.transitionProperty).length;
+      w.testUpdate({ state: 'idle', version: '', edition: 'installer', hasSetup: true });
+      assert(await until(() => !doc.getAnimations().filter(a => a.animationName !== 'ring-turn').length), 'The card never came to rest');
+      w.testUpdate({ state: 'checking', version: '', edition: 'installer', hasSetup: true });
+      assert(rising() === 1, 'A click on 检查更新: the title jumps up to make room for the status line');
+      assert(await until(() => !doc.getAnimations().filter(a => a.animationName !== 'ring-turn').length), 'The card never came to rest');
+      w.testUpdate({ state: 'checkFailed', version: '', edition: 'installer', hasSetup: true });
+      assert(card.offsetHeight > height, 'The failed check no longer needs a second line (the test needs another width)');
+      assert(gliding() === 1, 'The card grew by ' + (card.offsetHeight - height) + ' px and the card under it jumped');
+    } finally { frame.style.width = was; }
+    doc = await reset();
+  });
+  await test('The selected page, the rows of 查找设置, a list\'s options and a text box have a look under the pointer and pressed', async () => {
+    doc = await reset();
+    const selectors = [];
+    const walk = rules => { for (const rule of rules) { if (rule.cssRules?.length) walk(rule.cssRules); if (rule.selectorText) selectors.push(rule.selectorText); } };
+    walk(doc.styleSheets[0].cssRules);
+    const has = text => selectors.some(s => s.includes(text));
+    for (const wanted of ['nav a.sel:hover', 'nav a.sel:active', '.search-list [role="option"]:active', '.search-list [role="option"][aria-selected="true"]:hover', '.search-list [role="option"][aria-selected="true"]:active',
+      'select option:active', 'select option:checked:hover', 'select option:checked:active', 'textarea):where(:enabled):hover'])
+      assert(has(wanted), 'No rule for ' + wanted);
+    doc = await reset();
+  });
+  await test('Smart fence editor: the line that says how many files were found leaves no character alone on its second line', async () => {
+    const was = frame.style.width;
+    try {
+      frame.style.width = '640px';
+      doc = await openEditor('fence=new');
+      const text = [...doc.querySelectorAll('#seWindow .se-count > div *')].flatMap(el => [...el.childNodes]).find(n => n.nodeType === 3 && n.data.trim().length > 6);
+      assert(text, 'The count shows no text');
+      const range = doc.createRange(), lines = [];
+      for (let i = 0, last = null; i < text.length; i++) {
+        range.setStart(text, i); range.setEnd(text, i + 1);
+        const top = Math.round(range.getBoundingClientRect().top);
+        if (top !== last) { lines.push(''); last = top; }
+        lines[lines.length - 1] += text.data[i];
+      }
+      assert(lines.length === 1 || lines.at(-1).length >= 3, 'In a 640 px window the text breaks as: ' + lines.join(' / '));
+    } finally { frame.style.width = was; }
+    doc = await reset();
+  });
+  await test('No description on a page ends with one character alone on its last line', async () => {
+    doc = await reset();
+    const was = frame.style.width;
+    try {
+      frame.style.width = '944px'; await settle();
+      doc.querySelectorAll('details').forEach(d => { d.open = true; });
+      const alone = [];
+      for (const page of doc.querySelectorAll('.page')) {
+        doc.querySelector(`nav a[data-page=${page.id.replace('page-', '')}]`).click();
+        for (const el of page.querySelectorAll('.card .s, .card .t')) {
+          const text = el.firstChild;
+          if (!el.offsetParent || el.children.length || !text || text.nodeType !== 3 || text.length < 8) continue;
+          const range = doc.createRange(), lines = [];
+          for (let i = 0, last = null; i < text.length; i++) {
+            range.setStart(text, i); range.setEnd(text, i + 1);
+            const top = Math.round(range.getBoundingClientRect().top);
+            if (top !== last) { lines.push(''); last = top; }
+            lines[lines.length - 1] += text.data[i];
+          }
+          if (lines.length > 1 && lines.at(-1).trim().length < 2) alone.push(lines.at(-2).slice(-8) + ' / ' + lines.at(-1));
+        }
+      }
+      assert(!alone.length, alone.length + ' descriptions end with one character alone: ' + alone.join(' | '));
+    } finally { frame.style.width = was; }
+    doc = await reset();
+  });
+  await test('The notice at the bottom comes in decelerating and leaves accelerating', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const bar = doc.getElementById('toast');
+    const curve = () => doc.getAnimations().filter(a => a.effect.target === bar && a.transitionProperty === 'transform').map(a => a.effect.getComputedTiming().easing).join();
+    win().testHost({ type: 'toast', text: '已保存快照' });
+    assert(curve() === 'cubic-bezier(0, 0, 0, 1)', 'Coming in, the notice moves on ' + (curve() || 'no curve'));
+    assert(await until(() => curve() === ''), 'The notice never came to rest');
+    bar.classList.remove('on');
+    assert(curve() === 'cubic-bezier(1, 0, 1, 1)', 'Leaving, the notice moves on ' + (curve() || 'no curve'));
+    doc = await reset();
+  });
+  await test('Every transition and animation of the page takes one of the app\'s four times', async () => {
+    doc = await reset();
+    assert(await motionReady(), 'The page never allowed transitions');
+    const root = win().getComputedStyle(doc.documentElement);
+    const times = ['--faster', '--fast', '--normal', '--slow'].map(name => root.getPropertyValue(name).trim()).join();
+    assert(times === '83ms,167ms,250ms,333ms', 'The four times of the motion language are ' + times);
+    // No declaration names a time of its own (0s is a switch at the end of a wait).
+    const own = [];
+    const walk = rules => {
+      for (const rule of rules) {
+        if (rule.cssRules?.length) walk(rule.cssRules);
+        for (const property of rule.style ? ['transition', 'animation'] : []) {
+          const value = rule.style.getPropertyValue(property);
+          const literal = (value.replace(/var\([^)]*\)|cubic-bezier\([^)]*\)/g, '').match(/[\d.]+m?s\b/g) || []).filter(time => parseFloat(time) !== 0);
+          if (literal.length) own.push((rule.selectorText || '') + ' { ' + property + ': ' + value + ' }');
+        }
+      }
+    };
+    walk(doc.styleSheets[0].cssRules);
+    assert(!own.length, own.length + ' declarations with a time of their own: ' + own.slice(0, 3).join(' | '));
+    // What runs: a switch slides and a hovered button fades in the app's times.
+    const toggle = doc.querySelector('[data-bind=autostart]');
+    toggle.click();
+    const ran = [...new Set(doc.getAnimations().map(a => Math.round(a.effect.getComputedTiming().duration)))];
+    assert(ran.includes(167) && ran.every(ms => [83, 167, 250, 333].includes(ms)), 'After a click on a switch, motion of ' + (ran.join(', ') || 'no time') + ' ms runs');
     doc = await reset();
   });
 

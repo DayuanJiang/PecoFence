@@ -63,6 +63,10 @@
     activateTab(tabs[0], false);
   }
 
+  // The tools block under the gallery shows the manual's tools lesson the same way.
+  var tools = document.querySelector(".tools");
+  if (tools) showDemo(tools);
+
   // The trailer shows its poster and a large play control. It never starts on its own;
   // a click plays it inline with sound and hands over to the native controls.
   // Without JavaScript the native controls are there from the start.

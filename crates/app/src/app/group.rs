@@ -4,7 +4,7 @@
 //! white ring, like the other drag feedback; a title drag of one of them moves them all
 //! (`fence_window::group`). A marquee that touches no fence and selects no Windows icon still
 //! offers a new fence or a folder fence there (two small buttons at its corner, see
-//! `marquee_offer.rs`), unless 「在桌面空白处拖出矩形时显示“新建栅栏”按钮」 is off.
+//! `marquee_offer.rs`), unless 「在桌面空白处拖出矩形时显示「新建栅栏」按钮」 is off.
 
 use super::*;
 use crate::anchor::{MARQUEE_MIN_PX, MarqueeEvent};
@@ -94,6 +94,11 @@ impl App {
                     w.end_desktop_band();
                 }
             }
+            // As 「显示所有栅栏」 from the command line does in this mode: the icons go again and
+            // every fence comes back (nothing happens when the mode ended meanwhile).
+            MarqueeEvent::DoubleClickInWindowsDesktop => {
+                self.set_windows_desktop(false, "double-click on the desktop");
+            }
         }
     }
 
@@ -103,6 +108,7 @@ impl App {
     /// drag did nothing until it was closed).
     pub(super) fn offer_new_fence(&mut self, rect: RECT) {
         self.marquee_offer = None;
+        self.marquee_offer_leaving = None;
         match crate::marquee_offer::MarqueeOffer::show(&self.ctx, rect) {
             Ok(offer) => self.marquee_offer = Some((offer, rect)),
             Err(e) => tracing::warn!(error = %e, "marquee offer not shown"),
@@ -112,15 +118,39 @@ impl App {
     /// The offer's buttons were clicked or went away (`Command::MarqueeOffer`).
     pub(super) fn on_marquee_offer(&mut self, event: crate::marquee_offer::OfferEvent) {
         use crate::marquee_offer::OfferEvent;
-        let Some((_offer, rect)) = self.marquee_offer.take() else {
+        // The buttons fade out by themselves: the rectangle they belong to fades with them
+        // (it stood to the end of their fade and went in one frame), unless a new rectangle
+        // is being drawn already.
+        if let OfferEvent::Fading(opacity) = event {
+            if self.marquee_base.is_none()
+                && self.marquee_draws_band
+                && let Some((_, rect)) = self.marquee_offer.as_ref()
+            {
+                let rect = *rect;
+                let strength = (crate::marquee_band::OFFERED as u32 * opacity as u32 / 255) as u8;
+                self.show_marquee_band(rect, strength);
+            }
+            return;
+        }
+        let Some((offer, rect)) = self.marquee_offer.take() else {
             return;
         };
+        // After a click the buttons fade out by themselves while the fence fades in: they
+        // stay alive until the next rectangle's buttons take their place (`offer_new_fence`).
+        if !matches!(event, OfferEvent::Dismissed(_)) {
+            self.marquee_offer_leaving = Some(offer);
+        }
         // The rectangle that stayed with the buttons goes with them, unless a new rectangle
         // is being drawn already (its band is on screen now).
         if self.marquee_base.is_none() {
             self.hide_marquee_band();
         }
         tracing::info!(?event, ?rect, "marquee offer answered");
+        // Drawn beside another fence: the same gap as a fence dragged there.
+        let rect = match event {
+            OfferEvent::Dismissed(_) => rect,
+            _ => crate::fence_window::snap_drawn_rect(&self.ctx.behavior, rect),
+        };
         match event {
             OfferEvent::NewFence => self.create_fence_with_rename(rect),
             OfferEvent::ShowFolder => match pecofence_platform::filedialog::pick_folder(
@@ -131,7 +161,7 @@ impl App {
                 Ok(None) => tracing::info!("show folder here: no folder picked"),
                 Err(e) => tracing::warn!(error = %e, "folder picker failed"),
             },
-            OfferEvent::Dismissed(_) => {}
+            OfferEvent::Dismissed(_) | OfferEvent::Fading(_) => {}
         }
     }
 

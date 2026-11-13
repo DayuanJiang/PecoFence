@@ -230,7 +230,7 @@ if ($Part -match 'B') {
   $h = OpenEditor 'edit menu' 'One'
   $r = Rect $h
   $wa = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-  Check 'about 680 x 560, centred on the work area' ([math]::Abs(($r.R - $r.L) - 680) -le 2 -and [math]::Abs(($r.B - $r.T) - 560) -le 2 -and [math]::Abs(($r.L + $r.R) / 2 - ($wa.Left + $wa.Width / 2)) -le 2) "rect=$($r | ConvertTo-Json -Compress) work=$($wa.Width)x$($wa.Height)"
+  Check 'about 880 x 660, centred on the work area' ([math]::Abs(($r.R - $r.L) - 880) -le 2 -and [math]::Abs(($r.B - $r.T) - 660) -le 2 -and [math]::Abs(($r.L + $r.R) / 2 - ($wa.Left + $wa.Width / 2)) -le 2) "rect=$($r | ConvertTo-Json -Compress) work=$($wa.Width)x$($wa.Height)"
   Check 'the caption says 编辑智能栅栏' ([W]::Title($h) -eq 'Edit smart fence') ([W]::Title($h))
   Shot 'b01-edit'
 

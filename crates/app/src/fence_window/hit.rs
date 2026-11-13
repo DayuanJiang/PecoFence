@@ -7,6 +7,8 @@ pub(super) struct ColDrag {
     pub(super) col: DetailColumn,
     pub(super) start_x_px: i32,
     pub(super) start_w: f32,
+    /// The widest the column may get in this drag (`DetailColumns::drag_limit`).
+    pub(super) max_w: f32,
 }
 
 pub(super) fn bounded_auto_height(desired: i32, title_height: i32, top: i32, bottom: i32) -> i32 {
@@ -95,10 +97,14 @@ impl FenceViewState {
                     let text = item.date_text();
                     item.date_label.get_or_insert(text).clone()
                 }
+                // Rows that were never drawn have no type text yet: asked once per extension
+                // here too (`ensure_texts`), not once per file.
                 DetailColumn::Type => item
                     .type_label
                     .get_or_insert_with(|| {
-                        fileinfo::type_name(&item.path, item.is_folder).unwrap_or_default()
+                        self.type_names
+                            .get(&item.path, item.is_folder)
+                            .unwrap_or_default()
                     })
                     .clone(),
                 _ => {
@@ -200,6 +206,7 @@ impl FenceViewState {
                     width - self.laid_deco().lock_w(),
                     1,
                     self.deco.title_x(),
+                    self.rolled_count_room(),
                 )
             } else {
                 0.0
@@ -244,6 +251,7 @@ impl FenceViewState {
                 width - self.laid_deco().lock_w(),
                 1,
                 self.deco.title_x(),
+                self.rolled_count_room(),
             )
         } else {
             0.0
@@ -260,6 +268,71 @@ impl FenceViewState {
             self.theme.title_height,
         );
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
+    }
+
+    /// The row a single title is laid out in, as drawn (see `desktop_glyph_at`): its width in
+    /// DIPs and the rolled count's room at the right.
+    fn lone_title_row(&self) -> (f32, f32) {
+        let width = self.chrome_panel.size_px().0 as f32 / self.scale();
+        // As drawn (`render`, `FenceChrome::draw`): a note, a clock and a script fence show
+        // no count, and a left-aligned title leaves only the count's text free. With the
+        // whole box always kept, a title shown whole got a tip that repeated it, and the name
+        // box of a tool fence's centred or right-aligned title stood up to 64 DIPs left.
+        let reserve = if self.roll_target()
+            && !self.behavior.hide_count_and_chevron.get()
+            && self.shows_rolled_count()
+        {
+            let caption = self.rolled_count_caption();
+            let count_w = pecofence_render::fence_chrome::header_count_width(
+                width - self.laid_deco().lock_w(),
+                1,
+                self.deco.title_x(),
+                self.chrome.rolled_count_room(&caption),
+            );
+            self.chrome
+                .rolled_count_reserve(&caption, count_w, self.behavior.title_align.get(), 1)
+        } else {
+            0.0
+        };
+        (width, reserve)
+    }
+
+    /// A centred or right-aligned single title as drawn (DIPs): where its text starts and
+    /// ends, and the room it is aligned in. Its name box takes that room.
+    pub(super) fn lone_title_text_span(&self) -> (f32, f32, (f32, f32)) {
+        let (width, reserve) = self.lone_title_row();
+        let deco = self.laid_deco();
+        let (x, w, room_w) = self.chrome.lone_title_text_span(
+            &self.title,
+            self.title_count.as_deref(),
+            self.filter_tag_ref(),
+            self.style.title_size,
+            self.behavior.title_align.get(),
+            width,
+            deco,
+            reserve,
+        );
+        (x, x + w, (deco.title_x(), deco.title_x() + room_w))
+    }
+
+    /// Is the single title drawn cut short (it ends in an ellipsis)? Its infotip then shows the
+    /// whole title, as a cut tab caption's does. Never for a tab strip, a left tab column (the
+    /// tabs have their own infotips) or the desktop fence without a title row.
+    pub(super) fn lone_title_cut(&self) -> bool {
+        if self.title_row_strip() || self.tabs_on_rail() || self.bare() {
+            return false;
+        }
+        let (width, reserve) = self.lone_title_row();
+        self.chrome.lone_title_cut(
+            &self.title,
+            self.title_count.as_deref(),
+            self.filter_tag_ref(),
+            self.style.title_size,
+            self.behavior.title_align.get(),
+            width,
+            self.laid_deco(),
+            reserve,
+        )
     }
 
     /// The portal up button in a left tab column (DIPs): at the end of the shown tab's row, as
@@ -365,12 +438,13 @@ impl FenceViewState {
         if self.column_collapsed || self.behavior.hide_count_and_chevron.get() || self.bare() {
             return false;
         }
+        // 鼠标移入时保持透明 with the title row folded away: the chevron is not drawn, and a
+        // click on a button nobody sees would roll the fence up. Its spot is title row.
+        if self.title_row_unseen() {
+            return false;
+        }
         let r = if self.tabs_on_rail() {
-            let rows_end = self
-                .tab_rects()
-                .iter()
-                .map(|(y, h)| y + h)
-                .fold(0.0, f32::max);
+            let rows_end = self.rail_rows_end();
             TitleDeco::rail_chevron_box(self.rail_w(), h_px as f32 / scale, rows_end)
         } else {
             TitleDeco::chevron_box(w_px as f32 / scale, self.theme.title_height)
@@ -399,23 +473,42 @@ impl FenceViewState {
 
     /// Is the client-pixel point on the lock glyph of a locked fence (its infotip says how to
     /// unlock)? The glyph's slot before the chevron, as drawn; a fence collapsed to its left
-    /// tab column shows none.
+    /// tab column shows none, and neither does one whose glyph the pointer does not bring
+    /// (鼠标移入时保持透明).
     pub(super) fn lock_glyph_at(&self, x_px: i32, y_px: i32) -> bool {
-        if !self.laid_deco().locked || self.bare() || self.column_collapsed {
+        if !self.laid_deco().locked
+            || self.bare()
+            || self.column_collapsed
+            || !self.pointer_reveals()
+        {
             return false;
         }
         let scale = self.scale();
         let (w_px, h_px) = self.chrome_panel.size_px();
         let r = if self.tabs_on_rail() {
-            let rows_end = self
-                .tab_rects()
-                .iter()
-                .map(|(y, h)| y + h)
-                .fold(0.0, f32::max);
+            let rows_end = self.rail_rows_end();
             TitleDeco::rail_lock_box(self.rail_w(), h_px as f32 / scale, rows_end)
         } else {
             TitleDeco::lock_box(w_px as f32 / scale, self.theme.title_height)
         };
+        let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
+        x >= r.left && x < r.right && y >= r.top && y < r.bottom
+    }
+
+    /// Is the client-pixel point on the count capsule of a smart fence's single title, as drawn
+    /// (its infotip says of how many files the fence shows the newest)?
+    pub(super) fn count_capsule_at(&self, x_px: i32, y_px: i32) -> bool {
+        let Some(count) = self.title_count.as_deref() else {
+            return false;
+        };
+        if self.title_row_strip() || self.tabs_on_rail() || self.bare() || self.column_collapsed {
+            return false;
+        }
+        let scale = self.scale();
+        let width = self.chrome_panel.size_px().0 as f32 / scale - self.laid_deco().lock_w();
+        let r = self
+            .chrome
+            .count_capsule_box(count, width, self.theme.title_height);
         let (x, y) = (x_px as f32 / scale, y_px as f32 / scale);
         x >= r.left && x < r.right && y >= r.top && y < r.bottom
     }
@@ -428,6 +521,9 @@ impl FenceViewState {
             PressTarget::Header(c) => self.header_hit(x_px, y_px) == Some(c),
             PressTarget::Item(i) => self.hit_item(x_px, y_px) == Some(i),
             PressTarget::Tab(t) => self.tab_at(x_px, y_px) == Some(t),
+            PressTarget::NoteBox(l) => self.note_box_at(x_px, y_px) == Some(l),
+            PressTarget::NoteLink(l, s) => self.note_link_at(x_px, y_px) == Some((l, s)),
+            PressTarget::ScriptRow(r) => self.script_row_at(x_px, y_px) == Some(r),
         }
     }
 
@@ -459,6 +555,13 @@ impl FenceViewState {
     /// The item layout at `width_dip`. Its rows keep their pitch at any fence height; with
     /// 「调整大小时按整行整列对齐」 the viewport shows only the whole rows (`scroll_view_h`).
     pub(super) fn layout(&self, width_dip: f32) -> ItemLayout {
+        if self.scrolls_text() {
+            // A note or a script fence scrolls its text: an empty grid as tall as that text
+            // gives the wheel, the glide and the scrollbar their range.
+            let mut grid = Grid::grouped(self.grid_metrics(), width_dip, 0, &[]);
+            grid.content_height = self.tool_text_h;
+            return ItemLayout::Grid(grid);
+        }
         let spans = self.group_spans();
         let n = self.items.len();
         match self.row_metrics() {
@@ -548,6 +651,29 @@ impl FenceViewState {
             DetailColumn::Size => self.column_widths[2] = w,
             DetailColumn::Name => {}
         }
+    }
+
+    /// Screen rectangle of an item's whole cell (icon and name; its row in the list views):
+    /// what a menu opened for it with the keyboard keeps clear of.
+    pub(super) fn item_cell_rect(&self, item: ItemId) -> Option<RECT> {
+        let index = self.items.iter().position(|i| i.id == item)?;
+        let scale = self.scale();
+        let (cw, _) = self.content_size_px();
+        let layout = self.layout(cw as f32 / scale);
+        let cell = layout.cell(index);
+        let header = match &layout {
+            ItemLayout::Grid(_) => 0.0,
+            ItemLayout::Rows { metrics, .. } => metrics.header_h,
+        };
+        let win = window::window_rect(self.hwnd);
+        let (left, top) = (win.left + self.content_x, win.top + self.content_y);
+        let y = cell.y - self.scroll_y + header;
+        Some(RECT {
+            left: left + (cell.x * scale) as i32,
+            top: top + (y * scale) as i32,
+            right: left + ((cell.x + cell.w) * scale) as i32,
+            bottom: top + ((y + cell.h) * scale) as i32,
+        })
     }
 
     /// Screen rectangle of an item's label (for the inline rename popup).

@@ -13,7 +13,7 @@ The product page at <https://pecofence.jiang.jp> is a static site generated from
 | `site/partials/header.html`, `footer.html` | The header (manual and GitHub links, language picker, download button) and footer, shared by the home page and the manual |
 | `site/assets/base.css` | Tokens, header and footer styles, shared by the home page and the manual |
 | `site/assets/site.css`, `site.js`, `mark.svg` | The home page's styles; the hero trailer's play control, accessible feature tabs and their animations, AI prompt and install command copy buttons, language picker (`site.js` runs on the manual too) and favicon |
-| `site/assets/*.mp4`, `*.jpg`, `panel-*.png`, `wallpaper.jpg` | The 30-second trailer (`promo.mp4`, v3; `--promo-only` re-exports just it and its poster), eight feature clips, posters, the three hero fences and the wallpaper, exported by `scripts/make-site-media.py` from the local promo project; the search and dialog jump clips and posters come from caption-free renders of their manual lessons (`--lessons-only` re-exports just those) |
+| `site/assets/*.mp4`, `*.jpg`, `panel-*.png`, `wallpaper.jpg` | The 30-second trailer (`promo.mp4`, v3; `--promo-only` re-exports just it and its poster), thirteen feature clips, posters, the three hero fences and the wallpaper, exported by `scripts/make-site-media.py` from the local promo project; the clips and posters of search, dialog jump, smart fences, virtual desktops, loose icons, Ctrl+Z and the tools block come from caption-free renders of their manual lessons (`--lessons-only` re-exports just those, `--lessons-only smart tools` only the ones named) |
 | `site/assets/showcase-wallpaper.jpg` | The hero's backdrop: the original wallpaper from the revision-2 Store scene |
 | `site/i18n/<language>.json` | Copy for each language; `en.json` is the source and every other file must have the same keys |
 | `site/site.json` | Domain, repository URL and the language list |
@@ -51,20 +51,22 @@ the detailed setup instructions. Both copy buttons have independent feedback and
 text if clipboard access fails; the prompt and install command remain readable without JavaScript.
 
 The feature gallery shows one feature at a time, with click and Left/Right/Home/End
-keyboard navigation. Making a fence comes first, then search and dialog jump. Wider than 840 px the eight tabs sit
-in two rows of four; narrower screens scroll them sideways. Each one plays the manual's animation of it in the page's
+keyboard navigation. Making a fence comes first, then search and dialog jump; smart fences, a set of fences per
+virtual desktop, loose desktop icons and Ctrl+Z close the list. Wider than 840 px the twelve tabs sit
+in three rows of four; narrower screens scroll them sideways. Each one plays the manual's animation of it in the page's
 language (an iframe of `manual/?only=<lesson>&embed`, `FEATURE_LESSONS` in
 `build-site.py`), loaded the first time its tab opens; it plays while in view, has
 its own play / pause button and links to the lesson's steps. With JavaScript disabled
-all eight recordings appear with native video controls instead. Five of their covers
+all twelve recordings appear with native video controls instead. Five of their covers
 come from the revision-2 desktop, Peek, tabs, automatic sorting and folder scenes; the
-hide/show cover remains a frame from its existing recording, and the search and dialog
-jump covers are frames of their manual lessons.
+hide/show cover remains a frame from its existing recording, and the covers of search, dialog
+jump and the four newest cards are frames of their manual lessons.
 
-Below the gallery, the tools block (`#tools`) lists the three tools of Settings › Tools
-(小工具): notes and to-dos, the clock and script fences, side by side. Dialog jump, a switch on
+Below the gallery, the tools block (`#tools`) shows the manual's tools lesson the way a gallery card
+does (`manual/?only=tools&embed`, the recording `assets/tools.mp4` without JavaScript) and lists the
+three tools of Settings › Tools (小工具): notes and to-dos, the clock and script fences, side by side. Dialog jump, a switch on
 Settings › 速览与搜索, has its own card in the gallery (`feature.dialog.*`).
-It has no animation; its items are drawn like the small details further down, from
+Its items are drawn like the small details further down, from
 `TOOLS` in `build-site.py` and the `tool.*` keys, with the switch names from `locales/`
 as titles. Pressing Ctrl twice as Peek's shortcut and the whole-computer search with
 Everything are options of Peek (Settings › 速览与搜索); the search card's text
@@ -87,6 +89,18 @@ Open `dist/site/index.html` in a browser. `--base http://localhost:8000` rewrite
 canonical URLs for a local server, and `--strict` fails on any language file whose
 keys differ from `en.json` (the deployment workflow uses it).
 
+The build also writes `update.json`, the app's second source for its update check: the app asks
+GitHub's API for the latest release and, without an answer within 8 seconds, this file
+(`parse_site_update` in `crates/core/src/updates.rs`). It holds the version of the latest
+published release, whether that release has a setup, the site's download page, and per language
+the first point of the Store notes of that tag (the line of the app's update card). This is the
+one step that needs the network: the release comes from GitHub's API (with `GITHUB_TOKEN` or
+`GH_TOKEN` when set, which lifts the limit of 60 requests an hour) and the notes from the tag's
+`docs/store/v2-i18n` files. It never takes the version from the checkout, so the file names a
+version only once its installers exist. When GitHub cannot be read the build prints a warning and
+writes no file; with `--strict` it fails, because a deployment replaces the whole site and would
+remove the file. [RELEASING.md](RELEASING.md) says how the file follows a release.
+
 ## Publishing
 
 The site is served by **Cloudflare Pages** from the project `pecofence`
@@ -108,7 +122,8 @@ any other branch name creates a preview URL.
 ### Deploy from GitHub
 
 `.github/workflows/website.yml` runs the same two steps on every push to `main` that
-touches the site. It needs two repository secrets: `CLOUDFLARE_API_TOKEN`, a token with
+touches the site, and when the release workflow starts it after publishing a release (so
+`update.json` names the new version). It needs two repository secrets: `CLOUDFLARE_API_TOKEN`, a token with
 **Account → Cloudflare Pages → Edit**, and `CLOUDFLARE_ACCOUNT_ID`. After deploying it runs
 `scripts/indexnow.py`, which submits every sitemap URL to IndexNow so Bing and Yandex recrawl
 the changed pages; a failure there does not fail the deployment.
@@ -145,7 +160,7 @@ in `en.json`; everything else is escaped.
 
 ## The user manual
 
-`site/manual/` is an interactive manual: 19 lessons whose demos are drawn in HTML and
+`site/manual/` is an interactive manual: 23 lessons whose demos are drawn in HTML and
 CSS (a miniature Windows desktop, fences, a scripted pointer with click rings, gesture
 captions and keycaps), a step list that highlights in sync, a scrub bar and a half-speed
 switch, plus two reference appendices (shortcuts, FAQ). The build writes one copy per
@@ -160,7 +175,7 @@ line up with it.
 |---|---|
 | `page.html` | The zh-CN page, the master copy of every lesson's text |
 | `manual.js` | Engine and player (`window.PM`). Every demo is a pure function of time, so `?only=<lesson>&bare&seek=<s>` freezes one frame of one lesson; `?only=<lesson>&embed` is the stage alone with a play / pause button, for the home page's gallery |
-| `demos/<lesson>.js`, `demos/*.css` | One demo per lesson; `settings-mock.js` draws the settings window for the settings lessons |
+| `demos/<lesson>.js`, `demos/*.css` | One demo per lesson; `settings-mock.js` draws the settings window for the settings lessons, `smart.css` the smart fence editor (`ui/settings.html` `#seWindow`), `dialogs.css` the pieces of Windows itself (a message box, a notification, the name of a virtual desktop) |
 | `assets/` | Icons, the wallpaper and the logo used inside the demos |
 | `i18n/<language>.json` | Translations: `page` maps each text block of `page.html` (inner HTML) and `stage` maps each Chinese string literal of the demos (plain text) to the language |
 
@@ -182,10 +197,10 @@ fence titles ellipsize like the app. A few demo texts follow the page language i
 search lesson types `hyjl` (the pinyin initials of 会议记录) on the Chinese pages and the
 start of the translated 会议记录 elsewhere, so that word must appear unchanged inside the
 translated file names that contain it; the clocks and script fence footers of the tools
-lessons show `10:24 AM` in English. A script fence is titled with its file's name, so the
-demos derive those titles from the translated file names (`天气.ps1`, `GitHub 动态.ps1`,
-`电脑状态.ps1` without `.ps1`), and the row titles of the 小工具 page (`天气`, `电脑状态`) take
-the app's catalog text. What the example scripts print is not translated like other demo
+lessons show `10:24 AM` in English. The fence of an example script is titled as its menu
+line reads (`天气`, `GitHub 仓库动态`, `电脑状态`: the app's catalog text, like the row titles of
+the 小工具 page), and its footer names the script file (`天气.ps1`, `GitHub 动态.ps1`,
+`电脑状态.ps1`, translated as the app translates them). What the example scripts print is not translated like other demo
 text: the app writes the Chinese examples for both Chinese languages and the English ones
 for every other language (`crates/app/src/scripts.rs`, `example`), so the weather lines,
 「刷新」 and the rows of 电脑状态 stay Simplified Chinese on the zh-TW page

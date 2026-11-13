@@ -9,6 +9,38 @@ trap {
   continue
 }
 . C:\pf\kit\lib.ps1
+# An EC2 box's desktop starts every job with only the two shortcuts the box came with. What an
+# earlier job left (a job that was stopped, files moved there with an older creation time, which
+# the cleanup at the end of this file does not see) shows up in this job's fences (2026-11-12:
+# forty left files made the desktop fence 822 px tall, and it pushed the fence under test).
+# A Hyper-V guest's desktop is left as it is: only the EC2 boxes have these shortcuts.
+# The box is known by its maker: the two shortcuts can be gone (ec2-2 had lost them, nothing was
+# cleaned there from then on, and on 2026-11-13 three files of the evening before made two lines
+# of the release suite fail).
+$onEc2 = (Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).Manufacturer -eq 'Amazon EC2'
+if ($onEc2 -or (Test-Path -LiteralPath (Join-Path $PfDesk 'EC2 Feedback.url'))) {
+  Get-ChildItem -LiteralPath $PfDesk -Force -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne 'desktop.ini' -and $_.Name -notlike 'EC2 *.url' } |
+    ForEach-Object {
+      Log "desktop: removing what an earlier job left: $($_.Name)"
+      Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  # The same for Windows' two colour modes, the one for apps and the one for Windows itself
+  # (the taskbar), which PecoFence follows by default. A value that is 0 or gone reads as dark
+  # there: Windows itself answers "dark" for a missing SystemUsesLightTheme, and PecoFence's
+  # fences, cards and search box turn dark with it (2026-11-13: a steps file emptied the key on
+  # two boxes, and every later job there had a dark search box). Steps that want dark set it
+  # themselves.
+  $themeKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+  if (-not (Test-Path -LiteralPath $themeKey)) { New-Item -Path $themeKey -Force | Out-Null }
+  foreach ($mode in 'AppsUseLightTheme', 'SystemUsesLightTheme') {
+    $was = (Get-ItemProperty -Path $themeKey -ErrorAction SilentlyContinue).$mode
+    if ($was -ne 1) {
+      Log "colour mode: $mode was '$was' (what an earlier job left): set to 1, light"
+      Set-ItemProperty -Path $themeKey -Name $mode -Value 1 -Type DWord
+    }
+  }
+}
 . $PfSteps
 Case 'end'
 if (PfAlive) { PfQuit }

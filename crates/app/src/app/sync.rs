@@ -171,6 +171,22 @@ impl App {
         self.arm_portal_back_check();
     }
 
+    /// The pointer came onto `fence`, which shows a folder. A local folder that was renamed,
+    /// moved or deleted keeps its watcher running (the handle follows the folder), and the
+    /// pass that notices it runs once a minute: looked at now, the fence says 找不到此文件夹
+    /// before the user acts on icons whose files are no longer there. One file-system call
+    /// per entry of the pointer, for folders on fixed drives only.
+    pub(super) fn portal_pointer_in(&mut self, fence: FenceId) {
+        let moved = self
+            .portal_watchers
+            .get(&fence)
+            .is_some_and(|(dir, w)| shell::is_on_fixed_drive(dir) && !w.still_at(dir));
+        if moved {
+            tracing::info!(%fence, "folder shown in a fence is no longer at its path; noticed as the pointer came onto it");
+            self.revive_watchers();
+        }
+    }
+
     /// While a fence shows a folder that is gone (deleted, renamed away, an undo yet to come),
     /// look for it every `PORTAL_BACK_MS` instead of only at the minute's `revive_watchers`: a
     /// folder made again is back in its fence within a second or two. Only folders on a local

@@ -90,28 +90,86 @@ pub(super) fn snapshot_room(
     snapshots: &mut Vec<pecofence_core::Snapshot>,
     protect: Option<uuid::Uuid>,
 ) -> bool {
-    let auto = [
-        pecofence_core::i18n::text("恢复快照前"),
-        pecofence_core::i18n::text("删除栅栏前"),
-        ConfigSource::Import.before(),
-        ConfigSource::Backup.before(),
-    ];
     if snapshots.len() >= pecofence_core::MAX_SNAPSHOTS
-        && let Some(i) = snapshots.iter().position(|s| {
-            Some(s.id) != protect
-                && (s.name.starts_with(super::ipc::AUTO_SNAPSHOT_PREFIX)
-                    || auto.contains(&s.name.as_str()))
-        })
+        && let Some(i) = snapshots
+            .iter()
+            .position(|s| Some(s.id) != protect && is_auto_snapshot(&s.name))
     {
         snapshots.remove(i);
     }
     snapshots.len() < pecofence_core::MAX_SNAPSHOTS
 }
 
+/// A snapshot the app saved by itself (the page's 「…前」 ones in the current language, the
+/// CLI's `auto-cli-…`): the ones a full list gives up, and the page marks them 「自动保存」.
+pub(super) fn is_auto_snapshot(name: &str) -> bool {
+    name.starts_with(super::ipc::AUTO_SNAPSHOT_PREFIX)
+        || [
+            pecofence_core::i18n::text("恢复快照前"),
+            pecofence_core::i18n::text("删除栅栏前"),
+            ConfigSource::Import.before(),
+            ConfigSource::Backup.before(),
+        ]
+        .contains(&name)
+}
+
+/// The name the page shows for a snapshot. The command line's safety snapshots are saved as
+/// `auto-cli-<time>` (scripts read that name): the page calls them 「命令行操作前」, as it names
+/// its own automatic ones, and the time is the row's date already.
+pub(super) fn snapshot_label(name: &str) -> &str {
+    if name.starts_with(super::ipc::AUTO_SNAPSHOT_PREFIX) {
+        pecofence_core::i18n::text("命令行操作前")
+    } else {
+        name
+    }
+}
+
+/// What the settings window leaves for the next one of this run.
+#[derive(Default)]
+pub(super) struct SettingsKept {
+    /// Where the window was closed: its rectangle (screen px) and the scale of its monitor.
+    pub closed_at: Option<(RECT, f32)>,
+    /// The page it showed (a `data-page` of the navigation) and how far it was scrolled.
+    pub view: Option<(String, f64)>,
+    /// The snapshot the page deleted last, its place in the list and the note texts and
+    /// scripts of its fences (the save after the delete drops those nothing else has), for the
+    /// notice's 撤销. Gone when the window closes.
+    pub deleted_snapshot: Option<(usize, pecofence_core::Snapshot, pecofence_core::ToolData)>,
+    /// The 「恢复快照前」 snapshot of the page's last restore, for the notice's 撤销.
+    pub restore_undo: Option<uuid::Uuid>,
+}
+
 fn snapshot_limit_text() -> String {
     pecofence_core::i18n::format(
-        "快照已达上限（{0} 个），未保存新快照。请删除不需要的快照。",
+        "请删除不需要的快照：快照已达上限（{0} 个），未保存新快照。",
         &[pecofence_core::MAX_SNAPSHOTS.to_string()],
+    )
+}
+
+/// A restore or an import that did not run: the snapshot of the layout it replaces had no
+/// room. Says so, where [`snapshot_limit_text`] only speaks of the snapshot.
+fn not_done_for_snapshot_limit_text() -> String {
+    pecofence_core::i18n::format(
+        "请删除不需要的快照后再试：快照已达上限（{0} 个），无法先保存当前布局，所以什么都没有改。",
+        &[pecofence_core::MAX_SNAPSHOTS.to_string()],
+    )
+}
+
+/// While another program holds the configuration files open, the fences on show are a
+/// stand-in that is never saved: an import would be gone once the files are read, and an
+/// export would write the stand-in.
+pub(super) fn config_locked_text() -> &'static str {
+    pecofence_core::i18n::text(
+        "请等 PecoFence 读到配置文件后再试：它正被其他程序占用，现在不能导入、导出或恢复备份。",
+    )
+}
+
+/// What the user reads while scripts of an imported configuration wait for the 小工具 switch
+/// (after the import, after a snapshot or backup brought them back, when a new tool fence
+/// would have turned the switch on). The 小工具 page lists the scripts on the switch's card.
+pub(super) fn scripts_held_text() -> &'static str {
+    pecofence_core::i18n::text(
+        "已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在“小工具”页打开“小工具”开关。",
     )
 }
 
@@ -131,10 +189,43 @@ fn changed_settings(old: &pecofence_core::Settings, new: &pecofence_core::Settin
 }
 
 impl App {
-    /// Replaces the configuration wholesale (import / backup) and rebuilds everything.
-    pub(super) fn adopt_config(&mut self, cfg: pecofence_core::Config, source: ConfigSource) {
+    /// Replaces the configuration wholesale (import / backup) and rebuilds everything. Returns
+    /// how many scripts of an imported file are held off (the settings page says so in its
+    /// notice, the CLI in its reply).
+    pub(super) fn adopt_config(
+        &mut self,
+        mut cfg: pecofence_core::Config,
+        source: ConfigSource,
+    ) -> usize {
         self.end_peek_now();
         let old_settings = self.state.config.settings.clone();
+        let imported = matches!(source, ConfigSource::Import);
+        // A snapshot of an imported file brings its fences, never scripts: restoring it later
+        // would start them with no word of warning. That goes for the scripts a snapshot keeps
+        // itself and for those the file lists for fences that are in none of its layouts (only
+        // a snapshot can show them).
+        let snapshot_scripts: usize = if imported {
+            let shown: std::collections::HashSet<FenceId> = cfg
+                .layouts
+                .iter()
+                .flat_map(|l| &l.fences)
+                .map(|f| f.id)
+                .collect();
+            let listed = cfg.scripts.len();
+            cfg.scripts.retain(|id, _| shown.contains(id));
+            let kept: usize = cfg
+                .snapshots
+                .iter_mut()
+                .map(|s| std::mem::take(&mut s.scripts).len())
+                .sum();
+            listed - cfg.scripts.len() + kept
+        } else {
+            0
+        };
+        // The scripts the file itself brings (the user's own stay in the configuration for the
+        // undo snapshot and are counted apart). Each is marked as held: the mark stays with the
+        // script in snapshots and backups, and only the user's own turn of 小工具 takes it off.
+        let file_scripts = if imported { cfg.hold_scripts() } else { 0 };
         self.state.replace_config(cfg);
         if let Some(desk) = shell::user_desktop() {
             self.state.migrate_desktop_path(&desk);
@@ -143,22 +234,27 @@ impl App {
         // edition's startup switch is Windows': a file does not change it (nor open its page).
         let mut new_settings = self.state.config.settings.clone();
         // An imported file may come from someone else: its script fences do not run until the
-        // user switches 小工具 on (a backup is the user's own and keeps the switch).
-        let scripts_held = matches!(source, ConfigSource::Import)
-            && new_settings.tools.enabled
-            && !self.state.config.scripts.is_empty();
-        if scripts_held {
-            new_settings.tools.enabled = false;
+        // user switches 小工具 on (a backup is the user's own and keeps the switch). A file that
+        // has the switch off already gets the same words: its scripts start with the switch too.
+        // A backup made while imported scripts waited brings them back held: the same goes.
+        let file_scripts = file_scripts.max(self.state.config.held_scripts().len());
+        let scripts_held = file_scripts > 0;
+        if scripts_held || snapshot_scripts > 0 {
             tracing::info!(
-                scripts = self.state.config.scripts.len(),
+                scripts = file_scripts,
+                snapshot_scripts,
+                switch_was_on = new_settings.tools.enabled,
                 "imported script fences held off"
             );
+        }
+        if scripts_held {
+            new_settings.tools.enabled = false;
         }
         if pecofence_platform::process::is_packaged() {
             new_settings.autostart = old_settings.autostart;
         }
         self.sync_desktop_if_available("config adopted");
-        self.relayout_from_state();
+        self.relayout_from_state_gliding();
         // The file's portals need enumerating; runtime state of the replaced ones is pruned.
         self.refresh_portals();
         // Re-apply the settings through the diff path so the anchor / Run-key side effects
@@ -176,15 +272,20 @@ impl App {
         self.state.save_and_wait("import");
         self.push_settings_state();
         if scripts_held {
-            self.settings_toast(pecofence_core::i18n::text(
-                "已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在「小工具」页打开「小工具」开关。",
-            ));
+            self.settings_toast(scripts_held_text());
+            file_scripts
         } else {
             self.settings_toast(source.done());
+            0
         }
     }
 
     pub(super) fn export_config(&mut self) {
+        if self.state.locked_config.is_some() {
+            tracing::info!("export refused: the configuration files are locked");
+            self.settings_error(config_locked_text());
+            return;
+        }
         let owner = self.settings.as_ref().map(|h| h.hwnd());
         let name = format!(
             "pecofence-{}.json",
@@ -277,15 +378,39 @@ impl App {
             pecofence_core::LoadOutcome::Recovered(..) => "daily backup",
             pecofence_core::LoadOutcome::Fresh(_) => "new: files unusable",
         };
+        // What the tray says: the user's file was read, or (it opened but could not be used,
+        // and was kept aside) what shows in its place, as at a start with such a file.
+        let told = match &outcome {
+            pecofence_core::LoadOutcome::Recovered(_, from) if report.moved_to.is_some() => {
+                Some(pecofence_core::i18n::format(
+                    "配置文件读不出来，现在用的是备份 {0}。原来的文件已改名，仍在配置文件夹里。",
+                    &[from
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default()],
+                ))
+            }
+            pecofence_core::LoadOutcome::Fresh(_) if report.moved_to.is_some() => Some(
+                pecofence_core::i18n::text(
+                    "配置文件读不出来，也没有可用的备份，现在是默认的栅栏。原来的文件已改名，仍在配置文件夹里。",
+                )
+                .to_string(),
+            ),
+            _ => None,
+        };
         tracing::info!(
             source,
             tries = self.config_lock_tries,
             moved_aside = report.moved_to.is_some(),
+            told_unreadable = told.is_some(),
             "config files readable again; loaded"
         );
         self.adopt_config(outcome.into_config(), ConfigSource::Unlocked);
         if let Some(t) = &self.tray {
-            t.show_info("PecoFence", ConfigSource::Unlocked.done(), false);
+            match &told {
+                Some(text) => t.show_info("PecoFence", text, true),
+                None => t.show_info("PecoFence", ConfigSource::Unlocked.done(), false),
+            }
         }
     }
 
@@ -304,13 +429,54 @@ impl App {
         }
     }
 
+    /// A snapshot or a backup put fences back. When scripts that came with an imported
+    /// configuration and were never allowed are on show now, 小工具 goes off as after the
+    /// import, until the user turns it on. Returns how many scripts wait.
+    pub(super) fn hold_switch_for_held_scripts(&mut self, why: &'static str) -> usize {
+        let held = self.state.config.held_scripts().len();
+        if held > 0 && self.state.config.settings.tools.enabled {
+            tracing::info!(
+                scripts = held,
+                why,
+                "held scripts are back on show: 小工具 off"
+            );
+            let mut settings = self.state.config.settings.clone();
+            settings.tools.enabled = false;
+            self.apply_settings(settings, "held scripts");
+        }
+        held
+    }
+
+    /// After the page restored a snapshot's layouts (or took the restore back): the windows
+    /// follow, and the page lists the snapshots as they are now. Returns how many scripts of
+    /// an imported configuration the restore brought back (they wait for the 小工具 switch).
+    fn show_restored_layout(&mut self) -> usize {
+        self.end_peek_now();
+        let held = self.hold_switch_for_held_scripts("snapshot restored on the page");
+        // Files that came to the desktop after the snapshot are in none of its fences: they
+        // are filed now, not at the next desktop change.
+        self.sync_desktop_if_available("snapshot restored");
+        self.relayout_from_state_gliding();
+        // Portals restored with the snapshot need enumerating; stale runtime state of the
+        // replaced ones is pruned on the way.
+        self.refresh_portals();
+        self.schedule_save();
+        self.push_settings_state();
+        held
+    }
+
     pub(super) fn restore_from_file(&mut self, path: &std::path::Path, source: ConfigSource) {
+        if self.state.locked_config.is_some() {
+            tracing::info!("import or backup restore refused: the configuration files are locked");
+            self.settings_error(config_locked_text());
+            return;
+        }
         match pecofence_core::ConfigStore::parse_file(path) {
             Ok(cfg) => {
                 // Keep a snapshot of what we are replacing so the step can be undone; a list
                 // full of the user's own snapshots has no room for it, so nothing is replaced.
                 if !snapshot_room(&mut self.state.config.snapshots, None) {
-                    self.settings_error(&snapshot_limit_text());
+                    self.settings_error(&not_done_for_snapshot_limit_text());
                     return;
                 }
                 let undo = self.state.save_snapshot(source.before());
@@ -351,29 +517,56 @@ impl App {
     }
 
     pub(super) fn open_settings(&mut self) {
+        self.open_settings_beside(None);
+    }
+
+    /// Opens the settings window, or brings the open one to the front. `beside`: a fence
+    /// (screen px) a new window opens next to (栅栏选项…).
+    pub(super) fn open_settings_beside(&mut self, beside: Option<RECT>) {
         self.query_store_startup();
         if let Some(h) = &self.settings {
             window::show_normal(h.hwnd());
-            window::bring_to_front(h.hwnd());
+            // Asked for by the command line or a second start, the app did not get the last
+            // input and Windows refused a plain request: the window stayed behind the one in
+            // front (its taskbar button flashed).
+            let front = window::claim_foreground(h.hwnd());
+            tracing::info!(front, "settings: the open window is asked to the front");
             return;
         }
-        if !self.ensure_web_env() {
-            return;
-        }
-        match SettingsHost::open(
+        // The window's frame first: the browser and the page take 0.4 s and more.
+        let frame = SettingsHost::open(
             &self.settings_class,
-            self.web_env.as_ref().unwrap(),
             self.theme_mode,
             self.ctx.theme.borrow().liquid_glass,
             self.queue.clone(),
             HostKind::Settings,
             pecofence_core::i18n::text("PecoFence 设置"),
             None,
-        ) {
-            Ok(mut host) => {
-                self.set_host_icons(&mut host);
-                self.settings = Some(host);
+            self.settings_kept.closed_at,
+        );
+        let opened = frame.and_then(|mut host| {
+            self.set_host_icons(&mut host);
+            if let Some(fence) = beside {
+                host.place_beside(fence);
             }
+            host.show_frame();
+            if !self.ensure_web_env() {
+                // The tray has said why; the empty frame goes again.
+                host.close();
+                return Ok(None);
+            }
+            match host.load(self.web_env.as_ref().unwrap()) {
+                Ok(true) => Ok(Some(host)),
+                // Closed by the user meanwhile.
+                Ok(false) => Ok(None),
+                Err(e) => {
+                    host.close();
+                    Err(e)
+                }
+            }
+        });
+        match opened {
+            Ok(host) => self.settings = host,
             Err(_) if window::quit_posted() => window::post_quit(0),
             Err(e) => {
                 tracing::error!(error = %e, "settings window failed");
@@ -454,10 +647,11 @@ impl App {
             .map(|s| {
                 serde_json::json!({
                     "id": s.id,
-                    "name": s.name,
+                    "name": snapshot_label(&s.name),
                     "ts": s.ts,
                     "date": pecofence_platform::fileinfo::format_local_datetime(s.ts),
                     "fenceCount": super::ipc::snapshot_dto(s, &self.state.work_areas).fence_count,
+                    "auto": is_auto_snapshot(&s.name),
                 })
             })
             .collect();
@@ -511,6 +705,12 @@ impl App {
             "themeMode": if self.theme_mode == ThemeMode::Dark { "dark" } else { "light" },
             // The style the fences show, which a custom theme's base decides.
             "styleInUse": if self.ctx.theme.borrow().liquid_glass { "liquidGlass" } else { "fluent" },
+            // Liquid Glass over a live wallpaper: the line under 主题风格 says how the fences
+            // look and why (`readable`: a frosted capture; else a see-through pane).
+            "liveWallpaper": self.live_wallpaper_note().map(|note| serde_json::json!({
+                "readable": !note.unreadable,
+                "player": note.player,
+            })),
             "customThemes": custom_theme_names(&self.state),
             "customThemeError": self.custom_theme_error,
             "accent": accent,
@@ -518,6 +718,9 @@ impl App {
             "peekHotkey": self.peek_hotkey_json(),
             "windowsDesktopHotkey": self.windows_desktop_hotkey_json(),
             "everything": self.everything_json(),
+            // The scripts of an imported configuration that start once 小工具 is turned on:
+            // the switch's card lists them.
+            "heldScripts": self.state.config.held_scripts(),
         })
         .to_string()
     }
@@ -690,7 +893,7 @@ impl App {
         }
     }
 
-    fn settings_error(&self, text: &str) {
+    pub(super) fn settings_error(&self, text: &str) {
         if let Some(h) = &self.settings {
             h.post_json(
                 &serde_json::json!({ "type": "toast", "text": text, "error": true }).to_string(),
@@ -717,14 +920,20 @@ impl App {
                 // A reload in the middle of recording a shortcut never says it ended.
                 self.resume_hotkeys();
                 self.push_settings_state();
-                // The first `ready` shows the window; a reload's leaves it as the user left it.
-                if let Some(h) = self
-                    .settings
-                    .as_ref()
-                    .filter(|h| !desktop::is_visible(h.hwnd()))
+                // Nothing asked for a page (栅栏选项…, a tip's 打开设置, the feedback form):
+                // the page this run's last window was closed on, scrolled as it was.
+                let asked = self.settings_focus_page.is_some()
+                    || self.settings_focus_fence.is_some()
+                    || self.feedback.focus.is_some();
+                if !asked
+                    && let Some((page, scroll)) = &self.settings_kept.view
+                    && let Some(h) = &self.settings
                 {
-                    window::show_normal(h.hwnd());
-                    window::bring_to_front(h.hwnd());
+                    tracing::debug!(page, scroll, "settings: page shown as it was closed");
+                    h.post_json(
+                        &serde_json::json!({ "type": "showPage", "page": page, "scroll": scroll })
+                            .to_string(),
+                    );
                 }
                 if let Some((page, focus)) = self.settings_focus_page.take() {
                     self.post_show_page(page, focus);
@@ -733,6 +942,41 @@ impl App {
                     self.post_show_fence(fence);
                 }
                 self.show_pending_feedback();
+            }
+            // The page has drawn the state (and the page or fence it was asked for) in the
+            // window, which stood in the page's background colour until now.
+            Some("drawn") => {
+                if let Some(h) = self.settings.as_mut().filter(|h| !h.drawn) {
+                    h.drawn = true;
+                    h.reveal();
+                    let ms = h.opened.elapsed().as_millis() as u64;
+                    tracing::info!(ms, "settings: page drawn");
+                }
+            }
+            // The page draws the colour mode it was just sent: the title bar changes with it.
+            Some("modeDrawn") => {
+                if let Some(h) = &self.settings {
+                    h.theme_drawn();
+                }
+            }
+            // The page has scrolled to where this run's last window was closed.
+            Some("restored") => {
+                let n = |key: &str| v.get(key).and_then(|x| x.as_f64()).unwrap_or(-1.0);
+                tracing::debug!(
+                    wanted = n("wanted"),
+                    now = n("top"),
+                    scroll_height = n("scrollHeight"),
+                    view_height = n("height"),
+                    view_width = n("width"),
+                    "settings: page scrolled to where it was closed"
+                );
+            }
+            // The page shown and how far it is scrolled, kept for the next open in this run.
+            Some("view") => {
+                if let Some(page) = v.get("page").and_then(|p| p.as_str()) {
+                    let scroll = v.get("scroll").and_then(|s| s.as_f64()).unwrap_or(0.0);
+                    self.settings_kept.view = Some((page.to_string(), scroll));
+                }
             }
             Some("setFence") => self.on_set_fence(&v),
             Some("ringFence") => {
@@ -778,7 +1022,12 @@ impl App {
                 Some("applyRules") => {
                     // The notice with 撤销 says how many moved; without it, the page does.
                     let (moved, step) = self.apply_rules_now();
-                    if !step.is_some_and(|id| self.offer_undo_refiled(id, moved)) {
+                    if moved == 0 {
+                        // Nothing moved: say that, not "0 items sorted".
+                        self.settings_toast(pecofence_core::i18n::text(
+                            "没有需要整理的项目，图标都已按规则放好。",
+                        ));
+                    } else if !step.is_some_and(|id| self.offer_undo_refiled(id, moved)) {
                         self.settings_toast(&pecofence_core::i18n::format(
                             "已按规则整理 {0} 个项目",
                             &[moved.to_string()],
@@ -790,14 +1039,19 @@ impl App {
                         .get("example")
                         .and_then(|e| e.as_str())
                         .and_then(crate::scripts::Example::parse);
-                    // Beside the middle of the primary monitor's work area; the placement
-                    // looks for a free spot from there.
+                    // Clear of this window, which would cover it (`place_new_tool`). Only a
+                    // maximized window leaves no such spot: then beside the middle of the
+                    // primary monitor's work area, where a free spot is looked for.
                     let at = self
                         .state
                         .work_areas
                         .first()
                         .map(|w| ((w.left + w.right) / 2, (w.top + w.bottom) / 2));
                     if let Some((x, y)) = at {
+                        self.tool_clear_of = self
+                            .settings
+                            .as_ref()
+                            .map(|h| window::window_rect(h.hwnd()));
                         match name {
                             "newNote" => self.new_note_near(x, y),
                             "newClock" => self.new_clock_near(x, y),
@@ -807,6 +1061,7 @@ impl App {
                                 None => tracing::warn!("unknown script example on the page"),
                             },
                         }
+                        self.tool_clear_of = None;
                     }
                 }
                 Some(name @ ("editSmart" | "refreshSmart")) => {
@@ -861,7 +1116,11 @@ impl App {
                     let _ = explorer.spawn();
                 }
                 Some("openThemesFolder") => {
+                    // `quiet`: 自定义 was chosen with no theme file yet. The examples are
+                    // written as for the button, without an Explorer window.
+                    let quiet = v.get("quiet").and_then(|q| q.as_bool()).unwrap_or(false);
                     let dir = self.state.themes_dir();
+                    tracing::debug!(quiet, exists = dir.exists(), "settings: themes folder");
                     if !dir.exists() {
                         match std::fs::create_dir_all(&dir) {
                             Ok(()) => write_example_themes(&dir),
@@ -873,10 +1132,12 @@ impl App {
                     self.sync_theme_watcher();
                     // The examples were written before the watcher started: list them now.
                     self.push_settings_state();
-                    // The Store package's copy of %APPDATA%, where Explorer can find it.
-                    let _ = std::process::Command::new("explorer.exe")
-                        .arg(crate::state::canonical_path(dir))
-                        .spawn();
+                    if !quiet {
+                        // The Store package's copy of %APPDATA%, where Explorer can find it.
+                        let _ = std::process::Command::new("explorer.exe")
+                            .arg(crate::state::canonical_path(dir))
+                            .spawn();
+                    }
                 }
                 Some("openThemeGuide") => {
                     let _ = shell::shell_execute(Path::new(THEME_GUIDE_URL), None, None);
@@ -921,21 +1182,43 @@ impl App {
                         // a list full of the user's own snapshots has no room for it, so
                         // nothing is restored.
                         if !snapshot_room(&mut self.state.config.snapshots, Some(id)) {
-                            self.settings_error(&snapshot_limit_text());
+                            self.settings_error(&not_done_for_snapshot_limit_text());
                             return;
                         }
-                        self.state.restore_snapshot_with_backup(
+                        let before = self.state.restore_snapshot_with_backup(
                             id,
                             pecofence_core::i18n::text("恢复快照前"),
                         );
-                        self.end_peek_now();
-                        self.relayout_from_state();
-                        // Portals restored with the snapshot need enumerating; stale
-                        // runtime state of the replaced ones is pruned on the way.
-                        self.refresh_portals();
-                        self.schedule_save();
-                        self.push_settings_state();
-                        self.settings_toast(pecofence_core::i18n::text("已恢复快照"));
+                        let held = self.show_restored_layout();
+                        // The notice offers 撤销 for a few seconds, as after a delete: the
+                        // layout from before is in the snapshot just taken.
+                        self.settings_kept.restore_undo = before;
+                        if held > 0 {
+                            // The snapshot brought scripts of an imported configuration back.
+                            self.settings_error(scripts_held_text());
+                        } else if let Some(h) = &self.settings {
+                            h.post_json(
+                                &serde_json::json!({
+                                    "type": "toast",
+                                    "text": pecofence_core::i18n::text("已恢复快照"),
+                                    "undo": "undoRestoreSnapshot",
+                                })
+                                .to_string(),
+                            );
+                        }
+                    }
+                }
+                // 撤销 on the restore notice: the layout from before the restore comes back
+                // and the 「恢复快照前」 snapshot that held it goes, its work done.
+                Some("undoRestoreSnapshot") => {
+                    if let Some(before) = self.settings_kept.restore_undo.take()
+                        && self.state.restore_snapshot(before)
+                    {
+                        self.state.delete_snapshot(before);
+                        tracing::info!("snapshot restore undone from the page's notice");
+                        if self.show_restored_layout() > 0 {
+                            self.settings_error(scripts_held_text());
+                        }
                     }
                 }
                 Some("deleteSnapshot") => {
@@ -943,10 +1226,55 @@ impl App {
                         .get("id")
                         .and_then(|i| i.as_str())
                         .and_then(|i| uuid::Uuid::parse_str(i).ok())
-                        && self.state.delete_snapshot(id)
+                        && let Some(at) =
+                            self.state.config.snapshots.iter().position(|s| s.id == id)
                     {
+                        // One click deletes. The page's notice offers 撤销 for a few seconds:
+                        // the snapshot is kept for it.
+                        let gone = self.state.config.snapshots[at].clone();
+                        let tool_data = self.state.config.tool_data_of(&gone);
+                        self.state.delete_snapshot(id);
                         self.schedule_save();
                         self.push_settings_state();
+                        tracing::debug!(
+                            index = at,
+                            notes = tool_data.notes.len(),
+                            scripts = tool_data.scripts.len(),
+                            "snapshot deleted on the page, kept for its undo"
+                        );
+                        if let Some(h) = &self.settings {
+                            let text = pecofence_core::i18n::format(
+                                "已删除快照“{0}”",
+                                &[snapshot_label(&gone.name).to_string()],
+                            );
+                            let undo = "restoreDeletedSnapshot";
+                            h.post_json(
+                                &serde_json::json!({ "type": "toast", "text": text, "undo": undo })
+                                    .to_string(),
+                            );
+                        }
+                        self.settings_kept.deleted_snapshot = Some((at, gone, tool_data));
+                    }
+                }
+                // 撤销 on the delete notice: the snapshot goes back to its place in the list,
+                // with its name and content.
+                Some("restoreDeletedSnapshot") => {
+                    if let Some((at, snapshot, tool_data)) =
+                        self.settings_kept.deleted_snapshot.take()
+                    {
+                        if !snapshot_room(&mut self.state.config.snapshots, None) {
+                            self.settings_error(&snapshot_limit_text());
+                            return;
+                        }
+                        let list = &mut self.state.config.snapshots;
+                        let at = at.min(list.len());
+                        list.insert(at, snapshot);
+                        // What its fences showed: the save after the delete may have dropped it.
+                        self.state.config.put_back_tool_data(tool_data);
+                        self.state.mark_dirty();
+                        self.schedule_save();
+                        self.push_settings_state();
+                        tracing::info!(index = at, "deleted snapshot put back from the page");
                     }
                 }
                 Some("swapMonitors") => {
@@ -980,7 +1308,10 @@ impl App {
                     self.on_feedback_action(name, &v);
                 }
                 Some("pageError") => log_page_error(&v),
-                Some(name @ ("checkUpdate" | "installUpdate" | "openReleasePage")) => {
+                Some(
+                    name @ ("checkUpdate" | "installUpdate" | "openReleasePage"
+                    | "openDownloadPage"),
+                ) => {
                     self.on_update_action(name);
                 }
                 Some("setPeekHotkey") => {
@@ -1002,6 +1333,9 @@ impl App {
                     self.set_windows_desktop_hotkey_from_page(h);
                 }
                 Some("repairIcons") => self.set_desktop_icons_hidden(false),
+                // 「退出 PecoFence」 under 「显示托盘图标」: the tray menu's entry, for when the
+                // icon is hidden.
+                Some("quit") => self.queue.push(Command::Quit("settings page")),
                 Some("hideDesktopIcons") => self.set_desktop_icons_hidden(true),
                 Some("rateInStore") => self.open_store_rating(),
                 Some("openManual") => self.open_manual(),
@@ -1158,6 +1492,7 @@ impl App {
             .behavior
             .snap_gap_dip
             .set(snap_gap_dip(&new.snapping));
+        pecofence_core::geometry::set_edge_gap_max(snap_gap_dip(&new.snapping));
         self.ctx
             .behavior
             .size_to_cells
@@ -1224,6 +1559,20 @@ impl App {
             new.hide_inbox_when_icons_shown != old.hide_inbox_when_icons_shown;
         // A tool switched on brings its fences back; switched off, they go.
         let tools_changed = new.tools != old.tools;
+        // The user's own turn of the 小工具 switch (on the page or by the command line) is the
+        // yes the scripts of an imported configuration wait for. A switch turned for a new tool
+        // fence never gets here with them waiting (`create_tool_fence`).
+        if new.tools.enabled && !old.tools.enabled && matches!(by, "settings" | "cli") {
+            let allowed = self.state.config.allow_held_scripts();
+            if allowed > 0 {
+                tracing::info!(
+                    allowed,
+                    by,
+                    "held scripts allowed: the user turned 小工具 on"
+                );
+            }
+        }
+        let tray_changed = new.show_tray_icon != old.show_tray_icon;
         let per_desktop_changed = new.per_desktop_fences != old.per_desktop_fences;
         if per_desktop_changed {
             tracing::info!(
@@ -1238,6 +1587,9 @@ impl App {
         self.refresh_language();
         self.state.mark_dirty();
         self.schedule_save();
+        if tray_changed {
+            self.apply_tray_wanted("setting switched");
+        }
         self.sync_peek_hotkey();
         self.sync_windows_desktop_hotkey();
         self.sync_dialog_jump();
@@ -1284,11 +1636,24 @@ impl App {
         if let Some(host) = &self.settings {
             host.set_title(pecofence_core::i18n::text("PecoFence 设置"));
         }
+        // Texts a window keeps as text: a script fence's status line, a smart fence's empty
+        // state, the filter tag, the tip of the virtual desktop mark.
+        let hosts: Vec<FenceId> = self.fences.keys().copied().collect();
+        for host in &hosts {
+            self.push_tool_view(*host);
+            self.apply_portal_deco(*host);
+        }
+        self.apply_desktop_visibility("interface language changed");
+        tracing::debug!(
+            windows = hosts.len(),
+            "fence windows got their kept texts in the new language"
+        );
         for window in self.fences.values() {
             window.redraw();
         }
         self.push_settings_state();
         self.smart_editor_language_changed();
+        self.retext_welcome_card();
     }
 }
 

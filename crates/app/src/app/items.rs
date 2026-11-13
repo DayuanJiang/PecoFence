@@ -32,14 +32,20 @@ impl App {
     pub(super) fn item_views(&self, fence: &pecofence_core::Fence) -> Vec<ItemView> {
         // 筛选: only what matches the fence's filter.
         let filter = self.fence_filter(fence.id);
-        self.state
-            .items_of(fence)
+        let started = Instant::now();
+        let items = self.state.items_of(fence);
+        let (listed, total) = (started.elapsed(), items.len());
+        let kept: Vec<_> = items
             .into_iter()
             .filter(|it| {
                 filter
                     .as_deref()
                     .is_none_or(|q| filter::filter_keeps(it, q))
             })
+            .collect();
+        let matched = started.elapsed();
+        let views: Vec<ItemView> = kept
+            .into_iter()
             .map(|it| {
                 let path = PathBuf::from(it.path().unwrap_or(""));
                 let (_, icon_only) = crate::icons::icon_key_for(&path, it.is_folder, it.mtime);
@@ -54,7 +60,21 @@ impl App {
                     it.size,
                 )
             })
-            .collect()
+            .collect();
+        // What a list of thousands costs before the window gets it, part by part.
+        if total >= 500 {
+            let ms = crate::share_log::millis;
+            tracing::debug!(
+                fence = %fence.id,
+                items = total,
+                shown = views.len(),
+                sort_ms = ms(listed),
+                filter_ms = ms(matched - listed),
+                views_ms = ms(started.elapsed() - matched),
+                "item list built for the window"
+            );
+        }
+        views
     }
 
     /// Fence menu "新建 ▸": create the file/folder on the real desktop and remember which fence
@@ -331,7 +351,7 @@ impl App {
         // As wide as the name is drawn: a name fitted to the wider box keeps it in the box.
         let inset = w.item_label_inset(item);
         tracing::info!(?rect, centered, inset, "item rename box opened");
-        w.set_renaming(Some(item));
+        let ink = w.label_ink(self.theme_mode);
         let label_size = self.ctx.chrome.label_size();
         crate::rename::begin_item_rename(
             rect,
@@ -344,8 +364,11 @@ impl App {
             select_end,
             centered.then_some(inset),
             self.queue.clone(),
-            self.theme_mode,
+            ink,
         );
+        // After the box is up and painted: the fence then draws the icon without its name.
+        // The other way round the name was gone for a frame before the box showed.
+        w.set_renaming(Some(item));
     }
 
     /// The inline rename edit closed (commit or cancel): labels may unfold again and a hover
@@ -552,9 +575,9 @@ impl App {
         )
     }
 
-    /// Runs one of the shell's canonical verbs (`delete`, `cut`, `copy`, `properties`) on the
-    /// selection as if picked from Explorer's menu. `shift` = Shift held (permanent delete).
-    /// `delete` runs on a worker thread (see [`App::start_shell_delete`]).
+    /// Runs the shell's `properties` verb on the selection as if picked from Explorer's menu, or
+    /// deletes it (`delete`: the shell's file operation on a worker thread, see
+    /// [`App::start_shell_delete`]). `shift` = Shift held (permanent delete).
     pub(super) fn shell_verb_on_items(
         &mut self,
         fence: FenceId,
@@ -563,9 +586,9 @@ impl App {
         shift: bool,
     ) -> bool {
         let mut paths = self.shell_paths_of(items);
-        if matches!(verb, "delete" | "cut" | "copy") {
-            // The Recycle Bin cannot be deleted, cut or copied, and the other special items
-            // only pretend to (their "delete" hides the desktop icon): leave them to Windows.
+        if verb == "delete" {
+            // The Recycle Bin cannot be deleted, and the other special items only pretend to
+            // (their "delete" hides the desktop icon): leave them to Windows.
             paths.retain(|p| !shell::is_namespace_path(p));
         }
         if paths.is_empty() {
@@ -575,9 +598,7 @@ impl App {
             .window_for(fence)
             .map(|w| w.hwnd())
             .unwrap_or(self.control.hwnd());
-        if !matches!(verb, "cut" | "copy")
-            && let Some(a) = self.anchor.borrow_mut().as_mut()
-        {
+        if let Some(a) = self.anchor.borrow_mut().as_mut() {
             // Properties and the delete confirmation: closing them gives the fence the
             // keyboard back with its selection.
             a.dialog_opened_from(owner);
@@ -588,6 +609,7 @@ impl App {
         }
         let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
         let started = Instant::now();
+        let _loads = pecofence_platform::shell_menu::LoadWatch::new("Properties");
         let result = ShellContextMenu::for_paths(&refs)
             .and_then(|m| m.invoke_verb(verb, owner, window::cursor_pos(), shift));
         let ms = crate::share_log::millis(started.elapsed());
@@ -603,7 +625,7 @@ impl App {
         }
     }
 
-    /// Delete key: the shell's own `delete` verb (Recycle Bin + its confirmation dialog);
+    /// Delete key: the shell's own delete (Recycle Bin + its confirmation dialog);
     /// `permanent` = Shift+Delete (the shell's own 永久删除 confirmation).
     pub(super) fn delete_items(&mut self, fence: FenceId, items: &[ItemId], permanent: bool) {
         // The fence waits only for what the shell is asked to delete (the Recycle Bin and the
@@ -625,6 +647,25 @@ impl App {
 
     /// Alt+Enter / 属性: the shell's `properties` verb (multi-select gives one combined sheet).
     pub(super) fn show_properties(&mut self, fence: FenceId, items: &[ItemId]) {
+        // The Windows part of the item menus is off after a crash in a menu extension: the
+        // verb would load every menu extension again (`ShellContextMenu::invoke_verb`). The
+        // property sheet of the first file is opened without the menu.
+        if self.windows_menu_off() {
+            let path = self.shell_paths_of(items).into_iter().next();
+            let owner = self
+                .window_for(fence)
+                .map(|w| w.hwnd())
+                .unwrap_or(self.control.hwnd());
+            let shown = path.as_deref().is_some_and(|p| {
+                !shell::is_namespace_path(p) && shell::show_properties_sheet(p, owner)
+            });
+            tracing::info!(
+                count = items.len(),
+                shown,
+                "properties without the Windows menu: its part is off"
+            );
+            return;
+        }
         if self.shell_verb_on_items(fence, items, "properties", false) {
             return;
         }
@@ -642,12 +683,27 @@ impl App {
         }
     }
 
-    /// Ctrl+C / Ctrl+X: the shell's copy / cut verb puts the files on the clipboard exactly as
-    /// Explorer does (`CF_HDROP` + `Preferred DropEffect`); cut items draw dimmed.
-    pub(super) fn clipboard_verb(&mut self, fence: FenceId, items: &[ItemId], cut: bool) {
-        if !self.shell_verb_on_items(fence, items, if cut { "cut" } else { "copy" }, false) {
+    /// Ctrl+C / Ctrl+X: the files go on the clipboard exactly as Explorer puts them there (the
+    /// shell's data object of the files with `Preferred DropEffect`, `clipboard::set_files`);
+    /// cut items draw dimmed. The Recycle Bin and the other special items cannot be cut or
+    /// copied.
+    pub(super) fn clipboard_verb(&mut self, _fence: FenceId, items: &[ItemId], cut: bool) {
+        let mut paths = self.shell_paths_of(items);
+        paths.retain(|p| !shell::is_namespace_path(p));
+        if paths.is_empty() {
             return;
         }
+        let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
+        let started = Instant::now();
+        let _loads =
+            pecofence_platform::shell_menu::LoadWatch::new(if cut { "Cut" } else { "Copy" });
+        let result = clipboard::set_files(&refs, cut);
+        let ms = crate::share_log::millis(started.elapsed());
+        if let Err(e) = result {
+            tracing::warn!(error = %e, cut, ms, "files not put on the clipboard");
+            return;
+        }
+        tracing::info!(count = paths.len(), cut, ms, "files put on the clipboard");
         self.cut_items = if cut {
             items.iter().copied().collect()
         } else {
@@ -669,6 +725,27 @@ impl App {
             self.cut_items.clear();
             self.push_cut_items();
         }
+    }
+
+    /// Esc after Ctrl+X: the cut is taken back. Explorer's desktop does the same (measured on
+    /// Windows Server 2025: the icon is whole again and the clipboard is empty; a click
+    /// elsewhere leaves both as they are). The clipboard is emptied only while it still
+    /// holds our cut, and never under a paste of it that is still running.
+    pub(super) fn cancel_cut(&mut self) {
+        if self.cut_items.is_empty() || self.cut_paste.is_some() {
+            return;
+        }
+        let ours = clipboard::sequence() == self.cut_clip_seq;
+        tracing::info!(
+            items = self.cut_items.len(),
+            clipboard_emptied = ours,
+            "Esc: cut taken back"
+        );
+        if ours {
+            clipboard::clear();
+        }
+        self.cut_items.clear();
+        self.push_cut_items();
     }
 
     /// Ctrl+V / 粘贴: the clipboard's files land in `fence` — desktop items change membership,
@@ -923,6 +1000,20 @@ impl App {
                 inside && f.navigates_folders(),
             )
         });
+        // An icon of a folder shown in a fence whose file is gone: the folder was renamed or
+        // deleted and the fence has not noticed yet (its watcher follows a renamed folder; the
+        // check for that runs once a minute). Explorer would put up its "Windows cannot find"
+        // box inside the call below, and every fence would wait until it is closed. The fence
+        // is read again instead and shows what is there now.
+        if self.state.is_portal_item(item)
+            && let Some(dir) = self.state.portal_path(from)
+            && !path.exists()
+        {
+            tracing::info!(fence = %from, place = shell::path_place(&path), "launch: the file is gone; its fence is re-read");
+            self.portal_watchers.remove(&from);
+            self.refresh_portals_in(std::slice::from_ref(&dir));
+            return;
+        }
         // A folder inside a navigating portal opens in place (Fences "Navigate"). Two portals
         // can show the same folder, so only the one the item was opened from navigates.
         if portal && navigate && is_folder && self.state.is_portal_item(item) {
@@ -943,6 +1034,7 @@ impl App {
             self.note_opened(item);
             return;
         }
+        let _loads = pecofence_platform::shell_menu::LoadWatch::new("Launch");
         match shell::shell_execute(&path, None, None) {
             Ok(()) => {
                 self.note_opened(item);

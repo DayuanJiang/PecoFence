@@ -418,7 +418,7 @@ h2 {
     scrollbar-color: #b8c4dd transparent
 }
 
-/* On wider screens the eight tabs sit in two even rows of four; narrower screens scroll them. */
+/* On wider screens the twelve tabs sit in three even rows of four; narrower screens scroll them. */
 @media(min-width:841px) {
     .feature-picker {
         display: grid;
@@ -642,6 +642,17 @@ h2 {
     margin: 0;
     color: var(--ink-soft);
     font-size: 14px
+}
+
+.tools-heading .text-link {
+    margin-top: 14px;
+    font-size: 13px
+}
+
+/* The tools lesson's animation, like a gallery card's */
+.tools-media {
+    margin-bottom: 44px;
+    border-radius: 15px
 }
 
 .tools .details>div {

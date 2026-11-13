@@ -37,11 +37,31 @@ pub(super) struct LeavingItem {
 }
 
 /// Layout motion runs only for a *rearrangement*: when at most half of the ids changed
-/// (`changed` = removed + added) relative to the larger of the two lists, or when an empty list
-/// fills up (its items fade in). A tab switch, portal navigation or a refill replaces most ids
-/// and snaps instead.
+/// (`changed` = removed + added) relative to the larger of the two lists, when an empty list
+/// fills up (its items fade in), or when the only item leaves (it fades out and the empty
+/// fence's text fades in). A tab switch, portal navigation or a refill replaces most ids and
+/// snaps instead.
 pub(super) fn layout_motion_applies(changed: usize, old_len: usize, new_len: usize) -> bool {
-    old_len == 0 || changed * 2 <= old_len.max(new_len)
+    old_len == 0 || (old_len == 1 && new_len == 0) || changed * 2 <= old_len.max(new_len)
+}
+
+/// A change that only takes icons away, or only brings icons in, is no refill either, however
+/// many they are: 「立即应用」, its undo and a snapshot restore move dozens of icons between
+/// fences at once, and the ones that go fade out as the ones that come fade in. (A refill
+/// swaps ids: it removes and adds.)
+pub(super) fn one_way_change(removed: usize, added: usize) -> bool {
+    (removed == 0) != (added == 0)
+}
+
+/// The same icons in a new order (a sort change) cross-fade instead of gliding when more than
+/// half of them go further than to the next place in the order and there are more than
+/// `REORDER_FADE_OVER` of them: gliding sends them all through the middle of the fence at
+/// once. `far` = icons whose place in the order changed by more than one. Up to a dozen icons
+/// the eye still follows each one to its new cell (looked at on the test box with 6, 10, 14,
+/// 20 and 34 icons); an icon moved by hand shifts the others by one place, which never counts.
+pub(super) const REORDER_FADE_OVER: usize = 12;
+pub(super) fn reorder_cross_fades(far: usize, len: usize) -> bool {
+    len > REORDER_FADE_OVER && far * 2 > len
 }
 
 /// How long after a drop its icons still count as "just let go here" (`drop_landing`): the
@@ -51,6 +71,15 @@ pub(super) const DROP_LANDING_MAX: Duration = Duration::from_millis(500);
 /// A cell origin as a map key (cells sit on whole DIPs).
 pub(super) fn cell_key(x: f32, y: f32) -> (i32, i32) {
     (x.round() as i32, y.round() as i32)
+}
+
+/// Whether a cell at `y`, `h` tall (content DIPs), lies within one viewport of the visible
+/// part, at the scroll offset or where a running glide of it ends (`offsets`): what a list
+/// change moves. A cell further away is not seen before its glide would have ended.
+pub(super) fn near_viewport(y: f32, h: f32, view_h: f32, offsets: [f32; 2]) -> bool {
+    offsets
+        .iter()
+        .any(|at| y + h > at - view_h && y < at + 2.0 * view_h)
 }
 
 /// Cell origin of an icon whose centre is at (`cx`, `cy`): where a dropped icon starts, under
@@ -64,6 +93,11 @@ pub(super) fn landing_origin(cx: f32, cy: f32, cell: &CellRect) -> (f32, f32) {
 pub(super) fn fade_in_start(vacated: bool, now: Instant) -> Instant {
     if vacated { now + motion::FASTER } else { now }
 }
+
+/// How long a new icon's fade-in waits for its picture at most. A picture that is not in the
+/// cache comes from the worker a few frames later: the name used to fade in alone and the
+/// picture after it. A file whose picture takes longer shows its name after this wait.
+pub(super) const ICON_WAIT_MAX: Duration = motion::FAST;
 
 /// Index-keyed per-item state carried across a list refresh by item identity: `old` / `new`
 /// are the ids before and after, `index` an index into `old`. Items that vanished map to None
@@ -169,6 +203,99 @@ impl FenceViewState {
         (0..self.items.len()).map(|i| layout.cell(i)).collect()
     }
 
+    /// 按时间分组 goes on or off: the section captions come or go, and every icon or row near
+    /// the viewport glides from where it stood to its cell in the new arrangement, as a sort
+    /// glides them (250 ms point-to-point). They used to jump there in one frame: the list
+    /// that follows (`replace_items`) measured its "old" cells with the new grouping already
+    /// set, so it found nothing to move. That list continues these glides to the new order.
+    /// More than `REORDER_FADE_OVER` icons of which most go to another column or further than
+    /// a row cross-fade instead (the list that follows then snaps under the fade). Snaps under the conditions `replace_items`
+    /// snaps under.
+    pub(super) fn regroup(&mut self, on: bool) {
+        let animate = self.motion.enabled()
+            && !self.rolled_up
+            && self.roll_anim.is_none()
+            && !self.ole_drag
+            && self.marquee.is_none()
+            && self.outgoing.is_empty()
+            // A hover switch that follows another shows the next tab at once (`set_tabs`): its
+            // grouping differs from the last tab's, and a cross-fade started here for the last
+            // tab's icons would bring the overlap back.
+            && !self.place_next_items
+            && desktop::is_visible(self.hwnd);
+        let (cw, _) = self.content_size_px();
+        let width_dip = cw as f32 / self.scale();
+        let old = if animate {
+            self.cell_origins(width_dip)
+        } else {
+            Vec::new()
+        };
+        self.group_by_date = on;
+        // The cells a running glide was computed for no longer exist.
+        self.snap_item_motion();
+        if !animate {
+            tracing::debug!(on, "group by date changed: no glide");
+            return;
+        }
+        let now = Instant::now();
+        let (layout, view_h) = self.scroll_extent();
+        // Many icons of which most go to another column or further than a row: they
+        // cross-fade, as a sort change of that size does (`reorder_cross_fades`). Gliding
+        // sent them all through each other. Icons that only move down by a caption's height
+        // (every file is of one day) still glide, however many they are.
+        let far = (old.iter().enumerate())
+            .filter(|(i, o)| {
+                let c = layout.cell(*i);
+                (o.x - c.x).abs() > c.w / 2.0 || (o.y - c.y).abs() > c.h
+            })
+            .count();
+        if self.desktop.is_none()
+            && self.content_swap_shows()
+            && reorder_cross_fades(far, self.items.len())
+        {
+            tracing::debug!(
+                on,
+                items = self.items.len(),
+                far,
+                "group by date changed: the content cross-fades"
+            );
+            self.begin_content_swap(0);
+            return;
+        }
+        let scroll = self.scroll_y;
+        // One viewport of slack above and below, as a column change takes; the rest snaps.
+        let near = |y: f32, h: f32| y + h > scroll - view_h && y < scroll + 2.0 * view_h;
+        let mut motion: HashMap<ItemId, ItemMotion> = HashMap::new();
+        for (i, (item, o)) in self.items.iter().zip(&old).enumerate() {
+            let c = layout.cell(i);
+            let moved = (o.x - c.x).abs() > 0.5 || (o.y - c.y).abs() > 0.5;
+            if moved && (near(o.y, o.h) || near(c.y, c.h)) {
+                let glide = |from: f32, to: f32| {
+                    self.motion
+                        .tween(from, to, motion::NORMAL, Curve::PointToPoint, now)
+                };
+                motion.insert(
+                    item.id,
+                    ItemMotion {
+                        x: glide(o.x, c.x),
+                        y: glide(o.y, c.y),
+                        alpha: Tween::at(1.0, now),
+                    },
+                );
+            }
+        }
+        tracing::debug!(
+            on,
+            items = self.items.len(),
+            gliding = motion.len(),
+            "group by date changed: icons glide"
+        );
+        if !motion.is_empty() {
+            self.item_motion = motion;
+            self.frames.request();
+        }
+    }
+
     /// Replaces the item list with layout motion (WinUI Reorder / AddDelete theme transitions):
     /// items present before and after glide from their old cell to the new one (250 ms
     /// point-to-point), new items fade in (167 ms) at their cell, removed items fade out (83 ms)
@@ -186,14 +313,31 @@ impl FenceViewState {
         let scale = self.scale();
         let (cw, _) = self.content_size_px();
         let width_dip = cw as f32 / scale;
+        // A hover switch that showed its tab at once (`set_tabs`): the list stands at once.
+        let placed = std::mem::take(&mut self.place_next_items);
+        if placed {
+            tracing::debug!(
+                old_len = self.items.len(),
+                new_len = items.len(),
+                "item list of a tab shown at once: placed whole"
+            );
+        }
         let animate = self.motion.enabled()
+            && !placed
             && !self.rolled_up
             && self.roll_anim.is_none()
             && !self.ole_drag
-            && self.marquee.is_none()
+            // A rubber band that has not moved yet is a plain press: the click on an empty
+            // part of the fence that confirms a new name must not make the renamed icon jump
+            // to its new place.
+            && self.marquee.as_ref().is_none_or(|m| m.cur == m.start)
             && self.outgoing.is_empty()
             && desktop::is_visible(self.hwnd);
-        let old_pos: HashMap<ItemId, CellRect> = if animate {
+        // Whether the content already scrolls: a scroll bar that the new icons bring comes
+        // with them (`sb_arrives`).
+        let had_bar = animate && self.scrollbar_geometry().is_some();
+        self.sb_arrives = false;
+        let mut old_pos: HashMap<ItemId, CellRect> = if animate {
             let cells = self.cell_origins(width_dip);
             self.items
                 .iter()
@@ -203,8 +347,30 @@ impl FenceViewState {
         } else {
             HashMap::new()
         };
+        // 自由摆放: every icon stands in a cell of its own, but `desktop_slots` pairs with the
+        // items by their place in the list, and holds the old list's cells until
+        // `arrange_desktop` places the new one (after this, in `set_items`). With an icon gone
+        // from the middle of the list, every icon after it took the cell of the one before it
+        // as its new place: it glided there, and another file's icon stood in its cell, until
+        // the cells were placed again. Each icon's own cell, by id, for the new list below.
+        let own_slots: HashMap<ItemId, CellRect> =
+            if self.places_freely() && !self.desktop_slots.is_empty() {
+                self.items
+                    .iter()
+                    .zip(&self.desktop_slots)
+                    .map(|(it, slot)| (it.id, *slot))
+                    .collect()
+            } else {
+                HashMap::new()
+            };
         let old_len = self.items.len();
         let old_ids: Vec<ItemId> = self.items.iter().map(|i| i.id).collect();
+        // New items have no fitted names: the fitting ahead starts over after the next draw.
+        self.fit_ahead_done = false;
+        // The search fades are set for the new list at its first draw.
+        self.search_fades_for = None;
+        // A new list asks the shell for its type names again (kept items keep theirs below).
+        self.type_names = Default::default();
         // Keep icons / labels for unchanged items.
         let mut old: HashMap<ItemId, ItemView> = self.items.drain(..).map(|i| (i.id, i)).collect();
         let icons = self.icons.borrow();
@@ -218,6 +384,7 @@ impl FenceViewState {
                     n.icon = o.icon;
                     n.icon_px = o.icon_px;
                     n.icon_fade = o.icon_fade;
+                    n.fade_waits = o.fade_waits;
                     n.icon_waited = o.icon_waited;
                     n.icon_stand_in = o.icon_stand_in;
                     n.label = o.label;
@@ -248,6 +415,44 @@ impl FenceViewState {
             })
             .collect();
         drop(icons);
+        if !own_slots.is_empty() && !self.items.iter().map(|n| n.id).eq(old_ids.iter().copied()) {
+            // An icon that is new here: the cell saved for it (one dropped here from another
+            // fence: its landing glide went to the spare cell at the far side of the screen,
+            // unseen, and the icon then appeared in its cell), else the spare one (where a
+            // single new file goes) until the cells are placed. One slot per item and none to
+            // spare, so the placing that follows always differs from these and fits the
+            // window to it.
+            let spare = self.desktop_slots.last().copied();
+            let kept = self
+                .items
+                .iter()
+                .filter(|n| own_slots.contains_key(&n.id))
+                .count();
+            let saved: HashMap<ItemId, CellRect> = self
+                .items
+                .iter()
+                .filter(|n| !own_slots.contains_key(&n.id))
+                .filter_map(|n| Some((n.id, self.saved_slot(n.id)?)))
+                .collect();
+            self.desktop_slots = self
+                .items
+                .iter()
+                .filter_map(|n| {
+                    own_slots
+                        .get(&n.id)
+                        .or_else(|| saved.get(&n.id))
+                        .copied()
+                        .or(spare)
+                })
+                .collect();
+            tracing::debug!(
+                kept,
+                new = self.items.len() - kept,
+                new_in_saved_cell = saved.len(),
+                gone = old_len - kept,
+                "free placement: icons keep their own cells while the list changes"
+            );
+        }
         // `old` now holds only the removed items: their fades leave with them.
         if !old.is_empty() {
             self.item_hover.prune(now, |k| !old.contains_key(k));
@@ -270,8 +475,12 @@ impl FenceViewState {
             .filter(|n| !old_pos.contains_key(&n.id) && !landing.contains_key(&n.id))
             .count();
         let changed = old.len() + added;
-        let animate = animate && layout_motion_applies(changed, old_len, self.items.len());
-        if !animate && changed > 0 && layout_motion_applies(changed, old_len, self.items.len()) {
+        // The filter box asks for its own cross-fade of a refill (`fade_refill`): its lists
+        // keep the half rule alone. (`added` counts every item when nothing can animate.)
+        let rearranged = layout_motion_applies(changed, old_len, self.items.len())
+            || (animate && !fade_refill && one_way_change(old.len(), added));
+        let animate = animate && rearranged;
+        if !animate && changed > 0 && rearranged {
             // A genuine rearrangement that snapped instead of gliding: say why.
             tracing::info!(
                 ole_drag = self.ole_drag,
@@ -314,6 +523,47 @@ impl FenceViewState {
             }
             return;
         }
+        // The same icons in a new order that takes most of them far from their places (a sort
+        // change): every icon glided through the middle of the fence at once, lying on the
+        // others for the whole glide. The old page fades out under the new one, as the
+        // filter's refill does. A few icons that change places, a short list, and an icon
+        // let go at another place (`landing`; its neighbours move one cell) glide.
+        if changed == 0 && landing.is_empty() && self.desktop.is_none() && self.content_swap_shows()
+        {
+            let old_index: HashMap<ItemId, usize> =
+                old_ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+            let far = self
+                .items
+                .iter()
+                .enumerate()
+                .filter(|(i, n)| old_index.get(&n.id).is_some_and(|o| o.abs_diff(*i) > 1))
+                .count();
+            if reorder_cross_fades(far, self.items.len()) {
+                tracing::debug!(
+                    far,
+                    items = self.items.len(),
+                    "new order moves most icons far: the content cross-fades"
+                );
+                self.snap_item_motion();
+                self.begin_content_swap(0);
+                return;
+            }
+        }
+        // 像桌面一样排列: the cells of the new list are placed here, before the glides get
+        // their targets. They used to be placed only after this function, so every icon
+        // glided to the cell the old list had at its index and jumped to its own cell when
+        // the glide ended.
+        if self.desktop.is_some()
+            && let Some((_, moved)) = self.arrange_desktop()
+        {
+            tracing::debug!(
+                fence = %self.fence_id,
+                moved,
+                items = self.items.len(),
+                "desktop cells placed for the new item list before its glide"
+            );
+            self.desktop_slots_moved |= moved;
+        }
         let cells = self.cell_origins(width_dip);
         // Cells an icon at rest slides out of in this pass: a new icon there waits for it.
         let vacated: HashSet<(i32, i32)> = self
@@ -325,9 +575,40 @@ impl FenceViewState {
                 ((o.x - c.x).abs() > 0.5 || (o.y - c.y).abs() > 0.5).then(|| cell_key(o.x, o.y))
             })
             .collect();
+        // Fewer rows end the content above the place the fence is scrolled to (files deleted
+        // at the end of the content): the redraw puts the offset back to the new end, and the
+        // rows that stay jumped down by that much in one frame. The offset goes there now and
+        // every icon, the ones that leave too, starts from where it stood on screen: the rows
+        // glide down while the deleted icons fade out in place. (A glide still in flight
+        // holds its own coordinates: then the redraw clamps as before.)
+        if self.desktop.is_none() && self.scroll_anim.is_none() && self.item_motion.is_empty() {
+            let (layout, view_h) = self.scroll_extent();
+            let over = self.scroll_y - layout.max_scroll(view_h);
+            if over > 0.5 {
+                tracing::debug!(
+                    fence = %self.fence_id,
+                    over,
+                    items = self.items.len(),
+                    "the content ends above the scroll offset: the rows that stay glide down"
+                );
+                self.scroll_y -= over;
+                for c in old_pos.values_mut() {
+                    c.y -= over;
+                }
+            }
+        }
+        // Only what can be seen moving gets a motion: the icons that stand, or will stand,
+        // within one viewport of the visible part (as `regroup` and a column change take it).
+        // The others take their places at once. One new file at the top of a folder of 8000
+        // used to start 8000 glides, and every frame of them looked at all 8000 icons.
+        let (_, view_h) = self.scroll_extent();
+        let offsets = [self.scroll_y, self.scroll_target()];
+        let near = |y: f32, h: f32| near_viewport(y, h, view_h, offsets);
+        let mut far = 0usize;
         let mut motion: HashMap<ItemId, ItemMotion> = HashMap::new();
         let (mut landed, mut waited) = (0usize, 0usize);
-        for (n, c) in self.items.iter().zip(cells) {
+        let wait_for_icon = self.motion.enabled();
+        for (n, c) in self.items.iter_mut().zip(cells) {
             // A motion still in flight continues from where it is, not from the old slot.
             let prev = self.item_motion.remove(&n.id);
             if let Some(&(lx, ly)) = landing.get(&n.id) {
@@ -365,7 +646,11 @@ impl FenceViewState {
                     let (fx, fy) =
                         prev.map_or((o.x, o.y), |m| (m.x.value_at(now), m.y.value_at(now)));
                     let alpha = prev.map_or(Tween::at(1.0, now), |m| m.alpha);
-                    if (fx - c.x).abs() > 0.5 || (fy - c.y).abs() > 0.5 || !alpha.is_done(now) {
+                    let moves =
+                        (fx - c.x).abs() > 0.5 || (fy - c.y).abs() > 0.5 || !alpha.is_done(now);
+                    if moves && !(near(fy, c.h) || near(c.y, c.h)) {
+                        far += 1;
+                    } else if moves {
                         motion.insert(
                             n.id,
                             ItemMotion {
@@ -388,13 +673,20 @@ impl FenceViewState {
                         );
                     }
                 }
+                None if !near(c.y, c.h) => far += 1,
                 None => {
                     // Its cell is still being left by an icon sliding away: the fade-in starts
                     // 83 ms later, so the two names do not lie on top of each other (WinUI
                     // staggers the add after the reposition the same way).
                     let waits = vacated.contains(&cell_key(c.x, c.y));
-                    let start = fade_in_start(waits, now);
+                    let mut start = fade_in_start(waits, now);
                     waited += waits as usize;
+                    // Name and picture come together: the fade-in is held until the picture
+                    // is there (`ensure_icons_and_labels` starts it), `ICON_WAIT_MAX` at most.
+                    if wait_for_icon && n.icon.is_none() {
+                        n.fade_waits = Some(start);
+                        start += ICON_WAIT_MAX;
+                    }
                     motion.insert(
                         n.id,
                         ItemMotion {
@@ -415,6 +707,13 @@ impl FenceViewState {
                 "layout motion: icons arriving from a drop, new icons fading in 83 ms later"
             );
         }
+        if far > 0 {
+            tracing::debug!(
+                moving = motion.len(),
+                far,
+                "layout motion: the icons out of sight take their places at once"
+            );
+        }
         // Survivors took their motions out of the old map: what is left belongs to the
         // removed items (a glide or fade-in still in flight when the item vanished).
         let stale = std::mem::replace(&mut self.item_motion, motion);
@@ -429,7 +728,8 @@ impl FenceViewState {
             let m = stale.get(&id);
             let (x, y) = m.map_or((c.x, c.y), |m| (m.x.value_at(now), m.y.value_at(now)));
             let a0 = m.map_or(1.0, |m| m.alpha.value_at(now)).clamp(0.0, 1.0);
-            if a0 <= 0.01 {
+            // One that left out of sight has no fade to show.
+            if a0 <= 0.01 || !near(y, c.h) {
                 continue;
             }
             self.leaving.push(LeavingItem {
@@ -451,6 +751,24 @@ impl FenceViewState {
             });
         }
         drop(icons);
+        if !self.leaving.is_empty() {
+            tracing::debug!(
+                leaving = self.leaving.len(),
+                old_len,
+                new_len = self.items.len(),
+                "icons leaving fade out"
+            );
+        }
+        // New icons made the content longer than the fence: its scroll bar stood there at
+        // once, about three frames before the icons, which wait for their pictures. It takes
+        // their strength until they are in (`scrollbar_draw_in`).
+        self.sb_arrives = !had_bar && self.item_motion.values().any(|m| !m.alpha.is_done(now));
+        if self.sb_arrives {
+            tracing::debug!(
+                items = self.items.len(),
+                "new icons bring a scroll bar: it fades in with them"
+            );
+        }
         if !self.item_motion.is_empty() || !self.leaving.is_empty() {
             self.frames.request();
         }
@@ -460,7 +778,9 @@ impl FenceViewState {
     /// `old_cw_px` wide before. While the user drags an edge (`interactive`) and the icon grid
     /// gains or loses a column, every icon near the viewport glides from where it is drawn to
     /// its new cell (167 ms decelerate; one already gliding continues from its place), as a
-    /// sort or a delete glides them. A width that keeps the columns moves the cells with the
+    /// sort or a delete glides them. A column change that follows the one before within that
+    /// time (an edge dragged across several column counts) places the icons at once instead
+    /// of gliding them again. A width that keeps the columns moves the cells with the
     /// edge as before, and glides in flight ride along with their target cells. Everything
     /// else snaps: rows (one column at any width), 像桌面一样排列, animations off, a resize
     /// nobody drags.
@@ -468,6 +788,12 @@ impl FenceViewState {
         let (cw, _) = self.content_size_px();
         if cw == old_cw_px {
             // Only the height changed: every cell is where it was.
+            return;
+        }
+        if self.bare() {
+            // 像桌面一样排列: the window reaches to the last column in use, and the cells
+            // stand where they are from the work area's corner at any width. Glides and
+            // fades in flight go on (an icon that left the last column took them all away).
             return;
         }
         let animate = interactive
@@ -511,6 +837,26 @@ impl FenceViewState {
             return;
         }
         let now = Instant::now();
+        // An edge dragged across several column counts: the change before this one came less
+        // than a glide ago, so its icons are still on their way (or would be). A new glide
+        // from there on every change kept all icons in flight, lying across each other, for
+        // as long as the drag went on. They take their cells at once; a single change, and
+        // the first of a run, glide as before.
+        let again = self
+            .column_change_at
+            .replace(now)
+            .is_some_and(|t| now.duration_since(t) < motion::FAST);
+        if again {
+            tracing::debug!(
+                from = og.columns,
+                to = ng.columns,
+                items = self.items.len(),
+                in_flight = self.item_motion.len(),
+                "resize changed the columns again within a glide: icons are placed at once"
+            );
+            self.snap_item_motion();
+            return;
+        }
         // Fewer rows may clamp the scroll offset (the redraw does it): the icons start from
         // the same place on screen.
         let view_h = self.scroll_view_h(&new);
@@ -587,7 +933,8 @@ impl FenceViewState {
         self.selected = remap_indices(old_ids, &new, &self.selected);
         self.anchor_index = self.anchor_index.and_then(map);
         self.range_anchor = self.range_anchor.and_then(map);
-        if self.anchor_index.is_none() {
+        // A rolled-up fence and one with nothing in it keep the mark on their title row.
+        if self.anchor_index.is_none() && !self.roll_target() && !self.items.is_empty() {
             self.focus_visible = false;
         }
         // The user's own Delete took the focused item away: its neighbour takes the focus and

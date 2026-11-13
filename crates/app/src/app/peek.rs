@@ -5,6 +5,15 @@ use super::*;
 use pecofence_core::hotkey::{FALLBACKS, PRESETS, Problem};
 
 /// The reasons `end_peek` gets when the keyboard or the foreground left the Peek's windows.
+/// The reasons of `end_peek` with which the user closed the Peek and opened nothing: the
+/// keyboard goes back to the desktop or the fence that had it when the Peek opened.
+const PEEK_CLOSED_BY_USER: [&str; 5] = [
+    "Esc pressed",
+    "Esc pressed in the search box",
+    "Ctrl pressed twice",
+    "hotkey or tray menu",
+    "dimmer clicked",
+];
 const PEEK_FOCUS_LOST: [&str; 3] = [
     "another window came to the front",
     "dimmer lost the focus",
@@ -16,12 +25,24 @@ const PEEK_LATE_DESKTOP: Duration = Duration::from_millis(1500);
 /// Frames between making a covered fence transparent and raising it over the window that hides
 /// it: the opacity reaches the compositor only when the message loop has run again, and the
 /// fence must not come over the window while it is still opaque on screen.
-const PEEK_RAISE_FRAMES: u8 = 1;
+pub(super) const PEEK_RAISE_FRAMES: u8 = 1;
+/// The longest that wait may take (a window timer, so about 63 ms in effect). A compositor
+/// clock (Windows 11) gives its two beats 25 to 40 ms after the fences were made transparent,
+/// before this, so nothing changes there: the timer finds the fences raised. Windows 10 has
+/// no compositor clock: the frame clock waits in `DwmFlush`, and on a PC without a GPU its
+/// first two beats after a rest took 127 to 174 ms together, so the covered fences were first
+/// seen 232 to 279 ms after the shortcut (60 to 112 ms in 0.3.3, which did not fade). With
+/// the limit they are raised 63 to 67 ms after they were made transparent and seen after 149
+/// to 186 ms; no opaque fence showed before the fade in the Peeks of the guest's checks.
+pub(super) const PEEK_RAISE_LIMIT_MS: u32 = 50;
 /// Frames a faded fence stays transparent after the Peek put it back under the windows. A
 /// change of the z-order reaches the screen a frame or two after a change of opacity does:
 /// made opaque in the same turn, the fence showed for one frame over the window that hides it
 /// again (4 of 6 closes on a test box). Nobody sees the wait, the fence is under that window.
 const PEEK_REST_FRAMES: u8 = 4;
+/// How long after the Peek's start the search box's window is made for its first letter: after
+/// the Peek's fade (83 ms) and the raise of covered fences, so the start is not held up.
+const PEEK_SEARCH_READY_MS: u32 = 150;
 
 /// A shortcut as the tray menu and messages show it: `Ctrl+Alt+空格`.
 pub(super) fn peek_hotkey_label(h: Hotkey) -> String {
@@ -122,6 +143,8 @@ impl App {
         // While a fallback is registered `want != peek_hotkey`, so every sync (startup, preset,
         // settings apply) retries the preferred combination first and switches back once free.
         if want == self.peek_hotkey {
+            // Peek switched off, or to 「双击 Ctrl」, while no shortcut worked.
+            self.apply_tray_wanted("peek shortcut");
             return;
         }
         let prev = self.peek_hotkey;
@@ -138,9 +161,12 @@ impl App {
             let registered = std::iter::once(h).chain(FALLBACKS).find(|c| {
                 hotkey::register(hwnd, HOTKEY_PEEK, c.mods | hotkey::mods::NOREPEAT, c.vk)
             });
+            self.peek_hotkey = registered;
+            // Before the notices: with 「显示托盘图标」 off the icon stays while no shortcut
+            // works (the notice names the tray menu) and leaves again once one does.
+            self.apply_tray_wanted("peek shortcut");
             match registered {
                 Some(c) => {
-                    self.peek_hotkey = Some(c);
                     tracing::info!(hotkey = %c, "peek hotkey registered");
                     if c != h {
                         tracing::warn!(wanted = %h, "peek hotkey taken; using fallback");
@@ -152,7 +178,7 @@ impl App {
                             t.show_info(
                                 "PecoFence",
                                 &pecofence_core::i18n::format(
-                                    "快捷键 {0} 已被系统或其他程序占用，“速览栅栏”改用 {1}。",
+                                    "“速览栅栏”改用 {1}：快捷键 {0} 已被系统或其他程序占用。",
                                     &[peek_hotkey_label(h), peek_hotkey_label(c)],
                                 ),
                                 false,
@@ -176,6 +202,13 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Peek is on with a shortcut, and neither the chosen combination nor a fallback could be
+    /// registered: the notice of that sends the user to the tray menu.
+    pub(super) fn peek_without_shortcut(&self) -> bool {
+        let peek = &self.state.config.settings.peek;
+        peek.enabled && !peek.double_ctrl && self.peek_hotkey.is_none()
     }
 
     /// 「双击 Ctrl」 as Peek's shortcut: listened to while Peek is on and chosen, and not while
@@ -322,7 +355,9 @@ impl App {
                 // that were fading out fade back in on the next frame (any still held first
                 // come over their window then).
                 p.reopen(now);
+                self.peek_from = self.peek_back.take();
                 self.peek_raise_in = Some(0);
+                window::set_timer(self.control.hwnd(), TIMER_PEEK_RAISE, PEEK_RAISE_LIMIT_MS);
                 self.ctx.frames.request();
             } else {
                 self.end_peek("hotkey or tray menu");
@@ -333,6 +368,17 @@ impl App {
             return;
         }
         self.note_search_dialog();
+        // The desktop or a fence has the keyboard now: it gets it back when the user closes
+        // the Peek (`end_peek`).
+        let front = desktop::foreground_window();
+        let ours = self.fences.values().any(|w| w.hwnd() == front)
+            || self
+                .anchor
+                .borrow()
+                .as_ref()
+                .is_some_and(|a| a.is_desktop_window(front));
+        self.peek_from = ours.then_some(front);
+        self.peek_back = None;
         let dim = self.state.config.settings.peek.dim;
         let overlay = match PeekOverlay::show(
             &self.peek_class,
@@ -362,10 +408,29 @@ impl App {
         }
         if !held.is_empty() {
             self.peek_raise_in = Some(PEEK_RAISE_FRAMES);
+            window::set_timer(self.control.hwnd(), TIMER_PEEK_RAISE, PEEK_RAISE_LIMIT_MS);
         }
         if animating || !held.is_empty() {
             self.ctx.frames.request();
         }
+        // The search box's window is made once the Peek's own first frames are out.
+        window::set_timer(
+            self.control.hwnd(),
+            TIMER_PEEK_SEARCH_READY,
+            PEEK_SEARCH_READY_MS,
+        );
+    }
+
+    /// `TIMER_PEEK_SEARCH_READY`: the search box's window is made, hidden, so that the first
+    /// letter only has to show it. Not when the Peek is ending or the box is open already
+    /// (a Peek started with the box, or a letter typed in its first moments).
+    pub(super) fn prepare_peek_search(&mut self) {
+        if self.peek.as_ref().is_none_or(|p| p.is_closing()) || crate::peek_search::is_open() {
+            return;
+        }
+        let fences = self.fence_plates(|_| true);
+        let dark = self.theme_mode == ThemeMode::Dark;
+        crate::peek_search::prepare(self.queue.clone(), dark, &fences);
     }
 
     /// The fences another program's window hides completely do not pop up over it: each is made
@@ -396,6 +461,21 @@ impl App {
             "peek: fences hidden by a window fade in with the dimmer"
         );
         held
+    }
+
+    /// `PEEK_RAISE_LIMIT_MS` after the Peek opened: fences that still wait for the frame
+    /// clock's beats are raised now and fade in. Nothing to do when the beats came first, when
+    /// the Peek is closing or over.
+    pub(super) fn peek_raise_overdue(&mut self) {
+        let Some(beats_left) = self.peek_raise_in.take() else {
+            return;
+        };
+        tracing::debug!(
+            beats_left,
+            limit_ms = PEEK_RAISE_LIMIT_MS,
+            "peek: the frame clock is slow to beat; covered fences raised at the limit"
+        );
+        self.raise_peek_held();
     }
 
     /// Frame tick of the Peek's fence fade: counts down to the raise of the held fences, then
@@ -460,28 +540,36 @@ impl App {
         }
     }
 
-    /// The Peek starts to end: the fences that go back under a window fade out with the dimmer.
-    /// Fences still held (never raised) stay as they are. Returns whether any fades.
+    /// The Peek starts to end: the fences that go back under a window fade out with the dimmer,
+    /// and so do the fences it showed although they are hidden (隐藏所有栅栏): they faded only
+    /// after the dimmer was gone, a second motion. Fences still held (never raised) stay as
+    /// they are. Returns whether any fades.
     fn begin_peek_fade_out(&mut self) -> bool {
         self.peek_raise_in = None;
         // The anchor is asked first and let go: the fades below touch windows.
-        let covered: Vec<HWND> = match self.anchor.borrow().as_ref() {
-            Some(a) => a
-                .covered_fences()
-                .into_iter()
-                .filter(|f| !a.is_peek_held(*f))
-                .collect(),
+        let (covered, hidden_again): (Vec<HWND>, Vec<HWND>) = match self.anchor.borrow().as_ref() {
+            Some(a) => (
+                a.covered_fences()
+                    .into_iter()
+                    .filter(|f| !a.is_peek_held(*f))
+                    .collect(),
+                a.peek_shown_fences(),
+            ),
             None => return false,
         };
         let fading = self
             .fences
             .values()
-            .filter(|w| covered.contains(&w.hwnd()) && w.peek_fade_out())
+            .filter(|w| {
+                (covered.contains(&w.hwnd()) || hidden_again.contains(&w.hwnd()))
+                    && w.peek_fade_out()
+            })
             .count();
         tracing::debug!(
             covered = covered.len(),
+            hidden_again = hidden_again.len(),
             fading,
-            "peek ending: fences that go back under a window fade out"
+            "peek ending: fences that go back under a window or are hidden again fade out"
         );
         fading > 0
     }
@@ -525,7 +613,7 @@ impl App {
         if crate::peek_search::is_open() {
             crate::peek_search::set_text(text);
         } else {
-            crate::peek_search::open(text, self.queue.clone(), self.theme_mode == ThemeMode::Dark);
+            self.open_peek_search(text);
         }
         self.update_peek_search();
         true
@@ -539,9 +627,28 @@ impl App {
         if crate::peek_search::is_open() {
             crate::peek_search::append(text);
         } else {
-            crate::peek_search::open(text, self.queue.clone(), self.theme_mode == ThemeMode::Dark);
+            self.open_peek_search(text);
         }
         self.update_peek_search();
+    }
+
+    /// Opens the search box with `text`: in the upper middle of the screen, or beside the
+    /// fences in sight when it would cover one there.
+    pub(super) fn open_peek_search(&mut self, text: &str) {
+        let fences = self.fence_plates(|_| true);
+        let dark = self.theme_mode == ThemeMode::Dark;
+        crate::peek_search::open(text, self.queue.clone(), dark, &fences);
+    }
+
+    /// Screen rectangles of the fences in sight that `pick` takes, for the search box to keep
+    /// clear of. A 「桌面」 arranged like the desktop is left out: it has no plate, and its
+    /// window spans all its loose icons, wherever they are.
+    fn fence_plates(&self, pick: impl Fn(&FenceId) -> bool) -> Vec<RECT> {
+        self.fences
+            .iter()
+            .filter(|(id, w)| desktop::is_visible(w.hwnd()) && !w.is_desktop_arranged() && pick(id))
+            .map(|(_, w)| w.rect())
+            .collect()
     }
 
     /// Re-runs the search for the text in the box over every fence, its hidden tabs and rolled-up
@@ -549,8 +656,19 @@ impl App {
     /// (fences in reading order: left to right, then top down; tabs in strip order).
     pub(super) fn update_peek_search(&mut self) {
         let typed = crate::peek_search::query().unwrap_or_default();
+        if typed.is_empty() {
+            self.show_search_cue();
+        }
         let query = typed.trim().to_lowercase();
         self.rank_fence_matches(&query);
+        // The first matches of this search: a box that covers a fence holding some moves
+        // aside, this once (typing on never moves it).
+        if !self.search.placed && !self.peek_hits.is_empty() {
+            self.search.placed = true;
+            let holding =
+                self.fence_plates(|id| self.peek_hits.iter().any(|(host, _, _)| host == id));
+            crate::peek_search::keep_clear(&holding);
+        }
         self.schedule_everything(typed.trim());
         self.refresh_search_rows();
         crate::peek_search::rows_shown_for_change();
@@ -636,6 +754,8 @@ impl App {
     /// Closes the search box, puts back the tabs it switched and draws every fence as usual
     /// again (fences it expanded roll back up).
     fn end_peek_search(&mut self) {
+        window::kill_timer(self.control.hwnd(), TIMER_PEEK_SEARCH_READY);
+        crate::peek_search::drop_prepared();
         crate::peek_search::close();
         self.peek_hits.clear();
         self.peek_hit = 0;
@@ -694,6 +814,11 @@ impl App {
             }
         }
         tracing::info!(reason, "peek ending");
+        // Closed by the user with nothing opened: the keyboard goes back where it was.
+        self.peek_back = self
+            .peek_from
+            .take()
+            .filter(|_| PEEK_CLOSED_BY_USER.contains(&reason));
         if !self.ctx.motion.enabled() {
             self.end_peek_now();
             return;
@@ -756,12 +881,48 @@ impl App {
         let anchored = Instant::now();
         // Dropping the windows destroys them (after the fences left the topmost band).
         self.peek = None;
+        self.peek_from = None;
+        // A Peek opened from the desktop (or a fence) and closed by the user: the keyboard
+        // goes back there. With the dimmer gone Windows gave it to the next window in line,
+        // the taskbar, and the arrow keys moved through the taskbar's buttons.
+        if let Some(back) = self.peek_back.take() {
+            let front = desktop::foreground_window();
+            let class = desktop::class_name(front);
+            // A card on screen (the undo card, a tip) is the next window in line as well:
+            // Windows gave it the keyboard, the card showed no mark and took no key. A card
+            // the user went to with F6 has a button with the focus mark and keeps the keys.
+            let card = self
+                .notices()
+                .any(|n| n.hwnd() == front && !n.has_keyboard());
+            // The search box that Esc closed still has the keyboard while it fades out; when
+            // it is gone the keyboard goes to the next window in line all the same.
+            let search = class == "PecoFence.PeekSearch";
+            let taskbar = front.0.is_null() || card || search || class == "Shell_TrayWnd";
+            let given = taskbar && window::claim_foreground(back);
+            tracing::debug!(
+                taskbar,
+                card,
+                search,
+                given,
+                "peek ended: the keyboard goes back to where it was"
+            );
+        }
+        // The dimmer had the keyboard and passed the keys on to a fence (Tab, the arrows), so
+        // that fence gets no WM_KILLFOCUS now: its focus ring goes with the Peek. It stayed on
+        // an icon while the keys went to the window that came to the front.
+        let front = desktop::foreground_window();
+        let rings = self
+            .fences
+            .values()
+            .filter(|w| w.hwnd() != front && w.keyboard_left())
+            .count();
         let ms = crate::share_log::millis;
         tracing::debug!(
             search_ms = ms(searched - started),
             redraw_ms = ms(redrawn - searched),
             zorder_ms = ms(anchored - redrawn),
             dimmer_ms = ms(anchored.elapsed()),
+            rings,
             "peek ended"
         );
     }

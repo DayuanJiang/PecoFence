@@ -73,6 +73,7 @@ pub(super) const FENCE_PROPS: &[&str] = &[
     "titleSize",
     "textSize",
     "titleOnHover",
+    "transparentOnHover",
     "layout",
     "sort",
     "reverse",
@@ -192,6 +193,8 @@ pub(super) enum FenceProp {
     TextSize(Option<TitleSize>),
     /// None = the global `rollUp.titleOnHover`.
     TitleOnHover(Option<bool>),
+    /// 鼠标移入时保持透明: acts while the opacity is 全透明.
+    TransparentOnHover(bool),
     /// Regular fences: a double-clicked folder opens inside the fence.
     OpenFoldersInside(bool),
     PortalNavigate(bool),
@@ -310,10 +313,11 @@ pub(super) fn parse_fence_prop(
             }
         },
         "iconAlign" => {
-            const ALLOWED: &[&str] = &["left", "center"];
+            const ALLOWED: &[&str] = &["left", "center", "right"];
             FenceProp::IconAlign(match as_str(ALLOWED)? {
                 "left" => IconAlign::Left,
                 "center" => IconAlign::Center,
+                "right" => IconAlign::Right,
                 _ => return Err(bad(ALLOWED)),
             })
         }
@@ -380,6 +384,7 @@ pub(super) fn parse_fence_prop(
                 _ => return Err(bad(ALLOWED)),
             })
         }
+        "transparentOnHover" => FenceProp::TransparentOnHover(as_bool()?),
         "layout" => {
             const ALLOWED: &[&str] = &["icons", "list", "details"];
             FenceProp::Layout(match as_str(ALLOWED)? {
@@ -680,11 +685,22 @@ impl App {
             "free placement: icons dropped"
         );
         self.state.set_desktop_cells(inbox, &cells);
+        if own && let Some(w) = self.fences.get(&inbox) {
+            w.note_hand_move(at);
+        }
         // The window takes the new cells first, so icons that come from another fence land in
         // them rather than in the first free ones.
         self.arrange_desktop_fence();
         if !own {
+            // Let go on the bare desktop, the window of 「桌面」 did not see the drop: it learns
+            // here where the icons were let go, and they arrive from there.
+            if let Some(w) = self.fences.get(&inbox) {
+                w.note_desktop_landing(at);
+            }
             self.move_items(items, inbox);
+        } else if let Some(w) = self.fences.get(&inbox) {
+            // Its own icons, moved by hand: they settle into the new cells from the pointer.
+            w.land_moved_icons(at);
         }
         self.schedule_save();
         true
@@ -782,6 +798,15 @@ impl App {
         self.schedule_save();
     }
 
+    /// 鼠标移入时保持透明: the pointer over a fully transparent fence shows neither its plate
+    /// nor a folded title row.
+    pub(super) fn set_fence_transparent_on_hover(&mut self, fence: FenceId, on: bool) {
+        let host = self.state.host_of(fence);
+        self.state.set_transparent_on_hover(host, on);
+        self.apply_fence_appearance(host);
+        self.schedule_save();
+    }
+
     /// Icon spacing in DIPs.
     pub(super) fn set_fence_spacing(&mut self, fence: FenceId, px: i32) {
         self.state.set_spacing(fence, px);
@@ -833,7 +858,8 @@ impl App {
 
     /// Opens the settings window on the 「栅栏」 page with `fence` selected.
     pub(super) fn open_fence_options(&mut self, fence: FenceId) {
-        self.open_settings();
+        // A new window opens beside the fence: its frame shows before the page is there.
+        self.open_settings_beside(self.window_for(fence).map(|w| w.rect()));
         let Some(host) = &self.settings else {
             return;
         };
@@ -911,9 +937,14 @@ impl App {
             "spacingPx": f.view.spacing,
             "labelLines": f.view.label_lines,
             "layout": layout_name(f.view.layout),
+            // 排序方式 on the 栅栏 page (the fence menu's own choices).
+            "sort": sort_name(f.view.sort),
+            "reverse": f.view.reverse,
+            "foldersFirst": f.view.folders_first,
             "iconAlign": match f.view.icon_align {
                 IconAlign::Left => "left",
                 IconAlign::Center => "center",
+                IconAlign::Right => "right",
             },
             "autoHeight": h.view.auto_height,
             "locked": h.locked,
@@ -928,6 +959,7 @@ impl App {
             // 文字大小 (note and script fences).
             "textSize": size_name(f.appearance.as_ref().and_then(|a| a.text_size)),
             "titleOnHover": title_on_hover,
+            "transparentOnHover": h.appearance.as_ref().is_some_and(|a| a.transparent_on_hover),
             "hideWhenEmpty": f.hide_when_empty,
             "desktopLayout": f.desktop_layout,
             "freePlacement": f.free_placement,
@@ -1055,6 +1087,7 @@ impl App {
             }
             FenceProp::TextSize(size) => self.set_fence_text_size(fence, size),
             FenceProp::TitleOnHover(on) => self.set_fence_title_on_hover(fence, on),
+            FenceProp::TransparentOnHover(on) => self.set_fence_transparent_on_hover(fence, on),
             FenceProp::OpenFoldersInside(on) => self.set_fence_open_folders_inside(fence, on),
             FenceProp::PortalNavigate(on) => self.set_fence_portal_navigate(fence, on),
             FenceProp::PortalTitleIcon(on) => self.set_fence_title_icon(fence, on),

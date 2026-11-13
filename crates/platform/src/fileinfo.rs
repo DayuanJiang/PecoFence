@@ -64,6 +64,50 @@ pub fn type_name(path: &Path, is_folder: bool) -> Option<String> {
     (!s.is_empty()).then_some(s)
 }
 
+/// [`type_name`] for many items at once: the shell is asked once per kind of file instead of
+/// once per file. A file's type name comes from its extension alone (`type_name` never reads
+/// the disk), so the files of one extension share the answer; namespace items are asked one
+/// by one. A details view of 300 files asked 300 times, 18 ms of its 30 ms switch.
+#[derive(Default)]
+pub struct TypeNames {
+    by_kind: std::collections::HashMap<(bool, String), Option<String>>,
+    asked: usize,
+}
+
+impl TypeNames {
+    pub fn get(&mut self, path: &Path, is_folder: bool) -> Option<String> {
+        if crate::shell::is_namespace_path(path) {
+            self.asked += 1;
+            return type_name(path, is_folder);
+        }
+        let key = (is_folder, shell_extension(path));
+        if let Some(name) = self.by_kind.get(&key) {
+            return name.clone();
+        }
+        self.asked += 1;
+        let name = type_name(path, is_folder);
+        self.by_kind.insert(key, name.clone());
+        name
+    }
+
+    /// How often the shell was asked (tests).
+    pub fn asked(&self) -> usize {
+        self.asked
+    }
+}
+
+/// The extension of `path` as the shell takes it, lower case with its dot: from the last dot
+/// of the file name, so `.gitignore` is all extension and `a.tar.gz` has `.gz`; empty without
+/// a dot.
+fn shell_extension(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy())
+        .unwrap_or_default();
+    name.rfind('.')
+        .map_or(String::new(), |dot| name[dot..].to_lowercase())
+}
+
 /// A shell icon (HICON), destroyed on drop.
 pub struct FileIcon(HICON);
 
@@ -166,15 +210,49 @@ pub fn format_local_time(unix: i64) -> String {
     }
 }
 
-/// 时钟与日期: the local time as Windows' region format writes it (12 or 24 hours; `seconds`
-/// adds them) and the region's long date, with the weekday after it when the long date has
-/// none ("2026年11月4日 星期三", "Wednesday, November 4, 2026"), in the user's time zone.
-pub fn clock_texts(seconds: bool) -> (String, String) {
+/// 时钟与日期: the local time now as hours and minutes alone, without seconds and without the
+/// AM / PM marker of a 12 hour format ("2:32" for "2:32 PM", "下午 2:32"): what a clock too
+/// narrow for the whole time still shows. Empty when Windows gives none.
+pub fn clock_time_plain() -> String {
     let unix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64);
     let Some(st) = local_system_time(unix) else {
-        return (String::new(), String::new());
+        return String::new();
+    };
+    const TIME_NOTIMEMARKER: u32 = 4;
+    let mut buf = [0u16; 64];
+    // SAFETY: the buffer is live and its length is passed; `st` is a valid SYSTEMTIME.
+    let n = unsafe {
+        GetTimeFormatEx(
+            PCWSTR::null(),
+            TIME_NOSECONDS as u32 | TIME_NOTIMEMARKER,
+            Some(&st),
+            PCWSTR::null(),
+            Some(PWSTR(buf.as_mut_ptr())),
+            buf.len() as i32,
+        )
+    };
+    if n > 1 {
+        String::from_utf16_lossy(&buf[..(n - 1) as usize])
+            .trim()
+            .to_string()
+    } else {
+        String::new()
+    }
+}
+
+/// 时钟与日期: the local time as Windows' region format writes it (12 or 24 hours; `seconds`
+/// adds them) and the region's long date, with the weekday after it when the long date has
+/// none ("2026年11月4日 星期三", "Wednesday, November 4, 2026"), in the user's time zone. The
+/// third text is the date for a clock too narrow for that line: the region's month and day
+/// with the short weekday where the long date has it ("11月4日 周三", "Wed, Nov 4").
+pub fn clock_texts(seconds: bool) -> (String, String, String) {
+    let unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64);
+    let Some(st) = local_system_time(unix) else {
+        return (String::new(), String::new(), String::new());
     };
     const DATE_LONGDATE: u32 = 2;
     let mut buf = [0u16; 96];
@@ -219,12 +297,44 @@ pub fn clock_texts(seconds: bool) -> (String, String) {
     };
     let long = date(DATE_LONGDATE, None);
     let weekday = date(0, Some("dddd"));
+    // The region's own picture of a month and day ("M月d日", "MMMM d"), with the short month
+    // name (GetDateFormatEx refuses its DATE_MONTHDAY flag).
+    let month_day = {
+        windows_core::link!("kernel32.dll" "system" fn GetLocaleInfoEx(locale: PCWSTR, lctype: u32, data: PWSTR, len: i32) -> i32);
+        const LOCALE_SMONTHDAY: u32 = 0x78;
+        let mut picture = [0u16; 80];
+        // SAFETY: the buffer is live and its length is passed.
+        let n = unsafe {
+            GetLocaleInfoEx(
+                PCWSTR::null(),
+                LOCALE_SMONTHDAY,
+                PWSTR(picture.as_mut_ptr()),
+                picture.len() as i32,
+            )
+        };
+        let picture = text(n, &picture).replace("MMMM", "MMM");
+        if picture.is_empty() {
+            String::new()
+        } else {
+            date(0, Some(&picture))
+        }
+    };
+    let short_day = date(0, Some("ddd"));
+    let short = match long.strip_prefix(weekday.as_str()) {
+        // The long date starts with the weekday: the short one too, with what follows it
+        // there (", " in English, a space in French).
+        Some(rest) if !weekday.is_empty() && !month_day.is_empty() => {
+            let sep: String = rest.chars().take_while(|c| !c.is_alphanumeric()).collect();
+            format!("{short_day}{sep}{month_day}")
+        }
+        _ => format!("{month_day} {short_day}").trim().to_string(),
+    };
     let line = if weekday.is_empty() || long.contains(&weekday) {
         long
     } else {
         format!("{long} {weekday}")
     };
-    (time, line)
+    (time, line, short)
 }
 
 /// Unix seconds → "short date + time without seconds" in the user's locale and time zone
@@ -388,5 +498,47 @@ mod tests {
         let t = type_name(Path::new(r"C:\x\y.txt"), false);
         assert!(t.is_some());
         assert!(type_name(Path::new(r"C:\x\folder"), true).is_some());
+    }
+
+    #[test]
+    fn type_names_are_asked_once_per_extension_and_say_what_the_shell_says() {
+        let files = [
+            r"C:\x\季度报告 2026.txt",
+            r"C:\x\b.TXT",
+            r"C:\x\预算.docx",
+            r"C:\x\c.xlsx",
+            r"C:\x\a.b.pdf",
+            r"C:\x\archive.tar.gz",
+            r"C:\x\.gitignore",
+            r"C:\x\no extension",
+            r"C:\x\ends with a dot.",
+            r"C:\x\记事本.lnk",
+            r"C:\x\setup.exe",
+            r"C:\x\second.txt",
+            r"C:\x\third.Docx",
+        ];
+        let folders = [r"C:\x\资料", r"C:\x\folder.txt", r"C:\x\another"];
+        let mut names = TypeNames::default();
+        for (paths, is_folder) in [(&files[..], false), (&folders[..], true)] {
+            for p in paths {
+                assert_eq!(
+                    names.get(Path::new(p), is_folder),
+                    type_name(Path::new(p), is_folder),
+                    "{p}"
+                );
+            }
+        }
+        // txt, docx, xlsx, pdf, gz, gitignore, none, the lone dot, lnk, exe; folders: none, txt.
+        assert_eq!(names.asked(), 12);
+    }
+
+    #[test]
+    fn the_extension_is_what_follows_the_last_dot_of_the_name() {
+        let ext = |p: &str| shell_extension(Path::new(p));
+        assert_eq!(ext(r"C:\x\Report.PDF"), ".pdf");
+        assert_eq!(ext(r"C:\x\a.tar.gz"), ".gz");
+        assert_eq!(ext(r"C:\x\.gitignore"), ".gitignore");
+        assert_eq!(ext(r"C:\x.y\name"), "");
+        assert_eq!(ext(r"C:\x\name."), ".");
     }
 }

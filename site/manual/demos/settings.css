@@ -49,18 +49,11 @@
     border-radius: 4px;
 }
 .set-nav-i.hot { background: rgba(0, 0, 0, .037) }
-.set-nav-i.sel { background: rgba(0, 0, 0, .037) }
+/* the selected page: a tint and the accent colour for its icon and name (ui/settings.html nav a.sel) */
+.set-nav-i.sel { background: color-mix(in srgb, #005fb8 14%, transparent); color: color-mix(in srgb, #005fb8 70%, #1b1b1b) }
 .set-nav-i .set-ic { left: 10px; top: 7px; font-size: 12px }
 .set-nav-i .set-nav-t { left: 32px; top: 0; font-size: 11.5px; line-height: 26px; white-space: nowrap }
 .set-nav-i .set-nav-t.fit { right: 6px; overflow: hidden; text-overflow: ellipsis }
-.set-nav-pill {
-    left: 0;
-    top: 7px;
-    width: 3px;
-    height: 12px;
-    border-radius: 2px;
-    background: #005fb8;
-}
 .set-nav-foot { left: 14px; bottom: 10px; color: #8a8a8a; font-size: 9.5px; line-height: 12px; white-space: nowrap }
 .set-nav-foot.fit { right: 8px; overflow: hidden; text-overflow: ellipsis }
 
@@ -183,17 +176,8 @@
 }
 .set-pop-i { left: 4px; right: 4px; height: 22px; border-radius: 4px; padding-left: 8px; line-height: 22px; white-space: nowrap }
 .set-pop-i span { position: static }
-.set-pop-i.cur { background: rgba(0, 0, 0, .05) }
-.set-pop-i.cur::before {
-    content: "";
-    position: absolute;
-    left: 0;
-    top: 6px;
-    width: 3px;
-    height: 10px;
-    border-radius: 2px;
-    background: #005fb8;
-}
+/* the current choice of an open list: an accent tint and semibold (ui/settings.html option:checked) */
+.set-pop-i.cur { background: color-mix(in srgb, #005fb8 14%, transparent); font-weight: 600 }
 .set-pop-i.hot { background: rgba(0, 0, 0, .075) }
 .set-pop-bar { right: 2px; top: 6px; width: 3px; border-radius: 2px; background: rgba(0, 0, 0, .3) }
 
@@ -212,6 +196,8 @@
     z-index: 3;
 }
 .set-toast span { position: static }
+/* 撤销 on a notice (the page's #toastUndo): a standard button after the text */
+.stage-inner .set-toast b { position: static; display: inline-block; height: 20px; margin: 0 -4px 0 10px; padding: 0 9px; border-radius: 3px; background: rgba(255, 255, 255, .7); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06), inset 0 -1px 0 rgba(0, 0, 0, .1); font-weight: 400; line-height: 20px; vertical-align: middle }
 .set-toast svg { left: 11px; top: 9px; width: 12px; height: 12px }
 
 /* theme style tiles (常规 → 主题风格): the page's own preview of the two materials */

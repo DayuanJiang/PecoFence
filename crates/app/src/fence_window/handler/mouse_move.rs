@@ -29,6 +29,11 @@ pub(super) fn on_mousemove(
     let Some(v) = guard.as_mut() else {
         return Some(0);
     };
+    // Every fence but a folder fence already known to be gone: a smart fence's searched
+    // folders are looked at too (the app knows which fence has any).
+    if !v.mouse_inside && !(v.is_portal && v.portal_missing) {
+        queue.push(Command::PortalPointerIn(v.active));
+    }
     v.set_mouse_inside(true);
     // A press on a locked fence that turns into a drag: the lock glyph pulses.
     v.note_lock_drag((pt.x, pt.y));
@@ -190,6 +195,29 @@ pub(super) fn on_mousemove(
         v.frames.request();
         return Some(0);
     }
+    // A right-button press on an icon that leaves the drag threshold becomes the shell drag the
+    // left button starts (feedback #121): File Explorer, the desktop and folders show their
+    // 移动到当前位置 / 复制到当前位置 menu at the drop. A press on anything else stays a press.
+    let mut right_drag = false;
+    if v.drag.is_none()
+        && let Some((sx, sy)) = v.rbutton_press
+        && let Some(item) = v.hit_item(sx, sy)
+    {
+        let (tx, ty) = window::drag_threshold();
+        if (x - sx).abs() > tx || (y - sy).abs() > ty {
+            tracing::debug!(item, "right-button drag of an icon starts");
+            v.rbutton_press = None;
+            right_drag = true;
+            v.drag = Some(DragState {
+                start: (sx, sy),
+                item,
+                collapse_on_up: false,
+                was_sole_selected: false,
+                deselect_on_up: false,
+                open_on_up: false,
+            });
+        }
+    }
     if let Some(d) = v.drag.as_ref() {
         let (tx, ty) = window::drag_threshold();
         let (sx, sy) = d.start;
@@ -236,12 +264,16 @@ pub(super) fn on_mousemove(
         // there without Ctrl / Alt, the drag ends in the drop source instead and the items go
         // back to the inbox. A Windows icon that takes the drop (a folder) still gets it; a
         // portal's files really move to the desktop.
+        let skipped = std::rc::Rc::new(std::cell::Cell::new(false));
         let skip_drop = (!from_portal).then(|| -> dragdrop::SkipDrop {
-            Box::new(|keys| {
+            let skipped = skipped.clone();
+            Box::new(move |keys| {
                 let (hit, _, on_desktop) = window_under_cursor();
-                on_desktop
+                let skip = on_desktop
                     && dragdrop::modifier_effect(keys, true) == DropEffect::Move
-                    && !pecofence_platform::shell_icons::desktop_icon_drop_target(hit)
+                    && !pecofence_platform::shell_icons::desktop_icon_drop_target(hit);
+                skipped.set(skip);
+                skip
             })
         });
         let mut drag_returned: Option<Instant> = None;
@@ -300,6 +332,7 @@ pub(super) fn on_mousemove(
             on_desktop,
             %class,
             from_portal,
+            right_drag,
             "drag-out finished"
         );
         match effect {
@@ -309,11 +342,14 @@ pub(super) fn on_mousemove(
             // ListView accepted nothing, so the effect is None): keep
             // "back to the inbox". A Ctrl / Alt drop
             // means duplicate, not relocate. A portal's files really moved
-            // there; the desktop watcher files them.
+            // there; the desktop watcher files them. A right-button drop on one of Windows'
+            // own desktop icons ended in Explorer's menu: 取消 there (effect None) leaves the
+            // icons in their fence.
             Some(r)
                 if on_desktop
                     && !from_portal
-                    && matches!(r.effect, DropEffect::None | DropEffect::Move) =>
+                    && matches!(r.effect, DropEffect::None | DropEffect::Move)
+                    && (!right_drag || skipped.get()) =>
             {
                 // Where the icons landed, for a 「桌面」 that places them freely (自由摆放).
                 let c = window::cursor_pos();
@@ -354,13 +390,51 @@ pub(super) fn on_mousemove(
     if let Some(cd) = v.col_drag.as_ref() {
         // Divider sits on the column's left edge: dragging right shrinks it.
         let dx = (x - cd.start_x_px) as f32 / v.scale();
-        let (col, w) = (cd.col, cd.start_w - dx);
+        // No wider than the name column has room for: every column stays, the divider stops.
+        let (col, w) = (cd.col, (cd.start_w - dx).min(cd.max_w));
         v.set_column_width(col, w);
         window::set_standard_cursor(StandardCursor::SizeWE);
         // Drawn once per frame by `tick` (see the marquee arm above).
         v.content_busy = true;
         v.frames.request();
         return Some(0);
+    }
+    // A press in a note: on a to-do it becomes a drag once the pointer leaves the drag
+    // threshold, and the line follows the pointer.
+    if v.todo_drag.is_some() && !window::key_down(msg::VK_LBUTTON) {
+        // The release went elsewhere (the capture was lost meanwhile). The button itself is
+        // asked: the move the app sends itself after a scroll, for the hover under a pointer
+        // at rest, carries no button.
+        tracing::debug!("to-do press: the button is up without a release here");
+        let _ = v.end_todo_drag(false);
+    }
+    if v.todo_drag.is_some() {
+        // A press with Alt in an editor that closed: the capture may be gone.
+        let recapture = window::get_capture() != hwnd;
+        match v.todo_drag_move(x, y) {
+            Some(true) => {
+                // The fence takes the keyboard, so that Esc puts the line back. Taking it
+                // can cost the mouse capture, and a lost capture ends a drag: the drag is
+                // held out of the view meanwhile.
+                let held = v.todo_drag.take();
+                drop(guard);
+                focus_session(view, hwnd);
+                window::set_capture(hwnd);
+                window::set_standard_cursor(StandardCursor::Arrow);
+                if let Some(v) = view.borrow_mut().as_mut() {
+                    v.todo_drag = held;
+                }
+                return Some(0);
+            }
+            // Following the pointer, or still a click: the text has nothing to track.
+            Some(false) | None => {
+                if recapture {
+                    drop(guard);
+                    window::set_capture(hwnd);
+                }
+                return Some(0);
+            }
+        }
     }
     // A release-fired button is held: track whether the pointer is still
     // over it (Win32 button semantics: pressed fill and hover fill both go
@@ -369,7 +443,12 @@ pub(super) fn on_mousemove(
     if let Some(p) = v.pressed
         && matches!(
             p,
-            PressTarget::Up | PressTarget::Chevron | PressTarget::Header(_)
+            PressTarget::Up
+                | PressTarget::Chevron
+                | PressTarget::Header(_)
+                | PressTarget::NoteBox(_)
+                | PressTarget::NoteLink(..)
+                | PressTarget::ScriptRow(_)
         )
     {
         if p == PressTarget::Chevron {
@@ -403,6 +482,9 @@ pub(super) fn on_mousemove(
                 PressTarget::Up => v.up_hovered = inside,
                 PressTarget::Chevron => v.chevron_hovered = inside,
                 PressTarget::Header(c) => v.header_hover = inside.then_some(c),
+                PressTarget::NoteBox(l) => v.note_box_hover = inside.then_some(l),
+                PressTarget::NoteLink(l, s) => v.note_link_hover = inside.then_some((l, s)),
+                PressTarget::ScriptRow(r) => v.script_hover = inside.then_some(r),
                 _ => {}
             }
             v.redraw_for_press(p);
@@ -420,7 +502,10 @@ pub(super) fn on_mousemove(
         | (std::mem::replace(&mut v.tab_hover, tab) != tab);
     let on_control = up || chev || tab.is_some();
     // With 「鼠标悬停时切换标签页」 on, resting on another tab switches to it after the hover
-    // delay; moving onto a different tab restarts the wait.
+    // delay of 「展开快慢」 (the one a rolled fence waits); moving onto a different tab restarts
+    // the wait. Once a hover has switched a tab, the next ones follow the pointer after
+    // `TAB_HOVER_NEXT_MS`, as Windows' menus and tips do.
+    v.note_tab_strip_pointer(tab.is_some());
     let switch_to = hover_switch_target(
         tab.filter(|&i| v.tab_fully_shown(i)),
         v.active_index(),
@@ -430,8 +515,11 @@ pub(super) fn on_mousemove(
     );
     if switch_to != v.tab_hover_switch {
         v.tab_hover_switch = switch_to;
-        if switch_to.is_some() {
-            window::set_timer(hwnd, TIMER_TAB_HOVER, Tooltip::hover_delay_ms());
+        if let Some(i) = switch_to {
+            let quick = v.tab_hover_quick;
+            let delay_ms = tab_hover_wait_ms(behavior.hover_open_ms(), quick);
+            tracing::debug!(tab = i, delay_ms, quick, "tab hover switch armed");
+            window::set_timer(hwnd, TIMER_TAB_HOVER, delay_ms);
         } else {
             window::kill_timer(hwnd, TIMER_TAB_HOVER);
         }
@@ -456,10 +544,30 @@ pub(super) fn on_mousemove(
     } else {
         v.script_row_at(x, y)
     };
-    let script_changed = std::mem::replace(&mut v.script_hover, script_row) != script_row;
-    let tip = v
-        .tip_target_at(x, y, hit.filter(|_| behavior.info_tips.get()))
-        .or(script_row.map(TipTarget::ScriptRow));
+    // A note's check box under the pointer lights up, also while the note is edited: a
+    // click ticks it then too.
+    let note_box = if sb_hot || on_control {
+        None
+    } else {
+        v.note_box_at(x, y)
+    };
+    // A web address in a note is underlined under the pointer.
+    let note_link = if sb_hot || on_control {
+        None
+    } else {
+        v.note_link_at(x, y)
+    };
+    let script_changed = (std::mem::replace(&mut v.script_hover, script_row) != script_row)
+        | (std::mem::replace(&mut v.note_box_hover, note_box) != note_box)
+        | (std::mem::replace(&mut v.note_link_hover, note_link) != note_link)
+        | v.hover_empty_action((!sb_hot && !on_control).then_some((x, y)));
+    // The arrow says what a click on it does, as the buttons of a window's title bar do.
+    let tip = if chev {
+        Some(TipTarget::Chevron)
+    } else {
+        v.tip_target_at(x, y, hit.filter(|_| behavior.info_tips.get()))
+            .or(script_row.map(TipTarget::ScriptRow))
+    };
     v.update_tip_target(tip, x, y);
     let header = if divider.is_some() || on_control {
         None
@@ -477,9 +585,10 @@ pub(super) fn on_mousemove(
     };
     let (item_changed, title_changed) = v.set_hover(hit, in_title);
     // Explorer's single-click open: resting on an item selects it after the hover time;
-    // moving onto another item restarts the wait.
-    if item_changed && behavior.single_click.get() {
-        if hit.is_some() {
+    // moving onto another item restarts the wait. A rest on the title row (a tab, a button of
+    // the row) gives the fence the keyboard after the same wait.
+    if (item_changed || title_changed) && behavior.single_click.get() {
+        if hit.is_some() || in_title {
             window::set_timer(hwnd, TIMER_HOVER_SELECT, Tooltip::hover_delay_ms());
         } else {
             window::kill_timer(hwnd, TIMER_HOVER_SELECT);
@@ -505,8 +614,9 @@ pub(super) fn on_mousemove(
         && !menu_open.get()
         && !peek_armed.replace(true)
     {
-        window::set_timer(hwnd, TIMER_PEEK_OPEN, behavior.hover_open_ms());
+        window::set_timer(hwnd, TIMER_PEEK_OPEN, behavior.peek_open_wait_ms());
     }
+    behavior.note_rolled_title_pointer(in_title && (v.rolled_up || v.peeking));
     if v.peeking {
         window::kill_timer(hwnd, TIMER_PEEK_CLOSE);
     }

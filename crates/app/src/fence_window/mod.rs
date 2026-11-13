@@ -31,10 +31,10 @@ use pecofence_platform::window::{
 };
 use pecofence_platform::{HWND, RECT, desktop, dwm, hotkey, monitors, msg};
 use pecofence_render::fence_chrome::{
-    Backdrop, BackdropCrop, ContentDraw, FenceChrome, FenceStyle, GroupHeaderDraw, HeaderColumn,
-    ItemCell, RAIL_BOTTOM, RAIL_COLLAPSED_BOTTOM, RAIL_ROW_H, RAIL_ROW_INSET, RAIL_ROW_RIGHT,
-    RAIL_TOP, RowCell, RowColumns, RowsDraw, ScrollbarDraw, StripClip, TabDraw, TitleDeco,
-    TitleState,
+    Backdrop, BackdropCrop, ContentDraw, EmptyAction, FenceChrome, FenceStyle, GroupHeaderDraw,
+    HeaderColumn, ItemCell, RAIL_BOTTOM, RAIL_COLLAPSED_BOTTOM, RAIL_ROW_H, RAIL_ROW_INSET,
+    RAIL_ROW_RIGHT, RAIL_TOP, RowCell, RowColumns, RowsDraw, ScrollbarDraw, StripClip, TabDraw,
+    TitleDeco, TitleState,
 };
 use pecofence_render::motion::{self, Curve, Fades, Motion, Prop, Tween};
 use pecofence_render::{
@@ -48,6 +48,25 @@ use std::rc::Rc;
 use std::time::{Duration, Instant};
 use windows_core::Result;
 
+/// File operations of PecoFence's own that are running (a paste, a delete, a move into a
+/// folder). The shell takes the activation from the fence that owns the operation and gives
+/// it back about 0.3 s later: the selection turned grey for those frames after every Delete
+/// and Ctrl+V (`on_activate` keeps its colour while this is above zero).
+static OWN_FILE_OPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub fn own_file_op_started() {
+    OWN_FILE_OPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn own_file_op_ended() {
+    use std::sync::atomic::Ordering::Relaxed;
+    let _ = OWN_FILE_OPS.try_update(Relaxed, Relaxed, |n| n.checked_sub(1));
+}
+
+fn own_file_op_running() -> bool {
+    OWN_FILE_OPS.load(std::sync::atomic::Ordering::Relaxed) > 0
+}
+
 mod api;
 mod consts;
 mod desktop_layout;
@@ -57,6 +76,7 @@ mod group;
 mod handler;
 mod hit;
 mod items;
+mod note_text;
 mod render;
 mod roll;
 mod scroll;
@@ -79,6 +99,7 @@ use self::dnd::*;
 use self::group::*;
 use self::hit::*;
 use self::items::*;
+use self::note_text::TodoDrag;
 use self::render::*;
 use self::roll::*;
 use self::scroll::*;
@@ -126,7 +147,8 @@ pub struct Behavior {
     pub backdrop: std::cell::Cell<BackdropMode>,
     /// Rolled fences expand on a single title click (hover peek off while set).
     pub click_to_expand: std::cell::Cell<bool>,
-    /// How long the pointer rests on a rolled fence before it expands (`rollUp.hoverSpeed`).
+    /// How long the pointer rests on a rolled fence before it expands, and on a tab before
+    /// the hover switch (`rollUp.hoverSpeed`).
     pub hover_speed: std::cell::Cell<pecofence_core::HoverSpeed>,
     /// Title row drawn only while hovered; at rest the plate starts at the content.
     pub title_on_hover: std::cell::Cell<bool>,
@@ -171,6 +193,21 @@ pub struct Behavior {
     /// Set while a title drag moves windows on a mouse move (`window_drag.rs`): they move at
     /// once and redraw their backdrop for the new place on the next frame instead.
     pub defer_backdrop: std::cell::Cell<bool>,
+    /// Open while the app runs a frame (`App::on_frame`): the smaller sizes the frame's
+    /// height animations ask for and the moves of its push pass. They are applied in one
+    /// batch when the frame has them all, so a fence that rolls up and the fences that
+    /// follow it move in the same composed frame. `None` outside a frame: a position applies
+    /// at once.
+    pub frame_positions: std::cell::RefCell<Option<Vec<window::WindowPos>>>,
+    /// Height animations whose last step is in `frame_positions`, with the rolled state they
+    /// end in: they land (`FrameHandle::land`) once the batch is applied.
+    pub frame_landings: std::cell::RefCell<Vec<(HWND, Option<bool>)>>,
+    /// A rolled fence expanded under the pointer: the next rolled fence the pointer comes to
+    /// waits `TAB_HOVER_NEXT_MS` only (as the tabs of a strip do after a hover switch).
+    pub roll_quick: std::cell::Cell<bool>,
+    /// When the pointer left the title of a rolled or hover-expanded fence while `roll_quick`
+    /// (`TAB_HOVER_NEXT_KEEP` later the full wait is back).
+    pub roll_title_left: std::cell::Cell<Option<Instant>>,
 }
 
 /// A fence window the push pass moved down (or up, out of the way of a fence that expands
@@ -200,9 +237,103 @@ pub struct SizeMove {
 }
 
 impl Behavior {
-    /// The wait before a rolled fence expands under the pointer or a dragged file.
+    /// One frame of the drag feedback's fades (the alignment guides and the landing outline
+    /// are layered windows: their alpha is a client tween, ticked by `App::on_frame`). Returns
+    /// true while one is still on its way.
+    pub fn tick_drag_feedback(&self, now: Instant) -> bool {
+        let mut more = false;
+        if let Ok(mut preview) = self.drop_preview.try_borrow_mut()
+            && let Some(preview) = preview.as_mut()
+        {
+            more |= preview.tick(now);
+        }
+        if let Ok(mut guides) = self.drag_guides.try_borrow_mut()
+            && let Some(guides) = guides.as_mut()
+        {
+            more |= guides.tick(now);
+        }
+        more
+    }
+
+    /// The wait before a rolled fence expands under the pointer or a dragged file, and before
+    /// the tab under a resting pointer is switched to.
     pub fn hover_open_ms(&self) -> u32 {
         self.hover_speed.get().delay_ms(Tooltip::hover_delay_ms())
+    }
+
+    /// Keeps the short wait of rolled fences while the pointer is on the title of a rolled or
+    /// hover-expanded fence (`on_title`) and for `TAB_HOVER_NEXT_KEEP` after it left one.
+    pub fn note_rolled_title_pointer(&self, on_title: bool) {
+        if !self.roll_quick.get() {
+            return;
+        }
+        match (on_title, self.roll_title_left.get()) {
+            (true, Some(left)) => {
+                self.roll_title_left.set(None);
+                if left.elapsed() > TAB_HOVER_NEXT_KEEP {
+                    tracing::debug!(
+                        "hover expand: off the rolled titles too long, the full wait again"
+                    );
+                    self.roll_quick.set(false);
+                }
+            }
+            (false, None) => self.roll_title_left.set(Some(Instant::now())),
+            _ => {}
+        }
+    }
+
+    /// The wait before the rolled fence the pointer came to expands: the hover delay of
+    /// 「展开快慢」, or the short wait once a hover has expanded a rolled fence.
+    pub fn peek_open_wait_ms(&self) -> u32 {
+        self.note_rolled_title_pointer(true);
+        let quick = self.roll_quick.get();
+        let ms = tab_hover_wait_ms(self.hover_open_ms(), quick);
+        tracing::debug!(ms, quick, "hover expand armed");
+        ms
+    }
+
+    /// A rolled fence expanded under the pointer: the next ones wait the short time.
+    pub fn rolled_fence_hover_expanded(&self) {
+        self.roll_quick.set(true);
+        self.roll_title_left.set(None);
+    }
+
+    /// Inside the app's frame: notes `pos` for the frame's batch and returns true. A second
+    /// note for the same window moves the first (a fence that is resized by its animation
+    /// and pushed in the same frame). Outside a frame: false, the caller applies it.
+    pub fn defer_position(&self, pos: window::WindowPos) -> bool {
+        let mut guard = self.frame_positions.borrow_mut();
+        let Some(batch) = guard.as_mut() else {
+            return false;
+        };
+        match batch.iter_mut().find(|p| p.hwnd == pos.hwnd) {
+            Some(p) => {
+                (p.x, p.y) = (pos.x, pos.y);
+                p.size = pos.size.or(p.size);
+            }
+            None => batch.push(pos),
+        }
+        true
+    }
+
+    /// The rectangle `hwnd` has once the frame's batch is applied: what the rest of the frame
+    /// lays out for. Outside a frame, and for a window the frame does not move, its rect now.
+    pub fn frame_rect(&self, hwnd: HWND) -> RECT {
+        let r = window::window_rect(hwnd);
+        let guard = self.frame_positions.borrow();
+        let Some(p) = guard
+            .as_ref()
+            .and_then(|batch| batch.iter().find(|p| p.hwnd == hwnd))
+        else {
+            return r;
+        };
+        let (w, h) = p.size.unwrap_or((r.right - r.left, r.bottom - r.top));
+        RECT {
+            left: p.x,
+            top: p.y,
+            right: p.x + w,
+            bottom: p.y + h,
+        }
     }
 
     /// `rect`, `hwnd`'s window rectangle, without the push shift: what the layout records.
@@ -245,6 +376,26 @@ pub fn snap_gap_px(gap_dip: i32, scale: f32) -> i32 {
     (gap_dip as f32 * scale).round() as i32
 }
 
+/// A rectangle the user drew for a new fence, moved as a fence dragged there snaps: the
+/// snapping gap from a fence or screen edge it nearly touches, in line with an edge it nearly
+/// lines up with. Unchanged with snapping off.
+pub fn snap_drawn_rect(behavior: &Behavior, rect: RECT) -> RECT {
+    let mut snapped = rect;
+    if behavior.snapping.get() {
+        let centre = ((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2);
+        let scale = monitors::query(monitors::monitor_from_point(centre.0, centre.1))
+            .map_or(1.0, |m| m.scale());
+        snap_rect(
+            &mut snapped,
+            HWND::default(),
+            snap_gap_px(behavior.snap_gap_dip.get(), scale),
+            (SNAP_DIST_DIP as f32 * scale) as i32,
+        );
+    }
+    tracing::debug!(drawn = ?rect, ?snapped, "drawn rectangle snapped for a new fence");
+    snapped
+}
+
 /// Queues `FenceBoundsChanged` with `hwnd`'s window rectangle as it is now, the push shift taken
 /// out in the same breath (a push pass running before the command is handled cannot skew it).
 pub(super) fn queue_bounds_changed(
@@ -280,6 +431,10 @@ pub enum BackdropMode {
 #[derive(Default)]
 pub struct BackdropSets {
     pub acrylic: Rc<Vec<MonitorBackdrop>>,
+    /// The monitors (virtual-screen pixels) whose live wallpaper cannot be read: their
+    /// backdrop is a plain pane colour, and Liquid Glass lets the wallpaper itself show
+    /// through it (`FenceViewState::material_opacity`).
+    pub unreadable: Vec<RECT>,
 }
 
 impl BackdropSets {
@@ -324,6 +479,9 @@ pub struct ItemView {
     icon_waited: bool,
     /// Bitmap opacity 0 → 1 (167 ms linear) after an asynchronous icon arrived.
     icon_fade: Option<Tween>,
+    /// A new item whose fade-in waits for its picture (`ICON_WAIT_MAX`): the moment the fade
+    /// would have started without the wait. Taken when the picture is there.
+    fade_waits: Option<Instant>,
     /// `icon` is the picture the item showed under its previous icon key (a rename changes a
     /// per-file key, a save a by-content one) and stays up until the new one arrives: the
     /// draw key it is uploaded under, so it is never cached under the new key's.
@@ -408,6 +566,7 @@ impl ItemView {
             icon_failed: false,
             icon_waited: false,
             icon_fade: None,
+            fade_waits: None,
             icon_stand_in: None,
         }
     }
@@ -419,8 +578,23 @@ impl ItemView {
 pub struct ScriptView {
     pub rows: Vec<ScriptRowView>,
     pub footer: String,
-    /// No "printed no text" hint while the body is empty (the first run has not ended).
+    /// The footer without the script's name (the status alone), shown when the whole line
+    /// does not fit the fence's width; empty when the footer is the name alone.
+    pub footer_short: String,
+    /// The first run has not ended: the empty body says 「正在运行…」 in place of the "printed
+    /// no text" hint.
     pub quiet: bool,
+}
+
+/// A note while its editor is open (`crate::note_edit`): the text as it stands in the
+/// editor (line breaks are `\n`), the two ends of the selection in UTF-16 units (the caret is
+/// at `active`), and whether the caret shows right now (it blinks).
+#[derive(Clone, Debug, PartialEq)]
+pub struct NoteEditView {
+    pub text: String,
+    pub anchor: usize,
+    pub active: usize,
+    pub caret_on: bool,
 }
 
 /// One row of a script fence as drawn (see `pecofence_core::script_output`).
@@ -448,6 +622,21 @@ impl ScriptRowView {
                 ..Self::default()
             })
             .collect()
+    }
+
+    /// A failed run: `error` (the line that says what went wrong) in the colour of a
+    /// `color=red` row, then what the script printed until it failed, as plain rows.
+    pub fn failed(error: &str, output: &str) -> Vec<Self> {
+        let mut rows = Vec::new();
+        if !error.is_empty() {
+            rows.push(Self {
+                text: error.to_string(),
+                color: Some("red".to_string()),
+                ..Self::default()
+            });
+        }
+        rows.extend(Self::plain(output));
+        rows
     }
 
     /// A script's output read as rows with their parameters.

@@ -1,6 +1,7 @@
-//! pecofence-watchdog: waits for the main process to exit and, if it died without restoring the
-//! desktop icons (marker file still present), sends the "show desktop icons" toggle itself.
-//! After a crash it starts PecoFence again with the same arguments.
+//! pecofence-watchdog: waits for the main process to exit. After a crash it starts PecoFence
+//! again with the same arguments, and that run takes over the hidden desktop icons. When no
+//! PecoFence runs afterwards and the icons are still hidden (marker file still present), it
+//! sends the "show desktop icons" toggle itself.
 //!
 //! Usage: `pecofence-watchdog <parent-pid> <marker-path> [<parent arguments>...]`
 
@@ -14,6 +15,9 @@ use std::time::Duration;
 /// restart PecoFence within `QUICK_RESTART_GAP`: a start that crashes every time must not loop.
 const RESTART_MIN_RUN: Duration = Duration::from_secs(60);
 const QUICK_RESTART_GAP: Duration = Duration::from_secs(600);
+/// How long a PecoFence the watchdog started has to take over the hidden icons before the
+/// watchdog shows them itself.
+const RESTART_WAIT: Duration = Duration::from_secs(5);
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -28,7 +32,6 @@ fn main() {
 
     // Block until the parent exits (or fails to open → it is already gone).
     let exit = process::wait_for_process_exit(pid);
-    restore_icons(&marker, &mutex);
     // When the last restart happened (Unix seconds), kept beside the marker.
     let stamp = marker.with_extension("restarted");
     if let Some((code, ran)) = exit
@@ -38,8 +41,14 @@ fn main() {
         && !window::session_ending()
     {
         let _ = std::fs::write(&stamp, now_secs().to_string());
-        restart(&args[2..], code, ran);
+        // PecoFence first: the new run takes over the icons the crashed one hid (the marker
+        // tells it), so Windows' own icons do not show for a moment in between. They are
+        // shown below only when no PecoFence runs a while later.
+        if restart(&args[2..], code, ran) {
+            std::thread::sleep(RESTART_WAIT);
+        }
     }
+    restore_icons(&marker, &mutex);
 }
 
 fn now_secs() -> u64 {
@@ -70,13 +79,14 @@ fn crashed(code: u32) -> bool {
 }
 
 /// Starts `pecofence.exe` beside this program with the crashed run's arguments and environment
-/// (`PECOFENCE_INSTANCE` included). Not test runs: their script would run again.
-fn restart(args: &[String], code: u32, ran: Duration) {
+/// (`PECOFENCE_INSTANCE` included); false when nothing was started. Not test runs: their
+/// script would run again.
+fn restart(args: &[String], code: u32, ran: Duration) -> bool {
     if args
         .iter()
         .any(|a| a == "--test-script" || a == "--exit-after")
     {
-        return;
+        return false;
     }
     // SAFETY: the watchdog runs no other threads that could read the environment meanwhile.
     unsafe {
@@ -89,10 +99,10 @@ fn restart(args: &[String], code: u32, ran: Duration) {
         .ok()
         .and_then(|exe| Some(exe.parent()?.join("pecofence.exe")))
     else {
-        return;
+        return false;
     };
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
-    let _ = process::spawn_detached(&exe.to_string_lossy(), &args);
+    process::spawn_detached(&exe.to_string_lossy(), &args).is_ok()
 }
 
 fn restore_icons(marker: &Path, mutex: &str) {

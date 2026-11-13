@@ -65,18 +65,19 @@ Case 'Peek type tabs: a click, Ctrl+Tab, Ctrl+Shift+Tab'
 Pf peek start --search '季度' | Out-Null; Start-Sleep -Seconds 3
 $all = WaitTab '全部'
 Shot 't01-all'
-Check '全部: the report and the poster in both fences, the plan from Everything (5)' ((Results $all) -eq 5) "$all"
+# The smart fence and the folder fence show the same two files: each takes one row.
+Check '全部: the report and the poster (each in both fences, listed once), the plan from Everything (3)' ((Results $all) -eq 3) "$all"
 ClickTab 2
 $doc = WaitTab '文档'
 Shot 't02-documents'
 $pick = @(PfLogAll | Where-Object { $_ -match 'type tab picked' -and $_ -match 'by=click' }).Count
-Check 'a click on 文档 picks it: the report twice and the plan, no poster (3)' ((Results $doc) -eq 3 -and $pick -ge 1) "picked=$pick $doc"
+Check 'a click on 文档 picks it: the report and the plan, no poster (2)' ((Results $doc) -eq 2 -and $pick -ge 1) "picked=$pick $doc"
 Chord 0x11 0x09; $img = WaitTab '图片'
-Check 'Ctrl+Tab: 图片, the poster twice (2)' ((Results $img) -eq 2 -and (@(PfLogAll | Where-Object { $_ -match 'type tab picked' -and $_ -match 'by=Ctrl\+Tab' }).Count -ge 1)) "$img"
+Check 'Ctrl+Tab: 图片, the poster (1)' ((Results $img) -eq 1 -and (@(PfLogAll | Where-Object { $_ -match 'type tab picked' -and $_ -match 'by=Ctrl\+Tab' }).Count -ge 1)) "$img"
 Shot 't03-images'
 [G]::KeyDown(0x11); [G]::KeyDown(0x10); [G]::Press(0x09); [G]::KeyUp(0x10); [G]::KeyUp(0x11)
 $back = WaitTab '文档'
-Check 'Ctrl+Shift+Tab: back to 文档 (3)' ((Results $back) -eq 3 -and (@(PfLogAll | Where-Object { $_ -match 'by=Ctrl\+Shift\+Tab' }).Count -ge 1)) "$back"
+Check 'Ctrl+Shift+Tab: back to 文档 (2)' ((Results $back) -eq 2 -and (@(PfLogAll | Where-Object { $_ -match 'by=Ctrl\+Shift\+Tab' }).Count -ge 1)) "$back"
 $asked = @(PfLogAll | Where-Object { $_ -match 'Everything asked' -and $_ -match 'ext:' } | Select-Object -Last 1)
 Check 'Everything is asked for the type too' ($asked.Count -ge 1) "$asked"
 

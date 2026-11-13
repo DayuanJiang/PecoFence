@@ -171,8 +171,9 @@ in; only the tab currently shown can be measured, so another tab is `unsupported
 to 128 in steps of 4 (the fence menu offers 32/48/64/96), `spacing` compact/normal/loose,
 `spacingPx` -12 to 32 in steps of 4 (DIPs the icon cell gains in width: compact is -12, normal 0,
 loose 16; `fence get` reports both, with `spacing` naming the nearest preset), `iconAlign`
-left/center (center: a row of icons that does not fill the fence width, the last one too, sits in
-the middle; icons view only; left by default), `autoHeight`,
+left/center/right (center: a row of icons that does not fill the fence width, the last one too,
+sits in the middle; right: every row fills from the right edge, its first icon at the right and
+the next one to its left; icons view only; left by default), `autoHeight`,
 `locked`, `expandUpward` (rolled up, it opens upward from its title row where it fits
 above it, else downward, for fences resting on the taskbar; the row stays where it is;
 `bottomAnchored` in `fence get` says whether the bottom edge is the one that stays put, which
@@ -185,7 +186,10 @@ tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/normal
 boxes and clickable rows, 12/14/18/24 DIPs; normal by default; other fences refuse it, and a
 clock's text follows the size of its fence instead),
 `titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
-fence; default follows `rollUp.titleOnHover`), `layout` icons/list/details,
+fence; default follows `rollUp.titleOnHover`), `transparentOnHover` (a fence whose `opacity` is
+transparent stays transparent while the pointer is over it: no glass, rim or shadow, and a title
+row hidden by `titleOnHover` stays hidden, though it still moves the fence; off by default; no
+effect at another opacity), `layout` icons/list/details,
 `sort` manual/name/type/date/size/openCount, `reverse`, `groupByDate`, `foldersFirst` (folders above files in a sorted fence), `labelLines` 0/1/2/3 (lines
 of the label under each icon in the icons layout; 0 shows the icons without labels),
 `openFoldersInside` (any fence but a portal: double-clicking a folder, or a shortcut to a folder,
@@ -262,7 +266,7 @@ where each move has `item`, `name`, `path`, `from`/`fromTitle`, `to`/`toTitle`, 
 `moves` list describes what happened.
 
 An item no rule matches goes to `defaultTarget` (the inbox). With `"unmatched": "stay"` in the rule set
-(Settings › 整理规则 › 没有命中规则的项目 › 留在当前栅栏; the default is `"defaultTarget"`), applying the
+(Settings › 整理规则 › 不符合任何规则的项目 › 留在当前栅栏; the default is `"defaultTarget"`), applying the
 rules leaves such an item in the fence it is in, so disabling a rule no longer sends the items it filed
 back to the inbox. An item in no fence yet still goes to `defaultTarget`. `rule list` shows the value;
 change it in Settings or with `rule import` of an edited `rule list`.
@@ -283,6 +287,10 @@ included. `config.json` and `config export` files write this condition as
 
 `rule import` reads UTF-8 (a BOM is fine). Windows PowerShell 5 writes UTF-16 with `>`; such a file
 is rejected with `invalid_value` and the hint to re-save it (`| Set-Content -Encoding utf8`).
+The list is stored as given; when some of its rules target a fence that does not exist or cannot
+hold desktop items (a folder portal, a tool fence, a smart fence), the result carries a `warning`
+with their number, because the files they match go to the inbox. `rule add --to` refuses such a
+fence.
 
 `settings set` paths are dotted camelCase keys of the Settings object, e.g. `iconSize`, `theme`,
 `themeStyle`, `hideRealIcons` and `hideInboxWhenIconsShown` (the settings page shows the two as one
@@ -295,7 +303,13 @@ shows two small buttons at its bottom-right corner, 「新建栅栏」 and 「�
 default on), `featureTips` (「功能提示」: one-time cards in the corner when a
 feature would help, such as rolling up fences once there are many, showing a folder opened often on
 the desktop, or a rule for files of one type dragged into one fence; each shows once; default on),
-`autoCheckUpdates` (「自动检查更新」, installer and ZIP editions: a check of GitHub's latest release
+`showTrayIcon` (「显示托盘图标」: PecoFence's icon in the notification area of the taskbar; `false`
+takes it out at once, and it comes back only while a notification of PecoFence shows and in the
+two states whose notice names the tray menu (no Peek shortcut can be registered; the item menus
+are without their Windows entries after a crash); starting PecoFence again or `settings open-ui`
+opens the settings window then, where 「退出 PecoFence」 is under the switch; default on),
+`autoCheckUpdates` (「自动检查更新」, installer and ZIP editions: a check of GitHub's latest release,
+or of the website's copy of it when GitHub gives no answer,
 about a minute after start and then once a day, and a card once per new version; default on),
 `autostart`, `peek.enabled`, `peek.doubleCtrl` (`true` makes
 Peek open by pressing Ctrl twice quickly, with its search box, instead of the shortcut, which stays
@@ -319,8 +333,14 @@ column; default top),
 and ignores `hoverPeek` for the pointer (the page
 keeps `hoverPeek` on with it, so a file dragged onto a rolled title still expands it); both false
 leaves the double-click and the chevron; default hover), `rollUp.hoverSpeed` (the page's 「展开快慢」:
-how long the pointer or a dragged file rests on a rolled fence before it expands, `fast` 150 ms,
-`normal` Windows' mouse hover time (400 ms unless changed), `slow` 1 s; default `normal`),
+how long the pointer or a dragged file rests on a rolled fence before it expands, and how long
+the pointer rests on a tab before `rollUp.switchTabOnHover` switches to it, `fast` 150 ms,
+`normal` Windows' mouse hover time (400 ms unless changed), `slow` 1 s; default `normal`; that
+is the wait of the first one: after one rolled fence has expanded under the pointer, the next
+rolled fence the pointer comes to within a second expands after 50 ms, and after one tab
+switch the next tabs of the strip follow the pointer after 50 ms; the full wait is back when
+the pointer has been off the rolled titles, or the tabs, for a second or a mouse button was
+pressed),
 `rollUp.pushNeighbors` (an expanded fence pushes the
 fences stacked below it down and they slide back when it rolls up; their `rect` stays where it was;
 when they reach the bottom of the work area, a fence opened by a click or by the command line opens
@@ -370,7 +390,13 @@ fails with `limitReached`. Tool fences hold no items (rules, `item move --to` an
 part in tabs (`fence merge` refuses them). Properties about icons (`iconSize`, `layout`,
 `autoHeight` and the like) and `fence fit` are refused for them. `--text` alone implies `--tool note`.
 An imported configuration (`config import`) with script fences switches `tools.enabled` off until
-the user turns it on again; a backup restore keeps it.
+the user turns it on again, and the reply says how many scripts wait (`scriptsHeld`): read them
+before switching it on when the file came from someone else. A snapshot that came with the file
+brings no script paths. A backup restore keeps the switch. While such scripts wait, only
+`settings set tools.enabled true` (or the switch on the settings page) starts them:
+`fence create --tool` and `--script` fail with `unsupported` and name the scripts, and a
+snapshot or backup that brings them back later switches `tools.enabled` off again
+(`scriptsHeld` in the reply of `snapshot restore`).
 
 `tools.dialogJump` (Settings › 速览与搜索 › 文件对话框 › 「对话框跳转」, `false` by default) has no fence: an Open,
 Save As or Select Folder dialog of any program jumps to the folder of the File Explorer window or
@@ -422,9 +448,9 @@ drawn as a to-do with a check box.
 
 | Parameter | A click on the row |
 |---|---|
-| `href=<url>` | opens the URL (the default browser, or whatever program handles it) |
-| `open=<path>` | opens a file or folder as a double-click does; a relative path starts at the script's folder |
-| `run=<program>` (or SwiftBar's `bash=`), with `param1=`, `param2=` ... | runs the program with those arguments, without a window, in the script's folder; a relative path that exists there is taken from there, else from PATH. A .ps1, .py or .js runs through Windows PowerShell, `py -3` or `node`. A program that needs administrator rights and has no arguments starts through the shell, so Windows asks first |
+| `href=<url>` | opens an `http://` or `https://` address in the default browser. Any other address (`file:`, `mailto:`, `ms-settings:`, a path) needs the header line (see Rows that start programs) |
+| `open=<path>` | opens a folder, a document (a file of a type Windows does not class as dangerous to open: a text, a picture, a PDF) or an `http://` / `https://` address, as a double-click does; a relative path starts at the script's folder. A program, a script, a shortcut, a place on the network (`\\server\...`, a mapped network drive), a disc in a CD or DVD drive or anything else needs the header line (see Rows that start programs) |
+| `run=<program>` (or SwiftBar's `bash=`), with `param1=`, `param2=` ... | needs the header line (see Rows that start programs). Runs the program with those arguments, without a window, in the script's folder; a relative path that exists there is taken from there, else from PATH. A .ps1, .py or .js runs through Windows PowerShell, `py -3` or `node`. A program that needs administrator rights and has no arguments starts through the shell, so Windows asks first |
 | `copy=<text>` | copies the text to the clipboard |
 | `action=<value>` | runs the same script again with `PECOFENCE_ACTION` set to the value and shows its new output |
 | `refresh=true` | runs the script again after the click; after a `run=` program, once that program has ended (waiting at most 60 seconds) |
@@ -474,6 +500,47 @@ for ($i = 0; $i -lt $lines.Count; $i++) { "$($lines[$i]) | action=toggle:$i" }
 "Open the list | open=""$file"""
 'PecoFence on GitHub | href=https://github.com/DayuanJiang/PecoFence color=blue'
 ```
+
+### Rows that start programs
+
+Rows start programs only in a script that allows it in a comment within the first 8 KB of the
+file:
+
+```powershell
+# <pecofence.allow>run</pecofence.allow>
+"Open Task Manager | run=taskmgr.exe"
+```
+
+Without that line `run=` and `bash=` do nothing, `href=` opens `http://` and `https://` addresses
+only, and `open=` opens folders, documents and `http://` / `https://` addresses only (an address
+with a space or a double quote in it does not count as one: write `%20` and `%22`). A click that
+is refused shows a short message beside the pointer that names the line to add, and the log gets
+an info line with the script's file name and the parameter (never its value). With the line every
+parameter works as the table says. `copy=`, `action=` and `refresh=true` need no line: they start
+nothing but the script itself. In a .cmd or .bat file write the line after `::` (in a `rem` line
+cmd.exe takes `<` and `>` as redirections). A program (.exe) used as the script cannot carry the
+line: start it from a small .cmd or .ps1 that does.
+
+The reason: a row cannot tell text the script wrote from text it only passed on. A script that
+printed an issue title unchanged turned a title containing a `|` followed by a `run=` parameter
+into a row that started that program on a click (the built-in GitHub example of 0.3.0 to 0.3.3
+did).
+
+### Printing text you did not write
+
+Text from the network, from a file somebody else can change or from another program (a title, a
+user name, a file name, a weather report) can hold `|`, quotes and line breaks, and then reads as
+parameters of the row or as a row of its own. Clean every such value before printing it, also in
+a script without the header line (a forged `href=` could still send the click to another web
+page, a forged `copy=` puts its own text on the clipboard, and a forged `action=` reaches your
+script as input), and build links from parts you trust:
+
+```powershell
+function Clean($text) { "$text" -replace '\|', '¦' -replace '[\r\n]+', ' ' -replace '["'']', [char]0x2019 }
+"#$([int]$i.number)  $(Clean $i.title) | href=https://github.com/$repo/issues/$([int]$i.number)"
+```
+
+A script with the header line has to clean every such value: PecoFence refuses nothing there.
 
 ### Streaming scripts
 
@@ -658,7 +725,9 @@ The app ignores the field's value.
   `item move` when 20 or more desktop items change fence (not for file moves through a portal),
   and `snapshot restore`. Snapshots record fence layouts (fences, geometry, item membership) only, never
   settings or rules, so `settings set` and `rule import` do not return one. Automatic snapshots never
-  evict user snapshots: at the 20-snapshot limit none is taken and the result carries a `warning`.
+  evict user snapshots: with 20 snapshots stored, the oldest automatic one (the CLI's `auto-cli-…` or one
+  the settings page saved before a restore, an import or a fence delete) gives its place; when all 20
+  are snapshots the user saved, none is taken and the result carries a `warning`.
 - Batches (`fence set --all`, `fence roll --all`, `fence unroll --all`) return
   `{"changed": <any>, "results": [{"fence", "title", "changed"} | {"fence", "title", "error"} |
   {"fence", "title", "skipped": "tab"}]}` and exit 1 if any entry failed. A connection-level error
@@ -738,8 +807,9 @@ applies `fittingHeight`; `fence set <FENCE> autoHeight true` keeps it applied as
 Windows wallpaper), `pending` (a player window such as Wallpaper Engine or Lively covers it but no
 capture has worked yet; the Windows wallpaper until then), `captured` (the fences show the latest
 capture of the player) or `notCapturable` (the player draws nothing a capture can read, such as
-Wallpaper Engine's scene wallpapers, or came back black three times in a row; the fences show a
-neutral light or dark colour until a capture works again).
+Wallpaper Engine's scene wallpapers, or came back black three times in a row; until a capture
+works again Fluent fences show a neutral light or dark colour and Liquid Glass fences a pane of
+translucent glass that the live wallpaper shows through).
 
 ## Snapshots
 

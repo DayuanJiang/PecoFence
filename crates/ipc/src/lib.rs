@@ -192,11 +192,11 @@ pub enum Method {
     FencesMoveToMonitor { fence: String, monitor: String },
     /// Per-fence option; `prop` and `value` use the same names and values as [`FenceDto`]
     /// (`iconSize` 24 to 128 in steps of 4, `spacing` compact|normal|loose, `spacingPx` -12 to 32
-    /// in steps of 4, `iconAlign` left|center, `autoHeight`, `locked`, `expandUpward`,
+    /// in steps of 4, `iconAlign` left|center|right, `autoHeight`, `locked`, `expandUpward`,
     /// `excludeFromQuickHide`, `opacity` default|clear|solid|transparent, `tint` "#RRGGBB"|null,
     /// `tintTitleOnly`, `tabColor` "#RRGGBB"|null, `titleColor`, `titleSize`
     /// small|normal|large|extraLarge, `textSize` (note and script fences, same values),
-    /// `titleOnHover` default|hover|always, `layout`
+    /// `titleOnHover` default|hover|always, `transparentOnHover`, `layout`
     /// icons|list|details, `sort`, `reverse`, `groupByDate`, `foldersFirst`, `labelLines`
     /// 0|1|2|3, `openFoldersInside`, `portalNavigate`, `portalTitleIcon`, `hideWhenEmpty`,
     /// `desktopLayout`). Result: `{changed, fence}`.
@@ -305,7 +305,9 @@ pub enum Method {
     SnapshotsSave { name: String },
     /// `id` = snapshot id (or unique prefix) or name. A snapshot of the current layout is
     /// taken first unless the list is full of user snapshots (then `warning` says so and
-    /// `snapshotId` is absent). Result: `{changed, restored: uuid, snapshotId?}`.
+    /// `snapshotId` is absent). Result: `{changed, restored: uuid, snapshotId?, scriptsHeld?}`
+    /// (`scriptsHeld`: how many scripts of an imported file the snapshot brought back; they
+    /// wait until `tools.enabled` is switched on, and it is off again).
     #[serde(rename = "snapshots.restore")]
     SnapshotsRestore { id: String },
     /// What `snapshots.restore` with the same `id` would change, without restoring (the CLI's
@@ -327,7 +329,8 @@ pub enum Method {
     ConfigExport { path: String },
     /// Replace the configuration with the file at `path` (a `config export` file or a
     /// `config.json`); the current layout is snapshotted first. Result:
-    /// `{changed, imported: path, snapshotId?}`.
+    /// `{changed, imported: path, snapshotId?, scriptsHeld?}` (`scriptsHeld`: how many scripts
+    /// of the file wait until `tools.enabled` is switched on).
     #[serde(rename = "config.import")]
     ConfigImport { path: String },
     /// Daily backups the app keeps beside `config.json` (newest first). Result: `[BackupDto]`.
