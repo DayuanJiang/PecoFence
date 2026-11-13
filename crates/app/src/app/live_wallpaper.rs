@@ -192,14 +192,25 @@ pub(super) struct LiveNote {
     monitor: RECT,
 }
 
-/// The player's name as a user knows it, from its window class and program file. Lively plays
-/// videos in mpv and web pages in its own player, both started from its folder.
+/// The player's name as a user knows it, from its window class and program file. Wallpaper
+/// Engine: its two program files and its `WPE...` window classes. Lively plays videos in mpv
+/// and web pages in players of its own, all started from its folder (`Lively Wallpaper`, the
+/// Store package's `...LivelyWallpaper_...`): that folder, or one of its own program files
+/// (`Lively.exe`, `Lively.Player.CefSharp.exe` and the like, 1.x's `livelywpf.exe`). Anything
+/// else has no name: another program called `wallpaper...`, a Windows user called lively.
 fn player_name(class: &str, exe: Option<&Path>) -> Option<&'static str> {
     let exe = exe.map(|p| p.to_string_lossy().to_ascii_lowercase());
-    let file = exe.as_deref().and_then(|p| p.rsplit('\\').next());
-    if class.starts_with("WPE") || file.is_some_and(|f| f.starts_with("wallpaper")) {
+    let mut parts = exe.as_deref().unwrap_or_default().rsplit('\\');
+    let file = parts.next().unwrap_or_default();
+    let lively_folder =
+        |part: &str| part.contains("livelywallpaper") || part.contains("lively wallpaper");
+    if class.starts_with("WPE") || matches!(file, "wallpaper32.exe" | "wallpaper64.exe") {
         Some("Wallpaper Engine")
-    } else if exe.is_some_and(|p| p.contains("lively")) {
+    } else if matches!(file, "lively.exe" | "livelywpf.exe")
+        || file.starts_with("lively.player")
+        || lively_folder(file)
+        || parts.any(lively_folder)
+    {
         Some("Lively Wallpaper")
     } else {
         None
@@ -698,11 +709,38 @@ mod tests {
         // Lively: mpv and its own players run from its folder.
         let lively = r"C:\Program Files\WindowsApps\12030rocksdanister.LivelyWallpaper_2.1\Build\plugins\mpv\mpv.exe";
         assert_eq!(player_name("mpv", exe(lively)), Some("Lively Wallpaper"));
+        // Its installer's folder, and its own program files wherever they are.
+        for path in [
+            r"C:\Program Files\Lively Wallpaper\plugins\mpv\mpv.exe",
+            r"C:\Users\me\AppData\Local\Programs\Lively Wallpaper\plugins\cef\Lively.Player.CefSharp.exe",
+            r"D:\Portable\lively\plugins\webview2\Lively.Player.WebView2.exe",
+            r"D:\Portable\lively\Lively.exe",
+            r"D:\Portable\old\livelywpf.exe",
+        ] {
+            assert_eq!(
+                player_name("Other", exe(path)),
+                Some("Lively Wallpaper"),
+                "{path}"
+            );
+        }
         // Any other player has no name: the card says 动态壁纸.
         assert_eq!(
             player_name("PfLiveStandIn", exe(r"C:\pf\run\standin.exe")),
             None
         );
         assert_eq!(player_name("mpv", exe(r"C:\Tools\mpv\mpv.exe")), None);
+        // Look-alikes: other programs called wallpaper..., a Windows user or a folder called
+        // lively, a program whose name only begins like Lively's.
+        for path in [
+            r"C:\Program Files\WallpaperTool\wallpaper.exe",
+            r"C:\Tools\wallpaperchanger.exe",
+            r"C:\Tools\wallpaper64helper.exe",
+            r"C:\Users\lively\Tools\mpv\mpv.exe",
+            r"C:\Users\lively\AppData\Local\Other\player.exe",
+            r"D:\lively\mpv.exe",
+            r"C:\Tools\livelyhood.exe",
+        ] {
+            assert_eq!(player_name("Other", exe(path)), None, "{path}");
+        }
     }
 }
