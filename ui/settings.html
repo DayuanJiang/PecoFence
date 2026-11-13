@@ -773,7 +773,7 @@
       <header class="page-header"><h2>栅栏</h2></header>
       <div class="picker"><span class="fence-dot" id="fenceDot" aria-hidden="true"></span><select id="fenceSel" aria-label="选择栅栏"></select><span class="picker-count" id="fenceBadge"></span></div>
       <p class="picker-note" id="fenceHostNote">外观、锁定和自动高度对整组标签页生效</p>
-      <div class="card" id="fenceEmpty" style="display:none"><div class="s">桌面上还没有栅栏。可以从托盘菜单新建，或在桌面空白处拖出一个矩形。</div></div>
+      <div class="card" id="fenceEmpty" style="display:none"><div class="s" id="fenceEmptyText">桌面上还没有栅栏。可以从托盘菜单新建，或在桌面空白处拖出一个矩形。</div></div>
       <div id="fenceBody">
       <div class="card"><div class="l"><span class="ic">&#xE8AC;</span><div><div class="t">栅栏名称</div></div></div>
         <input type="text" id="fenceTitle" data-fence="title" maxlength="120"></div>
@@ -1784,6 +1784,8 @@
     renderHoverSpeed();
     // 「退出 PecoFence」 is in the tray menu: its card shows while the icon is hidden.
     reveal(document.getElementById('quitCard'), !state.settings.showTrayIcon);
+    // While the icon is hidden no text sends the user to its menu.
+    document.getElementById('fenceEmptyText').textContent = state.settings.showTrayIcon ? t("桌面上还没有栅栏。可以从托盘菜单新建，或在桌面空白处拖出一个矩形。") : t("桌面上还没有栅栏。可以在桌面空白处拖出一个矩形来新建。");
   }
 
   // The 快捷键 boxes (速览栅栏, 临时显示 Windows 桌面): a box records the next combination, the
@@ -1939,7 +1941,7 @@
     const w = state.windowsDesktopHotkey;
     if (!w) return null;
     const taken = w.chosen && !w.registered;
-    return { on: true, keys: w.chosen && w.chosen.keys, help: taken ? tf("{0} 已被其他程序占用，请换一个", w.chosen.label) : t("按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复；托盘菜单里也有这一项"), tone: taken ? 'error' : '' };
+    return { on: true, keys: w.chosen && w.chosen.keys, help: taken ? tf("{0} 已被其他程序占用，请换一个", w.chosen.label) : state.settings.showTrayIcon ? t("按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复；托盘菜单里也有这一项") : t("按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复"), tone: taken ? 'error' : '' };
   });
   function renderWindowsDesktopHotkey() {
     const w = state && state.windowsDesktopHotkey;

@@ -116,6 +116,18 @@ pub(super) enum Welcome {
     },
 }
 
+/// What the card 「已添加整理规则」 says while 新项目出现在桌面时自动归类 is off (`{0}`: the
+/// extension, `{1}`: the fence): how the rule gets applied now, by a way that exists. The tray
+/// menu's entry is named only while the icon is there (「显示托盘图标」); with the icon hidden
+/// it is 「立即应用」 on the page the card's own button opens.
+fn rule_added_while_off(tray_icon: bool) -> &'static str {
+    if tray_icon {
+        "“新项目出现在桌面时自动归类”现在是关闭的：打开它，或从托盘菜单选“立即应用整理规则”，{0} 文件才会放进“{1}”。规则在“设置”→“整理规则”里修改。"
+    } else {
+        "“新项目出现在桌面时自动归类”现在是关闭的：打开它，或点“设置”→“整理规则”里的“立即应用”，{0} 文件才会放进“{1}”。规则也在那里修改。"
+    }
+}
+
 /// What the roll-up tip waits for after a fence was made with its name box
 /// (`App::roll_tip_waits`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -352,7 +364,7 @@ impl App {
                     )
                 } else {
                     format(
-                        "“新项目出现在桌面时自动归类”现在是关闭的：打开它，或从托盘菜单选“立即应用整理规则”，{0} 文件才会放进“{1}”。规则在“设置”→“整理规则”里修改。",
+                        rule_added_while_off(self.state.config.settings.show_tray_icon),
                         &[ext.clone(), fence.clone()],
                     )
                 },
@@ -904,5 +916,38 @@ fn welcome_kind(which: &Welcome) -> String {
         Welcome::RuleTip { count, .. } => format!("RuleTip(count={count})"),
         Welcome::RuleAdded { already, .. } => format!("RuleAdded(already={already})"),
         Welcome::LiveWallpaper { key, .. } => format!("LiveWallpaper({key})"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rule_added_while_off;
+    use pecofence_core::i18n::{Language, SUPPORTED, catalog};
+
+    /// With 「显示托盘图标」 off there is no tray menu to choose from: the card names the
+    /// button of the 整理规则 page, in every language (a text without a translation would show
+    /// in Chinese, and one that is the old text's translation would still name the tray).
+    #[test]
+    fn the_rule_card_names_the_tray_menu_only_while_the_icon_is_there() {
+        let (shown, hidden) = (rule_added_while_off(true), rule_added_while_off(false));
+        assert!(shown.contains("托盘菜单"));
+        assert!(!hidden.contains("托盘") && hidden.contains("“立即应用”"));
+        for &language in SUPPORTED {
+            if language == Language::SimplifiedChinese {
+                continue;
+            }
+            let texts = catalog(language);
+            let hidden_text = texts
+                .get(hidden)
+                .unwrap_or_else(|| panic!("{}", language.tag()));
+            let apply_now = texts
+                .get("立即应用")
+                .unwrap_or_else(|| panic!("{}", language.tag()));
+            assert!(
+                hidden_text.contains(apply_now.as_str()) && Some(hidden_text) != texts.get(shown),
+                "{}: {hidden_text}",
+                language.tag()
+            );
+        }
     }
 }

@@ -97,6 +97,14 @@ Check 'a click on the switch removes the icon' ($ms -ge 0 -and $ms -lt 1500 -and
 Check 'the app logged the decision' ([bool](T6Log 'tray icon shown or hidden.*shown=false')) "$(T6Log 'tray icon shown or hidden')"
 $quit = JsWait "(() => { const q = document.getElementById('quitCard'); return !q.hidden && q.getBoundingClientRect().height > 20 ? q.innerText : null; })()" 5
 Check 'the page shows 退出 PecoFence under the switch now' ("$quit" -match '退出 PecoFence' -and "$quit" -match '从这里退出') "card='$quit'"
+# The 栅栏 page without fences and 临时显示 Windows 桌面 named the tray menu with the icon hidden.
+function T6TrayTexts() { return @(Js "(() => ['fenceEmptyText', 'wdHotkeyHelp'].map(id => { const e = document.getElementById(id); return e ? e.textContent : '(no element ' + id + ')'; }))()") }
+PageRect '#wdHotkeyCard' | Out-Null
+Start-Sleep -Milliseconds 500
+$r = PageRect '#wdHotkeyCard'
+if ($r) { Crop 'desktop-shortcut-icon-hidden' ($r.x - 12) ($r.y - 12) ($r.w + 24) ($r.h + 24) | Out-Null }
+$texts = T6TrayTexts
+Check 'with the icon hidden no text of the page sends the user to the tray menu' ($texts.Count -eq 2 -and @($texts | Where-Object { $_ -match '托盘|no element' }).Count -eq 0 -and $texts[0] -match '拖出一个矩形来新建' -and $texts[1] -match '再按一次恢复$') "$($texts -join ' | ')"
 Start-Sleep -Milliseconds 600
 Shot 'settings-off'
 T6Corner 'corner-off'
@@ -143,6 +151,8 @@ $ms = TrayWait $true
 $gone = JsWait "document.getElementById('quitCard').hidden" 5
 Check 'a click on the switch adds the icon' ($ms -ge 0 -and $ms -lt 1500 -and (TraySetting) -eq 'true') "there after $ms ms; showTrayIcon=$(TraySetting)"
 Check 'the 退出 card leaves the page' ([bool]$gone)
+$texts = T6TrayTexts
+Check 'with the icon back the two texts name the tray menu again' (@($texts | Where-Object { $_ -match '托盘菜单' }).Count -eq 2) "$($texts -join ' | ')"
 Pf settings set showTrayIcon false | Out-Null
 $ms = TrayWait $false
 $off = JsWait "document.querySelector('[data-bind=showTrayIcon]').getAttribute('aria-checked') === 'false' && !document.getElementById('quitCard').hidden" 5

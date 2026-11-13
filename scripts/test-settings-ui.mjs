@@ -1365,14 +1365,19 @@ async function runTests() {
     const heading = (() => { let h = tray.closest('.group'); while (h && h.tagName !== 'H3') h = h.previousElementSibling; return h && h.textContent; })();
     assert(heading === '桌面与启动', 'The switch is not under 桌面与启动: ' + heading);
     assert(tray.getAttribute('aria-checked') === 'true' && quit.hidden, 'On by default, without the 退出 card: ' + tray.getAttribute('aria-checked') + ' ' + quit.hidden);
+    // The 栅栏 page without fences and 临时显示 Windows 桌面 name the tray menu only while the icon is there.
+    const trayTexts = () => [doc.getElementById('fenceEmptyText').textContent, doc.getElementById('wdHotkeyHelp').textContent];
+    assert(trayTexts().every(s => s.includes('托盘菜单')), 'With the icon shown the two texts name the tray menu: ' + trayTexts().join(' | '));
     tray.click(); await settle();
     assert(current().settings.showTrayIcon === false, 'The switch did not post');
     assert(!quit.hidden && quit.querySelector('.t').textContent === '退出 PecoFence', 'No 退出 card while the icon is hidden');
+    assert(trayTexts().every(s => !s.includes('托盘')) && trayTexts()[0] === '桌面上还没有栅栏。可以在桌面空白处拖出一个矩形来新建。' && trayTexts()[1] === '按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复', 'While the icon is hidden a text sends the user to the tray menu: ' + trayTexts().join(' | '));
     doc.getElementById('quitApp').click();
     const last = frame.contentWindow.testMessages.at(-1);
     assert(last.type === 'action' && last.name === 'quit', '退出 did not ask the host to quit: ' + JSON.stringify(last));
     tray.click(); await settle();
     assert(current().settings.showTrayIcon === true && quit.hidden, 'Switched on again, the 退出 card stays');
+    assert(trayTexts().every(s => s.includes('托盘菜单')), 'Switched on again, the two texts do not name the tray menu: ' + trayTexts().join(' | '));
     const box = doc.getElementById('settingsSearch');
     const esc = () => box.dispatchEvent(new frame.contentWindow.KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true, cancelable: true }));
     const find = word => {
