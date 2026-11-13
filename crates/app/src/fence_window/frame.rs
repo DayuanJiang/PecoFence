@@ -184,7 +184,7 @@ impl FrameHandle {
             // feedback here would first publish the same frame at the previous size.
             let draw_chrome = !moved
                 && height.is_none_or(|(h, _, _)| {
-                    let (cur_w, cur_h) = crate::fence_window::shown_size(hwnd);
+                    let (cur_w, cur_h) = window::window_rect_size(hwnd);
                     h == cur_h && width.is_none_or(|w| w == cur_w)
                 });
             let more = v.tick(now, draw_chrome) || gliding;
@@ -200,61 +200,8 @@ impl FrameHandle {
             return more;
         };
         let r = window::window_rect(hwnd);
-        // A fence that opens upward moves its top edge, and one with a left tab column its
-        // width too: those rolls give the window a new size with every frame, as before.
-        let one_resize = rolled_at_end.is_some() && !upward && w.is_none();
         let w = w.unwrap_or(r.right - r.left);
         let top = top_for_height(upward, &r, h);
-        // A roll resizes the window once. While it runs the window holds the larger of the
-        // sizes it has and goes to, and a step only says which part of it shows
-        // (`set_shown`): WM_SIZE's work for that part is done without a new window size.
-        if one_resize {
-            if !done {
-                let (to_w, to_h) = self.view.borrow().as_ref().map_or((w, h), |v| {
-                    (
-                        v.width_target_px().unwrap_or(w),
-                        v.height_target_px().unwrap_or(h),
-                    )
-                });
-                let (real_w, real_h) = (r.right - r.left, r.bottom - r.top);
-                let (hold_w, hold_h) = (real_w.max(w).max(to_w), real_h.max(h).max(to_h));
-                let (shown_w, shown_h) = crate::fence_window::shown_size(hwnd);
-                let behavior = self.view.borrow().as_ref().map(|v| v.behavior.clone());
-                if (hold_w, hold_h) != (real_w, real_h) {
-                    // An expand's one resize, to the size it ends at. Its WM_SIZE draws for
-                    // the part that shows.
-                    crate::fence_window::set_shown(hwnd, Some((w, h, upward)));
-                    let _ = window::set_window_bounds(
-                        hwnd,
-                        r.left,
-                        top_for_height(upward, &r, hold_h),
-                        hold_w,
-                        hold_h,
-                    );
-                } else if w <= shown_w
-                    && h <= shown_h
-                    && let Some(behavior) = behavior
-                    && behavior.frame_positions.borrow().is_some()
-                {
-                    // Inside the app's frame a step that shows less waits for the push pass,
-                    // as a smaller window size does below: the rest of the frame lays out
-                    // for the new part, and the picture follows the batch (`show_step`).
-                    crate::fence_window::note_shown(hwnd, Some((w, h, upward)));
-                    behavior.frame_shown.borrow_mut().push(hwnd);
-                } else {
-                    crate::fence_window::set_shown(hwnd, Some((w, h, upward)));
-                    self.show_step();
-                }
-                return true;
-            }
-            // The last step: the window gets the size the roll ends at (a roll-up's one
-            // resize; an expand's window has it). Until it has, that size is the part that
-            // shows; `land` then lets the window show all of itself again.
-            crate::fence_window::note_shown(hwnd, Some((w, h, upward)));
-        } else {
-            // Every other height animation resizes the window itself.
-            crate::fence_window::set_shown(hwnd, None);
-        }
         // Inside the app's frame a size that makes the window smaller waits for the push pass:
         // the window, its shadow and the fences it pushes then move in one batch, and the
         // animation lands after it. (A refresh that fell between the resize and the moves
@@ -291,21 +238,6 @@ impl FrameHandle {
         more
     }
 
-    /// Draws the fence for the part its window shows now (WM_SIZE's work, without a new
-    /// window size) and tells other programs. No borrow may be held.
-    pub fn show_step(&self) {
-        let hwnd = self.hwnd();
-        if let Some((w, h)) = crate::fence_window::shown_part(hwnd) {
-            window::send_message(
-                hwnd,
-                msg::WM_SIZE,
-                0,
-                ((h as isize & 0xffff) << 16) | (w as isize & 0xffff),
-            );
-        }
-        crate::fence_window::publish_shown(hwnd);
-    }
-
     /// Before the frame's batch of window positions is applied. For a window the batch only
     /// moves, the shadow window comes back: it moves in the batch. A window the batch resizes
     /// (it gets smaller) needs a new shadow bitmap, which no batch carries, and Windows spends
@@ -333,7 +265,6 @@ impl FrameHandle {
             };
             v.roll_anim = None;
             v.height_anim = None;
-            crate::fence_window::set_shown(hwnd, None);
             if let Some(rolled) = rolled_at_end {
                 v.rolled_up = rolled;
                 v.content_panel.visual.set_opacity(1.0);

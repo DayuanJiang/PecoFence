@@ -17,10 +17,7 @@ using System; using System.Collections.Generic; using System.Diagnostics; using 
 public static class PmTrack {
   [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
   [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
-  [DllImport("user32.dll", EntryPoint = "GetWindowRect")] static extern bool WindowRectRaw(IntPtr h, out RECT r);
-  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr GetPropW(IntPtr h, string name);
-  // What the user sees of the window: during a roll the window is taller than the fence, and the app notes the part that shows in the window property PecoFence.Shown (height << 16 | width).
-  static bool GetWindowRect(IntPtr h, out RECT r) { bool ok = WindowRectRaw(h, out r); long s = GetPropW(h, "PecoFence.Shown").ToInt64(); if (s != 0) { r.R = r.L + (int)(s & 0xFFFF); r.B = r.T + (int)((s >> 16) & 0xFFFF); } return ok; }
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
   [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT p);
   [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint f);

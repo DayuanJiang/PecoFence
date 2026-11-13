@@ -14,10 +14,7 @@ Add-Type -Namespace Kx -Name W -MemberDefinition @'
 [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr SendMessageW(IntPtr h, uint m, IntPtr w, string l);
 [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
 [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-[DllImport("user32.dll", EntryPoint = "GetWindowRect")] static extern bool WindowRectRaw(IntPtr h, out RECT r);
-[DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr GetPropW(IntPtr h, string name);
-// What the user sees of the window: during a roll the window is taller than the fence, and the app notes the part that shows in the window property PecoFence.Shown (height << 16 | width).
-public static bool GetWindowRect(IntPtr h, out RECT r) { bool ok = WindowRectRaw(h, out r); long s = GetPropW(h, "PecoFence.Shown").ToInt64(); if (s != 0) { r.R = r.L + (int)(s & 0xFFFF); r.B = r.T + (int)((s >> 16) & 0xFFFF); } return ok; }
+[DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
 [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowTextW(IntPtr h, System.Text.StringBuilder s, int n);
 public struct RECT { public int L, T, R, B; }
 public static string FgText() { var s = new System.Text.StringBuilder(256); GetWindowTextW(GetForegroundWindow(), s, 256); return s.ToString(); }

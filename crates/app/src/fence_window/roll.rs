@@ -677,7 +677,7 @@ impl FenceViewState {
     /// under the view borrow (WindowFromPoint would send WM_NCHITTEST to this window).
     pub(super) fn pointer_in_rect(&self) -> bool {
         let pt = window::cursor_pos();
-        let r = crate::fence_window::shown_rect(self.hwnd);
+        let r = window::window_rect(self.hwnd);
         pt.x >= r.left && pt.x < r.right && pt.y >= r.top && pt.y < r.bottom
     }
 
@@ -723,7 +723,7 @@ impl FenceViewState {
         // The roll owns the height (and the content panel) from here on.
         self.height_anim = None;
         self.finish_content_swap_now();
-        let cur = crate::fence_window::shown_rect(self.hwnd);
+        let cur = window::window_rect(self.hwnd);
         let (cur_w, cur_h) = (cur.right - cur.left, cur.bottom - cur.top);
         // A fence with a left tab column collapses to the column (its title bar) rather than
         // to a title row: the width moves with the height.
@@ -848,7 +848,7 @@ impl FenceViewState {
         if self.roll_anim.is_some() {
             return false;
         }
-        let cur_h = crate::fence_window::shown_size(self.hwnd).1;
+        let cur_h = window::window_rect_size(self.hwnd).1;
         let now = Instant::now();
         if (to_h - cur_h).abs() < 2 || !self.motion.enabled() || !desktop::is_visible(self.hwnd) {
             return false;

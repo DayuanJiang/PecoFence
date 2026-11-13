@@ -445,10 +445,6 @@ impl App {
                 .chain(self.dying.iter())
                 .find(|w| w.hwnd() == hwnd)
         };
-        // Rolling fences that show less of their window in this frame are drawn after the
-        // batch. (Their shadow follows that draw: a shadow window resized before it made the
-        // draw wait for the compositor, 5.3 ms per frame of a roll-up against 2.6 ms.)
-        let stepped = std::mem::take(&mut *behavior.frame_shown.borrow_mut());
         // While the batch is still open the windows answer with their new rects: the shadow
         // of a fence that gets smaller is drawn for its new plate.
         let mut shadows = Vec::new();
@@ -479,12 +475,6 @@ impl App {
             );
             // No borrow held: the windows' handlers run synchronously.
             window::set_window_positions(&positions);
-        }
-        // The fences below are in place: the rolling fences are drawn for the part they show.
-        for hwnd in stepped {
-            if let Some(w) = window_of(hwnd) {
-                w.frame_handle().show_step();
-            }
         }
         let landings = std::mem::take(&mut *behavior.frame_landings.borrow_mut());
         for (hwnd, rolled_at_end) in landings {

@@ -76,9 +76,7 @@ pub(super) fn flush_window_drag(
             .remote_drag
             .as_ref()
             .filter(|d| d.hwnd == controller)
-            .map_or((0, 0), |d| {
-                v.open_hang_px(&crate::fence_window::shown_rect(d.hwnd))
-            });
+            .map_or((0, 0), |d| v.open_hang_px(&window::window_rect(d.hwnd)));
         let Some(drag) = v.remote_drag.as_mut() else {
             return false;
         };
@@ -114,7 +112,7 @@ pub(super) fn flush_window_drag(
         )
     };
     let began = Instant::now();
-    let old = crate::fence_window::shown_rect(target_hwnd);
+    let old = window::window_rect(target_hwnd);
     let mut rect = RECT {
         left: point.0 - offset.0,
         top: point.1 - offset.1,

@@ -788,25 +788,6 @@ pub fn window_rect(hwnd: HWND) -> RECT {
 }
 
 /// Moves/resizes any window without activating it or changing its z-order.
-/// Sets the window property `name` of `hwnd` to `value`, or takes it off (`None`). Another
-/// process reads it with `GetPropW` (the test kit does, for the part a rolling fence shows).
-pub fn set_window_prop(hwnd: HWND, name: &str, value: Option<isize>) {
-    windows_core::link!("user32.dll" "system" fn SetPropW(hwnd : HWND, name : PCWSTR, data : *mut core::ffi::c_void) -> i32);
-    windows_core::link!("user32.dll" "system" fn RemovePropW(hwnd : HWND, name : PCWSTR) -> *mut core::ffi::c_void);
-    let name = to_wide(name);
-    // SAFETY: plain FFI calls; `name` is NUL-terminated and lives past them.
-    unsafe {
-        match value {
-            Some(v) => {
-                SetPropW(hwnd, PCWSTR(name.as_ptr()), v as *mut core::ffi::c_void);
-            }
-            None => {
-                RemovePropW(hwnd, PCWSTR(name.as_ptr()));
-            }
-        }
-    }
-}
-
 pub fn set_window_bounds(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) -> Result<()> {
     // SAFETY: plain FFI call on a caller-supplied HWND.
     unsafe {

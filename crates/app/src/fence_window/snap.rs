@@ -23,7 +23,7 @@ pub(super) fn merge_target_at(me: HWND, also: HWND, point: (i32, i32)) -> Option
             if w == me || w == also || !desktop::is_visible(w) {
                 return false;
             }
-            let r = crate::fence_window::shown_rect(w);
+            let r = window::window_rect(w);
             let title_h = (pecofence_render::theme::TITLE_HEIGHT
                 * monitors::dpi_for_window(w).max(96) as f32
                 / 96.0)
@@ -84,7 +84,7 @@ pub(super) fn update_drag_feedback(
     let dpi = monitors::dpi_for_window(hwnd).max(96);
     let gap = snap_gap_px(behavior.snap_gap_dip.get(), dpi as f32 / 96.0);
     let (covering, outline) = match merge {
-        Some(target) => (true, Some(crate::fence_window::shown_rect(target))),
+        Some(target) => (true, Some(window::window_rect(target))),
         None => {
             let others = other_fence_rects(hwnd);
             let covers = others

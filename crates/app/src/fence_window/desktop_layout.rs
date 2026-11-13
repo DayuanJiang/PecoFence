@@ -751,7 +751,7 @@ impl FenceViewState {
         if !self.bare() || self.desktop_slots.is_empty() {
             return false;
         }
-        let win = crate::fence_window::shown_rect(self.hwnd);
+        let win = window::window_rect(self.hwnd);
         let scale = self.scale();
         let mut hit = HashSet::new();
         for (i, c) in self.desktop_slots.iter().take(self.items.len()).enumerate() {

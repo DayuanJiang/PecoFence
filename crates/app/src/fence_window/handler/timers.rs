@@ -585,7 +585,7 @@ pub(super) fn on_timer_peek_close(
         return Some(0);
     }
     let pt = window::cursor_pos();
-    let r = crate::fence_window::shown_rect(hwnd);
+    let r = window::window_rect(hwnd);
     // A fence this one pushed out of its way counts as inside: moving onto it must not make it
     // slide back from under the pointer.
     let inside = (pt.x >= r.left && pt.x < r.right && pt.y >= r.top && pt.y < r.bottom)

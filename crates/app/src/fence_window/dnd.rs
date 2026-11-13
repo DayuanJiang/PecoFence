@@ -465,7 +465,7 @@ impl FenceDropHandler {
             pt.and_then(|pt| {
                 let guard = self.view.try_borrow().ok()?;
                 let v = guard.as_ref().filter(|v| !v.takes_no_drops())?;
-                let rect = crate::fence_window::shown_rect(v.hwnd);
+                let rect = window::window_rect(v.hwnd);
                 let i = v.hit_item(pt.x - rect.left, pt.y - rect.top)?;
                 let item = v.items.get(i)?;
                 // A shortcut, or a program file itself (a portable app's .exe).
@@ -1218,7 +1218,7 @@ impl FenceViewState {
         if !self.motion.enabled() || self.rolled_up {
             return;
         }
-        let r = crate::fence_window::shown_rect(self.hwnd);
+        let r = window::window_rect(self.hwnd);
         let scale = self.scale();
         let (cw, _) = self.content_size_px();
         let fixed = self.layout(cw as f32 / scale).fixed_top();
@@ -1258,7 +1258,7 @@ impl FenceViewState {
         {
             return;
         }
-        let r = crate::fence_window::shown_rect(self.hwnd);
+        let r = window::window_rect(self.hwnd);
         let scale = self.scale();
         let (cw, _) = self.content_size_px();
         let fixed = self.layout(cw as f32 / scale).fixed_top();
@@ -1288,7 +1288,7 @@ impl FenceViewState {
         if !self.motion.enabled() || self.rolled_up || !desktop::is_visible(self.hwnd) {
             return false;
         }
-        let r = crate::fence_window::shown_rect(self.hwnd);
+        let r = window::window_rect(self.hwnd);
         let scale = self.scale();
         let (cw, _) = self.content_size_px();
         let layout = self.layout(cw as f32 / scale);
@@ -1394,7 +1394,7 @@ impl FenceViewState {
         sy: i32,
         internal: Option<&InternalDrag>,
     ) -> DropSpot {
-        let r = crate::fence_window::shown_rect(self.hwnd);
+        let r = window::window_rect(self.hwnd);
         let (cx, cy) = (sx - r.left, sy - r.top);
         let mut spot = DropSpot::default();
         if self.tabs.len() > 1 {
@@ -1625,7 +1625,7 @@ impl FenceViewState {
         // the press is always inside the grabbed cell. The shell clamps the offset into the
         // bitmap, so a press outside the footprint (a selection that scrolled away from the
         // grabbed item) would make the image jump to the cursor: fall back to the shell's.
-        let win = crate::fence_window::shown_rect(self.hwnd);
+        let win = window::window_rect(self.hwnd);
         let (px, py) = self.ole_drag_press;
         let (press_x, press_y) = (win.left + px, win.top + py);
         let origin_x = win.left + self.content_x + (l * scale).round() as i32;
