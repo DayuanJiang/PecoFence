@@ -178,45 +178,6 @@ pub fn windows_of_class(class: &str) -> Vec<HWND> {
     out
 }
 
-/// The window a press at the screen point (`x`, `y`) reaches when `above` lets it through:
-/// the first top-level window below `above` in z-order that shows, takes input (windows that
-/// are transparent for input, as shadows are, are passed) and holds the point, and in it the
-/// innermost visible child at the point. Null when there is none.
-pub fn window_below_at(above: HWND, x: i32, y: i32) -> HWND {
-    windows_core::link!("user32.dll" "system" fn ChildWindowFromPointEx(hwnd : HWND, pt : POINT, flags : u32) -> HWND);
-    // CWP_SKIPINVISIBLE | CWP_SKIPDISABLED | CWP_SKIPTRANSPARENT
-    const SKIP: u32 = 0x1 | 0x2 | 0x4;
-    let all = top_level_windows();
-    let Some(i) = all.iter().position(|w| *w == above) else {
-        return HWND(core::ptr::null_mut());
-    };
-    for &top in &all[i + 1..] {
-        if !has_visible_surface(top) || ex_style(top) & WS_EX_TRANSPARENT as u32 != 0 {
-            continue;
-        }
-        let mut r = RECT::default();
-        // SAFETY: a local, correctly sized output rectangle.
-        let ok = unsafe { GetWindowRect(top, &mut r).as_bool() };
-        if !ok || x < r.left || x >= r.right || y < r.top || y >= r.bottom {
-            continue;
-        }
-        let mut at = top;
-        loop {
-            let mut pt = POINT { x, y };
-            // SAFETY: plain FFI calls with a pointer to a local.
-            let child = unsafe {
-                let _ = ScreenToClient(at, &mut pt);
-                ChildWindowFromPointEx(at, pt, SKIP)
-            };
-            if child.0.is_null() || child == at {
-                return at;
-            }
-            at = child;
-        }
-    }
-    HWND(core::ptr::null_mut())
-}
-
 /// Enumerates top-level windows in z-order (top to bottom).
 pub fn top_level_windows() -> Vec<HWND> {
     let mut out: Vec<HWND> = Vec::new();

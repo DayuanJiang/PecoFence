@@ -1733,18 +1733,8 @@ impl DesktopAnchor {
     /// of Windows' own icons) a marquee may start there while the fences show; returns false
     /// anywhere else.
     fn begin_marquee(&mut self, pt: POINT) -> bool {
-        let mut hit = desktop::window_from_point(pt.x, pt.y);
-        let mut root = desktop::root_ancestor(hit);
-        // A fence in a roll holds its window taller than what it shows: a point of the window
-        // outside that part is a point of what lies under the fence.
-        if self.fences.iter().any(|(f, _)| *f == root) {
-            let shown = crate::fence_window::shown_rect(root);
-            if pt.x < shown.left || pt.x >= shown.right || pt.y < shown.top || pt.y >= shown.bottom
-            {
-                hit = desktop::window_below_at(root, pt.x, pt.y);
-                root = desktop::root_ancestor(hit);
-            }
-        }
+        let hit = desktop::window_from_point(pt.x, pt.y);
+        let root = desktop::root_ancestor(hit);
         let refused = if self.all_windows().contains(&root) {
             Some(PressRefused::OnOurs)
         } else if !self.is_desktop_window(hit) {
