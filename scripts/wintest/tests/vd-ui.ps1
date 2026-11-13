@@ -163,11 +163,12 @@ $h = SettingsScrolled 4
 # Where open-ui puts the window: the page's points below were measured there.
 $Centered = Rect $h
 Shot 'ui-page-switch-before'
-[G]::Click(1183, 480); Start-Sleep -Seconds 1
+# The row is one card further down since 显示托盘图标 came in above it (82 px).
+[G]::Click(1183, 562); Start-Sleep -Seconds 1
 $on = (Pf settings get perDesktopFences).Trim()
 Shot 'ui-page-switch-on'
 Check 'a click on 每个虚拟桌面各用一套栅栏 switches it on' ($on -match 'true') "get=$on"
-[G]::Click(1183, 480); Start-Sleep -Seconds 1
+[G]::Click(1183, 562); Start-Sleep -Seconds 1
 $off = (Pf settings get perDesktopFences).Trim()
 Check 'a second click switches it off' ($off -match 'false') "get=$off"
 CloseSettings
