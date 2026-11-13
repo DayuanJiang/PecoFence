@@ -2,7 +2,8 @@
 #   A  图标对齐 右对齐 (fence set <fence> iconAlign right): every row fills from the right edge,
 #      the first icon at the right and the next to its left. Clicks, the arrow keys, the
 #      selection rectangle, the insertion mark and the drop, 按时间分组, a fence that scrolls
-#      and a tab group all go by the mirrored cells.
+#      and a tab group all go by the mirrored cells. In a fence a whole number of cells wide
+#      the mark at the right edge is whole (2 px), left-aligned too.
 #   T  鼠标移入时保持透明 (fence set <fence> transparentOnHover true): a fully transparent
 #      fence looks under the pointer as it does at rest, in 浅色 and 深色, Fluent and Liquid
 #      Glass: no plate, no folded title row; the icons keep their own hover fill; the unseen
@@ -105,6 +106,32 @@ function ColumnContrast($x, $y, $w, $h, $name) {
   return [int]($m.Maximum - $m.Minimum)
 }
 function TabPt($d, $i) { $rc = $d.rects[$i]; return @([int]($d.l + $rc[0] + $rc[1] / 2), [int]($d.t + 18)) }
+# The insertion mark at the right edge of $fence: the icon at $from (grabbed near its top, so
+# its drag image hangs below the pointer) is held low in the right half of the cell at $to, and
+# the last 6 pixel columns of the fence are read in the upper part of that row. Returns how
+# many of them took the mark's colour (they differ from the fence at rest by more than the
+# column 6 px in from the edge does), and saves the fence's right end as $name.png.
+function OaEdgeMark($fence, $from, $to, $name) {
+  $wr = FR $fence
+  $sx = $wr.x + $wr.w - 6; $sy = $to[1] - 32 + 4
+  ParkMouse 1300 700; Start-Sleep -Milliseconds 500
+  $rest = [Px]::Grab($sx, $sy, 6, 32)
+  Hold $from[0] ($from[1] - 16) ($to[0] + 30) ($to[1] + 56) 900
+  $held = [Px]::Grab($sx, $sy, 6, 32)
+  Crop $name ($wr.x + $wr.w - 110) ($to[1] - 40) 130 110 | Out-Null
+  # Esc ends the drag where it began: nothing moves.
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 200; MUp; Start-Sleep -Milliseconds 900
+  $d = @()
+  for ($i = 0; $i -lt 6; $i++) {
+    $s = 0
+    for ($j = 0; $j -lt 32; $j++) { $a = $rest.GetPixel($i, $j); $b = $held.GetPixel($i, $j); $s += [math]::Abs($a.R - $b.R) + [math]::Abs($a.G - $b.G) + [math]::Abs($a.B - $b.B) }
+    $d += [int]($s / 32)
+  }
+  $rest.Dispose(); $held.Dispose()
+  $n = @($d | Where-Object { $_ - $d[0] -gt 40 }).Count
+  Log "edge mark $name of '$fence': change per column, 6 px in to the edge: $($d -join ' ') -> $n columns"
+  return @($n, ($d -join ' '))
+}
 $OaNames = @('oa 1 报告', 'oa 2 预算表', 'oa 3 会议纪要与分工', 'oa 4 图', 'oa 5 季度计划', 'oa 6 清单', 'oa 7 合同扫描件')
 
 Case 'setup'
@@ -195,6 +222,28 @@ if ($Part -match 'A') {
   Check 'A the dropped icon is where the mark was' ($f11 -like 'oa 1 *') "the cell left of the seventh holds '$f11'"
   Pf fence set OaR sort name | Out-Null
   Start-Sleep -Milliseconds 1000
+
+  Case 'A the mark at the right edge of a fence a whole number of cells wide'
+  # 400 px are five cells of 80 with nothing left over: the first cell of a row ends at the
+  # fence's right edge. The mark before the first icon of a row stands there, 2 px wide, and
+  # both of its pixels are inside the fence (the right one was cut off).
+  Pf fence set OaR sort manual | Out-Null
+  Pf fence move OaR --rect '300,160,400,260' | Out-Null
+  Start-Sleep -Milliseconds 1500
+  $e1 = OaEdgeMark 'OaR' (OaCell 'OaR' 0 1) (OaCell 'OaR' 0 0) 'A-8-edge-row1'
+  $e2 = OaEdgeMark 'OaR' (OaCell 'OaR' 0 1) (OaCell 'OaR' 1 0) 'A-8-edge-row2'
+  Check 'A the mark before the first icon of a row is whole at the right edge: 2 px wide, in the first and in the second row' ($e1[0] -eq 2 -and $e2[0] -eq 2) "columns with the mark, of the last 6: first row $($e1[0]) ($($e1[1])), second row $($e2[0]) ($($e2[1]))"
+  # Left-aligned, 560 px (seven cells, one full row): the mark after the last icon stands at
+  # the right edge too.
+  Pf fence set OaR iconAlign left | Out-Null
+  Pf fence move OaR --rect '300,160,560,260' | Out-Null
+  Start-Sleep -Milliseconds 1500
+  $e3 = OaEdgeMark 'OaR' (OaCell 'OaR' 0 6) (OaCell 'OaR' 0 0) 'A-8-edge-left-aligned'
+  Check 'A left-aligned, the mark after the last icon of a full row is whole at the right edge' ($e3[0] -eq 2) "columns with the mark, of the last 6: $($e3[0]) ($($e3[1]))"
+  Pf fence set OaR iconAlign right | Out-Null
+  Pf fence move OaR --rect '300,160,420,260' | Out-Null
+  Pf fence set OaR sort name | Out-Null
+  Start-Sleep -Milliseconds 1200
 
   Case 'A grouped by date'
   Pf fence set OaR groupByDate true | Out-Null

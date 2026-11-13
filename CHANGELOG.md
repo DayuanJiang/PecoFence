@@ -312,6 +312,7 @@
 - A fence in 详细信息 dragged wider gets its columns in one order: 大小, then 修改日期, then 类型. Between 328 and 355 px of width it showed 名称, 类型, 大小; a few pixels wider 修改日期 took the place of 类型, and wider again 类型 came back beside it. 类型 now waits until 修改日期 has room (when 修改日期 is hidden in the header's menu, 类型 shows as before).
 - A new sort order that moves most of the icons fades the old arrangement out under the new one. Every icon glided to its new cell at once, through the middle of the fence, and for the length of the glide the icons were one pile. With more than 12 icons, of which more than half go further than to the next place, the content now cross-fades as it does for the filter box. Fewer icons, a few that change places, and an icon dragged to another place glide as before, so one can see where each went.
 - Files deleted while the fence shows the end of its content: the rows that stay glide down to their new places. With the last row gone the content is shorter than the place the fence was scrolled to, and the rows above jumped down by a row in one frame while the deleted icons faded out. They now glide there over 250 ms, like every other icon that changes its cell.
+- The line that shows where a dragged icon will go is whole at the right edge of a fence. In a fence that is a whole number of icons wide (400 px for five icons), the line after the last icon of a full row stood half outside the fence: 1 of its 2 px showed. It now stands inside the edge, as it does at the left edge.
 
 ## 0.3.3
 

@@ -1090,10 +1090,13 @@ impl ItemLayout {
             Self::Grid(g) => {
                 // The edge of a cell the list comes from (the mark before an item stands
                 // there) and the one it goes on to: left and right, swapped in rows that
-                // fill from the right (图标对齐 右对齐).
+                // fill from the right (图标对齐 右对齐). At the right edge of a fence that is
+                // a whole number of cells wide the mark stays inside the content, both DIPs
+                // of it, as it does at the left edge.
+                let inside = self.header_width() - 2.0;
                 let lead = |c: CellRect| {
                     if g.rtl {
-                        c.x + c.w - 1.0
+                        (c.x + c.w - 1.0).min(inside)
                     } else {
                         (c.x - 1.0).max(0.0)
                     }
@@ -1102,7 +1105,7 @@ impl ItemLayout {
                     if g.rtl {
                         (c.x - 1.0).max(0.0)
                     } else {
-                        c.x + c.w - 1.0
+                        (c.x + c.w - 1.0).min(inside)
                     }
                 };
                 if count == 0 {
@@ -1911,8 +1914,14 @@ mod tests {
         assert_eq!(seven.insertion_index(245.0, y2, 7), 7);
         assert_eq!(seven.insertion_index(10.0, y2, 7), 7);
         let l = ItemLayout::Grid(seven);
-        // The mark stands on the side the list comes from: the right edge of the cell.
-        assert_eq!(l.insertion_caret(0, 7).x, 399.0);
+        // The mark stands on the side the list comes from: the right edge of the cell. At the
+        // fence's right edge both of its 2 DIPs are inside the content (400 wide).
+        assert_eq!(l.insertion_caret(0, 7).x, 398.0);
+        assert_eq!(
+            l.insertion_caret(5, 7).x,
+            398.0,
+            "the start of the second row"
+        );
         assert_eq!(l.insertion_caret(6, 7).x, 319.0);
         assert_eq!(l.insertion_caret(7, 7).x, 239.0, "after the last icon");
         // Left and Right go where the eye goes; at a row's end they go on along the list.
@@ -2448,10 +2457,16 @@ mod tests {
         let caret = l.insertion_caret(1, 6);
         assert_eq!(caret.x, c1.x - 1.0);
         assert_eq!(caret.w, 2.0);
-        // After the last item of a full row: the last cell's right edge.
+        // After the last item of a full row: the last cell's right edge, which is the fence's
+        // (320 wide, four cells): the whole mark stays inside.
         let last = l.cell(3);
         let end = l.insertion_caret(4, 4);
-        assert_eq!(end.x, last.x + last.w - 1.0);
+        assert_eq!(end.x, last.x + last.w - 2.0);
+        // A fence with room left over: the cells stand in from the edge, the mark on the edge
+        // of the cell.
+        let wide = ItemLayout::Grid(Grid::new(GridMetrics::for_icon_size(48, 2), 336.0, 4));
+        let last = wide.cell(3);
+        assert_eq!(wide.insertion_caret(4, 4).x, last.x + last.w - 1.0);
         let rows = ItemLayout::rows(RowMetrics::list(16.0), 200.0, 3);
         assert_eq!(rows.insertion_index(10.0, 4.0 + 28.0 * 1.6, 3), 2);
         assert_eq!(rows.insertion_index(10.0, 9_999.0, 3), 3);
