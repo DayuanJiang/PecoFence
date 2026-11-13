@@ -223,8 +223,12 @@ pub(super) fn band_indices(
 /// colour is near white in light mode and a dark slate in dark mode
 /// (`MonitorRecipe::show_neutral`), so the names keep 4.5 to 1 against it over any wallpaper,
 /// a black one under the light pane and a white one under the dark pane included.
-fn unreadable_pane_alpha(opacity: f32) -> f32 {
-    (0.5 + 0.28 * opacity).clamp(0.65, 0.78)
+/// `dark_tinted`: the fence has a 色调 in dark mode. The wash lies over the pane at 22 %
+/// whatever the pane's alpha and a light one (黄, 青) lightens the dark pane, so the pane is
+/// 0.74 at least there; the light pane keeps 4.5 to 1 under every preset as it is.
+fn unreadable_pane_alpha(opacity: f32, dark_tinted: bool) -> f32 {
+    let floor = if dark_tinted { 0.74 } else { 0.65 };
+    (0.5 + 0.28 * opacity).clamp(floor, 0.78)
 }
 
 impl FenceViewState {
@@ -235,7 +239,9 @@ impl FenceViewState {
         if self.behavior.floating.get() && self.theme.liquid_glass {
             opacity.max(1.0)
         } else if opacity <= 1.0 && self.over_unreadable_wallpaper() {
-            unreadable_pane_alpha(opacity)
+            let dark_tinted =
+                self.style.tint.is_some() && self.theme.mode == pecofence_render::ThemeMode::Dark;
+            unreadable_pane_alpha(opacity, dark_tinted)
         } else {
             opacity
         }
@@ -2475,22 +2481,53 @@ mod unreadable_pane_tests {
         0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
     }
 
+    /// The nine 色调 presets (`TINT_PALETTE` in app/fence_options.rs), 红 to 灰.
+    const TINTS: [[u8; 3]; 9] = [
+        [0xE7, 0x48, 0x56],
+        [0xF7, 0x63, 0x0C],
+        [0xFF, 0xB9, 0x00],
+        [0x10, 0x89, 0x3E],
+        [0x00, 0xB7, 0xC3],
+        [0x00, 0x78, 0xD4],
+        [0x87, 0x64, 0xB8],
+        [0xE3, 0x00, 0x8C],
+        [0x7A, 0x75, 0x74],
+    ];
+
     /// The pane lets the wallpaper through and nobody knows what that wallpaper shows: the
     /// names still read (4.5 to 1) over the worst one, black under the light pane with its
-    /// dark names and white under the dark pane with its light names, at every opacity.
+    /// dark names and white under the dark pane with its light names, at every opacity,
+    /// without a 色调 and with each preset. Composed as `fence_chrome::draw_plate` draws it:
+    /// the pane at its alpha, the glass layer at the same share, the tint wash at 22 %.
     #[test]
     fn names_read_on_the_pane_over_any_wallpaper() {
-        assert_eq!(unreadable_pane_alpha(1.0), 0.78);
-        assert!((unreadable_pane_alpha(0.55) - 0.654).abs() < 0.001);
+        assert_eq!(unreadable_pane_alpha(1.0, false), 0.78);
+        assert!((unreadable_pane_alpha(0.55, false) - 0.654).abs() < 0.001);
+        let tints = TINTS.map(|t| Some(t.map(|c| c as f32 / 255.0)));
         for (mode, behind) in [(ThemeMode::Light, 0.0), (ThemeMode::Dark, 1.0)] {
             let theme = Theme::for_mode(mode).with_liquid_glass();
-            let (pane, ink) = (theme.solid_fill, theme.text_primary);
-            for opacity in [0.1, 0.55, 0.8, 1.0] {
-                let alpha = unreadable_pane_alpha(opacity);
-                let shown = [pane.r, pane.g, pane.b].map(|c| alpha * c + (1.0 - alpha) * behind);
-                let (x, y) = (luminance(shown), luminance([ink.r, ink.g, ink.b]));
-                let contrast = (x.max(y) + 0.05) / (x.min(y) + 0.05);
-                assert!(contrast >= 4.5, "{mode:?} at {opacity}: {contrast:.2} to 1");
+            let (pane, layer, ink) = (theme.solid_fill, theme.glass_layer_fill, theme.text_primary);
+            for tint in std::iter::once(None).chain(tints) {
+                for opacity in [0.1, 0.55, 0.8, 1.0] {
+                    let dark_tinted = tint.is_some() && mode == ThemeMode::Dark;
+                    let alpha = unreadable_pane_alpha(opacity, dark_tinted);
+                    let mut shown =
+                        [pane.r, pane.g, pane.b].map(|c| alpha * c + (1.0 - alpha) * behind);
+                    for (s, l) in shown.iter_mut().zip([layer.r, layer.g, layer.b]) {
+                        *s += (l - *s) * layer.a * alpha;
+                    }
+                    if let Some(t) = tint {
+                        for (s, t) in shown.iter_mut().zip(t) {
+                            *s += (t - *s) * 0.22;
+                        }
+                    }
+                    let (x, y) = (luminance(shown), luminance([ink.r, ink.g, ink.b]));
+                    let contrast = (x.max(y) + 0.05) / (x.min(y) + 0.05);
+                    assert!(
+                        contrast >= 4.5,
+                        "{mode:?}, tint {tint:?} at {opacity}: {contrast:.2} to 1"
+                    );
+                }
             }
         }
     }
