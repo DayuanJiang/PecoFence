@@ -94,11 +94,11 @@ Resources:
       Runtime: nodejs24.x
       Architectures: [arm64]
       Handler: index.handler
-      MemorySize: 128
+      MemorySize: 256
       Timeout: 10
-      # At most two reports are handled at a time; more are answered 429 and the app tries
-      # again at its next start.
-      ReservedConcurrentExecutions: 2
+      # At most twenty reports are handled at a time (a bound on a flood); more are answered
+      # 429 and the app tries again at its next start.
+      ReservedConcurrentExecutions: 20
       Role: !GetAtt Role.Arn
       LoggingConfig:
         LogGroup: !Ref LogGroup
