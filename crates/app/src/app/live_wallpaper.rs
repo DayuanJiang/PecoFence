@@ -217,6 +217,15 @@ fn player_name(class: &str, exe: Option<&Path>) -> Option<&'static str> {
     }
 }
 
+/// A fence with this opacity setting (`AppearanceOverride::opacity`, None: 默认) shows the
+/// see-through pane over a live wallpaper that cannot be read: not the fence arranged like the
+/// desktop (it has no plate), not a fully transparent one (no plate until the pointer is over
+/// it), not a 更厚实 one (its plate stays opaque: `material_opacity`).
+fn shows_pane(opacity: Option<f32>, desktop_arranged: bool) -> bool {
+    let opacity = opacity.unwrap_or(1.0);
+    !desktop_arranged && opacity > 0.0 && opacity <= 1.0
+}
+
 /// The foreground window's rectangle when it belongs to another program than Explorer and this
 /// one. The fences sit under other programs' windows: it hides the fences inside it, and a
 /// maximized or full-screen window every fence on its monitor.
@@ -309,8 +318,9 @@ impl App {
 
     /// Liquid Glass fences on a monitor whose live wallpaper cannot be read are frosted panes:
     /// one card says why and offers Fluent, once per player (`notices.json` keeps the players
-    /// it was answered for). It waits while another card is up or no fence shows on that
-    /// monitor, and comes at a later check.
+    /// it was answered for). It waits while another card is up or no fence shows the pane on
+    /// that monitor right then (see `shows_pane`; none does during a Peek, when the glass is
+    /// opaque), and comes at a later check.
     fn offer_live_wallpaper_card(&mut self, note: LiveNote) {
         if !self.notices {
             return;
@@ -322,17 +332,28 @@ impl App {
             return;
         }
         let m = note.monitor;
-        let shown = self.fences.values().map(FenceWindow::hwnd).any(|h| {
+        // By the fence's centre, as the pane itself (`over_unreadable_wallpaper`).
+        let shown = self.fences.iter().any(|(id, w)| {
+            let h = w.hwnd();
             let f = window::window_rect(h);
+            let (cx, cy) = ((f.left + f.right) / 2, (f.top + f.bottom) / 2);
             desktop::is_visible(h)
                 && !desktop::is_cloaked(h)
-                && f.left < m.right
-                && f.right > m.left
-                && f.top < m.bottom
-                && f.bottom > m.top
+                && cx >= m.left
+                && cx < m.right
+                && cy >= m.top
+                && cy < m.bottom
+                && self.state.fence(*id).is_some_and(|f| {
+                    shows_pane(
+                        f.appearance.as_ref().and_then(|a| a.opacity),
+                        w.is_desktop_arranged(),
+                    )
+                })
         });
-        let waits = if !shown {
-            "no fence shows on that monitor"
+        let waits = if self.ctx.behavior.floating.get() {
+            "the fences are up in a Peek, their glass opaque"
+        } else if !shown {
+            "no fence shows the pane on that monitor"
         } else if self.notice_showing() {
             "another card is up"
         } else {
@@ -340,7 +361,9 @@ impl App {
         };
         if waits != self.live_card_waits {
             self.live_card_waits = waits;
-            tracing::info!(player = ?note.player, key = %note.key, waits, "live wallpaper card due");
+            // `reason`: the shareable log keeps that field's fixed words.
+            let reason = waits;
+            tracing::info!(player = ?note.player, key = %note.key, reason, "live wallpaper card due");
         }
         if !waits.is_empty() {
             return;
@@ -683,6 +706,20 @@ mod tests {
         assert_eq!(live_wallpaper_state(&live, monitor(1920)), "notCapturable");
         assert_eq!(live_wallpaper_state(&live, monitor(3840)), "pending");
         assert_eq!(live_wallpaper_state(&live, monitor(-1920)), "none");
+    }
+
+    #[test]
+    fn the_card_counts_only_fences_that_show_the_pane() {
+        // 默认 and 更透明 show the see-through pane.
+        assert!(shows_pane(None, false));
+        assert!(shows_pane(Some(1.0), false));
+        assert!(shows_pane(Some(0.55), false));
+        // 全透明 has no plate, 更厚实 stays opaque, the fence arranged like the desktop has
+        // no plate at any opacity.
+        assert!(!shows_pane(Some(0.0), false));
+        assert!(!shows_pane(Some(1.6), false));
+        assert!(!shows_pane(None, true));
+        assert!(!shows_pane(Some(0.55), true));
     }
 
     #[test]
