@@ -92,7 +92,7 @@ Resources:
       Environment:
         Variables:
           BUCKET: !Ref Bucket
-      # A placeholder: deploy.sh uploads src/index.mjs after the stack is up.
+      # A placeholder: deploy.sh uploads the files of src/ after the stack is up.
       Code:
         ZipFile: |
           exports.handler = async () => ({ statusCode: 503 });

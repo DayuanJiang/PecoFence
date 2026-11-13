@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { receive, validate } from '../src/index.mjs';
+import { receive, validate } from '../src/usage.mjs';
 
 const NOW = Date.parse('2026-11-14T03:00:00Z');
 

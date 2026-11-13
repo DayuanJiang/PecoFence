@@ -4,8 +4,8 @@
 # again after a change.
 #
 #   ./deploy.sh         on CloudFront's flat-rate Free plan (0 USD a month)
-#   ./deploy.sh payg    without the web ACL and the plan (pay-as-you-go), for a first deployment
-#                       to an account the plan refuses
+#   ./deploy.sh payg    without the web ACL and the plan (pay-as-you-go), for an account the
+#                       plan refuses
 set -euo pipefail
 cd "$(dirname "$0")"
 export AWS_PAGER=""
@@ -41,12 +41,18 @@ aws cloudformation deploy --region $region --stack-name $name --template-file te
   --capabilities CAPABILITY_NAMED_IAM --parameter-overrides "WebAclArn=$acl" \
   --tags "project=$name" --no-fail-on-empty-changeset
 
-# The function's code: the template creates the function with a placeholder.
+# The function's code: the template creates the function with a placeholder. The two files
+# go to the top of the zip.
 zip=${TMPDIR:-/tmp}/$name.zip
-python3 -m zipfile -c "$zip" src/index.mjs
+python3 -m zipfile -c "$zip" src/index.mjs src/usage.mjs
 aws lambda update-function-code --region $region --function-name $name \
   --zip-file "fileb://$zip" --query CodeSha256 --output text
 aws lambda wait function-updated --region $region --function-name $name
+
+# The stack's tag reaches everything that takes tags except the Glue database.
+account=$(aws sts get-caller-identity --query Account --output text)
+aws glue tag-resource --region $region --tags-to-add "project=$name" \
+  --resource-arn "arn:aws:glue:$region:$account:database/pecofence_usage"
 
 aws cloudformation describe-stacks --region $region --stack-name $name \
   --query 'Stacks[0].Outputs[].[OutputKey,OutputValue]' --output text
