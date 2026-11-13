@@ -7,7 +7,8 @@
 #      fence looks under the pointer as it does at rest, in 浅色 and 深色, Fluent and Liquid
 #      Glass: no plate, no folded title row; the icons keep their own hover fill; the unseen
 #      title row still moves the fence (move cursor), the edges still resize it, the roll-up
-#      chevron takes no click; a rolled-up fence shows its plate and title as before.
+#      chevron takes no click; a rolled-up fence shows its plate and title as before. In a
+#      Peek, where its glass shows, the pointer brings the title row.
 #   P  the two options in 栅栏选项 (a debug build: run.sh --bin target/wintest-bin-debug --var
 #      Part=P): 右对齐 is in the 图标对齐 list; 鼠标移入时保持透明 shows only while 不透明度
 #      is 全透明, and both reach the fence.
@@ -357,6 +358,24 @@ if ($Part -match 'T') {
       $dDef = [Oa]::Diff($rd, $hd)
       Check 'T at 默认 opacity the switch does nothing: the title row still comes under the pointer' ($dDef -gt 100) "$dDef px differ"
       Pf fence set OaT opacity transparent | Out-Null; Start-Sleep -Milliseconds 1000
+      # A Peek shows the glass of every fully transparent fence, this one too: the pointer
+      # over it then brings the title row and the roll-up chevron, as on any other fence.
+      ParkMouse 1300 700
+      Pf peek start | Out-Null
+      for ($i = 0; $i -lt 25 -and @([W]::Tops('PecoFence.PeekDimmer')).Count -eq 0; $i++) { Start-Sleep -Milliseconds 200 }
+      Start-Sleep -Milliseconds 1200
+      $pk0 = [Px]::Grab($wr.x, $wr.y, $wr.w, 36)
+      Crop 'T-7-peek-rest' $gx $gy $gw $gh | Out-Null
+      [G]::MoveTo($in[0] + 6, $in[1]); Start-Sleep -Milliseconds 100; [G]::MoveTo($in[0], $in[1]); Start-Sleep -Milliseconds 1000
+      $pk1 = [Px]::Grab($wr.x, $wr.y, $wr.w, 36)
+      Crop 'T-7-peek-pointer' $gx $gy $gw $gh | Out-Null
+      $dPk = [Oa]::Diff($pk0, $pk1); $hcPk = NcHit $h $cp[0] $cp[1]
+      $peekOn = @([W]::Tops('PecoFence.PeekDimmer')).Count -gt 0
+      Pf peek end | Out-Null; Start-Sleep -Milliseconds 1500
+      $after = [Px]::Grab($gx, $gy, $gw, $gh)
+      $dAfter = [Oa]::Diff($rest2, $after)
+      Check 'T in a Peek the pointer over the fence brings its title row, and the chevron takes clicks' ($peekOn -and $dPk -gt 300 -and $hcPk -eq 1) "Peek on=$peekOn; $dPk of $($wr.w * 36) px of the title row differ from the row without the pointer; hit at the chevron=$hcPk (1 a button, 2 caption)"
+      Check 'T after the Peek the pointer in the fence shows nothing again' ($dAfter -eq 0) "$dAfter px differ from the fence at rest"
       $first = $false
     }
   }

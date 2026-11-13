@@ -596,9 +596,11 @@ impl FenceViewState {
     /// The pointer is over the fence and shows what the fence hides at rest: the plate of a
     /// fully transparent fence, a title row folded away by title on hover, the lock glyph.
     /// Not with 鼠标移入时保持透明, except in a rolled-up fence opened by the pointer (hover
-    /// peek): that one keeps the plate and title row it shows rolled up.
+    /// peek): that one keeps the plate and title row it shows rolled up; and except while the
+    /// fence floats above other windows (Peek): its plate shows then anyway, so the pointer
+    /// brings the title row as on every other fence.
     pub(super) fn pointer_reveals(&self) -> bool {
-        self.mouse_inside && (!self.stays_clear() || self.peeking)
+        self.mouse_inside && (!self.stays_clear() || self.peeking || self.behavior.floating.get())
     }
 
     /// The title row is folded away and the pointer does not bring it back
