@@ -1127,3 +1127,75 @@ mod ipc {
         assert_eq!(after, before);
     }
 }
+
+/// The shell menu prewarm is made for the first shortcut that leads to a file on a fixed local
+/// drive: Windows builds a shortcut's menu from its target's, so a shortcut to a folder, to a
+/// network place or to a drive that is not there is left alone, and the disk is asked about a
+/// target on a fixed drive only.
+#[test]
+fn the_shell_menu_prewarm_takes_a_shortcut_to_a_local_file() {
+    use super::{prewarm_passes_over, prewarm_pick};
+    use std::path::Path;
+    let target = |p: &'static str| Some(Path::new(p));
+    let file = |_: &Path| Some(true);
+    let folder = |_: &Path| Some(false);
+    let nothing = |_: &Path| None;
+    let never = |_: &Path| -> Option<bool> { panic!("the disk is asked for a fixed drive only") };
+    assert_eq!(
+        prewarm_passes_over(target(r"C:\Windows\notepad.exe"), "fixed", file),
+        None
+    );
+    assert_eq!(
+        prewarm_passes_over(target(r"C:\Users"), "fixed", folder),
+        Some("target is a folder")
+    );
+    assert_eq!(
+        prewarm_passes_over(target(r"C:\gone\a.exe"), "fixed", nothing),
+        Some("target is missing")
+    );
+    assert_eq!(
+        prewarm_passes_over(target(r"\\server\share\a.exe"), "unc", never),
+        Some("target on a network share")
+    );
+    assert_eq!(
+        prewarm_passes_over(target(r"Z:\a.exe"), "network", never),
+        Some("target on a network drive")
+    );
+    assert_eq!(
+        prewarm_passes_over(target(r"Q:\none\a.exe"), "unknown", never),
+        Some("target on a drive that is not there")
+    );
+    assert_eq!(
+        prewarm_passes_over(target(r"E:\a.exe"), "removable", never),
+        Some("target on a removable drive")
+    );
+    assert_eq!(
+        prewarm_passes_over(None, "unknown", never),
+        Some("no target path")
+    );
+
+    let paths = |names: &[&str]| -> Vec<PathBuf> { names.iter().map(PathBuf::from).collect() };
+    let shortcuts = paths(&["!a.lnk", "b.lnk", "c.lnk", "d.lnk"]);
+    let files = paths(&["gone.txt", "e.txt", "f.txt"]);
+    let there = |p: &Path| p != Path::new("gone.txt");
+    // The first shortcut that fits, in order; the ones before it with their reasons.
+    let odd = |p: &Path| match p.to_str() {
+        Some("!a.lnk") => Some("target is a folder"),
+        Some("b.lnk") => Some("target on a network share"),
+        _ => None,
+    };
+    let (file, passed) = prewarm_pick(&shortcuts, &files, odd, there);
+    assert_eq!(file, Some((Path::new("c.lnk"), "shortcut")));
+    assert_eq!(passed, ["target is a folder", "target on a network share"]);
+    // Every shortcut fits: the first one, as before.
+    let (file, passed) = prewarm_pick(&shortcuts, &files, |_| None, there);
+    assert_eq!(file, Some((Path::new("!a.lnk"), "shortcut")));
+    assert!(passed.is_empty());
+    // No shortcut fits: the first other file that is there.
+    let (file, passed) = prewarm_pick(&shortcuts, &files, |_| Some("target is a folder"), there);
+    assert_eq!(file, Some((Path::new("e.txt"), "plain file")));
+    assert_eq!(passed.len(), 4);
+    // Nothing fits: no prewarm.
+    let (file, _) = prewarm_pick(&shortcuts, &[], |_| Some("no target path"), there);
+    assert_eq!(file, None);
+}

@@ -2372,6 +2372,9 @@ impl App {
         // most (a web link's has a dozen entries less, and the first right-click on a shortcut
         // then still waits for the rest). The items are a hash map, so "the first one" was
         // another file at every start: take the paths in order and a shortcut before the rest.
+        // Windows builds a shortcut's menu from its target's: only a shortcut to a file on a
+        // fixed local drive is taken (`prewarm_passes_over`), else the first other file. The
+        // worker chooses: it reads the shortcuts' targets and asks the disk, off this thread.
         let mut paths: Vec<&str> = app
             .state
             .config
@@ -2381,29 +2384,22 @@ impl App {
             .collect();
         paths.sort_unstable();
         let is_shortcut = |p: &&&str| p.to_ascii_lowercase().ends_with(".lnk");
-        let file = paths
-            .iter()
-            .filter(is_shortcut)
-            .take(32)
-            .chain(paths.iter().take(32))
-            .map(PathBuf::from)
-            .find(|p| p.is_file());
-        tracing::info!(
-            file = ?file.as_ref().and_then(|p| p.extension()),
-            items = paths.len(),
-            "shell menu prewarm: the file it is made for, by kind"
-        );
-        match file {
-            _ if !app.previous_run_ended_normally() => {
-                tracing::info!("shell menu not prewarmed: the previous run did not end normally");
-            }
-            _ if app.windows_menu_off() => {
-                tracing::info!("shell menu not prewarmed: the Windows part of item menus is off");
-            }
-            Some(path) => {
-                pecofence_platform::shell_menu::prewarm(path, Duration::from_secs(2));
-            }
-            None => tracing::info!("shell menu not prewarmed: no file on the desktop"),
+        let (shortcuts, files): (Vec<&&str>, Vec<&&str>) = paths.iter().partition(is_shortcut);
+        let take = |list: Vec<&&str>| -> Vec<PathBuf> {
+            list.into_iter().take(32).map(PathBuf::from).collect()
+        };
+        let (shortcuts, files, items) = (take(shortcuts), take(files), paths.len());
+        if !app.previous_run_ended_normally() {
+            tracing::info!("shell menu not prewarmed: the previous run did not end normally");
+        } else if app.windows_menu_off() {
+            tracing::info!("shell menu not prewarmed: the Windows part of item menus is off");
+        } else if items == 0 {
+            tracing::info!("shell menu not prewarmed: no file on the desktop");
+        } else {
+            pecofence_platform::shell_menu::prewarm(
+                move || prewarm_file(&shortcuts, &files, items),
+                Duration::from_secs(2),
+            );
         }
         if args.dump_stats {
             match pecofence_platform::memstats::MemoryStats::current() {
@@ -3343,4 +3339,82 @@ impl App {
         }
         self.tray = None;
     }
+}
+
+/// Why the shell menu prewarm leaves a shortcut alone (None: its menu is safe to build in the
+/// background). Windows builds a shortcut's menu from its target's: a folder brings the folder
+/// menu (the 「包含到库中」 helper, where the 0.2.4 freeze began), and a target on a share, on a
+/// network or removable drive or on a drive that is not there can keep the worker waiting.
+/// `target` is the path the shortcut leads to (None: it has none), `drive` that path's
+/// `shell::drive_kind`; `is_file` asks the disk (Some(true): a file, Some(false): a folder,
+/// None: nothing there) and is called for a fixed drive only.
+fn prewarm_passes_over(
+    target: Option<&Path>,
+    drive: &str,
+    is_file: impl FnOnce(&Path) -> Option<bool>,
+) -> Option<&'static str> {
+    let Some(target) = target else {
+        return Some("no target path");
+    };
+    match drive {
+        "fixed" => match is_file(target) {
+            Some(true) => None,
+            Some(false) => Some("target is a folder"),
+            None => Some("target is missing"),
+        },
+        "unc" => Some("target on a network share"),
+        "network" => Some("target on a network drive"),
+        "unknown" => Some("target on a drive that is not there"),
+        _ => Some("target on a removable drive"),
+    }
+}
+
+/// The file the shell menu prewarm is made for, with its kind, and why each shortcut before it
+/// was left alone: the first of `shortcuts` that `passes_over` has nothing against (a
+/// shortcut's menu brings the most extensions), else the first of `files` that is there.
+fn prewarm_pick<'a>(
+    shortcuts: &'a [PathBuf],
+    files: &'a [PathBuf],
+    passes_over: impl Fn(&Path) -> Option<&'static str>,
+    is_file: impl Fn(&Path) -> bool,
+) -> (Option<(&'a Path, &'static str)>, Vec<&'static str>) {
+    let mut passed = Vec::new();
+    for shortcut in shortcuts {
+        match passes_over(shortcut) {
+            None => return (Some((shortcut, "shortcut")), passed),
+            Some(why) => passed.push(why),
+        }
+    }
+    let file = files.iter().find(|p| is_file(p));
+    (file.map(|p| (p.as_path(), "plain file")), passed)
+}
+
+/// On the prewarm worker: `prewarm_pick` with the real disk, and the log line that says what
+/// was taken and why shortcuts were left alone (kinds and reasons only, no names or paths).
+fn prewarm_file(shortcuts: &[PathBuf], files: &[PathBuf], items: usize) -> Option<PathBuf> {
+    let started = Instant::now();
+    let passes_over = |link: &Path| {
+        if !link.is_file() {
+            return Some("the shortcut file is gone");
+        }
+        let target = shell::shortcut_target_expanded(link);
+        let drive = target.as_deref().map_or("unknown", shell::drive_kind);
+        prewarm_passes_over(target.as_deref(), drive, |t| {
+            std::fs::metadata(t).ok().map(|m| m.is_file())
+        })
+    };
+    let (file, passed) = prewarm_pick(shortcuts, files, passes_over, |p| p.is_file());
+    // Fixed words only (the shareable log keeps `what` and `reason` as text).
+    let what = file.map_or("none", |(_, kind)| kind);
+    let reason = passed.join(", ");
+    tracing::info!(
+        file = ?file.and_then(|(p, _)| p.extension()),
+        what,
+        shortcuts_left_alone = passed.len(),
+        reason,
+        items,
+        us = started.elapsed().as_micros() as u64,
+        "shell menu prewarm: the file it is made for, by kind"
+    );
+    file.map(|(p, _)| p.to_path_buf())
 }

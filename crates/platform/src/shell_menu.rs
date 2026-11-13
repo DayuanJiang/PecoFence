@@ -308,15 +308,20 @@ pub fn prepare_handler_cache() {
     }
 }
 
-/// Builds the shell's menu for the file `path` once on a worker thread, `after` from now, and
+/// Builds the shell's menu for one file once on a worker thread, `after` from now, and
 /// drops it unseen: the first item menu after a start loads every menu extension of the
 /// installed programs, which took 0.5 to 0.9 s on a PC with many of them (the later menus 60 to
 /// 180 ms), and that loading is done here instead. The modules it loaded are pinned: the
 /// worker's COM apartment would unload the extensions again when it ends, while those the UI
 /// thread loads stay anyway. Only once `prepare_handler_cache` got the handler cache started,
 /// and only for a file: a folder's menu runs Windows' 「包含到库中」 helper, where the 0.2.4
-/// freeze started (see there).
-pub fn prewarm(path: std::path::PathBuf, after: Duration) {
+/// freeze started (see there). A shortcut's menu is built from its target's, so a shortcut to
+/// a folder is a folder here: `pick` chooses the file on the worker (it may read shortcut
+/// targets and ask the disk; COM is initialized), None when no file fits.
+pub fn prewarm(
+    pick: impl FnOnce() -> Option<std::path::PathBuf> + Send + 'static,
+    after: Duration,
+) {
     let spawned = std::thread::Builder::new()
         .name("shell menu prewarm".into())
         .spawn(move || {
@@ -327,6 +332,10 @@ pub fn prewarm(path: std::path::PathBuf, after: Duration) {
                 return;
             }
             let _sta = crate::com::OleGuard::init();
+            let Some(path) = pick() else {
+                tracing::info!("shell menu not prewarmed: no file on the desktop fits");
+                return;
+            };
             let _loads = LoadWatch::new("Prewarm");
             let started = Instant::now();
             let before = loaded_modules();
