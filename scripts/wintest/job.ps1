@@ -14,7 +14,11 @@ trap {
 # the cleanup at the end of this file does not see) shows up in this job's fences (2026-11-12:
 # forty left files made the desktop fence 822 px tall, and it pushed the fence under test).
 # A Hyper-V guest's desktop is left as it is: only the EC2 boxes have these shortcuts.
-if (Test-Path -LiteralPath (Join-Path $PfDesk 'EC2 Feedback.url')) {
+# The box is known by its maker: the two shortcuts can be gone (ec2-2 had lost them, nothing was
+# cleaned there from then on, and on 2026-11-13 three files of the evening before made two lines
+# of the release suite fail).
+$onEc2 = (Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).Manufacturer -eq 'Amazon EC2'
+if ($onEc2 -or (Test-Path -LiteralPath (Join-Path $PfDesk 'EC2 Feedback.url'))) {
   Get-ChildItem -LiteralPath $PfDesk -Force -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -ne 'desktop.ini' -and $_.Name -notlike 'EC2 *.url' } |
     ForEach-Object {
