@@ -231,6 +231,11 @@ o6-tray            3   ec2    debug   owner6-tray.ps1
 # the see-through pane and the card, then the line on the settings page.
 o6-livewall        4   ec2    release owner6-livewall.ps1
 o6-livewall-page   3   ec2    debug   owner6-livewall.ps1            --var Part=P
+o6-livewall-card   3   ec2    release owner6-livewall.ps1            --var Part=C
+o8-pane-tint       2   ec2    release owner8-pane-tint.ps1
+# The shell menu prewarm with a shortcut to a folder, a dead share and a missing drive first in
+# path order: an Administrator has to put the file on the public desktop first (the file's header).
+o8-prewarm         2   manual release owner8-prewarm.ps1
 # 图标对齐 右对齐 and 鼠标移入时保持透明 (GitHub #222): the fences, the two options in 栅栏选项,
 # and 右对齐 at 150 %.
 o6-align           4   ec2    release owner6-align.ps1
