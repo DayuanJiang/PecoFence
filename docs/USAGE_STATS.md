@@ -18,7 +18,7 @@ minutes after the start.
 
 ```json
 { "v": 1, "id": "5f0c2a9e7b1d4c38a6e0f1b2c3d4e5f6", "day": "2026-11-14",
-  "app": "0.3.4", "edition": "installer", "windows": "10.0.26200", "language": "zh-CN",
+  "app": "0.4.0", "edition": "installer", "windows": "10.0.26200", "language": "zh-CN",
   "settings": { "theme": "dark", "hideRealIcons": true, "customTheme": "unset" },
   "state": { "fences": 6, "tabs": 2, "portals": 1, "smart": 0, "tools": 1, "rules": 5, "items": 73 },
   "health": { "startupMs": 420, "memoryMB": 31, "crashed": false },
