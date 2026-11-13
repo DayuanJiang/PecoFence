@@ -2,9 +2,10 @@
 
 Receives the app's daily usage report (`docs/USAGE_STATS.md` says what a report holds) and keeps
 it for the questions in `queries.sql`. It runs in the maintainer's AWS account, region
-ap-northeast-1 (Tokyo). Live at `https://dipg04t9bhh01.cloudfront.net/usage`.
+ap-northeast-1 (Tokyo). Live at `https://usage.pecofence.jiang.jp/usage`.
 
-1. The app posts its report to a CloudFront distribution.
+1. The app posts its report to a CloudFront distribution. It has a name of its own because
+   connections to `*.cloudfront.net` names are reset in mainland China.
 2. CloudFront passes the request to the Lambda function `pecofence-usage` (`src/index.mjs`),
    which checks the report (`src/usage.mjs`) and writes it to the private bucket
    `pecofence-usage-<account id>` as `day=<day>/<id>.json`. A later upload of the same day
@@ -24,7 +25,7 @@ moment; `403` also for an IP address that sent more than 100 requests in 5 minut
 
 ```sh
 body='{"v":1,"id":"5f0c2a9e7b1d4c38a6e0f1b2c3d4e5f6","day":"2026-11-14","events":[[32400,"start","by_hand"]]}'
-curl -i https://dipg04t9bhh01.cloudfront.net/usage -H 'Content-Type: application/json' \
+curl -i https://usage.pecofence.jiang.jp/usage -H 'Content-Type: application/json' \
   -H "x-amz-content-sha256: $(printf %s "$body" | sha256sum | cut -d' ' -f1)" --data-binary "$body"
 ```
 
@@ -59,6 +60,34 @@ and delete the web ACL with the last two commands of "Remove everything".
 
 Tests: `node --test` (no dependencies; the write to S3 is replaced).
 
+### The name usage.pecofence.jiang.jp
+
+Set up once, outside the stack. The certificate lives in us-east-1, the only region CloudFront
+takes certificates from:
+
+```sh
+aws acm request-certificate --region us-east-1 --domain-name usage.pecofence.jiang.jp \
+  --validation-method DNS --tags Key=project,Value=pecofence-usage
+```
+
+The zone `jiang.jp` is at Cloudflare. It holds two records for this service, both CNAME and
+both DNS only (not proxied):
+
+| Name | Target |
+| --- | --- |
+| `_52014062f1f567dfdf2b6c2cbbe194d4.usage.pecofence.jiang.jp` | `_a30fee4ee3b80c2f2702fe86f61832f8.wzccmgtwzk.acm-validations.aws` |
+| `usage.pecofence.jiang.jp` | `dipg04t9bhh01.cloudfront.net` |
+
+The first one proves to ACM that the name is ours and has to stay: ACM renews the certificate
+through it, without anyone's help. `aws acm describe-certificate` shows it for a new
+certificate. The
+second one points at the distribution, the stack's output `DistributionDomain`. A stack that
+was deleted and deployed again has a new one, and the record has to follow.
+
+Once the certificate is issued, `./deploy.sh` finds it and gives the name and the certificate
+to the stack (the parameters `DomainName` and `CertificateArn`). The distribution keeps
+answering under its `cloudfront.net` name as well.
+
 ## Query
 
 In the Athena console (region ap-northeast-1) choose the workgroup `pecofence-usage`, then run
@@ -80,7 +109,11 @@ aws cloudformation delete-stack --region ap-northeast-1 --stack-name pecofence-u
 aws cloudformation wait stack-delete-complete --region ap-northeast-1 --stack-name pecofence-usage
 aws wafv2 list-web-acls --scope CLOUDFRONT --region us-east-1   # Id and LockToken of pecofence-usage
 aws wafv2 delete-web-acl --scope CLOUDFRONT --region us-east-1 --name pecofence-usage --id <Id> --lock-token <LockToken>
+aws acm list-certificates --region us-east-1                    # the ARN for usage.pecofence.jiang.jp
+aws acm delete-certificate --region us-east-1 --certificate-arn <ARN>
 ```
 
 Deleting the stack cancels the Free plan first and then waits for CloudFront to take the
-distribution down, about five minutes in all.
+distribution down, about five minutes in all. The certificate can only be deleted after the
+distribution. Last, delete the two CNAME records in the Cloudflare dashboard (zone `jiang.jp`,
+DNS, Records): `usage.pecofence` and `_52014062f1f567dfdf2b6c2cbbe194d4.usage.pecofence`.
