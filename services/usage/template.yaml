@@ -12,9 +12,22 @@ Parameters:
       The web ACL that deploy.sh creates in us-east-1 (where CloudFront's web ACLs live). When
       given, it is attached to the distribution and the distribution is subscribed to
       CloudFront's flat-rate Free plan. Empty: no web ACL, pay-as-you-go.
+  DomainName:
+    Type: String
+    Default: ''
+    Description: >-
+      The distribution's own name (usage.pecofence.jiang.jp); its DNS record is a CNAME to the
+      distribution's cloudfront.net name. Empty: the cloudfront.net name only.
+  CertificateArn:
+    Type: String
+    Default: ''
+    Description: >-
+      The ACM certificate for DomainName, issued in us-east-1 (the only region CloudFront
+      takes certificates from).
 
 Conditions:
   FreePlan: !Not [!Equals [!Ref WebAclArn, '']]
+  OwnName: !Not [!Equals [!Ref DomainName, '']]
 
 Resources:
   # One object per installation and day: day=YYYY-MM-DD/<id>.json. Athena's query results go
@@ -126,6 +139,14 @@ Resources:
         HttpVersion: http2
         IPV6Enabled: true
         WebACLId: !If [FreePlan, !Ref WebAclArn, !Ref AWS::NoValue]
+        # The name of its own with its certificate. The cloudfront.net name keeps answering.
+        Aliases: !If [OwnName, [!Ref DomainName], !Ref AWS::NoValue]
+        ViewerCertificate: !If
+          - OwnName
+          - AcmCertificateArn: !Ref CertificateArn
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - !Ref AWS::NoValue
         Origins:
           - Id: function
             # The host of https://<id>.lambda-url.<region>.on.aws/
@@ -244,7 +265,10 @@ Resources:
 Outputs:
   Endpoint:
     Description: The address the app posts its reports to
-    Value: !Sub https://${Distribution.DomainName}/usage
+    Value: !If [OwnName, !Sub 'https://${DomainName}/usage', !Sub 'https://${Distribution.DomainName}/usage']
+  DistributionDomain:
+    Description: The distribution's cloudfront.net name, the target of the own name's DNS record
+    Value: !GetAtt Distribution.DomainName
   DistributionId:
     Value: !Ref Distribution
   FunctionUrl:

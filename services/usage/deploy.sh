@@ -37,8 +37,20 @@ if [ "${1:-}" != payg ]; then
   fi
 fi
 
+# The distribution's own name, when its certificate has been issued (README.md says how to
+# request it; CloudFront takes certificates from us-east-1 only). Without one the distribution
+# answers under its cloudfront.net name alone.
+domain=usage.pecofence.jiang.jp
+certificate=$(aws acm list-certificates --region us-east-1 --certificate-statuses ISSUED \
+  --query "CertificateSummaryList[?DomainName=='$domain'].CertificateArn | [0]" --output text)
+if [ "$certificate" = None ]; then
+  domain=
+  certificate=
+fi
+
 aws cloudformation deploy --region $region --stack-name $name --template-file template.yaml \
-  --capabilities CAPABILITY_NAMED_IAM --parameter-overrides "WebAclArn=$acl" \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides "WebAclArn=$acl" "DomainName=$domain" "CertificateArn=$certificate" \
   --tags "project=$name" --no-fail-on-empty-changeset
 
 # The function's code: the template creates the function with a placeholder. The two files
