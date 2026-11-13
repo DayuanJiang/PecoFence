@@ -254,6 +254,7 @@ const REPORTED_SETTINGS: &[&str] = &[
     "perDesktopFences",
     "featureTips",
     "autoCheckUpdates",
+    "showTrayIcon",
     "snapping.enabled",
     "snapping.gapPx",
     "snapping.sizeToCells",

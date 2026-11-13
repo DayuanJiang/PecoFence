@@ -74,9 +74,9 @@ from a few central places of the program:
   `roll_up.title_on_hover`, `roll_up.hide_inactive_scrollbar`, `roll_up.push_neighbors`,
   `roll_up.switch_tab_on_hover`, `roll_up.hide_count_and_chevron`, `show_desktop`,
   `hide_real_icons`, `keep_icons_hidden`, `hide_inbox_when_icons_shown`, `offer_new_fence`,
-  `per_desktop_fences`, `feature_tips`, `auto_check_updates`, `snapping.enabled`,
-  `snapping.gap_px`, `snapping.size_to_cells`, `snapping.guide_lines`, `zorder`, `autostart`,
-  `peek.enabled`, `peek.dim`, `peek.double_ctrl`, `peek.custom_hotkey`,
+  `per_desktop_fences`, `feature_tips`, `auto_check_updates`, `show_tray_icon`,
+  `snapping.enabled`, `snapping.gap_px`, `snapping.size_to_cells`, `snapping.guide_lines`,
+  `zorder`, `autostart`, `peek.enabled`, `peek.dim`, `peek.double_ctrl`, `peek.custom_hotkey`,
   `windows_desktop_hotkey`, `icons.tint_rgb`, `icons.tint_strength`, `icons.chameleon`,
   `icons.shortcut_arrows`, `tools.enabled`, `tools.clock_seconds`, `tools.dialog_jump`,
   `tools.everything`.
@@ -84,11 +84,12 @@ from a few central places of the program:
   option's name (never its value): `title`, `icon_size`, `spacing`, `spacing_px`, `icon_align`,
   `auto_height`, `locked`, `expand_upward`, `exclude_from_quick_hide`, `opacity`, `tint`,
   `tint_title_only`, `tab_color`, `title_color`, `title_size`, `text_size`, `title_on_hover`,
-  `layout`, `sort`, `reverse`, `group_by_date`, `folders_first`, `label_lines`,
-  `open_folders_inside`, `portal_navigate`, `portal_title_icon`, `hide_when_empty`,
-  `desktop_layout`, `free_placement`, `note_text`, `script_path`, `script_interval`,
-  `smart_folder`, `smart_match`, `smart_subfolders`, `smart_within_days`, `smart_conditions`,
-  `smart_name`, `smart_everything`, `smart_limit`, `virtual_desktops`, `dock_top`.
+  `transparent_on_hover`, `layout`, `sort`, `reverse`, `group_by_date`, `folders_first`,
+  `label_lines`, `open_folders_inside`, `portal_navigate`, `portal_title_icon`,
+  `hide_when_empty`, `desktop_layout`, `free_placement`, `note_text`, `script_path`,
+  `script_interval`, `smart_folder`, `smart_match`, `smart_subfolders`, `smart_within_days`,
+  `smart_conditions`, `smart_name`, `smart_everything`, `smart_limit`, `virtual_desktops`,
+  `dock_top`.
 - **`cli`**, for a request of `pecofence-cli` that changed something, with the method:
   `fences.create`, `fences.delete`, `fences.rename`, `fences.refresh`, `fences.set_bounds`,
   `fences.move_to_monitor`, `fences.set_option`, `fences.fit`, `fences.roll`, `fences.dock_top`,
@@ -96,23 +97,26 @@ from a few central places of the program:
   `settings.patch`, `rules.set`, `rules.add`, `rules.remove`, `rules.enable`, `rules.move`,
   `rules.apply`, `snapshots.save`, `snapshots.restore`, `snapshots.delete`, `config.import`,
   `backups.restore`.
-- **A command of the program**, one name for each thing a click, a key or a drop asks it to
-  do: `fence_dropped` (a fence was moved), `toggle_roll_up`, `fit_to_content`,
-  `commit_expanded`, `launch_item`, `move_items`, `reorder_items`, `drop_into_folder`,
-  `drag_out_finished`, `portal_enter`, `portal_up`, `portal_forward`, `open_portal_folder`,
-  `focus_next_fence`, `merge_fence`, `set_column_widths`, `switch_tab`, `detach_tab`,
-  `cancel_detach`, `reorder_tab`, `move_items_to_inbox`, `external_drop`, `external_url_drop`,
-  `shell_drop`, `header_menu`, `fence_menu`, `item_menu` (a menu was opened), `clipboard_verb`,
-  `paste`, `new_folder`, `step_icon_size`, `item_properties`, `refresh_fence`, `rename_fence`,
-  `rename_item`, `rename_item_commit`, `rename_item_invalid`, `delete_items`, `delete_fence`,
-  `new_fence`, `new_note`, `new_clock`, `new_script`, `new_script_example`,
-  `open_smart_editor`, `open_fence_filter`, `fence_filter_closed`, `clear_fence_filter`,
-  `edit_note`, `note_edited`, `toggle_note_line`, `script_row_clicked`, `new_fence_rect`,
-  `marquee_offer`, `toggle_peek`, `end_peek`, `peek_search_step`, `peek_search_open`,
-  `peek_search_open_row`, `peek_search_open_folder`, `peek_search_actions`,
-  `peek_search_row_menu`, `apply_rules_now`, `open_settings`, `open_options_for_fence`,
-  `sort_column`, `notice` (a card in the corner was clicked or went away), `undo`.
+- **A command of the program**, one name for each thing a click, a key or a drop asks it to do:
+  `fence_dropped` (a fence was moved), `toggle_roll_up`, `fit_to_content`, `commit_expanded`,
+  `launch_item`, `move_items`, `reorder_items`, `drop_into_folder`, `drag_out_finished`,
+  `portal_enter`, `portal_up`, `portal_forward`, `open_portal_folder`, `focus_next_fence`,
+  `merge_fence`, `set_column_widths`, `switch_tab`, `detach_tab`, `cancel_detach`,
+  `reorder_tab`, `move_items_to_inbox`, `external_drop`, `external_url_drop`, `shell_drop`,
+  `header_menu`, `fence_menu`, `item_menu` (a menu was opened), `clipboard_verb`, `paste`,
+  `new_folder`, `step_icon_size`, `item_properties`, `refresh_fence`, `rename_fence`,
+  `edit_fence_name`, `rename_item`, `rename_item_commit`, `rename_item_invalid`,
+  `delete_items`, `delete_fence`, `new_fence`, `new_note`, `new_clock`, `new_script`,
+  `new_script_example`, `open_smart_editor`, `open_fence_filter`, `fence_filter_closed`,
+  `clear_fence_filter`, `edit_note`, `note_edited`, `toggle_note_line`, `move_note_line`,
+  `open_note_link`, `note_edit_menu`, `script_row_clicked`, `empty_action_clicked`,
+  `new_fence_rect`, `marquee_offer`, `cancel_cut`, `toggle_peek`, `end_peek`,
+  `peek_search_step`, `peek_search_page`, `peek_search_open`, `peek_search_open_row`,
+  `peek_search_open_folder`, `peek_search_actions`, `peek_search_row_menu`, `apply_rules_now`,
+  `open_settings`, `open_options_for_fence`, `sort_column`, `notice` (a card in the corner was
+  clicked or went away), `card_keys` (F6: the keyboard goes to that card), `undo`.
 
 Not recorded: what the program does by itself (redrawing, raising a fence that was clicked,
-taking a search result), what happens many times during one drag, and every typed character.
-Resizing a fence and the buttons of the settings window are not recorded either.
+taking a search result), what happens many times during one drag or one turn of the wheel, and
+every typed character and move of the caret in a note. Resizing a fence and the buttons of the
+settings window are not recorded either.

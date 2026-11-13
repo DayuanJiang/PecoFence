@@ -743,20 +743,27 @@ fn command_name(cmd: &Command) -> String {
 fn not_recorded(cmd: &Command) -> bool {
     matches!(
         cmd,
-        // The program queues these for itself: after an animation or a layout pass, for a
-        // window that opened, closed or was pressed, with a worker's answer.
+        // The program queues these for itself: after an animation or a layout pass, on a
+        // timer, for a window that opened, closed, was pressed or came under the pointer,
+        // with a worker's answer.
         Command::FenceBoundsChanged { .. }
             | Command::DesktopCellsPlaced { .. }
+            | Command::DesktopIconsAtRest
             | Command::BeginFenceRename(_)
             | Command::EndItemRename { .. }
             | Command::FocusFence(_)
             | Command::RaiseFence(_)
             | Command::RaiseForHover(_)
             | Command::EndHoverRaise(_)
+            | Command::PortalPointerIn(_)
             | Command::EndItemSelection { .. }
+            | Command::EndNoteEdit
+            | Command::CardKeysBack
             | Command::ClearFenceSelection
             | Command::PeekDragStarted
             | Command::PeekDragEnded { .. }
+            | Command::PeekSearchFaded
+            | Command::NoteCaretBlink { .. }
             | Command::SmartResults { .. }
             | Command::EverythingResults { .. }
             | Command::DeviceLost
@@ -764,14 +771,18 @@ fn not_recorded(cmd: &Command) -> bool {
             | Command::WindowGone(_)
             | Command::FadeOutDone(_)
             | Command::SettingsActivated
-            // Many during one drag.
+            // Many during one drag or one turn of the wheel.
             | Command::MergeHint { .. }
             | Command::DesktopMarquee(_)
-            // One for every typed character.
+            | Command::PeekSearchScroll(_)
+            // One for every typed character or move of the caret in a note.
             | Command::PeekSearchType(_)
             | Command::PeekSearchChanged
             | Command::FenceFilterText { .. }
             | Command::EditorMessage(_)
+            | Command::NoteEditState { .. }
+            | Command::NoteCaret { .. }
+            | Command::NoteCaretLine { .. }
             // Recorded where they are handled: `settings.page`, `settings.set`,
             // `settings.fence`, `exit`.
             | Command::SettingsMessage(_)
