@@ -174,7 +174,7 @@ Assinatura de código gratuita fornecida pela [SignPath.io](https://about.signpa
 
 Só são assinados os arquivos que o GitHub Actions compila a partir de uma tag de versão deste repositório. Cada assinatura é aprovada manualmente.
 
-**Privacidade:** este programa não transfere nenhuma informação para outros sistemas em rede, a menos que o usuário ou a pessoa que o instala ou opera peça isso expressamente. **Verificar atualizações** consulta a API do GitHub. O que você envia em **Comentários** vai para o serviço de comentários do PecoFence. A janela de configurações roda no Microsoft Edge WebView2, ao qual se aplica a [Declaração de Privacidade da Microsoft](https://privacy.microsoft.com/privacystatement).
+**Privacidade:** o PecoFence verifica atualizações no GitHub e envia [estatísticas de uso](../USAGE_STATS.md) ao serviço do PecoFence. As duas coisas podem ser desativadas em **Configurações › Sobre**. O que você envia em **Comentários** vai para o serviço de comentários do PecoFence. A janela de configurações roda no Microsoft Edge WebView2, ao qual se aplica a [Declaração de Privacidade da Microsoft](https://privacy.microsoft.com/privacystatement).
 
 ---
 

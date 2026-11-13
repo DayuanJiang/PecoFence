@@ -175,7 +175,7 @@ Firma del codice gratuita offerta da [SignPath.io](https://about.signpath.io/), 
 
 Vengono firmati solo i file che GitHub Actions compila da un tag di versione di questo repository. Ogni firma viene approvata a mano.
 
-**Privacy:** questo programma non trasferisce alcuna informazione ad altri sistemi in rete, a meno che non lo chieda espressamente l'utente o la persona che lo installa o lo usa. **Controlla gli aggiornamenti** contatta l'API di GitHub. Quello che invii da **Feedback** arriva al servizio di feedback di PecoFence. La finestra delle impostazioni usa Microsoft Edge WebView2, a cui si applica l'[Informativa sulla privacy di Microsoft](https://privacy.microsoft.com/privacystatement).
+**Privacy:** PecoFence controlla gli aggiornamenti su GitHub e invia [statistiche di utilizzo](../USAGE_STATS.md) al servizio di PecoFence. Entrambe le funzioni si possono disattivare in **Impostazioni › Informazioni**. Quello che invii da **Feedback** arriva al servizio di feedback di PecoFence. La finestra delle impostazioni usa Microsoft Edge WebView2, a cui si applica l'[Informativa sulla privacy di Microsoft](https://privacy.microsoft.com/privacystatement).
 
 ---
 

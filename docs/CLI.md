@@ -297,6 +297,7 @@ feature would help, such as rolling up fences once there are many, showing a fol
 the desktop, or a rule for files of one type dragged into one fence; each shows once; default on),
 `autoCheckUpdates` (「自动检查更新」, installer and ZIP editions: a check of GitHub's latest release
 about a minute after start and then once a day, and a card once per new version; default on),
+`usageStats` (「帮助改进 PecoFence」: [usage statistics](USAGE_STATS.md); default on),
 `autostart`, `peek.enabled`, `peek.doubleCtrl` (`true` makes
 Peek open by pressing Ctrl twice quickly, with its search box, instead of the shortcut, which stays
 saved but is not registered; setting `peek.hotkey` or `peek.customHotkey` turns it off; works only
