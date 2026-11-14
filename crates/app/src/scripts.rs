@@ -923,9 +923,12 @@ fn outdated_example(path: &Path) -> Option<(Example, bool)> {
     let name = path.file_name()?.to_string_lossy().to_string();
     if let Some(written) = read_examples_record(path).remove(&name) {
         let kind = Example::parse(&written.example)?;
-        let unedited = fingerprint(&std::fs::read_to_string(path).ok()?) == written.fingerprint;
-        let current = fingerprint(example(kind, written.chinese));
-        return (unedited && current != written.fingerprint).then_some((kind, written.chinese));
+        if fingerprint(&std::fs::read_to_string(path).ok()?) == written.fingerprint {
+            let current = fingerprint(example(kind, written.chinese));
+            return (current != written.fingerprint).then_some((kind, written.chinese));
+        }
+        // Changed since it was written: edited, unless it is an earlier version's text word
+        // for word (an old copy put back), which the check below knows.
     }
     // Only small files can be one of the old texts (a script fence may run a large .exe).
     if std::fs::metadata(path).map_or(true, |m| m.len() > 16 * 1024) {
