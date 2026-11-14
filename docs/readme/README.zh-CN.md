@@ -182,7 +182,7 @@ Microsoft Store 版由微软签名，自动更新，不会出现 SmartScreen 提
 
 只有 GitHub Actions 从本仓库的版本标签构建出来的文件才会签名。每一次签名都要人工批准。
 
-**隐私：** 除非用户或安装、使用本程序的人明确要求，本程序不会向其他联网系统发送任何信息。点**检查更新**时，它会访问 GitHub 的接口；只有 GitHub 没有回答时，才改为访问 PecoFence 的网站（pecofence.jiang.jp）。除了请求本身（其中带有 PecoFence 的版本号），不发送任何信息。在**反馈**里发送的内容会送到 PecoFence 的反馈服务。设置窗口基于 Microsoft Edge WebView2，适用 [Microsoft 隐私声明](https://privacy.microsoft.com/privacystatement)。
+**隐私：** PecoFence 会到 GitHub 检查更新，并向 PecoFence 的服务发送[使用统计](../USAGE_STATS.md)。两项都可以在**设置 › 关于**里关闭。检查更新时，它会访问 GitHub 的接口；只有 GitHub 没有回答时，才改为访问 PecoFence 的网站（pecofence.jiang.jp）。这时除了请求本身（其中带有 PecoFence 的版本号），不发送任何信息。在**反馈**里发送的内容会送到 PecoFence 的反馈服务。设置窗口基于 Microsoft Edge WebView2，适用 [Microsoft 隐私声明](https://privacy.microsoft.com/privacystatement)。
 
 ---
 

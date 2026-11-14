@@ -932,6 +932,7 @@
       </div>
       <div class="card" id="updateCard" hidden><div class="l"><span class="ic">&#xE895;</span><div><div class="t">更新</div><div class="s" id="updateStatus"></div></div></div><div class="actions"><button id="updateSite" hidden>打开下载页</button><button id="updateAction"></button></div></div>
       <div class="card" id="updateAutoCard" hidden><div class="l"><span class="ic">&#xE823;</span><div><div class="t">自动检查更新</div><div class="s">每天检查一次有没有新版本，有新版本时提醒一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="autoCheckUpdates"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE9D2;</span><div><div class="t">帮助改进 PecoFence</div><div class="s">发送匿名的使用统计，例如用了哪些功能。文件名、路径和你输入的文字不会发送。</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="usageStats"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE897;</span><div><div class="t">使用手册</div><div class="s">每个功能都有动画演示</div></div></div><button id="openManual">打开</button></div>
       <div class="card"><div class="l"><span class="ic">&#xE734;</span><div><div class="t">喜欢 PecoFence 吗？</div><div class="s">你的支持能让更多人发现它。</div></div></div>
         <div class="actions"><button id="rateStore" hidden>在 Microsoft Store 评分</button><button id="starRepo">在 GitHub 点 Star</button></div></div>
@@ -1336,6 +1337,7 @@
     a.tabIndex = 0;
     document.querySelectorAll('.page').forEach(p => p.classList.toggle('on', p.id === 'page-' + name));
     document.querySelector('main').scrollTop = 0;
+    send({ type: 'page', name });
     if (name === 'about') requestFeedbackInfo();
     ringFence();
     viewSoon();

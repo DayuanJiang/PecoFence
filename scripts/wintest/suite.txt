@@ -168,7 +168,10 @@ o2-requests-TD     2   ec2    release owner2-requests.ps1            --var Part=
 o2-requests-FV     2   ec2    release owner2-requests.ps1            --var Part=FV
 o2-requests-page   2   ec2    debug   owner2-requests.ps1            --var Part=FVS
 o2-hardening       3   ec2    release owner2-hardening.ps1
-o2-lang            4   ec2    release owner2-hunt-lang.ps1
+# Eleven languages at about 100 s each: two jobs, or the 900 s limit of a job ends the
+# line after the ninth language (it did in every run up to 2026-11-14).
+o2-lang-A          10  ec2    release owner2-hunt-lang.ps1           --var Langs=zh-CN,en,ja,zh-TW,ko,de
+o2-lang-B          9   ec2    release owner2-hunt-lang.ps1           --var Langs=fr,es,pt-BR,ru,it
 o2-tabs            4   ec2    release owner2-hunt-tabs.ps1
 o2-smart           4   ec2    release owner2-hunt-smart.ps1
 o2-smart-page      2   ec2    debug   owner2-hunt-smart.ps1          --var Part=G
@@ -241,3 +244,6 @@ o8-prewarm         2   manual release owner8-prewarm.ps1
 o6-align           4   ec2    release owner6-align.ps1
 o6-align-page      3   ec2    debug   owner6-align.ps1               --var Part=P
 o6-align-scale     3   resize release free-placement.ps1             --part S --steps owner6-align.ps1
+# Usage statistics: operations appear in usage.json, nothing typed does, an upload, the switch.
+usage-stats        4   ec2    release usage.ps1
+usage-desc         2   ec2    debug   usage-description.ps1

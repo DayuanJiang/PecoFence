@@ -207,6 +207,10 @@ pub struct Settings {
     /// while none of Peek's shortcuts can be registered (速览所有栅栏 is in that menu).
     #[serde(default = "default_true")]
     pub show_tray_icon: bool,
+    /// 发送使用统计: which features are used and in which order, with the version, the Windows
+    /// version and a random install number (`usage.rs`). No names, paths or typed text.
+    #[serde(default = "default_true")]
+    pub usage_stats: bool,
     /// Unused (see [`UNUSED_SETTINGS`]).
     #[serde(default)]
     #[cfg_attr(feature = "schema", schemars(skip))]
@@ -444,6 +448,7 @@ impl Default for Settings {
             feature_tips: true,
             auto_check_updates: true,
             show_tray_icon: true,
+            usage_stats: true,
             show_real_icons_when_fences_hidden: false,
             snapping: SnappingSettings::default(),
             zorder: ZOrderSetting::InsertAboveHost,

@@ -193,7 +193,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io/), certifi
 
 Only the files that GitHub Actions builds from a version tag of this repository are signed, and every signing request is approved by hand.
 
-**Privacy:** This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. **Check for updates** contacts the GitHub API and, only when GitHub does not answer, the PecoFence website (pecofence.jiang.jp). Nothing is sent but the request itself, which names the PecoFence version. A message you send from **Feedback** goes to the PecoFence feedback service. The Settings window runs on Microsoft Edge WebView2, which follows the [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement).
+**Privacy:** PecoFence checks GitHub for updates and sends [usage statistics](docs/USAGE_STATS.md) to the PecoFence service. Both can be switched off in **Settings › About**. The update check contacts the GitHub API and, only when GitHub does not answer, the PecoFence website (pecofence.jiang.jp). It sends nothing but the request itself, which names the PecoFence version. A message you send from **Feedback** goes to the PecoFence feedback service. The Settings window runs on Microsoft Edge WebView2, which follows the [Microsoft Privacy Statement](https://privacy.microsoft.com/privacystatement).
 
 ---
 

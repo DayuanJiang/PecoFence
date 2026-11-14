@@ -155,6 +155,11 @@ fn spawn(path: &Path, env: &RunEnv, stdin: bool) -> Result<std::process::Child, 
 
 /// Runs `path` once, at most [`TIMEOUT`], in its own folder and without a window.
 pub fn run(path: &Path, env: &RunEnv) -> Outcome {
+    run_within(path, env, TIMEOUT)
+}
+
+/// [`run`] with the time limit given (the tests give a slow CI machine more).
+fn run_within(path: &Path, env: &RunEnv, limit: Duration) -> Outcome {
     let mut child = match spawn(path, env, false) {
         Ok(child) => child,
         Err(outcome) => return outcome,
@@ -198,7 +203,7 @@ pub fn run(path: &Path, env: &RunEnv) -> Outcome {
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
-            Ok(None) if begun.elapsed() >= TIMEOUT => {
+            Ok(None) if begun.elapsed() >= limit => {
                 match &job {
                     Some(job) => job.terminate(),
                     None => {
@@ -961,7 +966,8 @@ mod tests {
             )),
         )
         .unwrap();
-        let outcome = run(&wrap, &RunEnv::default());
+        // A CI machine can take longer than the app's 10 s to start PowerShell the first time.
+        let outcome = run_within(&wrap, &RunEnv::default(), Duration::from_secs(90));
         let _ = std::fs::remove_dir_all(&dir);
         let Outcome::Done(text) = outcome else {
             panic!("{name}: {outcome:?}");

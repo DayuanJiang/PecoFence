@@ -1019,5 +1019,7 @@
   "保留 Liquid Glass": "Tieni Liquid Glass",
   "{0} 的壁纸画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "L’immagine dello sfondo di {0} non si può leggere, quindi i riquadri Liquid Glass per ora sono un vetro traslucido senza rifrazione. Tornano normali quando lo sfondo animato viene chiuso; Fluent non è interessato",
   "这种动态壁纸的画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "L’immagine di questo tipo di sfondo animato non si può leggere, quindi i riquadri Liquid Glass per ora sono un vetro traslucido senza rifrazione. Tornano normali quando lo sfondo animato viene chiuso; Fluent non è interessato",
-  "动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”": "Mentre uno sfondo animato è in riproduzione, Liquid Glass è un vetro smerigliato fatto con un’immagine fissa dello sfondo. Per far vedere lo sfondo stesso, imposta l’opacità su «Più trasparente» nella pagina «Riquadri»"
+  "动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”": "Mentre uno sfondo animato è in riproduzione, Liquid Glass è un vetro smerigliato fatto con un’immagine fissa dello sfondo. Per far vedere lo sfondo stesso, imposta l’opacità su «Più trasparente» nella pagina «Riquadri»",
+  "帮助改进 PecoFence": "Aiuta a migliorare PecoFence",
+  "发送匿名的使用统计，例如用了哪些功能。文件名、路径和你输入的文字不会发送。": "Invia statistiche di utilizzo anonime, ad esempio quali funzioni vengono usate. I nomi dei file, i percorsi e ciò che scrivi non vengono mai inviati."
 }

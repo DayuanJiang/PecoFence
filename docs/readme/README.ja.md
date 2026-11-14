@@ -179,7 +179,7 @@ PecoFence は Apache 2.0 ライセンスで公開されています。訳文の�
 
 署名するのは、このリポジトリのバージョンタグから GitHub Actions がビルドしたファイルだけです。署名のたびに手作業で承認しています。
 
-**プライバシー：** ユーザー、またはこのプログラムをインストールしたり操作したりする人が明示的に求めない限り、このプログラムがほかのネットワーク上のシステムに情報を送ることはありません。**アップデートを確認**を押すと GitHub の API に接続します。GitHub から応答がないときに限り、PecoFence のサイト（pecofence.jiang.jp）に接続します。送るのはリクエストそのもの（PecoFence のバージョン番号を含みます）だけです。**フィードバック**から送った内容は PecoFence のフィードバック サービスに届きます。設定画面は Microsoft Edge WebView2 で動いており、[Microsoft のプライバシーに関する声明](https://privacy.microsoft.com/privacystatement)が適用されます。
+**プライバシー：** PecoFence は GitHub でアップデートを確認し、[使用状況の統計](../USAGE_STATS.md)を PecoFence のサービスに送信します。どちらも**設定 › このアプリについて**でオフにできます。アップデートの確認では GitHub の API に接続します。GitHub から応答がないときに限り、PecoFence のサイト（pecofence.jiang.jp）に接続します。このとき送るのはリクエストそのもの（PecoFence のバージョン番号を含みます）だけです。**フィードバック**から送った内容は PecoFence のフィードバック サービスに届きます。設定画面は Microsoft Edge WebView2 で動いており、[Microsoft のプライバシーに関する声明](https://privacy.microsoft.com/privacystatement)が適用されます。
 
 ---
 
