@@ -1019,9 +1019,45 @@ impl Example {
     }
 }
 
+/// The folders in `dir` (`scripts-data`) named after a fence that `keep` does not list: what
+/// script fences that are gone left behind. Files there and folders of other names stay.
+pub fn left_data_folders(
+    dir: &Path,
+    keep: &std::collections::HashSet<String>,
+) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            uuid::Uuid::parse_str(&name).is_ok() && !keep.contains(&name)
+        })
+        .map(|e| e.path())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_data_of_fences_that_are_gone_is_left_over() {
+        let dir = std::env::temp_dir().join(format!("pf-left-data-{}", std::process::id()));
+        let kept = uuid::Uuid::new_v4().to_string();
+        let gone = uuid::Uuid::new_v4().to_string();
+        for name in [&kept, &gone, &"notes".to_string()] {
+            std::fs::create_dir_all(dir.join(name)).unwrap();
+        }
+        std::fs::write(dir.join(uuid::Uuid::new_v4().to_string()), "a file").unwrap();
+        let keep = std::collections::HashSet::from([kept.clone()]);
+        let left = left_data_folders(&dir, &keep);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(left, vec![dir.join(&gone)]);
+        assert!(left_data_folders(&dir, &keep).is_empty());
+    }
 
     #[test]
     fn pc_status_selects_a_connected_ipv4_gateway_and_local_disks() {

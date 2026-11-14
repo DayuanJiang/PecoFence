@@ -2235,6 +2235,7 @@ impl App {
             );
             t.show_info("PecoFence", &text, true);
         }
+        app.remove_left_script_data();
         // Desktop folder moved since last run? Re-point the item records before syncing, or
         // every item would be orphaned and re-routed by the rules.
         if let Some(desk) = shell::user_desktop() {

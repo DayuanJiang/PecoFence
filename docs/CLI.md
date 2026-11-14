@@ -481,7 +481,7 @@ Every run gets these environment variables:
 |---|---|
 | `PECOFENCE` | `1` |
 | `PECOFENCE_ACTION` | the clicked row's `action=` value; empty for a timed run, 立即运行, `refresh=true` and `fence refresh` |
-| `PECOFENCE_DATA` | a folder of this fence's own for what the script keeps: `<config folder>\scripts-data\<fence id>` (`pecofence-cli paths` shows the config folder). PecoFence creates it |
+| `PECOFENCE_DATA` | a folder of this fence's own for what the script keeps: `<config folder>\scripts-data\<fence id>` (`pecofence-cli paths` shows the config folder). PecoFence creates it, and removes it with what is in it at the first start after the fence is deleted (not while a snapshot still has the fence, and not after a start from a backup) |
 | `PECOFENCE_THEME` | `light` or `dark`, PecoFence's theme |
 | `PECOFENCE_FENCE` | the fence's id |
 | `PECOFENCE_LANGUAGE` | PecoFence's display language: `en`, `zh-CN`, `zh-TW`, `ja`, `ko`, `de`, `fr`, `es`, `pt-BR`, `ru` or `it` |

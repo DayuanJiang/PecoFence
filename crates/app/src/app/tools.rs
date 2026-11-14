@@ -603,6 +603,36 @@ impl App {
         }
     }
 
+    /// At start: removes the data folders (`scripts-data\<fence id>`) of script fences that are
+    /// gone, with what their scripts kept there (a clipboard history's pinned texts and
+    /// pictures). A fence a layout or a snapshot still has keeps its folder. Nothing goes when
+    /// the configuration is a new one or came from a backup: the fences it lacks may come back.
+    pub(super) fn remove_left_script_data(&self) {
+        let s = &self.state;
+        if s.first_run
+            || s.recovered_from.is_some()
+            || !s.load_failures.is_empty()
+            || s.locked_config.is_some()
+        {
+            return;
+        }
+        let Some(dir) = s
+            .config_path_on_disk()
+            .parent()
+            .map(|d| d.join("scripts-data"))
+        else {
+            return;
+        };
+        let keep: std::collections::HashSet<String> = (s.config.scripts.keys())
+            .chain(s.config.snapshots.iter().flat_map(|x| x.scripts.keys()))
+            .map(|id| id.to_string())
+            .collect();
+        for folder in crate::scripts::left_data_folders(&dir, &keep) {
+            let removed = std::fs::remove_dir_all(&folder);
+            tracing::info!(folder = ?folder.file_name(), ok = removed.is_ok(), "script data folder of a deleted fence removed");
+        }
+    }
+
     /// What a run of fence `id`'s script is told (environment variables).
     fn script_env(&self, id: FenceId, action: String) -> crate::scripts::RunEnv {
         let data_dir = self
