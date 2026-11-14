@@ -504,7 +504,10 @@ fn status_screens(
         .spawn(move || {
             let mut cpu = sysinfo::CpuTimes::now();
             // The first load needs an interval to measure over.
-            if stopped.recv_timeout(Duration::from_millis(300)).is_ok() {
+            if !matches!(
+                stopped.recv_timeout(Duration::from_millis(300)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ) {
                 return;
             }
             let mut ip = None;

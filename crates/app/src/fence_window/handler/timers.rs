@@ -633,7 +633,7 @@ pub(super) fn on_timer_clock(h: &HandlerCtx) -> Option<isize> {
         && let Some(v) = g.as_mut()
     {
         if !v.rolled_up && !v.retired && pecofence_platform::desktop::is_visible(v.hwnd) {
-            // A tick is no use of PecoFence: it does not hold back the memory housekeeping.
+            // A tick is nobody using PecoFence: it does not hold back the memory housekeeping.
             let _ = pecofence_render::stack::quiet_draws(|| v.redraw_content());
         }
         v.arm_clock();
