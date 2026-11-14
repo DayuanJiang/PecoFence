@@ -304,6 +304,7 @@ async function runTests() {
     const win = frame.contentWindow;
     const select = () => doc.querySelector('[data-bind=idleOpacity]');
     assert(select().value === '1', 'Idle fading must default to off');
+    assert(select().selectedOptions[0].textContent === '不淡化', 'The off entry must say 不淡化: ' + select().selectedOptions[0].textContent);
     win.testState.settings.idleOpacity = 0.44999998807907104;
     win.testRefresh(); await settle();
     assert(select().value === '0.45', 'Rounded f32 must select the 45% preset');
@@ -323,7 +324,7 @@ async function runTests() {
       box.value = text; box.dispatchEvent(new win.Event('input', { bubbles: true }));
       return [...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent);
     };
-    for (const text of ['不透明度', '淡出', '45%']) assert(hits(text).includes('闲置时的不透明度'), `查找设置 "${text}": ` + hits(text).join(' | '));
+    for (const text of ['不透明度', '淡出', '45%', '不淡化']) assert(hits(text).includes('闲置时的不透明度'), `查找设置 "${text}": ` + hits(text).join(' | '));
     const icons = [...doc.querySelectorAll('#page-general .card .ic')].map(i => i.textContent);
     assert(icons.filter(i => i === select().closest('.card').querySelector('.ic').textContent).length === 1, 'The card shares its icon with another card of the page');
     doc = await reset();
