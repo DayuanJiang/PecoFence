@@ -1,4 +1,7 @@
 {
+  "闲置时的不透明度": "Deckkraft im Ruhezustand",
+  "不淡化": "Nicht ausblenden",
+  "鼠标移开时淡化背景、图标和文字；悬停或操作时恢复正常": "Hintergründe, Symbole und Beschriftungen bei Inaktivität ausblenden; bei Mauszeigerkontakt oder Bedienung wiederherstellen",
   "桌面": "Desktop",
   "栅栏": "Bereiche",
   "程序": "Programme",
@@ -761,6 +764,7 @@
   "搜索别名\u0004字体颜色|文本颜色|白字|黑字": "Textfarbe|Beschriftungsfarbe|weiße Schrift|schwarze Schrift",
   "搜索别名\u0004图标尺寸|大图标|小图标|缩放": "Icongröße|große Symbole|kleine Symbole|Zoom|Skalierung|vergrößern",
   "搜索别名\u0004变淡|半透明|褪色|低饱和|Chameleon": "verblassen|halbtransparent|entsättigen|blass|dezent|Sättigung|Chameleon",
+  "搜索别名\u0004淡出|渐隐|变淡|半透明|空闲|不用时": "ausblenden|verblassen|durchsichtig|halbtransparent|Leerlauf|inaktiv",
   "搜索别名\u0004开机|开机启动|自启|自动启动|登录时启动": "Autostart|beim Hochfahren|Systemstart|bei Anmeldung starten|automatisch starten|Booten",
   "搜索别名\u0004隐藏桌面图标|显示桌面图标|系统图标|原来的图标": "Desktopsymbole ausblenden|Desktopsymbole anzeigen|Systemsymbole|ursprüngliche Symbole|Desktop-Icons",
   "搜索别名\u0004小技巧|提示卡片|新手提示|引导": "Tipps|Hinweise|Tippkarten|Einführung|erste Schritte",

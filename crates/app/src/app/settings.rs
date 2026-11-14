@@ -1546,6 +1546,13 @@ impl App {
             .behavior
             .hide_count_and_chevron
             .set(new.roll_up.hide_count_and_chevron);
+        // 闲置时的不透明度: every fence goes to the new strength at once (no redraw needed).
+        self.ctx.behavior.idle_opacity.set(new.idle_opacity);
+        if new.idle_opacity != old.idle_opacity {
+            for w in self.fences.values() {
+                w.refresh_idle_opacity();
+            }
+        }
         // Only whole rows show with 「调整大小时按整行整列对齐」 on: redraw.
         let chrome_changed = new.roll_up.title_on_hover != old.roll_up.title_on_hover
             || new.title_align != old.title_align

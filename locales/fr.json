@@ -1,4 +1,7 @@
 {
+  "闲置时的不透明度": "Opacité au repos",
+  "不淡化": "Ne pas estomper",
+  "鼠标移开时淡化背景、图标和文字；悬停或操作时恢复正常": "Estomper les arrière-plans, icônes et textes au repos ; rétablir leur opacité au survol ou pendant une interaction",
   "桌面": "Bureau",
   "栅栏": "Groupes",
   "程序": "Applications",
@@ -761,6 +764,7 @@
   "搜索别名\u0004字体颜色|文本颜色|白字|黑字": "couleur de police|couleur des étiquettes|texte blanc|texte noir",
   "搜索别名\u0004图标尺寸|大图标|小图标|缩放": "taille des icônes|grandes icônes|petites icônes|zoom|agrandir|échelle",
   "搜索别名\u0004变淡|半透明|褪色|低饱和|Chameleon": "estomper|semi-transparent|désaturer|pâle|discret|délavé|Chameleon",
+  "搜索别名\u0004淡出|渐隐|变淡|半透明|空闲|不用时": "estomper|fondu|transparent|translucide|inactif|au repos",
   "搜索别名\u0004开机|开机启动|自启|自动启动|登录时启动": "démarrage automatique|lancer au démarrage|ouverture de session|autostart|démarrage de Windows|boot",
   "搜索别名\u0004隐藏桌面图标|显示桌面图标|系统图标|原来的图标": "masquer les icônes du Bureau|afficher les icônes du Bureau|icônes système|icônes originales",
   "搜索别名\u0004小技巧|提示卡片|新手提示|引导": "astuces|conseils|cartes d’astuces|prise en main",

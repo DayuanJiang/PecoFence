@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fences can fade while nobody uses them (#216, thanks to snowyukitty). Settings › General › Appearance › 「闲置时的不透明度」 has 「不淡化」 (100 %, the default), 70 %, 45 % and 25 %: a fence the pointer is not over fades its plate, icons, names and shadow to that strength in 167 ms, and comes back when the pointer returns, while the keyboard is in it, while something is dragged from it or over it, while a name box, a note's editor, its filter box or its own menu is open, and during a Peek. A faded fence takes clicks and drops as before. The 「桌面」 fence arranged like the desktop does not fade, and with Windows' animation effects off the change is one step. CLI: `settings set idleOpacity 0.45` (0.1 to 1; a number out of that range in a hand-edited config.json loads as the nearest one).
 - The switch 「帮助改进 PecoFence」 in Settings › 关于 says what it sends: 「发送匿名的使用统计，例如用了哪些功能。文件名、路径和你输入的文字不会发送。」, in all eleven languages. It said 「发送使用统计」.
 
 ## 0.4.0

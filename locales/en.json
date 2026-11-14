@@ -1,4 +1,7 @@
 {
+  "闲置时的不透明度": "Idle opacity",
+  "不淡化": "Don't fade",
+  "鼠标移开时淡化背景、图标和文字；悬停或操作时恢复正常": "Fade backgrounds, icons and labels when idle; restore normal opacity on hover or interaction",
   "桌面": "Desktop",
   "栅栏": "Fences",
   "程序": "Programs",
@@ -761,6 +764,7 @@
   "搜索别名\u0004字体颜色|文本颜色|白字|黑字": "font color|text colour|label colour|white text|black text",
   "搜索别名\u0004图标尺寸|大图标|小图标|缩放": "icon size|big icons|small icons|zoom|scale",
   "搜索别名\u0004变淡|半透明|褪色|低饱和|Chameleon": "fade|faded|translucent|desaturate|muted|Chameleon",
+  "搜索别名\u0004淡出|渐隐|变淡|半透明|空闲|不用时": "fade out|dim|see-through|translucent|idle|not in use|mouse away",
   "搜索别名\u0004开机|开机启动|自启|自动启动|登录时启动": "startup|boot|autostart|launch at login|run at sign-in",
   "搜索别名\u0004隐藏桌面图标|显示桌面图标|系统图标|原来的图标": "hide desktop icons|show desktop icons|system icons|original icons",
   "搜索别名\u0004小技巧|提示卡片|新手提示|引导": "tips|hints|tip cards|onboarding|getting started",
