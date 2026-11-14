@@ -3,7 +3,7 @@
 use crate::bindings::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use windows_core::{Error, PCWSTR, Result};
@@ -19,10 +19,26 @@ pub enum FsEvent {
     Overflow,
 }
 
-struct SendHandle(HANDLE);
-// SAFETY: HANDLE is a kernel object reference; usable from any thread.
-unsafe impl Send for SendHandle {}
-unsafe impl Sync for SendHandle {}
+/// The watched folder's handle (a kernel object reference, usable from any thread); null
+/// once it is closed. The watcher thread closes it itself when the folder is gone.
+struct SendHandle(AtomicPtr<core::ffi::c_void>);
+
+impl SendHandle {
+    fn get(&self) -> HANDLE {
+        HANDLE(self.0.load(Ordering::SeqCst))
+    }
+
+    /// Closes the handle, once.
+    fn close(&self) {
+        let handle = self.0.swap(core::ptr::null_mut(), Ordering::SeqCst);
+        if !handle.is_null() {
+            // SAFETY: the handle was open, and the swap above leaves it to this call alone.
+            unsafe {
+                let _ = CloseHandle(HANDLE(handle));
+            }
+        }
+    }
+}
 
 /// Watches a single directory (non-recursive; [`DirWatcher::start_tree`] takes its subfolders
 /// too). Dropping stops the thread.
@@ -74,7 +90,7 @@ impl DirWatcher {
         if handle == INVALID_HANDLE_VALUE || handle.0.is_null() {
             return Err(Error::from_thread());
         }
-        let handle = Arc::new(SendHandle(handle));
+        let handle = Arc::new(SendHandle(AtomicPtr::new(handle.0)));
         let stop = Arc::new(AtomicBool::new(false));
         let created = folder_created(dir);
         let dir = dir.to_path_buf();
@@ -89,10 +105,7 @@ impl DirWatcher {
         let thread = match thread {
             Ok(t) => t,
             Err(e) => {
-                // SAFETY: no thread took the handle.
-                unsafe {
-                    let _ = CloseHandle(handle.0);
-                }
+                handle.close();
                 return Err(Error::new(windows_core::HRESULT(E_FAIL.0), e.to_string()));
             }
         };
@@ -127,16 +140,14 @@ impl Drop for DirWatcher {
             while !t.is_finished() {
                 // SAFETY: cancels the blocking ReadDirectoryChangesW on the watcher thread.
                 unsafe {
-                    let _ = CancelIoEx(self.handle.0, None);
+                    let _ = CancelIoEx(self.handle.get(), None);
                 }
                 std::thread::sleep(Duration::from_millis(1));
             }
             let _ = t.join();
         }
-        // SAFETY: handle is no longer used by any thread.
-        unsafe {
-            let _ = CloseHandle(self.handle.0);
-        }
+        // No thread uses the handle any more.
+        self.handle.close();
     }
 }
 
@@ -163,7 +174,7 @@ fn watch_loop(
         // SAFETY: buffer is DWORD-aligned (Vec<u8> from the allocator is 8/16-aligned) and sized.
         let ok = unsafe {
             ReadDirectoryChangesW(
-                handle.0,
+                handle.get(),
                 buf.as_mut_ptr().cast(),
                 buf.len() as u32,
                 subtree,
@@ -184,8 +195,13 @@ fn watch_loop(
                 continue;
             }
             tracing::warn!(error = err, dir = %dir.display(), place = crate::shell::path_place(&dir), "ReadDirectoryChangesW failed; watcher exiting");
-            // The directory is gone (deleted / renamed / unmounted): nudge the app to re-enumerate
-            // so it can fall back and re-point its watcher.
+            // The directory is gone (deleted / renamed / unmounted). Let go of it first: on
+            // Windows 10 1809 a deleted folder stays on disk for as long as a handle to it is
+            // open, its name cannot be used again, and it still reads as a folder. An exited
+            // watcher is kept for up to a minute, so a folder deleted and made again came back
+            // into its fence only then (#219). Then nudge the app to re-enumerate so it can
+            // fall back and re-point its watcher.
+            handle.close();
             on_events(vec![FsEvent::Overflow]);
             break;
         }

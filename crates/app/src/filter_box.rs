@@ -17,7 +17,7 @@ use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
 };
 use pecofence_platform::{HWND, RECT, dwm, edit, fonts, monitors, msg, paint};
-use pecofence_render::ThemeMode;
+use pecofence_render::ColorF;
 use std::cell::{Cell, RefCell};
 
 const FILTER_CLASS: &str = "PecoFence.Filter";
@@ -115,16 +115,19 @@ fn type_change() {
 }
 
 /// Opens (or moves) the filter box over `fence_hwnd`'s title row with `current` in it; `cue`
-/// is the grey hint while it is empty.
+/// is the grey hint while it is empty. `ink` is the colour the fence draws its title in: the
+/// box takes it for its text, on the field that colour reads on, as a name box does.
 pub fn open(
     fence_hwnd: HWND,
     fence: FenceId,
     current: &str,
     cue: &str,
     queue: CommandQueue,
-    mode: ThemeMode,
+    ink: ColorF,
 ) {
     close();
+    let (dark, text_color) = crate::rename::box_colors(ink);
+    tracing::debug!(%fence, dark_field = dark, text = format_args!("{text_color:06x}"), "filter box colours");
     let r = window::window_rect(fence_hwnd);
     let dpi = monitors::dpi_for_window(fence_hwnd).max(96);
     let px = |dip: f32| (dip * dpi as f32 / 96.0).round() as i32;
@@ -220,18 +223,19 @@ pub fn open(
     let edit_w = (w - edit_x - px(COUNT_W + CLEAR_W + 4.0)).max(px(40.0));
     // A type in the current filter comes back as its chip.
     let (tokens, typed) = type_filter::split(current);
-    let Ok(ctl) = edit::EditControl::create(
+    let Ok(mut ctl) = edit::EditControl::create(
         window.hwnd(),
         edit_w,
         px(EDIT_H),
         dpi,
         14.0,
         &typed,
-        mode == ThemeMode::Dark,
+        dark,
         on_key,
     ) else {
         return;
     };
+    ctl.set_text_color(text_color);
     ctl.set_bounds(edit_x, (h - px(EDIT_H)) / 2, edit_w, px(EDIT_H));
     ctl.set_cue(cue);
     window::show_normal(window.hwnd());
@@ -318,35 +322,35 @@ fn paint_box(hwnd: HWND) {
             p.text(r, &label, &s.count_font, accent_text, paint::Align::Center);
             x = r.right + s.px(4.0);
         }
-        // The suggestion needs more room at the right than the count.
-        let right = if s.suggest.is_some() {
-            s.px(SUGGEST_W + CLEAR_W + 4.0)
-        } else {
-            s.px(COUNT_W + CLEAR_W + 4.0)
+        // At the right: the count, or in its place the type the text names, taken with Tab.
+        // Either takes the room its text needs: 「Elemente: 128」 is wider than 「128 项」 and
+        // 「Typ: Installationsprogramme  Tab」 than 「类型：安装包  Tab」; cut short, the one
+        // lost its number and the other its key.
+        let (side, least, ink) = match &s.suggest {
+            Some(t) => (
+                format!("{}  Tab", type_filter::label(t)),
+                SUGGEST_W,
+                accent_text,
+            ),
+            None => (s.count.clone(), COUNT_W, dim),
         };
+        let side_w = s
+            .px(least)
+            .max(p.text_width(&side, &s.count_font) + s.px(8.0));
+        let right = side_w + s.px(CLEAR_W + 4.0);
         let ew = (w - x - right).max(s.px(30.0));
         if (x, ew) != s.edit_at.get() {
             s.edit_at.set((x, ew));
             s.edit
                 .set_bounds(x, (h - s.px(EDIT_H)) / 2, ew, s.px(EDIT_H));
         }
-        match &s.suggest {
-            // The type the text names, taken with Tab, in place of the count.
-            Some(t) => p.text(
-                row(w - s.px(SUGGEST_W + CLEAR_W + 2.0), w - s.px(CLEAR_W + 2.0)),
-                &format!("{}  Tab", type_filter::label(t)),
-                &s.count_font,
-                accent_text,
-                paint::Align::Right,
-            ),
-            None => p.text(
-                row(w - s.px(COUNT_W + CLEAR_W + 2.0), w - s.px(CLEAR_W + 2.0)),
-                &s.count,
-                &s.count_font,
-                dim,
-                paint::Align::Right,
-            ),
-        }
+        p.text(
+            row(w - side_w - s.px(CLEAR_W + 2.0), w - s.px(CLEAR_W + 2.0)),
+            &side,
+            &s.count_font,
+            ink,
+            paint::Align::Right,
+        );
         // Cancel (E711): clears the text.
         p.text(
             row(w - s.px(CLEAR_W), w - s.px(4.0)),

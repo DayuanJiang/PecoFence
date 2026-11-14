@@ -198,6 +198,13 @@ Check 'new-note opens the editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
   desktop's files and an installed PecoFence stay: steps remove what they create and install.
 - Files the steps need (installers, test programs) go in a folder given with `--extra`; on the box
   they are in `$PfExtra` (`C:\pf\extra`). Helper scripts of the kit itself are in `assets/`.
+- Another program's shell extension inside PecoFence: `build.sh` also builds
+  `tools/shellext-fault` into `target/wintest-shellext`, a menu handler and copy hook that writes
+  every call to `calls.log` beside the DLL and faults in the entry point named in `fault.txt`
+  (or, with `<entry> hang`, never returns from it), only inside pecofence.exe.
+  `tests/shellext-fault.ps1` (`--extra target/wintest-shellext`)
+  registers it for pf alone and removes it again; copy its `ExtRegister` / `ExtArm` for another
+  test of that kind.
 - An RDP session starts with Windows' client-area animations off, so PecoFence snaps where a
   normal desktop animates: switch them on in the steps when a test is about animation.
 - pf's Explorer shows icons only, never thumbnails (IconsOnly=1): switch it off for a thumbnail
@@ -222,6 +229,23 @@ new one and compose them side by side:
 - Keep one idea per animation, 2 to 4 steps, about 20 s, plain words of what the user does and sees.
   Screen grabs load the box: timing effects (frame gaps, drag lag) look smaller while recording, so
   show them with a metric and slow motion, and check the sheet before using the animation.
+
+## Memory on the home PC (before every release)
+
+```bash
+scripts/wintest/pc-memory.sh <last release dir> <candidate dir> [--minutes 30] [--order a,b,a,b]
+```
+
+Runs both builds in turn on the home PC (`ssh win`: its GPU and 4K monitor) as a portable test
+instance with a copy of the user's configuration (their fences, Liquid Glass and the 电脑状态 fence;
+autostart, hotkeys, hooks, the tray icon, update checks, usage uploads and icon hiding off) plus a
+clock with seconds, rolls a fence up and down every five minutes, samples every 30 s and prints
+median and maximum per build of what Task Manager shows for the PecoFence group (with the
+processes it started), the private commit, GPU memory, threads, handles and CPU per idle minute.
+The test fences show on the user's desktop for the whole run (about 2 hours by default): run it
+when the user is away, as the background command. The PC must be signed in; it must not sleep.
+Start builds of the same toolchain (two release zips, or two `build.sh` builds): a cross-built
+exe and a CI exe differ in more than the change.
 
 ## Hyper-V guests on the home PC (Windows 11 and Windows 10)
 
@@ -261,7 +285,10 @@ once can see that.
 for the dev box key, a standard user `pf` that signs in by itself, the `PFJob` task, WebView2,
 Chinese fonts, Windows Update off); it is ready about 20 minutes later. `box.sh up` starts a
 stopped box and keeps an RDP session for pf open from a virtual X server, so pf's desktop is
-1600x900 (`WINTEST_SIZE`); `box.sh down` stops both.
+1600x900 (`WINTEST_SIZE`); `box.sh down` stops both. pf's Chinese input method hangs on a box
+now and then (every key waits 10 s and arrives as a plain letter, in Notepad too; the setup
+check of `tests/peek-chinese-input.ps1` says so): `box.sh ime-reset <name>` ends its two
+processes, which pf cannot do, and Windows starts them again.
 
 Private settings live outside the repo in `~/.config/pecofence-wintest/`: `config.sh` (pf's
 password, AMI, subnet, security group), `boxes` (`name instance-id private-ip` per line), the ssh

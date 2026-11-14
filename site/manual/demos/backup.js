@@ -1,19 +1,21 @@
 // 5.1 布局快照和备份: tray → 设置… → 布局与备份, name and save a snapshot, drag two fences
 // elsewhere (snapping as snap.rs does), then 恢复: the fences jump back (relayout_from_state sets
-// the saved bounds directly) and the list gains the automatic 「恢复快照前」 snapshot.
+// the saved bounds directly), the page's notice 「已恢复快照」 offers 撤销 for 6 s, and the list
+// gains the automatic 「恢复快照前」 snapshot, marked 「自动保存」 after its date and count. 「桌面」 is
+// as a new installation shows it: loose icons from the top-left corner, no fence around them
+// (snapping and guides leave it out).
 (() => {
     'use strict';
-    const { E, ramp, lerp, pathAt, spans, spanFade, el, put, show, local, icon, fence, placeFence, menu, drawMenu,
-        rowY, guide, drawGuide, pointer, drawPointer, drawChip, taskbar, TRAY, loopFade, T } = PM;
+    const { E, ramp, lerp, pathAt, spans, spanFade, el, put, show, local, deskCell, icon, fence, placeFence, menu,
+        drawMenu, rowY, guide, drawGuide, pointer, drawPointer, drawChip, taskbar, TRAY, loopFade, T } = PM;
 
     const D = 12.6;
     const WIN = { x: 372, y: 14, w: 420, h: 392, navW: 120 };
     const WORK = { left: 0, top: 0, right: 800, bottom: 422 };
     const GAP = 8, DIST = 8;
     const SAVED = {
-        prog: { x: 8, y: 8, w: 168, h: 122 },
-        desk: { x: 184, y: 8, w: 168, h: 122 },
-        docs: { x: 8, y: 138, w: 344, h: 122 },
+        prog: { x: 90, y: 8, w: 168, h: 122 },       // right of the loose icons' column
+        docs: { x: 8, y: 172, w: 324, h: 122 },      // below them
     };
     const NOW = '2026/10/6 10:24';                 // format_local_datetime: short date + time (zh-CN)
 
@@ -27,7 +29,8 @@
     const TOAST = 1.6;                              // the page's toast lasts 2.4 s; shorter so it leaves the backup rows sooner
 
     // snap.rs snap_among: the shortest pull within DIST towards outer edges a GAP from a nearby
-    // fence's, edges level with it, the work area's edges (GAP inside) and its centre lines.
+    // fence's, edges level with any other fence's, the work area's edges (GAP inside) and its
+    // centre lines.
     function snapAmong(r, others) {
         let dx = null, dy = null;
         const cx = c => {
@@ -38,15 +41,19 @@
             const d = c - r.y;
             if (Math.abs(d) <= DIST && (dy == null || Math.abs(d) < Math.abs(dy))) dy = d;
         };
+        const REACH = GAP + DIST;
         for (const o of others) {
-            if (r.y < o.y + o.h + DIST && r.y + r.h > o.y - DIST) [o.x + o.w + GAP, o.x - GAP - r.w, o.x, o.x + o.w - r.w].forEach(cx);
-            if (r.x < o.x + o.w + DIST && r.x + r.w > o.x - DIST) [o.y + o.h + GAP, o.y - GAP - r.h, o.y, o.y + o.h - r.h].forEach(cy);
+            if (r.y < o.y + o.h + REACH && r.y + r.h > o.y - REACH) [o.x + o.w + GAP, o.x - GAP - r.w].forEach(cx);
+            if (r.x < o.x + o.w + REACH && r.x + r.w > o.x - REACH) [o.y + o.h + GAP, o.y - GAP - r.h].forEach(cy);
+            [o.x, o.x + o.w - r.w].forEach(cx);
+            [o.y, o.y + o.h - r.h].forEach(cy);
         }
         [WORK.left + GAP, WORK.right - GAP - r.w, Math.trunc((WORK.left + WORK.right) / 2 - r.w / 2)].forEach(cx);
         [WORK.top + GAP, WORK.bottom - GAP - r.h, Math.trunc((WORK.top + WORK.bottom) / 2 - r.h / 2)].forEach(cy);
         return { ...r, x: r.x + (dx ?? 0), y: r.y + (dy ?? 0) };
     }
-    // alignment_guides: only the screen centre lines can line up on these paths.
+    // alignment_guides: on these paths no edge comes level with the other fence's, so only the
+    // screen's horizontal centre line can show.
     const centreGuideY = r => (r.y === Math.trunc(211 - r.h / 2) ? 211 : null);
 
     let PATH;
@@ -54,7 +61,7 @@
 
     // Fence rectangles at t (and the dragged one's centre guide).
     function layout(t) {
-        const L = { prog: { ...SAVED.prog }, desk: { ...SAVED.desk }, docs: { ...SAVED.docs }, guide: null };
+        const L = { prog: { ...SAVED.prog }, docs: { ...SAVED.docs }, guide: null };
         if (t >= RESTORE_AT + .02) return L;
         const drag = (key, [a, b]) => {
             if (t < a) return;
@@ -75,9 +82,13 @@
         const S = r.scene;
 
         // desktop
+        [['txt', '安装日志.log'], ['folder', '素材']].forEach(([k, l], i) => {
+            const n = icon(S, k, l), s = deskCell(0, i);
+            n.classList.add('desk');
+            put(n, s.x, s.y);
+        });
         r.F = {
             prog: fence(S, { ...SAVED.prog, title: '程序' }),
-            desk: fence(S, { ...SAVED.desk, title: '桌面' }),
             docs: fence(S, { ...SAVED.docs, title: '文件与文档' }),
         };
         const fill = (f, list, c) => list.forEach(([k, l], i) => {
@@ -85,7 +96,6 @@
             put(icon(f.body, k, l), s.x, s.y);
         });
         fill(r.F.prog, [['url', '项目主页'], ['exe', '截图工具']], 2);
-        fill(r.F.desk, [['txt', '安装日志.log'], ['folder', '素材']], 2);
         fill(r.F.docs, [['pdf', '合同.pdf'], ['docx', '周报.docx'], ['xlsx', '预算.xlsx'], ['docx', '方案.docx']], 4);
         r.g = guide(S);
         r.g.style.zIndex = 1;      // guide windows sit just above the dragged fence, under other windows
@@ -107,21 +117,34 @@
         r.save = SM.button(save, '保存快照', 62, { accent: true, right: 10, top: 40 });
         const nameRight = 18 + r.save.w;
         r.name = SM.input(save, '快照名称（可选）', Math.min(132, pg.cardW - nameRight - 12), { right: nameRight, top: 40 });
-        r.empty = SM.card(pg, { s: '尚无快照', h: 34, indent: 22, textW: 200 });
-        r.empty.s.style.top = '10px';
+        // the empty list: its title and a second line that says what to do, which wraps as on the
+        // page (two lines here; a longer translation ends in an ellipsis)
+        r.empty = SM.card(pg, { t: '尚无快照', s: '点上面的“保存快照”，以后可以随时恢复到现在的布局。', h: 58, indent: 22, textW: pg.cardW - 46 });
+        r.empty.t.style.top = '8px';
+        Object.assign(r.empty.s.style, { top: '24px', whiteSpace: 'normal', display: '-webkit-box', webkitLineClamp: '2', webkitBoxOrient: 'vertical' });
         const now = SM.dateTime(NOW, new Date(2026, 9, 6, 10, 24));
-        const snapRow = (name, gap) => {
-            const b = SM.card(pg, { t: name, s: `${now} · ${T('{0} 个栅栏').replace('{0}', '3')}`, h: 40, indent: 22, textW: 140, gap });
+        // a snapshot the app saved by itself says so after its date and count (「… · 自动保存」);
+        // this narrow window has no room for it there, so it stands on the line below, where
+        // the page's own row would wrap
+        const snapRow = (name, gap, auto) => {
+            const b = SM.card(pg, { t: name, s: `${now} · ${T('{0} 个栅栏').replace('{0}', '3')}`, h: auto ? 52 : 40, indent: 22, textW: 140, gap });
+            if (auto) {
+                const lines = [b.s.textContent, T('自动保存')];
+                b.s.textContent = '';
+                for (const l of lines) Object.assign(el('div', null, b.s, l).style, { position: 'static', overflow: 'hidden', textOverflow: 'ellipsis' });
+                b.t.style.top = '6px';
+                b.s.style.top = '21px';
+            }
             b.restore = SM.button(b, '恢复', 46, { right: 36 });
             b.del = SM.iconButton(b, 'del', { right: 10 });
             return b;
         };
-        r.before = snapRow(T('恢复快照前'), 1);
+        r.before = snapRow(T('恢复快照前'), 1, true);
         r.before.n.style.borderRadius = '0';
         r.saved = snapRow('整理好了', 3);
         [r.empty, r.saved].forEach(b => { b.n.style.borderRadius = '0 0 4px 4px'; });
         SM.h3(pg, '备份');
-        const io = SM.card(pg, { ic: '\uE78C', t: '导出 / 导入配置文件', s: '导出为 JSON 以便迁移到另一台电脑；导入前会自动保存一份快照', h: 70, gap: 1, textW: 220 });
+        const io = SM.card(pg, { ic: '\uE78C', t: '导出 / 导入配置文件', s: '导出为 JSON 以便迁移到另一台电脑；导入前自动保存快照', h: 70, gap: 1, textW: 220 });
         io.t.style.top = '9px';
         io.s.style.top = '24px';
         io.n.querySelector('.set-ic').style.top = '10px';
@@ -139,9 +162,10 @@
             SM.button(b, '恢复', 46, { right: 10 });
         });
 
-        r.tray = menu(S, ['隐藏所有栅栏', '临时显示 Windows 桌面', '新建栅栏', { t: '在桌面显示文件夹', sub: 1 },
-            { t: '速览所有栅栏', key: 'Ctrl+Alt+空格' }, '立即应用整理规则', '-', '恢复显示桌面图标',
-            '修复桌面图标（图标消失时使用）', '发送反馈…', '设置…', '-', '退出 PecoFence'], 236);
+        r.tray = menu(S, ['隐藏所有栅栏', '临时显示 Windows 桌面', '新建栅栏', '新建便签', { t: '新建小工具', sub: 1 },
+            { t: '在桌面显示文件夹', sub: 1 }, '新建智能栅栏…', { t: '速览所有栅栏', key: 'Ctrl+Alt+空格' },
+            '立即应用整理规则', '-', '恢复显示桌面图标', '修复桌面图标（图标消失时使用）', '发送反馈…', '设置…', '-',
+            '退出 PecoFence'], 236);
         r.tray.n.style.zIndex = 3;
         r.trayAt = { x: TRAY.x - 236, y: TRAY.y - 10 - r.tray.h };
         // the 右键 caption goes above the tray icon, just right of the menu (which grows for longer
@@ -194,9 +218,9 @@
             [3.65, name.x, name.y], [4.45, name.x, name.y],       // name the snapshot
             [4.8, save.x, save.y], [5.1, save.x, save.y],         // 保存快照
             [5.8, g('docs').x, g('docs').y], [DRAG1[0], g('docs').x, g('docs').y],
-            [6.7, 84, 294], [6.85, 84, 294],                      // 文件与文档 to the bottom
+            [6.7, 84, 310], [6.85, 84, 310],                      // 文件与文档 to the bottom
             [7.3, g('prog').x, g('prog').y], [DRAG2[0], g('prog').x, g('prog').y],
-            [7.8, 70, 159], [8.2, 170, 159], [8.4, 170, 159],     // 程序 down, then right
+            [7.8, 150, 176], [8.2, 200, 176], [8.4, 200, 176],    // 程序 down, then right
             [9.1, restore.x, restore.y], [9.55, restore.x, restore.y], // 恢复
             [10.35, 330, 386], [D, 330, 386],
         ];
@@ -232,7 +256,8 @@
         SM.drawInput(r.name, s.name, s.focus, t);
         SM.drawButton(r.save, p, t >= SAVE_AT - .08 && t < SAVE_AT + .02);
         for (const b of [r.saved, r.before]) SM.drawButton(b.restore, p, b === r.saved && t >= RESTORE_AT - .08 && t < RESTORE_AT + .02);
-        SM.drawToast(r.w, t, [[SAVE_AT + .05, T('已保存快照'), TOAST], [RESTORE_AT + .05, T('已恢复快照'), TOAST]]);
+        // the notice of a restore has 撤销 and stays 6 s
+        SM.drawToast(r.w, t, [[SAVE_AT + .05, T('已保存快照'), TOAST], [RESTORE_AT + .05, T('已恢复快照'), 6, T('撤销')]]);
 
         drawPointer(r.ptr, t, p, { clicks: CLICKS, presses: PRESSES, chips: CHIPS, at });
     }

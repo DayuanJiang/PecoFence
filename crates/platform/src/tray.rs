@@ -2,7 +2,7 @@
 
 use crate::bindings::*;
 use crate::wide::to_wide;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use windows_core::{Error, PCSTR, PCWSTR, Result};
@@ -18,6 +18,25 @@ static MENU_TIME_US: AtomicU64 = AtomicU64::new(0);
 /// the user's time in it out.
 pub fn time_in_menus() -> Duration {
     Duration::from_micros(MENU_TIME_US.load(Ordering::Relaxed))
+}
+
+/// `TPM_VERTICAL`: a menu that cannot open at its point without covering the rectangle it
+/// keeps clear of goes above or below that rectangle first, then beside it.
+const TPM_VERTICAL: u32 = 0x0040;
+/// A rectangle named with [`keep_clear_next`] counts for a menu opened within this time.
+const KEEP_CLEAR_FOR: Duration = Duration::from_secs(1);
+
+thread_local! {
+    /// The rectangle the next menu keeps clear of, and when it was named.
+    static KEEP_CLEAR: std::cell::Cell<Option<(RECT, Instant)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// The next menu this thread shows (within a second) opens clear of `rect` (screen px): the
+/// icon a menu opened with the keyboard is for. Without it Windows slides a menu that has no
+/// room under its point up, over the icon.
+pub fn keep_clear_next(rect: RECT) {
+    KEEP_CLEAR.with(|k| k.set(Some((rect, Instant::now()))));
 }
 
 /// Closes the popup menu this thread shows, if any (its `TrackPopupMenuEx` returns 0).
@@ -124,6 +143,13 @@ pub fn destroy_icon(icon: HICON) {
     }
 }
 
+/// A hidden icon that came back for a notification stays at least this long: the end of an
+/// earlier notification is reported right after the next one went up.
+const LOAN_MIN: Duration = Duration::from_secs(1);
+/// And at most this long, when Windows never reports the notification's end (it does not for
+/// one it keeps back, as during 请勿打扰).
+const LOAN_MAX_MS: u32 = 30_000;
+
 /// A notification-area icon; removed on drop. Keeps what it was added with, so it can be
 /// added again when Explorer restarts.
 pub struct TrayIcon {
@@ -132,6 +158,13 @@ pub struct TrayIcon {
     callback_message: u32,
     icon: HICON,
     tip: String,
+    /// False keeps the icon out of the notification area ([`Self::set_wanted`]).
+    wanted: Cell<bool>,
+    /// Since when an unwanted icon is in the notification area for a notification.
+    lent: Cell<Option<Instant>>,
+    /// Timer on `hwnd` that ends such a loan after [`LOAN_MAX_MS`]; its owner calls
+    /// [`Self::end_loan`] then.
+    loan_timer: usize,
 }
 
 impl TrayIcon {
@@ -145,13 +178,51 @@ impl TrayIcon {
             callback_message,
             icon,
             tip: tip.to_string(),
+            wanted: Cell::new(true),
+            lent: Cell::new(None),
+            loan_timer: 0,
         }
     }
 
-    /// Adds the icon to the notification area. Call it again on `TaskbarCreated`: a restarted
-    /// Explorer starts without anyone's icons. Already present (the message also comes on
-    /// other occasions) counts as success.
+    /// The timer of `hwnd` that ends the stay of an unwanted icon (see [`Self::end_loan`]).
+    pub fn with_loan_timer(mut self, timer: usize) -> Self {
+        self.loan_timer = timer;
+        self
+    }
+
+    /// The user wants the icon in the notification area or not. Not wanted, it is taken out
+    /// now and [`Self::show`] adds nothing; a notification still brings it for as long as it
+    /// shows ([`Self::show_info`]). Wanted, it is added now.
+    pub fn set_wanted(&self, wanted: bool) -> Result<()> {
+        self.wanted.set(wanted);
+        self.lent.set(None);
+        crate::window::kill_timer(self.hwnd, self.loan_timer);
+        if wanted {
+            self.add()
+        } else {
+            self.remove();
+            Ok(())
+        }
+    }
+
+    /// What the last [`Self::set_wanted`] said (true before the first).
+    pub fn wanted(&self) -> bool {
+        self.wanted.get()
+    }
+
+    /// Adds the icon to the notification area, unless the user does not want it there. Call it
+    /// again on `TaskbarCreated`: a restarted Explorer starts without anyone's icons. Already
+    /// present (the message also comes on other occasions) counts as success.
     pub fn show(&self) -> Result<()> {
+        if !self.wanted.get() {
+            // A new taskbar has neither the lent icon nor its notification.
+            self.lent.set(None);
+            return Ok(());
+        }
+        self.add()
+    }
+
+    fn add(&self) -> Result<()> {
         let mut data = NOTIFYICONDATAW {
             cbSize: size_of::<NOTIFYICONDATAW>() as u32,
             hWnd: self.hwnd,
@@ -176,8 +247,18 @@ impl TrayIcon {
         Ok(())
     }
 
-    /// Shows a toast/balloon notification.
+    /// Shows a toast/balloon notification. Windows shows one only for an icon that is in the
+    /// notification area, so an unwanted icon is added for as long as the notification shows:
+    /// until [`Self::balloon_gone`] or [`Self::end_loan`].
     pub fn show_info(&self, title: &str, text: &str, warning: bool) {
+        if !self.wanted.get() {
+            if let Err(e) = self.add() {
+                tracing::debug!(error = %e, "hidden tray icon not added for a notification");
+            }
+            self.lent.set(Some(Instant::now()));
+            crate::window::set_timer(self.hwnd, self.loan_timer, LOAN_MAX_MS);
+            tracing::debug!("hidden tray icon shown while a notification is up");
+        }
         let mut data = NOTIFYICONDATAW {
             cbSize: size_of::<NOTIFYICONDATAW>() as u32,
             hWnd: self.hwnd,
@@ -197,10 +278,25 @@ impl TrayIcon {
             let _ = Shell_NotifyIconW(NIM_MODIFY as u32, &data);
         }
     }
-}
 
-impl Drop for TrayIcon {
-    fn drop(&mut self) {
+    /// Windows reported that a notification went away (timed out, closed or clicked): an icon
+    /// that was only there for it leaves again.
+    pub fn balloon_gone(&self) {
+        if self.lent.get().is_some_and(|at| at.elapsed() >= LOAN_MIN) {
+            self.end_loan();
+        }
+    }
+
+    /// Takes an icon that was only there for a notification out again.
+    pub fn end_loan(&self) {
+        crate::window::kill_timer(self.hwnd, self.loan_timer);
+        if self.lent.take().is_some() && !self.wanted.get() {
+            tracing::debug!("hidden tray icon taken out again after its notification");
+            self.remove();
+        }
+    }
+
+    fn remove(&self) {
         let data = NOTIFYICONDATAW {
             cbSize: size_of::<NOTIFYICONDATAW>() as u32,
             hWnd: self.hwnd,
@@ -211,6 +307,12 @@ impl Drop for TrayIcon {
         unsafe {
             let _ = Shell_NotifyIconW(NIM_DELETE as u32, &data);
         }
+    }
+}
+
+impl Drop for TrayIcon {
+    fn drop(&mut self) {
+        self.remove();
     }
 }
 
@@ -392,7 +494,8 @@ impl MenuTips {
                     let mut r = RECT::default();
                     if GetMenuItemRect(None, hmenu, pos as u32, &mut r).as_bool() {
                         let text = text.clone();
-                        self.tooltip.show(&text, r.right + 4, r.top);
+                        // Beside the row; with no room below, its bottom edge at the row's.
+                        self.tooltip.show(&text, r.right + 4, r.top, r.bottom);
                     }
                     return;
                 }
@@ -600,9 +703,10 @@ impl PopupMenu {
     }
 
     /// Shows the menu at screen coordinates and returns the chosen command id (0 = dismissed).
-    /// `owner` is brought to the foreground first: a menu without it cannot be dismissed. When
-    /// another window keeps the foreground the menu does not open (0), and an open menu that
-    /// finds itself without it closes.
+    /// `owner` is brought to the foreground first: a menu without it gets no Esc and no click
+    /// outside it. When another window keeps the foreground (a Windows toast lets no call take
+    /// it), the menu opens all the same and [`OutsidePress`] and the timer close it at the first
+    /// press outside it or at Esc; a menu that loses the foreground while it opens closes.
     pub fn show(&self, owner: HWND, x: i32, y: i32) -> u32 {
         self.show_aligned(owner, x, y, true)
     }
@@ -617,19 +721,66 @@ impl PopupMenu {
         if bottom_align {
             flags |= TPM_BOTTOMALIGN as u32;
         }
+        // A rectangle to keep clear of (`keep_clear_next`), named for this menu a moment ago.
+        let keep_clear = KEEP_CLEAR
+            .with(|k| k.take())
+            .filter(|(_, at)| at.elapsed() < KEEP_CLEAR_FOR)
+            .map(|(rect, _)| TPMPARAMS {
+                cbSize: size_of::<TPMPARAMS>() as u32,
+                rcExclude: rect,
+            });
+        if let Some(p) = &keep_clear {
+            flags |= TPM_VERTICAL;
+            let r = p.rcExclude;
+            tracing::debug!(
+                rect = ?(r.left, r.top, r.right, r.bottom),
+                "popup menu keeps clear of a rectangle"
+            );
+        }
         // A menu opened while another thread has the foreground never gets Esc, and clicks
         // outside it go to the other window: it stays open until an item is chosen, and the
         // UI thread waits in it all that time (a Windows Security toast took the foreground
         // right at a right-click, and PecoFence stood still for 20 minutes).
-        let Some(foreground_step) = take_foreground(owner) else {
-            let class = crate::desktop::class_name(crate::desktop::foreground_window());
-            tracing::warn!(
-                class = %class,
-                "popup menu not opened: another window keeps the foreground"
-            );
-            return 0;
+        let foreground_step = take_foreground(owner);
+        // A toast notification that has the foreground keeps it against every call (Windows 11
+        // gives a toast the foreground when the window in front closes; measured there:
+        // SetForegroundWindow returns 0 also after an Alt press, AttachThreadInput to the
+        // toast's thread is refused with error 5). The menu then opens without the foreground:
+        // it still gets the clicks on its own entries, a hook closes it at a press elsewhere,
+        // and the timer below reads Esc from the key state.
+        let outside = match foreground_step {
+            Some(_) => None,
+            None => {
+                let class = crate::desktop::class_name(crate::desktop::foreground_window());
+                let Some(watch) = OutsidePress::start() else {
+                    tracing::warn!(
+                        class = %class,
+                        "popup menu not opened: another window keeps the foreground"
+                    );
+                    return 0;
+                };
+                tracing::debug!(
+                    class = %class,
+                    "popup menu opens without the foreground; a press outside it or Esc closes it"
+                );
+                // Forgets an Esc pressed before the menu.
+                let _ = crate::window::key_pressed_async(VK_ESCAPE as u32);
+                Some(watch)
+            }
         };
+        MENU_WITHOUT_FOREGROUND.with(|w| w.set(outside.is_some()));
         MENU_FOREGROUND_LOST.with(|n| n.set(0));
+        // A menu that starts while this thread's key state still has a mouse button down takes
+        // no key until a click in it (the tray menu of Windows 10 1809 after a right-click on
+        // the icon, #219): see `sync_mouse_buttons`.
+        let buttons_before = button_states();
+        let queue_read = crate::window::sync_mouse_buttons();
+        tracing::debug!(
+            buttons_before,
+            queue_read,
+            buttons_now = button_states(),
+            "popup menu: mouse buttons as this thread has them / as they are"
+        );
         // Items with tooltips: a hook on this thread sees the highlight move for as long as
         // the menu is open.
         let tips = self.tips.borrow().clone();
@@ -663,7 +814,14 @@ impl PopupMenu {
                 Some(check_menu_foreground),
             );
             let shown = Instant::now();
-            let cmd = TrackPopupMenuEx(self.hmenu, flags, x, y, owner, None);
+            let cmd = TrackPopupMenuEx(
+                self.hmenu,
+                flags,
+                x,
+                y,
+                owner,
+                keep_clear.as_ref().map(|p| p as *const TPMPARAMS),
+            );
             let open = shown.elapsed();
             if timer != 0 {
                 let _ = KillTimer(Some(owner), MENU_FOREGROUND_TIMER);
@@ -674,13 +832,14 @@ impl PopupMenu {
             tracing::info!(
                 cmd = cmd.0,
                 open_ms = open.as_millis() as u64,
-                foreground_step,
+                foreground_step = foreground_step.unwrap_or(0),
                 check_timer = timer != 0,
                 closed_for_lost_foreground = lost,
                 "popup menu closed"
             );
             cmd.0 as u32
         };
+        drop(outside);
         if let Some(hook) = hook {
             // SAFETY: the hook set above.
             unsafe {
@@ -691,6 +850,26 @@ impl PopupMenu {
         MENU_TIPS.with(|t| t.borrow_mut().take());
         cmd
     }
+}
+
+/// The mouse buttons for the log: as this thread's key state has them / as they are.
+fn button_states() -> String {
+    let state = |vk: i32| {
+        format!(
+            "{}/{}",
+            if crate::window::key_down(vk as u32) {
+                "down"
+            } else {
+                "up"
+            },
+            if crate::window::key_down_async(vk as u32) {
+                "down"
+            } else {
+                "up"
+            }
+        )
+    };
+    format!("left {} right {}", state(VK_LBUTTON), state(VK_RBUTTON))
 }
 
 /// How often an open popup menu checks that this thread still has the foreground, and how many
@@ -704,6 +883,61 @@ thread_local! {
     /// Checks in a row that found another thread's window in the foreground while a menu is
     /// open (see [`check_menu_foreground`]).
     static MENU_FOREGROUND_LOST: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// The open menu was opened without the foreground (see [`OutsidePress`]).
+    static MENU_WITHOUT_FOREGROUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// While it lives, the first mouse button press outside this thread's popup menus closes the
+/// open menu (a low-level mouse hook on this thread; the menu's own loop pumps its messages).
+/// For a menu opened while another program keeps the foreground: such a menu sees the presses
+/// on its own windows only, so one elsewhere would leave it open.
+struct OutsidePress(HHOOK);
+
+impl OutsidePress {
+    fn start() -> Option<Self> {
+        // SAFETY: a low-level hook needs no module handle.
+        let hook = unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(outside_press_proc), None, 0) };
+        (!hook.0.is_null()).then_some(Self(hook))
+    }
+}
+
+impl Drop for OutsidePress {
+    fn drop(&mut self) {
+        // SAFETY: balances SetWindowsHookExW.
+        unsafe {
+            let _ = UnhookWindowsHookEx(self.0);
+        }
+    }
+}
+
+unsafe extern "system" fn outside_press_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    let m = wparam.0 as u32;
+    if code >= 0
+        && [
+            WM_LBUTTONDOWN as u32,
+            WM_RBUTTONDOWN as u32,
+            WM_MBUTTONDOWN as u32,
+            WM_XBUTTONDOWN as u32,
+        ]
+        .contains(&m)
+    {
+        // SAFETY: for WH_MOUSE_LL, lParam points to an MSLLHOOKSTRUCT, which starts with the
+        // pointer's position; plain FFI calls.
+        let on_menu = unsafe {
+            let under = WindowFromPoint(*(lparam.0 as *const POINT));
+            GetWindowThreadProcessId(under, None) == GetCurrentThreadId()
+                && crate::desktop::class_name(under) == "#32768"
+        };
+        if !on_menu {
+            tracing::debug!(
+                wm = m,
+                "press outside a popup menu without the foreground; closing it"
+            );
+            end_menu();
+        }
+    }
+    // SAFETY: passes the event on unchanged.
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
 }
 
 /// Whether the foreground window belongs to this thread: only then does an open menu get Esc
@@ -720,7 +954,8 @@ fn foreground_is_ours() -> bool {
 /// thread the foreground one: 1 a plain SetForegroundWindow, 2 the same after an empty input
 /// event (the foreground lock refuses a process that did not get the last input, as for a
 /// menu the CLI opens). None when another thread still has it. (Attaching to the foreground
-/// thread's input for the call was tried as well: the fence menu it opened ignored Esc.)
+/// thread's input for the call was tried as well: the fence menu it opened ignored Esc, and a
+/// toast's thread refuses it.)
 fn take_foreground(owner: HWND) -> Option<u32> {
     // SAFETY: plain FFI calls; the injected event has no flags, so it moves and presses nothing.
     unsafe {
@@ -739,6 +974,14 @@ fn take_foreground(owner: HWND) -> Option<u32> {
 /// it is closed here once the foreground stayed elsewhere for two checks. (Measured: a
 /// foreground change after the menu opened closes it by itself.)
 unsafe extern "system" fn check_menu_foreground(_: HWND, _: u32, _: usize, _: u32) {
+    if MENU_WITHOUT_FOREGROUND.with(|w| w.get()) {
+        // The keys go to the program that has the foreground, so the menu never sees Esc.
+        if crate::window::key_pressed_async(VK_ESCAPE as u32) {
+            tracing::debug!("Esc while a popup menu is open without the foreground; closing it");
+            end_menu();
+        }
+        return;
+    }
     let lost = if foreground_is_ours() {
         0
     } else {

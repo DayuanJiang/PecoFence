@@ -313,10 +313,72 @@ impl App {
         }
     }
 
+    /// The first frame after the start: the fences are on their way in. The Windows desktop
+    /// icons go when that fade is half way (83 ms later; at once with animations off), so the
+    /// desktop is never empty in between and both show together for those few frames only.
+    fn hide_icons_as_fences_come(&mut self) {
+        let fading = self.ctx.motion.enabled();
+        tracing::debug!(
+            fading,
+            "start: first frame, the Windows desktop icons go next"
+        );
+        if fading {
+            let ms = pecofence_render::motion::FASTER.as_millis() as u32;
+            window::set_timer(self.control.hwnd(), TIMER_START_ICONS, ms);
+        } else {
+            self.hide_icons_after_start();
+        }
+    }
+
+    /// Hides the Windows desktop icons for the start (`TIMER_START_ICONS`), unless the setting
+    /// went off or 「临时显示 Windows 桌面」 came on in the meantime.
+    pub(super) fn hide_icons_after_start(&mut self) {
+        let asked = self.state.config.settings.hide_real_icons
+            && !self.no_hide_icons
+            && !self.windows_desktop;
+        let hidden = asked
+            && self
+                .anchor
+                .borrow_mut()
+                .as_mut()
+                .is_some_and(|a| a.request_hide_desktop_icons());
+        tracing::info!(
+            asked,
+            hidden,
+            "start: Windows desktop icons hidden as the fences come in"
+        );
+    }
+
+    /// 退出 in the tray menu, or for an update: the fences fade out (167 ms) while Explorer
+    /// brings its icons back, and the program ends when they have gone. They were cut off in
+    /// one frame. The end of a Windows session does not wait, and with animations off (or no
+    /// fence on screen) nothing fades. `reason`: the quit's, or that the hold of
+    /// `TIMER_QUIT_FADE` is over.
+    pub(super) fn fade_out_and_quit(&mut self, reason: &'static str) {
+        let fading =
+            reason != "session end" && self.fences.values().fold(false, |any, w| w.retire() | any);
+        tracing::debug!(
+            reason,
+            fading,
+            fences = self.fences.len(),
+            "quit: the fences fade out first"
+        );
+        if fading {
+            let fade = pecofence_render::motion::FAST.as_millis() as u32;
+            // Two frames more, so the last step of the fade is on screen.
+            window::quit_after(fade + 33);
+        } else {
+            window::post_quit(0);
+        }
+    }
+
     /// One compositor frame: advance every fence's client tweens; ask for another frame while
     /// anything still moves.
     pub(super) fn on_frame(&mut self) {
         let now = Instant::now();
+        if std::mem::take(&mut self.hide_icons_at_frame) {
+            self.hide_icons_as_fences_come();
+        }
         // Frame cadence diagnostics (debug level): a gap since the previous frame of more than
         // ~1.5 compositor periods, or a slow frame, is what the user perceives as a hitch.
         if let Some(prev) = self.frame_prev.replace(now) {
@@ -332,12 +394,16 @@ impl App {
             self.ctx.frames.take_timeouts();
         }
         let mut more = false;
+        // The smaller sizes the height animations ask for and the moves of the push pass are
+        // noted and applied together (`apply_frame_positions`).
+        *self.ctx.behavior.frame_positions.borrow_mut() = Some(Vec::new());
         // Dying windows are ticked too: their shadow fades on the frame clock until the exit
         // fade's completion drops them.
         for w in self.fences.values().chain(self.dying.iter()) {
             more |= w.on_frame(now);
         }
         self.reflow_pushed();
+        self.apply_frame_positions();
         // Peek dimmer: a layered window, so its alpha is a client tween ticked here. The last
         // frame writes the clear alpha before the windows are torn down.
         let mut peek_done = false;
@@ -350,6 +416,8 @@ impl App {
             self.end_peek_now();
         }
         more |= self.tick_peek_rest();
+        // The alignment guides and the landing outline of a drag: layered windows as well.
+        more |= self.ctx.behavior.tick_drag_feedback(now);
         let spent = now.elapsed();
         self.frame_run.max_frame = self.frame_run.max_frame.max(spent);
         self.frame_run.work += spent;
@@ -357,6 +425,62 @@ impl App {
             self.ctx.frames.request();
         } else {
             self.end_frame_run(now);
+        }
+    }
+
+    /// Applies the window positions the frame noted (`Behavior::frame_positions`) in one batch:
+    /// a fence that rolls up (or gets shorter by itself), the fences that follow it and their
+    /// shadows are at their new places in the same composed frame. Then the animations that
+    /// ended land.
+    fn apply_frame_positions(&self) {
+        let behavior = self.ctx.behavior.clone();
+        let noted = behavior
+            .frame_positions
+            .borrow()
+            .clone()
+            .unwrap_or_default();
+        let window_of = |hwnd: HWND| {
+            self.fences
+                .values()
+                .chain(self.dying.iter())
+                .find(|w| w.hwnd() == hwnd)
+        };
+        // While the batch is still open the windows answer with their new rects: the shadow
+        // of a fence that gets smaller is drawn for its new plate.
+        let mut shadows = Vec::new();
+        for p in &noted {
+            let Some(w) = window_of(p.hwnd) else {
+                continue;
+            };
+            if let Some(shadow) = w.frame_handle().shadow_before_batch(p.size.is_some()) {
+                let (at, shadow_at) = (window::window_rect(p.hwnd), window::window_rect(shadow));
+                shadows.push(window::WindowPos {
+                    hwnd: shadow,
+                    x: shadow_at.left + p.x - at.left,
+                    y: shadow_at.top + p.y - at.top,
+                    size: None,
+                });
+            }
+        }
+        let mut positions = behavior
+            .frame_positions
+            .borrow_mut()
+            .take()
+            .unwrap_or_default();
+        positions.extend(shadows);
+        if !positions.is_empty() {
+            tracing::trace!(
+                windows = positions.len(),
+                "frame: window positions in one batch"
+            );
+            // No borrow held: the windows' handlers run synchronously.
+            window::set_window_positions(&positions);
+        }
+        let landings = std::mem::take(&mut *behavior.frame_landings.borrow_mut());
+        for (hwnd, rolled_at_end) in landings {
+            if let Some(w) = window_of(hwnd) {
+                w.frame_handle().land(rolled_at_end);
+            }
         }
     }
 

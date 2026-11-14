@@ -4,12 +4,13 @@
 //! Enter commits, Esc cancels, losing focus commits.
 
 use crate::commands::{Command, CommandQueue};
-use pecofence_core::{FenceId, ItemId};
+use pecofence_core::{FenceId, ItemId, TitleAlign};
+use pecofence_platform::tooltip::Tooltip;
 use pecofence_platform::window::{
     self, ClassOptions, MessageHandler, Window, WindowBuilder, WindowClass, style,
 };
 use pecofence_platform::{HWND, RECT, desktop, dwm, edit, monitors, msg, paint};
-use pecofence_render::ThemeMode;
+use pecofence_render::ColorF;
 use std::cell::RefCell;
 
 const RENAME_CLASS: &str = "PecoFence.Rename";
@@ -27,6 +28,11 @@ pub enum RenameTarget {
 }
 
 struct RenameSession {
+    /// The tip under the box that says why Enter did not take the name (`show_hint`); made
+    /// when first needed. Before `window`: it goes first.
+    hint: Option<Tooltip>,
+    /// The box is a dark field (the tip under it is dark too).
+    dark: bool,
     window: Window,
     edit: edit::EditControl,
     target: RenameTarget,
@@ -68,20 +74,135 @@ struct ItemBox {
     pad_bottom: i32,
     line_h: i32,
     max_lines: i32,
+    /// A title's one line: where its text stands in the box (an icon's name is always centred,
+    /// a row's starts at the left).
+    align: TitleAlign,
+}
+
+/// A fence title or a tab's caption as it is drawn (`FenceWindow::title_text_place`): `x` px
+/// from the window's left edge to the start of its text, the height of its row in px, its
+/// size in DIPs and its font (a theme's face, else the built-in one; the weight).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TitlePlace {
+    pub x: i32,
+    pub row_h: i32,
+    pub font_dip: f32,
+    pub face: Option<String>,
+    pub weight: i32,
+    /// A centred or right-aligned single title: its alignment, where its text ends and the
+    /// room it is aligned in (from, to), all in px from the window's left edge.
+    pub aligned: Option<(TitleAlign, i32, (i32, i32))>,
+}
+
+/// The name box over a title: its screen rectangle and where its edit sits in it. The text
+/// starts where the title's does, on a line in the middle of the title row, so the name does
+/// not move when the box opens (it stood 4 px left of the title and 5 px above it, in a
+/// 14 DIP regular font whatever the title's size and weight). `r` is the fence window.
+/// A centred title's box is centred on the title's text and as wide as the title's room
+/// allows on both sides; a right-aligned title's box ends where its text ends and reaches back
+/// over the room. Their text is centred or right-aligned in the box, so the name stays where
+/// it stood and grows as the title will.
+fn title_box_place(r: RECT, dpi: u32, title: &TitlePlace) -> (RECT, ItemBox) {
+    let scale = dpi.max(96) as f32 / 96.0;
+    let px = |dip: f32| (dip * scale).round() as i32;
+    // As an item's box: the 1 px border and 3 DIPs at the sides, the border and 1 DIP above,
+    // 1 DIP and the 2 DIP accent line below.
+    let (pad_x, pad_top, pad_bottom) = (px(3.0) + 1, px(1.0) + 1, px(3.0));
+    let h = (pad_top + px(title.font_dip * 4.0 / 3.0) + pad_bottom).min(title.row_h);
+    let top = r.top + (title.row_h - h) / 2;
+    let (left, right, align) = match title.aligned {
+        Some((TitleAlign::Center, end, (from, to))) => {
+            // Twice the text's centre, so a half pixel is not lost.
+            let c2 = title.x + end;
+            let half = ((c2 - 2 * from).min(2 * to - c2) / 2).max(px(40.0));
+            let left = r.left + (c2 - 2 * half) / 2 - pad_x;
+            (left, left + 2 * half + 2 * pad_x, TitleAlign::Center)
+        }
+        Some((TitleAlign::Right, end, (from, _))) => {
+            let right = r.left + end + pad_x;
+            let left = (r.left + from - pad_x).min(right - px(80.0));
+            (left, right, TitleAlign::Right)
+        }
+        _ => {
+            let left = r.left + title.x - pad_x;
+            // Up to the count and the chevron at the right, as before.
+            (
+                left,
+                (r.right - px(44.0)).max(left + px(80.0)),
+                TitleAlign::Left,
+            )
+        }
+    };
+    let rect = RECT {
+        left,
+        top,
+        right,
+        bottom: top + h,
+    };
+    let item_box = ItemBox {
+        pad_x,
+        edit_x: pad_x,
+        pad_top,
+        pad_bottom,
+        line_h: 0,
+        max_lines: 1,
+        align,
+    };
+    (rect, item_box)
 }
 
 /// Opens (or re-targets) the rename popup over `fence_hwnd`'s title bar, or over `row` (screen
-/// rect of the tab's row in a left tab column).
+/// rect of the tab's row in a left tab column). `title` is the title or tab caption the box
+/// replaces, where the fence can say where its text is: the box then sits on that text, in its
+/// font (a tab's box on its own tab; it opened at the left end of the row, over the first
+/// tab; a row of the left tab column on the row's caption). `ink` is the colour the fence's
+/// text is drawn in (see [`box_colors`]).
 pub fn begin_inline_rename(
     fence_hwnd: HWND,
     fence: FenceId,
     current: String,
     row: Option<RECT>,
+    title: Option<TitlePlace>,
     queue: CommandQueue,
-    mode: ThemeMode,
+    ink: ColorF,
 ) {
     let r = window::window_rect(fence_hwnd);
     let dpi = monitors::dpi_for_window(fence_hwnd).max(96);
+    if let Some(title) = title {
+        let (rect, item_box) = match row {
+            // A row of the left tab column: the box sits on the row's caption (`title.x`
+            // counts from the row's left edge) and ends with the row.
+            Some(row) => {
+                let (mut rect, item_box) = title_box_place(row, dpi, &title);
+                rect.right = row.right.max(rect.left + (80.0 * dpi as f32 / 96.0) as i32);
+                (rect, item_box)
+            }
+            None => title_box_place(r, dpi, &title),
+        };
+        // The built-in title faces: the Small optical size under 13 DIPs, as the title.
+        let built_in = if title.font_dip < 13.0 {
+            pecofence_platform::fonts::small_face()
+        } else {
+            pecofence_platform::fonts::text_face()
+        };
+        tracing::debug!(%fence, ?rect, ?title, "name box opens on the title's text");
+        begin_rename_at(
+            rect,
+            dpi,
+            title.font_dip,
+            RenameTarget::Fence(fence),
+            current,
+            None,
+            Some((
+                item_box,
+                title.face.as_deref().unwrap_or(built_in),
+                title.weight,
+            )),
+            queue,
+            ink,
+        );
+        return;
+    }
     let scale = dpi as f32 / 96.0;
     let h = (24.0 * scale) as i32;
     let rect = match row {
@@ -115,8 +236,27 @@ pub fn begin_inline_rename(
         None,
         None,
         queue,
-        mode,
+        ink,
     );
+}
+
+/// The colours of a name box: the text in the colour of the name the box replaces (`ink`, as
+/// the fence draws it: picked for the plate behind it, or 「文字颜色」 白色 / 黑色), on the field
+/// that colour reads on. Light text gets the dark field, dark text the light one, whatever the
+/// colour mode: in dark mode over a light wallpaper the names are dark on a light plate, and a
+/// dark box was the one dark block in the fence. Returns whether the field is the dark one and
+/// the text colour (a COLORREF, the ink's own alpha blended over the field).
+pub(crate) fn box_colors(ink: ColorF) -> (bool, u32) {
+    let dark = 0.2126 * ink.r + 0.7152 * ink.g + 0.0722 * ink.b > 0.5;
+    let [r, g, b, _] = edit::back_color(dark).to_le_bytes();
+    let over = |c: f32, field: u8| {
+        let a = ink.a.clamp(0.0, 1.0);
+        (c * 255.0 * a + field as f32 * (1.0 - a))
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    let text = u32::from_le_bytes([over(ink.r, r), over(ink.g, g), over(ink.b, b), 0]);
+    (dark, text)
 }
 
 /// How much of an item's editing name the rename box selects (UTF-16 units): the stem only, so
@@ -183,7 +323,8 @@ pub fn has_reserved_char(name: &str) -> bool {
 /// centred under the icon: the box is centred too, wraps the name at the label's width like
 /// the Windows desktop's and is as tall as the name's lines, growing and shrinking while the
 /// user types. `None` is a list or details row: one line over the name column, `text_scale`
-/// (`layout::row_text_scale`) taller with Windows' text size.
+/// (`layout::row_text_scale`) taller with Windows' text size. `ink` is the colour the name is
+/// drawn in (see [`box_colors`]).
 #[allow(clippy::too_many_arguments)]
 pub fn begin_item_rename(
     label_rect: RECT,
@@ -196,7 +337,7 @@ pub fn begin_item_rename(
     select_end: Option<usize>,
     wrap_inset_dip: Option<f32>,
     queue: CommandQueue,
-    mode: ThemeMode,
+    ink: ColorF,
 ) {
     let (r, item_box) = item_box_place(label_rect, dpi, font_dip, text_scale, wrap_inset_dip);
     begin_rename_at(
@@ -206,9 +347,9 @@ pub fn begin_item_rename(
         RenameTarget::Item(item),
         current,
         select_end,
-        Some((item_box, font_face)),
+        Some((item_box, font_face, 400)),
         queue,
-        mode,
+        ink,
     );
 }
 
@@ -246,6 +387,7 @@ fn item_box_place(
                 pad_bottom,
                 line_h: 0,
                 max_lines: ITEM_BOX_MAX_LINES,
+                align: TitleAlign::Center,
             }
         }
         None => {
@@ -263,6 +405,7 @@ fn item_box_place(
                 pad_bottom: 0,
                 line_h: 0,
                 max_lines: 1,
+                align: TitleAlign::Left,
             }
         }
     };
@@ -343,13 +486,14 @@ fn begin_rename_at(
     target: RenameTarget,
     current: String,
     select_end: Option<usize>,
-    item_box: Option<(ItemBox, &str)>,
+    item_box: Option<(ItemBox, &str, i32)>,
     queue: CommandQueue,
-    mode: ThemeMode,
+    ink: ColorF,
 ) {
-    // An item's box edits its name in the names' own font.
-    let font_face = item_box.map(|(_, face)| face);
-    let item_box = item_box.map(|(b, _)| b);
+    // An item's box edits its name in the names' own font (face, weight), a title's in the
+    // title's.
+    let font = item_box.map(|(_, face, weight)| (face, weight));
+    let item_box = item_box.map(|(b, _, _)| b);
     end_active(false);
     CLASS.with(|c| {
         if c.borrow().is_none() {
@@ -357,7 +501,13 @@ fn begin_rename_at(
         }
     });
     let (x, y, w, h) = (r.left, r.top, r.right - r.left, r.bottom - r.top);
-    let dark = mode == ThemeMode::Dark;
+    let (dark, text_color) = box_colors(ink);
+    tracing::debug!(
+        ?ink,
+        dark_field = dark,
+        text = format_args!("{text_color:06x}"),
+        "name box takes the colour of the text it replaces"
+    );
     let framed = item_box.is_some();
 
     let handler: MessageHandler = Box::new(
@@ -367,8 +517,16 @@ fn begin_rename_at(
                     end_active(true);
                     Some(0)
                 }
-                // The text changed: an icon's name box follows its lines.
+                // The text changed: an icon's name box follows its lines, and the hint about
+                // the last Enter goes.
                 msg::WM_COMMAND if framed && msg::hi_u16(wparam) == edit::EN_CHANGE => {
+                    ACTIVE.with(|a| {
+                        if let Ok(mut a) = a.try_borrow_mut()
+                            && let Some(t) = a.as_mut().and_then(|s| s.hint.as_mut())
+                        {
+                            t.hide();
+                        }
+                    });
                     ACTIVE.with(|a| {
                         if let Ok(a) = a.try_borrow()
                             && let Some(s) = a.as_ref()
@@ -419,13 +577,35 @@ fn begin_rename_at(
             dark,
             on_key,
         ),
+        // A centred or right-aligned title: its text keeps that place in the box.
+        Some(b) if b.align == TitleAlign::Center => edit::EditControl::create_centered(
+            window.hwnd(),
+            w,
+            h,
+            dpi,
+            font_dip,
+            &current,
+            dark,
+            on_key,
+        ),
+        Some(b) if b.align == TitleAlign::Right => edit::EditControl::create_right(
+            window.hwnd(),
+            w,
+            h,
+            dpi,
+            font_dip,
+            &current,
+            dark,
+            on_key,
+        ),
         _ => edit::EditControl::create(window.hwnd(), w, h, dpi, font_dip, &current, dark, on_key),
     };
     let Ok(mut ctl) = ctl else {
         return;
     };
-    if let Some(face) = font_face {
-        ctl.set_font(face, font_dip, dpi);
+    ctl.set_text_color(text_color);
+    if let Some((face, weight)) = font {
+        ctl.set_font_weight(face, font_dip, dpi, weight);
         ctl.set_margins(0);
     }
     let item_box = item_box.map(|b| ItemBox {
@@ -452,9 +632,16 @@ fn begin_rename_at(
     if let Some(b) = &item_box {
         // The selection put the caret after the stem: the name still shows from its start.
         fit_item_box(&window, &ctl, b);
+        // Also a name of more lines than the box holds: it opened on its last lines (the
+        // caret's), with the start of the name out of sight. Typing brings the caret back.
+        if b.max_lines > 1 {
+            ctl.scroll_to_top();
+        }
     }
     ACTIVE.with(|a| {
         *a.borrow_mut() = Some(RenameSession {
+            hint: None,
+            dark,
             window,
             edit: ctl,
             target,
@@ -463,6 +650,15 @@ fn begin_rename_at(
             item_box,
         })
     });
+    // Painted now and on screen before the caller takes the name off the icon or the title:
+    // painted when the message loop was next idle, the box came one to two frames after the
+    // name had gone. Windows shows a new window a frame after its first paint, so this waits
+    // for that frame (16 ms at 60 Hz).
+    let shown = ACTIVE.with(|a| a.borrow().as_ref().map(|s| s.window.hwnd()));
+    if let Some(hwnd) = shown {
+        window::paint_now(hwnd);
+        dwm::wait_for_frame();
+    }
 }
 
 fn on_key(vk: u32) -> bool {
@@ -492,6 +688,31 @@ fn on_key(vk: u32) -> bool {
         }
         _ => false,
     }
+}
+
+/// Shows `text` in a tip under the open name box (why Enter did not take the name), where
+/// the user is looking; it goes when the text changes or the box closes. False when no name
+/// box is open.
+pub fn show_hint(text: &str) -> bool {
+    ACTIVE.with(|a| {
+        let mut a = a.borrow_mut();
+        let Some(s) = a.as_mut() else {
+            return false;
+        };
+        let hwnd = s.window.hwnd();
+        if s.hint.is_none() {
+            s.hint = Tooltip::create(hwnd, s.dark)
+                .map_err(|e| tracing::warn!(error = %e, "name box: no window for its hint"))
+                .ok();
+        }
+        let r = window::window_rect(hwnd);
+        let Some(tip) = s.hint.as_mut() else {
+            return false;
+        };
+        tip.show(text, r.left, r.bottom + 4, r.top - 4);
+        tracing::debug!(at = ?(r.left, r.bottom + 4), "name box: hint shown under it");
+        true
+    })
 }
 
 /// What the open rename popup targets, if one is open.
@@ -539,14 +760,125 @@ pub fn end_active(commit: bool) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ITEM_BOX_MAX_LINES, has_reserved_char, invalid_file_name, item_box_place,
-        rename_hidden_suffix, rename_select_len,
+        ITEM_BOX_MAX_LINES, TitlePlace, box_colors, has_reserved_char, invalid_file_name,
+        item_box_place, rename_hidden_suffix, rename_select_len, title_box_place,
     };
+    use pecofence_core::TitleAlign;
     use pecofence_platform::RECT;
+    use pecofence_render::{Image, Theme};
+
+    /// The name box follows the text it replaces: in dark mode over a light wallpaper the
+    /// names are dark on a light plate and so is the box; in light mode over a dark one both
+    /// are light on dark. Where the mode's own text is kept, so are the box's old colours.
+    #[test]
+    fn the_name_box_takes_the_colour_of_the_text_it_replaces() {
+        // The modes' own text: the colours the box always had (COLORREFs, 0x00BBGGRR).
+        assert_eq!(box_colors(Theme::dark().text_primary), (true, 0x00FF_FFFF));
+        assert_eq!(
+            box_colors(Theme::light().text_primary),
+            (false, 0x001B_1B1B)
+        );
+        // Fluent, text picked from the plate: a plain wallpaper as the fence gets it.
+        let crop = |theme: &Theme, grey: u8| {
+            let mut image = Image::solid(32, 24, [grey; 3]);
+            let m = theme.acrylic_tint();
+            image.tint(m.color, m.luminosity_opacity, m.noise, m.chroma);
+            image
+        };
+        let dark = Theme::dark();
+        let on_light = dark.over_acrylic(&crop(&dark, 238), 1.0, None, None);
+        assert_eq!(box_colors(on_light.text_primary), (false, 0x001B_1B1B));
+        let light = Theme::light();
+        let on_dark = light.over_acrylic(&crop(&light, 20), 1.0, None, None);
+        assert_eq!(box_colors(on_dark.text_primary), (true, 0x00FF_FFFF));
+        // Liquid Glass: its navy text on the light field, in both modes.
+        for mode in [Theme::dark(), Theme::light()] {
+            let glass = mode.with_liquid_glass();
+            let picked = glass.over_glass(&Image::solid(16, 16, [238; 3]));
+            assert_eq!(box_colors(picked.text_primary), (false, 0x0036_2013));
+            let picked = glass.over_glass(&Image::solid(16, 16, [20; 3]));
+            assert_eq!(box_colors(picked.text_primary), (true, 0x00FF_FFFF));
+        }
+        // 「文字颜色」 白色 on a light plate, 黑色 on a dark one: the box goes with the text.
+        use pecofence_core::LabelColor;
+        let white = on_light.with_label_color(LabelColor::White);
+        assert_eq!(box_colors(white.text_primary), (true, 0x00FF_FFFF));
+        let black = on_dark.with_label_color(LabelColor::Black);
+        assert_eq!(box_colors(black.text_primary), (false, 0x001B_1B1B));
+    }
 
     /// An icon's name box is centred under the icon, as wide as the label's text plus its
     /// frame (inside the cell at the default icon size), with its first line where the label's
     /// was; a row's box keeps the name column and one line.
+    /// The name box of a fence: its text starts at the title's x (16 DIPs, more behind an
+    /// icon) and its one line is in the middle of the 36 DIP title row, at 100 % and 150 %.
+    /// It was a 24 DIP box 8 DIPs from the left and 4 from the top, its text 4 px left of the
+    /// title's and 5 px above it.
+    #[test]
+    fn a_fences_name_box_sits_on_the_title_text() {
+        let fence = RECT {
+            left: 8,
+            top: 8,
+            right: 308,
+            bottom: 248,
+        };
+        let title = |x: i32, row_h: i32, font_dip: f32| TitlePlace {
+            x,
+            row_h,
+            font_dip,
+            face: None,
+            weight: 600,
+            aligned: None,
+        };
+        let (r, b) = title_box_place(fence, 96, &title(16, 36, 14.0));
+        // Text at box.left + edit_x: the title's 8 + 16.
+        assert_eq!(r.left + b.edit_x, 24);
+        assert_eq!(
+            (r.top, r.bottom),
+            (14, 38),
+            "24 px box in the middle of 8..44"
+        );
+        assert_eq!(r.right, 308 - 44);
+        assert_eq!(b.max_lines, 1);
+        let big = RECT {
+            left: 12,
+            top: 12,
+            right: 462,
+            bottom: 372,
+        };
+        let (r, b) = title_box_place(big, 144, &title(24, 54, 18.0));
+        assert_eq!(r.left + b.edit_x, 36);
+        assert_eq!(
+            r.top - 12,
+            12 + 54 - r.bottom,
+            "the same room above and below"
+        );
+        assert!(r.bottom - r.top <= 54);
+        // A centred title (text 120..180 in a room 16..260 of a 300 px fence): the box is
+        // centred on the text and takes the room the nearer end leaves on both sides.
+        let centred = TitlePlace {
+            aligned: Some((TitleAlign::Center, 180, (16, 260))),
+            ..title(120, 36, 14.0)
+        };
+        let (r, b) = title_box_place(fence, 96, &centred);
+        assert_eq!((r.left + r.right) / 2, 8 + 150, "centred on the text");
+        assert_eq!(r.right - b.edit_x, 8 + 260, "up to the end of the room");
+        assert_eq!(b.align, TitleAlign::Center);
+        // Right-aligned (text 200..260): the box ends where the text ends and reaches back.
+        let right = TitlePlace {
+            aligned: Some((TitleAlign::Right, 260, (16, 260))),
+            ..title(200, 36, 14.0)
+        };
+        let (r, b) = title_box_place(fence, 96, &right);
+        assert_eq!(
+            r.right - b.edit_x,
+            8 + 260,
+            "the text ends where the title's did"
+        );
+        assert_eq!(r.left + b.edit_x, 8 + 16);
+        assert_eq!(b.align, TitleAlign::Right);
+    }
+
     #[test]
     fn an_icons_name_box_is_centred_and_stays_in_its_cell() {
         // The label area of a 48 px icon's cell at 100 %: the cell's 80 px, 8 px inset.

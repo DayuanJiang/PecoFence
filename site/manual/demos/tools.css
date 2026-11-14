@@ -16,12 +16,32 @@
     z-index: 4;
 }
 
-.sr-glyph { left: 14px; top: 14px; width: 16px; height: 16px; color: #5f5f5f }
+/* the magnifier over the row icons, the typed text at the left edge of the row names; the
+   empty box shows a hint in the secondary colour */
+.sr-glyph { left: 12px; top: 14px; width: 16px; height: 16px; color: #5f5f5f }
 .sr-glyph svg { position: static; display: block; width: 16px; height: 16px }
-.sr-q { left: 40px; top: 0; font-size: 15px; line-height: 44px; white-space: pre }
+.sr-q { left: 37px; top: 0; font-size: 15px; line-height: 44px; white-space: pre }
+.sr-hint { right: 12px; overflow: hidden; text-overflow: ellipsis; color: #767676 }
 .sr-caret { top: 13px; width: 1px; height: 18px; background: #1e1e1e }
-.sr-status { right: 14px; top: 0; color: #5f5f5f; font-size: 11.5px; line-height: 44px; white-space: nowrap }
 .sr-line { left: 0; right: 0; top: 44px; height: 1px; background: #e0e0e0 }
+
+/* the type tabs: the chosen one in an accent-tinted capsule, the keys at the right end */
+.sr-tabbar {
+    left: 0;
+    right: 0;
+    top: 44px;
+    height: 28px;
+    box-shadow: inset 0 -1px 0 #e0e0e0;
+    color: #5f5f5f;
+    font-size: 10px;
+    line-height: 18px;
+    white-space: nowrap;
+}
+
+.sr-tabs { left: calc(12px - var(--pad, 8px) / 2); top: 5px; display: flex; gap: 1.5px }
+.sr-tabs span { position: static; padding: 0 var(--pad, 8px); border-radius: 9px }
+.sr-tabs .on { background: #d9e8f7; color: #2a5bd7 }
+.sr-tabkeys { right: 12px; top: 5px }
 
 .sr-head {
     left: 0;
@@ -34,8 +54,11 @@
 }
 
 .sr-row { left: 0; right: 0; top: 0; height: 36px }
-.sr-selbg { left: 4px; right: 4px; top: 0; bottom: 0; background: #e3ebfa; opacity: 0 }
+.sr-selbg { left: 4px; right: 4px; top: 0; bottom: 0; border-radius: 3px; background: #e3ebfa; opacity: 0 }
 .sr-row img { left: 12px; top: 10px; width: 16px; height: 16px }
+/* an action row's glyph, in the accent colour where a file has its icon */
+.sr-act { left: 13px; top: 11px; width: 14px; height: 14px; color: #2a5bd7 }
+.sr-act svg { position: static; display: block; width: 14px; height: 14px }
 
 .sr-name {
     left: 37px;
@@ -50,7 +73,6 @@
 
 .sr-name span, .sr-name b { position: static }
 .sr-name b { color: #2a5bd7; font-weight: inherit }
-.sr-all .sr-name { left: 12px }
 
 .sr-detail {
     left: 37px;
@@ -64,8 +86,24 @@
     text-overflow: ellipsis;
 }
 
-.sr-all .sr-detail { left: 12px }
 .sr-key { right: 12px; top: 0; color: #5f5f5f; font-size: 10px; line-height: 36px; white-space: nowrap }
+
+/* the bar that ends the list: what the keys do, and how many results in all */
+.sr-bar {
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 26px;
+    box-shadow: inset 0 1px 0 #e0e0e0;
+    color: #5f5f5f;
+    font-size: 10px;
+    line-height: 26px;
+    white-space: nowrap;
+}
+
+.sr-barkeys { left: 12px; top: 0; display: flex; gap: 14px }
+.sr-barkeys span { position: static }
+.sr-count { right: 12px; top: 0 }
 
 /* A match in its fence: the selection colour; the current row's item fully, with the focus frame. */
 .ico.sr-hit {
@@ -104,23 +142,8 @@
 /* a button that cannot be pressed (时钟's 「已在桌面上」) */
 .set-btn.tl-dis, .set-btn.tl-dis.hot { background: rgba(249, 249, 249, .3); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06); color: rgba(0, 0, 0, .36) }
 
-/* the note editor: a white multi-line box over the note's content */
-.tl-edit {
-    left: 4px;
-    right: 4px;
-    top: 0;
-    bottom: 4px;
-    border-radius: 6px;
-    background: #fff;
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1), inset 0 -2px 0 var(--win-accent);
-    color: #323232;
-    font-size: 12.5px;
-    line-height: 17px;
-}
-
-.tl-edit-t { left: 10px; right: 10px; top: 6px; white-space: pre-wrap }
-.tl-measure { left: 10px; top: 6px; white-space: pre; visibility: hidden }
-.tl-caret { width: 1px; height: 15px; margin-top: 1px; background: #1b1b1b }
+/* a note is edited in place: nothing changes but a caret after the typed text */
+.stage-inner .tl-lines .tl-caret { display: inline-block; width: 1px; height: 15px; margin-left: 1px; vertical-align: -3px; background: #1b2133 }
 
 /* lines of a note or of a script's output: 14 px in, 5 px apart */
 .tl-lines, .tl-out { left: 14px; right: 14px; top: 2px }
@@ -321,6 +344,8 @@
 .sx-rows { left: 8px; right: 8px; top: 0; bottom: 28px; overflow: hidden }
 .sx-row { left: 0; right: 0; top: 0; height: 21px }
 .sx-plate { inset: 0; border-radius: 4px; background: rgba(27, 33, 51, .07) }
+/* while the mouse button is held on the row the plate is lighter; the row acts on the release */
+.sx-plate.down { background: rgba(27, 33, 51, .035) }
 .sx-sep { left: 6px; right: 6px; top: 0; height: 1px; background: rgba(27, 33, 51, .14) }
 .sx-ic { left: 6px; top: 3px; width: 16px; font-size: 11.5px; line-height: 15px; text-align: center }
 

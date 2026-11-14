@@ -1,7 +1,9 @@
 // 3.3 速览: a browser window covers the desktop and its fences; Ctrl+Alt+空格 floats every fence
-// above the windows over a 30 % black dimmer (peek.rs); a click on empty space ends it (the
-// dimmer fades out, then the fences drop back under the windows); peeking again and opening a
-// file brings that app to the front, which ends Peek by itself (anchor.rs on_foreground).
+// above the windows over a 30 % black dimmer (peek.rs). The fences here are completely under
+// the window, so they fade in with the dimmer and fade out with it at the end (a fence on
+// visible desktop would stay as it is). A click on empty space ends the Peek; peeking again
+// and opening a file brings that app to the front, which ends it by itself (anchor.rs
+// on_foreground).
 (() => {
     'use strict';
     const { E, ramp, lerp, pathAt, el, put, show, icon, fence, pointer, drawPointer, drawKeys, taskbar,
@@ -134,8 +136,8 @@
         opening(r.browser, t, WIN_OPEN, WIN);
         opening(r.doc, t, DOC_OPEN, DOC);
 
-        // Peek: fences jump into the topmost band at once; the dimmer fades in. Ending fades the
-        // dimmer out first, then the fences go back under the windows.
+        // Peek: the fences, all hidden by the browser window, come above the windows and fade in
+        // with the dimmer; ending fades both out, then the fences are back under the windows.
         let dim = 0, floating = false;
         for (const [on, end] of PEEKS) {
             if (t < on) continue;
@@ -145,6 +147,7 @@
         if (show(r.dim, dim > 0)) r.dim.style.opacity = (.302 * dim).toFixed(3);
         r.fences.forEach(f => {
             f.n.style.zIndex = floating ? 3 : 1;
+            f.n.style.opacity = floating ? dim.toFixed(3) : 1;
         });
 
         // 周报.docx: selected by the double-click, grey once its app is the active window.

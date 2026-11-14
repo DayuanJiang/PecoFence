@@ -54,7 +54,7 @@ Start-Sleep -Seconds 4
 Shot "k00-desktop-$Part"
 
 function PeekOn() { return (@([W]::Tops('PecoFence.PeekDimmer')).Count -gt 0) }
-function BoxRect() { $b = [G]::FindWindowW('PecoFence.PeekSearch', [NullString]::Value); if ($b -eq [IntPtr]::Zero) { return $null }; return (Rect $b) }
+function BoxRect() { $b = [G]::FindWindowW('PecoFence.PeekSearch', [NullString]::Value); if ($b -eq [IntPtr]::Zero -or -not [G]::IsWindowVisible($b)) { return $null }; return (Rect $b) }
 function ClipText() { return [Windows.Forms.Clipboard]::GetText() }
 function EndSearch() { CloseMenus; for ($i = 0; $i -lt 3 -and ([M]::BoxText() -ne $null -or (PeekOn)); $i++) { [G]::Press(0x1B); Start-Sleep -Milliseconds 400 } }
 # A Properties window of $name: found, visible, and on top at its middle (not under the Peek).

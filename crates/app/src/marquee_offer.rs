@@ -41,6 +41,9 @@ pub enum OfferEvent {
     ShowFolder,
     /// Faded out after the timeout, or Esc / a press elsewhere (`reason` for the log).
     Dismissed(&'static str),
+    /// The buttons are fading out by themselves: how opaque they are now (255: fully), so the
+    /// rectangle they belong to fades with them.
+    Fading(u8),
 }
 
 struct View {
@@ -260,7 +263,8 @@ fn handle(
                 _ => None,
             };
             if let Some(event) = event {
-                desktop::hide_window(hwnd);
+                // The buttons fade out (167 ms) while what the click made fades in; they
+                // were hidden in one frame here. The app keeps them alive meanwhile.
                 close(hwnd, view, None);
                 queue.push(Command::MarqueeOffer(event));
             } else {
@@ -295,7 +299,13 @@ fn handle(
             let Some(fade) = v.fade else {
                 return Some(0);
             };
-            v.root.set_opacity(fade.value_at(now));
+            let opacity = fade.value_at(now);
+            v.root.set_opacity(opacity);
+            // Leaving by themselves (not after a click, which hid them at once).
+            if v.closing && v.outcome.is_some() {
+                let step = OfferEvent::Fading((opacity.clamp(0.0, 1.0) * 255.0).round() as u8);
+                queue.push(Command::MarqueeOffer(step));
+            }
             if fade.is_done(now) {
                 v.fade = None;
                 window::kill_timer(hwnd, TIMER_FADE);

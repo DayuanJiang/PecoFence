@@ -42,6 +42,18 @@ pub(super) fn focus_session(view: &RefCell<Option<FenceViewState>>, hwnd: HWND) 
     }
 }
 
+/// The keyboard is with one of the fences or with Explorer's desktop: one desktop to the user,
+/// so a rest of the pointer in single-click mode may move it to the fence under the pointer.
+pub(super) fn keyboard_on_desktop() -> bool {
+    let front = desktop::root_ancestor(desktop::foreground_window());
+    desktop_surface_class(&desktop::class_name(front))
+}
+
+/// A fence's window class or one of Explorer's desktop windows.
+pub(in crate::fence_window) fn desktop_surface_class(class: &str) -> bool {
+    matches!(class, anchor::FENCE_CLASS | "Progman" | "WorkerW")
+}
+
 /// Opens `ids` as Enter does: a lone folder in a fence that navigates folders opens in place,
 /// anything else is launched.
 pub(super) fn open_items(v: &FenceViewState, queue: &CommandQueue, ids: Vec<ItemId>) {
@@ -254,6 +266,25 @@ impl FenceWindow {
                 }
                 if is_press(message) {
                     h.queue.push(Command::EndItemSelection { except: hwnd });
+                    // During a Peek F6 gave the keyboard to a card, and now a fence is
+                    // pressed: the fence cannot take the keyboard itself there (the dimmer
+                    // passes the keys on), so the card gives it back to the dimmer.
+                    if h.behavior.floating.get() && crate::notice::key_card_up() {
+                        tracing::debug!(
+                            ?hwnd,
+                            "press in a fence during a Peek: the card gives the keyboard back"
+                        );
+                        h.queue.push(Command::CardKeysBack);
+                    }
+                    // A click outside an open note editor saves and closes it. The editor
+                    // itself only notices when it loses the focus, and a press on a clock or
+                    // a script fence moves no focus.
+                    if crate::note_edit::is_open()
+                        && !mouse::press_in_note_editor(h, message, lparam)
+                    {
+                        tracing::debug!(?hwnd, message, "a press in a fence ends the note editor");
+                        h.queue.push(Command::EndNoteEdit);
+                    }
                     // A press in the fence ends the wait of an earlier Delete for its icons
                     // to go (`UserDelete`): what leaves the fence later moves no focus.
                     if let Ok(mut guard) = h.view.try_borrow_mut()
@@ -261,6 +292,9 @@ impl FenceWindow {
                     {
                         v.forget_user_delete("a press in the fence");
                     }
+                }
+                if let Some(done) = mouse::note_edit_mouse(h, hwnd, message, wparam, lparam) {
+                    return Some(done);
                 }
                 match message {
                     msg::WM_MOUSEACTIVATE => Some(msg::MA_NOACTIVATE),
@@ -358,12 +392,22 @@ impl FenceWindow {
                         timers::on_timer_tab_hover(h, hwnd, wparam, lparam)
                     }
                     msg::WM_TIMER if wparam == TIMER_CLOCK => timers::on_timer_clock(h),
+                    msg::WM_TIMER if wparam == TIMER_NAME_BOX => timers::on_timer_name_box(h, hwnd),
+                    msg::WM_TIMER if wparam == TIMER_ACTIVE_SYNC => {
+                        timers::on_timer_active_sync(h, hwnd, false)
+                    }
+                    msg::WM_TIMER if wparam == TIMER_ACTIVE_SYNC_END => {
+                        timers::on_timer_active_sync(h, hwnd, true)
+                    }
                     msg::WM_TIMER if wparam == TIMER_HOVER_SELECT => {
                         timers::on_timer_hover_select(h, hwnd, wparam, lparam)
                     }
 
                     msg::WM_TIMER if wparam == TIMER_SCROLLBAR => {
                         timers::on_timer_scrollbar(h, hwnd, wparam, lparam)
+                    }
+                    msg::WM_TIMER if wparam == TIMER_FIT_AHEAD => {
+                        timers::on_timer_fit_ahead(h, hwnd)
                     }
                     msg::WM_TIMER if wparam == TIMER_SHADOW => {
                         timers::on_timer_shadow(h, hwnd, wparam, lparam)

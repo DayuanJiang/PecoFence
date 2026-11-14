@@ -1,6 +1,7 @@
 //! In-app updates for the installer and ZIP editions (the Store updates the app itself):
 //! whether GitHub's latest release is newer and which file the installer downloads. The
-//! network and the hand-off to setup live in the app.
+//! network and the hand-off to setup live in the app. The project's website holds a copy of
+//! the latest release (`update.json`) for networks that cannot reach GitHub's API.
 
 use serde::Deserialize;
 
@@ -16,10 +17,30 @@ pub fn download_base() -> String {
     format!("https://github.com/{REPOSITORY}/releases/download/")
 }
 
+/// The project's website: the check's second source and its own download page.
+pub const SITE: &str = "https://pecofence.jiang.jp/";
+
+/// The site's copy of the latest published release (`scripts/build-site.py` writes it), asked
+/// when GitHub's API gives no answer.
+pub fn site_update_url() -> String {
+    format!("{SITE}update.json")
+}
+
+/// The site's download section in the UI language `ui_language`; English is at the site root.
+pub fn site_download_page(ui_language: &str) -> String {
+    match ui_language {
+        "zh-CN" | "zh-TW" | "ja" | "ko" | "de" | "fr" | "es" | "it" | "pt-BR" | "ru" => {
+            format!("{SITE}{ui_language}/#download")
+        }
+        _ => format!("{SITE}#download"),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Release {
     pub version: String,
-    /// The release page, opened by the ZIP edition.
+    /// The release page, opened by the ZIP edition (the site's download section for a release
+    /// read from the site).
     pub page: String,
     /// The release notes' first sentence (the card's line when it is in the UI's language);
     /// empty when they have none.
@@ -204,6 +225,49 @@ pub fn parse_release(json: &str, download_base: &str) -> Result<Release, String>
     })
 }
 
+/// The site's `update.json`: the latest published release's version, whether it has a setup,
+/// and the first point of its Store notes per UI language.
+#[derive(Deserialize)]
+struct SiteUpdate {
+    version: String,
+    #[serde(default)]
+    setup: bool,
+    #[serde(default)]
+    notes: std::collections::HashMap<String, String>,
+}
+
+/// Parses the site's `update.json` for the UI language `ui_language`. The file names no
+/// address: setup is the release's file at its exact place under `download_base` and the page
+/// is the site's own download section, so an unexpected file cannot point setup or the browser
+/// somewhere else.
+pub fn parse_site_update(
+    json: &str,
+    download_base: &str,
+    ui_language: &str,
+) -> Result<Release, String> {
+    let file: SiteUpdate = serde_json::from_str(json).map_err(|e| e.to_string())?;
+    if parse_version(&file.version).is_none() {
+        return Err(format!("unexpected version {}", file.version));
+    }
+    let name = setup_name(&file.version);
+    let setup = file.setup.then(|| SetupAsset {
+        url: format!("{download_base}v{}/{name}", file.version),
+        name,
+    });
+    let store_line = file
+        .notes
+        .get(ui_language)
+        .map(|line| line.trim().to_string())
+        .filter(|line| !line.is_empty());
+    Ok(Release {
+        version: file.version,
+        page: site_download_page(ui_language),
+        summary: String::new(),
+        store_line,
+        setup,
+    })
+}
+
 /// `major.minor.patch`, with an optional `-prerelease` (letters, digits, `.`, `-`) that sorts
 /// before the release.
 fn parse_version(version: &str) -> Option<([u64; 3], bool)> {
@@ -330,6 +394,48 @@ mod tests {
         assert_eq!(parse_release(&climbing, BASE).unwrap().setup, None);
         assert!(parse_release(&release_json("nightly", &[]), BASE).is_err());
         assert!(parse_release("not json", BASE).is_err());
+    }
+
+    /// The site's file gives the same release as GitHub's API: the setup at its place on
+    /// GitHub, the site's download section as the page, the card's line in the UI language.
+    #[test]
+    fn the_site_file_gives_the_release() {
+        let json = r#"{"version":"0.3.4","setup":true,"page":"https://example.invalid/",
+            "notes":{"en":"Typing no longer stutters.","zh-CN":"输入中文不再卡顿。","de":"  "}}"#;
+        let release = parse_site_update(json, BASE, "zh-CN").unwrap();
+        assert_eq!(release.version, "0.3.4");
+        assert_eq!(
+            release.setup,
+            Some(SetupAsset {
+                name: "pecofence-v0.3.4-x64-setup.exe".into(),
+                url: format!("{BASE}v0.3.4/pecofence-v0.3.4-x64-setup.exe"),
+            })
+        );
+        // Not the file's page: the site's own download section in the UI language.
+        assert_eq!(release.page, "https://pecofence.jiang.jp/zh-CN/#download");
+        assert_eq!(release.store_line.as_deref(), Some("输入中文不再卡顿。"));
+        let english = parse_site_update(json, BASE, "en").unwrap();
+        assert_eq!(english.page, "https://pecofence.jiang.jp/#download");
+        assert_eq!(
+            english.store_line.as_deref(),
+            Some("Typing no longer stutters.")
+        );
+        // No line for the language (or an empty one): the card says something general.
+        assert_eq!(
+            parse_site_update(json, BASE, "ja").unwrap().store_line,
+            None
+        );
+        assert_eq!(
+            parse_site_update(json, BASE, "de").unwrap().store_line,
+            None
+        );
+        // A release without a setup, and versions that are none.
+        let zip_only = parse_site_update(r#"{"version":"0.3.4"}"#, BASE, "en").unwrap();
+        assert_eq!(zip_only.setup, None);
+        assert!(parse_site_update(r#"{"version":"0.3.4/../x","setup":true}"#, BASE, "en").is_err());
+        assert!(parse_site_update(r#"{"version":"latest"}"#, BASE, "en").is_err());
+        assert!(parse_site_update("<html>captive portal</html>", BASE, "en").is_err());
+        assert_eq!(site_update_url(), "https://pecofence.jiang.jp/update.json");
     }
 
     /// The card's line: the notes' first sentence in the UI's language, cut when long.

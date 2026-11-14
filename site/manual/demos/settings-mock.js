@@ -96,8 +96,7 @@
             it.style.top = (58 + i * 28) + 'px';
             el('span', 'set-ic', it, glyph);
             const t = el('span', 'set-nav-t', it, T(label));
-            const pill = el('div', 'set-nav-pill', it);
-            w.nav[key] = { n: it, pill, y: 58 + i * 28 };
+            w.nav[key] = { n: it, y: 58 + i * 28 };
             return t;
         });
         // a label starts 6 + 32 px from the nav's left and ends 6 px before its item (6 px inset)
@@ -113,8 +112,9 @@
         w.main.style.left = w.navW + 'px';
         w.pages = {};
         w.toast = el('div', 'set-toast', w.n);
-        w.toast.innerHTML = ICON.ok + '<span></span>';
+        w.toast.innerHTML = ICON.ok + '<span></span><b></b>';
         w.toastText = w.toast.querySelector('span');
+        w.toastBtn = w.toast.querySelector('b');
         w.toast.style.display = 'none';
         return w;
     }
@@ -135,7 +135,6 @@
         for (const [k, item] of Object.entries(w.nav)) {
             const sel = k === key;
             item.n.classList.toggle('sel', sel);
-            item.pill.style.opacity = sel ? 1 : 0;
             const r = { x: w.x + 6, y: w.y + TITLE_H + item.y, w: w.navW - 12, h: 26 };
             item.n.classList.toggle('hot', !!p && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h);
         }
@@ -390,11 +389,13 @@
 
     // ---------- toast (.infobar: bottom-centre of the client area, 2.4 s) ----------
 
+    // list: [[t, text, seconds, button], ...]; with a button (撤销) the page keeps it for 6 s.
     function drawToast(w, t, list) {
         const e = list.filter(([a]) => t >= a).pop();
         const dur = e ? (e[2] || 2.4) : 0;
         if (!show(w.toast, !!e && t < e[0] + dur + .18)) return;
         text(w.toastText, e[1]);
+        if (show(w.toastBtn, !!e[3])) text(w.toastBtn, e[3]);
         const o = Math.min(ramp(t, e[0], e[0] + .18, E.lin), 1 - ramp(t, e[0] + dur, e[0] + dur + .18, E.lin));
         const tw = w.toast.offsetWidth;
         put(w.toast, (w.w - tw) / 2, w.h - 14 - 30 + 8 * (1 - o), o);

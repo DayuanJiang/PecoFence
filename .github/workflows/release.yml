@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: write
+  # The last step starts the Website workflow.
+  actions: write
 
 jobs:
   release:
@@ -62,3 +64,14 @@ jobs:
           }
           gh release create $env:GITHUB_REF_NAME @assets --verify-tag --generate-notes --title "PecoFence $env:GITHUB_REF_NAME"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # The website's update.json (what the app asks when GitHub's API gives it no answer) is
+      # written from the latest published release whenever the site is built: build it again
+      # now. A failure here leaves the release as it is; docs/RELEASING.md has the command.
+      - name: Rebuild the website for update.json
+        if: github.repository == 'DayuanJiang/PecoFence'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run website.yml --ref main

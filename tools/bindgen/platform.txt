@@ -35,6 +35,9 @@
     SW_SHOWNOACTIVATE
     SW_SHOWNORMAL
     SetWindowPos
+    BeginDeferWindowPos
+    DeferWindowPos
+    EndDeferWindowPos
     SWP_NOACTIVATE
     SWP_NOMOVE
     SWP_NOSIZE
@@ -291,6 +294,7 @@
     // ---- layered windows (shadow window)
     SetLayeredWindowAttributes
     UpdateLayeredWindow
+    UpdateWindow
     LWA_ALPHA
     LWA_COLORKEY
     ULW_ALPHA
@@ -308,6 +312,7 @@
     CreateWaitableTimerExW
     SetWaitableTimer
     CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+    DwmGetCompositionTimingInfo
     TIMER_ALL_ACCESS
     WAIT_TIMEOUT
     LoadLibraryExW
@@ -378,6 +383,27 @@
     PROCESS_MEMORY_COUNTERS
     QueryWorkingSet
 
+    // ---- 电脑状态 example, read by PecoFence itself (sysinfo.rs)
+    GetSystemTimes
+    GlobalMemoryStatusEx
+    MEMORYSTATUSEX
+    GetDiskFreeSpaceExW
+    SetThreadErrorMode
+    SEM_FAILCRITICALERRORS
+    GetAdaptersAddresses
+    IP_ADAPTER_ADDRESSES_LH
+    GAA_FLAG_INCLUDE_GATEWAYS
+    GAA_FLAG_SKIP_ANYCAST
+    GAA_FLAG_SKIP_MULTICAST
+    GAA_FLAG_SKIP_DNS_SERVER
+    GAA_FLAG_SKIP_FRIENDLY_NAME
+    AF_INET
+    SOCKADDR_IN
+    IfOperStatusUp
+    GetIfEntry2
+    MIB_IF_ROW2
+    ERROR_BUFFER_OVERFLOW
+
     // ---- CLI named pipe (pecofence-cli IPC)
     CreateNamedPipeW
     ConnectNamedPipe
@@ -410,6 +436,9 @@
     TOKEN_QUERY
     ConvertSidToStringSidW
     LocalFree
+    // usage statistics: the SHA-256 of a report, which the service wants in a header
+    BCryptHash
+    BCRYPT_SHA256_ALG_HANDLE
 
     // ---- misc
     MessageBoxW

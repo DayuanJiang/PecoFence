@@ -77,6 +77,39 @@ pub fn modifier_effect(key_state: u32, same_volume: bool) -> DropEffect {
     }
 }
 
+/// The effect of a file drag where Windows' `DefaultDropEffect` may be set (`user_default`, see
+/// [`default_drop_effect`]): without Ctrl, Shift or Alt the drag has that effect on one volume
+/// and across volumes alike, as in File Explorer; a held key decides as in [`modifier_effect`].
+pub fn file_drag_effect(
+    key_state: u32,
+    same_volume: bool,
+    user_default: Option<DropEffect>,
+) -> DropEffect {
+    match user_default {
+        Some(effect) if key_state & (MK_CONTROL | MK_SHIFT | MK_ALT) == 0 => effect,
+        _ => modifier_effect(key_state, same_volume),
+    }
+}
+
+/// Windows' `DefaultDropEffect` for file-system items, when the user set one: the value under
+/// `HKCR\*` or `HKCR\AllFilesystemObjects` (1 copy, 2 move, 4 create shortcut), which File
+/// Explorer gives a drag without a modifier key instead of "move within a volume, copy across"
+/// (feedback #153). Read from the user's classes, then the machine's, as `HKCR` merges them.
+pub fn default_drop_effect() -> Option<DropEffect> {
+    for class in ["*", "AllFilesystemObjects"] {
+        let key = format!(r"Software\Classes\{class}");
+        for root in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+            match crate::shell::reg_dword(root, &key, "DefaultDropEffect") {
+                Some(1) => return Some(DropEffect::Copy),
+                Some(2) => return Some(DropEffect::Move),
+                Some(4) => return Some(DropEffect::Link),
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
 /// The volume part of `path` for Explorer's same-volume rule: the drive letter, or the
 /// `\\server\share` of a UNC path, lower-cased. None for a path without either.
 pub fn volume_of(path: &std::path::Path) -> Option<String> {
@@ -695,6 +728,16 @@ impl ShortcutDropTarget {
         }
         let mut effect = allowed & (DROPEFFECT_COPY | DROPEFFECT_LINK) as u32;
         self.entered = false;
+        // The shell may show its right-drag menu (打开方式 / 取消) in the Drop below. On Windows 10
+        // 1809 that menu took no key after a right-button drag from File Explorer, so Esc did
+        // not close it (#219), unless the state of the mouse buttons is read first. Measured
+        // with the suite line drop-on-program-D on build 17763: 4 of 4 runs fail without this
+        // read, 3 of 3 pass with it, although the read finds both buttons up by then.
+        let buttons_synced = crate::window::sync_mouse_buttons();
+        tracing::debug!(
+            buttons_synced,
+            "drop on a program: handing the drop to the shell"
+        );
         // SAFETY: a successful DragEnter preceded this Drop; data lives through the call.
         unsafe {
             self.target
@@ -1069,6 +1112,9 @@ struct DropSourceObject {
     data: IDataObject,
     skip_drop: SkipDrop,
     skipped: std::cell::Cell<bool>,
+    /// The button that carries the drag (`MK_LBUTTON` or `MK_RBUTTON`), known from the first
+    /// `QueryContinueDrag`; 0 before it.
+    button: std::cell::Cell<u32>,
 }
 
 static SOURCE_VTBL: DropSourceVtbl = DropSourceVtbl {
@@ -1088,6 +1134,7 @@ fn new_drop_source(data: &IDataObject, skip_drop: SkipDrop) -> IDropSource {
         data: data.clone(),
         skip_drop,
         skipped: std::cell::Cell::new(false),
+        button: std::cell::Cell::new(0),
     });
     // SAFETY: a valid COM object with one owned reference, transferred to the wrapper.
     unsafe { IDropSource::from_raw(Box::into_raw(object).cast()) }
@@ -1137,8 +1184,33 @@ unsafe extern "system" fn source_release(this: *mut core::ffi::c_void) -> u32 {
     }
 }
 
-/// The shell's rules for a left-button drag (Esc or the right button cancels, releasing the
-/// left one drops), with `skip_drop` asked at the release.
+/// The button that carries a drag, from the key state of the first `QueryContinueDrag`: the
+/// right one when it alone is held, else the left one (also when it is already up, which
+/// drops at once).
+fn carrying_button(key_state: u32) -> u32 {
+    if key_state & (MK_LBUTTON | MK_RBUTTON) == MK_RBUTTON {
+        MK_RBUTTON
+    } else {
+        MK_LBUTTON
+    }
+}
+
+/// How a drag carried by `button` goes on: `Some(true)` it continues, `Some(false)` it is
+/// cancelled (Esc or the other button), `None` the button came up, which is the drop.
+fn drag_goes_on(button: u32, escape: bool, key_state: u32) -> Option<bool> {
+    let buttons = key_state & (MK_LBUTTON | MK_RBUTTON);
+    if escape || buttons & !button != 0 {
+        Some(false)
+    } else if buttons & button != 0 {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+/// The shell's rules for a drag with the left or the right button (Esc or the other button
+/// cancels, releasing the one that carries the drag drops), with `skip_drop` asked at the
+/// release.
 unsafe extern "system" fn source_query_continue_drag(
     this: *mut core::ffi::c_void,
     escape: windows_core::BOOL,
@@ -1146,15 +1218,22 @@ unsafe extern "system" fn source_query_continue_drag(
 ) -> HRESULT {
     // SAFETY: COM contract — `this` is a live DropSourceObject.
     let obj = unsafe { &*(this as *const DropSourceObject) };
-    if escape.as_bool() || key_state & MK_RBUTTON != 0 {
-        DRAGDROP_S_CANCEL
-    } else if key_state & MK_LBUTTON != 0 {
-        S_OK
-    } else if (obj.skip_drop)(key_state) {
-        obj.skipped.set(true);
-        DRAGDROP_S_CANCEL
-    } else {
-        HRESULT(DRAGDROP_S_DROP)
+    if obj.button.get() == 0 {
+        let button = carrying_button(key_state);
+        tracing::debug!(
+            right = button == MK_RBUTTON,
+            "drag out: which button carries it"
+        );
+        obj.button.set(button);
+    }
+    match drag_goes_on(obj.button.get(), escape.as_bool(), key_state) {
+        Some(true) => S_OK,
+        Some(false) => DRAGDROP_S_CANCEL,
+        None if (obj.skip_drop)(key_state) => {
+            obj.skipped.set(true);
+            DRAGDROP_S_CANCEL
+        }
+        None => HRESULT(DRAGDROP_S_DROP),
     }
 }
 
@@ -1535,6 +1614,43 @@ mod effect_tests {
             modifier_effect(MK_RBUTTON | MK_CONTROL, true),
             DropEffect::Copy
         );
+    }
+
+    /// A drag out of a fence is carried by the button that started it: releasing it drops, Esc
+    /// or the other button cancels, modifier keys change nothing.
+    #[test]
+    fn a_drag_is_carried_by_the_left_or_the_right_button() {
+        assert_eq!(carrying_button(MK_LBUTTON), MK_LBUTTON);
+        assert_eq!(carrying_button(MK_RBUTTON | MK_CONTROL), MK_RBUTTON);
+        assert_eq!(carrying_button(MK_LBUTTON | MK_RBUTTON), MK_LBUTTON);
+        assert_eq!(carrying_button(0), MK_LBUTTON);
+        for (button, other) in [(MK_LBUTTON, MK_RBUTTON), (MK_RBUTTON, MK_LBUTTON)] {
+            assert_eq!(drag_goes_on(button, false, button), Some(true));
+            assert_eq!(drag_goes_on(button, false, button | MK_SHIFT), Some(true));
+            assert_eq!(drag_goes_on(button, true, button), Some(false));
+            assert_eq!(drag_goes_on(button, false, button | other), Some(false));
+            assert_eq!(drag_goes_on(button, false, other), Some(false));
+            assert_eq!(drag_goes_on(button, false, 0), None);
+            assert_eq!(drag_goes_on(button, false, MK_CONTROL), None);
+        }
+    }
+
+    /// Windows' DefaultDropEffect replaces the plain drag's effect on one volume and across
+    /// volumes; Ctrl, Shift and Alt decide as without it (measured in File Explorer).
+    #[test]
+    fn default_drop_effect_replaces_the_plain_drag_only() {
+        let (mv, cp) = (Some(DropEffect::Move), Some(DropEffect::Copy));
+        assert_eq!(file_drag_effect(0, false, mv), DropEffect::Move);
+        assert_eq!(file_drag_effect(0, true, mv), DropEffect::Move);
+        assert_eq!(file_drag_effect(0, true, cp), DropEffect::Copy);
+        assert_eq!(file_drag_effect(0, false, cp), DropEffect::Copy);
+        assert_eq!(file_drag_effect(MK_LBUTTON, false, mv), DropEffect::Move);
+        assert_eq!(file_drag_effect(MK_CONTROL, false, mv), DropEffect::Copy);
+        assert_eq!(file_drag_effect(MK_ALT, false, mv), DropEffect::Link);
+        assert_eq!(file_drag_effect(MK_SHIFT, true, cp), DropEffect::Move);
+        assert_eq!(file_drag_effect(MK_ALT, true, cp), DropEffect::Link);
+        assert_eq!(file_drag_effect(0, true, None), DropEffect::Move);
+        assert_eq!(file_drag_effect(0, false, None), DropEffect::Copy);
     }
 
     #[test]

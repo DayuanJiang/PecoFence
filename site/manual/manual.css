@@ -483,16 +483,15 @@ main > .lesson:first-child { border-top: 0 }
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--win-accent) 34%, transparent);
 }
 
+/* loose desktop icons: white names with a dark edge that reads on the light wallpaper too */
 .ico.desk span {
     color: #fff;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, .85), 0 0 4px rgba(0, 0, 0, .45), 0 0 1px rgba(0, 0, 0, .9);
+    font-weight: 500;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .9), 0 0 3px rgba(0, 0, 0, .75), 0 0 1px #000, 0 0 1px #000;
 }
 
 /* the zoomed-out first-run desktop: keep its labels readable */
-.zoom .ico.desk span {
-    font-size: 13px;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, .9), 0 0 3px rgba(0, 0, 0, .75), 0 0 1px #000;
-}
+.zoom .ico.desk span { font-size: 13px }
 
 .ico.desk.sel {
     background: rgba(255, 255, 255, .26);
@@ -579,6 +578,20 @@ main > .lesson:first-child { border-top: 0 }
 
 .menu-item > span:first-child { padding-right: 24px }
 
+.menu.checks .menu-item { padding-left: 30px }
+
+.menu-item.check::before {
+    content: "";
+    position: absolute;
+    left: 11px;
+    top: 8px;
+    width: 9px;
+    height: 5px;
+    border-left: 1.3px solid #2b3140;
+    border-bottom: 1.3px solid #2b3140;
+    transform: rotate(-45deg);
+}
+
 .menu-key {
     margin-left: auto;
     color: #6b7180;
@@ -623,6 +636,49 @@ main > .lesson:first-child { border-top: 0 }
 }
 
 .badge b { position: static; color: #1663c7; font-weight: 600 }
+
+/* PecoFence's notice card above the taskbar: title, text, close box, one accent button */
+
+.notice {
+    left: 0;
+    top: 0;
+    width: 232px;
+    padding: 9px 12px 10px;
+    border-radius: 8px;
+    background: rgba(250, 250, 251, .98);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .09), 0 8px 18px rgba(0, 0, 0, .16);
+    font-size: 11.5px;
+    line-height: 1.4;
+    z-index: 2;
+}
+
+.notice b, .notice p, .notice-btn { position: relative; display: block }
+.notice b { padding-right: 16px; font-size: 12px; font-weight: 600 }
+.notice p { margin: 2px 0 8px; color: #5b6170 }
+
+.notice i {
+    right: 11px;
+    top: 10px;
+    width: 9px;
+    height: 9px;
+    background:
+        linear-gradient(45deg, transparent 44%, #6b7180 44% 56%, transparent 56%),
+        linear-gradient(-45deg, transparent 44%, #6b7180 44% 56%, transparent 56%);
+}
+
+.notice-btn {
+    width: max-content;
+    min-width: 44px;
+    margin-left: auto;
+    padding: 0 12px;
+    border-radius: 4px;
+    background: #0067c0;
+    color: #fff;
+    line-height: 22px;
+    text-align: center;
+}
+
+.notice-btn.hot { background: #1a74c4 }
 
 /* alignment guide: white 1 DIP core between dark hairlines, ends fading out */
 

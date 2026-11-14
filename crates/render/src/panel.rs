@@ -170,6 +170,7 @@ impl Panel {
         let scale = dpi as f32 / 96.0;
         let width_dip = self.width_px as f32 / scale;
         let height_dip = self.height_px as f32 / scale;
+        let started = std::time::Instant::now();
         let (context, (offset_x, offset_y)) = match self.surface.begin_draw::<ID2D1DeviceContext>()
         {
             Ok(v) => v,
@@ -182,6 +183,10 @@ impl Panel {
             .raw_compositor
             .GetCommitBatch(comp::CompositionBatchTypes::Animation)
             .ok();
+        let begun = started.elapsed();
+        // When the drawing calls returned; the session's end (Direct2D hands its batch to the
+        // graphics card there) is timed apart from them.
+        let called;
         let draw_result = {
             let session = DrawingSession::from_borrowed_context_with_dpi(
                 &context,
@@ -197,10 +202,26 @@ impl Panel {
                 m32: 0.0,
             });
             let clip = Clip { context: &context };
-            draw(&session, &clip, width_dip, height_dip)
+            let result = draw(&session, &clip, width_dip, height_dip);
+            called = started.elapsed();
+            result
         };
+        let flushed = started.elapsed();
         std::mem::forget(guard);
         let end_result = self.surface.end_draw();
+        let ended = started.elapsed();
+        drop(context);
+        tracing::trace!(
+            target: "pecofence::render_timing",
+            w = self.width_px,
+            h = self.height_px,
+            begin_us = begun.as_micros(),
+            calls_us = (called - begun).as_micros(),
+            flush_us = (flushed - called).as_micros(),
+            end_us = (ended - flushed).as_micros(),
+            release_us = (started.elapsed() - ended).as_micros(),
+            "surface draw"
+        );
         crate::stack::note_draw();
         if check_device_lost(&draw_result) || check_device_lost(&end_result) {
             return Ok(false);

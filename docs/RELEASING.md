@@ -58,6 +58,22 @@ The project does not assume or claim a particular GitHub organization. After the
 first push, set the repository URL in `site/site.json` and follow
 [WEBSITE.md](WEBSITE.md) to publish the product page.
 
+## Memory check
+
+Before every release, compare the release candidate with the last release on a real PC with a
+GPU and a high-DPI monitor, running a copy of a real user's layout with the self-refreshing
+fences (the 电脑状态 example and a clock with seconds). From the dev box:
+
+```bash
+scripts/wintest/pc-memory.sh <last release dir> <candidate dir>   # about 2 hours, A B A B
+```
+
+It reports, median and maximum per build: what Task Manager shows for the PecoFence group
+(the app and the processes it started, such as a script's PowerShell), the private commit,
+the GPU memory, threads, handles and CPU time per idle minute. A number that grew is fixed
+before the release. The EC2 boxes (no GPU, 100 % scale) do not replace this check: there the
+app's drawing memory is a fraction of what a 4K monitor needs.
+
 ## Versioned release
 
 Update the workspace version in `Cargo.toml`, regenerate `Cargo.lock` if needed,
@@ -87,6 +103,29 @@ instead (new URL, `InstallerSha256`, `ReleaseDate`, `ReleaseNotesUrl`), run
 `winget validate --manifest <folder>` and push to the PR branch. The workflow copies the
 previous manifest, which lists both portable commands (`pecofence` and `pecofence-cli`)
 since 0.1.0.
+
+### The website's copy of the latest release
+
+The app asks GitHub's API for the latest release. Where that gives no answer within 8 seconds
+(many networks in China, a rate limit), it asks the website for
+<https://pecofence.jiang.jp/update.json> instead: the version, whether there is a setup, and the
+first point of the Store notes in each language (the line of the update card).
+`scripts/build-site.py` writes that file each time the site is built, from the latest
+**published** release on GitHub and the Store notes of its tag (`docs/store/v2-i18n` at that
+tag), never from the checkout's own version. So a site deployment between the version commit
+and the release still names the old version, and a new version shows up there only once its
+installers exist.
+
+The release workflow starts the Website workflow as its last step, which rebuilds the file.
+A few minutes after the release is published, check that the file names the new version, and
+start the workflow by hand if it does not:
+
+```powershell
+curl.exe -s https://pecofence.jiang.jp/update.json
+gh workflow run website.yml
+```
+
+Until then, copies that cannot reach GitHub's API keep saying they are up to date.
 
 Current packaging is x64 and unsigned. ARM64 is not configured. The official winget
 workflow is restricted to `DayuanJiang/PecoFence`, including manual dispatch; forks

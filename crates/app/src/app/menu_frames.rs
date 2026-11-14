@@ -32,8 +32,9 @@ thread_local! {
 
 impl App {
     /// Runs `show` (a popup menu's `show` / `show_context`) with the fence windows' animations
-    /// still ticking, and returns its command.
-    pub(super) fn track_menu(&mut self, show: impl FnOnce() -> u32) -> u32 {
+    /// still ticking, and returns its command. `kind` names the menu for the usage statistics,
+    /// which record that an entry was chosen.
+    pub(super) fn track_menu(&mut self, kind: &'static str, show: impl FnOnce() -> u32) -> u32 {
         let windows = self
             .fences
             .values()
@@ -55,6 +56,9 @@ impl App {
             })
         });
         let cmd = show();
+        if cmd != 0 {
+            pecofence_core::usage::event_with("menu", kind);
+        }
         let Some(run) = MENU_FRAMES.with(|m| m.borrow_mut().take()) else {
             return cmd;
         };

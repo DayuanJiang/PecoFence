@@ -4,7 +4,9 @@
 #
 # Everything must be installed on the box (once, as Administrator; the installer adds its
 # service, so pf's copy indexes NTFS without asking for rights):
-#   box.sh ssh <box> 'Invoke-WebRequest -UseBasicParsing https://www.voidtools.com/Everything-1.4.1.1032.x64-Setup.exe -OutFile C:\ev14.exe; Start-Process C:\ev14.exe -ArgumentList /S -Wait'
+#   box.sh ssh <box> 'Invoke-WebRequest -UseBasicParsing https://www.voidtools.com/Everything-1.4.1.1032.x64-Setup.exe -OutFile C:\ev14.exe; Start-Process C:\ev14.exe -ArgumentList /S -Wait; Remove-Item "C:\Users\Public\Desktop\Everything.lnk"'
+# (the installer's desktop shortcut is one more program for the first-run layout: with it
+# free-place-scale's 150 % check fails, Alpha.fpx at 9,3 for 9,4)
 
 $PfDl = [Environment]::GetFolderPath('UserProfile') + '\Downloads'
 $PfDocs = [Environment]::GetFolderPath('MyDocuments')

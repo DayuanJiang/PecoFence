@@ -3,6 +3,22 @@
 
 use super::*;
 
+/// Opens `dir` in Explorer when it is a folder given by its full path. A folder fence's folder
+/// and a smart fence's folders come from the configuration, which may be a file from someone
+/// else (an import): a program, a document or a web address there is not handed to Windows.
+/// False when refused or when Explorer did not open it.
+pub(super) fn open_folder_in_explorer(dir: &std::path::Path) -> bool {
+    if !dir.is_absolute() || !dir.is_dir() {
+        tracing::info!(
+            place = shell::path_place(dir),
+            absolute = dir.is_absolute(),
+            "open folder refused: not a folder"
+        );
+        return false;
+    }
+    shell::shell_execute(dir, None, None).is_ok()
+}
+
 impl App {
     /// Pushes the shown fence's portal decorations (folder glyph, up button, navigate flag) and
     /// its display title into the host window. A regular fence showing a folder gets them too,
@@ -28,20 +44,24 @@ impl App {
             is_portal && self.state.portal_missing(active),
             folder,
         );
-        let (empty, count) = self.smart_view(f);
+        let (empty, action, count) = self.smart_view(f);
         let filtered = self.fence_filter(active).is_some();
         let empty = if filtered {
             Some(pecofence_core::i18n::text("没有符合筛选的文件。"))
         } else {
             empty
         };
+        let action = action.filter(|_| !filtered);
         // The count belongs to a single title; in a tab strip the tab shows the name only.
         let count = count.filter(|_| active == host && self.state.tabs_of(host).len() <= 1);
-        w.set_status_view(empty, count);
+        w.set_count_tip(count.as_ref().and_then(|_| self.smart_count_tip(f)));
+        w.set_status_view(empty, action, count);
         w.set_filtered(filtered);
         // The tag's count follows what the fence shows (files come and go).
         self.sync_filter_view(active);
-        w.set_refuses_drops(smart);
+        // A fence that says 找不到此文件夹 has nowhere to put a file: it takes no drop (the
+        // shell's move would fail with a system error).
+        w.set_refuses_drops(smart || (is_portal && self.state.portal_missing(active)));
         if let Some(h) = self.state.fence(host) {
             let title = if active == host {
                 self.filter_title(host, self.state.display_title(h))
@@ -236,9 +256,7 @@ impl App {
         if let Some(id) = self.state.new_portal_fence(&folder, rect) {
             tracing::info!(folder = %folder.display(), place = shell::path_place(&folder), %id, drawn, ?rect, "folder portal created");
             self.resync_windows();
-            if let Some(w) = self.fences.get(&id) {
-                w.show(true);
-            }
+            self.show_new_fence(id);
             self.schedule_save();
             self.offer_roll_tip();
         }
@@ -303,6 +321,10 @@ impl App {
         for id in ids {
             self.refresh_fence(id);
         }
+        // Whatever re-read found a folder gone (a watcher batch, a file operation, a click on
+        // the title's folder): it is looked for from now on, so it is shown again as soon as
+        // it is back.
+        self.arm_portal_back_check();
     }
 
     pub(super) fn portal_enter(&mut self, fence: FenceId, dir: &std::path::Path) {
@@ -338,12 +360,22 @@ impl App {
 
     /// Opens the folder `fence` shows in Explorer (the title glyph at the root, the fence
     /// menu's 在资源管理器中打开文件夹). `by` names the control for the log.
-    pub(super) fn open_portal_folder(&self, fence: FenceId, by: &'static str) {
+    pub(super) fn open_portal_folder(&mut self, fence: FenceId, by: &'static str) {
         let Some(dir) = self.state.portal_path(fence) else {
             tracing::info!(fence = %fence, by, "open folder: not a folder fence");
             return;
         };
-        let ok = shell::shell_execute(&dir, None, None).is_ok();
+        // A folder that is gone (renamed, deleted, its drive unplugged) while the fence still
+        // shows its icons: Explorer would put up its own "Windows cannot find" box, inside
+        // this call, and every fence would wait until it is closed. The fence is read again
+        // instead and says 找不到此文件夹。
+        if !dir.is_dir() {
+            tracing::info!(fence = %fence, by, place = shell::path_place(&dir), "open folder: the folder is gone; fence re-read");
+            self.portal_watchers.remove(&fence);
+            self.refresh_portals_in(std::slice::from_ref(&dir));
+            return;
+        }
+        let ok = open_folder_in_explorer(&dir);
         tracing::info!(fence = %fence, by, place = shell::path_place(&dir), ok, "folder opened in Explorer");
     }
 

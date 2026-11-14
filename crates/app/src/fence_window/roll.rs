@@ -200,6 +200,16 @@ impl FenceViewState {
         self.shadow_timer = false;
         let r = self.plate_rect();
         let resized = self.shadow.body_size() != Some((r.right - r.left, r.bottom - r.top));
+        // A roll or an auto-height settle brings a new bitmap with every frame: they go
+        // through one DIB section, tall enough for the taller end of the animation.
+        let tallest = self.height_animating().then(|| {
+            let h = r.bottom - r.top;
+            h.max(
+                self.height_target_px()
+                    .map_or(h, |t| t - self.plate_inset_px + self.square_top_px()),
+            )
+        });
+        self.shadow.keep_upload(tallest);
         let started = Instant::now();
         self.shadow.update(r, self.dpi);
         let now = Instant::now();
@@ -213,8 +223,12 @@ impl FenceViewState {
     /// Screen rect of the visible plate: the window, minus a title row that title on hover
     /// has folded away (the shadow casts from this).
     pub(super) fn plate_rect(&self) -> RECT {
-        let mut r = window::window_rect(self.hwnd);
+        // Inside the app's frame: where the frame's batch is about to put the window.
+        let mut r = self.behavior.frame_rect(self.hwnd);
         r.top = (r.top + self.plate_inset_px).min(r.bottom - 1);
+        // Square top corners at the screen edge: the shadow is cast by a shape that starts
+        // one radius higher, so it runs straight up to the edge beside the plate.
+        r.top -= self.square_top_px();
         r
     }
 
@@ -562,7 +576,7 @@ impl FenceViewState {
     /// fence is dragged over it to merge and while the title is being renamed.
     pub(super) fn title_visible_target(&self) -> bool {
         !self.title_on_hover()
-            || self.mouse_inside
+            || self.pointer_reveals()
             || self.roll_target()
             || self.merge_hint
             || self.title_renaming
@@ -573,15 +587,41 @@ impl FenceViewState {
         self.opacity <= 0.0 || self.bare()
     }
 
+    /// 鼠标移入时保持透明 (GitHub #222) acts: the option is on and the fence is fully
+    /// transparent. The pointer over it then shows nothing the fence hides at rest.
+    pub(super) fn stays_clear(&self) -> bool {
+        self.transparent_on_hover && self.opacity <= 0.0 && !self.bare()
+    }
+
+    /// The pointer is over the fence and shows what the fence hides at rest: the plate of a
+    /// fully transparent fence, a title row folded away by title on hover, the lock glyph.
+    /// Not with 鼠标移入时保持透明, except in a rolled-up fence opened by the pointer (hover
+    /// peek): that one keeps the plate and title row it shows rolled up; and except while the
+    /// fence floats above other windows (Peek): its plate shows then anyway, so the pointer
+    /// brings the title row as on every other fence.
+    pub(super) fn pointer_reveals(&self) -> bool {
+        self.mouse_inside && (!self.stays_clear() || self.peeking || self.behavior.floating.get())
+    }
+
+    /// The title row is folded away and the pointer does not bring it back
+    /// (鼠标移入时保持透明 with title on hover). The row still moves the fence, and the
+    /// pointer over it takes the move cursor, the only sign of where it is; the roll-up
+    /// chevron, which is not drawn then, takes no click.
+    pub(super) fn title_row_unseen(&self) -> bool {
+        self.stays_clear() && !self.title_visible_target()
+    }
+
     /// Whether floating above other windows (Peek) draws this fence differently: a fully
     /// transparent plate shows while it floats (`plate_visible_target`), Liquid Glass floats
-    /// at full opacity (`material_opacity`), and a Fluent fence in light mode that took light
+    /// at full opacity (`material_opacity`: a 更透明 plate, and the see-through pane over a
+    /// live wallpaper that cannot be read), and a Fluent fence in light mode that took light
     /// text from its plate shows dark text again (`material_foreground`). A fence arranged
     /// like the desktop looks the same either way.
     pub(super) fn floating_changes_look(&self) -> bool {
         !self.bare()
             && (self.opacity <= 0.0
                 || (self.theme.liquid_glass && self.opacity < 1.0)
+                || self.over_unreadable_wallpaper()
                 || self.peek_changes_text())
     }
 
@@ -596,7 +636,7 @@ impl FenceViewState {
             return false;
         }
         !self.is_clear()
-            || self.mouse_inside
+            || self.pointer_reveals()
             || self.shadow.ring().is_some()
             || self.roll_target()
             || self.behavior.floating.get()
