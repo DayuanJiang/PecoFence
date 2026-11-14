@@ -2,15 +2,16 @@
 //! player window, so the backdrops show captures of that window instead (feedback #24). A
 //! capture is a still picture: Liquid Glass frosts it (see `MonitorRecipe::show_live`), and it
 //! is taken again for a new window, after a wallpaper signal, when the desktop comes to the
-//! front, and once a minute while a fence on that monitor can be seen.
+//! front, and every ten seconds while a fence on that monitor can be seen.
 
 use super::visuals::{MonitorRecipe, backdrop_signature, monitor_recipes, unreadable_monitors};
 use super::*;
 use crate::commands::WM_APP_LIVE_WALLPAPER;
-use pecofence_platform::live_wallpaper;
+use pecofence_platform::{live_capture, live_wallpaper};
 
-/// A visible fence's backdrop catches up with the live wallpaper this often.
-pub(super) const LIVE_REFRESH: Duration = Duration::from_secs(60);
+/// A visible fence's backdrop catches up with the live wallpaper this often. With the light
+/// frost (see `LIVE_FROST_DIP`) this is what keeps a still frame from reading as frozen.
+pub(super) const LIVE_REFRESH: Duration = Duration::from_secs(10);
 /// The desktop came to the front: no new capture if the last one is this recent.
 pub(super) const LIVE_FRONT_REFRESH: Duration = Duration::from_secs(2);
 /// A new window (every window after a wallpaper signal) is captured again at every check (at
@@ -24,14 +25,15 @@ const LIVE_GONE_AFTER: Duration = Duration::from_secs(2);
 /// A capture whose result has not come back after this is given up (see
 /// `capture_live_wallpapers`).
 const LIVE_CAPTURE_GIVE_UP: Duration = Duration::from_secs(30);
-/// Captures are kept this many times smaller than the monitor: Fluent builds its backdrop at
-/// that size, and frosted glass shows no more detail.
-const CAPTURE_DOWNSCALE: u32 = 4;
+/// Captures keep the player window's own pixels. Liquid Glass shows a capture as the fence's
+/// backdrop (Liquid Glass only), and a detailed wallpaper must not be softened before the
+/// glass sees it; acrylic downsamples it in `MonitorBackdrop::build` anyway.
+const CAPTURE_DOWNSCALE: u32 = 1;
 /// Wallpaper Engine's clone mode shows one monitor's wallpaper on the others in windows of this
 /// class, through a DWM thumbnail of the window it copies (feedback #55).
 const CLONE_CLASS: &str = "WPECloneView";
 /// A settled window whose captures came back empty this many times in a row draws nothing
-/// PrintWindow can read.
+/// PrintWindow or Windows.Graphics.Capture can read.
 const BLIND_AFTER: u32 = 3;
 
 impl LiveWallpaper {
@@ -61,8 +63,9 @@ pub(super) struct LiveWallpaper {
     reported: Option<isize>,
     /// Empty captures of `hwnd` in a row once it settled.
     empty: u32,
-    /// `hwnd` cannot be captured (no redirection bitmap, or `BLIND_AFTER` empty captures): the
-    /// backdrop shows a neutral colour, not an old capture or the Windows wallpaper under it.
+    /// `hwnd` cannot be captured (nothing can read the window, or `BLIND_AFTER` empty captures):
+    /// the backdrop shows a neutral colour (Fluent) or a see-through pane (Liquid Glass), not an
+    /// old capture or the Windows wallpaper under it.
     pub(super) blind: bool,
 }
 
@@ -149,11 +152,9 @@ fn capture_and_build(work: Vec<(MonitorRecipe, Option<isize>)>) -> Result<Built>
                     Ok((rect, image)) => Some((Some(rect), image)),
                     Err(reason) => {
                         let copied = clone_source(window).map(capture);
-                        // A clone of a window PrintWindow cannot read is as blind as it.
+                        // A clone of a window nothing can read is as blind as it.
                         let reason = match copied {
-                            Some(Err(live_wallpaper::NOT_REDIRECTED)) => {
-                                live_wallpaper::NOT_REDIRECTED
-                            }
+                            Some(Err(live_capture::UNAVAILABLE)) => live_capture::UNAVAILABLE,
                             _ => reason,
                         };
                         let copied = copied.and_then(|copied| copied.ok());
@@ -629,13 +630,13 @@ impl App {
                 return;
             }
         };
-        // A window without a redirection bitmap never shows PrintWindow anything: its monitors
-        // go blind at once, others after BLIND_AFTER empty captures, not before the window
-        // settled (a player that just started can be black). Logged once per window once it
-        // settled, and when it goes blind.
+        // A window neither PrintWindow nor Windows.Graphics.Capture can read goes blind at once,
+        // others after BLIND_AFTER empty captures, not before the window settled (a player that
+        // just started can be black). Logged once per window once it settled, and when it goes
+        // blind.
         let mut blinded = false;
         for (hwnd, reason, copied) in empty {
-            let never = reason == live_wallpaper::NOT_REDIRECTED;
+            let never = reason == live_capture::UNAVAILABLE;
             let mut report = None;
             for live in self.live.iter_mut().filter(|l| l.hwnd == hwnd) {
                 let settled = never || live.since.elapsed() >= LIVE_SETTLE;
