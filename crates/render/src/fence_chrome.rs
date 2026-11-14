@@ -4793,6 +4793,9 @@ pub struct ScriptDrawn {
     /// The top and the height of the followed row in the band's rows (the offset not taken
     /// off), None when no row is followed.
     pub follow: Option<(f32, f32)>,
+    /// The offsets at which a line of the band's rows is at the band's top, as a note's text
+    /// has them: a wheel notch and a thumb let go rest on one, and so does the end.
+    pub tops: Vec<f32>,
 }
 
 /// Whether a row `h` tall at `y` shows: a pinned row always does, a row of the band when it
@@ -5438,6 +5441,7 @@ impl FenceChrome {
                 },
                 row_step,
                 follow: None,
+                tops: Vec::new(),
             });
         }
         let px = Px::new(scale);
@@ -5474,6 +5478,9 @@ impl FenceChrome {
         // The row to report the place of: where it starts, until the row after it begins.
         let mut follow_open: Option<f32> = None;
         let mut follow = None;
+        // Where the band's first line stands at offset 0, and the offset of each line's top.
+        let mut band_y0 = NOTE_PAD_TOP;
+        let mut tops = Vec::new();
         for (i, row) in rows.iter().enumerate() {
             if let Some(start) = follow_open.take() {
                 follow = Some((start - SCRIPT_ROW_PAD_Y + offset - band_top, y - start));
@@ -5493,10 +5500,12 @@ impl FenceChrome {
                         },
                         row_step,
                         follow: None,
+                        tops: Vec::new(),
                     });
                 }
                 pinned_hits = hits.len();
                 in_band = true;
+                band_y0 = band_top + SCRIPT_ROW_PAD_Y;
                 y = band_top + SCRIPT_ROW_PAD_Y - offset;
                 band_clip = Some(pecofence_platform::d2d::push_axis_aligned_clip(
                     session.raw(),
@@ -5530,6 +5539,9 @@ impl FenceChrome {
                     w = area_w;
                     h = w / ratio;
                 }
+                if in_band {
+                    tops.push(y + offset - band_y0);
+                }
                 if script_row_in_view(in_band, band_top, height, y, h)
                     && let Ok(bitmap) =
                         bitmaps
@@ -5543,6 +5555,9 @@ impl FenceChrome {
                 continue;
             }
             if !row.cells.is_empty() {
+                if in_band {
+                    tops.push(y + offset - band_y0);
+                }
                 let h = self.draw_script_cells(
                     session,
                     theme,
@@ -5574,6 +5589,13 @@ impl FenceChrome {
             let text = if row.text.is_empty() { " " } else { row.text };
             let layout = self.layout_in(text, &tt.body, text_w, f32::MAX)?;
             let h = layout.metrics().height.max(line_h);
+            if in_band {
+                tops.extend(
+                    layout_line_tops(&layout, h)
+                        .into_iter()
+                        .map(|t| y + offset - band_y0 + t),
+                );
+            }
             if !script_row_in_view(in_band, band_top, height, y, h) {
                 y += h + 2.0 * SCRIPT_ROW_PAD_Y;
                 continue;
@@ -5686,9 +5708,22 @@ impl FenceChrome {
                 clickable.push((row, cell, Rect { top, bottom, ..r }));
             }
         }
+        // Rows taller than the band end on a line's top, as a note does: the first line top from
+        // which the last row shows.
+        let band_h = (height - band_top).max(0.0);
+        let over = content - band_h;
+        let content = if over > 0.0 {
+            tops.iter()
+                .copied()
+                .find(|t| *t >= over - 0.5)
+                .unwrap_or(over)
+                + band_h
+        } else {
+            content
+        };
         let band = ScriptBand {
             top: band_top,
-            height: (height - band_top).max(0.0),
+            height: band_h,
             content,
             offset,
         };
@@ -5702,6 +5737,7 @@ impl FenceChrome {
             band,
             row_step,
             follow,
+            tops,
         })
     }
 

@@ -1795,9 +1795,6 @@ impl FenceViewState {
         use pecofence_render::fence_chrome::{
             ScriptBand, ScriptCellDraw, ScriptImageDraw, ScriptRowDraw, ScriptScroll, ScrollbarDraw,
         };
-        // A script's rows scroll by what they draw (`script_scroll`), not by a note's line tops:
-        // those of a note shown before in this window must not move them.
-        self.tool_line_tops.clear();
         // Another page of a list, another tab: the rows go back to their top.
         let pane = script.rows.iter().find_map(|r| r.pane.clone());
         if pane != self.script_scroll.pane {
@@ -2036,6 +2033,8 @@ impl FenceViewState {
         self.script_scroll.band_h = drawn.band.height;
         self.script_scroll.content_h = drawn.band.content;
         self.script_scroll.row_step = drawn.row_step;
+        // The wheel and a thumb let go rest on a line's top, as in a note.
+        self.tool_line_tops = drawn.tops;
         Ok(Some((drawn.band, drawn.follow)))
     }
 
