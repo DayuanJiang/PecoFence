@@ -383,6 +383,27 @@
     PROCESS_MEMORY_COUNTERS
     QueryWorkingSet
 
+    // ---- 电脑状态 example, read by PecoFence itself (sysinfo.rs)
+    GetSystemTimes
+    GlobalMemoryStatusEx
+    MEMORYSTATUSEX
+    GetDiskFreeSpaceExW
+    SetThreadErrorMode
+    SEM_FAILCRITICALERRORS
+    GetAdaptersAddresses
+    IP_ADAPTER_ADDRESSES_LH
+    GAA_FLAG_INCLUDE_GATEWAYS
+    GAA_FLAG_SKIP_ANYCAST
+    GAA_FLAG_SKIP_MULTICAST
+    GAA_FLAG_SKIP_DNS_SERVER
+    GAA_FLAG_SKIP_FRIENDLY_NAME
+    AF_INET
+    SOCKADDR_IN
+    IfOperStatusUp
+    GetIfEntry2
+    MIB_IF_ROW2
+    ERROR_BUFFER_OVERFLOW
+
     // ---- CLI named pipe (pecofence-cli IPC)
     CreateNamedPipeW
     ConnectNamedPipe
