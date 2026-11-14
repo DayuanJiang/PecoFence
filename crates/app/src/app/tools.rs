@@ -742,9 +742,13 @@ impl App {
         }
         shown.sort();
         shown.dedup();
-        for id in shown {
-            self.push_tool_view(self.state.host_of(id));
-        }
+        // New output of a script is content refreshing itself: it does not hold back the
+        // memory housekeeping that waits for PecoFence to go unused.
+        pecofence_render::stack::quiet_draws(|| {
+            for id in shown {
+                self.push_tool_view(self.state.host_of(id));
+            }
+        });
     }
 
     /// A click on row `index` of script fence `fence`: what its parameters ask for.

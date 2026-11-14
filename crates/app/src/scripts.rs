@@ -251,10 +251,13 @@ pub enum StreamEvent {
 /// A streaming script (`<swiftbar.type>streamable</swiftbar.type>` in its text) that keeps
 /// running; dropping it ends the script and what it started.
 pub struct Stream {
-    job: pecofence_platform::job::KillOnCloseJob,
+    /// None for the 电脑状态 example that PecoFence shows itself (see [`unchanged_status`]).
+    job: Option<pecofence_platform::job::KillOnCloseJob>,
     /// Lines for the script's input, written by a thread of their own: a script that does not
     /// read its input then blocks that thread, never the UI.
     input: Option<mpsc::Sender<String>>,
+    /// Ends the thread of the 电脑状态 screens when dropped.
+    _stop: Option<mpsc::Sender<()>>,
 }
 
 /// The first 8 KB of `path`, where a script's header comments sit.
@@ -378,6 +381,9 @@ impl Stream {
         env: &RunEnv,
         on_event: impl Fn(StreamEvent) + Send + 'static,
     ) -> Result<Self, Outcome> {
+        if let Some(chinese) = unchanged_status(path) {
+            return status_screens(chinese, on_event);
+        }
         let mut child = spawn(path, env, true)?;
         // Without a job the script could not be ended with the fence: do not start it.
         let Some(job) = pecofence_platform::job::KillOnCloseJob::new().filter(|j| j.assign(&child))
@@ -442,7 +448,11 @@ impl Stream {
                 on_event(StreamEvent::Ended(outcome));
             })
             .map_err(|e| Outcome::NotStarted(e.to_string()))?;
-        Ok(Self { job, input })
+        Ok(Self {
+            job: Some(job),
+            input,
+            _stop: None,
+        })
     }
 
     /// Hands `line` (a clicked row's `action=`) to the script's standard input.
@@ -461,8 +471,127 @@ impl Stream {
 impl Drop for Stream {
     fn drop(&mut self) {
         self.input = None;
-        self.job.terminate();
+        if let Some(job) = &self.job {
+            job.terminate();
+        }
     }
+}
+
+/// Whether `path` holds the 电脑状态 example as PecoFence wrote it (Some(true) for the Chinese
+/// one). PecoFence then shows the same screens itself: the PowerShell that would run it takes
+/// about 100 MB of memory and asks WMI every 2 seconds. An edited copy runs as a script.
+fn unchanged_status(path: &Path) -> Option<bool> {
+    let small = std::fs::metadata(path).is_ok_and(|m| m.len() <= 16 * 1024);
+    if !small {
+        return None;
+    }
+    let now = unify_lines(&std::fs::read_to_string(path).ok()?);
+    [true, false]
+        .into_iter()
+        .find(|&chinese| unify_lines(example(Example::Status, chinese)) == now)
+}
+
+/// The 电脑状态 example's screens, every 2 seconds, from a thread of their own: CPU and memory
+/// every time, the network address on the first screen and then every 30 seconds.
+fn status_screens(
+    chinese: bool,
+    on_event: impl Fn(StreamEvent) + Send + 'static,
+) -> Result<Stream, Outcome> {
+    use pecofence_platform::sysinfo;
+    let (stop, stopped) = mpsc::channel::<()>();
+    std::thread::Builder::new()
+        .name("pecofence-pc-status".into())
+        .spawn(move || {
+            let mut cpu = sysinfo::CpuTimes::now();
+            // The first load needs an interval to measure over.
+            if !matches!(
+                stopped.recv_timeout(Duration::from_millis(300)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ) {
+                return;
+            }
+            let mut ip = None;
+            for tick in 0u32.. {
+                if tick % 15 == 0 {
+                    ip = sysinfo::pick_ipv4(&sysinfo::adapters());
+                }
+                let now = sysinfo::CpuTimes::now();
+                let load = match (cpu, now) {
+                    (Some(a), Some(b)) => b.load_since(&a),
+                    _ => 0,
+                };
+                cpu = now;
+                let memory = sysinfo::memory_load().unwrap_or(0);
+                let drives = sysinfo::local_drives();
+                on_event(StreamEvent::Block(clean(&status_screen(
+                    chinese, load, memory, ip, &drives,
+                ))));
+                match stopped.recv_timeout(Duration::from_secs(2)) {
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    _ => return,
+                }
+            }
+        })
+        .map_err(|e| Outcome::NotStarted(e.to_string()))?;
+    tracing::info!(
+        chinese,
+        "script fence: the unchanged 电脑状态 example is shown by PecoFence itself, without PowerShell"
+    );
+    Ok(Stream {
+        job: None,
+        input: None,
+        _stop: Some(stop),
+    })
+}
+
+/// One screen of the 电脑状态 example, line for line what its script prints.
+fn status_screen(
+    chinese: bool,
+    cpu: u32,
+    memory: u32,
+    ip: Option<std::net::Ipv4Addr>,
+    drives: &[pecofence_platform::sysinfo::Drive],
+) -> String {
+    let cpu_color = match cpu {
+        81.. => "red",
+        51.. => "orange",
+        _ => "green",
+    };
+    let memory_color = if memory > 85 { "red" } else { "green" };
+    let mut lines = vec![format!("CPU {cpu}% | color={cpu_color} icon=🧠")];
+    lines.push(if chinese {
+        format!("内存已用 {memory}% | color={memory_color} icon=📊")
+    } else {
+        format!("Memory used {memory}% | color={memory_color} icon=📊")
+    });
+    lines.push("---".into());
+    lines.push(match (ip, chinese) {
+        (Some(ip), true) => format!("本机 IP {ip} | copy={ip} icon=📋 tooltip=点一下复制"),
+        (Some(ip), false) => {
+            format!("IP address {ip} | copy={ip} icon=📋 tooltip=\"Click to copy\"")
+        }
+        (None, true) => "本机 IP：没有连接网络 | color=gray icon=📋".into(),
+        (None, false) => "IP address: not connected | color=gray icon=📋".into(),
+    });
+    lines.push(if chinese {
+        "打开任务管理器 | run=taskmgr.exe icon=📈".into()
+    } else {
+        "Open Task Manager | run=taskmgr.exe icon=📈".into()
+    });
+    lines.push("---".into());
+    const GB: f64 = (1u64 << 30) as f64;
+    for d in drives {
+        let free = (d.free as f64 / GB).round() as u64;
+        let pct = (d.free as f64 * 100.0 / d.size as f64).round() as u64;
+        let color = if pct < 10 { "red" } else { "green" };
+        let letter = d.letter;
+        lines.push(if chinese {
+            format!("{letter} 盘剩余 {free} GB（{pct}%） | open={letter}:\\ color={color} icon=💽")
+        } else {
+            format!("{letter}: free {free} GB ({pct}%) | open={letter}:\\ color={color} icon=💽")
+        });
+    }
+    lines.join("\n")
 }
 
 /// A row's `run=`: `program` with `args` in the script's folder `dir`, without a window. A
@@ -806,6 +935,102 @@ mod tests {
             assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
         }
         assert!(!update_old_example(&dir.join("missing.ps1")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pecofence_shows_the_unchanged_pc_status_example_itself() {
+        use pecofence_core::script_output::{RowAction, ScriptLine, parse};
+        use pecofence_platform::sysinfo::Drive;
+        let drives = [
+            Drive {
+                letter: 'C',
+                free: 50 << 30,
+                size: 100 << 30,
+            },
+            Drive {
+                letter: 'D',
+                free: 5 << 30,
+                size: 100 << 30,
+            },
+        ];
+        let ip = Some("192.168.40.162".parse().unwrap());
+        for chinese in [true, false] {
+            let rows: Vec<_> = parse(&status_screen(chinese, 64, 90, ip, &drives))
+                .into_iter()
+                .filter_map(|l| match l {
+                    ScriptLine::Row(r) => Some(r),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                rows.len(),
+                6,
+                "CPU, memory, IP, Task Manager and two drives"
+            );
+            assert_eq!(rows[0].color.as_deref(), Some("orange"));
+            assert_eq!(rows[1].color.as_deref(), Some("red"));
+            assert_eq!(
+                rows[2].action,
+                Some(RowAction::Copy("192.168.40.162".into()))
+            );
+            assert!(
+                matches!(&rows[3].action, Some(RowAction::Run { program, .. }) if program == "taskmgr.exe")
+            );
+            assert_eq!(rows[4].action, Some(RowAction::Open("C:\\".into())));
+            assert_eq!(rows[5].color.as_deref(), Some("red"), "D: has 5 % left");
+            assert!(rows[4].text.contains("50 GB") && rows[4].text.contains("50%"));
+            // The script says the same: an edit of the example shows here.
+            let script = example(Example::Status, chinese);
+            let fixed: &[&str] = if chinese {
+                &[
+                    "内存已用 $mem% | color=",
+                    "本机 IP $ip | copy=$ip icon=📋 tooltip=点一下复制",
+                    "本机 IP：没有连接网络 | color=gray icon=📋",
+                    "打开任务管理器 | run=taskmgr.exe icon=📈",
+                    " 盘剩余 $free GB（$pct%） | open=$($disk.DeviceID)\\ color=",
+                ]
+            } else {
+                &[
+                    "Memory used $mem% | color=",
+                    "IP address $ip | copy=$ip icon=📋 tooltip=",
+                    "IP address: not connected | color=gray icon=📋",
+                    "Open Task Manager | run=taskmgr.exe icon=📈",
+                    " free $free GB ($pct%) | open=$($disk.DeviceID)\\ color=",
+                ]
+            };
+            for f in fixed.iter().chain(&[
+                "CPU $cpu% | color=$cpuColor icon=🧠",
+                "icon=📊",
+                "icon=💽",
+                "-gt 80",
+                "-gt 50",
+                "-gt 85",
+                "-lt 10",
+                "Start-Sleep -Seconds 2",
+            ]) {
+                assert!(script.contains(f), "the example no longer has {f:?}");
+            }
+        }
+        let no_ip = status_screen(true, 5, 30, None, &[]);
+        assert!(no_ip.contains("没有连接网络") && no_ip.contains("color=green icon=🧠"));
+    }
+
+    #[test]
+    fn only_an_unchanged_pc_status_example_skips_powershell() {
+        let dir = std::env::temp_dir().join(format!("pf-status-example-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("status.ps1");
+        for chinese in [true, false] {
+            std::fs::write(&path, example_file_text(Example::Status, chinese)).unwrap();
+            assert_eq!(unchanged_status(&path), Some(chinese));
+        }
+        let edited = example_file_text(Example::Status, true)
+            .replace("Start-Sleep -Seconds 2", "Start-Sleep -Seconds 5");
+        std::fs::write(&path, edited).unwrap();
+        assert_eq!(unchanged_status(&path), None);
+        std::fs::write(&path, example_file_text(Example::Weather, true)).unwrap();
+        assert_eq!(unchanged_status(&path), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
