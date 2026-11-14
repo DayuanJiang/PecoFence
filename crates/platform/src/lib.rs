@@ -71,6 +71,7 @@ pub mod shell_icons;
 pub mod shell_menu;
 pub mod shell_notify;
 pub mod store;
+pub mod sysinfo;
 pub mod sysparams;
 pub mod theme;
 pub mod tooltip;

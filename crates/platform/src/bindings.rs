@@ -840,6 +840,25 @@ pub unsafe fn GdiFlush() -> windows_core::BOOL {
     unsafe { GdiFlush() }
 }
 #[inline]
+pub unsafe fn GetAdaptersAddresses(
+    family: u32,
+    flags: u32,
+    reserved: Option<*const core::ffi::c_void>,
+    adapteraddresses: Option<*mut IP_ADAPTER_ADDRESSES_LH>,
+    sizepointer: *mut u32,
+) -> u32 {
+    windows_core::link!("iphlpapi.dll" "system" fn GetAdaptersAddresses(family : u32, flags : u32, reserved : *const core::ffi::c_void, adapteraddresses : *mut IP_ADAPTER_ADDRESSES_LH, sizepointer : *mut u32) -> u32);
+    unsafe {
+        GetAdaptersAddresses(
+            family,
+            flags,
+            reserved.unwrap_or(core::mem::zeroed()) as _,
+            adapteraddresses.unwrap_or(core::mem::zeroed()) as _,
+            sizepointer as _,
+        )
+    }
+}
+#[inline]
 pub unsafe fn GetAncestor(hwnd: HWND, gaflags: u32) -> HWND {
     windows_core::link!("user32.dll" "system" fn GetAncestor(hwnd : HWND, gaflags : u32) -> HWND);
     unsafe { GetAncestor(hwnd, gaflags) }
@@ -949,6 +968,26 @@ pub unsafe fn GetDesktopWindow() -> HWND {
     unsafe { GetDesktopWindow() }
 }
 #[inline]
+pub unsafe fn GetDiskFreeSpaceExW<P0>(
+    lpdirectoryname: P0,
+    lpfreebytesavailabletocaller: Option<*mut u64>,
+    lptotalnumberofbytes: Option<*mut u64>,
+    lptotalnumberoffreebytes: Option<*mut u64>,
+) -> windows_core::BOOL
+where
+    P0: windows_core::Param<windows_core::PCWSTR>,
+{
+    windows_core::link!("kernel32.dll" "system" fn GetDiskFreeSpaceExW(lpdirectoryname : windows_core::PCWSTR, lpfreebytesavailabletocaller : *mut u64, lptotalnumberofbytes : *mut u64, lptotalnumberoffreebytes : *mut u64) -> windows_core::BOOL);
+    unsafe {
+        GetDiskFreeSpaceExW(
+            lpdirectoryname.param().abi(),
+            lpfreebytesavailabletocaller.unwrap_or(core::mem::zeroed()) as _,
+            lptotalnumberofbytes.unwrap_or(core::mem::zeroed()) as _,
+            lptotalnumberoffreebytes.unwrap_or(core::mem::zeroed()) as _,
+        )
+    }
+}
+#[inline]
 pub unsafe fn GetDisplayConfigBufferSizes(
     flags: u32,
     numpatharrayelements: *mut u32,
@@ -1033,6 +1072,11 @@ pub unsafe fn GetForegroundWindow() -> HWND {
 pub unsafe fn GetGUIThreadInfo(idthread: u32, pgui: *mut GUITHREADINFO) -> windows_core::BOOL {
     windows_core::link!("user32.dll" "system" fn GetGUIThreadInfo(idthread : u32, pgui : *mut GUITHREADINFO) -> windows_core::BOOL);
     unsafe { GetGUIThreadInfo(idthread, pgui as _) }
+}
+#[inline]
+pub unsafe fn GetIfEntry2(row: *mut MIB_IF_ROW2) -> windows_core::NTSTATUS {
+    windows_core::link!("iphlpapi.dll" "system" fn GetIfEntry2(row : *mut MIB_IF_ROW2) -> windows_core::NTSTATUS);
+    unsafe { GetIfEntry2(row as _) }
 }
 #[inline]
 pub unsafe fn GetKeyState(nvirtkey: i32) -> i16 {
@@ -1222,6 +1266,21 @@ pub unsafe fn GetSystemMetricsForDpi(nindex: i32, dpi: u32) -> i32 {
     unsafe { GetSystemMetricsForDpi(nindex, dpi) }
 }
 #[inline]
+pub unsafe fn GetSystemTimes(
+    lpidletime: Option<*mut FILETIME>,
+    lpkerneltime: Option<*mut FILETIME>,
+    lpusertime: Option<*mut FILETIME>,
+) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" fn GetSystemTimes(lpidletime : *mut FILETIME, lpkerneltime : *mut FILETIME, lpusertime : *mut FILETIME) -> windows_core::BOOL);
+    unsafe {
+        GetSystemTimes(
+            lpidletime.unwrap_or(core::mem::zeroed()) as _,
+            lpkerneltime.unwrap_or(core::mem::zeroed()) as _,
+            lpusertime.unwrap_or(core::mem::zeroed()) as _,
+        )
+    }
+}
+#[inline]
 pub unsafe fn GetTextExtentPoint32W(
     hdc: HDC,
     lpstring: &[u16],
@@ -1357,6 +1416,11 @@ pub unsafe fn GlobalFree(hmem: HGLOBAL) -> HGLOBAL {
 pub unsafe fn GlobalLock(hmem: HGLOBAL) -> *mut core::ffi::c_void {
     windows_core::link!("kernel32.dll" "system" fn GlobalLock(hmem : HGLOBAL) -> *mut core::ffi::c_void);
     unsafe { GlobalLock(hmem) }
+}
+#[inline]
+pub unsafe fn GlobalMemoryStatusEx(lpbuffer: *mut MEMORYSTATUSEX) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" fn GlobalMemoryStatusEx(lpbuffer : *mut MEMORYSTATUSEX) -> windows_core::BOOL);
+    unsafe { GlobalMemoryStatusEx(lpbuffer as _) }
 }
 #[inline]
 pub unsafe fn GlobalSize(hmem: HGLOBAL) -> usize {
@@ -2497,6 +2561,14 @@ pub unsafe fn SetTextColor(hdc: HDC, color: COLORREF) -> COLORREF {
     unsafe { SetTextColor(hdc, color) }
 }
 #[inline]
+pub unsafe fn SetThreadErrorMode(
+    dwnewmode: u32,
+    lpoldmode: Option<*const u32>,
+) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" fn SetThreadErrorMode(dwnewmode : u32, lpoldmode : *const u32) -> windows_core::BOOL);
+    unsafe { SetThreadErrorMode(dwnewmode, lpoldmode.unwrap_or(core::mem::zeroed()) as _) }
+}
+#[inline]
 pub unsafe fn SetTimer(
     hwnd: Option<HWND>,
     nidevent: usize,
@@ -2936,7 +3008,11 @@ pub struct ADDRESS64 {
     pub Segment: u16,
     pub Mode: ADDRESS_MODE,
 }
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct ADDRESS_FAMILY(pub u16);
 pub type ADDRESS_MODE = i32;
+pub const AF_INET: i32 = 2;
 pub const ANTIALIASED_QUALITY: i32 = 4;
 #[repr(C, align(16))]
 #[cfg(any(target_arch = "arm64ec", target_arch = "x86", target_arch = "x86_64"))]
@@ -4109,6 +4185,9 @@ pub struct DWM_TIMING_INFO {
     pub cBuffersEmpty: DWM_FRAME_COUNT,
 }
 pub type DWM_WINDOW_CORNER_PREFERENCE = i32;
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct DWORDLONG(pub u64);
 pub const DWPOS_CENTER: DESKTOP_WALLPAPER_POSITION = 0;
 pub const DWPOS_FILL: DESKTOP_WALLPAPER_POSITION = 4;
 pub const DWPOS_FIT: DESKTOP_WALLPAPER_POSITION = 3;
@@ -4151,6 +4230,7 @@ pub const EN_CHANGE: i32 = 768;
 pub const EN_KILLFOCUS: i32 = 512;
 pub const ERROR_ALREADY_EXISTS: i32 = 183;
 pub const ERROR_BROKEN_PIPE: i32 = 109;
+pub const ERROR_BUFFER_OVERFLOW: i32 = 111;
 pub const ERROR_NOTIFY_ENUM_DIR: i32 = 1022;
 pub const ERROR_NO_DATA: i32 = 232;
 pub const ERROR_OPERATION_ABORTED: i32 = 995;
@@ -4312,6 +4392,11 @@ pub const FileOperation: windows_core::GUID =
     windows_core::GUID::from_u128(0x3ad05575_8857_4850_9277_11b85bdb8e09);
 pub const FileSaveDialog: windows_core::GUID =
     windows_core::GUID::from_u128(0xc0b4e2f3_ba21_4773_8dba_335ec946eb8b);
+pub const GAA_FLAG_INCLUDE_GATEWAYS: i32 = 128;
+pub const GAA_FLAG_SKIP_ANYCAST: i32 = 2;
+pub const GAA_FLAG_SKIP_DNS_SERVER: i32 = 8;
+pub const GAA_FLAG_SKIP_FRIENDLY_NAME: i32 = 32;
+pub const GAA_FLAG_SKIP_MULTICAST: i32 = 4;
 pub const GA_ROOT: i32 = 2;
 pub const GA_ROOTOWNER: i32 = 3;
 pub const GENERIC_READ: u32 = 2147483648;
@@ -8244,6 +8329,12 @@ pub struct IEnumUnknown_Vtbl {
     Clone: usize,
 }
 impl windows_core::RuntimeName for IEnumUnknown {}
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct IFTYPE(pub u32);
+pub type IF_INDEX = NET_IFINDEX;
+pub type IF_LUID = NET_LUID;
+pub type IF_OPER_STATUS = i32;
 windows_core::imp::define_interface!(
     IFileDialog,
     IFileDialog_Vtbl,
@@ -10737,6 +10828,42 @@ pub struct INITCOMMONCONTROLSEX {
 pub const INVALID_FILE_ATTRIBUTES: u32 = 4294967295;
 pub const INVALID_HANDLE_VALUE: HANDLE = HANDLE(-1 as _);
 #[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IN_ADDR {
+    pub S_un: IN_ADDR_0,
+}
+impl Default for IN_ADDR {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union IN_ADDR_0 {
+    pub S_un_b: IN_ADDR_0_0,
+    pub S_un_w: IN_ADDR_0_1,
+    pub S_addr: u32,
+}
+impl Default for IN_ADDR_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct IN_ADDR_0_0 {
+    pub s_b1: u8,
+    pub s_b2: u8,
+    pub s_b3: u8,
+    pub s_b4: u8,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct IN_ADDR_0_1 {
+    pub s_w1: u16,
+    pub s_w2: u16,
+}
+#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct IO_COUNTERS {
     pub ReadOperationCount: u64,
@@ -10851,6 +10978,377 @@ pub struct IOperationsProgressDialog_Vtbl {
     GetOperationStatus: usize,
 }
 impl windows_core::RuntimeName for IOperationsProgressDialog {}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IP_ADAPTER_ADDRESSES_LH {
+    pub Anonymous: IP_ADAPTER_ADDRESSES_LH_0,
+    pub Next: *mut Self,
+    pub AdapterName: PCHAR,
+    pub FirstUnicastAddress: PIP_ADAPTER_UNICAST_ADDRESS_LH,
+    pub FirstAnycastAddress: PIP_ADAPTER_ANYCAST_ADDRESS_XP,
+    pub FirstMulticastAddress: PIP_ADAPTER_MULTICAST_ADDRESS_XP,
+    pub FirstDnsServerAddress: PIP_ADAPTER_DNS_SERVER_ADDRESS_XP,
+    pub DnsSuffix: PWCHAR,
+    pub Description: PWCHAR,
+    pub FriendlyName: PWCHAR,
+    pub PhysicalAddress: [u8; 8],
+    pub PhysicalAddressLength: u32,
+    pub Anonymous2: IP_ADAPTER_ADDRESSES_LH_1,
+    pub Mtu: u32,
+    pub IfType: IFTYPE,
+    pub OperStatus: IF_OPER_STATUS,
+    pub Ipv6IfIndex: IF_INDEX,
+    pub ZoneIndices: [u32; 16],
+    pub FirstPrefix: PIP_ADAPTER_PREFIX_XP,
+    pub TransmitLinkSpeed: u64,
+    pub ReceiveLinkSpeed: u64,
+    pub FirstWinsServerAddress: PIP_ADAPTER_WINS_SERVER_ADDRESS_LH,
+    pub FirstGatewayAddress: PIP_ADAPTER_GATEWAY_ADDRESS_LH,
+    pub Ipv4Metric: u32,
+    pub Ipv6Metric: u32,
+    pub Luid: IF_LUID,
+    pub Dhcpv4Server: SOCKET_ADDRESS,
+    pub CompartmentId: NET_IF_COMPARTMENT_ID,
+    pub NetworkGuid: NET_IF_NETWORK_GUID,
+    pub ConnectionType: NET_IF_CONNECTION_TYPE,
+    pub TunnelType: TUNNEL_TYPE,
+    pub Dhcpv6Server: SOCKET_ADDRESS,
+    pub Dhcpv6ClientDuid: [u8; 130],
+    pub Dhcpv6ClientDuidLength: u32,
+    pub Dhcpv6Iaid: u32,
+    pub FirstDnsSuffix: PIP_ADAPTER_DNS_SUFFIX,
+}
+impl Default for IP_ADAPTER_ADDRESSES_LH {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union IP_ADAPTER_ADDRESSES_LH_0 {
+    pub Alignment: u64,
+    pub Anonymous: IP_ADAPTER_ADDRESSES_LH_0_0,
+}
+impl Default for IP_ADAPTER_ADDRESSES_LH_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct IP_ADAPTER_ADDRESSES_LH_0_0 {
+    pub Length: u32,
+    pub IfIndex: IF_INDEX,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union IP_ADAPTER_ADDRESSES_LH_1 {
+    pub Flags: u32,
+    pub Anonymous: IP_ADAPTER_ADDRESSES_LH_1_0,
+}
+impl Default for IP_ADAPTER_ADDRESSES_LH_1 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct IP_ADAPTER_ADDRESSES_LH_1_0 {
+    pub _bitfield: u32,
+}
+impl IP_ADAPTER_ADDRESSES_LH_1_0 {
+    pub fn DdnsEnabled(&self) -> bool {
+        self._bitfield & 1 != 0
+    }
+    pub fn set_DdnsEnabled(&mut self, value: bool) {
+        self._bitfield = (self._bitfield & !1) | (value as u32);
+    }
+    pub fn RegisterAdapterSuffix(&self) -> bool {
+        (self._bitfield >> 1) & 1 != 0
+    }
+    pub fn set_RegisterAdapterSuffix(&mut self, value: bool) {
+        self._bitfield = (self._bitfield & !(1 << 1)) | ((value as u32) << 1);
+    }
+    pub fn Dhcpv4Enabled(&self) -> bool {
+        (self._bitfield >> 2) & 1 != 0
+    }
+    pub fn set_Dhcpv4Enabled(&mut self, value: bool) {
+        self._bitfield = (self._bitfield & !(1 << 2)) | ((value as u32) << 2);
+    }
+    pub fn ReceiveOnly(&self) -> bool {
+        (self._bitfield >> 3) & 1 != 0
+    }
+    pub fn set_ReceiveOnly(&mut self, value: bool) {
+        self._bitfield = (self._bitfield & !(1 << 3)) | ((value as u32) << 3);
+    }
+    pub fn NoMulticast(&self) -> bool {
+        (self._bitfield >> 4) & 1 != 0
+    }
+    pub fn set_NoMulticast(&mut self, value: bool) {
+        self._bitfield = (self._bitfield & !(1 << 4)) | ((value as u32) << 4);
+    }
+    pub fn Ipv6OtherStatefulConfig(&self) -> bool {
+        (self._bitfield >> 5) & 1 != 0
+    }
+    pub fn set_Ipv6OtherStatefulConfig(&mut self, value: bool) {
+        self._bitfield = (self._bitfield & !(1 << 5)) | ((value as u32) << 5);
+    }
+    pub fn NetbiosOverTcpipEnabled(&self) -> bool {
+        (self._bitfield >> 6) & 1 != 0
+    }
+    pub fn set_NetbiosOverTcpipEnabled(&mut self, value: bool) {
+        self._bitfield = (self._bitfield & !(1 << 6)) | ((value as u32) << 6);
+    }
+    pub fn Ipv4Enabled(&self) -> bool {
+        (self._bitfield >> 7) & 1 != 0
+    }
+    pub fn set_Ipv4Enabled(&mut self, value: bool) {
+        self._bitfield = (self._bitfield & !(1 << 7)) | ((value as u32) << 7);
+    }
+    pub fn Ipv6Enabled(&self) -> bool {
+        (self._bitfield >> 8) & 1 != 0
+    }
+    pub fn set_Ipv6Enabled(&mut self, value: bool) {
+        self._bitfield = (self._bitfield & !(1 << 8)) | ((value as u32) << 8);
+    }
+    pub fn Ipv6ManagedAddressConfigurationSupported(&self) -> bool {
+        (self._bitfield >> 9) & 1 != 0
+    }
+    pub fn set_Ipv6ManagedAddressConfigurationSupported(&mut self, value: bool) {
+        self._bitfield = (self._bitfield & !(1 << 9)) | ((value as u32) << 9);
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IP_ADAPTER_ANYCAST_ADDRESS_XP {
+    pub Anonymous: IP_ADAPTER_ANYCAST_ADDRESS_XP_0,
+    pub Next: *mut Self,
+    pub Address: SOCKET_ADDRESS,
+}
+impl Default for IP_ADAPTER_ANYCAST_ADDRESS_XP {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union IP_ADAPTER_ANYCAST_ADDRESS_XP_0 {
+    pub Alignment: u64,
+    pub Anonymous: IP_ADAPTER_ANYCAST_ADDRESS_XP_0_0,
+}
+impl Default for IP_ADAPTER_ANYCAST_ADDRESS_XP_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct IP_ADAPTER_ANYCAST_ADDRESS_XP_0_0 {
+    pub Length: u32,
+    pub Flags: u32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IP_ADAPTER_DNS_SERVER_ADDRESS_XP {
+    pub Anonymous: IP_ADAPTER_DNS_SERVER_ADDRESS_XP_0,
+    pub Next: *mut Self,
+    pub Address: SOCKET_ADDRESS,
+}
+impl Default for IP_ADAPTER_DNS_SERVER_ADDRESS_XP {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union IP_ADAPTER_DNS_SERVER_ADDRESS_XP_0 {
+    pub Alignment: u64,
+    pub Anonymous: IP_ADAPTER_DNS_SERVER_ADDRESS_XP_0_0,
+}
+impl Default for IP_ADAPTER_DNS_SERVER_ADDRESS_XP_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct IP_ADAPTER_DNS_SERVER_ADDRESS_XP_0_0 {
+    pub Length: u32,
+    pub Reserved: u32,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IP_ADAPTER_DNS_SUFFIX {
+    pub Next: *mut Self,
+    pub String: [u16; 256],
+}
+impl Default for IP_ADAPTER_DNS_SUFFIX {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IP_ADAPTER_GATEWAY_ADDRESS_LH {
+    pub Anonymous: IP_ADAPTER_GATEWAY_ADDRESS_LH_0,
+    pub Next: *mut Self,
+    pub Address: SOCKET_ADDRESS,
+}
+impl Default for IP_ADAPTER_GATEWAY_ADDRESS_LH {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union IP_ADAPTER_GATEWAY_ADDRESS_LH_0 {
+    pub Alignment: u64,
+    pub Anonymous: IP_ADAPTER_GATEWAY_ADDRESS_LH_0_0,
+}
+impl Default for IP_ADAPTER_GATEWAY_ADDRESS_LH_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct IP_ADAPTER_GATEWAY_ADDRESS_LH_0_0 {
+    pub Length: u32,
+    pub Reserved: u32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IP_ADAPTER_MULTICAST_ADDRESS_XP {
+    pub Anonymous: IP_ADAPTER_MULTICAST_ADDRESS_XP_0,
+    pub Next: *mut Self,
+    pub Address: SOCKET_ADDRESS,
+}
+impl Default for IP_ADAPTER_MULTICAST_ADDRESS_XP {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union IP_ADAPTER_MULTICAST_ADDRESS_XP_0 {
+    pub Alignment: u64,
+    pub Anonymous: IP_ADAPTER_MULTICAST_ADDRESS_XP_0_0,
+}
+impl Default for IP_ADAPTER_MULTICAST_ADDRESS_XP_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct IP_ADAPTER_MULTICAST_ADDRESS_XP_0_0 {
+    pub Length: u32,
+    pub Flags: u32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IP_ADAPTER_PREFIX_XP {
+    pub Anonymous: IP_ADAPTER_PREFIX_XP_0,
+    pub Next: *mut Self,
+    pub Address: SOCKET_ADDRESS,
+    pub PrefixLength: u32,
+}
+impl Default for IP_ADAPTER_PREFIX_XP {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union IP_ADAPTER_PREFIX_XP_0 {
+    pub Alignment: u64,
+    pub Anonymous: IP_ADAPTER_PREFIX_XP_0_0,
+}
+impl Default for IP_ADAPTER_PREFIX_XP_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct IP_ADAPTER_PREFIX_XP_0_0 {
+    pub Length: u32,
+    pub Flags: u32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IP_ADAPTER_UNICAST_ADDRESS_LH {
+    pub Anonymous: IP_ADAPTER_UNICAST_ADDRESS_LH_0,
+    pub Next: *mut Self,
+    pub Address: SOCKET_ADDRESS,
+    pub PrefixOrigin: IP_PREFIX_ORIGIN,
+    pub SuffixOrigin: IP_SUFFIX_ORIGIN,
+    pub DadState: IP_DAD_STATE,
+    pub ValidLifetime: u32,
+    pub PreferredLifetime: u32,
+    pub LeaseLifetime: u32,
+    pub OnLinkPrefixLength: u8,
+}
+impl Default for IP_ADAPTER_UNICAST_ADDRESS_LH {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union IP_ADAPTER_UNICAST_ADDRESS_LH_0 {
+    pub Alignment: u64,
+    pub Anonymous: IP_ADAPTER_UNICAST_ADDRESS_LH_0_0,
+}
+impl Default for IP_ADAPTER_UNICAST_ADDRESS_LH_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct IP_ADAPTER_UNICAST_ADDRESS_LH_0_0 {
+    pub Length: u32,
+    pub Flags: u32,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IP_ADAPTER_WINS_SERVER_ADDRESS_LH {
+    pub Anonymous: IP_ADAPTER_WINS_SERVER_ADDRESS_LH_0,
+    pub Next: *mut Self,
+    pub Address: SOCKET_ADDRESS,
+}
+impl Default for IP_ADAPTER_WINS_SERVER_ADDRESS_LH {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union IP_ADAPTER_WINS_SERVER_ADDRESS_LH_0 {
+    pub Alignment: u64,
+    pub Anonymous: IP_ADAPTER_WINS_SERVER_ADDRESS_LH_0_0,
+}
+impl Default for IP_ADAPTER_WINS_SERVER_ADDRESS_LH_0 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct IP_ADAPTER_WINS_SERVER_ADDRESS_LH_0_0 {
+    pub Length: u32,
+    pub Reserved: u32,
+}
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct IP_DAD_STATE(pub NL_DAD_STATE);
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct IP_PREFIX_ORIGIN(pub NL_PREFIX_ORIGIN);
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct IP_SUFFIX_ORIGIN(pub NL_SUFFIX_ORIGIN);
 windows_core::imp::define_interface!(
     IPersist,
     IPersist_Vtbl,
@@ -17363,6 +17861,7 @@ pub struct IWICStream_Vtbl {
     InitializeFromIStreamRegion: usize,
 }
 impl windows_core::RuntimeName for IWICStream {}
+pub const IfOperStatusUp: IF_OPER_STATUS = 1;
 pub type JOBOBJECTINFOCLASS = i32;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -17470,6 +17969,7 @@ pub type LPOVERLAPPED_COMPLETION_ROUTINE = Option<
         lpoverlapped: *mut OVERLAPPED,
     ),
 >;
+pub type LPSOCKADDR = *mut SOCKADDR;
 pub type LPTBBUTTON = *mut TBBUTTON;
 pub type LPTBBUTTONSB = LPTBBUTTON;
 pub type LPTOP_LEVEL_EXCEPTION_FILTER = PTOP_LEVEL_EXCEPTION_FILTER;
@@ -17513,6 +18013,19 @@ pub const MB_YESNO: i32 = 4;
 pub const MDT_EFFECTIVE_DPI: MONITOR_DPI_TYPE = 0;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MEMORYSTATUSEX {
+    pub dwLength: u32,
+    pub dwMemoryLoad: u32,
+    pub ullTotalPhys: DWORDLONG,
+    pub ullAvailPhys: DWORDLONG,
+    pub ullTotalPageFile: DWORDLONG,
+    pub ullAvailPageFile: DWORDLONG,
+    pub ullTotalVirtual: DWORDLONG,
+    pub ullAvailVirtual: DWORDLONG,
+    pub ullAvailExtendedVirtual: DWORDLONG,
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct MENUITEMINFOW {
     pub cbSize: u32,
     pub fMask: u32,
@@ -17540,6 +18053,61 @@ pub const MF_POPUP: i32 = 16;
 pub const MF_SEPARATOR: i32 = 2048;
 pub const MF_STRING: i32 = 0;
 pub const MF_UNCHECKED: i32 = 0;
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct MIB_IF_ROW2 {
+    pub InterfaceLuid: NET_LUID,
+    pub InterfaceIndex: NET_IFINDEX,
+    pub InterfaceGuid: windows_core::GUID,
+    pub Alias: [u16; 257],
+    pub Description: [u16; 257],
+    pub PhysicalAddressLength: u32,
+    pub PhysicalAddress: [u8; 32],
+    pub PermanentPhysicalAddress: [u8; 32],
+    pub Mtu: u32,
+    pub Type: IFTYPE,
+    pub TunnelType: TUNNEL_TYPE,
+    pub MediaType: NDIS_MEDIUM,
+    pub PhysicalMediumType: NDIS_PHYSICAL_MEDIUM,
+    pub AccessType: NET_IF_ACCESS_TYPE,
+    pub DirectionType: NET_IF_DIRECTION_TYPE,
+    pub InterfaceAndOperStatusFlags: MIB_IF_ROW2_0,
+    pub OperStatus: IF_OPER_STATUS,
+    pub AdminStatus: NET_IF_ADMIN_STATUS,
+    pub MediaConnectState: NET_IF_MEDIA_CONNECT_STATE,
+    pub NetworkGuid: NET_IF_NETWORK_GUID,
+    pub ConnectionType: NET_IF_CONNECTION_TYPE,
+    pub TransmitLinkSpeed: u64,
+    pub ReceiveLinkSpeed: u64,
+    pub InOctets: u64,
+    pub InUcastPkts: u64,
+    pub InNUcastPkts: u64,
+    pub InDiscards: u64,
+    pub InErrors: u64,
+    pub InUnknownProtos: u64,
+    pub InUcastOctets: u64,
+    pub InMulticastOctets: u64,
+    pub InBroadcastOctets: u64,
+    pub OutOctets: u64,
+    pub OutUcastPkts: u64,
+    pub OutNUcastPkts: u64,
+    pub OutDiscards: u64,
+    pub OutErrors: u64,
+    pub OutUcastOctets: u64,
+    pub OutMulticastOctets: u64,
+    pub OutBroadcastOctets: u64,
+    pub OutQLen: u64,
+}
+impl Default for MIB_IF_ROW2 {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MIB_IF_ROW2_0 {
+    pub _bitfield: bool,
+}
 pub const MIIM_BITMAP: i32 = 128;
 pub const MIIM_FTYPE: i32 = 256;
 pub const MIIM_ID: i32 = 2;
@@ -18118,8 +18686,59 @@ pub const MiniDumpScanMemory: MINIDUMP_TYPE = 16;
 pub const MiniDumpWithDataSegs: MINIDUMP_TYPE = 1;
 pub const MiniDumpWithIndirectlyReferencedMemory: MINIDUMP_TYPE = 64;
 pub const MiniDumpWithThreadInfo: MINIDUMP_TYPE = 4096;
+pub type NDIS_MEDIUM = i32;
+pub type NDIS_PHYSICAL_MEDIUM = i32;
 #[cfg(target_arch = "aarch64")]
 pub type NEON128 = ARM64_NT_NEON128;
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct NET_IFINDEX(pub u32);
+pub type NET_IF_ACCESS_TYPE = i32;
+pub type NET_IF_ADMIN_STATUS = i32;
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct NET_IF_COMPARTMENT_ID(pub u32);
+pub type NET_IF_CONNECTION_TYPE = i32;
+pub type NET_IF_DIRECTION_TYPE = i32;
+pub type NET_IF_MEDIA_CONNECT_STATE = i32;
+pub type NET_IF_NETWORK_GUID = windows_core::GUID;
+pub type NET_LUID = NET_LUID_LH;
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub union NET_LUID_LH {
+    pub Value: u64,
+    pub Info: NET_LUID_LH_0,
+}
+impl Default for NET_LUID_LH {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct NET_LUID_LH_0 {
+    pub _bitfield: u64,
+}
+impl NET_LUID_LH_0 {
+    pub fn Reserved(&self) -> u64 {
+        (self._bitfield << 40) >> 40
+    }
+    pub fn set_Reserved(&mut self, value: u64) {
+        self._bitfield = (self._bitfield & !16777215) | (value & 16777215);
+    }
+    pub fn NetLuidIndex(&self) -> u64 {
+        (self._bitfield << 16) >> 40
+    }
+    pub fn set_NetLuidIndex(&mut self, value: u64) {
+        self._bitfield = (self._bitfield & !(16777215 << 24)) | ((value & 16777215) << 24);
+    }
+    pub fn IfType(&self) -> u64 {
+        self._bitfield >> 48
+    }
+    pub fn set_IfType(&mut self, value: u64) {
+        self._bitfield = (self._bitfield & !(65535 << 48)) | ((value & 65535) << 48);
+    }
+}
 pub const NIF_ICON: i32 = 2;
 pub const NIF_INFO: i32 = 16;
 pub const NIF_MESSAGE: i32 = 1;
@@ -18136,6 +18755,9 @@ pub const NIN_BALLOONTIMEOUT: i32 = 1028;
 pub const NIN_BALLOONUSERCLICK: i32 = 1029;
 pub const NIN_KEYSELECT: i32 = 1025;
 pub const NIN_SELECT: i32 = 1024;
+pub type NL_DAD_STATE = i32;
+pub type NL_PREFIX_ORIGIN = i32;
+pub type NL_SUFFIX_ORIGIN = i32;
 #[repr(C, packed(1))]
 #[cfg(target_arch = "x86")]
 #[derive(Clone, Copy)]
@@ -18327,6 +18949,7 @@ impl Default for PAINTSTRUCT {
         unsafe { core::mem::zeroed() }
     }
 }
+pub type PCHAR = *mut i8;
 #[cfg(any(target_arch = "arm64ec", target_arch = "x86", target_arch = "x86_64"))]
 pub type PCONTEXT = *mut CONTEXT;
 #[cfg(target_arch = "aarch64")]
@@ -18343,6 +18966,14 @@ pub const PIPE_REJECT_REMOTE_CLIENTS: i32 = 8;
 pub const PIPE_TYPE_BYTE: i32 = 0;
 pub const PIPE_UNLIMITED_INSTANCES: i32 = 255;
 pub const PIPE_WAIT: i32 = 0;
+pub type PIP_ADAPTER_ANYCAST_ADDRESS_XP = *mut IP_ADAPTER_ANYCAST_ADDRESS_XP;
+pub type PIP_ADAPTER_DNS_SERVER_ADDRESS_XP = *mut IP_ADAPTER_DNS_SERVER_ADDRESS_XP;
+pub type PIP_ADAPTER_DNS_SUFFIX = *mut IP_ADAPTER_DNS_SUFFIX;
+pub type PIP_ADAPTER_GATEWAY_ADDRESS_LH = *mut IP_ADAPTER_GATEWAY_ADDRESS_LH;
+pub type PIP_ADAPTER_MULTICAST_ADDRESS_XP = *mut IP_ADAPTER_MULTICAST_ADDRESS_XP;
+pub type PIP_ADAPTER_PREFIX_XP = *mut IP_ADAPTER_PREFIX_XP;
+pub type PIP_ADAPTER_UNICAST_ADDRESS_LH = *mut IP_ADAPTER_UNICAST_ADDRESS_LH;
+pub type PIP_ADAPTER_WINS_SERVER_ADDRESS_LH = *mut IP_ADAPTER_WINS_SERVER_ADDRESS_LH;
 pub type PMINIDUMP_USER_STREAM = *mut MINIDUMP_USER_STREAM;
 pub const PM_REMOVE: i32 = 1;
 pub type PNUMA_NODE_RELATIONSHIP = *mut NUMA_NODE_RELATIONSHIP;
@@ -18625,6 +19256,7 @@ pub struct SECURITY_ATTRIBUTES {
 pub const SEE_MASK_FLAG_NO_UI: i32 = 1024;
 pub const SEE_MASK_INVOKEIDLIST: i32 = 12;
 pub const SEE_MASK_NOASYNC: i32 = 256;
+pub const SEM_FAILCRITICALERRORS: i32 = 1;
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct SFGAOF(pub u32);
@@ -18890,6 +19522,36 @@ pub const SM_CYDRAG: i32 = 69;
 pub const SM_CYSCREEN: i32 = 1;
 pub const SM_SHUTTINGDOWN: i32 = 8192;
 pub const SM_SWAPBUTTON: i32 = 23;
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SOCKADDR {
+    pub sa_family: ADDRESS_FAMILY,
+    pub sa_data: [i8; 14],
+}
+impl Default for SOCKADDR {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct SOCKADDR_IN {
+    pub sin_family: ADDRESS_FAMILY,
+    pub sin_port: u16,
+    pub sin_addr: IN_ADDR,
+    pub sin_zero: [i8; 8],
+}
+impl Default for SOCKADDR_IN {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SOCKET_ADDRESS {
+    pub lpSockaddr: LPSOCKADDR,
+    pub iSockaddrLength: i32,
+}
 pub const SPI_GETCLIENTAREAANIMATION: i32 = 4162;
 pub const SPI_GETICONMETRICS: i32 = 45;
 pub const SPI_GETICONTITLELOGFONT: i32 = 31;
@@ -19132,6 +19794,7 @@ pub struct TTTOOLINFOW {
     pub lParam: LPARAM,
     pub lpReserved: *mut core::ffi::c_void,
 }
+pub type TUNNEL_TYPE = i32;
 pub type TYMED = i32;
 pub const TYMED_HGLOBAL: TYMED = 1;
 pub const TokenUser: TOKEN_INFORMATION_CLASS = 1;
