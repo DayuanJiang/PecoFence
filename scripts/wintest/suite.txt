@@ -246,3 +246,4 @@ o6-align-page      3   ec2    debug   owner6-align.ps1               --var Part=
 o6-align-scale     3   resize release free-placement.ps1             --part S --steps owner6-align.ps1
 # Usage statistics: operations appear in usage.json, nothing typed does, an upload, the switch.
 usage-stats        4   ec2    release usage.ps1
+usage-desc         2   ec2    debug   usage-description.ps1
