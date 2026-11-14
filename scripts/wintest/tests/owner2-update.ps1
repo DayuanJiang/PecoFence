@@ -141,7 +141,7 @@ $open = $win -ne [IntPtr]::Zero -and (PfSettings)
 $s = if ($open) { Status } else { '' }
 Start-Sleep -Milliseconds 500
 Shot 'f1-download-failed'
-Check 'Update on the card, the setup cannot be downloaded: the About page opens and says so, with the site''s address' ($card -match 'installs=true' -and $failed -and $open -and $s -match 'pecofence\.jiang\.jp' -and (Js "document.querySelector('nav a.sel').dataset.page") -eq 'about') "settings window=$win page: '$s'"
+Check 'Update on the card, the setup cannot be downloaded: the About page opens and says so, with the site''s address' ($card -match 'installs=true' -and $failed -and $open -and $s -match 'pecofence\.jiang\.jp' -and (JsWait "document.querySelector('nav a.sel').dataset.page === 'about'" 5)) "settings window=$win page: '$s' card=$([bool]($card -match 'installs=true')) failed=$([bool]$failed)"
 Check 'Open download page shows there too' ($open -and (SiteButton)) "extra button=$(if ($open) { SiteButton })"
 Remove-Item "$PfApp\unins000.exe" -ErrorAction SilentlyContinue
 

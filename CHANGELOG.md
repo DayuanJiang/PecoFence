@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The switch 「帮助改进 PecoFence」 in Settings › 关于 says what it sends: 「发送匿名的使用统计，例如用了哪些功能。文件名、路径和你输入的文字不会发送。」, in all eleven languages. It said 「发送使用统计」.
+
 ## 0.4.0
 
 - The icons of a fence can line up from the right (asked for in #222): 「图标对齐」 in Settings › 栅栏 › 布局 has a third choice, 「右对齐」 (or `pecofence-cli fence set <fence> iconAlign right`). Every row fills from the right edge: the first icon of a row stands at the right, the next one to its left, so the first column runs down the right edge of the fence, in a narrow fence as in a wide one. A last row that is not full stays at the right, and a new icon takes the place to its left without moving the others. The Left and Right keys go where the eye goes, the mark of a drag stands on the right side of the icon it goes before, and clicks, the selection rectangle, folder fences, tabs and the groups of 「按时间分组」 follow. It applies to the icons view; list and details rows fill the whole width as before. No fence changes until you pick 「右对齐」.
