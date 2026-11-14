@@ -49,14 +49,17 @@ const CODE_TEXT_FIELDS: &[&str] = &[
     "command",
     "effect",
     "family",
+    "file_ext",
     "generation",
     "hotkey",
     "host_kind",
     "install",
     "language",
+    "layers",
     "memory",
     "method",
     "mode",
+    "module",
     "module_owner",
     "new",
     "old",
@@ -72,6 +75,8 @@ const CODE_TEXT_FIELDS: &[&str] = &[
     "stack",
     "storage",
     "style",
+    "target_ext",
+    "target_place",
     "verb",
     "wanted",
     "what",
@@ -682,11 +687,14 @@ mod tests {
         ("class", "%desktop::class_name(by)"), // class of the window that covered the fences
         // Class of the window the fences go above.
         ("class", "%desktop::class_name(h)"),
+        // Explorer's desktop windows: class names, handles and counts.
+        ("layers", "%desktop::describe_desktop_windows()"),
         ("command", "name"), // `Command` variant name
         // shell::path_place: fixed words for the kind of place a path is on.
         ("place", "shell::path_place(&primary)"),
         ("place", "shell::path_place(path)"),
         ("place", "shell::path_place(&dir)"),
+        ("place", "shell::path_place(dir)"),
         ("place", "shell::path_place(&path)"),
         ("place", "shell::path_place(&folder)"),
         ("place", "crate::shell::path_place(&dir)"),
@@ -694,41 +702,48 @@ mod tests {
         ("command", "command.as_deref()"), // hangwatch::running_command: a `Command` variant name
         ("effect", "?effect"),          // DropEffect enum
         ("family", "%f.family"),        // installed font family
-        ("generation", "?generation"),  // DesktopGeneration enum
-        ("generation", "generation"),   // GPU device generation (u64)
-        ("hotkey", "%c"),               // Hotkey: modifier and key names ("Ctrl+Alt+Space")
-        ("hotkey", "%h"),               // Hotkey
-        ("host_kind", "?host_kind"),    // Option<HostKind> enum
-        ("install", "install.as_str()"), // feedback::install_kind: fixed names
-        ("source", "source.as_str()"),  // smart fence: where its results came from (fixed names)
+        // shell::log_ext: an extension of up to 10 ASCII letters and digits, `other`, `none`.
+        ("file_ext", "ext.as_str()"),
+        ("target_ext", "target_ext.as_deref()"),
+        // shell::path_place of a shortcut's target.
+        ("target_place", "target_place.as_deref()"),
+        ("generation", "?generation"),        // DesktopGeneration enum
+        ("generation", "generation"),         // GPU device generation (u64)
+        ("hotkey", "%c"),                     // Hotkey: modifier and key names ("Ctrl+Alt+Space")
+        ("hotkey", "%h"),                     // Hotkey
+        ("host_kind", "?host_kind"),          // Option<HostKind> enum
+        ("install", "install.as_str()"),      // feedback::install_kind: fixed names
+        ("source", "source.as_str()"), // smart fence: where its results came from (fixed names)
         ("source", "r.source.as_str()"), // the same, of a smart fence worker's result
         ("language", "language.tag()"), // BCP 47 tag of a Language variant
-        ("location", "%location"),      // panic `file:line`
-        ("memory", "%m.summary()"),     // MemoryStats::summary: numbers only
-        ("method", "method"),           // IPC method name
-        ("mode", "?mode"),              // ThemeMode enum
-        ("module_owner", "owner"),      // crashlog: windows / pecofence / other
-        ("new", "?resolved"),           // Option<IconHost>: HWNDs + kind enum
-        ("new", "?after"),              // store::StartupState enum
-        ("new", "?state"),              // store::StartupState enum
-        ("old", "?self.host"),          // Option<IconHost>
-        ("old", "?before"),             // store::StartupState enum
+        ("location", "%location"),     // panic `file:line`
+        ("memory", "%m.summary()"),    // MemoryStats::summary: numbers only
+        ("method", "method"),          // IPC method name
+        ("mode", "?mode"),             // ThemeMode enum
+        ("module", "%file"),           // shell_menu::LoadWatch: file name of a loaded DLL
+        ("module", "module"),          // feedback: file name of the DLL a crash line names
+        ("module_owner", "owner"),     // crashlog: windows / pecofence / other
+        ("new", "?resolved"),          // Option<IconHost>: HWNDs + kind enum
+        ("new", "?after"),             // store::StartupState enum
+        ("new", "?state"),             // store::StartupState enum
+        ("old", "?self.host"),         // Option<IconHost>
+        ("old", "?before"),            // store::StartupState enum
         ("old", "?self.store_startup_state"), // Option<store::StartupState>
         ("outcome", "?effect.as_ref().map(|r|(r.dropped,r.effect))"), // (bool, DropEffect)
-        ("outcome", "outcome.kind()"),  // scripts::Outcome::kind: fixed names
-        ("outcome", "?outcome"),        // dialogs::JumpOutcome enum (dialog_jump.rs)
-        ("outcome", "outcome"),         // fixed words: log_route outcomes, search menu choice
-        ("payload", "payload"),         // panic payload when `&'static str`
+        ("outcome", "outcome.kind()"), // scripts::Outcome::kind: fixed names
+        ("outcome", "?outcome"),       // dialogs::JumpOutcome enum (dialog_jump.rs)
+        ("outcome", "outcome"),        // fixed words: log_route outcomes, search menu choice
+        ("payload", "payload"),        // panic payload when `&'static str`
         ("position", "?snapshot.position"), // WallpaperPosition enum
-        ("prop", "prop"),               // fence property key from our settings page
-        ("queue", "stack.queue_path"),  // composition queue kind, static
-        ("reason", "reason"),           // `&'static str` reasons (reanchor / sync)
-        ("report", "?report"),          // SyncReport: counts
-        ("source", "source"),           // fixed names of the file the settings came from
+        ("prop", "prop"),              // fence property key from our settings page
+        ("queue", "stack.queue_path"), // composition queue kind, static
+        ("reason", "reason"),          // `&'static str` reasons (reanchor / sync)
+        ("report", "?report"),         // SyncReport: counts
+        ("source", "source"),          // fixed names of the file the settings came from
         ("stack", "%frames.join(\"\\n\")"), // crashlog: `module+rva` per frame
         ("storage", "state.storage_kind()"), // fixed names of the config folder's kind
-        ("style", "?style"),            // backdrop style enum
-        ("verb", "verb"),               // shell verb (canonical name)
+        ("style", "?style"),           // backdrop style enum
+        ("verb", "verb"),              // shell verb (canonical name)
         ("verb", "%verb"),
         ("wanted", "%h"),          // Hotkey
         ("what", "what"),          // `&'static str` operation names, rules::category_name

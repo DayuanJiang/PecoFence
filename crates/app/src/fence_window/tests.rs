@@ -406,6 +406,24 @@ fn hover_select_follows_the_desktop() {
     assert_eq!(anchor, Some(1));
 }
 
+/// Hover select reaches the fence under the pointer while another fence or Explorer's desktop
+/// has the keyboard; another program in front keeps it (#184).
+#[test]
+fn hover_select_takes_the_keyboard_only_from_the_desktop() {
+    for class in [anchor::FENCE_CLASS, "Progman", "WorkerW"] {
+        assert!(handler::desktop_surface_class(class), "{class}");
+    }
+    for class in [
+        "Notepad",
+        "CabinetWClass",
+        "PecoFence.Rename",
+        "PecoFence.NoteEdit",
+        "",
+    ] {
+        assert!(!handler::desktop_surface_class(class), "{class}");
+    }
+}
+
 /// Real file paths stay ours; Outlook mail, a Start-menu app (its `CF_HDROP` holds a
 /// known-folder-relative "path") and other shell-only items go to the shell; our own fences'
 /// drags and browser links keep their paths.
@@ -612,6 +630,138 @@ fn band_range_holds_exactly_the_cells_that_cross_the_band() {
         }
         assert!(band_range(layout, 0, 0.0, 100.0).is_empty());
     }
+}
+
+/// The items a content draw fits names for and asks icons for: the rows around the scroll
+/// offset and around where a glide ends, each once, however many items the fence has.
+#[test]
+fn a_content_draw_looks_at_the_two_bands_only_whatever_the_item_count() {
+    // The bands overlap while a glide is near its end: no index twice.
+    let seen: Vec<usize> = band_indices(&[10..14, 12..18], 8000).collect();
+    assert_eq!(seen, [10, 11, 12, 13, 14, 15, 16, 17]);
+    // End pressed at the top: the first rows and the last ones, nothing between.
+    let seen: Vec<usize> = band_indices(&[0..3, 7990..7993], 7992).collect();
+    assert_eq!(seen, [0, 1, 2, 7990, 7991]);
+    assert_eq!(band_indices(&[5..5, 5..5], 10).count(), 0);
+    // A viewport of 300 DIPs with one viewport of slack above and below, as the draws take
+    // it: the same number of items in a folder of 60 files and in one of 8000.
+    let near = |count: usize, at: f32| {
+        let grid = ItemLayout::Grid(Grid::new(GridMetrics::for_icon_size(48, 2), 360.0, count));
+        let here = band_range(&grid, count, at - 300.0, at + 600.0);
+        band_indices(&[here.clone(), here], count).count()
+    };
+    assert_eq!(near(8000, 480.0), near(60, 480.0));
+    assert!(near(8000, 480.0) < 60, "{} items", near(8000, 480.0));
+    assert!(near(8000, 96_000.0) < 60, "{} items", near(8000, 96_000.0));
+}
+
+/// While the fence rests, names are fitted outward from the rows in view, then at the two
+/// ends of the list, then everywhere else: every item once, whatever the scroll position.
+#[test]
+fn names_are_fitted_ahead_from_the_view_outward_then_at_both_ends() {
+    // 100 items, rows 40..47 in view, 3 near each way, 5 at each end.
+    let order = fit_ahead_order(100, 40..47, 3, 5);
+    assert_eq!(
+        order[..7],
+        [40, 41, 42, 43, 44, 45, 46],
+        "the rows in view first"
+    );
+    assert_eq!(
+        order[7..13],
+        [47, 39, 48, 38, 49, 37],
+        "below and above in turn"
+    );
+    assert_eq!(order[13..18], [99, 98, 97, 96, 95], "where End jumps");
+    assert_eq!(order[18..23], [0, 1, 2, 3, 4], "where Home jumps");
+    assert_eq!(order[23..27], [50, 36, 51, 35], "then outward again");
+    let mut all = order.clone();
+    all.sort_unstable();
+    assert_eq!(all, (0..100).collect::<Vec<_>>(), "every item once");
+    // At the top of the list, at its end, with more near rows than items, with none.
+    for (count, view, near, far) in [
+        (100usize, 0..7usize, 14usize, 42usize),
+        (100, 93..100, 14, 42),
+        (5, 0..5, 14, 42),
+        (8000, 4000..4042, 84, 252),
+        (3, 7..9, 2, 2),
+        (0, 0..0, 2, 2),
+    ] {
+        let mut all = fit_ahead_order(count, view.clone(), near, far);
+        assert_eq!(all.len(), count, "{count} items, view {view:?}");
+        all.sort_unstable();
+        assert_eq!(all, (0..count).collect::<Vec<_>>());
+    }
+    // The first items a piece takes are near the view or at an end, never from the middle.
+    let first: Vec<usize> = fit_ahead_order(8000, 4000..4042, 84, 252)
+        .into_iter()
+        .take(42 + 2 * 84 + 2 * 252)
+        .collect();
+    assert!(
+        first
+            .iter()
+            .all(|i| (3916..4126).contains(i) || *i >= 7748 || *i < 252)
+    );
+}
+
+/// A list change moves the icons within one viewport of the visible part (at the offset or
+/// where a running glide ends); the ones further away take their places at once.
+#[test]
+fn a_list_change_moves_only_the_icons_near_the_viewport() {
+    // A viewport of 300 DIPs scrolled to 1000, cells 96 tall.
+    let at = |y: f32| near_viewport(y, 96.0, 300.0, [1000.0, 1000.0]);
+    assert!(at(1000.0), "in view");
+    assert!(at(700.0 - 95.0), "ends inside the viewport above");
+    assert!(!at(700.0 - 96.0), "ends where the viewport above begins");
+    assert!(at(1599.0), "starts inside the viewport below");
+    assert!(!at(1600.0), "starts where the viewport below ends");
+    assert!(!at(0.0) && !at(50_000.0));
+    // End was pressed: the glide ends at 50 000, and the icons there move too.
+    let gliding = |y: f32| near_viewport(y, 96.0, 300.0, [1000.0, 50_000.0]);
+    assert!(gliding(1000.0) && gliding(50_100.0));
+    assert!(!gliding(25_000.0));
+    // How many glides a new first file starts in a grid of 4 columns: the same in a folder of
+    // 8000 files as in one of 80 (every icon moves one cell on).
+    let moving = |count: usize| {
+        let grid = ItemLayout::Grid(Grid::new(GridMetrics::for_icon_size(48, 2), 360.0, count));
+        (0..count - 1)
+            .filter(|&i| {
+                let (old, new) = (grid.cell(i), grid.cell(i + 1));
+                near_viewport(old.y, old.h, 300.0, [0.0, 0.0])
+                    || near_viewport(new.y, new.h, 300.0, [0.0, 0.0])
+            })
+            .count()
+    };
+    assert_eq!(moving(8000), moving(80));
+    assert!(moving(8000) < 40, "{} glides", moving(8000));
+}
+
+/// A scroll bar that came with new icons is as strong as the strongest of them, and stays
+/// whole once the first is in: a picture that arrived 100 ms later is at 40 % then.
+#[test]
+fn a_scroll_bar_that_new_icons_bring_does_not_drop_back_to_the_later_ones() {
+    let t0 = Instant::now();
+    let fade = |start: Instant| Tween::new(0.0, 1.0, motion::FAST, Curve::Linear, start);
+    // A text file whose picture was cached, a photo whose thumbnail came 100 ms later, and an
+    // icon that only slides (no fade).
+    let (text, photo) = (fade(t0), fade(t0 + Duration::from_millis(100)));
+    let slides = Tween::at(1.0, t0);
+    let at = |ms: u64| {
+        let now = t0 + Duration::from_millis(ms);
+        arriving_strength([&text, &photo, &slides].into_iter(), now).unwrap()
+    };
+    assert!(
+        (at(83) - 83.0 / 167.0).abs() < 0.02,
+        "follows the first icon: {}",
+        at(83)
+    );
+    // The first icon is in: the bar is whole, also while the photo is still at 42 %.
+    assert_eq!(at(170), 1.0);
+    assert_eq!(at(260), 1.0);
+    // Never weaker than a frame before.
+    let frames: Vec<f32> = (0..20).map(|i| at(i * 16)).collect();
+    assert!(frames.windows(2).all(|w| w[1] >= w[0]), "{frames:?}");
+    // Nothing fades in: the bar is not held back.
+    assert_eq!(arriving_strength([&slides].into_iter(), t0), None);
 }
 
 /// Content shift per 60 Hz frame for a wheel turned `n` notches `gap_ms` apart (96 DIP per
@@ -991,6 +1141,21 @@ fn narrow_tab_crossing_a_wide_one_is_stable() {
     assert_eq!(tab_reorder_step(0, 49.0 - 20.0, 40.0, &slots), None);
 }
 
+/// A new order of the same icons cross-fades only when it takes more than half of more than a
+/// dozen icons far from their places.
+#[test]
+fn a_new_order_cross_fades_only_for_many_icons_that_go_far() {
+    assert!(reorder_cross_fades(30, 34));
+    assert!(reorder_cross_fades(7, 13));
+    // Half or fewer go far: the eye follows them.
+    assert!(!reorder_cross_fades(17, 34));
+    // One icon moved by hand: the others shift by one place and do not count.
+    assert!(!reorder_cross_fades(1, 34));
+    // A dozen icons or fewer always glide.
+    assert!(!reorder_cross_fades(12, 12));
+    assert!(!reorder_cross_fades(8, 8));
+}
+
 /// Layout motion is a rearrangement effect: it runs for sorts / reorders / a few adds or
 /// removes and snaps for refills (tab switch, portal navigation); the first items of an empty
 /// fence fade in.
@@ -1002,8 +1167,17 @@ fn layout_motion_applies_only_to_rearrangements() {
     assert!(!layout_motion_applies(6, 10, 10));
     assert!(!layout_motion_applies(20, 10, 10));
     assert!(layout_motion_applies(5, 0, 5));
-    // Removing everything still snaps.
+    // Removing everything is no rearrangement by the half rule.
     assert!(!layout_motion_applies(10, 10, 0));
+    // Icons that only leave or only arrive animate whatever their share (「立即应用」 and its
+    // undo); a refill removes and adds.
+    assert!(one_way_change(10, 0));
+    assert!(one_way_change(0, 30));
+    assert!(!one_way_change(10, 10));
+    assert!(!one_way_change(0, 0));
+    // The only icon leaving fades out, as the first one fades in.
+    assert!(layout_motion_applies(1, 1, 0));
+    assert!(!layout_motion_applies(2, 2, 0));
 }
 
 /// An edge dragged from five columns to four: the fifth icon glides from the end of the first
@@ -1047,6 +1221,35 @@ fn a_dropped_icon_starts_under_its_drag_picture() {
 
 /// A new icon whose cell another icon is still sliding out of fades in 83 ms later; elsewhere
 /// at once. The delayed fade stays at 0 until then and takes its 167 ms from there.
+#[test]
+fn a_window_glide_keeps_its_own_time_and_curve_from_its_first_frame() {
+    // After a display change the fences glide a quarter of a second, point to point. The
+    // first frame started the clock again with the landing glide's 167 ms, decelerating.
+    let asked = Instant::now();
+    let mut glide = WindowGlide {
+        from: (0, 0),
+        to: (100, 0),
+        t: Tween::new(0.0, 1.0, motion::NORMAL, Curve::PointToPoint, asked),
+        time: motion::NORMAL,
+        curve: Curve::PointToPoint,
+        begun: false,
+        notify: false,
+    };
+    let first = asked + Duration::from_millis(40);
+    assert!(glide.begin(first));
+    assert!(!glide.begin(first + Duration::from_millis(16)));
+    // 200 ms after its first frame it is still on its way; after 250 ms it has arrived.
+    assert!(!glide.at(first + Duration::from_millis(200)).1);
+    assert_eq!(
+        glide.at(first + Duration::from_millis(251)),
+        ((100, 0), true)
+    );
+    // Point to point (0.55, 0.55, 0, 1): 92 of the way at half time. The landing glide's
+    // decelerating 167 ms would be at 98 by then.
+    let ((x, _), _) = glide.at(first + Duration::from_millis(125));
+    assert!((90..=94).contains(&x), "at half time: {x}");
+}
+
 #[test]
 fn a_new_icon_waits_for_the_icon_leaving_its_cell() {
     let now = Instant::now();
@@ -1290,6 +1493,36 @@ fn scrollbar_reserves_arrow_buttons_and_min_thumb() {
     assert_eq!(scroll_step_for(ScrollHit::TrackAbove, 200.0, 76.0), -200.0);
     assert_eq!(scroll_step_for(ScrollHit::TrackBelow, 200.0, 76.0), 200.0);
     assert_eq!(scroll_step_for(ScrollHit::Thumb, 200.0, 76.0), 0.0);
+}
+
+/// The bar ends before the window's rounded corner would cut it: its half-circle end, 6 DIPs
+/// in radius and touching the right edge, must lie inside the corner's circle.
+#[test]
+fn scrollbar_band_stays_inside_the_rounded_corners() {
+    // Below a 36 DIP title row, a band of 200 DIPs down to the window's bottom edge.
+    assert_eq!(scrollbar_band(0.0, 200.0, 36.0, 16.0), (0.0, 190.0));
+    assert_eq!(scrollbar_band(0.0, 200.0, 36.0, 8.0), (0.0, 198.0));
+    assert_eq!(scrollbar_band(0.0, 200.0, 36.0, 6.0), (0.0, 200.0));
+    assert_eq!(scrollbar_band(0.0, 200.0, 36.0, 0.0), (0.0, 200.0));
+    // A details header above the band changes nothing at the bottom.
+    assert_eq!(scrollbar_band(28.0, 172.0, 64.0, 16.0), (28.0, 162.0));
+    // Tabs in a column on the left: the band starts at the window's top edge, under its
+    // top-right corner.
+    assert_eq!(scrollbar_band(0.0, 200.0, 0.0, 16.0), (10.0, 180.0));
+    // A theme file's large radius under a title row: only what the row does not cover.
+    assert_eq!(scrollbar_band(0.0, 200.0, 36.0, 32.0), (0.0, 174.0));
+    assert_eq!(scrollbar_band(0.0, 200.0, 20.0, 32.0), (6.0, 168.0));
+    // Never an empty band.
+    assert_eq!(scrollbar_band(0.0, 12.0, 0.0, 16.0).1, 1.0);
+    for radius in [8.0f32, 12.0, 16.0, 24.0, 32.0] {
+        let (width, height) = (300.0f32, 236.0f32);
+        let (top, h) = scrollbar_band(0.0, 200.0, 36.0, radius);
+        // Centre of the bar's lower end against the centre of the bottom-right corner.
+        let (ex, ey) = (width - 6.0, 36.0 + top + h - 6.0);
+        let (cx, cy) = (width - radius, height - radius);
+        let reach = ((ex - cx).powi(2) + (ey - cy).max(0.0).powi(2)).sqrt() + 6.0;
+        assert!(reach <= radius + 0.01, "radius {radius}: reach {reach}");
+    }
 }
 
 /// Dragging the thumb by the free track length must scroll exactly to the end (the inverse
@@ -1758,6 +1991,16 @@ fn hover_switches_only_to_another_tab() {
     assert_eq!(hover_switch_target(None, 0, 3, true, false), None);
 }
 
+#[test]
+fn hover_switch_waits_less_after_the_first_one() {
+    // The first tab waits the hover delay of 「展开快慢」; the tabs after it the short wait.
+    assert_eq!(tab_hover_wait_ms(400, false), 400);
+    assert_eq!(tab_hover_wait_ms(400, true), TAB_HOVER_NEXT_MS);
+    assert_eq!(tab_hover_wait_ms(1000, true), TAB_HOVER_NEXT_MS);
+    // Never longer than the full wait.
+    assert_eq!(tab_hover_wait_ms(20, true), 20);
+}
+
 /// A 300 x 400 px window at 100 %: 6 px edges, corners that reach 16 px along each edge.
 fn edge(left: i32, top: i32) -> Option<isize> {
     resize_edge_at((left, top, 300 - left, 400 - top), (300, 400), 6, 6, 16)
@@ -1880,4 +2123,26 @@ fn lock_refuses_only_drags_that_are_not_something_else() {
     assert!(!lock_drag_refused(edge, (700, 500), threshold, true));
     // Out of the fence: that is the resize the lock refused.
     assert!(lock_drag_refused(edge, (490, 300), threshold, false));
+}
+
+/// The tip of a shortcut says what File Explorer's says: the shortcut's comment, else where it
+/// leads. A comment that is a resource reference is not shown, and a link without a path gets
+/// the usual lines (None).
+#[test]
+fn a_shortcut_tip_shows_its_comment_or_where_it_leads() {
+    let line = |comment: Option<&str>, target: Option<&str>| {
+        shortcut_tip_line(
+            comment.map(str::to_string),
+            target.map(std::path::PathBuf::from),
+        )
+    };
+    let notepad = Some(r"C:\Windows\notepad.exe");
+    assert_eq!(
+        line(Some("Write short notes"), notepad).as_deref(),
+        Some("\nWrite short notes")
+    );
+    let place = pecofence_core::i18n::format("\n位置: {0}", &[r"notepad (C:\Windows)".to_string()]);
+    assert_eq!(line(None, notepad), Some(place.clone()));
+    assert_eq!(line(Some("@shell32.dll,-22566"), notepad), Some(place));
+    assert_eq!(line(None, None), None);
 }

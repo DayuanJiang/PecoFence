@@ -24,6 +24,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: Build site
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/build-site.py --strict
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

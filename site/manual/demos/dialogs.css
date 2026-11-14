@@ -1,0 +1,133 @@
+/* Pieces of Windows itself that the undo and virtual desktop lessons show: a message box, a
+   notification toast, the Task View glyph of a fence that belongs to one virtual desktop. */
+
+/* Windows message box (the question before a fence with icons is deleted) */
+
+.msgbox {
+    left: 0;
+    top: 0;
+    width: 292px;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .14), 0 14px 30px rgba(0, 0, 0, .22);
+    font-size: 11.5px;
+    line-height: 1.45;
+    overflow: hidden;
+    z-index: 2;
+}
+
+.msgbox div, .msgbox p, .msgbox span { position: relative }
+
+.msgbox-cap {
+    height: 26px;
+    padding: 0 10px;
+    line-height: 26px;
+    color: #1b1b1b;
+}
+
+.msgbox-cap i {
+    right: 10px;
+    top: 9px;
+    width: 9px;
+    height: 9px;
+    background:
+        linear-gradient(45deg, transparent 44%, #6b7180 44% 56%, transparent 56%),
+        linear-gradient(-45deg, transparent 44%, #6b7180 44% 56%, transparent 56%);
+}
+
+.msgbox-body {
+    display: flex;
+    gap: 10px;
+    padding: 8px 16px 14px 14px;
+}
+
+.msgbox-body svg { position: relative; flex: none; width: 26px; height: 26px }
+.msgbox-body p { margin: 0 0 6px }
+.msgbox-body p:last-child { margin: 0 }
+
+.msgbox-foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 9px 10px;
+    background: #f3f3f3;
+    box-shadow: inset 0 1px 0 rgba(0, 0, 0, .06);
+}
+
+.msgbox-btn {
+    min-width: 46px;
+    padding: 0 10px;
+    border-radius: 4px;
+    background: #fdfdfd;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .14);
+    line-height: 20px;
+    text-align: center;
+}
+
+.msgbox-btn.hot { background: #eaf3fb; box-shadow: inset 0 0 0 1px #0067c0 }
+.msgbox-btn.def { box-shadow: inset 0 0 0 1.5px #0067c0 }
+
+/* Windows notification toast (a tray balloon of PecoFence) */
+
+.wtoast {
+    left: 0;
+    top: 0;
+    width: 236px;
+    padding: 8px 12px 10px;
+    border-radius: 8px;
+    background: rgba(244, 244, 246, .98);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .09), 0 8px 18px rgba(0, 0, 0, .16);
+    font-size: 11.5px;
+    line-height: 1.4;
+    z-index: 2;
+}
+
+.wtoast div, .wtoast b, .wtoast p, .wtoast img, .wtoast span { position: relative }
+.wtoast-head { display: flex; align-items: center; gap: 6px; height: 16px; color: #5b6170; font-size: 10.5px }
+.wtoast-head img { width: 11px; height: 11px }
+.wtoast-body { display: flex; gap: 10px; margin-top: 7px }
+
+.wtoast-info {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #0a77d6;
+    color: #fff;
+    font: 600 14px/22px Georgia, serif;
+    text-align: center;
+}
+
+.wtoast b { display: block; font-size: 12px; font-weight: 600 }
+.wtoast p { margin: 1px 0 0; color: #3b4150 }
+
+/* Task View glyph before the title of a fence that shows on one virtual desktop only */
+
+.vd-glyph {
+    left: 13px;
+    top: 10px;
+    width: 13px;
+    height: 12px;
+    color: rgba(27, 33, 51, .72);
+}
+
+.vd-glyph svg { position: static; display: block; width: 13px; height: 12px }
+
+/* The name of the virtual desktop just switched to, which Windows shows above the middle of
+   the taskbar for a moment */
+
+.vd-name {
+    left: 0;
+    top: 0;
+    min-width: 40px;
+    padding: 6px 16px;
+    border-radius: 6px;
+    background: rgba(250, 250, 251, .98);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .09), 0 6px 14px rgba(0, 0, 0, .14);
+    color: #1b1b1b;
+    font-size: 12px;
+    line-height: 16px;
+    text-align: center;
+    white-space: nowrap;
+    z-index: 2;
+}

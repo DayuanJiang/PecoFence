@@ -33,6 +33,10 @@ function RectsText($d) { return (@($d.rects) | ForEach-Object { "$([math]::Round
 function MarkerOn($d, $name) {
   $b = Crop $name ($d.l + $d.ox) ($d.t + $d.oy) $d.cw 36
   $m = [Px]::Marker($b, 20, 33)
+  # On a plate of middle brightness (Liquid Glass over the grey wallpaper) the marker is the
+  # accent moved towards the text's colour since the round of 2026-11-12 (`Theme::link_ink`:
+  # 201,237,255, 2.8 : 1 on the pill, where the accent itself had 1.9 : 1): a pale run counts.
+  if ($m -lt 0) { $m = [Px]::Marker($b, 20, 33, 40) }
   $i = ActiveIdx $d
   $x = $d.rects[$i][0]; $w = $d.rects[$i][1]
   return @(($m -ge $x + 8 -and $m -le $x + $w - 8), "marker x=$m active tab $([math]::Round($x, 1))..$([math]::Round($x + $w, 1)) runs=$([Px]::Runs($b, 20, 33))")

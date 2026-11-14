@@ -71,20 +71,31 @@ pub(super) struct FeedbackState {
     previous_run_unfinished: bool,
     /// The crash balloon is up; clicking it opens the feedback form.
     crash_offer_pending: bool,
+    /// Item menus are built without Windows' part (`windows-menu-off.marker` beside the
+    /// config): a run ended inside another program's module while it built such a menu, and
+    /// the same right-click would end the next run too. The tray menu turns it back on.
+    windows_menu_off: bool,
 }
 
 /// Whether a shareable log records a crash: the panic hook's `PANIC` or crashlog's line.
 fn log_records_crash(log: &str) -> bool {
     log.lines().any(|line| {
-        line.contains(": PANIC location=") || line.contains(": CRASH (unhandled exception)")
+        line.contains(": PANIC location=")
+            || line.contains(": CRASH (unhandled exception)")
+            || line.contains(HANG_END)
     })
 }
 
-/// A field of crashlog's line in a shareable log (`at`, `module_owner`).
+/// The hang watch's line when it ended a run stuck inside another program's module
+/// (`pecofence_platform::hangwatch`); it has the fields of crashlog's line.
+const HANG_END: &str = ": HANG: ending to restart";
+
+/// A field of crashlog's line, or of the hang watch's, in a shareable log (`at`,
+/// `module_owner`, `command`).
 fn crash_field<'a>(log: &'a str, name: &str) -> Option<&'a str> {
     let line = log
         .lines()
-        .find(|line| line.contains(": CRASH (unhandled exception)"))?;
+        .find(|line| line.contains(": CRASH (unhandled exception)") || line.contains(HANG_END))?;
     line.split_whitespace()
         .find_map(|w| w.strip_prefix(name)?.strip_prefix('='))
 }
@@ -103,6 +114,17 @@ fn other_programs_module(log: &str) -> Option<&str> {
     (crash_field(log, "module_owner") == Some("other"))
         .then(|| crash_module(log))
         .flatten()
+}
+
+/// Whether the run of a shareable log ended inside another program's module while it built
+/// Windows' menu for an icon, for a Peek search row or, two seconds after its start, in the
+/// background (crashlog's `command=ItemMenu`, `PeekSearchRowMenu`, `Prewarm`).
+fn crashed_building_menu(log: &str) -> bool {
+    other_programs_module(log).is_some()
+        && matches!(
+            crash_field(log, "command"),
+            Some("ItemMenu" | "PeekSearchRowMenu" | "Prewarm")
+        )
 }
 
 /// ExplorerPatcher's DLL: registered as a shell extension, it loads into every program that
@@ -355,21 +377,56 @@ impl App {
         if self.feedback.previous_run_unfinished {
             tracing::info!("previous run did not end normally");
         }
+        // A menu extension that ended the last run would end this one at the same
+        // right-click: Windows' part of the item menus stays out until the user asks for it.
+        let marker = self.state.windows_menu_marker();
+        let menu_crash = crashed && previous.as_deref().is_some_and(crashed_building_menu);
+        if menu_crash && let Err(e) = std::fs::write(&marker, b"") {
+            tracing::warn!(error = %e, "marker for menus without the Windows part not written");
+        }
+        self.feedback.windows_menu_off = menu_crash || marker.exists();
+        if self.feedback.windows_menu_off {
+            tracing::info!(
+                after_crash = menu_crash,
+                "item menus are built without the Windows part"
+            );
+            // The way back is in the tray menu: the icon shows until it was taken.
+            if !self.state.config.settings.show_tray_icon {
+                self.apply_tray_wanted("item menus are without the Windows part");
+            }
+        }
         if !crashed {
             return;
         }
         tracing::info!("previous run crashed; offering to send feedback");
         let log = previous.as_deref().unwrap_or_default();
         let text = if crash_module(log).is_some_and(is_explorer_patcher) {
-            tracing::info!("the crash was inside ExplorerPatcher");
-            pecofence_core::i18n::text(
-                "上次因 ExplorerPatcher 出错而关闭。请在它的 Properties › File Explorer 中取消勾选“Register as shell extension”，然后重启资源管理器。",
-            )
+            tracing::info!(menu_crash, "the crash was inside ExplorerPatcher");
+            // While a menu was built: Windows' part of the item menus is off now as well, so
+            // the notice names both steps, the setting first (the banner holds no more).
+            if menu_crash {
+                pecofence_core::i18n::text(
+                    "右键菜单里的 Windows 菜单项已暂时关闭。先在 ExplorerPatcher 的 Properties 里取消“Register as shell extension”，再从托盘菜单恢复。",
+                )
+            } else {
+                pecofence_core::i18n::text(
+                    "请在 ExplorerPatcher 的 Properties › File Explorer 里取消“Register as shell extension”并重启资源管理器。上次因它出错而关闭。",
+                )
+            }
             .to_string()
+        } else if let Some(module) = other_programs_module(log).filter(|_| menu_crash) {
+            tracing::info!(module, "the crash was inside another program's module");
+            // What the user can do comes first, the file last. Windows' banner shows 4 lines
+            // of about 36 Latin or 18 Chinese characters and cuts the rest: keep every
+            // language inside that with a 24-character file name (`i18n` tests the length).
+            pecofence_core::i18n::format(
+                "右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里恢复。上次因其他程序的 {0} 出错而关闭。",
+                &[module.to_string()],
+            )
         } else if let Some(module) = other_programs_module(log) {
             tracing::info!(module, "the crash was inside another program's module");
             pecofence_core::i18n::format(
-                "PecoFence 上次因 {0} 出错而关闭，这个文件属于其他程序，更新或卸载那个程序可能会解决。点击这里报告问题。",
+                "更新或卸载 {0} 所属的程序可能会解决：上次 PecoFence 因这个文件出错而关闭。点击这里报告问题。",
                 &[module.to_string()],
             )
         } else {
@@ -378,6 +435,26 @@ impl App {
         if let Some(t) = &self.tray {
             t.show_info("PecoFence", &text, true);
             self.feedback.crash_offer_pending = true;
+        }
+    }
+
+    /// Item menus are built without Windows' part (see `FeedbackState::windows_menu_off`).
+    pub(super) fn windows_menu_off(&self) -> bool {
+        self.feedback.windows_menu_off
+    }
+
+    /// The tray menu's entry: Windows' part is in the item menus again.
+    pub(super) fn turn_windows_menu_on(&mut self) {
+        let marker = self.state.windows_menu_marker();
+        if let Err(e) = std::fs::remove_file(&marker)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(error = %e, "marker for menus without the Windows part not removed");
+        }
+        self.feedback.windows_menu_off = false;
+        tracing::info!("the Windows part of item menus turned back on from the tray menu");
+        if !self.state.config.settings.show_tray_icon {
+            self.apply_tray_wanted("the Windows part of item menus is back");
         }
     }
 
@@ -694,6 +771,33 @@ mod tests {
             other_programs_module("t  INFO x: module_owner=other\n"),
             None
         );
+    }
+
+    #[test]
+    fn a_menu_extension_that_ended_the_run_is_recognised() {
+        // A crash inside another program's module while an item menu was built.
+        let menu = "t ERROR pecofence_platform::crashlog: CRASH (unhandled exception) code=0xc0000005 at=qingshellext64.dll+0x1b7b3 command=ItemMenu module_owner=other access=read stack=  qingshellext64.dll+0x1b7b3\n";
+        assert!(crashed_building_menu(menu));
+        assert!(crashed_building_menu(
+            &menu.replace("command=ItemMenu", "command=PeekSearchRowMenu")
+        ));
+        // The same in the menu built in the background after a start (a DLL that faults
+        // while it is loaded gets there first).
+        assert!(crashed_building_menu(
+            &menu.replace("command=ItemMenu", "command=Prewarm")
+        ));
+        // Another command, or PecoFence's own code under the menu: the menus stay whole.
+        assert!(!crashed_building_menu(
+            &menu.replace("command=ItemMenu", "command=Launch")
+        ));
+        assert!(!crashed_building_menu(
+            &menu.replace("module_owner=other", "module_owner=pecofence")
+        ));
+        // The hang watch's line, when it ended a run stuck in a menu extension, reads the same.
+        let hang = "t ERROR pecofence_platform::hangwatch: HANG: ending to restart at=YunShellExt64.dll+0x4c2 command=ItemMenu module_owner=other stack=  ntdll.dll+0x1\n";
+        assert!(log_records_crash(hang));
+        assert_eq!(other_programs_module(hang), Some("YunShellExt64.dll"));
+        assert!(crashed_building_menu(hang));
     }
 
     #[test]

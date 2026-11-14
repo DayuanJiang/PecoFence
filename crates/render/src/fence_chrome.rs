@@ -9,7 +9,7 @@ use crate::panel::Clip;
 use crate::text::TextLayouts;
 use crate::text_shadow::TextShadows;
 use crate::theme::{TextFx, Theme, font_display, font_small, font_text, lerp, with_alpha};
-use std::cell::{Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use windows_canvas::{
@@ -117,6 +117,11 @@ pub struct FenceChrome {
     text_shadows: RefCell<TextShadows>,
     /// Labels and row names shaped for an earlier frame, shared by all fences.
     text_layouts: RefCell<TextLayouts>,
+    /// The rows of the note laid out last, with the key of what they were laid out from
+    /// (`note_rows`). A redraw asks for a note's rows twice (its height, then the drawing) and
+    /// the caret of a note that is being edited redraws it twice a second: a note of 300
+    /// lines took 18 ms for each of those draws on the test box.
+    note_rows_cache: RefCell<Option<(u64, Rc<(Vec<NoteRow>, f32)>)>>,
 }
 
 /// A "按时间分组" section header band in surface DIPs (already scrolled; for rows already
@@ -298,7 +303,14 @@ pub struct RowsDraw<'a> {
     /// Header cell with the button held (fires on release, like a Win32 header control).
     pub header_pressed: Option<HeaderColumn>,
     pub scrollbar: Option<ScrollbarDraw>,
-    pub empty_text: Option<&'a str>,
+    /// The text of an empty fence and how strongly it shows (0..=1, see `ContentDraw`).
+    pub empty_text: Option<(&'a str, f32)>,
+    /// The content height (DIPs) `empty_text` is placed by when that is not the present one:
+    /// the height the fence had while it was empty. A fence of automatic height grows under
+    /// arriving icons, and the text that fades out stays where it stood.
+    pub empty_text_height: Option<f32>,
+    /// A clickable row under `empty_text` (「启动 Everything」).
+    pub empty_action: Option<EmptyAction<'a>>,
     /// Fence-wide drop wash + accent ring alpha 0..=1 (a drag hovers the fence itself).
     pub drop_highlight: f32,
     pub marquee: Option<Rect>,
@@ -456,6 +468,14 @@ pub struct TitleState {
     /// The lock glyph of a locked fence: shown while the pointer is over the fence (83 ms),
     /// dipping once when the lock refuses a drag.
     pub lock: f32,
+    /// The title's name and glyph (a lone title's, or the shown tab's) just changed with the
+    /// folder shown (into a subfolder, back up): 1 → 0 is the remainder of their fade-in, so
+    /// they draw at alpha `1 - swap` while the icons cross-fade (83 ms linear), instead of
+    /// cutting a frame ahead of them.
+    pub swap: f32,
+    /// The plate's top edge lies on the screen edge (a fence docked to the top): its top
+    /// corners are square there, as a drawer's are at the edge it hangs from.
+    pub edge_top: bool,
 }
 
 /// The visible span of a scrolled tab strip (DIPs). An end with more pills behind it fades out
@@ -520,6 +540,47 @@ fn push_strip_fade(
     Ok(brush)
 }
 
+/// `push_strip_fade` for a left tab column that scrolls: the rows are cut to `clip` (DIPs down
+/// the column, `rail_w` wide) and fade out over `STRIP_FADE_W` at an end with rows behind it.
+/// End it with `pop_strip_fade`.
+fn push_rail_fade(
+    session: &DrawingSession<'_>,
+    clip: StripClip,
+    rail_w: f32,
+) -> Result<b::ID2D1Brush> {
+    let fade_end = clip.content_right > clip.right + 0.5;
+    let fade = (STRIP_FADE_W / (clip.right - clip.left).max(1.0)).min(0.5);
+    let opaque = ColorF::new(0.0, 0.0, 0.0, 1.0);
+    let end = |hidden: bool| if hidden { ColorF::TRANSPARENT } else { opaque };
+    let gradient = session.create_linear_gradient(
+        Vector2::new(0.0, clip.left),
+        Vector2::new(0.0, clip.right),
+        &[
+            GradientStop::new(0.0, end(clip.fade_left)),
+            GradientStop::new(fade, opaque),
+            GradientStop::new(1.0 - fade, opaque),
+            GradientStop::new(1.0, end(fade_end)),
+        ],
+    )?;
+    let brush: b::ID2D1Brush = gradient.as_raw_brush().cast()?;
+    let context: b::ID2D1DeviceContext = session.raw().cast()?;
+    let params = b::D2D1_LAYER_PARAMETERS1 {
+        contentBounds: b::D2D_RECT_F {
+            left: 0.0,
+            top: clip.left,
+            right: rail_w,
+            bottom: clip.right,
+        },
+        maskTransform: windows_numerics::Matrix3x2::identity(),
+        opacity: 1.0,
+        opacityBrush: ManuallyDrop::new(Some(brush.clone())),
+        ..Default::default()
+    };
+    unsafe { context.PushLayer(&params, None::<&b::ID2D1Layer>) };
+    drop(ManuallyDrop::into_inner(params.opacityBrush));
+    Ok(brush)
+}
+
 /// A layer over `bounds` that leaves a clear disc of `radius` around `center`: what is drawn
 /// inside stops short of a badge drawn there afterwards, over any title background (a fixed
 /// ring colour smudged on tinted, Mica or glass titles). End it with `pop_strip_fade`.
@@ -559,7 +620,61 @@ fn push_cut_out(
     Ok(brush)
 }
 
-/// Ends the layer `push_strip_fade` (or `push_cut_out`) started.
+/// A layer over `bounds` that leaves the span `gap` (from, to; along x, or along y when
+/// `vertical`) clear, with 1 DIP soft edges: what is drawn inside is not drawn under a tab that
+/// is dragged over it. End it with `pop_strip_fade`.
+fn push_span_gap(
+    session: &DrawingSession<'_>,
+    bounds: Rect,
+    gap: (f32, f32),
+    vertical: bool,
+) -> Result<b::ID2D1Brush> {
+    let (start, len) = if vertical {
+        (bounds.top, bounds.height().max(1.0))
+    } else {
+        (bounds.left, bounds.width().max(1.0))
+    };
+    let at = |v: f32| ((v - start) / len).clamp(0.0, 1.0);
+    let point = |v: f32| {
+        if vertical {
+            Vector2::new(bounds.left, v)
+        } else {
+            Vector2::new(v, bounds.top)
+        }
+    };
+    let opaque = ColorF::new(0.0, 0.0, 0.0, 1.0);
+    let gradient = session.create_linear_gradient(
+        point(start),
+        point(start + len),
+        &[
+            GradientStop::new(0.0, opaque),
+            GradientStop::new(at(gap.0 - 1.0), opaque),
+            GradientStop::new(at(gap.0), ColorF::TRANSPARENT),
+            GradientStop::new(at(gap.1), ColorF::TRANSPARENT),
+            GradientStop::new(at(gap.1 + 1.0), opaque),
+            GradientStop::new(1.0, opaque),
+        ],
+    )?;
+    let brush: b::ID2D1Brush = gradient.as_raw_brush().cast()?;
+    let context: b::ID2D1DeviceContext = session.raw().cast()?;
+    let params = b::D2D1_LAYER_PARAMETERS1 {
+        contentBounds: b::D2D_RECT_F {
+            left: bounds.left,
+            top: bounds.top,
+            right: bounds.left + bounds.width(),
+            bottom: bounds.top + bounds.height(),
+        },
+        maskTransform: windows_numerics::Matrix3x2::identity(),
+        opacity: 1.0,
+        opacityBrush: ManuallyDrop::new(Some(brush.clone())),
+        ..Default::default()
+    };
+    unsafe { context.PushLayer(&params, None::<&b::ID2D1Layer>) };
+    drop(ManuallyDrop::into_inner(params.opacityBrush));
+    Ok(brush)
+}
+
+/// Ends the layer `push_strip_fade` (or `push_cut_out`, `push_span_gap`) started.
 fn pop_strip_fade(session: &DrawingSession<'_>, _brush: b::ID2D1Brush) {
     if let Ok(context) = session.raw().cast::<b::ID2D1DeviceContext>() {
         unsafe { context.PopLayer() };
@@ -755,7 +870,8 @@ pub struct TabDraw<'a> {
     pub badge: Option<&'a str>,
 }
 
-/// Width of the "N 项" caption a rolled fence shows before its chevron (DIPs).
+/// Least width of the "N 项" caption a rolled fence shows before its chevron (DIPs); a longer
+/// caption takes what it needs, see [`FenceChrome::rolled_count_room`].
 pub const ROLLED_COUNT_W: f32 = 64.0;
 
 /// Tab match badge (WinUI InfoBadge): 16 DIPs high, 5 DIPs of padding beside the number, 6 DIPs
@@ -817,8 +933,8 @@ fn tab_glyph_centre(caption_x: f32) -> f32 {
 
 /// Where captions start in a left tab column row: after the colour dot when any tab has a
 /// colour, and after the folder and Task View glyphs when any tab has them, so the names stay
-/// aligned.
-fn rail_text_left(colored: bool, folders: bool, desktops: bool) -> f32 {
+/// aligned. Counted from the row's left edge; the name box of a row opens there.
+pub fn rail_text_left(colored: bool, folders: bool, desktops: bool) -> f32 {
     (if colored { 24.0 } else { 10.0 }) + tab_glyphs_w(folders, desktops)
 }
 
@@ -838,15 +954,16 @@ pub fn tab_text_inset(theme: &Theme, w: f32, text_w: f32) -> f32 {
 
 /// Counts are secondary: a short collapsed fence must retain space for its title/tabs. A tab
 /// strip that does not fit scrolls, so room for two of its narrowest tabs is enough.
-pub fn header_count_width(width: f32, tabs: usize, title_x: f32) -> f32 {
+/// `count_w` is the room the count's text takes ([`FenceChrome::rolled_count_room`]).
+pub fn header_count_width(width: f32, tabs: usize, title_x: f32, count_w: f32) -> f32 {
     let (left, captions) = if tabs > 1 {
         let shown = tabs.min(2) as f32;
         (8.0, shown * 48.0 + (shown - 1.0) * 4.0)
     } else {
         (title_x, 64.0)
     };
-    if width - left - 44.0 - captions >= ROLLED_COUNT_W {
-        ROLLED_COUNT_W
+    if width - left - 44.0 - captions >= count_w {
+        count_w
     } else {
         0.0
     }
@@ -932,6 +1049,21 @@ fn draw_header_glass(
     Ok(())
 }
 
+/// How much of the wallpaper the lens of the shown tab lets through (`draw_header_glass`).
+const LENS_SELECTED: f32 = 0.78;
+
+/// The opacity the caption of the shown tab is picked for. On Liquid Glass its lens shows the
+/// wallpaper through the veil of 「更厚实」, so under it that much of the veil is gone: over a
+/// light wallpaper in dark mode the pill is light while the plate around it is dark, and a
+/// caption picked for the plate was white on it.
+fn lens_opacity(theme: &Theme, opacity: f32, shown: bool) -> f32 {
+    if theme.liquid_glass && shown && opacity > 1.0 {
+        1.0 + (opacity - 1.0) * (1.0 - LENS_SELECTED)
+    } else {
+        opacity
+    }
+}
+
 fn header_foreground(
     backdrop: &Backdrop<'_>,
     theme: &Theme,
@@ -948,6 +1080,17 @@ fn header_foreground(
         ..
     } = backdrop
     {
+        // A fully transparent fence (its captions have the halo; on Liquid Glass nothing
+        // else sets it) in a theme file whose glass has a tint of its own: the header keeps
+        // the fence's own pick, the wallpaper while the plate is hidden and the plate while
+        // it shows, as the content does. The sample under a control is of the tinted glass,
+        // which is not drawn while the plate is hidden: an ink picked from it was white on a
+        // white wallpaper in dark mode. The built-in glass has no tint, so its sample is the
+        // wallpaper itself and each control goes on picking its own ink.
+        let tinted = theme.material.color.a > 0.0 || theme.material.luminosity_opacity > 0.0;
+        if theme.text_halo && tinted {
+            return *theme;
+        }
         // A fixed 「文字颜色」 keeps its text; the sample still keeps the lens warm.
         return material
             .borrow_mut()
@@ -989,9 +1132,22 @@ fn draw_plate(
     pill_a: f32,
     hover: f32,
     style: FenceStyle,
+    square_top: bool,
 ) -> Result<()> {
     let px = Px::new(scale);
     let plate_top = outer.top;
+    // The rounded shape of the fills and the rim. With square top corners it starts one radius
+    // above the plate, where the surface cuts it off: the sides run straight up to the edge.
+    let shape = if square_top {
+        Rect::from_xywh(
+            outer.left,
+            outer.top - radius,
+            outer.width(),
+            outer.height() + radius,
+        )
+    } else {
+        outer
+    };
     // The crop is anchored at the window's top left and may cover more than the surface (size
     // animation): the surface clips it, and the compositor clip cuts it at a folded top.
     let crop_rect = |crop: &BackdropCrop<'_>| {
@@ -1029,7 +1185,7 @@ fn draw_plate(
                     Theme::light().solid_fill
                 };
                 let fill = session.create_solid_brush(with_alpha(fallback, plate_a))?;
-                session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &fill);
+                session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &fill);
             } else {
                 let mut c = theme.glass_layer_fill;
                 c.a *= opacity.min(1.0) * plate_a;
@@ -1090,17 +1246,17 @@ fn draw_plate(
         }
         Backdrop::SystemMaterial => {
             let layer = session.create_solid_brush(with_alpha(theme.layer_fill, plate_a))?;
-            session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &layer);
+            session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &layer);
         }
         _ => {
             let fill = session.create_solid_brush(with_alpha(theme.solid_fill, plate_a))?;
-            session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &fill);
+            session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &fill);
         }
     }
 
     if opacity > 1.0 {
         let veil = session.create_solid_brush(with_alpha(theme.opacity_veil(opacity), plate_a))?;
-        session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &veil);
+        session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &veil);
     }
     if let Some(mut tint) = style.tint {
         // Per-fence colour: a translucent wash so the glass still reads as glass.
@@ -1119,7 +1275,7 @@ fn draw_plate(
                     GradientStop::new(edge + soft, ColorF::TRANSPARENT),
                 ],
             )?;
-            session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &wash);
+            session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &wash);
         } else if style.tint_title_only {
             // Only the title row (what of it the fold leaves): the plate's rounded top
             // corners, a straight bottom edge where the icons start.
@@ -1136,11 +1292,11 @@ fn draw_plate(
                         GradientStop::new((edge + soft).min(1.0), ColorF::TRANSPARENT),
                     ],
                 )?;
-                session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &wash);
+                session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &wash);
             }
         } else {
             let wash = session.create_solid_brush(tint)?;
-            session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &wash);
+            session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &wash);
         }
     }
 
@@ -1160,11 +1316,11 @@ fn draw_plate(
                 GradientStop::new(1.0, with_alpha(theme.glass_rim_bottom, 0.12 * plate_a)),
             ],
         )?;
-        session.fill_rounded_rect(&RoundedRect::uniform(outer, radius), &sheen);
+        session.fill_rounded_rect(&RoundedRect::uniform(shape, radius), &sheen);
     }
 
     // A single 1 px rim, lit from the upper left and snapped to device pixels at every DPI.
-    let rim_rect = px.ring(outer, radius);
+    let rim_rect = px.ring(shape, radius);
     if sampled_material && theme.liquid_glass {
         // The GPU material lights its own rim (kube's specular ring).
         if !matches!(backdrop, Backdrop::GpuGlass { .. }) {
@@ -1224,6 +1380,22 @@ fn halo_color(theme: &Theme, ink: ColorF, alpha: f32, soft: bool) -> ColorF {
     }
 }
 
+/// The halo of a note's lines and a script's rows in a fence that has it (`Theme::text_halo`:
+/// part of its plate is weak for its text), as a list row has it: the line once more in the
+/// soft halo colour, one device pixel lower. The brush and that offset in DIPs; None without
+/// the halo.
+fn tool_halo(
+    session: &DrawingSession<'_>,
+    theme: &Theme,
+    scale: f32,
+) -> Result<Option<(Brush, f32)>> {
+    if !theme.text_halo {
+        return Ok(None);
+    }
+    let brush = session.create_solid_brush(halo_color(theme, theme.text_primary, 1.0, true))?;
+    Ok(Some((brush, 1.0 / scale.max(1.0))))
+}
+
 /// The halo brush of captions straight over wallpaper, recoloured per caption by
 /// [`Legible::fx`].
 struct Legible {
@@ -1266,6 +1438,28 @@ impl Legible {
             offset: fx.shadow_offset.unwrap_or(TextFx::SHADOW_OFFSET),
         });
         CaptionFx { halo, shadow }
+    }
+}
+
+/// The halo under text that is already laid out and sits straight on the wallpaper: a note's,
+/// a script fence's or a clock's on a fully transparent fence (`Theme::text_halo`), where
+/// titles and item names have it. The outline `draw_caption` gives a title, in the halo
+/// colour for `ink`; the text is drawn over it afterwards.
+fn draw_layout_halo(
+    session: &DrawingSession<'_>,
+    theme: &Theme,
+    legible: Option<&Legible>,
+    layout: &TextLayout,
+    at: Vector2,
+    ink: ColorF,
+) {
+    let Some(legible) = legible else {
+        return;
+    };
+    if let Some((halo, width)) = legible.fx(theme, ink, 1.0, false).halo {
+        for (dx, dy) in [(-width, 0.0), (width, 0.0), (0.0, -width), (0.0, width)] {
+            session.draw_text_layout(Vector2::new(at.x + dx, at.y + dy), layout, halo);
+        }
     }
 }
 
@@ -1340,7 +1534,16 @@ pub struct ContentDraw<'a> {
     pub label_gap: f32,
     /// Overlay scrollbar thumb when the content overflows.
     pub scrollbar: Option<ScrollbarDraw>,
-    pub empty_text: Option<&'a str>,
+    /// The text of an empty fence and how strongly it shows (0..=1): whole in a fence at
+    /// rest, and what the last icon fading out or the first one fading in leaves of it, so
+    /// the two cross-fade.
+    pub empty_text: Option<(&'a str, f32)>,
+    /// The content height (DIPs) `empty_text` is placed by when that is not the present one:
+    /// the height the fence had while it was empty. A fence of automatic height grows under
+    /// arriving icons, and the text that fades out stays where it stood.
+    pub empty_text_height: Option<f32>,
+    /// A clickable row under `empty_text` (「启动 Everything」).
+    pub empty_action: Option<EmptyAction<'a>>,
     /// Fence-wide drop wash + accent ring alpha 0..=1 (a drag hovers the fence itself).
     pub drop_highlight: f32,
     /// Rubber-band selection rectangle in content DIPs (already scrolled), while dragging.
@@ -1461,22 +1664,40 @@ fn draw_item_state(
         session.draw_rounded_rect(&px.ring(rect, 4.0), &brushes.sel_stroke, px.hair());
     }
     if focused {
-        // FocusVisual: 2 px outer stroke on the cell edge, 1 px inner stroke just inside it.
-        let o = Rect::from_xywh(
-            rect.left + 1.0,
-            rect.top + 1.0,
-            (rect.right - rect.left - 2.0).max(0.0),
-            (rect.bottom - rect.top - 2.0).max(0.0),
+        draw_focus_visual(
+            session,
+            px,
+            rect,
+            &brushes.focus_outer,
+            &brushes.focus_inner,
         );
-        session.draw_rounded_rect(&RoundedRect::uniform(o, 3.0), &brushes.focus_outer, 2.0);
-        let i = Rect::from_xywh(
-            rect.left + 2.0,
-            rect.top + 2.0,
-            (rect.right - rect.left - 4.0).max(0.0),
-            (rect.bottom - rect.top - 4.0).max(0.0),
-        );
-        session.draw_rounded_rect(&px.ring(i, 2.0), &brushes.focus_inner, px.hair());
     }
+}
+
+/// FocusVisual: 2 px outer stroke on the edge of `rect`, 1 px inner stroke just inside it. The
+/// one keyboard focus mark of a fence: around an icon's cell or a row, and around the title row
+/// when no icon can carry it (`FenceChrome::draw_title_focus`).
+fn draw_focus_visual(
+    session: &DrawingSession<'_>,
+    px: Px,
+    rect: Rect,
+    outer: &Brush,
+    inner: &Brush,
+) {
+    let o = Rect::from_xywh(
+        rect.left + 1.0,
+        rect.top + 1.0,
+        (rect.right - rect.left - 2.0).max(0.0),
+        (rect.bottom - rect.top - 2.0).max(0.0),
+    );
+    session.draw_rounded_rect(&RoundedRect::uniform(o, 3.0), outer, 2.0);
+    let i = Rect::from_xywh(
+        rect.left + 2.0,
+        rect.top + 2.0,
+        (rect.right - rect.left - 4.0).max(0.0),
+        (rect.bottom - rect.top - 4.0).max(0.0),
+    );
+    session.draw_rounded_rect(&px.ring(i, 2.0), inner, px.hair());
 }
 
 /// Fence-wide drop feedback (a drag hovers the fence itself), faded by `alpha`: the accent
@@ -1833,6 +2054,10 @@ impl FenceChrome {
     /// for a layout with the layout, so kept layouts held the old device's memory after a
     /// rebuild that should hand it back (the S15 memory check went from 15 to 20 MB).
     pub fn forget_text_layouts(&self) {
+        // The rows of the note laid out last hold the old device's memory in the same way.
+        if let Ok(mut rows) = self.note_rows_cache.try_borrow_mut() {
+            *rows = None;
+        }
         if let Ok(mut layouts) = self.text_layouts.try_borrow_mut() {
             let n = layouts.len();
             layouts.clear();
@@ -1918,11 +2143,13 @@ impl FenceChrome {
             tool_text(TOOL_TEXT_SIZES[2])?,
             tool_text(TOOL_TEXT_SIZES[3])?,
         ];
+        // Wraps: 「fail.ps1 · Fehler bei der Ausführung um 5:01 (Exitcode 3)」 is wider than a
+        // 300 DIP fence, and its end (the exit code) is what the line is for.
         let note_footer_format =
             TextFormat::with_locale(font_small(), 12.0, FontWeight::NORMAL, locale)?
                 .with_alignment(TextAlignment::Leading)
                 .with_paragraph_alignment(ParagraphAlignment::Top)
-                .with_word_wrapping(WordWrapping::NoWrap);
+                .with_word_wrapping(WordWrapping::Wrap);
         let clock_time_format =
             Self::build_tool_format(font_display(), CLOCK_TIME_DIP, FontWeight(300), false)?;
         let clock_date_format =
@@ -1946,6 +2173,7 @@ impl FenceChrome {
             clock_fonts: RefCell::default(),
             text_shadows: RefCell::default(),
             text_layouts: RefCell::default(),
+            note_rows_cache: RefCell::default(),
         };
         // Labels follow the desktop's icon-title font from the start (12 px / 16 stays the
         // fallback when the system call fails).
@@ -2110,6 +2338,12 @@ impl FenceChrome {
         self.label_font.borrow().line_h
     }
 
+    /// The titles' font: the theme's face (None: the built-in Segoe UI Variable) and weight.
+    pub fn title_font(&self) -> (Option<String>, i32) {
+        let fonts = self.title_fonts.borrow();
+        (fonts.face.clone(), fonts.weight)
+    }
+
     /// Title at 12 / 14 / 16 / 18 px for the per-fence "title size" option (0 to 3).
     pub fn title_format(&self, size: u8) -> Ref<'_, TextFormat> {
         Ref::map(self.title_fonts.borrow(), |f| {
@@ -2139,6 +2373,33 @@ impl FenceChrome {
     /// "按时间分组" section caption format (12 px semibold, like the small title).
     pub fn group_format(&self) -> &TextFormat {
         &self.group_format
+    }
+
+    /// The room a rolled fence's count takes before the chevron: its text and 12 DIPs (the
+    /// 4 DIPs before the chevron and a gap after the name), at least [`ROLLED_COUNT_W`].
+    /// 「Elementos: 128」 is wider than 「128 项」.
+    pub fn rolled_count_room(&self, caption: &str) -> f32 {
+        (crate::text::measure_width(caption, &self.count_format) + 12.0)
+            .ceil()
+            .max(ROLLED_COUNT_W)
+    }
+
+    /// What a single title leaves free for the rolled count, whose box is `count_w` wide
+    /// ([`header_count_width`]): a left-aligned title runs on to 12 DIPs before the count's
+    /// text, a centred or right-aligned one keeps the whole box. The drawing and the app's
+    /// hit testing (is the title cut, where does its name box go) both take it from here.
+    pub fn rolled_count_reserve(
+        &self,
+        caption: &str,
+        count_w: f32,
+        align: pecofence_core::TitleAlign,
+        tabs: usize,
+    ) -> f32 {
+        if count_w > 0.0 && tabs <= 1 && matches!(align, pecofence_core::TitleAlign::Left) {
+            (crate::text::measure_width(caption, &self.count_format) + 4.0 + 12.0).min(count_w)
+        } else {
+            count_w
+        }
     }
 
     /// Does a tab caption fit its pill of width `w` without ellipsis (tooltip decision)?
@@ -2193,6 +2454,22 @@ impl FenceChrome {
         }
     }
 
+    /// Where the caption's text starts in a tab pill `w` DIPs wide, counted from the pill's
+    /// left edge, as drawn: after its glyphs, centred in its room. The name box opens there.
+    pub fn tab_caption_text_x(
+        &self,
+        theme: &Theme,
+        w: f32,
+        title: &str,
+        size: u8,
+        glyphs: (bool, bool),
+        badge: Option<&str>,
+    ) -> f32 {
+        let c = self.tab_caption(theme, w, title, size, glyphs, badge);
+        let text_w = crate::text::measure_width(&c.fitted, &self.tab_format(size)).min(c.w);
+        c.x + (c.w - text_w) * 0.5
+    }
+
     /// The up button of a folder tab's pill at `x`, `w` wide, in a title-row strip: the square
     /// around its folder glyph, as drawn. The app hit-tests the same box.
     pub fn tab_up_box(
@@ -2219,6 +2496,19 @@ impl FenceChrome {
         crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0 + 8.0
     }
 
+    /// Where a smart fence's count capsule lies in a title row `width` x `title_h` (DIPs; the
+    /// width without a lock glyph's slot), as drawn: the pointer over it gets its infotip.
+    pub fn count_capsule_box(&self, count: &str, width: f32, title_h: f32) -> Rect {
+        let w = crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0;
+        let right = TitleDeco::chevron_box(width, title_h).left - 2.0;
+        Rect::from_xywh(
+            right - w,
+            ((title_h - COUNT_CAPSULE_H) * 0.5).round(),
+            w,
+            COUNT_CAPSULE_H,
+        )
+    }
+
     /// 智能栅栏: the count as a grey capsule right before the chevron's place, so it never reads
     /// as part of the name (mail apps show a folder's count the same way).
     #[allow(clippy::too_many_arguments)]
@@ -2233,17 +2523,14 @@ impl FenceChrome {
         alpha: f32,
         legible: Option<&Legible>,
     ) -> Result<()> {
-        let w = crate::text::measure_width(count, &self.badge_format) + COUNT_CAPSULE_PAD * 2.0;
-        let right = TitleDeco::chevron_box(width, title_h).left - 2.0;
-        let r = Rect::from_xywh(
-            right - w,
-            ((title_h - COUNT_CAPSULE_H) * 0.5).round(),
-            w,
-            COUNT_CAPSULE_H,
-        );
-        // ControlFillColorSecondary-like: a faint wash of the text colour.
+        let r = self.count_capsule_box(count, width, title_h);
+        // The capsule is the number's ground. Under a light number it is a dark wash, so the
+        // number reads on a plate of any brightness: the light wash it was made the ground
+        // lighter still (2.1 : 1 over the Windows 11 wallpaper in dark mode). Under a dark
+        // number it stays the faint dark wash (ControlFillColorSecondary-like): dark text has
+        // contrast to spare on every plate that takes it.
         let wash = if foreground.text_secondary.r > 0.5 {
-            ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0x1A)
+            ColorF::from_rgba8(0, 0, 0, 0x38)
         } else {
             ColorF::from_rgba8(0, 0, 0, 0x0F)
         };
@@ -2275,7 +2562,9 @@ impl FenceChrome {
         let layer = push_cut_out(session, slot, center, 7.5)?;
         session.draw_text("\u{E8B7}", &self.title_glyph_format, &slot, folder);
         pop_strip_fade(session, layer);
-        let accent = session.create_solid_brush(with_alpha(theme.accent, alpha))?;
+        // `theme` is the title's foreground: the magnifier takes the accent as a link does,
+        // in the shade that goes with the text picked for the plate.
+        let accent = session.create_solid_brush(with_alpha(theme.link_ink(), alpha))?;
         session.draw_text("\u{E721}", &self.folder_badge_format, &r, &accent);
         let r2 = Rect::from_xywh(r.left + 0.5, r.top, r.width(), r.height());
         session.draw_text("\u{E721}", &self.folder_badge_format, &r2, &accent);
@@ -2571,6 +2860,46 @@ impl FenceChrome {
         Rect::from_xywh(x - 2.0, 0.0, 20.0, title_h)
     }
 
+    /// Where the text of a single title laid out with `deco` stands, as drawn, for its name
+    /// box: its left edge, its width as shown, and the width of the room it is aligned in
+    /// (which starts at `deco.title_x()`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn lone_title_text_span(
+        &self,
+        title: &str,
+        count: Option<&str>,
+        tag: Option<(&str, &str, &str)>,
+        size: u8,
+        align: pecofence_core::TitleAlign,
+        width: f32,
+        deco: TitleDeco,
+        reserve: f32,
+    ) -> (f32, f32, f32) {
+        let (x, fitted, room_w) =
+            self.lone_title_place(title, count, tag, size, align, width, deco, reserve);
+        let text_w = crate::text::measure_width(&fitted, &self.title_format(size)).min(room_w);
+        (x + deco.glyphs_w(), text_w, room_w)
+    }
+
+    /// Is a single title laid out with `deco` drawn cut short (it ends in an ellipsis)? Its
+    /// infotip then shows all of it, as a cut tab caption's does.
+    #[allow(clippy::too_many_arguments)]
+    pub fn lone_title_cut(
+        &self,
+        title: &str,
+        count: Option<&str>,
+        tag: Option<(&str, &str, &str)>,
+        size: u8,
+        align: pecofence_core::TitleAlign,
+        width: f32,
+        deco: TitleDeco,
+        reserve: f32,
+    ) -> bool {
+        let (_, fitted, _) =
+            self.lone_title_place(title, count, tag, size, align, width, deco, reserve);
+        fitted != title
+    }
+
     /// Width a caption gets in a row of a `rail_w` DIP left tab column: after the colour dot's
     /// room when any tab has a colour and the folder glyph's when any tab has one, before the
     /// badge and the portal up button.
@@ -2609,6 +2938,53 @@ impl FenceChrome {
 
     /// Draws the chrome into a `width` x `height` DIP area whose origin is (0, 0). `scale` is
     /// the DIP→device-pixel factor (hairline snapping); `state` carries the sampled fades.
+    /// The keyboard focus mark on the title row, drawn over a finished [`FenceChrome::draw`]:
+    /// the fence has the keyboard and none of its icons can carry the mark (rolled up, or
+    /// nothing in it). The icons' FocusVisual around the title row, around the shown tab's
+    /// pill in a strip, or around the shown tab's row when the tabs stand at the left.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_title_focus(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        scale: f32,
+        width: f32,
+        height: f32,
+        tabs: &[TabDraw<'_>],
+        style: FenceStyle,
+    ) -> Result<()> {
+        let title_h = theme.title_height.min(height);
+        let rail_tab = tabs
+            .iter()
+            .find(|t| t.active)
+            .filter(|_| tabs.len() > 1 && style.tab_rail > 0.0);
+        let row = if let Some(t) = rail_tab {
+            // A row of the column: `x` and `w` are its top and height (`draw_tab_list`).
+            Rect::from_xywh(
+                RAIL_ROW_INSET,
+                t.x,
+                (style.tab_rail - RAIL_ROW_INSET - RAIL_ROW_RIGHT).max(0.0),
+                t.w,
+            )
+        } else if tabs.len() > 1 && style.tab_rail > 0.0 {
+            Rect::from_xywh(
+                4.0,
+                4.0,
+                (style.tab_rail - 8.0).max(0.0),
+                (height - 8.0).max(0.0),
+            )
+        } else if let Some(t) = tabs.iter().find(|t| t.active).filter(|_| tabs.len() > 1) {
+            let inset = if theme.liquid_glass { 4.0 } else { 6.0 };
+            Rect::from_xywh(t.x, inset, t.w, (title_h - inset * 2.0).max(0.0))
+        } else {
+            Rect::from_xywh(4.0, 4.0, (width - 8.0).max(0.0), (title_h - 8.0).max(0.0))
+        };
+        let outer = session.create_solid_brush(theme.focus_outer)?;
+        let inner = session.create_solid_brush(theme.focus_inner)?;
+        draw_focus_visual(session, Px::new(scale), row, &outer, &inner);
+        Ok(())
+    }
+
     /// `rolled_up` is the state the fence is rolling to (or resting in) and `roll_t` the roll
     /// progress 0 (expanded) ..= 1 (rolled) that turns the chevron. `bitmaps` holds the
     /// uploaded wallpaper crop and the acrylic noise tile across frames.
@@ -2676,6 +3052,7 @@ impl FenceChrome {
                 pill_a,
                 state.hover,
                 style,
+                state.edge_top && plate_top <= 0.0,
             )?;
         }
 
@@ -2757,6 +3134,10 @@ impl FenceChrome {
             // expands it): the chevron turns as it fades out with the collapse, and back in
             // as the fence expands.
             let rows_end = tabs.iter().map(|t| t.x + t.w).fold(0.0, f32::max);
+            // A column that scrolls ends where its part in view does.
+            let rows_end = state
+                .strip_clip
+                .map_or(rows_end, |clip| rows_end.min(clip.right));
             // 锁定位置和大小: the lock glyph before the chevron, gone with it once the fence is
             // collapsed to the column (no room under the last tab there).
             if deco.locked {
@@ -2821,16 +3202,28 @@ impl FenceChrome {
         // you what is inside (it fades out as the fence expands), unless the user hid it.
         let caption = caption.filter(|_| !style.hide_count_and_chevron);
         let count_a = state.count.clamp(0.0, 1.0) * title_a;
-        let count_w = if caption.is_some() && (rolled_up || count_a > 0.0) {
-            header_count_width(width - lock_w, tabs.len(), deco.title_x())
-        } else {
-            0.0
+        let count_w = match caption {
+            Some(caption) if rolled_up || count_a > 0.0 => header_count_width(
+                width - lock_w,
+                tabs.len(),
+                deco.title_x(),
+                self.rolled_count_room(caption),
+            ),
+            _ => 0.0,
         };
         // The title's ellipsis point moves with the caption fade instead of stepping when
         // the fade ends: the reserve is the caption's width scaled by its alpha (held at the
         // full width while rolling up, so the caption never fades in over the title).
+        // The count is right-aligned in its box (`ROLLED_COUNT_W`, room for 「128 items」). A
+        // left-aligned title runs on to 12 DIPs before the count's text: beside 「3 项」 it was
+        // cut 40 DIPs early. Centred and right-aligned titles keep the whole box, which the
+        // app places their glyphs with (`header_count_width`).
+        let count_room = match caption {
+            Some(text) => self.rolled_count_reserve(text, count_w, style.title_align, tabs.len()),
+            _ => count_w,
+        };
         let title_reserve = if caption.is_some() {
-            count_w * count_a.max(if rolled_up { 1.0 } else { 0.0 })
+            count_room * count_a.max(if rolled_up { 1.0 } else { 0.0 })
         } else {
             0.0
         };
@@ -2904,15 +3297,35 @@ impl FenceChrome {
                     .iter()
                     .find(|t| t.active)
                     .and_then(|t| t.color)
-                    .unwrap_or(theme.accent);
+                    // The accent in the shade that goes with the text picked for the plate,
+                    // as a link has it: the mode's own shade was light on a light plate in
+                    // dark mode over a bright wallpaper (1.5 : 1).
+                    .unwrap_or_else(|| foreground.link_ink());
                 marker(x, w, color, title_a)?;
             }
-            // A dragged tab (lens, marker and caption) is always above its neighbours.
+            // A dragged tab (lens, marker and caption) is always above its neighbours, and
+            // what it passes over is not drawn under it: its fill is see-through, and two
+            // names on top of each other read as neither.
+            let mut under_drag = match tabs.iter().find(|t| t.dragging) {
+                Some(d) => {
+                    let (from, to) = tabs
+                        .iter()
+                        .fold((d.x, d.x + d.w), |(a, b), t| (a.min(t.x), b.max(t.x + t.w)));
+                    let bounds = Rect::from_xywh(from, 0.0, to - from, title_h);
+                    Some(push_span_gap(session, bounds, (d.x, d.x + d.w), false)?)
+                }
+                None => None,
+            };
             for tab in tabs
                 .iter()
                 .filter(|t| !t.dragging)
                 .chain(tabs.iter().filter(|t| t.dragging))
             {
+                if tab.dragging
+                    && let Some(brush) = under_drag.take()
+                {
+                    pop_strip_fade(session, brush);
+                }
                 let ta = title_a * tab.alpha.clamp(0.0, 1.0);
                 if ta <= 0.0 {
                     continue;
@@ -2971,14 +3384,16 @@ impl FenceChrome {
                     (tab.x, tab.w)
                 };
                 if pill.is_none() && tab.active {
-                    marker(marker_x, marker_w, tab.color.unwrap_or(theme.accent), ta)?;
+                    let color = tab.color.unwrap_or_else(|| foreground.link_ink());
+                    marker(marker_x, marker_w, color, ta)?;
                 } else if !tab.active
                     && let Some(color) = tab.color
                 {
                     marker(marker_x, marker_w, color, ta * 0.7)?;
                 }
+                let shown_on = lens_opacity(theme, opacity, tab.active);
                 let foreground =
-                    header_foreground(&backdrop, theme, tab.key, rect, scale, opacity, style.tint);
+                    header_foreground(&backdrop, theme, tab.key, rect, scale, shown_on, style.tint);
                 let color = if tab.pressed && !tab.dragging {
                     foreground.text_tertiary
                 } else {
@@ -2990,8 +3405,15 @@ impl FenceChrome {
                         })
                     })
                 };
-                let brush = session.create_solid_brush(with_alpha(color, ta))?;
-                let fx = legible.as_ref().map(|l| l.fx(theme, color, ta, false));
+                // The shown tab's caption and glyph fade in after its folder changed; the
+                // pill and the marker stay.
+                let ca = if tab.active {
+                    ta * (1.0 - state.swap.clamp(0.0, 1.0))
+                } else {
+                    ta
+                };
+                let brush = session.create_solid_brush(with_alpha(color, ca))?;
+                let fx = legible.as_ref().map(|l| l.fx(theme, color, ca, false));
                 if tab.desktop_icon {
                     let slot =
                         Rect::from_xywh(caption_x - TAB_ICON_W - 2.0, 0.0, TAB_ICON_W, title_h);
@@ -3012,7 +3434,7 @@ impl FenceChrome {
                             } else {
                                 color
                             },
-                            ta,
+                            ca,
                         ))?;
                         session.draw_text("\u{E74A}", &self.title_glyph_format, &slot, &ink);
                     } else {
@@ -3052,10 +3474,19 @@ impl FenceChrome {
                     session.draw_text(badge, &self.badge_format, &r, &text);
                 }
             }
+            if let Some(brush) = under_drag.take() {
+                pop_strip_fade(session, brush);
+            }
             if let Some(brush) = strip_fade {
                 pop_strip_fade(session, brush);
             }
         } else {
+            // The name and glyph of a fence that just went to another folder fade in.
+            let swap_a = title_a * (1.0 - state.swap.clamp(0.0, 1.0));
+            if state.swap > 0.0 {
+                text.set_color(with_alpha(title_ink, swap_a));
+                secondary.set_color(with_alpha(foreground.text_secondary, swap_a));
+            }
             if deco.up_at_left() {
                 // Up (Segoe Fluent E74A) in a 28×28 box: transparent at rest, SubtleFill
                 // fading in on hover, SubtleFillColorTertiary + tertiary glyph while pressed.
@@ -3092,7 +3523,15 @@ impl FenceChrome {
                 // 智能栅栏: the folder with a magnifier badge, not a button (a smart fence shows
                 // no folder of its own to open).
                 if deco.search_glyph && !deco.up_button {
-                    self.draw_badged_folder(session, theme, slot, x, title_h, title_a, &secondary)?;
+                    self.draw_badged_folder(
+                        session,
+                        &foreground,
+                        slot,
+                        x,
+                        title_h,
+                        title_a,
+                        &secondary,
+                    )?;
                 } else {
                     let box_r = glyph_up_square(x + 8.0, title_h);
                     draw_up_box_fill(session, &backdrop, theme, scale, box_r, state, title_a)?;
@@ -3120,7 +3559,7 @@ impl FenceChrome {
             }
             let fx = legible
                 .as_ref()
-                .map(|l| l.fx(theme, title_ink, title_a, false));
+                .map(|l| l.fx(theme, title_ink, swap_a, false));
             self.draw_caption(
                 session,
                 &fitted,
@@ -3129,6 +3568,11 @@ impl FenceChrome {
                 &text,
                 fx,
             );
+            if state.swap > 0.0 {
+                // The chevron and the lock after this use the same brushes at full strength.
+                text.set_color(with_alpha(title_ink, title_a));
+                secondary.set_color(with_alpha(foreground.text_secondary, title_a));
+            }
             // The capsule's and the tag's texts get a halo as the title does, and on Liquid
             // Glass too (their washes are faint over a bright or busy wallpaper).
             let chip_legible = if legible.is_none() && theme.liquid_glass {
@@ -3372,6 +3816,11 @@ impl FenceChrome {
                 h,
             )
         };
+        // A column too short for its rows scrolls: the rows are cut to the part in view.
+        let rail_fade = match state.strip_clip {
+            Some(clip) => Some(push_rail_fade(session, clip, rail_w)?),
+            None => None,
+        };
         let separator = session.create_solid_brush(line(if dark { 0.16 } else { 0.13 }))?;
         for pair in tabs.windows(2) {
             if pair[0].dragging || pair[1].dragging {
@@ -3407,12 +3856,28 @@ impl FenceChrome {
         let folders = tabs.iter().any(|t| t.folder_icon);
         let desktops = tabs.iter().any(|t| t.desktop_icon);
         let text_left = rail_text_left(colored, folders, desktops);
-        // A dragged tab is always above its neighbours.
+        // A dragged tab is always above its neighbours, and the rows it passes over are not
+        // drawn under it (see the title row's strip).
+        let mut under_drag = match tabs.iter().find(|t| t.dragging) {
+            Some(d) => {
+                let (from, to) = tabs
+                    .iter()
+                    .fold((d.x, d.x + d.w), |(a, b), t| (a.min(t.x), b.max(t.x + t.w)));
+                let bounds = Rect::from_xywh(0.0, from, rail_w, to - from);
+                Some(push_span_gap(session, bounds, (d.x, d.x + d.w), true)?)
+            }
+            None => None,
+        };
         for tab in tabs
             .iter()
             .filter(|t| !t.dragging)
             .chain(tabs.iter().filter(|t| t.dragging))
         {
+            if tab.dragging
+                && let Some(brush) = under_drag.take()
+            {
+                pop_strip_fade(session, brush);
+            }
             let ta = tab.alpha.clamp(0.0, 1.0);
             if ta <= 0.0 {
                 continue;
@@ -3453,8 +3918,9 @@ impl FenceChrome {
                 let brush = session.create_solid_brush(with_alpha(color, ta))?;
                 session.fill_rounded_rect(&RoundedRect::uniform(dot, 3.0), &brush);
             }
+            let shown_on = lens_opacity(theme, opacity, tab.active);
             let foreground =
-                header_foreground(backdrop, theme, tab.key, rect, scale, opacity, tint);
+                header_foreground(backdrop, theme, tab.key, rect, scale, shown_on, tint);
             let color = if tab.pressed && !tab.dragging {
                 foreground.text_secondary
             } else {
@@ -3496,8 +3962,14 @@ impl FenceChrome {
             }
             // The shown tab's semibold caption cross-fades to the others' regular weight as the
             // fence collapses to the column.
+            // After its folder changed the shown tab's caption fades in, as in the title row.
+            let ca = if tab.active {
+                ta * (1.0 - state.swap.clamp(0.0, 1.0))
+            } else {
+                ta
+            };
             for (strong, a) in [(true, sel), (false, 1.0 - sel)] {
-                let a = a * ta;
+                let a = a * ca;
                 if a <= 0.0 {
                     continue;
                 }
@@ -3555,6 +4027,12 @@ impl FenceChrome {
                 session.draw_text(badge, &self.badge_format, &r, &text);
             }
         }
+        if let Some(brush) = under_drag.take() {
+            pop_strip_fade(session, brush);
+        }
+        if let Some(brush) = rail_fade {
+            pop_strip_fade(session, brush);
+        }
         Ok(())
     }
 
@@ -3580,7 +4058,6 @@ impl FenceChrome {
         draw_drop_wash(session, theme, &state, width, height, rows.drop_highlight);
         let selected = session.create_solid_brush(theme.selection_fill)?;
         let selected_stroke = session.create_solid_brush(theme.selection_stroke)?;
-        let secondary = session.create_solid_brush(theme.text_secondary)?;
         let cols = rows.columns;
         let header_h = rows.header_h;
         let fonts = self.label_font.borrow();
@@ -3906,22 +4383,27 @@ impl FenceChrome {
             draw_scrollbar(session, theme, &self.sort_glyph_format, width, bar)?;
         }
 
-        if let Some(text) = rows.empty_text
-            && rows.rows.is_empty()
-        {
+        if let Some((text, alpha)) = rows.empty_text {
+            let faded = session.create_solid_brush(with_alpha(theme.text_secondary, alpha))?;
             let avail = (height - header_h).max(0.0);
-            let y0 = empty_text_top(avail);
+            let placed_by = rows
+                .empty_text_height
+                .map_or(avail, |h| (h - header_h).max(0.0));
+            let y0 = empty_text_top(placed_by);
+            let (x, w) = balanced_wrap_span(text, &self.empty_format, width);
             session.draw_text(
                 text,
                 &self.empty_format,
-                &Rect::from_xywh(
-                    12.0,
-                    header_h + y0,
-                    (width - 24.0).max(0.0),
-                    (avail - y0).max(0.0),
-                ),
-                &secondary,
+                &Rect::from_xywh(x, header_h + y0, w, (avail - y0).max(0.0)),
+                &faded,
             );
+            if alpha >= 1.0
+                && let Some(action) = rows.empty_action
+                && let Some(rect) =
+                    self.empty_action_rect(text, action.label, width, height, header_h)
+            {
+                self.draw_empty_action(session, theme, &rect, &action)?;
+            }
         }
         Ok(())
     }
@@ -4054,17 +4536,22 @@ impl FenceChrome {
             draw_scrollbar(session, theme, &self.sort_glyph_format, width, bar)?;
         }
 
-        if let Some(text) = content.empty_text
-            && content.items.is_empty()
-        {
-            let secondary = session.create_solid_brush(theme.text_secondary)?;
-            let y0 = empty_text_top(height);
+        if let Some((text, alpha)) = content.empty_text {
+            let secondary = session.create_solid_brush(with_alpha(theme.text_secondary, alpha))?;
+            let y0 = empty_text_top(content.empty_text_height.unwrap_or(height));
+            let (x, w) = balanced_wrap_span(text, &self.empty_format, width);
             session.draw_text(
                 text,
                 &self.empty_format,
-                &Rect::from_xywh(12.0, y0, (width - 24.0).max(0.0), (height - y0).max(0.0)),
+                &Rect::from_xywh(x, y0, w, (height - y0).max(0.0)),
                 &secondary,
             );
+            if alpha >= 1.0
+                && let Some(action) = content.empty_action
+                && let Some(rect) = self.empty_action_rect(text, action.label, width, height, 0.0)
+            {
+                self.draw_empty_action(session, theme, &rect, &action)?;
+            }
         }
         Ok(())
     }
@@ -4075,6 +4562,68 @@ impl FenceChrome {
 pub struct NoteLineDraw<'a> {
     pub text: &'a str,
     pub todo: Option<bool>,
+}
+
+/// What a note shows on top of its text while it is being edited: the caret (the line and
+/// the place in that line's drawn text, in UTF-16 units; None while it is blinked off) and
+/// the selected part of each line (the line, from, to, and whether the selection goes on
+/// past the line's end).
+pub struct NoteEditDraw<'a> {
+    pub caret: Option<(usize, usize)>,
+    pub selection: &'a [(usize, usize, usize, bool)],
+}
+
+/// What [`FenceChrome::draw_note`] drew that takes the pointer, in surface DIPs: each to-do's
+/// line index with its check box, and each web address (its line and its start in the line's
+/// text, UTF-16 units) with one box per line on screen it runs over.
+#[derive(Default)]
+pub struct NoteDrawn {
+    pub boxes: Vec<(usize, Rect)>,
+    pub links: Vec<(usize, usize, Rect)>,
+}
+
+/// What a note shows while one of its to-dos is moved by a drag: how far below its place
+/// each line is drawn (DIPs: the lines that make room glide, the dragged one follows the
+/// pointer), and the lifted line with how much of its plate shows (0 to 1). The lifted line
+/// is drawn above the others on the plate a script fence's row has under the pointer, and
+/// what it passes over is not drawn under it, as with a dragged tab.
+pub struct NoteDragDraw<'a> {
+    pub offsets: &'a [f32],
+    pub lifted: Option<(usize, f32)>,
+}
+
+/// One line of a note laid out: its wrapped text, where the text starts, its top from the
+/// first line's top (before any scrolling) and its height. `inked`: the draw before put a
+/// link's ink (and underline) on the layout; the rows are kept from one draw to the next, so
+/// that comes off before the row is drawn again.
+struct NoteRow {
+    layout: TextLayout,
+    x: f32,
+    y: f32,
+    h: f32,
+    inked: Cell<bool>,
+}
+
+/// One row of a script fence laid out: its text (none for a separator) and icon, where the
+/// row and its text start, the top of its text from the first row's (before any scrolling)
+/// and its height.
+struct ScriptRowLaid {
+    text: Option<TextLayout>,
+    icon: Option<TextLayout>,
+    x: f32,
+    text_x: f32,
+    y: f32,
+    h: f32,
+}
+
+/// The text of a note or a script fence measured for scrolling: the top of every line of
+/// text as wrapped (from the first one's top; the content rests on one of them), how far
+/// one line of the wheel goes, and the height the content scrolls over.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ToolTextExtent {
+    pub tops: Vec<f32>,
+    pub line_step: f32,
+    pub height: f32,
 }
 
 /// Note layout in surface DIPs: the text inset from the left and right edges and from the top.
@@ -4134,12 +4683,187 @@ impl FenceChrome {
         &self.tool_text[usize::from(size.min(3))]
     }
 
+    /// A note's lines laid out for a content area `width` DIPs wide at 文字大小 `text_size`:
+    /// one row per line, wrapped to the width, and the height of one line of text.
+    fn note_rows(
+        &self,
+        width: f32,
+        text_size: u8,
+        lines: &[NoteLineDraw<'_>],
+    ) -> Result<Rc<(Vec<NoteRow>, f32)>> {
+        // The same lines at the same width and size: the rows laid out last.
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            (width.to_bits(), text_size, lines.len()).hash(&mut h);
+            for line in lines {
+                (line.text, line.todo.is_some()).hash(&mut h);
+            }
+            h.finish()
+        };
+        if let Some((k, rows)) = self.note_rows_cache.borrow().as_ref()
+            && *k == key
+        {
+            return Ok(rows.clone());
+        }
+        let tt = self.tool_text(text_size);
+        let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        let line_h = TextLayout::new("Ag", &tt.body, w, f32::MAX)?
+            .metrics()
+            .height;
+        let mut rows = Vec::with_capacity(lines.len());
+        let mut y = 0.0;
+        for line in lines {
+            let x = match line.todo {
+                Some(_) => NOTE_PAD_X + tt.todo_room(),
+                None => NOTE_PAD_X,
+            };
+            let text_w = (width - x - NOTE_PAD_X).max(1.0);
+            // An empty line still takes a line's height.
+            let text = if line.text.is_empty() { " " } else { line.text };
+            let layout = TextLayout::new(text, &tt.body, text_w, f32::MAX)?;
+            let h = layout.metrics().height.max(line_h);
+            rows.push(NoteRow {
+                layout,
+                x,
+                y,
+                h,
+                inked: Cell::new(false),
+            });
+            y += h + NOTE_LINE_GAP * tt.k;
+        }
+        let rows = Rc::new((rows, line_h));
+        *self.note_rows_cache.borrow_mut() = Some((key, rows.clone()));
+        Ok(rows)
+    }
+
+    /// What a note's text takes in a content area `width` DIPs wide (see [`ToolTextExtent`]).
+    /// A note without text (it shows its hint) takes nothing.
+    pub fn note_extent(
+        &self,
+        width: f32,
+        text_size: u8,
+        lines: &[NoteLineDraw<'_>],
+    ) -> Result<ToolTextExtent> {
+        if note_is_empty(lines) {
+            return Ok(ToolTextExtent::default());
+        }
+        let laid = self.note_rows(width, text_size, lines)?;
+        let (rows, line_h) = (&laid.0, laid.1);
+        let mut tops = Vec::new();
+        for row in rows {
+            tops.extend(
+                layout_line_tops(&row.layout, row.h)
+                    .into_iter()
+                    .map(|t| row.y + t),
+            );
+        }
+        Ok(ToolTextExtent {
+            tops,
+            line_step: line_h + NOTE_LINE_GAP * self.tool_text(text_size).k,
+            height: NOTE_PAD_TOP + rows.last().map_or(0.0, |r| r.y + r.h),
+        })
+    }
+
+    /// Each line of a note as [`FenceChrome::draw_note`] places it: its top in the content
+    /// (before any scrolling) and its height, a wrapped line with all its lines on screen.
+    pub fn note_row_spans(
+        &self,
+        width: f32,
+        text_size: u8,
+        lines: &[NoteLineDraw<'_>],
+    ) -> Result<Vec<(f32, f32)>> {
+        let laid = self.note_rows(width, text_size, lines)?;
+        let rows = &laid.0;
+        Ok(rows.iter().map(|r| (NOTE_PAD_TOP + r.y, r.h)).collect())
+    }
+
+    /// The place in a note's text nearest to point (`x`, `y`) of its content before any
+    /// scrolling: the line, and the place in that line's drawn text in UTF-16 units. A point
+    /// above or below the text takes the first or the last line.
+    pub fn note_hit(
+        &self,
+        width: f32,
+        text_size: u8,
+        lines: &[NoteLineDraw<'_>],
+        x: f32,
+        y: f32,
+    ) -> Result<(usize, usize)> {
+        let laid = self.note_rows(width, text_size, lines)?;
+        let rows = &laid.0;
+        let gap = NOTE_LINE_GAP * self.tool_text(text_size).k;
+        let y = y - NOTE_PAD_TOP;
+        // A line owns its text and half the gap above and below it.
+        let i = rows
+            .iter()
+            .position(|r| y < r.y + r.h + gap / 2.0)
+            .unwrap_or(rows.len().saturating_sub(1));
+        let Some(row) = rows.get(i) else {
+            return Ok((0, 0));
+        };
+        let len = lines[i].text.encode_utf16().count();
+        let hit = row.layout.hit_test_point(Vector2::new(
+            x - row.x,
+            (y - row.y).clamp(0.0, (row.h - 0.5).max(0.0)),
+        ));
+        let at = hit.text_position as usize + usize::from(hit.is_trailing_hit);
+        Ok((i, at.min(len)))
+    }
+
+    /// The place one line on screen above (`dir` < 0) or below the caret at (`line`, `at`),
+    /// at the caret's x. On the first and the last line the caret stays where it is.
+    pub fn note_vertical(
+        &self,
+        width: f32,
+        text_size: u8,
+        lines: &[NoteLineDraw<'_>],
+        line: usize,
+        at: usize,
+        dir: i8,
+    ) -> Result<(usize, usize)> {
+        let (x, top, h) = self.note_caret(width, text_size, lines, line, at)?;
+        // The middle of the neighbouring line, whether it belongs to the same wrapped line
+        // (right above or below) or to the next one (a gap away).
+        let gap = NOTE_LINE_GAP * self.tool_text(text_size).k;
+        let y = if dir < 0 {
+            top - gap - h / 2.0
+        } else {
+            top + h + gap + h / 2.0
+        };
+        self.note_hit(width, text_size, lines, x, y)
+    }
+
+    /// Where the caret stands before place `at` (UTF-16 units) of line `line`'s drawn text:
+    /// its x, its top and its height in content DIPs, before any scrolling.
+    pub fn note_caret(
+        &self,
+        width: f32,
+        text_size: u8,
+        lines: &[NoteLineDraw<'_>],
+        line: usize,
+        at: usize,
+    ) -> Result<(f32, f32, f32)> {
+        let laid = self.note_rows(width, text_size, lines)?;
+        let (rows, line_h) = (&laid.0, laid.1);
+        let (Some(row), Some(text)) = (rows.get(line), lines.get(line)) else {
+            return Ok((NOTE_PAD_X, NOTE_PAD_TOP, line_h));
+        };
+        let (x, top, h) = layout_caret(&row.layout, at, text.text.encode_utf16().count());
+        Ok((row.x + x, NOTE_PAD_TOP + row.y + top, h))
+    }
+
     /// Draws a note's lines from the top left, each wrapped to the width, at 文字大小
     /// `text_size` (0 to 3); a to-do gets a check box before its text, ticked ones in the
     /// accent with their text dimmed. `hint` shows in the secondary colour while the note has
     /// no text. `footer` (a script fence's status line) sits at the bottom in the secondary
-    /// colour and the lines stop above it. Returns each to-do's line index with its check box
-    /// (surface DIPs) for hit-testing.
+    /// colour and the lines stop above it. The lines are moved up by `scroll` DIPs (a note
+    /// taller than its fence), with the overlay `scrollbar` at the right. While the note is
+    /// being edited, `edit` adds the selection and the caret; nothing else changes. `hot` is
+    /// the line whose check box is under the pointer (true: held). A web address
+    /// (`pecofence_core::note::links`) is drawn as a link, in the accent ink, the one at
+    /// `link_hot` (line, start) underlined; while the note is edited it is plain text.
+    /// `drag` moves the lines of a note in which a to-do is dragged ([`NoteDragDraw`]).
+    /// Returns the check boxes and the links for hit-testing.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_note(
         &self,
@@ -4152,27 +4876,40 @@ impl FenceChrome {
         lines: &[NoteLineDraw<'_>],
         hint: &str,
         footer: Option<&str>,
-    ) -> Result<Vec<(usize, Rect)>> {
+        scroll: f32,
+        scrollbar: Option<ScrollbarDraw>,
+        edit: Option<&NoteEditDraw<'_>>,
+        hot: Option<(usize, bool)>,
+        link_hot: Option<(usize, usize)>,
+        drag: Option<&NoteDragDraw<'_>>,
+    ) -> Result<NoteDrawn> {
         session.clear(ColorF::TRANSPARENT);
         let tt = self.tool_text(text_size);
         let primary = session.create_solid_brush(theme.text_primary)?;
         let secondary = session.create_solid_brush(theme.text_secondary)?;
+        // A link in a done to-do is dimmed as the line's text is.
+        let link = session.create_solid_brush(theme.link_ink())?;
+        let link_dim =
+            session.create_solid_brush(with_alpha(theme.link_ink(), theme.text_secondary.a))?;
+        let halo = tool_halo(session, theme, scale)?;
         let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
         let height = match footer.filter(|f| !f.is_empty()) {
             Some(footer) => {
                 let layout = TextLayout::new(footer, &self.note_footer_format, w, f32::MAX)?;
                 let h = layout.metrics().height;
                 let top = (height - h - 8.0).max(0.0);
-                session.draw_text_layout(Vector2::new(NOTE_PAD_X, top), &layout, &secondary);
+                let at = Vector2::new(NOTE_PAD_X, top);
+                // The footer's halo, as the lines above have it.
+                if let Some((halo, down)) = &halo {
+                    session.draw_text_layout(Vector2::new(at.x, at.y + down), &layout, halo);
+                }
+                session.draw_text_layout(at, &layout, &secondary);
                 (top - 4.0).max(0.0)
             }
             None => height,
         };
         let has_footer = footer.is_some_and(|f| !f.is_empty());
-        if lines
-            .iter()
-            .all(|l| l.text.trim().is_empty() && l.todo.is_none())
-        {
+        if note_is_empty(lines) {
             session.draw_text(
                 hint,
                 &tt.body,
@@ -4184,32 +4921,80 @@ impl FenceChrome {
                 ),
                 &secondary,
             );
-            return Ok(Vec::new());
+            // A note that is being edited shows its hint until the first character, with
+            // the caret before it.
+            if edit.is_none() {
+                return Ok(NoteDrawn::default());
+            }
         }
-        let line_h = TextLayout::new("Ag", &tt.body, w, f32::MAX)?
-            .metrics()
-            .height;
+        let laid = self.note_rows(width, text_size, lines)?;
+        let (rows, line_h) = (&laid.0, laid.1);
         let px = Px::new(scale);
         let todo = TodoBrushes::new(session, theme)?;
-        let mut boxes = Vec::new();
-        let mut y = NOTE_PAD_TOP;
-        for (i, line) in lines.iter().enumerate() {
-            if y >= height {
-                break;
+        let selected = match edit {
+            Some(e) if !e.selection.is_empty() => {
+                Some(session.create_solid_brush(with_alpha(theme.accent, 0.4))?)
             }
-            let x = match line.todo {
-                Some(_) => NOTE_PAD_X + tt.todo_room(),
-                None => NOTE_PAD_X,
-            };
-            let text_w = (width - x - NOTE_PAD_X).max(1.0);
-            // An empty line still takes a line's height.
-            let text = if line.text.is_empty() { " " } else { line.text };
-            let layout = TextLayout::new(text, &tt.body, text_w, f32::MAX)?;
-            let h = layout.metrics().height.max(line_h);
+            _ => None,
+        };
+        let mut boxes = Vec::new();
+        let mut links = Vec::new();
+        let top_of = |i: usize, row: &NoteRow| {
+            let moved = drag.and_then(|d| d.offsets.get(i)).copied().unwrap_or(0.0);
+            NOTE_PAD_TOP + row.y - scroll + moved
+        };
+        // The lifted line of a drag comes last, over the others, on its plate; the others
+        // are not drawn where it is.
+        let lifted = drag
+            .and_then(|d| d.lifted)
+            .filter(|(i, _)| *i < rows.len().min(lines.len()));
+        let lifted_plate = lifted.map(|(i, _)| {
+            Rect::from_xywh(
+                NOTE_PAD_X - SCRIPT_ROW_PAD_X,
+                top_of(i, &rows[i]) - SCRIPT_ROW_PAD_Y,
+                w + 2.0 * SCRIPT_ROW_PAD_X,
+                rows[i].h + 2.0 * SCRIPT_ROW_PAD_Y,
+            )
+        });
+        let mut under_lifted = match lifted_plate {
+            Some(r) => Some(push_span_gap(
+                session,
+                Rect::from_xywh(0.0, 0.0, width, height),
+                (r.top, r.bottom),
+                true,
+            )?),
+            None => None,
+        };
+        let order = (0..rows.len().min(lines.len()))
+            .filter(|i| lifted.is_none_or(|(l, _)| l != *i))
+            .chain(lifted.map(|(i, _)| i));
+        for i in order {
+            let (line, row) = (&lines[i], &rows[i]);
+            if let (Some((l, shown)), Some(r)) = (lifted, lifted_plate)
+                && l == i
+            {
+                if let Some(layer) = under_lifted.take() {
+                    pop_strip_fade(session, layer);
+                }
+                let plate =
+                    session.create_solid_brush(with_alpha(theme.text_primary, 0.07 * shown))?;
+                session.fill_rounded_rect(&RoundedRect::uniform(r, 4.0), &plate);
+            }
+            let y = top_of(i, row);
+            if y >= height {
+                // Under the fence's bottom edge (the lines after it are too, unless a drag
+                // moves them).
+                continue;
+            }
+            if y + row.h <= 0.0 {
+                // Scrolled out above the fence.
+                continue;
+            }
             // A wrapped line that runs past the footer's top shows only its rows that fit whole,
             // so no text is drawn over the footer.
-            let _clip = if has_footer && y + h > height {
-                let fit = layout
+            let _clip = if has_footer && y + row.h > height {
+                let fit = row
+                    .layout
                     .hit_test_point(Vector2::new(0.0, height - y))
                     .bounds
                     .top;
@@ -4227,18 +5012,156 @@ impl FenceChrome {
                 None
             };
             if let Some(done) = line.todo {
-                boxes.push((i, todo.draw(tt, session, px, y, line_h, done)));
+                let state = match hot {
+                    Some((l, true)) if l == i => TodoBoxState::Pressed,
+                    Some((l, false)) if l == i => TodoBoxState::Hover,
+                    _ => TodoBoxState::Rest,
+                };
+                boxes.push((i, todo.draw(tt, session, px, y, line_h, done, state)));
+            }
+            let len = line.text.encode_utf16().count();
+            if let (Some(e), Some(fill)) = (edit, &selected) {
+                for &(_, from, to, past_end) in e.selection.iter().filter(|s| s.0 == i) {
+                    for r in layout_selection(&row.layout, from, to, len) {
+                        session.fill_rect(
+                            &Rect::from_xywh(
+                                row.x + r.left,
+                                y + r.top,
+                                r.right - r.left,
+                                r.bottom - r.top,
+                            ),
+                            fill,
+                        );
+                    }
+                    if past_end {
+                        // The line break is selected too: a short mark after the text.
+                        let (cx, top, h) = layout_caret(&row.layout, len, len);
+                        session.fill_rect(&Rect::from_xywh(row.x + cx, y + top, 0.3 * h, h), fill);
+                    }
+                }
             }
             let brush = if line.todo == Some(true) {
                 &secondary
             } else {
                 &primary
             };
-            session.draw_text_layout(Vector2::new(x, y), &layout, brush);
-            y += h + NOTE_LINE_GAP * tt.k;
+            // The row is kept from the draw before: the ink and the underline that draw put
+            // on its links come off (the pointer has left the link, the note is being edited
+            // now, and the halo is the fence text's in any case).
+            if row.inked.replace(false) {
+                row.layout.clear_range_marks();
+            }
+            if let Some((halo, down)) = &halo {
+                session.draw_text_layout(Vector2::new(row.x, y + down), &row.layout, halo);
+            }
+            // After the halo, which stays the fence text's: the links take their ink.
+            if edit.is_none() {
+                for (from, to) in pecofence_core::note::links(line.text) {
+                    let (start, count) = (from as u32, (to - from) as u32);
+                    let ink = if line.todo == Some(true) {
+                        &link_dim
+                    } else {
+                        &link
+                    };
+                    row.layout.set_range_brush(start, count, ink);
+                    row.inked.set(true);
+                    if link_hot == Some((i, from)) {
+                        row.layout.set_range_underline(start, count);
+                    }
+                    for r in layout_selection(&row.layout, from, to, len) {
+                        links.push((
+                            i,
+                            from,
+                            Rect::from_xywh(
+                                row.x + r.left,
+                                y + r.top,
+                                r.right - r.left,
+                                r.bottom - r.top,
+                            ),
+                        ));
+                    }
+                }
+            }
+            session.draw_text_layout(Vector2::new(row.x, y), &row.layout, brush);
+            if let Some((_, at)) = edit.and_then(|e| e.caret).filter(|c| c.0 == i) {
+                let (cx, top, h) = layout_caret(&row.layout, at, len);
+                session.fill_rect(
+                    &Rect::from_xywh(px.snap(row.x + cx), y + top, px.hair(), h),
+                    &primary,
+                );
+            }
         }
-        Ok(boxes)
+        if let Some(layer) = under_lifted.take() {
+            pop_strip_fade(session, layer);
+        }
+        if let Some(bar) = scrollbar {
+            draw_scrollbar(session, theme, &self.sort_glyph_format, width, bar)?;
+        }
+        Ok(NoteDrawn { boxes, links })
     }
+}
+
+/// A note without text: it shows its hint.
+fn note_is_empty(lines: &[NoteLineDraw<'_>]) -> bool {
+    lines
+        .iter()
+        .all(|l| l.text.trim().is_empty() && l.todo.is_none())
+}
+
+/// The caret before place `at` (UTF-16 units) of a laid-out line whose text is `len` units
+/// long: its x, and the top and height of the line on screen it stands in, from the layout's
+/// origin. The lines of one paragraph are equally high (see `layout_line_tops`).
+fn layout_caret(layout: &TextLayout, at: usize, len: usize) -> (f32, f32, f32) {
+    let r = if len > 0 && at >= len {
+        layout.caret_bounds((len - 1) as u32, true)
+    } else {
+        layout.caret_bounds(at as u32, false)
+    };
+    let m = layout.metrics();
+    let lines = m.line_count.max(1) as f32;
+    let line_h = m.height / lines;
+    let line = ((r.top + line_h / 2.0) / line_h)
+        .floor()
+        .clamp(0.0, lines - 1.0);
+    (r.left, line * line_h, line_h)
+}
+
+/// The boxes that cover places `from..to` of a laid-out line (its text `len` units long),
+/// one per line on screen, from the layout's origin.
+fn layout_selection(layout: &TextLayout, from: usize, to: usize, len: usize) -> Vec<Rect> {
+    let (ax, ay, line_h) = layout_caret(layout, from, len);
+    let (bx, by, _) = layout_caret(layout, to, len);
+    let mut out = Vec::new();
+    let (mut y, mut left) = (ay, ax);
+    while out.len() < 512 {
+        if y + 0.5 >= by {
+            // Right-to-left text (Hebrew, Arabic) has its start at the right and its end at
+            // the left: the box runs between the two, whichever is the left one.
+            out.push(Rect::from_xywh(left.min(bx), y, (bx - left).abs(), line_h));
+            break;
+        }
+        // The last character of the line on screen at `y`: its box ends where the line does.
+        let end = layout
+            .hit_test_point(Vector2::new(1.0e6, y + line_h / 2.0))
+            .bounds
+            .right;
+        out.push(Rect::from_xywh(left, y, (end - left).max(0.0), line_h));
+        y += line_h;
+        left = 0.0;
+    }
+    out
+}
+
+/// Tops of the lines `layout` (`height` DIPs high) wraps into, from its own top. The lines
+/// of one paragraph are equally high (a character's own box, which a hit test gives, can
+/// start a little below its line's top).
+fn layout_line_tops(layout: &TextLayout, height: f32) -> Vec<f32> {
+    let mut tops = Vec::new();
+    let lines = layout.metrics().line_count.max(1);
+    for line in 0..lines {
+        tops.push(height * line as f32 / lines as f32);
+    }
+    tops
 }
 
 impl ToolText {
@@ -4254,76 +5177,33 @@ impl ToolText {
 }
 
 impl FenceChrome {
-    /// 脚本栅栏: the rows a script printed, from the top left, each wrapped to the width, at
-    /// 文字大小 `text_size` (0 to 3): a to-do's check box, an icon, the text in its colour;
-    /// `---` a hairline. The row under the pointer (`hover`) gets a plate when it is
-    /// clickable, and an arrow when it opens something. `footer` sits at the bottom and the
-    /// rows stop above it, as in [`Self::draw_note`]. Returns each clickable row's index and
-    /// plate (surface DIPs).
-    #[allow(clippy::too_many_arguments)]
-    pub fn draw_script(
+    /// A script fence's rows laid out for a content area `width` DIPs wide at 文字大小
+    /// `text_size`, and the height of one line of text.
+    fn script_rows(
         &self,
-        session: &DrawingSession<'_>,
-        theme: &Theme,
-        scale: f32,
         width: f32,
-        height: f32,
         text_size: u8,
         rows: &[ScriptRowDraw<'_>],
-        hover: Option<usize>,
-        hint: &str,
-        footer: &str,
-    ) -> Result<Vec<(usize, Rect)>> {
-        session.clear(ColorF::TRANSPARENT);
+    ) -> Result<(Vec<ScriptRowLaid>, f32)> {
         let tt = self.tool_text(text_size);
-        let primary = session.create_solid_brush(theme.text_primary)?;
-        let secondary = session.create_solid_brush(theme.text_secondary)?;
         let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
-        let has_footer = !footer.is_empty();
-        let height = if has_footer {
-            let layout = TextLayout::new(footer, &self.note_footer_format, w, f32::MAX)?;
-            let h = layout.metrics().height;
-            let top = (height - h - 8.0).max(0.0);
-            session.draw_text_layout(Vector2::new(NOTE_PAD_X, top), &layout, &secondary);
-            (top - 4.0).max(0.0)
-        } else {
-            height
-        };
-        if rows.iter().all(|r| {
-            !r.separator && r.text.trim().is_empty() && r.todo.is_none() && r.icon.is_none()
-        }) {
-            session.draw_text(
-                hint,
-                &tt.body,
-                &Rect::from_xywh(
-                    NOTE_PAD_X,
-                    NOTE_PAD_TOP,
-                    w,
-                    (height - NOTE_PAD_TOP).max(0.0),
-                ),
-                &secondary,
-            );
-            return Ok(Vec::new());
-        }
         let line_h = TextLayout::new("Ag", &tt.body, w, f32::MAX)?
             .metrics()
             .height;
-        let px = Px::new(scale);
-        let plate = session.create_solid_brush(with_alpha(theme.text_primary, 0.07))?;
-        let rule = session.create_solid_brush(with_alpha(theme.text_primary, 0.14))?;
-        let todo = TodoBrushes::new(session, theme)?;
         let separator_h = (SCRIPT_SEPARATOR_H * tt.k).round();
         let arrow_w = (SCRIPT_ARROW_W * tt.k).round();
-        let glyph_w = (14.0 * tt.k).round();
-        let mut hits = Vec::new();
-        let mut y = NOTE_PAD_TOP + SCRIPT_ROW_PAD_Y;
-        for (i, row) in rows.iter().enumerate() {
-            if y >= height {
-                break;
-            }
+        let mut laid = Vec::with_capacity(rows.len());
+        let mut y = 0.0;
+        for row in rows {
             if row.separator {
-                let line_y = px.snap(y - SCRIPT_ROW_PAD_Y + separator_h / 2.0);
-                session.fill_rect(&Rect::from_xywh(NOTE_PAD_X, line_y, w, px.hair()), &rule);
+                laid.push(ScriptRowLaid {
+                    text: None,
+                    icon: None,
+                    x: NOTE_PAD_X,
+                    text_x: NOTE_PAD_X,
+                    y,
+                    h: separator_h,
+                });
                 y += separator_h;
                 continue;
             }
@@ -4343,6 +5223,162 @@ impl FenceChrome {
             let text = if row.text.is_empty() { " " } else { row.text };
             let layout = TextLayout::new(text, &tt.body, text_w, f32::MAX)?;
             let h = layout.metrics().height.max(line_h);
+            laid.push(ScriptRowLaid {
+                text: Some(layout),
+                icon,
+                x,
+                text_x,
+                y,
+                h,
+            });
+            y += h + 2.0 * SCRIPT_ROW_PAD_Y;
+        }
+        Ok((laid, line_h))
+    }
+
+    /// A script fence's footer for a content area `width` DIPs wide: `full` (the script's name
+    /// and the status) when it fits on its one line, else `short` (the status alone: the title
+    /// names the fence), cut with an ellipsis when that is too wide as well. The second value
+    /// names the choice for the log.
+    pub fn script_footer(&self, full: &str, short: &str, width: f32) -> (String, &'static str) {
+        let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        if full.is_empty() || crate::text::measure_width(full, &self.note_footer_format) <= w {
+            return (full.to_string(), "full");
+        }
+        let text = if short.is_empty() { full } else { short };
+        (
+            crate::text::fit_width(text, &self.note_footer_format, w),
+            "short",
+        )
+    }
+
+    /// What a script fence's rows and `footer` take in a content area `width` DIPs wide (see
+    /// [`ToolTextExtent`]): the rows scroll in the room above the footer. A fence without
+    /// rows (it shows its hint) takes nothing.
+    pub fn script_extent(
+        &self,
+        width: f32,
+        text_size: u8,
+        rows: &[ScriptRowDraw<'_>],
+        footer: &str,
+    ) -> Result<ToolTextExtent> {
+        if script_is_empty(rows) {
+            return Ok(ToolTextExtent::default());
+        }
+        let (laid, line_h) = self.script_rows(width, text_size, rows)?;
+        let mut tops = Vec::new();
+        let mut bottom: f32 = 0.0;
+        for row in &laid {
+            let Some(text) = &row.text else {
+                continue;
+            };
+            tops.extend(layout_line_tops(text, row.h).into_iter().map(|t| row.y + t));
+            bottom = row.y + row.h;
+        }
+        // The room the footer takes at the bottom, as `draw_script` keeps it.
+        let below = if footer.is_empty() {
+            0.0
+        } else {
+            let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+            TextLayout::new(footer, &self.note_footer_format, w, f32::MAX)?
+                .metrics()
+                .height
+                + 12.0
+        };
+        Ok(ToolTextExtent {
+            tops,
+            line_step: line_h + 2.0 * SCRIPT_ROW_PAD_Y,
+            // Under the last row's text, the room its plate takes.
+            height: NOTE_PAD_TOP + bottom + SCRIPT_ROW_PAD_Y + below,
+        })
+    }
+
+    /// 脚本栅栏: the rows a script printed, from the top left, each wrapped to the width, at
+    /// 文字大小 `text_size` (0 to 3): a to-do's check box, an icon, the text in its colour;
+    /// `---` a hairline. A clickable row under the pointer gets a plate, and an arrow when it
+    /// opens something: `hover` lists the rows whose plate shows and how far it has faded in
+    /// (0 to 1); the plate of the row held (`pressed`) is the lighter pressed fill. `footer`
+    /// sits at the bottom and the
+    /// rows stop above it, as in [`Self::draw_note`]. The rows are moved up by `scroll` DIPs
+    /// (more rows than the fence holds), with the overlay `scrollbar` at the right. Returns
+    /// each clickable row's index and plate (surface DIPs).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_script(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        scale: f32,
+        width: f32,
+        height: f32,
+        text_size: u8,
+        rows: &[ScriptRowDraw<'_>],
+        hover: &[(usize, f32)],
+        pressed: Option<usize>,
+        hint: &str,
+        footer: &str,
+        scroll: f32,
+        scrollbar: Option<ScrollbarDraw>,
+    ) -> Result<Vec<(usize, Rect)>> {
+        session.clear(ColorF::TRANSPARENT);
+        let tt = self.tool_text(text_size);
+        let primary = session.create_solid_brush(theme.text_primary)?;
+        let secondary = session.create_solid_brush(theme.text_secondary)?;
+        let halo = tool_halo(session, theme, scale)?;
+        let w = (width - 2.0 * NOTE_PAD_X).max(1.0);
+        let has_footer = !footer.is_empty();
+        let height = if has_footer {
+            let layout = TextLayout::new(footer, &self.note_footer_format, w, f32::MAX)?;
+            let h = layout.metrics().height;
+            let top = (height - h - 8.0).max(0.0);
+            let at = Vector2::new(NOTE_PAD_X, top);
+            // The footer's halo, as the lines above have it.
+            if let Some((halo, down)) = &halo {
+                session.draw_text_layout(Vector2::new(at.x, at.y + down), &layout, halo);
+            }
+            session.draw_text_layout(at, &layout, &secondary);
+            (top - 4.0).max(0.0)
+        } else {
+            height
+        };
+        if script_is_empty(rows) {
+            session.draw_text(
+                hint,
+                &tt.body,
+                &Rect::from_xywh(
+                    NOTE_PAD_X,
+                    NOTE_PAD_TOP,
+                    w,
+                    (height - NOTE_PAD_TOP).max(0.0),
+                ),
+                &secondary,
+            );
+            return Ok(Vec::new());
+        }
+        let (laid, line_h) = self.script_rows(width, text_size, rows)?;
+        let px = Px::new(scale);
+        let plate = session.create_solid_brush(with_alpha(theme.text_primary, 0.07))?;
+        let arrow = session.create_solid_brush(theme.text_secondary)?;
+        let rule = session.create_solid_brush(with_alpha(theme.text_primary, 0.14))?;
+        let todo = TodoBrushes::new(session, theme)?;
+        let glyph_w = (14.0 * tt.k).round();
+        let mut hits = Vec::new();
+        for (i, (row, at)) in rows.iter().zip(&laid).enumerate() {
+            // The first row's text stands where a note's first line does: the two fences
+            // side by side start their text on one line (the row stood 3 DIPs lower).
+            let y = NOTE_PAD_TOP + at.y - scroll;
+            if y >= height {
+                break;
+            }
+            if y + at.h + SCRIPT_ROW_PAD_Y <= 0.0 {
+                // Scrolled out above the fence.
+                continue;
+            }
+            let Some(layout) = &at.text else {
+                let line_y = px.snap(y - SCRIPT_ROW_PAD_Y + at.h / 2.0);
+                session.fill_rect(&Rect::from_xywh(NOTE_PAD_X, line_y, w, px.hair()), &rule);
+                continue;
+            };
+            let h = at.h;
             // A row that runs past the footer's top shows only its lines that fit whole.
             let _clip = if has_footer && y + h > height {
                 let fit = layout
@@ -4362,21 +5398,35 @@ impl FenceChrome {
             } else {
                 None
             };
+            // The first row's plate starts at the content's top edge, a DIP under where the
+            // others' would: its round corners stay whole.
+            let plate_top = (y - SCRIPT_ROW_PAD_Y).max(-scroll);
             let plate_rect = Rect::from_xywh(
                 NOTE_PAD_X - SCRIPT_ROW_PAD_X,
-                y - SCRIPT_ROW_PAD_Y,
+                plate_top,
                 w + 2.0 * SCRIPT_ROW_PAD_X,
-                h + 2.0 * SCRIPT_ROW_PAD_Y,
+                y + h + SCRIPT_ROW_PAD_Y - plate_top,
             );
-            let hovered = row.clickable && hover == Some(i);
-            if hovered {
+            // How far this row's plate has faded in.
+            let hot = if row.clickable {
+                hover
+                    .iter()
+                    .find(|(r, _)| *r == i)
+                    .map_or(0.0, |(_, a)| a.clamp(0.0, 1.0))
+            } else {
+                0.0
+            };
+            if hot > 0.0 {
+                // Held: the pressed fill, lighter than the hover's (as a WinUI list row).
+                let strength = if pressed == Some(i) { 0.04 } else { 0.07 };
+                plate.set_color(with_alpha(theme.text_primary, strength * hot));
                 session.fill_rounded_rect(&RoundedRect::uniform(plate_rect, 4.0), &plate);
             }
             if let Some(done) = row.todo {
-                todo.draw(tt, session, px, y, line_h, done);
+                todo.draw(tt, session, px, y, line_h, done, TodoBoxState::Rest);
             }
-            if let Some(icon) = &icon {
-                session.draw_text_layout_color(Vector2::new(x, y), icon, &primary);
+            if let Some(icon) = &at.icon {
+                session.draw_text_layout_color(Vector2::new(at.x, y), icon, &primary);
             }
             let own = match row.color {
                 Some(c) => Some(session.create_solid_brush(c)?),
@@ -4387,45 +5437,80 @@ impl FenceChrome {
                 (None, Some(true)) => &secondary,
                 (None, _) => &primary,
             };
-            session.draw_text_layout_color(Vector2::new(text_x, y), &layout, brush);
-            if hovered && row.opens {
+            // A row in a colour of its own keeps it bare: the halo is the fence text's.
+            if let (Some((halo, down)), None) = (&halo, &own) {
+                session.draw_text_layout(Vector2::new(at.text_x, y + down), layout, halo);
+            }
+            session.draw_text_layout_color(Vector2::new(at.text_x, y), layout, brush);
+            if hot > 0.0 && row.opens {
+                arrow.set_color(with_alpha(theme.text_secondary, hot));
                 session.draw_text(
                     OPEN_GLYPH,
                     &tt.glyph,
                     &Rect::from_xywh(width - NOTE_PAD_X - glyph_w, y, glyph_w, line_h),
-                    &secondary,
+                    &arrow,
                 );
             }
             if row.clickable {
                 hits.push((i, plate_rect));
             }
-            y += h + 2.0 * SCRIPT_ROW_PAD_Y;
+        }
+        if let Some(bar) = scrollbar {
+            draw_scrollbar(session, theme, &self.sort_glyph_format, width, bar)?;
         }
         Ok(hits)
     }
 }
 
-/// The brushes of a to-do's check box: its ring, the accent fill and the check mark.
+/// A script fence without rows: it shows its hint.
+fn script_is_empty(rows: &[ScriptRowDraw<'_>]) -> bool {
+    rows.iter()
+        .all(|r| !r.separator && r.text.trim().is_empty() && r.todo.is_none() && r.icon.is_none())
+}
+
+/// A to-do's check box as the pointer has it: at rest, under the pointer, or held.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TodoBoxState {
+    Rest,
+    Hover,
+    Pressed,
+}
+
+/// The brushes of a to-do's check box: its ring, the fill under the pointer, the accent fill
+/// and the check mark.
 struct TodoBrushes {
     ring: Brush,
+    fill: Brush,
     accent: Brush,
     check: Brush,
+    ink: ColorF,
+    accent_color: ColorF,
 }
 
 impl TodoBrushes {
     fn new(session: &DrawingSession<'_>, theme: &Theme) -> Result<Self> {
+        // A ticked box is filled with the accent in the shade that goes with the text picked
+        // for the plate (the light shade was 1.5 : 1 on a light plate in dark mode over a
+        // bright wallpaper); the tick is dark on the light shade and white on the dark one.
+        let accent = theme.accent_beside_text();
         Ok(Self {
             ring: session.create_solid_brush(with_alpha(theme.text_primary, 0.7))?,
-            accent: session.create_solid_brush(theme.accent)?,
-            check: session.create_solid_brush(match theme.mode {
-                crate::theme::ThemeMode::Dark => ColorF::from_rgba8(0, 0, 0, 0xE6),
-                crate::theme::ThemeMode::Light => ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xFF),
+            fill: session.create_solid_brush(ColorF::TRANSPARENT)?,
+            accent: session.create_solid_brush(accent)?,
+            check: session.create_solid_brush(if theme.text_primary.r > 0.5 {
+                ColorF::from_rgba8(0, 0, 0, 0xE6)
+            } else {
+                ColorF::from_rgba8(0xFF, 0xFF, 0xFF, 0xFF)
             })?,
+            ink: theme.text_primary,
+            accent_color: accent,
         })
     }
 
     /// The box of a to-do whose first line is at `y` (`line_h` tall), sized for the text
-    /// `tt`; returns its rect.
+    /// `tt`; returns its rect. As a WinUI CheckBox, the box answers the pointer: under it an
+    /// open box fills a little and a ticked one lightens; held, both dim.
+    #[allow(clippy::too_many_arguments)]
     fn draw(
         &self,
         tt: &ToolText,
@@ -4434,14 +5519,27 @@ impl TodoBrushes {
         y: f32,
         line_h: f32,
         done: bool,
+        state: TodoBoxState,
     ) -> Rect {
         let edge = tt.box_edge();
         let top = px.snap(y + (line_h - edge) / 2.0);
         let r = Rect::from_xywh(px.snap(NOTE_PAD_X), top, edge, edge);
+        let (ring_a, fill_a, accent_a) = match state {
+            TodoBoxState::Rest => (0.7, 0.0, 1.0),
+            TodoBoxState::Hover => (0.95, 0.08, 0.85),
+            TodoBoxState::Pressed => (0.45, 0.14, 0.7),
+        };
         if done {
+            self.accent
+                .set_color(with_alpha(self.accent_color, accent_a));
             session.fill_rounded_rect(&RoundedRect::uniform(r, 4.0), &self.accent);
             session.draw_text(CHECK_GLYPH, &tt.glyph, &r, &self.check);
         } else {
+            if fill_a > 0.0 {
+                self.fill.set_color(with_alpha(self.ink, fill_a));
+                session.fill_rounded_rect(&RoundedRect::uniform(r, 4.0), &self.fill);
+            }
+            self.ring.set_color(with_alpha(self.ink, ring_a));
             session.draw_rounded_rect(&px.ring(r, 4.0), &self.ring, px.hair());
         }
         r
@@ -4453,22 +5551,93 @@ impl FenceChrome {
     /// `height` DIPs showing `time` and `date`. A new clock's area shows them at 40 and 14;
     /// another area scales both by its height, at most as far as the wider of the two lines
     /// still fits the width, from 0.6 to 4 times (the date never under 11). The time size is
-    /// whole DIPs, so the text keeps its size while the strings change by a digit.
+    /// whole DIPs, so the text keeps its size while the strings change by a digit, and never
+    /// more than the width has room for: rounded up past that, the line the width was fitted
+    /// to would be a hair too wide, and a long date that has room would give way to the short
+    /// one.
     pub fn clock_text_sizes(&self, width: f32, height: f32, time: &str, date: &str) -> (f32, f32) {
         let w = (width - 2.0 * CLOCK_FIT_PAD_X).max(1.0);
         let need = crate::text::measure_width(time, &self.clock_time_format)
             .max(crate::text::measure_width(date, &self.clock_date_format))
             .max(1.0);
-        let k = (height / CLOCK_BASE_H)
-            .min(w / need)
+        let (by_height, by_width) = (height / CLOCK_BASE_H, w / need);
+        let k = by_height
+            .min(by_width)
             .clamp(CLOCK_SCALE_MIN, CLOCK_SCALE_MAX);
-        let time = (CLOCK_TIME_DIP * k).round();
+        let time = (CLOCK_TIME_DIP * k)
+            .round()
+            .min((CLOCK_TIME_DIP * by_width).floor())
+            .max((CLOCK_TIME_DIP * CLOCK_SCALE_MIN).round());
         let date = (CLOCK_DATE_DIP * time / CLOCK_TIME_DIP).max(CLOCK_DATE_MIN_DIP);
         (time, date)
     }
 
-    /// 时钟与日期: `time` large at the top left, `date` under it in the secondary colour, at
-    /// the sizes [`Self::clock_text_sizes`] gives for the area. Returns those sizes.
+    /// 时钟与日期: the time a clock area `width` × `height` DIPs has room for at the size
+    /// [`Self::clock_text_sizes`] gives: `time`, else the first of `shorter` that fits (the
+    /// same time without its seconds, then without its AM / PM marker too; empty ones are
+    /// passed over), else the last of them. A clock at its smallest size in a narrow fence
+    /// falls back to these. The second value names the choice for the log.
+    pub fn clock_time<'a>(
+        &self,
+        width: f32,
+        height: f32,
+        time: &'a str,
+        shorter: &[&'a str],
+        date: &str,
+    ) -> (&'a str, &'static str) {
+        let w = (width - 2.0 * CLOCK_FIT_PAD_X).max(1.0);
+        let fits = |text: &str| {
+            let (time_dip, _) = self.clock_text_sizes(width, height, text, date);
+            crate::text::measure_width(text, &self.clock_time_format) * time_dip / CLOCK_TIME_DIP
+                <= w
+        };
+        if fits(time) {
+            return (time, "full");
+        }
+        let mut last = None;
+        for text in shorter.iter().copied() {
+            if text.is_empty() || text == time {
+                continue;
+            }
+            last = Some(text);
+            if fits(text) {
+                break;
+            }
+        }
+        last.map_or((time, "full"), |text| (text, "short"))
+    }
+
+    /// 时钟与日期: the date line a clock area `width` × `height` DIPs has room for on one
+    /// line at the size [`Self::clock_text_sizes`] gives: `long`, else `short` (no year, the
+    /// short weekday), else none. Without a short date the long one stays. The second value
+    /// names the choice for the log.
+    pub fn clock_date<'a>(
+        &self,
+        width: f32,
+        height: f32,
+        time: &str,
+        long: &'a str,
+        short: &'a str,
+    ) -> (&'a str, &'static str) {
+        let (_, date_dip) = self.clock_text_sizes(width, height, time, long);
+        let w = (width - 2.0 * CLOCK_FIT_PAD_X).max(1.0);
+        let fits = |text: &str| {
+            crate::text::measure_width(text, &self.clock_date_format) * date_dip / CLOCK_DATE_DIP
+                <= w
+        };
+        if short.is_empty() || fits(long) {
+            (long, "long")
+        } else if fits(short) {
+            (short, "short")
+        } else {
+            ("", "none")
+        }
+    }
+
+    /// 时钟与日期: `time` large at the top left, `shown_date` (see [`Self::clock_date`])
+    /// under it in the secondary colour, at the sizes [`Self::clock_text_sizes`] gives for the
+    /// area and the long `date`. Returns those sizes.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_clock(
         &self,
         session: &DrawingSession<'_>,
@@ -4477,6 +5646,7 @@ impl FenceChrome {
         height: f32,
         time: &str,
         date: &str,
+        shown_date: &str,
     ) -> Result<(f32, f32)> {
         session.clear(ColorF::TRANSPARENT);
         let (time_dip, date_dip) = self.clock_text_sizes(width, height, time, date);
@@ -4511,12 +5681,39 @@ impl FenceChrome {
         let secondary = session.create_solid_brush(theme.text_secondary)?;
         // As wide as the sizes were fitted to, from the texts' left edge.
         let w = (width - 2.0 * CLOCK_FIT_PAD_X).max(1.0);
+        // On a fully transparent fence the text sits on the wallpaper: it gets the halo.
+        let legible = if theme.text_halo {
+            Some(Legible::new(session)?)
+        } else {
+            None
+        };
         let layout = TextLayout::new(time, &fonts.time_format, w, f32::MAX)?;
         let time_h = layout.metrics().height;
-        session.draw_text_layout(Vector2::new(NOTE_PAD_X, 0.0), &layout, &primary);
+        let time_at = Vector2::new(NOTE_PAD_X, 0.0);
+        draw_layout_halo(
+            session,
+            theme,
+            legible.as_ref(),
+            &layout,
+            time_at,
+            theme.text_primary,
+        );
+        session.draw_text_layout(time_at, &layout, &primary);
         let top = time_h + 2.0 * time_dip / CLOCK_TIME_DIP;
+        if legible.is_some() {
+            let date_layout =
+                TextLayout::new(shown_date, &fonts.date_format, w, (height - top).max(0.0))?;
+            draw_layout_halo(
+                session,
+                theme,
+                legible.as_ref(),
+                &date_layout,
+                Vector2::new(NOTE_PAD_X, top),
+                theme.text_secondary,
+            );
+        }
         session.draw_text(
-            date,
+            shown_date,
             &fonts.date_format,
             &Rect::from_xywh(NOTE_PAD_X, top, w, (height - top).max(0.0)),
             &secondary,
@@ -4560,21 +5757,22 @@ impl FenceChrome {
         // A cell that reaches into the scrollbar's strip: its plate ends before the thumb (the
         // name does too: a fence that scrolls fits none wider than `ICON_LABEL_SIDE_INSET`).
         rect.right = rect.right.min(content.plates_right).max(rect.left);
-        if alpha >= 1.0 {
-            draw_item_state(
-                session,
-                theme,
-                state,
-                px,
-                rect,
-                cell.hover,
-                cell.selection,
-                content.selection_inactive,
-                cell.pressed,
-                cell.focused,
-                cell.drop_target,
-            );
-        }
+        // A cell that fades in shows its state at the same strength: the box of an icon that
+        // arrives selected (a pasted copy) used to wait for the end of the fade-in and then
+        // stood there in one frame.
+        draw_item_state(
+            session,
+            theme,
+            state,
+            px,
+            rect,
+            cell.hover * alpha,
+            cell.selection * alpha,
+            content.selection_inactive,
+            cell.pressed && alpha >= 1.0,
+            cell.focused && alpha >= 1.0,
+            cell.drop_target * alpha,
+        );
         let icon_x = cell.x + (cell.w - content.icon_size) / 2.0;
         let icon_y = cell.y + content.icon_top;
         draw_item_icon(
@@ -4632,6 +5830,78 @@ impl FenceChrome {
     }
 }
 
+/// The clickable row under an empty fence's text (a smart fence that needs Everything:
+/// 「启动 Everything」).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EmptyAction<'a> {
+    pub label: &'a str,
+    /// The pointer is over it.
+    pub hover: bool,
+}
+
+/// Height of the empty state's action row and its distance from the text above (DIPs).
+const EMPTY_ACTION_H: f32 = 28.0;
+const EMPTY_ACTION_GAP: f32 = 8.0;
+
+impl FenceChrome {
+    /// Where the action row under the empty-state text is, in the content surface's DIPs:
+    /// under `text` as it wraps in a content area `width` x `height` whose first `header_h`
+    /// DIPs are the column header. None when the fence is too short to show the row.
+    pub fn empty_action_rect(
+        &self,
+        text: &str,
+        label: &str,
+        width: f32,
+        height: f32,
+        header_h: f32,
+    ) -> Option<Rect> {
+        let avail = (height - header_h).max(0.0);
+        let w = (width - 24.0).max(0.0);
+        let text_h = TextLayout::new(text, &self.empty_format, w, 1000.0)
+            .ok()?
+            .metrics()
+            .height;
+        let label_w = TextLayout::new(label, &self.empty_format, 1000.0, 100.0)
+            .ok()?
+            .metrics()
+            .width;
+        let row_w = (label_w + 32.0).min(w);
+        let left = 12.0 + (w - row_w) / 2.0;
+        let top = header_h + empty_text_top(avail) + text_h + EMPTY_ACTION_GAP;
+        (row_w > 0.0 && top + EMPTY_ACTION_H <= height)
+            .then(|| Rect::new(left, top, left + row_w, top + EMPTY_ACTION_H))
+    }
+
+    /// The action row: an accent-tinted plate (stronger under the pointer) with its label.
+    fn draw_empty_action(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        rect: &Rect,
+        action: &EmptyAction<'_>,
+    ) -> Result<()> {
+        let tint = if action.hover { 0.22 } else { 0.14 };
+        session.fill_rounded_rect(
+            &RoundedRect::uniform(*rect, 4.0),
+            &session.create_solid_brush(with_alpha(theme.accent, tint))?,
+        );
+        // `empty_format` starts its text at the top of the box: one 20 DIP line, centred.
+        let line = Rect::new(
+            rect.left,
+            rect.top + (EMPTY_ACTION_H - 20.0) / 2.0,
+            rect.right,
+            rect.bottom,
+        );
+        session.draw_text(
+            action.label,
+            &self.empty_format,
+            &line,
+            &session.create_solid_brush(theme.text_primary)?,
+        );
+        Ok(())
+    }
+}
+
 /// Top of the empty-state text inside an area `avail` DIPs tall: Explorer places "This folder
 /// is empty." in the upper part of the view; very short fences keep it vertically centred
 /// (20 DIP = the Body 14 line height).
@@ -4643,9 +5913,81 @@ fn empty_text_top(avail: f32) -> f32 {
     }
 }
 
+/// Where the text of an empty fence `width` DIPs wide is laid out: left edge and width,
+/// centred, 12 DIPs clear of both sides. A text that needs more than one line gets the
+/// narrowest box that keeps its number of lines, so the lines come out about equally long
+/// (in a fence of 220 DIPs 「このフォルダーが見つかりませ」 / 「ん。」 stood there). The box
+/// stays as wide as the longest word that cannot be broken (a run without a space and
+/// without Chinese, Japanese or Korean characters), so no word is cut that the whole width
+/// keeps in one piece. A text on one line keeps the whole width.
+fn balanced_wrap_span(text: &str, format: &TextFormat, width: f32) -> (f32, f32) {
+    let full = (width - 24.0).max(0.0);
+    let lines = |w: f32| {
+        TextLayout::new(text, format, w, 1000.0)
+            .map(|l| l.metrics().line_count)
+            .unwrap_or(1)
+    };
+    let n = lines(full);
+    if n <= 1 {
+        return (12.0, full);
+    }
+    let word = text
+        .split_whitespace()
+        .filter(|w| !w.chars().any(|c| c >= '\u{2E80}'))
+        .map(|w| crate::text::measure_width(w, format))
+        .fold(0.0f32, f32::max);
+    // n lines need more than full / n: the text would fit on fewer lines otherwise.
+    let (mut lo, mut hi) = ((full / n as f32).max(word), full);
+    if lo >= hi || lines(lo) <= n {
+        hi = lo.min(full);
+    }
+    while hi - lo > 1.0 {
+        let mid = (lo + hi) / 2.0;
+        if lines(mid) <= n {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    let w = hi.ceil().min(full);
+    (12.0 + (full - w) / 2.0, w)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_text_of_an_empty_fence_breaks_into_lines_of_about_one_length() {
+        let chrome = FenceChrome::new().unwrap();
+        let f = &chrome.empty_format;
+        let lines = |t: &str, w: f32| {
+            TextLayout::new(t, f, w, 1000.0)
+                .unwrap()
+                .metrics()
+                .line_count
+        };
+        // A fence of 220 DIPs: fifteen characters, of which the last one and the full stop
+        // stood alone on the second line.
+        let text = "このフォルダーが見つかりません。";
+        assert_eq!(lines(text, 196.0), 2);
+        let (x, w) = balanced_wrap_span(text, f, 220.0);
+        assert!(w < 130.0, "two lines of eight and seven characters: {w}");
+        assert_eq!(lines(text, w), 2);
+        assert!(lines(text, w - 4.0) > 2, "no narrower box keeps two lines");
+        assert!((x + w / 2.0 - 110.0).abs() < 0.01, "centred in the fence");
+        // English breaks at its spaces, and a text on one line keeps the whole width.
+        let en = "This folder cannot be found.";
+        let (_, w) = balanced_wrap_span(en, f, 150.0);
+        assert_eq!(lines(en, w), 2);
+        assert!(w < 126.0);
+        assert_eq!(balanced_wrap_span(text, f, 400.0), (12.0, 376.0));
+        // The least width: the box stays as wide as the longest word, so a word that the
+        // whole width keeps in one piece is not cut.
+        let word = crate::text::measure_width("folder", f);
+        let (_, w) = balanced_wrap_span("This folder is empty.", f, word + 26.0);
+        assert!(w >= word, "the box {w} holds the word {word}");
+    }
 
     #[test]
     fn title_alignment_centres_on_the_fence_and_keeps_clear_of_the_chevron() {
@@ -4709,12 +6051,29 @@ mod tests {
             header_control_radius(&theme, Rect::from_xywh(0.0, 0.0, 40.0, 2.0)),
             1.0
         );
-        assert_eq!(header_count_width(136.0, 1, 16.0), 0.0);
-        assert_eq!(header_count_width(136.0, 2, 16.0), 0.0);
-        assert_eq!(header_count_width(400.0, 2, 16.0), ROLLED_COUNT_W);
+        assert_eq!(header_count_width(136.0, 1, 16.0, ROLLED_COUNT_W), 0.0);
+        assert_eq!(header_count_width(136.0, 2, 16.0, ROLLED_COUNT_W), 0.0);
+        assert_eq!(
+            header_count_width(400.0, 2, 16.0, ROLLED_COUNT_W),
+            ROLLED_COUNT_W
+        );
         // Six tabs scroll beside the count instead of shrinking under it.
-        assert_eq!(header_count_width(320.0, 6, 16.0), ROLLED_COUNT_W);
-        assert_eq!(header_count_width(200.0, 6, 16.0), 0.0);
+        assert_eq!(
+            header_count_width(320.0, 6, 16.0, ROLLED_COUNT_W),
+            ROLLED_COUNT_W
+        );
+        assert_eq!(header_count_width(200.0, 6, 16.0, ROLLED_COUNT_W), 0.0);
+        // A count in words (German, Russian, Spanish) takes its own width and a gap, so it is
+        // not drawn over the end of a long name; a short one keeps the 64 DIPs.
+        let chrome = FenceChrome::new().unwrap();
+        assert_eq!(chrome.rolled_count_room("12 项"), ROLLED_COUNT_W);
+        let long = chrome.rolled_count_room("Элементов: 128");
+        let text = crate::text::measure_width("Элементов: 128", &chrome.count_format);
+        assert!(
+            long >= text + 12.0 && long > ROLLED_COUNT_W,
+            "{long} for {text}"
+        );
+        assert_eq!(header_count_width(400.0, 1, 16.0, long), long);
     }
 
     #[test]
@@ -5176,6 +6535,185 @@ mod tests {
         // where the strip starts.
         assert_eq!(w - ICON_LABEL_SIDE_INSET, w - SCROLL_STRIP);
         assert_eq!(NOTE_PAD_X, TEXT_LEFT);
+    }
+
+    /// A clock keeps the date form its width has room for at every height (a size is never
+    /// rounded up past the width), and a time too wide for a narrow clock at the smallest
+    /// size gives way to the one without seconds.
+    #[test]
+    fn a_clock_keeps_its_date_at_every_height_and_leaves_out_seconds_that_do_not_fit() {
+        let chrome = FenceChrome::new().unwrap();
+        let (time, long, short) = ("5:10", "2026年11月12日 星期四", "11月12日 周四");
+        for h in 104..=520 {
+            let got = chrome.clock_date(240.0, h as f32, time, long, short);
+            assert_eq!(got, (long, "long"), "content height {h}");
+        }
+        assert_eq!(
+            chrome.clock_time(86.0, 114.0, "5:09:59", &["5:09", "5:09"], long),
+            ("5:09", "short")
+        );
+        assert_eq!(
+            chrome.clock_time(240.0, 104.0, "5:09:59", &["5:09", "5:09"], long),
+            ("5:09:59", "full")
+        );
+        // A 12 hour format: first the seconds go, then the marker.
+        assert_eq!(
+            chrome.clock_time(128.0, 114.0, "5:09:59 PM", &["5:09 PM", "5:09"], long),
+            ("5:09 PM", "short")
+        );
+        assert_eq!(
+            chrome.clock_time(86.0, 114.0, "5:09:59 PM", &["5:09 PM", "5:09"], long),
+            ("5:09", "short")
+        );
+        // Nothing shorter to show: the time stays.
+        assert_eq!(
+            chrome.clock_time(86.0, 114.0, "5:09", &["", "5:09"], long),
+            ("5:09", "full")
+        );
+    }
+
+    /// A note's text measured for scrolling and for its editor: every line on screen has a
+    /// top, a place and the point of its caret name each other, and Up and Down go one line
+    /// on screen at a time.
+    #[test]
+    fn note_text_places_and_lines() {
+        let chrome = FenceChrome::new().unwrap();
+        let long = "给客户回邮件：确认报价单和交付日期，附上合同扫描件，然后把结果写进周报";
+        let lines = [
+            NoteLineDraw {
+                text: "周会准备",
+                todo: None,
+            },
+            NoteLineDraw {
+                text: long,
+                todo: Some(false),
+            },
+            NoteLineDraw {
+                text: "",
+                todo: None,
+            },
+            NoteLineDraw {
+                text: "备注：周五前完成",
+                todo: None,
+            },
+        ];
+        let w = 260.0;
+        let extent = chrome.note_extent(w, 1, &lines).unwrap();
+        // The long to-do wraps: more tops than lines, rising from 0, inside the height.
+        assert!(extent.tops.len() > lines.len(), "{:?}", extent.tops);
+        assert_eq!(extent.tops[0], 0.0);
+        assert!(
+            extent.tops.windows(2).all(|p| p[1] > p[0]),
+            "{:?}",
+            extent.tops
+        );
+        assert!(extent.height > *extent.tops.last().unwrap());
+        assert!(extent.line_step > 0.0);
+        // An empty note takes nothing.
+        let empty = [NoteLineDraw {
+            text: " ",
+            todo: None,
+        }];
+        assert_eq!(
+            chrome.note_extent(w, 1, &empty).unwrap(),
+            ToolTextExtent::default()
+        );
+        // The caret of a place, hit again, is that place: line starts, middles, ends.
+        let len = |i: usize| lines[i].text.encode_utf16().count();
+        for (line, at) in [
+            (0, 0),
+            (0, 2),
+            (0, 4),
+            (1, 0),
+            (1, 5),
+            (1, len(1)),
+            (2, 0),
+            (3, 3),
+            (3, len(3)),
+        ] {
+            let (x, top, h) = chrome.note_caret(w, 1, &lines, line, at).unwrap();
+            assert!(h > 10.0);
+            assert_eq!(
+                chrome.note_hit(w, 1, &lines, x, top + h / 2.0).unwrap(),
+                (line, at),
+                "caret of ({line}, {at}) at {x}, {top}"
+            );
+        }
+        // A to-do's text starts right of its check box; a plain line at the text edge.
+        assert_eq!(chrome.note_caret(w, 1, &lines, 0, 0).unwrap().0, NOTE_PAD_X);
+        assert!(chrome.note_caret(w, 1, &lines, 1, 0).unwrap().0 > NOTE_PAD_X + NOTE_BOX);
+        // Down from the first line goes into the to-do's first line on screen, down again
+        // into its second (a later place of the same line), and Up comes back.
+        let first = chrome.note_vertical(w, 1, &lines, 0, 0, 1).unwrap();
+        assert_eq!(first.0, 1);
+        let second = chrome
+            .note_vertical(w, 1, &lines, first.0, first.1, 1)
+            .unwrap();
+        assert_eq!(second.0, 1);
+        assert!(second.1 > first.1, "{first:?} then {second:?}");
+        let back = chrome
+            .note_vertical(w, 1, &lines, second.0, second.1, -1)
+            .unwrap();
+        assert_eq!(back, first);
+        // Up on the first line and Down on the last stay.
+        assert_eq!(
+            chrome.note_vertical(w, 1, &lines, 0, 2, -1).unwrap(),
+            (0, 2)
+        );
+        assert_eq!(chrome.note_vertical(w, 1, &lines, 3, 3, 1).unwrap(), (3, 3));
+        // A point below all the text takes the last line, one above it the first.
+        assert_eq!(
+            chrome.note_hit(w, 1, &lines, 500.0, 900.0).unwrap(),
+            (3, len(3))
+        );
+        assert_eq!(chrome.note_hit(w, 1, &lines, 0.0, -50.0).unwrap(), (0, 0));
+        // A selection over the wrapped to-do has a box for each of its lines on screen.
+        let laid = chrome.note_rows(w, 1, &lines).unwrap();
+        let rows = &laid.0;
+        let boxes = layout_selection(&rows[1].layout, 0, len(1), len(1));
+        assert_eq!(
+            boxes.len(),
+            layout_line_tops(&rows[1].layout, rows[1].h).len()
+        );
+        assert!(boxes.len() >= 2);
+        assert!(boxes.iter().all(|r| r.right > r.left && r.bottom > r.top));
+        // A script fence's rows scroll above its footer.
+        let script = [
+            ScriptRowDraw {
+                text: "第一行",
+                separator: false,
+                todo: None,
+                color: None,
+                icon: None,
+                clickable: false,
+                opens: false,
+            },
+            ScriptRowDraw {
+                text: "",
+                separator: true,
+                todo: None,
+                color: None,
+                icon: None,
+                clickable: false,
+                opens: false,
+            },
+            ScriptRowDraw {
+                text: "第二行",
+                separator: false,
+                todo: None,
+                color: None,
+                icon: None,
+                clickable: true,
+                opens: true,
+            },
+        ];
+        let bare = chrome.script_extent(w, 1, &script, "").unwrap();
+        let footed = chrome
+            .script_extent(w, 1, &script, "脚本.ps1 · 09:00 更新")
+            .unwrap();
+        assert_eq!(bare.tops.len(), 2);
+        assert_eq!(bare.tops, footed.tops);
+        assert!(footed.height > bare.height + 12.0);
     }
 
     #[test]

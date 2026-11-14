@@ -19,11 +19,17 @@ pub(super) fn theme_for(
         theme = theme.with_liquid_glass();
     }
     if let Some(p) = accent {
-        theme = theme.with_accent(if mode == ThemeMode::Dark {
-            p.light2
-        } else {
-            p.dark1
-        });
+        theme = theme
+            .with_accent(if mode == ThemeMode::Dark {
+                p.light2
+            } else {
+                p.dark1
+            })
+            .with_other_accent(if mode == ThemeMode::Dark {
+                p.dark1
+            } else {
+                p.light2
+            });
     }
     match custom {
         Some(c) => c.apply(theme),
@@ -221,10 +227,17 @@ impl MonitorRecipe {
     }
 
     /// Shows a neutral colour instead of the picture: the live wallpaper over it cannot be
-    /// captured, and the Windows wallpaper under it is not what the monitor shows.
-    pub(super) fn show_neutral(&mut self, dark: bool) {
+    /// captured, and the Windows wallpaper under it is not what the monitor shows. Liquid
+    /// Glass draws it as a see-through pane (`unreadable_monitors`) and gives its `pane`
+    /// colour: the theme's solid fill, a milky white in light mode and a dark slate in dark
+    /// mode.
+    pub(super) fn show_neutral(&mut self, dark: bool, pane: Option<pecofence_render::ColorF>) {
         self.path = None;
-        self.background = if dark { [40, 40, 44] } else { [212, 214, 218] };
+        self.background = match pane {
+            Some(c) => [c.r, c.g, c.b].map(|v| (v * 255.0).round() as u8),
+            None if dark => [40, 40, 44],
+            None => [212, 214, 218],
+        };
     }
 
     pub(super) fn rect(&self) -> RECT {
@@ -447,12 +460,24 @@ pub(super) fn monitor_recipes(
             if let Some(image) = l.image.clone() {
                 recipe.show_live(image);
             } else if l.blind {
-                recipe.show_neutral(theme.mode == ThemeMode::Dark);
+                recipe.show_neutral(
+                    theme.mode == ThemeMode::Dark,
+                    theme.liquid_glass.then_some(theme.solid_fill),
+                );
             }
         }
         out.push(recipe);
     }
     out
+}
+
+/// The monitors whose live wallpaper cannot be read: Liquid Glass fences there are drawn as
+/// see-through panes (`BackdropSets::unreadable`).
+pub(super) fn unreadable_monitors(live: &[LiveWallpaper]) -> Vec<RECT> {
+    live.iter()
+        .filter(|l| l.blind && l.image.is_none())
+        .map(|l| l.monitor)
+        .collect()
 }
 
 /// `snapshot`'s signature, plus the monitors whose backdrop shows a live wallpaper's capture
@@ -520,8 +545,17 @@ fn build_snapshot_backdrops(
         // under the old metadata, or a later desktop round trip could resurrect it.
         return Err(pending());
     }
+    let unreadable = unreadable_monitors(live);
+    if !unreadable.is_empty() {
+        tracing::debug!(
+            monitors = unreadable.len(),
+            liquid_glass = theme.liquid_glass,
+            "backdrops: live wallpaper not readable; Liquid Glass panes there are see-through"
+        );
+    }
     Ok(Rc::new(BackdropSets {
         acrylic: Rc::new(backdrops),
+        unreadable,
     }))
 }
 
@@ -708,6 +742,7 @@ impl StartupBackdrops {
         Ok((
             Rc::new(BackdropSets {
                 acrylic: Rc::new(backdrops),
+                ..Default::default()
             }),
             snapshot,
             signature,
@@ -1146,6 +1181,7 @@ impl App {
         );
         let backdrops = Rc::new(BackdropSets {
             acrylic: set.clone(),
+            ..Default::default()
         });
         if !self
             .wallpaper_cache
@@ -1237,6 +1273,7 @@ impl App {
             self.resettle_live_wallpapers();
         }
         self.capture_live_wallpapers(LIVE_REFRESH);
+        self.tell_live_wallpaper();
     }
 
     /// Wallpaper-only refresh: reuse a recent desktop's pixels and preserve icon/geometry
@@ -1300,6 +1337,8 @@ impl App {
 
     pub(super) fn on_system_settings_changed(&mut self) {
         self.refresh_language();
+        // The region's time and date formats (12 or 24 hours) may be what changed.
+        self.refresh_clocks("a system setting changed");
         self.ctx
             .motion
             .set_enabled(sysparams::client_area_animation());
@@ -1526,6 +1565,8 @@ impl App {
             self.gpu_baseline = None;
         }
         tracing::info!(?mode, ?style, accent = ?accent.map(|a| a.accent), "theme refreshed");
+        // The card that offers Fluent leaves at once when the user chose Fluent elsewhere.
+        self.retire_live_wallpaper_card();
     }
 
     /// Global icon tint / chameleon / shortcut arrows changed: flush the caches and let icons

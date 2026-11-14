@@ -19,6 +19,8 @@ const IPC_CLASSES: [&str; 2] = [
 /// `EVERYTHING_WM_IPC` requests (wParam of `WM_USER`).
 const GET_MAJOR_VERSION: usize = 0;
 const GET_MINOR_VERSION: usize = 1;
+/// `EVERYTHING_IPC_IS_DB_LOADED`: nonzero once Everything has read its index.
+const IS_DB_LOADED: usize = 401;
 
 /// A running Everything (1.5 first when both run).
 #[derive(Clone, Copy, Debug)]
@@ -32,6 +34,11 @@ impl Instance {
     /// Everything 1.5 matches Chinese names by pinyin (`pinyin:` / `pinyin-jian:`).
     pub fn supports_pinyin(&self) -> bool {
         (self.major, self.minor) >= (1, 5)
+    }
+
+    /// Whether Everything has read its index: a search sent before that finds nothing.
+    pub fn db_loaded(&self) -> bool {
+        ask(self.hwnd, IS_DB_LOADED).is_some_and(|loaded| loaded != 0)
     }
 
     /// The program file of the running Everything.
@@ -55,6 +62,18 @@ fn ask(hwnd: HWND, request: usize) -> Option<u32> {
         )
     };
     (ok.0 != 0).then_some(result as u32)
+}
+
+/// Whether an Everything window is there: no message is sent, so this never waits for an
+/// Everything that is busy (as [`find`] may, up to its timeout).
+pub fn running() -> bool {
+    IPC_CLASSES.iter().any(|class| {
+        let class = to_wide(class);
+        // SAFETY: plain FFI call with a NUL-terminated class name.
+        !unsafe { FindWindowW(PCWSTR(class.as_ptr()), PCWSTR::null()) }
+            .0
+            .is_null()
+    })
 }
 
 /// The running Everything, if any.

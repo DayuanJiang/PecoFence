@@ -11,6 +11,15 @@ pub(super) fn tip_delay_ms(hover_ms: u32, reshow_ms: u32, hidden_ago: Option<Dur
     }
 }
 
+/// Where a tip beside the pointer goes at `scale`: its top-left (12 DIPs right of the pointer
+/// and 20 below it, under the cursor's picture), and where its bottom edge goes when there is
+/// no room below: 4 DIPs above the pointer.
+pub(super) fn pointer_tip_place(scale: f32) -> (i32, i32, i32) {
+    let pt = window::cursor_pos();
+    let px = |dip: f32| (dip * scale).round() as i32;
+    (pt.x + px(12.0), pt.y + px(20.0), pt.y - px(4.0))
+}
+
 /// What the infotip describes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum TipTarget {
@@ -25,6 +34,12 @@ pub(super) enum TipTarget {
     FilterTag,
     /// The lock glyph of a locked fence: how to unlock it.
     Lock,
+    /// A single title that is drawn cut short: all of it.
+    Title,
+    /// The arrow at the right of the title: what a click on it does (收起 / 展开).
+    Chevron,
+    /// A smart fence's count capsule with a "+": of how many files it shows the newest.
+    Count,
 }
 
 /// TME_HOVER rectangle test: has the pointer left the `rect` (SPI_GETMOUSEHOVERWIDTH x
@@ -32,6 +47,30 @@ pub(super) enum TipTarget {
 /// restarts when it has, so a tip appears only once the pointer rests.
 pub(super) fn tip_hover_moved(anchor: (i32, i32), pt: (i32, i32), rect: (i32, i32)) -> bool {
     (pt.0 - anchor.0).abs() >= (rect.0 / 2).max(1) || (pt.1 - anchor.1).abs() >= (rect.1 / 2).max(1)
+}
+
+/// The second line of a shortcut's tip, as File Explorer writes it: the shortcut's `comment`,
+/// else 「位置: <target> (<its folder>)」. None when there is neither (the usual type, size and
+/// date lines show then). A comment kept as a resource reference (`@shell32.dll,-22566`) is
+/// no text to show.
+pub(super) fn shortcut_tip_line(
+    comment: Option<String>,
+    target: Option<std::path::PathBuf>,
+) -> Option<String> {
+    if let Some(c) = comment.filter(|c| !c.starts_with('@')) {
+        return Some(format!("\n{c}"));
+    }
+    let target = target?;
+    let name = target
+        .file_stem()
+        .or_else(|| target.file_name())?
+        .to_string_lossy()
+        .into_owned();
+    let place = match target.parent().filter(|p| !p.as_os_str().is_empty()) {
+        Some(dir) => format!("{name} ({})", dir.display()),
+        None => name,
+    };
+    Some(pecofence_core::i18n::format("\n位置: {0}", &[place]))
 }
 
 impl FenceViewState {
@@ -44,6 +83,11 @@ impl FenceViewState {
         y_px: i32,
         hit: Option<usize>,
     ) -> Option<TipTarget> {
+        // 鼠标移入时保持透明 with the title row folded away: nothing of the row (filter tag,
+        // up button, Task View glyph, tabs) is drawn, so nothing in it has an infotip.
+        if self.title_row_unseen() {
+            return hit.map(TipTarget::Item);
+        }
         if self.cut_filter_tag_at(x_px, y_px) {
             return Some(TipTarget::FilterTag);
         }
@@ -135,12 +179,31 @@ impl FenceViewState {
     /// full caption, the portal up button "向上" (at the root, where its glyph opens the folder,
     /// 在资源管理器中打开文件夹).
     pub(super) fn tip_text(&self) -> Option<String> {
+        // Both tips of the title's folder glyph end with the path of the folder shown: the
+        // title is one name (the fence's own at the root, a subfolder's below it) and says
+        // neither which folder that is nor how deep the fence has gone.
+        let with_folder = |text: &str| match &self.portal_folder {
+            Some(dir) => format!("{text}\n{}", dir.display()),
+            None => text.to_string(),
+        };
         match self.tip_target? {
-            TipTarget::Up if self.glyph_opens_folder() => {
-                Some(pecofence_core::i18n::text("在资源管理器中打开文件夹").to_string())
-            }
-            TipTarget::Up => Some(pecofence_core::i18n::text("向上").to_string()),
+            TipTarget::Up if self.glyph_opens_folder() => Some(with_folder(
+                pecofence_core::i18n::text("在资源管理器中打开文件夹"),
+            )),
+            TipTarget::Up => Some(with_folder(pecofence_core::i18n::text("向上"))),
             TipTarget::Desktops => self.desktop_tip.clone(),
+            TipTarget::Title => Some(self.title.clone()),
+            TipTarget::Count => self.count_tip.clone(),
+            TipTarget::Chevron => Some(
+                // What the click does: during a hover expansion it keeps the fence open
+                // (`CommitExpanded`), so the tip says 「展开」 there too, not 「收起」.
+                pecofence_core::i18n::text(if self.roll_target() || self.peeking {
+                    "展开"
+                } else {
+                    "收起"
+                })
+                .to_string(),
+            ),
             TipTarget::Lock => {
                 Some(pecofence_core::i18n::text("已锁定位置和大小，右键可解除锁定").to_string())
             }
@@ -203,6 +266,21 @@ impl FenceViewState {
             TipTarget::Item(i) => {
                 let it = self.items.get(i)?;
                 let mut s = it.name.clone();
+                // A shortcut: what it is for or where it leads, as in Explorer. The size and
+                // the date of the link file itself say nothing about the program.
+                let is_link = !it.is_folder
+                    && it
+                        .path
+                        .extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case("lnk"));
+                if is_link
+                    && let Some((comment, target)) =
+                        pecofence_platform::shell::shortcut_tip(&it.path)
+                    && let Some(line) = shortcut_tip_line(comment, target)
+                {
+                    s.push_str(&line);
+                    return Some(s);
+                }
                 if let Some(t) = fileinfo::type_name(&it.path, it.is_folder) {
                     s.push_str(&pecofence_core::i18n::format(
                         "\n类型: {0}",
@@ -228,12 +306,8 @@ impl FenceViewState {
     }
 
     pub(super) fn show_tip(&mut self) {
-        let pt = window::cursor_pos();
-        let scale = self.scale();
-        self.show_tip_at(
-            pt.x + (12.0 * scale).round() as i32,
-            pt.y + (20.0 * scale).round() as i32,
-        );
+        let (x, y, above) = pointer_tip_place(self.scale());
+        self.show_tip_at(x, y, above);
     }
 
     /// Keyboard focus (arrow keys, type-to-select, the Peek search's current match) moved to
@@ -254,17 +328,20 @@ impl FenceViewState {
         // target, so the tip goes where the item stops.
         let glide = ((self.scroll_y - self.scroll_target()) * self.scale()).round() as i32;
         self.tip_target = Some(TipTarget::Item(i));
-        self.show_tip_at(r.left, r.bottom + glide);
+        // With no room below, above the icon (the name's place is right under it).
+        let icon = ((self.icon_size as f32 + 8.0) * self.scale()).round() as i32;
+        self.show_tip_at(r.left, r.bottom + glide, r.top + glide - icon);
     }
 
-    fn show_tip_at(&mut self, x: i32, y: i32) {
+    fn show_tip_at(&mut self, x: i32, y: i32, above: i32) {
         let Some(text) = self.tip_text() else {
             return;
         };
-        self.show_tip_text_at(&text, x, y);
+        self.show_tip_text_at(&text, x, y, above);
     }
 
-    pub(super) fn show_tip_text_at(&mut self, text: &str, x: i32, y: i32) {
+    /// `above`: where the tip's bottom edge goes when it has no room below (`Tooltip::show`).
+    pub(super) fn show_tip_text_at(&mut self, text: &str, x: i32, y: i32, above: i32) {
         if self.tip.is_none() {
             let dark = matches!(self.theme.mode, pecofence_render::ThemeMode::Dark);
             self.tip = Tooltip::create(self.hwnd, dark)
@@ -272,7 +349,7 @@ impl FenceViewState {
                 .ok();
         }
         if let Some(t) = self.tip.as_mut() {
-            t.show(text, x, y);
+            t.show(text, x, y, above);
             self.tip_shown = true;
             self.tip_armed = false;
             window::set_timer(

@@ -62,6 +62,42 @@ function StageSummary($from) {
   foreach ($l in $lines) { if ($l -match 'stage="(\w+)" ms=\d+ us=(\d+)') { $k = $Matches[1]; $v = [int]$Matches[2] / 1000.0; if (-not $by[$k]) { $by[$k] = @() }; $by[$k] += $v } }
   return (($by.Keys | Sort-Object | ForEach-Object { "$_ $(@($by[$_]).Count)x max $([math]::Round((@($by[$_]) | Measure-Object -Maximum).Maximum, 1)) ms" }) -join '; ')
 }
+# Does the box's own Microsoft Pinyin compose at all? Typed into Notepad: "nihao" and Space must
+# give 你好. On the EC2 boxes the input method's process hangs now and then (2026-11-12: three
+# boxes); then no program takes Chinese, every key waits 10 s for it and arrives as a plain
+# letter, in PecoFence's search box as in Notepad (2026-11-13 on ec2-7: the check failed twice
+# and was right; pf cannot end the hung processes, `box.sh ime-reset <box>` does). Returns the
+# text Notepad holds, when it got there and how long Notepad took to answer after the word.
+function PinyinInNotepad() {
+  Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
+  Start-Process notepad
+  $np = WaitWin 'Notepad' 10
+  [L]::MoveWindow($np, 500, 300, 500, 300, $true) | Out-Null
+  Start-Sleep -Milliseconds 800
+  [G]::Click(750, 480); Start-Sleep -Milliseconds 500
+  for ($i = 0; $i -lt 2 -and [Ime]::Layout() -notmatch '804$'; $i++) {
+    [G]::KeyDown(0xA4); [G]::KeyDown(0xA0); Start-Sleep -Milliseconds 60; [G]::KeyUp(0xA0); [G]::KeyUp(0xA4); Start-Sleep -Milliseconds 800
+  }
+  $layout = [Ime]::Layout()
+  foreach ($c in 'NIHAO'.ToCharArray()) { [G]::Press([uint16][int]$c); Start-Sleep -Milliseconds 120 }
+  [G]::Press(0x20)
+  # The word is there within a second when the input method works (its first use after the
+  # language was added takes longest); looked for up to 4 s. Notepad is asked only while it
+  # answers: a hung input method keeps it waiting for seconds.
+  $e = [M]::FindWindowExW($np, [IntPtr]::Zero, 'Edit', [NullString]::Value)
+  $typed = [Diagnostics.Stopwatch]::StartNew(); $text = ''; $ms = 0; $answered = $false
+  while ($typed.ElapsedMilliseconds -lt 4000 -and $text -notmatch '你好') {
+    Start-Sleep -Milliseconds 200
+    $sw = [Diagnostics.Stopwatch]::StartNew(); $res = [IntPtr]::Zero
+    $answered = [G]::SendMessageTimeoutW($np, 0, [IntPtr]0, [IntPtr]0, 2, 1000, [ref]$res) -ne [IntPtr]::Zero
+    $ms = [int]$sw.ElapsedMilliseconds
+    if ($answered -and $e -ne [IntPtr]::Zero) { $text = [W]::Text($e) }
+  }
+  $at = [int]$typed.ElapsedMilliseconds
+  Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
+  Start-Sleep -Milliseconds 500
+  return @{ text = $text; ms = $ms; at = $at; layout = $layout; answered = $answered }
+}
 function Round($name, $ctl) {
   DeskClick 1500 820 | Out-Null
   PeekKey; Start-Sleep -Milliseconds 800
@@ -82,7 +118,9 @@ function Round($name, $ctl) {
     for ($k = $word.Length; $k -gt 1; $k--) {
       $w = Waited $ctl { [G]::Press(0x08) }; $out += "Backspace $w ms '$([M]::BoxText())'"; $worst = [math]::Max($worst, $w)
     }
-    if ($c -eq '季' -or $c -eq '的') { Shot "$name-$c" }
+    # Named with the letters typed: the box's tar stops at a Chinese file name and the job's
+    # shots do not come back ("the results archive is incomplete").
+    if ($c -eq '季' -or $c -eq '的') { Shot "$name-$keys" }
     $w = Waited $ctl { [G]::Press(0x08) }; $out += "Backspace $w ms ''"; $worst = [math]::Max($worst, $w)
   }
   Log "$name per keystroke: $($out -join '; ')"
@@ -100,6 +138,10 @@ $langs = Get-WinUserLanguageList
 $script:AddedZh = -not ($langs | Where-Object { $_.LanguageTag -like 'zh-Hans*' })
 if ($AddedZh) { $langs.Add('zh-Hans-CN'); Set-WinUserLanguageList $langs -Force }
 Check 'Microsoft Pinyin is an input method of pf' (@(Get-WinUserLanguageList | Where-Object { $_.InputMethodTips -match '0804:' }).Count -ge 1) "added=$AddedZh"
+# The box's input method itself, before PecoFence is asked to take Chinese from it.
+$np = PinyinInNotepad
+$script:ImeWorks = ($np.text -match '你好')
+Check 'the box''s Microsoft Pinyin composes in Notepad (nihao gives 你好); if not, the box is at fault and the Chinese rounds are left out' $script:ImeWorks "Notepad holds '$($np.text)' $($np.at) ms after the word, layout $($np.layout), answered=$($np.answered) after $($np.ms) ms$(if (-not $script:ImeWorks) { '; a hung input method is put right with box.sh ime-reset <box>' })"
 # A few thousand Chinese file names to index, a folder fence with some of them, desktop files.
 $words = '季度报告', '年度预算', '工作计划', '会议记录', '新年活动', '文件整理', '图片素材', '报销单', '发票', '合同', '项目进度', '的说明'
 New-Item -ItemType Directory -Force $Zh | Out-Null
@@ -129,8 +171,9 @@ $ctl = [G]::FindWindowW('PecoFence.Control', [NullString]::Value)
 Check 'the control window is there' ($ctl -ne [IntPtr]::Zero) "$ctl"
 
 Case 'Chinese input, the disk as it is'
-$r = Round 'disk' $ctl
-Check 'Pinyin reached the box (季度报告 down to 季, then 的 文 报 图 新 年)' ($r.text -match "'季度报告'" -and $r.text -match "'季度'" -and $r.text -match "'季'" -and @($Chars | Where-Object { $r.text -match "'$_'" }).Count -eq $Chars.Count) $r.text
+if (-not $script:ImeWorks) { Log 'the box''s input method does not compose: the Chinese rounds are left out' }
+$r = if ($script:ImeWorks) { Round 'disk' $ctl } else { @{ worst = 0; text = "left out: the box's input method does not compose"; stages = '' } }
+Check 'Pinyin reached the box (季度报告 down to 季, then 的 文 报 图 新 年)' (-not $script:ImeWorks -or ($r.text -match "'季度报告'" -and $r.text -match "'季度'" -and $r.text -match "'季'" -and @($Chars | Where-Object { $r.text -match "'$_'" }).Count -eq $Chars.Count)) $r.text
 Check 'disk as it is: no keystroke keeps the UI thread over 100 ms' ($r.worst -lt 100) "worst $($r.worst) ms; stages: $($r.stages)"
 
 Case 'Chinese input, a drive that spins up: each own icon 400 ms'
@@ -140,7 +183,7 @@ PfStart -Lang zh-CN
 Remove-Item Env:\PECOFENCE_TEST_SLOW_READ_MS
 Start-Sleep -Seconds 3
 $ctl = [G]::FindWindowW('PecoFence.Control', [NullString]::Value)
-$r = Round 'slow' $ctl
+$r = if ($script:ImeWorks) { Round 'slow' $ctl } else { @{ worst = 0; text = "left out: the box's input method does not compose"; stages = '' } }
 Check 'slow drive: no keystroke keeps the UI thread over 100 ms' ($r.worst -lt 100) "worst $($r.worst) ms; stages: $($r.stages)"
 
 Case 'cleanup'

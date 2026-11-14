@@ -89,6 +89,9 @@ function Wall($name) {
     'grey' { SolidWall 128 128 128 grey }
     'light' { SolidWall 236 239 243 light }
     'dark' { SolidWall 18 20 26 dark }
+    # The blue of Windows 10's own wallpaper: in dark mode its plate is about (22,139,226),
+    # between the two text thresholds, where white text has 3.6 : 1.
+    'win10' { SolidWall 6 142 243 win10 }
     'photo' { PhotoWall }
     'busy' { BusyWall }
     'split' { SplitWall }
@@ -185,7 +188,7 @@ if ($Part -match 'A') {
     trap { PfTrap $_; continue }
     foreach ($mode in 'dark', 'light') {
       Pf settings set theme $mode | Out-Null; Start-Sleep -Seconds 2
-      foreach ($wall in 'grey', 'light', 'dark', 'photo') {
+      foreach ($wall in 'grey', 'light', 'dark', 'photo', 'win10') {
         Case "V1 $mode mode, $wall wallpaper"
         Wall $wall; Park
         Shot "A-$mode-$wall"

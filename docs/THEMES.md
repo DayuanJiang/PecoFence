@@ -97,7 +97,11 @@ example) is drawn in a fallback font.
 ### Colours
 
 `accent` replaces the Windows accent colour: selected items, the drop highlight and the tab
-marker take it, with the opacity they normally have. The other keys set one colour each.
+marker take it, with the opacity they normally have. Where the wallpaper makes a fence's text
+change to the other colour mode's (dark mode over a bright wallpaper, light mode over a dark
+one), the tab marker, a ticked check box, a smart fence's magnifier and a link take a darker
+or lighter shade of the accent, so that they read beside that text. The other keys set one
+colour each.
 
 | Key | Where it shows |
 |---|---|
@@ -126,6 +130,12 @@ of the inactive selection, the focus ring, the scrollbar and the active tab are 
 mode as the text. So set these colours for both modes. 文字颜色 白色 and
 黑色 take the theme's `dark` and `light` text colour for item names, and for the titles and tabs
 of fences without a title colour of their own.
+
+On a plate of middle brightness (over a photo wallpaper, with a tint, or with the 更透明 opacity)
+`textSecondary` and `textTertiary` are drawn part of the way towards `textPrimary` where they
+would be too faint to read there (under 4.5 : 1 and 3 : 1 against the plate). This holds for the
+colours of a theme file too, and they stay quieter than the primary text. On a dark or a light
+plate they show exactly as set.
 
 A fence title or tab takes the first of these that is set: its own 标题颜色 (栅栏选项, anything
 but 跟随主题), 文字颜色 白色 or 黑色, the theme's `titleColor`, the theme's `textPrimary`.

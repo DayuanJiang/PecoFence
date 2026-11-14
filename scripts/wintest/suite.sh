@@ -48,6 +48,9 @@ grep -v -E '^\s*(#|$)' "$KIT/suite.txt" | sort -k2,2nr | while read -r name min 
     where=ec2
   fi
   if [[ "$opts" == *@installers* && -z "$INST" ]]; then echo "$name	needs --installers (installers.sh)" >> "$OUT/skipped"; continue; fi
+  SHELLEXT=$REPO/target/wintest-shellext
+  if [[ "$opts" == *@shellext* && ! -f "$SHELLEXT/pf_shellext_fault.dll" ]]; then echo "$name	needs the test shell extension (build.sh)" >> "$OUT/skipped"; continue; fi
+  opts=${opts//@shellext/$SHELLEXT}
   line="$name	$where	$build	$file	${opts//@installers/$INST}"
   if [ "$where" = vm ] || { [ "$where" = ec2 ] && [ "$INVM" = 1 ]; }; then
     if [ -z "$VM" ]; then echo "$name	needs a guest (--vm)" >> "$OUT/skipped"; else echo "$line" >> "$OUT/queue-vm"; fi

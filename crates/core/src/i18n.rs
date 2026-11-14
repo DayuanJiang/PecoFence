@@ -355,6 +355,25 @@ mod tests {
         assert_eq!(text_in(Language::English, "测试\x04不存在"), "不存在");
     }
 
+    /// The button of the last first-start tip opens the manual. "Manual" alone also reads as
+    /// "by hand" in English, Spanish, Portuguese, French and Italian: there the button says
+    /// what it does. Simplified Chinese keeps 使用手册.
+    #[test]
+    fn the_last_tips_button_says_that_it_opens_the_manual() {
+        let key = "小技巧\x04使用手册";
+        assert_eq!(text_in(Language::SimplifiedChinese, key), "使用手册");
+        assert_eq!(text_in(Language::English, key), "Open the manual");
+        for tag in ["en", "es", "pt-BR", "fr", "it"] {
+            let language = SUPPORTED.iter().copied().find(|l| l.tag() == tag);
+            let language = language.unwrap_or_else(|| panic!("{tag}"));
+            let (button, noun) = (text_in(language, key), text_in(language, "使用手册"));
+            assert!(
+                button != noun && button.to_lowercase().contains(&noun.to_lowercase()),
+                "{tag}: {button}"
+            );
+        }
+    }
+
     #[test]
     fn catalogs_have_matching_keys_and_placeholders() {
         let english = catalog(Language::English);
@@ -385,6 +404,239 @@ mod tests {
                     "{}: {source}",
                     language.tag()
                 );
+            }
+        }
+    }
+
+    /// The notice after a crash while a menu was built is a Windows banner: 4 lines of about
+    /// 36 Latin or 18 Chinese, Japanese or Korean characters, the rest is cut. Measured on
+    /// 2026-11-12 with a 24-character file name: every language fits at up to 126 half-width
+    /// characters, and the 182 of the earlier English text lost their last 48.
+    #[test]
+    fn the_menu_crash_notice_fits_the_banner() {
+        let source = "右键菜单里的 Windows 菜单项已暂时关闭，可以在托盘菜单里恢复。上次因其他程序的 {0} 出错而关闭。";
+        let name = "ContextMenuHandler64.dll".to_string();
+        // Half-width characters: Chinese, Japanese and Korean characters take two.
+        let width =
+            |s: &str| -> usize { s.chars().map(|c| if c >= '\u{2E80}' { 2 } else { 1 }).sum() };
+        for &language in SUPPORTED {
+            let text = match language {
+                Language::SimplifiedChinese => source,
+                _ => catalog(language)
+                    .get(source)
+                    .unwrap_or_else(|| panic!("{}", language.tag())),
+            };
+            let shown = interpolate(text, std::slice::from_ref(&name));
+            assert!(
+                width(&shown) <= 130,
+                "{}: {} half-width characters: {shown}",
+                language.tag(),
+                width(&shown)
+            );
+        }
+    }
+
+    /// Every text the app hands to a Windows notification fits the banner in every language:
+    /// 4 lines of about 36 Latin or 18 Chinese, Japanese or Korean characters (measured on
+    /// 2026-11-12), the rest is cut, and the end of a sentence is often the part that says
+    /// what to do. The texts are found in the app's sources: every catalog key in a function
+    /// that calls `show_info(` or `.toast(`. Not checked where the sources are not beside the
+    /// test (the test boxes run the built tests only).
+    #[test]
+    fn every_notification_fits_the_banner() {
+        fn rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    rust_files(&path, out);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    out.push(path);
+                }
+            }
+        }
+        // The string literals of a piece of Rust code (`\"` and `\\` unescaped).
+        fn literals(code: &str) -> Vec<String> {
+            let mut out = Vec::new();
+            let mut chars = code.chars();
+            while let Some(c) = chars.next() {
+                if c == '\'' && chars.as_str().starts_with("\"'") {
+                    chars.nth(1); // the character '"'
+                } else if c == '"' {
+                    let mut literal = String::new();
+                    while let Some(c) = chars.next() {
+                        match c {
+                            '"' => break,
+                            '\\' => literal.extend(chars.next()),
+                            _ => literal.push(c),
+                        }
+                    }
+                    out.push(literal);
+                }
+            }
+            out
+        }
+        let app = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../app/src");
+        let mut files = Vec::new();
+        rust_files(&app, &mut files);
+        if files.is_empty() {
+            eprintln!("no app sources at {}: not checked here", app.display());
+            return;
+        }
+        let english = catalog(Language::English);
+        let mut sources = std::collections::BTreeSet::new();
+        for file in &files {
+            let code = std::fs::read_to_string(file).unwrap();
+            // `toast` is the app's own short way to the same notification.
+            let calls = code.match_indices("show_info(");
+            for (call, _) in calls.chain(code.match_indices(".toast(")) {
+                // From the start of the function around the call to a little after it.
+                let from = code[..call]
+                    .rfind("\n    fn ")
+                    .max(code[..call].rfind("\n    pub"))
+                    .unwrap_or(0);
+                let to = code[call..]
+                    .char_indices()
+                    .nth(700)
+                    .map_or(code.len(), |(i, _)| call + i);
+                sources.extend(
+                    literals(&code[from..to])
+                        .into_iter()
+                        .filter(|s| english.contains_key(s)),
+                );
+            }
+        }
+        assert!(sources.len() >= 30, "only {} texts found", sources.len());
+        // Values as long as real ones: the configuration folder, the name an unreadable
+        // configuration file gets, and 24 characters for the rest (a file name, a shortcut
+        // of four modifiers).
+        let values = |source: &str| -> [String; 2] {
+            let first = if source.contains("能否写入") {
+                r"C:\Users\me\AppData\Roaming\PecoFence"
+            } else if source.contains("改名为") {
+                "config.unreadable-20261112-66600.json"
+            } else {
+                "ContextMenuHandler64.dll"
+            };
+            [first.to_string(), "Ctrl+Alt+Space".to_string()]
+        };
+        // Half-width characters: Chinese, Japanese and Korean characters take two.
+        let width =
+            |s: &str| -> usize { s.chars().map(|c| if c >= '\u{2E80}' { 2 } else { 1 }).sum() };
+        let mut long = Vec::new();
+        for source in &sources {
+            for &language in SUPPORTED {
+                let text = match language {
+                    Language::SimplifiedChinese => source,
+                    _ => &catalog(language)[source],
+                };
+                let shown = interpolate(text, &values(source));
+                if width(&shown) > 130 {
+                    long.push(format!("{} {}: {shown}", language.tag(), width(&shown)));
+                }
+            }
+        }
+        assert!(
+            long.is_empty(),
+            "longer than 130 half-width characters:\n{}",
+            long.join("\n")
+        );
+    }
+
+    /// The card after a fence is deleted says what happened first and the fence's name last:
+    /// a long name wraps, and the last line then held the verb alone (`Fence “…” / deleted`).
+    #[test]
+    fn the_undo_card_names_the_deleted_fence_last() {
+        let source = "已删除栅栏“{0}”";
+        for &language in SUPPORTED {
+            let text = match language {
+                Language::SimplifiedChinese => source,
+                _ => &catalog(language)[source],
+            };
+            let after = text.split("{0}").nth(1).unwrap_or_default();
+            assert!(
+                !after.chars().any(char::is_alphabetic),
+                "{}: {text}",
+                language.tag()
+            );
+        }
+    }
+
+    /// A script fence's footer names the script and says how the last run went; when both do
+    /// not fit, the name is left out. The status of a failed run stays short enough for both
+    /// in a fence 300 px wide (German had 47 characters and lost the name).
+    #[test]
+    fn the_status_of_a_failed_script_leaves_room_for_its_name() {
+        let source = "{0} 运行出错（退出代码 {1}）";
+        let values = ["23:59".to_string(), "1".to_string()];
+        let width =
+            |s: &str| -> usize { s.chars().map(|c| if c >= '\u{2E80}' { 2 } else { 1 }).sum() };
+        for &language in SUPPORTED {
+            let text = match language {
+                Language::SimplifiedChinese => source,
+                _ => &catalog(language)[source],
+            };
+            let shown = interpolate(text, &values);
+            assert!(width(&shown) <= 40, "{}: {shown}", language.tag());
+        }
+    }
+
+    /// One kind of quotation mark per language: a card that names a fence in “ ” above a
+    /// button named in 「 」 reads as two programs. The source strings (Simplified Chinese)
+    /// are the catalogs' keys.
+    #[test]
+    fn each_language_uses_one_kind_of_quotation_marks() {
+        // The marks a language's strings do not use.
+        let foreign = |language: Language| -> &'static [char] {
+            match language {
+                Language::Japanese | Language::TraditionalChinese => &['“', '”', '‘'],
+                Language::German => &['「', '」', '«', '»', '‘'],
+                Language::French | Language::Spanish | Language::Russian | Language::Italian => {
+                    &['「', '」', '“', '”', '‘']
+                }
+                // English, Korean, Portuguese and the Simplified Chinese source: “ ”.
+                _ => &['「', '」', '«', '»', '‘', '„'],
+            }
+        };
+        for source in catalog(Language::English).keys() {
+            let odd: Vec<char> = source
+                .chars()
+                .filter(|c| foreign(Language::SimplifiedChinese).contains(c))
+                .collect();
+            assert!(odd.is_empty(), "zh-CN: {odd:?} in {source}");
+        }
+        for &language in SUPPORTED {
+            if language == Language::SimplifiedChinese {
+                continue;
+            }
+            for (source, value) in catalog(language) {
+                let odd: Vec<char> = value
+                    .chars()
+                    .filter(|c| foreign(language).contains(c))
+                    .collect();
+                assert!(
+                    odd.is_empty(),
+                    "{}: {odd:?} in {value} ({source})",
+                    language.tag()
+                );
+                // A name in straight " " (\"{0}\" 필터) beside the language's own marks.
+                assert!(
+                    !value.contains("\"{") && !value.contains("}\""),
+                    "{}: a straight \" around a name in {value}",
+                    language.tag()
+                );
+                // A straight ' after a letter is an apostrophe (it's, d'ora, fences'); one
+                // that starts a word opens a quotation.
+                let chars: Vec<char> = value.chars().collect();
+                for (i, c) in chars.iter().enumerate() {
+                    let opens = *c == '\''
+                        && (i == 0 || !chars[i - 1].is_alphanumeric())
+                        && chars.get(i + 1).is_some_and(|n| n.is_alphanumeric());
+                    assert!(
+                        !opens,
+                        "{}: a straight ' as a quotation mark in {value}",
+                        language.tag()
+                    );
+                }
             }
         }
     }

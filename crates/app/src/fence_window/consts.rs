@@ -45,6 +45,13 @@ pub(super) const TIMER_CONTENT_FINISH: usize = 44;
 /// The pointer rests on another tab with `rollUp.switchTabOnHover` on: switch to it after the
 /// hover delay.
 pub(super) const TIMER_TAB_HOVER: usize = 45;
+/// Once a hover has switched a tab, the next tab the pointer comes to in the same strip is
+/// switched to after this wait instead of the hover delay (Windows shows the next tooltip after
+/// a fifth of the hover time and a menu bar opens the next menu at once). Long enough that a
+/// pointer sweeping to a far tab does not show every tab on its way.
+pub(super) const TAB_HOVER_NEXT_MS: u32 = 50;
+/// The short wait ends when the pointer has been off the tabs this long, or a button is pressed.
+pub(super) const TAB_HOVER_NEXT_KEEP: Duration = Duration::from_secs(1);
 /// Polls the right button during a title drag in the system move loop: the loop sends
 /// WM_MOVING only while the pointer moves, so a right click on a resting pointer went unseen.
 pub(super) const TIMER_MOVE_RBUTTON: usize = 46;
@@ -53,6 +60,29 @@ pub(super) const TIMER_MOVE_RBUTTON: usize = 46;
 pub(super) const TIMER_HOVER_SELECT: usize = 47;
 /// 时钟与日期: redraws a clock fence at the next minute (or second) boundary.
 pub(super) const TIMER_CLOCK: usize = 48;
+/// A fence just made has faded in (167 ms): its name box opens (`rename_after_fade_in`).
+pub(super) const TIMER_NAME_BOX: usize = 49;
+/// The activation went away while a file operation of PecoFence's own ran, and the selection
+/// kept its colour (`on_activate`). This timer looks every `ACTIVE_SYNC_MS` whether the
+/// operation is over; then `TIMER_ACTIVE_SYNC_END` fires once, after the shell has given the
+/// activation back (about 0.2 s after the end), and the colour follows the real state again.
+pub(super) const TIMER_ACTIVE_SYNC: usize = 60;
+pub(super) const TIMER_ACTIVE_SYNC_END: usize = 61;
+/// The names beyond the rows in view are fitted in pieces while the fence rests
+/// (`fit_ahead_tick`). Armed by a content draw while names are missing; it ends by itself
+/// when every item has its name, so a fence at rest has no timer.
+pub(super) const TIMER_FIT_AHEAD: usize = 62;
+/// How long nothing must be drawn and no key or mouse input arrive before a piece is fitted.
+pub(super) const FIT_AHEAD_REST_MS: u32 = 300;
+/// The pause between two pieces: input and painting come first.
+pub(super) const FIT_AHEAD_PAUSE_MS: u32 = 10;
+/// The work of one piece.
+pub(super) const FIT_AHEAD_PIECE: Duration = Duration::from_micros(2500);
+/// How often in a row the fitting may find the fence moving or the user busy before it gives
+/// up until the next content draw (6 s): a fence that animates all the time (a script that
+/// redraws, a held key) must not keep a timer of ours alive for good.
+pub(super) const FIT_AHEAD_WAITS: u8 = 20;
+pub(super) const ACTIVE_SYNC_MS: u32 = 500;
 /// DWM can suspend completion callbacks for fully occluded windows. UI state must still
 /// settle after the longest (250 ms) transition, independently of compositor visibility.
 pub(super) const COMPOSITION_FINISH_MS: u32 = 400;
@@ -127,6 +157,9 @@ pub(super) const TAB_EDGE_SPEED: f32 = 360.0;
 pub(super) const TAB_RAIL_MIN_W: f32 = 96.0;
 pub(super) const TAB_RAIL_MAX_W: f32 = 160.0;
 pub(super) const TAB_RAIL_TEXT_ROOM: f32 = 18.0;
+/// The least height of a row in the left tab column (DIPs): a caption with a little air. A
+/// column too short for its rows at this height scrolls, as a title row too narrow does.
+pub(super) const RAIL_ROW_MIN: f32 = 24.0;
 pub(super) const TAB_RAIL_DOT_ROOM: f32 = 14.0;
 /// Width of the insertion gap a tabbed strip opens for a fence dragged over it (WinUI TabView's
 /// default tab width; the merged tab is laid out for real once it lands).

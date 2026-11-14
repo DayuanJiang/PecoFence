@@ -1,10 +1,26 @@
 //! Fence geometry normalization between physical pixels and per-monitor DIPs (plan §7.4).
 
-use crate::model::{Anchor, NormGeometry};
+use crate::model::{Anchor, Fence, FenceId, NormGeometry};
 
 pub const MIN_W_DIP: f32 = 64.0;
 pub const MIN_H_DIP: f32 = 36.0;
 pub const MAX_DIP: f32 = 8192.0;
+/// The widest gap to a screen edge that a fence cut to fit a smaller work area keeps, and
+/// that still counts as "at the edge" for the anchor: 16 DIPs, or the snapping gap the user
+/// set when that is wider (`set_edge_gap_max`; the setting goes up to 64).
+const EDGE_GAP_MAX_DIP: f32 = 16.0;
+static EDGE_GAP_MAX: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(16);
+
+/// The snapping gap changed (`snapping.gapPx`, DIPs): a fence that stands that far from both
+/// screen edges is a fence as tall (or wide) as the screen, as one within 16 DIPs is.
+pub fn set_edge_gap_max(gap_dip: i32) {
+    let gap = gap_dip.clamp(EDGE_GAP_MAX_DIP as i32, 64) as u32;
+    EDGE_GAP_MAX.store(gap, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn edge_gap_max() -> f32 {
+    EDGE_GAP_MAX.load(std::sync::atomic::Ordering::Relaxed) as f32
+}
 
 /// A monitor's work area in physical pixels plus its DPI.
 #[derive(Clone, Debug, PartialEq)]
@@ -79,22 +95,25 @@ impl PxRect {
     }
 }
 
-/// Picks the anchor by which edges the fence is closest to.
-fn pick_anchor(x: f32, y: f32, w: f32, h: f32, work_w: f32, work_h: f32) -> Anchor {
+/// Picks the anchor by which edges the fence is closest to. A fence that reaches to within
+/// `EDGE_GAP_MAX_DIP` of both ends of an axis (a column as tall as the screen, a fence cut to
+/// fit) hangs from its nearer edge, the left or top one when they are equal: held by the
+/// middle it would float in the middle of a longer work area.
+fn pick_anchor(x: f32, y: f32, w: f32, h: f32, work_w: f32, work_h: f32, edge: f32) -> Anchor {
     let left = x;
     let right = work_w - (x + w);
     let top = y;
     let bottom = work_h - (y + h);
     let hcenter = (x + w / 2.0 - work_w / 2.0).abs();
     let vcenter = (y + h / 2.0 - work_h / 2.0).abs();
-    let h_side = if hcenter < left.min(right) * 0.5 {
+    let h_side = if hcenter < left.min(right) * 0.5 && left.min(right) > edge {
         0 // centre
     } else if left <= right {
         1
     } else {
         2
     };
-    let v_side = if vcenter < top.min(bottom) * 0.5 {
+    let v_side = if vcenter < top.min(bottom) * 0.5 && top.min(bottom) > edge {
         0
     } else if top <= bottom {
         1
@@ -116,6 +135,11 @@ fn pick_anchor(x: f32, y: f32, w: f32, h: f32, work_w: f32, work_h: f32) -> Anch
 
 /// Converts a physical rectangle on `work` into monitor-relative DIPs.
 pub fn normalize(rect: PxRect, work: &WorkArea) -> NormGeometry {
+    normalize_with(rect, work, edge_gap_max())
+}
+
+/// [`normalize`] with the widest gap that counts as "at the edge" given (DIPs).
+fn normalize_with(rect: PxRect, work: &WorkArea, edge: f32) -> NormGeometry {
     let s = work.scale();
     let x = (rect.left - work.left) as f32 / s;
     let y = (rect.top - work.top) as f32 / s;
@@ -131,21 +155,46 @@ pub fn normalize(rect: PxRect, work: &WorkArea) -> NormGeometry {
         h,
         work_w,
         work_h,
-        anchor: pick_anchor(x, y, w, h, work_w, work_h),
+        anchor: pick_anchor(x, y, w, h, work_w, work_h, edge),
     }
 }
 
 /// Converts saved DIP geometry back into physical pixels on `work`, keeping the anchored edge
 /// distances when the work area changed size, then clamping into the work area.
 pub fn denormalize(geo: &NormGeometry, work: &WorkArea) -> PxRect {
+    denormalize_with(geo, work, edge_gap_max())
+}
+
+/// [`denormalize`] with the widest gap to a screen edge that a fence cut to fit keeps (DIPs).
+fn denormalize_with(geo: &NormGeometry, work: &WorkArea, edge: f32) -> PxRect {
     let s = work.scale();
     let work_w = work.width_dip();
     let work_h = work.height_dip();
-    let w = geo.w.clamp(MIN_W_DIP, MAX_DIP).min(work_w.max(MIN_W_DIP));
-    let h = geo.h.clamp(MIN_H_DIP, MAX_DIP).min(work_h.max(MIN_H_DIP));
-
     let right_gap = geo.work_w - (geo.x + geo.w);
     let bottom_gap = geo.work_h - (geo.y + geo.h);
+    // A fence longer than the work area is cut to fit. One that stood a small gap from an edge
+    // (the first-run column, a fence snapped to the screen edge) keeps the smaller of its two
+    // gaps at both ends instead of touching the screen edge and the taskbar.
+    let edge_gap = |near: f32, far: f32| {
+        let small = |g: &f32| (0.0..=edge).contains(g);
+        [near, far]
+            .into_iter()
+            .filter(small)
+            .fold(None, |a: Option<f32>, g| Some(a.map_or(g, |a| a.min(g))))
+            .unwrap_or(0.0)
+    };
+    let (gap_x, gap_y) = (edge_gap(geo.x, right_gap), edge_gap(geo.y, bottom_gap));
+    let fit = |size: f32, min: f32, room: f32, gap: f32| {
+        let size = size.clamp(min, MAX_DIP);
+        if size > room {
+            (room - 2.0 * gap).max(min).min(room.max(min))
+        } else {
+            size
+        }
+    };
+    let w = fit(geo.w, MIN_W_DIP, work_w, gap_x);
+    let h = fit(geo.h, MIN_H_DIP, work_h, gap_y);
+
     let x = match geo.anchor {
         Anchor::LeftTop | Anchor::LeftBottom | Anchor::LeftVCenter => geo.x,
         Anchor::RightTop | Anchor::RightBottom | Anchor::RightVCenter => work_w - right_gap - w,
@@ -160,6 +209,9 @@ pub fn denormalize(geo: &NormGeometry, work: &WorkArea) -> PxRect {
             (geo.y + geo.h / 2.0) / geo.work_h.max(1.0) * work_h - h / 2.0
         }
     };
+    // Cut to fit: between its two gaps.
+    let x = if geo.w > work_w { gap_x } else { x };
+    let y = if geo.h > work_h { gap_y } else { y };
     let x = x.clamp(0.0, (work_w - w).max(0.0));
     let y = y.clamp(0.0, (work_h - h).max(0.0));
 
@@ -171,6 +223,140 @@ pub fn denormalize(geo: &NormGeometry, work: &WorkArea) -> PxRect {
         right: left + (w * s).round() as i32,
         bottom: top + (h * s).round() as i32,
     }
+}
+
+/// Which side of each axis an anchor holds on to: 0 the middle, 1 the left or top edge, 2 the
+/// right or bottom edge (horizontal, vertical).
+fn anchor_sides(anchor: Anchor) -> (u8, u8) {
+    let h = match anchor {
+        Anchor::LeftTop | Anchor::LeftBottom | Anchor::LeftVCenter => 1,
+        Anchor::RightTop | Anchor::RightBottom | Anchor::RightVCenter => 2,
+        Anchor::HCenterTop | Anchor::HCenterBottom | Anchor::Center => 0,
+    };
+    let v = match anchor {
+        Anchor::LeftTop | Anchor::RightTop | Anchor::HCenterTop => 1,
+        Anchor::LeftBottom | Anchor::RightBottom | Anchor::HCenterBottom => 2,
+        Anchor::LeftVCenter | Anchor::RightVCenter | Anchor::Center => 0,
+    };
+    (h, v)
+}
+
+/// Where a span `size` long at `pos` goes when its axis changes from `old` to `new` long, held
+/// by `side` (see [`anchor_sides`]), as [`denormalize`] moves one fence. A span longer than the
+/// new axis keeps its distance to the side it is held by.
+fn carry_axis(side: u8, pos: f32, size: f32, old: f32, new: f32) -> f32 {
+    let p = match side {
+        1 => pos,
+        2 => new - (old - (pos + size)) - size,
+        _ => (pos + size / 2.0) / old.max(1.0) * new - size / 2.0,
+    };
+    if size <= new {
+        p.clamp(0.0, new - size)
+    } else {
+        p
+    }
+}
+
+/// Fences that stand one snapping gap (`gap` DIPs) apart, side by side or one above the other,
+/// are a group: the first-run column, two fences snapped together. [`denormalize`] places each
+/// fence by its own anchor, so on a work area of another size the members nearest to different
+/// edges, or to the middle, part: the gap between them grows or they overlap. This re-places
+/// the fences `ids` that are in such a group for the work area their monitor has now: the
+/// group moves as one piece, by the anchor of its bounding box, and every member keeps its
+/// place in it (a member that does not fit is cut by [`denormalize`] as before). Returns how
+/// many fences got a new geometry.
+pub fn keep_groups_together(
+    fences: &mut [Fence],
+    ids: &[FenceId],
+    areas: &[WorkArea],
+    gap: f32,
+) -> usize {
+    // Half a pixel at 150 % and the rounding of a fractional gap.
+    const TOLERANCE: f32 = 0.75;
+    let members: Vec<usize> = fences
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| {
+            ids.contains(&f.id)
+                && f.tab_host.is_none()
+                && !f.desktop_layout
+                && areas.iter().any(|a| a.device_path == f.geometry.monitor)
+        })
+        .map(|(i, _)| i)
+        .collect();
+    let same_work = |a: &NormGeometry, b: &NormGeometry| {
+        a.monitor == b.monitor
+            && (a.work_w - b.work_w).abs() < 1.0
+            && (a.work_h - b.work_h).abs() < 1.0
+    };
+    let beside = |a: &NormGeometry, b: &NormGeometry| {
+        (b.x - (a.x + a.w) - gap).abs() <= TOLERANCE && a.y < b.y + b.h && b.y < a.y + a.h
+    };
+    let above = |a: &NormGeometry, b: &NormGeometry| {
+        (b.y - (a.y + a.h) - gap).abs() <= TOLERANCE && a.x < b.x + b.w && b.x < a.x + a.w
+    };
+    // Group label per member: snapped pairs take the same one.
+    let mut label: Vec<usize> = (0..members.len()).collect();
+    for i in 0..members.len() {
+        for j in i + 1..members.len() {
+            let (a, b) = (&fences[members[i]].geometry, &fences[members[j]].geometry);
+            let snapped =
+                same_work(a, b) && (beside(a, b) || beside(b, a) || above(a, b) || above(b, a));
+            if snapped && label[i] != label[j] {
+                let (keep, drop) = (label[i], label[j]);
+                for l in &mut label {
+                    if *l == drop {
+                        *l = keep;
+                    }
+                }
+            }
+        }
+    }
+    let mut moved = 0;
+    for group in 0..members.len() {
+        let of_group: Vec<usize> = (0..members.len())
+            .filter(|&m| label[m] == group)
+            .map(|m| members[m])
+            .collect();
+        if of_group.len() < 2 {
+            continue;
+        }
+        let first = &fences[of_group[0]].geometry;
+        let Some(work) = areas.iter().find(|a| a.device_path == first.monitor) else {
+            continue;
+        };
+        let (old_w, old_h) = (first.work_w, first.work_h);
+        let (new_w, new_h) = (work.width_dip(), work.height_dip());
+        if (old_w - new_w).abs() < 0.5 && (old_h - new_h).abs() < 0.5 {
+            continue;
+        }
+        let geos = || of_group.iter().map(|&i| &fences[i].geometry);
+        let x0 = geos().map(|g| g.x).fold(f32::MAX, f32::min);
+        let y0 = geos().map(|g| g.y).fold(f32::MAX, f32::min);
+        let x1 = geos().map(|g| g.x + g.w).fold(f32::MIN, f32::max);
+        let y1 = geos().map(|g| g.y + g.h).fold(f32::MIN, f32::max);
+        let (h_side, v_side) = anchor_sides(pick_anchor(
+            x0,
+            y0,
+            x1 - x0,
+            y1 - y0,
+            old_w,
+            old_h,
+            edge_gap_max(),
+        ));
+        let dx = carry_axis(h_side, x0, x1 - x0, old_w, new_w) - x0;
+        let dy = carry_axis(v_side, y0, y1 - y0, old_h, new_h) - y0;
+        for &i in &of_group {
+            let g = &mut fences[i].geometry;
+            g.x += dx;
+            g.y += dy;
+            g.work_w = new_w;
+            g.work_h = new_h;
+            g.anchor = pick_anchor(g.x, g.y, g.w, g.h, new_w, new_h, edge_gap_max());
+            moved += 1;
+        }
+    }
+    moved
 }
 
 /// Chooses the work area to place `geo` on: exact device path, else the primary/first.
@@ -266,5 +452,240 @@ mod tests {
         assert!(r.left >= 0 && r.right <= 800 && r.top >= 0 && r.bottom <= 600);
         assert_eq!(r.width(), MIN_W_DIP as i32);
         assert_eq!(r.height(), MIN_H_DIP as i32);
+    }
+
+    fn fence_at(wa: &WorkArea, left: i32, top: i32, w: i32, h: i32) -> Fence {
+        let r = PxRect {
+            left,
+            top,
+            right: left + w,
+            bottom: top + h,
+        };
+        Fence::new("f", crate::model::FenceKind::Virtual, normalize(r, wa))
+    }
+
+    /// Places `fences` on `wa` as the app does for a new monitor setup: groups first, then each
+    /// fence by its own geometry, saved again on that work area.
+    fn carry_to(fences: &mut [Fence], wa: &WorkArea) -> Vec<PxRect> {
+        let ids: Vec<FenceId> = fences.iter().map(|f| f.id).collect();
+        keep_groups_together(fences, &ids, std::slice::from_ref(wa), 8.0);
+        fences
+            .iter_mut()
+            .map(|f| {
+                let r = denormalize(&f.geometry, wa);
+                f.geometry = normalize(r, wa);
+                r
+            })
+            .collect()
+    }
+
+    /// The first-run column (two fences one above the other at the right edge) at 100 %, then
+    /// 150 %, then 125 % on a 1600x900 screen: the lower fence is nearer the middle of the
+    /// 150 % work area and was carried on by that, 75 px below the upper one at 125 %.
+    #[test]
+    fn a_snapped_column_keeps_its_gap_over_two_scale_changes() {
+        let at100 = work(96, 1600, 852);
+        let mut fences = vec![
+            fence_at(&at100, 1352, 8, 240, 150),
+            fence_at(&at100, 1352, 166, 240, 150),
+        ];
+        let at150 = work(144, 1600, 828);
+        let r = carry_to(&mut fences, &at150);
+        assert_eq!(r[1].top - r[0].bottom, 12, "8 DIPs at 150 %: {r:?}");
+        let at125 = work(120, 1600, 840);
+        let r = carry_to(&mut fences, &at125);
+        assert_eq!(r[1].top - r[0].bottom, 10, "8 DIPs at 125 %: {r:?}");
+        assert_eq!(r[0].left, r[1].left);
+        assert_eq!(r[0].right, 1600 - 10, "still 8 DIPs from the right edge");
+        let big = work(96, 1920, 1032);
+        let r = carry_to(&mut fences, &big);
+        assert_eq!(r[1].top - r[0].bottom, 8, "{r:?}");
+        assert_eq!((r[0].top, r[0].right), (8, 1920 - 8));
+    }
+
+    /// The first-run column with its tall third fence: cut to fit at 150 %, the group reaches
+    /// from 8 DIPs under the top to 8 above the taskbar. On the next, taller work area it hangs
+    /// from the top (held by the middle it stood 85 px down at 125 %).
+    #[test]
+    fn a_column_as_tall_as_the_work_area_hangs_from_the_top_on_a_taller_one() {
+        let at100 = work(96, 1600, 852);
+        let mut fences = vec![
+            fence_at(&at100, 1352, 8, 240, 150),
+            fence_at(&at100, 1352, 166, 240, 150),
+            fence_at(&at100, 1104, 8, 240, 822),
+        ];
+        let r = carry_to(&mut fences, &work(144, 1600, 828));
+        assert_eq!((r[0].top, r[2].top, r[2].bottom), (12, 12, 816));
+        let r = carry_to(&mut fences, &work(120, 1600, 840));
+        assert_eq!((r[0].top, r[1].top - r[0].bottom, r[2].top), (10, 10, 10));
+        let r = carry_to(&mut fences, &work(96, 1920, 1032));
+        assert_eq!((r[0].top, r[1].top - r[0].bottom, r[2].top), (8, 8, 8));
+    }
+
+    /// Two fences side by side left of the middle: on a narrower work area the right one was
+    /// placed by the middle and ended 101 DIPs from its neighbour one change later.
+    #[test]
+    fn a_snapped_pair_side_by_side_stays_together() {
+        let at100 = work(96, 1600, 852);
+        let mut fences = vec![
+            fence_at(&at100, 8, 8, 300, 240),
+            fence_at(&at100, 316, 8, 300, 240),
+            // Not snapped to anything: placed by its own anchor as before.
+            fence_at(&at100, 660, 400, 260, 160),
+        ];
+        let alone = denormalize(&fences[2].geometry, &work(144, 1600, 828));
+        let r = carry_to(&mut fences, &work(144, 1600, 828));
+        assert_eq!(r[1].left - r[0].right, 12);
+        assert_eq!(r[2], alone);
+        let r = carry_to(&mut fences, &work(120, 1600, 840));
+        assert_eq!(r[1].left - r[0].right, 10);
+        assert_eq!(r[0].left, 10);
+    }
+
+    /// A group larger than the new work area keeps the edge it is held by; only the member
+    /// that does not fit is cut.
+    #[test]
+    fn a_group_taller_than_the_work_area_keeps_its_top() {
+        let at100 = work(96, 1600, 852);
+        let mut fences = vec![
+            fence_at(&at100, 1352, 8, 240, 150),
+            fence_at(&at100, 1352, 166, 240, 150),
+            fence_at(&at100, 1104, 8, 240, 822),
+        ];
+        let r = carry_to(&mut fences, &work(96, 1280, 672));
+        assert_eq!((r[0].top, r[1].top), (8, 166));
+        assert_eq!(r[0].left - r[2].right, 8);
+        assert_eq!((r[2].top, r[2].bottom), (8, 672 - 8));
+    }
+
+    /// A fence 8 px under the top edge and taller than the new work area is cut to fit with
+    /// 8 px at both ends (it took the whole height, from the screen edge to the taskbar); one
+    /// that stood far from both edges, or flush with one, fills the height as before.
+    /// With a snapping gap of 24 a fence as tall as the screen stands 24 DIPs from both
+    /// edges: cut to fit a smaller screen it keeps that gap, and on a taller one it hangs
+    /// from the top. Both rules knew gaps up to 16 only: the fence touched the screen edge
+    /// and the taskbar at 672, and floated 114 px down at 1032.
+    #[test]
+    fn a_fence_as_tall_as_the_screen_with_a_wide_snapping_gap() {
+        let at100 = work(96, 1600, 852);
+        for (gap, edge) in [(24, 24.0), (48, 48.0), (8, 16.0), (16, 16.0)] {
+            let tall = normalize_with(
+                PxRect {
+                    left: 1104,
+                    top: gap,
+                    right: 1344,
+                    bottom: 852 - gap,
+                },
+                &at100,
+                edge,
+            );
+            let r = denormalize_with(&tall, &work(96, 1280, 672), edge);
+            assert_eq!(
+                (r.top, r.bottom),
+                (gap, 672 - gap),
+                "gap {gap}, a smaller screen"
+            );
+            let r = denormalize_with(&tall, &work(96, 1920, 1032), edge);
+            assert_eq!(r.top, gap, "gap {gap}, a taller screen");
+        }
+        // What the built-in bound of 16 alone gives for a gap of 24 (as before this change).
+        let rect = PxRect {
+            left: 1104,
+            top: 24,
+            right: 1344,
+            bottom: 828,
+        };
+        let tall = normalize_with(rect, &at100, 16.0);
+        let r = denormalize_with(&tall, &work(96, 1280, 672), 16.0);
+        assert_eq!((r.top, r.bottom), (0, 672));
+        assert_eq!(
+            denormalize_with(&tall, &work(96, 1920, 1032), 16.0).top,
+            114
+        );
+        // A narrower gap than 16 in the settings keeps the built-in bound.
+        set_edge_gap_max(4);
+        assert_eq!(edge_gap_max(), 16.0);
+    }
+
+    #[test]
+    fn a_fence_cut_to_fit_keeps_its_small_gap_to_the_edge() {
+        let at100 = work(96, 1600, 852);
+        let small = work(96, 1280, 672);
+        let tall = normalize(
+            PxRect {
+                left: 1104,
+                top: 8,
+                right: 1344,
+                bottom: 830,
+            },
+            &at100,
+        );
+        let r = denormalize(&tall, &small);
+        assert_eq!((r.top, r.bottom), (8, 664));
+        assert_eq!(r.width(), 240);
+        // Saved there and shown on a taller screen next, it hangs from the top, not the middle.
+        let cut = normalize(r, &small);
+        assert_eq!(cut.anchor, Anchor::RightTop);
+        assert_eq!(denormalize(&cut, &work(96, 1920, 1032)).top, 8);
+        // 150 %: 8 DIPs are 12 px.
+        let r = denormalize(&tall, &work(144, 1600, 828));
+        assert_eq!((r.top, r.bottom), (12, 816));
+        // Nearer the bottom edge: the same gap at both ends.
+        let low = normalize(
+            PxRect {
+                left: 8,
+                top: 40,
+                right: 248,
+                bottom: 844,
+            },
+            &at100,
+        );
+        let r = denormalize(&low, &small);
+        assert_eq!((r.top, r.bottom), (8, 664));
+        let flush = normalize(
+            PxRect {
+                left: 8,
+                top: 0,
+                right: 248,
+                bottom: 800,
+            },
+            &at100,
+        );
+        let r = denormalize(&flush, &small);
+        assert_eq!((r.top, r.bottom), (0, 672));
+        let middle = normalize(
+            PxRect {
+                left: 8,
+                top: 60,
+                right: 248,
+                bottom: 800,
+            },
+            &at100,
+        );
+        let r = denormalize(&middle, &small);
+        assert_eq!((r.top, r.bottom), (0, 672));
+    }
+
+    /// Fences on the work area they were saved on, and fences not asked for, stay as they are.
+    #[test]
+    fn groups_on_an_unchanged_work_area_are_left_alone() {
+        let wa = work(96, 1600, 852);
+        let mut fences = vec![
+            fence_at(&wa, 8, 8, 300, 240),
+            fence_at(&wa, 316, 8, 300, 240),
+        ];
+        let before: Vec<NormGeometry> = fences.iter().map(|f| f.geometry.clone()).collect();
+        let ids: Vec<FenceId> = fences.iter().map(|f| f.id).collect();
+        assert_eq!(
+            keep_groups_together(&mut fences, &ids, std::slice::from_ref(&wa), 8.0),
+            0
+        );
+        let small = work(96, 1280, 672);
+        assert_eq!(
+            keep_groups_together(&mut fences, &[], std::slice::from_ref(&small), 8.0),
+            0
+        );
+        let after: Vec<NormGeometry> = fences.iter().map(|f| f.geometry.clone()).collect();
+        assert_eq!(before, after);
     }
 }

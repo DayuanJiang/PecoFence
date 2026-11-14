@@ -1,6 +1,6 @@
 # PecoFence Windows installer
 
-Run `pecofence-v<version>-x64-setup.exe` on Windows 10 22H2 or Windows 11.
+Run `pecofence-v<version>-x64-setup.exe` on Windows 10 1809 or later, or Windows 11.
 The installer is unsigned. Microsoft Edge WebView2 Runtime is required for Settings;
 the installer includes the loader DLL, but does not download the runtime.
 
@@ -10,6 +10,11 @@ is created; a desktop shortcut is optional. The installer does not add the CLI t
 PATH and does not write a startup entry itself. **Start with Windows** is on by
 default: PecoFence registers it when it runs, and the switch is in Settings. The
 entry always points to the copy that ran last.
+
+At a first installation the options page also has **Send usage statistics to help
+improve PecoFence**, ticked by default; the same switch is in Settings > About
+([what is sent](https://github.com/DayuanJiang/PecoFence/blob/main/docs/USAGE_STATS.md)).
+A silent installation without it adds `/MERGETASKS="!usagestats"`.
 
 ## Program files and user data
 
@@ -79,7 +84,8 @@ the installed program files and shortcuts, and removes the startup entry only wh
 it points to this installed executable. Configuration, backups, logs and files you
 added to the installation folder are kept.
 
-**Settings > About > Check for updates** asks GitHub for the latest release. To
+**Settings > About > Check for updates** asks GitHub for the latest release, and the
+PecoFence website's copy of it when GitHub gives no answer within 8 seconds. To
 install it, PecoFence downloads the new setup and runs it; PecoFence closes meanwhile
 and opens again when setup is done. You can
 also run a newer setup from the Releases page yourself.

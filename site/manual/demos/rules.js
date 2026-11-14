@@ -1,11 +1,13 @@
 // 3.3 自动整理规则: 设置 → 整理规则 → 新建规则 (规则名称「发票」, 名称包含「发票」→「报销」) → 添加规则.
 // The new rule goes to the top of the list (settings.html nrAdd: rules match in list order, so a
 // new one is put before the broad first-run 「文件与文档」 rule), a new invoice lands in 报销, and
-// 立即应用 re-sorts the invoice already on the desktop.
+// 立即应用 re-sorts the invoice already on the desktop and shows the app's notice card with 撤销
+// above the right end of the taskbar (undo.rs offer_undo_refiled; the page's own toast shows only
+// when the card cannot). The fences leave that corner free, as the card keeps off fences.
 (() => {
     'use strict';
     const { E, ramp, lerp, pathAt, el, put, show, text, local, icon, fence, pointer, drawPointer, drawChip,
-        taskbar, loopFade, T } = PM;
+        notice, drawNotice, taskbar, loopFade, T } = PM;
 
     const D = 13.0;
     const WIN = { x: 16, y: 14, w: 504, h: 392 };
@@ -23,6 +25,7 @@
     const SCROLL = [9.0, 9.5];
     const APPLY_AT = 10.15;                      // 立即应用
     const TOAST = 1.6;                           // the page's toast lasts 2.4 s; shorter so it leaves rule 4 sooner
+    const GONE = 1;                              // 9月发票.pdf: the icon of 文件与文档 that 立即应用 moves
 
     // state of the page at t (what the real page would show)
     const st = t => ({
@@ -57,10 +60,10 @@
         const S = r.scene;
 
         // desktop: the first-run documents fence and an empty 报销 fence
-        r.F1 = fence(S, { x: 538, y: 14, w: 246, h: 202, title: '文件与文档' });
-        r.F2 = fence(S, { x: 538, y: 224, w: 246, h: 122, title: '报销' });
+        r.F1 = fence(S, { x: 538, y: 14, w: 246, h: 122, title: '文件与文档' });
+        r.F2 = fence(S, { x: 538, y: 144, w: 246, h: 122, title: '报销' });
         r.F2.hint.textContent = T('将项目拖到此处');
-        r.f1Icons = [['pdf', '合同.pdf'], ['docx', '周报.docx'], ['pdf', '9月发票.pdf'], ['xlsx', '预算.xlsx']]
+        r.f1Icons = [['pdf', '合同.pdf'], ['pdf', '9月发票.pdf'], ['docx', '周报.docx']]
             .map(([k, l]) => icon(r.F1.body, k, l));
         r.newIcon = icon(r.F2.body, 'pdf', '10月发票.pdf');
         r.movedIcon = icon(r.F2.body, 'pdf', '9月发票.pdf');
@@ -72,9 +75,9 @@
         w.foot.textContent = T('{0} 个栅栏 · {1} 个项目').replace('{0}', '5').replace('{1}', '23');
         const pg = r.pg = SM.page(w, 'rules');
         SM.header(pg, '整理规则');
-        const auto = SM.card(pg, { ic: '\uE8CB', t: '新项目出现在桌面时自动归类', s: '先看快捷方式目标规则，再按列表顺序匹配；都不符合的放进“桌面”栅栏', textW: 240 });
+        const auto = SM.card(pg, { ic: '\uE8CB', t: '新项目出现在桌面时自动归类', s: '条件是“快捷方式目标包含”的规则先匹配，其余按列表顺序；都不符合的放进“桌面”栅栏', textW: 240 });
         SM.drawToggle(SM.toggle(auto), true);
-        const unmatched = SM.card(pg, { ic: '\uE718', t: '没有命中规则的项目', s: '应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏', textW: 240 });
+        const unmatched = SM.card(pg, { ic: '\uE718', t: '不符合任何规则的项目', s: '应用规则时，已在某个栅栏里但不符合任何规则的项目放在哪里；不符合规则的新项目总是放进“桌面”栅栏', textW: 240 });
         SM.select(unmatched, '回到“桌面”栅栏', 104);
         const apply = SM.card(pg, { ic: '\uE8AB', t: '立即对桌面上的全部项目应用规则', s: '手动放进栅栏的项目保持原位', textW: 240 });
         r.apply = SM.button(apply, '立即应用', 64);
@@ -177,6 +180,8 @@
 
         r.kindPop = SM.popup(S, KINDS, 196, 8);
         r.targetPop = SM.popup(S, FENCES, 147);
+        r.card = notice(S, { title: T('已按规则整理 {0} 个项目').replace('{0}', '1'),
+            text: T('点“撤销”，或在栅栏上按 Ctrl+Z，就能把它们放回原处。'), button: T('撤销') });
         r.ptr = pointer(S);
         taskbar(root);
 
@@ -253,7 +258,7 @@
             [6.5, 455, 250], [8.65, 455, 250],
             [8.95, 300, 250], [9.55, 300, 250],                      // wheel up
             [10.05, applyBtn.x, applyBtn.y], [10.65, applyBtn.x, applyBtn.y], // 立即应用
-            [11.35, 662, 384], [D, 662, 384],
+            [11.0, applyBtn.x - 34, applyBtn.y + 42], [D, applyBtn.x - 34, applyBtn.y + 42],   // rests clear of the card
         ];
         CLICKS = [{ t: OPEN_AT }, { t: NAME_CLICK }, { t: KIND_CLICK }, { t: KIND_AT }, { t: VALUE_CLICK }, { t: TARGET_CLICK }, { t: TARGET_AT },
             { t: ADD_AT }, { t: APPLY_AT }];
@@ -288,16 +293,17 @@
         SM.drawButton(r.apply, p, t >= APPLY_AT - .08 && t < APPLY_AT + .02);
         SM.drawPopup(r.kindPop, t, POP.kind.x, POP.kind.y, KIND_CLICK + .02, KIND_AT, p, '文件类型');
         SM.drawPopup(r.targetPop, t, POP.target.x, POP.target.y, TARGET_CLICK + .02, TARGET_AT, p, '程序');
-        SM.drawToast(r.w, t, [[ADD_AT + .05, T('已添加规则'), TOAST], [APPLY_AT + .05, T('已按规则整理 {0} 个项目').replace('{0}', '1'), TOAST]]);
+        SM.drawToast(r.w, t, [[ADD_AT + .05, T('已添加规则'), TOAST]]);
+        drawNotice(r.card, t, APPLY_AT + .05, D, p);
 
         // ---- desktop ----
-        // 9月发票.pdf leaves 文件与文档 (83 ms fade), 预算.xlsx glides into its cell (250 ms), and
+        // 9月发票.pdf leaves 文件与文档 (83 ms fade), 周报.docx glides into its cell (250 ms), and
         // it fades into 报销 (167 ms); the new file fades in as the first item of 报销.
         r.f1Icons.forEach((n, i) => {
             let a = local(i, 3), o = 1;
-            if (i === 2) o = 1 - ramp(t, APPLY_AT + .05, APPLY_AT + .133, E.lin);
-            if (i === 3) {
-                const b = local(2, 3), q = ramp(t, APPLY_AT + .05, APPLY_AT + .3, E.p2p);
+            if (i === GONE) o = 1 - ramp(t, APPLY_AT + .05, APPLY_AT + .133, E.lin);
+            if (i > GONE) {
+                const b = local(i - 1, 3), q = ramp(t, APPLY_AT + .05, APPLY_AT + .3, E.p2p);
                 a = { x: lerp(a.x, b.x, q), y: lerp(a.y, b.y, q) };
             }
             put(n, a.x, a.y, o);

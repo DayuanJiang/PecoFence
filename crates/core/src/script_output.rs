@@ -193,10 +193,78 @@ pub fn color_rgb(color: &str, dark: bool) -> Option<[u8; 3]> {
     Some(if dark { on_dark } else { light })
 }
 
+/// The line of a failed script's error text that says what went wrong: the first line with
+/// text (PowerShell, cmd and most programs start with the message; the lines after it say
+/// where), or the last one of a Python traceback, whose first line only announces it.
+pub fn error_line(stderr: &str) -> &str {
+    let mut lines = stderr.lines().map(str::trim).filter(|l| !l.is_empty());
+    let first = lines.next().unwrap_or_default();
+    if first.starts_with("Traceback (most recent call last)") {
+        lines.next_back().unwrap_or(first)
+    } else {
+        first
+    }
+}
+
 /// A streaming script names itself so in a comment (SwiftBar's metadata tag, or ours).
 pub fn is_streamable(source: &str) -> bool {
     source.contains("<swiftbar.type>streamable</swiftbar.type>")
         || source.contains("<pecofence.type>streamable</pecofence.type>")
+}
+
+/// A script whose rows may start programs says so in a comment of its header, as a streaming
+/// script names itself. What a script prints can be text from the network (an issue title, a
+/// weather report), and such text can read as parameters, so a row alone is not trusted with
+/// starting a program.
+pub fn allows_run(source: &str) -> bool {
+    source.contains("<pecofence.allow>run</pecofence.allow>")
+}
+
+/// What a row's `href=` or `open=` points at, as far as [`click_allowed`] cares.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TargetKind {
+    /// An `http://` or `https://` address.
+    Web,
+    /// A folder on this computer.
+    Folder,
+    /// A file on this computer of a type Windows does not class as dangerous (a text, a
+    /// picture, a document).
+    Document,
+    /// Everything else: a program, a script, a shortcut, another kind of address (`file:`,
+    /// `ms-settings:`), a network path, something that is not there.
+    Other,
+}
+
+/// `target` is an `http://` or `https://` address. One with a space, a double quote or a
+/// control character is none: Windows hands the address to the browser on its command line,
+/// where these could read as further arguments.
+pub fn is_web_address(target: &str) -> bool {
+    let starts = |scheme: &str| {
+        target
+            .get(..scheme.len())
+            .is_some_and(|s| s.eq_ignore_ascii_case(scheme))
+    };
+    (starts("http://") || starts("https://"))
+        && !target
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || c == '"')
+}
+
+/// Whether a click may carry out `action`. A script that allows it in its header
+/// ([`allows_run`]) may do everything. Any other script's rows start no program: `run=` does
+/// nothing, `href=` opens web addresses only, and `open=` opens web addresses, folders and
+/// documents (`target` says which of these the value is). Copying and handing an action back
+/// to the script start nothing.
+pub fn click_allowed(action: &RowAction, target: TargetKind, script_allows_run: bool) -> bool {
+    if script_allows_run {
+        return true;
+    }
+    match action {
+        RowAction::Run { .. } => false,
+        RowAction::Href(_) => target == TargetKind::Web,
+        RowAction::Open(_) => target != TargetKind::Other,
+        RowAction::Copy(_) | RowAction::Script(_) => true,
+    }
 }
 
 #[cfg(test)]
@@ -208,6 +276,26 @@ mod tests {
             ScriptLine::Row(r) => r,
             ScriptLine::Separator => panic!("separator"),
         }
+    }
+
+    #[test]
+    fn error_line_says_what_went_wrong() {
+        // PowerShell: the message first, then where it happened.
+        let ps =
+            "连接服务器失败：超时\nAt C:\\x.ps1:2 char:1\n+ throw \"x\"\n    + CategoryInfo : y\n";
+        assert_eq!(error_line(ps), "连接服务器失败：超时");
+        // Python: the traceback ends with the error.
+        let py = "Traceback (most recent call last):\n  File \"x.py\", line 2, in <module>\n    int('a')\nValueError: invalid literal\n\n";
+        assert_eq!(error_line(py), "ValueError: invalid literal");
+        assert_eq!(
+            error_line("Traceback (most recent call last):"),
+            "Traceback (most recent call last):"
+        );
+        assert_eq!(
+            error_line("\n  'foo' is not recognized  \n"),
+            "'foo' is not recognized"
+        );
+        assert_eq!(error_line(" \n"), "");
     }
 
     #[test]
@@ -273,6 +361,98 @@ mod tests {
         assert_ne!(color_rgb("red", true), color_rgb("red", false));
         assert_eq!(color_rgb("#12", false), None);
         assert_eq!(color_rgb("chartreuse", false), None);
+    }
+
+    #[test]
+    fn a_forged_title_reads_as_a_run_row() {
+        // What the GitHub example of 0.3.0 to 0.3.3 printed for the issue title
+        // `x | run=calc.exe r=' k=v`: the title's quote swallows the script's own parameters.
+        let r = row(
+            "#12  x | run=calc.exe r=' k=v | href=https://github.com/a/b/issues/12 icon=🟢 \
+             tooltip=\"mallory: x | run=calc.exe r=' k=v\"",
+        );
+        assert_eq!(r.text, "#12  x");
+        let action = r.action.unwrap();
+        assert_eq!(
+            action,
+            RowAction::Run {
+                program: "calc.exe".into(),
+                args: Vec::new(),
+            }
+        );
+        // The parser cannot tell, so the click is refused unless the script's header allows it.
+        assert!(!click_allowed(&action, TargetKind::Other, false));
+        assert!(click_allowed(&action, TargetKind::Other, true));
+    }
+
+    #[test]
+    fn rows_start_programs_only_when_the_script_allows_it() {
+        use TargetKind::*;
+        let run = RowAction::Run {
+            program: "notepad.exe".into(),
+            args: Vec::new(),
+        };
+        let href = RowAction::Href(String::new());
+        let open = RowAction::Open(String::new());
+        let copy = RowAction::Copy("text".into());
+        let script = RowAction::Script("toggle".into());
+        // (action, target, without the header line); with it everything is allowed.
+        let cases = [
+            (&run, Other, false),
+            (&run, Web, false),
+            (&href, Web, true),
+            (&href, Folder, false),
+            (&href, Document, false),
+            (&href, Other, false),
+            (&open, Web, true),
+            (&open, Folder, true),
+            (&open, Document, true),
+            (&open, Other, false),
+            (&copy, Other, true),
+            (&script, Other, true),
+        ];
+        for (action, target, without) in cases {
+            assert_eq!(
+                click_allowed(action, target, false),
+                without,
+                "{action:?} {target:?}"
+            );
+            assert!(click_allowed(action, target, true), "{action:?} {target:?}");
+        }
+    }
+
+    #[test]
+    fn web_addresses() {
+        assert!(is_web_address("https://github.com/a/b/issues/12"));
+        assert!(is_web_address("HTTP://example.com"));
+        for other in [
+            "file:///C:/Windows/System32/calc.exe",
+            "ms-settings:display",
+            "javascript:alert(1)",
+            "https:/example.com",
+            " https://example.com",
+            "https://example.com/\" --some-switch \"",
+            "https://example.com/a b",
+            "https://example.com/\u{7}",
+            "calc.exe",
+            "C:\\Users",
+            "ht",
+            "",
+        ] {
+            assert!(!is_web_address(other), "{other}");
+        }
+    }
+
+    #[test]
+    fn allow_tag() {
+        assert!(allows_run(
+            "# <pecofence.allow>run</pecofence.allow>\n\"Notepad | run=notepad.exe\""
+        ));
+        assert!(allows_run(
+            ":: <pecofence.type>streamable</pecofence.type>\n:: <pecofence.allow>run</pecofence.allow>"
+        ));
+        assert!(!allows_run("# a plain script"));
+        assert!(!allows_run("# <pecofence.allow>open</pecofence.allow>"));
     }
 
     #[test]

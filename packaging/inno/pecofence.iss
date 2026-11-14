@@ -40,9 +40,11 @@ UsePreviousAppDir=yes
 DisableProgramGroupPage=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; Windows 10 2004 (build 19041) and later, as the Store package; 20H2 to 22H2 and LTSC 2021
-; (19042 to 19045) are the same release with enablement packages.
-MinVersion=10.0.19041
+; Windows 10 1809 (build 17763: LTSC 2019, Server 2019) and later. 1809 is the first build
+; with the Composition clip the fences are drawn with (CompositionGeometricClip); PecoFence
+; was tested there on a Server 2019 box (#219). The Store package stays at 2004 (build
+; 19041): its manifest uses uap10 attributes, and LTSC 2019 has no Store.
+MinVersion=10.0.17763
 SetupIconFile=..\..\crates\app\assets\pecofence.ico
 UninstallDisplayIcon={app}\pecofence.exe
 OutputBaseFilename=pecofence-v{#AppVersion}-x64-setup
@@ -71,6 +73,9 @@ Name: "it"; MessagesFile: "compiler:Languages\Italian.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+; Ticked by default, on a first installation only. Unticked, PecoFence starts with the
+; statistics switched off (ApplyUsageStatsTask).
+Name: "usagestats"; Description: "{cm:SendUsageStats}"; Check: IsFirstInstall
 
 [Files]
 ; Explicit payload: never collect config, caches or arbitrary files from a checkout.
@@ -129,6 +134,17 @@ es.NewerVersion=Ya hay una versión más reciente de PecoFence instalada. Para i
 pt_BR.NewerVersion=Uma versão mais recente do PecoFence já está instalada. Para instalar esta versão anterior, desinstale-a primeiro. Suas configurações e grupos são mantidos.
 ru.NewerVersion=Уже установлена более новая версия PecoFence. Чтобы установить старую версию, сначала удалите новую. Настройки и области сохранятся.
 it.NewerVersion=È già installata una versione più recente di PecoFence. Per installare questa versione precedente, disinstalla prima quella più recente. Le impostazioni e i riquadri vengono mantenuti.
+en.SendUsageStats=Send usage statistics to help improve PecoFence
+zh_CN.SendUsageStats=发送使用统计，帮助改进 PecoFence
+zh_TW.SendUsageStats=傳送使用統計，協助改善 PecoFence
+ja.SendUsageStats=使用状況の統計を送信して PecoFence の改善に協力する
+ko.SendUsageStats=사용 통계를 보내 PecoFence 개선에 참여
+de.SendUsageStats=Nutzungsstatistiken senden, um PecoFence zu verbessern
+fr.SendUsageStats=Envoyer des statistiques d'utilisation pour aider à améliorer PecoFence
+es.SendUsageStats=Enviar estadísticas de uso para ayudar a mejorar PecoFence
+pt_BR.SendUsageStats=Enviar estatísticas de uso para ajudar a melhorar o PecoFence
+ru.SendUsageStats=Отправлять статистику использования, чтобы помочь улучшить PecoFence
+it.SendUsageStats=Invia statistiche di utilizzo per aiutare a migliorare PecoFence
 
 [Code]
 const
@@ -136,7 +152,7 @@ const
   RunKey = 'Software\Microsoft\Windows\CurrentVersion\Run';
 
 var
-  Updating, Installed: Boolean;
+  Updating, Installed, FirstInstall: Boolean;
 
 function OpenProcess(Access: DWORD; Inherit: BOOL; Pid: DWORD): THandle;
   external 'OpenProcess@kernel32.dll stdcall';
@@ -156,6 +172,8 @@ var
   Processes: array of THandle;
   Waiting: Boolean;
 begin
+  { Read here: by ssPostInstall Setup has registered this installation. }
+  FirstInstall := not RegKeyExists(HKCU, UninstallKey);
   Pids := ExpandConstant('{param:UPDATE|}');
   Updating := Pids <> '';
   Count := 0;
@@ -187,10 +205,45 @@ begin
   Result := True;
 end;
 
+{ The usage statistics task is offered on a first installation only: an upgrade, also a silent
+  one, leaves the setting as it is. }
+function IsFirstInstall: Boolean;
+begin
+  Result := FirstInstall;
+end;
+
+{ First installation: the usage statistics box decides. PecoFence's configuration may not
+  exist yet, so an unticked box leaves a file: PecoFence finds it at its next start, switches
+  the statistics off and deletes it (AppState::load in crates/app/src/state.rs). A ticked box
+  removes the file that an earlier installation which never ran may have left. Test installers
+  leave the developer's own PecoFence alone and only log the unticked box. }
+procedure ApplyUsageStatsTask;
+var
+  Marker: String;
+  Unticked: Boolean;
+begin
+  Marker := ExpandConstant('{localappdata}\PecoFence\usage.off');
+  Unticked := not WizardIsTaskSelected('usagestats');
+#ifdef TestIdentity
+  if Unticked then
+    Log('Test identity: would write ' + Marker);
+#else
+  if not Unticked then
+    DeleteFile(Marker)
+  else if ForceDirectories(ExtractFileDir(Marker)) and SaveStringToFile(Marker, '', False) then
+    Log('Usage statistics unticked: wrote ' + Marker)
+  else
+    Log('Usage statistics unticked: could not write ' + Marker);
+#endif
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if CurStep = ssPostInstall then
+  if CurStep = ssPostInstall then begin
     Installed := True;
+    if FirstInstall then
+      ApplyUsageStatsTask;
+  end;
 end;
 
 { Test installers carry the real app: they log the restart instead of running it. }

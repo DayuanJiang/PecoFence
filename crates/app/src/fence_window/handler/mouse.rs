@@ -13,7 +13,21 @@ pub(super) fn on_setcursor(
     lparam: isize,
 ) -> Option<isize> {
     let HandlerCtx { view, .. } = h;
-    if msg::lo_i16(lparam) as isize != msg::HTCLIENT {
+    let hit = msg::lo_i16(lparam) as isize;
+    if hit == msg::HTCAPTION {
+        // 鼠标移入时保持透明 with the title row folded away: the move cursor over the row
+        // nobody sees says that the fence can be grabbed there.
+        let unseen = view.try_borrow().ok().is_some_and(|g| {
+            g.as_ref()
+                .is_some_and(|v| v.title_row_unseen() && !v.locked)
+        });
+        if unseen {
+            window::set_standard_cursor(StandardCursor::SizeAll);
+            return Some(1);
+        }
+        return None;
+    }
+    if hit != msg::HTCLIENT {
         return None;
     }
     // try_borrow: this arrives re-entrantly from nested loops too.
@@ -25,8 +39,22 @@ pub(super) fn on_setcursor(
         window::set_standard_cursor(StandardCursor::SizeWE);
         return Some(1);
     }
-    // A script fence's clickable row: the hand, as over a link.
-    if v.script_row_at(pt.x, pt.y).is_some() {
+    // A web address in a note that is not being edited: the hand, as over a link.
+    if v.note_link_at(pt.x, pt.y).is_some() {
+        drop(guard);
+        window::set_standard_cursor(StandardCursor::Hand);
+        return Some(1);
+    }
+    // A note's text: the text cursor, also before the click that starts the editing (it
+    // says that a click here writes). A check box keeps the arrow, also while the note is
+    // edited: a click ticks it.
+    if v.in_note_text(pt.x, pt.y) && v.note_box_at(pt.x, pt.y).is_none() {
+        drop(guard);
+        window::set_standard_cursor(StandardCursor::IBeam);
+        return Some(1);
+    }
+    // A script fence's clickable row, the empty state's action row: the hand, as over a link.
+    if v.script_row_at(pt.x, pt.y).is_some() || v.empty_action_at(pt.x, pt.y) {
         drop(guard);
         window::set_standard_cursor(StandardCursor::Hand);
         return Some(1);
@@ -67,7 +95,17 @@ pub(super) fn on_mouseleave(
     if let Some(v) = guard.as_mut() {
         if !inside {
             v.set_mouse_inside(false);
+            if v.rolled_up || v.peeking {
+                h.behavior.note_rolled_title_pointer(false);
+            }
             v.lift_peek_block("the pointer left the fence");
+            // The pointer went away from the point of its last move: a move back to that very
+            // point is a move again and arms the tip. (A menu that opened under a resting
+            // pointer leaves it where it was: the move that follows its closing stays none.)
+            if v.tip_move_at.is_some_and(|at| at != (pt.x, pt.y)) {
+                tracing::debug!("pointer left the fence: the point of its last move is forgotten");
+                v.tip_move_at = None;
+            }
         }
         // A tip armed over a spot of the caption (the Task View glyph, a filter tag, the lock
         // glyph) is WM_NCMOUSEMOVE's, which can come before this message when the pointer goes
@@ -75,18 +113,29 @@ pub(super) fn on_mouseleave(
         if !inside
             || !matches!(
                 v.tip_target,
-                Some(TipTarget::Desktops | TipTarget::FilterTag | TipTarget::Lock)
+                Some(
+                    TipTarget::Desktops
+                        | TipTarget::FilterTag
+                        | TipTarget::Lock
+                        | TipTarget::Title
+                        | TipTarget::Count
+                )
             )
         {
             v.hide_tip();
         }
+        v.note_tab_strip_pointer(false);
         let chrome_changed = std::mem::take(&mut v.up_hovered)
             | std::mem::take(&mut v.chevron_hovered)
             | v.tab_hover.take().is_some();
         // Leaving the bar starts the 0.5 s contract delay, not an
         // instant collapse.
         v.set_scrollbar_pointer(None);
-        let content_changed = v.header_hover.take().is_some() | v.script_hover.take().is_some();
+        let content_changed = v.header_hover.take().is_some()
+            | v.script_hover.take().is_some()
+            | v.note_box_hover.take().is_some()
+            | v.note_link_hover.take().is_some()
+            | v.hover_empty_action(None);
         // Onto the caption part of the title row (a gap between tabs): still the row, as in
         // WM_NCMOUSELEAVE; this message can come after the WM_NCMOUSEMOVE there.
         let c = window::screen_to_client(hwnd, pt);
@@ -134,6 +183,10 @@ pub(super) fn on_lbuttondown(
         v.cancel_pending_rename();
         v.suppress_dblclk = false;
         v.hide_tip();
+        // A press ends the short wait of hover switches that follow each other, and of rolled
+        // fences that expand one after the other.
+        v.tab_hover_quick = false;
+        h.behavior.roll_quick.set(false);
         // A press where the fence would resize without its lock (an edge band inside the
         // plate). It is remembered for the lock glyph's pulse only further down, once nothing
         // else has taken the press: the scrollbar, a tab, a header, a tool's row and an icon
@@ -155,7 +208,7 @@ pub(super) fn on_lbuttondown(
         // Mouse interaction hides the keyboard focus ring (Explorer). The
         // ring lives on the content surface: arms that do not repaint it
         // anyway do so once below (one raster per click).
-        let focus_cleared = std::mem::take(&mut v.focus_visible) && !v.rolled_up;
+        let focus_cleared = v.end_focus_mark() && !v.rolled_up;
         // 筛选: the × of the filter tag clears the filter.
         if v.filter_tag_clear_at(x, y) {
             let fence = v.active;
@@ -230,10 +283,15 @@ pub(super) fn on_lbuttondown(
         }
         let in_content = !v.rolled_up && y >= v.content_y && x >= v.content_x;
         if let Some(col) = v.divider_hit(x, y) {
+            let start_w = v.column_width(col);
+            let (cw, _) = v.content_size_px();
+            let max_w = v.columns_for(cw as f32 / v.scale()).drag_limit(start_w);
+            tracing::debug!(?col, start_w, max_w, "column divider drag starts");
             v.col_drag = Some(ColDrag {
                 col,
                 start_x_px: x,
-                start_w: v.column_width(col),
+                start_w,
+                max_w,
             });
             v.header_hover = None;
             if focus_cleared {
@@ -265,7 +323,28 @@ pub(super) fn on_lbuttondown(
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
-        if let Some(cmd) = v.note_press(x, y).or_else(|| v.script_press(x, y)) {
+        // A note's check box, a script fence's clickable row: pressed look now, the action on
+        // a release over it.
+        if v.press_tool_at(x, y, false).is_some() {
+            drop(guard);
+            window::set_capture(hwnd);
+            queue.push(Command::RaiseFence(hwnd));
+            return Some(0);
+        }
+        // A note's text: the editor opens with the caret at the press. On a to-do it opens
+        // on the release, since the press may become a drag of the line (`TodoDrag`); on
+        // other text, where nothing can be dragged, at once.
+        if let Some(cmd) = v.note_press(x, y) {
+            let at_once = v.begin_todo_press(x, y, cmd);
+            drop(guard);
+            match at_once {
+                Some(cmd) => queue.push(cmd),
+                None => window::set_capture(hwnd),
+            }
+            queue.push(Command::RaiseFence(hwnd));
+            return Some(0);
+        }
+        if let Some(cmd) = v.empty_action_press(x, y) {
             drop(guard);
             queue.push(cmd);
             queue.push(Command::RaiseFence(hwnd));
@@ -442,6 +521,14 @@ pub(super) fn on_lbuttonup(
         }
         return Some(0);
     }
+    // A press in a note: its click (the editor opens now), or the dragged to-do lands.
+    let note_press = view.borrow_mut().as_mut().and_then(|v| {
+        let held = v.todo_drag.as_ref()?.moved;
+        if let Some(cmd) = v.end_todo_drag(true) {
+            queue.push(cmd);
+        }
+        Some(held)
+    });
     let (drag, had_marquee, tab_drag, col_done, had_scroll, press) = {
         let mut guard = view.borrow_mut();
         match guard.as_mut() {
@@ -500,10 +587,17 @@ pub(super) fn on_lbuttonup(
     };
     // Each surface is rasterised at most once for the release: the flags
     // collect what changed, the redraws come last.
-    let mut need_content = had_marquee || had_scroll;
+    let mut need_content = had_marquee || had_scroll || note_press == Some(true);
     let mut need_chrome = false;
     match press {
-        Some((PressTarget::Item(_) | PressTarget::Header(_), _)) => {
+        Some((
+            PressTarget::Item(_)
+            | PressTarget::Header(_)
+            | PressTarget::NoteBox(_)
+            | PressTarget::NoteLink(..)
+            | PressTarget::ScriptRow(_),
+            _,
+        )) => {
             need_content = true;
         }
         Some((PressTarget::Tab(_) | PressTarget::Up | PressTarget::Chevron, _)) => {
@@ -520,6 +614,19 @@ pub(super) fn on_lbuttonup(
             PressTarget::Header(col) => queue.push(Command::SortColumn {
                 fence: v.active,
                 sort: column_sort(col),
+            }),
+            PressTarget::NoteBox(line) => queue.push(Command::ToggleNoteLine {
+                fence: v.active,
+                line,
+            }),
+            PressTarget::NoteLink(line, start) => queue.push(Command::OpenNoteLink {
+                fence: v.active,
+                line,
+                start,
+            }),
+            PressTarget::ScriptRow(row) => queue.push(Command::ScriptRowClicked {
+                fence: v.active,
+                row,
             }),
             // Also while a roll is still in flight: the toggle goes against the state it is
             // rolling to (`is_rolled`), so the roll turns round.
@@ -616,6 +723,15 @@ pub(super) fn on_capturechanged(
         v.drag = None;
         v.click_pending = None;
         v.rbutton_press = None;
+        // A note press that lost the capture is no click, and a dragged to-do goes back. A
+        // press with Alt in an editor that is closing stays (`TodoDrag::editor_closing`).
+        if !v
+            .todo_drag
+            .as_ref()
+            .is_some_and(|d| d.editor_closing && !d.moved)
+        {
+            let _ = v.end_todo_drag(false);
+        }
         v.clear_pressed();
         if v.detach_pending || v.remote_drag.is_some() {
             tracing::info!(
@@ -683,7 +799,7 @@ pub(super) fn on_lbuttondblclk(
         // A real double-click launches; it never renames.
         v.cancel_pending_rename();
         v.hide_tip();
-        v.focus_visible = false;
+        v.end_focus_mark();
         if let Some(col) = v.divider_hit(x, y) {
             // Explorer: double-clicking a divider sizes the column to fit.
             v.col_drag = None;
@@ -701,13 +817,19 @@ pub(super) fn on_lbuttondblclk(
             return Some(0);
         }
         // In a note the second click is another press: a check box ticks back.
+        if v.press_tool_at(x, y, true).is_some() {
+            drop(guard);
+            window::set_capture(hwnd);
+            return Some(0);
+        }
         if let Some(cmd) = v.note_press(x, y) {
             drop(guard);
             queue.push(cmd);
             return Some(0);
         }
-        // A script row acts once per double-click: a link opens one tab.
-        if v.script_row_at(x, y).is_some() {
+        // A script row acts once per double-click: a link opens one tab. So does the empty
+        // state's action row.
+        if v.script_row_at(x, y).is_some() || v.empty_action_at(x, y) {
             return Some(0);
         }
         // The folder glyph at a portal's root opens Explorer once per double-click.
@@ -767,6 +889,8 @@ pub(super) fn on_rbuttondown(
     if window::get_capture() != hwnd {
         if let Some(v) = view.borrow_mut().as_mut() {
             v.rbutton_press = Some((msg::lo_i16(lparam), msg::hi_i16(lparam)));
+            v.tab_hover_quick = false;
+            h.behavior.roll_quick.set(false);
         }
         window::set_capture(hwnd);
         return Some(0);
@@ -833,7 +957,7 @@ pub(super) fn on_rbuttonup(
         });
         return Some(0);
     }
-    v.focus_visible = false;
+    v.end_focus_mark();
     match v.hit_item(x, y) {
         Some(i) => {
             if !v.selected.contains(&i) {
@@ -891,6 +1015,127 @@ pub(super) fn on_xbuttonup(
         _ => {}
     }
     Some(1)
+}
+
+/// A press in the text of the note that is being edited in this window: it places the
+/// caret, so the editor stays open. Not a press with Alt on a to-do, which drags the to-do
+/// and ends the editing.
+pub(super) fn press_in_note_editor(h: &HandlerCtx, message: u32, lparam: isize) -> bool {
+    matches!(
+        message,
+        msg::WM_LBUTTONDOWN | msg::WM_LBUTTONDBLCLK | msg::WM_RBUTTONDOWN | WM_RBUTTONDBLCLK
+    ) && h.view.try_borrow().is_ok_and(|view| {
+        view.as_ref().is_some_and(|v| {
+            // The note's own scroll bar belongs to the editor: a press on it scrolls, and
+            // the edit goes on (the keyboard never left the editor's hidden text box).
+            let (x, y) = (msg::lo_i16(lparam), msg::hi_i16(lparam));
+            v.note_edit.is_some()
+                && ((v.in_note_text(x, y) && !alt_press_on_todo(v, message, x, y))
+                    || v.scrollbar_hit(x, y).is_some())
+        })
+    })
+}
+
+/// Alt held and the left button pressed on a to-do's text in the note that is being edited
+/// here. In an open editor a plain press places the caret and a drag selects, so the drag of
+/// a to-do starts with Alt there. The editing ends (its text is saved) and the press goes on
+/// as on a note at rest: moved, it drags the to-do; released in place, the editor opens
+/// again with the caret there.
+fn alt_press_on_todo(v: &FenceViewState, message: u32, x: i32, y: i32) -> bool {
+    message == msg::WM_LBUTTONDOWN
+        && v.note_edit.is_some()
+        && window::key_down(msg::VK_MENU)
+        && v.note_box_at(x, y).is_none()
+        && v.todo_line_at(y).is_some()
+}
+
+/// The mouse in the text of a note that is being edited (see `note_text`): a press places
+/// the caret (Shift extends the selection, a double-click takes the word), moving with the
+/// button held selects, a right-click opens the editor's own text menu. None for every other
+/// message: the usual handling goes on.
+pub(super) fn note_edit_mouse(
+    h: &HandlerCtx,
+    hwnd: HWND,
+    message: u32,
+    wparam: usize,
+    lparam: isize,
+) -> Option<isize> {
+    if !matches!(
+        message,
+        msg::WM_LBUTTONDOWN
+            | msg::WM_LBUTTONDBLCLK
+            | msg::WM_MOUSEMOVE
+            | msg::WM_LBUTTONUP
+            | msg::WM_RBUTTONDOWN
+            | WM_RBUTTONDBLCLK
+            | msg::WM_RBUTTONUP
+    ) {
+        return None;
+    }
+    let x = msg::lo_i16(lparam);
+    let y = msg::hi_i16(lparam);
+    let mut guard = h.view.try_borrow_mut().ok()?;
+    let v = guard.as_mut()?;
+    v.note_edit.as_ref()?;
+    let fence = v.active;
+    // A check box stays a check box while the note is edited: the usual press takes it (the
+    // pressed look, the tick on release), and the editor stays open.
+    if matches!(message, msg::WM_LBUTTONDOWN | msg::WM_LBUTTONDBLCLK)
+        && v.note_box_at(x, y).is_some()
+    {
+        return None;
+    }
+    // Alt and a press on a to-do's text: the to-do's drag, which the usual press handling
+    // begins.
+    if alt_press_on_todo(v, message, x, y) {
+        tracing::debug!(%fence, "Alt and a press on a to-do in the open editor: the editing ends, the to-do can be dragged");
+        return None;
+    }
+    match message {
+        msg::WM_LBUTTONDOWN | msg::WM_LBUTTONDBLCLK if v.in_note_text(x, y) => {
+            let offset = v.note_offset_at(x, y)?;
+            v.note_drag = true;
+            drop(guard);
+            window::set_capture(hwnd);
+            h.queue.push(Command::NoteCaret {
+                fence,
+                offset,
+                extend: wparam & msg::MK_SHIFT as usize != 0,
+                word: message == msg::WM_LBUTTONDBLCLK,
+            });
+            Some(0)
+        }
+        msg::WM_MOUSEMOVE if v.note_drag => {
+            if wparam & msg::MK_LBUTTON as usize == 0 {
+                // The release went elsewhere.
+                v.note_drag = false;
+                return None;
+            }
+            let offset = v.note_offset_at(x.max(v.content_x), y.max(v.content_y))?;
+            drop(guard);
+            h.queue.push(Command::NoteCaret {
+                fence,
+                offset,
+                extend: true,
+                word: false,
+            });
+            Some(0)
+        }
+        msg::WM_LBUTTONUP if v.note_drag => {
+            v.note_drag = false;
+            drop(guard);
+            window::release_capture();
+            Some(0)
+        }
+        msg::WM_RBUTTONDOWN | WM_RBUTTONDBLCLK if v.in_note_text(x, y) => Some(0),
+        msg::WM_RBUTTONUP if v.in_note_text(x, y) => {
+            drop(guard);
+            let at = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
+            h.queue.push(Command::NoteEditMenu { x: at.x, y: at.y });
+            Some(0)
+        }
+        _ => None,
+    }
 }
 
 pub(super) fn on_mousewheel(
@@ -995,12 +1240,14 @@ pub(super) fn on_mousewheel(
         // DirectManipulation tracking the fingers; easing each ~5 DIP
         // message would leave the content a glide behind the finger.
         let (layout, view_h) = v.scroll_extent();
+        // A note or a script fence scrolls its lines of text as a list scrolls its rows.
+        let text = v.scrolls_text();
         let step = wheel_step_dip(
             behavior.wheel_lines.get(),
             delta as f32 / msg::WHEEL_DELTA as f32,
-            layout.row_step(),
+            v.scroll_row_step(&layout),
             view_h,
-            matches!(layout, ItemLayout::Grid(_)),
+            matches!(layout, ItemLayout::Grid(_)) && !text,
         );
         if step == 0.0 {
             return Some(0);
@@ -1010,7 +1257,18 @@ pub(super) fn on_mousewheel(
         } else {
             motion::NORMAL
         };
-        v.scroll_to_by_wheel(v.scroll_target() - step, cap);
+        let mut target = v.scroll_target() - step;
+        if text && delta.abs() >= msg::WHEEL_DELTA {
+            // A whole notch ends with a whole line at the top edge (the last position is one
+            // too, see `take_tool_extent`). A step shorter than the way to the next line
+            // keeps its own target, so the wheel always moves the text.
+            let line = v.tool_line_snap(target);
+            if (line - v.scroll_target()).abs() > 0.5 {
+                target = line;
+            }
+            tracing::debug!(fence = %v.active, from = v.scroll_target(), step, to = target, "wheel over a tool fence's text: to a line's top");
+        }
+        v.scroll_to_by_wheel(target, cap);
         if v.scroll_anim.is_none() {
             // Animations off: the offset snapped, draw it now.
             if v.marquee.is_some() {

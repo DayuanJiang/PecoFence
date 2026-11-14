@@ -1,11 +1,11 @@
-/* Lessons 4.2 (title-hover) and 5.2 (ai). The 4.2 settings window is the shared mock
-   (demos/settings.css, .set-*); .xs-* adds its scrollbar, .xa-* the coding-agent terminal and
-   the restyled fences. */
+/* Lessons 4.2 (title-hover) and 2.1 (ai). The 4.2 settings window is the shared mock
+   (demos/settings.css, .set-*); .xs-* adds its scrollbar, .xa-* the coding-agent terminal (its
+   fences take the look lesson's plates, .set-pf and .set-plg). */
 
 /* settings page scrollbar: main::-webkit-scrollbar 12 px, thumb #0000005c inside a 4 px border */
 .xs-thumb { right: 4px; top: 0; width: 4px; border-radius: 2px; background: rgba(0, 0, 0, .36) }
 
-/* ---------- coding-agent terminal (5.2) ---------- */
+/* ---------- coding-agent terminal (2.1) ---------- */
 
 .xa-term {
     left: 0;
@@ -132,11 +132,7 @@
     background: #9fb4ff;
 }
 
-.keys.xa-keys { left: 20px; right: auto; width: 404px; top: 176px; bottom: auto }
-
-/* fences re-themed live: the demo sets these per frame */
-.xa-fence { color: var(--xa-ink, #1b2133) }
-.xa-fence .ico span { text-shadow: var(--xa-halo, 0 0 6px rgba(255, 255, 255, .7)) }
+.keys.xa-keys { left: 98px; right: auto; width: 404px; top: 176px; bottom: auto }
 
 /* side column: command names */
 [data-lesson="ai"] .side code {

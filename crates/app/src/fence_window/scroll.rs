@@ -220,6 +220,18 @@ pub(super) fn scrollbar_track(fixed_top: f32, view_h: f32) -> (f32, f32) {
     (fixed_top + button, (view_h - 2.0 * button).max(1.0))
 }
 
+/// The bar's band (`band_top`, `band_h`) kept inside the window's rounded corners. The bar is
+/// 12 DIPs wide at the right edge and ends in half circles, which fit under a corner of
+/// `radius` when the bar stops `radius - 6` DIPs before the window's edge: 10 in Liquid Glass
+/// (its corner cut the lower arrow before), 2 in Fluent, 0 for a radius up to 6. `above` is
+/// how far the band starts below the window's top edge: the title row, or nothing with the
+/// tabs in a column on the left.
+pub(super) fn scrollbar_band(band_top: f32, band_h: f32, above: f32, radius: f32) -> (f32, f32) {
+    let inset = (radius - pecofence_render::fence_chrome::ScrollbarDraw::BAR_W / 2.0).max(0.0);
+    let top = (inset - above).max(0.0);
+    (band_top + top, (band_h - top - inset).max(1.0))
+}
+
 /// Thumb length for a viewport `view_h` over `content_h` on a `track_h` track.
 pub(super) fn scrollbar_thumb_h(track_h: f32, view_h: f32, content_h: f32) -> f32 {
     (track_h * view_h / content_h)
@@ -301,10 +313,71 @@ impl FenceViewState {
     /// fence height then; the height left over stays empty under the last whole row.
     pub(super) fn scroll_view_h(&self, layout: &ItemLayout) -> f32 {
         let band_h = self.band_h(layout);
-        if self.behavior.size_to_cells.get() {
+        if self.behavior.size_to_cells.get() && !self.scrolls_text() {
             layout.whole_rows_h(band_h)
         } else {
             band_h
+        }
+    }
+
+    /// The fence shown is a note or a script fence: its text scrolls in place of items.
+    pub(super) fn scrolls_text(&self) -> bool {
+        self.note.is_some() || self.script.is_some()
+    }
+
+    /// Takes what the text of the note or script fence shown measures. Text taller than the
+    /// fence scrolls, and its last position rests on a line's top like every other: the
+    /// first line top from which the end of the text shows.
+    pub(super) fn take_tool_extent(
+        &mut self,
+        extent: pecofence_render::fence_chrome::ToolTextExtent,
+    ) {
+        let view_h = (self.viewport_h_px() as f32 / self.scale()).max(1.0);
+        let over = extent.height - view_h;
+        let height = if over > 0.0 {
+            let end = extent
+                .tops
+                .iter()
+                .copied()
+                .find(|t| *t >= over - 0.5)
+                .unwrap_or(over);
+            end + view_h
+        } else {
+            extent.height
+        };
+        if (height > view_h) != (self.tool_text_h > view_h) {
+            tracing::debug!(
+                fence = %self.active,
+                text_h = extent.height,
+                view_h,
+                lines = extent.tops.len(),
+                scrolls = height > view_h,
+                "tool fence text measured: it {}",
+                if height > view_h { "is taller than the fence and scrolls" } else { "fits" }
+            );
+        }
+        self.tool_text_h = height;
+        self.tool_line_tops = extent.tops;
+        self.tool_line_step = extent.line_step;
+    }
+
+    /// The scroll offset nearest to `target` that has a whole line of text at the top edge (a
+    /// note or a script fence).
+    pub(super) fn tool_line_snap(&self, target: f32) -> f32 {
+        self.tool_line_tops
+            .iter()
+            .copied()
+            .min_by(|a, b| (a - target).abs().total_cmp(&(b - target).abs()))
+            .unwrap_or(target)
+    }
+
+    /// One row for the wheel and the scrollbar's arrows: a line of text in a note or a script
+    /// fence, the layout's row otherwise.
+    pub(super) fn scroll_row_step(&self, layout: &ItemLayout) -> f32 {
+        if self.scrolls_text() && self.tool_line_step > 0.0 {
+            self.tool_line_step
+        } else {
+            layout.row_step()
         }
     }
 
@@ -479,9 +552,15 @@ impl FenceViewState {
         if max_scroll <= 0.0 {
             return None;
         }
-        // The bar spans the whole band, the empty height under the whole rows included.
+        // The bar spans the whole band, the empty height under the whole rows included, less
+        // what the window's rounded corners would cut.
         let band_top = layout.fixed_top();
-        let band_h = self.band_h(layout);
+        let (band_top, band_h) = scrollbar_band(
+            band_top,
+            self.band_h(layout),
+            self.content_y as f32 / self.scale() + band_top,
+            self.theme.corner_radius,
+        );
         let (track_top, track_h) = scrollbar_track(band_top, band_h);
         let content_h = layout.content_height();
         let thumb_h = scrollbar_thumb_h(track_h, view_h, content_h);
@@ -553,7 +632,13 @@ impl FenceViewState {
     ) -> Option<ScrollbarDraw> {
         let g = self.scrollbar_geometry_in(layout, view_h, self.scroll_y)?;
         let now = Instant::now();
-        let alpha = self.sb_alpha.value_at(now);
+        let mut alpha = self.sb_alpha.value_at(now);
+        if self.sb_arrives {
+            // The bar came with new icons (`replace_items`): as strong as the strongest of
+            // them until the first of them is in (`prune_content_motion` ends it then).
+            let arriving = arriving_strength(self.item_motion.values().map(|m| &m.alpha), now);
+            alpha *= arriving.map_or(1.0, |a| a.clamp(0.0, 1.0));
+        }
         if alpha <= 0.0 {
             return None;
         }
@@ -715,7 +800,8 @@ impl FenceViewState {
             | ScrollHit::TrackBelow
             | ScrollHit::ArrowUp
             | ScrollHit::ArrowDown => {
-                let step = scroll_step_for(hit, g.view_h, self.scroll_extent().0.row_step());
+                let row_step = self.scroll_row_step(&self.scroll_extent().0);
+                let step = scroll_step_for(hit, g.view_h, row_step);
                 self.scroll_to(self.scroll_target() + step, motion::SLOW);
                 self.page_repeat = Some(hit);
                 self.set_scrollbar_pointer(Some(hit));
@@ -735,6 +821,11 @@ impl FenceViewState {
         let had = self.scroll_drag.take().is_some() | self.page_repeat.take().is_some();
         if had {
             self.snap_scroll();
+            if self.scrolls_text() {
+                // A note or a script fence rests with a whole line at its top edge.
+                let line = self.tool_line_snap(self.scroll_target());
+                self.scroll_to(line, motion::FAST);
+            }
             window::kill_timer(self.hwnd, TIMER_SCROLL_REPEAT);
             if !self.scrollbar_hot {
                 window::set_timer(
@@ -884,4 +975,19 @@ impl FenceViewState {
                 .last_scroll
                 .is_some_and(|t| t.elapsed().as_millis() < SCROLLBAR_LINGER_MS as u128)
     }
+}
+
+/// The strength a scroll bar that came with new icons takes from them: that of the strongest
+/// icon that fades in. One that is fully in counts as such, so the bar stays whole while icons
+/// whose pictures came later (or that waited for a cell to be left) are still fading in: with
+/// only the unfinished ones counted, the bar dropped back to their strength and came in a
+/// second time. None when no icon fades in.
+pub(super) fn arriving_strength<'a>(
+    fades: impl Iterator<Item = &'a Tween>,
+    now: Instant,
+) -> Option<f32> {
+    fades
+        .filter(|a| a.origin() < 1.0)
+        .map(|a| a.value_at(now))
+        .reduce(f32::max)
 }

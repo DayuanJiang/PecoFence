@@ -126,6 +126,10 @@
         y: f.y + TITLE_H + 4 + Math.floor(i / c) * CELL_H,
     });
     const local = (i, c) => ({ x: PAD + (i % c) * CELL_W, y: 4 + Math.floor(i / c) * CELL_H });
+    // Stage coordinates of a loose desktop icon's cell: the 「桌面」 fence of a new installation is
+    // arranged like the desktop (no title, no border), its cells counted from the top-left
+    // corner of the screen, column by column. Such icons take the class `desk` (white names).
+    const deskCell = (col, row) => ({ x: 4 + col * CELL_W, y: 4 + row * CELL_H });
 
     function icon(parent, kind, label) {
         const n = el('div', 'ico', parent);
@@ -172,7 +176,8 @@
         put(f.n, x, y, opacity, extra);
     }
 
-    // items: 'label' | '-' | {t, sub, key, dis}
+    // items: 'label' | '-' | {t, sub, key, dis, check}; a menu with a ticked item keeps a
+    // column for the tick before every label, as Windows does
     function menu(parent, items, width) {
         const n = el('div', 'menu', parent);
         n.style.minWidth = width + 'px';   // grows when a translation is longer
@@ -186,6 +191,10 @@
             }
             const o = typeof it === 'string' ? { t: it } : it;
             const r = el('div', o.dis ? 'menu-item dis' : 'menu-item', n);
+            if (o.check) {
+                r.classList.add('check');
+                n.classList.add('checks');
+            }
             el('span', null, r, T(o.t));
             if (o.key) el('span', 'menu-key', r, T(o.key));
             if (o.sub) el('span', 'menu-sub', r);
@@ -296,6 +305,40 @@
         const down = t >= k.down && t < (k.up ?? k.down + .22);
         for (const kb of n.children) kb.classList.toggle('down', down);
         n.style.opacity = Math.min(ramp(t, k.a, k.a + .18), 1 - ramp(t, k.b, k.b + .2, E.lin));
+    }
+
+    // PecoFence's notice card above the right end of the taskbar (notice.rs): a title, a line of
+    // text, a close box and one accent button, such as 「已删除栅栏“工作”」 with 「撤销」.
+    function notice(parent, { title, text: body, button }) {
+        const n = el('div', 'notice', parent);
+        el('b', null, n, title);
+        el('i', null, n);
+        el('p', null, n, body);
+        const btn = el('span', 'notice-btn', n, button);
+        n.style.display = 'none';
+        return { n, btn };
+    }
+
+    // Where the card sits (12 px in from the stage's right edge and above the taskbar) and the
+    // centre of its button, for aiming the pointer.
+    function noticeBox(c) {
+        const shown = c.n.style.display;
+        c.n.style.display = '';
+        const w = c.n.offsetWidth, h = c.n.offsetHeight;
+        const x = SW - 12 - w, y = SH - 28 - 10 - h;
+        const btn = { x: x + c.btn.offsetLeft + c.btn.offsetWidth / 2, y: y + c.btn.offsetTop + c.btn.offsetHeight / 2 };
+        c.n.style.display = shown;
+        return { x, y, w, h, btn };
+    }
+
+    // Shown over [a, b]: it slides up 8 px while fading in (167 ms) and fades out (83 ms).
+    function drawNotice(c, t, a, b, p) {
+        if (!show(c.n, t >= a && t < b + .1)) return;
+        const box = noticeBox(c);
+        const o = ramp(t, a, a + .167) * (1 - ramp(t, b, b + .083, E.lin));
+        put(c.n, box.x, box.y + 8 * (1 - ramp(t, a, a + .167)), o);
+        c.btn.classList.toggle('hot', t < b && Math.abs(p.x - box.btn.x) <= c.btn.offsetWidth / 2
+            && Math.abs(p.y - box.btn.y) <= c.btn.offsetHeight / 2);
     }
 
     // Alignment guide (drag_guides.rs): 1 DIP white core between dark hairlines, running
@@ -563,9 +606,9 @@
 
     window.PM = {
         SW, SH, T, E, bezier, clamp01, ramp, lerp, inside, pathAt, firstWhen, spans, spanFade,
-        el, put, size, show, text, CELL_W, CELL_H, PAD, TITLE_H, cols, slot, local, icon, fence,
-        placeFence, menu, drawMenu, rowY, pointer, drawPointer, drawChip, drawKeys, guide, drawGuide,
-        taskbar, TRAY, loopFade, register,
+        el, put, size, show, text, CELL_W, CELL_H, PAD, TITLE_H, cols, slot, local, deskCell, icon, fence,
+        placeFence, menu, drawMenu, rowY, pointer, drawPointer, drawChip, drawKeys, notice, noticeBox, drawNotice,
+        guide, drawGuide, taskbar, TRAY, loopFade, register,
     };
     document.addEventListener('DOMContentLoaded', boot);
 })();

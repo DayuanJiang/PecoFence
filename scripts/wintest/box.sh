@@ -6,6 +6,7 @@
 #   box.sh down <name>       end the RDP session and stop the instance
 #   box.sh status            state of every box
 #   box.sh ssh <name> [cmd]  PowerShell on the box as Administrator
+#   box.sh ime-reset <name>  end pf's hung input method (Chinese input waits 10 s per key)
 # Private settings (key, pf's password, network ids, the list of boxes) live outside the repo in
 # ~/.config/pecofence-wintest: see README.md.
 set -uo pipefail
@@ -94,6 +95,13 @@ case "${1:-}" in
       rdp=$(pgrep -f "xfreerdp3 /v:$ip " >/dev/null && echo rdp || echo no-rdp)
       echo "$name $iid $ip $st $rdp ${lock:+locked: $lock}"
     done < "$CONF/boxes"
+    ;;
+  ime-reset)
+    # pf's input method hangs now and then: every key then waits 10 s and arrives as a plain
+    # letter, in every program. pf cannot end its two processes; Windows starts ctfmon again by
+    # itself and ChsIME with the next Chinese word.
+    name=${2:?name}
+    ssh_box "$name" 'Get-Process ChsIME, ctfmon -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 6; Get-Process ctfmon -ErrorAction SilentlyContinue | Select-Object Name, Id, StartTime | Format-Table -AutoSize | Out-String; exit 0'
     ;;
   ssh) name=${2:?name}; shift 2; ssh_box "$name" "$@" ;;
   *) sed -n '2,9p' "$0"; exit 1 ;;

@@ -58,6 +58,7 @@ impl GridSpec {
     pub fn grid(&self, line_h: f32, width: f32, count: usize, spans: &[GroupSpan]) -> Grid {
         Grid::grouped(self.metrics(line_h), width, count, spans)
             .centred(self.icon_align == IconAlign::Center)
+            .right_aligned(self.icon_align == IconAlign::Right)
     }
 }
 
@@ -507,6 +508,8 @@ pub struct Grid {
     bands: Bands,
     /// 图标对齐 居中: a row with fewer items than columns sits in the middle (`centred`).
     centre: bool,
+    /// 图标对齐 右对齐: every row fills from the right edge (`right_aligned`).
+    rtl: bool,
     /// 像桌面一样排列 (`Fence::desktop_layout`): one fixed cell per item in list order, plus
     /// one for a drop after the last (`with_slots`). Empty = the usual rows.
     slots: Vec<CellRect>,
@@ -531,6 +534,7 @@ impl Grid {
             content_height: bands.content_height,
             bands,
             centre: false,
+            rtl: false,
             slots: Vec::new(),
             free: false,
         }
@@ -608,13 +612,32 @@ impl Grid {
         self
     }
 
+    /// 图标对齐 右对齐 (GitHub #222): the columns count from the right edge, so the first item
+    /// of every row stands at the right and the next one to its left. A row that is not full
+    /// (the last one) keeps its items against the right edge, and an item added at the end
+    /// takes the free cell to their left: no other icon moves. Clicks, the arrow keys, the
+    /// selection rectangle and the insertion mark all go by the mirrored cells.
+    pub fn right_aligned(mut self, on: bool) -> Self {
+        self.rtl = on;
+        self
+    }
+
     /// How far a row of `len` items moves right; an empty row counts as one item (where the
     /// first item of an empty fence goes).
     fn row_shift(&self, len: usize) -> f32 {
-        if !self.centre {
+        if !self.centre || self.rtl {
             return 0.0;
         }
         self.columns.saturating_sub(len.max(1)) as f32 * self.pitch / 2.0
+    }
+
+    /// The column on screen (counted from the left) of the list's column `col`, and back.
+    fn mirror(&self, col: usize) -> usize {
+        if self.rtl {
+            self.columns.saturating_sub(1 + col)
+        } else {
+            col
+        }
     }
 
     /// Rect of item `index` in content coordinates (before scrolling). Cells sit centred in
@@ -628,7 +651,7 @@ impl Grid {
         CellRect {
             x: self.metrics.pad_x
                 + shift
-                + col as f32 * self.pitch
+                + self.mirror(col) as f32 * self.pitch
                 + (self.pitch - self.metrics.cell_w) / 2.0,
             y: self.bands.groups[gi].rows_y + row as f32 * self.bands.row_h,
             w: self.metrics.cell_w,
@@ -649,7 +672,7 @@ impl Grid {
         if col >= self.columns {
             return None;
         }
-        let idx = self.bands.hit(col, y)?;
+        let idx = self.bands.hit(self.mirror(col), y)?;
         (idx < count && self.cell(idx).contains(x, y)).then_some(idx)
     }
 
@@ -681,8 +704,15 @@ impl Grid {
             return (k + after as usize).min(count);
         }
         let row_x = x - self.row_shift(self.bands.insertion_row_len(y));
-        let colf = ((row_x - self.metrics.pad_x) / self.pitch).max(0.0);
-        self.bands.insertion(y, colf.round() as usize).min(count)
+        let colf = if self.rtl {
+            // Slots count from the right edge of the last column.
+            self.columns as f32 - (row_x - self.metrics.pad_x) / self.pitch
+        } else {
+            (row_x - self.metrics.pad_x) / self.pitch
+        };
+        self.bands
+            .insertion(y, colf.max(0.0).round() as usize)
+            .min(count)
     }
 
     fn centre_x(&self, index: usize) -> f32 {
@@ -767,6 +797,9 @@ impl DetailColumns {
     pub const DEFAULT_WIDTHS: [f32; 3] = [Self::DATE_W, Self::TYPE_W, Self::SIZE_W];
     pub const MIN_COL_W: f32 = 40.0;
     pub const MAX_COL_W: f32 = 480.0;
+    /// What the name column keeps before a column is dropped: 8 less than the 120 the name had
+    /// when it started at 8, so a fence keeps the columns it showed at its width.
+    pub const MIN_NAME_W: f32 = 112.0;
     /// Half-width of the grab zone on a column's left edge (DIPs).
     pub const DIVIDER_GRIP: f32 = 5.0;
 
@@ -781,9 +814,7 @@ impl DetailColumns {
         let clamp = |w: f32| w.clamp(Self::MIN_COL_W, Self::MAX_COL_W);
         let (date_w, type_w, size_w) = (clamp(widths[0]), clamp(widths[1]), clamp(widths[2]));
         let name_x = Self::NAME_X;
-        // 8 less than the 120 the name had when it started at 8: a fence keeps the columns it
-        // showed at its width.
-        let min_name = 112.0;
+        let min_name = Self::MIN_NAME_W;
         let mut right = width - Self::GUTTER;
         let mut size = None;
         let mut date = None;
@@ -810,7 +841,10 @@ impl DetailColumns {
         };
         let want_size = include(visible[2], size_w);
         let want_date = include(visible[0], date_w);
-        let want_type = include(visible[1], type_w);
+        // 类型 goes first: it does not stand in while the 修改日期 the user shows has no room.
+        // It did for the 28 DIPs between the two fits, so a fence dragged wider showed
+        // 名称 类型 大小, then 修改日期 in the place of 类型, then all three.
+        let want_type = (want_date || !visible[0]) && include(visible[1], type_w);
         if want_size {
             size = Some((right - size_w, size_w));
             right -= size_w + Self::GUTTER;
@@ -830,6 +864,15 @@ impl DetailColumns {
             type_,
             size,
         }
+    }
+
+    /// How wide a column that is `width` wide now may get under a divider drag: it takes room
+    /// from the name column down to that column's minimum, and no further. Wider, and
+    /// `for_width_with` would drop a column to give the name its room back: the type column
+    /// vanished in the middle of the drag and the divider jumped away from the pointer.
+    pub fn drag_limit(&self, width: f32) -> f32 {
+        // Half a DIP short of the exact fit, which rounding could miss.
+        width + (self.name_w - Self::MIN_NAME_W - 0.5).max(0.0)
     }
 
     /// The column whose left-edge divider is under a content-local x (header resize grip).
@@ -1013,7 +1056,11 @@ impl ItemLayout {
     pub fn neighbour(&self, index: usize, dx: i32, dy: i32, count: usize) -> Option<usize> {
         match self {
             Self::Grid(g) if g.has_slots() => g.slot_neighbour(index, dx, dy, count),
-            Self::Grid(g) => g.bands.neighbour(index, dx, dy, count, |i| g.centre_x(i)),
+            // Right-aligned rows run from right to left: Left goes on along the list.
+            Self::Grid(g) => {
+                let dx = if g.rtl { -dx } else { dx };
+                g.bands.neighbour(index, dx, dy, count, |i| g.centre_x(i))
+            }
             Self::Rows { bands, .. } => bands.neighbour(index, dx, dy, count, |_| 0.0),
         }
     }
@@ -1041,10 +1088,30 @@ impl ItemLayout {
                 }
             }
             Self::Grid(g) => {
+                // The edge of a cell the list comes from (the mark before an item stands
+                // there) and the one it goes on to: left and right, swapped in rows that
+                // fill from the right (图标对齐 右对齐). At the right edge of a fence that is
+                // a whole number of cells wide the mark stays inside the content, both DIPs
+                // of it, as it does at the left edge.
+                let inside = self.header_width() - 2.0;
+                let lead = |c: CellRect| {
+                    if g.rtl {
+                        (c.x + c.w - 1.0).min(inside)
+                    } else {
+                        (c.x - 1.0).max(0.0)
+                    }
+                };
+                let trail = |c: CellRect| {
+                    if g.rtl {
+                        (c.x - 1.0).max(0.0)
+                    } else {
+                        (c.x + c.w - 1.0).min(inside)
+                    }
+                };
                 if count == 0 {
                     let c = g.cell(0);
                     return CellRect {
-                        x: c.x,
+                        x: if g.rtl { c.x + c.w - 2.0 } else { c.x },
                         y: c.y,
                         w: 2.0,
                         h: c.h,
@@ -1054,16 +1121,16 @@ impl ItemLayout {
                 if index < count || col != 0 {
                     let c = g.cell(index);
                     CellRect {
-                        x: (c.x - 1.0).max(0.0),
+                        x: lead(c),
                         y: c.y,
                         w: 2.0,
                         h: c.h,
                     }
                 } else {
-                    // After a full last row: right edge of the last cell.
+                    // After a full last row: the far edge of the last cell.
                     let c = g.cell(count - 1);
                     CellRect {
-                        x: c.x + c.w - 1.0,
+                        x: trail(c),
                         y: c.y,
                         w: 2.0,
                         h: c.h,
@@ -1174,6 +1241,50 @@ pub mod clearance {
     /// area with the snapping gap. A candidate pushed back into the work area may sit closer
     /// than the gap, but never on another fence. `None` when there is no such spot.
     pub fn nearest_free(r: &RECT, others: &[RECT], work: &RECT, gap: i32) -> Option<RECT> {
+        nearest_spot(r, others, work, gap, false)
+    }
+
+    /// [`nearest_free`] for a card that should not stand against a fence (a notice): the
+    /// nearest spot that keeps `gap` to every one of `others`. Where there is none, the
+    /// nearest free spot, moved to the middle of the room it has between the fences above and
+    /// below it and then between those beside it, when that room is too small for the gap at
+    /// both ends. (A spot level with one fence's edge could stand 1 px from the next fence.)
+    pub fn nearest_free_apart(r: &RECT, others: &[RECT], work: &RECT, gap: i32) -> Option<RECT> {
+        if let Some(c) = nearest_spot(r, others, work, gap, true) {
+            return Some(c);
+        }
+        let mut c = nearest_spot(r, others, work, gap, false)?;
+        let (w, h) = (c.right - c.left, c.bottom - c.top);
+        let in_columns = |o: &&RECT| o.left < c.right && o.right > c.left;
+        let above = others.iter().filter(in_columns).map(|o| o.bottom);
+        let above = above.filter(|&b| b <= c.top).fold(work.top, i32::max);
+        let below = others.iter().filter(in_columns).map(|o| o.top);
+        let below = below.filter(|&t| t >= c.bottom).fold(work.bottom, i32::min);
+        if below - above < h + 2 * gap {
+            c.top = above + (below - above - h) / 2;
+            c.bottom = c.top + h;
+        }
+        let in_rows = |o: &&RECT| o.top < c.bottom && o.bottom > c.top;
+        let before = others.iter().filter(in_rows).map(|o| o.right);
+        let before = before.filter(|&x| x <= c.left).fold(work.left, i32::max);
+        let after = others.iter().filter(in_rows).map(|o| o.left);
+        let after = after.filter(|&x| x >= c.right).fold(work.right, i32::min);
+        if after - before < w + 2 * gap {
+            c.left = before + (after - before - w) / 2;
+            c.right = c.left + w;
+        }
+        Some(c)
+    }
+
+    /// The candidate of [`nearest_free`] nearest to `r`: one that overlaps none of `others`,
+    /// or with `keep_gap` one that keeps `gap` to each of them.
+    fn nearest_spot(
+        r: &RECT,
+        others: &[RECT],
+        work: &RECT,
+        gap: i32,
+        keep_gap: bool,
+    ) -> Option<RECT> {
         let (w, h) = (r.right - r.left, r.bottom - r.top);
         if w > work.right - work.left || h > work.bottom - work.top {
             return None;
@@ -1194,6 +1305,9 @@ pub mod clearance {
                     bottom: y.clamp(work.top, work.bottom - h) + h,
                 };
                 if others.iter().any(|o| overlaps(&c, o, 0)) {
+                    continue;
+                }
+                if keep_gap && !others.iter().all(|o| apart(&c, o, gap)) {
                     continue;
                 }
                 let (dx, dy) = ((c.left - r.left) as i64, (c.top - r.top) as i64);
@@ -1451,6 +1565,36 @@ mod tests {
         assert_eq!((spot.left, spot.right), (592, 692));
         // Nowhere to go.
         assert_eq!(nearest_free(&rc(10, 10, 110, 110), &[work], &work, 8), None);
+    }
+
+    /// A notice that has to leave its corner keeps the gap to every fence where a spot allows
+    /// it (level with one fence's lower edge it stood 1 px above the next fence), and else
+    /// stands in the middle of the room it has.
+    #[test]
+    fn a_notice_keeps_the_gap_to_the_fences_around_it() {
+        use clearance::{nearest_free, nearest_free_apart};
+        let work = rc(0, 0, 400, 400);
+        let card = rc(184, 284, 384, 384);
+        let side = rc(0, 100, 150, 259);
+        let below = rc(0, 260, 400, 400);
+        // Room for the gap at both ends: 16 px from the fence above and from the one below.
+        let above = rc(0, 0, 400, 90);
+        let fences = [side, below, above];
+        assert_eq!(
+            nearest_free(&card, &fences, &work, 16),
+            Some(rc(184, 159, 384, 259)),
+            "level with the side fence's lower edge: 1 px above the fence below"
+        );
+        let spot = nearest_free_apart(&card, &fences, &work, 16).unwrap();
+        assert!(
+            spot.bottom + 16 <= below.top && spot.top >= above.bottom + 16,
+            "{spot:?}"
+        );
+        assert!(spot.left >= side.right + 16, "{spot:?}");
+        // 110 px of room for a 100 px card: 5 px at each end.
+        let above = rc(0, 0, 400, 150);
+        let spot = nearest_free_apart(&card, &[side, below, above], &work, 16).unwrap();
+        assert_eq!((spot.top, spot.bottom), (155, 255));
     }
 
     /// A rolled-up fence (36 px title row, 250 px expanded) is placed by its whole expanded
@@ -1721,6 +1865,141 @@ mod tests {
         // An empty fence: the first icon goes to the middle.
         let empty = ItemLayout::Grid(Grid::new(m, 400.0, 0).centred(true));
         assert_eq!(empty.insertion_caret(0, 0).x, 160.0);
+    }
+
+    /// 图标对齐 右对齐 (GitHub #222): every row fills from the right edge, the first icon at
+    /// the right and the next to its left. One icon, a full row, one more than a full row and
+    /// a last row that is not full; an icon added at the end moves no other icon.
+    #[test]
+    fn right_aligned_grid_fills_every_row_from_the_right_edge() {
+        let m = GridMetrics::for_icon_size(48, 2); // 80 DIP cells
+        let right = |count| Grid::new(m, 400.0, count).right_aligned(true);
+        let one = right(1);
+        assert_eq!((one.columns, one.pitch), (5, 80.0));
+        assert_eq!(one.cell(0).x, 320.0, "one icon stands at the right edge");
+        // A full row is the mirror image of the left-aligned one.
+        let (five, left) = (right(5), Grid::new(m, 400.0, 5));
+        for i in 0..5 {
+            assert_eq!(five.cell(i).x, left.cell(4 - i).x);
+            assert_eq!(five.cell(i).y, left.cell(i).y);
+        }
+        // One more starts the next row at the right edge; the first row stays as it was.
+        let six = right(6);
+        for i in 0..5 {
+            assert_eq!(six.cell(i), five.cell(i));
+        }
+        assert_eq!(
+            (six.cell(5).x, six.cell(5).y),
+            (320.0, five.cell(0).y + m.cell_h)
+        );
+        // A last row of two: against the right edge, the free cells to their left.
+        let seven = right(7);
+        assert_eq!(
+            seven.cell(5),
+            six.cell(5),
+            "the seventh icon moved no other"
+        );
+        assert_eq!(seven.cell(6).x, 240.0);
+        let (y1, y2) = (seven.cell(0).y + 1.0, seven.cell(5).y + 1.0);
+        assert_eq!(seven.hit_test(330.0, y1, 7), Some(0));
+        assert_eq!(seven.hit_test(10.0, y1, 7), Some(4));
+        assert_eq!(seven.hit_test(330.0, y2, 7), Some(5));
+        assert_eq!(seven.hit_test(250.0, y2, 7), Some(6));
+        assert_eq!(seven.hit_test(170.0, y2, 7), None, "the free cells");
+        // Drops: before the first icon at the right edge, after the last one to the left.
+        assert_eq!(seven.insertion_index(395.0, y1, 7), 0);
+        assert_eq!(seven.insertion_index(5.0, y1, 7), 5);
+        assert_eq!(seven.insertion_index(395.0, y2, 7), 5);
+        assert_eq!(seven.insertion_index(322.0, y2, 7), 6);
+        assert_eq!(seven.insertion_index(245.0, y2, 7), 7);
+        assert_eq!(seven.insertion_index(10.0, y2, 7), 7);
+        let l = ItemLayout::Grid(seven);
+        // The mark stands on the side the list comes from: the right edge of the cell. At the
+        // fence's right edge both of its 2 DIPs are inside the content (400 wide).
+        assert_eq!(l.insertion_caret(0, 7).x, 398.0);
+        assert_eq!(
+            l.insertion_caret(5, 7).x,
+            398.0,
+            "the start of the second row"
+        );
+        assert_eq!(l.insertion_caret(6, 7).x, 319.0);
+        assert_eq!(l.insertion_caret(7, 7).x, 239.0, "after the last icon");
+        // Left and Right go where the eye goes; at a row's end they go on along the list.
+        assert_eq!(
+            l.neighbour(5, -1, 0, 7),
+            Some(6),
+            "Left: the icon to the left"
+        );
+        assert_eq!(
+            l.neighbour(6, 1, 0, 7),
+            Some(5),
+            "Right: the icon to the right"
+        );
+        assert_eq!(
+            l.neighbour(6, -1, 0, 7),
+            Some(6),
+            "the last icon: Left stays"
+        );
+        assert_eq!(
+            l.neighbour(0, 1, 0, 7),
+            Some(0),
+            "the first icon: Right stays"
+        );
+        assert_eq!(
+            l.neighbour(4, -1, 0, 7),
+            Some(5),
+            "Left at a row's left end"
+        );
+        assert_eq!(l.neighbour(0, 0, 1, 7), Some(5), "Down the right column");
+        assert_eq!(l.neighbour(1, 0, 1, 7), Some(6));
+        assert_eq!(
+            l.neighbour(4, 0, 1, 7),
+            Some(6),
+            "the nearest of a short row"
+        );
+        assert_eq!(l.neighbour(6, 0, -1, 7), Some(1));
+
+        // After a full last row the mark stands at the left edge of the last cell; in an
+        // empty fence where the first icon goes.
+        let full = ItemLayout::Grid(right(5));
+        assert_eq!(full.insertion_caret(5, 5).x, 0.0);
+        let empty = ItemLayout::Grid(right(0));
+        assert_eq!(empty.insertion_caret(0, 0).x, 398.0);
+        // A width that is no whole number of cells: the first column ends where the last
+        // column of a left-aligned grid ends.
+        let wide = Grid::new(m, 300.0, 4).right_aligned(true);
+        assert_eq!((wide.columns, wide.pitch), (3, 100.0));
+        assert_eq!(wide.cell(0).x + wide.cell(0).w + 10.0, 300.0);
+        assert_eq!(wide.cell(3).x, wide.cell(0).x, "the fourth under the first");
+        // One column (a tall narrow fence): the same column as left-aligned.
+        let narrow = Grid::new(m, 96.0, 3).right_aligned(true);
+        assert_eq!(narrow.columns, 1);
+        assert_eq!(narrow.cell(2).x, Grid::new(m, 96.0, 3).cell(2).x);
+    }
+
+    /// 右对齐 under 按时间分组: every group starts its rows at the right edge, clicks land on
+    /// the mirrored cells and never cross a header.
+    #[test]
+    fn right_aligned_groups_start_at_the_right_edge() {
+        let m = GridMetrics::for_icon_size(48, 2);
+        let spans = group_spans(
+            std::iter::repeat_n(Some(DateBucket::Today), 5).chain([Some(DateBucket::Earlier)]),
+        );
+        let l = ItemLayout::Grid(Grid::grouped(m, 320.0, 6, &spans).right_aligned(true));
+        assert_eq!(l.columns(), 4);
+        assert_eq!(l.cell(0).x, 240.0);
+        assert_eq!(l.cell(3).x, 0.0);
+        assert_eq!(l.cell(4).x, 240.0, "the second row of 今天");
+        assert_eq!(l.cell(5).x, 240.0, "更早 starts at the right edge too");
+        for i in 0..6 {
+            let c = l.cell(i);
+            assert_eq!(l.hit_test(c.x + c.w / 2.0, c.y + c.h / 2.0, 6), Some(i));
+        }
+        let c4 = l.cell(4);
+        assert_eq!(l.hit_test(c4.x - 40.0, c4.y + 5.0, 6), None, "free cell");
+        assert_eq!(l.neighbour(0, 0, 1, 6), Some(4));
+        assert_eq!(l.neighbour(4, 0, 1, 6), Some(5), "down across the header");
+        assert_eq!(l.neighbour(4, -1, 0, 6), Some(5), "Left goes on into 更早");
     }
 
     /// 「整数个图标」 at any height: the rows keep their pitch (the items never move with the
@@ -2178,10 +2457,16 @@ mod tests {
         let caret = l.insertion_caret(1, 6);
         assert_eq!(caret.x, c1.x - 1.0);
         assert_eq!(caret.w, 2.0);
-        // After the last item of a full row: the last cell's right edge.
+        // After the last item of a full row: the last cell's right edge, which is the fence's
+        // (320 wide, four cells): the whole mark stays inside.
         let last = l.cell(3);
         let end = l.insertion_caret(4, 4);
-        assert_eq!(end.x, last.x + last.w - 1.0);
+        assert_eq!(end.x, last.x + last.w - 2.0);
+        // A fence with room left over: the cells stand in from the edge, the mark on the edge
+        // of the cell.
+        let wide = ItemLayout::Grid(Grid::new(GridMetrics::for_icon_size(48, 2), 336.0, 4));
+        let last = wide.cell(3);
+        assert_eq!(wide.insertion_caret(4, 4).x, last.x + last.w - 1.0);
         let rows = ItemLayout::rows(RowMetrics::list(16.0), 200.0, 3);
         assert_eq!(rows.insertion_index(10.0, 4.0 + 28.0 * 1.6, 3), 2);
         assert_eq!(rows.insertion_index(10.0, 9_999.0, 3), 3);
@@ -2202,6 +2487,33 @@ mod tests {
         assert_eq!(tiny.size.unwrap().1, DetailColumns::MIN_COL_W);
     }
 
+    /// A fence dragged wider gets 大小, then 修改日期, then 类型: 类型 never shows without the
+    /// 修改日期 the user has not hidden (it stood in for it between 328 and 355 DIPs).
+    #[test]
+    fn the_type_column_never_stands_in_for_the_date_column() {
+        let mut shown = Vec::new();
+        for width in 150..520 {
+            let c = DetailColumns::for_width(width as f32);
+            assert!(
+                c.type_.is_none() || c.date.is_some(),
+                "width {width}: 类型 without 修改日期"
+            );
+            let now = (c.size.is_some(), c.date.is_some(), c.type_.is_some());
+            if shown.last() != Some(&now) {
+                shown.push(now);
+            }
+        }
+        assert_eq!(
+            shown,
+            vec![
+                (false, false, false),
+                (true, false, false),
+                (true, true, false),
+                (true, true, true)
+            ]
+        );
+    }
+
     /// The rows' icons start at the title's left edge, and a fence shows the columns it showed
     /// when the name started at 8 DIPs: all three from 472 DIPs on.
     #[test]
@@ -2211,6 +2523,30 @@ mod tests {
         assert!(DetailColumns::for_width(472.0).type_.is_some());
         assert!(DetailColumns::for_width(471.0).type_.is_none());
         assert!(DetailColumns::for_width(471.0).date.is_some());
+    }
+
+    /// A divider drag widens its column only as far as the name column has room: at the limit
+    /// every column is still shown. Without the limit the type column was dropped in the
+    /// middle of the drag (and the divider jumped to where the columns then stood).
+    #[test]
+    fn a_dragged_column_stops_before_another_one_is_dropped() {
+        let width = 500.0;
+        let cols = DetailColumns::for_width(width);
+        assert!(cols.type_.is_some());
+        let limit = cols.drag_limit(DetailColumns::DATE_W);
+        assert!(limit > DetailColumns::DATE_W + 10.0, "{limit}");
+        let with_date = |w: f32| {
+            let widths = [w, DetailColumns::TYPE_W, DetailColumns::SIZE_W];
+            DetailColumns::for_width_with(width, widths, [true; 3])
+        };
+        let at_limit = with_date(limit);
+        assert!(at_limit.date.is_some() && at_limit.type_.is_some() && at_limit.size.is_some());
+        assert!(at_limit.name_w >= DetailColumns::MIN_NAME_W);
+        // What a drag did before: a little wider and the type column goes.
+        assert!(with_date(limit + 10.0).type_.is_none());
+        // No room left: the column keeps its width.
+        let tight = DetailColumns::for_width(472.0);
+        assert!(tight.drag_limit(DetailColumns::DATE_W) < DetailColumns::DATE_W + 1.0);
     }
 
     /// Larger row text (Windows' text size 150 %: an 18 DIP font, 24 DIP lines) makes the rows

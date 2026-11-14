@@ -18,6 +18,13 @@ function StopTestProcesses() {
   Get-Process -ErrorAction SilentlyContinue | Where-Object {
     $_.Path -and ($_.Path -like 'C:\pf\extra\*' -or $_.Path -like 'C:\Users\pf\AppData\Local\Temp\*' -or $_.Path -like '*\unins*.exe')
   } | Stop-Process -Force -ErrorAction SilentlyContinue
+  # The script hosts of an earlier job and the helper scripts it started (the update server and
+  # the like): ending the task does not end them, and a job that was cut off left them running
+  # for hours, holding ports and ready to use the mouse of a later job (2026-11-13).
+  Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.ProcessId -ne $PID -and $_.Name -match '^(powershell|wscript)\.exe$' -and
+      "$($_.CommandLine)" -match 'C:\\pf\\job\.ps1|C:\\pf\\kit\\assets\\'
+  } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 }
 
 switch ($Cmd) {

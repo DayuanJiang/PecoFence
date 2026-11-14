@@ -127,26 +127,106 @@ impl App {
 
     /// A notice was clicked or went away. The welcome and the rating offer never show at
     /// the same time.
-    pub(super) fn on_notice(&mut self, event: crate::notice::NoticeEvent) {
-        if let Some((notice, fence)) = self.undo_notice.take() {
-            drop(notice);
+    pub(super) fn on_notice(&mut self, card: isize, event: crate::notice::NoticeEvent) {
+        // Two cards can be up (an undo card above a tip): the event names its card.
+        let is = |n: &crate::notice::Notice| n.hwnd().0 as isize == card;
+        if let Some((notice, fence)) = self.undo_notice.take_if(|(n, _)| is(n)) {
+            notice.leave();
             self.on_undo_notice(fence, event);
             return;
         }
-        if let Some((notice, which)) = self.welcome.take() {
-            // Gone before the next tip registers its window class.
-            drop(notice);
+        if let Some((notice, which)) = self.welcome.take_if(|(n, _)| is(n)) {
+            // 「下一条」: the card stays and shows the next tip.
+            if let Some(next) = self.next_tip(&which, event) {
+                self.show_next_tip(notice, next);
+                return;
+            }
+            // A card that the answer brings up (「已添加整理规则」 after 「添加规则」) takes this
+            // card's place where it stands; else this one fades out.
+            if event == crate::notice::NoticeEvent::Action {
+                notice.hold();
+                self.answered_card = Some(notice);
+            } else {
+                notice.leave();
+            }
             self.on_welcome_notice(which, event);
+            if let Some(notice) = self.answered_card.take() {
+                notice.leave();
+            }
+            self.resume_displaced_tip();
             return;
         }
-        if self.update_notice_open() {
+        if self.update_notice().is_some_and(is) {
             self.on_update_notice(event);
             return;
         }
-        self.rating.notice = None;
+        let Some(notice) = self.rating.notice.take_if(|n| is(n)) else {
+            tracing::debug!(?event, "notice event from a card that is gone");
+            return;
+        };
+        notice.leave();
         if event == crate::notice::NoticeEvent::Action {
             self.open_store_rating();
         }
+    }
+
+    /// `Command::CardKeys`: F6 in fence window `from`, or in the Peek (null). The card on
+    /// screen (the undo card first, then a tip or an offer) takes the keyboard; the fence's
+    /// focus mark goes, as when the keyboard leaves it for another fence.
+    pub(super) fn card_takes_keys(&mut self, from: HWND) {
+        let front = desktop::foreground_window();
+        let took = self
+            .undo_notice
+            .iter()
+            .map(|(n, _)| n)
+            .chain(self.notices())
+            .next()
+            .is_some_and(|card| card.take_keyboard());
+        tracing::info!(
+            took,
+            in_fence = !from.0.is_null(),
+            "F6: card asked to take the keyboard"
+        );
+        if !took {
+            return;
+        }
+        if let Some(w) = self.fences.values().find(|w| w.hwnd() == from) {
+            w.keyboard_left();
+        }
+        self.card_keys_back = Some((front, from));
+    }
+
+    /// `Command::CardKeysBack`: the keyboard goes back to the window that had it before F6,
+    /// and the fence it was in shows its focus mark again. Nothing when the user has gone on
+    /// to another window meanwhile.
+    pub(super) fn card_gives_keys_back(&mut self) {
+        let Some((front, from)) = self.card_keys_back.take() else {
+            return;
+        };
+        let on_card = desktop::class_name(desktop::foreground_window()) == "PecoFence.Notice";
+        tracing::info!(on_card, "the keyboard goes back from the card");
+        if !on_card {
+            return;
+        }
+        window::bring_to_front(front);
+        if let Some(w) = self.fences.values().find(|w| w.hwnd() == from) {
+            w.focus_by_keyboard();
+        }
+    }
+
+    /// After a card event: the card that had the keyboard was answered and is leaving (no
+    /// card on screen has it now): the keyboard goes back where it came from.
+    pub(super) fn card_keys_settle(&mut self) {
+        if self.card_keys_back.is_some() && !self.notices().any(|n| n.has_keyboard()) {
+            self.card_gives_keys_back();
+        }
+    }
+
+    /// Where the cards on screen stand (screen px): another card keeps clear of them.
+    pub(super) fn notice_rects(&self) -> Vec<RECT> {
+        self.notices()
+            .map(|n| window::window_rect(n.hwnd()))
+            .collect()
     }
 
     /// A welcome, what's-new, 对话框跳转 or rating notice is on screen.
@@ -158,7 +238,7 @@ impl App {
     }
 
     /// The notices on screen: a tip, the rating offer, an undo, the update card.
-    fn notices(&self) -> impl Iterator<Item = &crate::notice::Notice> {
+    pub(super) fn notices(&self) -> impl Iterator<Item = &crate::notice::Notice> {
         self.welcome
             .iter()
             .map(|(n, _)| n)

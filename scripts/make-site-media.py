@@ -20,7 +20,8 @@ REVISION = ROOT / ".cache/store-v2"
 # renderer's caption-free English render (.cache/store-trailers/render.py en <lesson>
 # --no-captions --out .cache/store-trailers/out/en/<lesson>-bare.mp4, which also writes the
 # poster frame as <lesson>-bare.png), cropped to the 1600x900 stage.
-LESSONS = {"search": "search", "dialog": "dialog-jump"}
+LESSONS = {"search": "search", "dialog": "dialog-jump", "smart": "smart", "vdesk": "vdesk", "place": "free-place",
+           "undo": "undo", "tools": "tools"}
 LESSON_RENDERS = ROOT / ".cache/store-trailers/out/en"
 STAGE = (160, 22, 1760, 922)
 
@@ -46,9 +47,11 @@ def presentation_stills():
         image.save(OUT / f"{name}.jpg", quality=91, optimize=True, progressive=True)
 
 
-def lesson_clips():
+def lesson_clips(names=None):
     left, top, right, bottom = STAGE
     for name, lesson in LESSONS.items():
+        if names and name not in names:
+            continue
         source = LESSON_RENDERS / f"{lesson}-bare"
         subprocess.run([
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source.with_suffix(".mp4")),
@@ -82,17 +85,21 @@ def main():
                         help="update the revision-2 images without re-encoding unchanged videos")
     parser.add_argument("--promo-only", action="store_true",
                         help="re-export only the trailer and its poster")
-    parser.add_argument("--lessons-only", action="store_true",
-                        help="re-export only the features shown by their manual lesson (LESSONS)")
+    parser.add_argument("--lessons-only", nargs="*", metavar="FEATURE", default=None,
+                        help="re-export only the features shown by their manual lesson (LESSONS): all of them, "
+                             "or the ones named")
     args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     if args.promo_only:
         promo()
         print("Updated promo.mp4 and promo.jpg")
         return
-    if args.lessons_only:
-        lesson_clips()
-        print("Updated " + ", ".join(f"{name}.mp4 and {name}.jpg" for name in LESSONS))
+    if args.lessons_only is not None:
+        unknown = sorted(set(args.lessons_only) - set(LESSONS))
+        if unknown:
+            parser.error(f"not shown by a manual lesson: {', '.join(unknown)}")
+        lesson_clips(args.lessons_only)
+        print("Updated " + ", ".join(f"{name}.mp4 and {name}.jpg" for name in args.lessons_only or LESSONS))
         return
     if args.stills_only:
         presentation_stills()

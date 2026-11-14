@@ -1,10 +1,15 @@
 //! Alignment guides while a fence is dragged or resized (`snapping.guideLines`): thin
 //! click-through layered windows along the edges it lines up with and the screen centre lines
-//! it snapped to, placed directly above the moving fence.
+//! it snapped to, placed directly above the moving fence. A guide fades in when an edge lines
+//! up and out when it no longer does (83 ms, `layer_fade`).
 
+use crate::layer_fade::FadingLayer;
+use pecofence_platform::frameclock::FrameClock;
 use pecofence_platform::layered::LayeredImage;
-use pecofence_platform::window::{self, ClassOptions, Window, WindowClass};
+use pecofence_platform::window::{self, ClassOptions, WindowClass};
 use pecofence_platform::{HWND, desktop};
+use std::rc::Rc;
+use std::time::Instant;
 use windows_core::Result;
 
 pub const DRAG_GUIDE_CLASS: &str = "PecoFence.DragGuide";
@@ -67,19 +72,16 @@ fn render(w: i32, h: i32, vertical: bool, hair: i32, fade: i32) -> Vec<u8> {
 }
 
 struct LineWindow {
-    window: Window,
+    layer: FadingLayer,
     /// Size and direction of the presented bitmap; a pure move only repositions the window.
     last: Option<(i32, i32, bool)>,
-    shown: bool,
 }
 
 impl LineWindow {
-    fn create(class: &WindowClass) -> Result<Self> {
-        let window = window::create_click_through(class, "drag guide")?;
+    fn create(class: &WindowClass, frames: Rc<FrameClock>) -> Result<Self> {
         Ok(Self {
-            window,
+            layer: FadingLayer::create(class, "drag guide", frames)?,
             last: None,
-            shown: false,
         })
     }
 
@@ -89,31 +91,24 @@ impl LineWindow {
             self.hide();
             return;
         }
+        let window = self.layer.window();
         if self.last == Some((w, h, line.vertical)) {
-            let _ = self
-                .window
-                .set_bounds_z(x, y, w, h, window::ZOrder::Keep, window::swp::NOSIZE);
+            let _ = window.set_bounds_z(x, y, w, h, window::ZOrder::Keep, window::swp::NOSIZE);
         } else {
             let presented = LayeredImage::new(w, h, &render(w, h, line.vertical, hair, fade))
-                .and_then(|img| img.present(self.window.hwnd(), x, y, 255));
+                .and_then(|img| img.present(window.hwnd(), x, y, self.layer.alpha()));
             if let Err(e) = presented {
                 tracing::warn!(error = %e, "drag guide present failed");
                 return;
             }
             self.last = Some((w, h, line.vertical));
         }
-        let _ = desktop::insert_above(self.window.hwnd(), above);
-        if !self.shown {
-            self.window.show_no_activate();
-            self.shown = true;
-        }
+        let _ = desktop::insert_above(window.hwnd(), above);
+        self.layer.show();
     }
 
     fn hide(&mut self) {
-        if self.shown {
-            self.window.hide();
-            self.shown = false;
-        }
+        self.layer.hide();
     }
 }
 
@@ -121,20 +116,32 @@ pub struct DragGuides {
     class: WindowClass,
     /// One window per guide on screen, created on first use and reused.
     lines: Vec<LineWindow>,
+    /// The app's frame clock: the guides' fades are ticked on it (`tick`).
+    frames: Rc<FrameClock>,
 }
 
 impl DragGuides {
-    pub fn create() -> Result<Self> {
+    pub fn create(frames: Rc<FrameClock>) -> Result<Self> {
         Ok(Self {
             class: WindowClass::register(DRAG_GUIDE_CLASS, ClassOptions::default())?,
             lines: Vec::new(),
+            frames,
         })
+    }
+
+    /// One frame of the guides' fades. Returns true while one is still on its way.
+    pub fn tick(&mut self, now: Instant) -> bool {
+        let mut more = false;
+        for w in &mut self.lines {
+            more |= w.layer.tick(now);
+        }
+        more
     }
 
     /// Shows `lines` (and hides any others) directly above `moving` in the z-order.
     pub fn show(&mut self, lines: &[GuideLine], dpi: u32, moving: HWND) {
         while self.lines.len() < lines.len() {
-            match LineWindow::create(&self.class) {
+            match LineWindow::create(&self.class, self.frames.clone()) {
                 Ok(w) => self.lines.push(w),
                 Err(e) => {
                     tracing::warn!(error = %e, "drag guide window unavailable");
@@ -161,8 +168,8 @@ impl DragGuides {
     pub fn shown(&self) -> Vec<pecofence_platform::RECT> {
         self.lines
             .iter()
-            .filter(|w| w.shown)
-            .map(|w| w.window.window_rect())
+            .filter(|w| w.layer.is_shown())
+            .map(|w| w.layer.window().window_rect())
             .collect()
     }
 }

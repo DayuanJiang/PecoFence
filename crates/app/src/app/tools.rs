@@ -23,9 +23,16 @@ pub(super) struct ScriptRuns {
     /// not this one's) and the process.
     streams: HashMap<FenceId, (String, u64, crate::scripts::Stream)>,
     next_stream: u64,
+    /// The runs PecoFence started by itself (the interval came round) and when: their footer
+    /// goes on showing the last run's time until the run has taken [`QUIET_RUN`], so a
+    /// script that answers at once does not make the footer blink at every run.
+    quiet: HashMap<FenceId, Instant>,
     tx: std::sync::mpsc::Sender<ScriptMsg>,
     rx: std::sync::mpsc::Receiver<ScriptMsg>,
 }
+
+/// How long a run PecoFence started by itself goes on without 「正在运行…」 in the footer.
+const QUIET_RUN: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// What the script workers send back.
 enum ScriptMsg {
@@ -57,6 +64,7 @@ impl Default for ScriptRuns {
             pending: HashMap::new(),
             streams: HashMap::new(),
             next_stream: 0,
+            quiet: HashMap::new(),
             tx,
             rx,
         }
@@ -105,13 +113,24 @@ impl App {
         if !self.fence_room_or_notice() {
             return None;
         }
+        if self.held_scripts_wait() {
+            // Switching 小工具 on for this fence would start the scripts of an imported
+            // configuration: the user turns the switch himself, on the page that lists them.
+            tracing::info!(
+                ?kind,
+                "new tool fence refused: imported scripts wait for 小工具"
+            );
+            self.open_settings_page("tools", None);
+            self.settings_error(super::settings::scripts_held_text());
+            return None;
+        }
         self.ensure_tool_on(kind);
         let (w, h) = match kind {
             FenceTool::Note => (280.0, 240.0),
             FenceTool::Clock => (240.0, 140.0),
             FenceTool::Script => (280.0, 160.0),
         };
-        let rect = rect.unwrap_or_else(|| self.place_new_fence_dip(w, h, x, y, None));
+        let rect = rect.unwrap_or_else(|| self.place_new_tool(w, h, x, y));
         let default_title = match &tool {
             NewTool::Note(_) => pecofence_core::i18n::text("便签").to_string(),
             NewTool::Clock => pecofence_core::i18n::text("时钟").to_string(),
@@ -134,14 +153,20 @@ impl App {
             self.state.mark_dirty();
         }
         self.resync_windows();
-        if let Some(w) = self.fences.get(&id) {
-            w.show(true);
-        }
+        self.show_new_fence(id);
         self.schedule_save();
         if kind == FenceTool::Script {
             self.start_script(id);
         }
         Some(id)
+    }
+
+    /// Where a new tool fence of `w` x `h` DIPs goes: a free spot near (`x`, `y`), or, made
+    /// from the settings page, a spot its window does not cover (`place_clear_of`).
+    fn place_new_tool(&self, w: f32, h: f32, x: i32, y: i32) -> RECT {
+        self.tool_clear_of
+            .and_then(|win| self.place_clear_of(w, h, win))
+            .unwrap_or_else(|| self.place_new_fence_dip(w, h, x, y, None))
     }
 
     /// 脚本栅栏 for `fence get` / `fence list`: the script and its last run.
@@ -157,7 +182,11 @@ impl App {
             Outcome::NotStarted(_) => "notStarted",
         });
         let output = last.and_then(|(o, _)| match o {
-            Outcome::Done(t) | Outcome::Failed { text: t, .. } => Some(t.clone()),
+            Outcome::Done(t) => Some(t.clone()),
+            // As before the two were kept apart: the error text of a run that printed nothing.
+            Outcome::Failed { text, error, .. } => {
+                Some(if text.is_empty() { error } else { text }.clone())
+            }
             _ => None,
         });
         Some(pecofence_ipc::ScriptDto {
@@ -170,6 +199,12 @@ impl App {
             running: self.script_runs.running.contains_key(&id)
                 || self.script_runs.streams.contains_key(&id),
         })
+    }
+
+    /// 小工具 is off and scripts of an imported configuration wait for the user to turn it on
+    /// (see `ScriptSpec::held`): nothing else may turn it on.
+    pub(super) fn held_scripts_wait(&self) -> bool {
+        !self.state.config.settings.tools.enabled && !self.state.config.held_scripts().is_empty()
     }
 
     /// Switches 小工具 on in the settings when it is off (a new tool fence would have no
@@ -198,6 +233,15 @@ impl App {
             return;
         }
         self.create_tool_fence(NewTool::Clock, None, None, x, y);
+    }
+
+    /// 时钟与日期: the system time, the time zone or the region's time format changed (`why`).
+    /// Every clock shows the new time now; it waited for its next tick, up to a minute.
+    pub(super) fn refresh_clocks(&self, why: &'static str) {
+        let drawn = self.fences.values().filter(|w| w.clock_changed()).count();
+        if drawn > 0 {
+            tracing::debug!(clocks = drawn, why, "clocks drawn again");
+        }
     }
 
     /// 新建小工具 (tray and fence menu), command ids `base`..`base + 5`: 时钟 (while the
@@ -268,9 +312,10 @@ impl App {
         else {
             return ScriptView {
                 rows: ScriptRowView::plain(i18n::text(
-                    "还没有选择脚本。右键这个栅栏，选「选择脚本…」。",
+                    "还没有选择脚本。右键这个栅栏，选“选择脚本…”。",
                 )),
                 footer: String::new(),
+                footer_short: String::new(),
                 quiet: false,
             };
         };
@@ -278,11 +323,19 @@ impl App {
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| spec.path.clone());
-        let running = self.script_runs.running.contains_key(&id);
+        // A run started by the interval says so only once it has taken a while.
+        let running = self.script_runs.running.contains_key(&id)
+            && self
+                .script_runs
+                .quiet
+                .get(&id)
+                .is_none_or(|begun| begun.elapsed() >= QUIET_RUN);
         let Some((outcome, at)) = self.script_runs.last.get(&id) else {
+            // The first run: the body says that it runs, where the rows will be.
             return ScriptView {
                 rows: Vec::new(),
-                footer: i18n::format("{0} · 正在运行…", &[name]),
+                footer: name,
+                footer_short: String::new(),
                 quiet: true,
             };
         };
@@ -291,12 +344,8 @@ impl App {
         // when it ran.
         let (text, status) = match outcome {
             Outcome::Done(text) => (text.clone(), Some(i18n::format("{0} 更新", &[when]))),
-            // An error's first line says what happened (PowerShell's further lines locate it).
-            Outcome::Failed { code, text } => (
-                text.lines()
-                    .find(|l| !l.trim().is_empty())
-                    .unwrap_or_default()
-                    .to_string(),
+            Outcome::Failed { code, text, .. } => (
+                text.clone(),
                 Some(i18n::format(
                     "{0} 运行出错（退出代码 {1}）",
                     &[
@@ -319,19 +368,28 @@ impl App {
                 None,
             ),
         };
-        let status = match (running, status) {
-            (true, _) => i18n::format("{0} · 正在运行…", &[name]),
-            (false, Some(status)) => format!("{name} · {status}"),
-            (false, None) => name,
+        // The status alone, for a fence too narrow for the script's name before it.
+        let (status, short) = match (running, status) {
+            (true, _) => (
+                i18n::format("{0} · 正在运行…", &[name]),
+                i18n::text("正在运行…").to_string(),
+            ),
+            (false, Some(status)) => (format!("{name} · {status}"), status),
+            (false, None) => (name, String::new()),
         };
         // Only a finished run's output is read as rows with actions; an error shows as text.
         let rows = match outcome {
             Outcome::Done(_) => ScriptRowView::from_output(&text),
+            // What went wrong first, then what the script printed until it failed.
+            Outcome::Failed { error, .. } => {
+                ScriptRowView::failed(pecofence_core::script_output::error_line(error), &text)
+            }
             _ => ScriptRowView::plain(&text),
         };
         ScriptView {
             rows,
             footer: status,
+            footer_short: short,
             quiet: false,
         }
     }
@@ -355,7 +413,38 @@ impl App {
             .filter(|id| self.script_runs.due.get(id).is_none_or(|&at| at <= now))
             .collect();
         for id in due {
+            // Not the first run: its footer has a time to go on showing.
+            if self.script_runs.last.contains_key(&id) {
+                self.script_runs.quiet.insert(id, now);
+                window::set_timer(
+                    self.control.hwnd(),
+                    TIMER_SCRIPT_QUIET,
+                    QUIET_RUN.as_millis() as u32 + 20,
+                );
+            }
             self.start_script(id);
+        }
+    }
+
+    /// `TIMER_SCRIPT_QUIET`: the runs started by the interval that are still going after
+    /// [`QUIET_RUN`] say 「正在运行…」 in their footer now.
+    pub(super) fn show_long_script_runs(&mut self) {
+        let late: Vec<FenceId> = self
+            .script_runs
+            .quiet
+            .iter()
+            .filter(|(_, begun)| begun.elapsed() >= QUIET_RUN)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &late {
+            self.script_runs.quiet.remove(id);
+            if self.script_runs.running.contains_key(id) {
+                tracing::debug!(%id, "script fence: the run takes long, the footer says it is running");
+                self.push_tool_view(self.state.host_of(*id));
+            }
+        }
+        if !self.script_runs.quiet.is_empty() {
+            window::set_timer(self.control.hwnd(), TIMER_SCRIPT_QUIET, 200);
         }
     }
 
@@ -372,6 +461,11 @@ impl App {
             return;
         };
         if spec.path.is_empty() || !self.state.config.settings.tools.enabled {
+            return;
+        }
+        if spec.held {
+            // From an imported configuration and not allowed yet, whatever the switch says.
+            tracing::debug!(%id, "script fence not started: held since the import");
             return;
         }
         let path = std::path::PathBuf::from(&spec.path);
@@ -566,6 +660,7 @@ impl App {
                     ms,
                 } => {
                     let ran = self.script_runs.running.remove(&id);
+                    self.script_runs.quiet.remove(&id);
                     let current = self.state.config.scripts.get(&id).map(|s| s.path.as_str());
                     if ran.as_deref() != current {
                         // The fence was given another script (or went) while this one ran: its
@@ -580,10 +675,18 @@ impl App {
                     }
                     let (lines, code) = match &outcome {
                         Outcome::Done(t) => (t.lines().count(), Some(0)),
-                        Outcome::Failed { code, text } => (text.lines().count(), *code),
+                        Outcome::Failed { code, text, .. } => (text.lines().count(), *code),
                         _ => (0, None),
                     };
                     tracing::info!(%id, outcome = outcome.kind(), ms, lines, code, "script fence run ended");
+                    if let Outcome::Failed { error, .. } = &outcome {
+                        tracing::debug!(
+                            %id,
+                            error_lines = error.lines().count(),
+                            shown = !pecofence_core::script_output::error_line(error).is_empty(),
+                            "script fence: a failed run shows its error line above its output"
+                        );
+                    }
                     self.script_runs.last.insert(id, (outcome, at));
                     shown.push(id);
                     let next = self
@@ -646,7 +749,9 @@ impl App {
 
     /// A click on row `index` of script fence `fence`: what its parameters ask for.
     pub(super) fn script_row_clicked(&mut self, fence: FenceId, index: usize) {
-        use pecofence_core::script_output::{RowAction, ScriptLine, parse};
+        use pecofence_core::script_output::{
+            RowAction, ScriptLine, TargetKind, click_allowed, parse,
+        };
         let Some((Outcome::Done(text), at)) = self.script_runs.last.get(&fence).cloned() else {
             return;
         };
@@ -656,11 +761,30 @@ impl App {
         if !row.clickable() {
             return;
         }
-        let dir = self.state.config.scripts.get(&fence).and_then(|s| {
-            std::path::Path::new(&s.path)
-                .parent()
-                .map(|d| d.to_path_buf())
-        });
+        let script = self
+            .state
+            .config
+            .scripts
+            .get(&fence)
+            .map(|s| std::path::PathBuf::from(&s.path));
+        let dir = script
+            .as_deref()
+            .and_then(|s| s.parent().map(|d| d.to_path_buf()));
+        // What `href=` / `open=` name, as a path: a relative one is taken from the script's
+        // folder.
+        let opens = match &row.action {
+            Some(RowAction::Href(target) | RowAction::Open(target)) => {
+                let mut path = std::path::PathBuf::from(target);
+                if path.is_relative()
+                    && !target.contains(':')
+                    && let Some(d) = &dir
+                {
+                    path = d.join(path);
+                }
+                Some((target.clone(), path))
+            }
+            _ => None,
+        };
         let kind = match &row.action {
             Some(RowAction::Href(_)) => "href",
             Some(RowAction::Open(_)) => "open",
@@ -670,18 +794,36 @@ impl App {
             None => "refresh",
         };
         tracing::info!(%fence, index, what = kind, refresh = row.refresh, "script row clicked");
+        // A row starts a program only when the script's header allows it: what a script prints
+        // can be text from the network that reads as parameters.
+        if let Some(action) = &row.action {
+            let allows = script.as_deref().is_some_and(crate::scripts::allows_run);
+            let target = match &opens {
+                Some((target, path)) if !allows => crate::scripts::target_kind(target, path),
+                _ => TargetKind::Other,
+            };
+            let allowed = click_allowed(action, target, allows);
+            tracing::debug!(%fence, key = kind, ?target, allows, allowed, "script row: may the click do this");
+            if !allowed {
+                let script = script
+                    .as_deref()
+                    .and_then(|s| s.file_name())
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                tracing::info!(%fence, script, key = kind, "script row refused: the script's header does not allow starting programs");
+                if let Some(w) = self.window_for(fence) {
+                    w.show_script_row_refused(index);
+                }
+                return;
+            }
+        }
         let owner = self.window_for(fence).map(|w| w.hwnd());
         let mut refresh = row.refresh;
         match row.action {
-            Some(RowAction::Href(target)) | Some(RowAction::Open(target)) => {
-                let mut path = std::path::PathBuf::from(&target);
-                if path.is_relative()
-                    && !target.contains(':')
-                    && let Some(d) = &dir
+            Some(RowAction::Href(_)) | Some(RowAction::Open(_)) => {
+                if let Some((_, path)) = &opens
+                    && let Err(e) = shell::shell_execute(path, None, owner)
                 {
-                    path = d.join(path);
-                }
-                if let Err(e) = shell::shell_execute(&path, None, owner) {
                     tracing::warn!(%fence, what = kind, error = %e, "script row: open failed");
                 }
             }
@@ -812,9 +954,10 @@ impl App {
             crate::scripts::Example::GitHub => (360.0, 300.0),
             crate::scripts::Example::Status => (280.0, 300.0),
         };
-        let rect = self.place_new_fence_dip(w, h, x, y, None);
+        let rect = self.place_new_tool(w, h, x, y);
         let script = NewTool::Script(path.to_string_lossy().to_string());
-        self.create_tool_fence(script, None, Some(rect), x, y);
+        // Titled as its menu line reads (a file is named `pc-status` in some languages).
+        self.create_tool_fence(script, Some(kind.label()), Some(rect), x, y);
     }
 
     /// Fence menu: another script for fence `id` (runs it at once).
@@ -849,6 +992,8 @@ impl App {
             return false;
         }
         spec.path = path.to_string();
+        // A script the user chose himself is his own.
+        spec.held = false;
         tracing::info!(%id, "script fence script changed");
         self.state.mark_dirty();
         self.schedule_save();
@@ -898,6 +1043,13 @@ impl App {
         else {
             return;
         };
+        // The path goes in between quotes. No file's path holds a quote, but one in an edited
+        // or imported configuration can: it would end the argument early and hand Explorer the
+        // rest as arguments of its own.
+        if spec.path.contains('"') {
+            tracing::info!(%id, "script fence: its folder not opened, the path holds a quote");
+            return;
+        }
         let _ = std::process::Command::new("explorer.exe")
             .raw_arg(format!("/select,\"{}\"", spec.path))
             .spawn();
@@ -927,16 +1079,23 @@ impl App {
     /// was off (the fence would have no window otherwise).
     pub(super) fn new_note_near(&mut self, x: i32, y: i32) {
         if let Some(id) = self.create_tool_fence(NewTool::Note(String::new()), None, None, x, y) {
-            self.edit_note(id);
+            self.edit_note(id, None);
         }
     }
 
-    /// Opens the editor over note `fence`'s content.
-    pub(super) fn edit_note(&mut self, fence: FenceId) {
+    /// Opens the editor of note `fence`, the caret at `caret` (a place in its text, UTF-16
+    /// units) or after the last line.
+    pub(super) fn edit_note(&mut self, fence: FenceId, caret: Option<usize>) {
         let Some(text) = self.state.note_text(fence).map(str::to_string) else {
             tracing::info!(%fence, "note editor not opened: no such note");
             return;
         };
+        // A rolled-up note (「编辑便签」 or 「添加待办」 from its title's menu) opens first: the
+        // editor draws nothing itself, the fence shows the text, and a rolled one shows none.
+        if self.window_for(fence).is_some_and(|w| w.rests_rolled()) {
+            tracing::info!(%fence, "note editor: the rolled-up fence opens first");
+            self.set_roll(fence, false);
+        }
         let Some(w) = self.window_for(fence) else {
             tracing::info!(%fence, "note editor not opened: the note has no window");
             return;
@@ -952,6 +1111,7 @@ impl App {
             text_size,
             font_dip,
             chars = text.chars().count(),
+            ?caret,
             "note editor opened"
         );
         crate::note_edit::open(
@@ -962,7 +1122,43 @@ impl App {
             self.queue.clone(),
             self.theme_mode,
             font_dip,
+            caret,
         );
+    }
+
+    /// 「添加待办」 in a note's menu: its editor opens with an empty to-do after the last
+    /// line, the caret in it (feedback #141).
+    pub(super) fn add_note_todo(&mut self, fence: FenceId) {
+        self.edit_note(fence, None);
+        crate::note_edit::add_todo(fence);
+    }
+
+    /// The editor of note `fence` holds `text` with this selection now: its window draws
+    /// them, and the editor's control follows the caret drawn there (the input method's
+    /// window appears at it).
+    pub(super) fn note_edit_state(
+        &self,
+        fence: FenceId,
+        text: String,
+        anchor: usize,
+        active: usize,
+    ) {
+        if crate::note_edit::open_for() != Some(fence) {
+            // The editor closed while this was queued: its text is on the way as the note's.
+            return;
+        }
+        let Some(w) = self.window_for(fence).filter(|w| w.active_fence() == fence) else {
+            return;
+        };
+        w.set_note_edit(Some(crate::fence_window::NoteEditView {
+            text,
+            anchor,
+            active,
+            caret_on: true,
+        }));
+        if let Some((x, top, _)) = w.note_caret_screen() {
+            crate::note_edit::place_caret(fence, x, top);
+        }
     }
 
     /// Quitting: the text of a note editor still open goes into the note now (its commit through
@@ -976,10 +1172,67 @@ impl App {
 
     /// A click on a to-do's check box.
     pub(super) fn toggle_note_line(&mut self, fence: FenceId, line: usize) {
+        // While the note is edited the tick goes into the editor's text (Ctrl+Z takes it
+        // back); the note gets it when the editor closes.
+        if crate::note_edit::open_for() == Some(fence) {
+            crate::note_edit::toggle_line(fence, line);
+            return;
+        }
+        // Outside the editor the tick is a step for Ctrl+Z in the fence, as a dragged
+        // to-do is.
+        let before = self.state.note_text(fence).map(str::to_string);
         if self.state.toggle_note_line(fence, line) {
+            if let (Some(before), Some(after)) = (before, self.state.note_text(fence)) {
+                self.note_line_for_undo(fence, before, after.to_string(), "note to-do ticked");
+            }
             self.push_note(fence);
             self.schedule_save();
         }
+    }
+
+    /// A to-do was dragged to another line of its note: one saved change, as a tick is,
+    /// and one step for Ctrl+Z in the fence.
+    pub(super) fn move_note_line(&mut self, fence: FenceId, from: usize, to: usize) {
+        let before = self.state.note_text(fence).map(str::to_string);
+        if self.state.move_note_line(fence, from, to) {
+            if let (Some(before), Some(after)) = (before, self.state.note_text(fence)) {
+                self.note_line_for_undo(fence, before, after.to_string(), "note line moved");
+            }
+            self.push_note(fence);
+            self.schedule_save();
+        }
+    }
+
+    /// A click on a web address in a note: it opens in the default browser. Only what
+    /// `note::links` finds there is opened, an `http://` or `https://` address, as a script
+    /// fence's `href=` row opens without its header line: a note starts no program and opens
+    /// no file.
+    pub(super) fn open_note_link(&mut self, fence: FenceId, line: usize, start: usize) {
+        use pecofence_core::note::{self, NoteLine};
+        let address = self.state.note_text(fence).and_then(|text| {
+            let shown = match *note::lines(text).get(line)? {
+                NoteLine::Todo { text, .. } | NoteLine::Text(text) => text,
+            };
+            let wide: Vec<u16> = shown.encode_utf16().collect();
+            let (from, to) = note::links(shown).into_iter().find(|l| l.0 == start)?;
+            Some(String::from_utf16_lossy(&wide[from..to]))
+        });
+        let Some(address) = address.filter(|a| pecofence_core::script_output::is_web_address(a))
+        else {
+            tracing::info!(%fence, line, start, "note link not opened: no web address there");
+            return;
+        };
+        let owner = self.window_for(fence).map(|w| w.hwnd());
+        let opened = shell::shell_execute(std::path::Path::new(&address), None, owner);
+        // The address itself stays out of the log: it is the user's.
+        tracing::info!(
+            %fence,
+            line,
+            chars = address.len(),
+            https = address.to_ascii_lowercase().starts_with("https://"),
+            ok = opened.is_ok(),
+            "note link opened in the browser"
+        );
     }
 
     /// The editor closed: its text replaces the note's (line breaks stored as `\n`).
@@ -990,6 +1243,10 @@ impl App {
             self.schedule_save();
         }
         self.push_note(fence);
+        // The window draws the stored note again, which has the editor's text by now.
+        if let Some(w) = self.window_for(fence) {
+            w.set_note_edit(None);
+        }
     }
 
     /// Shows note `fence`'s current text in its window.

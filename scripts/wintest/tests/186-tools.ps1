@@ -22,10 +22,12 @@ $ed = WaitWin 'PecoFence.NoteEdit' 25
 Check 'new-note opens the note editor' ($ed -ne [IntPtr]::Zero) "editor=$ed"
 $r = Rect $ed
 [G]::Click([int](($r.L + $r.R) / 2), [int]($r.T + 20)); Start-Sleep -Milliseconds 400
-[G]::Type("[ ] pay the rent`n[ ] write the notes`nplain line"); Start-Sleep -Milliseconds 300
+# Enter goes on with the list: the second to-do is typed with its marker (the old way, the
+# marker Enter made gives way to it), the third without; Enter on the empty fourth ends it.
+[G]::Type("[ ] pay the rent`n[ ] write the notes`nfeed the cat`n`nplain line"); Start-Sleep -Milliseconds 300
 [G]::Press(0x1B); Start-Sleep -Milliseconds 800
 $note = NoteFence
-Check 'Esc closes the editor and saves the text' ($note.noteText -eq "[ ] pay the rent`n[ ] write the notes`nplain line") ("noteText=" + ($note.noteText -replace "`n", ' / '))
+Check 'Esc closes the editor and saves the text' ($note.noteText -eq "[ ] pay the rent`n[ ] write the notes`n[ ] feed the cat`nplain line") ("noteText=" + ($note.noteText -replace "`n", ' / '))
 Shot 't01-note'
 
 Case 'tick a to-do'

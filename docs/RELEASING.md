@@ -88,6 +88,29 @@ instead (new URL, `InstallerSha256`, `ReleaseDate`, `ReleaseNotesUrl`), run
 previous manifest, which lists both portable commands (`pecofence` and `pecofence-cli`)
 since 0.1.0.
 
+### The website's copy of the latest release
+
+The app asks GitHub's API for the latest release. Where that gives no answer within 8 seconds
+(many networks in China, a rate limit), it asks the website for
+<https://pecofence.jiang.jp/update.json> instead: the version, whether there is a setup, and the
+first point of the Store notes in each language (the line of the update card).
+`scripts/build-site.py` writes that file each time the site is built, from the latest
+**published** release on GitHub and the Store notes of its tag (`docs/store/v2-i18n` at that
+tag), never from the checkout's own version. So a site deployment between the version commit
+and the release still names the old version, and a new version shows up there only once its
+installers exist.
+
+The release workflow starts the Website workflow as its last step, which rebuilds the file.
+A few minutes after the release is published, check that the file names the new version, and
+start the workflow by hand if it does not:
+
+```powershell
+curl.exe -s https://pecofence.jiang.jp/update.json
+gh workflow run website.yml
+```
+
+Until then, copies that cannot reach GitHub's API keep saying they are up to date.
+
 Current packaging is x64 and unsigned. ARM64 is not configured. The official winget
 workflow is restricted to `DayuanJiang/PecoFence`, including manual dispatch; forks
 cannot update that package identifier. It continues selecting the portable ZIP

@@ -15,11 +15,27 @@ const REPLY_TAG: usize = 0x5053_0000;
 /// Pause after a change in a watched folder before the search runs again: Everything indexes
 /// the change first (it follows the drive's change journal, usually within a second).
 const SOON_MS: u32 = 1_000;
+/// The same pause while Everything does not run: PecoFence reads the folder itself, so there is
+/// no index to wait for, only the burst of events one saved file makes.
+const SOON_NO_INDEX_MS: u32 = 250;
 /// A second run after a change, for an Everything that took longer to see it.
 const AGAIN_MS: u32 = 4_000;
 /// Everything answers one search at a time (a new one cancels the one before): the next
 /// fence's search waits for the answer, or this long for one that never comes.
 pub(super) const ANSWER_WAIT: Duration = Duration::from_secs(3);
+/// While a fence waits for Everything, its window is looked for this often: an Everything
+/// started by hand, or after PecoFence at logon, is used within seconds (the once-a-minute run
+/// left the fence asking for it up to a minute longer).
+const WAIT_POLL_MS: u32 = 2_000;
+/// The same look right after 「启动 Everything」 was picked.
+const STARTING_POLL_MS: u32 = 250;
+/// How long the waiting fences say 「正在搜索…」 after 「启动 Everything」; an Everything that is
+/// not there by then did not start, and the row comes back.
+const STARTING_FOR: Duration = Duration::from_secs(10);
+/// How long an Everything that is there but says its index is not read yet is waited for (a
+/// search sent before that finds nothing); after it the search is sent anyway, and this
+/// Everything is no longer asked to wait for (`SmartState::index_unknown`).
+const INDEX_WAIT: Duration = Duration::from_secs(10);
 /// The smart fence editor's live count runs as this make-believe fence: it takes its turn with
 /// Everything (after the Peek search, between the fences' own runs) and its workers like a
 /// fence's, and its results go to the editor instead of a fence.
@@ -61,6 +77,25 @@ pub(super) struct SmartRun {
     /// The worker (a folder read, or the check of Everything's answer) whose result this fence
     /// waits for (a newer run drops an older one).
     read: Option<u32>,
+    /// The run in progress is the once-a-minute one (see `smart_line`).
+    routine: bool,
+    /// The last run found nothing and none of the fence's folders is there (deleted, renamed,
+    /// a drive that is unplugged): the fence says so in place of "no matching files".
+    pub missing: bool,
+}
+
+/// A log line of a smart fence's run: info for a run something asked for (startup, F5, the
+/// CLI, a changed folder), debug for the once-a-minute run. Its two lines per fence and minute
+/// were all an idle PecoFence wrote at the default level, about 26 KB an hour for each smart
+/// fence; what such a run changes is still logged at info (`smart fence results changed`).
+macro_rules! smart_line {
+    ($routine:expr, $($arg:tt)*) => {
+        if $routine {
+            tracing::debug!($($arg)*)
+        } else {
+            tracing::info!($($arg)*)
+        }
+    };
 }
 
 /// What a smart fence's worker found: the results kept (newest first, at most the limit), the
@@ -70,6 +105,8 @@ struct Found {
     total: u32,
     scanned: usize,
     kept: usize,
+    /// Nothing found and none of the folders is there (see `SmartRun::missing`).
+    missing: bool,
 }
 
 /// A smart fence's results worked out on a worker: a folder read without Everything, or
@@ -82,6 +119,7 @@ pub(super) struct FolderRead {
     total: u32,
     scanned: usize,
     kept: usize,
+    missing: bool,
     /// Time spent finding (reading or checking) and naming the results.
     ms: u64,
     names_ms: u64,
@@ -109,12 +147,24 @@ pub(super) struct SmartState {
     /// Fences to run again when `TIMER_SMART_SOON` fires, and whether a second run follows.
     soon: HashSet<FenceId>,
     again: bool,
+    /// Why those runs are due, for the log (`run_smart`'s `why`).
+    soon_why: &'static str,
     /// The editor's search to count (`PREVIEW`) and the number of the page's request, and the
     /// number of the request the run in progress counts.
     preview: Option<(SmartSpec, u64)>,
     preview_sent: u64,
     /// Everything's total in its last answer to the editor's count.
     preview_total: u32,
+    /// `TIMER_SMART_WAIT` is set: a fence waits for Everything, whose window is looked for.
+    wait_poll: bool,
+    /// When 「启动 Everything」 was picked: until Everything is there (or `STARTING_FOR`) the
+    /// fences that wait for it say 「正在搜索…」, without the row.
+    starting: Option<Instant>,
+    /// When the look for Everything first saw its window (see `INDEX_WAIT`).
+    seen: Option<Instant>,
+    /// Everything was there for `INDEX_WAIT` without saying that its index is read: it is not
+    /// waited for again (until it says so once).
+    index_unknown: bool,
 }
 
 impl Default for SmartState {
@@ -133,9 +183,14 @@ impl Default for SmartState {
             changed: Arc::new(Mutex::new(HashSet::new())),
             soon: HashSet::new(),
             again: false,
+            soon_why: "folder changed",
             preview: None,
             preview_sent: 0,
             preview_total: 0,
+            wait_poll: false,
+            starting: None,
+            seen: None,
+            index_unknown: false,
         }
     }
 }
@@ -171,9 +226,7 @@ impl App {
             .unwrap_or_else(|| pecofence_core::i18n::text("智能栅栏").to_string());
         let id = self.state.new_smart_fence(&title, rect, spec)?;
         self.resync_windows();
-        if let Some(w) = self.fences.get(&id) {
-            w.show(true);
-        }
+        self.show_new_fence(id);
         self.ensure_smart_watchers();
         self.run_smart(id, "created");
         self.schedule_save();
@@ -206,6 +259,7 @@ impl App {
         let Some(spec) = self.smart_spec_of(id) else {
             return;
         };
+        let routine = why == "minute";
         // One worker per fence: a run asked for while one works out the fence's results (a
         // slow drive, a folder that keeps changing) follows it, so those results still show
         // and no threads pile up.
@@ -214,7 +268,19 @@ impl App {
             tracing::debug!(%id, why, "smart fence: its results are being worked out; it runs again after them");
             return;
         }
-        if let Some(instance) = everything::find() {
+        let mut instance = everything::find();
+        // At sign-in Everything may be there before it has read its index, and a search sent
+        // then finds nothing: the fence said 「没有符合条件的文件。」 until the next once-a-minute
+        // run. Such an Everything counts as not running for the first search (a folder is read
+        // by PecoFence, a whole-computer fence waits), and the look for Everything sends the
+        // search once the index is read (`look_for_everything`).
+        if why == "startup" && !self.smart.index_unknown && instance.is_some_and(|i| !i.db_loaded())
+        {
+            tracing::info!(%id, "smart fence: Everything has not read its index yet; it is waited for");
+            self.smart.seen.get_or_insert_with(Instant::now);
+            instance = None;
+        }
+        if let Some(instance) = instance {
             // The Peek search waits for Everything's answer: it goes first.
             if self.peek_waits_for_everything() {
                 if !self.smart.waiting.contains(&id) {
@@ -277,12 +343,13 @@ impl App {
                 ev::COPYDATA_QUERY2W,
                 &payload,
             );
-            tracing::info!(%id, why, sent, version = %format!("{}.{}", instance.major, instance.minor), search = %query, "smart fence: Everything asked");
+            smart_line!(routine, %id, why, sent, version = %format!("{}.{}", instance.major, instance.minor), search = %query, "smart fence: Everything asked");
             if sent {
                 let run = self.smart.runs.entry(id).or_default();
                 run.query = query;
                 run.pending = Some(seq);
                 run.read = None;
+                run.routine = routine;
                 self.smart.in_flight = Some((id, seq, Instant::now()));
                 return;
             }
@@ -291,10 +358,11 @@ impl App {
             self.smart.preview_sent = self.smart.preview.as_ref().map_or(0, |p| p.1);
         }
         if !spec.works_without_everything() {
-            tracing::info!(%id, why, "smart fence: needs Everything, which is not running");
+            smart_line!(routine, %id, why, "smart fence: needs Everything, which is not running");
             self.smart_done(id, SmartSource::NeedsEverything, Vec::new(), 0);
             return;
         }
+        self.smart.runs.entry(id).or_default().routine = routine;
         self.read_folder_later(id, spec, why);
     }
 
@@ -308,7 +376,7 @@ impl App {
 
     /// Reads smart fence `id`'s folders on a worker (a big folder tree takes a while).
     fn read_folder_later(&mut self, id: FenceId, spec: SmartSpec, why: &str) {
-        tracing::info!(%id, why, folders = spec.folders.len(), "smart fence: reading the folders without Everything");
+        smart_line!(why == "minute", %id, why, folders = spec.folders.len(), "smart fence: reading the folders without Everything");
         // The editor's count names nothing: it shows only how many.
         let limit = if id == PREVIEW {
             0
@@ -325,6 +393,7 @@ impl App {
                 total: kept as u32,
                 scanned,
                 kept,
+                missing: kept == 0 && folders_missing(&spec),
             }
         });
     }
@@ -359,6 +428,7 @@ impl App {
                     total,
                     scanned,
                     kept,
+                    missing,
                 } = find();
                 let ms = started.elapsed().as_millis() as u64;
                 let named_at = Instant::now();
@@ -380,6 +450,7 @@ impl App {
                     total,
                     scanned,
                     kept,
+                    missing,
                     ms,
                     names_ms,
                 });
@@ -431,15 +502,22 @@ impl App {
                 continue;
             }
             if current && self.state.smart_spec(r.id).is_some() {
-                self.smart.runs.entry(r.id).or_default().read = None;
+                let run = self.smart.runs.entry(r.id).or_default();
+                run.read = None;
+                let routine = run.routine;
                 let shown = r.found.len();
                 let applied_at = Instant::now();
+                let missing_changed = std::mem::replace(&mut run.missing, r.missing) != r.missing;
                 self.smart_done(r.id, r.source, r.found, r.total);
+                if missing_changed {
+                    tracing::info!(id = %r.id, missing = r.missing, "smart fence: whether its folders are there changed");
+                    self.apply_portal_deco(self.state.host_of(r.id));
+                }
                 let ui_ms = applied_at.elapsed().as_millis() as u64;
                 if r.source == SmartSource::Folder {
-                    tracing::info!(id = %r.id, seq = r.seq, scanned = r.scanned, total = r.total, shown, ms = r.ms, names_ms = r.names_ms, ui_ms, "smart fence: folder read without Everything");
+                    smart_line!(routine, id = %r.id, seq = r.seq, scanned = r.scanned, total = r.total, shown, ms = r.ms, names_ms = r.names_ms, ui_ms, "smart fence: folder read without Everything");
                 } else {
-                    tracing::info!(id = %r.id, seq = r.seq, total = r.total, got = r.scanned, kept = r.kept, shown, ms = r.ms, names_ms = r.names_ms, ui_ms, "smart fence: Everything answered");
+                    smart_line!(routine, id = %r.id, seq = r.seq, total = r.total, got = r.scanned, kept = r.kept, shown, ms = r.ms, names_ms = r.names_ms, ui_ms, "smart fence: Everything answered");
                 }
             } else {
                 tracing::debug!(id = %r.id, seq = r.seq, source = r.source.as_str(), "smart fence: an older result dropped");
@@ -533,6 +611,7 @@ impl App {
                 },
                 scanned: got,
                 kept,
+                missing: kept == 0 && folders_missing(&spec),
             }
         });
         // Everything is free: the next waiting search goes.
@@ -607,10 +686,131 @@ impl App {
             tracing::info!(%id, source = source.as_str(), count, total, "smart fence results changed");
         }
         if changed {
+            // Results that replace most of what the fence shows (none any more, another
+            // search) fade over the old page, as a filter does, instead of cutting to it.
+            let host = self.state.host_of(id);
+            if self.state.active_tab_of(host) == id
+                && let Some(w) = self.fences.get(&host)
+            {
+                w.fade_next_refill();
+            }
             self.refresh_fence(id);
         } else if source_changed {
             self.apply_portal_deco(self.state.host_of(id));
         }
+        if source == SmartSource::NeedsEverything {
+            // Soon when Everything is there already and only reads its index.
+            self.poll_for_everything(self.smart.seen.is_some());
+        }
+    }
+
+    /// Sets `TIMER_SMART_WAIT`: Everything's window is looked for again soon (`fast`: right
+    /// after 「启动 Everything」), while a fence waits for it.
+    fn poll_for_everything(&mut self, fast: bool) {
+        if self.smart.wait_poll && !fast {
+            return;
+        }
+        self.smart.wait_poll = true;
+        let ms = if fast { STARTING_POLL_MS } else { WAIT_POLL_MS };
+        window::set_timer(self.control.hwnd(), TIMER_SMART_WAIT, ms);
+    }
+
+    /// The fences that wait for Everything.
+    fn smart_waiting_for_everything(&self) -> Vec<FenceId> {
+        self.smart
+            .runs
+            .iter()
+            .filter(|(_, r)| r.source == SmartSource::NeedsEverything)
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    /// `TIMER_SMART_WAIT`: while a fence waits for Everything, an Everything that runs by now
+    /// (and has read its index) gets the fences' searches; else the look is repeated.
+    pub(super) fn look_for_everything(&mut self) {
+        self.smart.wait_poll = false;
+        let waiting = self.smart_waiting_for_everything();
+        if waiting.is_empty() {
+            self.smart.starting = None;
+            self.smart.seen = None;
+            return;
+        }
+        // Only the window is looked for while Everything is not there: asking it waits for
+        // an Everything that is busy.
+        let found = everything::running().then(everything::find).flatten();
+        let loaded = found.is_some_and(|i| i.db_loaded());
+        if loaded {
+            self.smart.index_unknown = false;
+        }
+        let was_seen = self.smart.seen.is_some();
+        let seen_for = match found {
+            Some(_) => Some(self.smart.seen.get_or_insert_with(Instant::now).elapsed()),
+            None => {
+                self.smart.seen = None;
+                None
+            }
+        };
+        // Everything came or went: the waiting fences say 「正在搜索…」 while it is there.
+        if was_seen != self.smart.seen.is_some() {
+            for id in &waiting {
+                self.apply_portal_deco(self.state.host_of(*id));
+            }
+        }
+        // An Everything that never says its index is read (a version that does not answer the
+        // question) is waited for once, `INDEX_WAIT` long, and searched at once from then on.
+        let waited = seen_for.is_some_and(|d| d >= INDEX_WAIT || self.smart.index_unknown);
+        if waited && !loaded {
+            self.smart.index_unknown = true;
+        }
+        if loaded || waited {
+            tracing::info!(
+                fences = waiting.len(),
+                started_here = self.smart.starting.is_some(),
+                loaded,
+                seen_ms = seen_for.map(|d| d.as_millis() as u64),
+                "smart fence: Everything is running now"
+            );
+            self.smart.starting = None;
+            self.smart.seen = None;
+            self.run_waiting_smart();
+            self.push_settings_state();
+            return;
+        }
+        let starting = self
+            .smart
+            .starting
+            .is_some_and(|t| t.elapsed() < STARTING_FOR);
+        if self.smart.starting.is_some() && !starting {
+            tracing::info!(
+                found = found.is_some(),
+                "smart fence: Everything did not come up; the fences offer to start it again"
+            );
+            self.smart.starting = None;
+            for id in waiting {
+                self.apply_portal_deco(self.state.host_of(id));
+            }
+        }
+        // Soon again while it is on its way (just started, or there and reading its index).
+        self.poll_for_everything(starting || found.is_some());
+    }
+
+    /// 「启动 Everything」 was picked: the fences that wait for it say 「正在搜索…」 at once (the
+    /// row stayed as it was for the 2.5 s until the search ran, as if the click had done
+    /// nothing), and search as soon as Everything is there.
+    pub(super) fn smart_everything_starting(&mut self) {
+        let waiting = self.smart_waiting_for_everything();
+        if waiting.is_empty() {
+            return;
+        }
+        tracing::debug!(
+            fences = waiting.len(),
+            "smart fence: Everything is being started; the waiting fences say so"
+        );
+        self.smart.starting = Some(Instant::now());
+        for id in waiting {
+            self.apply_portal_deco(self.state.host_of(id));
+        }
+        self.poll_for_everything(true);
     }
 
     /// Starts and stops the folder watchers of the smart fences: one per folder searched.
@@ -670,6 +870,26 @@ impl App {
         }
     }
 
+    /// The pointer came onto `fence`. A searched folder that was renamed or moved away keeps
+    /// its watcher running (the handle follows the folder) and the watcher reports nothing of
+    /// it, so a smart fence showed the files of a folder no longer at its path until the
+    /// once-a-minute search (a double-click on one failed). Looked at now, as a folder fence
+    /// is (`portal_pointer_in`): the search runs again at once. One file-system call per
+    /// searched folder on a fixed drive.
+    pub(super) fn smart_pointer_in(&mut self, fence: FenceId) {
+        let moved = self.smart.watchers.iter().any(|((id, dir), (_, w))| {
+            *id == fence && shell::is_on_fixed_drive(dir) && !w.still_at(dir)
+        });
+        if !moved {
+            return;
+        }
+        tracing::info!(%fence, "smart fence: a searched folder is no longer at its path; noticed as the pointer came onto it");
+        self.smart
+            .watchers
+            .retain(|(id, dir), (_, w)| *id != fence || w.still_at(dir));
+        self.run_smart(fence, "a searched folder is no longer at its path");
+    }
+
     /// A watcher batch named `dirs` (`all`: it overflowed): the smart fences with a folder that
     /// holds one of them run again shortly.
     pub(super) fn smart_folders_changed(&mut self, dirs: &[PathBuf], all: bool) {
@@ -711,7 +931,8 @@ impl App {
         self.run_smart_soon(ids, "its own watcher");
     }
 
-    /// Fences `hit` run again after `SOON_MS`, and once more `AGAIN_MS` later. A timer that is
+    /// Fences `hit` run again after `SOON_MS` (`SOON_NO_INDEX_MS` without Everything), and once
+    /// more `AGAIN_MS` later. A timer that is
     /// already set is left as it is, so a folder that keeps changing (a long download) still
     /// gets its runs.
     fn run_smart_soon(&mut self, hit: Vec<FenceId>, by: &str) {
@@ -719,19 +940,36 @@ impl App {
             return;
         }
         let armed = !self.smart.soon.is_empty();
-        tracing::debug!(fences = hit.len(), by, armed, "smart fence folders changed");
         self.smart.soon.extend(hit);
         self.smart.again = true;
-        if !armed {
-            window::set_timer(self.control.hwnd(), TIMER_SMART_SOON, SOON_MS);
+        self.smart.soon_why = if by == "everything started" {
+            "everything catching up"
+        } else {
+            "folder changed"
+        };
+        if armed {
+            tracing::debug!(by, "smart fence folders changed; their run is already due");
+            return;
         }
+        let pause = if everything::find().is_some() {
+            SOON_MS
+        } else {
+            SOON_NO_INDEX_MS
+        };
+        tracing::debug!(
+            fences = self.smart.soon.len(),
+            by,
+            pause,
+            "smart fence folders changed"
+        );
+        window::set_timer(self.control.hwnd(), TIMER_SMART_SOON, pause);
     }
 
     /// `TIMER_SMART_SOON`: runs the fences a folder change named, once more a few seconds later.
     pub(super) fn run_soon_smart(&mut self) {
         let ids: Vec<FenceId> = self.smart.soon.iter().copied().collect();
         for id in &ids {
-            self.run_smart(*id, "folder changed");
+            self.run_smart(*id, self.smart.soon_why);
         }
         if std::mem::take(&mut self.smart.again) {
             window::set_timer(self.control.hwnd(), TIMER_SMART_SOON, AGAIN_MS);
@@ -855,7 +1093,24 @@ impl App {
                 "smart fences waiting for Everything search again"
             );
         }
+        // An Everything that has just started answers from the index it saved when it last
+        // ran; what changed on the drive while it was not running comes in from the change
+        // journal a moment later. The first search, sent the moment the index is read, misses
+        // those files (a .psd made while Everything was stopped: 0 files, and the next search
+        // came with the minute's refresh 48 s later). The fences search once more after
+        // `SOON_MS` and again `AGAIN_MS` later, as after a change in a watched folder.
+        tracing::debug!(
+            fences = waiting.len(),
+            "smart fences search again in a moment: Everything catches up with the drive's changes"
+        );
+        self.run_smart_soon(waiting.clone(), "everything started");
         for id in waiting {
+            // Until the answer is in the fence says 「正在搜索…」, no longer that it needs
+            // Everything.
+            if let Some(run) = self.smart.runs.get_mut(&id) {
+                run.source = SmartSource::Waiting;
+            }
+            self.apply_portal_deco(self.state.host_of(id));
             self.run_smart(id, "everything started");
         }
     }
@@ -973,37 +1228,94 @@ impl App {
         }
     }
 
-    /// Smart fence `id`'s empty-state text and the count after its name: the files it shows
-    /// (after a filter), with a "+" when the limit cut the results. None for other fences.
+    /// What the infotip of smart fence `f`'s count says when the count ends with a "+": how
+    /// many files the fence shows (the newest, up to its limit) and how many the search found.
+    /// None when the fence shows all it found, is filtered, or is no smart fence.
+    pub(super) fn smart_count_tip(&self, f: &pecofence_core::Fence) -> Option<String> {
+        let spec = f.smart.as_ref()?;
+        let run = self.smart.runs.get(&f.id)?;
+        let found =
+            matches!(run.source, SmartSource::Everything | SmartSource::Folder) && !run.missing;
+        (found && run.total > spec.limit && self.fence_filter(f.id).is_none()).then(|| {
+            pecofence_core::i18n::format(
+                "显示最新的 {0} 个，共找到 {1} 个",
+                &[self.item_views(f).len().to_string(), run.total.to_string()],
+            )
+        })
+    }
+
+    /// Smart fence `id`'s empty-state text, the label of the row under it that starts or
+    /// installs Everything (only while the fence waits for Everything) and the count after
+    /// its name: the files it shows (after a filter), with a "+" when the limit cut the
+    /// results. None for other fences.
     pub(super) fn smart_view(
         &self,
         f: &pecofence_core::Fence,
-    ) -> (Option<&'static str>, Option<String>) {
+    ) -> (Option<&'static str>, Option<&'static str>, Option<String>) {
         let Some(spec) = f.smart.as_ref() else {
-            return (None, None);
+            return (None, None, None);
         };
         let run = self.smart.runs.get(&f.id);
-        let source = run.map_or(SmartSource::Waiting, |r| r.source);
+        let source = match run.map_or(SmartSource::Waiting, |r| r.source) {
+            // 「启动 Everything」 was just picked, or Everything is there and reads its index: it
+            // is on its way.
+            SmartSource::NeedsEverything
+                if self.smart.starting.is_some() || self.smart.seen.is_some() =>
+            {
+                SmartSource::Waiting
+            }
+            source => source,
+        };
         let empty = Some(match source {
             SmartSource::Waiting => pecofence_core::i18n::text("正在搜索…"),
             // A folder search waits for Everything only for its Everything syntax.
-            SmartSource::NeedsEverything if !spec.folders.is_empty() => pecofence_core::i18n::text(
-                "这个栅栏用了 Everything 语法，需要先打开 Everything：右键这个栅栏可以启动或安装它。",
-            ),
-            SmartSource::NeedsEverything => pecofence_core::i18n::text(
-                "要搜索整台电脑，需要先打开 Everything：右键这个栅栏可以启动或安装它。",
-            ),
+            SmartSource::NeedsEverything if !spec.folders.is_empty() => {
+                pecofence_core::i18n::text("这个栅栏用了 Everything 语法，需要先打开 Everything。")
+            }
+            SmartSource::NeedsEverything => {
+                pecofence_core::i18n::text("要搜索整台电脑，需要先打开 Everything。")
+            }
+            // What a folder fence says when its folder is gone.
+            SmartSource::Everything | SmartSource::Folder if run.is_some_and(|r| r.missing) => {
+                pecofence_core::i18n::text("找不到此文件夹。")
+            }
             SmartSource::Everything | SmartSource::Folder => {
                 pecofence_core::i18n::text("没有符合条件的文件。")
             }
         });
-        let count = matches!(source, SmartSource::Everything | SmartSource::Folder).then(|| {
+        let found = matches!(source, SmartSource::Everything | SmartSource::Folder)
+            && !run.is_some_and(|r| r.missing);
+        let count = found.then(|| {
             let shown = self.item_views(f).len();
             let cut =
                 run.is_some_and(|r| r.total > spec.limit) && self.fence_filter(f.id).is_none();
             format!("{shown}{}", if cut { "+" } else { "" })
         });
-        (empty, count)
+        // While winget installs Everything the row is away: a second click starts nothing.
+        let action = (source == SmartSource::NeedsEverything && !self.everything_installing)
+            .then(everything_action_label);
+        (empty, action, count)
+    }
+
+    /// 「启动 Everything」 / 「安装 Everything」 from a smart fence that waits for it (`by`: its
+    /// menu or the row in its empty state): what Settings' Everything card does.
+    pub(super) fn start_or_install_everything(&mut self, by: &'static str) {
+        let installed = pecofence_platform::everything::installed_exe().is_some();
+        tracing::info!(by, installed, "Everything asked for from a smart fence");
+        if installed {
+            self.start_everything();
+        } else {
+            self.install_everything();
+        }
+    }
+
+    /// The row under a smart fence's empty-state text was clicked.
+    pub(super) fn smart_everything_clicked(&mut self, fence: FenceId) {
+        if !self.smart_needs_everything(fence) {
+            tracing::debug!(%fence, "empty-state row clicked: the fence no longer waits for Everything");
+            return;
+        }
+        self.start_or_install_everything("fence row");
     }
 
     /// 智能栅栏 for `fence get` / `fence list`: the search and its last run.
@@ -1020,6 +1332,15 @@ impl App {
             "shown": self.state.fence(id).map_or(0, |f| self.state.items_of(f).len()),
             "query": run.map(|r| r.query.clone()).filter(|q| !q.is_empty()),
         }))
+    }
+}
+
+/// What a smart fence that waits for Everything offers, in its menu and in its empty state.
+pub(super) fn everything_action_label() -> &'static str {
+    if pecofence_platform::everything::installed_exe().is_some() {
+        pecofence_core::i18n::text("启动 Everything")
+    } else {
+        pecofence_core::i18n::text("安装 Everything")
     }
 }
 
@@ -1102,6 +1423,12 @@ fn entry_matches(spec: &SmartSpec, e: &DesktopEntry, targets: bool, now: i64) ->
         crate::state::AppState::plain_facts(e, None, now)
     };
     spec.matches(&facts, e.mtime.max(e.created), now)
+}
+
+/// Whether the search names folders and none of them is there (on a worker: a folder on a
+/// network drive that does not answer takes its time).
+fn folders_missing(spec: &SmartSpec) -> bool {
+    !spec.folders.is_empty() && !spec.folders.iter().any(|f| Path::new(f).is_dir())
 }
 
 /// Reads the search's folders (and their subfolders when the search takes them) without

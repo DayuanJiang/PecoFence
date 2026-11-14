@@ -409,7 +409,8 @@ impl App {
             return;
         };
         let scale = monitors::dpi_for_window(hwnd).max(96) as f32 / 96.0;
-        let gap = (16.0 * scale).round() as i32;
+        // The snapping gap, as between fences the user drags together later.
+        let gap = self.gap_px(hwnd);
         let work = monitor.work_area;
         let column_h = work.bottom - work.top - gap * 2;
         let mut heights = Vec::new();
