@@ -702,7 +702,7 @@ if ($Part -match 'C') {
   $sel = "document.querySelector('[data-bind=idleOpacity]')"
   $card = Js "(() => { const s = $sel, c = s.closest('.card'); let h = c; while (h && h.tagName !== 'H3') h = h.previousElementSibling; return { title: c.querySelector('.t').textContent, hint: c.querySelector('.s').textContent, value: s.value, options: [...s.options].map(o => o.textContent).join(' '), heading: h ? h.textContent : '', page: c.closest('section').id }; })()"
   Check 'the card is on General under Appearance' ($card.page -eq 'page-general' -and $card.heading -eq 'Appearance') "page $($card.page), heading '$($card.heading)'"
-  Check 'it is named and explained, with four steps and 100% chosen' ($card.title -eq 'Idle opacity' -and $card.hint -and $card.options -eq '100% 70% 45% 25%' -and $card.value -eq '1') "title '$($card.title)', hint '$($card.hint)', options '$($card.options)', value $($card.value)"
+  Check "it is named and explained, with four steps and Don't fade chosen" ($card.title -eq 'Idle opacity' -and $card.hint -and $card.options -eq "Don't fade 70% 45% 25%" -and $card.value -eq '1') "title '$($card.title)', hint '$($card.hint)', options '$($card.options)', value $($card.value)"
   # The keyboard on the selector: two steps down is 45 %.
   PageClick '[data-bind=idleOpacity]' 0 -40
   Js "$sel.focus()" | Out-Null
@@ -717,10 +717,10 @@ if ($Part -match 'C') {
   # A value the command line set between the steps shows as a choice of its own.
   SetIdle 0.37
   $own = JsWait "$sel.value === '0.37' && [...$sel.options].map(o => o.textContent).join(' ')" 6
-  Check 'a value set from the command line shows as its own choice' ($own -eq '100% 70% 45% 25% 37%') "options: $own"
+  Check 'a value set from the command line shows as its own choice' ($own -eq "Don't fade 70% 45% 25% 37%") "options: $own"
   SetIdle 0.7
   $back = JsWait "$sel.value === '0.7' && [...$sel.options].map(o => o.textContent).join(' ')" 6
-  Check 'back on a step, that choice is gone' ($back -eq '100% 70% 45% 25%') "options: $back"
+  Check 'back on a step, that choice is gone' ($back -eq "Don't fade 70% 45% 25%") "options: $back"
   # Find a setting.
   foreach ($word in 'idle', 'fade out', 'opacity', '45%') {
     PageType '#settingsSearch' $word
