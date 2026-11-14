@@ -8,9 +8,11 @@
 # Parts (run.sh --var Part=...): A the states one by one, the values the command line and the
 # config file take, a restart; B the idle fade together with the other animations (roll, slide,
 # drag, resize, drops, tools, Peek, virtual desktops, Win+D, animations off, neighbours); C the
-# card on the settings page (a debug build: run.sh --bin target/wintest-bin-debug).
-# Default: A and B. Runs on a 1600x900 box at 100 %.
-if (-not $Part) { $Part = 'AB' }
+# card on the settings page (a debug build: run.sh --bin target/wintest-bin-debug); D the fade with
+# what 0.4.0 added (a fence that stays transparent, no tray icon, the keyboard in a rolled-up
+# fence, tabs that switch under the pointer).
+# Default: A, B and D. Runs on a 1600x900 box at 100 %.
+if (-not $Part) { $Part = 'ABD' }
 if ($PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352' }
 trap { PfTrap $_; continue }
 . C:\pf\kit\vdesk.ps1
@@ -220,13 +222,16 @@ if ($Part -match 'A') {
   IoIs 'the pointer left, it rolled up again: faded' 'Left' 0.45
   Pf fence unroll Left | Out-Null; Start-Sleep -Milliseconds 900
   IoIs 'opened from the command line with the pointer away: faded' 'Left' 0.45
-  # Rolled up while it has the keyboard: nothing of it can be used any more.
+  # Rolled up while it has the keyboard: since 0.4.0 the keyboard stays on its title row, with
+  # the focus mark (Enter opens it again), so it stays full; a click elsewhere fades it.
   $p = ItemPt 'Left' 'if a'
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 300; Park
   [G]::Press(0x27); Start-Sleep -Milliseconds 300
   IoIs 'the keyboard is in the fence: full' 'Left' 1.0
   Pf fence roll Left | Out-Null; Start-Sleep -Milliseconds 1000
-  IoIs 'rolled up while it had the keyboard, the pointer away: faded' 'Left' 0.45
+  IoIs 'rolled up while it had the keyboard: the title row keeps it, full' 'Left' 1.0
+  DeskClick | Out-Null; Park
+  IoIs 'rolled up, then a click on the desktop: faded' 'Left' 0.45
   Pf fence unroll Left | Out-Null; Start-Sleep -Milliseconds 900
   DeskClick | Out-Null; Park
 
@@ -603,6 +608,90 @@ if ($Part -match 'B') {
   Park
   IoIs 'the pointer away: the pushed fence is faded' 'Right' 0.45
   IoIs 'the pointer away: the opened fence is faded' 'Left' 0.45
+}
+
+if ($Part -match 'D') {
+  # D: the idle fade with what 0.4.0 added on the same ground.
+  Case 'D a fence that stays transparent under the pointer'
+  # 「鼠标移入时保持透明」 (#222): no plate and no shadow under the pointer; the icons still fade.
+  Pf fence set Right opacity transparent | Out-Null
+  Pf fence set Right transparentOnHover true | Out-Null; Start-Sleep -Milliseconds 900; Park
+  IoIs 'stays transparent: at rest its icons are faded' 'Right' 0.45
+  Over 'Right'; Start-Sleep -Milliseconds 400
+  IoIs 'stays transparent: under the pointer it is full' 'Right' 1.0
+  $w = DumpOf 'Right' 4
+  Check 'stays transparent: no plate and no shadow under the pointer' ([double](DumpVal $w 'plate_alpha') -lt 0.05 -and (DumpVal $w 'shadow_alpha') -eq '0') "plate_alpha=$(DumpVal $w 'plate_alpha') shadow_alpha=$(DumpVal $w 'shadow_alpha')"
+  Shot 'D-transparent-hover'
+  Park
+  IoIs 'stays transparent: faded again when the pointer leaves' 'Right' 0.45
+  PeekKey; Start-Sleep -Milliseconds 900
+  IoIs 'stays transparent, in a Peek: full' 'Right' 1.0
+  $w = DumpOf 'Right' 4
+  Log "stays transparent, in a Peek: plate_inset=$(DumpVal $w 'plate_inset') plate_alpha=$(DumpVal $w 'plate_alpha') peek_faded=$(DumpVal $w 'peek_faded')"
+  Shot 'D-transparent-peek'
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 900; Park
+  IoIs 'stays transparent, the Peek ended: faded' 'Right' 0.45
+  Pf fence set Right transparentOnHover false | Out-Null
+  Pf fence set Right opacity default | Out-Null; Start-Sleep -Milliseconds 600; Park
+
+  Case 'D no tray icon'
+  # 「显示托盘图标」 off: nothing of the fade depends on the icon.
+  Pf settings set showTrayIcon false | Out-Null; Start-Sleep -Milliseconds 900; Park
+  IoIs 'no tray icon: a fence at rest is faded' 'Left' 0.45
+  Over 'Left'
+  IoIs 'no tray icon: under the pointer it is full' 'Left' 1.0
+  Park
+  IoIs 'no tray icon: faded again' 'Left' 0.45
+  Pf settings set showTrayIcon true | Out-Null; Start-Sleep -Milliseconds 600
+
+  Case 'D the keyboard in a rolled-up fence'
+  # 0.4.0 keeps the keyboard and its focus mark on a fence rolled up while it had the keyboard.
+  # The fence is full exactly while the mark shows, and fades when the keyboard leaves.
+  $first = @(PfJson item list --fence 'Left') | Where-Object { $_ -and $_.name } | Select-Object -First 1
+  $p = ItemPt 'Left' $first.name
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 300; Park
+  [G]::Press(0x27); Start-Sleep -Milliseconds 300
+  IoIs 'the keyboard is in the fence: full' 'Left' 1.0
+  Pf fence roll Left | Out-Null; Start-Sleep -Milliseconds 1000
+  $w = DumpOf 'Left' 4
+  $ring = DumpVal $w 'focus_ring'
+  $want = if ($ring -eq 'true') { 1.0 } else { 0.45 }
+  IoIs "rolled up while it had the keyboard (focus mark $ring): full only with the mark" 'Left' $want
+  Shot 'D-rolled-keyboard'
+  DeskClick | Out-Null; Park
+  $w = DumpOf 'Left' 4
+  Check 'a click on the desktop ends the focus mark of the rolled fence' ((DumpVal $w 'focus_ring') -eq 'false') "focus_ring=$(DumpVal $w 'focus_ring')"
+  IoIs 'a click on the desktop: the rolled fence fades' 'Left' 0.45
+  Pf fence unroll Left | Out-Null; Start-Sleep -Milliseconds 900; Park
+
+  Case 'D tabs switch under the pointer'
+  # rollUp.switchTabOnHover: a tab switches when the pointer rests on it.
+  Pf settings set rollUp.switchTabOnHover true | Out-Null
+  Pf fence merge Right --into Left | Out-Null; Start-Sleep -Milliseconds 900; Park
+  IoIs 'two tabs at rest: faded' 'Left' 0.45
+  $w = DumpOf 'Left' 4
+  $before = DumpVal $w 'active'
+  # The tab rects are DIPs from the client's left edge (ox), the title row 18 px under its top.
+  # The merge leaves either tab in front: rest on the first one, then on the second, until the
+  # active tab changes.
+  $after = $before
+  foreach ($i in 0, 1) {
+    if ($w.rects.Count -lt 2 -or $after -ne $before) { break }
+    $x = [int]($w.l + $w.ox + $w.rects[$i][0] + $w.rects[$i][1] / 2); $y = [int]($w.t + $w.oy + 18)
+    Log "tabs at $((@($w.rects) | ForEach-Object { "$([math]::Round($_[0]))+$([math]::Round($_[1]))" }) -join ' '); pointer to tab $i at $x,$y"
+    [G]::MoveTo($x - 6, $y + 4); Start-Sleep -Milliseconds 80; [G]::MoveTo($x, $y); Start-Sleep -Milliseconds 1500
+    $w2 = @(PfDump) | Where-Object { $_.ntabs -ge 2 } | Select-Object -First 1
+    $after = DumpVal $w2 'active'
+  }
+  $w = @(PfDump) | Where-Object { $_.ntabs -ge 2 } | Select-Object -First 1
+  Check 'the pointer on the other tab switched it, and the fence is full' ($after -ne $before -and (DumpVal $w 'idle_opacity') -eq '1.00') "active tab $before -> $after, idle_opacity=$(DumpVal $w 'idle_opacity')"
+  Park
+  $w = @(PfDump) | Where-Object { $_.ntabs -ge 2 } | Select-Object -First 1
+  Check 'after the hover switch and the pointer away: faded' ((DumpVal $w 'idle_opacity') -eq '0.45') "tab window '$($w.title)' idle_opacity=$(DumpVal $w 'idle_opacity')"
+  Pf settings set rollUp.switchTabOnHover false | Out-Null
+  Pf fence detach Right | Out-Null; Start-Sleep -Milliseconds 900
+  Place Right 608 200 300 260
+  Start-Sleep -Milliseconds 600; Park
 }
 
 if ($Part -match 'C') {
