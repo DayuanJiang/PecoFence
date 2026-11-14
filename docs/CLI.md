@@ -626,7 +626,8 @@ only, and `open=` opens folders, documents and `http://` / `https://` addresses 
 with a space or a double quote in it does not count as one: write `%20` and `%22`). A click that
 is refused shows a short message beside the pointer that names the line to add, and the log gets
 an info line with the script's file name and the parameter (never its value). With the line every
-parameter works as the table says. `copy=`, `action=` and `refresh=true` need no line: they start
+parameter works as the table says. Each cell of a row of cells follows the same rule as a row. `copy=`,
+`action=`, `dblaction=` and `refresh=true` need no line: they start
 nothing but the script itself. In a .cmd or .bat file write the line after `::` (in a `rem` line
 cmd.exe takes `<` and `>` as redirections). A program (.exe) used as the script cannot carry the
 line: start it from a small .cmd or .ps1 that does.
