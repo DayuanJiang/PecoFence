@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The switch 「帮助改进 PecoFence」 in Settings › 关于 says what it sends: 「发送匿名的使用统计，例如用了哪些功能。文件名、路径和你输入的文字不会发送。」, in all eleven languages. It said 「发送使用统计」.
+- Fences show a Wallpaper Engine live wallpaper again, scene or video (feedback #62, main #134): such a player draws without a redirection bitmap, which PrintWindow cannot read, so the fences fell back to the flat colour (now the pane) although the wallpaper was right there. Its window is now read with Windows.Graphics.Capture, the same frame Windows composes, and the capture behind Liquid Glass keeps the monitor's pixels, is only lightly softened and is taken again every 10 seconds, so the wallpaper stays as recognisable as a still one. A player neither PrintWindow nor Windows.Graphics.Capture can read still shows the flat colour or the pane.
 
 ## 0.4.0
 
