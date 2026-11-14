@@ -10,6 +10,8 @@ param(
   [int]$Minutes = 30
 )
 $ErrorActionPreference = 'Continue'
+# The CLI prints UTF-8: read in the console code page, Chinese fence titles break its JSON.
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 $Out = "$Root\out"
 New-Item -ItemType Directory -Force $Out | Out-Null
 function Note($m) { "$(Get-Date -Format HH:mm:ss.fff) $m" | Add-Content "$Out\log.txt" -Encoding UTF8 }
