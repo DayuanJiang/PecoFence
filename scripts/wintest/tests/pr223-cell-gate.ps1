@@ -58,8 +58,8 @@ $plain = "$PfRun\gate-plain.ps1"; $plainLog = "$PfRun\gate-plain.txt"
 $allowed = "$PfRun\gate-allowed.ps1"; $allowedLog = "$PfRun\gate-allowed.txt"
 GateScript $plain 'cells, no header line' $plainLog
 GateScript $allowed $Allow $allowedLog
-Pf fence create --script $plain --title GatePlain --rect '120,110,520,300' | Out-Null
-Pf fence create --script $allowed --title GateAllowed --rect '620,110,1020,300' | Out-Null
+Pf fence create --script $plain --title GatePlain --rect '120,110,400,200' | Out-Null
+Pf fence create --script $allowed --title GateAllowed --rect '700,110,400,200' | Out-Null
 $w1 = WaitCells 'GatePlain' 2
 $w2 = WaitCells 'GateAllowed' 2
 Check 'both fences draw their two cells' (@(CellRects $w1).Count -ge 2 -and @(CellRects $w2).Count -ge 2) "plain=$(DumpVal $w1 'script_cells') allowed=$(DumpVal $w2 'script_cells')"
