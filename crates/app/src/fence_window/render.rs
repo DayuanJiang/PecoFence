@@ -1678,10 +1678,11 @@ impl FenceViewState {
     fn script_image_key(&mut self, path: &str, height_dip: f32, scale: f32) -> String {
         const KEPT: usize = 40;
         let bound = ((height_dip * scale).ceil() as u32 * 2).clamp(64, 1024);
-        // A picture comes from this computer: a network place is not even asked whether the
-        // file is there (that already signs in to the server, with no click, and the fence
-        // would wait for a slow one at every draw).
-        let network = pecofence_core::script_output::is_network_path(path);
+        // A picture comes from this computer's own disks: a share or a mapped network drive is
+        // not even asked whether the file is there (that already signs in to the server, with
+        // no click, and the fence would wait for a slow one at every draw).
+        let place = pecofence_platform::shell::drive_kind(std::path::Path::new(path));
+        let network = !matches!(place, "fixed" | "removable" | "ramdisk");
         let stamp = if network {
             None
         } else {
@@ -1695,7 +1696,10 @@ impl FenceViewState {
             return key;
         }
         let decoded = if network {
-            tracing::warn!(path, "script fence picture on a network place: not read");
+            tracing::warn!(
+                place,
+                "script fence picture not on this computer's disks: not read"
+            );
             None
         } else {
             pecofence_platform::wallpaper::decode_scaled(std::path::Path::new(path), bound, bound)

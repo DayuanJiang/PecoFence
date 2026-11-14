@@ -352,17 +352,6 @@ pub fn is_streamable(source: &str) -> bool {
         || source.contains("<pecofence.type>streamable</pecofence.type>")
 }
 
-/// `path` names a network place (`\\server\share\file`, however its two slashes are written). A
-/// picture a row asks for is not read from there: what a script prints can be text from the
-/// network, and reading such a file signs in to that server without any click.
-pub fn is_network_path(path: &str) -> bool {
-    let mut chars = path.trim_start().chars();
-    matches!(
-        (chars.next(), chars.next()),
-        (Some('\\' | '/'), Some('\\' | '/'))
-    )
-}
-
 /// The title a script asks for its fence in a comment of its header
 /// (`<pecofence.title>Clipboard History</pecofence.title>`): what a fence made from it is called
 /// instead of the file name. None for no tag, an empty one or one of more than one line.
@@ -674,29 +663,6 @@ mod tests {
         assert_ne!(color_rgb("red", true), color_rgb("red", false));
         assert_eq!(color_rgb("#12", false), None);
         assert_eq!(color_rgb("chartreuse", false), None);
-    }
-
-    #[test]
-    fn network_places_are_told_from_this_computers_disks() {
-        for path in [
-            r"\\server\share\cover.jpg",
-            "//server/share/cover.jpg",
-            r"\/server\share\cover.jpg",
-            r"/\server/share",
-            r"  \\server\share\cover.jpg",
-            r"\\?\UNC\server\share\cover.jpg",
-        ] {
-            assert!(is_network_path(path), "{path}");
-        }
-        for path in [
-            r"C:\Users\me\Pictures\cover.jpg",
-            "C:/Users/me/cover.jpg",
-            r"covers\a.png",
-            r"\covers\a.png",
-            "",
-        ] {
-            assert!(!is_network_path(path), "{path}");
-        }
     }
 
     #[test]
