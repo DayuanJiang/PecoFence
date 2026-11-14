@@ -15,7 +15,7 @@ $L = if ($Part -eq 'D') {
 }
 Add-Type -AssemblyName System.Windows.Forms, System.Drawing
 
-# Hit rects of a dump field (script_rows) as objects: i (row * 100 + cell), l, t, r, b in content DIPs.
+# Hit rects of a dump field (script_cells) as objects: i (row * 100 + cell), l, t, r, b in content DIPs.
 function DumpRects($w, $name) {
   $v = DumpVal $w $name
   if (-not $v -or $v -eq '-') { return @() }
@@ -44,12 +44,12 @@ function ChLine($pattern) { $l = ChLines; for ($i = 0; $i -lt $l.Count; $i++) { 
 # The clickable cells drawn for an output line: their cell numbers.
 function ChCells($line) {
   $w = DumpOf $script:ChTitle 5
-  return @(DumpRects $w 'script_rows' | Where-Object { [math]::Floor($_.i / 100) -eq $line } | ForEach-Object { $_.i % 100 })
+  return @(DumpRects $w 'script_cells' | Where-Object { [math]::Floor($_.i / 100) -eq $line } | ForEach-Object { $_.i % 100 })
 }
 function ChClick($line, $cell) {
   $w = DumpOf $script:ChTitle 5
-  $r = @(DumpRects $w 'script_rows' | Where-Object { $_.i -eq $line * 100 + $cell }) | Select-Object -First 1
-  if (-not $r) { Log "no cell $line/$cell in $(DumpVal $w 'script_rows')"; return $false }
+  $r = @(DumpRects $w 'script_cells' | Where-Object { $_.i -eq $line * 100 + $cell }) | Select-Object -First 1
+  if (-not $r) { Log "no cell $line/$cell in $(DumpVal $w 'script_cells')"; return $false }
   $p = ContentPt $w (($r.l + $r.r) / 2) (($r.t + $r.b) / 2)
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 900
   ParkMouse
@@ -209,7 +209,7 @@ if ($Part -eq 'A') {
   Shot 'a5-blurred'
   $l = ChLine 'copy:\d+'
   $w = DumpOf $script:ChTitle 5
-  $r = @(DumpRects $w 'script_rows' | Where-Object { $_.i -eq $l * 100 }) | Select-Object -First 1
+  $r = @(DumpRects $w 'script_cells' | Where-Object { $_.i -eq $l * 100 }) | Select-Object -First 1
   $p = ContentPt $w (($r.l + $r.r) / 2) (($r.t + $r.b) / 2)
   [G]::MoveTo($p[0], $p[1]); Start-Sleep -Milliseconds 1800
   $tip = OcrText ($w.l - 200) $w.t ($w.r - $w.l + 400) ($w.b - $w.t) 'a5-tip'
@@ -291,6 +291,14 @@ if ($Part -eq 'B') {
   $left = @(Get-ChildItem $data -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
   Check 'deleting the fence ends its script' (-not $alive) "alive=$alive"
   Check 'what the deleted fence left in its data folder' $true "files: $($left -join ',')"
+  # The folder (it holds the pinned text) goes at the next start.
+  PfQuit
+  Start-Sleep -Seconds 2
+  $before = Test-Path $data
+  PfStart -Lang $L.lang -Script (DumpScript 250 10)
+  Start-Sleep -Seconds 4
+  $after = Test-Path $data
+  Check 'at the next start the deleted fence''s data folder is gone' ($before -and -not $after) "before=$before after=$after $data"
 }
 
 if ($Part -eq 'C') {
