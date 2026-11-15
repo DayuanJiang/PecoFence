@@ -271,10 +271,11 @@ Start-Sleep -Seconds 1
 [G]::Press(0x1B); Start-Sleep -Milliseconds 600
 $after = FenceCount
 Check 'Add to desktop > New fence makes a fence' ($after -eq $before + 1) "picked=$picked fences $before -> $after"
+# The CLI gets no answer while a menu is open: count first.
+$before = FenceCount
 $m = TitleMenu 'Solo'
 HoverRow $m 'Add to desktop' | Out-Null
 $sub = MenuWith 'New note'
-$before = FenceCount
 $picked = MenuPick '^New note$' $sub
 Start-Sleep -Seconds 2
 $notes = @(@(PfJson fence list) | Where-Object { $_ -and $_.script -and $_.script.path -eq 'plugin:notes' })

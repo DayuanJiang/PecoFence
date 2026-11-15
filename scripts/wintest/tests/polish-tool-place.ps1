@@ -34,9 +34,16 @@ function CheckClear($what, $f) {
   Check "$what is not under the Settings window" ((Under $f $s) -eq 0) "$what=$(ToolText $f) settings=$(WinText $s) covered=$(Under $f $s) px"
 }
 # The centre of the button $label in the row titled $title of the Tools page.
+# The plugin rows go below the page's fold: the page is scrolled to its top first, and down when
+# the row is not in sight.
 function RowButton($title, $label) {
   $sr = Rect $s
+  Wheel ($sr.L + 600) ($sr.T + 400) 10; Start-Sleep -Milliseconds 600
   $t = OcrFind $title ($sr.L + 260) $sr.T 520 ($sr.B - $sr.T)
+  if (-not $t) {
+    Wheel ($sr.L + 600) ($sr.T + 400) -6; Start-Sleep -Milliseconds 600
+    $t = OcrFind $title ($sr.L + 260) $sr.T 520 ($sr.B - $sr.T)
+  }
   if (-not $t) { return $null }
   return (OcrFind $label ($sr.R - 280) ($t[1] - 24) 280 90)
 }
@@ -49,7 +56,7 @@ function AddTool($title, $label = '^Add to desktop$') {
   return (NewTool $before)
 }
 # The notes plugin's row: its fence.
-function AddNote($text) { return (AddTool '^Notes') }
+function AddNote($text) { return (AddTool '^Notes\W+Dayuan') }
 # 新建便签 of the tray menu: a fence of the notes plugin. The tray's overflow window is opened
 # first and left to settle: the menu's place follows the icon while it slides in.
 function TrayNote() {
@@ -90,8 +97,8 @@ Check 'with fences on both sides of the window, the window covers less than half
 Case 'the window where it opens by itself'
 ClearFences | Out-Null
 $note = AddNote 'as it opens'
-$clock = AddTool '^Clock'
-$weather = AddTool '^Weather'
+$clock = AddTool '^Clock\W+Dayuan'
+$weather = AddTool '^Weather\W+Dayuan'
 Start-Sleep -Seconds 1
 Shot 'place-2-as-it-opens'
 CheckClear 'the note' $note
@@ -103,8 +110,8 @@ Case 'the window at the left edge of the screen'
 ClearFences | Out-Null
 MoveSettings 0
 $sr = Rect $s
-$git = AddTool '^GitHub activity'
-$status = AddTool '^PC status'
+$git = AddTool '^GitHub activity\W+Dayuan'
+$status = AddTool '^PC status\W+Dayuan'
 # 用自己的脚本: its file dialog names the script.
 Set-Content C:\pf\run\place.ps1 -Value 'Write-Output "placed"' -Encoding UTF8
 $before = ToolIds
@@ -127,8 +134,8 @@ ClearFences | Out-Null
 MoveSettings ($screenW - ($sr.R - $sr.L))
 $sr = Rect $s
 $note = AddNote 'right edge'
-$clock = AddTool '^Clock'
-$weather = AddTool '^Weather'
+$clock = AddTool '^Clock\W+Dayuan'
+$weather = AddTool '^Weather\W+Dayuan'
 Start-Sleep -Seconds 1
 Shot 'place-4-right-edge'
 CheckClear 'the note' $note
