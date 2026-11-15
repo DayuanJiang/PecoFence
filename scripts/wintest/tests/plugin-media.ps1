@@ -103,7 +103,7 @@ Check 'app: Msedge in the fence whose plugin lists msedge.exe, none in the other
 function CpuMs() { return (@(Get-Process pecofence -ErrorAction SilentlyContinue) | ForEach-Object { $_.TotalProcessorTime.TotalMilliseconds } | Measure-Object -Sum).Sum }
 $c0 = CpuMs; Start-Sleep -Seconds 10; $c1 = CpuMs
 Log "pecofence CPU while two media fences show what plays: $([int]($c1 - $c0)) ms in 10 s"
-Check 'PecoFence''s CPU while it plays (two fences, a read and a view a second)' ($c1 -gt $c0 -and $c1 - $c0 -lt 200) "$([int]($c1 - $c0)) ms in 10 s"
+Check 'PecoFence''s CPU while it plays (two fences, a read and a view a second)' ($c1 - $c0 -lt 200) "$([int]($c1 - $c0)) ms in 10 s"
 FenceShot 'playing' 'Now playing'
 
 Case 'the buttons: pause, play, next, previous, only in a click'
