@@ -7,7 +7,7 @@
 # a plugin that starts programs (the stricter warning, every update asks) and the switch for
 # Windows functions; a take-down; an uninstall during a download (its result dropped); an
 # imported fence whose plugin is not installed; a take-down from the saved index while offline.
-# The fix pass: a fence's cached view goes with it; the warning shows again when the index changes
+# The fix pass: a fence's cached view and its data files (named after it) go with it; the warning shows again when the index changes
 # the plugin while it is open; a plugin taken down or an entry for a newer PecoFence is not
 # installed when the page asks; a failed switch starts the fences again; a web plugin's update loads
 # the new page; a plugin fence holding a note has 编辑便签 and its uninstall names the notes; an
@@ -155,13 +155,19 @@ Shot 'plugin-details-form'
 $out = @{}; foreach ($f in (PluginFences pf-test)) { $out[$f.id] = $f.script.output }
 Check 'two forms; the second fence keeps B and shows it, the first is unchanged' ($forms -eq 2 -and (Saved $second).label -eq 'B' -and -not (Saved $first).label -and $out[$second] -match 'pf-test 1\.0\.0 B' -and $out[$first] -notmatch ' B') "forms=$forms first=$($out[$first]) second=$($out[$second])"
 
-Case 'a plugin fence''s cached view goes with the fence'
+Case 'a plugin fence''s cached view and its data files go with the fence'
 $third = "$((PfJson fence create --script plugin:pf-test --title Third --rect '1200,420,300,160').fence.id)"
 $cache = "$script:Config\plugins-host\$third.view.json"
 $made = $false; for ($i = 0; $i -lt 10 -and -not $made; $i++) { Start-Sleep -Seconds 1; $made = Test-Path $cache }
+# Data files: one named after this fence, one after the first fence, one after no fence.
+$data = "$script:Config\plugins-data\pf-test"; New-Item -ItemType Directory -Force $data | Out-Null
+foreach ($n in "$third-history.json", "$first-history.json", 'shared.json') { Set-Content "$data\$n" 'x' }
 Pf fence delete $third | Out-Null
 Start-Sleep -Seconds 5
 Check 'its view was cached, and 5 s after the fence is deleted the file is gone' ($made -and -not (Test-Path $cache)) "made=$made left=$(Test-Path $cache)"
+$left = (Get-ChildItem $data -Name | Sort-Object) -join ' '
+Check 'its data file is gone; the first fence''s and the one of no fence stay' ($left -eq "$first-history.json shared.json") "left=$left"
+Remove-Item "$data\$first-history.json", "$data\shared.json"
 
 Case 'an update that asks for nothing more installs by itself and keeps the version before'
 Offer 'pf-test' 'PF Test' '1.1.0'; Publish 3

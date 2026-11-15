@@ -13,7 +13,7 @@ use pecofence_core::FenceId;
 use pecofence_core::i18n;
 use pecofence_core::plugins::{self as list, Entry, Index, Manifest, Update};
 use pecofence_platform::window;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -860,35 +860,50 @@ impl App {
         self.plugins.reload(id);
     }
 
-    /// Deletes the cached views (`plugins-host\<fence>.view.json`, the plugin host's) of fences
-    /// that are no plugin fence any more: at start, and a few seconds after a plugin fence is
-    /// deleted (`wait`: a plugin just stopped still writes its last view when its thread handles
-    /// the stop).
-    pub(super) fn drop_stale_views(&self, wait: bool) {
-        let dir = self.views_dir();
+    /// Deletes what is kept on disk for fences that are no plugin fence of any layout any more:
+    /// their cached views (`plugins-host\<fence>.view.json`, the plugin host's) and the data
+    /// files their plugin named after them (`plugins-data\<id>\<fence>-*`). At start, and a few
+    /// seconds after a plugin fence is deleted (`wait`: a plugin just stopped still writes its
+    /// last view, and maybe data, when its thread handles the stop).
+    pub(super) fn drop_files_of_deleted_fences(&self, wait: bool) {
+        let (views, data) = (self.views_dir(), self.plugins_data());
+        let layouts = self.state.config.layouts.iter();
+        let held: HashSet<FenceId> = layouts
+            .flat_map(|l| l.fences.iter().map(|f| f.id))
+            .collect();
         let scripts = self.state.config.scripts.iter();
-        let keep: std::collections::HashSet<String> = scripts
-            .filter(|(f, s)| plugin_id(&s.path).is_some() && self.state.fence(**f).is_some())
-            .map(|(f, _)| format!("{f}.view.json"))
+        let keep: HashSet<String> = scripts
+            .filter(|(f, s)| plugin_id(&s.path).is_some() && held.contains(f))
+            .map(|(f, _)| f.to_string())
             .collect();
         let sweep = move || {
             if wait {
                 std::thread::sleep(Duration::from_secs(3));
             }
-            let mut gone = 0;
-            for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
-                let name = e.file_name().to_string_lossy().to_string();
-                if name.ends_with(".view.json")
-                    && !keep.contains(&name)
-                    && std::fs::remove_file(e.path()).is_ok()
-                {
-                    gone += 1;
+            // The files in `dir` that `fence` names a fence of, which is not kept.
+            let remove_stale = |dir: &Path, fence: fn(&str) -> Option<&str>| {
+                let mut gone = 0;
+                for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                    let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+                    let f = fence(&name).filter(|f| uuid::Uuid::try_parse(f).is_ok());
+                    if f.is_some_and(|f| !keep.contains(f))
+                        && std::fs::remove_file(e.path()).is_ok()
+                    {
+                        gone += 1;
+                    }
                 }
-            }
+                gone
+            };
+            let views = remove_stale(&views, |n| n.strip_suffix(".view.json"));
+            let named: fn(&str) -> Option<&str> =
+                |n| n.get(..36).filter(|_| n.as_bytes().get(36) == Some(&b'-'));
+            let plugins = std::fs::read_dir(&data).into_iter().flatten().flatten();
+            let data: usize = plugins.map(|p| remove_stale(&p.path(), named)).sum();
             tracing::info!(
-                gone,
+                views,
+                data,
                 kept = keep.len(),
-                "plugins: cached views of fences that went deleted"
+                "plugins: cached views and data files of fences that went deleted, deleted"
             );
         };
         let spawned = std::thread::Builder::new()
@@ -899,14 +914,11 @@ impl App {
         }
     }
 
-    /// A fence was deleted: when it was a plugin fence that showed something, its cached view goes.
+    /// A fence was deleted: when it was a plugin fence, its cached view and data files go.
     pub(super) fn fence_view_gone(&self, fence: FenceId) {
-        if self
-            .views_dir()
-            .join(format!("{fence}.view.json"))
-            .is_file()
-        {
-            self.drop_stale_views(true);
+        let script = self.state.config.scripts.get(&fence);
+        if script.is_some_and(|s| plugin_id(&s.path).is_some()) {
+            self.drop_files_of_deleted_fences(true);
         }
     }
 
