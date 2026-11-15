@@ -1,5 +1,5 @@
 //! `pecofence-plugin-check <plugin dir> [--seconds 60] [--fixture answers.json] [--lang en]
-//! [--json result.json]`
+//! [--settings '{"key": value}'] [--json result.json]`
 //!
 //! Runs a plugin's `main.js` for a while in PecoFence's own plugin host (`crates/plugin-host`)
 //! with fake host functions, on any system: `pf.http` answers come from the fixture or say
@@ -238,6 +238,8 @@ struct Args {
     seconds: f64,
     fixture: Option<PathBuf>,
     lang: String,
+    /// The fence's saved settings (the manifest's defaults for the rest).
+    settings: serde_json::Map<String, Value>,
     json: Option<PathBuf>,
 }
 
@@ -247,6 +249,7 @@ fn args() -> Result<Args, String> {
         seconds: 60.0,
         fixture: None,
         lang: "en".into(),
+        settings: serde_json::Map::new(),
         json: None,
     };
     let mut it = std::env::args().skip(1);
@@ -256,6 +259,10 @@ fn args() -> Result<Args, String> {
             "--seconds" => a.seconds = value()?.parse().map_err(|_| "--seconds takes a number")?,
             "--fixture" => a.fixture = Some(value()?.into()),
             "--lang" => a.lang = value()?,
+            "--settings" => {
+                let v = serde_json::from_str(&value()?).map_err(|e| format!("--settings: {e}"))?;
+                a.settings = v;
+            }
             "--json" => a.json = Some(value()?.into()),
             _ if !arg.starts_with('-') && a.dir.as_os_str().is_empty() => a.dir = arg.into(),
             _ => return Err(format!("unknown argument {arg}")),
@@ -264,7 +271,7 @@ fn args() -> Result<Args, String> {
     if a.dir.as_os_str().is_empty() || a.seconds < 5.0 {
         return Err(
             "usage: pecofence-plugin-check <plugin dir> [--seconds 60 (at least 5)] \
-                    [--fixture answers.json] [--lang en] [--json result.json]"
+                    [--fixture answers.json] [--lang en] [--settings JSON] [--json result.json]"
                 .into(),
         );
     }
@@ -317,7 +324,7 @@ fn check(a: Args) -> Result<bool, String> {
     let send_out = move |o: Output| _ = out_tx.send((Instant::now(), o));
     let (tx, thread) = host::spawn(fake.clone(), format, send_out).map_err(|e| e.to_string())?;
     let fence = FenceId::new_v4();
-    let settings = fence_settings(&manifest, &serde_json::Map::new());
+    let settings = fence_settings(&manifest, &a.settings);
     let begun = Instant::now();
     let send = |c: Command| _ = tx.send(c);
     send(Command::Start(Box::new(Start {
@@ -386,7 +393,12 @@ fn check(a: Args) -> Result<bool, String> {
     let m = &manifest;
     let (mut fails, mut warns, mut info) = (Vec::new(), Vec::new(), Vec::new());
     let calls: Vec<String> = log.calls.iter().map(|(k, v)| format!("{k} {v}")).collect();
-    info.push(format!("pf calls: {}", calls.join(", ")));
+    let calls = if calls.is_empty() {
+        "none".into()
+    } else {
+        calls.join(", ")
+    };
+    info.push(format!("pf calls: {calls}"));
     info.push(format!("{clicked} clicks on rows and cells with an id"));
     info.push(format!("last view: {}", short(&log.last_view)));
     for (host, (all, at_rest)) in &log.hosts {
