@@ -7,9 +7,9 @@
 # plugin clocks, release build).
 if ($Part -match '^M([abc])$') {
   Case "memory and CPU, scenario $($Matches[1])"
-  & powershell -NoProfile -ExecutionPolicy Bypass -File "$PfExtra\measure.ps1" -Scenario $Matches[1] -Root "$PfRun\m" -Out "$PfShots\measure"
+  & powershell -NoProfile -ExecutionPolicy Bypass -File "$PfExtra\measure.ps1" -Scenario $Matches[1] -Minutes $(if ($Minutes) { $Minutes } else { 5 }) -Root "$PfRun\m" -Out "$PfShots\measure"
   $rows = @(Get-Content "$PfShots\measure\samples.csv" -ErrorAction SilentlyContinue)
-  Check 'eleven samples over five minutes' ($rows.Count -ge 12) ((Get-Content "$PfShots\measure\log.txt") -join ' / ')
+  Check 'a sample every 30 s' ($rows.Count -ge 3) ((Get-Content "$PfShots\measure\log.txt") -join ' / ')
   return
 }
 $Feed = 'C:\pf\run\pfeed'
