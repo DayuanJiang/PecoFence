@@ -12,7 +12,7 @@
 //! soft rules of the repository's AGENTS.md.
 
 use pecofence_core::FenceId;
-use pecofence_core::plugins::{Clipboard, Manifest, fence_settings};
+use pecofence_core::plugins::{Manifest, fence_settings};
 use pecofence_plugin_host::{self as host, Command, Host, Note, Output, Start, Stopped};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -41,7 +41,6 @@ struct Log {
 }
 
 struct Fake {
-    manifest: Manifest,
     /// Address prefixes and their answers ({status, headers, body}).
     fixture: Vec<(String, Value)>,
     rest: AtomicBool,
@@ -75,13 +74,9 @@ fn short(v: &Value) -> String {
 
 impl Host for Fake {
     fn call(&self, _: FenceId, name: &str, args: Value) -> Result<Value, String> {
+        // The plugin host checked the call against the manifest already (`host::refusal`, and
+        // again at each redirect); refused calls come to `note`.
         let arg = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or_default();
-        // The checker holds the manifest to the code itself too, in case a host lets a call by.
-        if let Some(why) = host::refusal(&self.manifest.permissions, name, &args) {
-            let seen = format!("{name} {}: {why} (seen by the checker)", short(&args));
-            self.log().refused.push(seen);
-            return Err(why);
-        }
         let mut log = self.log();
         match name {
             "http.get" | "http.post" => {
@@ -128,9 +123,6 @@ impl Host for Fake {
             "run" => Ok(json!({ "code": 0, "output": "" })),
             "folder.list" => Ok(json!([])),
             "folder.read" => Ok(json!("")),
-            "openSystem" if arg(0) != "taskmgr" => {
-                Err(format!("{} is not a system window", arg(0)))
-            }
             // Nothing on the clipboard as a picture, the user cancels the folder dialog, and
             // opening, notices and clipboard writes only happen.
             "clipboard.image" | "folder.pick" | "openSystem" | "open" | "notify" => Ok(Value::Null),
@@ -318,7 +310,6 @@ fn check(a: Args) -> Result<bool, String> {
         None => Vec::new(),
     };
     let fake = Arc::new(Fake {
-        manifest: manifest.clone(),
         fixture,
         rest: AtomicBool::new(false),
         log: Mutex::default(),
@@ -370,10 +361,7 @@ fn check(a: Args) -> Result<bool, String> {
         send(Command::Event(fence, name, data));
         std::thread::sleep(Duration::from_millis(50));
     }
-    if matches!(
-        manifest.permissions.clipboard,
-        Clipboard::Read | Clipboard::Readwrite
-    ) {
+    if manifest.permissions.clipboard.reads() {
         send(Command::Event(fence, "clipboard", Value::Null));
     }
     wait(0.5);

@@ -60,8 +60,8 @@ impl App {
         let saved = self.state.config.scripts.get(&shown);
         let saved = saved.map(|s| s.settings.clone()).unwrap_or_default();
         let settings = self
-            .plugin_manifest(&plugin.id)
-            .map(|m| pecofence_core::plugins::fence_settings(&m, &saved));
+            .plugin(&plugin.id)
+            .map(|p| pecofence_core::plugins::fence_settings(&p.manifest, &saved));
         let (Some(w), Some(env)) = (self.fences.get(&host), self.web_env.as_ref()) else {
             return;
         };
@@ -71,7 +71,7 @@ impl App {
         let dark = w.draws_light_text(self.theme_mode);
         let init = serde_json::json!({
             "lang": i18n::language().tag(),
-            "theme": if dark { "dark" } else { "light" },
+            "theme": pecofence_core::plugins::theme(dark),
             "settings": settings.unwrap_or_else(|| serde_json::json!({})),
             "fence": { "id": shown.to_string(), "width": size.0, "height": size.1 },
         });

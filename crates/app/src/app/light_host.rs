@@ -7,6 +7,7 @@ use super::{App, HWND, WM_APP_COMMAND};
 use pecofence_core::FenceId;
 use pecofence_core::plugins::Manifest;
 use pecofence_platform::{clipboard, sysinfo, window};
+use pecofence_plugin_host::view::{MAX_IMAGE_BYTES, MAX_IMAGE_SIDE};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -18,7 +19,6 @@ pub(super) type UiJob = Box<dyn FnOnce(&mut App) + Send>;
 
 const MAX_TEXT: usize = 256 * 1024;
 const MAX_DATA: u64 = 200 * 1024 * 1024;
-const MAX_PICTURE: u32 = 4096;
 const MAX_FILE: u64 = 20 * 1024 * 1024;
 const RUN_TIME: Duration = Duration::from_secs(30);
 const RUN_OUTPUT: usize = 1024 * 1024;
@@ -42,12 +42,13 @@ fn text_of(v: &Value) -> String {
 }
 
 impl AppHost {
-    pub(super) fn new(control: HWND, jobs: Arc<Mutex<Vec<UiJob>>>, config_dir: &Path) -> Self {
+    /// `data`: the folder of the plugins' data folders.
+    pub(super) fn new(control: HWND, jobs: Arc<Mutex<Vec<UiJob>>>, data: PathBuf) -> Self {
         Self {
             control: control.0 as isize,
             jobs,
             plugins: Mutex::default(),
-            data: config_dir.join("plugins-data"),
+            data,
             cpu: Mutex::default(),
         }
     }
@@ -159,7 +160,7 @@ impl AppHost {
                 let Some((w, h, bgra)) = clipboard::read_image() else {
                     return Ok(Value::Null);
                 };
-                if w > MAX_PICTURE || h > MAX_PICTURE {
+                if w > MAX_IMAGE_SIDE || h > MAX_IMAGE_SIDE {
                     return Err(format!(
                         "the picture is larger than 4096 x 4096 ({w} x {h})"
                     ));
@@ -174,7 +175,7 @@ impl AppHost {
                 let _com = pecofence_platform::com::MtaGuard::init();
                 clipboard::save_png(&file, w, h, &bgra).map_err(|e| e.to_string())?;
                 let size = std::fs::metadata(&file).map_or(0, |m| m.len());
-                if size > MAX_FILE {
+                if size > MAX_IMAGE_BYTES {
                     let _ = std::fs::remove_file(&file);
                     return Err("the picture is larger than 20 MB as a PNG".into());
                 }
@@ -191,8 +192,8 @@ impl AppHost {
                 let _com = pecofence_platform::com::MtaGuard::init();
                 let picture = pecofence_platform::wallpaper::decode_native(
                     &file,
-                    MAX_PICTURE,
-                    MAX_PICTURE,
+                    MAX_IMAGE_SIDE,
+                    MAX_IMAGE_SIDE,
                     false,
                 );
                 let p = picture.map_err(|e| format!("{}: {e}", file.display()))?;

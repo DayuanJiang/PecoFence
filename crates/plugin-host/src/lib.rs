@@ -6,7 +6,7 @@
 //! done on a worker thread, its answer a Promise. Nothing here touches Windows.
 
 use pecofence_core::FenceId;
-use pecofence_core::plugins::{Clipboard, Permissions};
+use pecofence_core::plugins::Permissions;
 use rquickjs::{CaughtError, Context, Ctx, Exception, Function, Object, Runtime};
 use serde_json::{Value, json};
 use std::cell::{Cell, RefCell};
@@ -20,7 +20,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod api;
 pub mod view;
-pub use api::{Host, MAX_ANSWER, Note, perform, refusal, url_host, valid_data_name};
+pub use api::{Host, MAX_ANSWER, Note, perform, refusal, url_host};
 pub use view::{Row, View};
 
 pub const MEMORY_LIMIT: usize = 8 * 1024 * 1024;
@@ -235,7 +235,7 @@ impl Plugin {
             sent: None,
             host: host.clone(),
             background: p.background,
-            reads_clipboard: matches!(p.clipboard, Clipboard::Read | Clipboard::Readwrite),
+            reads_clipboard: p.clipboard.reads(),
             click: Rc::default(),
             second: (Instant::now(), Duration::ZERO),
             cache: s.cache.clone(),
@@ -680,6 +680,7 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pecofence_core::plugins::Clipboard;
     use std::sync::Mutex;
     use std::sync::mpsc::channel;
 

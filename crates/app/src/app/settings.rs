@@ -1005,7 +1005,7 @@ impl App {
                     pecofence_core::usage::event_with("settings.page", page);
                 }
                 if name == Some("tools") {
-                    self.plugins_page_shown();
+                    self.fetch_plugins();
                 }
             }
             Some("ringFence") => {

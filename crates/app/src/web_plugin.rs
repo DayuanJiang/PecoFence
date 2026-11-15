@@ -361,8 +361,7 @@ impl WebFence {
         controller.set_bounds(x, y, x + w, y + h)?;
         controller.set_visible(true)?;
         webview.navigate(&format!("{origin}index.html"))?;
-        self.input_tries.set(40);
-        window::set_timer(self.hwnd, TIMER_WEB_INPUT, 100);
+        self.look_for_browser_window();
         *self.live.borrow_mut() = Some(Live {
             comp,
             controller,
@@ -438,7 +437,7 @@ impl WebFence {
         tracing::info!(plugin = %self.plugin.id, fence = %self.fence, dark, "web plugin: the page follows the theme");
         self.event(
             "theme",
-            &serde_json::json!(if dark { "dark" } else { "light" }),
+            &serde_json::json!(pecofence_core::plugins::theme(dark)),
         );
     }
 
@@ -454,8 +453,8 @@ impl WebFence {
             let p = window::screen_to_client(self.hwnd, pecofence_platform::POINT { x: px, y: py });
             (px, py) = (p.x, p.y);
         }
-        let (x, y, w, h, _) = self.bounds.get();
-        let over = self.shown.get() && px >= x && py >= y && px < x + w && py < y + h;
+        let (x, y, ..) = self.bounds.get();
+        let over = self.shown.get() && self.over_page(px, py);
         if message == WM_MOUSELEAVE || (!over && !self.captured.get()) {
             if self.inside.replace(false) {
                 let _ = live.comp.send_mouse_input(WM_MOUSELEAVE, 0, 0, 0, 0);
@@ -494,6 +493,18 @@ impl WebFence {
             );
         }
         true
+    }
+
+    /// Point (`px`, `py`) of the fence window's client area is over the page.
+    fn over_page(&self, px: i32, py: i32) -> bool {
+        let (x, y, w, h, _) = self.bounds.get();
+        px >= x && py >= y && px < x + w && py < y + h
+    }
+
+    /// Starts `TIMER_WEB_INPUT`: at most 40 looks, 100 ms apart (`pass_mouse_through`).
+    fn look_for_browser_window(&self) {
+        self.input_tries.set(40);
+        window::set_timer(self.hwnd, TIMER_WEB_INPUT, 100);
     }
 
     /// `TIMER_WEB_INPUT`. The browser lays a window of its own over the page (a top-level
@@ -551,8 +562,7 @@ impl WebFence {
     /// WM_SETCURSOR: the page's cursor when the pointer is over it.
     pub fn set_cursor(&self) -> bool {
         let p = window::screen_to_client(self.hwnd, window::cursor_pos());
-        let (x, y, w, h, _) = self.bounds.get();
-        let over = p.x >= x && p.y >= y && p.x < x + w && p.y < y + h;
+        let over = self.over_page(p.x, p.y);
         let live = self.live.borrow();
         match live.as_ref() {
             Some(live) if over && self.shown.get() => {
@@ -604,8 +614,7 @@ impl WebFence {
         }
         if shown {
             window::kill_timer(self.hwnd, TIMER_WEB_SUSPEND);
-            self.input_tries.set(40);
-            window::set_timer(self.hwnd, TIMER_WEB_INPUT, 100);
+            self.look_for_browser_window();
         } else {
             window::set_timer(self.hwnd, TIMER_WEB_SUSPEND, SUSPEND_AFTER_MS);
         }

@@ -2116,8 +2116,7 @@ impl App {
                         .hint("pecofence-cli fence create --script C:\\path\\weather.ps1"));
                 };
                 // `plugin:<id>`: an installed plugin's fence.
-                let plugin =
-                    super::plugins::plugin_id(path).and_then(|id| self.plugin_manifest(id));
+                let plugin = super::plugins::plugin_id(path).and_then(|id| self.plugin(id));
                 if plugin.is_none() && !std::path::Path::new(path).is_file() {
                     return Err(IpcError::new(
                         ErrorCode::InvalidValue,

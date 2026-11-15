@@ -2,6 +2,7 @@
 //! plugin passed and cut to PecoFence's limits. All text is plain text. The app turns the rows
 //! into script fence rows and draws them.
 
+use pecofence_core::plugins::valid_plain_name;
 use serde::Deserialize;
 
 /// At most this many rows; the rest are dropped.
@@ -146,17 +147,6 @@ pub struct Input {
     pub placeholder: String,
 }
 
-/// A name in the plugin's data folder: letters, digits, `.`, `_` and `-`, at most 64, not
-/// starting with a dot.
-pub fn data_name_ok(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 64
-        && !name.starts_with('.')
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-}
-
 fn cut(text: &mut String) {
     if let Some((at, _)) = text.char_indices().nth(MAX_TEXT) {
         text.truncate(at);
@@ -179,7 +169,7 @@ fn height(v: Option<f32>) -> Option<f32> {
 }
 
 fn name(n: Option<String>) -> Option<String> {
-    n.filter(|n| data_name_ok(n))
+    n.filter(|n| valid_plain_name(n))
 }
 
 impl Row {
@@ -362,7 +352,7 @@ mod tests {
             (&"a".repeat(65), false),
             (&"a".repeat(64), true),
         ] {
-            assert_eq!(data_name_ok(name), ok, "{name}");
+            assert_eq!(valid_plain_name(name), ok, "{name}");
             let json = format!(
                 r#"{{"rows":[{{"image":{0:?},"cells":[{{"image":{0:?}}}],
                     "canvas":{{"height":9,"draw":[{{"image":{0:?}}}]}}}}]}}"#,

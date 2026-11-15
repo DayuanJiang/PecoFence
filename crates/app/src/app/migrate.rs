@@ -26,10 +26,8 @@ impl App {
         let mut plugins: Vec<&'static str> = moves.iter().map(|m| m.plugin).collect();
         plugins.sort_unstable();
         plugins.dedup();
-        let (ready, missing): (Vec<&str>, Vec<&str>) = (plugins.into_iter()).partition(|id| {
-            self.plugin(id)
-                .is_some_and(|p| p.ready && p.disabled.is_none())
-        });
+        let (ready, missing): (Vec<&str>, Vec<&str>) =
+            (plugins.into_iter()).partition(|id| self.plugin(id).is_some_and(|p| p.usable()));
         // A note being edited moves once its editor closes (`note_edited` calls again).
         let editing = crate::note_edit::open_for();
         let moving: Vec<_> = (moves.iter())

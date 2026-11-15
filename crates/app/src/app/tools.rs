@@ -670,7 +670,7 @@ impl App {
             .get(&id)
             .and_then(|s| super::plugins::plugin_id(&s.path));
         let data_dir = match plugin {
-            Some(plugin) => self.plugin_data_dir(plugin),
+            Some(plugin) => self.plugins_data().join(plugin),
             None => self
                 .state
                 .config_path_on_disk()

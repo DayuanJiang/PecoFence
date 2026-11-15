@@ -64,14 +64,13 @@ impl App {
 
     /// The app's side of the `pf` calls (made with the first plugin or web page call).
     fn light_host(&mut self) -> Arc<AppHost> {
-        let config = self.state.config_path_on_disk();
-        let dir = config.parent().unwrap_or(std::path::Path::new("."));
+        let data = self.plugins_data();
         let jobs = self.light.jobs.clone();
         let control = self.control.hwnd();
         (self
             .light
             .host
-            .get_or_insert_with(|| Arc::new(AppHost::new(control, jobs, dir))))
+            .get_or_insert_with(|| Arc::new(AppHost::new(control, jobs, data))))
         .clone()
     }
 
@@ -109,7 +108,7 @@ impl App {
         }
         let spec = self.state.config.scripts.get(&fence)?;
         let id = super::plugins::plugin_id(&spec.path)?.to_string();
-        let m = Arc::new(self.plugin_manifest(&id)?);
+        let m = Arc::new(self.plugin(&id)?.manifest.clone());
         if let Ok(mut plugins) = host.plugins.lock() {
             plugins.insert(fence, m.clone());
         }
@@ -121,10 +120,10 @@ impl App {
         if self.hold_light(fence, Some((id, main))) {
             return;
         }
-        let (Ok(code), Some(m)) = (std::fs::read_to_string(main), self.plugin_manifest(id)) else {
+        let (Ok(code), Some(p)) = (std::fs::read_to_string(main), self.plugin(id)) else {
             return;
         };
-        let m = Arc::new(m);
+        let m = Arc::new(p.manifest.clone());
         let api = self.light_host();
         if let Ok(mut plugins) = api.plugins.lock() {
             plugins.insert(fence, m.clone());
@@ -148,7 +147,7 @@ impl App {
             }
         }
         let p = &m.permissions;
-        if matches!(p.clipboard, Clipboard::Read | Clipboard::Readwrite) {
+        if p.clipboard.reads() {
             self.ensure_clipboard_listener();
         }
         let saved = self
@@ -178,7 +177,7 @@ impl App {
             code,
             settings,
             lang: pecofence_core::i18n::language().tag().to_string(),
-            theme: if dark { "dark" } else { "light" }.into(),
+            theme: pecofence_core::plugins::theme(dark).into(),
             size,
             shown,
             cache,
@@ -188,7 +187,7 @@ impl App {
     /// Plugin fence `fence` draws light text now, or dark: its plugin's `pf.theme` follows.
     pub(super) fn plugin_ink_changed(&mut self, fence: FenceId, light_text: bool) {
         if self.light_runs(fence) {
-            let theme = if light_text { "dark" } else { "light" };
+            let theme = pecofence_core::plugins::theme(light_text);
             tracing::debug!(%fence, theme, "plugin told of its fence's text colour");
             self.light_send(host::Command::Event(fence, "theme", json!(theme)));
         }
@@ -497,12 +496,8 @@ impl App {
         };
         let readers: Vec<FenceId> = (self.light.running.keys())
             .filter(|f| {
-                api.manifest(**f).is_some_and(|m| {
-                    matches!(
-                        m.permissions.clipboard,
-                        Clipboard::Read | Clipboard::Readwrite
-                    )
-                })
+                api.manifest(**f)
+                    .is_some_and(|m| m.permissions.clipboard.reads())
             })
             .copied()
             .collect();
@@ -579,5 +574,4 @@ impl App {
     }
 }
 
-use pecofence_core::plugins::Clipboard;
 const WM_CLIPBOARDUPDATE: u32 = 0x031D;

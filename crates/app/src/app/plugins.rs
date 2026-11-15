@@ -48,6 +48,13 @@ pub(super) struct Installed {
     failed: Option<String>,
 }
 
+impl Installed {
+    /// Its main file is there and the index has not taken it down: a fence can run it.
+    pub(super) fn usable(&self) -> bool {
+        self.ready && self.disabled.is_none()
+    }
+}
+
 #[derive(Default)]
 pub(super) struct Plugins {
     root: PathBuf,
@@ -113,7 +120,7 @@ fn fetch_index(test: Option<String>) -> Result<(Index, Vec<u8>), String> {
         let got = super::updates::get_in_time(&url, "").and_then(|bytes| {
             let sig = super::updates::get_in_time(&format!("{url}.sig"), "");
             match sig {
-                Ok(sig) if list::index_signed(&bytes, &sig) => Ok(bytes),
+                Ok(sig) if list::signed_by(&list::INDEX_KEY, &bytes, &sig) => Ok(bytes),
                 Err(_) if test.is_some() => Ok(bytes),
                 Ok(_) => Err("the signature does not match".to_string()),
                 Err(e) => Err(format!("no signature: {e}")),
@@ -206,13 +213,8 @@ fn read_installed(root: &Path, id: &str) -> Option<Installed> {
     let vdir = dir.join(&version);
     let manifest = list::parse_manifest(&std::fs::read(vdir.join("plugin.json")).ok()?).ok();
     let manifest = manifest.filter(|m| m.id == id && m.version == version)?;
-    let main = if manifest.layer == "web" {
-        "index.html"
-    } else {
-        "main.js"
-    };
     Some(Installed {
-        ready: vdir.join(main).is_file(),
+        ready: vdir.join(manifest.main_file()).is_file(),
         dir: vdir,
         disabled: read_text(&dir.join("disabled.txt")),
         failed: read_text(&dir.join("failed.txt")),
@@ -298,17 +300,13 @@ impl Plugins {
 }
 
 impl App {
-    fn plugins_dir(&self) -> PathBuf {
-        self.plugins.root.clone()
-    }
-
-    pub(super) fn plugin_data_dir(&self, id: &str) -> PathBuf {
+    /// `plugins-data` beside the configuration: a folder per plugin id for its data.
+    pub(super) fn plugins_data(&self) -> PathBuf {
         let config = self.state.config_path_on_disk();
         config
             .parent()
             .unwrap_or(Path::new("."))
             .join("plugins-data")
-            .join(id)
     }
 
     /// The installed plugin `id` (the in-memory table; no file is read).
@@ -320,10 +318,9 @@ impl App {
     /// or the path itself.
     pub(super) fn script_file(&self, path: &str) -> PathBuf {
         match plugin_id(path) {
-            Some(id) => self.plugin(id).map_or_else(PathBuf::new, |p| {
-                let web = p.manifest.layer == "web";
-                p.dir.join(if web { "index.html" } else { "main.js" })
-            }),
+            Some(id) => self
+                .plugin(id)
+                .map_or_else(PathBuf::new, |p| p.dir.join(p.manifest.main_file())),
             None => PathBuf::from(path),
         }
     }
@@ -333,18 +330,13 @@ impl App {
         let spec = self.state.config.scripts.get(&fence)?;
         let id = plugin_id(&spec.path)?;
         let p = self.plugin(id).filter(|p| p.manifest.layer == "web")?;
-        (p.ready && p.disabled.is_none()).then(|| crate::web_plugin::Plugin {
+        p.usable().then(|| crate::web_plugin::Plugin {
             id: id.to_string(),
             dir: p.dir.clone(),
             network: p.manifest.permissions.network.clone(),
             background: p.manifest.permissions.background,
-            clipboard_read: p.manifest.permissions.clipboard >= list::Clipboard::Read,
+            clipboard_read: p.manifest.permissions.clipboard.reads(),
         })
-    }
-
-    /// The installed plugin's `plugin.json` (it stays while the plugin is taken down).
-    pub(super) fn plugin_manifest(&self, id: &str) -> Option<Manifest> {
-        self.plugin(id).map(|p| p.manifest.clone())
     }
 
     fn plugin_fences(&self, id: &str) -> Vec<FenceId> {
@@ -410,12 +402,8 @@ impl App {
         self.migrate_tools(true);
     }
 
-    /// 设置 › 小工具 was shown.
-    pub(super) fn plugins_page_shown(&mut self) {
-        self.fetch_plugins();
-    }
-
-    fn fetch_plugins(&mut self) {
+    /// Asks for the plugin index (also each time 设置 › 小工具 is shown).
+    pub(super) fn fetch_plugins(&mut self) {
         if self.plugins.status == Status::Loading {
             return;
         }
@@ -530,7 +518,7 @@ impl App {
         self.plugins.downloads += 1;
         let n = self.plugins.downloads;
         self.plugins.busy.insert(id.to_string(), n);
-        let temp = self.plugins_dir().join(format!(".new-{id}-{n}"));
+        let temp = self.plugins.root.join(format!(".new-{id}-{n}"));
         let test = test_url(self.instance.is_some());
         let id = id.to_string();
         tracing::info!(
@@ -553,7 +541,7 @@ impl App {
         by_user: bool,
         result: Result<String, (bool, String)>,
     ) {
-        let temp = self.plugins_dir().join(format!(".new-{id}-{n}"));
+        let temp = self.plugins.root.join(format!(".new-{id}-{n}"));
         if self.plugins.busy.get(id) != Some(&n) {
             tracing::info!(
                 id,
@@ -620,7 +608,7 @@ impl App {
         for fence in self.plugin_fences(id) {
             self.stop_script(fence);
         }
-        let dir = self.plugins_dir().join(id);
+        let dir = self.plugins.root.join(id);
         let to = dir.join(version);
         let _ = std::fs::remove_dir_all(&to);
         let swapped = std::fs::create_dir_all(&dir)
@@ -659,7 +647,7 @@ impl App {
         let Some((before, at)) = self.plugins.trial.remove(&id) else {
             return;
         };
-        let dir = self.plugins_dir().join(&id);
+        let dir = self.plugins.root.join(&id);
         let failed = self
             .plugin(&id)
             .map(|p| p.manifest.version.clone())
@@ -693,7 +681,7 @@ impl App {
         for fence in self.plugin_fences(id) {
             self.stop_script(fence);
         }
-        disable_files(&self.plugins_dir().join(id), why);
+        disable_files(&self.plugins.root.join(id), why);
         self.plugins.reload(id);
         for fence in self.plugin_fences(id) {
             self.push_tool_view(self.state.host_of(fence));
@@ -714,14 +702,17 @@ impl App {
             .settings
             .as_ref()
             .map(|h| window::window_rect(h.hwnd()));
-        let rect = self.place_new_tool(280.0, 240.0, x, y);
-        let (title, tool) = (
-            self.plugin_name(id),
-            super::tools::NewTool::Script(format!("plugin:{id}")),
-        );
-        let made = self.create_tool_fence(tool, Some(&title), Some(rect), x, y);
+        let made = self.plugin_fence_at(id, x, y);
         tracing::info!(id, made = made.is_some(), "plugins: fence added");
         self.tool_clear_of = None;
+    }
+
+    /// A fence of plugin `id` titled after it, placed near (`x`, `y`).
+    fn plugin_fence_at(&mut self, id: &str, x: i32, y: i32) -> Option<FenceId> {
+        let rect = self.place_new_tool(280.0, 240.0, x, y);
+        let title = self.plugin_name(id);
+        let tool = super::tools::NewTool::Script(format!("plugin:{id}"));
+        self.create_tool_fence(tool, Some(&title), Some(rect), x, y)
     }
 
     /// 升级为插件 (`migrate.rs`): installs plugins `ids` without a fence or a notice, from the
@@ -741,19 +732,12 @@ impl App {
     /// 新建便签 in the fence, desktop and tray menus (`notes`): a fence of plugin `id` near
     /// (`x`, `y`) when it is installed, else 设置 › 小工具 at its row, to install it there.
     pub(super) fn new_plugin_fence(&mut self, id: &str, x: i32, y: i32) {
-        let ready = self
-            .plugin(id)
-            .is_some_and(|p| p.ready && p.disabled.is_none());
+        let ready = self.plugin(id).is_some_and(Installed::usable);
         tracing::info!(id, ready, "plugins: new fence from a menu");
         if !ready {
             return self.show_plugin(id, None);
         }
-        let rect = self.place_new_tool(280.0, 240.0, x, y);
-        let (title, tool) = (
-            self.plugin_name(id),
-            super::tools::NewTool::Script(format!("plugin:{id}")),
-        );
-        self.create_tool_fence(tool, Some(&title), Some(rect), x, y);
+        self.plugin_fence_at(id, x, y);
     }
 
     fn uninstall_plugin(&mut self, id: &str) {
@@ -777,7 +761,7 @@ impl App {
             self.delete_fence(fence);
         }
         crate::web_plugin::delete_profile(id);
-        for dir in [self.plugins_dir().join(id), self.plugin_data_dir(id)] {
+        for dir in [self.plugins.root.join(id), self.plugins_data().join(id)] {
             if let Err(e) = remove_dir(&dir) {
                 tracing::warn!(id, dir = %dir.display(), error = %e, "plugins: folder not removed");
             }

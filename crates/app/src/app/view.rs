@@ -28,7 +28,7 @@ impl App {
         let plugin = self.state.config.scripts.get(&fence);
         let data = plugin
             .and_then(|s| super::plugins::plugin_id(&s.path))
-            .map(|id| self.plugin_data_dir(id));
+            .map(|id| self.plugins_data().join(id));
         let file =
             |name: Option<String>| Some(data.as_ref()?.join(name?).to_string_lossy().into_owned());
         let note = view

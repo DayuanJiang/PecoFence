@@ -31,16 +31,6 @@ pub const OTHER_SIZE: u64 = 1024 * 1024;
 pub const MAX_FILES: usize = 100;
 pub const MAX_TOTAL: u64 = 5 * 1024 * 1024;
 
-/// The files a plugin of `layer` cannot do without: a light plugin runs `main.js`, a web
-/// plugin shows `index.html` (its `main.js` is optional).
-pub fn needed_files(layer: &str) -> [&'static str; 3] {
-    let main = if layer == "web" {
-        "index.html"
-    } else {
-        "main.js"
-    };
-    ["plugin.json", main, "README.md"]
-}
 /// The newest plugin interface this PecoFence knows (`api` in plugin.json).
 pub const API: u32 = 1;
 /// The most bytes `index.json` may have.
@@ -56,6 +46,17 @@ pub enum Clipboard {
     Write,
     Read,
     Readwrite,
+}
+
+impl Clipboard {
+    /// `read` or `readwrite`: the plugin gets what is copied.
+    pub fn reads(self) -> bool {
+        matches!(self, Self::Read | Self::Readwrite)
+    }
+    /// `write` or `readwrite`: the plugin may put things on the clipboard.
+    pub fn writes(self) -> bool {
+        matches!(self, Self::Write | Self::Readwrite)
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -107,6 +108,18 @@ fn first_api() -> u32 {
 
 fn light() -> String {
     "light".into()
+}
+
+impl Manifest {
+    /// The file the plugin starts from: a light plugin runs `main.js`, a web plugin shows
+    /// `index.html` (its `main.js` is optional).
+    pub fn main_file(&self) -> &'static str {
+        if self.layer == "web" {
+            "index.html"
+        } else {
+            "main.js"
+        }
+    }
 }
 
 /// One setting of a plugin fence (插件设置): `switch`, `text`, `number` or `choice`.
@@ -236,18 +249,25 @@ fn valid_program(p: &str) -> bool {
     exe && (name || path)
 }
 
-/// A file's name inside the plugin folder: parts joined by `/`, each of letters, digits, `.`,
-/// `_` and `-`, at most 64, not starting with a dot. So no `..`, no leading `/`, no backslash
-/// and no drive letter.
+/// `pf.theme` of a fence: `dark` where it draws light text (a dark background), else `light`.
+pub fn theme(light_text: bool) -> &'static str {
+    if light_text { "dark" } else { "light" }
+}
+
+/// A plain name: letters, digits, `.`, `_` and `-`, at most 64, not starting with a dot. The
+/// names `pf.data` keeps files under and pictures of the data folder are such names.
+pub fn valid_plain_name(name: &str) -> bool {
+    (1..=64).contains(&name.len())
+        && !name.starts_with('.')
+        && name
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
+}
+
+/// A file's name inside the plugin folder: plain names ([`valid_plain_name`]) joined by `/`. So
+/// no `..`, no leading `/`, no backslash and no drive letter.
 pub fn valid_file_name(name: &str) -> bool {
-    name.len() <= 200
-        && name.split('/').all(|part| {
-            (1..=64).contains(&part.len())
-                && !part.starts_with('.')
-                && part
-                    .bytes()
-                    .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
-        })
+    name.len() <= 200 && name.split('/').all(valid_plain_name)
 }
 
 /// The checks every manifest passes, in `plugin.json` and in the index. An `api` newer than
@@ -332,7 +352,7 @@ pub fn check_entry(e: &Entry) -> Result<(), String> {
     if e.files.len() > MAX_FILES || total > MAX_TOTAL {
         return Err(format!("{id}: too many files or bytes"));
     }
-    if let Some(missing) = needed_files(&e.manifest.layer)
+    if let Some(missing) = ["plugin.json", e.manifest.main_file(), "README.md"]
         .iter()
         .find(|n| !e.files.iter().any(|f| f.name == **n))
     {
@@ -396,11 +416,6 @@ pub fn signed_by(key: &[u8; 32], index: &[u8], sig: &[u8]) -> bool {
     };
     let sig = ed25519_dalek::Signature::from_bytes(&bytes);
     key.verify_strict(index, &sig).is_ok()
-}
-
-/// [`signed_by`] with the plugin repository's key.
-pub fn index_signed(index: &[u8], sig: &[u8]) -> bool {
-    signed_by(&INDEX_KEY, index, sig)
 }
 
 /// Reads an installed or downloaded `plugin.json`.
@@ -708,7 +723,7 @@ mod tests {
         assert!(!signed_by(&key, data, &sig.as_bytes()[..126]));
         assert!(!signed_by(&key, data, b""));
         // The repository's key did not sign it.
-        assert!(!index_signed(data, sig.as_bytes()));
+        assert!(!signed_by(&INDEX_KEY, data, sig.as_bytes()));
     }
 
     #[test]

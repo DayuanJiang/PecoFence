@@ -4,7 +4,7 @@
 //! a time, so that every host a request reaches is checked and seen.
 
 use pecofence_core::FenceId;
-use pecofence_core::plugins::{Clipboard, Permissions};
+use pecofence_core::plugins::{Permissions, valid_plain_name};
 use serde_json::{Value, json};
 
 /// The most bytes an answer to `pf.http` may have.
@@ -46,16 +46,6 @@ pub enum Note {
     },
 }
 
-/// A name `pf.data` keeps a file under: letters, digits, `.`, `_` and `-`, at most 64, not
-/// starting with a dot.
-pub fn valid_data_name(name: &str) -> bool {
-    (1..=64).contains(&name.len())
-        && !name.starts_with('.')
-        && name
-            .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
-}
-
 /// Why the manifest `p` does not allow call `name` with `args`, if it does not (the text names
 /// what is missing).
 pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
@@ -70,9 +60,8 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
         host.as_deref().is_some_and(listed)
     };
     let shown = host.clone().unwrap_or_else(|| "this address".into());
-    let reads = matches!(p.clipboard, Clipboard::Read | Clipboard::Readwrite);
-    let writes = matches!(p.clipboard, Clipboard::Write | Clipboard::Readwrite);
-    let named = |i: usize| args.get(i).is_none_or(Value::is_null) || valid_data_name(arg(i));
+    let (reads, writes) = (p.clipboard.reads(), p.clipboard.writes());
+    let named = |i: usize| args.get(i).is_none_or(Value::is_null) || valid_plain_name(arg(i));
     let (ok, need) = match name {
         "http.get" | "http.post" => (
             arg(0).starts_with("https://") && host_in(&[&p.network]),
@@ -88,11 +77,11 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
             (writes, "permissions.clipboard write".into())
         }
         "clipboard.setImage" => (
-            writes && valid_data_name(arg(0)),
+            writes && valid_plain_name(arg(0)),
             "clipboard write and a data name".into(),
         ),
         "data.read" | "data.write" | "data.remove" => (
-            valid_data_name(arg(0)),
+            valid_plain_name(arg(0)),
             "a name of letters, digits, . _ - (at most 64, no dot first)".into(),
         ),
         "run" => {
@@ -217,6 +206,7 @@ pub fn perform(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pecofence_core::plugins::Clipboard;
     use std::sync::Mutex;
 
     /// Answers requests from `answers` (by address) and remembers each call.
