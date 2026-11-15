@@ -224,6 +224,7 @@ impl App {
                 let data = args.get(0).cloned().unwrap_or_default();
                 tracing::debug!(plugin, %fence, "web plugin: the page posts to its main.js");
                 self.plugin_event(fence, "message", data);
+                web.reply(&id, Ok(serde_json::Value::Null));
             }
             "navigate" => {
                 let uri = crate::web_plugin::short(args[0].as_str().unwrap_or(""));

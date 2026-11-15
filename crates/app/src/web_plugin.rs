@@ -725,14 +725,17 @@ fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
     waiting.delete(m.id);
     if ("error" in m) w[1](new Error(m.error)); else w[0](m.result);
   }});
+  // A message over 1 MB is refused here: PecoFence drops it unanswered (as JSON in UTF-8, as it
+  // measures).
   const call = (name, args) => new Promise((ok, fail) => {{
-    const id = ++n;
+    const id = ++n, m = {{ id, call: name, args }};
+    if (new TextEncoder().encode(JSON.stringify(m)).length > {max}) throw new RangeError(`pf.${{name}}: a message to PecoFence is at most 1 MB`);
     waiting.set(id, [ok, fail]);
-    wv.postMessage({{ id, call: name, args }});
+    wv.postMessage(m);
   }});
   const pf = {{
     on(name, fn) {{ (handlers[name] = handlers[name] || []).push(fn); }},
-    post(data) {{ wv.postMessage({{ call: "post", args: [data === undefined ? null : data] }}); }},
+    post: data => call("post", [data === undefined ? null : data]),
   }};
   for (const name of "{calls}".split(" ")) {{
     const [a, b] = name.split("."), f = (...args) => call(name, args);
@@ -751,6 +754,7 @@ fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
   }});
 }})();"#,
         calls = CALLS,
+        max = pecofence_plugin_host::MAX_POST,
     )
 }
 
