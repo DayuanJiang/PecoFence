@@ -852,16 +852,23 @@ impl App {
         self.plugin_fence_at(id, x, y);
     }
 
-    fn uninstall_plugin(&mut self, id: &str) {
+    /// How many fences of plugin `id` hold a note with text (its uninstall names them).
+    fn plugin_notes(&self, id: &str) -> usize {
+        let fences = self.plugin_fences(id);
+        let notes = self.state.config.notes.iter();
+        notes
+            .filter(|(f, text)| fences.contains(f) && !text.trim().is_empty())
+            .count()
+    }
+
+    /// Uninstalls plugin `id`; `confirmed`: the page's dialog asked already, else a box asks.
+    fn uninstall_plugin(&mut self, id: &str, confirmed: bool) {
         let owner = self
             .settings
             .as_ref()
             .map_or(self.control.hwnd(), |h| h.hwnd());
         let fences = self.plugin_fences(id);
-        let notes = self.state.config.notes.iter();
-        let notes = notes
-            .filter(|(f, text)| fences.contains(f) && !text.trim().is_empty())
-            .count();
+        let notes = self.plugin_notes(id);
         let text = if notes > 0 {
             i18n::format(
                 "卸载“{0}”？它的栅栏和它保存的数据都会删掉，包括 {1} 个便签里的文字。",
@@ -873,8 +880,14 @@ impl App {
                 &[self.plugin_name(id)],
             )
         };
-        tracing::info!(id, fences = fences.len(), notes, "plugins: uninstall asked");
-        if !window::confirm(owner, &text, i18n::text("卸载")) {
+        tracing::info!(
+            id,
+            fences = fences.len(),
+            notes,
+            confirmed,
+            "plugins: uninstall asked"
+        );
+        if !confirmed && !window::confirm(owner, &text, i18n::text("卸载")) {
             return;
         }
         let cancelled = self.plugins.busy.remove(id);
@@ -1029,7 +1042,7 @@ impl App {
                 }
             }
             ("pluginAdd", Some(id)) if self.plugin(id).is_some() => self.add_plugin_fence(id),
-            ("pluginUninstall", Some(id)) => self.uninstall_plugin(id),
+            ("pluginUninstall", Some(id)) => self.uninstall_plugin(id, v["confirmed"] == true),
             ("pluginSetting", _) => self.set_plugin_setting(v),
             ("pluginPage", Some(id)) => {
                 if let Some(index) = &self.plugins.index {
@@ -1101,6 +1114,7 @@ impl App {
                     "folders": p.folders, "notify": p.notify,
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),
                     "state": state, "reason": reason, "page": index.is_some(),
+                    "notes": mine.map(|_| self.plugin_notes(id)),
                     "settings": settings, "fences": fences, "shown": list::shown_key(m),
                 }))
             })

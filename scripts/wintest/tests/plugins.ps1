@@ -85,13 +85,16 @@ function BoxText($dlg) {
   [L]::EnumChildWindows($dlg, { param($h, $l) if ([L]::Cls($h) -eq 'Static') { $t.Add([L]::Text($h)) }; $true }, [IntPtr]::Zero) | Out-Null
   return (($t | Where-Object { $_ }) -join ' ')
 }
-# Opens the details of plugin row `name` (when closed) and clicks its 卸载; the question box.
+# Opens the details of plugin row `name` (when closed) and clicks its 卸载; the question the
+# page's dialog asks ('' when it did not open). UninstallYes answers it.
 function UninstallVia($name, $id) {
   Js "(() => { const r = [...document.querySelectorAll('#pluginList .pl-row')].find(r => r.textContent.startsWith('$name')); if (r.getAttribute('aria-expanded') !== 'true') r.click(); return true; })()" | Out-Null
   Start-Sleep -Milliseconds 600
   Js "[...document.querySelectorAll('#pluginList .pl-detail[data-plugin=$id] button')].find(b => b.textContent === 'Uninstall').click()" | Out-Null
-  return (WaitWin '#32770' 5)
+  Start-Sleep -Milliseconds 400
+  return [string](Js "document.getElementById('plBack').hidden ? '' : document.getElementById('plBy').textContent")
 }
+function UninstallYes() { Js "document.getElementById('plOk').click()" | Out-Null; Start-Sleep -Seconds 2 }
 
 Case 'setup'
 CloseWindows
@@ -328,10 +331,9 @@ $editor = WaitWin 'PecoFence.NoteEdit' 5
 Start-Sleep -Milliseconds 500; [G]::Type('Buy milk'); Start-Sleep -Milliseconds 500
 $ok = ToolsPage; Start-Sleep -Seconds 1
 Check 'its menu has Edit note and Add to-do beside the plugin entries; Edit note opens the editor, which keeps what is typed' ($texts -match 'Edit note' -and $texts -match 'Add to-do' -and $texts -match 'Plugin settings' -and $editor -ne [IntPtr]::Zero -and (FenceGet $f.id).noteText -match 'Buy milk') "menu=$texts note=$((FenceGet $f.id).noteText)"
-$dlg = UninstallVia 'PF Note' 'pf-note'
-$q = BoxText $dlg
-Check 'the question says the text of 1 note goes too' ($dlg -ne [IntPtr]::Zero -and $q -match 'including the text of 1 note') $q
-[L]::PostMessageW($dlg, 0x111, [IntPtr]6, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 2
+$q = UninstallVia 'PF Note' 'pf-note'
+Check 'the question says the text of 1 note goes too' ($q -match 'including the text of 1 note') $q
+UninstallYes
 Check 'after Yes: no fence, no plugin folder' (@(PluginFences 'pf-note').Count -eq 0 -and -not (Test-Path "$script:Config\plugins\pf-note")) ''
 $script:Offer.Remove('pf-note')
 
@@ -358,8 +360,8 @@ $line = PfWaitLog 'plugins: installed, its fences start again.*pf-tick' 15; Star
 $t1 = Get-Content $tick -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; $t2 = Get-Content $tick -ErrorAction SilentlyContinue
 $g = @(PluginFences 'pf-tick')
 Check 'disabled.txt gone, main.js back; the same fence runs it again and keeps its note' ($line -and -not (Test-Path "$script:Config\plugins\pf-tick\disabled.txt") -and (Test-Path "$script:Config\plugins\pf-tick\1.0.0\main.js") -and $g.Count -eq 1 -and $g[0].id -eq $tf.id -and [int]$t2 -gt [int]$t1 -and (FenceGet $tf.id).noteText -match 'Keep me') "tick $t1 then $t2 fences=$($g.Count) $line"
-$dlg = UninstallVia 'PF Tick' 'pf-tick'
-[L]::PostMessageW($dlg, 0x111, [IntPtr]6, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 2
+UninstallVia 'PF Tick' 'pf-tick' | Out-Null
+UninstallYes
 $script:Offer.Remove('pf-tick')
 
 Case 'an older index served again counts as none'
@@ -385,9 +387,10 @@ $started = PfWaitLog 'plugins: download.*2\.1\.0' 5
 Js "(() => { const r = [...document.querySelectorAll('#pluginList .pl-row')].find(r => r.textContent.startsWith('PF Test')); if (r.getAttribute('aria-expanded') !== 'true') r.click(); return true; })()" | Out-Null
 Start-Sleep -Milliseconds 600
 Js "[...document.querySelectorAll('#pluginList .pl-detail[data-plugin=pf-test] button')].find(b => b.textContent === 'Uninstall').click()" | Out-Null
-$dlg = WaitWin '#32770' 5
-Check 'a Yes / No question comes first' ($dlg -ne [IntPtr]::Zero -and $started) "started=$started"
-[L]::PostMessageW($dlg, 0x111, [IntPtr]6, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 2
+Start-Sleep -Milliseconds 400
+$q = [string](Js "document.getElementById('plBack').hidden ? '' : document.getElementById('plBy').textContent")
+Check 'a question comes first' ($q -match 'Uninstall' -and $started) "started=$started q=$q"
+UninstallYes
 Check 'no plugin fence, no plugin folder, no data folder' (@(PluginFences pf-test).Count -eq 0 -and -not (Test-Path "$script:Config\plugins\pf-test") -and -not (Test-Path "$script:Config\plugins-data\pf-test")) ''
 $late = PfWaitLog 'plugins: a cancelled download ended.*pf-test' 15; Start-Sleep -Seconds 1
 Check 'the late download is dropped: nothing installed, no download folder left' ($late -and -not (Test-Path "$script:Config\plugins\pf-test") -and (Temps) -eq 0) "$late"

@@ -496,6 +496,23 @@
   .pl-form.pl-flash { background: var(--chosen); }
   .pl-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; }
   .pl-dialog .btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  /* The warning fades in as the smart fence editor does. */
+  .pl-back:not([hidden]) { animation: se-in var(--fast) var(--decelerate); }
+  /* A plugin row opens and closes as a card with a chevron does (333 ms open, 167 ms close). */
+  .pl-row .chev { font-size: 12px; color: var(--text2); }
+  .pl-row[aria-expanded=true] .chev { transform: rotate(180deg); }
+  .pl-row.pl-opening .chev { animation: pl-chev var(--slow) var(--decelerate); }
+  .pl-row.pl-closing .chev { transform: none; transition: transform var(--fast) var(--collapse); }
+  @keyframes pl-chev { from { transform: none; } }
+  .pl-detail { interpolate-size: allow-keywords; overflow-y: clip; }
+  .pl-detail.pl-opening { animation: pl-open var(--slow) var(--decelerate); }
+  .pl-detail.pl-closing { animation: pl-open var(--fast) var(--collapse) reverse forwards; }
+  @keyframes pl-open { from { block-size: 0; padding-block: 0; } }
+  /* A text setting's box on its own line under its name, as wide as the card. */
+  .pl-field:has(> input[type=text]) { flex-wrap: wrap; }
+  .pl-field > input[type=text] { width: 100%; }
+  /* A host name or a program's path stays whole: it goes to the next line as one. */
+  .pl-name { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
   .fb-note[hidden], .fb-preview-box[hidden], .card[hidden] { display: none; }
   .fb-form { gap: 12px; }
   .fb-kinds { display: flex; flex-wrap: wrap; gap: 8px 24px; padding-left: 40px; }
@@ -941,7 +958,7 @@
       <div class="pl-back" id="plBack" hidden><div class="pl-dialog" role="dialog" aria-modal="true" aria-labelledby="plTitle">
         <h4 id="plTitle"></h4><p id="plBy"></p>
         <p class="caution" id="plChanged" hidden>插件目录刚刚更新了这个插件，请再看一遍它会做的事。</p>
-        <div class="pl-warn"><p>它会做：</p><ul id="plDoes"></ul><p>插件只能做这里列出的事，每个版本都经过自动检查和审查。</p></div>
+        <div class="pl-warn" id="plDoesBox"><p>它会做：</p><ul id="plDoes"></ul><p>插件只能做这里列出的事，每个版本都经过自动检查和审查。</p></div>
         <div class="pl-warn strict" id="plSystem" hidden><p id="plSystemText"></p><p id="plSystemOff">打开“允许插件使用 Windows 底层功能”后才能用这些功能。</p></div>
         <p id="plToolsOn" hidden>安装后会打开“小工具”开关。</p>
         <div class="btns"><button id="plCancel">取消</button><button class="accent" id="plOk"></button></div>
@@ -1803,7 +1820,7 @@
   }
   // 插件: the host sends the list. Text the authors wrote goes in through textContent only.
   const plOpen = new Set();
-  let plOpenSeq = 0, plAsk = null, plPending = false, plFocus = null;
+  let plOpenSeq = 0, plAsk = null, plPending = false, plFocus = null, plOpening = null, plDrop = null;
   function plEl(tag, cls, text) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -1813,20 +1830,30 @@
   // The tags in a plugin's row.
   const plTags = (p) => [p.network.length && t("联网"), p.clipboard !== 'none' && t("剪贴板"), p.background && t("后台运行"),
     p.system.length && t("启动程序"), p.layer === 'web' && t("占用内存较多")].filter(Boolean);
-  // What it does, in its details and its install warning.
+  // What it does, in its details and its install warning: a text, or a text whose \u0001 stands
+  // for the names (hosts, programs).
   function plLines(p) {
     const clip = { write: t("写入剪贴板"), read: t("读取剪贴板"), readwrite: t("读取和写入剪贴板") }[p.clipboard];
-    const d = [p.network.length && tf("联网：{0}", p.network.join(', ')), p.links.length && tf("在浏览器里打开这些网站：{0}", p.links.join(', ')),
+    const d = [p.network.length && [tf("联网：{0}", '\u0001'), p.network], p.links.length && [tf("在浏览器里打开这些网站：{0}", '\u0001'), p.links],
       clip, p.background && t("栅栏隐藏时继续运行"), p.folders && t("读取你选的文件夹，只读不写"), p.notify && t("显示提示，发出提示音"),
-      p.system.length && tf("启动这些程序：{0}", p.system.join(', ')), p.layer === 'web' && t("用网页显示内容，占用内存较多")].filter(Boolean);
+      p.system.length && [tf("启动这些程序：{0}", '\u0001'), p.system], p.layer === 'web' && t("用网页显示内容，占用内存较多")].filter(Boolean);
     return d.length ? d : [t("只显示内容，不联网，也不读剪贴板")];
   }
+  // `el` with `text`, its \u0001 replaced by the names, each kept whole.
+  function plFill(el, text, names) {
+    const [head, tail = ''] = text.split('\u0001');
+    el.replaceChildren(head);
+    names.forEach((n, i) => el.append(...(i ? [', '] : []), plEl('span', 'pl-name', n)));
+    el.append(tail);
+    return el;
+  }
+  const plLi = (x) => typeof x === 'string' ? plEl('li', '', x) : plFill(plEl('li'), ...x);
   function plButton(p) {
     const asks = p.state === 'install' || p.state === 'confirm', b = plEl('button', asks && !state.plugins.held ? 'accent' : '');
     const [text, act] = {
       install: [t("安装"), () => plConfirm(p)], confirm: [t("更新插件"), () => plConfirm(p)],
       add: [t("添加到桌面"), () => send({ type: 'action', name: 'pluginAdd', id: p.id })],
-      disabled: [t("卸载"), () => send({ type: 'action', name: 'pluginUninstall', id: p.id })],
+      disabled: [t("卸载"), () => plAskUninstall(p)],
       busy: [t("正在下载…"), null], newer: [t("需要更新 PecoFence"), null], installed: [t("已在桌面上"), null],
     }[p.state] || [];
     if (!text) return '';
@@ -1880,7 +1907,9 @@
     // Shown once: a later redraw of the list (a row opened) does not bring it back after 取消.
     if (again) { plConfirm(again, true); pl.ask = null; }
     list.replaceChildren();
-    for (const p of pl.list) {
+    // By the shown name, so a row stays where it is when it is installed.
+    const lang = document.documentElement.lang || undefined;
+    for (const p of [...pl.list].sort((a, b) => a.name.localeCompare(b.name, lang))) {
       const row = plEl('div', 'card child pl-row'), l = plEl('div', 'l'), box = plEl('div');
       row.setAttribute('aria-expanded', plOpen.has(p.id));
       const title = plEl('div', 't', p.name);
@@ -1891,23 +1920,25 @@
       if (tags.childElementCount) box.append(tags);
       if (p.state === 'confirm') box.append(plEl('div', 's caution', t("有更新，需要你确认")));
       if (p.state === 'disabled') box.append(plEl('div', 's caution', tf("已下架：{0}", p.reason || '')));
-      l.append(box); row.append(l, plButton(p));
-      row.onclick = () => { plOpen.has(p.id) ? plOpen.delete(p.id) : plOpen.add(p.id); renderPlugins(); };
+      l.append(box); row.append(l, plButton(p), plEl('span', 'ic chev', '\uE70D'));
+      row.onclick = () => plToggle(p.id, row);
       list.append(row);
       if (!plOpen.has(p.id)) continue;
       const d = plEl('div', 'card child pl-detail');
+      if (plOpening === p.id) { row.classList.add('pl-opening'); d.classList.add('pl-opening'); }
       d.dataset.plugin = p.id;
       d.append(plEl('div', 't', t("它会做的事")));
       const ul = plEl('ul', 's');
-      for (const x of plLines(p)) ul.append(plEl('li', '', x));
+      for (const x of plLines(p)) ul.append(plLi(x));
       d.append(ul);
       if (p.settings.length) for (const f of p.fences) d.append(plForm(p, f));
       if (p.settings.length && !p.fences.length) d.append(plEl('div', 's', t("添加到桌面后，可以在这里改每个栅栏的设置。")));
       const acts = plEl('div', 'actions');
       if (p.page) { const g = plEl('button', '', t("在 GitHub 上看介绍")); g.onclick = () => send({ type: 'action', name: 'pluginPage', id: p.id }); acts.append(g); }
-      if (p.installed && p.state !== 'disabled') { const u = plEl('button', '', t("卸载")); u.onclick = () => send({ type: 'action', name: 'pluginUninstall', id: p.id }); acts.append(u); }
+      if (p.installed && p.state !== 'disabled') { const u = plEl('button', '', t("卸载")); u.onclick = () => plAskUninstall(p); acts.append(u); }
       d.append(acts); list.append(d);
     }
+    plOpening = null;
     // An empty list says why: the index is still on its way, or it lists no plugin.
     if (!pl.list.length && pl.status !== 'offline') {
       const c = plEl('div', 'card child'), l = plEl('div', 'l');
@@ -1931,17 +1962,42 @@
     }
   }
   document.getElementById('pluginList').addEventListener('focusout', () => setTimeout(() => { if (plPending) renderPlugins(); }));
+  // A row opens with the cards' motion; it closes once its closing motion has ended.
+  function plToggle(id, row) {
+    if (!plOpen.has(id)) { plOpen.add(id); plOpening = id; return renderPlugins(); }
+    const d = document.querySelector(`#pluginList .pl-detail[data-plugin="${CSS.escape(id)}"]`);
+    let closed = false;
+    const done = () => { if (!closed) { closed = true; plOpen.delete(id); renderPlugins(); } };
+    if (!d) return done();
+    row.classList.add('pl-closing'); d.classList.add('pl-closing');
+    if (!d.getAnimations().length) return done();
+    d.addEventListener('animationend', done, { once: true });
+    setTimeout(done, 400);
+  }
+  // 卸载 asks in the same dialog as 安装.
+  function plAskUninstall(p) {
+    plAsk = null; plDrop = p;
+    document.getElementById('plTitle').textContent = t("卸载");
+    document.getElementById('plBy').textContent = p.notes
+      ? tf("卸载“{0}”？它的栅栏和它保存的数据都会删掉，包括 {1} 个便签里的文字。", p.name, p.notes)
+      : tf("卸载“{0}”？它的栅栏和它保存的数据都会删掉。", p.name);
+    for (const id of ['plChanged', 'plDoesBox', 'plSystem', 'plToolsOn']) document.getElementById(id).hidden = true;
+    document.getElementById('plOk').textContent = t("卸载");
+    document.getElementById('plBack').hidden = false;
+    document.getElementById('plCancel').focus();
+  }
   // 安装 and a 更新 that asks for more: the warning first.
   function plConfirm(p, changed) {
-    plAsk = p;
+    plAsk = p; plDrop = null;
+    document.getElementById('plDoesBox').hidden = false;
     document.getElementById('plChanged').hidden = !changed;
     document.getElementById('plTitle').textContent = p.state === 'confirm' ? tf("更新“{0}”？", p.name) : tf("安装“{0}”？", p.name);
     document.getElementById('plBy').textContent = p.authorBefore
       ? tf("作者换了，原来是 {0}，现在是 {1}。审查过的版本是 {2}。", p.authorBefore, p.author, p.version)
       : tf("作者 {0}，审查过的版本是 {1}。", p.author, p.version);
-    document.getElementById('plDoes').replaceChildren(...plLines(p).map(x => plEl('li', '', x)));
+    document.getElementById('plDoes').replaceChildren(...plLines(p).map(plLi));
     document.getElementById('plSystem').hidden = !p.system.length;
-    document.getElementById('plSystemText').textContent = tf("请特别注意它要启动的程序：{0}。这些程序能做你的账号能做的任何事，只在你信任它的作者时安装。", p.system.join(', '));
+    plFill(document.getElementById('plSystemText'), tf("请特别注意它要启动的程序：{0}。这些程序能做你的账号能做的任何事，只在你信任它的作者时安装。", '\u0001'), p.system);
     document.getElementById('plSystemOff').hidden = !!(state.settings && state.settings.tools && state.settings.tools.allowSystem);
     document.getElementById('plToolsOn').hidden = !!(state.settings && state.settings.tools && state.settings.tools.enabled);
     document.getElementById('plOk').textContent = p.state === 'confirm' ? t("更新插件") : t("安装并添加");
@@ -1951,7 +2007,8 @@
   function plClose(install) {
     document.getElementById('plBack').hidden = true;
     if (install && plAsk) send({ type: 'action', name: 'pluginInstall', id: plAsk.id, shown: plAsk.shown });
-    plAsk = null;
+    if (install && plDrop) send({ type: 'action', name: 'pluginUninstall', id: plDrop.id, confirmed: true });
+    plAsk = null; plDrop = null;
   }
   document.getElementById('plCancel').onclick = () => plClose(false);
   document.getElementById('plOk').onclick = () => plClose(true);
