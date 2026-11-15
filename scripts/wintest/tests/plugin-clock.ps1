@@ -13,15 +13,19 @@ if ($Part -match '^M([abc])$') {
   return
 }
 $Feed = 'C:\pf\run\pfeed'
-function ClockFence() { return @(@((PfJson fence list)) | Where-Object { $_ -and $_.script -and $_.script.path -eq 'plugin:clock' })[0] }
+# The sample is published as clock-sample: the upgrade to plugins moves a native clock to the
+# plugin `clock` once that is installed, and the native clock beside it must stay native.
+$SampleId = 'clock-sample'
+function ClockFence() { return @(@((PfJson fence list)) | Where-Object { $_ -and $_.script -and $_.script.path -eq "plugin:$SampleId" })[0] }
 function Shows() { return (ClockFence).script.output }
 function Rows() { return (Js "[...document.querySelectorAll('#pluginList .pl-row')].map(r => r.textContent).join(' / ')") }
 
 Case 'setup: a test index with the clock plugin'
 CloseWindows
 $commit = 'c10c'.PadLeft(40, 'a')
-$dir = "$Feed\$commit\plugins\clock"; New-Item -ItemType Directory -Force $dir | Out-Null
+$dir = "$Feed\$commit\plugins\$SampleId"; New-Item -ItemType Directory -Force $dir | Out-Null
 Copy-Item "$PfExtra\clock\*" $dir
+[IO.File]::WriteAllText("$dir\plugin.json", ((Get-Content "$dir\plugin.json" -Raw -Encoding UTF8) -replace '"id":\s*"clock"', "`"id`": `"$SampleId`""))
 $m = Get-Content "$dir\plugin.json" -Raw -Encoding UTF8 | ConvertFrom-Json
 $m | Add-Member files @(foreach ($f in Get-ChildItem $dir -File) { [ordered]@{ name = $f.Name; size = $f.Length; sha256 = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower() } })
 [IO.File]::WriteAllText("$Feed\index.json", ([ordered]@{ format = 1; commit = $commit; plugins = @($m) } | ConvertTo-Json -Depth 8))
@@ -47,7 +51,7 @@ PageClick '#pluginList .pl-row button' ([int](Js "[...document.querySelectorAll(
 Start-Sleep -Milliseconds 600; PageClick '#plOk'
 $line = PfWaitLog 'plugin fence starts its main.js' 20
 Start-Sleep -Seconds 2
-Check 'installed in plugins\clock\1.0.0, current.txt names it' ((Test-Path "$script:Config\plugins\clock\1.0.0\main.js") -and (Get-Content "$script:Config\plugins\clock\current.txt") -eq '1.0.0') $line
+Check 'installed in plugins\<id>\1.0.0, current.txt names it' ((Test-Path "$script:Config\plugins\$SampleId\1.0.0\main.js") -and (Get-Content "$script:Config\plugins\$SampleId\current.txt") -eq '1.0.0') $line
 Check 'the fence shows the time without seconds and the date' ((Shows) -match '^\d{1,2}:\d{2}( [AP]M)?\n.*\d') (Shows)
 [L]::PostMessageW((WaitWin 'PecoFence.Settings' 2), 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
 Pf settings set tools.clockSeconds true | Out-Null
