@@ -2,9 +2,9 @@
 # running plugin fence beside the native clock: the install into plugins\clock\<version>, the
 # time it shows, its seconds on the second, its 显示秒 setting, no ticks while it is hidden, the
 # short form in a narrow fence, and quit ending the plugin thread. Debug build (CDP on the page);
-# --extra a folder with clock\plugin.json, main.js, README.md. `--var Part=Ma|Mb|Mc` runs
-# measure.ps1 of that folder instead (memory and CPU of one native clock, one plugin clock or six
-# plugin clocks, release build).
+# the sample is the kit's assets\clock-sample. `--var Part=Ma|Mb|Mc` runs measure.ps1 of an
+# --extra folder instead (memory and CPU of one native clock, one plugin clock or six plugin
+# clocks, release build).
 if ($Part -match '^M([abc])$') {
   Case "memory and CPU, scenario $($Matches[1])"
   & powershell -NoProfile -ExecutionPolicy Bypass -File "$PfExtra\measure.ps1" -Scenario $Matches[1] -Minutes $(if ($Minutes) { $Minutes } else { 5 }) -Root "$PfRun\m" -Out "$PfShots\measure"
@@ -23,7 +23,7 @@ Case 'setup: a test index with the clock plugin'
 CloseWindows
 $commit = 'c10c'.PadLeft(40, 'a')
 $dir = "$Feed\$commit\plugins\$SampleId"; New-Item -ItemType Directory -Force $dir | Out-Null
-Copy-Item "$PfExtra\clock\*" $dir
+Copy-Item 'C:\pf\kit\assets\clock-sample\*' $dir
 [IO.File]::WriteAllText("$dir\plugin.json", ((Get-Content "$dir\plugin.json" -Raw -Encoding UTF8) -replace '"id":\s*"clock"', "`"id`": `"$SampleId`""))
 $m = Get-Content "$dir\plugin.json" -Raw -Encoding UTF8 | ConvertFrom-Json
 $m | Add-Member files @(foreach ($f in Get-ChildItem $dir -File) { [ordered]@{ name = $f.Name; size = $f.Length; sha256 = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower() } })
@@ -122,10 +122,26 @@ Case 'a fence too narrow for the seconds shows the short form'
 Log "resize: $(Pf fence resize (ClockFence).id --w 70) $(Pf fence resize Native --w 70)"
 Start-Sleep -Seconds 2
 $nat = (PfFence 'Native').windowRect; $plg = (ClockFence).windowRect
-$tn = OcrText $nat.x ($nat.y + 30) $nat.w 70 'narrow-native'; $tp = OcrText $plg.x ($plg.y + 30) $plg.w 70 'narrow-plugin'
+# OCR misses a digit or reads the colon as another sign now and then: read again on a miss, and
+# let the digits count. It also misses half a letter cut by the fence's edge (a short form with
+# "AM" that does not fit), so the ink of the two times is compared as well: as wide, and clear
+# of the right edge.
+function TimeInk($r) {
+  $b = [Px]::Grab($r.x + 6, $r.y + 30, $r.w - 12, 70)
+  $p = [Px]::Ink($b, 0, 69); $b.Dispose()
+  $xs = @(for ($x = 0; $x -lt $p.Length; $x++) { if ($p[$x] -ge 60) { $x } })
+  if (-not $xs) { return @(-1, -1) }
+  return @($xs[0], $xs[-1])
+}
+for ($try = 0; $try -lt 3; $try++) {
+  $tn = OcrText $nat.x ($nat.y + 30) $nat.w 70 'narrow-native'; $tp = OcrText $plg.x ($plg.y + 30) $plg.w 70 'narrow-plugin'
+  if (($tp -replace '\D') -eq ($tn -replace '\D') -and $tp -match '\d{1,2}.?\d{2}') { break }
+  Log "narrow clocks read again: plugin='$tp' native='$tn'"; Start-Sleep -Milliseconds 700
+}
+$in = TimeInk $nat; $ip = TimeInk $plg
 Shot 'narrow-native-left-plugin-right'
-# OCR reads the colon of the same picture now and then as another sign: the digits count.
 Check 'both show the time without seconds, the same text' (($tp -replace '\D') -eq ($tn -replace '\D') -and $tp -match '\d{1,2}.?\d{2}' -and $tp -notmatch '\d:\d{2}:\d{2}' -and $tn -notmatch '\d:\d{2}:\d{2}') "plugin=$tp native=$tn view=$(Shows)"
+Check 'the two times are as wide, and neither reaches the right edge' ($in[0] -ge 0 -and $ip[0] -ge 0 -and [math]::Abs(($in[1] - $in[0]) - ($ip[1] - $ip[0])) -le 3 -and $ip[1] -lt $plg.w - 14 -and $in[1] -lt $nat.w - 14) "native ink $($in -join '-') plugin ink $($ip -join '-') of $($nat.w) and $($plg.w) px"
 
 Case 'quit stops the plugins and the plugin thread'
 PfQuit

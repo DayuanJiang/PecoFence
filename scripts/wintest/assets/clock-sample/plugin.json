@@ -1,0 +1,38 @@
+{
+  "id": "clock",
+  "version": "1.0.0",
+  "api": 1,
+  "layer": "light",
+  "name": {
+    "en": "Clock", "zh-CN": "时钟", "zh-TW": "時鐘", "ja": "時計", "ko": "시계", "de": "Uhr",
+    "fr": "Horloge", "es": "Reloj", "pt-BR": "Relógio", "ru": "Часы", "it": "Orologio"
+  },
+  "description": {
+    "en": "The time and the date in your Windows format, scaled with the fence.",
+    "zh-CN": "按 Windows 的格式显示时间和日期，字号随栅栏大小变化。",
+    "zh-TW": "按 Windows 的格式顯示時間和日期，字級隨圍欄大小變化。",
+    "ja": "Windows の形式で時刻と日付を表示します。文字の大きさはフェンスに合わせて変わります。",
+    "ko": "Windows 형식으로 시간과 날짜를 표시하며, 글자 크기는 펜스 크기에 맞춰 바뀝니다.",
+    "de": "Uhrzeit und Datum im Format von Windows, so groß wie der Bereich.",
+    "fr": "L'heure et la date au format de Windows, à la taille du groupe.",
+    "es": "La hora y la fecha en el formato de Windows, al tamaño del grupo.",
+    "pt-BR": "A hora e a data no formato do Windows, do tamanho do grupo.",
+    "ru": "Время и дата в формате Windows, размер текста меняется вместе с областью.",
+    "it": "L'ora e la data nel formato di Windows, grandi quanto il riquadro."
+  },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": {},
+  "settings": [
+    {
+      "key": "seconds",
+      "type": "switch",
+      "label": {
+        "en": "Show seconds", "zh-CN": "显示秒", "zh-TW": "顯示秒", "ja": "秒を表示", "ko": "초 표시",
+        "de": "Sekunden anzeigen", "fr": "Afficher les secondes", "es": "Mostrar segundos",
+        "pt-BR": "Mostrar segundos", "ru": "Показывать секунды", "it": "Mostra i secondi"
+      },
+      "default": false
+    }
+  ]
+}

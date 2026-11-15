@@ -12,8 +12,9 @@
 # installed when the page asks; a failed switch starts the fences again; a web plugin's update loads
 # the new page; a plugin fence holding a note has 编辑便签 and its uninstall names the notes; an
 # older index served again counts as none.
-# English UI. Debug build (CDP on the settings page). --extra a folder with signed\ (index.json,
-# index.json.sig and the plugin files, signed with the development key).
+# English UI. Debug build (CDP on the settings page). The signed index is the kit's
+# assets\signed-feed (index.json, index.json.sig and the plugin files, signed with the
+# development key: made again with make_signed_feed.py when the release key replaces it).
 $Feed = 'C:\pf\run\pfeed'
 # The plugins the feed offers, by id: version, permissions, settings, main.js, a take-down reason,
 # whether its main.js differs from its hash ('bad') or is sent slowly ('slow').
@@ -130,7 +131,7 @@ Check 'the log names the file' ([bool](PfWaitLog 'plugins: install or update fai
 $script:Offer.Remove('pf-bad')
 
 Case 'the index signature: a signed index is taken, a wrong signature counts as no index'
-Copy-Item "$PfExtra\signed\*" $Feed -Recurse -Force
+Copy-Item 'C:\pf\kit\assets\signed-feed\*' $Feed -Recurse -Force
 Refresh
 $same = (Get-FileHash "$Feed\index.json").Hash -eq (Get-FileHash "$script:Config\plugins\index.json" -ErrorAction SilentlyContinue).Hash
 Check 'signed with the development key: its plugin is listed, the index is saved as it came' ((PluginRows) -match 'PF Signed.*Install' -and $same) "saved=$same rows=$(PluginRows)"
