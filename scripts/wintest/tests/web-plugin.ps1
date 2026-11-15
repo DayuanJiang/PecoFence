@@ -7,7 +7,9 @@
 # page's pf calls, main.js beside the page, the theme, the right-click menu, crashes and
 # 重新加载, a background plugin, the profile deleted at the uninstall. Part N: no WebView2.
 # Part L (debug build): a declared host that resolves to this computer, the File System Access
-# pickers, the page's requests through a system proxy.
+# pickers, the page's requests through a system proxy. Review 7: a picture that is also JavaScript
+# does not run as a script (part A); a page that loads anew by itself gets the theme of now and
+# calls counted for it alone (part C).
 # run.sh --var Part=A|B|M|I|C|N|L (default A).
 if (-not $Part) { $Part = 'A' }
 $Demo = 'C:\pf\kit\assets\webdemo'
@@ -191,6 +193,13 @@ if ($Part -eq 'A') {
   $href = if ($reached) { Js "location.href" } else { '' }
   Check 'navigation to another site is refused, the page stays' ($href -like 'pecofence-plugin://webdemo/*' -and $null -ne (PfWaitLog 'navigation to another site refused' 5)) "href=$href"
   Check 'the page still answers after the refusals' ((Js "window.demo.clicks") -eq 1) ''
+
+  Case 'a picture that is also JavaScript'
+  # GIF89a=... is valid JavaScript: served as image/gif with nosniff, it never runs as a script.
+  [IO.File]::WriteAllText("$script:Config\plugins\webdemo\1.0.0\poly.gif", "GIF89a=1;window.polyRan=true;")
+  Js "(window.polyRan = false, window.poly = null, (() => { const s = document.createElement('script'); s.src = 'poly.gif'; s.onload = () => window.poly = 'loaded'; s.onerror = () => window.poly = 'error'; document.head.appendChild(s); })(), fetch('poly.gif').then(r => window.polyHead = r.headers.get('content-type') + ' ' + r.headers.get('x-content-type-options')), 1)" | Out-Null
+  $poly = JsWait "window.poly && window.polyHead && [window.poly, window.polyRan, window.polyHead].join(' ')" 10
+  Check 'a GIF that is also JavaScript does not run; it comes as image/gif with nosniff' ("$poly" -match '^error false image/gif nosniff$') "$poly"
 
   Case 'hidden'
   # A DevTools session keeps the page from being suspended: let go of it while hidden.

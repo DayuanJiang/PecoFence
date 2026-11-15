@@ -293,10 +293,13 @@ impl WebFence {
                         Some(b) => WebResourceResponse::new(b).content_type(mime(path)),
                         None => WebResourceResponse::new(Vec::new()).status(404, "Not Found"),
                     };
+                    // nosniff: a file runs as a script only when it is one (a picture that is
+                    // also valid JavaScript does not).
                     Some(
                         response
                             .header("Content-Security-Policy", &csp)
-                            .header("Connection-Allowlist", &allow),
+                            .header("Connection-Allowlist", &allow)
+                            .header("X-Content-Type-Options", "nosniff"),
                     )
                 })?,
             );
@@ -766,6 +769,7 @@ fn mime(path: &str) -> &'static str {
         "json" => "application/json",
         "svg" => "image/svg+xml",
         "png" => "image/png",
+        "gif" => "image/gif",
         "jpg" | "jpeg" => "image/jpeg",
         "webp" => "image/webp",
         "woff2" => "font/woff2",
