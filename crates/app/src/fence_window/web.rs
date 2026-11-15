@@ -44,7 +44,7 @@ impl FenceWindow {
     pub fn set_web(&self, web: Option<Rc<WebFence>>) {
         let mut old = None;
         self.with_view(|v| {
-            if v.web.as_ref().map(|w| Rc::as_ptr(w)) == web.as_ref().map(|w| Rc::as_ptr(w)) {
+            if v.web.as_ref().map(Rc::as_ptr) == web.as_ref().map(Rc::as_ptr) {
                 return;
             }
             if let Some(o) = v.web.take() {
