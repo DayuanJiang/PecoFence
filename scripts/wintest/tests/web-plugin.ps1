@@ -7,11 +7,13 @@
 if (-not $Part) { $Part = 'A' }
 $Demo = 'C:\pf\kit\assets\webdemo'
 
-# Installs the test plugin as `id` (a copy of webdemo under another id for the second plugin).
+# Installs the test plugin as `id` (a copy of webdemo under another id for the second plugin),
+# as an install does: in its version's folder, which current.txt names.
 function InstallDemo([string]$id = 'webdemo') {
-  $to = "$script:Config\plugins\$id"
+  $to = "$script:Config\plugins\$id\1.0.0"
   New-Item -ItemType Directory -Force $to | Out-Null
   Copy-Item "$Demo\*" $to -Force
+  Set-Content "$script:Config\plugins\$id\current.txt" '1.0.0' -Encoding ASCII -NoNewline
   if ($id -ne 'webdemo') { (Get-Content "$to\plugin.json" -Raw) -replace '"webdemo"', "`"$id`"" | Set-Content "$to\plugin.json" -Encoding UTF8 }
 }
 # A script fence at `rect` (x,y,w,h px) switched to plugin `id`; its fence id.
@@ -76,7 +78,7 @@ if ($Part -in 'A', 'I' -and $PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS = '--re
 PfStart -Lang en
 $script:Config = Split-Path (PfJson status).configPath
 InstallDemo
-Check 'the test plugin is installed' (Test-Path "$script:Config\plugins\webdemo\index.html") $script:Config
+Check 'the test plugin is installed' (Test-Path "$script:Config\plugins\webdemo\1.0.0\index.html") $script:Config
 
 if ($Part -eq 'A') {
   Case 'page in the fence'

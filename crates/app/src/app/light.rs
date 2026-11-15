@@ -201,7 +201,7 @@ impl App {
         let stopped = self.light.stopped.get(&fence).map(|why| {
             let text = pecofence_core::i18n::format(
                 "插件停止了：{0}。右键这个栅栏，选“立即运行”重新启动。",
-                &[why.clone()],
+                std::slice::from_ref(why),
             );
             ScriptRowView::failed(&text, "")
         });
