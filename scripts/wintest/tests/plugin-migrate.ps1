@@ -4,7 +4,10 @@
 # test index holding stand-ins of notes, clock, weather, github and pc-status
 # (lib.ps1's PfStandIn) the four move to their plugins once installed, the note keeps its
 # text, the edited copy and the own script stay; a restart moves nothing more; an import of the
-# old configuration moves them again; the snapshot 升级为插件之前 brings the old fences back.
+# old configuration moves them again; a backup restore gives the running plugins its settings
+# and starts the plugin a fence names now; an import keeps a plugin fence's settings without the
+# folders picked elsewhere and brings a new note text; the snapshot 升级为插件之前 brings the old
+# fences back, and the note keeps the text it has by then.
 $Feed = 'C:\pf\run\pfeed'; $Assets = 'C:\pf\kit\assets'; $Ex = 'C:\pf\run\ex'
 $Titles = 'Note', 'Clock', 'Weather', 'Status', 'GitHub', 'Mine'
 function ByTitle($t) { return (@(@((PfJson fence list)) | Where-Object { $_ -and $_.title -eq $t }) | Select-Object -First 1) }
@@ -62,6 +65,8 @@ $commit = 'e19'.PadLeft(40, 'a')
 $entries = foreach ($id in 'notes', 'clock', 'weather', 'github', 'pc-status') {
   $dir = "$Feed\$commit\plugins\$id"; New-Item -ItemType Directory -Force $dir | Out-Null
   Copy-Item "$(PfStandIn $id)\*" $dir
+  # Here they show their settings again when they change.
+  [IO.File]::WriteAllText("$dir\main.js", "const show = () => pf.show({ rows: [{ text: `"$id stand-in, settings `" + JSON.stringify(pf.settings) }] });`npf.on(`"start`", show);`npf.on(`"settings`", show);`n")
   $m = Get-Content "$dir\plugin.json" -Raw -Encoding UTF8 | ConvertFrom-Json
   $m | Add-Member files @(foreach ($f in Get-ChildItem $dir -File) { [ordered]@{ name = $f.Name; size = $f.Length; sha256 = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower() } })
   $m
@@ -95,11 +100,43 @@ $c = Now
 Check 'moved again at once (the plugins are there)' ((State) -eq $New -and (Moved) -eq 8) "$(State) moved=$(Moved)"
 Check 'the note keeps its text, still one 升级为插件之前' ($c.notes.$note -eq $Text -and (Before).Count -eq 1) ($c.notes.$note -replace "`n", ' / ')
 
+Case 'a backup restore: the running plugins get its settings, a fence naming another plugin starts that one'
+# The import held its scripts back with 小工具 off: on again, the plugins run.
+Pf settings set tools.enabled true | Out-Null
+function PlugOut($t) { return "$((ByTitle $t).script.output)" }
+for ($w = 0; $w -lt 20 -and (PlugOut 'Clock') -notmatch '"seconds":true'; $w++) { Start-Sleep -Milliseconds 500 }
+Pf config export "$PfRun\running.json" | Out-Null
+# The backup has 显示秒 off for the clock, and the weather plugin for the PC status fence.
+$json = Get-Content "$PfRun\running.json" -Raw -Encoding UTF8
+$json = $json -replace "(`"$clock`": \{[^}]*?`"settings`": \{\s*`"seconds`": )true", '${1}false' -replace '"plugin:pc-status"', '"plugin:weather"'
+New-Item -ItemType Directory -Force "$script:Config\backups" | Out-Null
+$backup = "$script:Config\backups\2000-01-01.json"
+[IO.File]::WriteAllText($backup, $json)
+$was = "clock=$(PlugOut 'Clock') status=$(PlugOut 'Status')"
+Pf backup restore $backup | Out-Null
+for ($w = 0; $w -lt 20 -and (PlugOut 'Clock') -notmatch '"seconds":false'; $w++) { Start-Sleep -Milliseconds 500 }
+Start-Sleep -Seconds 2
+Check 'the clock plugin shows the restored setting' ($was -match '"seconds":true' -and (PlugOut 'Clock') -match '"seconds":false') "before: $was; after: $(PlugOut 'Clock')"
+Check 'the PC status fence runs the weather plugin it names now' ((PlugOut 'Status') -match 'weather stand-in' -and (State) -match 'Status=plugin:weather') "$(PlugOut 'Status'); $(State)"
+
+Case 'an import keeps a plugin fence''s settings, without the folders picked on the other computer'
+# The file also has another text for the note (a plugin fence holds no note for the CLI to set).
+$Edited = "[ ] milk`n[x] rent`nedited after the upgrade"
+$json = Get-Content $backup -Raw -Encoding UTF8
+$json = $json -replace "(`"$clock`": \{[^}]*?`"settings`": \{)", '${1} "__folders": ["C:\\Windows"],' -replace 'plain line', 'edited after the upgrade'
+[IO.File]::WriteAllText("$PfRun\folders.json", $json)
+$asked = ((Get-Content "$PfRun\folders.json" -Raw -Encoding UTF8 | ConvertFrom-Json).scripts.$clock.settings.__folders)
+Pf config import "$PfRun\folders.json" | Out-Null
+Start-Sleep -Seconds 3
+$s = (Now).scripts.$clock.settings
+Check 'the clock keeps its settings, the folder list is gone' ("$asked" -eq 'C:\Windows' -and $s.seconds -eq $false -and $null -eq $s.__folders) "file=$asked now=$($s | ConvertTo-Json -Compress)"
+Check 'the note has the text of the file' ((Now).notes.$note -eq $Edited) ((Now).notes.$note -replace "`n", ' / ')
+
 Case 'the snapshot 升级为插件之前 brings the old fences back'
 Pf snapshot restore (Before)[0].id | Out-Null
 Start-Sleep -Seconds 4
 Check 'the old fences are back, and stay' ((State) -eq $Old -and (Moved) -eq 8) "$(State) moved=$(Moved)"
-Check 'the note has its text' ((ByTitle 'Note').noteText -eq $Text) ((ByTitle 'Note').noteText -replace "`n", ' / ')
+Check 'the note has the text it had, not the one of the upgrade day' ((ByTitle 'Note').noteText -eq $Edited) ((ByTitle 'Note').noteText -replace "`n", ' / ')
 Check 'the log says why they stay' ([bool](PfWaitLog 'restored, its fences stay as they are' 2)) ''
 # The import held its scripts back with 小工具 off: on again, the old tools show and work.
 Pf settings set tools.enabled true | Out-Null
