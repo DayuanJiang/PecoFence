@@ -126,8 +126,8 @@ impl App {
     }
 
     /// `WM_HOTKEY` of a plugin command: its fence shows like a Peek of it alone and its plugin
-    /// wakes, then gets `command`; pressed again while that Peek is open, the Peek ends. A Peek of
-    /// another fence alone ends first.
+    /// wakes, then gets `command`; pressed again while that Peek is open, the Peek ends. While
+    /// another fence is up alone, this one takes its place in the same Peek.
     pub(super) fn plugin_key_pressed(&mut self, id: i32) {
         let Some((fence, command, h)) = self.light.keys.get(&id).cloned() else {
             return;
@@ -148,10 +148,17 @@ impl App {
             return self.end_peek("hotkey or tray menu");
         }
         if self.peek.is_some() && self.peek_only.is_some() {
-            tracing::info!(%fence, "plugin shortcut: the Peek of another fence alone ends first");
-            self.end_peek_now();
-        }
-        if self.peek.is_none() {
+            // In the same Peek: one that ends and opens again loses the keyboard to the window
+            // under it and ends at once.
+            tracing::info!(%fence, "plugin shortcut: the fence up alone gives its place to this one");
+            let over = self.peek.as_ref().map(|p| p.hwnds()).unwrap_or_default();
+            if let Some(a) = self.anchor.borrow_mut().as_mut() {
+                a.set_peek(false, &[]);
+                a.peek_only = Some(hwnd);
+                a.set_peek(true, &over);
+            }
+            self.peek_only = Some(hwnd);
+        } else if self.peek.is_none() {
             self.peek_only = Some(hwnd);
             self.toggle_peek();
             if self.peek.is_none() {

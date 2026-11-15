@@ -270,6 +270,9 @@ if ($Part -eq 'A') {
   function Last([string]$key) { return "$(PfWaitLog "plugin shortcut (un)?registered.*Ctrl\+Alt\+$key" 1)" }
 
   Case 'a drop of 20 files: all of them become items, in one call'
+  # The import held the fence's plugin: 小工具 on again starts it.
+  Pf settings set tools.enabled true | Out-Null
+  Check 'the launcher runs again after the import' (WaitOut '拖到这里|右键' 15) (FenceOut $script:Fid)
   New-Item -ItemType Directory -Force "$Lr\many" | Out-Null
   $names = @(1..20 | ForEach-Object { 'm{0:d2}.txt' -f $_ })
   foreach ($n in $names) { Set-Content "$Lr\many\$n" $n -Encoding ASCII }
@@ -291,11 +294,11 @@ if ($Part -eq 'A') {
   Key 0x4B
   $aThen = [LX]::Topmost((FenceHwnd)); $bThen = [LX]::Topmost((FenceHwnd $script:FidB))
   Shot 'shortcut-b-over-launcher'
-  Check 'B is up, the launcher went back below' ($aFirst -and $bThen -and -not $aThen -and [bool](PfWaitLog 'the Peek of another fence alone ends first' 3)) "launcher up first=$aFirst, then launcher=$aThen B=$bThen"
+  Check 'B is up, the launcher went back below' ($aFirst -and $bThen -and -not $aThen -and [bool](PfWaitLog 'the fence up alone gives its place to this one' 3)) "launcher up first=$aFirst, then launcher=$aThen B=$bThen"
 
   Case 'B stops a third time within an hour: its shortcut goes, the launcher keeps its own'
   # Its command from the key above stopped it once; it starts again 5 s after each stop.
-  for ($n = 2; $n -le 3; $n++) { Key 0x4B; Start-Sleep -Seconds 5; Key 0x4B }
+  for ($n = 2; $n -le 3; $n++) { [G]::Press(0x1B); Start-Sleep -Seconds 6; Key 0x4B }
   $l = LogCount $UnregL
   Check 'three stops, then Ctrl+Alt+K is unregistered' ((WaitCount 'plugin fence stopped' 3) -and (WaitCount $UnregK 1 8) -and (Last 'K') -match 'unregistered' -and (LogCount $UnregL) -eq $l) "stops=$(LogCount 'plugin fence stopped') unregistered K=$(LogCount $UnregK)"
   [G]::Press(0x1B); Start-Sleep -Seconds 1; CloseWindows
@@ -306,6 +309,8 @@ if ($Part -eq 'A') {
   Check 'B started by hand: Ctrl+Alt+K is registered again' (WaitCount 'plugin shortcut registered.*Ctrl\+Alt\+K' 2 10) ''
   PfSettings | Out-Null
   Js "window.chrome.webview.postMessage({ type: 'action', name: 'pluginUninstall', id: 'launcher-b' })" | Out-Null
+  $dlg = WaitWin '#32770' 5
+  [L]::PostMessageW($dlg, 0x111, [IntPtr]6, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 2
   Check 'B uninstalled: Ctrl+Alt+K is unregistered' ((WaitCount $UnregK 2 10) -and (Last 'K') -match 'unregistered' -and -not (Test-Path "$script:Config\plugins\launcher-b\1.0.0\main.js")) ''
 
   Case 'the Peek''s key is refused for a command, by its name'
