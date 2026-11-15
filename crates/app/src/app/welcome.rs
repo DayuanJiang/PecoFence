@@ -116,6 +116,23 @@ pub(super) enum Welcome {
     },
 }
 
+impl Welcome {
+    /// The card's name in the usage statistics (`notice`).
+    pub(super) fn usage_name(&self) -> &'static str {
+        match self {
+            Welcome::Tip(_) => "tip",
+            Welcome::WhatsNew => "whats_new",
+            Welcome::DialogJump { .. } => "dialog_jump_offer",
+            Welcome::DialogJumpOn => "dialog_jump_on",
+            Welcome::RollTip => "roll_tip",
+            Welcome::FolderTip { .. } => "folder_tip",
+            Welcome::RuleTip { .. } => "rule_tip",
+            Welcome::RuleAdded { .. } => "rule_added",
+            Welcome::LiveWallpaper { .. } => "live_wallpaper",
+        }
+    }
+}
+
 /// What the card 「已添加整理规则」 says while 新项目出现在桌面时自动归类 is off (`{0}`: the
 /// extension, `{1}`: the fence): how the rule gets applied now, by a way that exists. The tray
 /// menu's entry is named only while the icon is there (「显示托盘图标」); with the icon hidden

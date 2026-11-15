@@ -531,6 +531,16 @@ pub fn jump_to(dlg: HWND, dir: PathBuf) {
 }
 
 fn start_jump(dlg: HWND, source: Source, reason: &'static str) {
+    pecofence_core::usage::event_with(
+        "dialog_jump",
+        match reason {
+            "back in the dialog" => "on_return",
+            "folder fence pressed" => "fence_press",
+            "Ctrl+G" => "ctrl_g",
+            "offer taken" => "offer",
+            _ => "other",
+        },
+    );
     let dlg_raw = dlg.0 as isize;
     let spawned = std::thread::Builder::new()
         .name("dialog-jump".into())

@@ -798,9 +798,10 @@ fn not_recorded(cmd: &Command) -> bool {
             | Command::NoteCaret { .. }
             | Command::NoteCaretLine { .. }
             // Recorded where they are handled: `settings.page`, `settings.set`,
-            // `settings.fence`, `exit`.
+            // `settings.fence`, `exit`, `notice` (with its card).
             | Command::SettingsMessage(_)
             | Command::Quit(_)
+            | Command::Notice(..)
     )
 }
 
