@@ -305,6 +305,12 @@ impl FenceViewState {
             self.plate_alpha = alpha;
             self.apply_shadow_alpha(Instant::now());
         }
+        // The glide is over: the shadow's bitmaps no longer share a kept section. Its last
+        // frames often move the plate by no pixel, so no shadow update came after it, and the
+        // section stayed with the fence until its next resize.
+        if !self.height_animating() && self.title_reveal.is_done(Instant::now()) {
+            self.shadow.keep_upload(None);
+        }
     }
 
     /// The shadow's constant alpha: the whole-window fade times the plate's own alpha, so a
