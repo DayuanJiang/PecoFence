@@ -1057,6 +1057,7 @@ impl App {
                     "network": p.network, "links": p.links, "system": p.system, "background": p.background,
                     "folders": p.folders, "notify": p.notify, "launch": p.launch, "drop": p.drop,
                     "commands": p.commands.iter().map(|c| list::pick(&c.title, lang)).collect::<Vec<_>>(),
+                    "media": format!("{:?}", p.media).to_lowercase(), "apps": p.apps,
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),
                     "state": state, "reason": reason, "page": index.is_some(),
                     "settings": settings, "fences": fences, "shown": list::shown_key(m),

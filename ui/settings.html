@@ -1820,7 +1820,9 @@
       clip, p.background && t("栅栏隐藏时继续运行"), p.folders && t("读取你选的文件夹，只读不写"), p.notify && t("显示提示，发出提示音"),
       p.system.length && tf("启动这些程序：{0}", p.system.join(', ')), p.layer === 'web' && t("用网页显示内容，占用内存较多"),
       p.launch && t("打开你放进这个栅栏的文件、文件夹和程序"), p.drop.length && t("你拖到它上面的文件和文字，它能读取"),
-      p.commands.length && tf("有这些命令：{0}。可以在插件详情里给它们设快捷键", p.commands.join(', '))].filter(Boolean);
+      p.commands.length && tf("有这些命令：{0}。可以在插件详情里给它们设快捷键", p.commands.join(', ')),
+      p.media === 'read' && t("看到正在播放的歌曲或视频的名字"), p.media === 'control' && t("看到正在播放的歌曲或视频的名字，并能暂停和切歌"),
+      p.apps && p.apps.length && tf("知道这些程序是否在运行、是否在最前面：{0}", p.apps.join(', '))].filter(Boolean);
     return d.length ? d : [t("只显示内容，不联网，也不读剪贴板")];
   }
   function plButton(p) {

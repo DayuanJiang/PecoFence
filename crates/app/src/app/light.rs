@@ -279,6 +279,7 @@ impl App {
             number,
         })));
         self.sync_plugin_keys();
+        self.sync_media();
     }
 
     /// Plugin fence `fence` draws light text now, or dark: its plugin's `pf.theme` follows.
@@ -305,6 +306,7 @@ impl App {
         self.light.menus.remove(&fence);
         self.light.drops.remove(&fence);
         self.sync_plugin_keys();
+        self.sync_media();
     }
 
     /// Plugin `id` is being uninstalled: no call of its fences writes into its data folder from
@@ -345,6 +347,7 @@ impl App {
                 self.light_send(host::Command::Event(fence, "resize", size));
             }
         }
+        self.sync_media();
     }
 
     /// The system time, the time zone or the region's format changed.
@@ -497,6 +500,10 @@ impl App {
         if self.light.clipboard_changed.swap(false, Ordering::Relaxed) {
             self.light_clipboard_changed();
         }
+        let media = self.light.host.as_ref().map(|h| h.media.changed.clone());
+        if media.is_some_and(|m| m.swap(false, Ordering::Relaxed)) {
+            self.light_media_changed();
+        }
         let outputs = match self.light.out.lock() {
             Ok(mut out) if !out.is_empty() => std::mem::take(&mut *out),
             _ => return,
@@ -615,6 +622,38 @@ impl App {
         tracing::debug!(plugins = readers.len(), "clipboard changed: plugins told");
         for fence in readers {
             self.light_send(host::Command::Event(fence, "clipboard", Value::Null));
+        }
+    }
+
+    /// The media session is read while a plugin that may see it runs in a fence that shows (or
+    /// in the background).
+    fn sync_media(&mut self) {
+        let Some(api) = self.light.host.clone() else {
+            return;
+        };
+        let wants = |f: &FenceId, shown: bool| {
+            let p = api.manifest(*f).map(|m| m.permissions.clone());
+            p.is_some_and(|p| p.media.reads() && (shown || p.background))
+        };
+        let on = (self.light.running.iter()).any(|(f, (_, shown, ..))| wants(f, *shown));
+        api.media.watch(on, self.control.hwnd().0 as isize);
+    }
+
+    /// The media session changed: the running plugins that may see it are told.
+    fn light_media_changed(&mut self) {
+        let Some(api) = self.light.host.clone() else {
+            return;
+        };
+        let told: Vec<FenceId> = (self.light.running.keys())
+            .filter(|f| {
+                api.manifest(**f)
+                    .is_some_and(|m| m.permissions.media.reads())
+            })
+            .copied()
+            .collect();
+        tracing::debug!(plugins = told.len(), "media session changed: plugins told");
+        for fence in told {
+            self.light_send(host::Command::Event(fence, "media", Value::Null));
         }
     }
 

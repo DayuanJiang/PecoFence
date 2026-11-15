@@ -31,6 +31,18 @@ mod bindings;
     unused_imports
 )]
 mod store_bindings;
+// Windows.Media.Control, kept apart from `bindings` (tools/bindgen/media.txt).
+#[allow(
+    non_snake_case,
+    non_upper_case_globals,
+    non_camel_case_types,
+    clippy::upper_case_acronyms,
+    clippy::missing_transmute_annotations,
+    clippy::useless_transmute,
+    dead_code,
+    unused_imports
+)]
+mod media_bindings;
 
 pub mod autostart;
 pub mod clipboard;
@@ -58,6 +70,7 @@ pub mod job;
 pub mod layered;
 pub mod live_wallpaper;
 pub mod locale;
+pub mod media;
 pub mod memstats;
 pub mod monitors;
 pub mod msg;

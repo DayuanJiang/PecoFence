@@ -74,6 +74,7 @@ mod light;
 mod light_host;
 mod live_wallpaper;
 mod lnk_targets;
+mod media;
 mod menu_frames;
 mod menus;
 mod migrate;
