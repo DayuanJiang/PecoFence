@@ -250,6 +250,9 @@ const HOTKEY_PEEK: i32 = 1;
 const HOTKEY_PROBE: i32 = 2;
 /// 「临时显示 Windows 桌面」.
 const HOTKEY_WINDOWS_DESKTOP: i32 = 3;
+/// Ctrl+V while Explorer's desktop is in front with its icons hidden (`follow_desktop_paste`).
+/// 4 is the dialog jump's Ctrl+G.
+const HOTKEY_DESKTOP_PASTE: i32 = 5;
 
 /// How long a fence-menu "新建" keeps its claim on the next desktop item (plan §5.8).
 const PENDING_CREATION_SECS: u64 = 15;
@@ -593,6 +596,8 @@ pub struct App {
     /// 「临时显示 Windows 桌面」 is on: every fence hidden, the icons PecoFence hid shown. Never
     /// saved.
     windows_desktop: bool,
+    /// Ctrl+V is registered for the desktop (`follow_desktop_paste`).
+    desktop_paste_key: bool,
     /// 在哪个虚拟桌面显示 (see `vdesktops.rs`): whether the virtual-desktop poll runs, and (a
     /// test-script switch) whether only the poll is followed, as the Store edition must.
     desktop_poll: bool,
@@ -1153,6 +1158,14 @@ impl App {
                             crate::dialog_jump::on_hotkey();
                             Some(0)
                         }
+                        msg::WM_HOTKEY if wparam as i32 == HOTKEY_DESKTOP_PASTE => {
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                app.paste_on_desktop();
+                            }
+                            Some(0)
+                        }
                         msg::WM_HOTKEY if wparam as i32 == HOTKEY_WINDOWS_DESKTOP => {
                             if let Ok(mut guard) = cell.try_borrow_mut()
                                 && let Some(app) = guard.as_mut()
@@ -1587,6 +1600,9 @@ impl App {
                                 });
                                 if wparam == 1 {
                                     app.notices_below(HWND(lparam as *mut core::ffi::c_void));
+                                    app.follow_desktop_paste(HWND(
+                                        lparam as *mut core::ffi::c_void,
+                                    ));
                                 }
                             }
                             if wparam == 1 {
@@ -2095,6 +2111,7 @@ impl App {
             peek_hotkey_wanted: None,
             hotkeys_paused: false,
             windows_desktop: false,
+            desktop_paste_key: false,
             desktop_poll: false,
             vd_poll_only: false,
             windows_desktop_hotkey: None,

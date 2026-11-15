@@ -98,7 +98,8 @@ function IpDrag($from, $to, $shot = '') {
   MUp; Start-Sleep -Milliseconds 1500
 }
 
-if ($Part -match 'A') {
+function PartA() {
+  trap { PfTrap $_; continue }
   Case 'A setup'
   CloseWindows
   IpClean
@@ -184,7 +185,8 @@ if ($Part -match 'A') {
   Get-Process IpCap, cap -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 
-if ($Part -match 'B') {
+function PartB() {
+  trap { PfTrap $_; continue }
   Case 'B setup'
   CloseWindows
   IpClean
@@ -210,17 +212,24 @@ if ($Part -match 'B') {
   $script:ExZip = ExOpen "$Src\ip 压缩包.zip" 820 440 760 400
   Log "Explorer windows: $(Explorers)"
 
-  function ClipFormats() { try { return ([Windows.Forms.Clipboard]::GetDataObject().GetFormats() -join ', ') } catch { return "error $_" } }
+  function ClipFormats() { return [IpClip]::Formats() }
   # Selects one item in an Explorer window and presses Ctrl+C there.
   function CopyIn($hw, $leaf) {
     [Windows.Forms.Clipboard]::Clear()
     $el = ExItem $hw $leaf
     if (-not $el) { return $false }
     $p = ExPt $el
-    [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 400
-    Chord 0x11 0x43; Start-Sleep -Milliseconds 800
-    Log "copied '$leaf': clipboard $(ClipFormats)"
-    return $true
+    # A click on the empty part of the list brings the window to the front and ends the
+    # selection there (a click on an item that is still selected would start renaming it), then
+    # one click selects the item.
+    $wr = Rect $hw
+    [G]::Click($wr.L + 400, $wr.B - 60); Start-Sleep -Milliseconds 500
+    [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
+    Log "CopyIn '$leaf': foreground $(Fg)"
+    Chord 0x11 0x43; Start-Sleep -Milliseconds 1200
+    $f = ClipFormats
+    Log "copied '$leaf': clipboard $f"
+    return ($f -match 'Shell IDList Array')
   }
   function FileAt($leaf, $sec = 6) {
     for ($i = 0; $i -lt $sec * 4; $i++) { if (Test-Path -LiteralPath (Join-Path $PfDesk $leaf)) { return $true }; Start-Sleep -Milliseconds 250 }
@@ -253,8 +262,9 @@ if ($Part -match 'B') {
   $m = BravoMenu
   $texts = MenuTexts $m
   Log "B3 menu: $texts"
-  Check 'B3 the menu''s 粘贴 can be picked' ($texts -match '(^|\| )粘贴(\(P\))?( \||$)' -and $texts -notmatch '粘贴(\(P\))? \(off\)') $texts
-  MenuPick '^粘贴' $m | Out-Null
+  $on = $texts -match '粘贴' -and $texts -notmatch '粘贴[^|]*\(off\)'
+  Check 'B3 the menu''s 粘贴 can be picked' $on $texts
+  if ($on) { MenuPick '^粘贴' $m | Out-Null } else { CloseMenus }
   $there = FileAt $Zipped 8
   Check 'B3 the file is on the desktop' $there ''
   Check 'B3 it is in the fence pasted into' ((WaitItemFence $Zipped 'Bravo' 6) -eq 'Bravo') "in '$(ItemFence $Zipped)'"
@@ -268,7 +278,7 @@ if ($Part -match 'B') {
   $there = FileAt $Plain
   Shot 'B4-after'
   Check 'B4 the file is on the desktop' ($ok -and $there) "foreground $(Fg)"
-  Log "B4 the pasted file is in '$(ItemFence $Plain)'"
+  Check 'B4 it is in 「桌面」' ((WaitItemFence $Plain $Inbox 6) -eq $Inbox) "in '$(ItemFence $Plain)'"
   DropPasted $Plain
 
   Case 'B5 a file copied inside a .zip, Ctrl+V on an empty spot of the desktop'
@@ -277,9 +287,53 @@ if ($Part -match 'B') {
   Chord 0x11 0x56
   $there = FileAt $Zipped 8
   Check 'B5 the file is on the desktop' ($ok -and $there) "foreground $(Fg)"
+  Check 'B5 it is in 「桌面」' ((WaitItemFence $Zipped $Inbox 6) -eq $Inbox) "in '$(ItemFence $Zipped)'"
   DropPasted $Zipped
   CloseWindows
+
+  Case 'B6 Ctrl+V in another program after the desktop was in front still pastes there'
+  DeskClick 500 700 | Out-Null
+  Start-Process notepad.exe
+  Start-Sleep -Seconds 2
+  $np = @(Get-Process notepad -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })[0]
+  # A click into its text brings it to the front, as the user would.
+  if ($np) { $nr = Rect $np.MainWindowHandle; [G]::Click([int](($nr.L + $nr.R) / 2), [int](($nr.T + $nr.B) / 2)) }
+  Start-Sleep -Milliseconds 600
+  Log "B6 foreground $(Fg)"
+  Set-Clipboard -Value 'ip 记事本里的文字'
+  Chord 0x11 0x56; Start-Sleep -Milliseconds 500
+  Set-Clipboard -Value 'empty'
+  Chord 0x11 0x41; Start-Sleep -Milliseconds 200; Chord 0x11 0x43; Start-Sleep -Milliseconds 500
+  $got = Get-Clipboard -Raw
+  Check 'B6 Notepad got the text' ("$got" -match '记事本里的文字') "clipboard after Ctrl+A Ctrl+C in Notepad: '$got'; foreground $(Fg)"
+  Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
 }
+
+# The clipboard's formats by their names, as Windows lists them (the .NET data object lists
+# none for a copy made inside a .zip).
+Add-Type @'
+using System; using System.Text; using System.Runtime.InteropServices; using System.Collections.Generic;
+public static class IpClip {
+  [DllImport("user32.dll")] static extern bool OpenClipboard(IntPtr h);
+  [DllImport("user32.dll")] static extern bool CloseClipboard();
+  [DllImport("user32.dll")] static extern uint EnumClipboardFormats(uint f);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClipboardFormatNameW(uint f, StringBuilder s, int n);
+  public static string Formats() {
+    if (!OpenClipboard(IntPtr.Zero)) return "(clipboard busy)";
+    var names = new List<string>();
+    try {
+      for (uint f = EnumClipboardFormats(0); f != 0; f = EnumClipboardFormats(f)) {
+        var sb = new StringBuilder(128);
+        names.Add(GetClipboardFormatNameW(f, sb, 128) > 0 ? sb.ToString() : ("#" + f));
+      }
+    } finally { CloseClipboard(); }
+    return names.Count == 0 ? "(empty)" : string.Join(", ", names.ToArray());
+  }
+}
+'@
+
+if ($Part -match 'A') { PartA }
+if ($Part -match 'B') { PartB }
 
 Case 'cleanup'
 IpClean

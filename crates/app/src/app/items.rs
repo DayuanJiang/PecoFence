@@ -845,6 +845,52 @@ impl App {
         }
     }
 
+    /// Ctrl+V on Explorer's desktop itself (after a click on an empty spot of it, or Win+D):
+    /// Windows' desktop pastes nothing while its icons are hidden, and the keys go to it, not
+    /// to a fence. So while it is in front with its icons hidden, Ctrl+V is taken for the
+    /// desktop and pastes into 「桌面」 (`paste_on_desktop`); in front of every other window the
+    /// key is left alone. Runs on every change of the foreground.
+    pub(super) fn follow_desktop_paste(&mut self, foreground: HWND) {
+        let on_desktop = self
+            .anchor
+            .try_borrow()
+            .is_ok_and(|a| a.as_ref().is_some_and(|a| a.is_desktop_window(foreground)));
+        let want = on_desktop
+            && self.state.inbox_id().is_some()
+            && pecofence_platform::shell_icons::desktop_icons_hidden();
+        if want == self.desktop_paste_key {
+            return;
+        }
+        if want {
+            const VK_V: u32 = 0x56;
+            let ok = hotkey::register(
+                self.control.hwnd(),
+                HOTKEY_DESKTOP_PASTE,
+                hotkey::mods::CONTROL | hotkey::mods::NOREPEAT,
+                VK_V,
+            );
+            if !ok {
+                tracing::info!("Ctrl+V on the desktop: taken by another program, left to it");
+                return;
+            }
+        } else {
+            hotkey::unregister(self.control.hwnd(), HOTKEY_DESKTOP_PASTE);
+        }
+        self.desktop_paste_key = want;
+        tracing::debug!(on = want, "Ctrl+V on the desktop pastes into 「桌面」");
+    }
+
+    /// `HOTKEY_DESKTOP_PASTE`: Ctrl+V with the desktop in front pastes into 「桌面」, as a
+    /// paste on the Windows desktop puts the files there.
+    pub(super) fn paste_on_desktop(&mut self) {
+        let Some(inbox) = self.state.inbox_id() else {
+            return;
+        };
+        tracing::info!(%inbox, "Ctrl+V on the desktop: pasting into 「桌面」");
+        self.paste_into(inbox);
+        self.follow_desktop_paste(desktop::foreground_window());
+    }
+
     /// Pastes what only the shell can write out: files copied inside a .zip, an Outlook
     /// attachment, a phone's photos (the clipboard has their contents or their shell items, no
     /// file paths, `clipboard::shell_items`). The clipboard's data object goes to the
