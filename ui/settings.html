@@ -1814,16 +1814,16 @@
   }
   const plLines = (p) => { const d = plDoes(p).map(x => x[1]); return d.length ? d : [t("只在自己的数据文件夹里存东西")]; };
   function plButton(p) {
-    const b = plEl('button', p.state === 'install' || p.state === 'confirm' ? 'accent' : '');
+    const asks = p.state === 'install' || p.state === 'confirm', b = plEl('button', asks && !state.plugins.held ? 'accent' : '');
     const [text, act] = {
       install: [t("安装"), () => plConfirm(p)], confirm: [t("更新插件"), () => plConfirm(p)],
       add: [t("添加到桌面"), () => send({ type: 'action', name: 'pluginAdd', id: p.id })],
       disabled: [t("卸载"), () => send({ type: 'action', name: 'pluginUninstall', id: p.id })],
-      busy: [t("正在下载…"), null], newer: [t("需要更新 PecoFence"), null],
-    }[p.state];
+      busy: [t("正在下载…"), null], newer: [t("需要更新 PecoFence"), null], installed: [t("已在桌面上"), null],
+    }[p.state] || [];
     if (!text) return '';
     b.textContent = text;
-    b.disabled = !act || (state.plugins.held && (p.state === 'install' || p.state === 'confirm'));
+    b.disabled = !act || (asks && state.plugins.held);
     b.onclick = (e) => { e.stopPropagation(); act && act(); };
     return b;
   }
@@ -1834,7 +1834,7 @@
     if (pl.open && pl.open[0] !== plOpenSeq) { plOpenSeq = pl.open[0]; plOpen.add(pl.open[1]); }
     list.replaceChildren();
     for (const p of pl.list) {
-      const row = plEl('div', 'card pl-row'), l = plEl('div', 'l'), box = plEl('div');
+      const row = plEl('div', 'card child pl-row'), l = plEl('div', 'l'), box = plEl('div');
       row.setAttribute('aria-expanded', plOpen.has(p.id));
       const title = plEl('div', 't', p.name);
       title.append(plEl('span', 'pl-meta', ' · ' + p.author + ' · ' + p.version));
