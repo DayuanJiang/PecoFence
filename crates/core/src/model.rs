@@ -2157,24 +2157,25 @@ impl Config {
     /// as a built-in example nobody edited (it names the plugin). Each fence once, sorted.
     pub fn plugin_moves(&self, example: impl Fn(&str) -> Option<&'static str>) -> Vec<PluginMove> {
         let snapshots = self.snapshots.iter().filter(|s| s.id != BEFORE_PLUGINS);
-        let fences = (self.layouts.iter())
+        let mut fences: Vec<(FenceId, FenceTool)> = (self.layouts.iter())
             .chain(snapshots.flat_map(|s| s.layouts.iter()))
-            .flat_map(|l| l.fences.iter());
-        let mut moves: Vec<PluginMove> = fences
-            .filter_map(|f| {
-                let plugin = match f.tool? {
+            .flat_map(|l| l.fences.iter())
+            .filter_map(|f| Some((f.id, f.tool?)))
+            .collect();
+        // A fence is in several layouts and snapshots: its script is read once.
+        fences.sort_by_key(|f| f.0);
+        fences.dedup();
+        let mut moves: Vec<PluginMove> = (fences.into_iter())
+            .filter_map(|(fence, tool)| {
+                let plugin = match tool {
                     FenceTool::Note => "notes",
                     FenceTool::Clock => "clock",
-                    FenceTool::Script => example(&self.scripts.get(&f.id)?.path)?,
+                    FenceTool::Script => example(&self.scripts.get(&fence)?.path)?,
                 };
-                Some(PluginMove {
-                    fence: f.id,
-                    plugin,
-                })
+                Some(PluginMove { fence, plugin })
             })
             .collect();
-        moves.sort_by_key(|m| m.fence);
-        moves.dedup();
+        moves.dedup_by_key(|m| m.fence);
         moves
     }
 
