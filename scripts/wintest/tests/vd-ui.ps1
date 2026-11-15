@@ -2,7 +2,9 @@
 # title of a bound fence (its infotip names the desktops), on every tab of a bound window, gone
 # again when unbound; 「每个虚拟桌面各用一套栅栏」 from the CLI and the General page, with new
 # fences made by the CLI, the fence menu, a note and a folder portal; the 「栅栏」 page's select.
-# Settings page clicks use coordinates measured on this kit's shots at 1600x900 (Chinese UI).
+# The two settings page cases run in English and find their row by its label (OCR), so rows that
+# come in above them do not move the click; the control's column is measured at 1600x900.
+. C:\pf\kit\pixels.ps1
 
 function ParkPointer() { [G]::MoveTo(1250, 780); Start-Sleep -Milliseconds 300 }
 # The title row of fence $t (screen px): the window's client origin from a dump line.
@@ -27,6 +29,16 @@ function SettingsScrolled($notches) {
   Start-Sleep -Seconds 4
   for ($i = 0; $i -lt $notches; $i++) { Wheel 920 426 -3; Start-Sleep -Milliseconds 700 }
   return $h
+}
+# The settings row labelled $want (OCR, English UI), scrolled into view one wheel notch at a time
+# (rows that come in above it push it down): @(x, y) of the label, or $null.
+function SettingsRow($want, $r) {
+  for ($k = 0; $k -lt 6; $k++) {
+    $row = OcrFind $want $r.L $r.T ($r.R - $r.L) ($r.B - $r.T)
+    if ($row -and $row[1] -lt $r.B - 60) { return $row }
+    Wheel ([int](($r.L + $r.R) / 2)) ([int](($r.T + $r.B) / 2)) -3; Start-Sleep -Milliseconds 700
+  }
+  return $null
 }
 function CloseSettings() { $h = [G]::FindWindowW('PecoFence.Settings', [NullString]::Value); if ($h -ne [IntPtr]::Zero) { [W]::PostMessageW($h, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 1 } }
 
@@ -156,37 +168,42 @@ foreach ($t in 'New CLI', 'Games note', 'Games portal', 'New fence', 'New off', 
 VdLeft
 
 Case 'the General page switch'
-Pf settings set language zh-CN | Out-Null
+Pf settings set language en-US | Out-Null
 Start-Sleep -Seconds 1
 Pf settings open-ui | Out-Null
 $h = SettingsScrolled 4
-# Where open-ui puts the window: the page's points below were measured there.
+# Where open-ui puts the window: the controls' columns below were measured there.
 $Centered = Rect $h
 Shot 'ui-page-switch-before'
-# The row is one card further down since 显示托盘图标 came in above it (82 px).
-[G]::Click(1183, 562); Start-Sleep -Seconds 1
+$row = SettingsRow '^Separate fences for each virtual desktop' $Centered
+Check 'the General page shows 每个虚拟桌面各用一套栅栏' ($null -ne $row) "row=$row"
+$sy = if ($row) { $row[1] + 16 } else { 562 }
+[G]::Click(1183, $sy); Start-Sleep -Seconds 1
 $on = (Pf settings get perDesktopFences).Trim()
 Shot 'ui-page-switch-on'
 Check 'a click on 每个虚拟桌面各用一套栅栏 switches it on' ($on -match 'true') "get=$on"
-[G]::Click(1183, 562); Start-Sleep -Seconds 1
+[G]::Click(1183, $sy); Start-Sleep -Seconds 1
 $off = (Pf settings get perDesktopFences).Trim()
 Check 'a second click switches it off' ($off -match 'false') "get=$off"
 CloseSettings
 
 Case 'the 栅栏 page select'
 $m = FenceMenu 'Work'
-MenuPick '^栅栏选项' $m | Out-Null
+MenuPick '^Fence options' $m | Out-Null
 $h = SettingsScrolled 4
-# 栅栏选项… opens the window beside the fence: the same points, moved with it.
+# 栅栏选项… opens the window beside the fence: the same column, moved with it; the row by its label.
 $r = Rect $h; $dx = $r.L - $Centered.L; $dy = $r.T - $Centered.T
 Log "settings window at $($r.L),$($r.T): $dx,$dy from where open-ui puts it"
 Shot 'ui-page-select-before'
-[G]::Click(1120 + $dx, 458 + $dy); Start-Sleep -Milliseconds 900
+$row = SettingsRow '^Show on virtual desktop' $r
+Check 'the 栅栏 page shows 在哪个虚拟桌面显示' ($null -ne $row) "row=$row"
+$sy = if ($row) { $row[1] + 8 } else { 458 + $dy }
+[G]::Click(1120 + $dx, $sy); Start-Sleep -Milliseconds 900
 Shot 'ui-page-select-open'
 [G]::Press(0x24); [G]::Press(0x28); [G]::Press(0x28); Start-Sleep -Milliseconds 200; [G]::Press(0x0D); Start-Sleep -Seconds 1
 $w = FenceGet 'Work'
 Check 'page: Work now on Games only, hidden here' (@($w.virtualDesktops).Count -eq 1 -and $w.virtualDesktops[0] -eq "{$($ids[1])}" -and (FVis 'Work') -eq $false) "vd=$($w.virtualDesktops) vis=$(FVis 'Work')"
-[G]::Click(1120 + $dx, 458 + $dy); Start-Sleep -Milliseconds 900
+[G]::Click(1120 + $dx, $sy); Start-Sleep -Milliseconds 900
 [G]::Press(0x24); Start-Sleep -Milliseconds 200; [G]::Press(0x0D); Start-Sleep -Seconds 1
 $w = FenceGet 'Work'
 Check 'page: 所有虚拟桌面 puts it back everywhere' (@($w.virtualDesktops).Count -eq 0 -and (FVis 'Work') -eq $true) "vd=$($w.virtualDesktops) vis=$(FVis 'Work')"
