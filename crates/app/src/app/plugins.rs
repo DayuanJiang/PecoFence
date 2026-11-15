@@ -533,6 +533,9 @@ impl App {
             let offered = entry.manifest.version.clone();
             let failed = mine.failed.as_deref() == Some(offered.as_str());
             let (why, disabled) = (entry.disabled.clone(), mine.disabled.is_some());
+            // Its code is gone (a take-down took it, a download after the listing again failed):
+            // it comes again whatever failed.txt says, until it is there.
+            let gone = !mine.ready;
             tracing::info!(
                 id,
                 installed = mine.manifest.version,
@@ -540,12 +543,15 @@ impl App {
                 ?kind,
                 disabled,
                 failed,
+                gone,
                 "plugins: update check"
             );
             match why {
                 Some(why) if !disabled => self.disable_plugin(&id, &why),
                 None if disabled => self.relist_plugin(&id, kind, failed),
-                None if kind == Update::Auto && !failed => self.start_plugin_download(&id, false),
+                None if gone || (kind == Update::Auto && !failed) => {
+                    self.start_plugin_download(&id, false)
+                }
                 _ => {}
             }
         }
@@ -565,12 +571,21 @@ impl App {
             return;
         }
         let mine = self.plugin(id);
+        let app = env!("CARGO_PKG_VERSION");
+        // Not asked for by the user, an installed plugin changes only as an automatic update
+        // does, or comes again as it was (its code gone, the same version as it was OK'd).
+        let unasked = |p: &Installed| {
+            let same = !p.ready && list::shown_key(&p.manifest) == list::shown_key(&entry.manifest);
+            list::update_kind(&p.manifest, &entry.manifest, app) != Update::Auto && !same
+        };
         let refused = if entry.disabled.is_some() || mine.is_some_and(|p| p.disabled.is_some()) {
             Some("taken down")
-        } else if list::needs_newer_app(&entry.manifest, env!("CARGO_PKG_VERSION")) {
+        } else if list::needs_newer_app(&entry.manifest, app) {
             Some("needs a newer PecoFence")
         } else if mine.is_some_and(|p| p.ready && p.manifest.version == entry.manifest.version) {
             Some("this version is installed")
+        } else if !by_user && mine.is_some_and(unasked) {
+            Some("not asked for, and more than an automatic update")
         } else {
             None
         };
@@ -781,15 +796,15 @@ impl App {
 
     /// The index lists plugin `id` again after taking it down: `disabled.txt` goes, and its code
     /// comes back as an update would (by itself unless it asks for more; its fences and their
-    /// settings stayed).
+    /// settings stayed). Its code went with the take-down: it comes again at every index read
+    /// until it is there (`apply_plugin_index`), whatever failed.txt says.
     fn relist_plugin(&mut self, id: &str, kind: Update, failed: bool) {
         let removed = std::fs::remove_file(self.plugins.root.join(id).join("disabled.txt"));
-        let again = removed.is_ok() && !failed;
-        tracing::info!(id, ?kind, failed, again, error = ?removed.err(), "plugins: listed again after a take-down");
         self.plugins.reload(id);
-        // Its code went with the take-down: the same version comes again.
         let gone = self.plugin(id).is_some_and(|p| !p.ready);
-        if again && (kind == Update::Auto || (kind == Update::None && gone)) {
+        let again = removed.is_ok() && (gone || (kind == Update::Auto && !failed));
+        tracing::info!(id, ?kind, failed, gone, again, error = ?removed.err(), "plugins: listed again after a take-down");
+        if again {
             self.start_plugin_download(id, false);
         }
         for fence in self.plugin_fences(id) {

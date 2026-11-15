@@ -372,8 +372,12 @@ Shot 'taken-down-with-note-open'
 $note = (FenceGet $tf.id).noteText
 Check 'the editor was open; after the take-down it is closed, the note keeps its text, the plugin''s timer writes no more' ($editor -ne [IntPtr]::Zero -and $down -and (WaitWin 'PecoFence.NoteEdit' 1) -eq [IntPtr]::Zero -and $note -match 'Keep me' -and $t1 -and $t1 -eq $t2) "tick $t1 then $t2 note=$note $down"
 
-Case 'listed again after its take-down: it comes back by itself and runs in its fence again'
-$script:Offer['pf-tick'].disabled = ''; Publish 66; Refresh
+Case 'listed again after its take-down: it comes back by itself and runs in its fence again, also when the first download fails'
+# The first download after the listing again fails (main.js is not the reviewed one).
+$script:Offer['pf-tick'].disabled = ''; $script:Offer['pf-tick'].bad = $true; Publish 66; Refresh
+$bad = PfWaitLog 'plugins: install or update failed.*pf-tick.*refused=true' 10
+Check 'the download after the listing again failed: no main.js yet' ($bad -and -not (Test-Path "$script:Config\plugins\pf-tick\1.0.0\main.js")) "$bad"
+$script:Offer['pf-tick'].bad = $false; Publish 67; Refresh
 $line = PfWaitLog 'plugins: installed, its fences start again.*pf-tick' 15; Start-Sleep -Seconds 3
 $t1 = Get-Content $tick -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; $t2 = Get-Content $tick -ErrorAction SilentlyContinue
 $g = @(PluginFences 'pf-tick')
