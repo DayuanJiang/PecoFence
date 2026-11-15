@@ -32,7 +32,7 @@ pub const MAX_FILES: usize = 100;
 pub const MAX_TOTAL: u64 = 5 * 1024 * 1024;
 
 /// The newest plugin interface this PecoFence knows (`api` in plugin.json).
-pub const API: u32 = 1;
+pub const API: u32 = 2;
 /// The most bytes `index.json` may have.
 pub const MAX_INDEX: usize = 1024 * 1024;
 
@@ -76,6 +76,66 @@ pub struct Permissions {
     pub folders: bool,
     /// Shows notices and plays their sound.
     pub notify: bool,
+    // Interface 2 (each needs `api: 2`, see [`API2_FIELDS`]).
+    /// Commands the user may give shortcuts (plugin details); a press sends `command`.
+    pub commands: Vec<Command>,
+    /// What may be dropped on its fence: `files`, `text`, `links`.
+    pub drop: Vec<String>,
+    /// Opens the files, folders and programs the user put into its fence (`pf.launch`).
+    pub launch: bool,
+    /// Sees the media session playing now, and may pause it and skip.
+    pub media: Media,
+    /// The programs it may know are running or in front (`spotify.exe`).
+    pub apps: Vec<String>,
+}
+
+/// One command of `commands`: its id and its title by language.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct Command {
+    pub id: String,
+    #[serde(default)]
+    pub title: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Media {
+    #[default]
+    None,
+    Read,
+    Control,
+}
+
+impl Media {
+    pub fn reads(self) -> bool {
+        self >= Self::Read
+    }
+    pub fn controls(self) -> bool {
+        self == Self::Control
+    }
+}
+
+/// The permissions interface 2 brought: a manifest using any of them must say `api: 2`, so that
+/// a PecoFence of interface 1 (which would not see them) shows 需要更新 PecoFence instead of
+/// installing it as asking for nothing more.
+pub const API2_FIELDS: [&str; 5] = ["commands", "drop", "launch", "media", "apps"];
+
+impl Permissions {
+    /// The fields of [`API2_FIELDS`] that `self` uses.
+    pub fn api2_fields(&self) -> Vec<&'static str> {
+        let used = [
+            !self.commands.is_empty(),
+            !self.drop.is_empty(),
+            self.launch,
+            self.media != Media::None,
+            !self.apps.is_empty(),
+        ];
+        API2_FIELDS
+            .into_iter()
+            .zip(used)
+            .filter_map(|(f, u)| u.then_some(f))
+            .collect()
+    }
 }
 
 /// A plugin's `plugin.json`, and the same fields in its index entry.
@@ -339,6 +399,29 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
     if p.system.len() > 20 || !p.system.iter().all(|s| valid_program(s)) {
         return Err(format!("{}: bad system programs", m.id));
     }
+    let newer = p.api2_fields();
+    if m.api < 2 && !newer.is_empty() {
+        return Err(format!("{}: {} need api 2", m.id, newer.join(", ")));
+    }
+    let once = |list: &[&str]| (0..list.len()).all(|i| !list[..i].contains(&list[i]));
+    let ids: Vec<&str> = p.commands.iter().map(|c| c.id.as_str()).collect();
+    let command_ok = |c: &Command| {
+        (1..=32).contains(&c.id.len())
+            && c.id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            && c.title.get("en").is_some_and(|t| !t.trim().is_empty())
+            && short(&c.title, 40)
+    };
+    if p.commands.len() > 8 || !once(&ids) || !p.commands.iter().all(command_ok) {
+        return Err(format!("{}: bad commands", m.id));
+    }
+    let drops: Vec<&str> = p.drop.iter().map(String::as_str).collect();
+    if !once(&drops) || !drops.iter().all(|d| ["files", "text", "links"].contains(d)) {
+        return Err(format!("{}: bad drop kinds", m.id));
+    }
+    let app_ok = |a: &String| valid_plain_name(a) && a.to_ascii_lowercase().ends_with(".exe");
+    if p.apps.len() > 20 || !p.apps.iter().all(app_ok) {
+        return Err(format!("{}: bad apps", m.id));
+    }
     Ok(())
 }
 
@@ -478,13 +561,21 @@ pub fn page_url(commit: &str, id: &str) -> String {
 /// The fields in which `new` asks for more than `old`: a host or program not asked for before
 /// (`network`, `links`, `system`; a link that was a network host is not new), reading or
 /// writing the clipboard when it did not before, or `background`, `folders`, `notify` turned on.
+/// Interface 2: a command or a kind of drop or a program of `apps` not there before, `launch`
+/// turned on, `media` from none to read to control.
 pub fn more_permissions(old: &Permissions, new: &Permissions) -> Vec<&'static str> {
     let added = |o: &[String], n: &[String]| {
         n.iter()
             .any(|h| !o.iter().any(|g| g.eq_ignore_ascii_case(h)))
     };
     let links = [old.links.as_slice(), old.network.as_slice()].concat();
+    let ids = |p: &Permissions| p.commands.iter().map(|c| c.id.clone()).collect::<Vec<_>>();
     [
+        ("commands", added(&ids(old), &ids(new))),
+        ("drop", added(&old.drop, &new.drop)),
+        ("launch", new.launch && !old.launch),
+        ("media", new.media > old.media),
+        ("apps", added(&old.apps, &new.apps)),
         ("network", added(&old.network, &new.network)),
         ("links", added(&links, &new.links)),
         ("system", added(&old.system, &new.system)),
@@ -895,6 +986,85 @@ mod tests {
     }
 
     #[test]
+    fn the_fields_of_interface_2_need_api_2_and_each_growth_asks() {
+        let with = |api: u32, p: serde_json::Value| {
+            manifest(|v| {
+                v["api"] = api.into();
+                v["permissions"] = p;
+            })
+        };
+        let new = [
+            json!({ "commands": [{ "id": "show", "title": { "en": "Show" } }] }),
+            json!({ "drop": ["files"] }),
+            json!({ "launch": true }),
+            json!({ "media": "read" }),
+            json!({ "apps": ["spotify.exe"] }),
+        ];
+        for (p, field) in new.iter().zip(API2_FIELDS) {
+            let why = check_manifest(&with(1, p.clone())).unwrap_err();
+            assert!(why.contains(field) && why.contains("api 2"), "{why}");
+            assert!(check_manifest(&with(2, p.clone())).is_ok(), "{p}");
+            // A PecoFence of interface 1 would show 需要更新 PecoFence for it, this one installs.
+            assert!(!needs_newer_app(&with(2, p.clone()), "0.5.0"));
+            // From nothing to the field: more.
+            let more = more_permissions(&Permissions::default(), &with(2, p.clone()).permissions);
+            assert_eq!(more, [field]);
+        }
+        let perms = |p: serde_json::Value| -> Permissions { serde_json::from_value(p).unwrap() };
+        let old = perms(json!({
+            "commands": [{ "id": "show", "title": { "en": "Show" } }], "drop": ["files"],
+            "launch": true, "media": "read", "apps": ["spotify.exe"]
+        }));
+        assert!(more_permissions(&old, &old).is_empty());
+        for (change, field) in [
+            (
+                json!({ "commands": [{ "id": "show" }, { "id": "add" }] }),
+                "commands",
+            ),
+            (json!({ "drop": ["files", "text"] }), "drop"),
+            (json!({ "media": "control" }), "media"),
+            (json!({ "apps": ["Spotify.exe", "obs64.exe"] }), "apps"),
+        ] {
+            let mut v = json!({ "commands": [{ "id": "show" }], "drop": ["files"], "launch": true, "media": "read", "apps": ["spotify.exe"] });
+            v.as_object_mut()
+                .unwrap()
+                .extend(change.as_object().unwrap().clone());
+            assert_eq!(more_permissions(&old, &perms(v)), [field]);
+        }
+        // Less is never more: control to read, fewer apps, launch off.
+        let less = perms(json!({ "media": "read", "apps": ["SPOTIFY.EXE"] }));
+        assert!(
+            more_permissions(
+                &perms(
+                    json!({ "media": "control", "apps": ["spotify.exe", "x.exe"], "launch": true })
+                ),
+                &less
+            )
+            .is_empty()
+        );
+        assert!(Media::Control.reads() && Media::Control.controls() && !Media::Read.controls());
+        for bad in [
+            json!({ "drop": ["folders"] }),
+            json!({ "drop": ["files", "files"] }),
+            json!({ "apps": ["C:\\x\\spotify.exe"] }),
+            json!({ "apps": ["spotify"] }),
+            json!({ "media": "write" }),
+            json!({ "commands": [{ "id": "a b", "title": { "en": "A" } }] }),
+            json!({ "commands": [{ "id": "a", "title": { "zh-CN": "甲" } }] }),
+            json!({ "commands": [{ "id": "a", "title": { "en": "A" } }, { "id": "a", "title": { "en": "B" } }] }),
+            json!({ "commands": [{ "id": "a", "title": { "en": "x".repeat(41) } }] }),
+        ] {
+            let m = serde_json::from_value::<Manifest>({
+                let mut v = entry("countdown");
+                v["api"] = 2.into();
+                v["permissions"] = bad.clone();
+                v
+            });
+            assert!(m.map_or(true, |m| check_manifest(&m).is_err()), "{bad}");
+        }
+    }
+
+    #[test]
     fn update_kinds() {
         let installed = manifest(|_| {});
         let newer = manifest(|v| v["version"] = "1.0.2".into());
@@ -913,7 +1083,7 @@ mod tests {
         assert_eq!(update_kind(&installed, &needs, "0.5.0"), Update::Auto);
         let api = manifest(|v| {
             v["version"] = "1.1.0".into();
-            v["api"] = 2.into();
+            v["api"] = 3.into();
         });
         assert!(check_manifest(&api).is_ok());
         assert_eq!(
