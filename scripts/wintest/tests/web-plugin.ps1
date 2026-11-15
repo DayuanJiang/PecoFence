@@ -351,12 +351,15 @@ if ($Part -eq 'C') {
   Check 'twenty requests at once: four go, sixteen are refused at once' ($ok -eq 4 -and $many -eq 16) ($r -join ' | ')
   Js "(chrome.webview.postMessage({ id: 1, call: 'time.now', args: ['x'.repeat(1100 * 1024)] }), 1)" | Out-Null
   Check 'a message over 1 MB is ignored' ([bool](PfWaitLog 'web plugin: a message over 1 MB ignored' 5)) ''
+  Js "(window.big = null, pf.time.format('x'.repeat(1100 * 1024)).then(() => window.big = 'answered', e => window.big = e.name), 1)" | Out-Null
+  Check 'a pf call over 1 MB is refused at once with a RangeError' ((JsWait "window.big" 5) -eq 'RangeError') "$(Js 'window.big')"
 
   Case 'main.js and the page'
   Check 'the web plugin main.js runs beside the page' ($null -ne (PfWaitLog 'plugin fence starts its main.js' 5)) ''
-  Js "(pf.post({ n: 41 }), 1)" | Out-Null
+  Js "(window.posted = null, pf.post({ n: 41 }).then(v => window.posted = 'answered ' + v), 1)" | Out-Null
   $m = JsWait "window.demo.messages.length > 0 && window.demo.messages[0]" 10
   Check "the page's message reaches main.js and its answer comes back" ($m.from -eq 'main.js' -and $m.echo.n -eq 41) "$($m | ConvertTo-Json -Compress)"
+  Check 'pf.post answers when PecoFence has passed it on' ((Js "window.posted") -eq 'answered null') "$(Js 'window.posted')"
 
   # The page's theme is what the fence draws: dark text (a light page) on the box's bright
   # wallpaper even in the dark theme, light text (a dark page) on a dark wallpaper.
@@ -402,12 +405,22 @@ if ($Part -eq 'C') {
   Check 'the page got hide and show' ($ev -match 'hide' -and $ev -match 'show') "$ev"
 
   Case 'a page that crashes'
+  # Four requests that hang (a port of example.org that does not answer; WinHTTP gives up after
+  # 15 s) count for the page; the page made anew after the crash does not inherit them.
+  Js "(window.hung = Array.from({ length: 4 }, () => pf.http.get('https://example.org:81/')), window.fifth = null, pf.http.get('https://example.org/').then(() => window.fifth = 'ok', e => window.fifth = e.message), 1)" | Out-Null
+  $hungAt = Get-Date
+  $fifth = JsWait "window.fifth" 5
+  Check 'while four requests of the page hang, a fifth is refused' ("$fifth" -match 'too many calls') "$fifth"
   $script:Cdp.Dispose(); $script:Cdp = $null
   $loads = LogCount 'web plugin: page loading'
   $k = Renderers; Log "renderers: $($k -join ',')"
   $k | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
   Check 'the first crash is seen' (WaitCount 'page failed; made anew.*count=1 again=true' 1 15) ''
   Check 'the page is made anew by itself' (WaitCount 'web plugin: page loading' ($loads + 1) 30) ''
+  $after = if (CdpOpen -Url 'pecofence-plugin://webdemo/*' -sec 10) { Js "(window.after = null, pf.http.get('https://example.org/').then(() => window.after = 'ok', e => window.after = e.message), 1)" | Out-Null; JsWait "window.after" 10 }
+  $s = [int]((Get-Date) - $hungAt).TotalSeconds
+  Check 'the new page''s request goes: the hanging ones of the page before do not count' ("$after" -eq 'ok' -and $s -lt 15) "$after after $s s"
+  if ($script:Cdp) { $script:Cdp.Dispose(); $script:Cdp = $null }
   Start-Sleep -Seconds 3
   $k = Renderers; Log "renderers: $($k -join ',')"
   $k | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }

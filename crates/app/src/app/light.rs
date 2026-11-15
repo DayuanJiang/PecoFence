@@ -13,10 +13,10 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// A web page's `pf` call waiting for its answer: its fence, whether it is a request
+/// A web page's `pf` call waiting for its answer: its page, whether it is a request
 /// (`pf.http`), and what gets the answer.
 type Reply = (
-    FenceId,
+    std::rc::Weak<crate::web_plugin::WebFence>,
     bool,
     Box<dyn FnOnce(std::result::Result<Value, String>)>,
 );
@@ -372,6 +372,7 @@ impl App {
     /// and the same work as a light plugin's call; `reply` gets the answer on this thread.
     pub(super) fn plugin_api(
         &mut self,
+        page: &std::rc::Weak<crate::web_plugin::WebFence>,
         fence: FenceId,
         name: &str,
         args: Value,
@@ -397,9 +398,10 @@ impl App {
             tracing::info!(%fence, plugin = m.id, name, why, "web plugin call refused");
             return reply(Err(why));
         }
-        // The light layer's limits: at most 16 calls and 4 requests of a fence at once.
+        // The light layer's limits: at most 16 calls and 4 requests of a page at once (the calls
+        // of the page before a reload or a crash no longer count).
         let request = name.starts_with("http.");
-        let going = self.light.replies.values().filter(|r| r.0 == fence);
+        let going = self.light.replies.values().filter(|r| r.0.ptr_eq(page));
         let (calls, requests) = going.fold((0, 0), |(c, r), g| (c + 1, r + usize::from(g.1)));
         if calls >= host::MAX_CALLS || (request && requests >= host::MAX_REQUESTS) {
             let (most_requests, most_calls) = (host::MAX_REQUESTS, host::MAX_CALLS);
@@ -410,7 +412,8 @@ impl App {
         }
         self.light.next_reply += 1;
         let number = self.light.next_reply;
-        (self.light.replies).insert(number, (fence, request, Box::new(reply)));
+        let page = page.clone();
+        (self.light.replies).insert(number, (page, request, Box::new(reply)));
         let api = self.light_host();
         let (jobs, control) = (self.light.jobs.clone(), self.control.hwnd().0 as isize);
         let (name, agent) = (

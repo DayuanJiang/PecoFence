@@ -265,7 +265,7 @@ impl App {
             _ => {
                 tracing::debug!(plugin, %fence, call, "web plugin: pf call");
                 drop(web);
-                self.plugin_api(fence, &call, args, move |result| {
+                self.plugin_api(&page.clone(), fence, &call, args, move |result| {
                     if let Some(web) = page.upgrade() {
                         web.reply(&id, result);
                     }
