@@ -74,7 +74,7 @@ Pf settings set tools.allowSystem true | Out-Null
 Command 'run'
 $v = WaitRow 'cmd-run' '^(ok|error)' 25
 Check 'switch on: ipconfig runs and its output comes back' ($v -eq 'ok [0,true]') $v
-Check 'the log says the program ended' ([bool](PfWaitLog 'pf.run: the program ended.*program="ipconfig" code=Some\(0\)' 2)) ''
+Check 'the log says the program ended' ([bool](PfWaitLog 'pf.run: the program ended.*program="ipconfig\.exe" code=Some\(0\)' 2)) ''
 
 Case 'pf.clipboard: text, a private copy, files, a picture there and back, setText'
 function LastClip() { return (Rows)["clipboard-$((Rows)['clipboard-count'])"] }

@@ -38,7 +38,7 @@ pf.on("start", () => {
   });
   refused("open-outside-click", () => pf.open("https://github.com/DayuanJiang/PecoFence"));
   refused("open-system-other", () => pf.openSystem("regedit"));
-  check("run-switch-off", async () => (await pf.run("ipconfig", ["/?"])).code);
+  check("run-switch-off", async () => (await pf.run("ipconfig.exe", ["/?"])).code);
   refused("run-undeclared", () => pf.run("cmd.exe", ["/c", "echo hi"]));
   refused("folder-pick", () => pf.folder.pick());
   check("notify", () => pf.notify("Test card", "From the plugin-api test", { sound: true }));
@@ -62,7 +62,7 @@ const commands = {
   "read-text": () => check("cmd-read-text", () => pf.clipboard.text()),
   "set-text": () => check("cmd-set-text", () => pf.clipboard.setText("from the plugin 插件")),
   "set-image": () => check("cmd-set-image", () => pf.clipboard.setImage("picture.png")),
-  "run": () => check("cmd-run", async () => { const r = await pf.run("ipconfig", []); return [r.code, r.output.length > 100]; }),
+  "run": () => check("cmd-run", async () => { const r = await pf.run("ipconfig.exe", []); return [r.code, r.output.length > 100]; }),
   // Twelve answers that each take 40 ms: more than 200 ms in a second.
   "busy": () => { for (let i = 0; i < 12; i++) pf.sys.memory().then(() => { const end = Date.now() + 40; while (Date.now() < end) {} }); },
   "hang": () => { for (;;) {} },
