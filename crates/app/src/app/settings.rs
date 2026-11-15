@@ -1371,7 +1371,7 @@ impl App {
                 Some("scriptGuide") => self.open_manual_at("#write-scripts"),
                 Some(
                     name @ ("pluginsRefresh" | "pluginInstall" | "pluginAdd" | "pluginUninstall"
-                    | "pluginPage"),
+                    | "pluginPage" | "pluginSetting"),
                 ) => self.on_plugin_action(name, &v),
                 Some("openRepository") => {
                     let url = pecofence_core::brand::REPOSITORY_URL;

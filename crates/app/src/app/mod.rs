@@ -2044,6 +2044,7 @@ impl App {
             pecofence_platform::process::is_packaged(),
         );
 
+        let plugins = plugins::Plugins::load(&state.config_path_on_disk());
         let wallpaper_reader =
             WallpaperReader::start(control.hwnd(), args.wallpaper_override.clone());
         let mut app = App {
@@ -2124,7 +2125,7 @@ impl App {
             store_startup_state: None,
             store_startup_done: None,
             script_runs: tools::ScriptRuns::default(),
-            plugins: plugins::Plugins::default(),
+            plugins,
             light: light::Light::default(),
             theme_override: if args.light {
                 Some(ThemeMode::Light)

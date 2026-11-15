@@ -488,6 +488,12 @@ impl Drop for WebFence {
 
 /// The answer to one `pf.*` call from the page: `{id, call, args}` gives `{id, result}` or
 /// `{id, error}`.
+/// Uninstall: deletes plugin `id`'s WebView2 profile (its cookies and storage). Stub for
+/// pf-store's uninstall: pf-web's version replaces it.
+pub fn delete_profile(id: &str) {
+    tracing::info!(id, "web plugin profile: deleting it is left to pf-web");
+}
+
 fn answer(json: &str) -> String {
     let message: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
     let id = message.get("id").cloned().unwrap_or_default();

@@ -35,6 +35,8 @@ clap = { version = "4", features = ["derive", "wrap_help"] }
 schemars = { version = "1", features = ["uuid1"] }
 # Default readings only: the heteronym table would add about 320 KB to the exe.
 pinyin = { version = "0.11", default-features = false, features = ["plain"] }
+# Verifying the plugin index's signature only (no key generation, no randomness).
+ed25519-dalek = { version = "3", default-features = false }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"

@@ -91,8 +91,8 @@ const CMD_FENCE_SCRIPT_EDIT: u32 = 509;
 const CMD_FENCE_SCRIPT_PICK: u32 = 501;
 const CMD_FENCE_SCRIPT_FOLDER: u32 = 502;
 const CMD_FENCE_SCRIPT_INTERVAL_BASE: u32 = 1900;
-/// A plugin fence's switches (插件设置), one id per setting of its plugin.json.
-const CMD_FENCE_PLUGIN_SETTING_BASE: u32 = 1930;
+/// A plugin fence's 插件设置: the settings page at this fence's settings.
+const CMD_FENCE_PLUGIN_SETTINGS: u32 = 1930;
 /// The inbox's 为空时自动隐藏 (in place of 删除栅栏).
 const CMD_FENCE_HIDE_EMPTY: u32 = 305;
 const CMD_FENCE_DESKTOP_LAYOUT: u32 = 306;
@@ -1003,71 +1003,86 @@ impl App {
         } else if f.tool == Some(pecofence_core::FenceTool::Script) {
             let spec = self.state.config.scripts.get(&fence);
             let has_path = spec.is_some_and(|s| !s.path.is_empty());
-            // A plugin fence offers 插件详情 in place of 选择脚本… and 编辑脚本.
-            let plugin = spec.is_some_and(|s| super::plugins::plugin_id(&s.path).is_some());
-            let pick = if plugin {
-                pecofence_core::i18n::text("插件详情")
-            } else {
-                pecofence_core::i18n::text("选择脚本…")
-            };
-            let interval = spec.map_or(0, |s| s.interval_minutes);
-            let interval_menu = PopupMenu::new();
-            for (i, minutes) in pecofence_core::ScriptSpec::INTERVALS
-                .into_iter()
-                .enumerate()
-            {
-                let label = if minutes == 1 {
-                    pecofence_core::i18n::text("1 分钟").to_string()
-                } else if minutes == 60 {
-                    pecofence_core::i18n::text("1 小时").to_string()
-                } else if minutes < 60 {
-                    pecofence_core::i18n::format("{0} 分钟", &[minutes.to_string()])
-                } else {
-                    pecofence_core::i18n::format("{0} 小时", &[(minutes / 60).to_string()])
-                };
-                interval_menu.item(
-                    CMD_FENCE_SCRIPT_INTERVAL_BASE + i as u32,
-                    &label,
-                    interval == minutes,
+            let plugin = spec.and_then(|s| super::plugins::plugin_id(&s.path));
+            if let Some(id) = plugin {
+                // A plugin fence: its settings and details on the settings page, and a restart.
+                let has_settings = self
+                    .plugin(id)
+                    .is_some_and(|p| !p.manifest.settings.is_empty());
+                menu.item(
+                    CMD_FENCE_PLUGIN_SETTINGS,
+                    pecofence_core::i18n::text("插件设置"),
                     false,
-                );
-            }
-            menu.item(
-                CMD_FENCE_SCRIPT_RUN,
-                pecofence_core::i18n::text("立即运行"),
-                false,
-                !has_path,
-            )
-            .icon(glyph::PLAY)
-            .item(CMD_FENCE_SCRIPT_PICK, pick, false, false)
-            .icon(glyph::DOCUMENT)
-            .submenu(pecofence_core::i18n::text("运行间隔"), interval_menu)
-            .icon(glyph::CLOCK);
-            if !plugin {
-                let edit = pecofence_core::i18n::text("编辑脚本");
-                menu.item(CMD_FENCE_SCRIPT_EDIT, edit, false, !has_path)
-                    .icon(glyph::EDIT);
-            }
-            menu.item(
-                CMD_FENCE_SCRIPT_FOLDER,
-                pecofence_core::i18n::text("打开脚本所在的文件夹"),
-                false,
-                !has_path,
-            )
-            .icon(glyph::FOLDER_OPEN);
-            // A plugin fence's switches, checked while on.
-            let id = spec.and_then(|s| super::plugins::plugin_id(&s.path));
-            if let Some(m) = id.and_then(|id| self.plugin_manifest(id)) {
-                let saved = spec.map(|s| s.settings.clone()).unwrap_or_default();
-                let now = pecofence_core::plugins::fence_settings(&m, &saved);
-                let lang = pecofence_core::i18n::language().tag();
-                for (i, s) in m.settings.iter().enumerate().take(20) {
-                    if s.kind == "switch" {
-                        let on = now[&s.key].as_bool().unwrap_or(false);
-                        let label = pecofence_core::plugins::pick(&s.label, lang);
-                        menu.item(CMD_FENCE_PLUGIN_SETTING_BASE + i as u32, label, on, false);
-                    }
+                    !has_settings,
+                )
+                .icon(glyph::SETTING)
+                .item(
+                    CMD_FENCE_SCRIPT_PICK,
+                    pecofence_core::i18n::text("插件详情"),
+                    false,
+                    false,
+                )
+                .icon(glyph::DOCUMENT)
+                .item(
+                    CMD_FENCE_SCRIPT_RUN,
+                    pecofence_core::i18n::text("重新启动插件"),
+                    false,
+                    false,
+                )
+                .icon(glyph::REFRESH);
+            } else {
+                let interval = spec.map_or(0, |s| s.interval_minutes);
+                let interval_menu = PopupMenu::new();
+                for (i, minutes) in pecofence_core::ScriptSpec::INTERVALS
+                    .into_iter()
+                    .enumerate()
+                {
+                    let label = if minutes == 1 {
+                        pecofence_core::i18n::text("1 分钟").to_string()
+                    } else if minutes == 60 {
+                        pecofence_core::i18n::text("1 小时").to_string()
+                    } else if minutes < 60 {
+                        pecofence_core::i18n::format("{0} 分钟", &[minutes.to_string()])
+                    } else {
+                        pecofence_core::i18n::format("{0} 小时", &[(minutes / 60).to_string()])
+                    };
+                    interval_menu.item(
+                        CMD_FENCE_SCRIPT_INTERVAL_BASE + i as u32,
+                        &label,
+                        interval == minutes,
+                        false,
+                    );
                 }
+                menu.item(
+                    CMD_FENCE_SCRIPT_RUN,
+                    pecofence_core::i18n::text("立即运行"),
+                    false,
+                    !has_path,
+                )
+                .icon(glyph::PLAY)
+                .item(
+                    CMD_FENCE_SCRIPT_PICK,
+                    pecofence_core::i18n::text("选择脚本…"),
+                    false,
+                    false,
+                )
+                .icon(glyph::DOCUMENT)
+                .submenu(pecofence_core::i18n::text("运行间隔"), interval_menu)
+                .icon(glyph::CLOCK)
+                .item(
+                    CMD_FENCE_SCRIPT_EDIT,
+                    pecofence_core::i18n::text("编辑脚本"),
+                    false,
+                    !has_path,
+                )
+                .icon(glyph::EDIT)
+                .item(
+                    CMD_FENCE_SCRIPT_FOLDER,
+                    pecofence_core::i18n::text("打开脚本所在的文件夹"),
+                    false,
+                    !has_path,
+                )
+                .icon(glyph::FOLDER_OPEN);
             }
         } else if f.tool == Some(pecofence_core::FenceTool::Clock) {
             // An entry with an icon shows no check mark: like 锁定位置和大小, it names what a
@@ -1624,15 +1639,16 @@ impl App {
                     .and_then(|s| super::plugins::plugin_id(&s.path))
                     .map(str::to_string)
                 {
-                    Some(id) => self.show_plugin(&id),
+                    Some(id) => self.show_plugin(&id, None),
                     None => self.pick_script_for(fence),
                 }
             }
             CMD_FENCE_SCRIPT_FOLDER => self.open_script_folder(fence),
-            c if (CMD_FENCE_PLUGIN_SETTING_BASE..CMD_FENCE_PLUGIN_SETTING_BASE + 20)
-                .contains(&c) =>
-            {
-                self.toggle_plugin_setting(fence, (c - CMD_FENCE_PLUGIN_SETTING_BASE) as usize)
+            CMD_FENCE_PLUGIN_SETTINGS => {
+                let spec = self.state.config.scripts.get(&fence);
+                if let Some(id) = spec.and_then(|s| super::plugins::plugin_id(&s.path)) {
+                    self.show_plugin(&id.to_string(), Some(fence));
+                }
             }
             c if (CMD_FENCE_SCRIPT_INTERVAL_BASE
                 ..CMD_FENCE_SCRIPT_INTERVAL_BASE

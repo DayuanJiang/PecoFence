@@ -281,6 +281,10 @@ pub struct ToolSettings {
     /// the Everything file search finds.
     #[serde(default)]
     pub everything: bool,
+    /// 允许插件使用 Windows 底层功能: plugins that declare programs (`system` in plugin.json)
+    /// may start them. Off by default; off, `pf.run` is refused.
+    #[serde(default)]
+    pub allow_system: bool,
 }
 
 impl Default for ToolSettings {
@@ -290,6 +294,7 @@ impl Default for ToolSettings {
             clock_seconds: false,
             dialog_jump: false,
             everything: false,
+            allow_system: false,
         }
     }
 }

@@ -181,6 +181,8 @@ impl App {
                         self.light.stopped.insert(fence, why);
                     }
                     hosts.push(self.state.host_of(fence));
+                    // In the first minute after an update, back to the version before.
+                    self.plugin_stopped(fence);
                 }
             }
         }
@@ -214,33 +216,11 @@ impl App {
         })
     }
 
-    /// A switch of the plugin fence's settings (its fence menu) turned over.
-    pub(super) fn toggle_plugin_setting(&mut self, fence: FenceId, index: usize) {
-        let id = self
-            .state
-            .config
-            .scripts
-            .get(&fence)
-            .and_then(|s| super::plugins::plugin_id(&s.path));
-        let Some(m) = id
-            .map(str::to_string)
-            .and_then(|id| self.plugin_manifest(&id))
-        else {
-            return;
-        };
-        let (Some(setting), Some(spec)) = (
-            m.settings.get(index),
-            self.state.config.scripts.get_mut(&fence),
-        ) else {
-            return;
-        };
-        let now = pecofence_core::plugins::fence_settings(&m, &spec.settings);
-        let on = !now[&setting.key].as_bool().unwrap_or(false);
-        spec.settings.insert(setting.key.clone(), on.into());
-        let settings = pecofence_core::plugins::fence_settings(&m, &spec.settings);
-        tracing::info!(%fence, key = setting.key, on, "plugin fence setting changed");
-        self.state.mark_dirty();
-        self.schedule_save();
-        self.light_send(host::Command::Event(fence, "settings", settings));
+    /// A fence's event for its plugin (click, dblclick, change, text, settings). Stub for
+    /// pf-store's settings form: pf-api's version replaces it.
+    pub(super) fn plugin_event(&mut self, fence: FenceId, name: &str, data: serde_json::Value) {
+        if name == "settings" {
+            self.light_send(host::Command::Event(fence, "settings", data));
+        }
     }
 }
