@@ -454,11 +454,10 @@ impl WebFence {
         tracing::debug!(plugin = %self.plugin.id, fence = %self.fence, ok, "web plugin: pf call answered");
     }
 
-    /// A mouse button went down in the page within the last second (`pf.open`, the menu).
-    pub fn pressed_lately(&self) -> bool {
-        self.pressed
-            .get()
-            .is_some_and(|t| t.elapsed() < PRESS_GRACE)
+    /// A mouse button went down in the page within the last second (`pf.open`, the menu): true
+    /// once, the press is used up.
+    pub fn take_press(&self) -> bool {
+        (self.pressed.take()).is_some_and(|t| t.elapsed() < PRESS_GRACE)
     }
 
     /// The fence's text changed between light and dark (`redraw_content`): `prefers-color-scheme`

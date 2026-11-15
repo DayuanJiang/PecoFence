@@ -196,8 +196,9 @@ impl App {
 
     /// A page's `pf.*` call: `post` goes to the plugin's main.js, `menu` (a right-click the
     /// page did not take) opens the fence's menu, the rest run as the light layer's calls do
-    /// (`plugin_api`, the same permission checks). `pf.open` and the menu need a press in the
-    /// page within the last second.
+    /// (`plugin_api`, the same permission checks). The menu and the calls a light plugin may make
+    /// only in a click need a press in the page within the last second, and each press lets one
+    /// through; `pf.launch.add` works only in main.js's `drop` handler (the page gets no drop).
     pub(super) fn web_call(
         &mut self,
         page: Weak<WebFence>,
@@ -208,8 +209,20 @@ impl App {
         let Some(web) = page.upgrade() else {
             return;
         };
-        let (fence, pressed) = (web.fence, web.pressed_lately());
+        let fence = web.fence;
         let plugin = web.plugin.id.clone();
+        let gated = [
+            "menu",
+            "open",
+            "launch.open",
+            "launch.pick",
+            "media.control",
+        ];
+        if gated.contains(&call.as_str()) && !web.take_press() {
+            tracing::info!(plugin, %fence, call, "web plugin: refused, no click in the fence just before (or it let another call through)");
+            let why = format!("pf.{call} works only right after a click in the fence");
+            return web.reply(&id, Err(why));
+        }
         match call.as_str() {
             "post" => {
                 let data = args.get(0).cloned().unwrap_or_default();
@@ -220,19 +233,15 @@ impl App {
                 let uri = crate::web_plugin::short(args[0].as_str().unwrap_or(""));
                 tracing::info!(plugin, %fence, uri, "web plugin: navigation to another site refused in the page");
             }
-            "menu" if pressed => {
+            "menu" => {
                 let p = window::cursor_pos();
                 tracing::debug!(plugin, %fence, "web plugin: right-click on the page, the fence menu");
                 self.show_fence_menu(fence, p.x, p.y);
             }
-            "menu" | "open" | "media.control" if !pressed => {
-                tracing::info!(plugin, %fence, call, "web plugin: refused, no click in the fence just before");
-                web.reply(
-                    &id,
-                    Err(format!(
-                        "pf.{call} works only right after a click in the fence"
-                    )),
-                );
+            "launch.add" => {
+                tracing::info!(plugin, %fence, "web plugin: launch.add refused, the page gets no drop");
+                let why = "pf.launch.add works only in a drop handler of main.js";
+                web.reply(&id, Err(why.into()));
             }
             _ => {
                 tracing::debug!(plugin, %fence, call, "web plugin: pf call");
