@@ -97,10 +97,11 @@ Check 'the cover is in the plugin''s data folder, one file, shown in the first r
 $a = Shown $script:Now; Start-Sleep -Seconds 3; $b = Shown $script:Now
 Check 'the time moves on, about a second a second' ($a -ge 0 -and $b - $a -ge 2 -and $b - $a -le 4) "a=$a b=$b"
 Check 'app: Msedge in the fence whose plugin lists msedge.exe, none in the other' (((Rows $script:Edge)[0] -eq 'Msedge') -and ((FenceOut $script:Now) -notmatch 'Msedge')) "edge=$((Rows $script:Edge) -join ' / ') now=$((Rows $script:Now) -join ' / ')"
-$proc = Get-Process pecofence | Select-Object -First 1
-$c0 = $proc.TotalProcessorTime.TotalMilliseconds; Start-Sleep -Seconds 10; $proc.Refresh(); $c1 = $proc.TotalProcessorTime.TotalMilliseconds
+# All of PecoFence's processes (the first one alone may be a helper that does nothing here).
+function CpuMs() { return (@(Get-Process pecofence -ErrorAction SilentlyContinue) | ForEach-Object { $_.TotalProcessorTime.TotalMilliseconds } | Measure-Object -Sum).Sum }
+$c0 = CpuMs; Start-Sleep -Seconds 10; $c1 = CpuMs
 Log "pecofence CPU while two media fences show what plays: $([int]($c1 - $c0)) ms in 10 s"
-Check 'PecoFence''s CPU while it plays (two fences, a read and a view a second)' ($c1 - $c0 -lt 200) "$([int]($c1 - $c0)) ms in 10 s"
+Check 'PecoFence''s CPU while it plays (two fences, a read and a view a second)' ($c1 -gt $c0 -and $c1 - $c0 -lt 200) "$([int]($c1 - $c0)) ms in 10 s"
 FenceShot 'playing' 'Now playing'
 
 Case 'the buttons: pause, play, next, previous, only in a click'
