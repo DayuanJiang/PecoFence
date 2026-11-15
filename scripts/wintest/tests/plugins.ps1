@@ -181,13 +181,17 @@ Refresh
 $again = LogCount 'plugins: download id="pf-test".*1\.2\.0'
 Check 'the next check does not take 1.2.0 again' ($again -eq $downloads + 1 -and (Installed) -eq '1.1.0') "downloads=$downloads then $again"
 
-Case 'a new version whose timer throws goes back to the version before as well'
+Case 'a new version whose timer throws goes back to the version before as well, also when failed.txt cannot be written'
 Offer 'pf-test' 'PF Test' '1.3.0' @{} "pf.on('start', () => { pf.show({ rows: [{ text: 'pf-test 1.3.0' }] }); pf.after(1, () => { throw new Error('broken in a timer 1.3.0'); }); });`r`n"; Publish 41
+# Held open without write sharing: failed.txt cannot be written.
+$hold = [IO.File]::Open("$script:Config\plugins\pf-test\failed.txt", 'Open', 'Read', 'Read')
 Refresh
 $back = PfWaitLog 'the new version stopped after its update.*1\.3\.0.*back=true' 15; Start-Sleep -Seconds 3
+$hold.Dispose()
 $err = PfWaitLog 'plugin error: it escaped a handler.*broken in a timer' 1
+$unwritten = PfWaitLog 'failed\.txt not written' 1
 $f = @(PluginFences pf-test)
-Check 'the error is logged, then back on 1.1.0: 1.3.0 deleted and remembered as failed, the fences run 1.1.0' ($err -and $back -and (Installed) -eq '1.1.0' -and (Versions) -notmatch '1\.3\.0' -and (Get-Content "$script:Config\plugins\pf-test\failed.txt") -eq '1.3.0' -and $f[0].script.output -match '1\.1\.0') "versions=$(Versions) err=$err back=$back"
+Check 'the error is logged, then back on 1.1.0: 1.3.0 deleted, failed.txt not written, the fences run 1.1.0 all the same' ($err -and $back -and $unwritten -and (Installed) -eq '1.1.0' -and (Versions) -notmatch '1\.3\.0' -and $f[0].script.output -match '1\.1\.0' -and $f[1].script.output -match '1\.1\.0') "versions=$(Versions) out=$($f[0].script.output) | $($f[1].script.output) err=$err back=$back"
 
 Case 'an update that asks for more waits for the OK'
 Offer 'pf-test' 'PF Test' '2.0.0' @{ network = @('example.com') }; Publish 5
