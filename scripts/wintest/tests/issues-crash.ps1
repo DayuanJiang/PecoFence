@@ -8,6 +8,8 @@
 
 $IcPart = 'ABC'
 if ($Part) { $IcPart = $Part }
+# --var Rec=before (or after) records case A1 for a before/after clip (rec.ps1).
+if ($Rec) { . C:\pf\kit\rec.ps1 }
 
 Add-Type @'
 using System;
@@ -144,12 +146,15 @@ if ($IcPart -match 'A') {
 
   Case 'A1 invalid operation unmasked while nothing happens, then a right-click on an icon'
   $f = UiThreadFence
+  $p = try { ItemPt '浮点 测试' '浮点 报告' } catch { $null }
+  if ($Rec) { RecStart "A1-$Rec" -X 400 -Y 80 -W 720 -H 480 -Fps 12; RecMark '另一个程序打开了浮点异常'; Start-Sleep -Milliseconds 800 }
   $r = [Fp]::SetMxcsr($f, [Convert]::ToUInt32("FFFFFF40", 16), 0)
   Log "inject: $r"
   Start-Sleep -Milliseconds 300
-  $p = try { ItemPt '浮点 测试' '浮点 报告' } catch { $null }
+  if ($Rec) { RecMark '右键点一个图标'; [G]::MoveTo($p[0], $p[1]); Start-Sleep -Milliseconds 300 }
   if ($p) { [G]::RClick($p[0], $p[1]) }
   Start-Sleep -Milliseconds 1200
+  if ($Rec) { RecMark '等一会儿'; Start-Sleep -Milliseconds 1500; RecStop }
   Shot 'A1-menu'
   if (PfAlive) {
     CloseMenus
@@ -339,7 +344,7 @@ if ($IcPart -match 'C') {
       if (-not (Test-Path -LiteralPath (Join-Path $src $name))) { Set-Content -LiteralPath (Join-Path $src $name) "folder copy $k" }
       $p = SrcItemPt; $q = FenceDropPt
       # desk-esc: onto the 「桌面」 fence, arranged like the desktop, away from the other fence.
-      if ($how -eq 'desk-esc') { $q = @(1300, 640) }
+      if ($how -eq 'desk-esc') { $q = @(640, 770) }
       if (-not $p) { $rows += "${how} ${k}: source row not found"; continue }
       # copy-esc: Ctrl held, so the file is copied (the reporter's drop was a copy).
       if ($how -eq 'copy-esc') { [G]::KeyDown(0x11) }
