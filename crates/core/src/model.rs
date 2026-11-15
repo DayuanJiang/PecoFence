@@ -2254,8 +2254,10 @@ impl Config {
                 .iter_mut()
                 .flat_map(|s| s.scripts.values_mut()),
         );
+        // What the user gave a plugin fence there (folders, launcher items, shortcuts, under keys
+        // that start with `__`) is of that computer.
         for spec in specs {
-            spec.settings.remove("__folders");
+            spec.settings.retain(|k, _| !k.starts_with("__"));
         }
         dropped
     }
@@ -3029,6 +3031,12 @@ mod tests {
             spec.settings.insert("seconds".into(), true.into());
             spec.settings
                 .insert("__folders".into(), serde_json::json!([folder]));
+            spec.settings.insert(
+                "__launch".into(),
+                serde_json::json!([{ "id": "1", "path": "C:/x.bat", "name": "x" }]),
+            );
+            spec.settings
+                .insert("__keys".into(), serde_json::json!({ "show": "Ctrl+Alt+L" }));
             spec
         };
         // A plugin fence only a snapshot shows, one in the layouts, and a script in no layout.
@@ -3053,7 +3061,10 @@ mod tests {
         assert!(kept.held && kept.path == "plugin:clock");
         let specs = c.scripts.values().chain([kept]);
         for spec in specs {
-            assert!(!spec.settings.contains_key("__folders"), "{spec:?}");
+            assert!(
+                !spec.settings.keys().any(|k| k.starts_with("__")),
+                "{spec:?}"
+            );
         }
         assert_eq!(c.scripts[&old_clock].settings["seconds"], true);
     }
