@@ -14,7 +14,8 @@ KIT=$(cd "$HV/.." && pwd)
 REPO=$(cd "$KIT/../.." && pwd)
 SSHH=${WINTEST_HV_SSH:-win}
 VM=; BIN=$REPO/target/wintest-bin; EXTRA=; TIMEOUT=1500; NOTEPAD=-ClassicNotepad
-TAG=$(date +%m%d-%H%M%S)
+# The PID keeps two runs started in the same second (two guests at once) out of each other's folder on the PC.
+TAG=$(date +%m%d-%H%M%S)-$$
 OUT=${CLAUDE_JOB_DIR:-/tmp/pecofence-wintest}/tmp/wintest-hv-$TAG
 while [ $# -gt 0 ]; do
   case "$1" in
