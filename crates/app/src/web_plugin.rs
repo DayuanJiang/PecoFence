@@ -273,7 +273,7 @@ impl WebFence {
         let (x, y, w, h, scale) = self.bounds.get();
         controller.set_rasterization_scale(scale)?;
         controller.set_bounds(x, y, x + w, y + h)?;
-        controller.set_visible(self.shown.get())?;
+        controller.set_visible(true)?;
         webview.navigate(&format!("{origin}index.html"))?;
         self.input_tries.set(40);
         window::set_timer(self.hwnd, TIMER_WEB_INPUT, 100);
@@ -430,17 +430,17 @@ impl WebFence {
     }
 
     /// The fence shows its page (false: rolled up, hidden with the desktop). A hidden page goes to
-    /// low memory at once and is suspended 30 s later; showing it resumes it.
+    /// low memory at once; 30 s later it stops drawing and is suspended (`suspend`). It keeps
+    /// drawing until then: a fence expanded again within 30 s shows its page in the same frame as
+    /// its glass (an invisible browser needs a frame to draw again).
     pub fn set_shown(&self, shown: bool) {
         if self.shown.replace(shown) == shown {
             return;
         }
         if let Some(live) = self.live.borrow().as_ref() {
-            let _ = live.controller.set_visible(shown);
-            if shown {
-                let _ = live.webview.resume();
-            }
             let level = if shown {
+                let _ = live.controller.set_visible(true);
+                let _ = live.webview.resume();
                 MemoryUsageTargetLevel::Normal
             } else {
                 MemoryUsageTargetLevel::Low
@@ -464,6 +464,8 @@ impl WebFence {
             return;
         }
         if let Some(live) = self.live.borrow().as_ref() {
+            // WebView2 suspends only an invisible browser.
+            let _ = live.controller.set_visible(false);
             let id = self.plugin.id.clone();
             let asked = live.webview.try_suspend(move |r| {
                 tracing::info!(plugin = %id, suspended = ?r, "web plugin: hidden page suspended");

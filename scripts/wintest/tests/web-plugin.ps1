@@ -3,7 +3,7 @@
 # answers, and what the plugin must not do is refused. Part B (release build): screenshots
 # next to a normal fence, clips of roll-up, fade, move and resize. Part M (release build): the
 # memory of PecoFence's process group with no web plugin, one, two, and after 60 s hidden.
-# run.sh --var Part=A|B|M (default A).
+# Part I (debug build): Chinese typing with Microsoft Pinyin in the page. run.sh --var Part=A|B|M|I (default A).
 if (-not $Part) { $Part = 'A' }
 $Demo = 'C:\pf\kit\assets\webdemo'
 
@@ -66,7 +66,13 @@ function MemNow([string]$what) {
 
 Case 'setup'
 CloseWindows
-if ($Part -eq 'A' -and $PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352' }
+if ($Part -eq 'I') {
+  # Microsoft Pinyin for pf, before PecoFence starts (taken away again at the end).
+  $langs = Get-WinUserLanguageList
+  $script:AddedZh = -not ($langs | Where-Object { $_.LanguageTag -like 'zh-Hans*' })
+  if ($AddedZh) { $langs.Add('zh-Hans-CN'); Set-WinUserLanguageList $langs -Force }
+}
+if ($Part -in 'A', 'I' -and $PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352' }
 PfStart -Lang en
 $script:Config = Split-Path (PfJson status).configPath
 InstallDemo
@@ -223,4 +229,50 @@ if ($Part -eq 'M') {
   Start-Sleep -Seconds 10
   $m4 = MemNow 'two, shown again'
   Check 'memory readings taken' ($m0 -and $m1 -and $m2 -and $m3 -and $m4) ((Get-Content "$PfShots\memory.tsv") -join ' / ')
+}
+
+if ($Part -eq 'I') {
+  Add-Type @"
+using System; using System.Runtime.InteropServices;
+public static class WebIme {
+  [DllImport("user32.dll")] static extern IntPtr LoadKeyboardLayoutW(string id, uint flags);
+  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
+  // Asks the foreground window to switch to Chinese (PRC) with its default IME, Microsoft Pinyin.
+  public static void Chinese() { var hkl = LoadKeyboardLayoutW("00000804", 1); PostMessageW(GetForegroundWindow(), 0x50, IntPtr.Zero, hkl); }
+  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
+  [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
+  public static string Layout() { var t = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero); return GetKeyboardLayout(t).ToInt64().ToString("X"); }
+  public static void English() { var hkl = LoadKeyboardLayoutW("00000409", 1); PostMessageW(GetForegroundWindow(), 0x50, IntPtr.Zero, hkl); }
+}
+"@
+  Case 'chinese input'
+  $fid = NewWebFence 'Web' '420,160,380,460'
+  Check 'the page loads' ($null -ne (PfWaitLog 'web plugin: page loading' 30)) ''
+  $h = FenceWin 'Web'
+  $reached = CdpOpen -Url 'https://webdemo.plugins.pecofence/*' -sec 30
+  JsWait "document.getElementById('list').children.length === 40" 15 | Out-Null
+  Start-Sleep -Seconds 2
+  $t = WebRect $h '#box'
+  [G]::Click($t.cx, $t.cy); Start-Sleep -Milliseconds 800
+  [WebIme]::Chinese(); Start-Sleep -Milliseconds 1500
+  Log "layout after the request: $([WebIme]::Layout())"
+  if ([WebIme]::Layout() -notlike '*0804') { Chord 0x5B 0x20; Start-Sleep -Milliseconds 1500; Log "layout after Win+Space: $([WebIme]::Layout())" }
+  Check 'the fence thread has the Chinese layout' ([WebIme]::Layout() -like '*0804') ([WebIme]::Layout())
+  foreach ($c in 'NIHAO'.ToCharArray()) { [G]::Press([uint16][int]$c); Start-Sleep -Milliseconds 150 }
+  Start-Sleep -Milliseconds 1200
+  Shot 'I1-composing'
+  [G]::Press(0x20); Start-Sleep -Milliseconds 1000
+  $v = Js "document.getElementById('box').value"
+  Check 'Chinese typed with Microsoft Pinyin lands in the text box' ($v -match '[一-鿿]') "value='$v' fg=$(Fg)"
+  foreach ($c in 'SHIJIE'.ToCharArray()) { [G]::Press([uint16][int]$c); Start-Sleep -Milliseconds 150 }
+  Start-Sleep -Milliseconds 1200
+  Shot 'I2-composing-after-text'
+  [G]::Press(0x20); Start-Sleep -Milliseconds 1000
+  $v = Js "document.getElementById('box').value"
+  Log "box: $v"
+  Check 'a second word follows the first' ($v.Length -ge 4) "value='$v'"
+  [WebIme]::English(); Start-Sleep -Milliseconds 800
+  Shot 'I3-typed'
+  if ($AddedZh) { $langs = Get-WinUserLanguageList; $zh = $langs | Where-Object { $_.LanguageTag -like 'zh-Hans*' }; foreach ($z in @($zh)) { [void]$langs.Remove($z) }; Set-WinUserLanguageList $langs -Force }
 }
