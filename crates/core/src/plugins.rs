@@ -414,8 +414,9 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
     if p.commands.len() > 8 || !once(&ids) || !p.commands.iter().all(command_ok) {
         return Err(format!("{}: bad commands", m.id));
     }
+    // Text and links come with the drops of the second batch: until then files only.
     let drops: Vec<&str> = p.drop.iter().map(String::as_str).collect();
-    if !once(&drops) || !drops.iter().all(|d| ["files", "text", "links"].contains(d)) {
+    if !once(&drops) || !drops.iter().all(|d| *d == "files") {
         return Err(format!("{}: bad drop kinds", m.id));
     }
     let app_ok = |a: &String| valid_plain_name(a) && a.to_ascii_lowercase().ends_with(".exe");
@@ -569,9 +570,10 @@ pub fn more_permissions(old: &Permissions, new: &Permissions) -> Vec<&'static st
             .any(|h| !o.iter().any(|g| g.eq_ignore_ascii_case(h)))
     };
     let links = [old.links.as_slice(), old.network.as_slice()].concat();
-    let ids = |p: &Permissions| p.commands.iter().map(|c| c.id.clone()).collect::<Vec<_>>();
+    // Command ids are compared exactly: `Show` is another command than `show`.
+    let new_command = (new.commands.iter()).any(|n| !old.commands.iter().any(|o| o.id == n.id));
     [
-        ("commands", added(&ids(old), &ids(new))),
+        ("commands", new_command),
         ("drop", added(&old.drop, &new.drop)),
         ("launch", new.launch && !old.launch),
         ("media", new.media > old.media),
@@ -1021,6 +1023,7 @@ mod tests {
                 json!({ "commands": [{ "id": "show" }, { "id": "add" }] }),
                 "commands",
             ),
+            (json!({ "commands": [{ "id": "Show" }] }), "commands"),
             (json!({ "drop": ["files", "text"] }), "drop"),
             (json!({ "media": "control" }), "media"),
             (json!({ "apps": ["Spotify.exe", "obs64.exe"] }), "apps"),
@@ -1043,25 +1046,29 @@ mod tests {
             .is_empty()
         );
         assert!(Media::Control.reads() && Media::Control.controls() && !Media::Read.controls());
+        // Each of these reads as a manifest, and the check refuses it.
         for bad in [
             json!({ "drop": ["folders"] }),
             json!({ "drop": ["files", "files"] }),
+            json!({ "drop": ["text"] }),
+            json!({ "drop": ["files", "links"] }),
             json!({ "apps": ["C:\\x\\spotify.exe"] }),
             json!({ "apps": ["spotify"] }),
-            json!({ "media": "write" }),
             json!({ "commands": [{ "id": "a b", "title": { "en": "A" } }] }),
             json!({ "commands": [{ "id": "a", "title": { "zh-CN": "甲" } }] }),
             json!({ "commands": [{ "id": "a", "title": { "en": "A" } }, { "id": "a", "title": { "en": "B" } }] }),
             json!({ "commands": [{ "id": "a", "title": { "en": "x".repeat(41) } }] }),
         ] {
-            let m = serde_json::from_value::<Manifest>({
-                let mut v = entry("countdown");
+            let m = manifest(|v| {
                 v["api"] = 2.into();
                 v["permissions"] = bad.clone();
-                v
             });
-            assert!(m.map_or(true, |m| check_manifest(&m).is_err()), "{bad}");
+            assert!(check_manifest(&m).is_err(), "{bad}");
         }
+        // An unknown media level does not even read.
+        let mut v = entry("countdown");
+        v["permissions"] = json!({ "media": "write" });
+        assert!(serde_json::from_value::<Manifest>(v).is_err());
     }
 
     #[test]
