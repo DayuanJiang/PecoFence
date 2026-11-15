@@ -117,14 +117,14 @@ PageClick '#page-tools .toggle[data-bind="tools.enabled"]'; Start-Sleep -Seconds
 $off = (FenceWindows).Count
 $g = PfJson fence get $st[0].id
 $s = if ($g.fence) { $g.fence.script } else { $g.script }
-Check 'off: the clock, the note and the two script fences go' ($off -eq $before - 4) "windows before=$before off=$off"
+Check 'off: the clock, the note and the script fence go' ($off -eq $before - 3) "windows before=$before off=$off"
 Check 'off: the streaming script stops' (-not $s.running) "running=$($s.running)"
 $h = AddToDesktop (FenceMenu (PlainFence))
 $texts = if ($h) { MenuTexts $h } else { '' }
 Check 'off: the fence menu has no New note / New tool' ($texts -match '^New fence' -and $texts -notmatch 'New note' -and $texts -notmatch 'New tool') $texts
 CloseMenus
 PageClick '#page-tools .toggle[data-bind="tools.enabled"]'; Start-Sleep -Seconds 4
-Check 'on again: the four come back' ((FenceWindows).Count -eq $before) "windows=$((FenceWindows).Count)"
+Check 'on again: the three come back' ((FenceWindows).Count -eq $before) "windows=$((FenceWindows).Count)"
 
 Case 'settings: 速览与搜索 page'
 PageClick 'nav a[data-page=peek]'; Start-Sleep -Milliseconds 600
