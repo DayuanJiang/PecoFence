@@ -701,12 +701,7 @@ impl FenceViewState {
                     self.chrome.label_size(),
                 ));
                 let top = cell.y - self.scroll_y + metrics.header_h + (metrics.row_h - box_h) / 2.0;
-                (
-                    text_x - 4.0,
-                    top,
-                    cols.name_x + cols.name_w,
-                    top + metrics.row_h - 4.0,
-                )
+                (text_x - 4.0, top, cols.name_x + cols.name_w, top + box_h)
             }
         };
         let win_left = win.left + self.content_x;
