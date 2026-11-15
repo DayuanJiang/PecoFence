@@ -245,7 +245,8 @@ pub fn begin_inline_rename(
 /// A plugin fence's one-line box (`input: { type: "line" }`) over `rect` (screen px, the field
 /// the fence draws), framed as an icon's name box: its edit has the keyboard and the input
 /// method. Enter or a click elsewhere hands the text to the plugin, Esc keeps the old one.
-/// `placeholder` shows grey while the box is empty.
+/// `placeholder` shows grey while the box is empty; its text is `font_dip` tall (the fence's
+/// 文字大小).
 #[allow(clippy::too_many_arguments)]
 pub fn begin_line_input(
     fence_hwnd: HWND,
@@ -255,6 +256,7 @@ pub fn begin_line_input(
     placeholder: String,
     queue: CommandQueue,
     ink: ColorF,
+    font_dip: f32,
 ) {
     let dpi = monitors::dpi_for_window(fence_hwnd).max(96);
     let px = |dip: f32| (dip * dpi as f32 / 96.0).round() as i32;
@@ -271,7 +273,7 @@ pub fn begin_line_input(
     begin_rename_at(
         rect,
         dpi,
-        14.0,
+        font_dip,
         RenameTarget::PluginLine(at.0, at.1),
         current,
         None,

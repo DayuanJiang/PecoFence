@@ -230,7 +230,10 @@ impl App {
         let Some(rect) = w.script_row_screen_rect(index, 0) else {
             return;
         };
-        tracing::info!(%fence, index, chars = line.value.chars().count(), "plugin fence: its one-line box opens");
+        // The box's text is as big as the fence's 文字大小, as the row under it.
+        let text_size = self.state.fence(fence).map_or(1, super::text_size_index);
+        let font_dip = pecofence_render::fence_chrome::TOOL_TEXT_SIZES[usize::from(text_size)];
+        tracing::info!(%fence, index, chars = line.value.chars().count(), font_dip, "plugin fence: its one-line box opens");
         crate::rename::begin_line_input(
             w.hwnd(),
             rect,
@@ -239,6 +242,7 @@ impl App {
             line.placeholder,
             self.queue.clone(),
             w.label_ink(self.theme_mode),
+            font_dip,
         );
     }
 
