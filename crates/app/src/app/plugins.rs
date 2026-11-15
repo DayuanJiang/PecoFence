@@ -1034,6 +1034,8 @@ impl App {
                 };
                 // A row offering an update describes what it brings.
                 let m = if state == "confirm" { offered? } else { mine.map(|p| &p.manifest).or(offered)? };
+                // The warning of an update by another author names the one before.
+                let before = mine.map(|p| &p.manifest.author).filter(|a| state == "confirm" && **a != m.author);
                 let p = &m.permissions;
                 // The settings form of each fence of the installed plugin.
                 let form = mine.map(|mine| {
@@ -1051,7 +1053,7 @@ impl App {
                 let (settings, fences) = form.unwrap_or_default();
                 Some(serde_json::json!({
                     "id": id, "name": texts(&m.name), "description": texts(&m.description),
-                    "author": m.author, "version": m.version, "installed": mine.is_some(), "layer": m.layer,
+                    "author": m.author, "authorBefore": before, "version": m.version, "installed": mine.is_some(), "layer": m.layer,
                     "network": p.network, "links": p.links, "system": p.system, "background": p.background,
                     "folders": p.folders, "notify": p.notify,
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),

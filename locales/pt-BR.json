@@ -1046,6 +1046,7 @@
   "安装“{0}”？": "Instalar “{0}”?",
   "更新“{0}”？": "Atualizar “{0}”?",
   "作者 {0}，审查过的版本是 {1}。": "De {0}. A versão revisada é a {1}.",
+  "作者换了，原来是 {0}，现在是 {1}。审查过的版本是 {2}。": "O autor mudou, antes era {0} e agora é {1}. A versão revisada é a {2}.",
   "安装并添加": "Instalar e adicionar",
   "便签、时钟、天气这些小工具都是插件，放在栅栏里，和普通栅栏一样可以移动、吸附和收起。": "Notas, o relógio, o clima e as outras ferramentas são plugins. Eles ficam em grupos: você move, encaixa e recolhe como qualquer outro grupo.",
   "允许插件使用 Windows 底层功能": "Deixar os plugins usarem funções do sistema do Windows",

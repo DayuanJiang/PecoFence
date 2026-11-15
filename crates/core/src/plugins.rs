@@ -521,7 +521,8 @@ pub fn needs_newer_app(m: &Manifest, app: &str) -> bool {
 }
 
 /// What to do with the index's `entry` when `installed` is on this computer and PecoFence is
-/// version `app`. A plugin with `system`, or one that changes its layer, always asks.
+/// version `app`. A plugin with `system`, or one that changes its layer or its author, always
+/// asks.
 pub fn update_kind(installed: &Manifest, entry: &Manifest, app: &str) -> Update {
     let (old, new) = (&installed.permissions, &entry.permissions);
     if !crate::updates::is_newer(&entry.version, &installed.version) {
@@ -530,6 +531,7 @@ pub fn update_kind(installed: &Manifest, entry: &Manifest, app: &str) -> Update 
         Update::NeedsNewerApp
     } else if !new.system.is_empty()
         || installed.layer != entry.layer
+        || installed.author != entry.author
         || !more_permissions(old, new).is_empty()
     {
         Update::Confirm
@@ -538,11 +540,14 @@ pub fn update_kind(installed: &Manifest, entry: &Manifest, app: &str) -> Update 
     }
 }
 
-/// What the install warning shows of plugin `m` (its version, layer and permissions), as one
-/// text: the page sends it back with 安装, and a different one now means the index changed
-/// while the warning was open, so the warning is shown again.
+/// What the install warning shows of plugin `m` (its version, layer, author and permissions),
+/// as one text: the page sends it back with 安装, and a different one now means the index
+/// changed while the warning was open, so the warning is shown again.
 pub fn shown_key(m: &Manifest) -> String {
-    format!("{} {} {:?}", m.version, m.layer, m.permissions)
+    format!(
+        "{} {} {:?} {:?}",
+        m.version, m.layer, m.author, m.permissions
+    )
 }
 
 /// The text for UI language `lang` ("zh-CN"): that language, another one of the same family,
@@ -942,6 +947,12 @@ mod tests {
             v["layer"] = "web".into();
         });
         assert_eq!(update_kind(&installed, &web, "0.4.0"), Update::Confirm);
+        // So does one whose author is someone else now.
+        let other = manifest(|v| {
+            v["version"] = "1.0.2".into();
+            v["author"] = "someone-else".into();
+        });
+        assert_eq!(update_kind(&installed, &other, "0.4.0"), Update::Confirm);
     }
 
     #[test]
@@ -954,6 +965,7 @@ mod tests {
             manifest(|v| v["permissions"]["clipboard"] = "read".into()),
             manifest(|v| v["permissions"]["network"] = json!(["x.com"])),
             manifest(|v| v["permissions"]["notify"] = true.into()),
+            manifest(|v| v["author"] = "someone-else".into()),
         ];
         for other in changed {
             assert_ne!(shown_key(&m), shown_key(&other), "{other:?}");

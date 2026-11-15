@@ -1929,7 +1929,9 @@
     plAsk = p;
     document.getElementById('plChanged').hidden = !changed;
     document.getElementById('plTitle').textContent = p.state === 'confirm' ? tf("更新“{0}”？", p.name) : tf("安装“{0}”？", p.name);
-    document.getElementById('plBy').textContent = tf("作者 {0}，审查过的版本是 {1}。", p.author, p.version);
+    document.getElementById('plBy').textContent = p.authorBefore
+      ? tf("作者换了，原来是 {0}，现在是 {1}。审查过的版本是 {2}。", p.authorBefore, p.author, p.version)
+      : tf("作者 {0}，审查过的版本是 {1}。", p.author, p.version);
     document.getElementById('plDoes').replaceChildren(...plLines(p).map(x => plEl('li', '', x)));
     document.getElementById('plSystem').hidden = !p.system.length;
     document.getElementById('plSystemText').textContent = tf("请特别注意它要启动的程序：{0}。这些程序能做你的账号能做的任何事，只在你信任它的作者时安装。", p.system.join(', '));
