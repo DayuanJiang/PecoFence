@@ -1351,6 +1351,7 @@ impl App {
                                 | updates::TIMER_UPDATE_CARD
                                 | updates::TIMER_UPDATE_RESUME
                                 | plugins::TIMER_PLUGINS_CHECK
+                                | plugins::TIMER_PLUGIN_FILES
                                 | TIMER_PORTAL_BACK
                                 | TIMER_CONFIG_LOCKED
                                 | desktop_import::TIMER_WINDOWS_PLACES
@@ -1395,6 +1396,9 @@ impl App {
                                             updates::TIMER_UPDATE_CARD => app.show_update_card(),
                                             plugins::TIMER_PLUGINS_CHECK => {
                                                 app.daily_plugins_check()
+                                            }
+                                            plugins::TIMER_PLUGIN_FILES => {
+                                                app.drop_files_of_deleted_fences()
                                             }
                                             updates::TIMER_UPDATE_RESUME => {
                                                 app.update_check_after_resume()
@@ -2491,7 +2495,7 @@ impl App {
         app.remove_old_update_downloads();
         app.arm_update_check(true);
         app.arm_plugins_check(true);
-        app.drop_stale_views(false);
+        app.drop_files_of_deleted_fences();
         // Last of the startup balloons, so it is the one left showing.
         app.offer_crash_feedback();
         app.offer_welcome();

@@ -260,6 +260,16 @@ impl Plugin {
         })));
         let ctx = Context::full(&rt).map_err(fail)?;
         let p = &s.permissions;
+        // The view of a plugin that may read the clipboard can hold copied texts: it is never
+        // kept on disk, and one an earlier version kept goes.
+        let cache = match &s.cache {
+            Some(path) if p.clipboard.reads() => {
+                let gone = std::fs::remove_file(path).is_ok();
+                tracing::info!(fence = %s.fence, gone, "plugin view not cached: it may read the clipboard");
+                None
+            }
+            cache => cache.clone(),
+        };
         let mut plugin = Plugin {
             fence: s.fence,
             number: s.number,
@@ -275,7 +285,7 @@ impl Plugin {
             reads_clipboard: p.clipboard.reads(),
             click: Rc::default(),
             second: (Instant::now(), Duration::ZERO),
-            cache: s.cache.clone(),
+            cache,
             cached: None,
             unsaved: false,
             rejected,
@@ -1259,6 +1269,42 @@ mod tests {
         assert_eq!(
             start("pf.on('start', () => pf.show({ rows: [{ text: 'now' }] }));"),
             ["now"]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_plugin_that_reads_the_clipboard_keeps_no_view_on_disk() {
+        let dir = std::env::temp_dir().join(format!("pf-cache-clip-{}", std::process::id()));
+        let path = dir.join("fence.view.json");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&path, r#"{"rows":[{"text":"copied"}]}"#).unwrap();
+        let (tx, rx) = channel();
+        let (out_tx, out_rx) = channel();
+        let host: Arc<dyn Host> = Arc::new(Fake::default());
+        let thread =
+            std::thread::spawn(move || run(rx, host, format, move |o| out_tx.send(o).unwrap()));
+        let s = Start {
+            code: "pf.on('start', () => pf.show({ rows: [{ text: 'copied too' }] }));".into(),
+            shown: true,
+            cache: Some(path.clone()),
+            permissions: Permissions {
+                clipboard: Clipboard::Read,
+                ..Permissions::default()
+            },
+            ..Start::default()
+        };
+        tx.send(Command::Start(Box::new(s))).unwrap();
+        std::thread::sleep(Duration::from_millis(300));
+        drop(tx);
+        thread.join().unwrap();
+        assert_eq!(
+            texts(&out_rx.try_iter().collect::<Vec<_>>()),
+            ["copied too"]
+        );
+        assert!(
+            !path.exists(),
+            "the old view stays, or the new one was written"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

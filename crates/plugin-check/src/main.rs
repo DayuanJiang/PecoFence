@@ -442,6 +442,8 @@ fn check(a: Args) -> Result<bool, String> {
         log.memory / 1024
     ));
     match shows.first().map(|t| (*t - begun).as_secs_f64()) {
+        // A web plugin's page is its view: its main.js need not show one.
+        None if manifest.layer == "web" => {}
         None => fails.push("the plugin never showed a view (pf.show)".to_string()),
         Some(s) if s > 1.0 => {
             warns.push(format!("the first view came after {s:.1} s (at most 1 s)"))
