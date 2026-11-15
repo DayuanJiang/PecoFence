@@ -2187,6 +2187,8 @@ impl Config {
     /// Makes `m.fence` a fence of plugin `m.plugin` in every layout and snapshot but
     /// [`BEFORE_PLUGINS`]: a note keeps its text in `notes`, a clock takes 显示秒 along as its
     /// `seconds` setting, an example keeps its interval and `held` with default settings.
+    /// [`BEFORE_PLUGINS`] keeps the example's script, which restoring it brings back; it keeps
+    /// no note texts, which stay in `notes` for both kinds of fence.
     pub fn move_to_plugin(&mut self, m: &PluginMove) {
         let (mut clock, mut script) = (false, false);
         for f in self.movable_layouts().flat_map(|l| l.fences.iter_mut()) {
@@ -2200,6 +2202,16 @@ impl Config {
         // Moved before (a snapshot brought it back as it was): its plugin settings stay.
         if self.scripts.get(&m.fence).is_some_and(|s| s.path == path) {
             return;
+        }
+        let old = self
+            .scripts
+            .get(&m.fence)
+            .filter(|s| !s.path.starts_with("plugin:"));
+        if let Some((old, before)) = old
+            .cloned()
+            .zip(self.snapshots.iter_mut().find(|s| s.id == BEFORE_PLUGINS))
+        {
+            before.scripts.entry(m.fence).or_insert(old);
         }
         let fresh = ScriptSpec::new("");
         let spec = self.scripts.entry(m.fence).or_insert(fresh.clone());
@@ -2935,6 +2947,12 @@ mod tests {
             }
             let json = |l: &Vec<Layout>| serde_json::to_string(l).unwrap();
             assert_eq!(json(&c.snapshots[2].layouts), json(&before.layouts));
+            // It keeps the moved example's script for the way back, and no note texts: those
+            // stay as they are when it is restored.
+            let kept = &c.snapshots[2];
+            assert!(kept.notes.is_empty());
+            assert_eq!(kept.scripts.keys().collect::<Vec<_>>(), [&weather]);
+            assert_eq!(kept.scripts[&weather].path, "C:/s/天气.ps1");
             assert_eq!(c.scripts[&note].path, "plugin:notes");
             assert_eq!(c.notes[&note], "[ ] milk\n[x] rent");
             assert_eq!(c.scripts[&clock].path, "plugin:clock");

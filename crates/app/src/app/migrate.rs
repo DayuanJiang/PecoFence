@@ -87,9 +87,9 @@ impl App {
             tracing::warn!("upgrade to plugins: waits, the snapshots are all the user's own");
             return false;
         }
+        // Restoring it brings the fences back, and the examples' scripts (`move_to_plugin` keeps
+        // them in it); the note texts stay as they are by then.
         let id = self.state.save_snapshot(i18n::text("升级为插件之前"));
-        // Restoring it brings the note texts and scripts back with the fences.
-        self.state.keep_tool_data_in(id);
         if let Some(s) = self.state.config.snapshots.iter_mut().find(|s| s.id == id) {
             s.id = BEFORE_PLUGINS;
         }
