@@ -544,9 +544,8 @@ impl App {
             );
             match why {
                 Some(why) if !disabled => self.disable_plugin(&id, &why),
-                None if kind == Update::Auto && !disabled && !failed => {
-                    self.start_plugin_download(&id, false)
-                }
+                None if disabled => self.relist_plugin(&id, kind, failed),
+                None if kind == Update::Auto && !failed => self.start_plugin_download(&id, false),
                 _ => {}
             }
         }
@@ -770,10 +769,29 @@ impl App {
         self.plugins.busy.remove(id);
         self.plugins.trial.remove(id);
         for fence in self.plugin_fences(id) {
+            self.close_plugin_input(fence);
             self.stop_script(fence);
         }
         disable_files(&self.plugins.root.join(id), why);
         self.plugins.reload(id);
+        for fence in self.plugin_fences(id) {
+            self.push_tool_view(self.state.host_of(fence));
+        }
+    }
+
+    /// The index lists plugin `id` again after taking it down: `disabled.txt` goes, and its code
+    /// comes back as an update would (by itself unless it asks for more; its fences and their
+    /// settings stayed).
+    fn relist_plugin(&mut self, id: &str, kind: Update, failed: bool) {
+        let removed = std::fs::remove_file(self.plugins.root.join(id).join("disabled.txt"));
+        let again = removed.is_ok() && !failed;
+        tracing::info!(id, ?kind, failed, again, error = ?removed.err(), "plugins: listed again after a take-down");
+        self.plugins.reload(id);
+        // Its code went with the take-down: the same version comes again.
+        let gone = self.plugin(id).is_some_and(|p| !p.ready);
+        if again && (kind == Update::Auto || (kind == Update::None && gone)) {
+            self.start_plugin_download(id, false);
+        }
         for fence in self.plugin_fences(id) {
             self.push_tool_view(self.state.host_of(fence));
         }
@@ -860,6 +878,7 @@ impl App {
         tracing::info!(id, fences = fences.len(), ?cancelled, "plugins: uninstall");
         self.plugins.trial.remove(id);
         for fence in fences {
+            self.close_plugin_input(fence);
             self.stop_script(fence);
             self.delete_fence(fence);
         }
