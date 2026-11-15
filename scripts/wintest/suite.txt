@@ -153,6 +153,9 @@ shellext-log       1   ec2    release shellext-fault.ps1             --extra @sh
 shellext-copy      1   ec2    release shellext-fault.ps1             --extra @shellext --var Part=C
 shellext-menu-off  2   ec2    release shellext-fault.ps1             --extra @shellext --var Part=M
 shellext-own-crash 1   ec2    release shellext-fault.ps1             --extra @shellext --var Part=O
+issues-fpu         1   ec2    release issues-crash.ps1               --var Part=A
+issues-covered     3   ec2    release issues-crash.ps1               --var Part=B
+issues-conflict    5   ec2    release issues-crash.ps1               --var Part=C
 shellext-load      1   ec2    release shellext-fault.ps1             --extra @shellext --var Part=A
 shellext-hang      2   ec2    release shellext-fault.ps1             --extra @shellext --var Part=H
 shellext-stall     2   ec2    debug   shellext-fault.ps1             --extra @shellext --var Part=S
