@@ -171,7 +171,7 @@ impl App {
 
     /// Where a new tool fence of `w` x `h` DIPs goes: a free spot near (`x`, `y`), or, made
     /// from the settings page, a spot its window does not cover (`place_clear_of`).
-    fn place_new_tool(&self, w: f32, h: f32, x: i32, y: i32) -> RECT {
+    pub(super) fn place_new_tool(&self, w: f32, h: f32, x: i32, y: i32) -> RECT {
         self.tool_clear_of
             .and_then(|win| self.place_clear_of(w, h, win))
             .unwrap_or_else(|| self.place_new_fence_dip(w, h, x, y, None))
@@ -217,7 +217,7 @@ impl App {
 
     /// Switches 小工具 on in the settings when it is off (a new tool fence would have no
     /// window otherwise).
-    fn ensure_tool_on(&mut self, tool: FenceTool) {
+    pub(super) fn ensure_tool_on(&mut self, tool: FenceTool) {
         if tool.enabled(&self.state.config.settings.tools) {
             return;
         }
@@ -327,10 +327,23 @@ impl App {
                 quiet: false,
             };
         };
-        let name = std::path::Path::new(&spec.path)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| spec.path.clone());
+        let plugin = super::plugins::plugin_id(&spec.path);
+        let name = match plugin {
+            Some(id) => self.plugin_name(id),
+            None => std::path::Path::new(&spec.path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| spec.path.clone()),
+        };
+        // A plugin that is not installed (an import, a restore) or was taken down says so.
+        if let Some(text) = plugin.and_then(|id| self.plugin_blocked_text(id)) {
+            return ScriptView {
+                rows: ScriptRowView::plain(&text),
+                footer: name,
+                footer_short: String::new(),
+                quiet: false,
+            };
+        }
         // A run started by the interval says so only once it has taken a while.
         let running = self.script_runs.running.contains_key(&id)
             && self
@@ -476,7 +489,11 @@ impl App {
             tracing::debug!(%id, "script fence not started: held since the import");
             return;
         }
-        let path = std::path::PathBuf::from(&spec.path);
+        let path = self.script_file(&spec.path);
+        if super::plugins::plugin_id(&spec.path).is_some() && !path.is_file() {
+            tracing::debug!(%id, "script fence not started: its plugin is not installed or was taken down");
+            return;
+        }
         if !self.script_runs.streams.contains_key(&id) && crate::scripts::update_old_example(&path)
         {
             tracing::info!(%id, "script fence runs the updated example");
@@ -554,10 +571,8 @@ impl App {
             let env = self.script_env(id, String::new());
             let tx = self.script_runs.tx.clone();
             let control = self.control.hwnd().0 as isize;
-            let started = crate::scripts::Stream::start(
-                std::path::Path::new(&spec.path),
-                &env,
-                move |event| {
+            let started =
+                crate::scripts::Stream::start(&self.script_file(&spec.path), &env, move |event| {
                     let _ = tx.send(ScriptMsg::Stream {
                         id,
                         start,
@@ -570,8 +585,7 @@ impl App {
                         0,
                         0,
                     );
-                },
-            );
+                });
             match started {
                 Ok(stream) => {
                     tracing::info!(%id, start, "script fence stream started");
@@ -634,12 +648,22 @@ impl App {
 
     /// What a run of fence `id`'s script is told (environment variables).
     fn script_env(&self, id: FenceId, action: String) -> crate::scripts::RunEnv {
-        let data_dir = self
+        // A plugin keeps one data folder for all its fences, and keeps it when they go.
+        let plugin = self
             .state
-            .config_path_on_disk()
-            .parent()
-            .map(|d| d.join("scripts-data").join(id.to_string()))
-            .unwrap_or_default();
+            .config
+            .scripts
+            .get(&id)
+            .and_then(|s| super::plugins::plugin_id(&s.path));
+        let data_dir = match plugin {
+            Some(plugin) => self.plugin_data_dir(plugin),
+            None => self
+                .state
+                .config_path_on_disk()
+                .parent()
+                .map(|d| d.join("scripts-data").join(id.to_string()))
+                .unwrap_or_default(),
+        };
         if let Err(e) = std::fs::create_dir_all(&data_dir) {
             tracing::warn!(%id, error = %e, "script data folder not made");
         }
@@ -858,7 +882,15 @@ impl App {
             .config
             .scripts
             .get(&fence)
-            .map(|s| std::path::PathBuf::from(&s.path));
+            .map(|s| self.script_file(&s.path));
+        // A plugin's rows start programs only when its installed plugin.json says so too.
+        let plugin_may_run = self
+            .state
+            .config
+            .scripts
+            .get(&fence)
+            .and_then(|s| super::plugins::plugin_id(&s.path))
+            .is_none_or(|id| self.plugin_may_run(id));
         let dir = script
             .as_deref()
             .and_then(|s| s.parent().map(|d| d.to_path_buf()));
@@ -894,7 +926,8 @@ impl App {
         // can be text from the network that reads as parameters. A cell of a row of cells and a
         // `dblaction=` are rows of their own here and go through the same check.
         if let Some(action) = &row.action {
-            let allows = script.as_deref().is_some_and(crate::scripts::allows_run);
+            let allows =
+                plugin_may_run && script.as_deref().is_some_and(crate::scripts::allows_run);
             let target = match &opens {
                 Some((target, path)) if !allows => crate::scripts::target_kind(target, path),
                 _ => TargetKind::Other,
@@ -1109,6 +1142,13 @@ impl App {
 
     /// 立即运行, `refresh=true` and `fence refresh`: runs fence `id`'s script now (after the
     /// run still going); a streaming script starts again.
+    /// Ends fence `id`'s streaming script (a plugin is updated, taken down or uninstalled).
+    pub(super) fn stop_script(&mut self, id: FenceId) {
+        if self.script_runs.streams.remove(&id).is_some() {
+            tracing::info!(%id, "script fence stream stopped");
+        }
+    }
+
     pub(super) fn refresh_script(&mut self, id: FenceId) {
         if self.script_runs.streams.remove(&id).is_some() {
             tracing::info!(%id, "script fence stream restarted");
@@ -1129,7 +1169,7 @@ impl App {
             return;
         };
         let started = std::process::Command::new("notepad.exe")
-            .arg(&spec.path)
+            .arg(self.script_file(&spec.path))
             .spawn();
         tracing::info!(%id, ok = started.is_ok(), "script fence: script opened in Notepad");
     }
@@ -1149,12 +1189,13 @@ impl App {
         // The path goes in between quotes. No file's path holds a quote, but one in an edited
         // or imported configuration can: it would end the argument early and hand Explorer the
         // rest as arguments of its own.
-        if spec.path.contains('"') {
+        let path = self.script_file(&spec.path).to_string_lossy().to_string();
+        if path.contains('"') {
             tracing::info!(%id, "script fence: its folder not opened, the path holds a quote");
             return;
         }
         let _ = std::process::Command::new("explorer.exe")
-            .raw_arg(format!("/select,\"{}\"", spec.path))
+            .raw_arg(format!("/select,\"{path}\""))
             .spawn();
     }
 

@@ -1001,6 +1001,13 @@ impl App {
         } else if f.tool == Some(pecofence_core::FenceTool::Script) {
             let spec = self.state.config.scripts.get(&fence);
             let has_path = spec.is_some_and(|s| !s.path.is_empty());
+            // A plugin fence offers 插件详情 in place of 选择脚本… and 编辑脚本.
+            let plugin = spec.is_some_and(|s| super::plugins::plugin_id(&s.path).is_some());
+            let pick = if plugin {
+                pecofence_core::i18n::text("插件详情")
+            } else {
+                pecofence_core::i18n::text("选择脚本…")
+            };
             let interval = spec.map_or(0, |s| s.interval_minutes);
             let interval_menu = PopupMenu::new();
             for (i, minutes) in pecofence_core::ScriptSpec::INTERVALS
@@ -1030,23 +1037,16 @@ impl App {
                 !has_path,
             )
             .icon(glyph::PLAY)
-            .item(
-                CMD_FENCE_SCRIPT_PICK,
-                pecofence_core::i18n::text("选择脚本…"),
-                false,
-                false,
-            )
+            .item(CMD_FENCE_SCRIPT_PICK, pick, false, false)
             .icon(glyph::DOCUMENT)
             .submenu(pecofence_core::i18n::text("运行间隔"), interval_menu)
-            .icon(glyph::CLOCK)
-            .item(
-                CMD_FENCE_SCRIPT_EDIT,
-                pecofence_core::i18n::text("编辑脚本"),
-                false,
-                !has_path,
-            )
-            .icon(glyph::EDIT)
-            .item(
+            .icon(glyph::CLOCK);
+            if !plugin {
+                let edit = pecofence_core::i18n::text("编辑脚本");
+                menu.item(CMD_FENCE_SCRIPT_EDIT, edit, false, !has_path)
+                    .icon(glyph::EDIT);
+            }
+            menu.item(
                 CMD_FENCE_SCRIPT_FOLDER,
                 pecofence_core::i18n::text("打开脚本所在的文件夹"),
                 false,
@@ -1602,7 +1602,16 @@ impl App {
             CMD_FENCE_ADD_TODO => self.add_note_todo(fence),
             CMD_FENCE_SCRIPT_RUN => self.refresh_script(fence),
             CMD_FENCE_SCRIPT_EDIT => self.edit_script(fence),
-            CMD_FENCE_SCRIPT_PICK => self.pick_script_for(fence),
+            CMD_FENCE_SCRIPT_PICK => {
+                let spec = self.state.config.scripts.get(&fence);
+                match spec
+                    .and_then(|s| super::plugins::plugin_id(&s.path))
+                    .map(str::to_string)
+                {
+                    Some(id) => self.show_plugin(&id),
+                    None => self.pick_script_for(fence),
+                }
+            }
             CMD_FENCE_SCRIPT_FOLDER => self.open_script_folder(fence),
             c if (CMD_FENCE_SCRIPT_INTERVAL_BASE
                 ..CMD_FENCE_SCRIPT_INTERVAL_BASE

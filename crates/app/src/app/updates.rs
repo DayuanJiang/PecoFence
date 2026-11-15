@@ -174,7 +174,10 @@ fn source(test_instance: bool) -> (String, String, String) {
 
 /// `http::get` of one of a check's small files, waited for at most `ANSWER_WAIT`: the request
 /// runs on a thread of its own, and one that got no answer in time ends by itself later.
-fn get_in_time(url: &str, headers: &'static str) -> std::result::Result<Vec<u8>, String> {
+pub(super) fn get_in_time(
+    url: &str,
+    headers: &'static str,
+) -> std::result::Result<Vec<u8>, String> {
     let (answer, waiting) = std::sync::mpsc::channel();
     let address = url.to_string();
     std::thread::Builder::new()
