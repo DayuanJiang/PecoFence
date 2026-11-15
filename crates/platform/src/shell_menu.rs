@@ -98,6 +98,7 @@ impl ShellContextMenu {
         wait_for_handler_cache();
         // SAFETY: hmenu is a valid menu owned by the caller.
         let hr = unsafe { self.menu.QueryContextMenu(hmenu, index, first, last, flags) };
+        crate::fpu::restore("QueryContextMenu");
         if hr.is_err() {
             return Err(Error::from_hresult(hr));
         }
@@ -196,6 +197,7 @@ impl ShellContextMenu {
             self.menu
                 .InvokeCommand(&info as *const CMINVOKECOMMANDINFOEX as *const CMINVOKECOMMANDINFO)
         };
+        crate::fpu::restore("InvokeCommand");
         hr.ok()
     }
 }
@@ -218,6 +220,7 @@ impl ShellContextMenu {
                 self.menu
                     .QueryContextMenu(hmenu, 0, 1, 0x7FFF, CMF_OPTIMIZEFORINVOKE)
             };
+            crate::fpu::restore("QueryContextMenu");
             if hr.is_err() {
                 return Err(Error::from_hresult(hr));
             }
@@ -244,6 +247,7 @@ impl ShellContextMenu {
                     &info as *const CMINVOKECOMMANDINFOEX as *const CMINVOKECOMMANDINFO,
                 )
             };
+            crate::fpu::restore("InvokeCommand");
             hr.ok()
         })();
         // SAFETY: we own the menu.

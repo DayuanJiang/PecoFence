@@ -33,6 +33,8 @@ desktop-input-B    3   ec2    release desktop-clicks-and-focus.ps1   --var Part=
 desktop-input-C    3   ec2    release desktop-clicks-and-focus.ps1   --var Part=C
 showdesk-nofocus   1   ec2    release show-desktop-window-without-focus.ps1
 showdesk-dblclick  1   vm     release owner-showdesktop-dblclick.ps1
+showdesk-win10     4   vm     release issues-vm-win10-ontop.ps1
+menu-sendto        2   vm     release issues-vm-sendto.ps1
 explorer-freeze    2   ec2    release explorer-busy.ps1              --var Part=freeze
 explorer-burst     3   ec2    release explorer-busy.ps1              --var Part=burst
 explorer-start     3   ec2    release explorer-busy.ps1              --var Part=start
@@ -53,6 +55,9 @@ frame-pacing       2   ec2    release frame-pacing.ps1
 render-memory      5   ec2    release software-render-memory.ps1
 rolled-AB          4   ec2    release rolled-fences.ps1              --var Part=AB
 rolled-CD          3   ec2    release rolled-fences.ps1              --var Part=CD
+issues-hover-G     3   ec2    release issues-hover.ps1               --var Part=G
+issues-hover-H     4   ec2    release issues-hover.ps1               --var Part=H
+issues-hover-MX    3   ec2    release issues-hover.ps1               --var Part=MX
 keys-A             3   ec2    release keyboard-and-menu-items.ps1    --var Part=A
 keys-B             2   ec2    release keyboard-and-menu-items.ps1    --var Part=B
 keys-C             2   ec2    release keyboard-and-menu-items.ps1    --var Part=C
@@ -101,6 +106,9 @@ polish-paste-B     2   ec2    release polish-paste.ps1               --var Part=
 polish-paste-C     2   ec2    release polish-paste.ps1               --var Part=C
 # Part D copies a 6 GB file: the box needs 12 GB free.
 polish-paste-D     2   ec2    release polish-paste.ps1               --var Part=D
+issues-reorder     2   ec2    release issues-dragpaste.ps1           --var Part=A
+issues-paste       2   ec2    release issues-dragpaste.ps1           --var Part=B
+issues-paste-C     3   ec2    release issues-dragpaste.ps1           --var Part=C
 big-copy-save-A    2   ec2    release big-copy-save.ps1              --var Part=A
 big-copy-save-B    1   ec2    release big-copy-save.ps1              --var Part=B
 polish-undo        2   ec2    release polish-undo.ps1
@@ -139,6 +147,7 @@ owner-frames-A     2   ec2    release owner-frame-pacing.ps1         --var Part=
 owner-frames-B     2   ec2    release owner-frame-pacing.ps1         --var Part=B
 owner-settings-open 2  ec2    release owner-settings-host.ps1        --var Part=OK
 owner-settings-page 2  ec2    debug   owner-settings-host.ps1        --var Part=RDK
+issues-settings    2   ec2    debug   issues-settings.ps1
 owner-settings-ui  1   ec2    debug   owner-settings-ui.ps1
 owner-editor-A     2   ec2    debug   owner-smart-editor.ps1         --var Part=A
 owner-editor-B     2   ec2    debug   owner-smart-editor.ps1         --var Part=B
@@ -148,6 +157,9 @@ shellext-log       1   ec2    release shellext-fault.ps1             --extra @sh
 shellext-copy      1   ec2    release shellext-fault.ps1             --extra @shellext --var Part=C
 shellext-menu-off  2   ec2    release shellext-fault.ps1             --extra @shellext --var Part=M
 shellext-own-crash 1   ec2    release shellext-fault.ps1             --extra @shellext --var Part=O
+issues-fpu         1   ec2    release issues-crash.ps1               --var Part=A
+issues-covered     3   ec2    release issues-crash.ps1               --var Part=B
+issues-conflict    5   ec2    release issues-crash.ps1               --var Part=C
 shellext-load      1   ec2    release shellext-fault.ps1             --extra @shellext --var Part=A
 shellext-hang      2   ec2    release shellext-fault.ps1             --extra @shellext --var Part=H
 shellext-stall     2   ec2    debug   shellext-fault.ps1             --extra @shellext --var Part=S
@@ -207,6 +219,7 @@ o3-icons2-D        2   ec2    release owner3-ux3-icons2.ps1          --var Part=
 o3-notices         2   ec2    release owner3-ux3-notices.ps1         --var Part=NJ
 o3-notices-page    1   ec2    debug   owner3-ux3-notices.ps1         --var Part=W
 o3-folder          5   ec2    release owner3-ux3-folder.ps1
+issues-small       3   ec2    release issues-small.ps1
 o3-keys            4   ec2    release owner3-ux3-keys.ps1
 o3-looks           4   ec2    release owner3-ux3-looks.ps1           --extra ui/themes --var Look=fluent-dark-bright,glass-light-dark
 o3-icons3          2   ec2    release owner3-ux3-icons3.ps1          --var Part=F
@@ -247,3 +260,5 @@ o6-align-scale     3   resize release free-placement.ps1             --part S --
 # Usage statistics: operations appear in usage.json, nothing typed does, an upload, the switch.
 usage-stats        4   ec2    release usage.ps1
 usage-desc         2   ec2    debug   usage-description.ps1
+# Usage statistics: notice cards, dialog jumps, cut-off and crashed runs (Midnight=1 needs the box clock set: see the file).
+usage-gaps         4   ec2    release usage-gaps.ps1

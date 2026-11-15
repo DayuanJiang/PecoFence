@@ -58,6 +58,22 @@ The project does not assume or claim a particular GitHub organization. After the
 first push, set the repository URL in `site/site.json` and follow
 [WEBSITE.md](WEBSITE.md) to publish the product page.
 
+## Memory check
+
+Before every release, compare the release candidate with the last release on a real PC with a
+GPU and a high-DPI monitor, running a copy of a real user's layout with the self-refreshing
+fences (the 电脑状态 example and a clock with seconds). From the dev box:
+
+```bash
+scripts/wintest/pc-memory.sh <last release dir> <candidate dir>   # about 2 hours, A B A B
+```
+
+It reports, median and maximum per build: what Task Manager shows for the PecoFence group
+(the app and the processes it started, such as a script's PowerShell), the private commit,
+the GPU memory, threads, handles and CPU time per idle minute. A number that grew is fixed
+before the release. The EC2 boxes (no GPU, 100 % scale) do not replace this check: there the
+app's drawing memory is a fraction of what a 4K monitor needs.
+
 ## Versioned release
 
 Update the workspace version in `Cargo.toml`, regenerate `Cargo.lock` if needed,

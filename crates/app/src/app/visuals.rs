@@ -116,6 +116,22 @@ pub(super) fn custom_theme_names(state: &AppState) -> Vec<String> {
     names
 }
 
+/// Whether the popup menus are dark: 菜单颜色 on its own, or the colour mode's.
+pub(super) fn menus_dark(menu: pecofence_core::MenuColor, mode: ThemeMode) -> bool {
+    match menu {
+        pecofence_core::MenuColor::FollowMode => mode == ThemeMode::Dark,
+        pecofence_core::MenuColor::Light => false,
+        pecofence_core::MenuColor::Dark => true,
+    }
+}
+
+/// Draws the popup menus as 菜单颜色 and the colour mode `mode` say.
+pub(super) fn apply_menu_colors(menu: pecofence_core::MenuColor, mode: ThemeMode, why: &str) {
+    let dark = menus_dark(menu, mode);
+    tracing::debug!(?menu, ?mode, dark, why, "menu colours set");
+    tray::set_dark_menus(dark);
+}
+
 pub(super) fn pick_theme_mode(setting: ThemeSetting, args: &Args) -> ThemeMode {
     if args.light {
         return ThemeMode::Light;
@@ -1537,8 +1553,8 @@ impl App {
         } else {
             self.ctx.backdrops.borrow().clone()
         };
-        if mode != self.theme_mode {
-            tray::set_dark_menus(mode == ThemeMode::Dark);
+        if mode != self.theme_mode || force {
+            apply_menu_colors(self.state.config.settings.menu_color, mode, "colour mode");
         }
         self.theme_mode = mode;
         self.accent = accent;

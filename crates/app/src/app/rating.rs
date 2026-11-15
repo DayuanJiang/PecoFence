@@ -7,6 +7,17 @@
 use super::*;
 use pecofence_platform::store::{self, RatingOutcome};
 
+/// `notice` in the usage statistics: the card and how it ended (`update.action`).
+fn record_notice(card: &str, event: crate::notice::NoticeEvent) {
+    use crate::notice::NoticeEvent;
+    let answer = match event {
+        NoticeEvent::Action => "action",
+        NoticeEvent::Dismissed => "dismissed",
+        NoticeEvent::Declined => "declined",
+    };
+    pecofence_core::usage::event_named("notice", &format!("{card}.{answer}"));
+}
+
 /// How long PecoFence is in use before it asks.
 const ASK_AFTER: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 /// Not right after a start, which is usually the logon rush.
@@ -131,11 +142,13 @@ impl App {
         // Two cards can be up (an undo card above a tip): the event names its card.
         let is = |n: &crate::notice::Notice| n.hwnd().0 as isize == card;
         if let Some((notice, fence)) = self.undo_notice.take_if(|(n, _)| is(n)) {
+            record_notice("undo", event);
             notice.leave();
             self.on_undo_notice(fence, event);
             return;
         }
         if let Some((notice, which)) = self.welcome.take_if(|(n, _)| is(n)) {
+            record_notice(which.usage_name(), event);
             // 「下一条」: the card stays and shows the next tip.
             if let Some(next) = self.next_tip(&which, event) {
                 self.show_next_tip(notice, next);
@@ -157,6 +170,7 @@ impl App {
             return;
         }
         if self.update_notice().is_some_and(is) {
+            record_notice("update", event);
             self.on_update_notice(event);
             return;
         }
@@ -164,6 +178,7 @@ impl App {
             tracing::debug!(?event, "notice event from a card that is gone");
             return;
         };
+        record_notice("rating", event);
         notice.leave();
         if event == crate::notice::NoticeEvent::Action {
             self.open_store_rating();

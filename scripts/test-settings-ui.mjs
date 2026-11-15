@@ -13,9 +13,9 @@ const fixture = {
   type: 'state',
   locale: 'zh-CN', translations: {},
   settings: {
-    language: 'zh-CN',
+    language: 'zh-CN', idleOpacity: 1,
     autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, showTrayIcon: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
-    showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
+    showDesktop: 'keepVisible', theme: 'dark', menuColor: 'followMode', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace', doubleCtrl: false },
@@ -166,6 +166,10 @@ function bridge() {
           else if (message.prop !== 'dockTop') fence[message.prop] = message.value;
           if (message.prop === 'spacingPx') fence.spacing = message.value <= -8 ? 'compact' : message.value >= 12 ? 'loose' : 'normal';
         }
+        // 应用到所有栅栏 and its 撤销: many options of many fences at once.
+        if (message.type === 'setFences') {
+          for (const c of message.changes) { const fence = state.fences.find(f => f.id === c.id); if (fence) fence[c.prop] = c.value; }
+        }
         window.testShowFence = (id) => receive({ data: { type: 'showFence', id } });
         window.testShowFeedback = (crash) => receive({ data: { type: 'showFeedback', crash } });
         if (message.name === 'feedbackInfo') {
@@ -194,7 +198,7 @@ function bridge() {
           state.snapshots.splice(window.testDeletedSnapshot.at, 0, window.testDeletedSnapshot.gone);
           window.testDeletedSnapshot = null;
         }
-        if (['ready', 'patchSettings', 'setRules', 'setFence'].includes(message.type) || message.type === 'action') {
+        if (['ready', 'patchSettings', 'setRules', 'setFence', 'setFences'].includes(message.type) || message.type === 'action') {
           setTimeout(window.testRefresh, 0);
         }
       },
@@ -298,6 +302,36 @@ async function runTests() {
       const label = el.getAttribute('aria-label') || doc.getElementById(el.getAttribute('aria-labelledby'))?.textContent;
       assert(label?.trim(), 'Unnamed control: ' + (el.id || el.dataset.bind));
     }
+  });
+  await test('Idle opacity preserves presets, f32 rounding and custom values', async () => {
+    doc = await reset();
+    const win = frame.contentWindow;
+    const select = () => doc.querySelector('[data-bind=idleOpacity]');
+    assert(select().value === '1', 'Idle fading must default to off');
+    assert(select().selectedOptions[0].textContent === '不淡化', 'The off entry must say 不淡化: ' + select().selectedOptions[0].textContent);
+    win.testState.settings.idleOpacity = 0.44999998807907104;
+    win.testRefresh(); await settle();
+    assert(select().value === '0.45', 'Rounded f32 must select the 45% preset');
+    win.testState.settings.idleOpacity = 0.37;
+    win.testRefresh(); await settle();
+    win.testRefresh(); await settle();
+    assert(select().value === '0.37', 'Custom CLI opacity must stay selected');
+    assert(select().querySelectorAll('[data-custom]').length === 1, 'Refresh duplicated the custom option');
+    select().value = '0.25';
+    select().dispatchEvent(new win.Event('change', { bubbles: true }));
+    await settle();
+    const message = win.testMessages.filter(m => m.type === 'patchSettings').at(-1);
+    assert(message?.settings.idleOpacity === 0.25, 'Dropdown must post a number, not a string');
+    // 查找设置 finds the card by its title, by another name and by one of its choices.
+    const box = doc.getElementById('settingsSearch');
+    const hits = text => {
+      box.value = text; box.dispatchEvent(new win.Event('input', { bubbles: true }));
+      return [...doc.querySelectorAll('#settingsSearchList [role=option] b')].map(b => b.textContent);
+    };
+    for (const text of ['不透明度', '淡出', '45%', '不淡化']) assert(hits(text).includes('闲置时的不透明度'), `查找设置 "${text}": ` + hits(text).join(' | '));
+    const icons = [...doc.querySelectorAll('#page-general .card .ic')].map(i => i.textContent);
+    assert(icons.filter(i => i === select().closest('.card').querySelector('.ic').textContent).length === 1, 'The card shares its icon with another card of the page');
+    doc = await reset();
   });
   await test('Notification icons render glyphs rather than escaped code text', async () => {
     const toast = doc.getElementById('toast');
@@ -567,6 +601,45 @@ async function runTests() {
     assert(doc.getElementById('fenceTransparentOnHover').hidden, 'Stay-transparent switch offered for a fence that is not fully transparent');
     change(doc, 'fenceIconAlign', 'center'); await settle();
     assert(messages().at(-1).id === 'fence-a' && messages().at(-1).prop === 'iconAlign' && messages().at(-1).value === 'center', 'Icon alignment not posted');
+  });
+  await test('应用到所有栅栏 gives one group of options to the other fences, leaves the desktop-like 「桌面」 alone, and 撤销 sets them back', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=fences]').click();
+    const batches = () => frame.contentWindow.testMessages.filter(m => m.type === 'setFences');
+    const fence = id => current().fences.find(f => f.id === id);
+    change(doc, 'fenceSel', 'portal'); await settle();
+    assert(!doc.getElementById('fenceLooksAll').hidden && !doc.getElementById('fenceLayoutAll').hidden, 'Apply-to-all cards hidden with other fences there');
+    doc.getElementById('fenceLayoutAllBtn').click(); await settle();
+    const layout = batches().at(-1);
+    assert(layout && layout.what === 'apply_to_all', 'No batch posted: ' + JSON.stringify(layout));
+    assert(!layout.changes.some(c => c.id === 'inbox'), 'The desktop-like 「桌面」 took the layout');
+    assert(!layout.changes.some(c => !['layout', 'sort', 'reverse', 'foldersFirst', 'iconSize', 'spacingPx', 'labelLines', 'iconAlign'].includes(c.prop)), 'A prop outside 布局 was sent: ' + layout.changes.map(c => c.prop).join());
+    for (const id of ['fence-a', 'fence-b']) assert(fence(id).iconAlign === 'center' && fence(id).iconSize === 32 && fence(id).spacingPx === -12 && fence(id).labelLines === 0, id + ' did not take the layout: ' + JSON.stringify(fence(id)));
+    assert(fence('fence-a').opacity === 'default' && fence('fence-a').tint === null, 'The layout button changed the looks');
+    assert(doc.getElementById('toastText').textContent === '已用到其他 2 个栅栏' && !doc.getElementById('toastUndo').hidden, 'Notice: ' + doc.getElementById('toastText').textContent);
+    doc.getElementById('toastUndo').click(); await settle();
+    assert(batches().at(-1).what === 'apply_to_all_undo', 'Undo not posted');
+    assert(fence('fence-a').iconAlign === 'left' && fence('fence-a').iconSize === 48 && fence('fence-b').iconSize === 96 && fence('fence-b').layout === 'list', 'Undo did not set each fence back: ' + JSON.stringify([fence('fence-a'), fence('fence-b')]));
+    // 外观: the tint goes before the title colour that follows it.
+    doc.getElementById('fenceLooksAllBtn').click(); await settle();
+    const looks = batches().at(-1);
+    const props = looks.changes.filter(c => c.id === 'fence-a').map(c => c.prop);
+    assert(props.indexOf('tint') < props.indexOf('titleColor') && props.includes('opacity'), 'Looks: ' + props.join());
+    assert(fence('fence-a').tint === '123456' && fence('fence-a').titleColor === 'ABCDEF' && fence('fence-a').opacity === 'clear', 'fence-a did not take the looks');
+    assert(fence('inbox').opacity === 'solid', 'The desktop-like 「桌面」 took the looks');
+    doc.getElementById('fenceLooksAllBtn').click(); await settle();
+    assert(doc.getElementById('toastText').textContent === '其他栅栏已经和它一样' && doc.getElementById('toastUndo').hidden, 'Nothing left to change, notice: ' + doc.getElementById('toastText').textContent);
+    change(doc, 'fenceSel', 'inbox'); await settle();
+    assert(doc.getElementById('fenceLooksAll').hidden && doc.getElementById('fenceLayoutAll').hidden, 'Offered for 「桌面」 arranged like the desktop');
+  });
+  await test('菜单颜色 offers 跟随颜色模式, 浅色 and 深色 and posts the choice', async () => {
+    doc = await reset();
+    const sel = doc.querySelector('[data-bind=menuColor]');
+    assert([...sel.options].map(o => o.value).join() === 'followMode,light,dark', 'Options: ' + [...sel.options].map(o => o.value).join());
+    assert(sel.value === 'followMode', 'Default not shown: ' + sel.value);
+    sel.value = 'light'; sel.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true })); await settle();
+    const patch = frame.contentWindow.testMessages.filter(m => m.type === 'patchSettings').at(-1);
+    assert(patch && patch.settings.menuColor === 'light', 'Not posted: ' + JSON.stringify(patch && patch.settings.menuColor));
   });
   await test('在哪个虚拟桌面显示 lists the desktops, shows the choice and posts it; none for the inbox or one desktop', async () => {
     doc.querySelector('[data-page=fences]').click();
@@ -3620,4 +3693,4 @@ const server = http.createServer(async (request, response) => {
     response.end(String(error));
   }
 });
-server.listen(port, '127.0.0.1', () => console.log(`Settings UI tests: http://127.0.0.1:${port}`));
+server.listen(port, '127.0.0.1', () => console.log(`Settings UI tests: http://127.0.0.1:${server.address().port}`));

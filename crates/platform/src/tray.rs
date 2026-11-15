@@ -823,6 +823,8 @@ impl PopupMenu {
                 keep_clear.as_ref().map(|p| p as *const TPMPARAMS),
             );
             let open = shown.elapsed();
+            // The menu's loop ran the handlers of a shell menu in it (crate::fpu).
+            crate::fpu::restore("TrackPopupMenuEx");
             if timer != 0 {
                 let _ = KillTimer(Some(owner), MENU_FOREGROUND_TIMER);
             }

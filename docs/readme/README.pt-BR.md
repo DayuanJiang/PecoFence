@@ -1,7 +1,7 @@
 https://github.com/user-attachments/assets/c827f059-cfd7-4f6a-bed3-8b00411a7220
 
 <p align="center">
-  <strong>Uma alternativa gratuita e de código aberto ao Stardock Fences para Windows 11.</strong><br>
+  <strong>Uma alternativa gratuita e de código aberto ao Stardock Fences para Windows 11 e 10.</strong><br>
   Agrupe arquivos em painéis de vidro, alterne entre projetos com abas e deixe seu agente de IA configurar o layout, a aparência e as regras de organização pela CLI integrada.
 </p>
 

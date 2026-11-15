@@ -80,7 +80,8 @@ impl App {
             ViewLayout::Icons => None,
             ViewLayout::List => Some(crate::layout::RowMetrics::list(line_h)),
             ViewLayout::Details => Some(crate::layout::RowMetrics::details(line_h)),
-        };
+        }
+        .map(|rm| rm.with_icon_size(shown.view.icon_size));
         Some(match rows {
             Some(rm) => GridSteps {
                 cols: None,
@@ -513,7 +514,7 @@ impl App {
         if h == r.bottom - r.top {
             return None;
         }
-        let rect = w.apply_height(h, true);
+        let rect = w.apply_height(h, !self.fits_at_once);
         self.record_bounds(id, rect, false, h, "fit");
         self.schedule_save();
         Some(h)

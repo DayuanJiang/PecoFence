@@ -50,6 +50,7 @@ struct Gpu {
 
 thread_local! {
     static DRAW_HOOK: RefCell<Option<Box<dyn Fn()>>> = const { RefCell::new(None) };
+    static QUIET: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
 /// Called after every panel draw on this thread (the app uses it to schedule [`RenderStack::trim`]
@@ -58,7 +59,21 @@ pub fn set_draw_hook(hook: impl Fn() + 'static) {
     DRAW_HOOK.with(|h| *h.borrow_mut() = Some(Box::new(hook)));
 }
 
+/// Runs `f`, whose draws do not call the draw hook. For content that refreshes by itself (a
+/// clock's tick, a script's new output): nobody is using PecoFence then, and a fence that
+/// refreshes every few seconds would otherwise keep the memory housekeeping that waits for
+/// drawing to go quiet from ever running.
+pub fn quiet_draws<R>(f: impl FnOnce() -> R) -> R {
+    QUIET.with(|q| q.set(q.get() + 1));
+    let result = f();
+    QUIET.with(|q| q.set(q.get().saturating_sub(1)));
+    result
+}
+
 pub(crate) fn note_draw() {
+    if QUIET.with(|q| q.get()) > 0 {
+        return;
+    }
     DRAW_HOOK.with(|h| {
         if let Ok(hook) = h.try_borrow()
             && let Some(hook) = hook.as_ref()

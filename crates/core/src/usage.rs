@@ -232,6 +232,7 @@ pub fn sent(day: &str) {
 const REPORTED_SETTINGS: &[&str] = &[
     "language",
     "theme",
+    "menuColor",
     "themeStyle",
     "labelColor",
     "titleAlign",

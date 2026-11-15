@@ -995,6 +995,7 @@ impl App {
                 }
             }
             Some("setFence") => self.on_set_fence(&v),
+            Some("setFences") => self.on_set_fences(&v),
             // Usage statistics: a page of the navigation was shown.
             Some("page") => {
                 let name = v.get("name").and_then(|n| n.as_str());
@@ -1422,6 +1423,7 @@ impl App {
         self.sync_desktop_if_available("hide-real-icons toggled");
         self.refresh_all();
         self.push_workspace_summary();
+        self.follow_desktop_paste(desktop::foreground_window());
     }
 
     fn apply_desktop_icons_hidden(&self, hidden: bool) -> bool {
@@ -1546,6 +1548,13 @@ impl App {
             .behavior
             .hide_count_and_chevron
             .set(new.roll_up.hide_count_and_chevron);
+        // 闲置时的不透明度: every fence goes to the new strength at once (no redraw needed).
+        self.ctx.behavior.idle_opacity.set(new.idle_opacity);
+        if new.idle_opacity != old.idle_opacity {
+            for w in self.fences.values() {
+                w.refresh_idle_opacity();
+            }
+        }
         // Only whole rows show with 「调整大小时按整行整列对齐」 on: redraw.
         let chrome_changed = new.roll_up.title_on_hover != old.roll_up.title_on_hover
             || new.title_align != old.title_align
@@ -1597,6 +1606,7 @@ impl App {
             }
         }
         let tray_changed = new.show_tray_icon != old.show_tray_icon;
+        let menus_changed = new.menu_color != old.menu_color;
         let per_desktop_changed = new.per_desktop_fences != old.per_desktop_fences;
         if per_desktop_changed {
             tracing::info!(
@@ -1637,6 +1647,10 @@ impl App {
         }
         if visual_changed {
             self.refresh_visuals(true);
+        }
+        if menus_changed {
+            let menu = self.state.config.settings.menu_color;
+            super::visuals::apply_menu_colors(menu, self.theme_mode, "setting changed");
         }
         if push_changed {
             // Pushed fences go back at once when it is switched off.

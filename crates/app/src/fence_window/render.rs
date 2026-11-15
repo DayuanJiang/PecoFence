@@ -757,10 +757,14 @@ impl FenceViewState {
             self.plate_reveal.retarget(plate, dur, Curve::Linear, now);
         }
         // 像桌面一样排列 has no title row: nothing above the plate, no title.
-        let plate_top = if self.bare() {
-            0.0
+        let (plate_top, plate_top_rest) = if self.bare() {
+            (0.0, 0.0)
         } else {
-            self.theme.title_height * (1.0 - self.title_reveal.value_at(now).clamp(0.0, 1.0))
+            let folded = |reveal: f32| self.theme.title_height * (1.0 - reveal.clamp(0.0, 1.0));
+            (
+                folded(self.title_reveal.value_at(now)),
+                folded(self.title_reveal.target()),
+            )
         };
         let plate_clear = 1.0 - self.plate_reveal.value_at(now).clamp(0.0, 1.0);
         let shown = (!self.bare()) as u8 as f32;
@@ -818,6 +822,7 @@ impl FenceViewState {
             count: f.value(&ChromeKey::Count, now),
             merge_hint: self.merge_t.value_at(now),
             plate_top,
+            plate_top_rest,
             plate_clear,
             edge_top: self.edge_top && !self.theme.liquid_glass,
             swap: f.value(&ChromeKey::TitleSwap, now),
@@ -883,6 +888,7 @@ impl FenceViewState {
 
     /// Draws the chrome (backdrop, tabs or title, rim, chevron).
     pub(super) fn draw_chrome_panel(&mut self) -> Result<()> {
+        self.sync_idle_fade(Instant::now());
         let now = Instant::now();
         // The tab rects first: they bring the strip's scroll up to this size (the active tab in
         // view), and the strip's clip in `title_state` reads that scroll. In the other order a
@@ -917,7 +923,10 @@ impl FenceViewState {
             _ => Backdrop::Solid,
         };
         let bitmaps = self.bitmaps.clone();
-        let title = self.title.clone();
+        // A clock is never a tab (tool fences take no part in tabs): its one title is enough.
+        let title = self
+            .rolled_clock_caption()
+            .unwrap_or_else(|| self.title.clone());
         let rolled = self.roll_target();
         // A roll set / cancelled without the animation (reduced motion, retire, external
         // geometry) leaves the progress tween behind: rest it at the settled state.
@@ -1950,6 +1959,7 @@ impl FenceViewState {
     }
 
     pub(super) fn redraw_content(&mut self) -> Result<()> {
+        self.sync_idle_fade(Instant::now());
         self.content_look
             .set(Some(self.material_foreground().label_look()));
         if self.note.is_some() {

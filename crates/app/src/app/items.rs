@@ -2,6 +2,47 @@
 //! routing of newly created desktop items, item view builder.
 
 use super::*;
+use pecofence_platform::dragdrop;
+
+const VK_V: u32 = 0x56;
+
+thread_local! {
+    /// Ctrl+V is registered on the control window for the desktop (`App::follow_desktop_paste`).
+    static DESKTOP_PASTE_KEY: Cell<bool> = const { Cell::new(false) };
+}
+
+/// The desktop's Ctrl+V was pressed with something else in front, or while the App was busy:
+/// the shortcut is dropped and the key goes on to the window in front (the user still holds
+/// Ctrl, so it gets its Ctrl+V).
+pub(super) fn pass_on_desktop_paste(control: HWND, why: &'static str) {
+    if DESKTOP_PASTE_KEY.replace(false) {
+        hotkey::unregister(control, HOTKEY_DESKTOP_PASTE);
+    }
+    tracing::info!(why, "Ctrl+V passed on to the window in front");
+    window::send_key(VK_V);
+}
+
+/// A paste through the shell, ready to run (`App::paste_shell_items`).
+pub(super) struct ShellPaste {
+    fence: FenceId,
+    dest: PathBuf,
+    /// The folder's entries before the paste.
+    before: HashSet<PathBuf>,
+    /// The names the source describes (`FileGroupDescriptorW`).
+    names: Vec<String>,
+    /// The routes made for them before the paste.
+    routed: Vec<PathBuf>,
+    on_desktop: bool,
+}
+
+/// Runs `job`'s paste: the shell's modal progress and name-conflict dialogs run here, so the
+/// caller holds no App borrow.
+pub(super) fn run_shell_paste(job: &ShellPaste) -> dragdrop::DropEffect {
+    clipboard::paste_shell_items(&job.dest).unwrap_or_else(|error| {
+        tracing::warn!(%error, folder = %job.dest.display(), "paste through the shell failed");
+        dragdrop::DropEffect::None
+    })
+}
 
 /// Why [`App::rename_item_to`] declined.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -764,6 +805,7 @@ impl App {
             return;
         }
         let Some((paths, cut)) = clipboard::file_list() else {
+            self.paste_shell_items(fence);
             return;
         };
         let dest = self.state.portal_path(fence).or_else(shell::user_desktop);
@@ -841,6 +883,175 @@ impl App {
                 self.finish_cut_paste();
             }
         }
+    }
+
+    /// Ctrl+V on Explorer's desktop itself (after a click on an empty spot of it, or Win+D):
+    /// Windows' desktop pastes nothing while its icons are hidden, and the keys go to it, not
+    /// to a fence. So while it is in front and PecoFence hides its icons, Ctrl+V is registered
+    /// for the desktop (`on_desktop_paste_key` decides at each press by the window in front
+    /// then: our own windows bring no foreground event). Runs when another program's window
+    /// comes to the front, at the start, and when the icons are hidden or shown.
+    pub(super) fn follow_desktop_paste(&mut self, foreground: HWND) {
+        let want = self.desktop_in_front(foreground)
+            && self.state.inbox_id().is_some()
+            && self.state.config.settings.hide_real_icons
+            && !self.no_hide_icons
+            && !self.windows_desktop;
+        if want == DESKTOP_PASTE_KEY.get() {
+            return;
+        }
+        if want {
+            let ok = hotkey::register(
+                self.control.hwnd(),
+                HOTKEY_DESKTOP_PASTE,
+                hotkey::mods::CONTROL | hotkey::mods::NOREPEAT,
+                VK_V,
+            );
+            if !ok {
+                tracing::info!("Ctrl+V on the desktop: taken by another program, left to it");
+                return;
+            }
+        } else {
+            hotkey::unregister(self.control.hwnd(), HOTKEY_DESKTOP_PASTE);
+        }
+        DESKTOP_PASTE_KEY.set(want);
+        tracing::debug!(on = want, "Ctrl+V on the desktop pastes into 「桌面」");
+    }
+
+    /// Is `front` Explorer's desktop window (Progman, a WorkerW, the view in them)?
+    fn desktop_in_front(&self, front: HWND) -> bool {
+        self.anchor
+            .try_borrow()
+            .is_ok_and(|a| a.as_ref().is_some_and(|a| a.is_desktop_window(front)))
+    }
+
+    /// `HOTKEY_DESKTOP_PASTE` was pressed: decided by the window in front now. Explorer's
+    /// desktop with its icons hidden: a paste into 「桌面」 is queued (it runs once this
+    /// message is done). Anything else in front (a fence, its name box, the settings, another
+    /// program): false, and the caller hands the key back (`pass_on_desktop_paste`).
+    pub(super) fn on_desktop_paste_key(&mut self) -> bool {
+        let front = desktop::foreground_window();
+        let on_desktop = self.desktop_in_front(front);
+        let hidden = pecofence_platform::shell_icons::desktop_icons_hidden();
+        let inbox = self.state.inbox_id();
+        tracing::info!(
+            on_desktop,
+            icons_hidden = hidden,
+            inbox = inbox.is_some(),
+            front = %desktop::class_name(desktop::root_ancestor(front)),
+            "Ctrl+V while the desktop's shortcut is registered"
+        );
+        match inbox.filter(|_| on_desktop && hidden) {
+            Some(inbox) => {
+                self.queue.push(Command::Paste { fence: inbox });
+                true
+            }
+            None => {
+                self.follow_desktop_paste(front);
+                false
+            }
+        }
+    }
+
+    /// Pastes what only the shell can write out: files copied inside a .zip, an Outlook
+    /// attachment, a phone's photos (the clipboard has their contents or their shell items, no
+    /// file paths, `clipboard::shell_items`). The clipboard's data object goes to the
+    /// destination folder's own drop target, as Explorer's 粘贴 does: the shell writes the files
+    /// and asks about names that are taken. That runs a modal loop, so the paste only gets ready
+    /// here and the control window runs it once the App is free (`take_shell_paste`,
+    /// `finish_shell_paste`). What lands on the desktop for a virtual fence goes into that fence
+    /// and is selected, as any pasted file.
+    fn paste_shell_items(&mut self, fence: FenceId) {
+        let Some((data, cut)) = clipboard::shell_items() else {
+            tracing::info!(%fence, clipboard = %clipboard::describe(), "nothing to paste: no files on the clipboard");
+            return;
+        };
+        let names = dragdrop::file_group_descriptor_names(&data);
+        drop(data);
+        let portal = self.state.portal_path(fence);
+        let on_desktop = portal.is_none();
+        let Some(dest) = portal.or_else(shell::user_desktop) else {
+            return;
+        };
+        let before = dir_entries(&dest);
+        // The files the source describes are routed into the fence before they appear, so the
+        // rules never file them elsewhere first (a phone's files describe no names: those are
+        // routed when the paste is over).
+        let expected = crate::fence_window::shell_drop_landed(&dest, &before, &before, &names);
+        if on_desktop {
+            for path in &expected {
+                self.pending_routes.push(PendingRoute {
+                    fence,
+                    path: path.clone(),
+                    since: Instant::now(),
+                    rename: false,
+                });
+            }
+        }
+        self.pasted = Some(self.paste_started(fence, expected.clone()));
+        tracing::info!(%fence, cut, described = names.len(), folder = %dest.display(), "paste through the shell queued: items without file paths (a .zip's files, an attachment)");
+        self.shell_paste = Some(ShellPaste {
+            fence,
+            dest,
+            before,
+            names,
+            routed: if on_desktop { expected } else { Vec::new() },
+            on_desktop,
+        });
+        window::post_message(self.control.hwnd(), WM_APP_COMMAND, 0, 0);
+    }
+
+    /// The paste `paste_shell_items` got ready, for the control window to run with no App
+    /// borrow (`run_shell_paste`).
+    pub(super) fn take_shell_paste(&mut self) -> Option<ShellPaste> {
+        self.shell_paste.take()
+    }
+
+    /// The shell's part of a paste is over: what landed goes into the fence and is selected.
+    /// Whether Windows' undo list holds such a paste is not known, so Ctrl+Z stops at it and
+    /// says so, rather than undo an older step the user did not mean (an older paste).
+    pub(super) fn finish_shell_paste(&mut self, job: ShellPaste, effect: dragdrop::DropEffect) {
+        let ShellPaste {
+            fence,
+            dest,
+            before,
+            names,
+            routed,
+            on_desktop,
+        } = job;
+        let landed =
+            crate::fence_window::shell_drop_landed(&dest, &before, &dir_entries(&dest), &names);
+        tracing::info!(
+            %fence,
+            ?effect,
+            described = names.len(),
+            landed = landed.len(),
+            folder = %dest.display(),
+            "pasted through the shell"
+        );
+        // A move the source finishes later (a file cut inside a .zip) reports no effect: what
+        // arrived decides. Nothing yet: the routes stay for files still to come, and expire.
+        let arrived = landed.iter().any(|p| p.exists());
+        if effect == dragdrop::DropEffect::None && !arrived {
+            return;
+        }
+        self.pending_routes.retain(|r| !routed.contains(&r.path));
+        self.note_fileop_for_undo(SHELL_PASTE_STEP, false);
+        if let Some(p) = self.pasted.as_mut().filter(|p| p.fence == fence) {
+            // The shell's dialogs may have waited for the user: the files count as just pasted.
+            p.since = Instant::now();
+            for path in &landed {
+                if !p.paths.contains(path) {
+                    p.paths.push(path.clone());
+                }
+            }
+        }
+        self.shell_drop_landed(
+            fence,
+            if on_desktop { landed } else { Vec::new() },
+            on_desktop,
+        );
+        self.select_pasted();
     }
 
     /// Copies that pastes still running have made so far go into the fence pasted into: a

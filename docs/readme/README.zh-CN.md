@@ -1,7 +1,7 @@
 https://github.com/user-attachments/assets/c827f059-cfd7-4f6a-bed3-8b00411a7220
 
 <p align="center">
-  <strong>免费、开源的 Windows 11 桌面整理工具，可以替代 Stardock Fences。</strong><br>
+  <strong>免费、开源的 Windows 11 和 10 桌面整理工具，可以替代 Stardock Fences。</strong><br>
   用玻璃栅栏收好文件，用标签页切换项目，还能让 AI 助手通过内置 CLI，直接调整布局、外观和自动整理规则。
 </p>
 

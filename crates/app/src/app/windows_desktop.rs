@@ -62,6 +62,8 @@ impl App {
             a.set_fences_hidden(false, true, "windows desktop");
         }
         tracing::info!(on, reason, "windows desktop");
+        drop(guard);
+        self.follow_desktop_paste(desktop::foreground_window());
     }
 
     /// `TIMER_WINDOWS_DESKTOP_FADE`: File Explorer's icons are about to show, the fences fade

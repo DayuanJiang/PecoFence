@@ -182,6 +182,7 @@ pub(super) fn on_lbuttondown(
         // double-click: a click that expanded the fence no longer swallows the next one.
         v.cancel_pending_rename();
         v.suppress_dblclk = false;
+        v.up_on_dblclk = v.deco.up_button && v.hit_item(x, y).is_none();
         v.hide_tip();
         // A press ends the short wait of hover switches that follow each other, and of rolled
         // fences that expand one after the other.
@@ -863,6 +864,18 @@ pub(super) fn on_lbuttondblclk(
             }
         } else if v.tab_at(x, y).is_some() && !std::mem::take(&mut v.suppress_dblclk) {
             queue.push(Command::ToggleRollUp(fence_id));
+        } else if std::mem::take(&mut v.up_on_dblclk)
+            && v.deco.up_button
+            && !v.rolled_up
+            && x >= v.content_x
+            && y >= v.content_y
+            && !v.header_band_hit(x, y)
+        {
+            // A double-click on empty space in a subfolder goes up one level, as the up button,
+            // Backspace and the mouse's back button do (feedback #130). At the folder's root it
+            // does nothing, as before; nor when the first click opened or entered something.
+            tracing::debug!(fence = %fence_id, x, y, "double-click on empty space in a subfolder: up one level");
+            queue.push(Command::PortalUp(v.active));
         }
     }
     Some(0)
@@ -1164,10 +1177,10 @@ pub(super) fn on_mousewheel(
             return Some(0);
         }
         if ctrl {
-            // Ctrl+wheel never scrolls (Explorer); in Icons view it steps the
-            // icon size, one step per whole notch (touchpads accumulate). A tool
-            // fence has no icons to size.
-            if v.layout == ViewLayout::Icons && !v.shows_tool() {
+            // Ctrl+wheel never scrolls (Explorer); it steps the icon size, one step
+            // per whole notch (touchpads accumulate), in the rows of 列表 and 详细信息
+            // too (their icon follows it, feedback #120). A tool fence has no icons.
+            if !v.shows_tool() {
                 v.wheel_zoom_accum += delta;
                 while v.wheel_zoom_accum.abs() >= msg::WHEEL_DELTA {
                     let larger = v.wheel_zoom_accum > 0;

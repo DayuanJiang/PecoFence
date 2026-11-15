@@ -1,4 +1,7 @@
 {
+  "闲置时的不透明度": "Opacidad en reposo",
+  "不淡化": "Sin atenuar",
+  "鼠标移开时淡化背景、图标和文字；悬停或操作时恢复正常": "Atenuar fondos, iconos y etiquetas en reposo; restaurarlos al pasar el cursor o interactuar",
   "桌面": "Escritorio",
   "栅栏": "Grupos",
   "程序": "Programas",
@@ -537,6 +540,7 @@
   "点“撤销”，或在栅栏上按 Ctrl+Z，就能把它找回来。": "Haz clic en Deshacer, o pulsa Ctrl+Z en un grupo, para recuperarlo.",
   "点“撤销”，或在栅栏上按 Ctrl+Z，就能把它们放回原处。": "Haz clic en Deshacer, o pulsa Ctrl+Z en un grupo, para devolverlos a su sitio.",
   "永久删除的文件无法撤销。": "La eliminación permanente no se puede deshacer.",
+  "这次粘贴无法撤销，可以手动删除粘贴进来的文件。": "Este pegado no se puede deshacer. Puedes eliminar tú mismo los archivos pegados.",
   "撤销": "Deshacer",
   "其中的 {0} 个图标会回到“{1}”栅栏，文件本身不受影响。": "Sus iconos ({0}) volverán al grupo «{1}». Los archivos no se verán afectados.",
   "指向它的 {0} 条规则也会一并删除。": "También se eliminarán las reglas que lo usan como destino ({0}).",
@@ -761,6 +765,7 @@
   "搜索别名\u0004字体颜色|文本颜色|白字|黑字": "color de fuente|color de letra|texto blanco|texto negro|letras blancas",
   "搜索别名\u0004图标尺寸|大图标|小图标|缩放": "iconos grandes|iconos pequeños|tamaño de iconos|zoom|escala|agrandar",
   "搜索别名\u0004变淡|半透明|褪色|低饱和|Chameleon": "atenuar|semitransparente|desaturar|apagado|desvanecer|discreto|Chameleon",
+  "搜索别名\u0004淡出|渐隐|变淡|半透明|空闲|不用时": "atenuar|desvanecer|transparente|translúcido|inactivo|en reposo",
   "搜索别名\u0004开机|开机启动|自启|自动启动|登录时启动": "inicio automático|arranque|al encender|al iniciar sesión|autostart|inicio de Windows",
   "搜索别名\u0004隐藏桌面图标|显示桌面图标|系统图标|原来的图标": "ocultar iconos del escritorio|mostrar iconos del escritorio|iconos del sistema|iconos originales",
   "搜索别名\u0004小技巧|提示卡片|新手提示|引导": "consejos|sugerencias|tarjetas de consejos|primeros pasos",
@@ -1021,5 +1026,15 @@
   "这种动态壁纸的画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响": "La imagen de este tipo de fondo animado no se puede leer, así que los grupos Liquid Glass son por ahora un cristal translúcido sin refracción. Vuelven a la normalidad al cerrar el fondo animado; Fluent no se ve afectado",
   "动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”": "Mientras se reproduce un fondo animado, Liquid Glass es un cristal esmerilado hecho con una imagen fija del fondo. Para que se vea el propio fondo, pon la opacidad en Más transparente en la página Grupos",
   "帮助改进 PecoFence": "Ayudar a mejorar PecoFence",
-  "发送匿名的使用统计，例如用了哪些功能。文件名、路径和你输入的文字不会发送。": "Envía estadísticas de uso anónimas, por ejemplo qué funciones se usan. Los nombres de archivo, las rutas y lo que escribes no se envían nunca."
+  "发送匿名的使用统计，例如用了哪些功能。文件名、路径和你输入的文字不会发送。": "Envía estadísticas de uso anónimas, por ejemplo qué funciones se usan. Los nombres de archivo, las rutas y lo que escribes no se envían nunca.",
+  "菜单颜色": "Color de los menús",
+  "托盘菜单，以及栅栏和图标的右键菜单": "El menú de la bandeja y los menús contextuales de los grupos y los iconos",
+  "跟随颜色模式": "Usar el modo de color",
+  "所有栅栏用同样的外观": "La misma apariencia para todos los grupos",
+  "把上面的不透明度、色调、标题颜色、标题字号和标题栏设置用到其他栅栏": "Da a los demás grupos la opacidad, el tinte, el color y el tamaño del título y los ajustes de la barra de título de arriba",
+  "应用到所有栅栏": "Aplicar a todos los grupos",
+  "所有栅栏用同样的布局": "La misma distribución para todos los grupos",
+  "把上面的视图、排序、图标大小、间距、名称和对齐用到其他栅栏": "Da a los demás grupos la vista, el orden, el tamaño de los iconos, el espaciado, las etiquetas y la alineación de arriba",
+  "其他栅栏已经和它一样": "Los demás grupos ya están así",
+  "已用到其他 {0} 个栅栏": "Aplicado a otros {0} grupos"
 }

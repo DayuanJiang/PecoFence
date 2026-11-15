@@ -18,6 +18,9 @@ pub const ICON_SIZE_MIN: u32 = 24;
 pub const ICON_SIZE_MAX: u32 = 128;
 pub const ICON_SIZE_STEP: u32 = 4;
 
+/// The lowest `idleOpacity`: a fence at rest can still be seen and found again.
+pub const IDLE_OPACITY_MIN: f32 = 0.1;
+
 /// An icon size edited by hand loads as the nearest size in range.
 fn icon_size_in_range<'de, D: serde::Deserializer<'de>>(d: D) -> Result<u32, D::Error> {
     let size = u32::deserialize(d)?.clamp(ICON_SIZE_MIN, ICON_SIZE_MAX);
@@ -151,6 +154,17 @@ pub struct Settings {
     pub language: crate::i18n::Language,
     pub backdrop: Backdrop,
     pub theme: ThemeSetting,
+    /// 菜单颜色: light or dark popup menus (the tray menu, the fence and item menus with the
+    /// entries Windows adds, their tips), on their own or following `theme`.
+    #[serde(default)]
+    pub menu_color: MenuColor,
+    /// Whole-fence opacity while idle (0.1..1); 1 disables hover fading.
+    #[serde(
+        default = "default_idle_opacity",
+        deserialize_with = "idle_opacity_in_range"
+    )]
+    #[cfg_attr(feature = "schema", schemars(range(min = 0.1, max = 1.0)))]
+    pub idle_opacity: f32,
     /// Material style is independent of the light/dark preference.
     #[serde(default)]
     pub theme_style: ThemeStyle,
@@ -425,12 +439,25 @@ impl PeekHotkey {
     }
 }
 
+fn default_idle_opacity() -> f32 {
+    1.0
+}
+
+/// An idle opacity edited by hand loads as the nearest value in range, like an icon size: one
+/// number out of range must not make the whole file unreadable (the app would then start from a
+/// backup or from nothing). The command line refuses such a value before it gets here.
+fn idle_opacity_in_range<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+    Ok(f32::deserialize(d)?.clamp(IDLE_OPACITY_MIN, 1.0))
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
             language: crate::i18n::Language::System,
             backdrop: Backdrop::Acrylic,
             theme: ThemeSetting::FollowWindowsMode,
+            menu_color: MenuColor::FollowMode,
+            idle_opacity: 1.0,
             theme_style: ThemeStyle::Fluent,
             custom_theme: None,
             label_color: LabelColor::Auto,
@@ -478,6 +505,19 @@ pub enum Backdrop {
 pub enum ThemeSetting {
     FollowWindowsMode,
     FollowAppMode,
+    Light,
+    Dark,
+}
+
+/// 菜单颜色. Windows draws a process's menus light or dark as one (uxtheme's preferred app
+/// mode), so this goes for every popup menu of PecoFence at once.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum MenuColor {
+    /// The light or dark of 颜色模式 (`theme`).
+    #[default]
+    FollowMode,
     Light,
     Dark,
 }
@@ -2786,6 +2826,42 @@ mod tests {
     }
 
     #[test]
+    fn idle_opacity_defaults_off_and_loads_in_range() {
+        let mut json = serde_json::to_value(Settings::default()).unwrap();
+        json.as_object_mut().unwrap().remove("idleOpacity");
+        assert_eq!(
+            serde_json::from_value::<Settings>(json.clone())
+                .unwrap()
+                .idle_opacity,
+            1.0
+        );
+        for value in [0.1, 0.25, 0.45, 0.7, 1.0] {
+            json["idleOpacity"] = serde_json::json!(value);
+            let settings: Settings = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(settings.idle_opacity, value as f32);
+            let saved = serde_json::to_value(&settings).unwrap();
+            assert_eq!(serde_json::from_value::<Settings>(saved).unwrap(), settings);
+        }
+        // A number out of range in a hand-edited file loads as the nearest one in range: the
+        // rest of the file (every fence) must load.
+        for (value, loaded) in [
+            (0.0, 0.1),
+            (-0.5, 0.1),
+            (0.05, 0.1),
+            (1.01, 1.0),
+            (7.0, 1.0),
+        ] {
+            json["idleOpacity"] = serde_json::json!(value);
+            let settings: Settings = serde_json::from_value(json.clone()).unwrap();
+            assert_eq!(settings.idle_opacity, loaded as f32, "{value}");
+        }
+        for value in [serde_json::json!("0.45"), serde_json::Value::Null] {
+            json["idleOpacity"] = value;
+            assert!(serde_json::from_value::<Settings>(json.clone()).is_err());
+        }
+    }
+
+    #[test]
     fn peek_shortcuts_read_in_both_directions() {
         use crate::hotkey::{CTRL_ALT_SPACE, Hotkey};
         // What 0.2.0 reads of `peek` (it ignores fields it does not know).
@@ -2879,8 +2955,10 @@ mod tests {
         json.as_object_mut().unwrap().remove("tabBar");
         json.as_object_mut().unwrap().remove("labelColor");
         json.as_object_mut().unwrap().remove("customTheme");
+        json.as_object_mut().unwrap().remove("menuColor");
         let legacy: Settings = serde_json::from_value(json).unwrap();
         assert_eq!(legacy.theme_style, ThemeStyle::Fluent);
+        assert_eq!(legacy.menu_color, MenuColor::FollowMode);
         assert_eq!(legacy.custom_theme, None);
         assert_eq!(legacy.title_align, TitleAlign::Left);
         assert_eq!(legacy.tab_bar, TabBar::Top);
@@ -2895,10 +2973,12 @@ mod tests {
                 theme: mode,
                 theme_style: ThemeStyle::LiquidGlass,
                 label_color: LabelColor::White,
+                menu_color: MenuColor::Light,
                 ..legacy.clone()
             };
             let json = serde_json::to_value(&settings).unwrap();
             assert_eq!(json["themeStyle"], "liquidGlass");
+            assert_eq!(json["menuColor"], "light");
             assert_eq!(json["labelColor"], "white");
             assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
         }

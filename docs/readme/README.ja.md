@@ -1,7 +1,7 @@
 https://github.com/user-attachments/assets/c827f059-cfd7-4f6a-bed3-8b00411a7220
 
 <p align="center">
-  <strong>Windows 11 向けの無料・オープンソースの Stardock Fences 代替アプリ。</strong><br>
+  <strong>Windows 11・10 向けの無料・オープンソースの Stardock Fences 代替アプリ。</strong><br>
   ガラスのフェンスにファイルをまとめ、タブでプロジェクトを切り替え。内蔵 CLI を通じて、AI にレイアウトや外観、自動整理ルールの設定も任せられます。
 </p>
 

@@ -230,6 +230,23 @@ new one and compose them side by side:
   Screen grabs load the box: timing effects (frame gaps, drag lag) look smaller while recording, so
   show them with a metric and slow motion, and check the sheet before using the animation.
 
+## Memory on the home PC (before every release)
+
+```bash
+scripts/wintest/pc-memory.sh <last release dir> <candidate dir> [--minutes 30] [--order a,b,a,b]
+```
+
+Runs both builds in turn on the home PC (`ssh win`: its GPU and 4K monitor) as a portable test
+instance with a copy of the user's configuration (their fences, Liquid Glass and the 电脑状态 fence;
+autostart, hotkeys, hooks, the tray icon, update checks, usage uploads and icon hiding off) plus a
+clock with seconds, rolls a fence up and down every five minutes, samples every 30 s and prints
+median and maximum per build of what Task Manager shows for the PecoFence group (with the
+processes it started), the private commit, GPU memory, threads, handles and CPU per idle minute.
+The test fences show on the user's desktop for the whole run (about 2 hours by default): run it
+when the user is away, as the background command. The PC must be signed in; it must not sleep.
+Start builds of the same toolchain (two release zips, or two `build.sh` builds): a cross-built
+exe and a CI exe differ in more than the change.
+
 ## Hyper-V guests on the home PC (Windows 11 and Windows 10)
 
 ```bash
@@ -249,7 +266,10 @@ The guest runner:
   box's size), boots it and waits for pf's desktop;
 - points the guest's PFJob task at a hidden launcher with normal priority, turns Spotlight off and
   removes the Store Notepad, which restores earlier jobs' tabs and shows "Cannot find" boxes over
-  the Open dialog (`--keep-notepad` keeps it);
+  the Open dialog (`--keep-notepad` keeps it); with `--elevated` PFJob runs with pf's full
+  administrator token, so the app, its CLI and the steps run as administrator (a report from a
+  user who starts PecoFence that way; a job cannot elevate by itself, the guest's UAC asks on
+  the secure desktop);
 - runs one PFJob job per steps file, with the kit's `ctl.ps1 reset` before each, and packs
   `C:\pf\run` as `run.sh` does;
 - turns the guest off, restores the checkpoint and the video settings and deletes the checkpoint.

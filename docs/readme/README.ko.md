@@ -1,7 +1,7 @@
 https://github.com/user-attachments/assets/c827f059-cfd7-4f6a-bed3-8b00411a7220
 
 <p align="center">
-  <strong>Windows 11용 무료 오픈 소스 Stardock Fences 대안.</strong><br>
+  <strong>Windows 11·10용 무료 오픈 소스 Stardock Fences 대안.</strong><br>
   유리 펜스에 파일을 모으고 탭으로 프로젝트를 전환하세요. 내장 CLI로 AI 에이전트에게 배치, 모양, 자동 정리 규칙 설정도 맡길 수 있습니다.
 </p>
 

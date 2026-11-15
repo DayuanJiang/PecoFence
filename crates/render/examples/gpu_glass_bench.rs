@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut cache,
             &background,
             [-200, 80, 260, 160],
+            160,
             0.0,
             1.0,
             24.0,
@@ -56,6 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut cache,
             &background,
             [-190, 90, 260, 160],
+            160,
             0.0,
             1.0,
             24.0,
@@ -77,6 +79,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         1,
         "moving must not regenerate the field"
     );
+    // A title row gliding in: the lens is shorter for a few frames and is stretched from the
+    // map of the height it comes to rest at, which is built once.
+    for h in [150, 140, 155] {
+        target.draw(|s| {
+            s.clear(ColorF::TRANSPARENT);
+            glass.draw(
+                s,
+                &mut cache,
+                &background,
+                [-190, 90 + 160 - h, 260, h],
+                160,
+                (160 - h) as f32,
+                1.0,
+                24.0,
+                1.0,
+                0.0,
+            )
+        })?;
+    }
+    assert_eq!(
+        glass.stats().map_builds,
+        1,
+        "a lens stretched to its rest height must not regenerate the field"
+    );
     assert_eq!(cache.uploads, 1, "moving must not upload wallpaper again");
 
     {
@@ -94,6 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut cache,
                 &checker,
                 [-200, 80, 260, 160],
+                160,
                 0.0,
                 1.0,
                 24.0,
@@ -127,6 +154,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut cache,
                     &ramp,
                     [left, 80, 260, 160],
+                    160,
                     0.0,
                     1.0,
                     24.0,
@@ -185,6 +213,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut cache,
                     &monitors,
                     [left, 80, 260, 160],
+                    160,
                     0.0,
                     1.0,
                     24.0,
@@ -206,6 +235,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut cache,
                     &monitors,
                     [40, 80, 260, h],
+                    h,
                     0.0,
                     scale,
                     radius,
@@ -232,6 +262,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut cache,
                 &monitors,
                 [40, 80, 260, 160],
+                160,
                 0.0,
                 1.0,
                 24.0,
@@ -265,6 +296,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut cache,
                     &stripes,
                     [left, 80, 260, 160],
+                    160,
                     0.0,
                     1.0,
                     24.0,
@@ -281,6 +313,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut cache,
                     &stripes,
                     [left, 80, 260, 160],
+                    160,
                     0.0,
                     1.0,
                     24.0,
@@ -332,6 +365,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut cache,
                 &background,
                 [-250, 40, w as i32, h as i32],
+                h as i32,
                 0.0,
                 2.0,
                 24.0,
@@ -352,6 +386,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut cache,
                     &background,
                     [-250 + i * 3, 40 + i, w as i32, h as i32],
+                    h as i32,
                     0.0,
                     2.0,
                     24.0,
@@ -392,6 +427,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     &mut cache,
                     &background,
                     [-250, 40, w as i32, h as i32],
+                    h as i32,
                     0.0,
                     2.0,
                     16.0,

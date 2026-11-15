@@ -365,6 +365,15 @@ impl App {
         !self.feedback.previous_run_crashed && !self.feedback.previous_run_unfinished
     }
 
+    /// How the previous run ended, as `(crashed, cut off)`: a crash its log records, or a log
+    /// that stops without its last line (known once `offer_crash_feedback` ran).
+    pub(super) fn previous_run_end(&self) -> (bool, bool) {
+        (
+            self.feedback.previous_run_crashed,
+            self.feedback.previous_run_unfinished,
+        )
+    }
+
     /// At startup: if the last run crashed, offer to report it from a tray balloon.
     pub(super) fn offer_crash_feedback(&mut self) {
         let previous = self.share_log(pecofence_core::brand::PREVIOUS_SHARE_LOG);
@@ -562,13 +571,18 @@ impl App {
             .and_then(|a| a.as_ref().map(|a| a.window_report()))
         {
             Some(w) => format!(
-                "{} fences: {} visible, {} cloaked, {} topmost, {} below the desktop, {} above other windows, {} off screen; hidden by double-click {}, peek {}, show desktop {}, windows desktop {}; host {}",
+                "{} fences: {} visible, {} cloaked, {} topmost, {} below the desktop, {} above other windows{}, {} off screen; hidden by double-click {}, peek {}, show desktop {}, windows desktop {}; host {}",
                 w.fences,
                 w.visible,
                 w.cloaked,
                 w.topmost,
                 w.below_host,
                 w.above_windows,
+                if w.covered_classes.is_empty() {
+                    String::new()
+                } else {
+                    format!(" ({})", w.covered_classes.join(", "))
+                },
                 w.off_screen,
                 on_off(w.quick_hidden),
                 on_off(w.peeking),

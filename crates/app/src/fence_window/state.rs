@@ -251,6 +251,10 @@ pub struct FenceViewState {
     /// The last title click expanded the fence (click-to-expand); a WM_NCLBUTTONDBLCLK that
     /// completes it must not roll the fence back up.
     pub(super) suppress_dblclk: bool,
+    /// The last left press was on empty space of a subfolder, and the fence has shown no other
+    /// folder since: a double-click that completes it goes up one level (feedback #130). A
+    /// first click that opened or entered something (single-click open) leaves it false.
+    pub(super) up_on_dblclk: bool,
     /// Double-click on a folder item navigates inside the portal instead of launching it.
     pub(super) navigate_folders: bool,
     /// The folder the shown fence's drops land in when it is a portal (its current folder).
@@ -437,6 +441,13 @@ pub struct FenceViewState {
     pub(super) _target: DesktopWindowTarget,
     /// Root of the window's visual tree: whole-window fades / scales animate this.
     pub(super) root: ContainerVisual,
+    /// Independent of root show/hide fades and content tab/roll transitions.
+    pub(super) idle_layer: ContainerVisual,
+    pub(super) idle_fade: Tween,
+    pub(super) idle_opacity_applied: f32,
+    /// A popup menu of this fence is open (WM_ENTERMENULOOP to WM_EXITMENULOOP): the fence
+    /// keeps its full strength under its own menu, the other fences stay as they are.
+    pub(super) menu_open: bool,
     pub(super) chrome: Rc<FenceChrome>,
     pub(super) icons: Rc<RefCell<IconCache>>,
     pub(super) bitmaps: Rc<RefCell<BitmapCache>>,
@@ -1013,6 +1024,17 @@ impl FenceViewState {
         self.note.is_some() || self.clock.is_some() || self.script.is_some()
     }
 
+    /// 时钟与日期 rolled up (feedback #175): the title row shows the time, hours and minutes in
+    /// Windows' region format (12 or 24 hours), in place of the fence's name. None for any other
+    /// fence, an open clock, or when Windows gives no time.
+    pub(super) fn rolled_clock_caption(&self) -> Option<String> {
+        if self.clock.is_none() || !self.roll_target() {
+            return None;
+        }
+        let time = pecofence_platform::fileinfo::clock_texts(false).0;
+        (!time.is_empty()).then_some(time)
+    }
+
     /// The rolled title shows 「N 项」 before the chevron: not for a tool (no items), a smart
     /// fence (its capsule counts) or a filter tag (it carries the count).
     pub(super) fn shows_rolled_count(&self) -> bool {
@@ -1036,10 +1058,12 @@ impl FenceViewState {
     }
 
     /// Arms TIMER_CLOCK for just after the next minute (or second) boundary, or stops it when
-    /// the window shows no clock.
+    /// the window shows no clock. Rolled up, the clock shows hours and minutes in its title row
+    /// and ticks each minute.
     pub(super) fn arm_clock(&self) {
         match self.clock {
             Some(seconds) => {
+                let seconds = seconds && !self.roll_target();
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default();

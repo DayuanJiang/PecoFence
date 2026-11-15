@@ -218,6 +218,9 @@ pub struct Stats {
 /// kube.io's SVG chain: displace the backdrop once, let a strongly saturated copy of the
 /// refracted backdrop show through the specular ring, then light the ring itself.
 const RIM_SATURATION: f32 = 6.0;
+/// The most a plate's lens map is stretched or squeezed in height while a title row glides
+/// (`GpuGlass::draw`'s `rest_h`): a 36 DIP row over a plate 150 DIP high or more.
+const MAX_STRETCH: f32 = 1.33;
 const RIM_LIGHT: f32 = 0.4;
 
 /// feColorMatrix `saturate` (Rec. 709 luma weights) in D2D's input-row layout.
@@ -247,11 +250,18 @@ struct Effects {
     border: b::ID2D1Effect,
     position: b::ID2D1Effect,
     displace: b::ID2D1Effect,
-    rim: b::ID2D1Effect,
     light: b::ID2D1Effect,
     output: b::ID2D1Effect,
     surface: Rc<Wallpaper>,
+    /// Resample the lens map and the ring to the lens drawn (`geometry`).
+    map_border: b::ID2D1Effect,
+    map_scale: b::ID2D1Effect,
+    ring_scale: b::ID2D1Effect,
+    /// What the map and the ring were built for, and the map's own size in texels.
     geometry: Option<(u32, u32, u32, u32, u32)>,
+    map_size: (u32, u32),
+    /// The lens height (device px) the map and the ring are stretched to now.
+    stretched_to: Option<u32>,
     opacity: Option<u32>,
     light_level: Option<u32>,
 }
@@ -296,65 +306,9 @@ impl Effects {
         color_matrix(&light, light_matrix(RIM_LIGHT))?;
         let composite = effect(&b::CLSID_D2D1Composite)?;
         let output = effect(&b::CLSID_D2D1ColorMatrix)?;
-        unsafe {
-            position.SetInput(0, &border.GetOutput()?, true);
-            displace.SetInput(0, &position.GetOutput()?, true);
-            saturate.SetInput(0, &displace.GetOutput()?, true);
-            rim.SetInput(0, &saturate.GetOutput()?, true);
-            composite.SetInputCount(3).ok()?;
-            composite.SetInput(0, &displace.GetOutput()?, true);
-            composite.SetInput(1, &rim.GetOutput()?, true);
-            composite.SetInput(2, &light.GetOutput()?, true);
-            output.SetInput(0, &composite.GetOutput()?, true);
-        }
-        Ok(Self {
-            source: None,
-            border,
-            position,
-            displace,
-            rim,
-            light,
-            output,
-            surface: Rc::new(Wallpaper {
-                image: unsafe { composite.GetOutput()? },
-            }),
-            geometry: None,
-            opacity: None,
-            light_level: Some(RIM_LIGHT.to_bits()),
-        })
-    }
-
-    fn geometry(
-        &mut self,
-        context: &b::ID2D1DeviceContext,
-        w: u32,
-        h: u32,
-        scale: f32,
-        radius: f32,
-        refraction: f32,
-    ) -> Result<bool> {
-        let key = (
-            w,
-            h,
-            scale.to_bits(),
-            radius.to_bits(),
-            refraction.to_bits(),
-        );
-        if self.geometry == Some(key) {
-            return Ok(false);
-        }
-        let field = crate::liquid_glass::displacement_field(w, h, scale, radius);
-        let map = bitmap(
-            context,
-            field.width,
-            field.height,
-            field.rgba.as_ptr().cast(),
-            field.width * 8,
-            b::DXGI_FORMAT_R16G16B16A16_FLOAT,
-        )?;
-        // Effects use pixel coordinates; bitmap DPI alone does not resize input 1.
-        // Explicitly resample the cached field to the window, clamping its outer texels.
-        let map_border = unsafe { context.CreateEffect(&b::CLSID_D2D1Border)? };
+        // Effects use pixel coordinates; bitmap DPI alone does not resize input 1. The map is
+        // resampled to the window explicitly, clamping its outer texels.
+        let map_border = effect(&b::CLSID_D2D1Border)?;
         enumeration(
             &map_border,
             b::D2D1_BORDER_PROP_EDGE_MODE_X,
@@ -365,41 +319,121 @@ impl Effects {
             b::D2D1_BORDER_PROP_EDGE_MODE_Y,
             b::D2D1_BORDER_EDGE_MODE_CLAMP,
         )?;
-        let map_scale = unsafe { context.CreateEffect(&b::CLSID_D2D12DAffineTransform)? };
-        matrix(
-            &map_scale,
-            [
-                w as f32 / field.width as f32,
-                0.0,
-                0.0,
-                h as f32 / field.height as f32,
-                0.0,
-                0.0,
-            ],
-        )?;
-        let ring = bitmap(
-            context,
-            field.rim_width,
-            field.rim_height,
-            field.rim.as_ptr().cast(),
-            field.rim_pitch,
-            b::DXGI_FORMAT_A8_UNORM,
-        )?
-        .cast::<b::ID2D1Image>()?;
-        scalar(
-            &self.displace,
-            b::D2D1_DISPLACEMENTMAP_PROP_SCALE,
-            field.scale_px * refraction,
-        )?;
+        let map_scale = effect(&b::CLSID_D2D12DAffineTransform)?;
+        let ring_scale = effect(&b::CLSID_D2D12DAffineTransform)?;
         unsafe {
-            map_border.SetInput(0, &map.cast::<b::ID2D1Image>()?, true);
+            position.SetInput(0, &border.GetOutput()?, true);
+            displace.SetInput(0, &position.GetOutput()?, true);
+            saturate.SetInput(0, &displace.GetOutput()?, true);
+            rim.SetInput(0, &saturate.GetOutput()?, true);
+            composite.SetInputCount(3).ok()?;
+            composite.SetInput(0, &displace.GetOutput()?, true);
+            composite.SetInput(1, &rim.GetOutput()?, true);
+            composite.SetInput(2, &light.GetOutput()?, true);
+            output.SetInput(0, &composite.GetOutput()?, true);
             map_scale.SetInput(0, &map_border.GetOutput()?, true);
-            self.displace.SetInput(1, &map_scale.GetOutput()?, true);
-            self.rim.SetInput(1, &ring, true);
-            self.light.SetInput(0, &ring, true);
+            displace.SetInput(1, &map_scale.GetOutput()?, true);
+            rim.SetInput(1, &ring_scale.GetOutput()?, true);
+            light.SetInput(0, &ring_scale.GetOutput()?, true);
         }
-        self.geometry = Some(key);
-        Ok(true)
+        Ok(Self {
+            source: None,
+            border,
+            position,
+            displace,
+            light,
+            output,
+            surface: Rc::new(Wallpaper {
+                image: unsafe { composite.GetOutput()? },
+            }),
+            map_border,
+            map_scale,
+            ring_scale,
+            geometry: None,
+            map_size: (1, 1),
+            stretched_to: None,
+            opacity: None,
+            light_level: Some(RIM_LIGHT.to_bits()),
+        })
+    }
+
+    /// Builds the lens map and the ring for a `w` x `build_h` lens (device px) when that
+    /// geometry changed, and stretches both to the `h` px tall lens drawn now. `build_h` is the
+    /// height the lens comes to rest at: while a title row glides in or out the plate's height
+    /// changes every frame, and the map (a CPU pass over the plate and two uploads) is built
+    /// once for the end instead of for every frame. Returns whether it was built.
+    #[allow(clippy::too_many_arguments)]
+    fn geometry(
+        &mut self,
+        context: &b::ID2D1DeviceContext,
+        w: u32,
+        build_h: u32,
+        h: u32,
+        scale: f32,
+        radius: f32,
+        refraction: f32,
+    ) -> Result<bool> {
+        let key = (
+            w,
+            build_h,
+            scale.to_bits(),
+            radius.to_bits(),
+            refraction.to_bits(),
+        );
+        let built = self.geometry != Some(key);
+        if built {
+            let field = crate::liquid_glass::displacement_field(w, build_h, scale, radius);
+            let map = bitmap(
+                context,
+                field.width,
+                field.height,
+                field.rgba.as_ptr().cast(),
+                field.width * 8,
+                b::DXGI_FORMAT_R16G16B16A16_FLOAT,
+            )?;
+            let ring = bitmap(
+                context,
+                field.rim_width,
+                field.rim_height,
+                field.rim.as_ptr().cast(),
+                field.rim_pitch,
+                b::DXGI_FORMAT_A8_UNORM,
+            )?
+            .cast::<b::ID2D1Image>()?;
+            scalar(
+                &self.displace,
+                b::D2D1_DISPLACEMENTMAP_PROP_SCALE,
+                field.scale_px * refraction,
+            )?;
+            unsafe {
+                self.map_border
+                    .SetInput(0, &map.cast::<b::ID2D1Image>()?, true);
+                self.ring_scale.SetInput(0, &ring, true);
+            }
+            self.geometry = Some(key);
+            self.map_size = (field.width, field.height);
+            self.stretched_to = None;
+        }
+        if self.stretched_to != Some(h) {
+            let (map_w, map_h) = self.map_size;
+            matrix(
+                &self.map_scale,
+                [
+                    w as f32 / map_w as f32,
+                    0.0,
+                    0.0,
+                    h as f32 / map_h as f32,
+                    0.0,
+                    0.0,
+                ],
+            )?;
+            matrix(
+                &self.ring_scale,
+                [1.0, 0.0, 0.0, h as f32 / build_h as f32, 0.0, 0.0],
+            )?;
+            self.stretched_to = Some(h);
+        }
+        Ok(built)
     }
 
     fn set_light(&mut self, level: f32) -> Result<()> {
@@ -447,7 +481,8 @@ impl GpuGlass {
     }
 
     /// Draws the plate lens for the screen rect `rect` at surface row `origin_y` (device px;
-    /// non-zero while title on hover folds the title row away).
+    /// non-zero while title on hover folds the title row away). `rest_h` is the lens height
+    /// (device px) the plate comes to rest at: `rect[3]`, or the end of a title row's glide.
     #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
@@ -455,6 +490,7 @@ impl GpuGlass {
         cache: &mut WallpaperCache,
         sources: &Rc<Vec<MonitorBackdrop>>,
         rect: [i32; 4],
+        rest_h: i32,
         origin_y: f32,
         scale: f32,
         radius: f32,
@@ -478,7 +514,7 @@ impl GpuGlass {
         session.set_transform(&Matrix3x2::identity());
         self.origin_y = origin_y;
         let result = self.draw_inner(
-            session, cache, sources, rect, origin_y, scale, radius, opacity, hover,
+            session, cache, sources, rect, rest_h, origin_y, scale, radius, opacity, hover,
         );
         session.set_transform(&saved);
         if let Err(error) = &result {
@@ -573,7 +609,7 @@ impl GpuGlass {
             (rect.width() * scale).ceil().max(1.0) as u32,
             (rect.height() * scale).ceil().max(1.0) as u32,
         );
-        if effects.geometry(&context, w, h, scale, radius, self.lens.refraction)? {
+        if effects.geometry(&context, w, h, h, scale, radius, self.lens.refraction)? {
             self.stats.control_map_builds += 1;
         }
         effects.set_light(RIM_LIGHT * self.lens.rim_light)?;
@@ -621,6 +657,7 @@ impl GpuGlass {
         cache: &mut WallpaperCache,
         sources: &Rc<Vec<MonitorBackdrop>>,
         rect: [i32; 4],
+        rest_h: i32,
         origin_y: f32,
         scale: f32,
         radius: f32,
@@ -643,8 +680,27 @@ impl GpuGlass {
         }
         let w = rect[2].max(1) as u32;
         let h = rect[3].max(1) as u32;
-        if effects.geometry(&context, w, h, scale, radius, self.lens.refraction)? {
+        // Stretched only a little: a lens far from its rest height (a rolled fence that opens
+        // while its title row folds away starts one row high with a rest height near zero) is
+        // built for the height drawn, frame by frame, as before.
+        let rest = rest_h.max(1) as u32;
+        let build_h =
+            if (h as f32) <= rest as f32 * MAX_STRETCH && (rest as f32) <= h as f32 * MAX_STRETCH {
+                rest
+            } else {
+                h
+            };
+        let started = std::time::Instant::now();
+        if effects.geometry(&context, w, build_h, h, scale, radius, self.lens.refraction)? {
             self.stats.map_builds += 1;
+            tracing::trace!(
+                target: "pecofence::render_timing",
+                w,
+                h = build_h,
+                drawn_h = h,
+                us = started.elapsed().as_micros(),
+                "glass map built"
+            );
         }
         matrix(
             &effects.position,

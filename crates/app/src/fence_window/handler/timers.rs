@@ -520,9 +520,23 @@ pub(super) fn on_entermenuloop(
     _wparam: usize,
     _lparam: isize,
 ) -> Option<isize> {
-    let HandlerCtx { menu_open, .. } = h;
+    let HandlerCtx {
+        view, menu_open, ..
+    } = h;
     menu_open.set(true);
+    set_idle_menu(view, true);
     None
+}
+
+/// 闲置时的不透明度: a fence does not fade under its own menu (the pointer is on the menu then,
+/// not on the fence), and fades again when the menu has closed and nothing else holds it.
+fn set_idle_menu(view: &ViewCell, open: bool) {
+    if let Ok(mut guard) = view.try_borrow_mut()
+        && let Some(v) = guard.as_mut()
+    {
+        v.menu_open = open;
+        v.sync_idle_fade(Instant::now());
+    }
 }
 
 pub(super) fn on_exitmenuloop(
@@ -535,6 +549,7 @@ pub(super) fn on_exitmenuloop(
         view, menu_open, ..
     } = h;
     menu_open.set(false);
+    set_idle_menu(view, false);
     // The popup was part of the peeked fence: its close countdown starts
     // now, not while the menu was up (WM_MOUSEMOVE inside still cancels).
     let peeking = view
@@ -632,8 +647,16 @@ pub(super) fn on_timer_clock(h: &HandlerCtx) -> Option<isize> {
     if let Ok(mut g) = h.view.try_borrow_mut()
         && let Some(v) = g.as_mut()
     {
-        if !v.rolled_up && !v.retired && pecofence_platform::desktop::is_visible(v.hwnd) {
-            let _ = v.redraw_content();
+        if !v.retired && pecofence_platform::desktop::is_visible(v.hwnd) {
+            // A tick is nobody using PecoFence: it does not hold back the memory housekeeping.
+            // Rolled up, the time is in the title row (feedback #175).
+            let _ = pecofence_render::stack::quiet_draws(|| {
+                if v.rolled_up {
+                    v.redraw_chrome_only()
+                } else {
+                    v.redraw_content()
+                }
+            });
         }
         v.arm_clock();
     }

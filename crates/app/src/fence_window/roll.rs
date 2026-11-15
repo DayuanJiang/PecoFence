@@ -155,6 +155,61 @@ pub(super) fn show_shadow(shadow: HWND, fence: HWND) {
 }
 
 impl FenceViewState {
+    /// Update only compositor opacity and the cached shadow, never rasterize icons per frame.
+    pub(super) fn sync_idle_fade(&mut self, now: Instant) -> bool {
+        // Off (the default) and at full strength: nothing to work out, per frame or per draw.
+        if self.behavior.idle_opacity.get() >= 1.0
+            && self.idle_opacity_applied == 1.0
+            && self.idle_fade.target() == 1.0
+        {
+            return false;
+        }
+        let engaged = self.mouse_inside
+            || (self.win_active && self.focus_visible)
+            || self.drag.is_some()
+            || self.remote_drag.is_some()
+            || self.tab_drag.is_some()
+            || self.col_drag.is_some()
+            || self.scrollbar_pressed()
+            || self.ole_drag
+            || self.marquee.is_some()
+            || self.title_renaming
+            || self.renaming.is_some()
+            // A note's editor and the filter box are windows of their own over the fence: they
+            // do not fade, so the fence under them must not either.
+            || crate::note_edit::open_for() == Some(self.active)
+            || crate::filter_box::active_fence() == Some(self.active)
+            || self.merge_hint
+            || self.drop_hover
+            || self.drop_item.is_some()
+            || self.drop_insert.is_some()
+            || self.drop_tab.is_some()
+            || self.behavior.floating.get()
+            || self.menu_open;
+        let target = if self.bare() || engaged {
+            1.0
+        } else {
+            self.behavior.idle_opacity.get()
+        };
+        if !self.motion.enabled() {
+            self.idle_fade = Tween::at(target, now);
+        } else if self.idle_fade.target() != target {
+            self.idle_fade
+                .retarget(target, motion::FAST, Curve::Linear, now);
+        }
+        let opacity = self.idle_fade.value_at(now);
+        if opacity != self.idle_opacity_applied {
+            self.idle_layer.set_opacity(opacity);
+            self.idle_opacity_applied = opacity;
+            self.apply_shadow_alpha(now);
+        }
+        let busy = !self.idle_fade.is_done(now);
+        if busy {
+            self.frames.request();
+        }
+        busy
+    }
+
     pub(super) fn update_shadow(&mut self) {
         if pecofence_core::brand::var_os("PECOFENCE_NO_SHADOW").is_some() {
             self.shadow.hide();
@@ -200,11 +255,14 @@ impl FenceViewState {
         self.shadow_timer = false;
         let r = self.plate_rect();
         let resized = self.shadow.body_size() != Some((r.right - r.left, r.bottom - r.top));
-        // A roll or an auto-height settle brings a new bitmap with every frame: they go
-        // through one DIB section, tall enough for the taller end of the animation.
-        let tallest = self.height_animating().then(|| {
+        // A roll, an auto-height settle or the glide of a title row that shows on hover brings
+        // a new bitmap with every frame: they go through one DIB section, tall enough for the
+        // taller end of the animation (the glide's: the plate with the whole title row).
+        let gliding = !self.title_reveal.is_done(Instant::now());
+        let tallest = (self.height_animating() || gliding).then(|| {
             let h = r.bottom - r.top;
-            h.max(
+            let whole = if gliding { h + self.plate_inset_px } else { h };
+            whole.max(
                 self.height_target_px()
                     .map_or(h, |t| t - self.plate_inset_px + self.square_top_px()),
             )
@@ -247,12 +305,20 @@ impl FenceViewState {
             self.plate_alpha = alpha;
             self.apply_shadow_alpha(Instant::now());
         }
+        // The glide is over: the shadow's bitmaps no longer share a kept section. Its last
+        // frames often move the plate by no pixel, so no shadow update came after it, and the
+        // section stayed with the fence until its next resize.
+        if !self.height_animating() && self.title_reveal.is_done(Instant::now()) {
+            self.shadow.keep_upload(None);
+        }
     }
 
     /// The shadow's constant alpha: the whole-window fade times the plate's own alpha, so a
     /// fully transparent fence casts no shadow until its plate shows.
     pub(super) fn apply_shadow_alpha(&mut self, now: Instant) {
-        let a = self.shadow_alpha.value_at(now).clamp(0.0, 1.0) * self.plate_alpha;
+        let a = self.shadow_alpha.value_at(now).clamp(0.0, 1.0)
+            * self.plate_alpha
+            * self.idle_fade.value_at(now);
         self.shadow.set_alpha((a * 255.0).round() as u8);
     }
 
@@ -837,6 +903,16 @@ impl FenceViewState {
         // for, and it is hidden while rolled).
         if self.tabs.len() > 1 && self.tab_drag.is_none() && !self.tabs_on_rail() {
             self.sync_tab_slides(&prev, now);
+        }
+        // 时钟与日期 (feedback #175): the title row swaps the name for the time, or back; the new
+        // caption fades in as a folder's name does, and the clock ticks at what it now shows.
+        if self.clock.is_some() {
+            if self.motion.enabled() {
+                self.chrome_fades.snap(ChromeKey::TitleSwap, 1.0, now);
+                self.chrome_fades.set(true, ChromeKey::TitleSwap, 0.0, now);
+            }
+            self.arm_clock();
+            tracing::debug!(fence = %self.fence_id, rolled, "clock: the title row shows the {}", if rolled { "time" } else { "name" });
         }
         self.frames.request();
     }

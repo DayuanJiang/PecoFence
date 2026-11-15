@@ -993,8 +993,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         let state = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut State;
         let mut handled = None;
 
+        // Our code runs with exceptions masked, whatever a menu extension left (crate::fpu).
+        crate::fpu::restore("window message");
         // A shell context menu being tracked on this thread gets first pick of menu messages.
-        if let Some(result) = crate::shell_menu::forward_menu_message(msg, wparam.0, lparam.0) {
+        let forwarded = crate::shell_menu::forward_menu_message(msg, wparam.0, lparam.0);
+        if forwarded.is_some() {
+            // The menu's handlers ran: the loop of TrackPopupMenuEx may return to our code next.
+            crate::fpu::restore("menu message");
+        }
+        if let Some(result) = forwarded {
             return LRESULT(result);
         }
 
