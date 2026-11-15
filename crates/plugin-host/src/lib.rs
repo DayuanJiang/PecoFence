@@ -506,9 +506,9 @@ impl Plugin {
         let first = self.logged.len() < LOGGED_ERRORS && self.logged.insert(message.clone());
         let (fence, plugin) = (self.fence, &self.id);
         if first {
-            tracing::warn!(%fence, plugin, run = what, message, at, "plugin error: it escaped a handler, the plugin goes on");
+            tracing::warn!(%fence, plugin, run = what, error = message, at, "plugin error: it escaped a handler, the plugin goes on");
         } else {
-            tracing::debug!(%fence, plugin, run = what, message, "plugin error again");
+            tracing::debug!(%fence, plugin, run = what, error = message, "plugin error again");
         }
         let what = what.to_string();
         self.host.note(fence, Note::Error { what, message, at });
