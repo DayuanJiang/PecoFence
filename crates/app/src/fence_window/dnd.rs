@@ -1404,9 +1404,8 @@ impl FenceViewState {
     /// The item a drag let go at a client-pixel point drops onto (a folder, a program), as
     /// `hit_item`. Where the drag can also reorder (icons of our fences over a 手动 fence), only
     /// the icon itself takes them; its name and the room beside it put the icons at that place in
-    /// the order, as the Windows desktop splits "onto" from "beside". With the whole cell taking
-    /// them, a fence of program shortcuts could hardly be reordered: every drop opened the
-    /// dragged file with the program under it (feedback #162).
+    /// the order. With the whole cell taking them, a fence of program shortcuts could hardly be
+    /// reordered: every drop opened the dragged file with the program under it (feedback #162).
     pub(super) fn drop_onto_item(&self, x_px: i32, y_px: i32, internal: bool) -> Option<usize> {
         let i = self.hit_item(x_px, y_px)?;
         if !internal || self.places_freely() || self.insertion_at(x_px, y_px).is_none() {

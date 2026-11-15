@@ -6,7 +6,8 @@
 #   copied in File Explorer (it worked), a file copied inside a .zip (a virtual file, no file
 #   path on the clipboard), each by Ctrl+V and by the fence menu's 粘贴, and Ctrl+V on an empty
 #   spot of the desktop.
-# Parts: run.sh --var Part=A or --var Part=B (about 2 min each); default AB.
+# Parts: run.sh --var Part=A or --var Part=B (about 2 min each); default AB. Part R records the
+# before/after clips (--var Tag=main or fix).
 if (-not $Part) { $Part = 'AB' }
 trap { PfTrap $_; continue }
 
@@ -98,7 +99,7 @@ function IpDrag($from, $to, $shot = '') {
   MUp; Start-Sleep -Milliseconds 1500
 }
 
-function PartA() {
+function SetupA() {
   trap { PfTrap $_; continue }
   Case 'A setup'
   CloseWindows
@@ -136,6 +137,11 @@ function PartA() {
   Log "Apps [$(Order 'Apps')] Bravo [$(Order 'Bravo')]"
   Check 'A setup: six icons in Apps in the order they came' ((Names 'Apps').Count -eq 6 -and (IndexIn 'Apps' $script:A['ip 甲']) -eq 0 -and (IndexIn 'Apps' $script:A['ip 戊']) -eq 5) "[$(Order 'Apps')]"
   Shot 'A0-start'
+}
+
+function PartA() {
+  trap { PfTrap $_; continue }
+  SetupA
 
   Case 'A1 let go beside a program''s icon: the icon goes there, the program does not run'
   ClearRecv
@@ -185,7 +191,7 @@ function PartA() {
   Get-Process IpCap, cap -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 
-function PartB() {
+function SetupB() {
   trap { PfTrap $_; continue }
   Case 'B setup'
   CloseWindows
@@ -211,34 +217,39 @@ function PartB() {
   $script:ExPlain = ExOpen $Src 820 20 760 400
   $script:ExZip = ExOpen "$Src\ip 压缩包.zip" 820 440 760 400
   Log "Explorer windows: $(Explorers)"
+}
 
-  function ClipFormats() { return [IpClip]::Formats() }
-  # Selects one item in an Explorer window and presses Ctrl+C there.
-  function CopyIn($hw, $leaf) {
-    [Windows.Forms.Clipboard]::Clear()
-    $el = ExItem $hw $leaf
-    if (-not $el) { return $false }
-    $p = ExPt $el
-    # A click on the empty part of the list brings the window to the front and ends the
-    # selection there (a click on an item that is still selected would start renaming it), then
-    # one click selects the item.
-    $wr = Rect $hw
-    [G]::Click($wr.L + 400, $wr.B - 60); Start-Sleep -Milliseconds 500
-    [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
-    Log "CopyIn '$leaf': foreground $(Fg)"
-    Chord 0x11 0x43; Start-Sleep -Milliseconds 1200
-    $f = ClipFormats
-    Log "copied '$leaf': clipboard $f"
-    return ($f -match 'Shell IDList Array')
-  }
-  function FileAt($leaf, $sec = 6) {
-    for ($i = 0; $i -lt $sec * 4; $i++) { if (Test-Path -LiteralPath (Join-Path $PfDesk $leaf)) { return $true }; Start-Sleep -Milliseconds 250 }
-    return $false
-  }
-  function DropPasted($leaf) { Remove-Item -LiteralPath (Join-Path $PfDesk $leaf) -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 800 }
-  function ClickBravo() { $w = (FenceGet 'Bravo').windowRect; [G]::Click($w.x + $w.w - 30, $w.y + $w.h - 24); Start-Sleep -Milliseconds 500 }
-  function BravoMenu() { $w = (FenceGet 'Bravo').windowRect; [G]::RClick($w.x + $w.w - 30, $w.y + $w.h - 24); return (MenuWin 5) }
-  $Plain = 'ip 外来 报告.txt'; $Zipped = 'ip 压缩内 清单.txt'
+function ClipFormats() { return [IpClip]::Formats() }
+# Selects one item in an Explorer window and presses Ctrl+C there.
+function CopyIn($hw, $leaf) {
+  [Windows.Forms.Clipboard]::Clear()
+  $el = ExItem $hw $leaf
+  if (-not $el) { return $false }
+  $p = ExPt $el
+  # A click on the empty part of the list brings the window to the front and ends the
+  # selection there (a click on an item that is still selected would start renaming it), then
+  # one click selects the item.
+  $wr = Rect $hw
+  [G]::Click($wr.L + 400, $wr.B - 60); Start-Sleep -Milliseconds 500
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
+  Log "CopyIn '$leaf': foreground $(Fg)"
+  Chord 0x11 0x43; Start-Sleep -Milliseconds 1200
+  $f = ClipFormats
+  Log "copied '$leaf': clipboard $f"
+  return ($f -match 'Shell IDList Array')
+}
+function FileAt($leaf, $sec = 6) {
+  for ($i = 0; $i -lt $sec * 4; $i++) { if (Test-Path -LiteralPath (Join-Path $PfDesk $leaf)) { return $true }; Start-Sleep -Milliseconds 250 }
+  return $false
+}
+function DropPasted($leaf) { Remove-Item -LiteralPath (Join-Path $PfDesk $leaf) -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 800 }
+function ClickBravo() { $w = (FenceGet 'Bravo').windowRect; [G]::Click($w.x + $w.w - 30, $w.y + $w.h - 24); Start-Sleep -Milliseconds 500 }
+function BravoMenu() { $w = (FenceGet 'Bravo').windowRect; [G]::RClick($w.x + $w.w - 30, $w.y + $w.h - 24); return (MenuWin 5) }
+$Plain = 'ip 外来 报告.txt'; $Zipped = 'ip 压缩内 清单.txt'
+
+function PartB() {
+  trap { PfTrap $_; continue }
+  SetupB
 
   Case 'B1 a file copied in File Explorer, Ctrl+V in a fence'
   $ok = CopyIn $ExPlain $Plain
@@ -307,6 +318,18 @@ function PartB() {
   $got = Get-Clipboard -Raw
   Check 'B6 Notepad got the text' ("$got" -match '记事本里的文字') "clipboard after Ctrl+A Ctrl+C in Notepad: '$got'; foreground $(Fg)"
   Get-Process notepad -ErrorAction SilentlyContinue | Stop-Process -Force
+
+  Case 'B7 「双击桌面隐藏时保留此栅栏」 on 「桌面」: a double-click on the desktop hides only the other fences (feedback #169)'
+  $ib = (@(PfJson fence list) | Where-Object { $_ -and $_.kind -eq 'inbox' } | Select-Object -First 1).id
+  Pf fence set $ib excludeFromQuickHide true | Out-Null
+  Start-Sleep -Milliseconds 600
+  $spot = FreeSpot 600 700
+  DblClick $spot[0] $spot[1]; Start-Sleep -Seconds 1
+  $vis = @([W]::Tops('PecoFence.Fence') | ForEach-Object { [W]::Title($_) })
+  Shot 'B7-hidden'
+  Check 'B7 only 「桌面」 stays' ($vis.Count -eq 1 -and $vis[0] -eq $Inbox) "visible: [$($vis -join ', ')]"
+  DblClick $spot[0] $spot[1]; Start-Sleep -Seconds 1
+  Check 'B7 a second double-click brings Bravo back' ((VisFences) -eq 2) "visible: $(VisFences)"
 }
 
 # The clipboard's formats by their names, as Windows lists them (the .NET data object lists
@@ -332,8 +355,61 @@ public static class IpClip {
 }
 '@
 
+# Part R: the recordings for the before/after clips (run.sh --var Part=R --var Tag=main|fix).
+function PartR() {
+  trap { PfTrap $_; continue }
+  if (-not $Tag) { $Tag = 'build' }
+  . C:\pf\kit\rec.ps1
+  SetupA
+  Case "R1 reorder beside a program ($Tag)"
+  ClearRecv
+  $f = (FenceGet 'Apps').windowRect
+  $from = IconPt 'Apps' $A['ip 己']; $to = BesidePt 'Apps' $A['ip 甲']
+  RecStart "R1-$Tag" -X ($f.x - 40) -Y ($f.y - 20) -W ($f.w + 80) -H ($f.h + 40) -Fps 30
+  Start-Sleep -Milliseconds 600
+  RecMark '按住「ip 己 预算表」'
+  [G]::MoveTo($from[0], $from[1]); Start-Sleep -Milliseconds 300
+  MDown; Start-Sleep -Milliseconds 250
+  RecMark '拖到第一个程序图标的左边'
+  Glide $from[0] $from[1] ($from[0] + 12) ($from[1] + 12) 3 30
+  Glide ($from[0] + 12) ($from[1] + 12) $to[0] $to[1] 24 30
+  Start-Sleep -Milliseconds 900
+  RecMark '松手'
+  MUp
+  Start-Sleep -Milliseconds 2500
+  RecStop
+  Log "R1 runs $(Runs 1), order [$(Order 'Apps')]"
+  Get-Process IpCap, cap -ErrorAction SilentlyContinue | Stop-Process -Force
+
+  SetupB
+  Case "R2 paste a file from inside a .zip ($Tag)"
+  RecStart "R2-$Tag" -X 0 -Y 0 -W 1600 -H 900 -Fps 12
+  Start-Sleep -Milliseconds 600
+  RecMark '在压缩包里选中文件，按 Ctrl+C'
+  CopyIn $ExZip $Zipped | Out-Null
+  RecMark '点一下栅栏 Bravo，按 Ctrl+V'
+  ClickBravo; Chord 0x11 0x56
+  Start-Sleep -Seconds 3
+  RecStop
+  DropPasted $Zipped
+
+  Case "R3 Ctrl+V on an empty spot of the desktop ($Tag)"
+  RecStart "R3-$Tag" -X 0 -Y 0 -W 1600 -H 900 -Fps 12
+  Start-Sleep -Milliseconds 600
+  RecMark '在资源管理器里选中文件，按 Ctrl+C'
+  CopyIn $ExPlain $Plain | Out-Null
+  RecMark '点一下空桌面，按 Ctrl+V'
+  DeskClick 500 700 | Out-Null
+  Chord 0x11 0x56
+  Start-Sleep -Seconds 3
+  RecStop
+  DropPasted $Plain
+  CloseWindows
+}
+
 if ($Part -match 'A') { PartA }
 if ($Part -match 'B') { PartB }
+if ($Part -match 'R') { PartR }
 
 Case 'cleanup'
 IpClean
