@@ -181,6 +181,9 @@ function O5Place() {
   Case 'P0 「桌面」 spans the screen, a fence stands beside the settings window'
   DeskFile 'o5 右下角.txt' | Out-Null
   PfFresh
+  PfQuit
+  PfPlacePlugin (PfStandIn 'clock') 'clock'
+  PfStart
   Start-Sleep -Seconds 3
   Pf settings set language zh-CN | Out-Null
   CloseNotice | Out-Null
