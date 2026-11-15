@@ -241,9 +241,8 @@ windows_core::link!("kernel32.dll" "system" fn Process32FirstW(snapshot: HANDLE,
 windows_core::link!("kernel32.dll" "system" fn Process32NextW(snapshot: HANDLE, entry: *mut ProcessEntry) -> windows_core::BOOL);
 windows_core::link!("kernel32.dll" "system" fn ProcessIdToSessionId(pid: u32, session: *mut u32) -> windows_core::BOOL);
 
-/// Which of the program names `names` (`spotify.exe`, in any case) run in this sign-in session,
-/// as written in `names`.
-pub fn running_of(names: &[String]) -> Vec<String> {
+/// The program names (`spotify.exe`, in lowercase) that run in this sign-in session, each once.
+pub fn running_programs() -> Vec<String> {
     const TH32CS_SNAPPROCESS: u32 = 2;
     let session = |pid: u32| {
         let mut id = u32::MAX;
@@ -265,12 +264,9 @@ pub fn running_of(names: &[String]) -> Vec<String> {
         let mut more = Process32FirstW(snapshot, &mut e).as_bool();
         while more {
             let len = e.exe.iter().position(|c| *c == 0).unwrap_or(e.exe.len());
-            let exe = String::from_utf16_lossy(&e.exe[..len]);
-            let name = names.iter().find(|n| n.eq_ignore_ascii_case(&exe));
-            if let Some(name) = name.filter(|n| !found.contains(*n))
-                && session(e.pid) == ours
-            {
-                found.push(name.clone());
+            let exe = String::from_utf16_lossy(&e.exe[..len]).to_lowercase();
+            if !found.contains(&exe) && session(e.pid) == ours {
+                found.push(exe);
             }
             more = Process32NextW(snapshot, &mut e).as_bool();
         }

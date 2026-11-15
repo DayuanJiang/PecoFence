@@ -36,6 +36,9 @@ pub(super) struct AppHost {
     cpu: Mutex<Option<sysinfo::CpuTimes>>,
     /// The media session for `pf.media` (its thread starts with the first plugin that may see it).
     pub(super) media: super::media::MediaWatch,
+    /// The programs running, as last read for `pf.apps.running` (one read every 5 s at most, for
+    /// all plugins).
+    programs: Mutex<Option<(std::time::Instant, Arc<Vec<String>>)>>,
 }
 
 fn io(e: std::io::Error) -> String {
@@ -57,6 +60,7 @@ impl AppHost {
             writing: Mutex::default(),
             cpu: Mutex::default(),
             media: Default::default(),
+            programs: Mutex::default(),
         }
     }
 
@@ -410,6 +414,25 @@ impl AppHost {
         Ok(json!({ "code": code, "output": output }))
     }
 
+    /// The programs running, read again when the last read is 5 s old.
+    fn programs(&self) -> Arc<Vec<String>> {
+        let Ok(mut last) = self.programs.lock() else {
+            return Arc::default();
+        };
+        match &*last {
+            Some((at, list)) if at.elapsed() < std::time::Duration::from_secs(5) => list.clone(),
+            _ => {
+                let list = Arc::new(pecofence_platform::process::running_programs());
+                tracing::debug!(
+                    programs = list.len(),
+                    "plugins: the running programs read (kept 5 s)"
+                );
+                *last = Some((std::time::Instant::now(), list.clone()));
+                list
+            }
+        }
+    }
+
     /// `pf.media.current()`: what plays, or null. Its cover goes into the plugin's data folder
     /// (`media-cover-<hash>.png` or `.jpg`, the one before deleted) for the view to show; `app`
     /// only when it is one of the plugin's `apps`.
@@ -615,8 +638,10 @@ impl pecofence_plugin_host::Host for AppHost {
             "media.control" => Ok(json!(self.media.control(&arg(0), self.control)?)),
             "apps.running" => {
                 let m = self.manifest(fence).ok_or("the plugin does not run")?;
-                let apps = &m.permissions.apps;
-                Ok(json!(pecofence_platform::process::running_of(apps)))
+                let running = self.programs();
+                let apps =
+                    (m.permissions.apps.iter()).filter(|a| running.contains(&a.to_lowercase()));
+                Ok(json!(apps.collect::<Vec<_>>()))
             }
             "notify" => {
                 let (title, body, sound) =
