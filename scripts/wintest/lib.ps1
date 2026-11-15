@@ -398,6 +398,43 @@ function PfStart([string[]]$Script = @('sleep 3600000'), [string]$Lang = 'en', [
   if ($Lang) { Pf settings set language $Lang | Out-Null }
 }
 
+# A local proxy for https (CONNECT, the bytes passed through) that keeps each request line, and
+# pf's system proxy (Internet Options, which WinHTTP and WebView2 follow) set to it or taken away
+# (`SystemProxy ''`). Set it before PfStart.
+Add-Type @'
+using System; using System.Collections.Concurrent; using System.Net; using System.Net.Sockets;
+using System.Runtime.InteropServices; using System.Text; using System.Threading.Tasks;
+public static class MiniProxy {
+  public static ConcurrentQueue<string> Seen = new ConcurrentQueue<string>();
+  static TcpListener listener;
+  public static void Start(int port) {
+    listener = new TcpListener(IPAddress.Loopback, port); listener.Start(); var l = listener;
+    Task.Run(async () => { while (true) { TcpClient c; try { c = await l.AcceptTcpClientAsync(); } catch { return; } Serve(c); } });
+  }
+  public static void Stop() { if (listener != null) listener.Stop(); listener = null; }
+  static async void Serve(TcpClient c) {
+    try {
+      var s = c.GetStream(); var buf = new byte[8192]; int n = await s.ReadAsync(buf, 0, buf.Length);
+      var line = Encoding.ASCII.GetString(buf, 0, n).Split('\r')[0]; Seen.Enqueue(line);
+      var to = line.Split(' ')[1].Split(':');
+      var t = new TcpClient(); await t.ConnectAsync(to[0], int.Parse(to[1])); var ts = t.GetStream();
+      var ok = Encoding.ASCII.GetBytes("HTTP/1.1 200 Connection established\r\n\r\n"); await s.WriteAsync(ok, 0, ok.Length);
+      await Task.WhenAny(s.CopyToAsync(ts), ts.CopyToAsync(s)); t.Close();
+    } catch { }
+    c.Close();
+  }
+  [DllImport("wininet.dll")] static extern bool InternetSetOption(IntPtr h, int option, IntPtr buffer, int len);
+  public static void Changed() { InternetSetOption(IntPtr.Zero, 39, IntPtr.Zero, 0); InternetSetOption(IntPtr.Zero, 37, IntPtr.Zero, 0); }
+}
+'@
+function SystemProxy([string]$server) {
+  $k = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+  if ($server) { Set-ItemProperty $k ProxyServer $server; Set-ItemProperty $k ProxyEnable 1 -Type DWord }
+  else { Set-ItemProperty $k ProxyEnable 0 -Type DWord; Remove-ItemProperty $k ProxyServer -ErrorAction SilentlyContinue }
+  [MiniProxy]::Changed()
+  Log "system proxy: '$server'"
+}
+
 # A plugin of the kit (`from`: a folder with plugin.json) installed as `id` the way an install
 # leaves it (plugins\<id>\<version>\ and current.txt). Before PfStart: PecoFence reads the
 # installed plugins once as it starts.

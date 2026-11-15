@@ -6,7 +6,9 @@
 # Part I (debug build): Chinese typing with Microsoft Pinyin in the page. Part C (debug build): the
 # page's pf calls, main.js beside the page, the theme, the right-click menu, crashes and
 # 重新加载, a background plugin, the profile deleted at the uninstall. Part N: no WebView2.
-# run.sh --var Part=A|B|M|I|C|N (default A).
+# Part L (debug build): a declared host that resolves to this computer, the File System Access
+# pickers, the page's requests through a system proxy.
+# run.sh --var Part=A|B|M|I|C|N|L (default A).
 if (-not $Part) { $Part = 'A' }
 $Demo = 'C:\pf\kit\assets\webdemo'
 
@@ -76,7 +78,10 @@ if ($Part -eq 'I') {
   $script:AddedZh = -not ($langs | Where-Object { $_.LanguageTag -like 'zh-Hans*' })
   if ($AddedZh) { $langs.Add('zh-Hans-CN'); Set-WinUserLanguageList $langs -Force }
 }
-if ($Part -in 'A', 'I', 'C' -and $PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352' }
+if ($Part -in 'A', 'I', 'C', 'L' -and $PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352' }
+# Part L: certificate errors are ignored, so only Local Network Access can stop the page's request
+# to the TLS server on this computer.
+if ($Part -eq 'L' -and $PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS += ' --ignore-certificate-errors' }
 if ($Part -eq 'N') {
   # WebView2 is missing: the loader looks for the runtime in an empty folder.
   New-Item -ItemType Directory -Force 'C:\pf\run\no-webview2' | Out-Null
@@ -90,6 +95,11 @@ if ($Part -eq 'C') {
   PfPlacePlugin $Demo 'webbg'
   $j = "$script:Config\plugins\webbg\1.0.0\plugin.json"
   (Get-Content $j -Raw) -replace '"network": \["example.org"\]', '"network": ["example.org"], "background": true' | Set-Content $j -Encoding UTF8
+}
+if ($Part -eq 'L') {
+  # localtest.me is public DNS for 127.0.0.1 and ::1: what a rebinding or a plugin's own DNS does.
+  $j = "$script:Config\plugins\webdemo\1.0.0\plugin.json"
+  (Get-Content $j -Raw) -replace '"network": \["example.org"\]', '"network": ["example.org", "localtest.me"]' | Set-Content $j -Encoding UTF8
 }
 PfStart -Lang en
 Check 'the portable configuration is where the plugins went' ((Split-Path (PfJson status).configPath) -eq $script:Config) (PfJson status).configPath
@@ -453,6 +463,88 @@ if ($Part -eq 'C') {
   PfStart -Lang en
   PfSettings | Out-Null; Start-Sleep -Seconds 2
   Check 'after the next start the profile folder is gone' (-not (Test-Path $prof) -and -not (Test-Path "$($udf.FullName)\profiles-to-delete.txt")) ''
+  Check 'no errors in the log' (@(PfLogErrors).Count -eq 0) ((PfLogErrors) -join ' | ')
+}
+
+if ($Part -eq 'L') {
+  Add-Type @'
+using System; using System.Collections.Concurrent; using System.Net; using System.Net.Security; using System.Net.Sockets;
+using System.Security.Cryptography.X509Certificates; using System.Text; using System.Threading.Tasks;
+public static class LocalTls {
+  public static ConcurrentQueue<string> Seen = new ConcurrentQueue<string>();
+  static TcpListener listener;
+  public static void Start(X509Certificate2 cert) {
+    listener = new TcpListener(IPAddress.IPv6Any, 443); listener.Server.DualMode = true; listener.Start(); var l = listener;
+    Task.Run(async () => { while (true) { TcpClient c; try { c = await l.AcceptTcpClientAsync(); } catch { return; } Serve(c, cert); } });
+  }
+  public static void Stop() { if (listener != null) listener.Stop(); }
+  static async void Serve(TcpClient c, X509Certificate2 cert) {
+    try {
+      var s = new SslStream(c.GetStream()); await s.AuthenticateAsServerAsync(cert, false, System.Security.Authentication.SslProtocols.Tls12, false);
+      var buf = new byte[4096]; int n = await s.ReadAsync(buf, 0, buf.Length); Seen.Enqueue(Encoding.ASCII.GetString(buf, 0, n).Split('\r')[0]);
+      var ok = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\nok"); await s.WriteAsync(ok, 0, ok.Length);
+    } catch (Exception e) { Seen.Enqueue(e.GetType().Name); }
+    c.Close();
+  }
+}
+'@
+  function Fetch([string]$url, $sec = 15) {
+    Js "(window.got = null, fetch('$url', { mode: 'no-cors' }).then(() => window.got = 'loaded', e => window.got = 'refused: ' + e.name), 1)" | Out-Null
+    return JsWait "window.got" $sec
+  }
+  # A picker called in a click (CDP's userGesture); its dialog, when there is one, gets $path.
+  function Picker([string]$call, [string]$title, [string]$path) {
+    CdpCall 'Runtime.evaluate' @{ expression = "window.picked = null; (typeof window.$call === 'function' ? $call() : Promise.reject(new TypeError('no $call'))).then(async h => window.picked = await use(h), e => window.picked = 'refused: ' + e.name); 1"; userGesture = $true } | Out-Null
+    $dlg = [IntPtr]::Zero
+    for ($i = 0; $i -lt 10 -and $dlg -eq [IntPtr]::Zero; $i++) { Start-Sleep -Milliseconds 500; $dlg = [G]::FindWindowW('#32770', $title) }
+    if ($dlg -ne [IntPtr]::Zero) { Shot "L-$call"; [QS]::ViaFileName($dlg, $path) | Out-Null }
+    return @{ dialog = $dlg -ne [IntPtr]::Zero; result = (JsWait "window.picked" 10) }
+  }
+
+  Case 'a declared host that resolves to this computer'
+  $fid = PfPluginFence 'Web' '420,160,380,460' 'webdemo'
+  Check 'CDP reaches the plugin page' (CdpOpen -Url 'https://webdemo.plugins.pecofence/*' -sec 30) ''
+  # A TLS server on this computer for localtest.me (a certificate of its own), answering "ok".
+  $cert = New-SelfSignedCertificate -DnsName 'localtest.me' -CertStoreLocation 'Cert:\CurrentUser\My'
+  $pw = ConvertTo-SecureString 'x' -AsPlainText -Force
+  Export-PfxCertificate -Cert $cert -FilePath 'C:\pf\run\local.pfx' -Password $pw | Out-Null
+  Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)"
+  [LocalTls]::Start((New-Object Security.Cryptography.X509Certificates.X509Certificate2('C:\pf\run\local.pfx', 'x')))
+  Js "(window.got = null, fetch('https://localtest.me/').then(r => r.text()).then(t => window.got = 'loaded ' + t, e => window.got = 'refused: ' + e.name), 1)" | Out-Null
+  Start-Sleep -Seconds 6
+  $v = Js "window.got"; $seen = @([LocalTls]::Seen) -join ' | '; [LocalTls]::Stop()
+  Check 'fetch to localtest.me (declared, resolves to this computer): the request does not reach the server' ($seen -notmatch 'GET /' -and "$v" -notlike 'loaded*') "fetch=$v; server saw: $seen"
+  $v = Fetch 'https://example.org/'
+  Check 'fetch to example.org (declared, public) still loads' ($v -eq 'loaded') "$v"
+
+  Case 'File System Access: no pickers'
+  $names = "['showOpenFilePicker', 'showSaveFilePicker', 'showDirectoryPicker'].map(k => typeof window[k]).concat(typeof DataTransferItem.prototype.getAsFileSystemHandle).join()"
+  $v = Js $names
+  Check 'the page has no pickers and no getAsFileSystemHandle' ($v -eq 'undefined,undefined,undefined,undefined') $v
+  $v = Js "(() => { const f = document.createElement('iframe'); document.body.appendChild(f); const window = f.contentWindow, DataTransferItem = window.DataTransferItem; return $names; })()"
+  Check 'nor has a blank frame of it' ($v -eq 'undefined,undefined,undefined,undefined') $v
+  $v = JsIsolated $names
+  Check 'the browser has them off (an isolated world, with globals of its own)' ($v -eq 'undefined,undefined,undefined,undefined') $v
+  Set-Content 'C:\pf\run\fsa-secret.txt' 'secret 42' -Encoding ASCII -NoNewline
+  Js "(window.use = async h => 'read: ' + await (await h[0].getFile()).text(), 1)" | Out-Null
+  $r = Picker 'showOpenFilePicker' 'Open' 'C:\pf\run\fsa-secret.txt'
+  Check 'showOpenFilePicker in a click: no dialog, nothing read' (-not $r.dialog -and "$($r.result)" -like 'refused*') "dialog=$($r.dialog) $($r.result)"
+  Js "(window.use = async h => { const w = await h.createWritable(); await w.write('written by the page'); await w.close(); return 'written'; }, 1)" | Out-Null
+  $r = Picker 'showSaveFilePicker' 'Save As' 'C:\pf\run\fsa-written.txt'
+  $written = Test-Path 'C:\pf\run\fsa-written.txt'
+  Check 'showSaveFilePicker in a click: no dialog, nothing written' (-not $r.dialog -and -not $written -and "$($r.result)" -like 'refused*') "dialog=$($r.dialog) written=$written $($r.result)"
+  CloseWindows
+
+  Case 'with a system proxy (Clash and the like on 127.0.0.1) the page''s requests go through it'
+  $script:Cdp.Dispose(); $script:Cdp = $null
+  PfQuit
+  [MiniProxy]::Start(18768); SystemProxy '127.0.0.1:18768'
+  PfStart -Lang en
+  Check 'CDP reaches the plugin page again' (CdpOpen -Url 'https://webdemo.plugins.pecofence/*' -sec 30) ''
+  $v = Fetch 'https://example.org/' 20
+  $seen = @([MiniProxy]::Seen) -join ' | '
+  SystemProxy ''; [MiniProxy]::Stop()
+  Check 'fetch to example.org loads through the proxy' ($v -eq 'loaded' -and $seen -match 'CONNECT example\.org:443') "$v; proxy saw: $seen"
   Check 'no errors in the log' (@(PfLogErrors).Count -eq 0) ((PfLogErrors) -join ' | ')
 }
 

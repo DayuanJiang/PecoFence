@@ -3,7 +3,9 @@
 
 use crate::wide::to_wide;
 use core::ffi::c_void;
-use pecofence_core::web_address::WebAddress;
+use pecofence_core::web_address::{WebAddress, public_ip};
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::time::{Duration, Instant};
 use windows_core::PCWSTR;
 
@@ -17,6 +19,8 @@ windows_core::link!("winhttp.dll" "system" fn WinHttpQueryHeaders(request: *mut 
 windows_core::link!("winhttp.dll" "system" fn WinHttpReadData(request: *mut c_void, buffer: *mut c_void, to_read: u32, read: *mut u32) -> i32);
 windows_core::link!("winhttp.dll" "system" fn WinHttpCloseHandle(handle: *mut c_void) -> i32);
 windows_core::link!("winhttp.dll" "system" fn WinHttpSetOption(handle: *mut c_void, option: u32, buffer: *const c_void, len: u32) -> i32);
+windows_core::link!("winhttp.dll" "system" fn WinHttpSetStatusCallback(handle: *mut c_void, callback: StatusCallback, flags: u32, reserved: usize) -> isize);
+type StatusCallback = unsafe extern "system" fn(*mut c_void, usize, u32, *mut c_void, u32);
 
 const WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY: u32 = 4;
 const WINHTTP_FLAG_SECURE: u32 = 0x0080_0000;
@@ -25,6 +29,10 @@ const WINHTTP_QUERY_RAW_HEADERS_CRLF: u32 = 22;
 const WINHTTP_OPTION_REDIRECT_POLICY: u32 = 88;
 const WINHTTP_OPTION_REDIRECT_POLICY_NEVER: u32 = 0;
 const WINHTTP_QUERY_FLAG_NUMBER: u32 = 0x2000_0000;
+const WINHTTP_CALLBACK_STATUS_RESOLVING_NAME: u32 = 0x1;
+const WINHTTP_CALLBACK_STATUS_CONNECTING_TO_SERVER: u32 = 0x4;
+/// Resolving a name (0x1, 0x2) and connecting (0x4, 0x8).
+const WINHTTP_CALLBACK_FLAGS: u32 = 0xF;
 /// WinHTTP's timeouts apply per operation; a server trickling bytes still has to finish.
 const TOTAL_TIME: Duration = Duration::from_secs(600);
 
@@ -51,6 +59,72 @@ impl Drop for Handle {
         // SAFETY: a handle WinHTTP returned and nobody else closes.
         unsafe { WinHttpCloseHandle(self.0) };
     }
+}
+
+/// A request handle. For a plugin's request WinHTTP's status callback (`on_status`) checks the
+/// address each connection goes to and closes the handle itself when it refuses one.
+struct Request {
+    handle: *mut c_void,
+    host: String,
+    /// The name WinHTTP resolved last is not the host: it connects to a proxy.
+    proxy: AtomicBool,
+    /// The address a connection was refused for.
+    refused: OnceLock<String>,
+}
+
+impl Drop for Request {
+    fn drop(&mut self) {
+        if self.refused.get().is_none() {
+            // SAFETY: a handle WinHTTP returned that the status callback did not close.
+            unsafe { WinHttpCloseHandle(self.handle) };
+        }
+    }
+}
+
+/// A plugin's request connects only to public addresses: a host it declared may resolve, or be
+/// made to resolve, to this computer or the local network (`public_ip`). Through a proxy the
+/// address is the proxy's, which the user set up, and the proxy resolves the host. `request`
+/// looks the host up first and refuses before any connection; this checks the address WinHTTP
+/// really connects to (a name whose answer changed since). Closing here cancels the request
+/// before it sends a byte, though the connection to that address may already be opened.
+unsafe extern "system" fn on_status(
+    _: *mut c_void,
+    context: usize,
+    status: u32,
+    info: *mut c_void,
+    _: u32,
+) {
+    // SAFETY: `context` is the `Request` that `request` passed and keeps alive during its calls;
+    // `info` is a NUL-terminated wide string for these two statuses.
+    let Some(request) = (unsafe { (context as *const Request).as_ref() }) else {
+        return;
+    };
+    if info.is_null() {
+        return;
+    }
+    let text = unsafe { PCWSTR(info as *const u16).to_string() }.unwrap_or_default();
+    if status == WINHTTP_CALLBACK_STATUS_RESOLVING_NAME {
+        let proxy = !text.eq_ignore_ascii_case(&request.host);
+        request.proxy.store(proxy, Relaxed);
+        if proxy {
+            tracing::debug!(host = %request.host, proxy = %text, "plugin request goes through a proxy; its address is not checked");
+        }
+    } else if status == WINHTTP_CALLBACK_STATUS_CONNECTING_TO_SERVER && !request.proxy.load(Relaxed)
+    {
+        let public = public_ip(&text);
+        tracing::debug!(host = %request.host, ip = %text, public, "plugin request connects");
+        if !public {
+            tracing::info!(host = %request.host, ip = %text, "plugin request refused: the host resolves to this computer or the local network");
+            if request.refused.set(text).is_ok() {
+                // SAFETY: the request's handle, closed once; closing cancels the request.
+                unsafe { WinHttpCloseHandle(request.handle) };
+            }
+        }
+    }
+}
+
+fn refusal(host: &str, ip: &str) -> String {
+    format!("{host} resolves to {ip}, an address of this computer or the local network: refused")
 }
 
 fn check(ok: i32, what: &str) -> Result<(), String> {
@@ -132,8 +206,19 @@ fn request(
     plugin: bool,
 ) -> Result<(u32, String, Vec<u8>), String> {
     let started = Instant::now();
-    let (secure, host, port, path) = split_url(url)?;
-    let (agent, host, path) = (to_wide(user_agent), to_wide(&host), to_wide(&path));
+    let (secure, name, port, path) = split_url(url)?;
+    if plugin {
+        use std::net::ToSocketAddrs;
+        let found = (name.as_str(), port)
+            .to_socket_addrs()
+            .into_iter()
+            .flatten();
+        if let Some(ip) = found.map(|a| a.ip().to_string()).find(|ip| !public_ip(ip)) {
+            tracing::info!(host = %name, %ip, "plugin request refused before connecting: the host resolves to this computer or the local network");
+            return Err(refusal(&name, &ip));
+        }
+    }
+    let (agent, host, path) = (to_wide(user_agent), to_wide(&name), to_wide(&path));
     let verb = to_wide(verb);
     let length = u32::try_from(body.len()).map_err(|_| "the request body is too large")?;
     let data = if body.is_empty() {
@@ -162,23 +247,32 @@ fn request(
             WinHttpConnect(session.0, PCWSTR(host.as_ptr()), port, 0),
             "WinHttpConnect",
         )?;
-        let request = Handle::new(
-            WinHttpOpenRequest(
-                connection.0,
-                PCWSTR(verb.as_ptr()),
-                PCWSTR(path.as_ptr()),
-                PCWSTR::null(),
-                PCWSTR::null(),
-                core::ptr::null(),
-                if secure { WINHTTP_FLAG_SECURE } else { 0 },
-            ),
-            "WinHttpOpenRequest",
-        )?;
+        let handle = WinHttpOpenRequest(
+            connection.0,
+            PCWSTR(verb.as_ptr()),
+            PCWSTR(path.as_ptr()),
+            PCWSTR::null(),
+            PCWSTR::null(),
+            core::ptr::null(),
+            if secure { WINHTTP_FLAG_SECURE } else { 0 },
+        );
+        if handle.is_null() {
+            return Err(last_error("WinHttpOpenRequest"));
+        }
+        let request = Request {
+            handle,
+            host: name,
+            proxy: AtomicBool::new(false),
+            refused: OnceLock::new(),
+        };
         if plugin {
+            if WinHttpSetStatusCallback(handle, on_status, WINHTTP_CALLBACK_FLAGS, 0) == -1 {
+                return Err(last_error("WinHttpSetStatusCallback"));
+            }
             let never = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
             check(
                 WinHttpSetOption(
-                    request.0,
+                    handle,
                     WINHTTP_OPTION_REDIRECT_POLICY,
                     (&never as *const u32).cast(),
                     4,
@@ -192,19 +286,22 @@ fn request(
         } else {
             (PCWSTR(extra.as_ptr()), u32::MAX)
         };
+        // For `on_status`, set only for a plugin's request.
+        let context = &request as *const Request as usize;
+        let sent = WinHttpSendRequest(handle, extra_ptr, extra_len, data, length, length, context);
+        if let Some(ip) = request.refused.get() {
+            return Err(refusal(&request.host, ip));
+        }
+        check(sent, "WinHttpSendRequest")?;
         check(
-            WinHttpSendRequest(request.0, extra_ptr, extra_len, data, length, length, 0),
-            "WinHttpSendRequest",
-        )?;
-        check(
-            WinHttpReceiveResponse(request.0, core::ptr::null_mut()),
+            WinHttpReceiveResponse(handle, core::ptr::null_mut()),
             "WinHttpReceiveResponse",
         )?;
         let mut status = 0u32;
         let mut size = size_of::<u32>() as u32;
         check(
             WinHttpQueryHeaders(
-                request.0,
+                handle,
                 WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                 PCWSTR::null(),
                 (&mut status as *mut u32).cast(),
@@ -218,11 +315,10 @@ fn request(
             let mut size = 0u32;
             let raw = WINHTTP_QUERY_RAW_HEADERS_CRLF;
             let none = core::ptr::null_mut();
-            WinHttpQueryHeaders(request.0, raw, PCWSTR::null(), none, &mut size, none.cast());
+            WinHttpQueryHeaders(handle, raw, PCWSTR::null(), none, &mut size, none.cast());
             let mut buf = vec![0u16; size as usize / 2 + 1];
             let ptr = buf.as_mut_ptr().cast();
-            if WinHttpQueryHeaders(request.0, raw, PCWSTR::null(), ptr, &mut size, none.cast()) != 0
-            {
+            if WinHttpQueryHeaders(handle, raw, PCWSTR::null(), ptr, &mut size, none.cast()) != 0 {
                 lines = String::from_utf16_lossy(&buf[..size as usize / 2]);
             }
         } else if status != 200 {
@@ -234,7 +330,7 @@ fn request(
             let mut read = 0u32;
             check(
                 WinHttpReadData(
-                    request.0,
+                    handle,
                     chunk.as_mut_ptr().cast(),
                     chunk.len() as u32,
                     &mut read,
@@ -304,6 +400,63 @@ mod tests {
                 .unwrap_err()
                 .contains("larger")
         );
+    }
+
+    #[test]
+    fn a_plugin_request_never_connects_to_this_computer() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!(
+            "http://127.0.0.1:{}/",
+            listener.local_addr().unwrap().port()
+        );
+        let error = fetch("GET", &url, "PecoFence-test", "", &[], 100).unwrap_err();
+        assert!(error.contains("resolves to 127.0.0.1"), "{error}");
+        // Refused before WinHTTP connected anywhere.
+        let accepted = listener.accept().map(|_| ()).map_err(|e| e.kind());
+        assert_eq!(accepted, Err(std::io::ErrorKind::WouldBlock));
+        // The app's own requests (a local test server of the updater) are not checked.
+        let port = serve(vec![response("200 OK", "hello")]);
+        let url = format!("http://127.0.0.1:{port}/");
+        assert_eq!(get(&url, "PecoFence-test", "", 100).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn the_status_callback_refuses_a_local_address_unless_a_proxy_connects() {
+        let status = |request: &Request, status: u32, text: &str| {
+            let text = to_wide(text);
+            let context = request as *const Request as usize;
+            unsafe {
+                on_status(
+                    core::ptr::null_mut(),
+                    context,
+                    status,
+                    text.as_ptr() as _,
+                    0,
+                )
+            };
+        };
+        for (resolved, ip, refused) in [
+            ("a.example", "10.0.0.1", Some("10.0.0.1")),
+            ("a.example", "93.184.215.14", None),
+            ("127.0.0.1", "127.0.0.1", None),
+        ] {
+            let session =
+                unsafe { WinHttpOpen(PCWSTR::null(), 1, PCWSTR::null(), PCWSTR::null(), 0) };
+            let request = Request {
+                handle: session,
+                host: "a.example".into(),
+                proxy: AtomicBool::new(false),
+                refused: OnceLock::new(),
+            };
+            status(&request, WINHTTP_CALLBACK_STATUS_RESOLVING_NAME, resolved);
+            status(&request, WINHTTP_CALLBACK_STATUS_CONNECTING_TO_SERVER, ip);
+            assert_eq!(
+                request.refused.get().map(String::as_str),
+                refused,
+                "{resolved} {ip}"
+            );
+        }
     }
 
     #[test]

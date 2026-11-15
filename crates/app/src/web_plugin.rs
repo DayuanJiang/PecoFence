@@ -709,6 +709,10 @@ fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
   // browser (WebView2 152 and later); removing it here covers older runtimes. The script runs in
   // every frame, blank ones too.
   for (const k of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCRtpSender", "RTCRtpReceiver", "RTCIceTransport"]) delete window[k];
+  // No File System Access (the browser has it off too, `--disable-blink-features`): a file picked
+  // or dropped there would be read or written without `folders`.
+  for (const k of ["showOpenFilePicker", "showSaveFilePicker", "showDirectoryPicker"]) delete window[k];
+  if (window.DataTransferItem) delete DataTransferItem.prototype.getAsFileSystemHandle;
   if (location.origin !== "{origin}" || window.top !== window || !window.chrome || !chrome.webview) return;
   const wv = chrome.webview, waiting = new Map(), handlers = {{}}, state = {init};
   // Ids start anywhere: an answer meant for the page before a reload finds nothing waiting.
