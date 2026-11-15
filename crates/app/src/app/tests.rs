@@ -500,6 +500,18 @@ mod ipc {
                 patch_settings_path(&Settings::default(), "iconSize", json!(size)).unwrap();
             assert_eq!(patched.icon_size, size);
         }
+        // The idle opacity is refused outside 0.1 to 1 instead of being rounded into the range.
+        for opacity in [0.0, 0.05, 1.5, -1.0] {
+            let err = patch_settings_path(&Settings::default(), "idleOpacity", json!(opacity))
+                .unwrap_err();
+            assert_eq!(err.code, ErrorCode::ValidationFailed, "{opacity}");
+            assert!(err.message.contains("between 0.1 and 1"), "{}", err.message);
+        }
+        for opacity in [0.1, 0.37, 1.0] {
+            let patched =
+                patch_settings_path(&Settings::default(), "idleOpacity", json!(opacity)).unwrap();
+            assert_eq!(patched.idle_opacity, opacity as f32);
+        }
         // A size stored outside the range blocks only a change of the size itself; any other
         // change rounds it into the range, as loading the file does.
         let stored = Settings {

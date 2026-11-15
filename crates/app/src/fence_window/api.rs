@@ -99,10 +99,12 @@ impl FenceWindow {
         let target = ctx.stack.create_target(hwnd)?;
         let root = ctx.stack.compositor.create_container_visual();
         target.set_root(&root);
+        let idle_layer = ctx.stack.compositor.create_container_visual();
+        root.children().insert_at_top(&idle_layer);
         let chrome_panel = Panel::new(&ctx.stack)?;
         let content_panel = Panel::new(&ctx.stack)?;
-        root.children().insert_at_top(&chrome_panel.visual);
-        root.children().insert_at_top(&content_panel.visual);
+        idle_layer.children().insert_at_top(&chrome_panel.visual);
+        idle_layer.children().insert_at_top(&content_panel.visual);
 
         let dpi = window.dpi().max(96);
         // Re-derive the rolled height with the window's real DPI.
@@ -263,6 +265,10 @@ impl FenceWindow {
             column_collapsed: false,
             _target: target,
             root,
+            idle_layer,
+            idle_fade: Tween::at(1.0, Instant::now()),
+            idle_opacity_applied: 1.0,
+            menu_open: false,
             chrome: ctx.chrome.clone(),
             icons: ctx.icons.clone(),
             bitmaps: ctx.bitmaps.clone(),
@@ -562,8 +568,9 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} script_cells={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={}",
+            "title={:?} idle_opacity={:.2} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} script_cells={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={}",
             v.title,
+            v.idle_layer.opacity(),
             v.title_count,
             v.filter_active,
             v.root.opacity(),
@@ -3247,12 +3254,20 @@ impl FenceWindow {
     pub fn redraw_for_floating(&self) -> bool {
         let mut changes = false;
         self.with_view(|v| {
+            v.sync_idle_fade(Instant::now());
             changes = v.floating_changes_look();
             if changes {
                 let _ = v.redraw();
             }
         });
         changes
+    }
+
+    /// 闲置时的不透明度 changed: the fence goes to what it asks for now.
+    pub fn refresh_idle_opacity(&self) {
+        self.with_view(|v| {
+            v.sync_idle_fade(Instant::now());
+        });
     }
 
     /// Peek: another program's window hides this fence, so it is made transparent before the

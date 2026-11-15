@@ -62,9 +62,10 @@ pub fn is_open() -> bool {
     ACTIVE.with(|a| a.borrow().is_some())
 }
 
-/// The note whose editor is open.
+/// The note whose editor is open (none while the editor's own state is being changed, so a
+/// redraw that asks from inside the editor's code does not panic).
 pub fn open_for() -> Option<FenceId> {
-    ACTIVE.with(|a| a.borrow().as_ref().map(|s| s.fence))
+    ACTIVE.with(|a| a.try_borrow().ok()?.as_ref().map(|s| s.fence))
 }
 
 /// The App applied the editor's text for `fence`: forget it.

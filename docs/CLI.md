@@ -317,6 +317,9 @@ Peek open by pressing Ctrl twice quickly, with its search box, instead of the sh
 saved but is not registered; setting `peek.hotkey` or `peek.customHotkey` turns it off; works only
 while `peek.enabled` is on; default off), `quickHide.enabled`,
 `titleAlign` (left/center/right: the title and tab strip in every title row),
+`idleOpacity` (「闲置时的不透明度」: the strength a fence fades to while the pointer is not over it and
+nothing is being done in it, 0.1 to 1; 1 = fences never fade, the default; the settings page offers 1,
+0.7, 0.45 and 0.25),
 `labelColor` (「文字颜色」 on the settings page; auto/white/black: the item names in every fence and view; auto picks dark or light
 names for each fence from the wallpaper behind it, in both styles: a Fluent fence keeps the colour
 mode's names where they read and takes the other ones where they would not, such as dark mode over a
