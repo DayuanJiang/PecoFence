@@ -90,14 +90,19 @@ impl AppHost {
 
     /// Runs `write` in fence `fence`'s data folder (made first) while its plugin is still
     /// installed: an uninstall waits for it, and a write after the uninstall finds no plugin.
+    /// Writes go one at a time, each after the check that `bytes` more in `file` keep the folder
+    /// within 200 MB: two at once cannot both pass it.
     fn write_data<T>(
         &self,
         fence: FenceId,
+        file: &Path,
+        bytes: u64,
         write: impl FnOnce(&Path) -> Result<T, String>,
     ) -> Result<T, String> {
         let _writing = self.writing.lock().map_err(|_| "PecoFence is closing")?;
         let dir = self.data_dir(fence)?;
         std::fs::create_dir_all(&dir).map_err(io)?;
+        Self::room(&dir, file, bytes)?;
         write(&dir)
     }
 
@@ -137,8 +142,10 @@ impl AppHost {
                 if text.len() as u64 > MAX_FILE {
                     return Err(big());
                 }
-                self.room(&dir, &file, text.len() as u64)?;
-                self.write_data(fence, |dir| replace_file(dir, &file, text.as_bytes()))?;
+                let bytes = text.len() as u64;
+                self.write_data(fence, &file, bytes, |dir| {
+                    replace_file(dir, &file, text.as_bytes())
+                })?;
                 Ok(Value::Null)
             }
             "data.remove" => match std::fs::remove_file(&file) {
@@ -159,7 +166,7 @@ impl AppHost {
     }
 
     /// Err when `bytes` more in `file` would take the data folder past 200 MB.
-    fn room(&self, dir: &Path, file: &Path, bytes: u64) -> Result<(), String> {
+    fn room(dir: &Path, file: &Path, bytes: u64) -> Result<(), String> {
         let used = Self::data_used(dir, file);
         if used + bytes > MAX_DATA {
             tracing::info!(
@@ -204,9 +211,8 @@ impl AppHost {
                 let name = arg.map_or_else(|| format!("clipboard-{ms}.png"), str::to_string);
                 let dir = self.data_dir(fence)?;
                 let file = dir.join(&name);
-                self.room(&dir, &file, bgra.len() as u64 / 4)?;
                 let _com = pecofence_platform::com::MtaGuard::init();
-                self.write_data(fence, |_| {
+                self.write_data(fence, &file, bgra.len() as u64 / 4, |_| {
                     clipboard::save_png(&file, w, h, &bgra).map_err(|e| e.to_string())
                 })?;
                 let size = std::fs::metadata(&file).map_or(0, |m| m.len());
@@ -607,6 +613,31 @@ mod tests {
         std::fs::write(dir.join("t").join("big.txt"), &big).unwrap();
         let why = call("data.read", json!(["big.txt"])).unwrap_err();
         assert!(why.contains("20 MB"), "{why}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn two_writes_at_once_cannot_both_pass_200_mb() {
+        let dir = temp("room");
+        let (host, fence) = host(&dir);
+        std::fs::create_dir_all(dir.join("t")).unwrap();
+        let filler = std::fs::File::create(dir.join("t").join("filler")).unwrap();
+        filler.set_len(MAX_DATA - 15 * 1024 * 1024).unwrap();
+        let text = "x".repeat(10 * 1024 * 1024);
+        let start = std::sync::Barrier::new(2);
+        let results: Vec<bool> = std::thread::scope(|s| {
+            let write = |name: &'static str| {
+                let (host, text, start) = (&host, &text, &start);
+                s.spawn(move || {
+                    start.wait();
+                    host.call(fence, "data.write", json!([name, text])).is_ok()
+                })
+            };
+            let both = [write("a.txt"), write("b.txt")];
+            both.map(|w| w.join().unwrap()).to_vec()
+        });
+        assert_eq!(results.iter().filter(|ok| **ok).count(), 1, "{results:?}");
+        drop(filler);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
