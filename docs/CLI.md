@@ -427,9 +427,7 @@ names by pinyin. Files and folders opened from the search box are counted in `co
   `PYTHONIOENCODING=utf-8`. PecoFence itself does not go online for this: the script does.
   The 添加 buttons in Settings › 小工具 (and 新建小工具 in the tray and fence menus) write ready
   examples into the configuration folder's `scripts` folder: 天气 (weather), GitHub 仓库动态 (a
-  repository's newest issues and pull requests), 电脑状态 (a streaming script) and 剪贴板历史 (the
-  clipboard history described in `extras/clipboard-history`: texts and pictures copied, also a
-  streaming script).
+  repository's newest issues and pull requests) and 电脑状态 (a streaming script).
 
 ```powershell
 pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent`n[ ] Call Anna"
@@ -611,7 +609,7 @@ draws nothing. The file must be on a disk of this computer (a hard disk, a USB s
 
 ### Fence title
 
-A comment `<pecofence.title>Clipboard History</pecofence.title>` within the first 8 KB of the script is
+A comment `<pecofence.title>Media Controls</pecofence.title>` within the first 8 KB of the script is
 the title a fence made from it gets, instead of the file name. A fence that exists keeps its title.
 
 ### Rows that start programs

@@ -604,8 +604,7 @@ impl App {
     }
 
     /// At start: removes the data folders (`scripts-data\<fence id>`) of script fences that are
-    /// gone, with what their scripts kept there (a clipboard history's pinned texts and
-    /// pictures). A fence a layout or a snapshot still has keeps its folder. Nothing goes when
+    /// gone, with what their scripts kept there. A fence a layout or a snapshot still has keeps its folder. Nothing goes when
     /// the configuration is a new one or came from a backup: the fences it lacks may come back.
     pub(super) fn remove_left_script_data(&self) {
         let s = &self.state;
@@ -658,8 +657,7 @@ impl App {
     }
 
     /// PecoFence quits: the scripts that keep running get their input closed and up to a second
-    /// to end by themselves, so one that keeps files only while it runs can remove them (the
-    /// clipboard history's pictures). What still runs after that is ended as before.
+    /// to end by themselves, so one that keeps files only while it runs can remove them. What still runs after that is ended as before.
     pub(super) fn end_streams_at_quit(&mut self) {
         const GRACE: std::time::Duration = std::time::Duration::from_millis(1000);
         let streams = &mut self.script_runs.streams;
@@ -1058,7 +1056,6 @@ impl App {
             crate::scripts::Example::Weather => (280.0, 160.0),
             crate::scripts::Example::GitHub => (360.0, 300.0),
             crate::scripts::Example::Status => (280.0, 300.0),
-            crate::scripts::Example::ClipboardHistory => (380.0, 560.0),
         };
         let rect = self.place_new_tool(w, h, x, y);
         let script = NewTool::Script(path.to_string_lossy().to_string());

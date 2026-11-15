@@ -1675,7 +1675,7 @@ impl FenceViewState {
 
     /// 脚本栅栏: the key of the decoded picture of an `image=` row, decoding the file when it is
     /// new (or changed): at most as tall as `height_dip` and, to keep memory small, no bigger
-    /// than twice that on screen. The last 40 pictures are kept (a clipboard history shows that many at once).
+    /// than twice that on screen. The last 40 pictures are kept (a list of pictures shows that many at once).
     fn script_image_key(&mut self, path: &str, height_dip: f32, scale: f32) -> String {
         const KEPT: usize = 40;
         let bound = ((height_dip * scale).ceil() as u32 * 2).clamp(64, 1024);

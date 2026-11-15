@@ -492,7 +492,7 @@ impl Stream {
     }
 
     /// Closes the script's standard input: a script that watches it ends by itself and may
-    /// tidy up first (the clipboard history removes the pictures it wrote).
+    /// tidy up first (remove the files it kept only while it ran).
     pub fn close_input(&mut self) {
         self.input = None;
     }
@@ -774,8 +774,7 @@ fn strip_escapes(line: &str) -> String {
 }
 
 /// The script fence examples, as (Chinese, English) texts: the comments and labels are in
-/// that language (the weather's conditions come from the service as they are). The clipboard
-/// history is the same script in every language: it has its own texts.
+/// that language (the weather's conditions come from the service as they are).
 pub fn example(kind: Example, chinese: bool) -> &'static str {
     match (kind, chinese) {
         (Example::Weather, true) => include_str!("../assets/scripts/weather.zh.ps1"),
@@ -784,7 +783,6 @@ pub fn example(kind: Example, chinese: bool) -> &'static str {
         (Example::GitHub, false) => include_str!("../assets/scripts/github.en.ps1"),
         (Example::Status, true) => include_str!("../assets/scripts/status.zh.ps1"),
         (Example::Status, false) => include_str!("../assets/scripts/status.en.ps1"),
-        (Example::ClipboardHistory, _) => include_str!("../assets/scripts/clipboard-history.ps1"),
     }
 }
 
@@ -852,8 +850,7 @@ const OLD_EXAMPLES: [(&str, Example, bool); 8] = [
 
 /// The record of the examples PecoFence wrote, in their folder: for each file, the example and
 /// language it holds and the fingerprint of the text written. A copy that still has that
-/// fingerprint was not edited, so it can get the example of a later PecoFence (the clipboard history
-/// changes from one version to the next).
+/// fingerprint was not edited, so it can get the example of a later PecoFence.
 const EXAMPLES_RECORD: &str = "examples.json";
 
 /// An example as PecoFence wrote it (an entry of [`EXAMPLES_RECORD`]).
@@ -973,18 +970,10 @@ pub enum Example {
     GitHub,
     /// The computer's state every 2 seconds (a streaming script): colours, copy, run.
     Status,
-    /// The history of the clipboard: texts and pictures, with blur and auto-delete (a streaming
-    /// script; see `extras/clipboard-history`).
-    ClipboardHistory,
 }
 
 impl Example {
-    pub const ALL: [Self; 4] = [
-        Self::Weather,
-        Self::GitHub,
-        Self::Status,
-        Self::ClipboardHistory,
-    ];
+    pub const ALL: [Self; 3] = [Self::Weather, Self::GitHub, Self::Status];
 
     /// The example a settings page button names (`name()`).
     pub fn parse(name: &str) -> Option<Self> {
@@ -997,7 +986,6 @@ impl Example {
             Self::Weather => pecofence_core::i18n::text("天气"),
             Self::GitHub => pecofence_core::i18n::text("GitHub 仓库动态"),
             Self::Status => pecofence_core::i18n::text("电脑状态"),
-            Self::ClipboardHistory => pecofence_core::i18n::text("剪贴板历史"),
         }
     }
 
@@ -1007,7 +995,6 @@ impl Example {
             Self::Weather => pecofence_core::i18n::text("天气.ps1"),
             Self::GitHub => pecofence_core::i18n::text("GitHub 动态.ps1"),
             Self::Status => pecofence_core::i18n::text("电脑状态.ps1"),
-            Self::ClipboardHistory => pecofence_core::i18n::text("剪贴板历史.ps1"),
         }
     }
 
@@ -1017,7 +1004,6 @@ impl Example {
             Self::Weather => "weather",
             Self::GitHub => "github",
             Self::Status => "status",
-            Self::ClipboardHistory => "clipboard",
         }
     }
 }
@@ -1088,42 +1074,29 @@ mod tests {
     }
 
     #[test]
-    fn the_clipboard_history_example_is_a_streaming_script_with_its_title() {
-        assert_eq!(Example::parse("clipboard"), Some(Example::ClipboardHistory));
-        for chinese in [true, false] {
-            let text = example_file_text(Example::ClipboardHistory, chinese);
-            // The BOM Windows PowerShell 5.1 needs, and the script's own header comments.
-            assert!(text.starts_with('\u{feff}'));
-            assert!(text.contains("<pecofence.type>streamable</pecofence.type>"));
-            assert!(text.contains("<pecofence.title>Clipboard History</pecofence.title>"));
-            assert!(!text.contains("\r\r"));
-        }
-    }
-
-    #[test]
     fn a_recorded_example_follows_pecofence_until_it_is_edited() {
         let dir = std::env::temp_dir().join(format!("pf-recorded-example-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("clipboard-history.ps1");
+        let path = dir.join("status.ps1");
         // Written by this build: up to date, nothing to do.
-        write_example(&path, Example::ClipboardHistory, false).unwrap();
+        write_example(&path, Example::Status, false).unwrap();
         assert!(!update_old_example(&path));
         // As an earlier build wrote it (another text, recorded): the current one replaces it,
         // whatever an editor did to its line ends.
         let earlier =
             "\u{feff}# <pecofence.type>streamable</pecofence.type>\r\n'an earlier player'\r\n";
         std::fs::write(&path, earlier).unwrap();
-        note_written_example(&path, Example::ClipboardHistory, false, earlier);
+        note_written_example(&path, Example::Status, false, earlier);
         std::fs::write(&path, earlier.replace("\r\n", "\n")).unwrap();
         assert!(update_old_example(&path));
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
-            example_file_text(Example::ClipboardHistory, false)
+            example_file_text(Example::Status, false)
         );
         assert!(!update_old_example(&path));
         // An edited copy (an API key put in) stays as it is.
         std::fs::write(&path, earlier).unwrap();
-        note_written_example(&path, Example::ClipboardHistory, false, earlier);
+        note_written_example(&path, Example::Status, false, earlier);
         let edited = earlier.replace("earlier", "edited");
         std::fs::write(&path, &edited).unwrap();
         assert!(!update_old_example(&path));
