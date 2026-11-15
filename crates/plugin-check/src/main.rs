@@ -338,6 +338,7 @@ fn check(a: Args) -> Result<bool, String> {
         theme: "dark".into(),
         size: (320.0, 240.0),
         shown: true,
+        cache: None,
     })));
     let wait = |part: f64| {
         let at = begun + Duration::from_secs_f64(a.seconds * part);
@@ -385,6 +386,9 @@ fn check(a: Args) -> Result<bool, String> {
         match o {
             Output::Show(..) => shows.push(at),
             Output::Stopped(_, Stopped::TooLong) => stops.push("a run took over 50 ms".into()),
+            Output::Stopped(_, Stopped::TooBusy) => {
+                stops.push("over 200 ms of JavaScript in one second".into())
+            }
             Output::Stopped(_, Stopped::TooMuchMemory) => stops.push("it used over 8 MB".into()),
             Output::Stopped(_, Stopped::Error(e)) => stops.push(format!("an error: {e}")),
         }
