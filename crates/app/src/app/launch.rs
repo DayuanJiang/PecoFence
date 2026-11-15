@@ -80,7 +80,7 @@ impl App {
 
     /// Registers the shortcuts wanted and drops the others (a fence deleted, its plugin
     /// uninstalled, taken down, stopped for good, or a command an update took away). One another
-    /// program holds is tried again only when it changes.
+    /// program held is tried again at each sync.
     pub(super) fn sync_plugin_keys(&mut self) {
         if self.hotkeys_paused {
             return;
@@ -95,9 +95,9 @@ impl App {
             }
             keep
         });
-        self.light.keys_taken.retain(|k| want.contains(k));
+        self.light.keys_taken.clear();
         for k in want {
-            if self.light.keys.values().any(|r| *r == k) || self.light.keys_taken.contains(&k) {
+            if self.light.keys.values().any(|r| *r == k) {
                 continue;
             }
             let id = (HOTKEY_PLUGIN_FIRST..).find(|i| !self.light.keys.contains_key(i));
@@ -548,16 +548,49 @@ impl App {
             .keys
             .values()
             .any(|k| k.0 == fence && k.1 == command && k.2 == h);
-        let other = self
-            .plugin_keys_wanted()
-            .into_iter()
-            .any(|k| k.2 == h && (k.0 != fence || k.1 != command));
-        let ours = other || self.peek_hotkey == Some(h) || self.windows_desktop_hotkey == Some(h);
-        if !mine && (ours || !self.hotkey_free(h)) {
-            tracing::info!(hotkey = %h, ours, "plugin shortcut refused: taken");
+        if mine {
+            return None;
+        }
+        // PecoFence's own shortcuts by name: the Peek, the Windows desktop, dialog jump's Ctrl+G
+        // (while it is on), another plugin command.
+        let other = (self.plugin_keys_wanted().into_iter())
+            .find(|k| k.2 == h && (k.0 != fence || k.1 != command));
+        let lang = i18n::language().tag();
+        let title = |(f, c, _): &(FenceId, String, Hotkey)| {
+            let spec = self.state.config.scripts.get(f)?;
+            let m = self.plugin(super::plugins::plugin_id(&spec.path)?)?;
+            let c = m
+                .manifest
+                .permissions
+                .commands
+                .iter()
+                .find(|x| x.id == *c)?;
+            Some(pecofence_core::plugins::pick(&c.title, lang).to_string())
+        };
+        let dialog_jump = self.state.config.settings.tools.dialog_jump
+            && h == Hotkey::new(pecofence_core::hotkey::CTRL, 0x47);
+        let ours = if self.peek_hotkey == Some(h) {
+            Some(i18n::text("速览").to_string())
+        } else if self.windows_desktop_hotkey == Some(h) {
+            Some(i18n::text("临时显示 Windows 桌面").to_string())
+        } else if dialog_jump {
+            Some(i18n::text("对话框跳转").to_string())
+        } else {
+            other.map(|k| title(&k).unwrap_or(k.1))
+        };
+        let label = super::peek::peek_hotkey_label(h);
+        if let Some(name) = ours {
+            tracing::info!(hotkey = %h, "plugin shortcut refused: one of PecoFence's own");
+            return Some(i18n::format(
+                "{0} 已经是“{1}”的快捷键，请换一个",
+                &[label, name],
+            ));
+        }
+        if !self.hotkey_free(h) {
+            tracing::info!(hotkey = %h, "plugin shortcut refused: taken by Windows or another program");
             return Some(i18n::format(
                 "{0} 已被 Windows 或其他程序占用，请换一个",
-                &[super::peek::peek_hotkey_label(h)],
+                &[label],
             ));
         }
         None
