@@ -12,7 +12,7 @@
 //! soft rules of the repository's AGENTS.md.
 
 use pecofence_core::FenceId;
-use pecofence_core::plugins::{Manifest, fence_settings};
+use pecofence_core::plugins::{fence_settings, parse_manifest};
 use pecofence_plugin_host::{self as host, Command, Host, Note, Output, Start, Stopped};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -299,8 +299,10 @@ fn main() {
 
 /// Runs the plugin and prints the report; whether it passed.
 fn check(a: Args) -> Result<bool, String> {
-    let manifest: Manifest = serde_json::from_value(read_json(&a.dir.join("plugin.json"))?)
-        .map_err(|e| format!("plugin.json: {e}"))?;
+    // PecoFence's own check first: what it would refuse to install does not pass here either.
+    let path = a.dir.join("plugin.json");
+    let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let manifest = parse_manifest(&bytes).map_err(|e| format!("plugin.json: {e}"))?;
     let main = a.dir.join("main.js");
     if !main.exists() && manifest.layer == "web" {
         println!(
