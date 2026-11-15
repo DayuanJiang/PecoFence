@@ -65,6 +65,8 @@ PfStart -Lang en -Script (DumpScript 400 30 3000)
 Pf settings set theme dark | Out-Null
 ClearFences | Out-Null
 $script:Now = PfPluginFence 'Now playing' '80,60,300,440' 'now-playing'
+# The first fence's script may still hold idle.cmd, which the second one writes again.
+Start-Sleep -Seconds 1
 $script:Edge = PfPluginFence 'Edge' '420,60,300,440' 'now-playing-edge'
 $ok = (WaitOut $script:Now '^Nothing is playing' 15) -and (WaitOut $script:Edge '^Nothing is playing' 5)
 Check 'both fences show Nothing is playing' $ok "now=$(FenceOut $script:Now) | edge=$(FenceOut $script:Edge)"

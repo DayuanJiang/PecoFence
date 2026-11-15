@@ -81,7 +81,7 @@ function Publish([int]$n, [string]$version, $commands, $others = @{}, [string]$d
   foreach ($p in $all) {
     $dir = "$Feed\$commit\plugins\$($p.id)"; New-Item -ItemType Directory -Force $dir | Out-Null
     $m = [ordered]@{ id = $p.id; version = $version; api = $p.api; layer = 'light'; name = @{ en = $p.id; 'zh-CN' = $p.id }
-      description = @{ en = 'A test plugin' }; author = 'tester'; minPecoFence = '0.5.0'; permissions = $p.perms }
+      description = @{ en = 'A test plugin' }; author = 'DayuanJiang'; minPecoFence = '0.5.0'; permissions = $p.perms }
     [IO.File]::WriteAllText("$dir\plugin.json", ($m | ConvertTo-Json -Depth 6))
     Copy-Item "$Kit\main.js", "$Kit\README.md" $dir
     $m.files = @(foreach ($f in Get-ChildItem $dir -File) { [ordered]@{ name = $f.Name; size = $f.Length; sha256 = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower() } })
