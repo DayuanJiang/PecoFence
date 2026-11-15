@@ -266,7 +266,10 @@ The guest runner:
   box's size), boots it and waits for pf's desktop;
 - points the guest's PFJob task at a hidden launcher with normal priority, turns Spotlight off and
   removes the Store Notepad, which restores earlier jobs' tabs and shows "Cannot find" boxes over
-  the Open dialog (`--keep-notepad` keeps it);
+  the Open dialog (`--keep-notepad` keeps it); with `--elevated` PFJob runs with pf's full
+  administrator token, so the app, its CLI and the steps run as administrator (a report from a
+  user who starts PecoFence that way; a job cannot elevate by itself, the guest's UAC asks on
+  the secure desktop);
 - runs one PFJob job per steps file, with the kit's `ctl.ps1 reset` before each, and packs
   `C:\pf\run` as `run.sh` does;
 - turns the guest off, restores the checkpoint and the video settings and deletes the checkpoint.
