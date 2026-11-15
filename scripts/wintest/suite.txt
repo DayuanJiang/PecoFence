@@ -55,6 +55,8 @@ frame-pacing       2   ec2    release frame-pacing.ps1
 render-memory      5   ec2    release software-render-memory.ps1
 rolled-AB          4   ec2    release rolled-fences.ps1              --var Part=AB
 rolled-CD          3   ec2    release rolled-fences.ps1              --var Part=CD
+issues-hover-G     3   ec2    release issues-hover.ps1               --var Part=G
+issues-hover-H     4   ec2    release issues-hover.ps1               --var Part=H
 keys-A             3   ec2    release keyboard-and-menu-items.ps1    --var Part=A
 keys-B             2   ec2    release keyboard-and-menu-items.ps1    --var Part=B
 keys-C             2   ec2    release keyboard-and-menu-items.ps1    --var Part=C
