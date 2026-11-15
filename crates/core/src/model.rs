@@ -313,6 +313,14 @@ pub struct ScriptSpec {
     /// snapshots and backups that keep the script.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub held: bool,
+    /// A plugin fence's settings by key (its plugin.json's `settings`; see
+    /// `plugins::fence_settings`).
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    #[cfg_attr(
+        feature = "schema",
+        schemars(with = "std::collections::BTreeMap<String, serde_json::Value>")
+    )]
+    pub settings: serde_json::Map<String, serde_json::Value>,
 }
 
 impl ScriptSpec {
@@ -327,6 +335,7 @@ impl ScriptSpec {
             path: path.to_string(),
             interval_minutes: Self::default_interval(),
             held: false,
+            settings: Default::default(),
         }
     }
 }

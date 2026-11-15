@@ -2114,7 +2114,10 @@ impl App {
                     return Err(IpcError::usage("a script fence needs --script <file>")
                         .hint("pecofence-cli fence create --script C:\\path\\weather.ps1"));
                 };
-                if !std::path::Path::new(path).is_file() {
+                // `plugin:<id>`: an installed plugin's fence.
+                let plugin =
+                    super::plugins::plugin_id(path).and_then(|id| self.plugin_manifest(id));
+                if plugin.is_none() && !std::path::Path::new(path).is_file() {
                     return Err(IpcError::new(
                         ErrorCode::InvalidValue,
                         format!("no such script: {path}"),

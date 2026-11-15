@@ -52,6 +52,9 @@ pub(super) fn on_showwindow(
     let (shadow, show) = {
         let mut guard = view.borrow_mut();
         let v = guard.as_mut()?;
+        if v.script.is_some() {
+            v.queue.push(Command::ToolShownChanged);
+        }
         // A clock hidden for a while shows the time now, not the one from when it went.
         if wparam != 0 && v.clock.is_some() && !v.rolled_up {
             let _ = v.redraw_content();

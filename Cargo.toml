@@ -8,6 +8,7 @@ members = [
     "crates/watchdog",
     "crates/ipc",
     "crates/cli",
+    "crates/plugin-host",
     "tools/bindgen",
 ]
 

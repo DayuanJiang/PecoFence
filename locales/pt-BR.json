@@ -1067,5 +1067,8 @@
   "这个插件还没有安装。右键这个栅栏，选“插件详情”去安装。": "Este plugin ainda não está instalado. Clique com o botão direito neste grupo e escolha “Detalhes do plugin” para instalá-lo.",
   "下载没有完成，检查网络后再试一次。": "O download não terminou. Verifique a rede e tente de novo.",
   "下载的文件和审查过的不一样，已经放弃安装。": "Os arquivos baixados são diferentes dos revisados, então nada foi instalado.",
-  "卸载“{0}”？它的栅栏和它保存的数据都会删掉。": "Desinstalar “{0}”? Os grupos dele e os dados salvos serão apagados."
+  "卸载“{0}”？它的栅栏和它保存的数据都会删掉。": "Desinstalar “{0}”? Os grupos dele e os dados salvos serão apagados.",
+  "插件停止了：{0}。右键这个栅栏，选“立即运行”重新启动。": "O plugin parou: {0}. Clique com o botão direito neste grupo e escolha “Executar agora” para iniciá-lo de novo.",
+  "一次运行超过了 50 毫秒": "uma execução levou mais de 50 ms",
+  "用的内存超过了 8 MB": "usou mais de 8 MB de memória"
 }

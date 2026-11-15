@@ -626,6 +626,10 @@ pub struct ScriptRowView {
     /// `follow=<key>`: the row after this one is kept in the middle of the scrolling rows, each
     /// time the key changes.
     pub follow: Option<String>,
+    /// A plugin row's `size` (`small` to `huge`, or `fit`), its narrow form and bold.
+    pub size: Option<String>,
+    pub short: Option<String>,
+    pub bold: bool,
     /// A row of cells side by side (a `::` line): the fields above are not used then.
     pub cells: Vec<ScriptCellView>,
 }
@@ -728,7 +732,7 @@ impl ScriptRowView {
                     todo: r.todo,
                     color: r.color,
                     icon: r.icon,
-                    cells: Vec::new(),
+                    ..Self::default()
                 },
             })
             .collect()

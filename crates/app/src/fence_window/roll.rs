@@ -854,6 +854,9 @@ impl FenceViewState {
             );
         } else {
             self.rolled_up = false;
+            if self.script.is_some() {
+                self.queue.push(Command::ToolShownChanged);
+            }
             // Rasterise the content once at its final size; the growing HWND reveals it.
             let w = to_w.unwrap_or_else(|| self.chrome_panel.size_px().0);
             let top = self.content_y;

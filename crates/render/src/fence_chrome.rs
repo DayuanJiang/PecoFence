@@ -117,6 +117,8 @@ pub struct FenceChrome {
     clock_date_format: TextFormat,
     /// The clock's time and date formats at the sizes last drawn (there is one clock at most).
     clock_fonts: RefCell<Option<ClockFonts>>,
+    /// Plugin rows in a size or weight of their own: their formats by (DIPs, bold).
+    row_fonts: RefCell<Vec<((u32, bool), TextFormat)>>,
     /// The blurred masks of a theme's soft text shadow, shared by all fences.
     text_shadows: RefCell<TextShadows>,
     /// Labels and row names shaped for an earlier frame, shared by all fences.
@@ -2204,6 +2206,7 @@ impl FenceChrome {
             clock_time_format,
             clock_date_format,
             clock_fonts: RefCell::default(),
+            row_fonts: RefCell::default(),
             text_shadows: RefCell::default(),
             text_layouts: RefCell::default(),
             note_rows_cache: RefCell::default(),
@@ -4708,6 +4711,9 @@ pub struct ScriptRowDraw<'a> {
     pub clickable: bool,
     /// A click opens a URL or file: an arrow on hover.
     pub opens: bool,
+    /// The text's size over the fence's 文字大小 (a plugin row's `size`), and bold.
+    pub size: f32,
+    pub bold: bool,
     /// A row of cells side by side (a `::` line); the other fields are not used then.
     pub cells: &'a [ScriptCellDraw<'a>],
     /// A picture in place of text (an `image=` row).
@@ -5315,6 +5321,24 @@ impl ToolText {
 }
 
 impl FenceChrome {
+    /// The format of a plugin row in a size or weight of its own (`size` over the normal text
+    /// size of `tt`), made once and kept.
+    fn script_row_format(&self, tt: &ToolText, size: f32, bold: bool) -> Result<TextFormat> {
+        let key = ((TOOL_TEXT_SIZES[1] * tt.k * size).round() as u32, bold);
+        let mut fonts = self.row_fonts.borrow_mut();
+        if let Some((_, f)) = fonts.iter().find(|(k, _)| *k == key) {
+            return Ok(f.clone());
+        }
+        let weight = if bold {
+            FontWeight(600)
+        } else {
+            FontWeight::NORMAL
+        };
+        let format = Self::build_tool_format(font_text(), key.0 as f32, weight, true)?;
+        fonts.push((key, format.clone()));
+        Ok(format)
+    }
+
     /// A script fence's footer for a content area `width` DIPs wide: `full` (the script's name
     /// and the status) when it fits on its one line, else `short` (the status alone: the title
     /// names the fence), cut with an ellipsis when that is too wide as well. The second value
@@ -5595,7 +5619,12 @@ impl FenceChrome {
             let arrow = if row.opens { arrow_w } else { 0.0 };
             let text_w = (width - text_x - NOTE_PAD_X - arrow).max(1.0);
             let text = if row.text.is_empty() { " " } else { row.text };
-            let layout = self.layout_in(text, &tt.body, text_w, f32::MAX)?;
+            let layout = if row.size != 1.0 || row.bold {
+                let format = self.script_row_format(tt, row.size, row.bold)?;
+                self.layout_in(text, &format, text_w, f32::MAX)?
+            } else {
+                self.layout_in(text, &tt.body, text_w, f32::MAX)?
+            };
             let h = layout.metrics().height.max(line_h);
             if in_band {
                 tops.extend(
@@ -6645,6 +6674,8 @@ mod tests {
             icon: None,
             clickable,
             opens: false,
+            size: 1.0,
+            bold: false,
             cells: &[],
             image: None,
             hidden: false,

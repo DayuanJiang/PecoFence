@@ -4,7 +4,7 @@
 # asks for more (waits for the OK), a plugin taken down, the uninstall, and an imported fence
 # whose plugin is not installed. English UI. Debug build (CDP on the settings page).
 $Feed = 'C:\pf\run\pfeed'
-# Writes plugin pf-test (and pf-bad, whose main.ps1 differs from its hash) at a made-up commit
+# Writes plugin pf-test (and pf-bad, whose main.js differs from its hash) at a made-up commit
 # `n` with `version`, the network hosts `net`, and the index naming that commit.
 function Publish([int]$n, [string]$version, [string[]]$net = @(), [string]$disabled = '') {
   $commit = ('{0:x}' -f $n).PadLeft(40, 'a')
@@ -13,10 +13,10 @@ function Publish([int]$n, [string]$version, [string[]]$net = @(), [string]$disab
     $m = [ordered]@{ id = $id; version = $version; name = @{ en = $(if ($id -eq 'pf-test') { 'PF Test' } else { 'PF Bad' }) }; description = @{ en = 'A test plugin' }
       author = 'tester'; minPecoFence = '0.4.0'; streamable = $false; permissions = [ordered]@{ network = @($net); clipboard = 'none'; files = 'data'; run = $false } }
     [IO.File]::WriteAllText("$dir\plugin.json", ($m | ConvertTo-Json -Depth 5))
-    [IO.File]::WriteAllText("$dir\main.ps1", "New-Item -ItemType Directory -Force `$env:PECOFENCE_DATA | Out-Null`r`nSet-Content (Join-Path `$env:PECOFENCE_DATA 'ran.txt') '$version'`r`n'$id $version'`r`n")
+    [IO.File]::WriteAllText("$dir\main.js", "pf.on('start', () => pf.show({ rows: [{ text: '$id $version' }] }));`r`n")
     [IO.File]::WriteAllText("$dir\README.md", "# $id`r`n")
     $files = foreach ($f in Get-ChildItem $dir -File) { [ordered]@{ name = $f.Name; size = $f.Length; sha256 = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower() } }
-    if ($id -eq 'pf-bad') { Add-Content "$dir\main.ps1" '# changed after the review' }
+    if ($id -eq 'pf-bad') { Add-Content "$dir\main.js" '// changed after the review' }
     $m.files = @($files)
     if ($disabled -and $id -eq 'pf-test') { $m.disabled = $disabled }
     $m
@@ -28,7 +28,7 @@ function Rows() { return (Js "[...document.querySelectorAll('#pluginList .pl-row
 function RowButton($name) { return (Js "[...document.querySelectorAll('#pluginList .pl-row')].findIndex(r => r.textContent.startsWith('$name'))") }
 # The page asks for the index again (as when 设置 › 小工具 opens).
 function Refresh() { Js "window.chrome.webview.postMessage({ type: 'action', name: 'pluginsRefresh' })" | Out-Null; Start-Sleep -Seconds 3 }
-function Installed() { $j = Get-Content "$script:Config\plugins\pf-test\plugin.json" -Raw -ErrorAction SilentlyContinue; if ($j) { return ($j | ConvertFrom-Json).version }; return $null }
+function Installed() { $v = Get-Content "$script:Config\plugins\pf-test\current.txt" -ErrorAction SilentlyContinue; if ($v -and (Test-Path "$script:Config\plugins\pf-test\$v\plugin.json")) { return $v }; return $null }
 function PluginFences() { return @(@((PfJson fence list)) | Where-Object { $_ -and $_.script -and $_.script.path -eq 'plugin:pf-test' }) }
 # Clicks 安装 / 更新 in the row of `name`, then the warning's OK; the warning's texts.
 function InstallVia($name) {
@@ -70,14 +70,14 @@ $f = @(PluginFences)
 Shot 'plugin-fence-v1'
 Check 'installed into plugins\pf-test, one fence titled after the plugin' ((Installed) -eq '1.0.0' -and $f.Count -eq 1 -and $f[0].title -eq 'PF Test' -and $line) "fences=$($f.Count) $line"
 Start-Sleep -Seconds 3; $f = @(PluginFences)
-Check 'the fence ran main.ps1, its data folder is plugins-data\pf-test' ($f[0].script.output -match 'pf-test 1\.0\.0' -and (Get-Content "$script:Config\plugins-data\pf-test\ran.txt" -ErrorAction SilentlyContinue) -eq '1.0.0') "output=$($f[0].script.output)"
+Check 'the fence runs main.js' ($f[0].script.output -match 'pf-test 1\.0\.0') "output=$($f[0].script.output)"
 Check 'the row now offers nothing to install' ((Rows) -match '^PF Test.*On the desktop') (Rows)
 
 Case 'a file whose SHA-256 is not the index''s is refused'
 $d = InstallVia 'PF Bad'
 $toast = PageToast
 Check 'nothing of pf-bad is left, the page says why' (-not (Test-Path "$script:Config\plugins\pf-bad") -and -not (Test-Path "$script:Config\plugins\.new-pf-bad") -and $toast.text -match 'differ from the reviewed') ($toast | ConvertTo-Json -Compress)
-Check 'the log names the file' ([bool](PfWaitLog 'plugins: install or update failed.*refused=true.*main\.ps1: size or SHA-256' 5)) ''
+Check 'the log names the file' ([bool](PfWaitLog 'plugins: install or update failed.*refused=true.*main\.js: size or SHA-256' 5)) ''
 
 Case 'an update that asks for nothing more installs by itself'
 Publish 2 '1.1.0'
@@ -98,7 +98,7 @@ Case 'a plugin taken down stops and says why'
 Publish 4 '2.0.0' @('example.com') 'Test reason'
 Refresh
 Shot 'plugin-taken-down'
-Check 'main.ps1 deleted, disabled.txt holds the reason' (-not (Test-Path "$script:Config\plugins\pf-test\main.ps1") -and (Get-Content "$script:Config\plugins\pf-test\disabled.txt") -eq 'Test reason') ''
+Check 'main.js deleted, disabled.txt holds the reason' (-not (Test-Path "$script:Config\plugins\pf-test\2.0.0\main.js") -and (Get-Content "$script:Config\plugins\pf-test\disabled.txt") -eq 'Test reason') ''
 Check 'the row says so and offers 卸载' ((Rows) -match 'PF Test.*Taken down: Test reason.*Uninstall') (Rows)
 
 Case 'uninstall asks, then removes the fence, the plugin and its data'
@@ -123,6 +123,6 @@ Check 'with 小工具 on the fence says the plugin is not installed and how to i
 Refresh
 InstallVia 'PF Test' | Out-Null
 Start-Sleep -Seconds 3; $f = @(PluginFences)
-Check 'installing it runs that fence, no second fence' ($f.Count -eq 1 -and (Get-Content "$script:Config\plugins-data\pf-test\ran.txt" -ErrorAction SilentlyContinue) -eq '2.0.0') "fences=$($f.Count) output=$($f[0].script.output)"
+Check 'installing it runs that fence, no second fence' ($f.Count -eq 1 -and $f[0].script.output -match '2\.0\.0') "fences=$($f.Count) output=$($f[0].script.output)"
 PfQuit
 if ($feedProc) { Stop-Process -Id $feedProc.Id -Force -ErrorAction SilentlyContinue }

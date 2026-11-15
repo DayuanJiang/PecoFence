@@ -20,6 +20,7 @@ pecofence-core = { path = "../core" }
 pecofence-ipc = { path = "../ipc" }
 pecofence-platform = { path = "../platform" }
 pecofence-render = { path = "../render" }
+pecofence-plugin-host = { path = "../plugin-host" }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 

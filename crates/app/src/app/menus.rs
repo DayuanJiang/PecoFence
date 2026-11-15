@@ -91,6 +91,8 @@ const CMD_FENCE_SCRIPT_EDIT: u32 = 509;
 const CMD_FENCE_SCRIPT_PICK: u32 = 501;
 const CMD_FENCE_SCRIPT_FOLDER: u32 = 502;
 const CMD_FENCE_SCRIPT_INTERVAL_BASE: u32 = 1900;
+/// A plugin fence's switches (插件设置), one id per setting of its plugin.json.
+const CMD_FENCE_PLUGIN_SETTING_BASE: u32 = 1930;
 /// The inbox's 为空时自动隐藏 (in place of 删除栅栏).
 const CMD_FENCE_HIDE_EMPTY: u32 = 305;
 const CMD_FENCE_DESKTOP_LAYOUT: u32 = 306;
@@ -1053,6 +1055,20 @@ impl App {
                 !has_path,
             )
             .icon(glyph::FOLDER_OPEN);
+            // A plugin fence's switches, checked while on.
+            let id = spec.and_then(|s| super::plugins::plugin_id(&s.path));
+            if let Some(m) = id.and_then(|id| self.plugin_manifest(id)) {
+                let saved = spec.map(|s| s.settings.clone()).unwrap_or_default();
+                let now = pecofence_core::plugins::fence_settings(&m, &saved);
+                let lang = pecofence_core::i18n::language().tag();
+                for (i, s) in m.settings.iter().enumerate().take(20) {
+                    if s.kind == "switch" {
+                        let on = now[&s.key].as_bool().unwrap_or(false);
+                        let label = pecofence_core::plugins::pick(&s.label, lang);
+                        menu.item(CMD_FENCE_PLUGIN_SETTING_BASE + i as u32, label, on, false);
+                    }
+                }
+            }
         } else if f.tool == Some(pecofence_core::FenceTool::Clock) {
             // An entry with an icon shows no check mark: like 锁定位置和大小, it names what a
             // click does now.
@@ -1613,6 +1629,11 @@ impl App {
                 }
             }
             CMD_FENCE_SCRIPT_FOLDER => self.open_script_folder(fence),
+            c if (CMD_FENCE_PLUGIN_SETTING_BASE..CMD_FENCE_PLUGIN_SETTING_BASE + 20)
+                .contains(&c) =>
+            {
+                self.toggle_plugin_setting(fence, (c - CMD_FENCE_PLUGIN_SETTING_BASE) as usize)
+            }
             c if (CMD_FENCE_SCRIPT_INTERVAL_BASE
                 ..CMD_FENCE_SCRIPT_INTERVAL_BASE
                     + pecofence_core::ScriptSpec::INTERVALS.len() as u32)

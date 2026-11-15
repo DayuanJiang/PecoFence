@@ -2013,12 +2013,19 @@ impl FenceWindow {
                 // cross-fade (83 ms, as a change of view), not in one frame.
                 let first_result = v.script.as_ref().is_some_and(|s| s.quiet)
                     && script.as_ref().is_some_and(|s| !s.quiet);
+                // New rows of a fence that shows rows already: only the content is drawn
+                // again, as a clock's tick (a plugin clock's rows change every second).
+                let rows_only = v.script.is_some() && script.is_some();
                 v.script = script;
                 if first_result && v.content_swap_shows() {
                     tracing::debug!(fence = %v.active, "script fence: the first result fades in");
                     v.begin_content_swap(0);
                 }
-                let _ = v.redraw();
+                if !rows_only {
+                    let _ = v.redraw();
+                } else if !v.rolled_up {
+                    let _ = v.redraw_content();
+                }
             }
         });
     }
@@ -2128,6 +2135,22 @@ impl FenceWindow {
             .borrow()
             .as_ref()
             .is_some_and(|v| v.roll_target() || v.peeking)
+    }
+
+    /// What the native clock's tick asks before it draws: the content shows (not rolled up,
+    /// the window not hidden).
+    pub fn shows_content(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| {
+            !v.rolled_up && !v.retired && pecofence_platform::desktop::is_visible(v.hwnd)
+        })
+    }
+
+    /// The content area in DIPs.
+    pub fn content_dips(&self) -> (f32, f32) {
+        self.view.borrow().as_ref().map_or((0.0, 0.0), |v| {
+            let (w, h) = v.content_size_px();
+            (w as f32 / v.scale(), h as f32 / v.scale())
+        })
     }
 
     pub fn dpi(&self) -> u32 {
