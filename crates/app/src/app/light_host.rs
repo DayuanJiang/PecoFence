@@ -418,10 +418,14 @@ impl AppHost {
         let Some(p) = self.media.now.lock().ok().and_then(|n| n.clone()) else {
             return Ok(Value::Null);
         };
-        let cover = match &p.cover {
-            Some(bytes) => Some(self.save_cover(fence, bytes)?),
-            None => None,
-        };
+        // A cover that cannot be saved is none; the rest still comes.
+        let cover = (p.cover.as_ref()).and_then(|(hash, bytes)| {
+            let saved = self.save_cover(fence, *hash, bytes);
+            if let Err(e) = &saved {
+                tracing::info!(%fence, error = e, "plugin: the media cover not saved, given as null");
+            }
+            saved.ok()
+        });
         // The session names its app by its AppUserModelID: `Spotify.exe`, `MSEdge` (msedge.exe),
         // `Chrome`; a Store app's (`Microsoft.ZuneMusic_…!…`) is no program name.
         let apps = &m.permissions.apps;
@@ -437,11 +441,7 @@ impl AppHost {
         }))
     }
 
-    fn save_cover(&self, fence: FenceId, bytes: &[u8]) -> Result<String, String> {
-        // FNV-1a: a new cover gets a new name, so the fence draws it anew.
-        let hash = (bytes.iter()).fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
-            (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
-        });
+    fn save_cover(&self, fence: FenceId, hash: u64, bytes: &[u8]) -> Result<String, String> {
         let kind = if bytes.starts_with(b"\x89PNG") {
             "png"
         } else {

@@ -15,6 +15,9 @@
     Windows.Media.Control.IGlobalSystemMediaTransportControlsSession.TryTogglePlayPauseAsync
     Windows.Media.Control.IGlobalSystemMediaTransportControlsSession.TrySkipNextAsync
     Windows.Media.Control.IGlobalSystemMediaTransportControlsSession.TrySkipPreviousAsync
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSession.MediaPropertiesChanged
+    Windows.Media.Control.MediaPropertiesChangedEventArgs
+    Windows.Foundation.TypedEventHandler
     Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties
     Windows.Media.Control.IGlobalSystemMediaTransportControlsSessionMediaProperties.Title
     Windows.Media.Control.IGlobalSystemMediaTransportControlsSessionMediaProperties.Artist

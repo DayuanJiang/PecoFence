@@ -471,6 +471,8 @@ impl App {
             return;
         }
         self.light.stopped.insert(fence, why);
+        // No more media reads for it while it is stopped.
+        self.sync_media();
         if !again {
             // Stopped for good: its shortcuts go until it is started again.
             return self.sync_plugin_keys();

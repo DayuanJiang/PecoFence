@@ -94,10 +94,24 @@ fn watch(
     control: isize,
 ) {
     let _com = pecofence_platform::com::MtaGuard::init();
-    let sessions = Sessions::new();
-    if let Err(e) = &sessions {
-        tracing::warn!(error = %e, "media session manager not available: plugins see nothing playing");
-    }
+    // Made on the first read or control, and again after one that failed.
+    let mut sessions: Option<Sessions> = None;
+    let mut failed = 0_u32;
+    let mut manager = |sessions: &mut Option<Sessions>| {
+        if sessions.is_none() {
+            match Sessions::new() {
+                Ok(s) => *sessions = Some(s),
+                Err(e) if failed == 0 => {
+                    tracing::warn!(error = %e, "media session manager not made: plugins see nothing playing; made again on a later read")
+                }
+                Err(e) => {
+                    tracing::debug!(error = %e, failed, "media session manager not made again")
+                }
+            }
+            failed = if sessions.is_some() { 0 } else { failed + 1 };
+        }
+        sessions.is_some()
+    };
     let (mut watching, mut last) = (false, now.lock().ok().and_then(|n| n.clone()));
     loop {
         let ask = if watching {
@@ -108,9 +122,10 @@ fn watch(
         match ask {
             Ok(Ask::Watch(on)) => watching = on,
             Ok(Ask::Control(what, reply)) => {
+                manager(&mut sessions);
                 let took = match &sessions {
-                    Ok(s) => s.control(&what).map_err(|e| e.to_string()),
-                    Err(_) => Ok(false),
+                    Some(s) => s.control(&what).map_err(|e| e.to_string()),
+                    None => Ok(false),
                 };
                 tracing::info!(
                     what,
@@ -122,16 +137,17 @@ fn watch(
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
-        let Ok(s) = sessions.as_ref().map_err(|_| ()) else {
-            continue;
-        };
-        if !watching {
+        if !watching || !manager(&mut sessions) {
             continue;
         }
+        let Some(s) = sessions.as_mut() else {
+            continue;
+        };
         let read = match s.current(last.as_ref()) {
             Ok(read) => read,
             Err(e) => {
-                tracing::debug!(error = %e, "media session not read this time");
+                tracing::debug!(error = %e, "media session not read this time: its manager is made again on the next read");
+                sessions = None;
                 continue;
             }
         };
