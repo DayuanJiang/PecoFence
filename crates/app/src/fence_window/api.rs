@@ -1985,12 +1985,19 @@ impl FenceWindow {
                 // cross-fade (83 ms, as a change of view), not in one frame.
                 let first_result = v.script.as_ref().is_some_and(|s| s.quiet)
                     && script.as_ref().is_some_and(|s| !s.quiet);
+                // New rows of a fence that shows rows already: only the content is drawn
+                // again, as a clock's tick (a plugin clock's rows change every second).
+                let rows_only = v.script.is_some() && script.is_some();
                 v.script = script;
                 if first_result && v.content_swap_shows() {
                     tracing::debug!(fence = %v.active, "script fence: the first result fades in");
                     v.begin_content_swap(0);
                 }
-                let _ = v.redraw();
+                if !rows_only {
+                    let _ = v.redraw();
+                } else if !v.rolled_up {
+                    let _ = v.redraw_content();
+                }
             }
         });
     }

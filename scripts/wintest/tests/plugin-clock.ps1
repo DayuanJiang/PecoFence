@@ -97,10 +97,8 @@ Log "native at ms $(($n | ForEach-Object { $_.ms % 1000 }) -join ','); plugin at
 Check 'the plugin clock changed about once a second' ($p.Count -ge 13 -and $p.Count -le 16) "plugin=$($p.Count) native=$($n.Count)"
 Check 'each change within 50 ms of the native clock''s' ($gaps.Count -ge 13 -and @($gaps | Where-Object { [math]::Abs($_) -gt 50 }).Count -eq 0) "gaps=$($gaps -join ',')"
 . C:\pf\kit\rec.ps1
-foreach ($side in @(@('native', $nat), @('plugin', $plg))) {
-  RecStart "tick-$($side[0])" -X $side[1].x -Y $side[1].y -W 260 -H 150 -Fps 20
-  RecMark '看秒数跳动'; Start-Sleep -Seconds 5; RecStop
-}
+RecStart 'tick-both' -X $nat.x -Y $nat.y -W ($plg.x + $plg.w - $nat.x) -H $nat.h -Fps 20
+RecMark '看秒数跳动'; Start-Sleep -Seconds 6; RecStop
 
 Case 'hidden: no ticks while rolled up, while all fences are hidden, on another virtual desktop'
 $id = (ClockFence).id

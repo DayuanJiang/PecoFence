@@ -185,9 +185,13 @@ impl App {
             }
         }
         hosts.dedup();
-        for host in hosts {
-            self.push_tool_view(host);
-        }
+        // A plugin's new view is content refreshing itself, as a script's new output: it does
+        // not hold back the memory housekeeping.
+        pecofence_render::stack::quiet_draws(|| {
+            for host in hosts {
+                self.push_tool_view(host);
+            }
+        });
         // A hide that came without its window message still pauses the plugin.
         self.sync_light();
     }
