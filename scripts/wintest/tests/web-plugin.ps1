@@ -545,6 +545,7 @@ public static class LocalTls {
   $seen = @([MiniProxy]::Seen) -join ' | '
   SystemProxy ''; [MiniProxy]::Stop()
   Check 'fetch to example.org loads through the proxy' ($v -eq 'loaded' -and $seen -match 'CONNECT example\.org:443') "$v; proxy saw: $seen"
+  Check 'the proxy never hears the name of the plugin''s page (*.plugins.pecofence bypasses it)' ($seen -notmatch 'plugins\.pecofence') "proxy saw: $seen"
   Check 'no errors in the log' (@(PfLogErrors).Count -eq 0) ((PfLogErrors) -join ' | ')
 }
 
