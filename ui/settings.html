@@ -506,8 +506,9 @@
   @keyframes pl-chev { from { transform: none; } }
   .pl-detail { interpolate-size: allow-keywords; overflow-y: clip; }
   .pl-detail.pl-opening { animation: pl-open var(--slow) var(--decelerate); }
-  .pl-detail.pl-closing { animation: pl-open var(--fast) var(--collapse) reverse forwards; }
+  .pl-detail.pl-closing { animation: pl-close var(--fast) var(--collapse) forwards; }
   @keyframes pl-open { from { block-size: 0; padding-block: 0; } }
+  @keyframes pl-close { to { block-size: 0; padding-block: 0; } }
   /* A text setting's box on its own line under its name, as wide as the card. */
   .pl-field:has(> input[type=text]) { flex-wrap: wrap; }
   .pl-field > input[type=text] { width: 100%; }
