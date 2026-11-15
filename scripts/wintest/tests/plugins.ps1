@@ -3,7 +3,7 @@
 # fence; a file whose SHA-256 is not the index's (refused, nothing left); the index signature
 # (a signed index taken, a wrong signature refused); the settings form changing one fence only;
 # an update that asks for nothing more (by itself, the version before kept), one whose new
-# version fails to start (back to the one before), one that asks for more (waits for the OK);
+# version fails to start or throws in a timer (back to the one before), one that asks for more (waits for the OK);
 # a plugin that starts programs (the stricter warning, every update asks) and the switch for
 # Windows functions; a take-down; an uninstall during a download (its result dropped); an
 # imported fence whose plugin is not installed; a take-down from the saved index while offline.
@@ -179,6 +179,14 @@ Check 'back on 1.1.0, 1.2.0 deleted and remembered as failed, the fences run 1.1
 Refresh
 $again = LogCount 'plugins: download id="pf-test".*1\.2\.0'
 Check 'the next check does not take 1.2.0 again' ($again -eq $downloads + 1 -and (Installed) -eq '1.1.0') "downloads=$downloads then $again"
+
+Case 'a new version whose timer throws goes back to the version before as well'
+Offer 'pf-test' 'PF Test' '1.3.0' @{} "pf.on('start', () => { pf.show({ rows: [{ text: 'pf-test 1.3.0' }] }); pf.after(1, () => { throw new Error('broken in a timer 1.3.0'); }); });`r`n"; Publish 41
+Refresh
+$back = PfWaitLog 'the new version stopped after its update.*1\.3\.0.*back=true' 15; Start-Sleep -Seconds 3
+$err = PfWaitLog 'plugin error: it escaped a handler.*broken in a timer' 1
+$f = @(PluginFences pf-test)
+Check 'the error is logged, then back on 1.1.0: 1.3.0 deleted and remembered as failed, the fences run 1.1.0' ($err -and $back -and (Installed) -eq '1.1.0' -and (Versions) -notmatch '1\.3\.0' -and (Get-Content "$script:Config\plugins\pf-test\failed.txt") -eq '1.3.0' -and $f[0].script.output -match '1\.1\.0') "versions=$(Versions) err=$err back=$back"
 
 Case 'an update that asks for more waits for the OK'
 Offer 'pf-test' 'PF Test' '2.0.0' @{ network = @('example.com') }; Publish 5

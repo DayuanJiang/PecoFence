@@ -487,7 +487,8 @@ impl App {
         for output in outputs {
             let (host::Output::Show(fence, number, _)
             | host::Output::Post(fence, number, _)
-            | host::Output::Stopped(fence, number, _)) = output;
+            | host::Output::Stopped(fence, number, _)
+            | host::Output::Errored(fence, number)) = output;
             if self.light.running.get(&fence).map(|r| r.3) != Some(number) {
                 tracing::debug!(%fence, number, "plugin output of an earlier start dropped");
                 continue;
@@ -519,6 +520,11 @@ impl App {
                     self.light_stopped(fence, why);
                     hosts.push(self.state.host_of(fence));
                     // In the first minute after an update, back to the version before.
+                    self.plugin_stopped(fence);
+                }
+                // So does an error that escaped a handler (logged, the plugin went on).
+                host::Output::Errored(fence, _) => {
+                    tracing::debug!(%fence, "plugin error escaped a handler: an update a minute ago goes back");
                     self.plugin_stopped(fence);
                 }
             }

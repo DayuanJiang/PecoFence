@@ -118,6 +118,8 @@ pub enum Output {
     Stopped(FenceId, u32, Stopped),
     /// `pf.post(data)`, as JSON: for the page of the web plugin whose main.js this is.
     Post(FenceId, u32, String),
+    /// The first error that escaped a handler of this start (it was logged, the plugin goes on).
+    Errored(FenceId, u32),
 }
 
 /// What reaches the plugin thread: the app's commands and the answers of the worker threads.
@@ -213,6 +215,8 @@ struct Plugin {
     /// messages of the errors logged so far.
     rejected: Rc<RefCell<Vec<Rejected>>>,
     logged: HashSet<String>,
+    /// An error escaped a handler: whether [`Output::Errored`] went out for it.
+    errored: Option<bool>,
 }
 
 type Rejected = (Persistent<rquickjs::Value<'static>>, String);
@@ -289,6 +293,7 @@ impl Plugin {
             unsaved: false,
             rejected,
             logged: HashSet::new(),
+            errored: None,
         };
         let (shared, click, fence) = (plugin.shared.clone(), plugin.click.clone(), s.fence);
         let agent = format!("PecoFence-plugin/{} {}", s.id, s.version);
@@ -513,6 +518,7 @@ impl Plugin {
         let at = lines.map(str::trim).find(|l| !l.is_empty());
         let at = at.unwrap_or_default().to_string();
         let first = self.logged.len() < LOGGED_ERRORS && self.logged.insert(message.clone());
+        self.errored.get_or_insert(false);
         let (fence, plugin) = (self.fence, &self.id);
         if first {
             tracing::warn!(%fence, plugin, run = what, error = message, line = at, "plugin error: it escaped a handler, the plugin goes on");
@@ -765,6 +771,10 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
             for data in posts {
                 out(Output::Post(p.fence, p.number, data));
             }
+            if p.errored == Some(false) {
+                p.errored = Some(true);
+                out(Output::Errored(p.fence, p.number));
+            }
         }
     }
 }
@@ -889,6 +899,7 @@ mod tests {
         let numbers: Vec<u32> = (out.iter())
             .map(|o| match o {
                 Output::Show(_, n, _) | Output::Post(_, n, _) | Output::Stopped(_, n, _) => *n,
+                Output::Errored(_, n) => *n,
             })
             .collect();
         assert_eq!(numbers, [7, 7, 7], "{out:?}");
@@ -913,6 +924,9 @@ mod tests {
         );
         assert_eq!(stop_of(&out), None, "{out:?}");
         assert!(texts(&out).contains(&"tick 2".to_string()), "{out:?}");
+        // The app hears of the first one (in the first minute after an update, it goes back).
+        let told = out.iter().filter(|o| matches!(o, Output::Errored(_, 7)));
+        assert_eq!(told.count(), 1, "{out:?}");
         let notes = fake.notes.lock().unwrap();
         let errors: Vec<(String, String)> = (notes.iter())
             .filter_map(|n| match n {
