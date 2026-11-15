@@ -261,10 +261,11 @@ impl Plugin {
         rt.set_host_promise_rejection_tracker(Some(Box::new(
             move |ctx, promise, reason, handled| {
                 let promise = Persistent::save(&ctx, promise);
-                let mut list = to.borrow_mut();
                 if handled {
-                    return list.retain(|(p, _)| *p != promise);
+                    return to.borrow_mut().retain(|(p, _)| *p != promise);
                 }
+                // The text first: an error's `message` or `stack` getter is the plugin's code and
+                // may reject another Promise, which comes back here.
                 let text = match reason.as_exception() {
                     Some(e) => format!(
                         "Error: {}\n{}",
@@ -273,7 +274,7 @@ impl Plugin {
                     ),
                     None => format!("Error: {reason:?}"),
                 };
-                list.push((promise, text));
+                to.borrow_mut().push((promise, text));
             },
         )));
         let ctx = Context::full(&rt).map_err(fail)?;
@@ -1017,6 +1018,36 @@ mod tests {
     }
 
     #[test]
+    fn an_error_whose_message_rejects_a_promise_is_logged() {
+        // Its getter runs while the rejection is told and rejects a Promise of its own, which is
+        // told (and logged) too.
+        let code = r#"
+            class Sly extends Error {
+                get message() { Promise.reject(new Error('inner')); return 'sly'; }
+            }
+            let n = 0;
+            pf.on('click', async () => { pf.show({ rows: [{ text: 'click ' + ++n }] }); throw new Sly(); });
+        "#;
+        let fake = Arc::new(Fake::default());
+        let clicks = vec![event("click"), event("click")];
+        let out = run_with(code, Permissions::default(), fake.clone(), true, 30, clicks);
+        assert_eq!(stop_of(&out), None, "{out:?}");
+        assert_eq!(texts(&out).last().map(String::as_str), Some("click 2"));
+        let notes = fake.notes.lock().unwrap();
+        let errors: Vec<&str> = (notes.iter())
+            .filter_map(|n| match n {
+                Note::Error { message, .. } => Some(message.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            errors,
+            ["Error: inner", "Error: sly"].repeat(2),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
     fn an_error_in_main_js_itself_stops_the_plugin() {
         let out = outputs("pf.show({ rows: [] }); null.x;", true, 30, vec![]);
         assert!(
@@ -1043,9 +1074,15 @@ mod tests {
         let code = "pf.on('message', (m) => pf.post({ got: m.n + 1 }));";
         let waiting = Arc::new(());
         let message = Command::Message(FenceId::new_v4(), json!({ "n": 1 }), waiting.clone());
+        // Looked at while the plugin still runs (it quits at 210 ms): once main.js had the post,
+        // it no longer counts as waiting (only this and the probe's own are left).
+        let probe = waiting.clone();
+        let probe = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(150));
+            Arc::strong_count(&probe)
+        });
         let out = outputs(code, true, 30, vec![message]);
-        // Once main.js had it, the post no longer counts as waiting.
-        assert_eq!(Arc::strong_count(&waiting), 1);
+        assert_eq!(probe.join().unwrap(), 2);
         let posts: Vec<Value> = (out.iter())
             .filter_map(|o| match o {
                 Output::Post(_, _, data) => serde_json::from_str(data).ok(),
