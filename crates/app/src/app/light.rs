@@ -63,16 +63,19 @@ pub(super) struct Light {
         std::thread::JoinHandle<()>,
     )>,
     out: Arc<Mutex<Vec<host::Output>>>,
-    /// The fences whose plugin runs: the rows it last showed (None before its first view), and
-    /// whether it was last told that the fence shows and how big it is.
+    /// The fences whose plugin runs: the rows it last showed (None before its first view),
+    /// whether it was last told that the fence shows and how big it is, and the number of its
+    /// start (what an earlier runtime of the fence sent is dropped).
     pub(super) running: HashMap<
         FenceId,
         (
             Option<Vec<crate::fence_window::ScriptRowView>>,
             bool,
             (f32, f32),
+            u32,
         ),
     >,
+    starts: u32,
     /// The plugins PecoFence stopped, and why.
     pub(super) stopped: HashMap<FenceId, String>,
     /// When PecoFence stopped each plugin within the last hour.
@@ -212,7 +215,11 @@ impl App {
         let (shown, size) = self.light_shown(fence);
         tracing::info!(%fence, id, version = m.version, shown, ?size, background = p.background, "plugin fence starts its main.js");
         self.light.stopped.remove(&fence);
-        self.light.running.insert(fence, (None, shown, size));
+        self.light.starts += 1;
+        let number = self.light.starts;
+        self.light
+            .running
+            .insert(fence, (None, shown, size, number));
         let config = self.state.config_path_on_disk();
         let cache = config
             .parent()
@@ -226,6 +233,7 @@ impl App {
             init,
             shown,
             cache,
+            number,
         })));
     }
 
@@ -274,7 +282,7 @@ impl App {
         let fences: Vec<FenceId> = self.light.running.keys().copied().collect();
         for fence in fences {
             let (shown, size) = self.light_shown(fence);
-            let Some((_, was_shown, was_size)) = self.light.running.get_mut(&fence) else {
+            let Some((_, was_shown, was_size, _)) = self.light.running.get_mut(&fence) else {
                 continue;
             };
             let resized = shown && (size.0 - was_size.0).abs() + (size.1 - was_size.1).abs() >= 1.0;
@@ -436,19 +444,23 @@ impl App {
         };
         let mut hosts = Vec::new();
         for output in outputs {
+            let (host::Output::Show(fence, number, _)
+            | host::Output::Post(fence, number, _)
+            | host::Output::Stopped(fence, number, _)) = output;
+            if self.light.running.get(&fence).map(|r| r.3) != Some(number) {
+                tracing::debug!(%fence, number, "plugin output of an earlier start dropped");
+                continue;
+            }
             match output {
-                host::Output::Show(fence, view) => {
-                    if !self.light.running.contains_key(&fence) {
-                        continue;
-                    }
+                host::Output::Show(fence, _, view) => {
                     let shown = self.plugin_rows(fence, view);
                     if let Some((rows, ..)) = self.light.running.get_mut(&fence) {
                         *rows = Some(shown);
                     }
                     hosts.push(self.state.host_of(fence));
                 }
-                host::Output::Post(fence, data) => self.web_event(fence, "message", data),
-                host::Output::Stopped(fence, why) => {
+                host::Output::Post(fence, _, data) => self.web_event(fence, "message", data),
+                host::Output::Stopped(fence, _, why) => {
                     use pecofence_core::i18n;
                     let why = match why {
                         host::Stopped::TooLong => i18n::text("一次运行超过了 50 毫秒").to_string(),

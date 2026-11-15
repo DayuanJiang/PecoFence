@@ -75,6 +75,9 @@ pub struct Start {
     /// Where the fence's last view is kept (`plugins-host\<fence>.view.json`): shown at start
     /// until the plugin's first `pf.show`.
     pub cache: Option<PathBuf>,
+    /// The app's number of this start: every [`Output`] of the runtime carries it, so what an
+    /// earlier runtime of the fence sent late (before an update) is told apart.
+    pub number: u32,
 }
 
 pub enum Command {
@@ -99,12 +102,13 @@ pub enum Stopped {
     Error(String),
 }
 
+/// What a plugin's runtime sends, with its fence and its [`Start::number`].
 #[derive(Debug, PartialEq)]
 pub enum Output {
-    Show(FenceId, View),
-    Stopped(FenceId, Stopped),
+    Show(FenceId, u32, View),
+    Stopped(FenceId, u32, Stopped),
     /// `pf.post(data)`: for the page of the web plugin whose main.js this is.
-    Post(FenceId, serde_json::Value),
+    Post(FenceId, u32, serde_json::Value),
 }
 
 /// What reaches the plugin thread: the app's commands and the answers of the worker threads.
@@ -170,6 +174,7 @@ struct Shared {
 
 struct Plugin {
     fence: FenceId,
+    number: u32,
     // The context is dropped before its runtime.
     ctx: Context,
     rt: Runtime,
@@ -225,6 +230,7 @@ impl Plugin {
         let p = &s.permissions;
         let mut plugin = Plugin {
             fence: s.fence,
+            number: s.number,
             ctx,
             rt,
             deadline,
@@ -577,7 +583,7 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
             None => inbox.recv().map_err(|_| RecvTimeoutError::Disconnected),
         };
         let at = |fence: FenceId, plugins: &[Plugin]| plugins.iter().position(|p| p.fence == fence);
-        let mut failed: Vec<(FenceId, Stopped)> = Vec::new();
+        let mut failed: Vec<(FenceId, u32, Stopped)> = Vec::new();
         match msg {
             Err(RecvTimeoutError::Timeout) => {}
             Ok(Msg::Cmd(Command::Quit)) | Err(RecvTimeoutError::Disconnected) => {
@@ -589,11 +595,11 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                 if let Some(i) = at(fence, &plugins)
                     && let Err(why) = plugins[i].done(number, result)
                 {
-                    failed.push((fence, why));
+                    failed.push((fence, plugins[i].number, why));
                 }
             }
             Ok(Msg::Cmd(Command::Start(s))) => {
-                let fence = s.fence;
+                let (fence, number) = (s.fence, s.number);
                 if let Some(i) = at(fence, &plugins) {
                     plugins.remove(i).stop();
                 }
@@ -605,11 +611,11 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                         let cached = cached.then(|| p.cache.as_deref().and_then(cached_view));
                         tracing::info!(%fence, ms = begun.elapsed().as_millis(), used, cached = matches!(cached, Some(Some(_))), "plugin started");
                         if let Some(Some(view)) = cached {
-                            out(Output::Show(fence, view));
+                            out(Output::Show(fence, number, view));
                         }
                         plugins.push(p);
                     }
-                    Err(why) => failed.push((fence, why)),
+                    Err(why) => failed.push((fence, number, why)),
                 }
             }
             Ok(Msg::Cmd(Command::Stop(fence))) => {
@@ -622,7 +628,7 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                 if let Some(i) = at(fence, &plugins)
                     && let Err(why) = plugins[i].set_shown(shown)
                 {
-                    failed.push((fence, why));
+                    failed.push((fence, plugins[i].number, why));
                 }
             }
             Ok(Msg::Cmd(Command::Event(fence, name, data))) => {
@@ -644,7 +650,7 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                     let result = if told { p.emit(name, data) } else { Ok(()) };
                     p.click.set(false);
                     if let Err(why) = result {
-                        failed.push((fence, why));
+                        failed.push((fence, p.number, why));
                     }
                 }
             }
@@ -652,23 +658,23 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
         let now = Instant::now();
         for p in &mut plugins {
             if let Err(why) = p.tick(now) {
-                failed.push((p.fence, why));
+                failed.push((p.fence, p.number, why));
             }
         }
-        for (fence, why) in failed {
-            tracing::warn!(%fence, ?why, "plugin stopped by PecoFence");
+        for (fence, number, why) in failed {
+            tracing::warn!(%fence, number, ?why, "plugin stopped by PecoFence");
             if let Some(i) = at(fence, &plugins) {
                 plugins.remove(i).save_view(true);
             }
-            out(Output::Stopped(fence, why));
+            out(Output::Stopped(fence, number, why));
         }
         for p in &mut plugins {
             if let Some(view) = p.view_to_send(now) {
-                out(Output::Show(p.fence, view));
+                out(Output::Show(p.fence, p.number, view));
             }
             let posts = std::mem::take(&mut p.shared.borrow_mut().posts);
             for data in posts {
-                out(Output::Post(p.fence, data));
+                out(Output::Post(p.fence, p.number, data));
             }
         }
     }
@@ -744,6 +750,7 @@ mod tests {
             }),
             shown,
             cache: None,
+            number: 7,
         };
         tx.send(Command::Start(Box::new(start))).unwrap();
         for cmd in then {
@@ -763,7 +770,7 @@ mod tests {
 
     fn texts(out: &[Output]) -> Vec<String> {
         let rows = out.iter().filter_map(|o| match o {
-            Output::Show(_, v) => Some(
+            Output::Show(_, _, v) => Some(
                 v.rows
                     .iter()
                     .map(|r| r.text.clone())
@@ -777,13 +784,25 @@ mod tests {
 
     fn stop_of(out: &[Output]) -> Option<Stopped> {
         out.iter().find_map(|o| match o {
-            Output::Stopped(_, why) => Some(why.clone()),
+            Output::Stopped(_, _, why) => Some(why.clone()),
             _ => None,
         })
     }
 
     fn event(name: &'static str) -> Command {
         Command::Event(FenceId::new_v4(), name, json!({ "id": "a" }))
+    }
+
+    #[test]
+    fn every_output_carries_the_number_of_its_start() {
+        let code = "pf.show({ rows: [{ text: 'a' }] }); pf.post(1); pf.on('click', () => { for (;;) {} });";
+        let out = outputs(code, true, 30, vec![event("click")]);
+        let numbers: Vec<u32> = (out.iter())
+            .map(|o| match o {
+                Output::Show(_, n, _) | Output::Post(_, n, _) | Output::Stopped(_, n, _) => *n,
+            })
+            .collect();
+        assert_eq!(numbers, [7, 7, 7], "{out:?}");
     }
 
     #[test]
@@ -800,7 +819,7 @@ mod tests {
         let out = outputs(code, true, 30, vec![message]);
         let posts: Vec<_> = (out.iter())
             .filter_map(|o| match o {
-                Output::Post(_, data) => Some(data.clone()),
+                Output::Post(_, _, data) => Some(data.clone()),
                 _ => None,
             })
             .collect();
