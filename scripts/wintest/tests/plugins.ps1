@@ -109,7 +109,7 @@ PfStart -Lang en
 $script:Config = Split-Path (PfJson status).configPath
 $ok = ToolsPage
 Check 'the feed runs, the settings page is reachable' ($script:FeedProc -and -not $script:FeedProc.HasExited -and $ok) "config=$script:Config"
-Check 'the tools page lists both plugins with 安装' ((PluginRows) -match '^PF Test.*Install / PF Bad.*Install$') (PluginRows)
+Check 'the tools page lists both plugins with 安装' (@((PluginRows) -split ' / ' | Where-Object { $_ -match '^PF (Test|Bad) .*Install' }).Count -eq 2) (PluginRows)
 
 Case '设置 › 小工具: the 小工具 switch, the own script, the plugin list and the switch for Windows functions'
 $p = Js "(() => ({ rows: [...document.querySelectorAll('#page-tools .card.child:not(.pl-row) .t')].map(t => t.textContent), binds: [...document.querySelectorAll('#page-tools .toggle')].map(t => t.dataset.bind), head: document.getElementById('plugins').textContent }))()"
@@ -125,7 +125,7 @@ Shot 'plugin-fence-v1'
 Check 'installed into plugins\pf-test\1.0.0, one fence titled after the plugin' ((Installed) -eq '1.0.0' -and $f.Count -eq 1 -and $f[0].title -eq 'PF Test' -and $line) "fences=$($f.Count) $line"
 Start-Sleep -Seconds 3; $f = @(PluginFences pf-test)
 Check 'the fence runs main.js' ($f[0].script.output -match 'pf-test 1\.0\.0') "output=$($f[0].script.output)"
-Check 'the row now offers nothing to install' ((PluginRows) -match '^PF Test.*On the desktop') (PluginRows)
+Check 'the row now offers nothing to install' (@((PluginRows) -split ' / ' | Where-Object { $_ -match '^PF Test .*On the desktop' }).Count -eq 1) (PluginRows)
 
 Case 'a file whose SHA-256 is not the index''s is refused'
 $d = InstallVia 'PF Bad'

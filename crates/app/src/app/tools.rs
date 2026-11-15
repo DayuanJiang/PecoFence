@@ -1398,6 +1398,10 @@ impl App {
             self.schedule_save();
         }
         self.push_note(fence);
+        // 设置 › 小工具's uninstall question names the notes with text: it gets the new count.
+        if self.settings.is_some() {
+            self.push_settings_state();
+        }
         // The window draws the stored note again, which has the editor's text by now.
         if let Some(w) = self.window_for(fence) {
             w.set_note_edit(None);

@@ -1042,7 +1042,12 @@ impl App {
                 }
             }
             ("pluginAdd", Some(id)) if self.plugin(id).is_some() => self.add_plugin_fence(id),
-            ("pluginUninstall", Some(id)) => self.uninstall_plugin(id, v["confirmed"] == true),
+            ("pluginUninstall", Some(id)) => {
+                // The page's dialog asked, unless it named fewer notes than there are now.
+                let shown = v["notes"].as_u64().unwrap_or(0) as usize;
+                let asked = v["confirmed"] == true && shown >= self.plugin_notes(id);
+                self.uninstall_plugin(id, asked)
+            }
             ("pluginSetting", _) => self.set_plugin_setting(v),
             ("pluginPage", Some(id)) => {
                 if let Some(index) = &self.plugins.index {

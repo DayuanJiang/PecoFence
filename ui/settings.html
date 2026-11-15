@@ -2008,7 +2008,7 @@
   function plClose(install) {
     document.getElementById('plBack').hidden = true;
     if (install && plAsk) send({ type: 'action', name: 'pluginInstall', id: plAsk.id, shown: plAsk.shown });
-    if (install && plDrop) send({ type: 'action', name: 'pluginUninstall', id: plDrop.id, confirmed: true });
+    if (install && plDrop) send({ type: 'action', name: 'pluginUninstall', id: plDrop.id, confirmed: true, notes: plDrop.notes || 0 });
     plAsk = null; plDrop = null;
   }
   document.getElementById('plCancel').onclick = () => plClose(false);
