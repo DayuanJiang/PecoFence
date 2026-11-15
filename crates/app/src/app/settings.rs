@@ -269,8 +269,8 @@ impl App {
         self.sync_windows_desktop_hotkey();
         self.apply_icon_variant();
         self.refresh_visuals(true);
-        self.plugins_after_replace();
         self.migrate_tools(true);
+        self.plugins_after_replace();
         // Written before the page lists the backups: the first save of a day adds one.
         self.state.save_and_wait("import");
         self.push_settings_state();

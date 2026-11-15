@@ -75,19 +75,20 @@ impl App {
     /// After a snapshot restore. 升级为插件之前 is the way back to the tools as they were: its
     /// fences stay as they are until the configuration comes in again (the next start).
     pub(super) fn migrate_after_restore(&mut self, snapshot: uuid::Uuid) {
-        self.plugins_after_replace();
         if snapshot == BEFORE_PLUGINS {
             tracing::info!(
                 "upgrade to plugins: 升级为插件之前 restored, its fences stay as they are"
             );
-            return;
+        } else {
+            self.migrate_tools(true);
         }
-        self.migrate_tools(true);
+        self.plugins_after_replace();
     }
 
     /// A configuration came in (import, backup, snapshot) while plugins ran: each running
     /// plugin gets its fence's settings as they are now, and one whose fence names another
-    /// plugin now (or none) stops, and the fence starts what it names.
+    /// plugin now (or none) stops, and the fence starts what it names. The script fences it
+    /// brought run now (not at the next minute).
     pub(super) fn plugins_after_replace(&mut self) {
         let light: Vec<FenceId> = self.light.running.keys().copied().collect();
         let mut running: Vec<(FenceId, String)> = (light.into_iter())
@@ -119,6 +120,7 @@ impl App {
             tracing::info!(%fence, plugin = runs, "configuration came in: the plugin gets its fence's settings");
             self.plugin_event(fence, "settings", settings);
         }
+        self.run_due_scripts();
     }
 
     /// 升级为插件之前, saved before the first fence moves. False when the list is full of
