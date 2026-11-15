@@ -237,18 +237,26 @@ impl AppHost {
                     .ok_or_else(|| "the clipboard is busy".into())
             }
             _ => {
-                // Only files of the plugin's data folder and of the folders the user picked.
-                let mut roots = self.picked(fence)?;
-                roots.push(self.data_dir(fence)?);
                 let paths: Vec<PathBuf> = (args[0].as_array().into_iter().flatten())
-                    .map(|p| {
-                        let p = p.as_str().unwrap_or_default();
-                        inside(p, &roots).map(|_| PathBuf::from(p))
-                    })
-                    .collect::<Result<_, String>>()
-                    .inspect_err(|why| {
-                        tracing::info!(%fence, why, "plugin clipboard.setFiles refused");
-                    })?;
+                    .filter_map(Value::as_str)
+                    .map(PathBuf::from)
+                    .collect();
+                // A plugin that only writes the clipboard never read a file list from it: it may
+                // only put files of its data folder and of the folders the user picked. (One
+                // that reads it, a clipboard history, puts back what was copied.)
+                let reads = self
+                    .manifest(fence)
+                    .is_some_and(|m| m.permissions.clipboard.reads());
+                if !reads {
+                    let mut roots = self.picked(fence)?;
+                    roots.push(self.data_dir(fence)?);
+                    for p in &paths {
+                        inside(&p.to_string_lossy(), &roots).map_err(|why| {
+                            tracing::info!(%fence, why, "plugin clipboard.setFiles refused");
+                            format!("clipboard.setFiles: {why}")
+                        })?;
+                    }
+                }
                 // The shell's data object lives on the UI thread, as Explorer's copy does.
                 self.on_ui(move |_| {
                     let paths: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
