@@ -159,7 +159,10 @@ impl App {
         tracing::info!(%fence, id, version = m.version, shown, ?size, background = p.background, "plugin fence starts its main.js");
         self.light.stopped.remove(&fence);
         self.light.running.insert(fence, (None, shown, size));
-        let dark = self.theme_mode == ThemeMode::Dark;
+        // What the fence draws, as a web plugin's page has it (`draws_light_text`).
+        let dark = (self.window_for(fence)).map_or(self.theme_mode == ThemeMode::Dark, |w| {
+            w.draws_light_text(self.theme_mode)
+        });
         let config = self.state.config_path_on_disk();
         let cache = config
             .parent()
@@ -253,7 +256,6 @@ impl App {
 
     /// A web plugin page's `pf.<name>(args)`: the same check against the installed manifest
     /// and the same work as a light plugin's call; `reply` gets the answer on this thread.
-    #[allow(dead_code)] // The web layer's page bridge calls it.
     pub(super) fn plugin_api(
         &mut self,
         fence: FenceId,
@@ -391,6 +393,7 @@ impl App {
                     }
                     hosts.push(self.state.host_of(fence));
                 }
+                host::Output::Post(fence, data) => self.web_event(fence, "message", data),
                 host::Output::Stopped(fence, why) => {
                     use pecofence_core::i18n;
                     let why = match why {
@@ -465,6 +468,8 @@ impl App {
         if pecofence_platform::clipboard::is_private() {
             return tracing::info!("clipboard changed, marked private: plugins are not told");
         }
+        // The pages of web plugins that may read it.
+        self.web_events("clipboard", Value::Null);
         let Some(api) = self.light.host.clone() else {
             return;
         };
@@ -578,6 +583,7 @@ impl App {
         tracing::info!(%fence, key = setting.key, on, "plugin fence setting changed");
         self.state.mark_dirty();
         self.schedule_save();
+        self.web_event(fence, "settings", settings.clone());
         self.light_send(host::Command::Event(fence, "settings", settings));
     }
 }

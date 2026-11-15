@@ -2923,6 +2923,13 @@ impl FenceWindow {
         picked.unwrap_or(Theme::for_mode(mode).text_primary)
     }
 
+    /// Whether the content is drawn in light text now (on a dark plate or a dark wallpaper):
+    /// the `pf.theme` of a plugin in this fence is `dark` then.
+    pub fn draws_light_text(&self, mode: pecofence_render::ThemeMode) -> bool {
+        let picked = self.view.borrow().as_ref().map(|v| v.material_foreground());
+        picked.unwrap_or(Theme::for_mode(mode)).text_primary.r > 0.5
+    }
+
     /// The title of `fence` as it is drawn, for its name box (`rename::begin_inline_rename`):
     /// where its text starts, its row's height, its size and its font. A lone title (centred
     /// or right-aligned: with the room it is aligned in, which its box takes) or a tab in the

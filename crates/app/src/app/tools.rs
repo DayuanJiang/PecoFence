@@ -181,7 +181,7 @@ impl App {
     pub(super) fn script_dto(&self, id: FenceId) -> Option<pecofence_ipc::ScriptDto> {
         let spec = self.state.config.scripts.get(&id)?;
         // A light plugin: the texts of its rows, or why it stopped.
-        if let Some(view) = self.light_view(id) {
+        if let Some(view) = self.web_stopped_view(id).or_else(|| self.light_view(id)) {
             let text: Vec<&str> = view.rows.iter().map(|r| r.text.as_str()).collect();
             return Some(pecofence_ipc::ScriptDto {
                 path: spec.path.clone(),
@@ -259,6 +259,7 @@ impl App {
     /// Every clock shows the new time now; it waited for its next tick, up to a minute.
     pub(super) fn refresh_clocks(&self, why: &'static str) {
         self.light_time_changed();
+        self.web_events("timechange", serde_json::Value::Null);
         let drawn = self.fences.values().filter(|w| w.clock_changed()).count();
         if drawn > 0 {
             tracing::debug!(clocks = drawn, why, "clocks drawn again");
@@ -305,18 +306,7 @@ impl App {
             .then(|| self.web_plugin_of(shown))
             .flatten();
         match web {
-            Some(plugin) => {
-                if w.web_plugin().as_deref() != Some(&plugin.id) {
-                    // 正在运行… until the page is there.
-                    w.set_script(Some(ScriptView {
-                        rows: Vec::new(),
-                        footer: String::new(),
-                        footer_short: String::new(),
-                        quiet: true,
-                    }));
-                    self.queue.push(Command::StartWebFence(host));
-                }
-            }
+            Some(plugin) => self.push_web_view(w, host, shown, &plugin.id),
             None => {
                 w.set_web(None);
                 w.set_script((tool == Some(FenceTool::Script)).then(|| self.script_view(shown)));

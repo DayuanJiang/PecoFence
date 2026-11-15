@@ -187,36 +187,9 @@ impl App {
             id: id.to_string(),
             dir,
             network: m.permissions.network,
+            background: m.permissions.background,
+            clipboard_read: m.permissions.clipboard >= list::Clipboard::Read,
         })
-    }
-
-    /// `Command::StartWebFence`: the page of the web plugin the window of `host` shows.
-    pub(super) fn start_web_fence(&mut self, host: pecofence_core::FenceId) {
-        let Some(shown) = self.fences.get(&host).map(|w| w.active_fence()) else {
-            return;
-        };
-        let Some(plugin) = self.web_plugin_of(shown) else {
-            return;
-        };
-        if self
-            .fences
-            .get(&host)
-            .and_then(|w| w.web_plugin())
-            .as_deref()
-            == Some(&plugin.id)
-        {
-            return;
-        }
-        // Made once, as for the settings window (it pumps messages until the browser is there).
-        if !self.ensure_web_env() {
-            return;
-        }
-        let (Some(w), Some(env)) = (self.fences.get(&host), self.web_env.as_ref()) else {
-            return;
-        };
-        let web =
-            crate::web_plugin::WebFence::start(&env.env, &self.ctx.stack, w.hwnd(), shown, plugin);
-        w.set_web(Some(web));
     }
 
     /// The installed plugin's `plugin.json` (it stays while the plugin is taken down).
@@ -555,6 +528,7 @@ impl App {
                 tracing::warn!(id, dir = %dir.display(), error = %e, "plugins: folder not removed");
             }
         }
+        crate::web_plugin::delete_profile(id);
     }
 
     /// 插件详情 in a plugin fence's menu: the plugin's row on the settings page.

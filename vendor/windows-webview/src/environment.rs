@@ -5,6 +5,11 @@ use super::*;
 pub struct Environment(pub(crate) ICoreWebView2Environment);
 
 impl Environment {
+    /// The version of the WebView2 runtime this environment runs, as `147.0.3179.66`.
+    pub fn browser_version(&self) -> String {
+        unsafe { string::take_result(self.0.BrowserVersionString()) }
+    }
+
     /// Creates the default WebView2 environment, pumping the UI thread until it is ready.
     ///
     /// The calling thread is initialized as a COM STA if needed.

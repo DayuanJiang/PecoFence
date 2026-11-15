@@ -2269,9 +2269,12 @@ impl FenceViewState {
 
     pub(super) fn redraw_content(&mut self) -> Result<()> {
         self.sync_idle_fade(Instant::now());
-        self.content_look
-            .set(Some(self.material_foreground().label_look()));
-        if self.web.is_some() {
+        let picked = self.material_foreground();
+        self.content_look.set(Some(picked.label_look()));
+        if let Some(web) = &self.web {
+            // The page's theme is what the fence draws (the content is drawn again when that
+            // changes): light text means a dark page.
+            web.set_theme(picked.text_primary.r > 0.5);
             return self.redraw_web();
         }
         if self.note.is_some() {

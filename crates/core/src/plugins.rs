@@ -63,7 +63,7 @@ pub struct Permissions {
     pub clipboard: Clipboard,
     pub files: Files,
     pub run: bool,
-    /// Keeps running while the fence is hidden.
+    /// Keeps running while its fence is hidden (a web plugin's page is not suspended).
     pub background: bool,
     /// Programs `pf.run` may start.
     pub system: Vec<String>,

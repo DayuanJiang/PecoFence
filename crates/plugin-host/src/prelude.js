@@ -25,6 +25,8 @@
     fence: JSON.parse(n.fence),
     on(name, fn) { (handlers[name] = handlers[name] || []).push(fn); },
     show(view) { n.show(JSON.stringify(view)); },
+    // A web plugin's main.js: data for its page (the page gets a `message` event).
+    post(data) { n.post(JSON.stringify(data === undefined ? null : data)); },
     every: (seconds, fn, options) => timer(seconds, fn, options && options.align, false),
     after: (seconds, fn) => timer(seconds, fn, "", true),
     cancel(id) { if (timers.delete(id)) n.cancel(id); },

@@ -1075,5 +1075,12 @@
   "选择插件可以读取的文件夹": "Ordner wählen, den das Plugin lesen darf",
   "一次运行超过了 50 毫秒": "ein Durchlauf dauerte länger als 50 ms",
   "用的内存超过了 8 MB": "es hat mehr als 8 MB Speicher belegt",
-  "升级为插件之前": "Vor dem Wechsel zu Plugins"
+  "升级为插件之前": "Vor dem Wechsel zu Plugins",
+  "需要 WebView2 才能显示这个插件。": "Dieses Plugin braucht WebView2, um angezeigt zu werden.",
+  "下载 WebView2": "WebView2 herunterladen",
+  "重新加载": "Neu laden",
+  "插件的网页一小时里停了三次，最后一次是因为{0}。": "Die Seite des Plugins ist innerhalb einer Stunde dreimal stehen geblieben, zuletzt weil {0}.",
+  "WebView2 的浏览器进程退出了": "der Browserprozess von WebView2 beendet wurde",
+  "网页的进程退出了": "der Prozess der Seite beendet wurde",
+  "网页没有响应": "die Seite nicht mehr reagierte"
 }

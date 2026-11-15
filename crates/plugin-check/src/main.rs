@@ -391,6 +391,8 @@ fn check(a: Args) -> Result<bool, String> {
             }
             Output::Stopped(_, Stopped::TooMuchMemory) => stops.push("it used over 8 MB".into()),
             Output::Stopped(_, Stopped::Error(e)) => stops.push(format!("an error: {e}")),
+            // A web plugin's main.js posting to its page: nothing to check here.
+            Output::Post(..) => {}
         }
     }
     let log = fake.log();

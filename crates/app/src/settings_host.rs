@@ -49,20 +49,26 @@ pub struct WebEnvironment {
     pub(crate) env: Environment,
 }
 
+/// WebView2's user data folder of this instance (the web plugins' profiles are in it too).
+pub fn user_data_folder() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("PecoFence")
+        // Keep independent instances from sharing incompatible controller options.
+        .join("WebView2Profiles")
+        .join(profile_name(
+            pecofence_core::brand::var("PECOFENCE_INSTANCE")
+                .ok()
+                .as_deref(),
+        ))
+}
+
 impl WebEnvironment {
     pub fn create() -> Result<Self> {
-        let user_data = std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir)
-            .join("PecoFence")
-            // Keep independent instances from sharing incompatible controller options.
-            .join("WebView2Profiles")
-            .join(profile_name(
-                pecofence_core::brand::var("PECOFENCE_INSTANCE")
-                    .ok()
-                    .as_deref(),
-            ));
+        let user_data = user_data_folder();
         let _ = std::fs::create_dir_all(&user_data);
+        crate::web_plugin::delete_left_profiles(&user_data);
         // The web plugins' pages share this environment: no WebRTC (it would reach hosts the
         // page's CSP does not list).
         let mut args = String::from("--force-webrtc-ip-handling-policy=disable_non_proxied_udp");

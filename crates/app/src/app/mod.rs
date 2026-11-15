@@ -99,6 +99,7 @@ mod vdesktops;
 mod view;
 mod visuals;
 mod wallpaper_refresh;
+mod web;
 mod welcome;
 mod windows_desktop;
 
@@ -532,6 +533,7 @@ pub struct App {
     script_runs: tools::ScriptRuns,
     plugins: plugins::Plugins,
     light: light::Light,
+    web_pages: web::Web,
     /// `--light` / `--dark`: pin the theme this run.
     theme_override: Option<ThemeMode>,
     peek_class: WindowClass,
@@ -2129,6 +2131,7 @@ impl App {
             script_runs: tools::ScriptRuns::default(),
             plugins: plugins::Plugins::default(),
             light: light::Light::default(),
+            web_pages: web::Web::default(),
             theme_override: if args.light {
                 Some(ThemeMode::Light)
             } else if args.dark {
@@ -3180,6 +3183,13 @@ impl App {
             }
             Command::NewScript { x, y } => self.new_script_near(x, y, None),
             Command::StartWebFence(host) => self.start_web_fence(host),
+            Command::WebCall {
+                page,
+                id,
+                call,
+                args,
+            } => self.web_call(page, id, call, args),
+            Command::WebPageFailed { page, failure } => self.web_page_failed(page, failure),
             Command::EditNote { fence, caret } => self.edit_note(fence, caret),
             Command::NoteEditState {
                 fence,
@@ -3224,7 +3234,11 @@ impl App {
                 fraction,
                 dragging,
                 double,
-            } => self.script_row_clicked(fence, row, cell, fraction, dragging, double),
+            } => {
+                if !self.web_row_clicked(fence, row, cell) {
+                    self.script_row_clicked(fence, row, cell, fraction, dragging, double)
+                }
+            }
             Command::EmptyActionClicked { fence } => self.smart_everything_clicked(fence),
             Command::EndNoteEdit => crate::note_edit::end_active(true),
             Command::NoteEdited { fence, text } => self.note_edited(fence, &text),
