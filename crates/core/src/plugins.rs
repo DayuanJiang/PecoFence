@@ -39,6 +39,8 @@ pub const MAX_INDEX: usize = 1024 * 1024;
 pub enum Clipboard {
     #[default]
     None,
+    /// Only puts things on the clipboard.
+    Write,
     Read,
     Readwrite,
 }
@@ -56,9 +58,17 @@ pub enum Files {
 #[serde(default)]
 pub struct Permissions {
     pub network: Vec<String>,
+    /// More hosts `pf.open` may open in the browser.
+    pub links: Vec<String>,
     pub clipboard: Clipboard,
     pub files: Files,
     pub run: bool,
+    /// Keeps running while the fence is hidden.
+    pub background: bool,
+    /// Programs `pf.run` may start.
+    pub system: Vec<String>,
+    pub folders: bool,
+    pub notify: bool,
 }
 
 /// A plugin's `plugin.json`, and the same fields in its index entry.

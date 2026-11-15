@@ -912,6 +912,12 @@ impl App {
         use pecofence_core::script_output::{
             RowAction, ScriptLine, TargetKind, click_allowed, parse,
         };
+        // A light plugin's row: its plugin gets the click (a stopped one starts again).
+        if self.light_runs(fence) && !dragging {
+            let name = if double { "dblclick" } else { "click" };
+            let data = serde_json::json!({ "id": null, "row": index, "cell": cell });
+            return self.plugin_event(fence, name, data);
+        }
         let Some((Outcome::Done(text), at)) = self.script_runs.last.get(&fence).cloned() else {
             return;
         };

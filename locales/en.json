@@ -1068,7 +1068,11 @@
   "下载没有完成，检查网络后再试一次。": "The download didn't finish. Check the network and try again.",
   "下载的文件和审查过的不一样，已经放弃安装。": "The downloaded files differ from the reviewed ones, so nothing was installed.",
   "卸载“{0}”？它的栅栏和它保存的数据都会删掉。": "Uninstall “{0}”? Its fences and the data it saved are deleted.",
-  "插件停止了：{0}。右键这个栅栏，选“立即运行”重新启动。": "The plugin stopped: {0}. Right-click this fence and choose “Run now” to start it again.",
+  "插件停止了：{0}。5 秒后自动重新启动。": "The plugin stopped: {0}. It starts again by itself in 5 seconds.",
+  "插件停止了：{0}。一小时里停了三次，不再自动启动。": "The plugin stopped: {0}. It stopped three times within an hour, so it no longer starts by itself.",
+  "每秒合计运行超过了 200 毫秒": "together it ran longer than 200 ms within one second",
+  "重新启动": "Restart",
+  "选择插件可以读取的文件夹": "Choose a folder the plugin may read",
   "一次运行超过了 50 毫秒": "one run took longer than 50 ms",
   "用的内存超过了 8 MB": "it used more than 8 MB of memory"
 }

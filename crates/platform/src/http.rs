@@ -15,10 +15,14 @@ windows_core::link!("winhttp.dll" "system" fn WinHttpReceiveResponse(request: *m
 windows_core::link!("winhttp.dll" "system" fn WinHttpQueryHeaders(request: *mut c_void, info: u32, name: PCWSTR, buffer: *mut c_void, len: *mut u32, index: *mut u32) -> i32);
 windows_core::link!("winhttp.dll" "system" fn WinHttpReadData(request: *mut c_void, buffer: *mut c_void, to_read: u32, read: *mut u32) -> i32);
 windows_core::link!("winhttp.dll" "system" fn WinHttpCloseHandle(handle: *mut c_void) -> i32);
+windows_core::link!("winhttp.dll" "system" fn WinHttpSetOption(handle: *mut c_void, option: u32, buffer: *const c_void, len: u32) -> i32);
 
 const WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY: u32 = 4;
 const WINHTTP_FLAG_SECURE: u32 = 0x0080_0000;
 const WINHTTP_QUERY_STATUS_CODE: u32 = 19;
+const WINHTTP_QUERY_RAW_HEADERS_CRLF: u32 = 22;
+const WINHTTP_OPTION_REDIRECT_POLICY: u32 = 88;
+const WINHTTP_OPTION_REDIRECT_POLICY_NEVER: u32 = 0;
 const WINHTTP_QUERY_FLAG_NUMBER: u32 = 0x2000_0000;
 /// WinHTTP's timeouts apply per operation; a server trickling bytes still has to finish.
 const TOTAL_TIME: Duration = Duration::from_secs(600);
@@ -80,16 +84,30 @@ fn split_url(url: &str) -> Result<(bool, &str, u16, &str), String> {
 /// GETs `url` (following redirects) and returns the body of a 200 response, at most `limit`
 /// bytes. `headers` are extra request lines such as `Accept: …`, separated by `\r\n`.
 pub fn get(url: &str, user_agent: &str, headers: &str, limit: usize) -> Result<Vec<u8>, String> {
-    match request("GET", url, user_agent, headers, &[], limit)? {
-        (200, body) => Ok(body),
-        (status, _) => Err(format!("HTTP {status} from {url}")),
+    match request("GET", url, user_agent, headers, &[], limit, false)? {
+        (200, _, body) => Ok(body),
+        (status, ..) => Err(format!("HTTP {status} from {url}")),
     }
+}
+
+/// A plugin's request (`pf.http`): sends `verb` and returns the status, the response's header
+/// lines and its body (whatever the status, at most `limit` bytes). A redirect is returned as
+/// it is: the plugin host checks its target before it follows it.
+pub fn fetch(
+    verb: &str,
+    url: &str,
+    user_agent: &str,
+    headers: &str,
+    body: &[u8],
+    limit: usize,
+) -> Result<(u32, String, Vec<u8>), String> {
+    request(verb, url, user_agent, headers, body, limit, true)
 }
 
 /// POSTs `body` to `url` and returns the HTTP status of the answer. `headers` as for [`get`].
 /// An error is a request that got no answer.
 pub fn post(url: &str, user_agent: &str, headers: &str, body: &[u8]) -> Result<u32, String> {
-    request("POST", url, user_agent, headers, body, 64 * 1024).map(|(status, _)| status)
+    request("POST", url, user_agent, headers, body, 64 * 1024, false).map(|(status, ..)| status)
 }
 
 /// The SHA-256 of `data` in lowercase hex, for a header that carries the hash of a body.
@@ -111,7 +129,8 @@ pub fn sha256_hex(data: &[u8]) -> String {
 }
 
 /// Sends `verb` for `url` with `body`; returns the status and, for a 200, the response's body
-/// (at most `limit` bytes).
+/// (at most `limit` bytes). `plugin`: no redirect is followed, the header lines come back and
+/// so does the body of any status.
 fn request(
     verb: &str,
     url: &str,
@@ -119,7 +138,8 @@ fn request(
     headers: &str,
     body: &[u8],
     limit: usize,
-) -> Result<(u32, Vec<u8>), String> {
+    plugin: bool,
+) -> Result<(u32, String, Vec<u8>), String> {
     let started = Instant::now();
     let (secure, host, port, path) = split_url(url)?;
     let (agent, host, path) = (to_wide(user_agent), to_wide(host), to_wide(path));
@@ -163,6 +183,18 @@ fn request(
             ),
             "WinHttpOpenRequest",
         )?;
+        if plugin {
+            let never = WINHTTP_OPTION_REDIRECT_POLICY_NEVER;
+            check(
+                WinHttpSetOption(
+                    request.0,
+                    WINHTTP_OPTION_REDIRECT_POLICY,
+                    (&never as *const u32).cast(),
+                    4,
+                ),
+                "WinHttpSetOption",
+            )?;
+        }
         let extra = to_wide(headers);
         let (extra_ptr, extra_len) = if headers.is_empty() {
             (PCWSTR::null(), 0)
@@ -190,8 +222,20 @@ fn request(
             ),
             "WinHttpQueryHeaders",
         )?;
-        if status != 200 {
-            return Ok((status, Vec::new()));
+        let mut lines = String::new();
+        if plugin {
+            let mut size = 0u32;
+            let raw = WINHTTP_QUERY_RAW_HEADERS_CRLF;
+            let none = core::ptr::null_mut();
+            WinHttpQueryHeaders(request.0, raw, PCWSTR::null(), none, &mut size, none.cast());
+            let mut buf = vec![0u16; size as usize / 2 + 1];
+            let ptr = buf.as_mut_ptr().cast();
+            if WinHttpQueryHeaders(request.0, raw, PCWSTR::null(), ptr, &mut size, none.cast()) != 0
+            {
+                lines = String::from_utf16_lossy(&buf[..size as usize / 2]);
+            }
+        } else if status != 200 {
+            return Ok((status, lines, Vec::new()));
         }
         let mut body = Vec::new();
         let mut chunk = vec![0u8; 64 * 1024];
@@ -207,7 +251,7 @@ fn request(
                 "WinHttpReadData",
             )?;
             if read == 0 {
-                return Ok((status, body));
+                return Ok((status, lines, body));
             }
             body.extend_from_slice(&chunk[..read as usize]);
             if body.len() > limit {

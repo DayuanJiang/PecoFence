@@ -1,4 +1,9 @@
 #[inline]
+pub unsafe fn AddClipboardFormatListener(hwnd: HWND) -> windows_core::BOOL {
+    windows_core::link!("user32.dll" "system" fn AddClipboardFormatListener(hwnd : HWND) -> windows_core::BOOL);
+    unsafe { AddClipboardFormatListener(hwnd) }
+}
+#[inline]
 pub unsafe fn AppendMenuW<P3>(
     hmenu: HMENU,
     uflags: u32,
@@ -884,6 +889,11 @@ pub unsafe fn GetClientRect(hwnd: HWND, lprect: *mut RECT) -> windows_core::BOOL
     unsafe { GetClientRect(hwnd, lprect as _) }
 }
 #[inline]
+pub unsafe fn GetClipboardData(uformat: u32) -> HANDLE {
+    windows_core::link!("user32.dll" "system" fn GetClipboardData(uformat : u32) -> HANDLE);
+    unsafe { GetClipboardData(uformat) }
+}
+#[inline]
 pub unsafe fn GetClipboardSequenceNumber() -> u32 {
     windows_core::link!("user32.dll" "system" fn GetClipboardSequenceNumber() -> u32);
     unsafe { GetClipboardSequenceNumber() }
@@ -1266,6 +1276,13 @@ pub unsafe fn GetSystemMetricsForDpi(nindex: i32, dpi: u32) -> i32 {
     unsafe { GetSystemMetricsForDpi(nindex, dpi) }
 }
 #[inline]
+pub unsafe fn GetSystemPowerStatus(
+    lpsystempowerstatus: *mut SYSTEM_POWER_STATUS,
+) -> windows_core::BOOL {
+    windows_core::link!("kernel32.dll" "system" fn GetSystemPowerStatus(lpsystempowerstatus : *mut SYSTEM_POWER_STATUS) -> windows_core::BOOL);
+    unsafe { GetSystemPowerStatus(lpsystempowerstatus as _) }
+}
+#[inline]
 pub unsafe fn GetSystemTimes(
     lpidletime: Option<*mut FILETIME>,
     lpkerneltime: Option<*mut FILETIME>,
@@ -1476,6 +1493,11 @@ pub unsafe fn InvalidateRect(
             berase.into(),
         )
     }
+}
+#[inline]
+pub unsafe fn IsClipboardFormatAvailable(format: u32) -> windows_core::BOOL {
+    windows_core::link!("user32.dll" "system" fn IsClipboardFormatAvailable(format : u32) -> windows_core::BOOL);
+    unsafe { IsClipboardFormatAvailable(format) }
 }
 #[inline]
 pub unsafe fn IsIconic(hwnd: HWND) -> windows_core::BOOL {
@@ -2075,6 +2097,11 @@ pub unsafe fn ReleaseDC(hwnd: Option<HWND>, hdc: HDC) -> i32 {
 pub unsafe fn ReleaseStgMedium(param0: *const STGMEDIUM) {
     windows_core::link!("ole32.dll" "system" fn ReleaseStgMedium(param0 : *const STGMEDIUM));
     unsafe { ReleaseStgMedium(param0) }
+}
+#[inline]
+pub unsafe fn RemoveClipboardFormatListener(hwnd: HWND) -> windows_core::BOOL {
+    windows_core::link!("user32.dll" "system" fn RemoveClipboardFormatListener(hwnd : HWND) -> windows_core::BOOL);
+    unsafe { RemoveClipboardFormatListener(hwnd) }
 }
 #[inline]
 pub unsafe fn RemoveMenu(hmenu: HMENU, uposition: u32, uflags: u32) -> windows_core::BOOL {
@@ -3253,6 +3280,7 @@ pub struct BLENDFUNCTION {
 pub const CC_ANYCOLOR: i32 = 256;
 pub const CC_FULLOPEN: i32 = 2;
 pub const CC_RGBINIT: i32 = 1;
+pub const CF_DIB: i32 = 8;
 pub const CF_HDROP: i32 = 15;
 pub const CF_UNICODETEXT: i32 = 13;
 #[repr(C, packed(1))]
@@ -4418,6 +4446,8 @@ impl Default for GROUP_AFFINITY {
         unsafe { core::mem::zeroed() }
     }
 }
+pub const GUID_ContainerFormatPng: windows_core::GUID =
+    windows_core::GUID::from_u128(0x1b7cfaf4_713f_473c_bbcd_6137425faeaf);
 pub const GUID_WICPixelFormat32bppBGRA: windows_core::GUID =
     windows_core::GUID::from_u128(0x6fddc324_4e03_4bfe_b185_3d77768dc90f);
 pub const GUID_WICPixelFormat32bppPBGRA: windows_core::GUID =
@@ -11450,6 +11480,22 @@ pub struct IPersistFile_Vtbl {
 }
 impl windows_core::RuntimeName for IPersistFile {}
 windows_core::imp::define_interface!(
+    IPropertyBag2,
+    IPropertyBag2_Vtbl,
+    0x22f55882_280b_11d0_a8a9_00a0c90c2004
+);
+windows_core::imp::interface_hierarchy!(IPropertyBag2, windows_core::IUnknown);
+#[repr(C)]
+pub struct IPropertyBag2_Vtbl {
+    pub base__: windows_core::IUnknown_Vtbl,
+    Read: usize,
+    Write: usize,
+    CountProperties: usize,
+    GetPropertyInfo: usize,
+    LoadObject: usize,
+}
+impl windows_core::RuntimeName for IPropertyBag2 {}
+windows_core::imp::define_interface!(
     IPropertyChangeArray,
     IPropertyChangeArray_Vtbl,
     0x380f5cad_1b5e_42f2_805d_637fd392d31e
@@ -15742,21 +15788,403 @@ windows_core::imp::define_interface!(
     0x00000103_a8f2_4877_ba0a_fd2b6645fb94
 );
 windows_core::imp::interface_hierarchy!(IWICBitmapEncoder, windows_core::IUnknown);
+impl IWICBitmapEncoder {
+    pub(crate) unsafe fn Initialize<P0>(
+        &self,
+        pistream: P0,
+        cacheoption: WICBitmapEncoderCacheOption,
+    ) -> windows_core::HRESULT
+    where
+        P0: windows_core::Param<IStream>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).Initialize)(
+                windows_core::Interface::as_raw(self),
+                pistream.param().abi(),
+                cacheoption,
+            )
+        }
+    }
+    pub(crate) unsafe fn GetContainerFormat(&self) -> windows_core::Result<windows_core::GUID> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetContainerFormat)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .map(|| result__)
+        }
+    }
+    pub(crate) unsafe fn GetEncoderInfo(&self) -> windows_core::Result<IWICBitmapEncoderInfo> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetEncoderInfo)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
+    pub(crate) unsafe fn SetColorContexts(
+        &self,
+        ccount: u32,
+        ppicolorcontext: *const Option<IWICColorContext>,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetColorContexts)(
+                windows_core::Interface::as_raw(self),
+                ccount,
+                core::mem::transmute(ppicolorcontext),
+            )
+        }
+    }
+    pub(crate) unsafe fn SetPalette<P0>(&self, pipalette: P0) -> windows_core::HRESULT
+    where
+        P0: windows_core::Param<IWICPalette>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetPalette)(
+                windows_core::Interface::as_raw(self),
+                pipalette.param().abi(),
+            )
+        }
+    }
+    pub(crate) unsafe fn SetThumbnail<P0>(&self, pithumbnail: P0) -> windows_core::HRESULT
+    where
+        P0: windows_core::Param<IWICBitmapSource>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetThumbnail)(
+                windows_core::Interface::as_raw(self),
+                pithumbnail.param().abi(),
+            )
+        }
+    }
+    pub(crate) unsafe fn SetPreview<P0>(&self, pipreview: P0) -> windows_core::HRESULT
+    where
+        P0: windows_core::Param<IWICBitmapSource>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetPreview)(
+                windows_core::Interface::as_raw(self),
+                pipreview.param().abi(),
+            )
+        }
+    }
+    pub(crate) unsafe fn CreateNewFrame(
+        &self,
+        ppiframeencode: *mut Option<IWICBitmapFrameEncode>,
+        ppiencoderoptions: *mut Option<IPropertyBag2>,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).CreateNewFrame)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute(ppiframeencode),
+                core::mem::transmute(ppiencoderoptions),
+            )
+        }
+    }
+    pub(crate) unsafe fn Commit(&self) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).Commit)(windows_core::Interface::as_raw(self))
+        }
+    }
+    pub(crate) unsafe fn GetMetadataQueryWriter(
+        &self,
+    ) -> windows_core::Result<IWICMetadataQueryWriter> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetMetadataQueryWriter)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
+}
 #[repr(C)]
 pub struct IWICBitmapEncoder_Vtbl {
     pub base__: windows_core::IUnknown_Vtbl,
-    Initialize: usize,
-    GetContainerFormat: usize,
-    GetEncoderInfo: usize,
-    SetColorContexts: usize,
-    SetPalette: usize,
-    SetThumbnail: usize,
-    SetPreview: usize,
-    CreateNewFrame: usize,
-    Commit: usize,
-    GetMetadataQueryWriter: usize,
+    pub Initialize: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+        WICBitmapEncoderCacheOption,
+    ) -> windows_core::HRESULT,
+    pub GetContainerFormat: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut windows_core::GUID,
+    ) -> windows_core::HRESULT,
+    pub GetEncoderInfo: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub SetColorContexts: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        u32,
+        *const *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub SetPalette: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub SetThumbnail: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub SetPreview: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub CreateNewFrame: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub Commit: unsafe extern "system" fn(*mut core::ffi::c_void) -> windows_core::HRESULT,
+    pub GetMetadataQueryWriter: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+pub trait IWICBitmapEncoder_Impl: windows_core::IUnknownImpl {
+    fn Initialize(
+        &self,
+        pistream: windows_core::Ref<IStream>,
+        cacheoption: WICBitmapEncoderCacheOption,
+    ) -> windows_core::Result<()>;
+    fn GetContainerFormat(&self) -> windows_core::Result<windows_core::GUID>;
+    fn GetEncoderInfo(&self) -> windows_core::Result<IWICBitmapEncoderInfo>;
+    fn SetColorContexts(
+        &self,
+        ccount: u32,
+        ppicolorcontext: *const Option<IWICColorContext>,
+    ) -> windows_core::Result<()>;
+    fn SetPalette(&self, pipalette: windows_core::Ref<IWICPalette>) -> windows_core::Result<()>;
+    fn SetThumbnail(
+        &self,
+        pithumbnail: windows_core::Ref<IWICBitmapSource>,
+    ) -> windows_core::Result<()>;
+    fn SetPreview(
+        &self,
+        pipreview: windows_core::Ref<IWICBitmapSource>,
+    ) -> windows_core::Result<()>;
+    fn CreateNewFrame(
+        &self,
+        ppiframeencode: windows_core::OutRef<IWICBitmapFrameEncode>,
+        ppiencoderoptions: windows_core::OutRef<IPropertyBag2>,
+    ) -> windows_core::Result<()>;
+    fn Commit(&self) -> windows_core::Result<()>;
+    fn GetMetadataQueryWriter(&self) -> windows_core::Result<IWICMetadataQueryWriter>;
+}
+impl IWICBitmapEncoder_Vtbl {
+    pub const fn new<Identity: IWICBitmapEncoder_Impl, const OFFSET: isize>() -> Self {
+        unsafe extern "system" fn Initialize<
+            Identity: IWICBitmapEncoder_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            pistream: *mut core::ffi::c_void,
+            cacheoption: WICBitmapEncoderCacheOption,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapEncoder_Impl::Initialize(
+                    this,
+                    core::mem::transmute_copy(&pistream),
+                    core::mem::transmute_copy(&cacheoption),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn GetContainerFormat<
+            Identity: IWICBitmapEncoder_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            pguidcontainerformat: *mut windows_core::GUID,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                match IWICBitmapEncoder_Impl::GetContainerFormat(this) {
+                    Ok(ok__) => {
+                        pguidcontainerformat.write(ok__);
+                        windows_core::HRESULT(0)
+                    }
+                    Err(err) => err.into(),
+                }
+            }
+        }
+        unsafe extern "system" fn GetEncoderInfo<
+            Identity: IWICBitmapEncoder_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            ppiencoderinfo: *mut *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                match IWICBitmapEncoder_Impl::GetEncoderInfo(this) {
+                    Ok(ok__) => {
+                        ppiencoderinfo.write(core::mem::transmute(ok__));
+                        windows_core::HRESULT(0)
+                    }
+                    Err(err) => err.into(),
+                }
+            }
+        }
+        unsafe extern "system" fn SetColorContexts<
+            Identity: IWICBitmapEncoder_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            ccount: u32,
+            ppicolorcontext: *const *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapEncoder_Impl::SetColorContexts(
+                    this,
+                    core::mem::transmute_copy(&ccount),
+                    core::mem::transmute_copy(&ppicolorcontext),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn SetPalette<
+            Identity: IWICBitmapEncoder_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            pipalette: *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapEncoder_Impl::SetPalette(this, core::mem::transmute_copy(&pipalette))
+                    .into()
+            }
+        }
+        unsafe extern "system" fn SetThumbnail<
+            Identity: IWICBitmapEncoder_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            pithumbnail: *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapEncoder_Impl::SetThumbnail(this, core::mem::transmute_copy(&pithumbnail))
+                    .into()
+            }
+        }
+        unsafe extern "system" fn SetPreview<
+            Identity: IWICBitmapEncoder_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            pipreview: *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapEncoder_Impl::SetPreview(this, core::mem::transmute_copy(&pipreview))
+                    .into()
+            }
+        }
+        unsafe extern "system" fn CreateNewFrame<
+            Identity: IWICBitmapEncoder_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            ppiframeencode: *mut *mut core::ffi::c_void,
+            ppiencoderoptions: *mut *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapEncoder_Impl::CreateNewFrame(
+                    this,
+                    core::mem::transmute_copy(&ppiframeencode),
+                    core::mem::transmute_copy(&ppiencoderoptions),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn Commit<Identity: IWICBitmapEncoder_Impl, const OFFSET: isize>(
+            this: *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapEncoder_Impl::Commit(this).into()
+            }
+        }
+        unsafe extern "system" fn GetMetadataQueryWriter<
+            Identity: IWICBitmapEncoder_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            ppimetadataquerywriter: *mut *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                match IWICBitmapEncoder_Impl::GetMetadataQueryWriter(this) {
+                    Ok(ok__) => {
+                        ppimetadataquerywriter.write(core::mem::transmute(ok__));
+                        windows_core::HRESULT(0)
+                    }
+                    Err(err) => err.into(),
+                }
+            }
+        }
+        Self {
+            base__: windows_core::IUnknown_Vtbl::new::<Identity, OFFSET>(),
+            Initialize: Initialize::<Identity, OFFSET>,
+            GetContainerFormat: GetContainerFormat::<Identity, OFFSET>,
+            GetEncoderInfo: GetEncoderInfo::<Identity, OFFSET>,
+            SetColorContexts: SetColorContexts::<Identity, OFFSET>,
+            SetPalette: SetPalette::<Identity, OFFSET>,
+            SetThumbnail: SetThumbnail::<Identity, OFFSET>,
+            SetPreview: SetPreview::<Identity, OFFSET>,
+            CreateNewFrame: CreateNewFrame::<Identity, OFFSET>,
+            Commit: Commit::<Identity, OFFSET>,
+            GetMetadataQueryWriter: GetMetadataQueryWriter::<Identity, OFFSET>,
+        }
+    }
+    pub fn matches(iid: &windows_core::GUID) -> bool {
+        iid == &<IWICBitmapEncoder as windows_core::Interface>::IID
+    }
 }
 impl windows_core::RuntimeName for IWICBitmapEncoder {}
+windows_core::imp::define_interface!(
+    IWICBitmapEncoderInfo,
+    IWICBitmapEncoderInfo_Vtbl,
+    0x94c9b4ee_a09f_4f92_8a1e_4a9bce7e76fb
+);
+impl core::ops::Deref for IWICBitmapEncoderInfo {
+    type Target = IWICBitmapCodecInfo;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+windows_core::imp::interface_hierarchy!(
+    IWICBitmapEncoderInfo,
+    windows_core::IUnknown,
+    IWICComponentInfo,
+    IWICBitmapCodecInfo
+);
+#[repr(C)]
+pub struct IWICBitmapEncoderInfo_Vtbl {
+    pub base__: IWICBitmapCodecInfo_Vtbl,
+    CreateInstance: usize,
+}
+impl windows_core::RuntimeName for IWICBitmapEncoderInfo {}
 windows_core::imp::define_interface!(
     IWICBitmapFlipRotator,
     IWICBitmapFlipRotator_Vtbl,
@@ -15936,6 +16364,435 @@ impl IWICBitmapFrameDecode_Vtbl {
     }
 }
 impl windows_core::RuntimeName for IWICBitmapFrameDecode {}
+windows_core::imp::define_interface!(
+    IWICBitmapFrameEncode,
+    IWICBitmapFrameEncode_Vtbl,
+    0x00000105_a8f2_4877_ba0a_fd2b6645fb94
+);
+windows_core::imp::interface_hierarchy!(IWICBitmapFrameEncode, windows_core::IUnknown);
+impl IWICBitmapFrameEncode {
+    pub(crate) unsafe fn Initialize<P0>(&self, piencoderoptions: P0) -> windows_core::HRESULT
+    where
+        P0: windows_core::Param<IPropertyBag2>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).Initialize)(
+                windows_core::Interface::as_raw(self),
+                piencoderoptions.param().abi(),
+            )
+        }
+    }
+    pub(crate) unsafe fn SetSize(&self, uiwidth: u32, uiheight: u32) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetSize)(
+                windows_core::Interface::as_raw(self),
+                uiwidth,
+                uiheight,
+            )
+        }
+    }
+    pub(crate) unsafe fn SetResolution(&self, dpix: f64, dpiy: f64) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetResolution)(
+                windows_core::Interface::as_raw(self),
+                dpix,
+                dpiy,
+            )
+        }
+    }
+    pub(crate) unsafe fn SetPixelFormat(
+        &self,
+        ppixelformat: *mut WICPixelFormatGUID,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetPixelFormat)(
+                windows_core::Interface::as_raw(self),
+                ppixelformat as _,
+            )
+        }
+    }
+    pub(crate) unsafe fn SetColorContexts(
+        &self,
+        ccount: u32,
+        ppicolorcontext: *const Option<IWICColorContext>,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetColorContexts)(
+                windows_core::Interface::as_raw(self),
+                ccount,
+                core::mem::transmute(ppicolorcontext),
+            )
+        }
+    }
+    pub(crate) unsafe fn SetPalette<P0>(&self, pipalette: P0) -> windows_core::HRESULT
+    where
+        P0: windows_core::Param<IWICPalette>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetPalette)(
+                windows_core::Interface::as_raw(self),
+                pipalette.param().abi(),
+            )
+        }
+    }
+    pub(crate) unsafe fn SetThumbnail<P0>(&self, pithumbnail: P0) -> windows_core::HRESULT
+    where
+        P0: windows_core::Param<IWICBitmapSource>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetThumbnail)(
+                windows_core::Interface::as_raw(self),
+                pithumbnail.param().abi(),
+            )
+        }
+    }
+    pub(crate) unsafe fn WritePixels(
+        &self,
+        linecount: u32,
+        cbstride: u32,
+        cbbuffersize: u32,
+        pbpixels: *const u8,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).WritePixels)(
+                windows_core::Interface::as_raw(self),
+                linecount,
+                cbstride,
+                cbbuffersize,
+                pbpixels,
+            )
+        }
+    }
+    pub(crate) unsafe fn WriteSource<P0>(
+        &self,
+        pibitmapsource: P0,
+        prc: *const WICRect,
+    ) -> windows_core::HRESULT
+    where
+        P0: windows_core::Param<IWICBitmapSource>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).WriteSource)(
+                windows_core::Interface::as_raw(self),
+                pibitmapsource.param().abi(),
+                prc,
+            )
+        }
+    }
+    pub(crate) unsafe fn Commit(&self) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).Commit)(windows_core::Interface::as_raw(self))
+        }
+    }
+    pub(crate) unsafe fn GetMetadataQueryWriter(
+        &self,
+    ) -> windows_core::Result<IWICMetadataQueryWriter> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).GetMetadataQueryWriter)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
+}
+#[repr(C)]
+pub struct IWICBitmapFrameEncode_Vtbl {
+    pub base__: windows_core::IUnknown_Vtbl,
+    pub Initialize: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub SetSize:
+        unsafe extern "system" fn(*mut core::ffi::c_void, u32, u32) -> windows_core::HRESULT,
+    pub SetResolution:
+        unsafe extern "system" fn(*mut core::ffi::c_void, f64, f64) -> windows_core::HRESULT,
+    pub SetPixelFormat: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut WICPixelFormatGUID,
+    ) -> windows_core::HRESULT,
+    pub SetColorContexts: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        u32,
+        *const *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub SetPalette: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub SetThumbnail: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub WritePixels: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        u32,
+        u32,
+        u32,
+        *const u8,
+    ) -> windows_core::HRESULT,
+    pub WriteSource: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+        *const WICRect,
+    ) -> windows_core::HRESULT,
+    pub Commit: unsafe extern "system" fn(*mut core::ffi::c_void) -> windows_core::HRESULT,
+    pub GetMetadataQueryWriter: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+pub trait IWICBitmapFrameEncode_Impl: windows_core::IUnknownImpl {
+    fn Initialize(
+        &self,
+        piencoderoptions: windows_core::Ref<IPropertyBag2>,
+    ) -> windows_core::Result<()>;
+    fn SetSize(&self, uiwidth: u32, uiheight: u32) -> windows_core::Result<()>;
+    fn SetResolution(&self, dpix: f64, dpiy: f64) -> windows_core::Result<()>;
+    fn SetPixelFormat(&self, ppixelformat: *mut WICPixelFormatGUID) -> windows_core::Result<()>;
+    fn SetColorContexts(
+        &self,
+        ccount: u32,
+        ppicolorcontext: *const Option<IWICColorContext>,
+    ) -> windows_core::Result<()>;
+    fn SetPalette(&self, pipalette: windows_core::Ref<IWICPalette>) -> windows_core::Result<()>;
+    fn SetThumbnail(
+        &self,
+        pithumbnail: windows_core::Ref<IWICBitmapSource>,
+    ) -> windows_core::Result<()>;
+    fn WritePixels(
+        &self,
+        linecount: u32,
+        cbstride: u32,
+        cbbuffersize: u32,
+        pbpixels: *const u8,
+    ) -> windows_core::Result<()>;
+    fn WriteSource(
+        &self,
+        pibitmapsource: windows_core::Ref<IWICBitmapSource>,
+        prc: *const WICRect,
+    ) -> windows_core::Result<()>;
+    fn Commit(&self) -> windows_core::Result<()>;
+    fn GetMetadataQueryWriter(&self) -> windows_core::Result<IWICMetadataQueryWriter>;
+}
+impl IWICBitmapFrameEncode_Vtbl {
+    pub const fn new<Identity: IWICBitmapFrameEncode_Impl, const OFFSET: isize>() -> Self {
+        unsafe extern "system" fn Initialize<
+            Identity: IWICBitmapFrameEncode_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            piencoderoptions: *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapFrameEncode_Impl::Initialize(
+                    this,
+                    core::mem::transmute_copy(&piencoderoptions),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn SetSize<
+            Identity: IWICBitmapFrameEncode_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            uiwidth: u32,
+            uiheight: u32,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapFrameEncode_Impl::SetSize(
+                    this,
+                    core::mem::transmute_copy(&uiwidth),
+                    core::mem::transmute_copy(&uiheight),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn SetResolution<
+            Identity: IWICBitmapFrameEncode_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            dpix: f64,
+            dpiy: f64,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapFrameEncode_Impl::SetResolution(
+                    this,
+                    core::mem::transmute_copy(&dpix),
+                    core::mem::transmute_copy(&dpiy),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn SetPixelFormat<
+            Identity: IWICBitmapFrameEncode_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            ppixelformat: *mut WICPixelFormatGUID,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapFrameEncode_Impl::SetPixelFormat(
+                    this,
+                    core::mem::transmute_copy(&ppixelformat),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn SetColorContexts<
+            Identity: IWICBitmapFrameEncode_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            ccount: u32,
+            ppicolorcontext: *const *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapFrameEncode_Impl::SetColorContexts(
+                    this,
+                    core::mem::transmute_copy(&ccount),
+                    core::mem::transmute_copy(&ppicolorcontext),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn SetPalette<
+            Identity: IWICBitmapFrameEncode_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            pipalette: *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapFrameEncode_Impl::SetPalette(this, core::mem::transmute_copy(&pipalette))
+                    .into()
+            }
+        }
+        unsafe extern "system" fn SetThumbnail<
+            Identity: IWICBitmapFrameEncode_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            pithumbnail: *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapFrameEncode_Impl::SetThumbnail(
+                    this,
+                    core::mem::transmute_copy(&pithumbnail),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn WritePixels<
+            Identity: IWICBitmapFrameEncode_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            linecount: u32,
+            cbstride: u32,
+            cbbuffersize: u32,
+            pbpixels: *const u8,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapFrameEncode_Impl::WritePixels(
+                    this,
+                    core::mem::transmute_copy(&linecount),
+                    core::mem::transmute_copy(&cbstride),
+                    core::mem::transmute_copy(&cbbuffersize),
+                    core::mem::transmute_copy(&pbpixels),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn WriteSource<
+            Identity: IWICBitmapFrameEncode_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            pibitmapsource: *mut core::ffi::c_void,
+            prc: *const WICRect,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapFrameEncode_Impl::WriteSource(
+                    this,
+                    core::mem::transmute_copy(&pibitmapsource),
+                    core::mem::transmute_copy(&prc),
+                )
+                .into()
+            }
+        }
+        unsafe extern "system" fn Commit<
+            Identity: IWICBitmapFrameEncode_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                IWICBitmapFrameEncode_Impl::Commit(this).into()
+            }
+        }
+        unsafe extern "system" fn GetMetadataQueryWriter<
+            Identity: IWICBitmapFrameEncode_Impl,
+            const OFFSET: isize,
+        >(
+            this: *mut core::ffi::c_void,
+            ppimetadataquerywriter: *mut *mut core::ffi::c_void,
+        ) -> windows_core::HRESULT {
+            unsafe {
+                let this: &Identity =
+                    &*((this as *const *const ()).offset(OFFSET) as *const Identity);
+                match IWICBitmapFrameEncode_Impl::GetMetadataQueryWriter(this) {
+                    Ok(ok__) => {
+                        ppimetadataquerywriter.write(core::mem::transmute(ok__));
+                        windows_core::HRESULT(0)
+                    }
+                    Err(err) => err.into(),
+                }
+            }
+        }
+        Self {
+            base__: windows_core::IUnknown_Vtbl::new::<Identity, OFFSET>(),
+            Initialize: Initialize::<Identity, OFFSET>,
+            SetSize: SetSize::<Identity, OFFSET>,
+            SetResolution: SetResolution::<Identity, OFFSET>,
+            SetPixelFormat: SetPixelFormat::<Identity, OFFSET>,
+            SetColorContexts: SetColorContexts::<Identity, OFFSET>,
+            SetPalette: SetPalette::<Identity, OFFSET>,
+            SetThumbnail: SetThumbnail::<Identity, OFFSET>,
+            WritePixels: WritePixels::<Identity, OFFSET>,
+            WriteSource: WriteSource::<Identity, OFFSET>,
+            Commit: Commit::<Identity, OFFSET>,
+            GetMetadataQueryWriter: GetMetadataQueryWriter::<Identity, OFFSET>,
+        }
+    }
+    pub fn matches(iid: &windows_core::GUID) -> bool {
+        iid == &<IWICBitmapFrameEncode as windows_core::Interface>::IID
+    }
+}
+impl windows_core::RuntimeName for IWICBitmapFrameEncode {}
 windows_core::imp::define_interface!(
     IWICBitmapScaler,
     IWICBitmapScaler_Vtbl,
@@ -17852,13 +18709,86 @@ windows_core::imp::interface_hierarchy!(
     ISequentialStream,
     IStream
 );
+impl IWICStream {
+    pub(crate) unsafe fn InitializeFromIStream<P0>(&self, pistream: P0) -> windows_core::HRESULT
+    where
+        P0: windows_core::Param<IStream>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).InitializeFromIStream)(
+                windows_core::Interface::as_raw(self),
+                pistream.param().abi(),
+            )
+        }
+    }
+    pub(crate) unsafe fn InitializeFromFilename<P0>(
+        &self,
+        wzfilename: P0,
+        dwdesiredaccess: u32,
+    ) -> windows_core::HRESULT
+    where
+        P0: windows_core::Param<windows_core::PCWSTR>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).InitializeFromFilename)(
+                windows_core::Interface::as_raw(self),
+                wzfilename.param().abi(),
+                dwdesiredaccess,
+            )
+        }
+    }
+    pub(crate) unsafe fn InitializeFromMemory(
+        &self,
+        pbbuffer: *const u8,
+        cbbuffersize: u32,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).InitializeFromMemory)(
+                windows_core::Interface::as_raw(self),
+                pbbuffer,
+                cbbuffersize,
+            )
+        }
+    }
+    pub(crate) unsafe fn InitializeFromIStreamRegion<P0>(
+        &self,
+        pistream: P0,
+        uloffset: u64,
+        ulmaxsize: u64,
+    ) -> windows_core::HRESULT
+    where
+        P0: windows_core::Param<IStream>,
+    {
+        unsafe {
+            (windows_core::Interface::vtable(self).InitializeFromIStreamRegion)(
+                windows_core::Interface::as_raw(self),
+                pistream.param().abi(),
+                uloffset,
+                ulmaxsize,
+            )
+        }
+    }
+}
 #[repr(C)]
 pub struct IWICStream_Vtbl {
     pub base__: IStream_Vtbl,
-    InitializeFromIStream: usize,
-    InitializeFromFilename: usize,
-    InitializeFromMemory: usize,
-    InitializeFromIStreamRegion: usize,
+    pub InitializeFromIStream: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub InitializeFromFilename: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        windows_core::PCWSTR,
+        u32,
+    ) -> windows_core::HRESULT,
+    pub InitializeFromMemory:
+        unsafe extern "system" fn(*mut core::ffi::c_void, *const u8, u32) -> windows_core::HRESULT,
+    pub InitializeFromIStreamRegion: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut core::ffi::c_void,
+        u64,
+        u64,
+    ) -> windows_core::HRESULT,
 }
 impl windows_core::RuntimeName for IWICStream {}
 pub const IfOperStatusUp: IF_OPER_STATUS = 1;
@@ -18005,6 +18935,7 @@ pub const MA_ACTIVATE: i32 = 1;
 pub const MA_NOACTIVATE: i32 = 3;
 pub const MA_NOACTIVATEANDEAT: i32 = 4;
 pub const MB_DEFBUTTON2: i32 = 256;
+pub const MB_ICONASTERISK: i32 = 64;
 pub const MB_ICONERROR: i32 = 16;
 pub const MB_ICONWARNING: i32 = 48;
 pub const MB_OK: i32 = 0;
@@ -19668,6 +20599,16 @@ pub struct SYSTEMTIME {
     pub wSecond: u16,
     pub wMilliseconds: u16,
 }
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SYSTEM_POWER_STATUS {
+    pub ACLineStatus: u8,
+    pub BatteryFlag: u8,
+    pub BatteryLifePercent: u8,
+    pub SystemStatusFlag: u8,
+    pub BatteryLifeTime: u32,
+    pub BatteryFullLifeTime: u32,
+}
 pub const S_FALSE: windows_core::HRESULT = windows_core::HRESULT(0x1_u32 as _);
 pub const S_OK: windows_core::HRESULT = windows_core::HRESULT(0x0_u32 as _);
 pub const ShellLink: windows_core::GUID =
@@ -19979,6 +20920,8 @@ pub type WICBitmapAlphaChannelOption = i32;
 pub type WICBitmapCreateCacheOption = i32;
 pub type WICBitmapDitherType = i32;
 pub const WICBitmapDitherTypeNone: WICBitmapDitherType = 0;
+pub type WICBitmapEncoderCacheOption = i32;
+pub const WICBitmapEncoderNoCache: WICBitmapEncoderCacheOption = 2;
 pub const WICBitmapIgnoreAlpha: WICBitmapAlphaChannelOption = 2;
 pub type WICBitmapInterpolationMode = i32;
 pub const WICBitmapInterpolationModeFant: WICBitmapInterpolationMode = 3;
@@ -20057,6 +21000,7 @@ pub const WM_APP: i32 = 32768;
 pub const WM_CANCELMODE: i32 = 31;
 pub const WM_CAPTURECHANGED: i32 = 533;
 pub const WM_CHAR: i32 = 258;
+pub const WM_CLIPBOARDUPDATE: i32 = 797;
 pub const WM_CLOSE: i32 = 16;
 pub const WM_COMMAND: i32 = 273;
 pub const WM_CONTEXTMENU: i32 = 123;
