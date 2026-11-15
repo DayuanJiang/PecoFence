@@ -57,9 +57,8 @@ $TextDip = @{ small = 12; normal = 14; large = 18; extraLarge = 24 }
 $NoteText = "[ ] first to-do`n[ ] second to-do`nplain line"
 # No plugin index is reached: nothing is installed or moved but what the steps place.
 $env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:9/index.json'
-# 新建便签 makes a fence of the notes plugin: the note plugin of the view steps stands in for it
-# (PecoFence edits and keeps its note). A native note moves to it once its editor closes.
-if ($Part -eq 'N') { PfPlacePlugin 'C:\pf\kit\assets\plugin-view\viewnote' 'notes' }
+# The notes plugin is not installed: the native notes keep their sizes (with it, a native note
+# moves to it once its editor closes), and 新建便签 opens 设置 › 小工具 to install it.
 PfStart -Script (DumpScript 500 25 3000)
 Start-Sleep -Seconds 2
 
@@ -184,32 +183,27 @@ if ($Part -eq 'N') {
 $schema = & "$PfApp\pecofence-cli.exe" describe --schema Config --compact | Out-String
 [IO.File]::WriteAllText("$PfShots\config-schema.json", $schema.Trim(), (New-Object Text.UTF8Encoding($false)))
 Check 'the config schema has textSize' ($schema -match '"textSize"') "length=$($schema.Length)"
-# The menus' New note makes a fence of the notes plugin, a note at the chosen text size too.
-function NotesFences() { return @(@(PfJson fence list) | Where-Object { $_ -and $_.script -and $_.script.path -eq 'plugin:notes' } | ForEach-Object { "$($_.id)" }) }
+# The menus' New note without the notes plugin: 设置 › 小工具, where it is installed. The sizes are
+# those of native notes (an earlier version's, made here by the CLI).
+function SettingsOpened() {
+  $sw = WaitWin 'PecoFence.Settings' 15
+  if ($sw -ne [IntPtr]::Zero) { Start-Sleep -Seconds 2; [L]::PostMessageW($sw, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 1 }
+  return ($sw -ne [IntPtr]::Zero)
+}
 Case 'N1 note from the tray menu'
 $m = TrayOpen
 Check 'the tray menu has New note' ((MenuTexts $m) -match 'New note') (MenuTexts $m)
 MenuPick '^New note' $m | Out-Null
-Start-Sleep -Seconds 2
-$made = @(NotesFences)
-Check 'New note makes a fence of the notes plugin' ($made.Count -eq 1) "notes fences=$($made -join ',')"
-$id = "$($made[0])"
-Pf fence rename $id NoteTray | Out-Null
-Pf fence move NoteTray --x 80 --y 90 | Out-Null
-Pf fence resize NoteTray --w 380 --h 270 | Out-Null
+Check 'New note without the notes plugin opens the settings page to install it' (SettingsOpened) ''
+$id = "$((PfJson fence create --tool note --title NoteTray --text $NoteText --rect '80,90,380,270').fence.id)"
 Check 'a new note has the standard text size' ((FenceGet $id).textSize -eq 'normal') "textSize=$((FenceGet $id).textSize)"
 NoteSizes 'NoteTray' $id
 
 Case 'N2 note from the fence menu'
 $add = SubMenu (FenceMenu (PlainFence)) '^Add to desktop' '^New fence'
 MenuPick '^New note' $add | Out-Null
-Start-Sleep -Seconds 2
-$made = @(NotesFences | Where-Object { $_ -ne $id })
-Check 'Add to desktop > New note makes a fence of the notes plugin' ($made.Count -eq 1) "notes fences=$($made -join ',')"
-$id2 = "$($made[0])"
-Pf fence rename $id2 NoteMenu | Out-Null
-Pf fence move NoteMenu --x 480 --y 90 | Out-Null
-Pf fence resize NoteMenu --w 380 --h 270 | Out-Null
+Check 'Add to desktop > New note without the notes plugin opens the settings page' (SettingsOpened) ''
+$id2 = "$((PfJson fence create --tool note --title NoteMenu --text $NoteText --rect '480,90,380,270').fence.id)"
 NoteSizes 'NoteMenu' $id2
 
 Case 'N3 note from the CLI'
