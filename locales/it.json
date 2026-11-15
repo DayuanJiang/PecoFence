@@ -1042,6 +1042,8 @@
   "已下架：{0}": "Ritirato: {0}",
   "在 GitHub 上看介绍": "Leggi la descrizione su GitHub",
   "暂时连不上插件目录": "Al momento non si raggiunge l’elenco dei plugin",
+  "正在读取插件目录…": "Caricamento dell’elenco dei plugin…",
+  "插件目录里还没有插件": "L’elenco dei plugin non contiene ancora plugin",
   "重试": "Riprova",
   "安装“{0}”？": "Installare «{0}»?",
   "更新“{0}”？": "Aggiornare «{0}»?",

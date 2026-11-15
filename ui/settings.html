@@ -1908,6 +1908,12 @@
       if (p.installed && p.state !== 'disabled') { const u = plEl('button', '', t("卸载")); u.onclick = () => send({ type: 'action', name: 'pluginUninstall', id: p.id }); acts.append(u); }
       d.append(acts); list.append(d);
     }
+    // An empty list says why: the index is still on its way, or it lists no plugin.
+    if (!pl.list.length && pl.status !== 'offline') {
+      const c = plEl('div', 'card child'), l = plEl('div', 'l');
+      l.append(pl.status === 'loading' ? plEl('div', 's busy', t("正在读取插件目录…")) : plEl('div', 's', t("插件目录里还没有插件")));
+      c.append(l); list.append(c);
+    }
     if (pl.status === 'offline') {
       const c = plEl('div', 'card child'), l = plEl('div', 'l'), r = plEl('button', '', t("重试"));
       l.append(plEl('div', 's', t("暂时连不上插件目录")));
