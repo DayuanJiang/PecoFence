@@ -3239,16 +3239,7 @@ impl App {
                 self.plugin_note_changed(fence, before);
             }
             Command::OpenNoteLink { fence, line, start } => self.open_note_link(fence, line, start),
-            Command::ScriptRowClicked {
-                fence,
-                row,
-                cell,
-                fraction,
-                dragging,
-                double,
-            } if self.light_runs(fence) => {
-                self.plugin_row_clicked(fence, row, cell, fraction, dragging, double)
-            }
+            // A stopped web page's rows go to the web layer first: its main.js may still run.
             Command::ScriptRowClicked {
                 fence,
                 row,
@@ -3257,7 +3248,10 @@ impl App {
                 dragging,
                 double,
             } => {
-                if !self.web_row_clicked(fence, row, cell) {
+                if self.web_row_clicked(fence, row, cell) {
+                } else if self.light_runs(fence) {
+                    self.plugin_row_clicked(fence, row, cell, fraction, dragging, double)
+                } else {
                     self.script_row_clicked(fence, row, cell, fraction, dragging, double)
                 }
             }
