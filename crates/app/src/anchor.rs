@@ -435,9 +435,11 @@ pub struct WindowReport {
     pub topmost: usize,
     /// Below the icon host in the z-order: covered by the desktop.
     pub below_host: usize,
-    /// Above a window that is not ours or the desktop's (an app, Settings, a dialog): the fence
-    /// covers it.
+    /// Above a window of another program that is not the desktop (an app, Settings, a dialog):
+    /// the fence covers it.
     pub above_windows: usize,
+    /// The classes of those windows (three at most).
+    pub covered_classes: Vec<String>,
     /// On no monitor at all.
     pub off_screen: usize,
     pub quick_hidden: bool,
@@ -2279,22 +2281,41 @@ impl DesktopAnchor {
         let below_host = |w: HWND| {
             host_at.is_some_and(|i| order.iter().position(|&x| x == w).is_some_and(|p| p > i))
         };
-        let ours = self.all_windows();
-        let above_windows = |w: HWND| {
-            let Some(at) = order.iter().position(|&x| x == w) else {
-                return false;
-            };
-            // The windows between the fence and the host (none for a fence below the host).
-            let between = order.get(at + 1..host_at.unwrap_or(order.len()));
-            between.is_some_and(|between| {
-                between.iter().any(|&x| {
-                    !ours.contains(&x)
-                        && !is_drag_overlay(x)
-                        && !self.is_desktop_window(x)
-                        && desktop::has_visible_surface(x)
-                })
+        // Windows of other programs only: our own (a card, the settings, the Peek's box) cover
+        // nothing a user would miss.
+        let me = std::process::id();
+        let covered: Vec<Vec<HWND>> = self
+            .fences
+            .iter()
+            .map(|(f, _)| {
+                let Some(at) = order.iter().position(|x| x == f) else {
+                    return Vec::new();
+                };
+                // The windows between the fence and the host (none for a fence below the host).
+                order
+                    .get(at + 1..host_at.unwrap_or(order.len()))
+                    .unwrap_or_default()
+                    .iter()
+                    .copied()
+                    .filter(|&x| {
+                        desktop::window_pid(x) != me
+                            && !self.is_desktop_window(x)
+                            && desktop::has_visible_surface(x)
+                    })
+                    .collect()
             })
-        };
+            .collect();
+        // What they are, for the report: the first three classes.
+        let mut covered_classes: Vec<String> = Vec::new();
+        for &w in covered.iter().flatten() {
+            let cls = desktop::class_name(w);
+            if covered_classes.len() < 3 && !covered_classes.contains(&cls) {
+                covered_classes.push(cls);
+            }
+        }
+        if !covered_classes.is_empty() {
+            tracing::debug!(classes = ?covered_classes, "fences above windows of other programs");
+        }
         let screens: Vec<RECT> = pecofence_platform::monitors::enumerate()
             .iter()
             .map(|m| m.bounds)
@@ -2313,7 +2334,8 @@ impl DesktopAnchor {
             cloaked: count(&desktop::is_cloaked),
             topmost: count(&desktop::is_topmost),
             below_host: count(&below_host),
-            above_windows: count(&above_windows),
+            above_windows: covered.iter().filter(|c| !c.is_empty()).count(),
+            covered_classes,
             off_screen: count(&off_screen),
             quick_hidden: self.quick.fences_hidden,
             peeking: self.peeking,

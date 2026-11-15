@@ -65,6 +65,16 @@ public static class Zb {
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int hh, bool r);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
   [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
+  [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint f);
+  // Keeps putting w directly below `fence` for ms milliseconds (on a thread of its own), so it
+  // sits between the fences and the desktop although the fences take their place back.
+  public static void KeepBelow(IntPtr w, IntPtr fence, int ms) {
+    var t = new System.Threading.Thread(() => {
+      var end = DateTime.UtcNow.AddMilliseconds(ms);
+      while (DateTime.UtcNow < end) { SetWindowPos(w, fence, 0, 0, 0, 0, 0x0013); System.Threading.Thread.Sleep(2); }
+    });
+    t.IsBackground = true; t.Start();
+  }
   static string Cls(IntPtr h) { var s = new StringBuilder(256); GetClassNameW(h, s, 256); return s.ToString(); }
   static string Proc(uint pid) { try { return System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { return "?"; } }
   // The windows with a visible surface between the highest fence and Explorer's desktop window
@@ -187,7 +197,7 @@ if ($IcPart -match 'B') {
   Case 'B setup: three fences, a merged tab, a rolled fence, Peek a few times, the settings open'
   CloseWindows
   foreach ($n in 'cov 甲 文件.txt', 'cov Beta.txt', 'cov 丙 计划 表.txt', 'cov Delta.txt') { Set-Content -LiteralPath (Made (Join-Path $PfDesk $n)) 'cov' }
-  PfFresh @('sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 3600000')
+  PfFresh @('sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 3600000')
   $t0 = Get-Date
   Start-Sleep -Seconds 3
   ClearFences
@@ -237,6 +247,30 @@ if ($IcPart -match 'B') {
   $b3 = [Zb]::Between()
   Log "state 3: $($fi3.system.state)"
   Log "between 3: $b3"
+  Case 'B4 a Notepad window kept between the fences and the desktop'
+  $np = @([W]::Tops('Notepad'))[0]
+  if ($np) { [Zb]::ShowWindow($np, 9) | Out-Null; [Zb]::MoveWindow($np, 300, 200, 500, 400, $true) | Out-Null }
+  Start-Sleep -Milliseconds 800
+  $wait = 100 - ((Get-Date) - $t0).TotalSeconds - 3
+  if ($wait -gt 0) { Start-Sleep -Seconds ([int]$wait) }
+  if ($np) { [Zb]::KeepBelow($np, (UiThreadFence), 6000) }
+  $fi4 = NthFeedbackInfo 4
+  $b4 = [Zb]::Between()
+  Log "state 4: $($fi4.system.state)"
+  Log "between 4: $b4"
+  Start-Sleep -Seconds 4
+  Check 'B4 a window of another program between them is counted and named' ("$($fi4.system.state)" -match '[1-9]\d* above other windows \(Notepad\)') "$($fi4.system.state)"
+  Case 'B5 our own settings window kept between the fences and the desktop'
+  $st = @([W]::Tops('PecoFence.Settings'))[0]
+  $wait = 125 - ((Get-Date) - $t0).TotalSeconds - 3
+  if ($wait -gt 0) { Start-Sleep -Seconds ([int]$wait) }
+  if ($st) { [Zb]::KeepBelow($st, (UiThreadFence), 6000) }
+  $fi5 = NthFeedbackInfo 5
+  $b5 = [Zb]::Between()
+  Log "state 5: $($fi5.system.state)"
+  Log "between 5: $b5"
+  Start-Sleep -Seconds 4
+  Check 'B5 a window of PecoFence itself between them is not counted' ($st -and "$($fi5.system.state)" -match ' 0 above other windows,') "settings=$st; $($fi5.system.state); between: $b5"
   $count = { param($fi) if ("$($fi.system.state)" -match '(\d+) above other windows') { [int]$Matches[1] } else { -1 } }
   $n1 = & $count $fi; $n2 = & $count $fi2; $n3 = & $count $fi3
   $other = { param($b) ($b -split '; ' | Where-Object { $_ -and $_ -ne 'none' -and $_ -notmatch '\[pecofence\]' }).Count }
@@ -271,16 +305,16 @@ if ($IcPart -match 'C') {
   # Details view: the file is a row with its name.
   function SrcItemPt() {
     $el = UiaFind $ex $name
+    if (-not $el) { $el = UiaFind $ex ([IO.Path]::GetFileNameWithoutExtension($name)) }
     if (-not $el) { return $null }
     $b = $el.Current.BoundingRectangle
     return @([int]($b.X + [math]::Min(60, $b.Width / 2)), [int]($b.Y + $b.Height / 2))
   }
-  function FenceDropPt() { $r = (FenceGet '冲突 栅栏').windowRect; return @([int]($r.x + $r.width / 2), [int]($r.y + $r.height - 60)) }
+  function FenceDropPt() { $r = (FenceGet '冲突 栅栏').windowRect; return @([int]($r.x + $r.w / 2), [int]($r.y + $r.h - 60)) }
   function ConflictDlg($sec = 6) {
     for ($i = 0; $i -lt $sec * 5; $i++) {
-      foreach ($h in @([W]::Tops('OperationStatusWindow')) + @([W]::Tops('#32770'))) {
-        if ($h -and [G]::IsWindowVisible($h) -and ([W]::ProcOf($h) -eq 'pecofence')) { return $h }
-      }
+      $h = [G]::FindWindowW([NullString]::Value, 'Replace or Skip Files')
+      if ($h -ne [IntPtr]::Zero -and [G]::IsWindowVisible($h)) { return $h }
       Start-Sleep -Milliseconds 200
     }
     return [IntPtr]::Zero
@@ -292,24 +326,29 @@ if ($IcPart -match 'C') {
   }
   function Answer($h, $how) {
     switch ($how) {
-      'esc' { [G]::SetForegroundWindow($h) | Out-Null; Start-Sleep -Milliseconds 200; [G]::Press(0x1B) }
+      { $_ -in 'esc', 'copy-esc', 'desk-esc' } { [G]::SetForegroundWindow($h) | Out-Null; Start-Sleep -Milliseconds 200; [G]::Press(0x1B) }
       'close' { $el = UiaFind $h 'Close'; if ($el) { $b = $el.Current.BoundingRectangle; [G]::Click([int]($b.X + $b.Width / 2), [int]($b.Y + $b.Height / 2)) } else { [Zb]::PostMessageW($h, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null } }
       'skip' { $el = UiaFind $h 'Skip this file'; if (-not $el) { $el = UiaFind $h 'Skip' }; if ($el) { $b = $el.Current.BoundingRectangle; [G]::Click([int]($b.X + $b.Width / 2), [int]($b.Y + $b.Height / 2)) } }
     }
   }
   $rows = @(); $seen = 0; $crashAt = ''
-  foreach ($how in 'esc', 'close', 'skip') {
+  foreach ($how in 'esc', 'close', 'skip', 'copy-esc', 'desk-esc') {
     Case "C $how in the conflict dialog, 8 times"
     for ($k = 1; $k -le 8; $k++) {
       if (-not (PfAlive)) { break }
       if (-not (Test-Path -LiteralPath (Join-Path $src $name))) { Set-Content -LiteralPath (Join-Path $src $name) "folder copy $k" }
       $p = SrcItemPt; $q = FenceDropPt
+      # desk-esc: onto the 「桌面」 fence, arranged like the desktop, away from the other fence.
+      if ($how -eq 'desk-esc') { $q = @(1300, 640) }
       if (-not $p) { $rows += "${how} ${k}: source row not found"; continue }
+      # copy-esc: Ctrl held, so the file is copied (the reporter's drop was a copy).
+      if ($how -eq 'copy-esc') { [G]::KeyDown(0x11) }
       DragTo $p[0] $p[1] $q[0] $q[1] 20
+      if ($how -eq 'copy-esc') { [G]::KeyUp(0x11) }
       $dlg = ConflictDlg
       if ($dlg -eq [IntPtr]::Zero) { $rows += "${how} ${k}: no dialog"; Shot "C-$how-$k-nodlg"; Start-Sleep -Seconds 1; continue }
       $seen++
-      if ($seen -eq 1) { Log "dialog: class $([W]::Info($dlg)); $(ButtonNames $dlg)"; Shot 'C-dialog' }
+      if ($seen -eq 1) { Log "dialog: class $([W]::Cls($dlg)) $([W]::Info($dlg)); $(ButtonNames $dlg)"; Shot 'C-dialog' }
       Start-Sleep -Milliseconds (300 + 150 * ($k % 4))
       Answer $dlg $how
       Start-Sleep -Milliseconds 2500
@@ -320,9 +359,11 @@ if ($IcPart -match 'C') {
     if ($crashAt) { break }
   }
   Log ($rows -join ' | ')
+  $deskFence = @(PfJson fence list) | Where-Object { $_ -and $_.kind -eq 'inbox' } | Select-Object -First 1
+  Log "the 桌面 fence: desktopLayout=$($deskFence.desktopLayout) freePlacement=$($deskFence.freePlacement) rect=$($deskFence.windowRect.x),$($deskFence.windowRect.y),$($deskFence.windowRect.w)x$($deskFence.windowRect.h)"
   $c = @(Crashes)
   Log "crash lines: $($c -join ' || ')"
-  Check 'C the dialog came up for the drops' ($seen -ge 12) "$seen dialogs; $($rows -join ' | ')"
+  Check 'C the dialog came up for the drops' ($seen -ge 20) "$seen dialogs; $($rows -join ' | ')"
   Check 'C no crash after an answer in the conflict dialog' ((PfAlive) -and $c.Count -eq 0) "crash at '$crashAt': $($c -join ' | ')"
   CloseWindows
   if (PfAlive) { PfQuit }
