@@ -12,7 +12,7 @@
     "links": ["github.com"],
     "clipboard": "readwrite",
     "background": false,
-    "system": ["ipconfig.exe"],
+    "system": ["ipconfig.exe", "cmd.exe"],
     "notify": true
   }
 }

@@ -20,6 +20,7 @@ pub mod type_filter;
 pub mod updates;
 pub mod usage;
 pub mod vdesk;
+pub mod web_address;
 
 pub use config_store::{ConfigSaver, ConfigStore, Lint, LintLevel, LoadOutcome};
 pub use date_group::{CivilDate, DateBucket, date_bucket};

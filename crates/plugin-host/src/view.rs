@@ -4,6 +4,8 @@
 
 use pecofence_core::plugins::valid_plain_name;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use serde_json::Value;
 
 /// At most this many rows; the rest are dropped.
 pub const MAX_ROWS: usize = 300;
@@ -214,22 +216,85 @@ impl Row {
     }
 }
 
-/// The view in `json`, cut to the limits above. A row that does not read (a field of the wrong
-/// type) is left out and the others show.
+/// The view in `json`, cut to the limits above.
 pub fn parse(json: &str) -> serde_json::Result<View> {
-    let value: serde_json::Value = serde_json::from_str(json)?;
+    read(json).map(|(view, _)| view)
+}
+
+/// [`parse`], and the fields left out because they were of the wrong type (`bold`,
+/// `cells.id`, ...): the rest of their row, span, cell or drawing step shows. A row that is no
+/// object is left out whole.
+pub fn read(json: &str) -> serde_json::Result<(View, Vec<String>)> {
+    let value: Value = serde_json::from_str(json)?;
     let rows = value.get("rows").and_then(|r| r.as_array());
-    let mut view = View::default();
-    for (i, row) in rows.into_iter().flatten().take(MAX_ROWS).enumerate() {
-        match Row::deserialize(row) {
-            Ok(mut row) => {
-                row.limit();
-                view.rows.push(row);
-            }
-            Err(e) => tracing::debug!(row = i, error = %e, "plugin view: a row left out"),
+    let (mut view, mut dropped) = (View::default(), Vec::new());
+    for row in rows.into_iter().flatten().take(MAX_ROWS) {
+        let row = Row::deserialize(row).ok().or_else(|| {
+            let row = without_wrong_fields(row, &mut dropped)?;
+            Row::deserialize(&row).ok()
+        });
+        if let Some(mut row) = row {
+            row.limit();
+            view.rows.push(row);
         }
     }
-    Ok(view)
+    dropped.sort();
+    dropped.dedup();
+    Ok((view, dropped))
+}
+
+/// `row` (one that does not read) without its fields of the wrong type, in its cells, spans
+/// and drawing steps too.
+fn without_wrong_fields(row: &Value, dropped: &mut Vec<String>) -> Option<Value> {
+    let mut row = row.clone();
+    if let Some(list) = row.get_mut("cells").and_then(Value::as_array_mut) {
+        *list = (list.iter())
+            .filter_map(|c| readable::<Cell>(c, "cells.", dropped))
+            .collect();
+    }
+    if let Some(list) = row.get_mut("spans").and_then(Value::as_array_mut) {
+        *list = (list.iter())
+            .filter_map(|s| readable::<Span>(s, "spans.", dropped))
+            .collect();
+    }
+    let draw = row.get_mut("canvas").and_then(|c| c.get_mut("draw"));
+    if let Some(list) = draw.and_then(Value::as_array_mut) {
+        *list = (list.iter())
+            .filter_map(|s| readable::<Step>(s, "canvas.draw.", dropped))
+            .collect();
+    }
+    readable::<Row>(&row, "", dropped)
+}
+
+/// `value` as a `T` reads it: whole when it does, else without the fields that do not read
+/// (their names, after `path`, go into `dropped`); None when it is no object.
+fn readable<T: DeserializeOwned>(
+    value: &Value,
+    path: &str,
+    dropped: &mut Vec<String>,
+) -> Option<Value> {
+    if T::deserialize(value).is_ok() {
+        return Some(value.clone());
+    }
+    let Some(fields) = value.as_object() else {
+        let part = if path.is_empty() {
+            "row"
+        } else {
+            path.trim_end_matches('.')
+        };
+        dropped.push(format!("{part} (not an object)"));
+        return None;
+    };
+    let mut kept = serde_json::Map::new();
+    for (k, v) in fields {
+        let alone = Value::Object([(k.clone(), v.clone())].into_iter().collect());
+        if T::deserialize(&alone).is_ok() {
+            kept.insert(k.clone(), v.clone());
+        } else {
+            dropped.push(format!("{path}{k}"));
+        }
+    }
+    Some(Value::Object(kept))
 }
 
 #[cfg(test)]
@@ -368,10 +433,42 @@ mod tests {
     }
 
     #[test]
-    fn a_row_that_does_not_read_is_left_out() {
-        let view = parse(r#"{"rows":[{"text":"a"},{"bold":"yes"},{"text":"c"},7]}"#).unwrap();
+    fn a_field_of_the_wrong_type_is_left_out_and_the_rest_shows() {
+        let (view, dropped) = read(
+            r#"{"rows":[{"text":"a","id":5,"bold":null,"color":"red"},{"bold":"yes"},7,
+                {"text":"c","cells":[{"id":"b","text":"Go","fill":"yes"},{"id":1,"text":"x"},3],
+                 "spans":[{"text":"s","bold":1}],"canvas":{"height":9,"draw":[{"line":[0,0,1,1]},{"text":"t","at":"x"}]}}]}"#,
+        )
+        .unwrap();
         let texts: Vec<&str> = view.rows.iter().map(|r| r.text.as_str()).collect();
-        assert_eq!(texts, ["a", "c"]);
+        assert_eq!(texts, ["a", "", "c"]);
+        let (a, c) = (&view.rows[0], &view.rows[2]);
+        assert_eq!(
+            (a.id.as_deref(), a.bold, a.color.as_deref()),
+            (None, false, Some("red"))
+        );
+        let cells: Vec<(Option<&str>, &str)> = c
+            .cells
+            .iter()
+            .map(|c| (c.id.as_deref(), c.text.as_str()))
+            .collect();
+        assert_eq!(cells, [(Some("b"), "Go"), (None, "x")]);
+        assert_eq!(c.spans[0].text, "s");
+        let draw = &c.canvas.as_ref().unwrap().draw;
+        assert_eq!((draw.len(), draw[1].text.as_deref()), (2, Some("t")));
+        assert_eq!(
+            dropped,
+            [
+                "bold",
+                "canvas.draw.at",
+                "cells (not an object)",
+                "cells.fill",
+                "cells.id",
+                "id",
+                "row (not an object)",
+                "spans.bold"
+            ]
+        );
         assert!(parse("not json").is_err());
         assert!(parse("{}").unwrap().rows.is_empty());
     }

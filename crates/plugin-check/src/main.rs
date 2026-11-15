@@ -38,6 +38,9 @@ struct Log {
     slowest: (f64, String),
     memory: usize,
     data: BTreeMap<String, String>,
+    /// Errors that escaped a handler, a timer or a Promise ("<run>: <message> <stack line>"),
+    /// and how often each came.
+    errors: BTreeMap<String, usize>,
 }
 
 struct Fake {
@@ -164,6 +167,11 @@ impl Host for Fake {
                     log.slowest = (ms, what);
                 }
                 log.memory = log.memory.max(memory);
+            }
+            Note::Error { what, message, at } => {
+                *log.errors
+                    .entry(format!("{what}: {message} {at}"))
+                    .or_default() += 1;
             }
         }
     }
@@ -333,6 +341,7 @@ fn check(a: Args) -> Result<bool, String> {
         }),
         shown: true,
         cache: None,
+        number: 1,
     })));
     let wait = |part: f64| {
         let at = begun + Duration::from_secs_f64(a.seconds * part);
@@ -376,12 +385,12 @@ fn check(a: Args) -> Result<bool, String> {
     for (at, o) in out_rx.try_iter() {
         match o {
             Output::Show(..) => shows.push(at),
-            Output::Stopped(_, Stopped::TooLong) => stops.push("a run took over 50 ms".into()),
-            Output::Stopped(_, Stopped::TooBusy) => {
+            Output::Stopped(_, _, Stopped::TooLong) => stops.push("a run took over 50 ms".into()),
+            Output::Stopped(_, _, Stopped::TooBusy) => {
                 stops.push("over 200 ms of JavaScript in one second".into())
             }
-            Output::Stopped(_, Stopped::TooMuchMemory) => stops.push("it used over 8 MB".into()),
-            Output::Stopped(_, Stopped::Error(e)) => stops.push(format!("an error: {e}")),
+            Output::Stopped(_, _, Stopped::TooMuchMemory) => stops.push("it used over 8 MB".into()),
+            Output::Stopped(_, _, Stopped::Error(e)) => stops.push(format!("an error: {e}")),
             // A web plugin's main.js posting to its page: nothing to check here.
             Output::Post(..) => {}
         }
@@ -474,6 +483,10 @@ fn check(a: Args) -> Result<bool, String> {
             .iter()
             .map(|s| format!("PecoFence stopped the plugin: {s}")),
     );
+    fails.extend(log.errors.iter().map(|(e, n)| match n {
+        1 => format!("an error escaped {e}"),
+        n => format!("an error escaped {n} times {e}"),
+    }));
     let v = env!("CARGO_PKG_VERSION");
     println!(
         "PASS: ran {} {} ({} layer) for {:.0} s in PecoFence {v}'s plugin host",
@@ -490,6 +503,7 @@ fn check(a: Args) -> Result<bool, String> {
             "viewsPerSecondAtRest": rest_views, "showCallsPerSecondAtRest": rest_calls,
             "jsMs": log.js_ms, "jsMsPerSecondAtRest": rest_ms, "slowestMs": log.slowest.0,
             "slowest": log.slowest.1, "memoryBytes": log.memory, "stopped": stops,
+            "errors": log.errors,
             "warnings": warns, "failures": fails, "lastView": log.last_view,
         });
         let text = serde_json::to_string_pretty(&result).unwrap_or_default();

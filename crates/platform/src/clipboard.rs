@@ -263,6 +263,11 @@ fn marked_private() -> bool {
 
 /// The bytes of `format` on the open clipboard.
 fn data(format: u32) -> Option<Vec<u8>> {
+    with_data(format, <[u8]>::to_vec)
+}
+
+/// `f` of the bytes of `format` on the open clipboard, read in place (not copied).
+fn with_data<T>(format: u32, f: impl FnOnce(&[u8]) -> T) -> Option<T> {
     // SAFETY: GetClipboardData's block belongs to the clipboard; it is only read while locked.
     unsafe {
         let mem: HGLOBAL = GetClipboardData(format);
@@ -273,9 +278,9 @@ fn data(format: u32) -> Option<Vec<u8>> {
         if ptr.is_null() {
             return None;
         }
-        let bytes = std::slice::from_raw_parts(ptr, GlobalSize(mem)).to_vec();
+        let out = f(std::slice::from_raw_parts(ptr, GlobalSize(mem)));
         let _ = GlobalUnlock(mem);
-        Some(bytes)
+        Some(out)
     }
 }
 
@@ -350,28 +355,46 @@ pub fn read_files() -> Option<Vec<PathBuf>> {
     })
 }
 
-/// The picture on the clipboard (`CF_DIB`, 24 or 32 bits a pixel) as width, height and
-/// top-down BGRA pixels. Any thread.
-pub fn read_image() -> Option<(u32, u32, Vec<u8>)> {
-    let dib = read(|| data(CF_DIB as u32))?;
+/// A picture: width, height and top-down BGRA pixels; or the width and height of one larger
+/// than asked for, read from its header alone.
+pub type Picture = std::result::Result<(u32, u32, Vec<u8>), (u32, u32)>;
+
+/// The picture on the clipboard (`CF_DIB`, 24 or 32 bits a pixel), at most `max_side` pixels
+/// on a side: a larger one is told by its header before anything is copied. Any thread.
+pub fn read_image(max_side: u32) -> Option<Picture> {
+    read(|| with_data(CF_DIB as u32, |dib| dib_pixels(dib, max_side)).flatten())
+}
+
+/// The pixels of the `CF_DIB` block `dib`, when its header is of a kind read and the block
+/// holds the pixels it says; every size is checked before it is used.
+fn dib_pixels(dib: &[u8], max_side: u32) -> Option<Picture> {
     let field = |at: usize| Some(u32::from_le_bytes(dib.get(at..at + 4)?.try_into().ok()?));
     let (header, width, height) = (field(0)? as usize, field(4)? as i32, field(8)? as i32);
     let (bits, compression) = (*dib.get(14)? as usize, field(16)?);
-    if width <= 0 || height == 0 || !(bits == 24 || bits == 32) || compression > 3 {
-        tracing::debug!(bits, compression, "clipboard picture of a kind not read");
+    if header < 40 || width <= 0 || height == 0 || !(bits == 24 || bits == 32) || compression > 3 {
+        tracing::debug!(
+            header,
+            bits,
+            compression,
+            "clipboard picture of a kind not read"
+        );
         return None;
     }
+    let (w, h) = (width as u32, height.unsigned_abs());
+    if w > max_side || h > max_side {
+        tracing::debug!(w, h, "clipboard picture larger than asked for: not read");
+        return Some(Err((w, h)));
+    }
     // BI_BITFIELDS after a plain header: three colour masks come before the pixels.
-    let start = header
-        + if compression == 3 && header == 40 {
-            12
-        } else {
-            0
-        };
-    let (w, h, bpp) = (width as usize, height.unsigned_abs() as usize, bits / 8);
-    let stride = (w * bpp).div_ceil(4) * 4;
-    let pixels = dib.get(start..start + stride * h)?;
-    let mut out = Vec::with_capacity(w * h * 4);
+    let start = header.checked_add(if compression == 3 && header == 40 {
+        12
+    } else {
+        0
+    })?;
+    let (w, h, bpp) = (w as usize, h as usize, bits / 8);
+    let stride = w.checked_mul(bpp)?.div_ceil(4).checked_mul(4)?;
+    let pixels = dib.get(start..start.checked_add(stride.checked_mul(h)?)?)?;
+    let mut out = Vec::with_capacity(w.checked_mul(h)?.checked_mul(4)?);
     for y in 0..h {
         let row = if height < 0 { y } else { h - 1 - y };
         for px in pixels[row * stride..][..w * bpp].chunks_exact(bpp) {
@@ -385,7 +408,7 @@ pub fn read_image() -> Option<(u32, u32, Vec<u8>)> {
             .iter_mut()
             .for_each(|p| p[3] = 255);
     }
-    Some((w as u32, h as u32, out))
+    Some(Ok((w as u32, h as u32, out)))
 }
 
 /// Puts a picture (top-down BGRA) on the clipboard as a 32-bit `CF_DIB`.
@@ -447,4 +470,53 @@ pub fn save_png(path: &Path, width: u32, height: u32, bgra: &[u8]) -> Result<()>
 pub fn listen(hwnd: HWND) -> bool {
     // SAFETY: plain FFI call; Windows removes the listener with the window.
     unsafe { AddClipboardFormatListener(hwnd) }.as_bool()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `CF_DIB` header (40 bytes) and `pixels`.
+    fn dib(width: i32, height: i32, bits: u16, pixels: &[u8]) -> Vec<u8> {
+        let mut d = Vec::new();
+        d.extend_from_slice(&40u32.to_le_bytes());
+        d.extend_from_slice(&width.to_le_bytes());
+        d.extend_from_slice(&height.to_le_bytes());
+        d.extend_from_slice(&1u16.to_le_bytes());
+        d.extend_from_slice(&bits.to_le_bytes());
+        d.extend_from_slice(&[0; 24]);
+        d.extend_from_slice(pixels);
+        d
+    }
+
+    #[test]
+    fn a_picture_is_read_bottom_up_into_top_down_bgra() {
+        // 2 x 2, 24 bits: rows of 6 bytes padded to 8, the bottom row first.
+        let pixels = [1, 2, 3, 4, 5, 6, 0, 0, 7, 8, 9, 10, 11, 12, 0, 0];
+        let (w, h, bgra) = dib_pixels(&dib(2, 2, 24, &pixels), 4096).unwrap().unwrap();
+        assert_eq!((w, h), (2, 2));
+        assert_eq!(
+            bgra,
+            [7, 8, 9, 255, 10, 11, 12, 255, 1, 2, 3, 255, 4, 5, 6, 255]
+        );
+    }
+
+    #[test]
+    fn a_huge_or_short_picture_is_refused_by_its_header() {
+        // Larger than asked for: told without reading (or allocating for) its pixels.
+        let huge = dib(100_000, -100_000, 32, &[]);
+        assert_eq!(dib_pixels(&huge, 4096), Some(Err((100_000, 100_000))));
+        assert_eq!(
+            dib_pixels(&dib(1, i32::MIN, 32, &[]), 4096),
+            Some(Err((1, 1 << 31)))
+        );
+        // Sizes that would overflow, or more pixels than the block holds: not read.
+        assert_eq!(
+            dib_pixels(&dib(i32::MAX, i32::MAX, 32, &[]), u32::MAX),
+            None
+        );
+        assert_eq!(dib_pixels(&dib(4096, 4096, 32, &[0; 64]), 4096), None);
+        assert_eq!(dib_pixels(&dib(2, 2, 8, &[0; 16]), 4096), None);
+        assert_eq!(dib_pixels(&[40, 0, 0], 4096), None);
+    }
 }

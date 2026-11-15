@@ -13,13 +13,22 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// A web page's `pf` call waiting for its answer.
-type Reply = Box<dyn FnOnce(std::result::Result<Value, String>)>;
+/// A web page's `pf` call waiting for its answer: its fence, whether it is a request
+/// (`pf.http`), and what gets the answer.
+type Reply = (
+    FenceId,
+    bool,
+    Box<dyn FnOnce(std::result::Result<Value, String>)>,
+);
 
 /// A stopped plugin starts again by itself this long after, unless it stopped this often in
 /// the last hour (a web plugin's page too: it is made anew at once).
 const RESTART_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
 const STOPS_AN_HOUR: usize = 3;
+/// The most messages of plugins' main.js (`pf.post`) and their bytes that wait for this thread
+/// together; more are dropped while it is busy.
+const MAX_QUEUED_POSTS: usize = 1000;
+const MAX_QUEUED_BYTES: usize = 16 * 1024 * 1024;
 
 /// Records a stop of `fence`'s plugin or page in `stops` (those older than an hour dropped
 /// first): how many there are now, and whether it may start again by itself.
@@ -63,16 +72,19 @@ pub(super) struct Light {
         std::thread::JoinHandle<()>,
     )>,
     out: Arc<Mutex<Vec<host::Output>>>,
-    /// The fences whose plugin runs: the rows it last showed (None before its first view), and
-    /// whether it was last told that the fence shows and how big it is.
+    /// The fences whose plugin runs: the rows it last showed (None before its first view),
+    /// whether it was last told that the fence shows and how big it is, and the number of its
+    /// start (what an earlier runtime of the fence sent is dropped).
     pub(super) running: HashMap<
         FenceId,
         (
             Option<Vec<crate::fence_window::ScriptRowView>>,
             bool,
             (f32, f32),
+            u32,
         ),
     >,
+    starts: u32,
     /// The plugins PecoFence stopped, and why.
     pub(super) stopped: HashMap<FenceId, String>,
     /// When PecoFence stopped each plugin within the last hour.
@@ -191,10 +203,28 @@ impl App {
         }
         if self.light.thread.is_none() {
             let (out, control) = (self.light.out.clone(), self.control.hwnd().0 as isize);
+            let full = AtomicBool::new(false);
             let spawned = host::spawn(api, pecofence_platform::fileinfo::time_text, move |o| {
-                if let Ok(mut out) = out.lock() {
-                    out.push(o);
+                let Ok(mut out) = out.lock() else {
+                    return;
+                };
+                if let host::Output::Post(fence, _, json) = &o {
+                    let posts = out.iter().filter_map(|o| match o {
+                        host::Output::Post(_, _, j) => Some(j.len()),
+                        _ => None,
+                    });
+                    let (count, bytes) = posts.fold((0, 0), |(n, b), len| (n + 1, b + len));
+                    let over = count >= MAX_QUEUED_POSTS || bytes + json.len() > MAX_QUEUED_BYTES;
+                    if over && !full.swap(true, Ordering::Relaxed) {
+                        tracing::info!(%fence, count, bytes, "plugin messages dropped: too many wait for PecoFence");
+                    }
+                    if over {
+                        return;
+                    }
+                    full.store(false, Ordering::Relaxed);
                 }
+                out.push(o);
+                drop(out);
                 window::post_message(
                     HWND(control as *mut core::ffi::c_void),
                     WM_APP_COMMAND,
@@ -215,7 +245,11 @@ impl App {
         let (shown, size) = self.light_shown(fence);
         tracing::info!(%fence, id, version = m.version, shown, ?size, background = p.background, "plugin fence starts its main.js");
         self.light.stopped.remove(&fence);
-        self.light.running.insert(fence, (None, shown, size));
+        self.light.starts += 1;
+        let number = self.light.starts;
+        self.light
+            .running
+            .insert(fence, (None, shown, size, number));
         let config = self.state.config_path_on_disk();
         let cache = config
             .parent()
@@ -229,6 +263,7 @@ impl App {
             init,
             shown,
             cache,
+            number,
         })));
     }
 
@@ -255,6 +290,14 @@ impl App {
         }
     }
 
+    /// Plugin `id` is being uninstalled: no call of its fences writes into its data folder from
+    /// now on (call before the folder is deleted).
+    pub(super) fn forget_light(&self, id: &str) {
+        if let Some(host) = &self.light.host {
+            host.forget(id);
+        }
+    }
+
     /// Exit: every plugin gets `stop` (each within its 50 ms), then the thread ends.
     pub(super) fn quit_light(&mut self) {
         if let Some((tx, thread)) = self.light.thread.take() {
@@ -269,7 +312,7 @@ impl App {
         let fences: Vec<FenceId> = self.light.running.keys().copied().collect();
         for fence in fences {
             let (shown, size) = self.light_shown(fence);
-            let Some((_, was_shown, was_size)) = self.light.running.get_mut(&fence) else {
+            let Some((_, was_shown, was_size, _)) = self.light.running.get_mut(&fence) else {
                 continue;
             };
             let resized = shown && (size.0 - was_size.0).abs() + (size.1 - was_size.1).abs() >= 1.0;
@@ -345,9 +388,20 @@ impl App {
             tracing::info!(%fence, plugin = m.id, name, why, "web plugin call refused");
             return reply(Err(why));
         }
+        // The light layer's limits: at most 16 calls and 4 requests of a fence at once.
+        let request = name.starts_with("http.");
+        let going = self.light.replies.values().filter(|r| r.0 == fence);
+        let (calls, requests) = going.fold((0, 0), |(c, r), g| (c + 1, r + usize::from(g.1)));
+        if calls >= host::MAX_CALLS || (request && requests >= host::MAX_REQUESTS) {
+            let (most_requests, most_calls) = (host::MAX_REQUESTS, host::MAX_CALLS);
+            tracing::info!(%fence, plugin = m.id, name, calls, requests, "web plugin call refused: too many at once");
+            return reply(Err(format!(
+                "{name}: too many calls at once (at most {most_requests} requests and {most_calls} calls)"
+            )));
+        }
         self.light.next_reply += 1;
         let number = self.light.next_reply;
-        self.light.replies.insert(number, Box::new(reply));
+        (self.light.replies).insert(number, (fence, request, Box::new(reply)));
         let api = self.light_host();
         let (jobs, control) = (self.light.jobs.clone(), self.control.hwnd().0 as isize);
         let (name, agent) = (
@@ -360,14 +414,14 @@ impl App {
             .spawn(move || {
                 let result = host::perform(&*api, fence, &m.permissions, &agent, &name, args);
                 let job: UiJob = Box::new(move |app: &mut App| {
-                    if let Some(reply) = app.light.replies.remove(&number) {
+                    if let Some((.., reply)) = app.light.replies.remove(&number) {
                         reply(result);
                     }
                 });
                 Self::post_job(&jobs, control, job);
             });
         if worker.is_err()
-            && let Some(reply) = self.light.replies.remove(&number)
+            && let Some((.., reply)) = self.light.replies.remove(&number)
         {
             reply(Err("no thread for the call".into()));
         }
@@ -431,19 +485,26 @@ impl App {
         };
         let mut hosts = Vec::new();
         for output in outputs {
+            let (host::Output::Show(fence, number, _)
+            | host::Output::Post(fence, number, _)
+            | host::Output::Stopped(fence, number, _)) = output;
+            if self.light.running.get(&fence).map(|r| r.3) != Some(number) {
+                tracing::debug!(%fence, number, "plugin output of an earlier start dropped");
+                continue;
+            }
             match output {
-                host::Output::Show(fence, view) => {
-                    if !self.light.running.contains_key(&fence) {
-                        continue;
-                    }
+                host::Output::Show(fence, _, view) => {
                     let shown = self.plugin_rows(fence, view);
                     if let Some((rows, ..)) = self.light.running.get_mut(&fence) {
                         *rows = Some(shown);
                     }
                     hosts.push(self.state.host_of(fence));
                 }
-                host::Output::Post(fence, data) => self.web_event(fence, "message", data),
-                host::Output::Stopped(fence, why) => {
+                host::Output::Post(fence, _, json) => {
+                    let data = serde_json::from_str(&json).unwrap_or_default();
+                    self.web_event(fence, "message", data);
+                }
+                host::Output::Stopped(fence, _, why) => {
                     use pecofence_core::i18n;
                     let why = match why {
                         host::Stopped::TooLong => i18n::text("一次运行超过了 50 毫秒").to_string(),

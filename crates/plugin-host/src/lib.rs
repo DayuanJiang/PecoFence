@@ -10,7 +10,7 @@ use pecofence_core::plugins::Permissions;
 use rquickjs::{CaughtError, Context, Ctx, Exception, Function, Object, Runtime};
 use serde_json::{Value, json};
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -32,9 +32,15 @@ pub const BUDGET: Duration = Duration::from_millis(200);
 /// later one takes its place.
 const SHOW_GAP: Duration = Duration::from_millis(100);
 const MAX_TIMERS: usize = 20;
-/// Requests (`pf.http`) a plugin may have going at once, and calls of any kind.
-const MAX_REQUESTS: usize = 4;
-const MAX_CALLS: usize = 16;
+/// Requests (`pf.http`) a plugin may have going at once, and calls of any kind (a web plugin's
+/// page too).
+pub const MAX_REQUESTS: usize = 4;
+pub const MAX_CALLS: usize = 16;
+/// What `call` names the run of main.js itself: an error there stops the plugin (in any other
+/// run it is logged and the plugin goes on).
+const MAIN: &str = "main.js";
+/// The different error messages a plugin's log gets in full; the rest only in the debug log.
+const LOGGED_ERRORS: usize = 100;
 /// The last view goes into the fence's cache file at most this often (and when it stops).
 const CACHE_GAP: Duration = Duration::from_secs(60);
 /// The events PecoFence sends ([`Command::Event`] takes one of these names).
@@ -54,8 +60,11 @@ pub const EVENTS: [&str; 14] = [
     "message",
     "theme",
 ];
-/// The most bytes one `pf.post` may carry (as JSON).
-const MAX_POST: usize = 1024 * 1024;
+/// The most bytes one `pf.post` may carry (as JSON; a web plugin page's message too), and the
+/// most messages and bytes that may wait to go out from one run of the plugin.
+pub const MAX_POST: usize = 1024 * 1024;
+const MAX_POSTS: usize = 100;
+const MAX_POSTED: usize = 4 * 1024 * 1024;
 /// `pf.time.format(unix_ms, kind)`: the time in Windows' region format.
 pub type Format = fn(i64, &str) -> String;
 
@@ -75,6 +84,9 @@ pub struct Start {
     /// Where the fence's last view is kept (`plugins-host\<fence>.view.json`): shown at start
     /// until the plugin's first `pf.show`.
     pub cache: Option<PathBuf>,
+    /// The app's number of this start: every [`Output`] of the runtime carries it, so what an
+    /// earlier runtime of the fence sent late (before an update) is told apart.
+    pub number: u32,
 }
 
 pub enum Command {
@@ -99,12 +111,13 @@ pub enum Stopped {
     Error(String),
 }
 
+/// What a plugin's runtime sends, with its fence and its [`Start::number`].
 #[derive(Debug, PartialEq)]
 pub enum Output {
-    Show(FenceId, View),
-    Stopped(FenceId, Stopped),
-    /// `pf.post(data)`: for the page of the web plugin whose main.js this is.
-    Post(FenceId, serde_json::Value),
+    Show(FenceId, u32, View),
+    Stopped(FenceId, u32, Stopped),
+    /// `pf.post(data)`, as JSON: for the page of the web plugin whose main.js this is.
+    Post(FenceId, u32, String),
 }
 
 /// What reaches the plugin thread: the app's commands and the answers of the worker threads.
@@ -165,11 +178,16 @@ struct Shared {
     json: Option<String>,
     /// The calls on worker threads, by number: their names.
     calls: HashMap<u32, String>,
-    posts: Vec<serde_json::Value>,
+    /// The view fields of the wrong type logged already (each once).
+    dropped: HashSet<String>,
+    /// What `pf.post` sent in this run, as JSON.
+    posts: Vec<String>,
 }
 
 struct Plugin {
     fence: FenceId,
+    number: u32,
+    id: String,
     // The context is dropped before its runtime.
     ctx: Context,
     rt: Runtime,
@@ -189,6 +207,10 @@ struct Plugin {
     /// When the cache file was last written, and whether a newer view is not in it yet.
     cached: Option<Instant>,
     unsaved: bool,
+    /// The errors of Promises nobody handled in this run (an async handler that threw), and the
+    /// messages of the errors logged so far.
+    rejected: Rc<RefCell<Vec<String>>>,
+    logged: HashSet<String>,
 }
 
 fn stopped(text: String) -> Stopped {
@@ -221,10 +243,27 @@ impl Plugin {
         rt.set_interrupt_handler(Some(Box::new(move || {
             late.get().is_some_and(|d| Instant::now() > d)
         })));
+        let rejected: Rc<RefCell<Vec<String>>> = Rc::default();
+        let to = rejected.clone();
+        rt.set_host_promise_rejection_tracker(Some(Box::new(move |_, _, reason, handled| {
+            if !handled {
+                let text = match reason.as_exception() {
+                    Some(e) => format!(
+                        "Error: {}\n{}",
+                        e.message().unwrap_or_default(),
+                        e.stack().unwrap_or_default()
+                    ),
+                    None => format!("Error: {reason:?}"),
+                };
+                to.borrow_mut().push(text);
+            }
+        })));
         let ctx = Context::full(&rt).map_err(fail)?;
         let p = &s.permissions;
         let mut plugin = Plugin {
             fence: s.fence,
+            number: s.number,
+            id: s.id.clone(),
             ctx,
             rt,
             deadline,
@@ -239,6 +278,8 @@ impl Plugin {
             cache: s.cache.clone(),
             cached: None,
             unsaved: false,
+            rejected,
+            logged: HashSet::new(),
         };
         let (shared, click, fence) = (plugin.shared.clone(), plugin.click.clone(), s.fence);
         let agent = format!("PecoFence-plugin/{} {}", s.id, s.version);
@@ -255,20 +296,25 @@ impl Plugin {
                 host.note(fence, note);
             }
         };
-        plugin.call("start", move |ctx| {
+        plugin.call(MAIN, move |ctx| {
             let n = Object::new(ctx.clone())?;
             n.set("lang", s.init["lang"].as_str().unwrap_or_default())?;
             n.set("theme", s.init["theme"].as_str().unwrap_or_default())?;
             n.set("settings", s.init["settings"].to_string())?;
             n.set("fence", s.init["fence"].to_string())?;
-            let (to, note_) = (shared.clone(), note.clone());
+            let (to, note_, plugin) = (shared.clone(), note.clone(), id.clone());
             let show = move |json: String| {
                 if noting {
                     note_("show", json!([serde_json::from_str::<Value>(&json).unwrap_or_default()]));
                 }
-                match view::parse(&json) {
-                    Ok(view) => {
+                match view::read(&json) {
+                    Ok((view, dropped)) => {
                         let mut s = to.borrow_mut();
+                        for field in dropped {
+                            if s.dropped.insert(field.clone()) {
+                                tracing::info!(%fence, plugin, field, "plugin view: a field of the wrong type is left out, the rest shows");
+                            }
+                        }
                         (s.view, s.json) = (Some(view), Some(json));
                     }
                     Err(e) => tracing::debug!(error = %e, "plugin view not read"),
@@ -276,12 +322,16 @@ impl Plugin {
             };
             n.set("show", Function::new(ctx.clone(), show)?)?;
             let to = shared.clone();
-            let post = move |json: String| match serde_json::from_str(&json) {
-                Ok(data) if json.len() <= MAX_POST => to.borrow_mut().posts.push(data),
-                _ => tracing::debug!(
-                    bytes = json.len(),
-                    "plugin post not sent: too big or not JSON"
-                ),
+            let post = move |ctx: Ctx<'_>, json: String| {
+                let mut s = to.borrow_mut();
+                let waiting = s.posts.iter().map(String::len).sum::<usize>();
+                if json.len() > MAX_POST || s.posts.len() >= MAX_POSTS || waiting + json.len() > MAX_POSTED {
+                    tracing::info!(%fence, bytes = json.len(), waiting, posts = s.posts.len(), "plugin post refused: too big or too much at once");
+                    let why = "pf.post: a message is at most 1 MB, and at most 100 messages or 4 MB go out at once";
+                    return Err(Exception::throw_range(&ctx, why));
+                }
+                s.posts.push(json);
+                Ok(())
             };
             n.set("post", Function::new(ctx.clone(), post)?)?;
             let (to, note_) = (shared.clone(), note.clone());
@@ -381,7 +431,9 @@ impl Plugin {
     }
 
     /// Runs `f` in the plugin, then the promise jobs it queued, within [`CALL_LIMIT`] and what
-    /// is left of [`BUDGET`] in this second.
+    /// is left of [`BUDGET`] in this second. A limit stops the plugin, and so does an error in
+    /// main.js itself ([`MAIN`]); an error that escapes a handler, a timer or a Promise is
+    /// logged ([`Self::escaped`]) and the plugin goes on.
     fn call(
         &mut self,
         what: &str,
@@ -408,6 +460,15 @@ impl Plugin {
             }
         }
         self.deadline.set(None);
+        let rejected = std::mem::take(&mut *self.rejected.borrow_mut());
+        for text in rejected {
+            // Out of memory or time inside an async function: a limit all the same.
+            if result.is_ok() && !matches!(stopped(text.clone()), Stopped::Error(_)) {
+                result = Err(text);
+            } else {
+                self.escaped(what, &text);
+            }
+        }
         let took = begun.elapsed();
         self.second.1 += took;
         let noting = self.host.wants_notes();
@@ -420,12 +481,37 @@ impl Plugin {
             let (what, ms) = (what.into(), took.as_secs_f64() * 1000.0);
             self.host.note(self.fence, Note::Ran { what, ms, memory });
         }
-        result.map_err(|e| match stopped(e) {
+        let Err(text) = result else {
+            return Ok(());
+        };
+        match stopped(text.clone()) {
             // Out of memory, QuickJS may have no room left for its error and throws null.
-            Stopped::Error(_) if memory > MEMORY_LIMIT / 10 * 9 => Stopped::TooMuchMemory,
-            Stopped::TooLong if left < CALL_LIMIT => Stopped::TooBusy,
-            why => why,
-        })
+            Stopped::Error(_) if memory > MEMORY_LIMIT / 10 * 9 => Err(Stopped::TooMuchMemory),
+            Stopped::TooLong if left < CALL_LIMIT => Err(Stopped::TooBusy),
+            Stopped::Error(_) if what != MAIN => {
+                self.escaped(what, &text);
+                Ok(())
+            }
+            why => Err(why),
+        }
+    }
+
+    /// An error escaped run `what`: the log gets the plugin, the run, the message and the first
+    /// line of its stack (each message once in full), the checker a note; the plugin goes on.
+    fn escaped(&mut self, what: &str, text: &str) {
+        let mut lines = text.lines();
+        let message = lines.next().unwrap_or_default().to_string();
+        let at = lines.map(str::trim).find(|l| !l.is_empty());
+        let at = at.unwrap_or_default().to_string();
+        let first = self.logged.len() < LOGGED_ERRORS && self.logged.insert(message.clone());
+        let (fence, plugin) = (self.fence, &self.id);
+        if first {
+            tracing::warn!(%fence, plugin, run = what, error = message, line = at, "plugin error: it escaped a handler, the plugin goes on");
+        } else {
+            tracing::debug!(%fence, plugin, run = what, error = message, "plugin error again");
+        }
+        let what = what.to_string();
+        self.host.note(fence, Note::Error { what, message, at });
     }
 
     fn emit(&mut self, name: &str, data: Option<String>) -> Result<(), Stopped> {
@@ -577,7 +663,7 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
             None => inbox.recv().map_err(|_| RecvTimeoutError::Disconnected),
         };
         let at = |fence: FenceId, plugins: &[Plugin]| plugins.iter().position(|p| p.fence == fence);
-        let mut failed: Vec<(FenceId, Stopped)> = Vec::new();
+        let mut failed: Vec<(FenceId, u32, Stopped)> = Vec::new();
         match msg {
             Err(RecvTimeoutError::Timeout) => {}
             Ok(Msg::Cmd(Command::Quit)) | Err(RecvTimeoutError::Disconnected) => {
@@ -589,11 +675,11 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                 if let Some(i) = at(fence, &plugins)
                     && let Err(why) = plugins[i].done(number, result)
                 {
-                    failed.push((fence, why));
+                    failed.push((fence, plugins[i].number, why));
                 }
             }
             Ok(Msg::Cmd(Command::Start(s))) => {
-                let fence = s.fence;
+                let (fence, number) = (s.fence, s.number);
                 if let Some(i) = at(fence, &plugins) {
                     plugins.remove(i).stop();
                 }
@@ -605,11 +691,11 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                         let cached = cached.then(|| p.cache.as_deref().and_then(cached_view));
                         tracing::info!(%fence, ms = begun.elapsed().as_millis(), used, cached = matches!(cached, Some(Some(_))), "plugin started");
                         if let Some(Some(view)) = cached {
-                            out(Output::Show(fence, view));
+                            out(Output::Show(fence, number, view));
                         }
                         plugins.push(p);
                     }
-                    Err(why) => failed.push((fence, why)),
+                    Err(why) => failed.push((fence, number, why)),
                 }
             }
             Ok(Msg::Cmd(Command::Stop(fence))) => {
@@ -622,7 +708,7 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                 if let Some(i) = at(fence, &plugins)
                     && let Err(why) = plugins[i].set_shown(shown)
                 {
-                    failed.push((fence, why));
+                    failed.push((fence, plugins[i].number, why));
                 }
             }
             Ok(Msg::Cmd(Command::Event(fence, name, data))) => {
@@ -644,7 +730,7 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                     let result = if told { p.emit(name, data) } else { Ok(()) };
                     p.click.set(false);
                     if let Err(why) = result {
-                        failed.push((fence, why));
+                        failed.push((fence, p.number, why));
                     }
                 }
             }
@@ -652,23 +738,23 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
         let now = Instant::now();
         for p in &mut plugins {
             if let Err(why) = p.tick(now) {
-                failed.push((p.fence, why));
+                failed.push((p.fence, p.number, why));
             }
         }
-        for (fence, why) in failed {
-            tracing::warn!(%fence, ?why, "plugin stopped by PecoFence");
+        for (fence, number, why) in failed {
+            tracing::warn!(%fence, number, ?why, "plugin stopped by PecoFence");
             if let Some(i) = at(fence, &plugins) {
                 plugins.remove(i).save_view(true);
             }
-            out(Output::Stopped(fence, why));
+            out(Output::Stopped(fence, number, why));
         }
         for p in &mut plugins {
             if let Some(view) = p.view_to_send(now) {
-                out(Output::Show(p.fence, view));
+                out(Output::Show(p.fence, p.number, view));
             }
             let posts = std::mem::take(&mut p.shared.borrow_mut().posts);
             for data in posts {
-                out(Output::Post(p.fence, data));
+                out(Output::Post(p.fence, p.number, data));
             }
         }
     }
@@ -744,6 +830,7 @@ mod tests {
             }),
             shown,
             cache: None,
+            number: 7,
         };
         tx.send(Command::Start(Box::new(start))).unwrap();
         for cmd in then {
@@ -763,7 +850,7 @@ mod tests {
 
     fn texts(out: &[Output]) -> Vec<String> {
         let rows = out.iter().filter_map(|o| match o {
-            Output::Show(_, v) => Some(
+            Output::Show(_, _, v) => Some(
                 v.rows
                     .iter()
                     .map(|r| r.text.clone())
@@ -777,13 +864,81 @@ mod tests {
 
     fn stop_of(out: &[Output]) -> Option<Stopped> {
         out.iter().find_map(|o| match o {
-            Output::Stopped(_, why) => Some(why.clone()),
+            Output::Stopped(_, _, why) => Some(why.clone()),
             _ => None,
         })
     }
 
     fn event(name: &'static str) -> Command {
         Command::Event(FenceId::new_v4(), name, json!({ "id": "a" }))
+    }
+
+    #[test]
+    fn every_output_carries_the_number_of_its_start() {
+        let code = "pf.show({ rows: [{ text: 'a' }] }); pf.post(1); pf.on('click', () => { for (;;) {} });";
+        let out = outputs(code, true, 30, vec![event("click")]);
+        let numbers: Vec<u32> = (out.iter())
+            .map(|o| match o {
+                Output::Show(_, n, _) | Output::Post(_, n, _) | Output::Stopped(_, n, _) => *n,
+            })
+            .collect();
+        assert_eq!(numbers, [7, 7, 7], "{out:?}");
+    }
+
+    #[test]
+    fn an_error_in_a_handler_or_timer_is_logged_and_the_plugin_goes_on() {
+        let code = r#"
+            let n = 0;
+            pf.on('click', () => { throw new Error('click boom'); });
+            pf.on('start', async () => { await 0; throw new TypeError('async boom'); });
+            pf.every(1, () => { n++; if (n === 1) throw new Error('tick boom'); pf.show({ rows: [{ text: 'tick ' + n }] }); });
+        "#;
+        let fake = Arc::new(Fake::default());
+        let out = run_with(
+            code,
+            Permissions::default(),
+            fake.clone(),
+            true,
+            1100,
+            vec![event("click")],
+        );
+        assert_eq!(stop_of(&out), None, "{out:?}");
+        assert!(texts(&out).contains(&"tick 2".to_string()), "{out:?}");
+        let notes = fake.notes.lock().unwrap();
+        let errors: Vec<(String, String)> = (notes.iter())
+            .filter_map(|n| match n {
+                Note::Error { what, message, at } => {
+                    assert!(!at.is_empty(), "{message} has no stack line");
+                    Some((what.clone(), message.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        for (what, message) in [
+            ("start", "Error: async boom"),
+            ("click", "Error: click boom"),
+            ("timer", "Error: tick boom"),
+        ] {
+            assert!(
+                errors.contains(&(what.into(), message.into())),
+                "{what} {message} not in {errors:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_error_in_main_js_itself_stops_the_plugin() {
+        let out = outputs("pf.show({ rows: [] }); null.x;", true, 30, vec![]);
+        assert!(
+            matches!(stop_of(&out), Some(Stopped::Error(e)) if e.contains("null")),
+            "{out:?}"
+        );
+        // Out of memory in an async function is a limit all the same.
+        let code = "pf.on('start', async () => { await 0; const a = []; for (;;) a.push('x'.repeat(1000) + a.length); });";
+        assert_eq!(
+            stop_of(&outputs(code, true, 50, vec![])),
+            Some(Stopped::TooMuchMemory)
+        );
     }
 
     #[test]
@@ -798,13 +953,44 @@ mod tests {
         let code = "pf.on('message', (m) => pf.post({ got: m.n + 1 }));";
         let message = Command::Event(FenceId::new_v4(), "message", serde_json::json!({ "n": 1 }));
         let out = outputs(code, true, 30, vec![message]);
-        let posts: Vec<_> = (out.iter())
+        let posts: Vec<Value> = (out.iter())
             .filter_map(|o| match o {
-                Output::Post(_, data) => Some(data.clone()),
+                Output::Post(_, _, data) => serde_json::from_str(data).ok(),
                 _ => None,
             })
             .collect();
         assert_eq!(posts, [serde_json::json!({ "got": 2 })]);
+    }
+
+    #[test]
+    fn posts_waiting_to_go_out_are_capped() {
+        let code = r#"
+            const big = 'x'.repeat(900 * 1024), out = [];
+            const tryIt = (what, f) => { try { f(); out.push(what + ' ok'); } catch (e) { out.push(what + ' ' + e.name); } };
+            tryIt('huge', () => pf.post('x'.repeat(1100 * 1024)));
+            for (let i = 0; i < 5; i++) tryIt('big' + i, () => pf.post(big));
+            pf.after(1, () => {
+                tryIt('later', () => pf.post(big));
+                for (let i = 0; i < 101; i++) tryIt('small' + i, () => pf.post(i));
+                pf.show({ rows: [{ text: out.join(' ') }] });
+            });
+        "#;
+        let out = outputs(code, true, 1100, vec![]);
+        let text = texts(&out).join("");
+        // Four of 900 KB fit into 4 MB, the fifth waits for none: refused; after the run they
+        // went out and there is room again; the 101st message of one run is refused.
+        for want in [
+            "huge RangeError",
+            "big3 ok",
+            "big4 RangeError",
+            "later ok",
+            "small98 ok",
+            "small99 RangeError",
+        ] {
+            assert!(text.contains(want), "{want} not in {text}");
+        }
+        let posts = out.iter().filter(|o| matches!(o, Output::Post(..))).count();
+        assert_eq!(posts, 4 + 1 + 99);
     }
 
     #[test]

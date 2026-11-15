@@ -851,6 +851,7 @@ impl App {
             self.delete_fence(fence);
         }
         crate::web_plugin::delete_profile(id);
+        self.forget_light(id);
         for dir in [self.plugins.root.join(id), self.plugins_data().join(id)] {
             if let Err(e) = remove_dir(&dir) {
                 tracing::warn!(id, dir = %dir.display(), error = %e, "plugins: folder not removed");
