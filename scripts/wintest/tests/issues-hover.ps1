@@ -9,6 +9,12 @@
 #                         under a pointer that comes to rest on its title (two rolled fences, one
 #                         8 px under the other, as in the report's picture). A pointer that came
 #                         back while the fence was rolling up, and then rests, opens it too
+#   run.sh --var Part=M   six such fences, each hovered once: afterwards no fence keeps the
+#                         shadow bitmap of its glide (GDI objects and private bytes of the app)
+#   run.sh --var Part=X   a rolled Liquid Glass fence with that title row opened by the CLI while
+#                         the pointer is away: its title row folds while it opens, and the glass
+#                         is never stretched far from the height drawn (a 1 px map stretched to
+#                         the 48 px row showed a white glow); recorded for the report
 #   run.sh --var Part=R   recordings of G's glide for the report (no checks)
 $PfAllowLogErrors = $true
 [Anim]::Set($true)
@@ -23,6 +29,8 @@ public static class HoverWatch {
   [DllImport("winmm.dll")] static extern uint timeBeginPeriod(uint ms);
   [DllImport("winmm.dll")] static extern uint timeEndPeriod(uint ms);
   public static int Height(IntPtr h) { RECT r; GetWindowRect(h, out r); return r.B - r.T; }
+  [DllImport("user32.dll")] static extern uint GetGuiResources(IntPtr process, uint flags);
+  public static uint GdiObjects(IntPtr process) { return GetGuiResources(process, 0); }
   // Puts the pointer at (x, y) and returns the ms until the window is more than 2 px taller than
   // it was then (-1: not within timeoutMs). jitterMs > 0 moves the pointer 1 px back and forth
   // that often while waiting (a hand on the mouse).
@@ -296,6 +304,77 @@ if ($Part -match 'L') {
   [Px]::Grab($wr.x - 20, $wr.y - 20, $wr.w + 40, $wr.h + 40).Save("$PfShots\L-shown.png")
   ParkMouse 1300 760
   PfQuit
+  HvClean
+}
+
+if ($Part -match 'M') {
+  Case 'M: six fences with the title row on hover, each hovered once'
+  HvClean
+  HvStart
+  Pf settings set theme light | Out-Null
+  Pf settings set themeStyle liquidGlass | Out-Null
+  $k = 0
+  foreach ($row in 0, 1) {
+    foreach ($col in 0, 1, 2) {
+      $k++
+      HvFence "HvMem$k" "$(60 + $col * 500),$(60 + $row * 400),440,340" @("hv m$k 报告", "hv m$k 预算表")
+    }
+  }
+  ParkMouse 1560 860; Start-Sleep -Seconds 4
+  function HvMem() {
+    $p = Get-Process pecofence | Select-Object -First 1
+    $p.Refresh()
+    return @([int][HoverWatch]::GdiObjects($p.Handle), [math]::Round($p.PrivateMemorySize64 / 1MB, 2))
+  }
+  # Before any title row glided: the title rows show, nothing has been kept for a glide yet.
+  $m0 = HvMem
+  # Each title row folds away (one glide each), then comes back under the pointer and folds again.
+  for ($i = 1; $i -le 6; $i++) { Pf fence set "HvMem$i" titleOnHover hover | Out-Null }
+  Start-Sleep -Seconds 1
+  for ($i = 1; $i -le 6; $i++) {
+    $wr = HvRect "HvMem$i"
+    [G]::MoveTo([int]($wr.x + $wr.w - 20), [int]($wr.y + $wr.h - 20)); Start-Sleep -Milliseconds 800
+    ParkMouse 1560 860; Start-Sleep -Milliseconds 800
+  }
+  Start-Sleep -Seconds 3
+  $m1 = HvMem
+  $d = "GDI objects $($m0[0]) before the title rows glided, $($m1[0]) after; private bytes $($m0[1]) MB before, $($m1[1]) MB after"
+  Log "M $d"
+  Check 'M: after the glides the fences keep no shadow bitmaps of them (at most 4 more GDI objects, 12 with one bitmap and DC per fence)' ($m1[0] -le $m0[0] + 4) $d
+  Check 'M: and private bytes grow by under 1.5 MB (about 0.8 MB per fence with the bitmaps kept)' ($m1[1] - $m0[1] -lt 1.5) $d
+  PfQuit
+  HvClean
+}
+
+if ($Part -match 'X') {
+  . C:\pf\kit\rec.ps1
+  Case 'X: a rolled Liquid Glass fence with the title row on hover, opened by the CLI'
+  HvClean
+  HvStart
+  Pf settings set theme light | Out-Null
+  Pf settings set themeStyle liquidGlass | Out-Null
+  HvFence 'HvOpen' '420,200,440,340' @(1..8 | ForEach-Object { "hv x$_ 会议纪要" })
+  Pf fence set HvOpen titleOnHover hover | Out-Null
+  Pf fence roll HvOpen | Out-Null
+  ParkMouse 1500 840; Start-Sleep -Seconds 3
+  $wr = HvRect 'HvOpen'
+  $from = (Get-Date).ToUniversalTime()
+  for ($n = 1; $n -le 3; $n++) {
+    RecStart "open-$n" -X ($wr.x - 30) -Y ($wr.y - 30) -W ($wr.w + 60) -H 440 -Fps 30 -InMemory
+    Start-Sleep -Milliseconds 300
+    RecMark '用命令行展开收起的栅栏（鼠标不在上面）'
+    Pf fence unroll HvOpen | Out-Null
+    Start-Sleep -Milliseconds 900
+    RecStop
+    Pf fence roll HvOpen | Out-Null; Start-Sleep -Milliseconds 1500
+  }
+  $to = (Get-Date).ToUniversalTime()
+  PfQuit
+  $maps = @(HvLines $from $to | Where-Object { $_ -match 'glass map built w=\d+ h=(\d+) drawn_h=(\d+)' })
+  $far = @($maps | Where-Object { $_ -match ' h=(\d+) drawn_h=(\d+)' -and ([double]$Matches[2] -gt 1.4 * [double]$Matches[1] -or [double]$Matches[1] -gt 1.4 * [double]$Matches[2]) })
+  $d = "$($maps.Count) glass builds while the fence opened 3 times; built far from the height drawn: $($far.Count)$(if ($far.Count) { '; e.g. ' + (($far | Select-Object -First 3 | ForEach-Object { $_ -replace '^.*glass map built ', '' }) -join ' / ') })"
+  Log "X $d"
+  Check 'X: the glass is never built for a height far from the one drawn (no 1 px map stretched over the title row)' ($maps.Count -ge 3 -and $far.Count -eq 0) $d
   HvClean
 }
 
