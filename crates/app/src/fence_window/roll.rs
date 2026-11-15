@@ -255,11 +255,14 @@ impl FenceViewState {
         self.shadow_timer = false;
         let r = self.plate_rect();
         let resized = self.shadow.body_size() != Some((r.right - r.left, r.bottom - r.top));
-        // A roll or an auto-height settle brings a new bitmap with every frame: they go
-        // through one DIB section, tall enough for the taller end of the animation.
-        let tallest = self.height_animating().then(|| {
+        // A roll, an auto-height settle or the glide of a title row that shows on hover brings
+        // a new bitmap with every frame: they go through one DIB section, tall enough for the
+        // taller end of the animation (the glide's: the plate with the whole title row).
+        let gliding = !self.title_reveal.is_done(Instant::now());
+        let tallest = (self.height_animating() || gliding).then(|| {
             let h = r.bottom - r.top;
-            h.max(
+            let whole = if gliding { h + self.plate_inset_px } else { h };
+            whole.max(
                 self.height_target_px()
                     .map_or(h, |t| t - self.plate_inset_px + self.square_top_px()),
             )
