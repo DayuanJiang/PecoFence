@@ -101,9 +101,9 @@ use fences::work_areas;
 use fileops::{FileOp, FileOpThen};
 use peek::peek_hotkey_label;
 use visuals::{
-    StartupBackdrops, backdrop_mode_for, custom_theme_names, fence_style_for, icon_variant_for,
-    load_custom_theme, pick_theme_mode, shadow_style_for, text_size_index, theme_for,
-    tray_icon_image, verify_wallpaper_later, write_example_themes,
+    StartupBackdrops, apply_menu_colors, backdrop_mode_for, custom_theme_names, fence_style_for,
+    icon_variant_for, load_custom_theme, pick_theme_mode, shadow_style_for, text_size_index,
+    theme_for, tray_icon_image, verify_wallpaper_later, write_example_themes,
 };
 use wallpaper_refresh::{
     BackdropCache, FIRST_CHECK_MS, RefreshSchedule, WallpaperReader, supersedes,
@@ -906,7 +906,7 @@ impl App {
         log_start_state(&state);
 
         let theme_mode = pick_theme_mode(state.config.settings.theme, &args);
-        tray::set_dark_menus(theme_mode == ThemeMode::Dark);
+        apply_menu_colors(state.config.settings.menu_color, theme_mode, "start");
         let accent = systheme::accent_palette();
         let loaded = load_custom_theme(&state);
         let custom_theme_error = loaded.as_ref().err().cloned();

@@ -15,7 +15,7 @@ const fixture = {
   settings: {
     language: 'zh-CN', idleOpacity: 1,
     autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, showTrayIcon: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
-    showDesktop: 'keepVisible', theme: 'dark', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
+    showDesktop: 'keepVisible', theme: 'dark', menuColor: 'followMode', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace', doubleCtrl: false },
@@ -597,6 +597,15 @@ async function runTests() {
     assert(doc.getElementById('fenceTransparentOnHover').hidden, 'Stay-transparent switch offered for a fence that is not fully transparent');
     change(doc, 'fenceIconAlign', 'center'); await settle();
     assert(messages().at(-1).id === 'fence-a' && messages().at(-1).prop === 'iconAlign' && messages().at(-1).value === 'center', 'Icon alignment not posted');
+  });
+  await test('菜单颜色 offers 跟随颜色模式, 浅色 and 深色 and posts the choice', async () => {
+    doc = await reset();
+    const sel = doc.querySelector('[data-bind=menuColor]');
+    assert([...sel.options].map(o => o.value).join() === 'followMode,light,dark', 'Options: ' + [...sel.options].map(o => o.value).join());
+    assert(sel.value === 'followMode', 'Default not shown: ' + sel.value);
+    sel.value = 'light'; sel.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true })); await settle();
+    const patch = frame.contentWindow.testMessages.filter(m => m.type === 'patchSettings').at(-1);
+    assert(patch && patch.settings.menuColor === 'light', 'Not posted: ' + JSON.stringify(patch && patch.settings.menuColor));
   });
   await test('在哪个虚拟桌面显示 lists the desktops, shows the choice and posts it; none for the inbox or one desktop', async () => {
     doc.querySelector('[data-page=fences]').click();

@@ -68,7 +68,7 @@ from a few central places of the program:
   `search_row` or `right_drag`.
 - **`settings.page`** with `general`, `layout`, `fences`, `rules`, `peek`, `tools` or `about`.
 - **`settings.set`**, when the settings window changed a setting, with the setting's name
-  (never its value): `rules` for the rules, or one of `language`, `theme`, `theme_style`,
+  (never its value): `rules` for the rules, or one of `language`, `theme`, `menu_color`, `theme_style`,
   `custom_theme`, `label_color`, `title_align`, `tab_bar`, `icon_size`, `quick_hide.enabled`,
   `roll_up.hover_peek`, `roll_up.click_to_expand`, `roll_up.hover_speed`,
   `roll_up.title_on_hover`, `roll_up.hide_inactive_scrollbar`, `roll_up.push_neighbors`,

@@ -317,6 +317,9 @@ Peek open by pressing Ctrl twice quickly, with its search box, instead of the sh
 saved but is not registered; setting `peek.hotkey` or `peek.customHotkey` turns it off; works only
 while `peek.enabled` is on; default off), `quickHide.enabled`,
 `titleAlign` (left/center/right: the title and tab strip in every title row),
+`menuColor` (「菜单颜色」: followMode/light/dark: the colours of every popup menu of PecoFence, the
+tray menu and the fence and item menus with the entries Windows adds, and their tips; followMode
+takes the light or dark of `theme`; Windows 10 before 1903 keeps light menus; default followMode),
 `idleOpacity` (「闲置时的不透明度」: the strength a fence fades to while the pointer is not over it and
 nothing is being done in it, 0.1 to 1; 1 = fences never fade, the default; the settings page offers 1,
 0.7, 0.45 and 0.25),

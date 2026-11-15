@@ -154,6 +154,10 @@ pub struct Settings {
     pub language: crate::i18n::Language,
     pub backdrop: Backdrop,
     pub theme: ThemeSetting,
+    /// 菜单颜色: light or dark popup menus (the tray menu, the fence and item menus with the
+    /// entries Windows adds, their tips), on their own or following `theme`.
+    #[serde(default)]
+    pub menu_color: MenuColor,
     /// Whole-fence opacity while idle (0.1..1); 1 disables hover fading.
     #[serde(
         default = "default_idle_opacity",
@@ -452,6 +456,7 @@ impl Default for Settings {
             language: crate::i18n::Language::System,
             backdrop: Backdrop::Acrylic,
             theme: ThemeSetting::FollowWindowsMode,
+            menu_color: MenuColor::FollowMode,
             idle_opacity: 1.0,
             theme_style: ThemeStyle::Fluent,
             custom_theme: None,
@@ -500,6 +505,19 @@ pub enum Backdrop {
 pub enum ThemeSetting {
     FollowWindowsMode,
     FollowAppMode,
+    Light,
+    Dark,
+}
+
+/// 菜单颜色. Windows draws a process's menus light or dark as one (uxtheme's preferred app
+/// mode), so this goes for every popup menu of PecoFence at once.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "camelCase")]
+pub enum MenuColor {
+    /// The light or dark of 颜色模式 (`theme`).
+    #[default]
+    FollowMode,
     Light,
     Dark,
 }
@@ -2937,8 +2955,10 @@ mod tests {
         json.as_object_mut().unwrap().remove("tabBar");
         json.as_object_mut().unwrap().remove("labelColor");
         json.as_object_mut().unwrap().remove("customTheme");
+        json.as_object_mut().unwrap().remove("menuColor");
         let legacy: Settings = serde_json::from_value(json).unwrap();
         assert_eq!(legacy.theme_style, ThemeStyle::Fluent);
+        assert_eq!(legacy.menu_color, MenuColor::FollowMode);
         assert_eq!(legacy.custom_theme, None);
         assert_eq!(legacy.title_align, TitleAlign::Left);
         assert_eq!(legacy.tab_bar, TabBar::Top);
@@ -2953,10 +2973,12 @@ mod tests {
                 theme: mode,
                 theme_style: ThemeStyle::LiquidGlass,
                 label_color: LabelColor::White,
+                menu_color: MenuColor::Light,
                 ..legacy.clone()
             };
             let json = serde_json::to_value(&settings).unwrap();
             assert_eq!(json["themeStyle"], "liquidGlass");
+            assert_eq!(json["menuColor"], "light");
             assert_eq!(json["labelColor"], "white");
             assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
         }
