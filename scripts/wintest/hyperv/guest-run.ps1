@@ -5,7 +5,7 @@
 # left as found. Guest account pf / pecofence with auto-logon and the PFJob task (see README).
 # Results: <Base>\res-<VM><Tag>\<step>.tar (C:\pf\run of each job) and jobs.txt; progress in
 # run-<VM><Tag>.log; done-<VM><Tag>.txt when it ends.
-param([string]$VM, [string]$Steps, [int]$Timeout = 1500, [int]$Width = 1600, [int]$Height = 900, [string]$Base = (Join-Path $env:TEMP 'pfwintest'), [string]$Stage = 'stage', [string]$Tag = '', [switch]$ClassicNotepad)
+param([string]$VM, [string]$Steps, [int]$Timeout = 1500, [int]$Width = 1600, [int]$Height = 900, [string]$Base = (Join-Path $env:TEMP 'pfwintest'), [string]$Stage = 'stage', [string]$Tag = '', [switch]$ClassicNotepad, [switch]$Elevated)
 $ErrorActionPreference = 'Continue'
 $base = $Base
 $res = Join-Path $base "res-$VM$Tag"
@@ -81,6 +81,12 @@ try {
     "action=$($t.Actions[0].Execute) $($t.Actions[0].Arguments) priority=$($t.Settings.Priority) user=$($t.Principal.UserId) $($t.Principal.LogonType) $($t.Principal.RunLevel)"
   }
   L "prep: $prep"
+  if ($Elevated) {
+    # The jobs (the app, its CLI and the steps) run with pf's full administrator token, as for a
+    # user who starts PecoFence as administrator; the checkpoint restore undoes it.
+    $el = G { $p = (Get-ScheduledTask PFJob).Principal; $p.RunLevel = 'Highest'; Set-ScheduledTask -TaskName PFJob -Principal $p | Out-Null; 'PFJob run level ' + (Get-ScheduledTask PFJob).Principal.RunLevel }
+    L $el
+  }
   if ($ClassicNotepad) {
     # The kit's steps expect the classic Notepad (as on Server 2025): the Store Notepad restores
     # the tabs of earlier jobs and shows "Cannot find ..." boxes over them.
