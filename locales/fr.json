@@ -1080,6 +1080,8 @@
   "下载没有完成，检查网络后再试一次。": "Le téléchargement n’a pas abouti. Vérifiez le réseau et réessayez.",
   "下载的文件和审查过的不一样，已经放弃安装。": "Les fichiers téléchargés diffèrent de ceux relus : rien n’a été installé.",
   "卸载“{0}”？它的栅栏和它保存的数据都会删掉。": "Désinstaller « {0} » ? Ses groupes et les données enregistrées seront supprimées.",
+  "卸载“{0}”？它的栅栏和它保存的数据都会删掉，包括 {1} 个便签里的文字。": "Désinstaller « {0} » ? Ses groupes et les données enregistrées seront supprimés, y compris le texte de {1} note(s).",
+  "插件目录刚刚更新了这个插件，请再看一遍它会做的事。": "La liste des plugins vient de modifier ce plugin. Relisez ce qu’il va faire.",
   "插件停止了：{0}。5 秒后自动重新启动。": "Le plugin s’est arrêté : {0}. Il redémarre tout seul dans 5 secondes.",
   "插件停止了：{0}。一小时里停了三次，不再自动启动。": "Le plugin s’est arrêté : {0}. Il s’est arrêté trois fois en une heure et ne redémarre plus tout seul.",
   "每秒合计运行超过了 200 毫秒": "il a tourné plus de 200 ms au total en une seconde",

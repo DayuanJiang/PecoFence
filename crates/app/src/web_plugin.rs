@@ -763,6 +763,36 @@ pub fn delete_profile(id: &str) {
     }
 }
 
+/// A plugin installed again (`App::switch_plugin`): the deletion its uninstall left for the next
+/// start is tried now, and is no longer left, so the next start keeps the new install's data.
+pub fn keep_profile(id: &str) {
+    let data = crate::settings_host::user_data_folder();
+    let list = data.join(LEFT_PROFILES);
+    let Ok(text) = std::fs::read_to_string(&list) else {
+        return;
+    };
+    if !text.lines().any(|l| l == id) {
+        return;
+    }
+    let gone = std::fs::remove_dir_all(profile_dir(&data, id)).is_ok();
+    let rest: String = text
+        .lines()
+        .filter(|l| *l != id)
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let kept = if rest.is_empty() {
+        std::fs::remove_file(&list)
+    } else {
+        std::fs::write(&list, rest)
+    };
+    tracing::info!(
+        plugin = id,
+        gone,
+        list_ok = kept.is_ok(),
+        "web plugin: installed again, its left profile is no longer deleted at the next start"
+    );
+}
+
 /// Before the browser starts (`WebEnvironment::create`): the profiles `delete_profile` left.
 pub fn delete_left_profiles(data: &Path) {
     let list = data.join(LEFT_PROFILES);

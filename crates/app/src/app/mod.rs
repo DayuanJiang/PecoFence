@@ -2491,6 +2491,7 @@ impl App {
         app.remove_old_update_downloads();
         app.arm_update_check(true);
         app.arm_plugins_check(true);
+        app.drop_stale_views(false);
         // Last of the startup balloons, so it is the one left showing.
         app.offer_crash_feedback();
         app.offer_welcome();

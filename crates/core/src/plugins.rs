@@ -36,8 +36,8 @@ pub const API: u32 = 1;
 /// The most bytes `index.json` may have.
 pub const MAX_INDEX: usize = 1024 * 1024;
 
-/// What a plugin may do with the clipboard, in growing order.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+/// What a plugin may do with the clipboard: reading and writing are two separate rights.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Clipboard {
     #[default]
@@ -187,6 +187,9 @@ pub struct Entry {
 
 #[derive(Debug, Clone, Default)]
 pub struct Index {
+    /// Grows with every change of the plugin repository (its count of commits); an index with a
+    /// lower one than the index kept is an old copy served again. None in an index: 0.
+    pub serial: u64,
     pub commit: String,
     pub plugins: Vec<Entry>,
 }
@@ -367,6 +370,8 @@ pub fn parse_index(bytes: &[u8]) -> Result<(Index, Vec<String>), String> {
     #[derive(Deserialize)]
     struct Raw {
         format: u32,
+        #[serde(default)]
+        serial: u64,
         commit: String,
         plugins: Vec<serde_json::Value>,
     }
@@ -381,6 +386,7 @@ pub fn parse_index(bytes: &[u8]) -> Result<(Index, Vec<String>), String> {
         return Err("index commit is not 40 hex digits".into());
     }
     let mut index = Index {
+        serial: raw.serial,
         commit: raw.commit,
         plugins: Vec::new(),
     };
@@ -456,8 +462,8 @@ pub fn page_url(commit: &str, id: &str) -> String {
 }
 
 /// The fields in which `new` asks for more than `old`: a host or program not asked for before
-/// (`network`, `links`, `system`; a link that was a network host is not new), more clipboard
-/// access (none < write < read < readwrite), or `background`, `folders`, `notify` turned on.
+/// (`network`, `links`, `system`; a link that was a network host is not new), reading or
+/// writing the clipboard when it did not before, or `background`, `folders`, `notify` turned on.
 pub fn more_permissions(old: &Permissions, new: &Permissions) -> Vec<&'static str> {
     let added = |o: &[String], n: &[String]| {
         n.iter()
@@ -468,7 +474,11 @@ pub fn more_permissions(old: &Permissions, new: &Permissions) -> Vec<&'static st
         ("network", added(&old.network, &new.network)),
         ("links", added(&links, &new.links)),
         ("system", added(&old.system, &new.system)),
-        ("clipboard", new.clipboard > old.clipboard),
+        (
+            "clipboard",
+            (new.clipboard.reads() && !old.clipboard.reads())
+                || (new.clipboard.writes() && !old.clipboard.writes()),
+        ),
         ("background", new.background && !old.background),
         ("folders", new.folders && !old.folders),
         ("notify", new.notify && !old.notify),
@@ -497,18 +507,28 @@ pub fn needs_newer_app(m: &Manifest, app: &str) -> bool {
 }
 
 /// What to do with the index's `entry` when `installed` is on this computer and PecoFence is
-/// version `app`. A plugin with `system` always asks.
+/// version `app`. A plugin with `system`, or one that changes its layer, always asks.
 pub fn update_kind(installed: &Manifest, entry: &Manifest, app: &str) -> Update {
     let (old, new) = (&installed.permissions, &entry.permissions);
     if !crate::updates::is_newer(&entry.version, &installed.version) {
         Update::None
     } else if needs_newer_app(entry, app) {
         Update::NeedsNewerApp
-    } else if !new.system.is_empty() || !more_permissions(old, new).is_empty() {
+    } else if !new.system.is_empty()
+        || installed.layer != entry.layer
+        || !more_permissions(old, new).is_empty()
+    {
         Update::Confirm
     } else {
         Update::Auto
     }
+}
+
+/// What the install warning shows of plugin `m` (its version, layer and permissions), as one
+/// text: the page sends it back with 安装, and a different one now means the index changed
+/// while the warning was open, so the warning is shown again.
+pub fn shown_key(m: &Manifest) -> String {
+    format!("{} {} {:?}", m.version, m.layer, m.permissions)
 }
 
 /// The text for UI language `lang` ("zh-CN"): that language, another one of the same family,
@@ -693,7 +713,14 @@ mod tests {
     #[test]
     fn index_needs_format_1_and_a_full_commit() {
         let ok = index(vec![]);
-        assert!(parse_index(&ok).is_ok());
+        assert_eq!(
+            parse_index(&ok).unwrap().0.serial,
+            0,
+            "no serial reads as 0"
+        );
+        let with = json!({ "format": 1, "serial": 57, "commit": COMMIT, "plugins": [] });
+        let with = parse_index(&serde_json::to_vec(&with).unwrap()).unwrap().0;
+        assert_eq!(with.serial, 57);
         let text = String::from_utf8(ok).unwrap();
         assert!(parse_index(text.replace("\"format\":1", "\"format\":2").as_bytes()).is_err());
         assert!(parse_index(text.replace(COMMIT, "index").as_bytes()).is_err());
@@ -807,13 +834,20 @@ mod tests {
                 .extend(change.as_object().unwrap().clone());
             assert_eq!(more_permissions(&old, &perms(v)), [field]);
         }
-        let order = [
-            Clipboard::None,
-            Clipboard::Write,
-            Clipboard::Read,
-            Clipboard::Readwrite,
-        ];
-        assert!(order.windows(2).all(|w| w[0] < w[1]));
+        // Reading and writing the clipboard are two rights: read to write is more too.
+        let clip = |c: &str| perms(json!({ "clipboard": c }));
+        for (from, to, more) in [
+            ("read", "write", true),
+            ("write", "read", true),
+            ("none", "write", true),
+            ("read", "readwrite", true),
+            ("readwrite", "read", false),
+            ("readwrite", "write", false),
+            ("write", "none", false),
+        ] {
+            let got = more_permissions(&clip(from), &clip(to));
+            assert_eq!(!got.is_empty(), more, "{from} to {to}: {got:?}");
+        }
     }
 
     #[test]
@@ -858,6 +892,31 @@ mod tests {
             update_kind(&system("1.0.1"), &system("1.0.2"), "0.4.0"),
             Update::Confirm
         );
+        // A light plugin that becomes a web page asks too.
+        let web = manifest(|v| {
+            v["version"] = "1.0.2".into();
+            v["layer"] = "web".into();
+        });
+        assert_eq!(update_kind(&installed, &web, "0.4.0"), Update::Confirm);
+    }
+
+    #[test]
+    fn the_shown_key_changes_with_what_the_warning_shows() {
+        let m = manifest(|_| {});
+        assert_eq!(shown_key(&m), shown_key(&m.clone()));
+        let changed = [
+            manifest(|v| v["version"] = "1.0.2".into()),
+            manifest(|v| v["layer"] = "web".into()),
+            manifest(|v| v["permissions"]["clipboard"] = "read".into()),
+            manifest(|v| v["permissions"]["network"] = json!(["x.com"])),
+            manifest(|v| v["permissions"]["notify"] = true.into()),
+        ];
+        for other in changed {
+            assert_ne!(shown_key(&m), shown_key(&other), "{other:?}");
+        }
+        // The name and the description are not part of what it may do.
+        let renamed = manifest(|v| v["description"] = json!({ "en": "Other words." }));
+        assert_eq!(shown_key(&m), shown_key(&renamed));
     }
 
     #[test]

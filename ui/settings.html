@@ -472,6 +472,8 @@
   .fb-note .ic { color: var(--caution); font-size: 16px; line-height: 20px; }
   /* 插件 in 设置 › 小工具: a row per plugin opens into its details; 安装 asks first. */
   .pl-row { cursor: pointer; }
+  /* No icon is drawn left of a plugin's name: its rows start where the cards' text does. */
+  #pluginList > .card.child { padding-left: 16px; }
   .pl-row .pl-meta { color: var(--text2); font-size: 12px; }
   .pl-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
   .pl-tags span { font-size: 12px; line-height: 18px; padding: 0 6px; border-radius: 4px; background: var(--subtle); color: var(--text2); }
@@ -485,9 +487,10 @@
   .pl-dialog h4 { font-size: 20px; line-height: 28px; font-weight: 600; margin: 0 0 8px; overflow-wrap: anywhere; }
   .pl-dialog p { margin: 4px 0; }
   .pl-dialog .pl-warn { margin: 12px 0; padding: 8px 12px; border-radius: 4px; background: var(--caution-bg); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent); }
-  .pl-dialog .pl-warn.strict { border-color: var(--caution); }
+  .pl-dialog .pl-warn.strict { border-color: var(--caution); background: color-mix(in srgb, var(--caution) 18%, var(--caution-bg)); }
   .pl-dialog .pl-warn.strict p:first-child { font-weight: 600; }
-  .pl-dialog .pl-warn[hidden] { display: none; }
+  .pl-dialog .pl-warn[hidden], .pl-dialog p[hidden] { display: none; }
+  .pl-dialog p.caution { color: var(--caution); font-weight: 600; }
   /* A plugin fence's settings in the details; 插件设置 in its menu tints the one it came from. */
   .pl-form { margin-top: 8px; padding: 8px 12px; border-radius: 4px; background: var(--subtle); transition: background-color 0.3s linear; }
   .pl-form.pl-flash { background: var(--chosen); }
@@ -532,7 +535,7 @@
     nav { width: 56px; padding: 12px 6px; }
     .brand { justify-content: center; padding: 8px 0 16px; }
     .brand-name, .nav-text, .nav-footer, .nav-search { display: none; } nav a { justify-content: center; padding: 8px 0; }
-    main { padding: 16px 12px 24px; } .card { padding: 12px; } .card.child, .rows > .card { padding-left: 12px; }
+    main { padding: 16px 12px 24px; } .card { padding: 12px; } .card.child, .rows > .card, #pluginList > .card.child { padding-left: 12px; }
     .style-tiles, .theme-files, .chips, .fb-kinds, .fb-field { padding-left: 0; } .newrule, .cond-list, .fb-preview { padding-left: 12px; }
     .about-head { gap: 14px; } .about-head .brand-mark { width: 44px; height: 44px; }
   }
@@ -937,6 +940,7 @@
       </div>
       <div class="pl-back" id="plBack" hidden><div class="pl-dialog" role="dialog" aria-modal="true" aria-labelledby="plTitle">
         <h4 id="plTitle"></h4><p id="plBy"></p>
+        <p class="caution" id="plChanged" hidden>插件目录刚刚更新了这个插件，请再看一遍它会做的事。</p>
         <div class="pl-warn"><p>它会做：</p><ul id="plDoes"></ul><p>插件只能做这里列出的事，每个版本都经过自动检查和审查。</p></div>
         <div class="pl-warn strict" id="plSystem" hidden><p id="plSystemText"></p><p id="plSystemOff">打开“允许插件使用 Windows 底层功能”后才能用这些功能。</p></div>
         <p id="plToolsOn" hidden>安装后会打开“小工具”开关。</p>
@@ -1871,6 +1875,9 @@
     if (list.contains(a) && a.matches('input, select')) { plPending = true; return; }
     plPending = false;
     if (pl.open && pl.open[0] !== plOpenSeq) { plOpenSeq = pl.open[0]; plOpen.add(pl.open[1]); plFocus = [pl.open[1], pl.open[2]]; }
+    // 安装 was refused: the index changed what the plugin may do while its warning was open.
+    const again = pl.ask && pl.list.find(x => x.id === pl.ask && (x.state === 'install' || x.state === 'confirm'));
+    if (again) plConfirm(again, true);
     list.replaceChildren();
     for (const p of pl.list) {
       const row = plEl('div', 'card child pl-row'), l = plEl('div', 'l'), box = plEl('div');
@@ -1918,8 +1925,9 @@
   }
   document.getElementById('pluginList').addEventListener('focusout', () => setTimeout(() => { if (plPending) renderPlugins(); }));
   // 安装 and a 更新 that asks for more: the warning first.
-  function plConfirm(p) {
+  function plConfirm(p, changed) {
     plAsk = p;
+    document.getElementById('plChanged').hidden = !changed;
     document.getElementById('plTitle').textContent = p.state === 'confirm' ? tf("更新“{0}”？", p.name) : tf("安装“{0}”？", p.name);
     document.getElementById('plBy').textContent = tf("作者 {0}，审查过的版本是 {1}。", p.author, p.version);
     document.getElementById('plDoes').replaceChildren(...plLines(p).map(x => plEl('li', '', x)));
@@ -1933,7 +1941,7 @@
   }
   function plClose(install) {
     document.getElementById('plBack').hidden = true;
-    if (install && plAsk) send({ type: 'action', name: 'pluginInstall', id: plAsk.id });
+    if (install && plAsk) send({ type: 'action', name: 'pluginInstall', id: plAsk.id, shown: plAsk.shown });
     plAsk = null;
   }
   document.getElementById('plCancel').onclick = () => plClose(false);

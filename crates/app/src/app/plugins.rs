@@ -75,6 +75,9 @@ pub(super) struct Plugins {
     /// The row the page opens (插件详情, 插件设置 with its fence), numbered so that the page
     /// opens it again after the user closed it.
     open: Option<(u32, String, Option<FenceId>)>,
+    /// The plugin whose install warning the page shows again (the index changed what it may do
+    /// while the warning was open): in the one state sent right after the refused 安装.
+    ask: Option<String>,
     done: Arc<Mutex<Vec<Done>>>,
 }
 
@@ -110,8 +113,9 @@ fn get_first(urls: &[String]) -> Result<Vec<u8>, String> {
 }
 
 /// The index from the first address whose copy is signed by the plugin repository's key (a
-/// wrong or missing signature counts as no index there).
-fn fetch_index(test: Option<String>) -> Result<(Index, Vec<u8>), String> {
+/// wrong or missing signature, or a serial lower than `serial` of the index kept, counts as no
+/// index there).
+fn fetch_index(test: Option<String>, serial: u64) -> Result<(Index, Vec<u8>), String> {
     let urls = test
         .clone()
         .map_or_else(|| list::index_urls().to_vec(), |u| vec![u]);
@@ -126,7 +130,14 @@ fn fetch_index(test: Option<String>) -> Result<(Index, Vec<u8>), String> {
                 Err(e) => Err(format!("no signature: {e}")),
             }
         });
-        match got.and_then(|bytes| Ok((list::parse_index(&bytes)?, bytes))) {
+        let got = got.and_then(|bytes| Ok((list::parse_index(&bytes)?, bytes)));
+        let got = got.and_then(|((index, dropped), bytes)| match index.serial {
+            older if older < serial => Err(format!(
+                "an older index (serial {older}, the one kept has {serial})"
+            )),
+            _ => Ok(((index, dropped), bytes)),
+        });
+        match got {
             Ok(((index, dropped), bytes)) => {
                 for why in dropped {
                     tracing::warn!(why, "plugins: index entry left out");
@@ -198,6 +209,18 @@ fn remove_dir(dir: &Path) -> std::io::Result<()> {
         }
     }
     std::fs::remove_dir_all(dir)
+}
+
+/// Names `version` the one in use: `current.txt` is written beside it and renamed over it, so a
+/// failure leaves the version before in use.
+fn write_current(dir: &Path, version: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let temp = dir.join("current.txt.new");
+    let mut f = std::fs::File::create(&temp)?;
+    f.write_all(version.as_bytes())?;
+    f.sync_all()?;
+    drop(f);
+    std::fs::rename(&temp, dir.join("current.txt"))
 }
 
 fn read_text(path: &Path) -> Option<String> {
@@ -409,7 +432,8 @@ impl App {
         }
         self.plugins.status = Status::Loading;
         let test = test_url(self.instance.is_some());
-        self.run_plugin_job(move || Done::Index(fetch_index(test)));
+        let serial = self.plugins.index.as_ref().map_or(0, |i| i.serial);
+        self.run_plugin_job(move || Done::Index(fetch_index(test, serial)));
         self.push_settings_state();
     }
 
@@ -446,7 +470,7 @@ impl App {
         for d in done {
             match d {
                 Done::Index(Ok((index, bytes))) => {
-                    tracing::info!(plugins = index.plugins.len(), commit = %index.commit, "plugins: index read");
+                    tracing::info!(plugins = index.plugins.len(), serial = index.serial, commit = %index.commit, "plugins: index read");
                     let saved = std::fs::create_dir_all(&self.plugins.root)
                         .and_then(|()| std::fs::write(self.plugins.root.join("index.json"), bytes));
                     if let Err(e) = saved {
@@ -473,6 +497,23 @@ impl App {
     /// Takes down what the index marks disabled and updates what may update by itself.
     fn apply_plugin_index(&mut self) {
         let app = env!("CARGO_PKG_VERSION");
+        // A first install under way of a plugin taken down now: its result will be dropped.
+        let index = self.plugins.index.as_ref();
+        let down: Vec<String> = (self.plugins.busy.keys())
+            .filter(|id| {
+                index
+                    .and_then(|i| i.get(id))
+                    .is_some_and(|e| e.disabled.is_some())
+            })
+            .cloned()
+            .collect();
+        for id in down {
+            tracing::warn!(
+                id,
+                "plugins: taken down by the index during its download, cancelled"
+            );
+            self.plugins.busy.remove(&id);
+        }
         let ids: Vec<String> = self.plugins.installed.keys().cloned().collect();
         for id in ids {
             let entry = self.plugins.index.as_ref().and_then(|i| i.get(&id));
@@ -515,6 +556,20 @@ impl App {
         if self.plugins.busy.contains_key(id) {
             return;
         }
+        let mine = self.plugin(id);
+        let refused = if entry.disabled.is_some() || mine.is_some_and(|p| p.disabled.is_some()) {
+            Some("taken down")
+        } else if list::needs_newer_app(&entry.manifest, env!("CARGO_PKG_VERSION")) {
+            Some("needs a newer PecoFence")
+        } else if mine.is_some_and(|p| p.ready && p.manifest.version == entry.manifest.version) {
+            Some("this version is installed")
+        } else {
+            None
+        };
+        if let Some(why) = refused {
+            let version = &entry.manifest.version;
+            return tracing::warn!(id, by_user, version, why, "plugins: download refused");
+        }
         self.plugins.downloads += 1;
         let n = self.plugins.downloads;
         self.plugins.busy.insert(id.to_string(), n);
@@ -542,16 +597,26 @@ impl App {
         result: Result<String, (bool, String)>,
     ) {
         let temp = self.plugins.root.join(format!(".new-{id}-{n}"));
-        if self.plugins.busy.get(id) != Some(&n) {
+        let ours = self.plugins.busy.get(id) == Some(&n);
+        if ours {
+            self.plugins.busy.remove(id);
+        }
+        // Checked again right before the switch: a plugin the index takes down is not installed.
+        let index = self.plugins.index.as_ref();
+        let down = index
+            .and_then(|i| i.get(id))
+            .is_some_and(|e| e.disabled.is_some())
+            || self.plugin(id).is_some_and(|p| p.disabled.is_some());
+        if !ours || down {
             tracing::info!(
                 id,
                 n,
+                down,
                 "plugins: a cancelled download ended, its files are dropped"
             );
             let _ = std::fs::remove_dir_all(&temp);
             return;
         }
-        self.plugins.busy.remove(id);
         let before = self.plugin(id).map(|p| p.manifest.version.clone());
         let result =
             result.and_then(|version| self.switch_plugin(id, &temp, &version, before.as_deref()));
@@ -583,7 +648,9 @@ impl App {
                     fences = fences.len(),
                     "plugins: installed, its fences start again"
                 );
+                // A web plugin's page, its rules and its main.js are the new version's.
                 for fence in fences {
+                    self.restart_web_page(fence);
                     self.start_script(fence);
                 }
             }
@@ -605,18 +672,29 @@ impl App {
                 format!("{version} is lower than the installed {before:?}"),
             ));
         }
-        for fence in self.plugin_fences(id) {
-            self.stop_script(fence);
+        let fences = self.plugin_fences(id);
+        for fence in &fences {
+            self.stop_script(*fence);
         }
         let dir = self.plugins.root.join(id);
         let to = dir.join(version);
         let _ = std::fs::remove_dir_all(&to);
         let swapped = std::fs::create_dir_all(&dir)
             .and_then(|()| std::fs::rename(temp, &to))
-            .and_then(|()| std::fs::write(dir.join("current.txt"), version));
-        swapped.map_err(|e| (false, e.to_string()))?;
-        for name in ["disabled.txt", "failed.txt"] {
-            let _ = std::fs::remove_file(dir.join(name));
+            .and_then(|()| write_current(&dir, version));
+        if let Err(e) = swapped {
+            // The version before is still the one in use: its fences run it again.
+            tracing::warn!(id, version, error = %e, fences = fences.len(), "plugins: switch failed, the fences start again");
+            self.plugins.reload(id);
+            for fence in fences {
+                self.start_script(fence);
+            }
+            return Err((false, e.to_string()));
+        }
+        let _ = std::fs::remove_file(dir.join("failed.txt"));
+        if before.is_none() {
+            // A web plugin installed again keeps the profile its uninstall could not delete.
+            crate::web_plugin::keep_profile(id);
         }
         for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
@@ -663,7 +741,7 @@ impl App {
         if !back {
             return;
         }
-        let written = std::fs::write(dir.join("current.txt"), &before)
+        let written = write_current(&dir, &before)
             .and_then(|()| std::fs::write(dir.join("failed.txt"), &failed));
         if let Err(e) = written {
             return tracing::warn!(id, error = %e, "plugins: could not go back");
@@ -745,14 +823,26 @@ impl App {
             .settings
             .as_ref()
             .map_or(self.control.hwnd(), |h| h.hwnd());
-        let text = i18n::format(
-            "卸载“{0}”？它的栅栏和它保存的数据都会删掉。",
-            &[self.plugin_name(id)],
-        );
+        let fences = self.plugin_fences(id);
+        let notes = self.state.config.notes.iter();
+        let notes = notes
+            .filter(|(f, text)| fences.contains(f) && !text.trim().is_empty())
+            .count();
+        let text = if notes > 0 {
+            i18n::format(
+                "卸载“{0}”？它的栅栏和它保存的数据都会删掉，包括 {1} 个便签里的文字。",
+                &[self.plugin_name(id), notes.to_string()],
+            )
+        } else {
+            i18n::format(
+                "卸载“{0}”？它的栅栏和它保存的数据都会删掉。",
+                &[self.plugin_name(id)],
+            )
+        };
+        tracing::info!(id, fences = fences.len(), notes, "plugins: uninstall asked");
         if !window::confirm(owner, &text, i18n::text("卸载")) {
             return;
         }
-        let fences = self.plugin_fences(id);
         let cancelled = self.plugins.busy.remove(id);
         tracing::info!(id, fences = fences.len(), ?cancelled, "plugins: uninstall");
         self.plugins.trial.remove(id);
@@ -767,6 +857,63 @@ impl App {
             }
         }
         self.plugins.reload(id);
+    }
+
+    /// Deletes the cached views (`plugins-host\<fence>.view.json`, the plugin host's) of fences
+    /// that are no plugin fence any more: at start, and a few seconds after a plugin fence is
+    /// deleted (`wait`: a plugin just stopped still writes its last view when its thread handles
+    /// the stop).
+    pub(super) fn drop_stale_views(&self, wait: bool) {
+        let dir = self.views_dir();
+        let scripts = self.state.config.scripts.iter();
+        let keep: std::collections::HashSet<String> = scripts
+            .filter(|(f, s)| plugin_id(&s.path).is_some() && self.state.fence(**f).is_some())
+            .map(|(f, _)| format!("{f}.view.json"))
+            .collect();
+        let sweep = move || {
+            if wait {
+                std::thread::sleep(Duration::from_secs(3));
+            }
+            let mut gone = 0;
+            for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                if name.ends_with(".view.json")
+                    && !keep.contains(&name)
+                    && std::fs::remove_file(e.path()).is_ok()
+                {
+                    gone += 1;
+                }
+            }
+            tracing::info!(
+                gone,
+                kept = keep.len(),
+                "plugins: cached views of fences that went deleted"
+            );
+        };
+        let spawned = std::thread::Builder::new()
+            .name("pecofence-plugin-views".into())
+            .spawn(sweep);
+        if let Err(e) = spawned {
+            tracing::warn!(error = %e, "plugins: view sweep did not start");
+        }
+    }
+
+    /// A fence was deleted: when it was a plugin fence that showed something, its cached view goes.
+    pub(super) fn fence_view_gone(&self, fence: FenceId) {
+        if self
+            .views_dir()
+            .join(format!("{fence}.view.json"))
+            .is_file()
+        {
+            self.drop_stale_views(true);
+        }
+    }
+
+    /// `plugins-host` beside the configuration, where the plugin host caches each fence's view.
+    fn views_dir(&self) -> PathBuf {
+        let config = self.state.config_path_on_disk();
+        let dir = config.parent().unwrap_or(Path::new("."));
+        dir.join("plugins-host")
     }
 
     /// 插件详情 and 插件设置 in a plugin fence's menu: the plugin's row on the settings page,
@@ -818,9 +965,24 @@ impl App {
                 self.settings_error(super::settings::scripts_held_text())
             }
             ("pluginInstall", Some(id)) => {
-                // Like the built-in examples, an install switches 小工具 on.
-                self.ensure_tool_on(pecofence_core::FenceTool::Script);
-                self.start_plugin_download(id, true);
+                // The warning showed this version and these permissions; when the index has
+                // changed them since, the warning is shown again.
+                let shown = v.get("shown").and_then(|s| s.as_str());
+                let now = self.plugins.index.as_ref().and_then(|i| i.get(id));
+                let now = now.map(|e| list::shown_key(&e.manifest));
+                if shown.is_none() || shown != now.as_deref() {
+                    tracing::warn!(
+                        id,
+                        shown,
+                        now,
+                        "plugins: install refused, the warning showed another entry; shown again"
+                    );
+                    self.plugins.ask = Some(id.to_string());
+                } else {
+                    // Like the built-in examples, an install switches 小工具 on.
+                    self.ensure_tool_on(pecofence_core::FenceTool::Script);
+                    self.start_plugin_download(id, true);
+                }
             }
             ("pluginAdd", Some(id)) if self.plugin(id).is_some() => self.add_plugin_fence(id),
             ("pluginUninstall", Some(id)) => self.uninstall_plugin(id),
@@ -834,6 +996,8 @@ impl App {
             _ => {}
         }
         self.push_settings_state();
+        // Asked once: a page opened later shows no warning by itself.
+        self.plugins.ask = None;
     }
 
     /// 设置 › 小工具's plugin list: the installed plugins, then the others of the index (those
@@ -891,7 +1055,7 @@ impl App {
                     "folders": p.folders, "notify": p.notify,
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),
                     "state": state, "reason": reason, "page": index.is_some(),
-                    "settings": settings, "fences": fences,
+                    "settings": settings, "fences": fences, "shown": list::shown_key(m),
                 }))
             })
             .collect();
@@ -900,6 +1064,6 @@ impl App {
             Status::Offline => "offline",
             Status::Ready => "ready",
         };
-        serde_json::json!({ "status": status, "held": self.held_scripts_wait(), "open": self.plugins.open, "list": rows })
+        serde_json::json!({ "status": status, "held": self.held_scripts_wait(), "open": self.plugins.open, "ask": self.plugins.ask, "list": rows })
     }
 }
