@@ -2366,11 +2366,21 @@ impl FenceViewState {
         self.sync_idle_fade(Instant::now());
         let picked = self.material_foreground();
         self.content_look.set(Some(picked.label_look()));
+        // A plugin's theme is what the fence draws (the content is drawn again when that
+        // changes): light text means `dark`.
+        let light_text = picked.text_primary.r > 0.5;
         if let Some(web) = &self.web {
-            // The page's theme is what the fence draws (the content is drawn again when that
-            // changes): light text means a dark page.
-            web.set_theme(picked.text_primary.r > 0.5);
+            web.set_theme(light_text);
             return self.redraw_web();
+        }
+        if self.script.is_some()
+            && let Some(was) = self.light_text.replace(Some(light_text))
+            && was != light_text
+        {
+            self.queue.push(Command::FenceInkChanged {
+                fence: self.active,
+                light_text,
+            });
         }
         if self.note.is_some() {
             return self.redraw_note();

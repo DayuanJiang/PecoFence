@@ -3261,6 +3261,9 @@ impl App {
                     self.script_row_clicked(fence, row, cell, fraction, dragging, double)
                 }
             }
+            Command::FenceInkChanged { fence, light_text } => {
+                self.plugin_ink_changed(fence, light_text)
+            }
             Command::PluginLineClosed { fence, row, text } => {
                 self.plugin_line_closed(fence, row, text)
             }

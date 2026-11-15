@@ -38,7 +38,7 @@ const MAX_CALLS: usize = 16;
 /// The last view goes into the fence's cache file at most this often (and when it stops).
 const CACHE_GAP: Duration = Duration::from_secs(60);
 /// The events PecoFence sends ([`Command::Event`] takes one of these names).
-pub const EVENTS: [&str; 13] = [
+pub const EVENTS: [&str; 14] = [
     "start",
     "show",
     "hide",
@@ -52,6 +52,7 @@ pub const EVENTS: [&str; 13] = [
     "timechange",
     "stop",
     "message",
+    "theme",
 ];
 /// The most bytes one `pf.post` may carry (as JSON).
 const MAX_POST: usize = 1024 * 1024;
@@ -785,6 +786,13 @@ mod tests {
 
     fn event(name: &'static str) -> Command {
         Command::Event(FenceId::new_v4(), name, json!({ "id": "a" }))
+    }
+
+    #[test]
+    fn the_theme_event_updates_pf_theme() {
+        let code = "pf.on('theme', () => pf.show({ rows: [{ text: pf.theme }] }));";
+        let theme = Command::Event(FenceId::new_v4(), "theme", json!("light"));
+        assert_eq!(texts(&outputs(code, true, 30, vec![theme])), ["light"]);
     }
 
     #[test]

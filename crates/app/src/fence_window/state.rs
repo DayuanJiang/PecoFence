@@ -416,6 +416,9 @@ pub struct FenceViewState {
     /// Last contrast choice of a fully transparent fence for the bare wallpaper (its plate
     /// hidden); `glass_dark_text` keeps the one for its plate. Reset with it.
     pub(super) bare_dark_text: Cell<Option<bool>>,
+    /// A script fence: whether its content was last drawn in light text (a plugin's `pf.theme`
+    /// is `dark` then).
+    pub(super) light_text: Cell<Option<bool>>,
     /// The text colour and halo the content was last drawn with (`Theme::label_look`): a
     /// fully transparent fence draws its content again when its plate comes or goes and the
     /// pick changes (`redraw_chrome_only`).

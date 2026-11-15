@@ -54,6 +54,7 @@
     const data = json === undefined ? undefined : JSON.parse(json);
     if (name === "settings") pf.settings = data;
     if (name === "resize") Object.assign(pf.fence, data);
+    if (name === "theme") pf.theme = data;
     for (const fn of handlers[name] || []) fn(data);
   });
   fixed("__pf_tick", (id, once) => {

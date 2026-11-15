@@ -417,6 +417,12 @@ pub enum Command {
         /// The second click of a double-click: the row's `dblaction=` runs.
         double: bool,
     },
+    /// A script fence's content turned to light text or back (the wallpaper behind it, the
+    /// theme): its light plugin's `pf.theme` follows.
+    FenceInkChanged {
+        fence: FenceId,
+        light_text: bool,
+    },
     /// A plugin fence's one-line box closed: its text (None after Esc).
     PluginLineClosed {
         fence: FenceId,

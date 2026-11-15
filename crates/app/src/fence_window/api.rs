@@ -250,6 +250,7 @@ impl FenceWindow {
             glass_dark_text: Cell::new(None),
             plate_halo: Cell::new(false),
             bare_dark_text: Cell::new(None),
+            light_text: Cell::new(None),
             content_look: Cell::new(None),
             backdrops: ctx.backdrops.borrow().clone(),
             backdrop_crop: None,

@@ -185,6 +185,15 @@ impl App {
         })));
     }
 
+    /// Plugin fence `fence` draws light text now, or dark: its plugin's `pf.theme` follows.
+    pub(super) fn plugin_ink_changed(&mut self, fence: FenceId, light_text: bool) {
+        if self.light_runs(fence) {
+            let theme = if light_text { "dark" } else { "light" };
+            tracing::debug!(%fence, theme, "plugin told of its fence's text colour");
+            self.light_send(host::Command::Event(fence, "theme", json!(theme)));
+        }
+    }
+
     pub(super) fn stop_light(&mut self, fence: FenceId) {
         if self.hold_light(fence, None) {
             return;
