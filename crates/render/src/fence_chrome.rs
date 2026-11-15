@@ -7071,6 +7071,14 @@ mod tests {
             cells: &[],
             image: None,
             hidden: false,
+            fit: None,
+            spans: &[],
+            blur: false,
+            progress: None,
+            chart: None,
+            canvas: None,
+            line: None,
+            hover: false,
         }
     }
 
@@ -7143,19 +7151,24 @@ mod tests {
             image: None,
             fill,
             under,
+            blur: false,
         }
     }
 
     /// The areas of the clickable cells of one row of `cells` in a fence `width` DIPs wide.
     fn cells_hits(width: f32, cells: &[ScriptCellDraw<'_>]) -> Vec<ScriptHit> {
-        let _ole = pecofence_platform::com::OleGuard::init().unwrap();
-        let gpu = windows_canvas::GpuDevice::new_or_warp().unwrap();
-        let target = gpu.create_render_target(width as u32, 200).unwrap();
-        let chrome = FenceChrome::new().unwrap();
-        let theme = Theme::dark();
         let mut row = script_row("", false);
         row.cells = cells;
-        let rows = [row];
+        rows_drawn(width, &[row]).hits
+    }
+
+    /// `rows` drawn in a fence `width` x 400 DIPs.
+    fn rows_drawn(width: f32, rows: &[ScriptRowDraw<'_>]) -> ScriptDrawn {
+        let _ole = pecofence_platform::com::OleGuard::init().unwrap();
+        let gpu = windows_canvas::GpuDevice::new_or_warp().unwrap();
+        let target = gpu.create_render_target(width as u32, 400).unwrap();
+        let chrome = FenceChrome::new().unwrap();
+        let theme = Theme::dark();
         let bitmaps = RefCell::new(crate::bitmaps::BitmapCache::new());
         let bar = |_: ScriptBand| None;
         let scroll = ScriptScroll {
@@ -7172,9 +7185,9 @@ mod tests {
                     &theme,
                     1.0,
                     width,
-                    200.0,
+                    400.0,
                     1,
-                    &rows,
+                    rows,
                     &[],
                     None,
                     &bitmaps,
@@ -7185,7 +7198,48 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        drawn.unwrap().hits
+        drawn.unwrap()
+    }
+
+    /// A plugin's chart and drawing take the heights it asked for (a drawing the fence's whole
+    /// width), a blurred row reports the pointer without being clickable, and a one-line box's
+    /// area is its field.
+    #[test]
+    fn plugin_rows_take_their_heights_and_report_the_pointer() {
+        let chart = Chart {
+            values: vec![1.0, 3.0, 2.0],
+            color: None,
+            height: Some(50.0),
+        };
+        let canvas = Canvas {
+            height: 70.0,
+            draw: Vec::new(),
+        };
+        let mut rows = vec![
+            script_row("secret", false),
+            script_row("", false),
+            script_row("", false),
+            script_row("", true),
+        ];
+        rows[0].blur = true;
+        rows[0].hover = true;
+        rows[1].chart = Some(&chart);
+        rows[1].hover = true;
+        rows[2].canvas = Some((&canvas, &[]));
+        rows[2].hover = true;
+        rows[3].line = Some(("", "Type here"));
+        let hits = rows_drawn(320.0, &rows).hits;
+        let size = |i: usize| {
+            hits.iter()
+                .find(|h| h.0 == i)
+                .map(|h| (h.2.width(), h.2.height()))
+        };
+        assert_eq!(hits.len(), 4, "{hits:?}");
+        assert_eq!(size(1), Some((320.0 - 2.0 * NOTE_PAD_X, 50.0)));
+        assert_eq!(size(2), Some((320.0, 70.0)));
+        let field = hits.iter().find(|h| h.0 == 3).unwrap().2;
+        assert_eq!(field.left, NOTE_PAD_X);
+        assert!(field.top >= hits.iter().find(|h| h.0 == 2).unwrap().2.bottom);
     }
 
     #[test]

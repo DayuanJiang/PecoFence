@@ -39,8 +39,10 @@ function Hit($title, $row, $cell = 0) {
   $w = DumpOf $title 5
   return @(CellRects $w | Where-Object { $_.i -eq $row * 100 + $cell }) | Select-Object -First 1
 }
+# The display scale of a dumped window: its title row is 36 DIPs tall.
+function Dpi($w) { return [double](DumpVal $w 'content_y') / 36.0 }
 function ContentPt($w, $x, $y) {
-  $sc = [double](DumpVal $w 'scale')
+  $sc = Dpi $w
   return @([int]($w.l + [double](DumpVal $w 'content_x') + $x * $sc), [int]($w.t + [double](DumpVal $w 'content_y') + $y * $sc))
 }
 # The screen point of a spot in row `row`, cell `cell` (fx, fy: 0 to 1 across it).
@@ -102,7 +104,7 @@ Copy-Item "$data\pic.png" "$PfRun\pic.png"
 $script:View = NewPluginFence 'View' '60,20,380,720' 'viewdemo'
 $ok = WaitOut $script:View 'event: -' 15
 # Fences sized for the scale: 380 x 720 px at 100 %.
-$k = [double](DumpVal (DumpOf 'View' 8) 'scale'); if (-not $k) { $k = 1.0 }
+$k = Dpi (DumpOf 'View' 8); if (-not $k) { $k = 1.0 }
 $fw = [int](380 * $k); $fh = [int][math]::Min(720 * $k, 860)
 if ($k -ne 1.0) { Pf fence move $script:View --rect "60,20,$fw,$fh" | Out-Null; Start-Sleep -Seconds 2 }
 Check 'the plugin fence shows the plugin''s view' $ok "scale=$k $((Out0 $script:View) -split "`n" | Select-Object -First 4)"
@@ -131,6 +133,10 @@ $back = [Px]::Diff($blurred, $again, 0, $blurred.Width - 1, 0, $blurred.Height -
 Check 'a blurred row is sharp under the pointer and blurred again after' ($diff -gt 3 -and $back -lt 1.5) "diff=$([math]::Round($diff, 2)) back=$([math]::Round($back, 2))"
 $blurred.Dispose(); $sharp.Dispose(); $again.Dispose()
 Shot 'rows'
+# A narrow fence: the fit row takes its short form.
+Pf fence move $script:View --rect "60,20,$([int](128 * $k)),$fh" | Out-Null; Start-Sleep -Seconds 2
+Pair "rows-narrow-$([int](100 * $k))" @('View')
+Pf fence move $script:View --rect "60,20,$fw,$fh" | Out-Null; Start-Sleep -Seconds 2
 
 Case 'cells: buttons, a check box, a slider, under'
 Page 'cells'
