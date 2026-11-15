@@ -375,10 +375,8 @@ impl App {
                 self.stop_script(fence);
             }
             let swapped = if dir.is_dir() {
-                let names = ["main.ps1", "README.md", "plugin.json"].iter();
-                let moved: std::io::Result<()> = names
-                    .map(|n| std::fs::rename(temp.join(n), dir.join(n)))
-                    .collect();
+                let mut names = ["main.ps1", "README.md", "plugin.json"].iter();
+                let moved = names.try_for_each(|n| std::fs::rename(temp.join(n), dir.join(n)));
                 moved.and_then(|()| std::fs::remove_file(dir.join("disabled.txt")).or(Ok(())))
             } else {
                 std::fs::rename(&temp, &dir)
