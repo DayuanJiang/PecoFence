@@ -823,14 +823,26 @@ impl App {
             .settings
             .as_ref()
             .map_or(self.control.hwnd(), |h| h.hwnd());
-        let text = i18n::format(
-            "卸载“{0}”？它的栅栏和它保存的数据都会删掉。",
-            &[self.plugin_name(id)],
-        );
+        let fences = self.plugin_fences(id);
+        let notes = self.state.config.notes.iter();
+        let notes = notes
+            .filter(|(f, text)| fences.contains(f) && !text.trim().is_empty())
+            .count();
+        let text = if notes > 0 {
+            i18n::format(
+                "卸载“{0}”？它的栅栏和它保存的数据都会删掉，包括 {1} 个便签里的文字。",
+                &[self.plugin_name(id), notes.to_string()],
+            )
+        } else {
+            i18n::format(
+                "卸载“{0}”？它的栅栏和它保存的数据都会删掉。",
+                &[self.plugin_name(id)],
+            )
+        };
+        tracing::info!(id, fences = fences.len(), notes, "plugins: uninstall asked");
         if !window::confirm(owner, &text, i18n::text("卸载")) {
             return;
         }
-        let fences = self.plugin_fences(id);
         let cancelled = self.plugins.busy.remove(id);
         tracing::info!(id, fences = fences.len(), ?cancelled, "plugins: uninstall");
         self.plugins.trial.remove(id);
@@ -845,6 +857,63 @@ impl App {
             }
         }
         self.plugins.reload(id);
+    }
+
+    /// Deletes the cached views (`plugins-host\<fence>.view.json`, the plugin host's) of fences
+    /// that are no plugin fence any more: at start, and a few seconds after a plugin fence is
+    /// deleted (`wait`: a plugin just stopped still writes its last view when its thread handles
+    /// the stop).
+    pub(super) fn drop_stale_views(&self, wait: bool) {
+        let dir = self.views_dir();
+        let scripts = self.state.config.scripts.iter();
+        let keep: std::collections::HashSet<String> = scripts
+            .filter(|(f, s)| plugin_id(&s.path).is_some() && self.state.fence(**f).is_some())
+            .map(|(f, _)| format!("{f}.view.json"))
+            .collect();
+        let sweep = move || {
+            if wait {
+                std::thread::sleep(Duration::from_secs(3));
+            }
+            let mut gone = 0;
+            for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                let name = e.file_name().to_string_lossy().to_string();
+                if name.ends_with(".view.json")
+                    && !keep.contains(&name)
+                    && std::fs::remove_file(e.path()).is_ok()
+                {
+                    gone += 1;
+                }
+            }
+            tracing::info!(
+                gone,
+                kept = keep.len(),
+                "plugins: cached views of fences that went deleted"
+            );
+        };
+        let spawned = std::thread::Builder::new()
+            .name("pecofence-plugin-views".into())
+            .spawn(sweep);
+        if let Err(e) = spawned {
+            tracing::warn!(error = %e, "plugins: view sweep did not start");
+        }
+    }
+
+    /// A fence was deleted: when it was a plugin fence that showed something, its cached view goes.
+    pub(super) fn fence_view_gone(&self, fence: FenceId) {
+        if self
+            .views_dir()
+            .join(format!("{fence}.view.json"))
+            .is_file()
+        {
+            self.drop_stale_views(true);
+        }
+    }
+
+    /// `plugins-host` beside the configuration, where the plugin host caches each fence's view.
+    fn views_dir(&self) -> PathBuf {
+        let config = self.state.config_path_on_disk();
+        let dir = config.parent().unwrap_or(Path::new("."));
+        dir.join("plugins-host")
     }
 
     /// 插件详情 and 插件设置 in a plugin fence's menu: the plugin's row on the settings page,

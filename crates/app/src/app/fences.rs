@@ -1320,6 +1320,7 @@ impl App {
         if let Some(w) = self.fences.remove(&fence) {
             self.retire_window(w);
         }
+        self.fence_view_gone(fence);
         self.resync_windows();
         self.refresh_all();
         self.schedule_save();
