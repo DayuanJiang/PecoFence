@@ -752,6 +752,18 @@ impl RowMetrics {
             ..list
         }
     }
+
+    /// The rows' icon for a fence's 「图标大小」 (feedback #120): 20 DIPs at the default 48 and
+    /// in proportion to it, 16 to 48; an icon taller than the row text makes the row taller.
+    /// The details header keeps the height of the text.
+    pub fn with_icon_size(self, icon_size: u32) -> Self {
+        let icon = (icon_size as f32 * 20.0 / 48.0).round().clamp(16.0, 48.0);
+        Self {
+            row_h: self.row_h.max(icon + 8.0),
+            icon,
+            ..self
+        }
+    }
 }
 
 /// Row text size over the default 12 DIPs (never below 1): the item rename box is this much
@@ -760,12 +772,12 @@ pub fn row_text_scale(text: f32) -> f32 {
     text.max(12.0) / 12.0
 }
 
-/// Icon edge in DIPs for a view layout: `icon_size` in Icons, the rows' small icon otherwise.
+/// Icon edge in DIPs for a view layout: `icon_size` in Icons, the rows' icon for it otherwise.
 pub fn icon_dip(layout: ViewLayout, icon_size: u32) -> f32 {
     match layout {
         ViewLayout::Icons => icon_size as f32,
-        ViewLayout::List => RowMetrics::list(0.0).icon,
-        ViewLayout::Details => RowMetrics::details(0.0).icon,
+        ViewLayout::List => RowMetrics::list(0.0).with_icon_size(icon_size).icon,
+        ViewLayout::Details => RowMetrics::details(0.0).with_icon_size(icon_size).icon,
     }
 }
 
@@ -2590,6 +2602,25 @@ mod tests {
         assert_eq!(RowMetrics::list(24.0).header_h, 0.0);
         assert_eq!(row_text_scale(18.0), 1.5);
         assert_eq!(row_text_scale(10.0), 1.0);
+    }
+
+    /// List and details rows follow the fence's 「图标大小」 (feedback #120): the default 48 keeps
+    /// the 20 DIP icon and the 28 DIP row, a larger size makes both larger; the header keeps the
+    /// height of its text.
+    #[test]
+    fn row_icon_follows_the_icon_size() {
+        let at = |size| RowMetrics::details(16.0).with_icon_size(size);
+        assert_eq!((at(48).icon, at(48).row_h), (20.0, 28.0));
+        assert_eq!((at(32).icon, at(32).row_h), (16.0, 28.0));
+        assert_eq!((at(24).icon, at(24).row_h), (16.0, 28.0));
+        assert_eq!((at(64).icon, at(64).row_h), (27.0, 35.0));
+        assert_eq!((at(96).icon, at(96).row_h), (40.0, 48.0));
+        assert_eq!((at(128).icon, at(128).row_h), (48.0, 56.0));
+        assert!([24, 48, 96, 128].iter().all(|&s| at(s).header_h == 28.0));
+        // Larger row text still sets the row when it is taller than the icon.
+        assert_eq!(RowMetrics::list(40.0).with_icon_size(64).row_h, 52.0);
+        assert_eq!(icon_dip(ViewLayout::List, 96), 40.0);
+        assert_eq!(icon_dip(ViewLayout::Icons, 96), 96.0);
     }
 
     fn overlaps(a: CellRect, b: CellRect) -> bool {

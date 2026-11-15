@@ -583,7 +583,7 @@ impl FenceViewState {
         }
     }
 
-    /// Icon edge in DIPs for the current layout (rows use a small 20 DIP icon).
+    /// Icon edge in DIPs for the current layout (rows: 20 DIPs at the default icon size).
     pub(super) fn icon_dip(&self) -> f32 {
         crate::layout::icon_dip(self.layout, self.icon_size)
     }
@@ -602,6 +602,7 @@ impl FenceViewState {
             ViewLayout::Details => RowMetrics::details(line_h),
             _ => RowMetrics::list(line_h),
         }
+        .with_icon_size(self.icon_size)
     }
 
     /// Details header column under a client-pixel point.
