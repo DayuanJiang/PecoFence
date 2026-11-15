@@ -438,7 +438,7 @@ impl App {
             CMD_WINDOWS_DESKTOP => self.set_windows_desktop(!self.windows_desktop, "tray menu"),
             CMD_PEEK => self.queue.push(Command::TogglePeek),
             CMD_NEW_FENCE => self.queue.push(Command::NewFence { x, y: y - 300 }),
-            CMD_NEW_NOTE => self.queue.push(Command::NewNote { x, y: y - 300 }),
+            CMD_NEW_NOTE => self.new_plugin_fence("notes", x, y - 300),
             c if (CMD_NEW_TOOL..CMD_NEW_TOOL + TOOL_MENU_ENTRIES).contains(&c) => {
                 self.new_tool_command(c - CMD_NEW_TOOL, x, y - 300)
             }
@@ -1620,7 +1620,7 @@ impl App {
                 let rect = self.place_new_fence(3, 200.0, x, y, Some(host));
                 self.create_fence_with_rename(rect);
             }
-            CMD_FENCE_NEW_NOTE => self.queue.push(Command::NewNote { x, y }),
+            CMD_FENCE_NEW_NOTE => self.new_plugin_fence("notes", x, y),
             c if (CMD_FENCE_NEW_TOOL..CMD_FENCE_NEW_TOOL + TOOL_MENU_ENTRIES).contains(&c) => {
                 self.new_tool_command(c - CMD_FENCE_NEW_TOOL, x, y)
             }

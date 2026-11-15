@@ -1911,8 +1911,8 @@
     if (plFocus) {
       const [id, fence] = plFocus, f = fence && list.querySelector(`[data-fence="${CSS.escape(fence)}"]`);
       const target = f || list.querySelector(`[data-plugin="${CSS.escape(id)}"]`);
-      plFocus = null;
-      if (target) target.scrollIntoView({ block: 'center' });
+      // The row comes later while the list is still loading: it is looked for again then.
+      if (target) { plFocus = null; target.scrollIntoView({ block: 'center' }); }
       if (f) { f.classList.add('pl-flash'); setTimeout(() => f.classList.remove('pl-flash'), 1500); }
     }
   }

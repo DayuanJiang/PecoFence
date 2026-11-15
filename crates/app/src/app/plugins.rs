@@ -747,6 +747,24 @@ impl App {
         self.tool_clear_of = None;
     }
 
+    /// 新建便签 in the fence, desktop and tray menus (`notes`): a fence of plugin `id` near
+    /// (`x`, `y`) when it is installed, else 设置 › 小工具 at its row, to install it there.
+    pub(super) fn new_plugin_fence(&mut self, id: &str, x: i32, y: i32) {
+        let ready = self
+            .plugin(id)
+            .is_some_and(|p| p.ready && p.disabled.is_none());
+        tracing::info!(id, ready, "plugins: new fence from a menu");
+        if !ready {
+            return self.show_plugin(id, None);
+        }
+        let rect = self.place_new_tool(280.0, 240.0, x, y);
+        let (title, tool) = (
+            self.plugin_name(id),
+            super::tools::NewTool::Script(format!("plugin:{id}")),
+        );
+        self.create_tool_fence(tool, Some(&title), Some(rect), x, y);
+    }
+
     fn uninstall_plugin(&mut self, id: &str) {
         let owner = self
             .settings

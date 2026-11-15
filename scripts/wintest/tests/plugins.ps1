@@ -186,6 +186,25 @@ Check 'the confirmed update is installed' ((Installed 'pf-sys') -eq '1.0.1') "in
 PageClick '[data-bind="tools.allowSystem"]'; Start-Sleep -Seconds 1
 Check 'turned off again' ((Pf settings get tools.allowSystem | Out-String).Trim() -eq 'false') ''
 
+Case '新建便签 in the tray menu: the notes plugin''s row first, a fence of it once installed'
+Offer 'notes' 'Notes' '1.0.0'; Publish 20; Refresh
+[L]::PostMessageW((WaitWin 'PecoFence.Settings' 2), 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 1
+function TrayOpen() {
+  $ctl = [G]::FindWindowW('PecoFence.Control', [NullString]::Value)
+  [W]::PostMessageW($ctl, 0x8003, [IntPtr](1500 -bor (830 -shl 16)), [IntPtr](0x7B -bor (1 -shl 16))) | Out-Null
+  return (MenuWin 5)
+}
+MenuPick '^New note' (TrayOpen) | Out-Null
+$ok = (WaitWin 'PecoFence.Settings' 15) -ne [IntPtr]::Zero -and (CdpOpen) -and (JsWait "!!document.querySelector('#pluginList .pl-detail[data-plugin=notes]')" 15)
+Shot 'new-note-opens-the-notes-row'
+Check 'not installed: the settings page opens with the notes row open, no note fence, no editor' ($ok -and @(PluginFences 'notes').Count -eq 0 -and (WaitWin 'PecoFence.NoteEdit' 1) -eq [IntPtr]::Zero) "page=$ok"
+InstallVia 'Notes' | Out-Null
+MenuPick '^New note' (TrayOpen) | Out-Null; Start-Sleep -Seconds 3
+$n = @(PluginFences 'notes')
+Check 'installed: 新建便签 makes a second fence of the notes plugin' ((Installed 'notes') -eq '1.0.0' -and $n.Count -eq 2 -and @($n | Where-Object { $_.script.output -match 'notes 1\.0\.0' }).Count -eq 2) "fences=$($n.Count)"
+$script:Offer.Remove('notes')
+$ok = ToolsPage
+
 Case 'a plugin taken down stops and says why'
 $script:Offer['pf-sys'].disabled = 'Test reason'; Publish 8
 Refresh
