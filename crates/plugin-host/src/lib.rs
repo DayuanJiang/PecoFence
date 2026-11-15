@@ -277,7 +277,7 @@ impl Plugin {
                 note_(if once { "after" } else { "every" }, json!([seconds, align]));
                 let mut s = to.borrow_mut();
                 if s.timers.len() >= MAX_TIMERS {
-                    tracing::info!(%fence, "plugin timer refused: it has {MAX_TIMERS} already");
+                    tracing::info!(%fence, max = MAX_TIMERS, "plugin timer refused: it has the most timers");
                     return Err(Exception::throw_range(&ctx, "a plugin has at most 20 timers"));
                 }
                 let unit = match align.as_str() {
