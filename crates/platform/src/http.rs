@@ -3,6 +3,7 @@
 
 use crate::wide::to_wide;
 use core::ffi::c_void;
+use pecofence_core::web_address::WebAddress;
 use std::time::{Duration, Instant};
 use windows_core::PCWSTR;
 
@@ -60,25 +61,15 @@ fn check(ok: i32, what: &str) -> Result<(), String> {
     }
 }
 
-/// `https://host[:port]/path`; plain `http://` only for local test servers.
-fn split_url(url: &str) -> Result<(bool, &str, u16, &str), String> {
-    let (secure, rest) = match url.split_once("://") {
-        Some(("https", rest)) => (true, rest),
-        Some(("http", rest)) if rest.starts_with("127.0.0.1:") => (false, rest),
-        _ => return Err(format!("unsupported address {url}")),
-    };
-    let (authority, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
-    let (host, port) = match authority.rsplit_once(':') {
-        Some((host, port)) => (
-            host,
-            port.parse().map_err(|_| format!("bad port in {url}"))?,
-        ),
-        None => (authority, if secure { 443 } else { 80 }),
-    };
-    if host.is_empty() {
-        return Err(format!("no host in {url}"));
+/// `https://host[:port]/path`; plain `http://` only for local test servers. Read by
+/// [`WebAddress`], the reading the plugin host checks a plugin's address with.
+fn split_url(url: &str) -> Result<(bool, String, u16, String), String> {
+    let a = WebAddress::parse(url).ok_or_else(|| format!("unsupported address {url}"))?;
+    if !a.secure && a.host != "127.0.0.1" {
+        return Err(format!("unsupported address {url}"));
     }
-    Ok((secure, host, port, if path.is_empty() { "/" } else { path }))
+    let port = a.port.unwrap_or(if a.secure { 443 } else { 80 });
+    Ok((a.secure, a.host, port, a.path))
 }
 
 /// GETs `url` (following redirects) and returns the body of a 200 response, at most `limit`
@@ -142,7 +133,7 @@ fn request(
 ) -> Result<(u32, String, Vec<u8>), String> {
     let started = Instant::now();
     let (secure, host, port, path) = split_url(url)?;
-    let (agent, host, path) = (to_wide(user_agent), to_wide(host), to_wide(path));
+    let (agent, host, path) = (to_wide(user_agent), to_wide(&host), to_wide(&path));
     let verb = to_wide(verb);
     let length = u32::try_from(body.len()).map_err(|_| "the request body is too large")?;
     let data = if body.is_empty() {
@@ -319,13 +310,16 @@ mod tests {
     fn only_https_and_local_test_servers_are_allowed() {
         assert_eq!(
             split_url("https://api.github.com/repos/x/y").unwrap(),
-            (true, "api.github.com", 443, "/repos/x/y")
+            (true, "api.github.com".into(), 443, "/repos/x/y".into())
         );
         assert_eq!(
             split_url("http://127.0.0.1:8080").unwrap(),
-            (false, "127.0.0.1", 8080, "/")
+            (false, "127.0.0.1".into(), 8080, "/".into())
         );
         assert!(split_url("http://example.com/").is_err());
         assert!(split_url("file:///C:/x").is_err());
+        // The host is the one the plugin host checked: no user name, backslash or NUL.
+        assert!(split_url("https://evil.example\u{0}@api.github.com/").is_err());
+        assert!(split_url("https://evil.com\\@api.github.com/").is_err());
     }
 }

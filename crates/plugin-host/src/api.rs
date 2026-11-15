@@ -5,6 +5,7 @@
 
 use pecofence_core::FenceId;
 use pecofence_core::plugins::{Permissions, valid_plain_name};
+use pecofence_core::web_address::WebAddress;
 use serde_json::{Value, json};
 
 /// The most bytes an answer to `pf.http` may have.
@@ -50,7 +51,8 @@ pub enum Note {
 /// what is missing).
 pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
     let arg = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or_default();
-    let host = url_host(arg(0));
+    let address = WebAddress::parse(arg(0));
+    let host = address.as_ref().map(|a| a.host.clone());
     let host_in = |lists: &[&Vec<String>]| {
         let listed = |h: &str| {
             lists
@@ -64,7 +66,7 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
     let named = |i: usize| args.get(i).is_none_or(Value::is_null) || valid_plain_name(arg(i));
     let (ok, need) = match name {
         "http.get" | "http.post" => (
-            arg(0).starts_with("https://") && host_in(&[&p.network]),
+            address.as_ref().is_some_and(|a| a.secure) && host_in(&[&p.network]),
             format!("an https address with {shown} in permissions.network"),
         ),
         "open" => (
@@ -99,14 +101,23 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
     (!ok).then(|| format!("{name} needs {need}"))
 }
 
-/// The host of an http or https address, in lowercase.
+/// The host of an http or https address, in lowercase (None when [`WebAddress`] does not read
+/// it).
 pub fn url_host(url: &str) -> Option<String> {
-    let rest = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))?;
-    let authority = rest.split(['/', '?', '#']).next()?;
-    let host = authority.rsplit('@').next()?.split(':').next()?;
-    (!host.is_empty()).then(|| host.trim_end_matches('.').to_ascii_lowercase())
+    WebAddress::parse(url).map(|a| a.host)
+}
+
+/// `args` with its first value, an address the check read, written back as it was read: what
+/// WinHTTP and the browser get is exactly what was checked.
+fn normalised(mut args: Value) -> Value {
+    let read = args
+        .get(0)
+        .and_then(Value::as_str)
+        .and_then(WebAddress::parse);
+    if let (Some(address), Some(first)) = (read, args.get_mut(0)) {
+        *first = address.to_string().into();
+    }
+    args
 }
 
 /// `location` (a redirect's target) read against the https address `base`.
@@ -138,9 +149,13 @@ pub fn perform(
     name: &str,
     args: Value,
 ) -> Result<Value, String> {
+    if name == "open" {
+        return host.call(fence, name, normalised(args));
+    }
     if !name.starts_with("http.") {
         return host.call(fence, name, args);
     }
+    let args = normalised(args);
     let mut url = args
         .get(0)
         .and_then(Value::as_str)
@@ -198,7 +213,7 @@ pub fn perform(
             (verb, body) = ("http.get".into(), Value::Null);
         }
         tracing::debug!(%fence, status, from = url, to = next, "plugin request redirected");
-        url = next;
+        url = WebAddress::parse(&next).map_or(next, |a| a.to_string());
     }
     Err(format!("more than {MAX_HOPS} redirects"))
 }
@@ -256,6 +271,20 @@ mod tests {
         assert!(why.contains("example.com in permissions.network"), "{why}");
         assert!(refused("http.get", json!(["http://api.github.com/"])).is_some());
         assert!(refused("http.get", json!(["https://evil.com@api.github.com.x/"])).is_some());
+        // Where the browser or WinHTTP would read another host than the check did.
+        for bad in [
+            "https://evil.example\u{0}@api.github.com/",
+            "https://evil.com\\@api.github.com/",
+            "https://evil.com@api.github.com/",
+            "https://api.github.com\\evil.com/",
+            "https://api.git\thub.com/",
+        ] {
+            assert!(refused("http.get", json!([bad])).is_some(), "{bad:?}");
+            assert!(
+                refused("open", json!([bad.replace("api.", "")])).is_some(),
+                "{bad:?}"
+            );
+        }
         assert_eq!(refused("open", json!(["https://github.com/x"])), None);
         assert!(refused("open", json!(["file:///C:/Windows"])).is_some());
         assert_eq!(refused("clipboard.setText", json!(["a"])), None);
@@ -345,6 +374,28 @@ mod tests {
                 .contains("more than 5")
         );
         assert_eq!(fake.calls.lock().unwrap().len(), 3 + 1 + 6);
+    }
+
+    #[test]
+    fn the_host_gets_the_address_as_it_was_checked() {
+        let fence = FenceId::new_v4();
+        let ok = json!({ "status": 200, "headers": {}, "body": "" });
+        let fake = Fake {
+            answers: vec![("https://a.com/x?y", ok.clone()), ("https://b.com/", ok)],
+            ..Fake::default()
+        };
+        let p = Permissions {
+            links: vec!["b.com".into()],
+            ..perms(&["a.com"])
+        };
+        let run = |name: &str, url: &str| {
+            let _ = perform(&fake, fence, &p, "ua", name, json!([url]));
+        };
+        run("http.get", "https://A.com./x?y");
+        run("open", "https://B.COM");
+        let calls = fake.calls.lock().unwrap();
+        let urls: Vec<&str> = calls.iter().map(|c| c.1[0].as_str().unwrap()).collect();
+        assert_eq!(urls, ["https://a.com/x?y", "https://b.com/"]);
     }
 
     #[test]
