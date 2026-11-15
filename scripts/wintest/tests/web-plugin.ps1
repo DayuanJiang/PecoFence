@@ -228,7 +228,7 @@ if ($Part -eq 'I') {
   Check 'the page loads' ($null -ne (PfWaitLog 'web plugin: page loading' 30)) ''
   $h = FenceWin 'Web'
   $reached = CdpOpen -Url 'https://webdemo.plugins.pecofence/*' -sec 30
-  JsWait "document.getElementById('list').children.length === 40" 15 | Out-Null
+  JsWait "document.readyState === 'complete' && document.getElementById('list').children.length === 40" 15 | Out-Null
   Start-Sleep -Seconds 2
   $t = WebRect $h '#box'
   [G]::Click($t.cx, $t.cy); Start-Sleep -Milliseconds 800
@@ -364,14 +364,15 @@ if ($Part -eq 'C') {
   $clicked = OcrClick 'Reload' $r.L $r.T ($r.R - $r.L) ($r.B - $r.T)
   Check '重新加载 is there and starts the page again' ($clicked -and (WaitCount 'web plugin: page loading' ($loads + 3) 30)) ''
   $reached = CdpOpen -Url 'https://webdemo.plugins.pecofence/*' -sec 20
-  $ok = JsWait "document.getElementById('list').children.length === 40" 15
+  $ok = JsWait "document.readyState === 'complete' && document.getElementById('list').children.length === 40" 15
   Check 'the page works again' ($reached -and $ok) ''
 
   Case 'a background plugin is not suspended'
   $fb = PfPluginFence 'Bg' '820,160,380,460' 'webbg'
   Check 'the background plugin page loads' ($null -ne (PfWaitLog 'page loading plugin=webbg.*background=true' 30)) ''
   $reached = CdpOpen -Url 'https://webbg.plugins.pecofence/*' -sec 30
-  JsWait "document.getElementById('list').children.length === 40" 15 | Out-Null
+  $ok = JsWait "document.readyState === 'complete' && document.getElementById('list').children.length === 40" 15
+  Check 'CDP reaches the background page and its script ran' ($reached -and $ok) ''
   $t0 = Js "window.demo.ticks"
   $script:Cdp.Dispose(); $script:Cdp = $null
   Pf fence roll --all | Out-Null
