@@ -6208,15 +6208,19 @@ impl FenceChrome {
                 0.0
             };
             // A column is as wide as its widest cell; a `fill=true` cell takes what is left and
-            // ends its text with an ellipsis where it does not fit.
+            // ends its text with an ellipsis where it does not fit, as does a column wider than
+            // the whole line (a check box's label in a narrow fence).
+            let squeeze = !cell.fill && wrap && group_w[leader[c]] > area;
             let w = if cell.fill {
                 slider_w
+            } else if squeeze {
+                area
             } else {
                 group_w[leader[c]]
             };
             let fitted;
             let mut shown = String::new();
-            let layout = if cell.fill {
+            let layout = if cell.fill || squeeze {
                 let format = if cell.bold { &tt.bold } else { &tt.body };
                 shown = self.fit_width(cell.text, format, (w - room).max(1.0));
                 fitted = self.layout_in(
@@ -6283,7 +6287,11 @@ impl FenceChrome {
                 } else {
                     &tt.body
                 };
-                let text = if cell.fill { shown.as_str() } else { cell.text };
+                let text = if cell.fill || squeeze {
+                    shown.as_str()
+                } else {
+                    cell.text
+                };
                 let color = cell.color.unwrap_or(theme.text_primary);
                 let reveal = fade_of(hover, (row, c));
                 self.draw_text_blurred(session, layout, text, format, at, color, reveal)?;

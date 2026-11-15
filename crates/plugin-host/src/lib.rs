@@ -47,7 +47,7 @@ pub const ERRORS_TOLD: u32 = 3;
 /// The last view goes into the fence's cache file at most this often (and when it stops).
 const CACHE_GAP: Duration = Duration::from_secs(60);
 /// The events PecoFence sends ([`Command::Event`] takes one of these names).
-pub const EVENTS: [&str; 14] = [
+pub const EVENTS: [&str; 15] = [
     "start",
     "show",
     "hide",
@@ -62,6 +62,7 @@ pub const EVENTS: [&str; 14] = [
     "stop",
     "message",
     "theme",
+    "lang",
 ];
 /// The most bytes one `pf.post` may carry (as JSON; a web plugin page's message too), and the
 /// most messages and bytes that may wait to go out from one run of the plugin.

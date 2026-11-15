@@ -739,7 +739,7 @@ fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
   wv.addEventListener("message", e => {{
     const m = e.data;
     if (m && m.event) {{
-      if (m.event === "settings" || m.event === "theme") state[m.event] = m.data;
+      if (m.event === "settings" || m.event === "theme" || m.event === "lang") state[m.event] = m.data;
       if (m.event === "resize") Object.assign(state.fence, m.data);
       for (const fn of handlers[m.event] || []) try {{ fn(m.data); }} catch (err) {{ console.error(err); failed(); }}
       return;

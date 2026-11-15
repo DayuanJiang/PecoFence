@@ -364,6 +364,7 @@ fn check(a: Args) -> Result<bool, String> {
     send(Command::Event(fence, "settings", settings));
     wait(0.35);
     send(Command::Event(fence, "timechange", Value::Null));
+    send(Command::Event(fence, "lang", json!(a.lang)));
     wait(0.4);
     let view = fake.log().last_view.clone();
     let clicks = clicks(&view);
