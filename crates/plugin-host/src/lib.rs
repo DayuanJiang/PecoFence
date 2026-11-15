@@ -177,6 +177,8 @@ struct Shared {
     json: Option<String>,
     /// The calls on worker threads, by number: their names.
     calls: HashMap<u32, String>,
+    /// The view fields of the wrong type logged already (each once).
+    dropped: HashSet<String>,
     /// What `pf.post` sent in this run, as JSON.
     posts: Vec<String>,
 }
@@ -299,14 +301,19 @@ impl Plugin {
             n.set("theme", s.init["theme"].as_str().unwrap_or_default())?;
             n.set("settings", s.init["settings"].to_string())?;
             n.set("fence", s.init["fence"].to_string())?;
-            let (to, note_) = (shared.clone(), note.clone());
+            let (to, note_, plugin) = (shared.clone(), note.clone(), id.clone());
             let show = move |json: String| {
                 if noting {
                     note_("show", json!([serde_json::from_str::<Value>(&json).unwrap_or_default()]));
                 }
-                match view::parse(&json) {
-                    Ok(view) => {
+                match view::read(&json) {
+                    Ok((view, dropped)) => {
                         let mut s = to.borrow_mut();
+                        for field in dropped {
+                            if s.dropped.insert(field.clone()) {
+                                tracing::info!(%fence, plugin, field, "plugin view: a field of the wrong type is left out, the rest shows");
+                            }
+                        }
                         (s.view, s.json) = (Some(view), Some(json));
                     }
                     Err(e) => tracing::debug!(error = %e, "plugin view not read"),
