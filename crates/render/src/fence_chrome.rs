@@ -7090,15 +7090,30 @@ mod tests {
         pinned_rows: usize,
         follow_row: Option<usize>,
     ) -> (ScriptDrawn, Option<ScriptBand>) {
-        let _ole = pecofence_platform::com::OleGuard::init().unwrap();
-        let gpu = windows_canvas::GpuDevice::new_or_warp().unwrap();
-        let target = gpu.create_render_target(320, height as u32).unwrap();
-        let chrome = FenceChrome::new().unwrap();
-        let theme = Theme::dark();
         let names: Vec<String> = (0..43).map(|i| format!("Row {i}")).collect();
         let mut rows: Vec<ScriptRowDraw<'_>> = names.iter().map(|n| script_row(n, true)).collect();
         // The hidden row that splits them: index 3.
         rows[3].hidden = true;
+        drawn_scrolled(320.0, height, &rows, pinned_rows, offset, follow_row)
+    }
+
+    /// `rows` drawn in a fence `width` x `height` DIPs with `pinned_rows`, scrolled by `offset`
+    /// (or to `follow_row`); the band the scrollbar callback was told.
+    fn drawn_scrolled(
+        width: f32,
+        height: f32,
+        rows: &[ScriptRowDraw<'_>],
+        pinned_rows: usize,
+        offset: f32,
+        follow_row: Option<usize>,
+    ) -> (ScriptDrawn, Option<ScriptBand>) {
+        let _ole = pecofence_platform::com::OleGuard::init().unwrap();
+        let gpu = windows_canvas::GpuDevice::new_or_warp().unwrap();
+        let target = gpu
+            .create_render_target(width as u32, height as u32)
+            .unwrap();
+        let chrome = FenceChrome::new().unwrap();
+        let theme = Theme::dark();
         let bitmaps = RefCell::new(crate::bitmaps::BitmapCache::new());
         let seen = std::cell::Cell::new(None);
         let bar = |band: ScriptBand| {
@@ -7118,10 +7133,10 @@ mod tests {
                     s,
                     &theme,
                     1.0,
-                    320.0,
+                    width,
                     height,
                     1,
-                    &rows,
+                    rows,
                     &[],
                     None,
                     &bitmaps,
@@ -7164,41 +7179,7 @@ mod tests {
 
     /// `rows` drawn in a fence `width` x 400 DIPs.
     fn rows_drawn(width: f32, rows: &[ScriptRowDraw<'_>]) -> ScriptDrawn {
-        let _ole = pecofence_platform::com::OleGuard::init().unwrap();
-        let gpu = windows_canvas::GpuDevice::new_or_warp().unwrap();
-        let target = gpu.create_render_target(width as u32, 400).unwrap();
-        let chrome = FenceChrome::new().unwrap();
-        let theme = Theme::dark();
-        let bitmaps = RefCell::new(crate::bitmaps::BitmapCache::new());
-        let bar = |_: ScriptBand| None;
-        let scroll = ScriptScroll {
-            pinned_rows: 0,
-            offset: 0.0,
-            follow_row: None,
-            bar: &bar,
-        };
-        let mut drawn = None;
-        target
-            .draw(|s| {
-                drawn = Some(chrome.draw_script(
-                    s,
-                    &theme,
-                    1.0,
-                    width,
-                    400.0,
-                    1,
-                    rows,
-                    &[],
-                    None,
-                    &bitmaps,
-                    "",
-                    "",
-                    &scroll,
-                )?);
-                Ok(())
-            })
-            .unwrap();
-        drawn.unwrap()
+        drawn_scrolled(width, 400.0, rows, 0, 0.0, None).0
     }
 
     /// A plugin's chart and drawing take the heights it asked for (a drawing the fence's whole

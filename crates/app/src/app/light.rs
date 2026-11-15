@@ -296,13 +296,9 @@ impl App {
     }
 
     /// The user did something in plugin fence `fence` (click, dblclick, change, text, or a web
-    /// plugin page's `message`): its plugin gets the event. A click in a stopped plugin's
-    /// fence (its 重新启动) starts it again.
+    /// plugin page's `message`): its plugin gets the event. (A click in a stopped plugin's
+    /// fence, its 重新启动, is `plugin_row_clicked`'s.)
     pub(super) fn plugin_event(&mut self, fence: FenceId, name: &str, data: Value) {
-        if self.light.stopped.contains_key(&fence) && matches!(name, "click" | "dblclick") {
-            tracing::info!(%fence, "plugin started again from its fence");
-            return self.start_script(fence);
-        }
         let Some(name) = host::EVENTS.iter().find(|e| **e == name).copied() else {
             return tracing::warn!(%fence, name, "plugin event of an unknown name dropped");
         };

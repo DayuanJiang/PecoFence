@@ -662,22 +662,10 @@ impl App {
 
     /// What a run of fence `id`'s script is told (environment variables).
     fn script_env(&self, id: FenceId, action: String) -> crate::scripts::RunEnv {
-        // A plugin keeps one data folder for all its fences, and keeps it when they go.
-        let plugin = self
-            .state
-            .config
-            .scripts
-            .get(&id)
-            .and_then(|s| super::plugins::plugin_id(&s.path));
-        let data_dir = match plugin {
-            Some(plugin) => self.plugins_data().join(plugin),
-            None => self
-                .state
-                .config_path_on_disk()
-                .parent()
-                .map(|d| d.join("scripts-data").join(id.to_string()))
-                .unwrap_or_default(),
-        };
+        // A plugin's fence runs no script (`start_script_with`): its data is under plugins-data.
+        let data_dir = (self.state.config_path_on_disk().parent())
+            .map(|d| d.join("scripts-data").join(id.to_string()))
+            .unwrap_or_default();
         if let Err(e) = std::fs::create_dir_all(&data_dir) {
             tracing::warn!(%id, error = %e, "script data folder not made");
         }
@@ -882,12 +870,6 @@ impl App {
         use pecofence_core::script_output::{
             RowAction, ScriptLine, TargetKind, click_allowed, parse,
         };
-        // A light plugin's row: its plugin gets the click (a stopped one starts again).
-        if self.light_runs(fence) && !dragging {
-            let name = if double { "dblclick" } else { "click" };
-            let data = serde_json::json!({ "id": null, "row": index, "cell": cell });
-            return self.plugin_event(fence, name, data);
-        }
         let Some((Outcome::Done(text), at)) = self.script_runs.last.get(&fence).cloned() else {
             return;
         };

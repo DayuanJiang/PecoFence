@@ -1993,15 +1993,7 @@ impl FenceViewState {
             .iter()
             .map(|keys| {
                 keys.iter()
-                    .map(|key| {
-                        let key = key.as_deref()?;
-                        let (_, image) = self.script_images.iter().find(|(k, _)| k == key)?;
-                        Some(ScriptImageDraw {
-                            key,
-                            image: image.as_ref()?,
-                            height: 0.0,
-                        })
-                    })
+                    .map(|key| picture(&self.script_images, key, 0.0))
                     .collect()
             })
             .collect();
@@ -2036,14 +2028,7 @@ impl FenceViewState {
                         fill: c.fill,
                         under: c.under,
                         blur: c.blur,
-                        image: key.as_deref().and_then(|key| {
-                            let (_, image) = self.script_images.iter().find(|(k, _)| k == key)?;
-                            Some(ScriptImageDraw {
-                                key,
-                                image: image.as_ref()?,
-                                height: c.image_height,
-                            })
-                        }),
+                        image: picture(&self.script_images, key, c.image_height),
                     })
                     .collect()
             })
@@ -2068,14 +2053,7 @@ impl FenceViewState {
                     .map(|l| (l.value.as_str(), l.placeholder.as_str())),
                 hover: r.plugin && (r.blur || r.tip.is_some() || r.clickable),
                 cells,
-                image: key.as_deref().and_then(|key| {
-                    let (_, image) = self.script_images.iter().find(|(k, _)| k == key)?;
-                    Some(ScriptImageDraw {
-                        key,
-                        image: image.as_ref()?,
-                        height: r.image_height,
-                    })
-                }),
+                image: picture(&self.script_images, key, r.image_height),
                 hidden: r.hidden,
                 text: &r.text,
                 separator: r.separator,
@@ -2863,6 +2841,22 @@ impl FenceViewState {
         self.arm_fit_ahead();
         Ok(())
     }
+}
+
+/// The picture of a script or plugin row by its cache key, when it is decoded: drawn `height`
+/// DIPs tall (0: as the drawing's step asks).
+fn picture<'a>(
+    images: &'a [(String, Option<Image>)],
+    key: &'a Option<String>,
+    height: f32,
+) -> Option<pecofence_render::fence_chrome::ScriptImageDraw<'a>> {
+    let key = key.as_deref()?;
+    let (_, image) = images.iter().find(|(k, _)| k == key)?;
+    Some(pecofence_render::fence_chrome::ScriptImageDraw {
+        key,
+        image: image.as_ref()?,
+        height,
+    })
 }
 
 /// Localised caption of a "按时间分组" section (literal keys keep `check-locales.py` honest).
