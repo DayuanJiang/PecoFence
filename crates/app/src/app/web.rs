@@ -1,6 +1,6 @@
 //! 网页层 in the app: a web plugin fence's page (`crate::web_plugin`) and its optional main.js
 //! beside it (the light layer), the page's `pf.*` calls, the events pages get, and a page that
-//! crashed or cannot start (WebView2 missing): the fence shows why, with 重新加载.
+//! crashed or cannot start (WebView2 missing or too old): the fence shows why, with 重新加载.
 
 use super::light::{note_stop, stopped_rows};
 use super::*;
@@ -16,6 +16,8 @@ const WEBVIEW2_DOWNLOAD: &str = "https://developer.microsoft.com/microsoft-edge/
 /// Why a fence's page does not run; it waits for 重新加载.
 enum Stop {
     NoWebView2,
+    /// Older than 152: it would not hold the page to its Connection-Allowlist.
+    OldWebView2,
     Failed(Failure),
 }
 
@@ -46,6 +48,12 @@ impl App {
         if !self.ensure_web_env() {
             tracing::warn!(fence = %shown, plugin = plugin.id, "web plugin: no WebView2, the fence says so");
             self.web_pages.stopped.insert(shown, Stop::NoWebView2);
+            return self.push_tool_view(host);
+        }
+        let version = (self.web_env.as_ref()).map_or(String::new(), |e| e.env.browser_version());
+        if !pecofence_core::plugins::webview2_enough(&version) {
+            tracing::warn!(fence = %shown, plugin = plugin.id, version, "web plugin: WebView2 older than 152 ignores Connection-Allowlist, the page is not loaded and the fence asks for an update");
+            self.web_pages.stopped.insert(shown, Stop::OldWebView2);
             return self.push_tool_view(host);
         }
         let main = plugin.dir.join("main.js");
@@ -91,13 +99,14 @@ impl App {
     }
 
     /// A stopped page's fence: why, in red, then 重新加载 (and the download of WebView2 when it
-    /// is missing).
+    /// is missing or too old).
     pub(super) fn web_stopped_view(&self, fence: FenceId) -> Option<ScriptView> {
         let (why, download) = match self.web_pages.stopped.get(&fence)? {
             Stop::NoWebView2 => (
                 i18n::text("需要 WebView2 才能显示这个插件。").to_string(),
                 true,
             ),
+            Stop::OldWebView2 => (i18n::text("这个插件需要更新 WebView2。").to_string(), true),
             Stop::Failed(f) => {
                 let reason = match f {
                     Failure::BrowserExited => i18n::text("WebView2 的浏览器进程退出了"),
@@ -146,7 +155,7 @@ impl App {
         let Some(stop) = self.web_pages.stopped.get(&fence) else {
             return false;
         };
-        let download = matches!(stop, Stop::NoWebView2);
+        let download = matches!(stop, Stop::NoWebView2 | Stop::OldWebView2);
         if row != 1 {
             return true;
         }

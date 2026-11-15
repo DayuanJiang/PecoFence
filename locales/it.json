@@ -1091,6 +1091,7 @@
   "用的内存超过了 8 MB": "ha usato più di 8 MB di memoria",
   "升级为插件之前": "Prima del passaggio ai plugin",
   "需要 WebView2 才能显示这个插件。": "Questo plugin ha bisogno di WebView2 per essere mostrato.",
+  "这个插件需要更新 WebView2。": "Questo plugin ha bisogno di una versione più recente di WebView2.",
   "下载 WebView2": "Scarica WebView2",
   "重新加载": "Ricarica",
   "插件的网页一小时里停了三次，最后一次是因为{0}。": "La pagina del plugin si è fermata tre volte in un’ora, l’ultima volta perché {0}.",

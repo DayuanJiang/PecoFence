@@ -236,15 +236,6 @@ impl WebFence {
         match self.ready(comp) {
             Ok(()) => {
                 tracing::info!(plugin = %self.plugin.id, fence = %self.fence, ms, version = self.version, background = self.plugin.background, "web plugin: page loading");
-                let major: u32 = self
-                    .version
-                    .split('.')
-                    .next()
-                    .and_then(|m| m.parse().ok())
-                    .unwrap_or(0);
-                if major < 152 {
-                    tracing::warn!(plugin = %self.plugin.id, version = self.version, "web plugin: this WebView2 runtime ignores Connection-Allowlist; dns-prefetch and preconnect to other hosts are not blocked, WebRTC only by its removal from the page")
-                }
             }
             Err(e) => {
                 tracing::warn!(plugin = %self.plugin.id, error = %e, "web plugin: browser setup failed")
