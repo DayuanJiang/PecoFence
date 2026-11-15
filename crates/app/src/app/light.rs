@@ -159,7 +159,10 @@ impl App {
     }
 
     /// The installed manifest of fence `fence`'s plugin, read once and kept until it stops.
-    fn light_manifest(&mut self, fence: FenceId) -> Option<Arc<pecofence_core::plugins::Manifest>> {
+    pub(super) fn light_manifest(
+        &mut self,
+        fence: FenceId,
+    ) -> Option<Arc<pecofence_core::plugins::Manifest>> {
         let host = self.light_host();
         if let Some(m) = host.manifest(fence) {
             return Some(m);

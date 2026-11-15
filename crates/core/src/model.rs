@@ -2187,6 +2187,8 @@ impl Config {
     /// Makes `m.fence` a fence of plugin `m.plugin` in every layout and snapshot but
     /// [`BEFORE_PLUGINS`]: a note keeps its text in `notes`, a clock takes 显示秒 along as its
     /// `seconds` setting, an example keeps its interval and `held` with default settings.
+    /// [`BEFORE_PLUGINS`] keeps the example's script, which restoring it brings back; it keeps
+    /// no note texts, which stay in `notes` for both kinds of fence.
     pub fn move_to_plugin(&mut self, m: &PluginMove) {
         let (mut clock, mut script) = (false, false);
         for f in self.movable_layouts().flat_map(|l| l.fences.iter_mut()) {
@@ -2201,6 +2203,16 @@ impl Config {
         if self.scripts.get(&m.fence).is_some_and(|s| s.path == path) {
             return;
         }
+        let old = self
+            .scripts
+            .get(&m.fence)
+            .filter(|s| !s.path.starts_with("plugin:"));
+        if let Some((old, before)) = old
+            .cloned()
+            .zip(self.snapshots.iter_mut().find(|s| s.id == BEFORE_PLUGINS))
+        {
+            before.scripts.entry(m.fence).or_insert(old);
+        }
         let fresh = ScriptSpec::new("");
         let spec = self.scripts.entry(m.fence).or_insert(fresh.clone());
         if !script {
@@ -2212,6 +2224,40 @@ impl Config {
             let seconds = self.settings.tools.clock_seconds;
             spec.settings.insert("seconds".into(), seconds.into());
         }
+    }
+
+    /// A file from someone else about to be imported: the scripts only a snapshot can show (of
+    /// fences in none of its layouts) and those its snapshots keep go, or restoring a snapshot
+    /// later would start them with no word of warning. Plugin fences keep theirs: a plugin is
+    /// from the store, not code of the file (the ones snapshots keep are held like the file's
+    /// others). The folders a plugin fence may read were picked on another computer: they go
+    /// (`__folders`). Returns how many scripts went.
+    pub fn drop_imported_scripts(&mut self) -> usize {
+        let plugin = |s: &ScriptSpec| s.path.starts_with("plugin:");
+        let shown: HashSet<FenceId> = (self.layouts.iter())
+            .flat_map(|l| &l.fences)
+            .map(|f| f.id)
+            .collect();
+        let listed = self.scripts.len();
+        self.scripts.retain(|id, s| shown.contains(id) || plugin(s));
+        let mut dropped = listed - self.scripts.len();
+        for snapshot in &mut self.snapshots {
+            let kept = snapshot.scripts.len();
+            snapshot.scripts.retain(|_, s| plugin(s));
+            dropped += kept - snapshot.scripts.len();
+            for s in snapshot.scripts.values_mut() {
+                s.held = true;
+            }
+        }
+        let specs = (self.scripts.values_mut()).chain(
+            self.snapshots
+                .iter_mut()
+                .flat_map(|s| s.scripts.values_mut()),
+        );
+        for spec in specs {
+            spec.settings.remove("__folders");
+        }
+        dropped
     }
 
     /// Marks every script of this configuration as held (see [`ScriptSpec::held`]): it is a
@@ -2935,6 +2981,12 @@ mod tests {
             }
             let json = |l: &Vec<Layout>| serde_json::to_string(l).unwrap();
             assert_eq!(json(&c.snapshots[2].layouts), json(&before.layouts));
+            // It keeps the moved example's script for the way back, and no note texts: those
+            // stay as they are when it is restored.
+            let kept = &c.snapshots[2];
+            assert!(kept.notes.is_empty());
+            assert_eq!(kept.scripts.keys().collect::<Vec<_>>(), [&weather]);
+            assert_eq!(kept.scripts[&weather].path, "C:/s/天气.ps1");
             assert_eq!(c.scripts[&note].path, "plugin:notes");
             assert_eq!(c.notes[&note], "[ ] milk\n[x] rent");
             assert_eq!(c.scripts[&clock].path, "plugin:clock");
@@ -2967,6 +3019,43 @@ mod tests {
             assert_eq!(c.scripts[&clock].settings["seconds"], false);
             assert!(c.plugin_moves(example).is_empty());
         }
+    }
+
+    #[test]
+    fn an_import_keeps_plugin_fences_without_the_folders_picked_elsewhere() {
+        let (mut c, [_, _, weather, github, own, old_clock]) = config_with_tools(false);
+        let picked = |path: &str, folder: &str| {
+            let mut spec = ScriptSpec::new(path);
+            spec.settings.insert("seconds".into(), true.into());
+            spec.settings
+                .insert("__folders".into(), serde_json::json!([folder]));
+            spec
+        };
+        // A plugin fence only a snapshot shows, one in the layouts, and a script in no layout.
+        c.scripts
+            .insert(old_clock, picked("plugin:clock", "C:/Users/a/Docs"));
+        c.scripts.insert(weather, picked("plugin:weather", "D:/x"));
+        let hidden = Uuid::new_v4();
+        c.scripts.insert(hidden, ScriptSpec::new("C:/s/hidden.ps1"));
+        // The undo snapshot of the file keeps three scripts and a plugin fence's entry.
+        (c.snapshots[1].scripts).insert(old_clock, picked("plugin:clock", "E:/y"));
+        assert_eq!(c.drop_imported_scripts(), 4);
+        let mut ids: Vec<_> = c.scripts.keys().copied().collect();
+        ids.sort();
+        let mut want = vec![weather, github, own, old_clock];
+        want.sort();
+        assert_eq!(
+            ids, want,
+            "plugin fences keep theirs, the hidden script goes"
+        );
+        assert_eq!(c.snapshots[1].scripts.len(), 1);
+        let kept = &c.snapshots[1].scripts[&old_clock];
+        assert!(kept.held && kept.path == "plugin:clock");
+        let specs = c.scripts.values().chain([kept]);
+        for spec in specs {
+            assert!(!spec.settings.contains_key("__folders"), "{spec:?}");
+        }
+        assert_eq!(c.scripts[&old_clock].settings["seconds"], true);
     }
 
     #[test]

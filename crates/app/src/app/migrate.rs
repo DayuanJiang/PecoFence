@@ -7,7 +7,7 @@
 //! works. It runs again at every chance, and a second run finds nothing to do.
 
 use super::App;
-use pecofence_core::{BEFORE_PLUGINS, i18n};
+use pecofence_core::{BEFORE_PLUGINS, FenceId, FenceTool, i18n};
 
 impl App {
     /// Moves the fences whose plugin is installed. `fetch`: the missing plugins are installed
@@ -49,6 +49,14 @@ impl App {
             return;
         }
         for m in &moving {
+            // A note whose editor just closed: its text, still on its way in the command queue,
+            // goes into the note first (the plugin fence it becomes would not take it).
+            if let Some(text) = crate::note_edit::take_committed(m.fence) {
+                let saved = self
+                    .state
+                    .set_note_text(m.fence, &text.replace("\r\n", "\n"));
+                tracing::info!(fence = %m.fence, saved, "upgrade to plugins: the note's last edit kept first");
+            }
             self.forget_script(m.fence);
             self.state.config.move_to_plugin(m);
             tracing::info!(fence = %m.fence, plugin = m.plugin, "upgrade to plugins: fence moved");
@@ -71,9 +79,48 @@ impl App {
             tracing::info!(
                 "upgrade to plugins: 升级为插件之前 restored, its fences stay as they are"
             );
-            return;
+        } else {
+            self.migrate_tools(true);
         }
-        self.migrate_tools(true);
+        self.plugins_after_replace();
+    }
+
+    /// A configuration came in (import, backup, snapshot) while plugins ran: each running
+    /// plugin gets its fence's settings as they are now, and one whose fence names another
+    /// plugin now (or none) stops, and the fence starts what it names. The script fences it
+    /// brought run now (not at the next minute).
+    pub(super) fn plugins_after_replace(&mut self) {
+        let light: Vec<FenceId> = self.light.running.keys().copied().collect();
+        let mut running: Vec<(FenceId, String)> = (light.into_iter())
+            .filter_map(|fence| Some((fence, self.light_manifest(fence)?.id.clone())))
+            .collect();
+        let pages = self.fences.values().filter_map(|w| w.web());
+        running.extend(pages.map(|web| (web.fence, web.plugin.id.clone())));
+        running.sort();
+        running.dedup();
+        for (fence, runs) in running {
+            let script =
+                (self.state.fence(fence)).is_some_and(|f| f.tool == Some(FenceTool::Script));
+            let spec = (self.state.config.scripts.get(&fence)).filter(|_| script);
+            let names = spec.and_then(|s| super::plugins::plugin_id(&s.path));
+            if names != Some(runs.as_str()) {
+                tracing::info!(%fence, runs, names, "configuration came in: the fence runs another plugin now, it starts again");
+                self.stop_script(fence);
+                self.restart_web_page(fence);
+                if script {
+                    self.start_script(fence);
+                }
+                continue;
+            }
+            let settings = spec.map(|s| s.settings.clone()).unwrap_or_default();
+            let Some(p) = self.plugin(&runs) else {
+                continue;
+            };
+            let settings = pecofence_core::plugins::fence_settings(&p.manifest, &settings);
+            tracing::info!(%fence, plugin = runs, "configuration came in: the plugin gets its fence's settings");
+            self.plugin_event(fence, "settings", settings);
+        }
+        self.run_due_scripts();
     }
 
     /// 升级为插件之前, saved before the first fence moves. False when the list is full of
@@ -87,9 +134,9 @@ impl App {
             tracing::warn!("upgrade to plugins: waits, the snapshots are all the user's own");
             return false;
         }
+        // Restoring it brings the fences back, and the examples' scripts (`move_to_plugin` keeps
+        // them in it); the note texts stay as they are by then.
         let id = self.state.save_snapshot(i18n::text("升级为插件之前"));
-        // Restoring it brings the note texts and scripts back with the fences.
-        self.state.keep_tool_data_in(id);
         if let Some(s) = self.state.config.snapshots.iter_mut().find(|s| s.id == id) {
             s.id = BEFORE_PLUGINS;
         }

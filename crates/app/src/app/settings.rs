@@ -205,25 +205,10 @@ impl App {
         self.end_peek_now();
         let old_settings = self.state.config.settings.clone();
         let imported = matches!(source, ConfigSource::Import);
-        // A snapshot of an imported file brings its fences, never scripts: restoring it later
-        // would start them with no word of warning. That goes for the scripts a snapshot keeps
-        // itself and for those the file lists for fences that are in none of its layouts (only
-        // a snapshot can show them).
-        let snapshot_scripts: usize = if imported {
-            let shown: std::collections::HashSet<FenceId> = cfg
-                .layouts
-                .iter()
-                .flat_map(|l| &l.fences)
-                .map(|f| f.id)
-                .collect();
-            let listed = cfg.scripts.len();
-            cfg.scripts.retain(|id, _| shown.contains(id));
-            let kept: usize = cfg
-                .snapshots
-                .iter_mut()
-                .map(|s| std::mem::take(&mut s.scripts).len())
-                .sum();
-            listed - cfg.scripts.len() + kept
+        // A snapshot of an imported file brings its fences, never scripts (plugin fences keep
+        // theirs, without the folders picked on another computer).
+        let snapshot_scripts = if imported {
+            cfg.drop_imported_scripts()
         } else {
             0
         };
@@ -285,6 +270,7 @@ impl App {
         self.apply_icon_variant();
         self.refresh_visuals(true);
         self.migrate_tools(true);
+        self.plugins_after_replace();
         // Written before the page lists the backups: the first save of a day adds one.
         self.state.save_and_wait("import");
         self.push_settings_state();
