@@ -1068,7 +1068,11 @@
   "下载没有完成，检查网络后再试一次。": "Der Download wurde nicht abgeschlossen. Prüfen Sie das Netzwerk und versuchen Sie es erneut.",
   "下载的文件和审查过的不一样，已经放弃安装。": "Die geladenen Dateien weichen von den geprüften ab, daher wurde nichts installiert.",
   "卸载“{0}”？它的栅栏和它保存的数据都会删掉。": "„{0}“ deinstallieren? Seine Bereiche und gespeicherten Daten werden gelöscht.",
-  "插件停止了：{0}。右键这个栅栏，选“立即运行”重新启动。": "Das Plugin wurde beendet: {0}. Klicken Sie mit der rechten Maustaste auf diesen Bereich und wählen Sie „Jetzt ausführen“, um es neu zu starten.",
+  "插件停止了：{0}。5 秒后自动重新启动。": "Das Plugin wurde beendet: {0}. Es startet in 5 Sekunden von selbst neu.",
+  "插件停止了：{0}。一小时里停了三次，不再自动启动。": "Das Plugin wurde beendet: {0}. Es wurde innerhalb einer Stunde dreimal beendet und startet nicht mehr von selbst.",
+  "每秒合计运行超过了 200 毫秒": "es lief innerhalb einer Sekunde insgesamt länger als 200 ms",
+  "重新启动": "Neu starten",
+  "选择插件可以读取的文件夹": "Ordner wählen, den das Plugin lesen darf",
   "一次运行超过了 50 毫秒": "ein Durchlauf dauerte länger als 50 ms",
   "用的内存超过了 8 MB": "es hat mehr als 8 MB Speicher belegt"
 }

@@ -5,7 +5,7 @@ use crate::bindings::*;
 use crate::dragdrop;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-use windows_core::Result;
+use windows_core::{PCWSTR, Result};
 
 static PREFERRED_EFFECT_FORMAT: OnceLock<u16> = OnceLock::new();
 static PASTE_SUCCEEDED_FORMAT: OnceLock<u16> = OnceLock::new();
@@ -207,7 +207,13 @@ pub fn sequence() -> u32 {
 /// Puts `text` on the clipboard as Unicode text (the search's 复制路径).
 pub fn set_text(owner: HWND, text: &str) -> bool {
     let wide = crate::wide::to_wide(text);
-    let bytes = wide.len() * 2;
+    // SAFETY: plain reinterpretation of the UTF-16 units as their bytes.
+    let bytes = unsafe { std::slice::from_raw_parts(wide.as_ptr().cast::<u8>(), wide.len() * 2) };
+    put(owner, CF_UNICODETEXT as u32, bytes)
+}
+
+/// Empties the clipboard and puts `bytes` on it as `format`.
+fn put(owner: HWND, format: u32, bytes: &[u8]) -> bool {
     // SAFETY: the global block is filled while locked; on success the clipboard owns it,
     // otherwise it is freed here.
     unsafe {
@@ -215,16 +221,14 @@ pub fn set_text(owner: HWND, text: &str) -> bool {
             return false;
         }
         let _ = EmptyClipboard();
-        let mem = GlobalAlloc(GMEM_MOVEABLE as u32, bytes);
+        let mem = GlobalAlloc(GMEM_MOVEABLE as u32, bytes.len());
         let mut ok = false;
         if !mem.0.is_null() {
-            let dst = GlobalLock(mem) as *mut u16;
+            let dst = GlobalLock(mem) as *mut u8;
             if !dst.is_null() {
-                std::ptr::copy_nonoverlapping(wide.as_ptr(), dst, wide.len());
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), dst, bytes.len());
                 let _ = GlobalUnlock(mem);
-                ok = !SetClipboardData(CF_UNICODETEXT as u32, Some(HANDLE(mem.0)))
-                    .0
-                    .is_null();
+                ok = !SetClipboardData(format, Some(HANDLE(mem.0))).0.is_null();
             }
             if !ok {
                 let _ = GlobalFree(mem);
@@ -233,4 +237,214 @@ pub fn set_text(owner: HWND, text: &str) -> bool {
         let _ = CloseClipboard();
         ok
     }
+}
+
+static EXCLUDE_FORMAT: OnceLock<u16> = OnceLock::new();
+static HISTORY_FORMAT: OnceLock<u16> = OnceLock::new();
+static VIEWER_IGNORE_FORMAT: OnceLock<u16> = OnceLock::new();
+
+/// The clipboard's content is marked private (a password manager's copy): it says
+/// `ExcludeClipboardContentFromMonitorProcessing`, `Clipboard Viewer Ignore`, or
+/// `CanIncludeInClipboardHistory` = 0. Plugins never see such content. With the clipboard open.
+fn marked_private() -> bool {
+    let format = |name, slot| u32::from(dragdrop::registered_format(name, slot));
+    // SAFETY: plain FFI calls with the clipboard open.
+    let has = |f: u32| unsafe { IsClipboardFormatAvailable(f) }.as_bool();
+    let exclude = format(
+        "ExcludeClipboardContentFromMonitorProcessing",
+        &EXCLUDE_FORMAT,
+    );
+    let ignore = format("Clipboard Viewer Ignore", &VIEWER_IGNORE_FORMAT);
+    let history = format("CanIncludeInClipboardHistory", &HISTORY_FORMAT);
+    has(exclude)
+        || has(ignore)
+        || has(history) && data(history).is_none_or(|b| b.get(..4) == Some(&[0; 4]))
+}
+
+/// The bytes of `format` on the open clipboard.
+fn data(format: u32) -> Option<Vec<u8>> {
+    // SAFETY: GetClipboardData's block belongs to the clipboard; it is only read while locked.
+    unsafe {
+        let mem: HGLOBAL = GetClipboardData(format);
+        if mem.0.is_null() {
+            return None;
+        }
+        let ptr = GlobalLock(mem) as *const u8;
+        if ptr.is_null() {
+            return None;
+        }
+        let bytes = std::slice::from_raw_parts(ptr, GlobalSize(mem)).to_vec();
+        let _ = GlobalUnlock(mem);
+        Some(bytes)
+    }
+}
+
+/// Runs `read` with the clipboard open (tried for 200 ms while another program holds it). None
+/// when it could not be opened or its content is marked private ([`marked_private`]).
+fn read<T>(read: impl FnOnce() -> Option<T>) -> Option<T> {
+    for _ in 0..10 {
+        // SAFETY: plain FFI calls; the clipboard is closed again on this thread.
+        if unsafe { OpenClipboard(None) }.as_bool() {
+            let private = marked_private();
+            let out = if private { None } else { read() };
+            // SAFETY: closes what this thread opened.
+            unsafe {
+                let _ = CloseClipboard();
+            }
+            if private {
+                tracing::debug!("clipboard content marked private: not read");
+            }
+            return out;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    tracing::debug!("clipboard not read: another program holds it open");
+    None
+}
+
+/// The clipboard's content is marked private (its change is not told to plugins).
+pub fn is_private() -> bool {
+    read(|| Some(())).is_none()
+}
+
+/// The clipboard's text, at most `max` bytes of UTF-8 (cut at a character), and whether it
+/// was cut. Any thread.
+pub fn read_text(max: usize) -> Option<(String, bool)> {
+    let bytes = read(|| data(CF_UNICODETEXT as u32))?;
+    let units: Vec<u16> = bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes(*c))
+        .collect();
+    let end = units.iter().position(|&u| u == 0).unwrap_or(units.len());
+    let text = String::from_utf16_lossy(&units[..end]);
+    if text.len() <= max {
+        return Some((text, false));
+    }
+    let cut = (0..=max)
+        .rev()
+        .find(|&i| text.is_char_boundary(i))
+        .unwrap_or(0);
+    Some((text[..cut].to_string(), true))
+}
+
+/// The files on the clipboard (`CF_HDROP`), without OLE: any thread.
+pub fn read_files() -> Option<Vec<PathBuf>> {
+    read(|| {
+        // SAFETY: the drop handle belongs to the open clipboard; each name fits its buffer.
+        unsafe {
+            let drop = HDROP(GetClipboardData(CF_HDROP as u32).0);
+            if drop.0.is_null() {
+                return None;
+            }
+            let count = DragQueryFileW(drop, u32::MAX, None, 0);
+            let paths = (0..count).map(|i| {
+                let mut buf = vec![0u16; DragQueryFileW(drop, i, None, 0) as usize + 1];
+                let len = buf.len() as u32;
+                let n = DragQueryFileW(drop, i, Some(windows_core::PWSTR(buf.as_mut_ptr())), len);
+                PathBuf::from(String::from_utf16_lossy(&buf[..n as usize]))
+            });
+            Some(paths.collect())
+        }
+    })
+}
+
+/// The picture on the clipboard (`CF_DIB`, 24 or 32 bits a pixel) as width, height and
+/// top-down BGRA pixels. Any thread.
+pub fn read_image() -> Option<(u32, u32, Vec<u8>)> {
+    let dib = read(|| data(CF_DIB as u32))?;
+    let field = |at: usize| Some(u32::from_le_bytes(dib.get(at..at + 4)?.try_into().ok()?));
+    let (header, width, height) = (field(0)? as usize, field(4)? as i32, field(8)? as i32);
+    let (bits, compression) = (*dib.get(14)? as usize, field(16)?);
+    if width <= 0 || height == 0 || !(bits == 24 || bits == 32) || compression > 3 {
+        tracing::debug!(bits, compression, "clipboard picture of a kind not read");
+        return None;
+    }
+    // BI_BITFIELDS after a plain header: three colour masks come before the pixels.
+    let start = header
+        + if compression == 3 && header == 40 {
+            12
+        } else {
+            0
+        };
+    let (w, h, bpp) = (width as usize, height.unsigned_abs() as usize, bits / 8);
+    let stride = (w * bpp).div_ceil(4) * 4;
+    let pixels = dib.get(start..start + stride * h)?;
+    let mut out = Vec::with_capacity(w * h * 4);
+    for y in 0..h {
+        let row = if height < 0 { y } else { h - 1 - y };
+        for px in pixels[row * stride..][..w * bpp].chunks_exact(bpp) {
+            out.extend_from_slice(&[px[0], px[1], px[2], if bpp == 4 { px[3] } else { 255 }]);
+        }
+    }
+    // Most programs leave the alpha of a 32-bit picture at 0: it is opaque.
+    if out.as_chunks::<4>().0.iter().all(|p| p[3] == 0) {
+        out.as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .for_each(|p| p[3] = 255);
+    }
+    Some((w as u32, h as u32, out))
+}
+
+/// Puts a picture (top-down BGRA) on the clipboard as a 32-bit `CF_DIB`.
+pub fn set_image(owner: HWND, width: u32, height: u32, bgra: &[u8]) -> bool {
+    let mut dib = Vec::with_capacity(40 + bgra.len());
+    for v in [
+        40,
+        width,
+        height,
+        1 | (32 << 16),
+        0,
+        bgra.len() as u32,
+        0,
+        0,
+        0,
+        0,
+    ] {
+        dib.extend_from_slice(&v.to_le_bytes());
+    }
+    for row in bgra.chunks_exact(width as usize * 4).rev() {
+        dib.extend_from_slice(row);
+    }
+    put(owner, CF_DIB as u32, &dib)
+}
+
+/// Saves a picture (top-down BGRA) as a PNG file with WIC. On a thread with COM.
+pub fn save_png(path: &Path, width: u32, height: u32, bgra: &[u8]) -> Result<()> {
+    let wide = crate::wide::to_wide(&path.to_string_lossy());
+    // SAFETY: standard WIC encoding; every interface lives until the end of the block.
+    unsafe {
+        let factory: IWICImagingFactory =
+            CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?;
+        let bitmap = factory.CreateBitmapFromMemory(
+            width,
+            height,
+            &GUID_WICPixelFormat32bppBGRA,
+            width * 4,
+            bgra.len() as u32,
+            bgra.as_ptr(),
+        )?;
+        let stream = factory.CreateStream()?;
+        (stream.InitializeFromFilename(PCWSTR(wide.as_ptr()), GENERIC_WRITE as u32)).ok()?;
+        let encoder = factory.CreateEncoder(&GUID_ContainerFormatPng, core::ptr::null())?;
+        encoder.Initialize(&stream, WICBitmapEncoderNoCache).ok()?;
+        let (mut frame, mut options) = (None, None);
+        encoder.CreateNewFrame(&mut frame, &mut options).ok()?;
+        let frame = frame.ok_or_else(windows_core::Error::empty)?;
+        frame.Initialize(options.as_ref()).ok()?;
+        frame.SetSize(width, height).ok()?;
+        let mut format = GUID_WICPixelFormat32bppBGRA;
+        frame.SetPixelFormat(&mut format).ok()?;
+        frame.WriteSource(&bitmap, core::ptr::null()).ok()?;
+        frame.Commit().ok()?;
+        encoder.Commit().ok()
+    }
+}
+
+/// `hwnd` gets `WM_CLIPBOARDUPDATE` whenever the clipboard changes, until it is destroyed.
+pub fn listen(hwnd: HWND) -> bool {
+    // SAFETY: plain FFI call; Windows removes the listener with the window.
+    unsafe { AddClipboardFormatListener(hwnd) }.as_bool()
 }

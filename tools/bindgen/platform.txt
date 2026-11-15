@@ -1086,3 +1086,22 @@
     PROCESS_QUERY_LIMITED_INFORMATION
     RI_KEY_BREAK
     RIM_TYPEKEYBOARD
+
+    // ---- plugins: pf.clipboard (read, images, the clipboard event), pf.sys.battery
+    AddClipboardFormatListener
+    RemoveClipboardFormatListener
+    WM_CLIPBOARDUPDATE
+    GetClipboardData
+    IsClipboardFormatAvailable
+    GlobalSize
+    CF_DIB
+    CF_HDROP
+    BITMAPINFOHEADER
+    GetSystemPowerStatus
+    SYSTEM_POWER_STATUS
+    IWICBitmapEncoder
+    IWICBitmapFrameEncode
+    IWICStream
+    GUID_ContainerFormatPng
+    WICBitmapEncoderNoCache
+    MB_ICONASTERISK

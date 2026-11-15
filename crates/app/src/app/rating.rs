@@ -130,6 +130,9 @@ impl App {
     pub(super) fn on_notice(&mut self, card: isize, event: crate::notice::NoticeEvent) {
         // Two cards can be up (an undo card above a tip): the event names its card.
         let is = |n: &crate::notice::Notice| n.hwnd().0 as isize == card;
+        if let Some(notice) = self.light.notice.take_if(|n| is(n)) {
+            return notice.leave();
+        }
         if let Some((notice, fence)) = self.undo_notice.take_if(|(n, _)| is(n)) {
             notice.leave();
             self.on_undo_notice(fence, event);
@@ -245,6 +248,7 @@ impl App {
             .chain(&self.rating.notice)
             .chain(self.undo_notice.iter().map(|(n, _)| n))
             .chain(self.update_notice())
+            .chain(&self.light.notice)
     }
 
     /// After a render stack rebuild: the notice on screen draws on the new device.

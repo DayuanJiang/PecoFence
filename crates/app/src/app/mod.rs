@@ -70,6 +70,7 @@ mod ipc;
 mod items;
 mod keyfocus;
 mod light;
+mod light_host;
 mod live_wallpaper;
 mod lnk_targets;
 mod menu_frames;

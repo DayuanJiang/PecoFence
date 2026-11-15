@@ -23,13 +23,7 @@ impl App {
 
     /// A light plugin fence's view: its rows (正在运行… until the first), or why it stopped.
     pub(super) fn light_view(&self, fence: FenceId) -> Option<ScriptView> {
-        let stopped = self.light.stopped.get(&fence).map(|why| {
-            let text = pecofence_core::i18n::format(
-                "插件停止了：{0}。右键这个栅栏，选“立即运行”重新启动。",
-                std::slice::from_ref(why),
-            );
-            ScriptRowView::failed(&text, "")
-        });
+        let stopped = self.light_stopped_rows(fence);
         let rows = stopped.or_else(|| self.light.running.get(&fence)?.0.clone());
         let quiet = rows.is_none() && self.light.running.contains_key(&fence);
         (quiet || rows.is_some()).then(|| ScriptView {
