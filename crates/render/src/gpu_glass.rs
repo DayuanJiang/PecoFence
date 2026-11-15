@@ -218,6 +218,9 @@ pub struct Stats {
 /// kube.io's SVG chain: displace the backdrop once, let a strongly saturated copy of the
 /// refracted backdrop show through the specular ring, then light the ring itself.
 const RIM_SATURATION: f32 = 6.0;
+/// The most a plate's lens map is stretched or squeezed in height while a title row glides
+/// (`GpuGlass::draw`'s `rest_h`): a 36 DIP row over a plate 150 DIP high or more.
+const MAX_STRETCH: f32 = 1.33;
 const RIM_LIGHT: f32 = 0.4;
 
 /// feColorMatrix `saturate` (Rec. 709 luma weights) in D2D's input-row layout.
@@ -677,7 +680,16 @@ impl GpuGlass {
         }
         let w = rect[2].max(1) as u32;
         let h = rect[3].max(1) as u32;
-        let build_h = rest_h.max(1) as u32;
+        // Stretched only a little: a lens far from its rest height (a rolled fence that opens
+        // while its title row folds away starts one row high with a rest height near zero) is
+        // built for the height drawn, frame by frame, as before.
+        let rest = rest_h.max(1) as u32;
+        let build_h =
+            if (h as f32) <= rest as f32 * MAX_STRETCH && (rest as f32) <= h as f32 * MAX_STRETCH {
+                rest
+            } else {
+                h
+            };
         let started = std::time::Instant::now();
         if effects.geometry(&context, w, build_h, h, scale, radius, self.lens.refraction)? {
             self.stats.map_builds += 1;
