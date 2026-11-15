@@ -75,6 +75,7 @@ mod menu_frames;
 mod menus;
 mod motion;
 mod peek;
+mod plugins;
 mod portals;
 mod push;
 mod rating;
@@ -515,6 +516,7 @@ pub struct App {
     store_startup_done: Option<std::sync::mpsc::Receiver<()>>,
     /// 脚本栅栏: last results, running and next due script fences.
     script_runs: tools::ScriptRuns,
+    plugins: plugins::Plugins,
     /// `--light` / `--dark`: pin the theme this run.
     theme_override: Option<ThemeMode>,
     peek_class: WindowClass,
@@ -1290,6 +1292,7 @@ impl App {
                                 | updates::TIMER_UPDATE_CHECK
                                 | updates::TIMER_UPDATE_CARD
                                 | updates::TIMER_UPDATE_RESUME
+                                | plugins::TIMER_PLUGINS_CHECK
                                 | TIMER_PORTAL_BACK
                                 | TIMER_CONFIG_LOCKED
                                 | desktop_import::TIMER_WINDOWS_PLACES
@@ -1332,6 +1335,9 @@ impl App {
                                             }
                                             updates::TIMER_UPDATE_CHECK => app.auto_check_updates(),
                                             updates::TIMER_UPDATE_CARD => app.show_update_card(),
+                                            plugins::TIMER_PLUGINS_CHECK => {
+                                                app.daily_plugins_check()
+                                            }
                                             updates::TIMER_UPDATE_RESUME => {
                                                 app.update_check_after_resume()
                                             }
@@ -2062,6 +2068,7 @@ impl App {
             store_startup_state: None,
             store_startup_done: None,
             script_runs: tools::ScriptRuns::default(),
+            plugins: plugins::Plugins::default(),
             theme_override: if args.light {
                 Some(ThemeMode::Light)
             } else if args.dark {
@@ -2410,6 +2417,7 @@ impl App {
 
         app.remove_old_update_downloads();
         app.arm_update_check(true);
+        app.arm_plugins_check(true);
         // Last of the startup balloons, so it is the one left showing.
         app.offer_crash_feedback();
         app.offer_welcome();
@@ -2641,6 +2649,7 @@ impl App {
         self.drain_fileops();
         self.drain_ipc();
         self.drain_updates();
+        self.drain_plugins();
         for _ in 0..8 {
             let cmds = self.queue.drain();
             if cmds.is_empty() {

@@ -737,6 +737,7 @@ impl App {
             // The scripts of an imported configuration that start once 小工具 is turned on:
             // the switch's card lists them.
             "heldScripts": self.state.config.held_scripts(),
+            "plugins": self.plugins_json(),
         })
         .to_string()
     }
@@ -1000,6 +1001,9 @@ impl App {
                 let name = v.get("name").and_then(|n| n.as_str());
                 if let Some(page) = SETTINGS_PAGES.iter().find(|page| Some(**page) == name) {
                     pecofence_core::usage::event_with("settings.page", page);
+                }
+                if name == Some("tools") {
+                    self.plugins_page_shown();
                 }
             }
             Some("ringFence") => {
@@ -1364,6 +1368,10 @@ impl App {
                 Some("rateInStore") => self.open_store_rating(),
                 Some("openManual") => self.open_manual(),
                 Some("scriptGuide") => self.open_manual_at("#write-scripts"),
+                Some(
+                    name @ ("pluginsRefresh" | "pluginInstall" | "pluginAdd" | "pluginUninstall"
+                    | "pluginPage"),
+                ) => self.on_plugin_action(name, &v),
                 Some("openRepository") => {
                     let url = pecofence_core::brand::REPOSITORY_URL;
                     let _ = shell::shell_execute(std::path::Path::new(url), None, None);

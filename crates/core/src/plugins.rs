@@ -38,14 +38,11 @@ pub enum Files {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
 pub struct Permissions {
-    #[serde(default)]
     pub network: Vec<String>,
-    #[serde(default)]
     pub clipboard: Clipboard,
-    #[serde(default)]
     pub files: Files,
-    #[serde(default)]
     pub run: bool,
 }
 
@@ -349,53 +346,40 @@ mod tests {
 
     #[test]
     fn index_keeps_good_entries_and_drops_bad_ones() {
-        let mut bad_file = entry("bad-file");
-        bad_file["files"][0]["name"] = "run.exe".into();
-        let mut big = entry("too-big");
-        big["files"][0]["size"] = (200 * 1024 + 1).into();
-        let mut short_hash = entry("short-hash");
-        short_hash["files"][1]["sha256"] = "abc".into();
-        let mut missing = entry("no-readme");
-        missing["files"].as_array_mut().unwrap().pop();
-        let mut twice = entry("twice-file");
-        twice["files"][2]["name"] = "main.ps1".into();
-        let mut clip = entry("bad-clip");
-        clip["permissions"]["clipboard"] = "all".into();
-        let mut host = entry("bad-host");
-        host["permissions"]["network"] = serde_json::json!(["a.com/../x"]);
-        let mut no_en = entry("no-english");
-        no_en["name"] = serde_json::json!({ "zh-CN": "倒数日" });
-        let mut disabled = entry("taken-down");
-        disabled["disabled"] = "Sends data it does not declare".into();
-        let plugins = vec![
-            entry("countdown"),
-            entry("countdown"),
-            entry("Bad_Id"),
-            bad_file,
-            big,
-            short_hash,
-            missing,
-            twice,
-            clip,
-            host,
-            no_en,
-            disabled,
+        let bad: [(&str, fn(&mut serde_json::Value)); 9] = [
+            ("bad-file", |v| v["files"][0]["name"] = "run.exe".into()),
+            ("too-big", |v| {
+                v["files"][0]["size"] = (200 * 1024 + 1).into()
+            }),
+            ("short-hash", |v| v["files"][1]["sha256"] = "abc".into()),
+            ("no-readme", |v| {
+                _ = v["files"].as_array_mut().unwrap().pop()
+            }),
+            ("twice-file", |v| v["files"][2]["name"] = "main.ps1".into()),
+            ("bad-clip", |v| v["permissions"]["clipboard"] = "all".into()),
+            ("bad-host", |v| {
+                v["permissions"]["network"] = serde_json::json!(["a.com/x"])
+            }),
+            ("no-english", |v| {
+                v["name"] = serde_json::json!({ "zh-CN": "倒数日" })
+            }),
+            ("Bad_Id", |_| {}),
         ];
-        let mut bytes = b"\xEF\xBB\xBF".to_vec();
-        bytes.extend(index(plugins));
+        let mut plugins = vec![entry("countdown"), entry("countdown")];
+        for (id, spoil) in bad {
+            plugins.push(entry(id));
+            spoil(plugins.last_mut().unwrap());
+        }
+        plugins.push(entry("taken-down"));
+        plugins.last_mut().unwrap()["disabled"] = "Sends data it does not declare".into();
+        let bytes = [b"\xEF\xBB\xBF".to_vec(), index(plugins)].concat();
         let (index, dropped) = parse_index(&bytes).unwrap();
-        let ids: Vec<_> = index
-            .plugins
-            .iter()
-            .map(|e| e.manifest.id.as_str())
-            .collect();
+        let ids: Vec<_> = index.plugins.iter().map(|e| &e.manifest.id).collect();
         assert_eq!(ids, ["countdown", "taken-down"]);
         assert_eq!(dropped.len(), 10, "{dropped:?}");
         assert_eq!(index.commit, COMMIT);
-        assert_eq!(
-            index.get("taken-down").unwrap().disabled.as_deref(),
-            Some("Sends data it does not declare")
-        );
+        let why = index.get("taken-down").unwrap().disabled.as_deref();
+        assert_eq!(why, Some("Sends data it does not declare"));
     }
 
     #[test]
@@ -422,8 +406,8 @@ mod tests {
             "a_b",
             "a/b",
             "..",
-            &"a".repeat(41),
             "a b",
+            &"a".repeat(41),
         ] {
             assert!(!valid_id(bad), "{bad}");
         }
@@ -432,35 +416,32 @@ mod tests {
     #[test]
     fn urls_come_from_commit_id_and_name() {
         let [raw, cdn] = file_urls(COMMIT, "countdown", "main.ps1");
+        let path = format!("{COMMIT}/plugins/countdown/main.ps1");
         assert_eq!(
             raw,
-            format!(
-                "https://raw.githubusercontent.com/DayuanJiang/PecoFence-plugins/{COMMIT}/plugins/countdown/main.ps1"
-            )
+            format!("https://raw.githubusercontent.com/{REPO}/{path}")
+        );
+        assert_eq!(cdn, format!("https://cdn.jsdelivr.net/gh/{REPO}@{path}"));
+        let [raw, cdn] = index_urls();
+        assert_eq!(
+            raw,
+            format!("https://raw.githubusercontent.com/{REPO}/index/index.json")
         );
         assert_eq!(
             cdn,
-            format!(
-                "https://cdn.jsdelivr.net/gh/DayuanJiang/PecoFence-plugins@{COMMIT}/plugins/countdown/main.ps1"
-            )
+            format!("https://cdn.jsdelivr.net/gh/{REPO}@index/index.json")
         );
-        let [raw, cdn] = index_urls();
-        assert!(raw.ends_with("/PecoFence-plugins/index/index.json"));
-        assert!(cdn.ends_with("/PecoFence-plugins@index/index.json"));
-        assert_eq!(
-            test_file_url(
-                "http://127.0.0.1:8731/index.json",
-                COMMIT,
-                "countdown",
-                "README.md"
-            ),
-            format!("http://127.0.0.1:8731/{COMMIT}/plugins/countdown/README.md")
+        let test = test_file_url(
+            "http://127.0.0.1:8731/index.json",
+            COMMIT,
+            "countdown",
+            "main.ps1",
         );
+        assert_eq!(test, format!("http://127.0.0.1:8731/{path}"));
+        let page = page_url(COMMIT, "countdown");
         assert_eq!(
-            page_url(COMMIT, "countdown"),
-            format!(
-                "https://github.com/DayuanJiang/PecoFence-plugins/blob/{COMMIT}/plugins/countdown/README.md"
-            )
+            page,
+            format!("https://github.com/{REPO}/blob/{COMMIT}/plugins/countdown/README.md")
         );
     }
 
@@ -507,10 +488,8 @@ mod tests {
             v["version"] = "1.1.0".into();
             v["minPecoFence"] = "0.5.0".into();
         });
-        assert_eq!(
-            update_kind(&installed, &needs, "0.4.0"),
-            Update::NeedsNewerApp
-        );
+        let kind = update_kind(&installed, &needs, "0.4.0");
+        assert_eq!(kind, Update::NeedsNewerApp);
         assert_eq!(update_kind(&installed, &needs, "0.5.0"), Update::Auto);
         let more = manifest(|v| {
             v["version"] = "2.0.0".into();
@@ -541,8 +520,7 @@ mod tests {
     #[test]
     fn manifest_reads_with_a_bom_and_is_checked() {
         let text = serde_json::to_vec(&entry("countdown")).unwrap();
-        let mut bom = b"\xEF\xBB\xBF".to_vec();
-        bom.extend(&text);
+        let bom = [b"\xEF\xBB\xBF".to_vec(), text.clone()].concat();
         assert_eq!(parse_manifest(&bom).unwrap().id, "countdown");
         let bad = String::from_utf8(text).unwrap().replace("1.0.1", "one");
         assert!(parse_manifest(bad.as_bytes()).is_err());
