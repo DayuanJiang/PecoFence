@@ -492,7 +492,7 @@
   .pl-dialog .pl-warn[hidden], .pl-dialog p[hidden] { display: none; }
   .pl-dialog p.caution { color: var(--caution); font-weight: 600; }
   /* A plugin fence's settings in the details; 插件设置 in its menu tints the one it came from. */
-  .pl-form { margin-top: 8px; padding: 8px 12px; border-radius: 4px; background: var(--subtle); transition: background-color 0.3s linear; }
+  .pl-form { margin-top: 8px; padding: 8px 12px; border-radius: 4px; background: var(--subtle); transition: background-color var(--slow) linear; }
   .pl-form.pl-flash { background: var(--chosen); }
   .pl-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; }
   .pl-dialog .btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
@@ -1877,7 +1877,8 @@
     if (pl.open && pl.open[0] !== plOpenSeq) { plOpenSeq = pl.open[0]; plOpen.add(pl.open[1]); plFocus = [pl.open[1], pl.open[2]]; }
     // 安装 was refused: the index changed what the plugin may do while its warning was open.
     const again = pl.ask && pl.list.find(x => x.id === pl.ask && (x.state === 'install' || x.state === 'confirm'));
-    if (again) plConfirm(again, true);
+    // Shown once: a later redraw of the list (a row opened) does not bring it back after 取消.
+    if (again) { plConfirm(again, true); pl.ask = null; }
     list.replaceChildren();
     for (const p of pl.list) {
       const row = plEl('div', 'card child pl-row'), l = plEl('div', 'l'), box = plEl('div');

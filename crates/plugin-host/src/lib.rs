@@ -7,7 +7,7 @@
 
 use pecofence_core::FenceId;
 use pecofence_core::plugins::Permissions;
-use rquickjs::{CaughtError, Context, Ctx, Exception, Function, Object, Runtime};
+use rquickjs::{CaughtError, Context, Ctx, Exception, Function, Object, Persistent, Runtime};
 use serde_json::{Value, json};
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -121,6 +121,8 @@ pub enum Output {
     Stopped(FenceId, u32, Stopped),
     /// `pf.post(data)`, as JSON: for the page of the web plugin whose main.js this is.
     Post(FenceId, u32, String),
+    /// The first error that escaped a handler of this start (it was logged, the plugin goes on).
+    Errored(FenceId, u32),
 }
 
 /// What reaches the plugin thread: the app's commands and the answers of the worker threads.
@@ -210,11 +212,17 @@ struct Plugin {
     /// When the cache file was last written, and whether a newer view is not in it yet.
     cached: Option<Instant>,
     unsaved: bool,
-    /// The errors of Promises nobody handled in this run (an async handler that threw), and the
+    /// The Promises rejected in this run with nobody to handle them yet (an async handler that
+    /// threw), with their errors: one that an `await` or a `.catch` takes later in the run goes
+    /// out again. Emptied at the end of every run, so none outlives the runtime. Then the
     /// messages of the errors logged so far.
-    rejected: Rc<RefCell<Vec<String>>>,
+    rejected: Rc<RefCell<Vec<Rejected>>>,
     logged: HashSet<String>,
+    /// An error escaped a handler: whether [`Output::Errored`] went out for it.
+    errored: Option<bool>,
 }
+
+type Rejected = (Persistent<rquickjs::Value<'static>>, String);
 
 fn stopped(text: String) -> Stopped {
     if text.contains("interrupted") {
@@ -246,10 +254,15 @@ impl Plugin {
         rt.set_interrupt_handler(Some(Box::new(move || {
             late.get().is_some_and(|d| Instant::now() > d)
         })));
-        let rejected: Rc<RefCell<Vec<String>>> = Rc::default();
+        let rejected: Rc<RefCell<Vec<Rejected>>> = Rc::default();
         let to = rejected.clone();
-        rt.set_host_promise_rejection_tracker(Some(Box::new(move |_, _, reason, handled| {
-            if !handled {
+        rt.set_host_promise_rejection_tracker(Some(Box::new(
+            move |ctx, promise, reason, handled| {
+                let promise = Persistent::save(&ctx, promise);
+                let mut list = to.borrow_mut();
+                if handled {
+                    return list.retain(|(p, _)| *p != promise);
+                }
                 let text = match reason.as_exception() {
                     Some(e) => format!(
                         "Error: {}\n{}",
@@ -258,9 +271,9 @@ impl Plugin {
                     ),
                     None => format!("Error: {reason:?}"),
                 };
-                to.borrow_mut().push(text);
-            }
-        })));
+                list.push((promise, text));
+            },
+        )));
         let ctx = Context::full(&rt).map_err(fail)?;
         let p = &s.permissions;
         // The view of a plugin that may read the clipboard can hold copied texts: it is never
@@ -293,6 +306,7 @@ impl Plugin {
             unsaved: false,
             rejected,
             logged: HashSet::new(),
+            errored: None,
         };
         let (shared, click, fence) = (plugin.shared.clone(), plugin.click.clone(), s.fence);
         let agent = format!("PecoFence-plugin/{} {}", s.id, s.version);
@@ -474,7 +488,7 @@ impl Plugin {
         }
         self.deadline.set(None);
         let rejected = std::mem::take(&mut *self.rejected.borrow_mut());
-        for text in rejected {
+        for (_, text) in rejected {
             // Out of memory or time inside an async function: a limit all the same.
             if result.is_ok() && !matches!(stopped(text.clone()), Stopped::Error(_)) {
                 result = Err(text);
@@ -517,6 +531,7 @@ impl Plugin {
         let at = lines.map(str::trim).find(|l| !l.is_empty());
         let at = at.unwrap_or_default().to_string();
         let first = self.logged.len() < LOGGED_ERRORS && self.logged.insert(message.clone());
+        self.errored.get_or_insert(false);
         let (fence, plugin) = (self.fence, &self.id);
         if first {
             tracing::warn!(%fence, plugin, run = what, error = message, line = at, "plugin error: it escaped a handler, the plugin goes on");
@@ -777,6 +792,10 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
             for data in posts {
                 out(Output::Post(p.fence, p.number, data));
             }
+            if p.errored == Some(false) {
+                p.errored = Some(true);
+                out(Output::Errored(p.fence, p.number));
+            }
         }
     }
 }
@@ -902,6 +921,7 @@ mod tests {
         let numbers: Vec<u32> = (out.iter())
             .map(|o| match o {
                 Output::Show(_, n, _) | Output::Post(_, n, _) | Output::Stopped(_, n, _) => *n,
+                Output::Errored(_, n) => *n,
             })
             .collect();
         assert_eq!(numbers, [7, 7, 7], "{out:?}");
@@ -926,6 +946,9 @@ mod tests {
         );
         assert_eq!(stop_of(&out), None, "{out:?}");
         assert!(texts(&out).contains(&"tick 2".to_string()), "{out:?}");
+        // The app hears of the first one (in the first minute after an update, it goes back).
+        let told = out.iter().filter(|o| matches!(o, Output::Errored(_, 7)));
+        assert_eq!(told.count(), 1, "{out:?}");
         let notes = fake.notes.lock().unwrap();
         let errors: Vec<(String, String)> = (notes.iter())
             .filter_map(|n| match n {
@@ -946,6 +969,40 @@ mod tests {
                 "{what} {message} not in {errors:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_rejection_handled_later_in_the_run_is_no_error() {
+        let code = r#"
+            const f = async () => { throw new Error('caught later'); };
+            pf.on('click', async () => {
+                try { await f(); } catch (e) {}
+                Promise.reject(new Error('caught too')).catch(() => {});
+                const p = Promise.reject(new Error('caught after a turn'));
+                await 0;
+                p.catch(() => {});
+                Promise.reject(new Error('nobody catches this'));
+                pf.show({ rows: [{ text: 'done' }] });
+            });
+        "#;
+        let fake = Arc::new(Fake::default());
+        let out = run_with(
+            code,
+            Permissions::default(),
+            fake.clone(),
+            true,
+            30,
+            vec![event("click")],
+        );
+        assert_eq!((stop_of(&out), texts(&out)), (None, vec!["done".into()]));
+        let notes = fake.notes.lock().unwrap();
+        let errors: Vec<&str> = (notes.iter())
+            .filter_map(|n| match n {
+                Note::Error { message, .. } => Some(message.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(errors, ["Error: nobody catches this"]);
     }
 
     #[test]

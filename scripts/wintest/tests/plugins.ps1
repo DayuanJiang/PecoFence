@@ -3,7 +3,7 @@
 # fence; a file whose SHA-256 is not the index's (refused, nothing left); the index signature
 # (a signed index taken, a wrong signature refused); the settings form changing one fence only;
 # an update that asks for nothing more (by itself, the version before kept), one whose new
-# version fails to start (back to the one before), one that asks for more (waits for the OK);
+# version fails to start or throws in a timer (back to the one before), one that asks for more (waits for the OK);
 # a plugin that starts programs (the stricter warning, every update asks) and the switch for
 # Windows functions; a take-down; an uninstall during a download (its result dropped); an
 # imported fence whose plugin is not installed; a take-down from the saved index while offline.
@@ -11,7 +11,8 @@
 # the plugin while it is open; a plugin taken down or an entry for a newer PecoFence is not
 # installed when the page asks; a failed switch starts the fences again; a web plugin's update loads
 # the new page; a plugin fence holding a note has 编辑便签 and its uninstall names the notes; an
-# older index served again counts as none.
+# older index served again counts as none; a take-down while the plugin's note is open closes the
+# note and stops the plugin; a plugin listed again after its take-down comes back.
 # English UI. Debug build (CDP on the settings page). The signed index is the kit's
 # assets\signed-feed (index.json, index.json.sig and the plugin files, signed with the
 # development key: made again with make_signed_feed.py when the release key replaces it).
@@ -186,6 +187,18 @@ Refresh
 $again = LogCount 'plugins: download id="pf-test".*1\.2\.0'
 Check 'the next check does not take 1.2.0 again' ($again -eq $downloads + 1 -and (Installed) -eq '1.1.0') "downloads=$downloads then $again"
 
+Case 'a new version whose timer throws goes back to the version before as well, also when failed.txt cannot be written'
+Offer 'pf-test' 'PF Test' '1.3.0' @{} "pf.on('start', () => { pf.show({ rows: [{ text: 'pf-test 1.3.0' }] }); pf.after(1, () => { throw new Error('broken in a timer 1.3.0'); }); });`r`n"; Publish 41
+# Held open without write sharing: failed.txt cannot be written.
+$hold = [IO.File]::Open("$script:Config\plugins\pf-test\failed.txt", 'Open', 'Read', 'Read')
+Refresh
+$back = PfWaitLog 'the new version stopped after its update.*1\.3\.0.*back=true' 15; Start-Sleep -Seconds 3
+$hold.Dispose()
+$err = PfWaitLog 'plugin error: it escaped a handler.*broken in a timer' 1
+$unwritten = PfWaitLog 'failed\.txt not written' 1
+$f = @(PluginFences pf-test)
+Check 'the error is logged, then back on 1.1.0: 1.3.0 deleted, failed.txt not written, the fences run 1.1.0 all the same' ($err -and $back -and $unwritten -and (Installed) -eq '1.1.0' -and (Versions) -notmatch '1\.3\.0' -and $f[0].script.output -match '1\.1\.0' -and $f[1].script.output -match '1\.1\.0') "versions=$(Versions) out=$($f[0].script.output) | $($f[1].script.output) err=$err back=$back"
+
 Case 'an update that asks for more waits for the OK'
 Offer 'pf-test' 'PF Test' '2.0.0' @{ network = @('example.com') }; Publish 5
 Refresh
@@ -321,6 +334,33 @@ Check 'the question says the text of 1 note goes too' ($dlg -ne [IntPtr]::Zero -
 [L]::PostMessageW($dlg, 0x111, [IntPtr]6, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 2
 Check 'after Yes: no fence, no plugin folder' (@(PluginFences 'pf-note').Count -eq 0 -and -not (Test-Path "$script:Config\plugins\pf-note")) ''
 $script:Offer.Remove('pf-note')
+
+Case 'a take-down while the plugin''s note is open: the note closes with its text, the plugin stops'
+Offer 'pf-tick' 'PF Tick' '1.0.0' @{} "let n = 0;`r`npf.on('start', () => { pf.show({ rows: [{ input: { id: 'note', type: 'note' } }] }); pf.every(1, () => pf.data.write('tick.txt', String(++n))); });`r`n"; Publish 64; Refresh
+InstallVia 'PF Tick' | Out-Null
+Start-Sleep -Seconds 3
+$tf = @(PluginFences 'pf-tick')[0]
+$tick = "$script:Config\plugins-data\pf-tick\tick.txt"
+$r = $tf.windowRect
+[G]::RClick($r.x + 120, $r.y + 14); MenuPick '^Edit note$' (MenuWin 5) | Out-Null
+$editor = WaitWin 'PecoFence.NoteEdit' 5
+Start-Sleep -Milliseconds 500; [G]::Type('Keep me'); Start-Sleep -Milliseconds 500
+$script:Offer['pf-tick'].disabled = 'Tick reason'; Publish 65; Refresh
+$down = PfWaitLog 'plugins: taken down by the index.*pf-tick' 10; Start-Sleep -Seconds 2
+$t1 = Get-Content $tick -ErrorAction SilentlyContinue; Start-Sleep -Seconds 3; $t2 = Get-Content $tick -ErrorAction SilentlyContinue
+Shot 'taken-down-with-note-open'
+$note = (FenceGet $tf.id).noteText
+Check 'the editor was open; after the take-down it is closed, the note keeps its text, the plugin''s timer writes no more' ($editor -ne [IntPtr]::Zero -and $down -and (WaitWin 'PecoFence.NoteEdit' 1) -eq [IntPtr]::Zero -and $note -match 'Keep me' -and $t1 -and $t1 -eq $t2) "tick $t1 then $t2 note=$note $down"
+
+Case 'listed again after its take-down: it comes back by itself and runs in its fence again'
+$script:Offer['pf-tick'].disabled = ''; Publish 66; Refresh
+$line = PfWaitLog 'plugins: installed, its fences start again.*pf-tick' 15; Start-Sleep -Seconds 3
+$t1 = Get-Content $tick -ErrorAction SilentlyContinue; Start-Sleep -Seconds 2; $t2 = Get-Content $tick -ErrorAction SilentlyContinue
+$g = @(PluginFences 'pf-tick')
+Check 'disabled.txt gone, main.js back; the same fence runs it again and keeps its note' ($line -and -not (Test-Path "$script:Config\plugins\pf-tick\disabled.txt") -and (Test-Path "$script:Config\plugins\pf-tick\1.0.0\main.js") -and $g.Count -eq 1 -and $g[0].id -eq $tf.id -and [int]$t2 -gt [int]$t1 -and (FenceGet $tf.id).noteText -match 'Keep me') "tick $t1 then $t2 fences=$($g.Count) $line"
+$dlg = UninstallVia 'PF Tick' 'pf-tick'
+[L]::PostMessageW($dlg, 0x111, [IntPtr]6, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 2
+$script:Offer.Remove('pf-tick')
 
 Case 'an older index served again counts as none'
 $script:Serial = 5

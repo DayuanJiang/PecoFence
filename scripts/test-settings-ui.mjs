@@ -470,6 +470,11 @@ async function runTests() {
     await settle();
     assert(!back.hidden && !doc.getElementById('plChanged').hidden && doc.getElementById('plChanged').offsetHeight > 0, 'The warning did not show again');
     doc.getElementById('plCancel').click();
+    // Cancelled: opening and closing a row draws the list again, without the warning.
+    rows()[0].click();
+    rows()[0].click();
+    await settle();
+    assert(back.hidden, 'The warning came back after its cancel');
     current().plugins.ask = null;
     // A plugin row has no empty icon space: its text starts at the card's padding.
     const pad = frame.contentWindow.getComputedStyle(rows()[1]).paddingLeft;
