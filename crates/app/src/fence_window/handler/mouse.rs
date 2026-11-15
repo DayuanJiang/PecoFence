@@ -863,6 +863,17 @@ pub(super) fn on_lbuttondblclk(
             }
         } else if v.tab_at(x, y).is_some() && !std::mem::take(&mut v.suppress_dblclk) {
             queue.push(Command::ToggleRollUp(fence_id));
+        } else if v.deco.up_button
+            && !v.rolled_up
+            && x >= v.content_x
+            && y >= v.content_y
+            && !v.header_band_hit(x, y)
+        {
+            // A double-click on empty space in a subfolder goes up one level, as the up button,
+            // Backspace and the mouse's back button do (feedback #130). At the folder's root it
+            // does nothing, as before.
+            tracing::debug!(fence = %fence_id, x, y, "double-click on empty space in a subfolder: up one level");
+            queue.push(Command::PortalUp(v.active));
         }
     }
     Some(0)
