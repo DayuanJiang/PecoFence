@@ -19,6 +19,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub(super) const TIMER_PLUGINS_CHECK: usize = 101;
+/// A few seconds after a plugin fence is deleted: `drop_files_of_deleted_fences` (a plugin just
+/// stopped still writes its last view, and maybe data, when its thread handles the stop).
+pub(super) const TIMER_PLUGIN_FILES: usize = 102;
 /// A test instance's index (`http://127.0.0.1:` only); its files are on the same server. Its
 /// signature is checked only when the server has one.
 const URL_VAR: &str = "PECOFENCE_PLUGINS_URL";
@@ -862,10 +865,9 @@ impl App {
 
     /// Deletes what is kept on disk for fences that are no plugin fence of any layout any more:
     /// their cached views (`plugins-host\<fence>.view.json`, the plugin host's) and the data
-    /// files their plugin named after them (`plugins-data\<id>\<fence>-*`). At start, and a few
-    /// seconds after a plugin fence is deleted (`wait`: a plugin just stopped still writes its
-    /// last view, and maybe data, when its thread handles the stop).
-    pub(super) fn drop_files_of_deleted_fences(&self, wait: bool) {
+    /// files their plugin named after them (`plugins-data\<id>\<fence>-*`). At start, and
+    /// [`TIMER_PLUGIN_FILES`] after a plugin fence is deleted.
+    pub(super) fn drop_files_of_deleted_fences(&self) {
         let (views, data) = (self.views_dir(), self.plugins_data());
         let layouts = self.state.config.layouts.iter();
         let held: HashSet<FenceId> = layouts
@@ -877,9 +879,6 @@ impl App {
             .map(|(f, _)| f.to_string())
             .collect();
         let sweep = move || {
-            if wait {
-                std::thread::sleep(Duration::from_secs(3));
-            }
             // The files in `dir` that `fence` names a fence of, which is not kept.
             let remove_stale = |dir: &Path, fence: fn(&str) -> Option<&str>| {
                 let mut gone = 0;
@@ -918,7 +917,7 @@ impl App {
     pub(super) fn fence_view_gone(&self, fence: FenceId) {
         let script = self.state.config.scripts.get(&fence);
         if script.is_some_and(|s| plugin_id(&s.path).is_some()) {
-            self.drop_files_of_deleted_fences(true);
+            window::set_timer(self.control.hwnd(), TIMER_PLUGIN_FILES, 3000);
         }
     }
 
