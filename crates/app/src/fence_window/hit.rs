@@ -938,6 +938,34 @@ impl FenceViewState {
             c.contains(x, y)
         })
     }
+
+    /// Is a client-pixel point on the icon of item `i` itself (the icons view), or in the middle
+    /// half of its row (列表, 详细信息)? The name and the room around the icon are not.
+    pub(super) fn on_item_icon(&self, i: usize, x_px: i32, y_px: i32) -> bool {
+        let scale = self.scale();
+        let (cw, _) = self.content_size_px();
+        let layout = self.layout(cw as f32 / scale);
+        let x = (x_px - self.content_x) as f32 / scale;
+        let y = (y_px - self.content_y) as f32 / scale - layout.fixed_top() + self.scroll_y;
+        let mut c = layout.cell(i);
+        if let Some(m) = self
+            .items
+            .get(i)
+            .and_then(|it| self.item_motion.get(&it.id))
+        {
+            let now = Instant::now();
+            (c.x, c.y) = (m.x.value_at(now), m.y.value_at(now));
+        }
+        match layout {
+            ItemLayout::Grid(_) => {
+                let m = self.grid_metrics();
+                let left = c.x + (c.w - m.icon) / 2.0;
+                let top = c.y + m.icon_top;
+                x >= left && x < left + m.icon && y >= top && y < top + m.icon
+            }
+            ItemLayout::Rows { .. } => y >= c.y + c.h / 4.0 && y < c.y + c.h * 0.75,
+        }
+    }
 }
 
 /// The icon of `cell` (with a few DIPs of slack) or the name under it, in content DIPs.

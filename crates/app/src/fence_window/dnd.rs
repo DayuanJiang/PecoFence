@@ -470,7 +470,7 @@ impl FenceDropHandler {
                 let guard = self.view.try_borrow().ok()?;
                 let v = guard.as_ref().filter(|v| !v.takes_no_drops())?;
                 let rect = window::window_rect(v.hwnd);
-                let i = v.hit_item(pt.x - rect.left, pt.y - rect.top)?;
+                let i = v.drop_onto_item(pt.x - rect.left, pt.y - rect.top, internal.is_some())?;
                 let item = v.items.get(i)?;
                 // A shortcut, or a program file itself (a portable app's .exe).
                 (!item.is_folder
@@ -862,6 +862,15 @@ impl DropHandler for FenceDropHandler {
         let resolved = self.view.try_borrow_mut().ok().and_then(|mut g| {
             g.as_mut().filter(|v| !v.takes_no_drops()).map(|v| {
                 let spot = v.drop_spot_at(pt.x, pt.y, internal.as_ref());
+                if let Some(at) = spot.insert {
+                    let r = window::window_rect(v.hwnd);
+                    let beside = v.hit_item(pt.x - r.left, pt.y - r.top);
+                    tracing::debug!(
+                        at,
+                        beside = ?beside.and_then(|i| v.items.get(i)).map(|it| &it.name),
+                        "icons let go in a manual fence: they go to that place in the order"
+                    );
+                }
                 let tab_fence = spot.tab.and_then(|i| v.tabs.get(i)).map(|t| t.id);
                 let folder = spot.folder.and_then(|i| v.item_drop_folder(i));
                 let dest = v.drop_folder(&spot);
@@ -1382,13 +1391,28 @@ impl FenceViewState {
         x_px: i32,
         y_px: i32,
         exclude: &[ItemId],
+        internal: bool,
     ) -> Option<usize> {
-        let i = self.hit_item(x_px, y_px)?;
+        let i = self.drop_onto_item(x_px, y_px, internal)?;
         let it = self.items.get(i)?;
         if exclude.contains(&it.id) {
             return None;
         }
         self.item_drop_folder(i).map(|_| i)
+    }
+
+    /// The item a drag let go at a client-pixel point drops onto (a folder, a program), as
+    /// `hit_item`. Where the drag can also reorder (icons of our fences over a 手动 fence), only
+    /// the icon itself takes them; its name and the room beside it put the icons at that place in
+    /// the order, as the Windows desktop splits "onto" from "beside". With the whole cell taking
+    /// them, a fence of program shortcuts could hardly be reordered: every drop opened the
+    /// dragged file with the program under it (feedback #162).
+    pub(super) fn drop_onto_item(&self, x_px: i32, y_px: i32, internal: bool) -> Option<usize> {
+        let i = self.hit_item(x_px, y_px)?;
+        if !internal || self.places_freely() || self.insertion_at(x_px, y_px).is_none() {
+            return Some(i);
+        }
+        self.on_item_icon(i, x_px, y_px).then_some(i)
     }
 
     /// Resolves what a drag at screen point (sx, sy) targets in this window.
@@ -1426,7 +1450,7 @@ impl FenceViewState {
             return spot;
         }
         let exclude: &[ItemId] = internal.map(|d| d.items.as_slice()).unwrap_or(&[]);
-        spot.folder = self.folder_drop_target(cx, cy, exclude);
+        spot.folder = self.folder_drop_target(cx, cy, exclude, internal.is_some());
         if spot.folder.is_some() {
             return spot;
         }
