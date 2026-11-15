@@ -185,7 +185,7 @@ impl App {
         let Some(web) = page.upgrade() else {
             return;
         };
-        let fence = web.fence;
+        let (fence, began) = (web.fence, web.started);
         let host = self.state.host_of(fence);
         let current = self.fences.get(&host).and_then(|w| w.web());
         if !current.is_some_and(|c| Rc::ptr_eq(&c, &web)) {
@@ -201,7 +201,7 @@ impl App {
         if !again {
             self.web_pages.stopped.insert(fence, Stop::Failed(failure));
             // In the first minute after an update, back to the version before.
-            self.plugin_stopped(fence);
+            self.plugin_stopped(fence, began, false);
         }
         if let Some(w) = self.fences.get(&host) {
             w.set_web(None);
@@ -244,6 +244,13 @@ impl App {
                 tracing::debug!(plugin, %fence, "web plugin: the page posts to its main.js");
                 self.plugin_message(fence, data, waiting);
                 web.reply(&id, Ok(serde_json::Value::Null));
+            }
+            // An error nobody caught in the page (the bridge tells the first three): as main.js's.
+            "errored" => {
+                let began = web.started;
+                drop(web);
+                tracing::info!(plugin, %fence, "web plugin: an error nobody caught in the page");
+                self.plugin_stopped(fence, began, true);
             }
             "navigate" => {
                 let uri = crate::web_plugin::short(args[0].as_str().unwrap_or(""));

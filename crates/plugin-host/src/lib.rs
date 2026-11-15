@@ -41,6 +41,9 @@ pub const MAX_CALLS: usize = 16;
 const MAIN: &str = "main.js";
 /// The different error messages a plugin's log gets in full; the rest only in the debug log.
 const LOGGED_ERRORS: usize = 100;
+/// The errors of a start that escape a handler and the app hears of ([`Output::Errored`]): the
+/// app takes an update back after this many in its first minute.
+pub const ERRORS_TOLD: u32 = 3;
 /// The last view goes into the fence's cache file at most this often (and when it stops).
 const CACHE_GAP: Duration = Duration::from_secs(60);
 /// The events PecoFence sends ([`Command::Event`] takes one of these names).
@@ -121,7 +124,8 @@ pub enum Output {
     Stopped(FenceId, u32, Stopped),
     /// `pf.post(data)`, as JSON: for the page of the web plugin whose main.js this is.
     Post(FenceId, u32, String),
-    /// The first error that escaped a handler of this start (it was logged, the plugin goes on).
+    /// An error that escaped a handler of this start (it was logged, the plugin goes on): one
+    /// for each of the first [`ERRORS_TOLD`].
     Errored(FenceId, u32),
 }
 
@@ -220,8 +224,8 @@ struct Plugin {
     /// messages of the errors logged so far.
     rejected: Rc<RefCell<Vec<Rejected>>>,
     logged: HashSet<String>,
-    /// An error escaped a handler: whether [`Output::Errored`] went out for it.
-    errored: Option<bool>,
+    /// The errors that escaped a handler, and how many went out as [`Output::Errored`].
+    errors: (u32, u32),
 }
 
 type Rejected = (Persistent<rquickjs::Value<'static>>, String);
@@ -310,7 +314,7 @@ impl Plugin {
             unsaved: false,
             rejected,
             logged: HashSet::new(),
-            errored: None,
+            errors: (0, 0),
         };
         let (shared, click, fence) = (plugin.shared.clone(), plugin.click.clone(), s.fence);
         let agent = format!("PecoFence-plugin/{} {}", s.id, s.version);
@@ -536,7 +540,7 @@ impl Plugin {
         let at = lines.map(str::trim).find(|l| !l.is_empty());
         let at = at.unwrap_or_default().to_string();
         let first = self.logged.len() < LOGGED_ERRORS && self.logged.insert(message.clone());
-        self.errored.get_or_insert(false);
+        self.errors.0 += 1;
         let (fence, plugin) = (self.fence, &self.id);
         if first {
             tracing::warn!(%fence, plugin, run = what, error = message, line = at, "plugin error: it escaped a handler, the plugin goes on");
@@ -804,8 +808,8 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
             for data in posts {
                 out(Output::Post(p.fence, p.number, data));
             }
-            if p.errored == Some(false) {
-                p.errored = Some(true);
+            while p.errors.1 < p.errors.0.min(ERRORS_TOLD) {
+                p.errors.1 += 1;
                 out(Output::Errored(p.fence, p.number));
             }
         }
@@ -954,13 +958,14 @@ mod tests {
             fake.clone(),
             true,
             1100,
-            vec![event("click")],
+            vec![event("click"), event("click")],
         );
         assert_eq!(stop_of(&out), None, "{out:?}");
         assert!(texts(&out).contains(&"tick 2".to_string()), "{out:?}");
-        // The app hears of the first one (in the first minute after an update, it goes back).
+        // The app hears of the first three of the four (three in the first minute after an
+        // update take it back).
         let told = out.iter().filter(|o| matches!(o, Output::Errored(_, 7)));
-        assert_eq!(told.count(), 1, "{out:?}");
+        assert_eq!(told.count(), 3, "{out:?}");
         let notes = fake.notes.lock().unwrap();
         let errors: Vec<(String, String)> = (notes.iter())
             .filter_map(|n| match n {

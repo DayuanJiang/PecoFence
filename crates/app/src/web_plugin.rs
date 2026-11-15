@@ -146,7 +146,7 @@ pub struct WebFence {
     live: RefCell<Option<Live>>,
     /// The browser WebView2 made, until `setup` takes it.
     made: RefCell<Option<CompositionController>>,
-    started: std::time::Instant,
+    pub started: std::time::Instant,
     /// The page's place in the window's client area (px) and the fence's scale.
     bounds: Cell<(i32, i32, i32, i32, f64)>,
     shown: Cell<bool>,
@@ -714,13 +714,17 @@ fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
   if (location.origin !== "{origin}" || window.top !== window || !window.chrome || !chrome.webview) return;
   const wv = chrome.webview, waiting = new Map(), handlers = {{}}, state = {init};
   // Ids start anywhere: an answer meant for the page before a reload finds nothing waiting.
-  let n = Math.floor(Math.random() * 1e9);
+  let n = Math.floor(Math.random() * 1e9), errors = 0;
+  // An error nobody caught: the first three count as main.js's do after an update.
+  const failed = () => {{ if (++errors <= 3) wv.postMessage({{ call: "errored", args: [] }}); }};
+  addEventListener("error", failed);
+  addEventListener("unhandledrejection", failed);
   wv.addEventListener("message", e => {{
     const m = e.data;
     if (m && m.event) {{
       if (m.event === "settings" || m.event === "theme") state[m.event] = m.data;
       if (m.event === "resize") Object.assign(state.fence, m.data);
-      for (const fn of handlers[m.event] || []) try {{ fn(m.data); }} catch (err) {{ console.error(err); }}
+      for (const fn of handlers[m.event] || []) try {{ fn(m.data); }} catch (err) {{ console.error(err); failed(); }}
       return;
     }}
     const w = m && waiting.get(m.id);

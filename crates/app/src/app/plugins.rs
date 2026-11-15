@@ -67,8 +67,9 @@ pub(super) struct Plugins {
     /// longer here (uninstalled or taken down meanwhile) is dropped.
     busy: HashMap<String, u64>,
     downloads: u64,
-    /// Plugins updated a moment ago: the version they came from, and when.
-    trial: HashMap<String, (String, Instant)>,
+    /// Plugins updated a moment ago: the version they came from, when, and the errors of the
+    /// new version that escaped a handler since.
+    trial: HashMap<String, (String, Instant, u32)>,
     /// Plugins gone back to their version before: their fences start again on the next turn,
     /// after the stops of the failed version still waiting are read.
     restart: Vec<String>,
@@ -731,7 +732,7 @@ impl App {
             Some(b) => self
                 .plugins
                 .trial
-                .insert(id.to_string(), (b.to_string(), Instant::now())),
+                .insert(id.to_string(), (b.to_string(), Instant::now(), 0)),
             None => self.plugins.trial.remove(id),
         };
         self.plugins.reload(id);
@@ -739,15 +740,30 @@ impl App {
         Ok(())
     }
 
-    /// A plugin fence stopped by itself (an error, too long, too much memory). In the first
-    /// minute after an update the plugin goes back to the version before, and that stays until
-    /// a version newer than the failed one comes.
-    pub(super) fn plugin_stopped(&mut self, fence: FenceId) {
+    /// A plugin fence stopped by itself (an error in main.js, too long, too much memory), or
+    /// (`errored`) an error escaped a handler or its page, in a start or page made at `began`.
+    /// In the first minute after an update the plugin goes back to the version before at a stop
+    /// or at the third error, and that stays until a version newer than the failed one comes.
+    /// What a start made before the update sends (one an open input held) does not count.
+    pub(super) fn plugin_stopped(&mut self, fence: FenceId, began: Instant, errored: bool) {
         let spec = self.state.config.scripts.get(&fence);
         let Some(id) = spec.and_then(|s| plugin_id(&s.path)).map(str::to_string) else {
             return;
         };
-        let Some((before, at)) = self.plugins.trial.remove(&id) else {
+        let Some((_, at, errors)) = self.plugins.trial.get_mut(&id) else {
+            return;
+        };
+        if began < *at {
+            return tracing::info!(id, %fence, errored, "plugins: a stop or error of a start before the update does not count");
+        }
+        if errored && at.elapsed() < TRIAL {
+            *errors += 1;
+            if *errors < pecofence_plugin_host::ERRORS_TOLD {
+                let errors = *errors;
+                return tracing::info!(id, %fence, errors, "plugins: an error of the new version in its first minute");
+            }
+        }
+        let Some((before, at, _)) = self.plugins.trial.remove(&id) else {
             return;
         };
         let dir = self.plugins.root.join(&id);
@@ -761,6 +777,7 @@ impl App {
             failed,
             before,
             back,
+            errored,
             "plugins: the new version stopped after its update"
         );
         if !back {

@@ -43,7 +43,10 @@ function Publish([int]$n) {
       author = 'tester'; minPecoFence = $p.min; permissions = $p.perms; settings = $p.settings }
     [IO.File]::WriteAllText("$dir\plugin.json", ($m | ConvertTo-Json -Depth 6))
     $js = if ($p.js) { $p.js } else { "function draw() { pf.show({ rows: [{ text: '$id $($p.version) ' + (pf.settings.label || '') }] }); }`r`npf.on('start', draw); pf.on('settings', draw);`r`n" }
-    if ($p.web) { [IO.File]::WriteAllText("$dir\index.html", "<!doctype html><meta charset=utf-8><title>$id</title><p>$id $($p.version)</p>") }
+    if ($p.web) {
+      $app = if ($p.js) { [IO.File]::WriteAllText("$dir\app.js", $p.js); '<script src=app.js></script>' } else { '' }
+      [IO.File]::WriteAllText("$dir\index.html", "<!doctype html><meta charset=utf-8><title>$id</title><p>$id $($p.version)</p>$app")
+    }
     else { [IO.File]::WriteAllText("$dir\main.js", $js) }
     [IO.File]::WriteAllText("$dir\README.md", "# $id`r`n")
     $files = foreach ($f in Get-ChildItem $dir -File) { [ordered]@{ name = $f.Name; size = $f.Length; sha256 = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower() } }
@@ -207,17 +210,21 @@ Refresh
 $again = LogCount 'plugins: download id="pf-test".*1\.2\.0'
 Check 'the next check does not take 1.2.0 again' ($again -eq $downloads + 1 -and (Installed) -eq '1.1.0') "downloads=$downloads then $again"
 
-Case 'a new version whose timer throws goes back to the version before as well, also when failed.txt cannot be written'
-Offer 'pf-test' 'PF Test' '1.3.0' @{} "pf.on('start', () => { pf.show({ rows: [{ text: 'pf-test 1.3.0' }] }); pf.after(1, () => { throw new Error('broken in a timer 1.3.0'); }); });`r`n"; Publish 41
+Case 'a new version whose timer throws: two errors keep it, the third goes back to the version before, also when failed.txt cannot be written'
+Offer 'pf-test' 'PF Test' '1.3.0' @{} "pf.on('start', () => { pf.show({ rows: [{ text: 'pf-test 1.3.0' }] }); pf.every(3, () => { throw new Error('broken in a timer 1.3.0'); }); });`r`n"; Publish 41
 # Held open without write sharing: failed.txt cannot be written.
 $hold = [IO.File]::Open("$script:Config\plugins\pf-test\failed.txt", 'Open', 'Read', 'Read')
 Refresh
+# The two fences throw together every 3 s.
+$two = PfWaitLog 'an error of the new version in its first minute.*errors=2' 20
+$still = Installed
+Check 'after two errors (one in each fence) 1.3.0 stays' ($two -and $still -eq '1.3.0') "installed=$still $two"
 $back = PfWaitLog 'the new version stopped after its update.*1\.3\.0.*back=true' 15; Start-Sleep -Seconds 3
 $hold.Dispose()
 $err = PfWaitLog 'plugin error: it escaped a handler.*broken in a timer' 1
 $unwritten = PfWaitLog 'failed\.txt not written' 1
 $f = @(PluginFences pf-test)
-Check 'the error is logged, then back on 1.1.0: 1.3.0 deleted, failed.txt not written, the fences run 1.1.0 all the same' ($err -and $back -and $unwritten -and (Installed) -eq '1.1.0' -and (Versions) -notmatch '1\.3\.0' -and $f[0].script.output -match '1\.1\.0' -and $f[1].script.output -match '1\.1\.0') "versions=$(Versions) out=$($f[0].script.output) | $($f[1].script.output) err=$err back=$back"
+Check 'the errors are logged, at the third back on 1.1.0: 1.3.0 deleted, failed.txt not written, the fences run 1.1.0 all the same' ($err -and $back -and $unwritten -and (Installed) -eq '1.1.0' -and (Versions) -notmatch '1\.3\.0' -and $f[0].script.output -match '1\.1\.0' -and $f[1].script.output -match '1\.1\.0') "versions=$(Versions) out=$($f[0].script.output) | $($f[1].script.output) err=$err back=$back"
 
 Case 'an update that asks for more waits for the OK'
 Offer 'pf-test' 'PF Test' '2.0.0' @{ network = @('example.com') }; Publish 5
@@ -332,6 +339,13 @@ if (CdpOpen -Url 'pecofence-plugin://pf-web/*' -sec 15) { $text = JsWait "docume
 Shot 'web-plugin-updated'
 $ok = CdpOpen
 Check 'after the update by itself the page loads again and shows 1.0.1' ($v1 -and (Installed 'pf-web') -eq '1.0.1' -and (LogCount 'web plugin: page loading plugin=pf-web') -gt $loads -and $text -match 'pf-web 1\.0\.1') "loads=$loads text=$text"
+
+Case 'a web plugin''s new version whose page throws three errors nobody catches goes back to the version before'
+Offer 'pf-web' 'PF Web' '1.0.2' @{} "let n = 0;`r`nconst t = setInterval(() => { if (++n === 3) clearInterval(t); throw new Error('page boom ' + n); }, 700);`r`n" -Web; Publish 590; Refresh
+$back = PfWaitLog 'the new version stopped after its update.*pf-web.*back=true' 20; Start-Sleep -Seconds 3
+$errors = LogCount 'web plugin: an error nobody caught in the page.*pf-web'
+Check 'the page''s three errors take it back to 1.0.1: 1.0.2 deleted' ($back -and (Installed 'pf-web') -eq '1.0.1' -and (Versions 'pf-web') -notmatch '1\.0\.2' -and $errors -ge 3) "errors=$errors versions=$(Versions 'pf-web') $back"
+$ok = CdpOpen
 $script:Offer.Remove('pf-web')
 
 Case 'a plugin fence holding a note: 编辑便签 in its menu, and its uninstall names the notes whose text goes'

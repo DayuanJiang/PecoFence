@@ -73,8 +73,8 @@ pub(super) struct Light {
     )>,
     out: Arc<Mutex<Vec<host::Output>>>,
     /// The fences whose plugin runs: the rows it last showed (None before its first view),
-    /// whether it was last told that the fence shows and how big it is, and the number of its
-    /// start (what an earlier runtime of the fence sent is dropped).
+    /// whether it was last told that the fence shows and how big it is, the number of its
+    /// start (what an earlier runtime of the fence sent is dropped) and when it began.
     pub(super) running: HashMap<
         FenceId,
         (
@@ -82,6 +82,7 @@ pub(super) struct Light {
             bool,
             (f32, f32),
             u32,
+            Instant,
         ),
     >,
     starts: u32,
@@ -249,7 +250,7 @@ impl App {
         let number = self.light.starts;
         self.light
             .running
-            .insert(fence, (None, shown, size, number));
+            .insert(fence, (None, shown, size, number, Instant::now()));
         let config = self.state.config_path_on_disk();
         let cache = config
             .parent()
@@ -312,7 +313,7 @@ impl App {
         let fences: Vec<FenceId> = self.light.running.keys().copied().collect();
         for fence in fences {
             let (shown, size) = self.light_shown(fence);
-            let Some((_, was_shown, was_size, _)) = self.light.running.get_mut(&fence) else {
+            let Some((_, was_shown, was_size, ..)) = self.light.running.get_mut(&fence) else {
                 continue;
             };
             let resized = shown && (size.0 - was_size.0).abs() + (size.1 - was_size.1).abs() >= 1.0;
@@ -501,10 +502,11 @@ impl App {
             | host::Output::Post(fence, number, _)
             | host::Output::Stopped(fence, number, _)
             | host::Output::Errored(fence, number)) = output;
-            if self.light.running.get(&fence).map(|r| r.3) != Some(number) {
+            let start = self.light.running.get(&fence).filter(|r| r.3 == number);
+            let Some(began) = start.map(|r| r.4) else {
                 tracing::debug!(%fence, number, "plugin output of an earlier start dropped");
                 continue;
-            }
+            };
             match output {
                 host::Output::Show(fence, _, view) => {
                     let shown = self.plugin_rows(fence, view);
@@ -532,13 +534,10 @@ impl App {
                     self.light_stopped(fence, why);
                     hosts.push(self.state.host_of(fence));
                     // In the first minute after an update, back to the version before.
-                    self.plugin_stopped(fence);
+                    self.plugin_stopped(fence, began, false);
                 }
-                // So does an error that escaped a handler (logged, the plugin went on).
-                host::Output::Errored(fence, _) => {
-                    tracing::debug!(%fence, "plugin error escaped a handler: an update a minute ago goes back");
-                    self.plugin_stopped(fence);
-                }
+                // So do three errors that escaped a handler (logged, the plugin went on).
+                host::Output::Errored(fence, _) => self.plugin_stopped(fence, began, true),
             }
         }
         hosts.dedup();
