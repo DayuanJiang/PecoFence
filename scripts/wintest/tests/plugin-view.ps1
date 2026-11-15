@@ -88,12 +88,14 @@ CloseWindows
 $langs = Get-WinUserLanguageList
 $script:AddedZh = -not ($langs | Where-Object { $_.LanguageTag -like 'zh-Hans*' })
 if ($AddedZh) { $langs.Add('zh-Hans-CN'); Set-WinUserLanguageList $langs -Force }
+# The test plugins go in before the start: PecoFence reads the installed plugins once as it starts.
+$script:Config = "$PfApp\config"
+Install 'viewdemo'; Install 'viewnote'
 PfStart -Lang en -Script (DumpScript 400 30 3000)
-$script:Config = Split-Path (PfJson status).configPath
+Check 'the portable configuration is where the plugins went' ((Split-Path (PfJson status).configPath) -eq $script:Config) (PfJson status).configPath
 Pf settings set tools.enabled true | Out-Null
 Pf settings set theme light | Out-Null
 ClearFences | Out-Null
-Install 'viewdemo'; Install 'viewnote'
 # The picture of the data folder: red left, blue right.
 Add-Type -AssemblyName System.Drawing
 $data = "$script:Config\plugins-data\viewdemo"; New-Item -ItemType Directory -Force $data | Out-Null

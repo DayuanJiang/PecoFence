@@ -392,6 +392,19 @@ function PfStart([string[]]$Script = @('sleep 3600000'), [string]$Lang = 'en', [
   if ($Lang) { Pf settings set language $Lang | Out-Null }
 }
 
+# A plugin of the kit (`from`: a folder with plugin.json) installed as `id` the way an install
+# leaves it (plugins\<id>\<version>\ and current.txt). Before PfStart: PecoFence reads the
+# installed plugins once as it starts.
+function PfPlacePlugin([string]$from, [string]$id) {
+  $m = Get-Content "$from\plugin.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+  $root = "$PfApp\config\plugins\$id"; $to = "$root\$($m.version)"
+  New-Item -ItemType Directory -Force $to | Out-Null
+  Copy-Item "$from\*" $to -Force
+  if ($m.id -ne $id) { (Get-Content "$to\plugin.json" -Raw -Encoding UTF8) -replace "`"id`":\s*`"$($m.id)`"", "`"id`": `"$id`"" | Set-Content "$to\plugin.json" -Encoding UTF8 }
+  Set-Content "$root\current.txt" $m.version -Encoding ASCII -NoNewline
+  Log "plugin $id placed from $from"
+}
+
 # Ends PecoFence the way a sign-out does (it saves, restores the desktop icons and quits).
 # Killing it instead makes the watchdog report a crash.
 function PfQuit() {

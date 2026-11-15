@@ -55,6 +55,12 @@ $Sizes = @('small', 'normal', 'large', 'extraLarge')
 $BoxEdge = @{ small = 14; normal = 16; large = 21; extraLarge = 27 }
 $TextDip = @{ small = 12; normal = 14; large = 18; extraLarge = 24 }
 $NoteText = "[ ] first to-do`n[ ] second to-do`nplain line"
+if ($Part -eq 'N') {
+  # 新建便签 makes a fence of the notes plugin: a stand-in of it is installed, and no plugin
+  # index is reached (the native notes made below stay native).
+  $env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:9/index.json'
+  PfPlacePlugin 'C:\pf\kit\assets\plugin-migrate\notes' 'notes'
+}
 PfStart -Script (DumpScript 500 25 3000)
 Start-Sleep -Seconds 2
 
@@ -188,32 +194,25 @@ if ($Part -eq 'N') {
 $schema = & "$PfApp\pecofence-cli.exe" describe --schema Config --compact | Out-String
 [IO.File]::WriteAllText("$PfShots\config-schema.json", $schema.Trim(), (New-Object Text.UTF8Encoding($false)))
 Check 'the config schema has textSize' ($schema -match '"textSize"') "length=$($schema.Length)"
+# The menus' New note makes a fence of the notes plugin; the sizes are those of native notes
+# (an earlier version's, or the CLI's).
+function NotesFences() { return @(@(PfJson fence list) | Where-Object { $_ -and $_.script -and $_.script.path -eq 'plugin:notes' }) }
 Case 'N1 note from the tray menu'
-$before = AllIds
 $m = TrayOpen
 Check 'the tray menu has New note' ((MenuTexts $m) -match 'New note') (MenuTexts $m)
 MenuPick '^New note' $m | Out-Null
-$ed = WaitWin 'PecoFence.NoteEdit' 10
-Check 'New note opens the editor at once (standard text)' ($ed -ne [IntPtr]::Zero -and (EditFont).height -eq -14) "editor=$ed font=$((EditFont).height)"
-[G]::Type($NoteText); [G]::Press(0x1B); Start-Sleep -Milliseconds 800
-$id = NewId $before
-Pf fence rename $id NoteTray | Out-Null
-Pf fence move NoteTray --x 80 --y 90 | Out-Null
-Pf fence resize NoteTray --w 380 --h 270 | Out-Null
+Start-Sleep -Seconds 2
+Check 'New note makes a fence of the notes plugin' ((NotesFences).Count -eq 1) "notes fences=$((NotesFences).Count)"
+$id = "$((PfJson fence create --tool note --title NoteTray --text $NoteText --rect '80,90,380,270').fence.id)"
 Check 'a new note has the standard text size' ((FenceGet $id).textSize -eq 'normal') "textSize=$((FenceGet $id).textSize)"
 NoteSizes 'NoteTray' $id
 
 Case 'N2 note from the fence menu'
-$before = AllIds
 $add = SubMenu (FenceMenu (PlainFence)) '^Add to desktop' '^New fence'
 MenuPick '^New note' $add | Out-Null
-$ed = WaitWin 'PecoFence.NoteEdit' 10
-Check 'Add to desktop > New note opens the editor' ($ed -ne [IntPtr]::Zero)
-[G]::Type($NoteText); [G]::Press(0x1B); Start-Sleep -Milliseconds 800
-$id2 = NewId $before
-Pf fence rename $id2 NoteMenu | Out-Null
-Pf fence move NoteMenu --x 480 --y 90 | Out-Null
-Pf fence resize NoteMenu --w 380 --h 270 | Out-Null
+Start-Sleep -Seconds 2
+Check 'Add to desktop > New note makes a fence of the notes plugin' ((NotesFences).Count -eq 2) "notes fences=$((NotesFences).Count)"
+$id2 = "$((PfJson fence create --tool note --title NoteMenu --text $NoteText --rect '480,90,380,270').fence.id)"
 NoteSizes 'NoteMenu' $id2
 
 Case 'N3 note from the CLI'

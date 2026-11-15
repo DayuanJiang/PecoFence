@@ -179,6 +179,10 @@ Set-Culture en-US
 GreyWallpaper
 New-Item -ItemType Directory -Force "$PfRun\Shared docs" | Out-Null
 Set-Content "$PfRun\Shared docs\plan.txt" 'plan'
+# 新建便签 makes a fence of the notes plugin: a stand-in of it is installed, and no plugin index
+# is reached (nothing else is installed, the native note and clock below stay as they are).
+$env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:9/index.json'
+PfPlacePlugin 'C:\pf\kit\assets\plugin-migrate\notes' 'notes'
 PfStart
 Pf settings set theme light | Out-Null
 Pf fence create --title Work --rect '300,150,520,300' | Out-Null
@@ -270,10 +274,11 @@ Check 'Add to desktop > New fence makes a fence' ($after -eq $before + 1) "picke
 $m = TitleMenu 'Solo'
 HoverRow $m 'Add to desktop' | Out-Null
 $sub = MenuWith 'New note'
+$before = FenceCount
 $picked = MenuPick '^New note$' $sub
-$ed = WaitWin 'PecoFence.NoteEdit' 6
-Check 'Add to desktop > New note opens a note editor' ($ed -ne [IntPtr]::Zero) "picked=$picked editor=$ed"
-[G]::Press(0x1B); Start-Sleep -Milliseconds 800
+Start-Sleep -Seconds 2
+$notes = @(@(PfJson fence list) | Where-Object { $_ -and $_.script -and $_.script.path -eq 'plugin:notes' })
+Check 'Add to desktop > New note makes a fence of the notes plugin' ($notes.Count -eq 1 -and (FenceCount) -eq $before + 1) "picked=$picked notes fences=$($notes.Count) fences $before -> $(FenceCount)"
 $m = TitleMenu 'Solo'
 HoverRow $m 'Add to desktop' | Out-Null
 $sub = MenuWith 'Show a folder on the desktop'
