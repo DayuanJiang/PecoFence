@@ -172,6 +172,18 @@ impl App {
     /// 脚本栅栏 for `fence get` / `fence list`: the script and its last run.
     pub(super) fn script_dto(&self, id: FenceId) -> Option<pecofence_ipc::ScriptDto> {
         let spec = self.state.config.scripts.get(&id)?;
+        // A light plugin: the texts of its rows, or why it stopped.
+        if let Some(view) = self.light_view(id) {
+            let text: Vec<&str> = view.rows.iter().map(|r| r.text.as_str()).collect();
+            return Some(pecofence_ipc::ScriptDto {
+                path: spec.path.clone(),
+                interval_minutes: spec.interval_minutes,
+                outcome: None,
+                output: Some(text.join("\n")),
+                last_run: None,
+                running: self.light_runs(id) && !view.rows.iter().any(|r| r.color.is_some()),
+            });
+        }
         let last = self.script_runs.last.get(&id);
         let outcome = last.map(|(o, _)| match o {
             Outcome::Done(_) => "done",
@@ -238,6 +250,7 @@ impl App {
     /// 时钟与日期: the system time, the time zone or the region's time format changed (`why`).
     /// Every clock shows the new time now; it waited for its next tick, up to a minute.
     pub(super) fn refresh_clocks(&self, why: &'static str) {
+        self.light_time_changed();
         let drawn = self.fences.values().filter(|w| w.clock_changed()).count();
         if drawn > 0 {
             tracing::debug!(clocks = drawn, why, "clocks drawn again");
@@ -336,6 +349,9 @@ impl App {
                 quiet: false,
             };
         }
+        if let Some(view) = plugin.and_then(|_| self.light_view(id)) {
+            return view;
+        }
         // A run started by the interval says so only once it has taken a while.
         let running = self.script_runs.running.contains_key(&id)
             && self
@@ -423,6 +439,7 @@ impl App {
             .map(|f| f.id)
             .filter(|id| !self.script_runs.running.contains_key(id))
             .filter(|id| !self.script_runs.streams.contains_key(id))
+            .filter(|id| !self.light_runs(*id))
             .filter(|id| self.script_runs.due.get(id).is_none_or(|&at| at <= now))
             .collect();
         for id in due {
@@ -482,9 +499,13 @@ impl App {
             return;
         }
         let path = self.script_file(&spec.path);
-        if super::plugins::plugin_id(&spec.path).is_some() && !path.is_file() {
-            tracing::debug!(%id, "script fence not started: its plugin is not installed or was taken down");
-            return;
+        if let Some(plugin) = super::plugins::plugin_id(&spec.path) {
+            if path.is_file() {
+                self.start_light(id, plugin, &path);
+            } else {
+                tracing::debug!(%id, "script fence not started: its plugin is not installed or was taken down");
+            }
+            return self.push_tool_view(self.state.host_of(id));
         }
         if !self.script_runs.streams.contains_key(&id) && crate::scripts::update_old_example(&path)
         {
@@ -669,6 +690,20 @@ impl App {
                 self.script_runs.streams.remove(&id);
                 tracing::info!(%id, tool_on = on, "script fence stream ended by PecoFence");
             }
+        }
+        // A plugin whose fence went, shows something else now or had the tool switched off.
+        let gone: Vec<FenceId> = (self.light.running.keys())
+            .filter(|id| {
+                let f = self.state.fence(**id);
+                let spec = self.state.config.scripts.get(id);
+                !on || f.is_none_or(|f| f.tool != Some(FenceTool::Script))
+                    || spec.is_none_or(|s| super::plugins::plugin_id(&s.path).is_none())
+            })
+            .copied()
+            .collect();
+        for id in gone {
+            tracing::info!(%id, tool_on = on, "plugin fence stopped by PecoFence");
+            self.stop_light(id);
         }
     }
 
@@ -1045,6 +1080,7 @@ impl App {
     /// run still going); a streaming script starts again.
     /// Ends fence `id`'s streaming script (a plugin is updated, taken down or uninstalled).
     pub(super) fn stop_script(&mut self, id: FenceId) {
+        self.stop_light(id);
         if self.script_runs.streams.remove(&id).is_some() {
             tracing::info!(%id, "script fence stream stopped");
         }

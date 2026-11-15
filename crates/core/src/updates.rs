@@ -270,7 +270,7 @@ pub fn parse_site_update(
 
 /// `major.minor.patch`, with an optional `-prerelease` (letters, digits, `.`, `-`) that sorts
 /// before the release.
-pub(crate) fn parse_version(version: &str) -> Option<([u64; 3], bool)> {
+pub fn parse_version(version: &str) -> Option<([u64; 3], bool)> {
     let (numbers, prerelease) = match version.split_once('-') {
         Some((numbers, suffix)) => {
             let allowed = |b: u8| b.is_ascii_alphanumeric() || b == b'.' || b == b'-';

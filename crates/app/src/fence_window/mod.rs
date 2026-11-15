@@ -613,6 +613,10 @@ pub struct ScriptRowView {
     pub clickable: bool,
     /// A click opens a URL or a file (an arrow shows on hover).
     pub opens: bool,
+    /// A plugin row's `size` (`small` to `huge`, or `fit`), its narrow form and bold.
+    pub size: Option<String>,
+    pub short: Option<String>,
+    pub bold: bool,
 }
 
 impl ScriptRowView {
@@ -660,6 +664,7 @@ impl ScriptRowView {
                     todo: r.todo,
                     color: r.color,
                     icon: r.icon,
+                    ..Self::default()
                 },
             })
             .collect()

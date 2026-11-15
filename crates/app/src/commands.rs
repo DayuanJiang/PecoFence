@@ -521,6 +521,8 @@ pub enum Command {
     SettingsActivated,
     /// A retired fence window (deleted / merged) finished fading out: destroy it now.
     FadeOutDone(HWND),
+    /// A tool fence's window was shown, hidden, rolled up or opened: its plugin learns it.
+    ToolShownChanged,
     /// The user clicked a fence: bring it above the other fences.
     RaiseFence(HWND),
     /// A hover peek (or a file drag resting on its title) opened a rolled fence: above the

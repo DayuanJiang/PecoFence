@@ -251,8 +251,28 @@ pub fn clock_texts(seconds: bool) -> (String, String, String) {
     let unix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as i64);
+    let [time, line, short, _] = clock_parts(unix, seconds);
+    (time, line, short)
+}
+
+/// `pf.time.format` of the plugins: `unix_ms` as the native clock writes it: `time` (without
+/// seconds), `seconds`, `date` (the clock's date line), `short` (its date line for a narrow
+/// clock) or `weekday`. Empty for another kind.
+pub fn time_text(unix_ms: i64, kind: &str) -> String {
+    let [time, line, short, weekday] = clock_parts(unix_ms.div_euclid(1000), kind == "seconds");
+    match kind {
+        "time" | "seconds" => time,
+        "date" => line,
+        "short" => short,
+        "weekday" => weekday,
+        _ => String::new(),
+    }
+}
+
+/// [`clock_texts`] at `unix`, with the weekday.
+fn clock_parts(unix: i64, seconds: bool) -> [String; 4] {
     let Some(st) = local_system_time(unix) else {
-        return (String::new(), String::new(), String::new());
+        return Default::default();
     };
     const DATE_LONGDATE: u32 = 2;
     let mut buf = [0u16; 96];
@@ -334,7 +354,7 @@ pub fn clock_texts(seconds: bool) -> (String, String, String) {
     } else {
         format!("{long} {weekday}")
     };
-    (time, line, short)
+    [time, line, short, weekday]
 }
 
 /// Unix seconds → "short date + time without seconds" in the user's locale and time zone

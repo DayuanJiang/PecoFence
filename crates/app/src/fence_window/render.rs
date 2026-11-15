@@ -1679,6 +1679,33 @@ impl FenceViewState {
             return Ok(());
         };
         use pecofence_render::fence_chrome::ScriptRowDraw;
+        // A plugin's `fit` row and the row under it: drawn as the native clock draws its time
+        // and date, scaled with the fence, in their short forms when it is narrow.
+        if let Some(i) = script
+            .rows
+            .iter()
+            .position(|r| r.size.as_deref() == Some("fit"))
+        {
+            let (big, under) = (&script.rows[i], script.rows.get(i + 1));
+            let short = |r: &ScriptRowView| r.short.clone().unwrap_or_default();
+            let (time, time_short) = (big.text.clone(), short(big));
+            let (date, date_short) =
+                under.map_or_else(Default::default, |r| (r.text.clone(), short(r)));
+            let theme = self
+                .material_foreground()
+                .with_label_color(self.behavior.label_color.get());
+            let chrome = self.chrome.clone();
+            let ok = self
+                .content_panel
+                .draw_ex(self.dpi, |session, _clip, wd, hd| {
+                    let (time, _) = chrome.clock_time(wd, hd, &time, &[time_short.as_str()], &date);
+                    let (shown, _) = chrome.clock_date(wd, hd, time, &date, &date_short);
+                    chrome.draw_clock(session, &theme, wd, hd, time, &date, shown)?;
+                    Ok(())
+                })?;
+            self.note_draw_result(ok);
+            return Ok(());
+        }
         let scale = self.scale();
         let picked = self.material_foreground();
         // Colour names take the shade for the plate they are on: light text means a dark one.
@@ -1699,6 +1726,14 @@ impl FenceViewState {
                 icon: r.icon.as_deref(),
                 clickable: r.clickable,
                 opens: r.opens,
+                size: match r.size.as_deref() {
+                    Some("small") => 0.86,
+                    Some("large") => 1.3,
+                    Some("xlarge") => 1.7,
+                    Some("huge") => 2.4,
+                    _ => 1.0,
+                },
+                bold: r.bold,
             })
             .collect();
         let chrome = self.chrome.clone();

@@ -270,7 +270,14 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
                 .as_deref()
                 .and_then(pecofence_core::smart::SmartMatch::parse);
             let portal = portal.map(absolute);
-            let script = script.map(absolute);
+            // `plugin:<id>` names an installed plugin, not a file.
+            let script = script.map(|s| {
+                if s.starts_with("plugin:") {
+                    s
+                } else {
+                    absolute(s)
+                }
+            });
             // --script means a script fence, --text a note.
             let tool = tool
                 .or_else(|| script.as_ref().map(|_| "script".to_string()))

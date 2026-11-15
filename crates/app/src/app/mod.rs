@@ -69,6 +69,7 @@ mod group;
 mod ipc;
 mod items;
 mod keyfocus;
+mod light;
 mod live_wallpaper;
 mod lnk_targets;
 mod menu_frames;
@@ -517,6 +518,7 @@ pub struct App {
     /// 脚本栅栏: last results, running and next due script fences.
     script_runs: tools::ScriptRuns,
     plugins: plugins::Plugins,
+    light: light::Light,
     /// `--light` / `--dark`: pin the theme this run.
     theme_override: Option<ThemeMode>,
     peek_class: WindowClass,
@@ -772,6 +774,7 @@ fn not_recorded(cmd: &Command) -> bool {
             | Command::RedrawAll
             | Command::WindowGone(_)
             | Command::FadeOutDone(_)
+            | Command::ToolShownChanged
             | Command::SettingsActivated
             // One for every frame while the 「新建栅栏」 button fades away by itself.
             | Command::MarqueeOffer(crate::marquee_offer::OfferEvent::Fading(_))
@@ -2069,6 +2072,7 @@ impl App {
             store_startup_done: None,
             script_runs: tools::ScriptRuns::default(),
             plugins: plugins::Plugins::default(),
+            light: light::Light::default(),
             theme_override: if args.light {
                 Some(ThemeMode::Light)
             } else if args.dark {
@@ -2650,6 +2654,7 @@ impl App {
         self.drain_ipc();
         self.drain_updates();
         self.drain_plugins();
+        self.drain_light();
         for _ in 0..8 {
             let cmds = self.queue.drain();
             if cmds.is_empty() {
@@ -2744,7 +2749,9 @@ impl App {
                 self.apply_auto_height(fence);
                 // Another fence moved or resized: the desktop-arranged one flows around it.
                 self.arrange_desktop_fence();
+                self.sync_light();
             }
+            Command::ToolShownChanged => self.sync_light(),
             Command::FenceDropped(fence) => self.move_out_of_overlap(fence),
             Command::ToggleRollUp(fence) => self.toggle_roll(fence),
             Command::FitToContent(fence) => {
@@ -3408,6 +3415,7 @@ impl App {
     }
 
     pub fn shutdown(&mut self) {
+        self.quit_light();
         self.end_peek_now();
         self.commit_open_note();
         self.state.save_and_wait("exit");

@@ -1,5 +1,6 @@
-//! 社区插件 in the app. The plugin folder `<config>\plugins\<id>\` is what is installed (its
-//! `plugin.json` gives the version and the permissions); a plugin's fences run `plugin:<id>`,
+//! 社区插件 in the app. A plugin is installed in `<config>\plugins\<id>\<version>\`, and
+//! `<config>\plugins\<id>\current.txt` names the version in use (writing it is the switch; its
+//! `plugin.json` gives the permissions); a plugin's fences run `plugin:<id>` (its `main.js`),
 //! and its data lives in `<config>\plugins-data\<id>\`. The index is downloaded when
 //! 设置 › 小工具 opens, and once a day while a plugin is installed; downloads run on threads
 //! of their own and come back through `drain_plugins`.
@@ -80,8 +81,7 @@ fn fetch_index(test: Option<String>) -> Result<Index, String> {
 }
 
 /// Downloads `entry`'s files at the index's `commit` into `dir` (made afresh) and checks each
-/// against the index (size, SHA-256), `plugin.json` against the entry, and `main.ps1`'s header
-/// against `plugin.json`.
+/// against the index (size, SHA-256) and `plugin.json` against the entry.
 fn download(
     entry: &Entry,
     commit: &str,
@@ -120,13 +120,6 @@ fn download(
     if manifest != entry.manifest {
         return Err((true, "plugin.json differs from the index".into()));
     }
-    let main = std::fs::read(dir.join("main.ps1")).map_err(io)?;
-    if !list::header_matches(&manifest, &main) {
-        return Err((
-            true,
-            "main.ps1's header differs from plugin.json (streamable, run)".into(),
-        ));
-    }
     Ok(())
 }
 
@@ -159,17 +152,25 @@ impl App {
             .join(id)
     }
 
-    /// The file a fence's script path runs: a plugin's `main.ps1`, or the path itself.
+    /// The folder of the plugin's version in use (`current.txt`).
+    fn plugin_dir(&self, id: &str) -> Option<PathBuf> {
+        let dir = self.plugins_dir().join(id);
+        let version = std::fs::read_to_string(dir.join("current.txt")).ok()?;
+        let version = version.trim();
+        pecofence_core::updates::parse_version(version).map(|_| dir.join(version))
+    }
+
+    /// The file a fence's script path runs: a plugin's `main.js`, or the path itself.
     pub(super) fn script_file(&self, path: &str) -> PathBuf {
         match plugin_id(path) {
-            Some(id) => self.plugins_dir().join(id).join("main.ps1"),
+            Some(id) => self.plugin_dir(id).unwrap_or_default().join("main.js"),
             None => PathBuf::from(path),
         }
     }
 
     /// The installed plugin's `plugin.json` (it stays while the plugin is taken down).
     pub(super) fn plugin_manifest(&self, id: &str) -> Option<Manifest> {
-        let bytes = std::fs::read(self.plugins_dir().join(id).join("plugin.json")).ok()?;
+        let bytes = std::fs::read(self.plugin_dir(id)?.join("plugin.json")).ok()?;
         list::parse_manifest(&bytes).ok().filter(|m| m.id == id)
     }
 
@@ -368,19 +369,20 @@ impl App {
             self.plugins_dir().join(format!(".new-{id}")),
         );
         let result = result.and_then(|_| {
-            // Stop the plugin's streaming scripts, then swap: the folder itself when it is
-            // new, file by file when it is there (a stopped script may still hold it as its
-            // current folder), plugin.json last since it names the version.
+            // Stop the plugin's fences, move the download into its version's folder, then
+            // switch to it by writing current.txt.
             for fence in self.plugin_fences(id) {
                 self.stop_script(fence);
             }
-            let swapped = if dir.is_dir() {
-                let mut names = ["main.ps1", "README.md", "plugin.json"].iter();
-                let moved = names.try_for_each(|n| std::fs::rename(temp.join(n), dir.join(n)));
-                moved.and_then(|()| std::fs::remove_file(dir.join("disabled.txt")).or(Ok(())))
-            } else {
-                std::fs::rename(&temp, &dir)
-            };
+            let manifest = std::fs::read(temp.join("plugin.json")).ok();
+            let manifest = manifest.and_then(|b| list::parse_manifest(&b).ok());
+            let version = manifest.map(|m| m.version).unwrap_or_default();
+            let to = dir.join(&version);
+            let _ = std::fs::remove_dir_all(&to);
+            let swapped = std::fs::create_dir_all(&dir)
+                .and_then(|()| std::fs::rename(&temp, &to))
+                .and_then(|()| std::fs::write(dir.join("current.txt"), &version))
+                .and_then(|()| std::fs::remove_file(dir.join("disabled.txt")).or(Ok(())));
             swapped.map_err(|e| (false, e.to_string()))
         });
         let _ = std::fs::remove_dir_all(&temp);
@@ -424,7 +426,9 @@ impl App {
         for fence in self.plugin_fences(id) {
             self.stop_script(fence);
         }
-        let _ = std::fs::remove_file(dir.join("main.ps1"));
+        if let Some(current) = self.plugin_dir(id) {
+            let _ = std::fs::remove_file(current.join("main.js"));
+        }
         if let Err(e) = std::fs::write(dir.join("disabled.txt"), why) {
             tracing::warn!(id, error = %e, "plugins: disabled.txt not written");
         }

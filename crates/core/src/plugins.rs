@@ -10,12 +10,14 @@ pub const REPO: &str = "DayuanJiang/PecoFence-plugins";
 /// The files a plugin may have, with the most bytes each may have.
 pub const FILES: [(&str, u64); 4] = [
     ("plugin.json", 64 * 1024),
-    ("main.ps1", 200 * 1024),
+    ("main.js", 200 * 1024),
     ("README.md", 64 * 1024),
     ("screenshot.png", 300 * 1024),
 ];
 /// The files an install downloads (this version shows no screenshot).
-pub const INSTALL_FILES: [&str; 3] = ["plugin.json", "main.ps1", "README.md"];
+pub const INSTALL_FILES: [&str; 3] = ["plugin.json", "main.js", "README.md"];
+/// The newest plugin interface this PecoFence knows (`api` in plugin.json).
+pub const API: u32 = 1;
 /// The most bytes `index.json` may have.
 pub const MAX_INDEX: usize = 1024 * 1024;
 
@@ -62,6 +64,50 @@ pub struct Manifest {
     pub streamable: bool,
     #[serde(default)]
     pub permissions: Permissions,
+    #[serde(default = "first_api")]
+    pub api: u32,
+    /// `light`: main.js in PecoFence's QuickJS, which draws the plugin's view.
+    #[serde(default = "light")]
+    pub layer: String,
+    #[serde(default)]
+    pub settings: Vec<Setting>,
+}
+
+fn first_api() -> u32 {
+    1
+}
+
+fn light() -> String {
+    "light".into()
+}
+
+/// One setting a plugin fence has (栅栏菜单里的插件设置): `switch`, `text`, `number` or `choice`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Setting {
+    pub key: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub label: BTreeMap<String, String>,
+    #[serde(default)]
+    pub default: serde_json::Value,
+}
+
+/// A plugin fence's settings as its plugin sees them (`pf.settings`): what the fence saved
+/// when it is of the setting's kind, else the setting's default.
+pub fn fence_settings(
+    m: &Manifest,
+    saved: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    let value = |s: &Setting| {
+        let kept = saved.get(&s.key).filter(|v| match s.kind.as_str() {
+            "switch" => v.is_boolean(),
+            "number" => v.is_number(),
+            _ => v.is_string(),
+        });
+        (s.key.clone(), kept.unwrap_or(&s.default).clone())
+    };
+    serde_json::Value::Object(m.settings.iter().map(value).collect())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -140,6 +186,22 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
     {
         return Err(format!("{}: name or description missing or too long", m.id));
     }
+    if m.api == 0 || m.api > API || m.layer != "light" {
+        return Err(format!(
+            "{}: api {} or layer {:?} not known",
+            m.id, m.api, m.layer
+        ));
+    }
+    let kinds = ["switch", "text", "number", "choice"];
+    let good = |s: &Setting| {
+        (1..=32).contains(&s.key.len())
+            && s.key.bytes().all(|c| c.is_ascii_alphanumeric())
+            && kinds.contains(&s.kind.as_str())
+            && short(&s.label, 60)
+    };
+    if m.settings.len() > 20 || !m.settings.iter().all(good) {
+        return Err(format!("{}: bad settings", m.id));
+    }
     let hosts = &m.permissions.network;
     if hosts.len() > 20 || !hosts.iter().all(|h| valid_host(h)) {
         return Err(format!("{}: bad network hosts", m.id));
@@ -216,14 +278,6 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, String> {
     let m: Manifest = serde_json::from_slice(strip_bom(bytes)).map_err(|e| e.to_string())?;
     check_manifest(&m)?;
     Ok(m)
-}
-
-/// Whether `main.ps1`'s header (its first 8 KB) says what the manifest says about
-/// `streamable` and `run`.
-pub fn header_matches(m: &Manifest, main: &[u8]) -> bool {
-    let head = String::from_utf8_lossy(&main[..main.len().min(8 * 1024)]);
-    crate::script_output::is_streamable(&head) == m.streamable
-        && crate::script_output::allows_run(&head) == m.permissions.run
 }
 
 /// The index: from GitHub first, then from jsDelivr.
@@ -324,7 +378,7 @@ mod tests {
             "author": "DayuanJiang", "minPecoFence": "0.4.0", "streamable": false,
             "permissions": { "network": [], "clipboard": "none", "files": "data", "run": false },
             "files": [
-                { "name": "main.ps1", "size": 2745, "sha256": HASH, "url": "https://evil.example/x" },
+                { "name": "main.js", "size": 2745, "sha256": HASH, "url": "https://evil.example/x" },
                 { "name": "plugin.json", "size": 453, "sha256": HASH },
                 { "name": "README.md", "size": 900, "sha256": HASH }
             ]
@@ -355,7 +409,7 @@ mod tests {
             ("no-readme", |v| {
                 _ = v["files"].as_array_mut().unwrap().pop()
             }),
-            ("twice-file", |v| v["files"][2]["name"] = "main.ps1".into()),
+            ("twice-file", |v| v["files"][2]["name"] = "main.js".into()),
             ("bad-clip", |v| v["permissions"]["clipboard"] = "all".into()),
             ("bad-host", |v| {
                 v["permissions"]["network"] = serde_json::json!(["a.com/x"])
@@ -415,8 +469,8 @@ mod tests {
 
     #[test]
     fn urls_come_from_commit_id_and_name() {
-        let [raw, cdn] = file_urls(COMMIT, "countdown", "main.ps1");
-        let path = format!("{COMMIT}/plugins/countdown/main.ps1");
+        let [raw, cdn] = file_urls(COMMIT, "countdown", "main.js");
+        let path = format!("{COMMIT}/plugins/countdown/main.js");
         assert_eq!(
             raw,
             format!("https://raw.githubusercontent.com/{REPO}/{path}")
@@ -435,7 +489,7 @@ mod tests {
             "http://127.0.0.1:8731/index.json",
             COMMIT,
             "countdown",
-            "main.ps1",
+            "main.js",
         );
         assert_eq!(test, format!("http://127.0.0.1:8731/{path}"));
         let page = page_url(COMMIT, "countdown");
@@ -499,22 +553,30 @@ mod tests {
     }
 
     #[test]
-    fn header_must_say_what_the_manifest_says() {
-        let plain = manifest(|_| {});
-        let stream = manifest(|v| v["streamable"] = true.into());
-        let runs = manifest(|v| v["permissions"]["run"] = true.into());
-        let s = b"# <pecofence.type>streamable</pecofence.type>\nWrite-Output hi";
-        let r = b"# <pecofence.allow>run</pecofence.allow>\n";
-        assert!(header_matches(&plain, b"Write-Output hi"));
-        assert!(!header_matches(&plain, s));
-        assert!(header_matches(&stream, s));
-        assert!(!header_matches(&stream, b"Write-Output hi"));
-        assert!(header_matches(&runs, r));
-        assert!(!header_matches(&plain, r));
-        // A tag after the first 8 KB does not count, as when PecoFence runs the script.
-        let mut late = vec![b' '; 8 * 1024];
-        late.extend_from_slice(s);
-        assert!(header_matches(&plain, &late));
+    fn settings_are_checked_and_saved_values_keep_their_kind() {
+        let m = manifest(|v| {
+            v["settings"] = serde_json::json!([
+                { "key": "seconds", "type": "switch", "label": { "en": "Seconds" }, "default": false },
+                { "key": "city", "type": "text", "default": "" }
+            ])
+        });
+        assert!(check_manifest(&m).is_ok());
+        let saved = serde_json::json!({ "seconds": true, "city": 3, "gone": 1 });
+        let settings = fence_settings(&m, saved.as_object().unwrap());
+        assert_eq!(settings, serde_json::json!({ "seconds": true, "city": "" }));
+        for bad in [
+            serde_json::json!({ "settings": [{ "key": "a b", "type": "switch" }] }),
+            serde_json::json!({ "settings": [{ "key": "a", "type": "file" }] }),
+            serde_json::json!({ "api": 2 }),
+            serde_json::json!({ "layer": "native" }),
+        ] {
+            let m = manifest(|v| {
+                v.as_object_mut()
+                    .unwrap()
+                    .extend(bad.as_object().unwrap().clone())
+            });
+            assert!(check_manifest(&m).is_err(), "{bad}");
+        }
     }
 
     #[test]

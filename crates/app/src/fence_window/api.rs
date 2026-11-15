@@ -2102,6 +2102,22 @@ impl FenceWindow {
             .is_some_and(|v| v.roll_target() || v.peeking)
     }
 
+    /// What the native clock's tick asks before it draws: the content shows (not rolled up,
+    /// the window not hidden).
+    pub fn shows_content(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| {
+            !v.rolled_up && !v.retired && pecofence_platform::desktop::is_visible(v.hwnd)
+        })
+    }
+
+    /// The content area in DIPs.
+    pub fn content_dips(&self) -> (f32, f32) {
+        self.view.borrow().as_ref().map_or((0.0, 0.0), |v| {
+            let (w, h) = v.content_size_px();
+            (w as f32 / v.scale(), h as f32 / v.scale())
+        })
+    }
+
     pub fn dpi(&self) -> u32 {
         self.view.borrow().as_ref().map(|v| v.dpi).unwrap_or(96)
     }

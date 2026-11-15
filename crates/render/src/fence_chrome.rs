@@ -113,6 +113,8 @@ pub struct FenceChrome {
     clock_date_format: TextFormat,
     /// The clock's time and date formats at the sizes last drawn (there is one clock at most).
     clock_fonts: RefCell<Option<ClockFonts>>,
+    /// Plugin rows in a size or weight of their own: their formats by (DIPs, bold).
+    row_fonts: RefCell<Vec<((u32, bool), TextFormat)>>,
     /// The blurred masks of a theme's soft text shadow, shared by all fences.
     text_shadows: RefCell<TextShadows>,
     /// Labels and row names shaped for an earlier frame, shared by all fences.
@@ -2171,6 +2173,7 @@ impl FenceChrome {
             clock_time_format,
             clock_date_format,
             clock_fonts: RefCell::default(),
+            row_fonts: RefCell::default(),
             text_shadows: RefCell::default(),
             text_layouts: RefCell::default(),
             note_rows_cache: RefCell::default(),
@@ -4675,6 +4678,9 @@ pub struct ScriptRowDraw<'a> {
     pub clickable: bool,
     /// A click opens a URL or file: an arrow on hover.
     pub opens: bool,
+    /// The text's size over the fence's 文字大小 (a plugin row's `size`), and bold.
+    pub size: f32,
+    pub bold: bool,
 }
 
 impl FenceChrome {
@@ -5221,7 +5227,26 @@ impl FenceChrome {
             let arrow = if row.opens { arrow_w } else { 0.0 };
             let text_w = (width - text_x - NOTE_PAD_X - arrow).max(1.0);
             let text = if row.text.is_empty() { " " } else { row.text };
-            let layout = TextLayout::new(text, &tt.body, text_w, f32::MAX)?;
+            let layout = if row.size != 1.0 || row.bold {
+                let key = (
+                    (TOOL_TEXT_SIZES[1] * tt.k * row.size).round() as u32,
+                    row.bold,
+                );
+                let mut fonts = self.row_fonts.borrow_mut();
+                if !fonts.iter().any(|(k, _)| *k == key) {
+                    let weight = if row.bold {
+                        FontWeight(600)
+                    } else {
+                        FontWeight::NORMAL
+                    };
+                    let format = Self::build_tool_format(font_text(), key.0 as f32, weight, true)?;
+                    fonts.push((key, format));
+                }
+                let format = &fonts.iter().find(|(k, _)| *k == key).map(|(_, f)| f);
+                TextLayout::new(text, format.unwrap_or(&tt.body), text_w, f32::MAX)?
+            } else {
+                TextLayout::new(text, &tt.body, text_w, f32::MAX)?
+            };
             let h = layout.metrics().height.max(line_h);
             laid.push(ScriptRowLaid {
                 text: Some(layout),
@@ -6687,6 +6712,8 @@ mod tests {
                 icon: None,
                 clickable: false,
                 opens: false,
+                size: 1.0,
+                bold: false,
             },
             ScriptRowDraw {
                 text: "",
@@ -6696,6 +6723,8 @@ mod tests {
                 icon: None,
                 clickable: false,
                 opens: false,
+                size: 1.0,
+                bold: false,
             },
             ScriptRowDraw {
                 text: "第二行",
@@ -6705,6 +6734,8 @@ mod tests {
                 icon: None,
                 clickable: true,
                 opens: true,
+                size: 1.0,
+                bold: false,
             },
         ];
         let bare = chrome.script_extent(w, 1, &script, "").unwrap();

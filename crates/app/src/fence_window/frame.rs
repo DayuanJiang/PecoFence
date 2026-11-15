@@ -268,6 +268,9 @@ impl FrameHandle {
             v.height_anim = None;
             if let Some(rolled) = rolled_at_end {
                 v.rolled_up = rolled;
+                if v.script.is_some() {
+                    v.queue.push(Command::ToolShownChanged);
+                }
                 v.content_panel.visual.set_opacity(1.0);
                 v.content_panel.visual.set_visible(!rolled);
                 // Rolled up after a hover peek raised it: back among the other fences.
