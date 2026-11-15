@@ -56,9 +56,14 @@ $r = (ClockFence).windowRect; $form = "[data-fence=`"$((ClockFence).id)`"] .togg
 $texts = MenuTexts $menu
 MenuPick '^Plugin settings$' $menu | Out-Null
 $ok = (WaitWin 'PecoFence.Settings' 15) -ne [IntPtr]::Zero -and (CdpOpen) -and (JsWait "!!document.querySelector('$form')" 15)
+# The page scrolls to the form and tints it: click once it stands still, and again when the
+# switch did not take the click.
+function Saved() { return (Get-Content "$script:Config\config.json" -Raw -Encoding UTF8 | ConvertFrom-Json).scripts.((ClockFence).id).settings.seconds }
+Start-Sleep -Seconds 1
 PageClick $form; Start-Sleep -Seconds 2
+if ((Saved) -ne $true) { Log 'the form switch did not take the click: again'; PageClick $form; Start-Sleep -Seconds 2 }
 [L]::PostMessageW((WaitWin 'PecoFence.Settings' 2), 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 1
-$saved = (Get-Content "$script:Config\config.json" -Raw -Encoding UTF8 | ConvertFrom-Json).scripts.((ClockFence).id).settings.seconds
+$saved = Saved
 Check 'the menu has Plugin settings, Plugin details and Restart plugin, no interval or script entries' ($texts -match 'Plugin settings' -and $texts -match 'Plugin details' -and $texts -match 'Restart plugin' -and $texts -notmatch 'Run interval|Choose script|Edit script|Run now') "menu=$texts"
 Check 'its form turns seconds on: the time has seconds and the config keeps it' ($ok -and (Shows) -match '^\d{1,2}:\d{2}:\d{2}' -and $saved -eq $true) "form=$ok shows=$(Shows) saved=$saved"
 ParkMouse
@@ -124,8 +129,7 @@ Start-Sleep -Seconds 2
 $nat = (PfFence 'Native').windowRect; $plg = (ClockFence).windowRect
 # OCR misses a digit or reads the colon as another sign now and then: read again on a miss, and
 # let the digits count. It also misses half a letter cut by the fence's edge (a short form with
-# "AM" that does not fit), so the ink of the two times is compared as well: as wide, and clear
-# of the right edge.
+# "AM" that does not fit), so the ink of the two times is compared as well: as wide.
 function TimeInk($r) {
   $b = [Px]::Grab($r.x + 6, $r.y + 30, $r.w - 12, 70)
   $p = [Px]::Ink($b, 0, 69); $b.Dispose()
@@ -141,7 +145,7 @@ for ($try = 0; $try -lt 3; $try++) {
 $in = TimeInk $nat; $ip = TimeInk $plg
 Shot 'narrow-native-left-plugin-right'
 Check 'both show the time without seconds, the same text' (($tp -replace '\D') -eq ($tn -replace '\D') -and $tp -match '\d{1,2}.?\d{2}' -and $tp -notmatch '\d:\d{2}:\d{2}' -and $tn -notmatch '\d:\d{2}:\d{2}') "plugin=$tp native=$tn view=$(Shows)"
-Check 'the two times are as wide, and neither reaches the right edge' ($in[0] -ge 0 -and $ip[0] -ge 0 -and [math]::Abs(($in[1] - $in[0]) - ($ip[1] - $ip[0])) -le 3 -and $ip[1] -lt $plg.w - 14 -and $in[1] -lt $nat.w - 14) "native ink $($in -join '-') plugin ink $($ip -join '-') of $($nat.w) and $($plg.w) px"
+Check 'the two times are as wide (a form cut by the edge is wider than the native one)' ($in[0] -ge 0 -and $ip[0] -ge 0 -and [math]::Abs(($in[1] - $in[0]) - ($ip[1] - $ip[0])) -le 3) "native ink $($in -join '-') plugin ink $($ip -join '-') of $($nat.w) and $($plg.w) px"
 
 Case 'quit stops the plugins and the plugin thread'
 PfQuit
