@@ -48,6 +48,12 @@ Check 'a name starting with a dot is refused' ((Rows)['data-name-dot'] -match '^
 $v = WaitRow 'data-roundtrip' '^(ok|error)'
 Check 'write, read, list, remove' ($v -eq 'ok ["hello 你好",true,null]') $v
 Check 'nothing was written outside the data folder' (-not (Test-Path "$script:Config\plugins-data\x.txt") -and -not (Test-Path "$script:Data\.hidden")) ''
+Check 'a Windows device name (nul.txt) is refused' ((Rows)['data-name-device'] -match '^refused data.write needs a name') (Rows)['data-name-device']
+Check 'a name ending with a dot is refused' ((Rows)['data-name-dot-end'] -match '^refused data.write needs a name') (Rows)['data-name-dot-end']
+
+Case 'addresses a browser could read with another host'
+Check 'a NUL and a user name before api.github.com: refused' ((Rows)['http-userinfo'] -match '^refused http.get needs .*permissions.network') (Rows)['http-userinfo']
+Check 'a backslash and a user name before github.com: pf.open refused' ((Rows)['open-backslash'] -match '^refused open needs .*permissions.network or links') (Rows)['open-backslash']
 
 Case 'pf.sys, pf.time, pf.open, pf.openSystem, pf.folder, pf.notify'
 $v = (Rows)['sys']
@@ -62,7 +68,7 @@ Shot 'notice'
 if ($card -ne [IntPtr]::Zero) { $r = Rect $card; [G]::Click($r.R - 60, $r.B - 30); Start-Sleep -Milliseconds 800 }
 
 Case 'pf.run: refused with the system switch off, works with it on'
-Check 'undeclared program refused' ((Rows)['run-undeclared'] -match '^refused run needs cmd.exe in permissions.system') (Rows)['run-undeclared']
+Check 'undeclared program refused' ((Rows)['run-undeclared'] -match '^refused run needs whoami.exe in permissions.system') (Rows)['run-undeclared']
 $v = WaitRow 'run-switch-off' '^(ok|error)'
 Check 'declared ipconfig, switch off: rejected naming the switch' ($v -match '^error pf.run needs 允许插件使用 Windows 底层功能') $v
 Pf settings set tools.allowSystem true | Out-Null
@@ -70,6 +76,26 @@ Command 'run'
 $v = WaitRow 'cmd-run' '^(ok|error)' 25
 Check 'switch on: ipconfig runs and its output comes back' ($v -eq 'ok [0,true]') $v
 Check 'the log says the program ended' ([bool](PfWaitLog 'pf.run: the program ended.*program="ipconfig\.exe" code=Some\(0\)' 2)) ''
+$pings = @(Get-Process ping -ErrorAction SilentlyContinue).Count
+Command 'run-child'
+$v = WaitRow 'cmd-run-child' '^(ok|error)' 45
+Check 'a program that leaves another running: the answer comes at once' ($v -eq 'ok [0,true]') $v
+Start-Sleep -Seconds 1
+Check 'and what it left running was ended with it' (@(Get-Process ping -ErrorAction SilentlyContinue).Count -eq $pings) "ping before=$pings now=$(@(Get-Process ping -ErrorAction SilentlyContinue).Count)"
+
+Case 'a data file over 20 MB, an error in a handler, a row with fields of the wrong type'
+[IO.File]::WriteAllBytes("$script:Data\big.txt", (New-Object byte[] (21MB)))
+Command 'read-big'
+$v = WaitRow 'cmd-read-big' '^(ok|error)'
+Check 'pf.data.read of a 21 MB file is rejected' ($v -match '^error .*larger than 20 MB') $v
+Remove-Item "$script:Data\big.txt"
+Command 'throw'
+$line = PfWaitLog 'plugin error: it escaped a handler' 10
+Check 'an error in a handler is logged with its message' ("$line" -match 'thrown by the throw command') "$line"
+Command 'bad-row'
+$v = WaitRow 'bad-row' '^shown'
+Check 'the plugin goes on, and a row with an id of the wrong type still shows' ($v -eq 'shown' -and (FenceOut $script:Fid) -notmatch 'stopped') "$v $(FenceOut $script:Fid)"
+Check 'the log names the field left out' ([bool](PfWaitLog 'a field of the wrong type is left out.*field=.?id' 5)) ''
 
 Case 'pf.clipboard: text, a private copy, files, a picture there and back, setText'
 function LastClip() { return (Rows)["clipboard-$((Rows)['clipboard-count'])"] }
