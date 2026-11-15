@@ -211,16 +211,23 @@ fn remove_dir(dir: &Path) -> std::io::Result<()> {
     std::fs::remove_dir_all(dir)
 }
 
-/// Names `version` the one in use: `current.txt` is written beside it and renamed over it, so a
-/// failure leaves the version before in use.
-fn write_current(dir: &Path, version: &str) -> std::io::Result<()> {
+/// Writes `path` as `<path>.new` and renames that over it: a failure, or PecoFence ending halfway,
+/// leaves the file before whole.
+fn write_whole(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
-    let temp = dir.join("current.txt.new");
+    let mut temp = path.as_os_str().to_owned();
+    temp.push(".new");
     let mut f = std::fs::File::create(&temp)?;
-    f.write_all(version.as_bytes())?;
+    f.write_all(bytes)?;
     f.sync_all()?;
     drop(f);
-    std::fs::rename(&temp, dir.join("current.txt"))
+    std::fs::rename(&temp, path)
+}
+
+/// Names `version` the one in use (`current.txt`, written whole: a failure leaves the version
+/// before in use).
+fn write_current(dir: &Path, version: &str) -> std::io::Result<()> {
+    write_whole(&dir.join("current.txt"), version.as_bytes())
 }
 
 fn read_text(path: &Path) -> Option<String> {
@@ -471,8 +478,10 @@ impl App {
             match d {
                 Done::Index(Ok((index, bytes))) => {
                     tracing::info!(plugins = index.plugins.len(), serial = index.serial, commit = %index.commit, "plugins: index read");
+                    // Written whole: a torn file would read as no index at the next start, and an
+                    // older index served again would no longer be refused by its serial.
                     let saved = std::fs::create_dir_all(&self.plugins.root)
-                        .and_then(|()| std::fs::write(self.plugins.root.join("index.json"), bytes));
+                        .and_then(|()| write_whole(&self.plugins.root.join("index.json"), &bytes));
                     if let Err(e) = saved {
                         tracing::warn!(error = %e, "plugins: index not saved");
                     }
@@ -687,6 +696,8 @@ impl App {
             tracing::warn!(id, version, error = %e, fences = fences.len(), "plugins: switch failed, the fences start again");
             self.plugins.reload(id);
             for fence in fences {
+                // A web plugin's main.js starts with its page.
+                self.restart_web_page(fence);
                 self.start_script(fence);
             }
             return Err((false, e.to_string()));
@@ -741,10 +752,12 @@ impl App {
         if !back {
             return;
         }
-        let written = write_current(&dir, &before)
-            .and_then(|()| std::fs::write(dir.join("failed.txt"), &failed));
-        if let Err(e) = written {
+        if let Err(e) = write_current(&dir, &before) {
             return tracing::warn!(id, error = %e, "plugins: could not go back");
+        }
+        // The version before is in use from here on: its fences start again whatever comes.
+        if let Err(e) = std::fs::write(dir.join("failed.txt"), &failed) {
+            tracing::warn!(id, failed, error = %e, "plugins: failed.txt not written, the next check may offer the failed version again");
         }
         let _ = std::fs::remove_dir_all(dir.join(&failed));
         self.plugins.reload(&id);
@@ -1066,5 +1079,21 @@ impl App {
             Status::Ready => "ready",
         };
         serde_json::json!({ "status": status, "held": self.held_scripts_wait(), "open": self.plugins.open, "ask": self.plugins.ask, "list": rows })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_file_written_whole_replaces_the_one_before_and_leaves_no_temporary_file() {
+        let dir = std::env::temp_dir().join(format!("pf-whole-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("index.json");
+        for text in ["first", "second"] {
+            super::write_whole(&path, text.as_bytes()).unwrap();
+        }
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "second");
+        assert!(!dir.join("index.json.new").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
