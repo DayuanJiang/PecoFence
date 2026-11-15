@@ -113,11 +113,12 @@ $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'
 $script:Config = "$PfApp\config"
 PfPlacePlugin $Kit 'launcher'
 if ($Part -eq 'A') {
-  # A second launcher, B, whose command from its shortcut runs for ever: PecoFence stops it each time.
+  # A second launcher, B. Once its data folder has the file `spin`, a command from its shortcut runs for
+  # ever and PecoFence stops it (the three stops case); before that it is a plain launcher.
   PfPlacePlugin $Kit 'launcher-b'
   $bd = "$script:Config\plugins\launcher-b\1.0.0"
   [IO.File]::WriteAllText("$bd\plugin.json", ([IO.File]::ReadAllText("$bd\plugin.json") -replace '"启动器"', '"B 启动器"'))
-  Add-Content "$bd\main.js" 'pf.on("command", (c) => { if (c.via === "key") for (;;) {} });'
+  Add-Content "$bd\main.js" 'pf.on("command", async (c) => { if (c.via === "key" && (await pf.data.read("spin")) === "1") for (;;) {} });'
 }
 PfStart -Lang zh-CN
 $script:Fid = PfPluginFence '启动器' '80,140,320,360' 'launcher'
@@ -294,11 +295,14 @@ if ($Part -eq 'A') {
   Key 0x4B
   $aThen = [LX]::Topmost((FenceHwnd)); $bThen = [LX]::Topmost((FenceHwnd $script:FidB))
   Shot 'shortcut-b-over-launcher'
-  Check 'B is up, the launcher went back below' ($aFirst -and $bThen -and -not $aThen -and [bool](PfWaitLog 'the fence up alone gives its place to this one' 3)) "launcher up first=$aFirst, then launcher=$aThen B=$bThen"
+  Check 'B is up, the launcher went back below, B runs' ((FenceOut $script:FidB) -notmatch '插件停止了' -and $aFirst -and $bThen -and -not $aThen -and [bool](PfWaitLog 'the fence up alone gives its place to this one' 3)) "launcher up first=$aFirst, then launcher=$aThen B=$bThen"
 
   Case 'B stops a third time within an hour: its shortcut goes, the launcher keeps its own'
-  # Its command from the key above stopped it once; it starts again 5 s after each stop.
-  for ($n = 2; $n -le 3; $n++) { [G]::Press(0x1B); Start-Sleep -Seconds 6; Key 0x4B }
+  # From now on its command spins; it starts again 5 s after each stop.
+  New-Item -ItemType Directory -Force "$script:Config\plugins-data\launcher-b" | Out-Null
+  [IO.File]::WriteAllText("$script:Config\plugins-data\launcher-b\spin", '1')
+  [G]::Press(0x1B); Start-Sleep -Seconds 1
+  for ($n = 1; $n -le 3; $n++) { Key 0x4B; [G]::Press(0x1B); Start-Sleep -Seconds 6 }
   $l = LogCount $UnregL
   Check 'three stops, then Ctrl+Alt+K is unregistered' ((WaitCount 'plugin fence stopped' 3) -and (WaitCount $UnregK 1 8) -and (Last 'K') -match 'unregistered' -and (LogCount $UnregL) -eq $l) "stops=$(LogCount 'plugin fence stopped') unregistered K=$(LogCount $UnregK)"
   [G]::Press(0x1B); Start-Sleep -Seconds 1; CloseWindows
