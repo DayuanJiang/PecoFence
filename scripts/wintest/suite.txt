@@ -33,6 +33,8 @@ desktop-input-B    3   ec2    release desktop-clicks-and-focus.ps1   --var Part=
 desktop-input-C    3   ec2    release desktop-clicks-and-focus.ps1   --var Part=C
 showdesk-nofocus   1   ec2    release show-desktop-window-without-focus.ps1
 showdesk-dblclick  1   vm     release owner-showdesktop-dblclick.ps1
+showdesk-win10     4   vm     release issues-vm-win10-ontop.ps1
+menu-sendto        2   vm     release issues-vm-sendto.ps1
 explorer-freeze    2   ec2    release explorer-busy.ps1              --var Part=freeze
 explorer-burst     3   ec2    release explorer-busy.ps1              --var Part=burst
 explorer-start     3   ec2    release explorer-busy.ps1              --var Part=start
