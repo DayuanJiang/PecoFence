@@ -1020,6 +1020,17 @@ impl FenceViewState {
         self.note.is_some() || self.clock.is_some() || self.script.is_some()
     }
 
+    /// 时钟与日期 rolled up (feedback #175): the title row shows the time, hours and minutes in
+    /// Windows' region format (12 or 24 hours), in place of the fence's name. None for any other
+    /// fence, an open clock, or when Windows gives no time.
+    pub(super) fn rolled_clock_caption(&self) -> Option<String> {
+        if self.clock.is_none() || !self.roll_target() {
+            return None;
+        }
+        let time = pecofence_platform::fileinfo::clock_texts(false).0;
+        (!time.is_empty()).then_some(time)
+    }
+
     /// The rolled title shows 「N 项」 before the chevron: not for a tool (no items), a smart
     /// fence (its capsule counts) or a filter tag (it carries the count).
     pub(super) fn shows_rolled_count(&self) -> bool {
@@ -1043,10 +1054,12 @@ impl FenceViewState {
     }
 
     /// Arms TIMER_CLOCK for just after the next minute (or second) boundary, or stops it when
-    /// the window shows no clock.
+    /// the window shows no clock. Rolled up, the clock shows hours and minutes in its title row
+    /// and ticks each minute.
     pub(super) fn arm_clock(&self) {
         match self.clock {
             Some(seconds) => {
+                let seconds = seconds && !self.roll_target();
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default();

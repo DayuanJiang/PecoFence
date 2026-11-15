@@ -918,7 +918,10 @@ impl FenceViewState {
             _ => Backdrop::Solid,
         };
         let bitmaps = self.bitmaps.clone();
-        let title = self.title.clone();
+        // A clock is never a tab (tool fences take no part in tabs): its one title is enough.
+        let title = self
+            .rolled_clock_caption()
+            .unwrap_or_else(|| self.title.clone());
         let rolled = self.roll_target();
         // A roll set / cancelled without the animation (reduced motion, retire, external
         // geometry) leaves the progress tween behind: rest it at the settled state.

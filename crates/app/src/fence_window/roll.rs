@@ -895,6 +895,16 @@ impl FenceViewState {
         if self.tabs.len() > 1 && self.tab_drag.is_none() && !self.tabs_on_rail() {
             self.sync_tab_slides(&prev, now);
         }
+        // 时钟与日期 (feedback #175): the title row swaps the name for the time, or back; the new
+        // caption fades in as a folder's name does, and the clock ticks at what it now shows.
+        if self.clock.is_some() {
+            if self.motion.enabled() {
+                self.chrome_fades.snap(ChromeKey::TitleSwap, 1.0, now);
+                self.chrome_fades.set(true, ChromeKey::TitleSwap, 0.0, now);
+            }
+            self.arm_clock();
+            tracing::debug!(fence = %self.fence_id, rolled, "clock: the title row shows the {}", if rolled { "time" } else { "name" });
+        }
         self.frames.request();
     }
 

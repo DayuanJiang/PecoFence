@@ -564,7 +564,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} idle_opacity={:.2} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={}",
+            "title={:?} idle_opacity={:.2} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={} rolled_caption={:?}",
             v.title,
             v.idle_layer.opacity(),
             v.title_count,
@@ -635,6 +635,8 @@ impl FenceWindow {
             v.peek_faded,
             v.clock_date,
             v.clock_time,
+            // What a rolled-up clock shows in its title row in place of its name (#175).
+            v.rolled_clock_caption(),
         )
     }
 
@@ -856,6 +858,7 @@ impl FenceWindow {
             v.column_collapsed = rolled && v.tabs_on_rail();
             v.rail_dip = v.measure_rail_w();
             v.roll_t = Tween::at(rolled as u8 as f32, Instant::now());
+            v.arm_clock();
             let _ = v.motion.stop(&v.content_panel.visual, Prop::Opacity);
             v.content_panel.visual.set_opacity(1.0);
             v.content_panel.visual.set_visible(!rolled);
@@ -1966,9 +1969,13 @@ impl FenceWindow {
             return false;
         };
         v.arm_clock();
-        let shows = !v.rolled_up && !v.retired && pecofence_platform::desktop::is_visible(v.hwnd);
+        let shows = !v.retired && pecofence_platform::desktop::is_visible(v.hwnd);
         if shows {
-            let _ = v.redraw_content();
+            let _ = if v.rolled_up {
+                v.redraw_chrome_only()
+            } else {
+                v.redraw_content()
+            };
         }
         shows
     }
