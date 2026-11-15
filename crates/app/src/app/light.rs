@@ -276,6 +276,22 @@ impl App {
         }
     }
 
+    /// The display language changed: every plugin's main.js and page hear `lang` (`pf.lang`
+    /// follows), so they show their texts in it without a restart.
+    pub(super) fn plugins_lang_changed(&mut self) {
+        let lang = pecofence_core::i18n::language().tag();
+        let fences: Vec<FenceId> = self.light.running.keys().copied().collect();
+        tracing::info!(
+            lang,
+            plugins = fences.len(),
+            "plugins told of the new language"
+        );
+        for fence in fences {
+            self.light_send(host::Command::Event(fence, "lang", json!(lang)));
+        }
+        self.web_events("lang", json!(lang));
+    }
+
     pub(super) fn stop_light(&mut self, fence: FenceId) {
         if self.hold_light(fence, None) {
             return;

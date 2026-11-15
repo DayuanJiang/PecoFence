@@ -1683,6 +1683,7 @@ impl App {
             self.apply_portal_deco(*host);
         }
         self.apply_desktop_visibility("interface language changed");
+        self.plugins_lang_changed();
         tracing::debug!(
             windows = hosts.len(),
             "fence windows got their kept texts in the new language"
