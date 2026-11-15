@@ -55,13 +55,17 @@ Pf fence create --tool clock --title 'Native' --rect '300,150,260,150' | Out-Nul
 Pf fence move (ClockFence).id --rect '600,150,260,150' | Out-Null
 Start-Sleep -Seconds 2
 
-Case 'the 显示秒 setting in the fence menu'
-$r = (ClockFence).windowRect
+Case 'the 显示秒 setting: 插件设置 in the fence menu opens this fence''s form'
+$r = (ClockFence).windowRect; $form = "[data-fence=`"$((ClockFence).id)`"] .toggle"
 [G]::RClick($r.x + 120, $r.y + 14); $menu = MenuWin 5
 $texts = MenuTexts $menu
-MenuPick '^Show seconds$' $menu | Out-Null; Start-Sleep -Seconds 2
+MenuPick '^Plugin settings$' $menu | Out-Null
+$ok = (WaitWin 'PecoFence.Settings' 15) -ne [IntPtr]::Zero -and (CdpOpen) -and (JsWait "!!document.querySelector('$form')" 15)
+PageClick $form; Start-Sleep -Seconds 2
+[L]::PostMessageW((WaitWin 'PecoFence.Settings' 2), 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 1
 $saved = (Get-Content "$script:Config\config.json" -Raw -Encoding UTF8 | ConvertFrom-Json).scripts.((ClockFence).id).settings.seconds
-Check 'the menu offers Show seconds; on, the time has seconds and the config keeps it' ($texts -match 'Show seconds' -and (Shows) -match '^\d{1,2}:\d{2}:\d{2}' -and $saved -eq $true) "menu=$texts shows=$(Shows) saved=$saved"
+Check 'the menu has Plugin settings, Plugin details and Restart plugin, no interval or script entries' ($texts -match 'Plugin settings' -and $texts -match 'Plugin details' -and $texts -match 'Restart plugin' -and $texts -notmatch 'Run interval|Choose script|Edit script|Run now') "menu=$texts"
+Check 'its form turns seconds on: the time has seconds and the config keeps it' ($ok -and (Shows) -match '^\d{1,2}:\d{2}:\d{2}' -and $saved -eq $true) "form=$ok shows=$(Shows) saved=$saved"
 ParkMouse
 Shot 'side-by-side-native-left-plugin-right'
 

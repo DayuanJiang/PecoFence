@@ -19,7 +19,7 @@ const fixture = {
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace', doubleCtrl: false },
-    tools: { enabled: false, clockSeconds: false, dialogJump: false, everything: false },
+    tools: { enabled: false, clockSeconds: false, dialogJump: false, everything: false, allowSystem: false },
   },
   rules: {
     keepUpdated: true, defaultTarget: 'inbox', unmatched: 'defaultTarget',
@@ -364,46 +364,125 @@ async function runTests() {
       }
     }
   });
-  await test('Tools page: one switch, a new note, one clock, the examples and the guide', async () => {
+  await test('Tools page: the 小工具 switch, the own script, the plugin list and the Windows functions switch', async () => {
     doc = await reset();
     doc.querySelector('[data-page=tools]').click();
     const page = doc.getElementById('page-tools');
-    assert(page.querySelectorAll('.toggle').length === 1, 'The tools page has more than one switch');
+    const binds = [...page.querySelectorAll('.toggle')].map(t => t.dataset.bind).join(' ');
+    assert(binds === 'tools.enabled tools.allowSystem', 'The tools page switches: ' + binds);
     for (const gone of ['tools.notes', 'tools.clock', 'tools.scripts', 'tools.clockSeconds']) {
       assert(!doc.querySelector(`[data-bind="${gone}"]`), gone + ' still has a switch');
     }
-    assert(!doc.getElementById('noteCount') && !doc.getElementById('newScriptExample'), 'The count line or 添加示例… is still there');
-    const titles = [...page.querySelectorAll('.card.child .t')].map(t => t.textContent).join(' / ');
-    assert(titles === '便签与待办 / 时钟 / 天气 / GitHub 仓库动态 / 电脑状态 / 用自己的脚本', 'Rows: ' + titles);
-    const before = frame.contentWindow.testMessages.length;
-    doc.querySelector('[data-bind="tools.enabled"]').click();
-    const patch = frame.contentWindow.testMessages.slice(before).find(m => m.type === 'patchSettings');
-    assert(patch && patch.settings.tools.enabled === true, 'The 小工具 switch not posted');
-    const last = () => frame.contentWindow.testMessages.at(-1);
-    doc.getElementById('newNote').click();
-    assert(last().type === 'action' && last().name === 'newNote', 'New note not asked for: ' + JSON.stringify(last()));
-    const clock = doc.getElementById('newClock');
-    assert(!clock.disabled && clock.textContent === '添加', 'Clock button wrong without a clock: ' + clock.textContent);
-    clock.click();
-    assert(last().name === 'newClock', 'New clock not asked for');
-    for (const [id, example] of [['addWeather', 'weather'], ['addGitHub', 'github'], ['addStatus', 'status']]) {
-      doc.getElementById(id).click();
-      assert(last().name === 'newScriptExample' && last().example === example, id + ' sent ' + JSON.stringify(last()));
+    for (const gone of ['newNote', 'newClock', 'addWeather', 'addGitHub', 'addStatus', 'noteCount', 'newScriptExample']) {
+      assert(!doc.getElementById(gone), gone + ' is still there');
     }
+    const titles = [...page.querySelectorAll('.card.child .t')].map(t => t.textContent).join(' / ');
+    assert(titles === '用自己的脚本', 'Rows: ' + titles);
+    const sent = (from) => frame.contentWindow.testMessages.slice(from).find(m => m.type === 'patchSettings');
+    let before = frame.contentWindow.testMessages.length;
+    doc.querySelector('[data-bind="tools.enabled"]').click();
+    assert(sent(before)?.settings.tools.enabled === true, 'The 小工具 switch not posted');
+    before = frame.contentWindow.testMessages.length;
+    doc.querySelector('[data-bind="tools.allowSystem"]').click();
+    assert(sent(before)?.settings.tools.allowSystem === true, 'The Windows functions switch not posted');
+    const last = () => frame.contentWindow.testMessages.at(-1);
     doc.getElementById('newScript').click();
     assert(last().name === 'newScript', 'Own script not asked for');
     doc.getElementById('scriptGuide').click();
     assert(last().name === 'scriptGuide', 'Guide not asked for');
-    // One clock at most: its button greys out while the desktop has one.
-    current().fences.push({ ...current().fences[0], id: 'clock-a', title: 'Clock', tool: { kind: 'clock' } });
+    // A note is no rule target.
     current().fences.push({ ...current().fences[0], id: 'note-a', title: 'Note A', tool: { kind: 'note' } });
     frame.contentWindow.testRefresh();
     await settle();
-    assert(clock.disabled && clock.textContent === '已在桌面上', 'Clock button not greyed with a clock: ' + clock.textContent);
-    // A note is no rule target.
     rulesPage(doc);
     assert(![...doc.querySelectorAll('#nrTarget option')].some(o => o.value === 'note-a'), 'A note is offered as a rule target');
-    current().fences.splice(-2);
+    current().fences.splice(-1);
+    doc = await reset();
+  });
+  await test('Plugin list: tags, details with a form per fence, the install warning', async () => {
+    doc = await reset();
+    const perms = { network: [], links: [], system: [], clipboard: 'none', background: false, folders: false, notify: false };
+    const settings = [
+      { key: 'city', type: 'text', label: '城市', options: [] },
+      { key: 'unit', type: 'choice', label: '单位', options: [{ value: 'c', label: '摄氏' }, { value: 'f', label: '华氏' }] },
+      { key: 'tomorrow', type: 'switch', label: '显示明天', options: [] },
+    ];
+    const values = (city) => ({ city, unit: 'c', tomorrow: false });
+    current().plugins = { status: 'ready', held: false, open: null, list: [
+      { ...perms, id: 'weather', name: '天气', description: '今天和明天的天气', author: 'DayuanJiang', version: '1.0.0', installed: true, layer: 'light',
+        network: ['wttr.in'], state: 'installed', reason: null, page: true, settings,
+        fences: [{ id: 'f-1', title: '东京', values: values('Tokyo') }, { id: 'f-2', title: '大阪', values: values('Osaka') }] },
+      { ...perms, id: 'runner', name: 'Runner', description: 'Runs ipconfig', author: 'tester', version: '2.0.0', installed: false, layer: 'light',
+        clipboard: 'write', system: ['ipconfig.exe'], state: 'install', reason: null, page: true, settings: [], fences: [] },
+      { ...perms, id: 'webdemo', name: 'Web demo', description: 'A page', author: 'tester', version: '1.0.0', installed: false, layer: 'web',
+        state: 'install', reason: null, page: true, settings: [], fences: [] },
+    ] };
+    frame.contentWindow.testRefresh();
+    await settle();
+    doc.querySelector('[data-page=tools]').click();
+    const rows = () => [...doc.querySelectorAll('#pluginList .pl-row')];
+    const tags = (i) => [...rows()[i].querySelectorAll('.pl-tags span')].map(s => s.textContent).join(' ');
+    assert(rows().length === 3, 'Rows: ' + rows().length);
+    assert(tags(0) === '联网' && tags(1) === '剪贴板 启动程序' && tags(2) === '占用内存较多', 'Tags: ' + [0, 1, 2].map(tags).join(' | '));
+    rows()[0].click();
+    await settle();
+    const forms = [...doc.querySelectorAll('#pluginList .pl-form')];
+    assert(forms.length === 2 && forms[1].textContent.includes('栅栏“大阪”的设置'), 'Forms: ' + forms.map(f => f.textContent).join(' | '));
+    const detail = doc.querySelector('#pluginList .pl-detail').textContent;
+    assert(detail.includes('联网：wttr.in') && detail.includes('卸载') && detail.includes('在 GitHub 上看介绍'), 'Details: ' + detail);
+    const last = () => frame.contentWindow.testMessages.at(-1);
+    const city = forms[1].querySelector('input[type=text]');
+    assert(city.value === 'Osaka' && forms[0].querySelector('input[type=text]').value === 'Tokyo', 'City boxes: ' + city.value);
+    city.focus();
+    city.value = 'Kyoto';
+    // A state that comes while the box is typed in keeps the box.
+    frame.contentWindow.testRefresh();
+    await settle();
+    assert(doc.activeElement === city, 'The box being typed in was drawn again');
+    city.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+    const m = last();
+    assert(m.name === 'pluginSetting' && m.id === 'weather' && m.fence === 'f-2' && m.key === 'city' && m.value === 'Kyoto', 'Text setting sent: ' + JSON.stringify(m));
+    city.blur();
+    await settle();
+    const form1 = doc.querySelectorAll('#pluginList .pl-form')[0];
+    const unit = form1.querySelector('select');
+    unit.value = 'f';
+    unit.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+    assert(last().fence === 'f-1' && last().key === 'unit' && last().value === 'f', 'Choice sent: ' + JSON.stringify(last()));
+    form1.querySelector('.toggle').click();
+    assert(last().fence === 'f-1' && last().key === 'tomorrow' && last().value === true, 'Switch sent: ' + JSON.stringify(last()));
+    // The install warning: what it does, the promise, and for programs the stricter paragraph.
+    rows()[1].querySelector('button').click();
+    const back = doc.getElementById('plBack'), sys = doc.getElementById('plSystem');
+    const text = back.textContent;
+    assert(!back.hidden && text.includes('它会做：') && text.includes('写入剪贴板') && text.includes('启动这些程序：ipconfig.exe') && text.includes('插件只能做这里列出的事，每个版本都经过自动检查和审查。'), 'Warning: ' + text);
+    assert(!sys.hidden && sys.textContent.includes('ipconfig.exe') && sys.textContent.includes('这些程序能做你的账号能做的任何事') && !doc.getElementById('plSystemOff').hidden, 'Programs paragraph: ' + sys.textContent);
+    const box = frame.contentWindow.getComputedStyle(back.querySelector('.pl-warn')).backgroundColor;
+    assert(box === 'rgb(67, 53, 25)', 'The warning box is not the caution colour: ' + box);
+    doc.getElementById('plOk').click();
+    assert(back.hidden && last().name === 'pluginInstall' && last().id === 'runner', 'Install not asked for: ' + JSON.stringify(last()));
+    // With the switch on, the paragraph does not ask for it; a plugin without programs has none.
+    current().settings.tools.allowSystem = true;
+    frame.contentWindow.testRefresh();
+    await settle();
+    rows()[1].querySelector('button').click();
+    assert(doc.getElementById('plSystemOff').hidden, 'The switch is asked for while on');
+    doc.getElementById('plCancel').click();
+    rows()[2].querySelector('button').click();
+    assert(sys.hidden && back.textContent.includes('用网页显示内容，占用内存较多'), 'Web plugin warning: ' + back.textContent);
+    doc.getElementById('plCancel').click();
+    assert(last().name !== 'pluginInstall' || last().id === 'runner', 'Cancel installed');
+    // 插件设置 in a fence's menu: the details open at that fence's settings.
+    rows()[0].click();
+    await settle();
+    assert(!doc.querySelector('#pluginList .pl-detail'), 'Details did not close');
+    current().plugins.open = [1, 'weather', 'f-2'];
+    frame.contentWindow.testRefresh();
+    await settle();
+    const opened = doc.querySelectorAll('#pluginList .pl-form');
+    assert(opened.length === 2 && opened[1].classList.contains('pl-flash') && !opened[0].classList.contains('pl-flash'), 'Not opened at the fence');
+    delete current().plugins;
+    current().settings.tools.allowSystem = false;
     doc = await reset();
   });
   await test('文字大小 for notes and script fences, not for a clock or an ordinary fence', async () => {

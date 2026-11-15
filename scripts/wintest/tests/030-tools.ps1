@@ -86,28 +86,17 @@ Case 'settings: 小工具 page'
 $ok = PfSettings
 Check 'settings open over CDP' $ok
 PageClick 'nav a[data-page=tools]'; Start-Sleep -Milliseconds 600
-$rows = Js "[...document.querySelectorAll('#page-tools .card.child .t')].map(t => t.textContent).join(' / ')"
-Check 'the list: notes, clock, weather, GitHub, PC status, own script' ($rows -eq 'Notes and to-dos / Clock / Weather / GitHub repository activity / PC status / Your own script') $rows
-Check 'one switch on the page' ((Js "document.querySelectorAll('#page-tools .toggle').length") -eq 1)
-$clock = Js "(() => { const b = document.getElementById('newClock'); return { disabled: b.disabled, text: b.textContent }; })()"
-Check 'with a clock, its button is greyed: On the desktop' ($clock.disabled -and $clock.text -eq 'On the desktop') ($clock | ConvertTo-Json -Compress)
+# The built-in tool rows went with the plugins (they come from the plugin list now): the
+# own script stays beside the switch, and the switch for Windows functions is the second.
+$rows = Js "[...document.querySelectorAll('#page-tools .card.child:not(.pl-row) .t')].map(t => t.textContent).join(' / ')"
+Check 'the rows: own script only, then the plugin list' ($rows -eq 'Your own script' -and (Js "!!document.getElementById('pluginList')")) $rows
+Check 'two switches on the page: 小工具 and the Windows functions' ((Js "[...document.querySelectorAll('#page-tools .toggle')].map(t => t.dataset.bind).join(' ')") -eq 'tools.enabled tools.allowSystem')
 Shot 't03-tools-page'
-# A streaming script stands in for the PC status example the page added before (a plugin now).
-Set-Content C:\pf\run\status.ps1 -Encoding UTF8 -Value "# <pecofence.type>streamable</pecofence.type>`nwhile (`$true) { 'CPU 5%'; '~~~'; Start-Sleep -Seconds 2 }"
-Pf fence create --script C:\pf\run\status.ps1 --title status --rect '900,400,300,200' | Out-Null
+# What the page's rows made before, for the next case: a streaming script fence and a note.
+Set-Content 'C:\pf\run\stream.ps1' "# <pecofence.type>streamable</pecofence.type>`r`nwhile (`$true) { 'CPU ' + (Get-Date).Second; Start-Sleep -Seconds 2 }"
+$st = @((PfJson fence create --script C:\pf\run\stream.ps1 --title 'PC status' --rect '700,520,300,160').fence)
+Pf fence create --tool note --title Note --rect '1020,520,260,160' | Out-Null
 Start-Sleep -Seconds 6
-$st = @(ToolFences 'script' | Where-Object { $_.title -match 'status' })
-Check 'a streaming script fence' ($st.Count -eq 1) ((ToolFences 'script' | ForEach-Object { $_.title }) -join ', ')
-if ($st.Count) {
-  $g = PfJson fence get $st[0].id
-  $s = if ($g.fence) { $g.fence.script } else { $g.script }
-  Check 'it keeps running and prints its rows' ($s.running -and "$($s.output)" -match 'CPU') "running=$($s.running) output=$(("$($s.output)" -split "`n")[0])"
-}
-PageClick '#newNote'
-$ed = WaitWin 'PecoFence.NoteEdit' 10
-Check 'New note opens the note editor' ($ed -ne [IntPtr]::Zero)
-[G]::Type('from the settings page'); [G]::Press(0x1B); Start-Sleep -Milliseconds 800
-Check 'the note is made' ((ToolFences 'note').Count -eq 1)
 PageClick '#scriptGuide'; Start-Sleep -Seconds 2
 Check 'Write-up opens the manual lesson' ((PfLogAll) -match 'opening the manual url=https://pecofence\.jiang\.jp/manual/#write-scripts') ([regex]::Match((PfLogAll), '.*opening the manual.*').Value)
 # All of Edge: on a new box its first-run window (another title) covers the settings page.

@@ -1,23 +1,35 @@
-//! 社区插件: plugins from the DayuanJiang/PecoFence-plugins repository. This module reads and
-//! checks the repository's `index.json` and a plugin's `plugin.json`, builds the addresses of
-//! a plugin's files (from the reviewed commit, never from the index) and says what an update
-//! may do. It touches neither the network nor the disk.
+//! 插件: plugins from the DayuanJiang/PecoFence-plugins repository. This module reads and
+//! checks the repository's signed `index.json` and a plugin's `plugin.json`, builds the
+//! addresses of a plugin's files (from the reviewed commit, never from the index) and says what
+//! an update may do. It touches neither the network nor the disk.
 
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
 pub const REPO: &str = "DayuanJiang/PecoFence-plugins";
-/// The files a plugin may have, with the most bytes each may have.
-pub const FILES: [(&str, u64); 5] = [
+/// The project website's copy of the index and the files: the third address, for networks that
+/// reach neither GitHub nor jsDelivr.
+pub const SITE: &str = "https://pecofence.jiang.jp/plugins";
+/// The Ed25519 key `index.json.sig` is checked with. A development key: the release key
+/// (`tools/make-key.py` in the plugin repository; its private half is the repository secret
+/// INDEX_SIGNING_KEY) replaces it before a release offers plugins.
+pub const INDEX_KEY: [u8; 32] = [
+    0x83, 0xf3, 0x36, 0xdd, 0xc5, 0x6e, 0xa4, 0x18, 0x92, 0x26, 0xc1, 0xb1, 0x0f, 0x01, 0x48, 0x48,
+    0xa0, 0xd8, 0x3f, 0xb0, 0x8f, 0xd7, 0x23, 0xb7, 0x41, 0x0b, 0x9f, 0xc3, 0xb8, 0xcd, 0x4b, 0x81,
+];
+/// The files whose names are fixed, with the most bytes each may have. A light plugin has only
+/// these; a web plugin also has `index.html` and the files it uses (sub-folders allowed), each
+/// up to `OTHER_SIZE`.
+pub const FILES: [(&str, u64); 4] = [
     ("plugin.json", 64 * 1024),
     ("main.js", 200 * 1024),
-    ("index.html", 200 * 1024),
     ("README.md", 64 * 1024),
     ("screenshot.png", 300 * 1024),
 ];
-/// The files an install downloads, those of them the plugin has (this version shows no
-/// screenshot).
-pub const INSTALL_FILES: [&str; 4] = ["plugin.json", "main.js", "index.html", "README.md"];
+pub const OTHER_SIZE: u64 = 1024 * 1024;
+/// A plugin's most files, and most bytes together.
+pub const MAX_FILES: usize = 100;
+pub const MAX_TOTAL: u64 = 5 * 1024 * 1024;
 
 /// The files a plugin of `layer` cannot do without: a light plugin runs `main.js`, a web
 /// plugin shows `index.html` (its `main.js` is optional).
@@ -34,6 +46,7 @@ pub const API: u32 = 1;
 /// The most bytes `index.json` may have.
 pub const MAX_INDEX: usize = 1024 * 1024;
 
+/// What a plugin may do with the clipboard, in growing order.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Clipboard {
@@ -45,29 +58,22 @@ pub enum Clipboard {
     Readwrite,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
-pub enum Files {
-    #[default]
-    #[serde(rename = "data")]
-    Data,
-    #[serde(rename = "data+read")]
-    DataRead,
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(default)]
 pub struct Permissions {
+    /// The hosts `pf.http` may reach.
     pub network: Vec<String>,
-    /// More hosts `pf.open` may open in the browser.
+    /// More hosts `pf.open` may open in the browser (those of `network` too).
     pub links: Vec<String>,
     pub clipboard: Clipboard,
-    pub files: Files,
-    pub run: bool,
     /// Keeps running while its fence is hidden (a web plugin's page is not suspended).
     pub background: bool,
-    /// Programs `pf.run` may start.
+    /// The programs `pf.run` may start (a full path or a name in System32); `pf.run` works only
+    /// while 允许插件使用 Windows 底层功能 is on.
     pub system: Vec<String>,
+    /// Reads a folder the user picks.
     pub folders: bool,
+    /// Shows notices and plays their sound.
     pub notify: bool,
 }
 
@@ -83,8 +89,6 @@ pub struct Manifest {
     pub author: String,
     #[serde(rename = "minPecoFence")]
     pub min_pecofence: String,
-    #[serde(default)]
-    pub streamable: bool,
     #[serde(default)]
     pub permissions: Permissions,
     #[serde(default = "first_api")]
@@ -105,7 +109,7 @@ fn light() -> String {
     "light".into()
 }
 
-/// One setting a plugin fence has (栅栏菜单里的插件设置): `switch`, `text`, `number` or `choice`.
+/// One setting of a plugin fence (插件设置): `switch`, `text`, `number` or `choice`.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Setting {
     pub key: String,
@@ -115,20 +119,37 @@ pub struct Setting {
     pub label: BTreeMap<String, String>,
     #[serde(default)]
     pub default: serde_json::Value,
+    /// A `choice`'s values, each with its label.
+    #[serde(default)]
+    pub options: Vec<Choice>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Choice {
+    pub value: String,
+    #[serde(default)]
+    pub label: BTreeMap<String, String>,
+}
+
+/// Whether `v` is a value of setting `s`: true or false, a number, one of the choices, or a text
+/// of at most 4,000 characters.
+pub fn fits(s: &Setting, v: &serde_json::Value) -> bool {
+    match s.kind.as_str() {
+        "switch" => v.is_boolean(),
+        "number" => v.is_number(),
+        "choice" => s.options.iter().any(|o| v.as_str() == Some(&o.value)),
+        _ => v.as_str().is_some_and(|t| t.chars().count() <= 4000),
+    }
 }
 
 /// A plugin fence's settings as its plugin sees them (`pf.settings`): what the fence saved
-/// when it is of the setting's kind, else the setting's default.
+/// when it fits the setting, else the setting's default.
 pub fn fence_settings(
     m: &Manifest,
     saved: &serde_json::Map<String, serde_json::Value>,
 ) -> serde_json::Value {
     let value = |s: &Setting| {
-        let kept = saved.get(&s.key).filter(|v| match s.kind.as_str() {
-            "switch" => v.is_boolean(),
-            "number" => v.is_number(),
-            _ => v.is_string(),
-        });
+        let kept = saved.get(&s.key).filter(|v| fits(s, v));
         (s.key.clone(), kept.unwrap_or(&s.default).clone())
     };
     serde_json::Value::Object(m.settings.iter().map(value).collect())
@@ -181,14 +202,56 @@ fn is_hex(s: &str, len: usize) -> bool {
             .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
 }
 
-fn valid_host(host: &str) -> bool {
-    (1..=253).contains(&host.len())
-        && host
-            .bytes()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'.' || c == b'-')
+/// A host name in lower case with a dot, whose last part starts with a letter: no IP address,
+/// no `localhost`, no name of the local network.
+pub fn valid_host(host: &str) -> bool {
+    let parts: Vec<&str> = host.split('.').collect();
+    let part_ok = |p: &&str| {
+        (1..=63).contains(&p.len())
+            && !p.starts_with('-')
+            && !p.ends_with('-')
+            && p.bytes()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+    };
+    let last = parts.last().copied().unwrap_or("");
+    host.len() <= 253
+        && parts.len() >= 2
+        && parts.iter().all(part_ok)
+        && last.len() >= 2
+        && last.as_bytes()[0].is_ascii_lowercase()
 }
 
-/// The checks every manifest passes, in `plugin.json` and in the index.
+/// A program of `system`: a full path (`C:\…\x.exe`) or the name of a program in System32.
+fn valid_program(p: &str) -> bool {
+    let b = p.as_bytes();
+    let exe = (5..=260).contains(&p.len()) && p.to_ascii_lowercase().ends_with(".exe");
+    let name = p
+        .bytes()
+        .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c));
+    let path = b.len() > 3
+        && b[0].is_ascii_alphabetic()
+        && &b[1..3] == b":\\"
+        && !b[3..].iter().any(|c| b"/:*?\"<>|".contains(c) || *c < 32)
+        && !p.split('\\').any(|s| s.is_empty() || s == "..");
+    exe && (name || path)
+}
+
+/// A file's name inside the plugin folder: parts joined by `/`, each of letters, digits, `.`,
+/// `_` and `-`, at most 64, not starting with a dot. So no `..`, no leading `/`, no backslash
+/// and no drive letter.
+pub fn valid_file_name(name: &str) -> bool {
+    name.len() <= 200
+        && name.split('/').all(|part| {
+            (1..=64).contains(&part.len())
+                && !part.starts_with('.')
+                && part
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
+        })
+}
+
+/// The checks every manifest passes, in `plugin.json` and in the index. An `api` newer than
+/// this PecoFence's passes: its row says 需要更新 PecoFence ([`needs_newer_app`]).
 pub fn check_manifest(m: &Manifest) -> Result<(), String> {
     let short = |texts: &BTreeMap<String, String>, max: usize| {
         texts.values().all(|t| t.chars().count() <= max)
@@ -210,44 +273,64 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
     {
         return Err(format!("{}: name or description missing or too long", m.id));
     }
-    if m.api == 0 || m.api > API || !matches!(m.layer.as_str(), "light" | "web") {
+    if m.api == 0 || !matches!(m.layer.as_str(), "light" | "web") {
         return Err(format!(
             "{}: api {} or layer {:?} not known",
             m.id, m.api, m.layer
         ));
     }
     let kinds = ["switch", "text", "number", "choice"];
-    let good = |s: &Setting| {
+    let good = |(i, s): (usize, &Setting)| {
         (1..=32).contains(&s.key.len())
             && s.key.bytes().all(|c| c.is_ascii_alphanumeric())
+            && !m.settings[..i].iter().any(|t| t.key == s.key)
             && kinds.contains(&s.kind.as_str())
             && short(&s.label, 60)
+            && (s.kind != "choice" || (1..=50).contains(&s.options.len()))
+            && s.options.iter().all(|o| short(&o.label, 60))
+            && fits(s, &s.default)
     };
-    if m.settings.len() > 20 || !m.settings.iter().all(good) {
+    if m.settings.len() > 20 || !m.settings.iter().enumerate().all(good) {
         return Err(format!("{}: bad settings", m.id));
     }
-    let hosts = &m.permissions.network;
-    if hosts.len() > 20 || !hosts.iter().all(|h| valid_host(h)) {
-        return Err(format!("{}: bad network hosts", m.id));
+    let p = &m.permissions;
+    for (field, hosts) in [("network", &p.network), ("links", &p.links)] {
+        if hosts.len() > 20 || !hosts.iter().all(|h| valid_host(h)) {
+            return Err(format!("{}: bad {field} hosts", m.id));
+        }
+    }
+    if p.system.len() > 20 || !p.system.iter().all(|s| valid_program(s)) {
+        return Err(format!("{}: bad system programs", m.id));
     }
     Ok(())
 }
 
-/// An index entry's checks: its manifest's and its files' (only the allowed names, each once,
-/// within its size, with a SHA-256; the three its layer needs are there).
+/// An index entry's checks: its manifest's and its files' (allowed names, each once, within
+/// its size, with a SHA-256; the three its layer needs are there; at most `MAX_FILES` and
+/// `MAX_TOTAL`).
 pub fn check_entry(e: &Entry) -> Result<(), String> {
     check_manifest(&e.manifest)?;
-    let id = &e.manifest.id;
+    let (id, web) = (&e.manifest.id, e.manifest.layer == "web");
+    let mut total = 0;
     for (i, f) in e.files.iter().enumerate() {
-        let Some((_, max)) = FILES.iter().find(|(name, _)| *name == f.name) else {
+        let fixed = FILES.iter().find(|(name, _)| *name == f.name);
+        if !valid_file_name(&f.name) || (fixed.is_none() && !web) {
             return Err(format!("{id}: file {:?} not allowed", f.name));
-        };
-        if f.size > *max || !is_hex(&f.sha256, 64) {
+        }
+        if f.size > fixed.map_or(OTHER_SIZE, |(_, max)| *max) || !is_hex(&f.sha256, 64) {
             return Err(format!("{id}: {} too big or without a SHA-256", f.name));
         }
-        if e.files[..i].iter().any(|g| g.name == f.name) {
+        // Windows does not tell A.js from a.js.
+        if e.files[..i]
+            .iter()
+            .any(|g| g.name.eq_ignore_ascii_case(&f.name))
+        {
             return Err(format!("{id}: {} listed twice", f.name));
         }
+        total += f.size;
+    }
+    if e.files.len() > MAX_FILES || total > MAX_TOTAL {
+        return Err(format!("{id}: too many files or bytes"));
     }
     if let Some(missing) = needed_files(&e.manifest.layer)
         .iter()
@@ -297,6 +380,29 @@ pub fn parse_index(bytes: &[u8]) -> Result<(Index, Vec<String>), String> {
     Ok((index, dropped))
 }
 
+/// Whether `sig` (the text of `index.json.sig`, 128 hex digits) is `key`'s Ed25519 signature
+/// of exactly the bytes `index`.
+pub fn signed_by(key: &[u8; 32], index: &[u8], sig: &[u8]) -> bool {
+    let text = std::str::from_utf8(sig).unwrap_or("").trim();
+    if !is_hex(text, 128) {
+        return false;
+    }
+    let mut bytes = [0u8; 64];
+    for (i, b) in bytes.iter_mut().enumerate() {
+        *b = u8::from_str_radix(&text[2 * i..2 * i + 2], 16).unwrap_or(0);
+    }
+    let Ok(key) = ed25519_dalek::VerifyingKey::from_bytes(key) else {
+        return false;
+    };
+    let sig = ed25519_dalek::Signature::from_bytes(&bytes);
+    key.verify_strict(index, &sig).is_ok()
+}
+
+/// [`signed_by`] with the plugin repository's key.
+pub fn index_signed(index: &[u8], sig: &[u8]) -> bool {
+    signed_by(&INDEX_KEY, index, sig)
+}
+
 /// Reads an installed or downloaded `plugin.json`.
 pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, String> {
     let m: Manifest = serde_json::from_slice(strip_bom(bytes)).map_err(|e| e.to_string())?;
@@ -304,19 +410,22 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, String> {
     Ok(m)
 }
 
-/// The index: from GitHub first, then from jsDelivr.
-pub fn index_urls() -> [String; 2] {
+/// The index: from GitHub, then jsDelivr, then the project website. Its signature is at the
+/// same address with `.sig`.
+pub fn index_urls() -> [String; 3] {
     [
         format!("https://raw.githubusercontent.com/{REPO}/index/index.json"),
         format!("https://cdn.jsdelivr.net/gh/{REPO}@index/index.json"),
+        format!("{SITE}/index.json"),
     ]
 }
 
-/// A plugin file at the reviewed commit: from GitHub first, then from jsDelivr.
-pub fn file_urls(commit: &str, id: &str, name: &str) -> [String; 2] {
+/// A plugin file at the reviewed commit, from the same three places.
+pub fn file_urls(commit: &str, id: &str, name: &str) -> [String; 3] {
     [
         format!("https://raw.githubusercontent.com/{REPO}/{commit}/plugins/{id}/{name}"),
         format!("https://cdn.jsdelivr.net/gh/{REPO}@{commit}/plugins/{id}/{name}"),
+        format!("{SITE}/{commit}/plugins/{id}/{name}"),
     ]
 }
 
@@ -331,39 +440,56 @@ pub fn page_url(commit: &str, id: &str) -> String {
     format!("https://github.com/{REPO}/blob/{commit}/plugins/{id}/README.md")
 }
 
-/// Whether `new` may do more than `old`: a new network host, more clipboard or file access,
-/// rows that start programs, or a script that keeps running.
-pub fn permissions_grow(old: &Manifest, new: &Manifest) -> bool {
-    let (o, n) = (&old.permissions, &new.permissions);
-    n.network
-        .iter()
-        .any(|h| !o.network.iter().any(|g| g.eq_ignore_ascii_case(h)))
-        || n.clipboard > o.clipboard
-        || n.files > o.files
-        || (n.run && !o.run)
-        || (new.streamable && !old.streamable)
+/// The fields in which `new` asks for more than `old`: a host or program not asked for before
+/// (`network`, `links`, `system`; a link that was a network host is not new), more clipboard
+/// access (none < write < read < readwrite), or `background`, `folders`, `notify` turned on.
+pub fn more_permissions(old: &Permissions, new: &Permissions) -> Vec<&'static str> {
+    let added = |o: &[String], n: &[String]| {
+        n.iter()
+            .any(|h| !o.iter().any(|g| g.eq_ignore_ascii_case(h)))
+    };
+    let links = [old.links.as_slice(), old.network.as_slice()].concat();
+    [
+        ("network", added(&old.network, &new.network)),
+        ("links", added(&links, &new.links)),
+        ("system", added(&old.system, &new.system)),
+        ("clipboard", new.clipboard > old.clipboard),
+        ("background", new.background && !old.background),
+        ("folders", new.folders && !old.folders),
+        ("notify", new.notify && !old.notify),
+    ]
+    .into_iter()
+    .filter_map(|(field, more)| more.then_some(field))
+    .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Update {
-    /// Nothing newer.
+    /// Nothing newer (a lower version is never taken).
     None,
     /// Newer and asks for nothing more: installed without asking.
     Auto,
-    /// Newer and asks for more: waits for the user.
+    /// Newer and asks for more, or may start programs: waits for the user.
     Confirm,
     /// Newer but needs a newer PecoFence.
     NeedsNewerApp,
 }
 
+/// Whether plugin `m` needs a newer PecoFence than version `app`: a newer interface or a
+/// higher `minPecoFence`.
+pub fn needs_newer_app(m: &Manifest, app: &str) -> bool {
+    m.api > API || crate::updates::is_newer(&m.min_pecofence, app)
+}
+
 /// What to do with the index's `entry` when `installed` is on this computer and PecoFence is
-/// version `app`.
+/// version `app`. A plugin with `system` always asks.
 pub fn update_kind(installed: &Manifest, entry: &Manifest, app: &str) -> Update {
+    let (old, new) = (&installed.permissions, &entry.permissions);
     if !crate::updates::is_newer(&entry.version, &installed.version) {
         Update::None
-    } else if crate::updates::is_newer(&entry.min_pecofence, app) {
+    } else if needs_newer_app(entry, app) {
         Update::NeedsNewerApp
-    } else if permissions_grow(installed, entry) {
+    } else if !new.system.is_empty() || !more_permissions(old, new).is_empty() {
         Update::Confirm
     } else {
         Update::Auto
@@ -390,17 +516,18 @@ pub fn pick<'a>(texts: &'a BTreeMap<String, String>, lang: &str) -> &'a str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     const HASH: &str = "db47f4c49907d313d7588e63a07e8b1ed1b6331993499aeae4e578e4a338b488";
     const COMMIT: &str = "a89e80aa191bc052eb10b7ab0c0088f9ffa92a84";
 
     fn entry(id: &str) -> serde_json::Value {
-        serde_json::json!({
-            "id": id, "version": "1.0.1",
+        json!({
+            "id": id, "version": "1.0.1", "api": 1, "layer": "light",
             "name": { "en": "Countdown", "zh-CN": "倒数日" },
             "description": { "en": "Days left." },
-            "author": "DayuanJiang", "minPecoFence": "0.4.0", "streamable": false,
-            "permissions": { "network": [], "clipboard": "none", "files": "data", "run": false },
+            "author": "DayuanJiang", "minPecoFence": "0.4.0",
+            "permissions": { "network": [], "clipboard": "none" },
             "files": [
                 { "name": "main.js", "size": 2745, "sha256": HASH, "url": "https://evil.example/x" },
                 { "name": "plugin.json", "size": 453, "sha256": HASH },
@@ -410,10 +537,7 @@ mod tests {
     }
 
     fn index(plugins: Vec<serde_json::Value>) -> Vec<u8> {
-        serde_json::to_vec(
-            &serde_json::json!({ "format": 1, "commit": COMMIT, "plugins": plugins }),
-        )
-        .unwrap()
+        serde_json::to_vec(&json!({ "format": 1, "commit": COMMIT, "plugins": plugins })).unwrap()
     }
 
     fn manifest(f: impl FnOnce(&mut serde_json::Value)) -> Manifest {
@@ -433,14 +557,12 @@ mod tests {
             ("no-readme", |v| {
                 _ = v["files"].as_array_mut().unwrap().pop()
             }),
-            ("twice-file", |v| v["files"][2]["name"] = "main.js".into()),
+            ("twice-file", |v| v["files"][2]["name"] = "MAIN.js".into()),
             ("bad-clip", |v| v["permissions"]["clipboard"] = "all".into()),
             ("bad-host", |v| {
-                v["permissions"]["network"] = serde_json::json!(["a.com/x"])
+                v["permissions"]["network"] = json!(["a.com/x"])
             }),
-            ("no-english", |v| {
-                v["name"] = serde_json::json!({ "zh-CN": "倒数日" })
-            }),
+            ("no-english", |v| v["name"] = json!({ "zh-CN": "倒数日" })),
             ("Bad_Id", |_| {}),
         ];
         let mut plugins = vec![entry("countdown"), entry("countdown")];
@@ -461,19 +583,96 @@ mod tests {
     }
 
     #[test]
-    fn a_web_plugin_needs_its_page_and_may_have_main_js() {
-        let check = |files: &[&str]| {
+    fn file_sets_of_both_layers() {
+        let check = |layer: &str, files: &[&str]| {
             let mut v = entry("webdemo");
-            v["layer"] = "web".into();
+            v["layer"] = layer.into();
             v["files"] = files
                 .iter()
-                .map(|n| serde_json::json!({ "name": n, "size": 10, "sha256": HASH }))
+                .map(|n| json!({ "name": n, "size": 10, "sha256": HASH }))
                 .collect();
             check_entry(&serde_json::from_value(v).unwrap())
         };
-        assert!(check(&["plugin.json", "index.html", "README.md"]).is_ok());
-        assert!(check(&["plugin.json", "index.html", "main.js", "README.md"]).is_ok());
-        assert!(check(&["plugin.json", "main.js", "README.md"]).is_err());
+        let web = ["plugin.json", "index.html", "README.md"];
+        assert!(check("web", &web).is_ok());
+        assert!(
+            check(
+                "web",
+                &[&web[..], &["main.js", "img/icon.png", "css/a.b.css"]].concat()
+            )
+            .is_ok()
+        );
+        assert!(check("web", &["plugin.json", "main.js", "README.md"]).is_err());
+        for bad in [
+            "../x.js",
+            "/x.js",
+            "a\\x.js",
+            "C:x.js",
+            "img/../x.js",
+            ".hidden",
+            "a//b.js",
+            "a b.js",
+        ] {
+            assert!(check("web", &[&web[..], &[bad]].concat()).is_err(), "{bad}");
+        }
+        let light = ["plugin.json", "main.js", "README.md"];
+        assert!(check("light", &[&light[..], &["screenshot.png"]].concat()).is_ok());
+        assert!(check("light", &[&light[..], &["index.html"]].concat()).is_err());
+        assert!(check("light", &[&light[..], &["img/a.png"]].concat()).is_err());
+        let many: Vec<String> = (0..MAX_FILES).map(|i| format!("f{i}.js")).collect();
+        let many: Vec<&str> = many.iter().map(String::as_str).collect();
+        assert!(check("web", &[&web[..], &many].concat()).is_err());
+    }
+
+    #[test]
+    fn hosts_are_names_with_a_dot_and_programs_exe_files() {
+        for ok in ["wttr.in", "api.github.com", "a-b.example.org", "x1.io"] {
+            assert!(valid_host(ok), "{ok}");
+        }
+        for bad in [
+            "localhost",
+            "intranet",
+            "127.0.0.1",
+            "10.0.0.8",
+            "[::1]",
+            "::1",
+            "a.com/x",
+            "A.com",
+            "a.com:8080",
+            "-a.com",
+            "a-.com",
+            "a..com",
+            ".a.com",
+            "a.com.",
+            "a.1",
+            "",
+        ] {
+            assert!(!valid_host(bad), "{bad}");
+        }
+        let with = |field: &str, list: serde_json::Value| {
+            check_manifest(&manifest(|v| v["permissions"][field] = list))
+        };
+        assert!(with("links", json!(["github.com"])).is_ok());
+        assert!(with("links", json!(["localhost"])).is_err());
+        assert!(with("network", json!(["192.168.1.1"])).is_err());
+        for ok in [
+            "notepad.exe",
+            "C:\\Program Files\\Tool\\tool.exe",
+            "ipconfig.EXE",
+        ] {
+            assert!(with("system", json!([ok])).is_ok(), "{ok}");
+        }
+        for bad in [
+            "notepad",
+            "cmd.bat",
+            "..\\x.exe",
+            "C:\\a\\..\\x.exe",
+            "C:/x.exe",
+            "\\\\srv\\x.exe",
+            "a b.exe",
+        ] {
+            assert!(with("system", json!([bad])).is_err(), "{bad}");
+        }
     }
 
     #[test]
@@ -486,6 +685,30 @@ mod tests {
         assert!(parse_index(text.replace(COMMIT, &COMMIT.to_uppercase()).as_bytes()).is_err());
         assert!(parse_index(b"not json").is_err());
         assert!(parse_index(&vec![b' '; MAX_INDEX + 1]).is_err());
+    }
+
+    #[test]
+    fn signature_is_checked_over_the_exact_bytes() {
+        // RFC 8032 test 1's key, signing this index (made with Python's cryptography).
+        let key: [u8; 32] = core::array::from_fn(|i| {
+            let hex = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
+            u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).unwrap()
+        });
+        let data =
+            br#"{"format":1,"commit":"a89e80aa191bc052eb10b7ab0c0088f9ffa92a84","plugins":[]}"#;
+        let sig = "b01958c8cb79c229436f3c1beb1fa6b26e580a150076e6e97e6d17e3341898802211e5eaa5438d46dcf59f9888fa987357a30e944ab0fcb97ad28eb9f978540a";
+        assert!(signed_by(&key, data, sig.as_bytes()));
+        assert!(signed_by(&key, data, format!("{sig}\r\n").as_bytes()));
+        let empty = "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b";
+        assert!(signed_by(&key, b"", empty.as_bytes()));
+        let changed = [&data[..data.len() - 1], b" }"].concat();
+        assert!(!signed_by(&key, &changed, sig.as_bytes()));
+        assert!(!signed_by(&key, data, empty.as_bytes()));
+        assert!(!signed_by(&key, data, sig.to_uppercase().as_bytes()));
+        assert!(!signed_by(&key, data, &sig.as_bytes()[..126]));
+        assert!(!signed_by(&key, data, b""));
+        // The repository's key did not sign it.
+        assert!(!index_signed(data, sig.as_bytes()));
     }
 
     #[test]
@@ -509,14 +732,15 @@ mod tests {
 
     #[test]
     fn urls_come_from_commit_id_and_name() {
-        let [raw, cdn] = file_urls(COMMIT, "countdown", "main.js");
-        let path = format!("{COMMIT}/plugins/countdown/main.js");
+        let [raw, cdn, site] = file_urls(COMMIT, "countdown", "img/a.png");
+        let path = format!("{COMMIT}/plugins/countdown/img/a.png");
         assert_eq!(
             raw,
             format!("https://raw.githubusercontent.com/{REPO}/{path}")
         );
         assert_eq!(cdn, format!("https://cdn.jsdelivr.net/gh/{REPO}@{path}"));
-        let [raw, cdn] = index_urls();
+        assert_eq!(site, format!("https://pecofence.jiang.jp/plugins/{path}"));
+        let [raw, cdn, site] = index_urls();
         assert_eq!(
             raw,
             format!("https://raw.githubusercontent.com/{REPO}/index/index.json")
@@ -525,11 +749,12 @@ mod tests {
             cdn,
             format!("https://cdn.jsdelivr.net/gh/{REPO}@index/index.json")
         );
+        assert_eq!(site, "https://pecofence.jiang.jp/plugins/index.json");
         let test = test_file_url(
             "http://127.0.0.1:8731/index.json",
             COMMIT,
             "countdown",
-            "main.js",
+            "img/a.png",
         );
         assert_eq!(test, format!("http://127.0.0.1:8731/{path}"));
         let page = page_url(COMMIT, "countdown");
@@ -540,35 +765,40 @@ mod tests {
     }
 
     #[test]
-    fn permission_growth() {
-        let old = manifest(|v| v["permissions"]["network"] = serde_json::json!(["api.github.com"]));
-        assert!(!permissions_grow(&old, &old));
-        let fewer = manifest(|_| {});
-        assert!(!permissions_grow(&old, &fewer));
-        let same_host =
-            manifest(|v| v["permissions"]["network"] = serde_json::json!(["API.github.com"]));
-        assert!(!permissions_grow(&old, &same_host));
-        let grows: [fn(&mut serde_json::Value); 6] = [
-            |v| v["permissions"]["network"] = serde_json::json!(["api.github.com", "x.com"]),
-            |v| v["permissions"]["clipboard"] = "read".into(),
-            |v| v["permissions"]["files"] = "data+read".into(),
-            |v| v["permissions"]["run"] = true.into(),
-            |v| v["streamable"] = true.into(),
-            |v| {
-                v["permissions"]["network"] = serde_json::json!(["api.github.com"]);
-                v["permissions"]["clipboard"] = "readwrite".into();
-            },
+    fn permissions_compared_field_by_field() {
+        let perms = |p: serde_json::Value| -> Permissions { serde_json::from_value(p).unwrap() };
+        let old = perms(
+            json!({ "network": ["api.github.com"], "links": ["github.com"], "clipboard": "write", "system": ["ipconfig.exe"] }),
+        );
+        assert!(more_permissions(&old, &old).is_empty());
+        assert!(more_permissions(&old, &Permissions::default()).is_empty());
+        let fewer = perms(
+            json!({ "network": ["api.github.com"], "links": ["api.github.com"], "system": ["IPCONFIG.exe"] }),
+        );
+        assert!(more_permissions(&old, &fewer).is_empty());
+        let grows = [
+            (json!({ "network": ["api.github.com", "x.com"] }), "network"),
+            (json!({ "links": ["github.com", "x.com"] }), "links"),
+            (json!({ "system": ["ipconfig.exe", "ping.exe"] }), "system"),
+            (json!({ "clipboard": "read" }), "clipboard"),
+            (json!({ "background": true }), "background"),
+            (json!({ "folders": true }), "folders"),
+            (json!({ "notify": true }), "notify"),
         ];
-        for grow in grows {
-            let mut v = entry("countdown");
-            v["permissions"]["network"] = serde_json::json!(["api.github.com"]);
-            grow(&mut v);
-            let new: Manifest = serde_json::from_value(v).unwrap();
-            assert!(permissions_grow(&old, &new), "{new:?}");
+        for (change, field) in grows {
+            let mut v = json!({ "network": ["api.github.com"], "links": ["github.com"], "clipboard": "write", "system": ["ipconfig.exe"] });
+            v.as_object_mut()
+                .unwrap()
+                .extend(change.as_object().unwrap().clone());
+            assert_eq!(more_permissions(&old, &perms(v)), [field]);
         }
-        let read = manifest(|v| v["permissions"]["clipboard"] = "readwrite".into());
-        let less = manifest(|v| v["permissions"]["clipboard"] = "read".into());
-        assert!(!permissions_grow(&read, &less));
+        let order = [
+            Clipboard::None,
+            Clipboard::Write,
+            Clipboard::Read,
+            Clipboard::Readwrite,
+        ];
+        assert!(order.windows(2).all(|w| w[0] < w[1]));
     }
 
     #[test]
@@ -576,39 +806,76 @@ mod tests {
         let installed = manifest(|_| {});
         let newer = manifest(|v| v["version"] = "1.0.2".into());
         assert_eq!(update_kind(&installed, &installed, "0.4.0"), Update::None);
+        // A lower version is never an update.
         assert_eq!(update_kind(&newer, &installed, "0.4.0"), Update::None);
         assert_eq!(update_kind(&installed, &newer, "0.4.0"), Update::Auto);
         let needs = manifest(|v| {
             v["version"] = "1.1.0".into();
             v["minPecoFence"] = "0.5.0".into();
         });
-        let kind = update_kind(&installed, &needs, "0.4.0");
-        assert_eq!(kind, Update::NeedsNewerApp);
+        assert_eq!(
+            update_kind(&installed, &needs, "0.4.0"),
+            Update::NeedsNewerApp
+        );
         assert_eq!(update_kind(&installed, &needs, "0.5.0"), Update::Auto);
+        let api = manifest(|v| {
+            v["version"] = "1.1.0".into();
+            v["api"] = 2.into();
+        });
+        assert!(check_manifest(&api).is_ok());
+        assert_eq!(
+            update_kind(&installed, &api, "9.0.0"),
+            Update::NeedsNewerApp
+        );
         let more = manifest(|v| {
             v["version"] = "2.0.0".into();
-            v["permissions"]["run"] = true.into();
+            v["permissions"]["clipboard"] = "read".into();
         });
         assert_eq!(update_kind(&installed, &more, "0.4.0"), Update::Confirm);
+        // A plugin that starts programs asks at every update, even with nothing new.
+        let system = |version: &str| {
+            manifest(|v| {
+                v["version"] = version.into();
+                v["permissions"]["system"] = json!(["ipconfig.exe"]);
+            })
+        };
+        assert_eq!(
+            update_kind(&system("1.0.1"), &system("1.0.2"), "0.4.0"),
+            Update::Confirm
+        );
     }
 
     #[test]
-    fn settings_are_checked_and_saved_values_keep_their_kind() {
+    fn settings_are_checked_and_saved_values_fit() {
         let m = manifest(|v| {
-            v["settings"] = serde_json::json!([
+            v["settings"] = json!([
                 { "key": "seconds", "type": "switch", "label": { "en": "Seconds" }, "default": false },
-                { "key": "city", "type": "text", "default": "" }
+                { "key": "city", "type": "text", "default": "" },
+                { "key": "days", "type": "number", "default": 3 },
+                { "key": "unit", "type": "choice", "default": "c",
+                  "options": [{ "value": "c", "label": { "en": "Celsius" } }, { "value": "f" }] }
             ])
         });
         assert!(check_manifest(&m).is_ok());
-        let saved = serde_json::json!({ "seconds": true, "city": 3, "gone": 1 });
+        let saved = json!({ "seconds": true, "city": 3, "days": 5, "unit": "k", "gone": 1 });
         let settings = fence_settings(&m, saved.as_object().unwrap());
-        assert_eq!(settings, serde_json::json!({ "seconds": true, "city": "" }));
+        assert_eq!(
+            settings,
+            json!({ "seconds": true, "city": "", "days": 5, "unit": "c" })
+        );
+        let saved = json!({ "city": "Tokyo", "unit": "f" });
+        let settings = fence_settings(&m, saved.as_object().unwrap());
+        assert_eq!(settings["city"], "Tokyo");
+        assert_eq!(settings["unit"], "f");
         for bad in [
-            serde_json::json!({ "settings": [{ "key": "a b", "type": "switch" }] }),
-            serde_json::json!({ "settings": [{ "key": "a", "type": "file" }] }),
-            serde_json::json!({ "api": 2 }),
-            serde_json::json!({ "layer": "native" }),
+            json!({ "settings": [{ "key": "a b", "type": "switch", "default": true }] }),
+            json!({ "settings": [{ "key": "a", "type": "file", "default": "" }] }),
+            json!({ "settings": [{ "key": "a", "type": "switch", "default": "yes" }] }),
+            json!({ "settings": [{ "key": "a", "type": "choice", "default": "x", "options": [{ "value": "y" }] }] }),
+            json!({ "settings": [{ "key": "a", "type": "choice", "default": "x" }] }),
+            json!({ "settings": [{ "key": "a", "type": "text", "default": "" }, { "key": "a", "type": "text", "default": "" }] }),
+            json!({ "api": 0 }),
+            json!({ "layer": "native" }),
         ] {
             let m = manifest(|v| {
                 v.as_object_mut()
@@ -634,8 +901,7 @@ mod tests {
         assert_eq!(pick(&m.name, "zh-CN"), "倒数日");
         assert_eq!(pick(&m.name, "zh-TW"), "倒數日");
         assert_eq!(pick(&m.name, "ja"), "Countdown");
-        let only_cn =
-            manifest(|v| v["name"] = serde_json::json!({ "en": "Countdown", "zh-CN": "倒数日" }));
+        let only_cn = manifest(|v| v["name"] = json!({ "en": "Countdown", "zh-CN": "倒数日" }));
         assert_eq!(pick(&only_cn.name, "zh-TW"), "倒数日");
         assert_eq!(pick(&BTreeMap::new(), "en"), "");
     }

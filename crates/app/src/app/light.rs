@@ -247,6 +247,10 @@ impl App {
         let Some(name) = host::EVENTS.iter().find(|e| **e == name).copied() else {
             return tracing::warn!(%fence, name, "plugin event of an unknown name dropped");
         };
+        if name == "settings" {
+            // A web plugin's page hears of its settings too.
+            self.web_event(fence, name, data.clone());
+        }
         if !self.light.running.contains_key(&fence) {
             return tracing::debug!(%fence, name, "plugin event dropped: the plugin does not run");
         }
@@ -408,6 +412,8 @@ impl App {
                     };
                     self.light_stopped(fence, why);
                     hosts.push(self.state.host_of(fence));
+                    // In the first minute after an update, back to the version before.
+                    self.plugin_stopped(fence);
                 }
             }
         }
@@ -554,37 +560,6 @@ impl App {
             unsafe { MessageBeep(0x40) };
         }
         tracing::info!(%fence, plugin = id, sound, "plugin notice shown");
-    }
-
-    /// A switch of the plugin fence's settings (its fence menu) turned over.
-    pub(super) fn toggle_plugin_setting(&mut self, fence: FenceId, index: usize) {
-        let id = self
-            .state
-            .config
-            .scripts
-            .get(&fence)
-            .and_then(|s| super::plugins::plugin_id(&s.path));
-        let Some(m) = id
-            .map(str::to_string)
-            .and_then(|id| self.plugin_manifest(&id))
-        else {
-            return;
-        };
-        let (Some(setting), Some(spec)) = (
-            m.settings.get(index),
-            self.state.config.scripts.get_mut(&fence),
-        ) else {
-            return;
-        };
-        let now = pecofence_core::plugins::fence_settings(&m, &spec.settings);
-        let on = !now[&setting.key].as_bool().unwrap_or(false);
-        spec.settings.insert(setting.key.clone(), on.into());
-        let settings = pecofence_core::plugins::fence_settings(&m, &spec.settings);
-        tracing::info!(%fence, key = setting.key, on, "plugin fence setting changed");
-        self.state.mark_dirty();
-        self.schedule_save();
-        self.web_event(fence, "settings", settings.clone());
-        self.light_send(host::Command::Event(fence, "settings", settings));
     }
 }
 

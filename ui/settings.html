@@ -470,7 +470,7 @@
   .page-lede { margin: -4px 2px 16px; color: var(--text2); }
   .fb-note { display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; margin-bottom: 4px; border-radius: var(--r-card); background: var(--caution-bg); border: 1px solid var(--card-stroke); }
   .fb-note .ic { color: var(--caution); font-size: 16px; line-height: 20px; }
-  /* 社区插件 in 设置 › 小工具: a row per plugin opens into its details; 安装 asks first. */
+  /* 插件 in 设置 › 小工具: a row per plugin opens into its details; 安装 asks first. */
   .pl-row { cursor: pointer; }
   .pl-row .pl-meta { color: var(--text2); font-size: 12px; }
   .pl-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
@@ -484,7 +484,14 @@
   .pl-dialog { width: 440px; max-width: calc(100vw - 48px); padding: 20px 24px; border-radius: 8px; background: var(--card); border: 1px solid var(--card-stroke); box-shadow: 0 8px 32px #00000040; }
   .pl-dialog h4 { font-size: 20px; line-height: 28px; font-weight: 600; margin: 0 0 8px; overflow-wrap: anywhere; }
   .pl-dialog p { margin: 4px 0; }
-  .pl-dialog .warn { margin: 12px 0; padding: 8px 12px; border-radius: 4px; background: var(--error-bg); border: 1px solid color-mix(in srgb, var(--error) 35%, transparent); }
+  .pl-dialog .pl-warn { margin: 12px 0; padding: 8px 12px; border-radius: 4px; background: var(--caution-bg); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent); }
+  .pl-dialog .pl-warn.strict { border-color: var(--caution); }
+  .pl-dialog .pl-warn.strict p:first-child { font-weight: 600; }
+  .pl-dialog .pl-warn[hidden] { display: none; }
+  /* A plugin fence's settings in the details; 插件设置 in its menu tints the one it came from. */
+  .pl-form { margin-top: 8px; padding: 8px 12px; border-radius: 4px; background: var(--subtle); transition: background-color 0.3s linear; }
+  .pl-form.pl-flash { background: var(--chosen); }
+  .pl-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; }
   .pl-dialog .btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   .fb-note[hidden], .fb-preview-box[hidden], .card[hidden] { display: none; }
   .fb-form { gap: 12px; }
@@ -915,24 +922,23 @@
 
     <section class="page" id="page-tools">
       <header class="page-header"><h2>小工具</h2></header>
-      <p class="page-lede">便签、时钟和脚本放在栅栏里，和普通栅栏一样可以移动、吸附和收起。</p>
+      <p class="page-lede">便签、时钟、天气这些小工具都是插件，放在栅栏里，和普通栅栏一样可以移动、吸附和收起。</p>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xEA86;</span><div><div class="t">小工具</div><div class="s">关闭后，桌面上的小工具都不显示，脚本也全部停下</div><div class="s caution" id="toolsHeld" hidden></div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.enabled"></div></div>
-        <div class="card child"><div class="l"><div><div class="t">便签与待办</div><div class="s">在栅栏里写几行字，单击就能编辑。行首写 [ ] 的一行会变成可以勾选的待办</div></div></div><button class="accent" id="newNote">新建便签</button></div>
-        <div class="card child"><div class="l"><div><div class="t">时钟</div><div class="s">显示时间、日期和星期。右键时钟可以打开“显示秒”</div></div></div><button id="newClock">添加</button></div>
-        <div class="card child"><div class="l"><div><div class="t">天气</div><div class="s">今天和明天的天气，每 30 分钟更新，数据来自 wttr.in。添加后右键它选“编辑脚本”，把 Tokyo 换成你的城市</div></div></div><button id="addWeather" data-example="weather">添加</button></div>
-        <div class="card child"><div class="l"><div><div class="t">GitHub 仓库动态</div><div class="s">一个仓库最新的 issue 和 PR，点一行在浏览器里打开。添加后右键它选“编辑脚本”，换成你关心的仓库</div></div></div><button id="addGitHub" data-example="github">添加</button></div>
-        <div class="card child"><div class="l"><div><div class="t">电脑状态</div><div class="s">一直运行，每 2 秒更新 CPU、内存和每个磁盘的剩余空间。点一行可以复制本机 IP 或打开任务管理器</div></div></div><button id="addStatus" data-example="status">添加</button></div>
         <div class="card child"><div class="l"><div><div class="t">用自己的脚本</div><div class="s">运行你选的脚本（PowerShell、Python、批处理等），把它打印的文字显示在栅栏里。脚本最多运行 10 秒（一直运行的除外），不弹出窗口。PecoFence 本身不会为脚本联网</div></div></div><div class="actions"><button id="scriptGuide">写法说明</button><button id="newScript">选择脚本…</button></div></div>
       </div>
       <div id="pluginsPart">
-        <h3 id="plugins">社区插件</h3>
-        <p class="page-lede">其他人写的脚本。每个版本都经过自动检查和审查，点一行看详情。</p>
+        <h3 id="plugins">插件</h3>
+        <p class="page-lede">插件只能做它列出的事，每个版本都经过自动检查和审查。点一行看详情。</p>
         <div class="group" id="pluginList"></div>
       </div>
+      <div class="group">
+        <div class="card"><div class="l"><span class="ic">&#xE7EF;</span><div><div class="t">允许插件使用 Windows 底层功能</div><div class="s">打开后，声明了要启动程序的插件可以启动它列出的程序。关着时这些插件照常运行，只是不能启动程序</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.allowSystem"></div></div>
+      </div>
       <div class="pl-back" id="plBack" hidden><div class="pl-dialog" role="dialog" aria-modal="true" aria-labelledby="plTitle">
-        <h4 id="plTitle"></h4><p id="plBy"></p><p>它会做的事</p><ul id="plDoes"></ul>
-        <p class="warn">插件能用你的 Windows 账号做任何事，PecoFence 拦不住。只装你信任的作者写的插件。</p>
+        <h4 id="plTitle"></h4><p id="plBy"></p>
+        <div class="pl-warn"><p>它会做：</p><ul id="plDoes"></ul><p>插件只能做这里列出的事，每个版本都经过自动检查和审查。</p></div>
+        <div class="pl-warn strict" id="plSystem" hidden><p id="plSystemText"></p><p id="plSystemOff">打开“允许插件使用 Windows 底层功能”后才能用这些功能。</p></div>
         <p id="plToolsOn" hidden>安装后会打开“小工具”开关。</p>
         <div class="btns"><button id="plCancel">取消</button><button class="accent" id="plOk"></button></div>
       </div></div>
@@ -1781,12 +1787,8 @@
   // shortcut rows (renderPeekHotkey) are what Peek's switch turns on. Gap, whole-cell sizing
   // and dimming apply without them. A child starting with '#' is a button's id.
   const DEPENDENT = [['snapping.guideLines', 'snapping.enabled'], ['#everythingAction', 'tools.everything']];
-  // 「小工具」 page: there is one clock at most, so its 添加 greys out while the desktop has one.
+  // 「小工具」 page.
   function renderTools() {
-    const clocks = (state.fences || []).filter(f => f.tool && f.tool.kind === 'clock').length;
-    const clock = document.getElementById('newClock');
-    clock.disabled = clocks > 0;
-    clock.textContent = clocks ? t("已在桌面上") : t("添加");
     // Scripts of an imported configuration wait for the switch: its card says so and lists
     // them, so what would start is read before the switch is turned on.
     const held = state.heldScripts || [], heldEl = document.getElementById('toolsHeld');
@@ -1795,28 +1797,26 @@
     renderEverything();
     renderPlugins();
   }
-  // 社区插件: the host sends the list (null in the Store edition). Text the authors wrote goes
-  // in through textContent only.
+  // 插件: the host sends the list. Text the authors wrote goes in through textContent only.
   const plOpen = new Set();
-  let plOpenSeq = 0, plAsk = null;
+  let plOpenSeq = 0, plAsk = null, plPending = false, plFocus = null;
   function plEl(tag, cls, text) {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
     if (text != null) e.textContent = text;
     return e;
   }
-  // What a plugin may do: [its tag in the row, its line in the details and the warning].
-  function plDoes(p) {
-    const does = [];
-    if (p.network.length) does.push([t("联网"), t("联网") + ' (' + p.network.join(', ') + ')']);
-    if (p.clipboard === 'read') does.push([t("读剪贴板"), t("读剪贴板")]);
-    if (p.clipboard === 'readwrite') does.push([t("读写剪贴板"), t("读写剪贴板")]);
-    if (p.readsFiles) does.push([t("读你选的文件"), t("读你选的文件")]);
-    if (p.streamable) does.push([t("一直在后台运行"), t("一直在后台运行")]);
-    if (p.run) does.push([t("能启动程序"), t("能启动程序")]);
-    return does;
+  // The tags in a plugin's row.
+  const plTags = (p) => [p.network.length && t("联网"), p.clipboard !== 'none' && t("剪贴板"), p.background && t("后台运行"),
+    p.system.length && t("启动程序"), p.layer === 'web' && t("占用内存较多")].filter(Boolean);
+  // What it does, in its details and its install warning.
+  function plLines(p) {
+    const clip = { write: t("写入剪贴板"), read: t("读取剪贴板"), readwrite: t("读取和写入剪贴板") }[p.clipboard];
+    const d = [p.network.length && tf("联网：{0}", p.network.join(', ')), p.links.length && tf("在浏览器里打开这些网站：{0}", p.links.join(', ')),
+      clip, p.background && t("栅栏隐藏时继续运行"), p.folders && t("读取你选的文件夹，只读不写"), p.notify && t("显示提示，发出提示音"),
+      p.system.length && tf("启动这些程序：{0}", p.system.join(', ')), p.layer === 'web' && t("用网页显示内容，占用内存较多")].filter(Boolean);
+    return d.length ? d : [t("只显示内容，不联网，也不读剪贴板")];
   }
-  const plLines = (p) => { const d = plDoes(p).map(x => x[1]); return d.length ? d : [t("只在自己的数据文件夹里存东西")]; };
   function plButton(p) {
     const asks = p.state === 'install' || p.state === 'confirm', b = plEl('button', asks && !state.plugins.held ? 'accent' : '');
     const [text, act] = {
@@ -1831,11 +1831,46 @@
     b.onclick = (e) => { e.stopPropagation(); act && act(); };
     return b;
   }
+  // One fence's settings: a switch or a choice is sent at once, a text or a number when its box
+  // is left.
+  function plForm(p, f) {
+    const box = plEl('div', 'pl-form');
+    box.dataset.fence = f.id;
+    box.append(plEl('div', 't', tf("栅栏“{0}”的设置", f.title || p.name)));
+    for (const s of p.settings) {
+      const row = plEl('div', 'pl-field'), v = f.values[s.key];
+      const set = (value) => send({ type: 'action', name: 'pluginSetting', id: p.id, fence: f.id, key: s.key, value });
+      let c;
+      if (s.type === 'switch') {
+        c = plEl('div', 'toggle' + (v ? ' on' : ''));
+        c.setAttribute('role', 'switch'); c.tabIndex = 0; c.setAttribute('aria-checked', String(!!v));
+        c.onclick = () => { const on = !c.classList.contains('on'); c.classList.toggle('on', on); c.setAttribute('aria-checked', String(on)); set(on); };
+        keyToggle(c);
+      } else if (s.type === 'choice') {
+        c = plEl('select');
+        for (const o of s.options) { const op = plEl('option', '', o.label || o.value); op.value = o.value; c.append(op); }
+        c.value = v;
+        c.onchange = () => set(c.value);
+      } else {
+        c = plEl('input');
+        c.type = s.type === 'number' ? 'number' : 'text';
+        c.value = v ?? '';
+        c.onchange = () => s.type !== 'number' ? set(c.value) : c.value !== '' && isFinite(+c.value) && set(+c.value);
+      }
+      c.setAttribute('aria-label', s.label || s.key);
+      row.append(plEl('span', '', s.label || s.key), c);
+      box.append(row);
+    }
+    return box;
+  }
   function renderPlugins() {
     const pl = state.plugins, list = document.getElementById('pluginList');
-    document.getElementById('pluginsPart').hidden = !pl;
     if (!pl) return;
-    if (pl.open && pl.open[0] !== plOpenSeq) { plOpenSeq = pl.open[0]; plOpen.add(pl.open[1]); }
+    // A setting being typed keeps its box: the list is drawn again when it is left.
+    const a = document.activeElement;
+    if (list.contains(a) && a.matches('input, select')) { plPending = true; return; }
+    plPending = false;
+    if (pl.open && pl.open[0] !== plOpenSeq) { plOpenSeq = pl.open[0]; plOpen.add(pl.open[1]); plFocus = [pl.open[1], pl.open[2]]; }
     list.replaceChildren();
     for (const p of pl.list) {
       const row = plEl('div', 'card child pl-row'), l = plEl('div', 'l'), box = plEl('div');
@@ -1844,7 +1879,7 @@
       title.append(plEl('span', 'pl-meta', ' · ' + p.author + ' · ' + p.version));
       box.append(title, plEl('div', 's', p.description));
       const tags = plEl('div', 'pl-tags');
-      for (const [tag] of plDoes(p)) tags.append(plEl('span', 'more', tag));
+      for (const tag of plTags(p)) tags.append(plEl('span', 'more', tag));
       if (tags.childElementCount) box.append(tags);
       if (p.state === 'confirm') box.append(plEl('div', 's caution', t("有更新，需要你确认")));
       if (p.state === 'disabled') box.append(plEl('div', 's caution', tf("已下架：{0}", p.reason || '')));
@@ -1853,10 +1888,13 @@
       list.append(row);
       if (!plOpen.has(p.id)) continue;
       const d = plEl('div', 'card child pl-detail');
+      d.dataset.plugin = p.id;
       d.append(plEl('div', 't', t("它会做的事")));
       const ul = plEl('ul', 's');
       for (const x of plLines(p)) ul.append(plEl('li', '', x));
       d.append(ul);
+      if (p.settings.length) for (const f of p.fences) d.append(plForm(p, f));
+      if (p.settings.length && !p.fences.length) d.append(plEl('div', 's', t("添加到桌面后，可以在这里改每个栅栏的设置。")));
       const acts = plEl('div', 'actions');
       if (p.page) { const g = plEl('button', '', t("在 GitHub 上看介绍")); g.onclick = () => send({ type: 'action', name: 'pluginPage', id: p.id }); acts.append(g); }
       if (p.installed && p.state !== 'disabled') { const u = plEl('button', '', t("卸载")); u.onclick = () => send({ type: 'action', name: 'pluginUninstall', id: p.id }); acts.append(u); }
@@ -1869,13 +1907,25 @@
       c.append(l, r); list.append(c);
     }
     if (pl.held) list.append(plEl('div', 'card child s caution', t("已导入配置。其中的脚本还没有运行。确认这些脚本可信后，在“小工具”页打开“小工具”开关。")));
+    // Opened from a fence's menu: its details (插件详情) or its fence's settings (插件设置).
+    if (plFocus) {
+      const [id, fence] = plFocus, f = fence && list.querySelector(`[data-fence="${CSS.escape(fence)}"]`);
+      const target = f || list.querySelector(`[data-plugin="${CSS.escape(id)}"]`);
+      // The row comes later while the list is still loading: it is looked for again then.
+      if (target) { plFocus = null; target.scrollIntoView({ block: 'center' }); }
+      if (f) { f.classList.add('pl-flash'); setTimeout(() => f.classList.remove('pl-flash'), 1500); }
+    }
   }
+  document.getElementById('pluginList').addEventListener('focusout', () => setTimeout(() => { if (plPending) renderPlugins(); }));
   // 安装 and a 更新 that asks for more: the warning first.
   function plConfirm(p) {
     plAsk = p;
     document.getElementById('plTitle').textContent = p.state === 'confirm' ? tf("更新“{0}”？", p.name) : tf("安装“{0}”？", p.name);
     document.getElementById('plBy').textContent = tf("作者 {0}，审查过的版本是 {1}。", p.author, p.version);
     document.getElementById('plDoes').replaceChildren(...plLines(p).map(x => plEl('li', '', x)));
+    document.getElementById('plSystem').hidden = !p.system.length;
+    document.getElementById('plSystemText').textContent = tf("请特别注意它要启动的程序：{0}。这些程序能做你的账号能做的任何事，只在你信任它的作者时安装。", p.system.join(', '));
+    document.getElementById('plSystemOff').hidden = !!(state.settings && state.settings.tools && state.settings.tools.allowSystem);
     document.getElementById('plToolsOn').hidden = !!(state.settings && state.settings.tools && state.settings.tools.enabled);
     document.getElementById('plOk').textContent = p.state === 'confirm' ? t("更新插件") : t("安装并添加");
     document.getElementById('plBack').hidden = false;
@@ -2873,12 +2923,7 @@
     panel.querySelectorAll('.cond:not(#nrCond)').forEach(b => b.remove());
   };
   document.getElementById('applyRules').onclick = () => send({ type: 'action', name: 'applyRules' });
-  document.getElementById('newNote').onclick = () => send({ type: 'action', name: 'newNote' });
-  document.getElementById('newClock').onclick = () => send({ type: 'action', name: 'newClock' });
   document.getElementById('newScript').onclick = () => send({ type: 'action', name: 'newScript' });
-  document.querySelectorAll('#page-tools [data-example]').forEach(b => {
-    b.onclick = () => send({ type: 'action', name: 'newScriptExample', example: b.dataset.example });
-  });
   document.getElementById('scriptGuide').onclick = () => send({ type: 'action', name: 'scriptGuide' });
   document.querySelectorAll('#templates [data-template]').forEach(b => { b.onclick = () => send({ type: 'action', name: 'addTemplate', template: b.dataset.template }); });
   document.getElementById('snapSave').onclick = () => { const n = document.getElementById('snapName').value; send({ type: 'action', name: 'saveSnapshot', snapshotName: n }); document.getElementById('snapName').value = ''; };

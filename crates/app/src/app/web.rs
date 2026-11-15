@@ -145,6 +145,24 @@ impl App {
         })
     }
 
+    /// Plugin fence `fence`'s version changed (an update, a return to the version before): a
+    /// page it shows, or one stopped after its crashes, is made anew from the new folder.
+    pub(super) fn restart_web_page(&mut self, fence: FenceId) {
+        let was_stopped = self.web_pages.stopped.remove(&fence).is_some();
+        let host = self.state.host_of(fence);
+        let Some(w) = self.fences.get(&host) else {
+            return;
+        };
+        let shows = w.web().is_some_and(|web| web.fence == fence);
+        if shows {
+            w.set_web(None);
+        }
+        if shows || was_stopped {
+            tracing::info!(%fence, was_stopped, "web plugin: the page starts again for the new version");
+            self.push_tool_view(host);
+        }
+    }
+
     /// A click in a stopped page's fence (true: it was one): 下载 WebView2 opens its page in the
     /// browser, 重新加载 starts the page again.
     pub(super) fn web_row_clicked(&mut self, fence: FenceId, row: usize, cell: usize) -> bool {
@@ -195,6 +213,8 @@ impl App {
         tracing::warn!(%fence, ?failure, count, again, "web plugin: page failed; made anew when again, else the fence shows why");
         if !again {
             self.web_pages.stopped.insert(fence, Stop::Failed(failure));
+            // In the first minute after an update, back to the version before.
+            self.plugin_stopped(fence);
         }
         if let Some(w) = self.fences.get(&host) {
             w.set_web(None);
