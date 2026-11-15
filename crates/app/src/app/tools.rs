@@ -182,7 +182,17 @@ impl App {
         let spec = self.state.config.scripts.get(&id)?;
         // A light plugin: the texts of its rows, or why it stopped.
         if let Some(view) = self.web_stopped_view(id).or_else(|| self.light_view(id)) {
-            let text: Vec<&str> = view.rows.iter().map(|r| r.text.as_str()).collect();
+            // A row of cells shows their texts (its own is not drawn).
+            let text: Vec<String> = (view.rows.iter())
+                .map(|r| match r.cells.as_slice() {
+                    [] => r.text.clone(),
+                    cells => cells
+                        .iter()
+                        .map(|c| c.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                })
+                .collect();
             return Some(pecofence_ipc::ScriptDto {
                 path: spec.path.clone(),
                 interval_minutes: spec.interval_minutes,
@@ -309,6 +319,7 @@ impl App {
             Some(plugin) => self.push_web_view(w, host, shown, &plugin.id),
             None => {
                 w.set_web(None);
+                w.set_plugin_drop(self.plugin_takes_drops(shown));
                 w.set_script((tool == Some(FenceTool::Script)).then(|| self.script_view(shown)));
             }
         }

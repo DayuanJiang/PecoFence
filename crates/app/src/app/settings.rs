@@ -1328,7 +1328,9 @@ impl App {
                     let number = |key: &str| v.get(key).and_then(|n| n.as_u64()).unwrap_or(0);
                     self.set_peek_hotkey_from_page(number("mods") as u32, number("vk") as u32);
                 }
-                Some("peekHotkeyRecording" | "windowsDesktopHotkeyRecording") => {
+                Some(
+                    "peekHotkeyRecording" | "windowsDesktopHotkeyRecording" | "pluginKeyRecording",
+                ) => {
                     if v.get("on").and_then(|o| o.as_bool()).unwrap_or(false) {
                         self.pause_hotkeys();
                     } else {
@@ -1352,7 +1354,7 @@ impl App {
                 Some("scriptGuide") => self.open_manual_at("#write-scripts"),
                 Some(
                     name @ ("pluginsRefresh" | "pluginInstall" | "pluginAdd" | "pluginUninstall"
-                    | "pluginPage" | "pluginSetting"),
+                    | "pluginPage" | "pluginSetting" | "pluginKey" | "pluginItemRemove"),
                 ) => self.on_plugin_action(name, &v),
                 Some("openRepository") => {
                     let url = pecofence_core::brand::REPOSITORY_URL;

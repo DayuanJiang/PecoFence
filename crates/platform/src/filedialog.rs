@@ -105,6 +105,34 @@ pub fn open_script(owner: Option<HWND>, title: &str) -> Result<Option<PathBuf>> 
     }
 }
 
+/// "Open" for a launcher's item: a program (`.exe`, `.lnk`) or any file; a shortcut stays a
+/// shortcut. `None` when the user cancelled.
+pub fn pick_file(owner: Option<HWND>, title: &str, programs: bool) -> Result<Option<PathBuf>> {
+    const FOS_NODEREFERENCELINKS: FILEOPENDIALOGOPTIONS = 0x10_0000;
+    let title_w = to_wide(title);
+    let filter_name = to_wide(pecofence_core::i18n::text("程序"));
+    let filter_spec = to_wide("*.exe;*.lnk");
+    // SAFETY: COM object created here; all strings outlive the calls.
+    unsafe {
+        let dialog: IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_ALL as u32)?;
+        let base: IFileDialog = dialog.cast()?;
+        let options = FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_FILEMUSTEXIST;
+        base.SetOptions(options | FOS_NODEREFERENCELINKS).ok()?;
+        if programs {
+            let spec = COMDLG_FILTERSPEC {
+                pszName: PCWSTR(filter_name.as_ptr()),
+                pszSpec: PCWSTR(filter_spec.as_ptr()),
+            };
+            base.SetFileTypes(1, &spec).ok()?;
+        }
+        base.SetTitle(PCWSTR(title_w.as_ptr())).ok()?;
+        if base.Show(owner).is_err() {
+            return Ok(None);
+        }
+        result_path(&base).map(Some)
+    }
+}
+
 /// "Select folder" picker. `None` when the user cancelled.
 pub fn pick_folder(owner: Option<HWND>, title: &str) -> Result<Option<PathBuf>> {
     let title_w = to_wide(title);

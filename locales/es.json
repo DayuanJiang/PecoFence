@@ -1096,5 +1096,12 @@
   "插件的网页一小时里停了三次，最后一次是因为{0}。": "La página del plugin se detuvo tres veces en una hora; la última vez, porque {0}.",
   "WebView2 的浏览器进程退出了": "el proceso del navegador de WebView2 terminó",
   "网页的进程退出了": "el proceso de la página terminó",
-  "网页没有响应": "la página dejó de responder"
+  "网页没有响应": "la página dejó de responder",
+  "打开你放进这个栅栏的文件、文件夹和程序": "Abrir los archivos, carpetas y programas que pongas en esta valla",
+  "你拖到它上面的文件和文字，它能读取": "Puede leer los archivos y el texto que arrastres sobre ella",
+  "有这些命令：{0}。可以在插件详情里给它们设快捷键": "Tiene estos comandos: {0}. Puedes darles atajos en los detalles del complemento",
+  "这个栅栏里还没有项目": "Todavía no hay nada en esta valla",
+  "移除": "Quitar",
+  "添加程序": "Añadir un programa",
+  "添加文件": "Añadir un archivo"
 }
