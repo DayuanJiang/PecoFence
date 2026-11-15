@@ -373,6 +373,17 @@ pub(super) struct Feedback {
 /// The most files one drop gives a plugin.
 const MAX_PLUGIN_DROP: usize = 20;
 
+/// Screen point (sx, sy) is over the tab pill of another fence than the plugin fence shown:
+/// what is dropped there is not for its plugin.
+fn over_other_tab(v: &FenceViewState, sx: i32, sy: i32) -> bool {
+    let r = window::window_rect(v.hwnd);
+    let tab = (v.tabs.len() > 1)
+        .then(|| v.tab_at(sx - r.left, sy - r.top))
+        .flatten();
+    tab.and_then(|i| v.tabs.get(i))
+        .is_some_and(|t| t.id != v.active)
+}
+
 pub(super) struct FenceDropHandler {
     pub(super) queue: CommandQueue,
     pub(super) view: Rc<RefCell<Option<FenceViewState>>>,
@@ -601,7 +612,7 @@ impl FenceDropHandler {
                 ..none
             };
         };
-        if v.plugin_drop.is_some() {
+        if v.plugin_drop.is_some() && !over_other_tab(v, pt.x, pt.y) {
             let effect = match self.kind {
                 DropKind::Files => dragdrop::resolve(DropEffect::Link, allowed),
                 _ => DropEffect::None,
@@ -898,7 +909,8 @@ impl DropHandler for FenceDropHandler {
         let kind = std::mem::replace(&mut self.kind, DropKind::None);
         let internal = Self::internal();
         let plugin = self.view.try_borrow_mut().ok().and_then(|mut g| {
-            let v = g.as_mut().filter(|v| v.plugin_drop.is_some())?;
+            let v = (g.as_mut())
+                .filter(|v| v.plugin_drop.is_some() && !over_other_tab(v, pt.x, pt.y))?;
             v.apply_drop_feedback(None);
             Some(v.active)
         });
