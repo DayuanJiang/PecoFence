@@ -45,7 +45,8 @@ pub struct Row {
     pub id: Option<String>,
     /// Pieces of one line, each in its own colour and weight (in place of `text`).
     pub spans: Vec<Span>,
-    /// The text or picture is blurred until the pointer is on it.
+    /// The text or picture is blurred until the pointer is on it ([`blur`]).
+    #[serde(deserialize_with = "blur")]
     pub blur: bool,
     /// A to-do: its check box, ticked or not (a click sends `change`).
     pub todo: Option<bool>,
@@ -96,7 +97,13 @@ pub struct Cell {
     pub align: Option<String>,
     pub fill: bool,
     pub under: bool,
+    #[serde(deserialize_with = "blur")]
     pub blur: bool,
+}
+
+/// `blur` may hide a password: anything but `false` (`1`, `"yes"`, `null`) blurs.
+fn blur<'de, D: serde::Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+    Ok(Value::deserialize(d)?.as_bool() != Some(false))
 }
 
 /// A line chart of `values`, `height` DIPs tall.
@@ -471,5 +478,18 @@ mod tests {
         );
         assert!(parse("not json").is_err());
         assert!(parse("{}").unwrap().rows.is_empty());
+    }
+
+    #[test]
+    fn a_blur_that_does_not_read_blurs() {
+        let (view, dropped) = read(
+            r#"{"rows":[{"text":"a","blur":1},{"text":"b","blur":"yes"},{"text":"c","blur":null},
+                {"text":"d","blur":false},{"text":"e"},{"cells":[{"text":"f","blur":1},{"text":"g"}]}]}"#,
+        )
+        .unwrap();
+        let rows: Vec<bool> = view.rows.iter().map(|r| r.blur).collect();
+        assert_eq!(rows, [true, true, true, false, false, false]);
+        let cells: Vec<bool> = view.rows[5].cells.iter().map(|c| c.blur).collect();
+        assert_eq!((cells, dropped.len()), (vec![true, false], 0));
     }
 }
