@@ -44,7 +44,7 @@ const LOGGED_ERRORS: usize = 100;
 /// The last view goes into the fence's cache file at most this often (and when it stops).
 const CACHE_GAP: Duration = Duration::from_secs(60);
 /// The events PecoFence sends ([`Command::Event`] takes one of these names).
-pub const EVENTS: [&str; 14] = [
+pub const EVENTS: [&str; 15] = [
     "start",
     "show",
     "hide",
@@ -59,6 +59,7 @@ pub const EVENTS: [&str; 14] = [
     "stop",
     "message",
     "theme",
+    "media",
 ];
 /// The most bytes one `pf.post` may carry (as JSON; a web plugin page's message too), and the
 /// most messages and bytes that may wait to go out from one run of the plugin.
@@ -383,8 +384,9 @@ impl Plugin {
             let call = move |ctx: Ctx<'_>, name: String, args: String| {
                 let args: Value = serde_json::from_str(&args).unwrap_or(json!([]));
                 let mut refused = refusal(&permissions, &name, &args);
-                if refused.is_none() && name == "open" && !click.get() {
-                    refused = Some("pf.open works only in a click or dblclick handler".into());
+                let by_user = ["open", "media.control"].contains(&name.as_str());
+                if refused.is_none() && by_user && !click.get() {
+                    refused = Some(format!("pf.{name} works only in a click, dblclick or command handler"));
                 }
                 let mut s = to.borrow_mut();
                 let requests = s.calls.values().filter(|c| c.starts_with("http.")).count();
@@ -720,10 +722,15 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                             .filter(|t| t.aligned)
                             .for_each(Timer::arm);
                     }
-                    // The clipboard only for a plugin that may read it and runs now.
-                    let told = name != "clipboard" || (p.reads_clipboard && p.runs());
+                    // The clipboard only for a plugin that may read it and runs now; the
+                    // media session (the app tells only plugins that may see it) the same.
+                    let told = match name {
+                        "clipboard" => p.reads_clipboard && p.runs(),
+                        "media" => p.runs(),
+                        _ => true,
+                    };
                     if !told {
-                        tracing::debug!(%fence, reads = p.reads_clipboard, "plugin not told of the clipboard");
+                        tracing::debug!(%fence, name, reads = p.reads_clipboard, runs = p.runs(), "plugin not told of the clipboard or the media session");
                     }
                     let data = (!data.is_null()).then(|| data.to_string());
                     p.click.set(matches!(name, "click" | "dblclick"));
@@ -933,8 +940,9 @@ mod tests {
             matches!(stop_of(&out), Some(Stopped::Error(e)) if e.contains("null")),
             "{out:?}"
         );
-        // Out of memory in an async function is a limit all the same.
-        let code = "pf.on('start', async () => { await 0; const a = []; for (;;) a.push('x'.repeat(1000) + a.length); });";
+        // Out of memory in an async function is a limit all the same. (Big pieces: the one that
+        // fails leaves room for the error; with no room at all QuickJS rejects with null.)
+        let code = "pf.on('start', async () => { await 0; const a = []; for (;;) a.push('x'.repeat(100000) + a.length); });";
         assert_eq!(
             stop_of(&outputs(code, true, 50, vec![])),
             Some(Stopped::TooMuchMemory)
@@ -1160,7 +1168,7 @@ mod tests {
         for want in [
             "http refused: http.get needs an https address with example.com in permissions.network",
             "clipboard refused: clipboard.text needs permissions.clipboard read",
-            "open refused: pf.open works only in a click or dblclick handler",
+            "open refused: pf.open works only in a click, dblclick or command handler",
             "data refused: data.read needs a name",
             "http 200 https://a.com/x",
             r#"["sys.battery",[]]"#,
@@ -1184,6 +1192,36 @@ mod tests {
                 .iter()
                 .any(|n| matches!(n, Note::Ran { what, .. } if what == "answer to http.get"))
         );
+    }
+
+    #[test]
+    fn media_control_only_in_a_click_and_the_media_event_only_while_it_runs() {
+        let code = r#"
+            let why = '', seen = 0, done = '';
+            const draw = () => pf.show({ rows: [{ text: why + '|' + seen + '|' + done }] });
+            try { pf.media.control('playpause'); } catch (e) { why = e.message; }
+            pf.on('click', () => { pf.media.control('next').then((a) => { done = JSON.stringify(a); draw(); }); });
+            pf.on('media', () => { seen++; draw(); });
+            pf.on('show', draw);
+            draw();
+        "#;
+        let p = Permissions {
+            media: pecofence_core::plugins::Media::Control,
+            ..Permissions::default()
+        };
+        let run = |shown: bool, then: Vec<Command>| {
+            let out = run_with(code, p.clone(), Arc::new(Fake::default()), shown, 600, then);
+            texts(&out).last().cloned().unwrap_or_default()
+        };
+        let text = run(true, vec![event("click"), event("media")]);
+        assert_eq!(
+            text,
+            r#"pf.media.control works only in a click, dblclick or command handler|1|["media.control",["next"]]"#
+        );
+        // Hidden, it hears nothing of the media session.
+        let shown = Command::Shown(FenceId::new_v4(), true);
+        let text = run(false, vec![event("media"), shown]);
+        assert!(text.ends_with("|0|"), "{text}");
     }
 
     #[test]

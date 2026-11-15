@@ -34,6 +34,8 @@ pub(super) struct AppHost {
     /// plugin ([`Self::forget`]): a write either ends before the folder goes or finds no plugin.
     writing: Mutex<()>,
     cpu: Mutex<Option<sysinfo::CpuTimes>>,
+    /// The media session for `pf.media` (its thread starts with the first plugin that may see it).
+    pub(super) media: super::media::MediaWatch,
 }
 
 fn io(e: std::io::Error) -> String {
@@ -54,6 +56,7 @@ impl AppHost {
             data,
             writing: Mutex::default(),
             cpu: Mutex::default(),
+            media: Default::default(),
         }
     }
 
@@ -407,6 +410,63 @@ impl AppHost {
         Ok(json!({ "code": code, "output": output }))
     }
 
+    /// `pf.media.current()`: what plays, or null. Its cover goes into the plugin's data folder
+    /// (`media-cover-<hash>.png` or `.jpg`, the one before deleted) for the view to show; `app`
+    /// only when it is one of the plugin's `apps`.
+    fn media_current(&self, fence: FenceId) -> Result<Value, String> {
+        let m = self.manifest(fence).ok_or("the plugin does not run")?;
+        let Some(p) = self.media.now.lock().ok().and_then(|n| n.clone()) else {
+            return Ok(Value::Null);
+        };
+        let cover = match &p.cover {
+            Some(bytes) => Some(self.save_cover(fence, bytes)?),
+            None => None,
+        };
+        // The session names its app by its AppUserModelID: `Spotify.exe`, `MSEdge` (msedge.exe),
+        // `Chrome`; a Store app's (`Microsoft.ZuneMusic_…!…`) is no program name.
+        let apps = &m.permissions.apps;
+        let named = |a: &&String| {
+            let stem = a.get(..a.len().saturating_sub(4)).unwrap_or_default();
+            a.eq_ignore_ascii_case(&p.app) || stem.eq_ignore_ascii_case(&p.app)
+        };
+        let app = apps.iter().find(named);
+        tracing::debug!(%fence, listed = app.is_some(), "plugin: what plays, its app named only when listed in apps");
+        Ok(json!({
+            "app": app, "title": p.title, "artist": p.artist, "album": p.album,
+            "playing": p.playing, "position": p.position, "duration": p.duration, "cover": cover,
+        }))
+    }
+
+    fn save_cover(&self, fence: FenceId, bytes: &[u8]) -> Result<String, String> {
+        // FNV-1a: a new cover gets a new name, so the fence draws it anew.
+        let hash = (bytes.iter()).fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+            (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
+        });
+        let kind = if bytes.starts_with(b"\x89PNG") {
+            "png"
+        } else {
+            "jpg"
+        };
+        let name = format!("media-cover-{hash:016x}.{kind}");
+        let dir = self.data_dir(fence)?;
+        let file = dir.join(&name);
+        if file.exists() {
+            return Ok(name);
+        }
+        self.room(&dir, &file, bytes.len() as u64)?;
+        self.write_data(fence, |dir| {
+            let entries = std::fs::read_dir(dir).into_iter().flatten().flatten();
+            for old in
+                entries.filter(|e| e.file_name().to_string_lossy().starts_with("media-cover-"))
+            {
+                let _ = std::fs::remove_file(old.path());
+            }
+            replace_file(dir, &file, bytes)
+        })?;
+        tracing::debug!(%fence, bytes = bytes.len(), kind, "plugin: the media cover put into its data folder");
+        Ok(name)
+    }
+
     /// The folders the user picked for fence `fence`'s plugin.
     fn picked(&self, fence: FenceId) -> Result<Vec<PathBuf>, String> {
         let picked = self.on_ui(move |app| Ok(app.plugin_folders(fence)))?;
@@ -546,6 +606,13 @@ impl pecofence_plugin_host::Host for AppHost {
                     tracing::info!(%fence, ok = opened.is_ok(), "plugin opened a page or Task Manager");
                     opened.map(|_| Value::Null).map_err(|e| e.to_string())
                 })
+            }
+            "media.current" => self.media_current(fence),
+            "media.control" => Ok(json!(self.media.control(&arg(0), self.control)?)),
+            "apps.running" => {
+                let m = self.manifest(fence).ok_or("the plugin does not run")?;
+                let apps = &m.permissions.apps;
+                Ok(json!(pecofence_platform::process::running_of(apps)))
             }
             "notify" => {
                 let (title, body, sound) =

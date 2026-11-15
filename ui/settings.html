@@ -1818,7 +1818,9 @@
     const clip = { write: t("写入剪贴板"), read: t("读取剪贴板"), readwrite: t("读取和写入剪贴板") }[p.clipboard];
     const d = [p.network.length && tf("联网：{0}", p.network.join(', ')), p.links.length && tf("在浏览器里打开这些网站：{0}", p.links.join(', ')),
       clip, p.background && t("栅栏隐藏时继续运行"), p.folders && t("读取你选的文件夹，只读不写"), p.notify && t("显示提示，发出提示音"),
-      p.system.length && tf("启动这些程序：{0}", p.system.join(', ')), p.layer === 'web' && t("用网页显示内容，占用内存较多")].filter(Boolean);
+      p.system.length && tf("启动这些程序：{0}", p.system.join(', ')), p.layer === 'web' && t("用网页显示内容，占用内存较多"),
+      p.media === 'read' && t("看到正在播放的歌曲或视频的名字"), p.media === 'control' && t("看到正在播放的歌曲或视频的名字，并能暂停和切歌"),
+      p.apps && p.apps.length && tf("知道这些程序是否在运行、是否在最前面：{0}", p.apps.join(', '))].filter(Boolean);
     return d.length ? d : [t("只显示内容，不联网，也不读剪贴板")];
   }
   function plButton(p) {

@@ -1054,6 +1054,7 @@ impl App {
                     "author": m.author, "version": m.version, "installed": mine.is_some(), "layer": m.layer,
                     "network": p.network, "links": p.links, "system": p.system, "background": p.background,
                     "folders": p.folders, "notify": p.notify,
+                    "media": format!("{:?}", p.media).to_lowercase(), "apps": p.apps,
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),
                     "state": state, "reason": reason, "page": index.is_some(),
                     "settings": settings, "fences": fences, "shown": list::shown_key(m),

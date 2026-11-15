@@ -101,6 +101,12 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
         }
         "folder.pick" | "folder.list" | "folder.read" => (p.folders, "permissions.folders".into()),
         "notify" => (p.notify, "permissions.notify".into()),
+        "media.current" => (p.media.reads(), "permissions.media".into()),
+        "media.control" => (
+            p.media.controls() && ["playpause", "next", "previous"].contains(&arg(0)),
+            "permissions.media control and playpause, next or previous".into(),
+        ),
+        "apps.running" => (!p.apps.is_empty(), "permissions.apps".into()),
         "openSystem" => (arg(0) == "taskmgr", "the name taskmgr".into()),
         "data.list" => (true, String::new()),
         n if n.starts_with("sys.") => (true, String::new()),
@@ -229,7 +235,7 @@ pub fn perform(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pecofence_core::plugins::Clipboard;
+    use pecofence_core::plugins::{Clipboard, Media};
     use std::sync::Mutex;
 
     /// Answers requests from `answers` (by address) and remembers each call.
@@ -321,6 +327,31 @@ mod tests {
         assert!(refused("openSystem", json!(["regedit"])).is_some());
         assert_eq!(refused("sys.battery", json!([])), None);
         assert!(refused("fetch", json!([])).is_some());
+        assert!(
+            refused("media.current", json!([]))
+                .unwrap()
+                .contains("permissions.media")
+        );
+        assert!(
+            refused("apps.running", json!([]))
+                .unwrap()
+                .contains("permissions.apps")
+        );
+        let media = |m: Media| Permissions {
+            media: m,
+            apps: vec!["spotify.exe".into()],
+            ..Permissions::default()
+        };
+        let read = media(Media::Read);
+        assert_eq!(refusal(&read, "media.current", &json!([])), None);
+        assert_eq!(refusal(&read, "apps.running", &json!([])), None);
+        assert!(refusal(&read, "media.control", &json!(["next"])).is_some());
+        let control = media(Media::Control);
+        assert_eq!(
+            refusal(&control, "media.control", &json!(["playpause"])),
+            None
+        );
+        assert!(refusal(&control, "media.control", &json!(["seek"])).is_some());
         for bad in ["", ".hidden", "a/b", "..", "x".repeat(65).as_str(), "名字"] {
             assert!(
                 refused("data.write", json!([bad, "x"])).is_some(),

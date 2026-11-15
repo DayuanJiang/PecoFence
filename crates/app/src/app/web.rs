@@ -225,7 +225,7 @@ impl App {
                 tracing::debug!(plugin, %fence, "web plugin: right-click on the page, the fence menu");
                 self.show_fence_menu(fence, p.x, p.y);
             }
-            "menu" | "open" if !pressed => {
+            "menu" | "open" | "media.control" if !pressed => {
                 tracing::info!(plugin, %fence, call, "web plugin: refused, no click in the fence just before");
                 web.reply(
                     &id,
