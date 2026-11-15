@@ -70,8 +70,15 @@ impl WebEnvironment {
         let _ = std::fs::create_dir_all(&user_data);
         crate::web_plugin::delete_left_profiles(&user_data);
         // The web plugins' pages share this environment: no WebRTC (it would reach hosts the
-        // page's CSP does not list).
-        let mut args = String::from("--force-webrtc-ip-handling-policy=disable_non_proxied_udp");
+        // page's CSP does not list); Local Network Access on (off in WebView2 by default): a
+        // request to a declared host that resolves to this computer or the local network is not
+        // sent; no File System Access pickers (a file picked there is read or written without
+        // `folders`).
+        let mut args = String::from(
+            "--force-webrtc-ip-handling-policy=disable_non_proxied_udp \
+             --enable-features=LocalNetworkAccessChecks,msWebViewAllowLocalNetworkAccessChecks \
+             --disable-blink-features=FileSystemAccessLocal",
+        );
         // Debug builds: `PECOFENCE_WEBVIEW_ARGS=--remote-debugging-port=9352` lets a test drive
         // the page (the options always pass browser arguments, so WebView2's own
         // WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS is not honoured).

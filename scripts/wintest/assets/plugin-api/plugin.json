@@ -8,7 +8,7 @@
   "author": "DayuanJiang",
   "minPecoFence": "0.4.0",
   "permissions": {
-    "network": ["api.github.com"],
+    "network": ["api.github.com", "localtest.me"],
     "links": ["github.com"],
     "clipboard": "readwrite",
     "background": false,

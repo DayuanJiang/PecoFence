@@ -3,6 +3,7 @@
 //! the address it writes back, so the host that was checked is the host that is reached.
 
 use std::fmt;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 /// An http or https address read strictly: the host is letters, digits, `.` and `-` (kept in
 /// lowercase, without a dot at the end), with an optional port; no user name (`@`) and no
@@ -71,6 +72,34 @@ impl fmt::Display for WebAddress {
     }
 }
 
+/// Whether the address WinHTTP connects a plugin's request to (`93.184.215.14`, `2606:2800::1`,
+/// with a port or a zone perhaps) is public. Not public: this computer (127/8, ::1), the local
+/// network (10/8, 172.16/12, 192.168/16, 169.254/16, fc00::/7, fe80::/10), 0/8, the broadcast
+/// address and anything unreadable. A name a plugin declared may resolve, or be made to resolve,
+/// to these: the router and the computer's own services must stay out of its reach. Public on
+/// purpose: 198.18/15 (the fake-ip answers of proxy tools such as Clash) and 100.64/10 (CGNAT).
+pub fn public_ip(text: &str) -> bool {
+    let ip = text.parse::<SocketAddr>().map(|a| a.ip()).or_else(|_| {
+        let bare = text.split('%').next().unwrap_or_default();
+        bare.trim_matches(['[', ']']).parse::<IpAddr>()
+    });
+    let v4 = |ip: Ipv4Addr| {
+        !(ip.is_loopback() || ip.is_private() || ip.is_link_local())
+            && !(ip.octets()[0] == 0 || ip.is_broadcast())
+    };
+    match ip {
+        Ok(IpAddr::V4(ip)) => v4(ip),
+        Ok(IpAddr::V6(ip)) => match ip.to_ipv4_mapped() {
+            Some(mapped) => v4(mapped),
+            None => {
+                !(ip.is_loopback() || ip.is_unspecified())
+                    && !(ip.is_unique_local() || ip.is_unicast_link_local())
+            }
+        },
+        Err(_) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,6 +133,21 @@ mod tests {
             read("https://a.com/x\\y z").as_deref(),
             Some("https://a.com/x\\y z")
         );
+    }
+
+    #[test]
+    fn only_public_addresses_are_public() {
+        let public = "93.184.215.14 140.82.112.6:443 2606:2800:21f:cb07::1 [2606:2800::1]:443 \
+            172.32.0.1 100.64.0.1 198.18.0.5";
+        for ip in public.split_whitespace() {
+            assert!(public_ip(ip), "{ip}");
+        }
+        let not = "127.0.0.1 127.1.2.3:443 10.0.0.1 172.16.0.1 172.31.255.255 192.168.1.1 \
+            169.254.169.254 0.0.0.0 0.1.2.3 255.255.255.255 ::1 [::1]:443 :: fc00::1 fd12:3456::1 \
+            fe80::1 fe80::1%3 [fe80::1%3]:80 ::ffff:127.0.0.1 ::ffff:192.168.0.1 localhost 1.2.3";
+        for ip in not.split_whitespace().chain([""]) {
+            assert!(!public_ip(ip), "{ip}");
+        }
     }
 
     #[test]

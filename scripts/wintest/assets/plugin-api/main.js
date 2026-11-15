@@ -77,6 +77,9 @@ const commands = {
     return [r.code, Date.now() - begun < 10000];
   }),
   "read-big": () => check("cmd-read-big", () => pf.data.read("big.txt")),
+  // localtest.me is declared and resolves to 127.0.0.1 and ::1; the steps listen on the port.
+  "private": () => check("cmd-private", async () => (await pf.http.get("https://localtest.me:18767/")).status),
+  "proxied": () => check("cmd-proxied", async () => (await pf.http.get("https://api.github.com/zen")).status),
   // An error escapes the timer's handler: logged, and the plugin goes on.
   "throw": () => { throw new Error("thrown by the throw command"); },
   "bad-row": () => { extra = [{ text: "bad-row shown", id: 5, bold: null }]; show(); },

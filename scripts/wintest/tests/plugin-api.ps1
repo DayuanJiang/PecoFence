@@ -42,6 +42,16 @@ Check 'the redirect to codeload.github.com is refused' ($v -match '^error redire
 Check 'the log names the refused redirect' ([bool](PfWaitLog 'plugin request: redirect refused' 2)) ''
 Check 'the request carried the plugin''s User-Agent (log of the answer)' ([bool](PfWaitLog 'plugin request answered.*api.github.com.*status=200' 2)) ''
 
+Case 'pf.http: a declared host that resolves to this computer is refused before it connects'
+# localtest.me is public DNS for 127.0.0.1 and ::1: what a rebinding or a plugin's own DNS does.
+$tl = [Net.Sockets.TcpListener]::new([Net.IPAddress]::IPv6Any, 18767); $tl.Server.DualMode = $true; $tl.Start()
+Command 'private'
+$v = WaitRow 'cmd-private' '^(ok|error)' 8
+$hit = $tl.Pending(); $tl.Stop()
+Check 'localtest.me (declared) is refused, naming the address' ($v -match '^error localtest.me resolves to (127\.0\.0\.1|::1), an address of this computer') $v
+Check 'and nothing connected to the port it named' (-not $hit) "connected=$hit"
+Check 'the log says why' ([bool](PfWaitLog 'plugin request refused.*the host resolves to this computer or the local network' 2)) ''
+
 Case 'pf.data: names and a round trip'
 Check 'a name with a slash is refused' ((Rows)['data-name-slash'] -match '^refused data.write needs a name') (Rows)['data-name-slash']
 Check 'a name starting with a dot is refused' ((Rows)['data-name-dot'] -match '^refused data.write needs a name') (Rows)['data-name-dot']
@@ -170,4 +180,15 @@ $cache = "$script:Config\plugins-host\$($script:Fid).view.json"
 $text = if (Test-Path $cache) { Get-Content $cache -Raw -Encoding UTF8 } else { '' }
 Check 'the view cache file has the last rows' ($text -match '"rows"' -and $text -match 'http-declared') $cache
 Check 'the log says every plugin stopped and the thread ended' ([bool](PfWaitLog 'plugin thread: every plugin stops' 5) -and [bool](PfWaitLog 'plugin thread ended' 5)) ''
+
+Case 'with a system proxy (Clash and the like on 127.0.0.1) requests go through it'
+[MiniProxy]::Start(18768); SystemProxy '127.0.0.1:18768'
+PfStart -Lang en
+Command 'proxied'
+$v = WaitRow 'cmd-proxied' '^(ok|error)' 30
+$seen = @([MiniProxy]::Seen) -join ' | '
+SystemProxy ''; [MiniProxy]::Stop()
+Check 'api.github.com answers 200 through the proxy' ($v -eq 'ok 200' -and $seen -match 'CONNECT api\.github\.com:443') "$v; proxy saw: $seen"
+Check 'the log says the proxy''s address is not checked' ([bool](PfWaitLog 'plugin request goes through a proxy' 2)) ''
+PfQuit
 Set-Clipboard -Value ' '
