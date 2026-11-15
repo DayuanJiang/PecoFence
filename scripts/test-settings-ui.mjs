@@ -413,7 +413,7 @@ async function runTests() {
         network: ['wttr.in'], state: 'installed', reason: null, page: true, settings,
         fences: [{ id: 'f-1', title: '东京', values: values('Tokyo') }, { id: 'f-2', title: '大阪', values: values('Osaka') }] },
       { ...perms, id: 'runner', name: 'Runner', description: 'Runs ipconfig', author: 'tester', version: '2.0.0', installed: false, layer: 'light',
-        clipboard: 'write', system: ['ipconfig.exe'], state: 'install', reason: null, page: true, settings: [], fences: [] },
+        clipboard: 'write', system: ['ipconfig.exe'], state: 'install', reason: null, page: true, settings: [], fences: [], shown: '2.0.0 light runner' },
       { ...perms, id: 'webdemo', name: 'Web demo', description: 'A page', author: 'tester', version: '1.0.0', installed: false, layer: 'web',
         state: 'install', reason: null, page: true, settings: [], fences: [] },
     ] };
@@ -459,8 +459,21 @@ async function runTests() {
     assert(!sys.hidden && sys.textContent.includes('ipconfig.exe') && sys.textContent.includes('这些程序能做你的账号能做的任何事') && !doc.getElementById('plSystemOff').hidden, 'Programs paragraph: ' + sys.textContent);
     const box = frame.contentWindow.getComputedStyle(back.querySelector('.pl-warn')).backgroundColor;
     assert(box === 'rgb(67, 53, 25)', 'The warning box is not the caution colour: ' + box);
+    const strict = frame.contentWindow.getComputedStyle(sys).backgroundColor;
+    assert(strict !== box, 'The programs paragraph has the first box\'s tint: ' + strict);
+    assert(doc.getElementById('plChanged').hidden, 'The changed note shows on a first warning');
     doc.getElementById('plOk').click();
-    assert(back.hidden && last().name === 'pluginInstall' && last().id === 'runner', 'Install not asked for: ' + JSON.stringify(last()));
+    assert(back.hidden && last().name === 'pluginInstall' && last().id === 'runner' && last().shown === '2.0.0 light runner', 'Install not asked for with what was shown: ' + JSON.stringify(last()));
+    // The host refused it (the entry changed meanwhile): the warning shows again, saying so.
+    current().plugins.ask = 'runner';
+    frame.contentWindow.testRefresh();
+    await settle();
+    assert(!back.hidden && !doc.getElementById('plChanged').hidden && doc.getElementById('plChanged').offsetHeight > 0, 'The warning did not show again');
+    doc.getElementById('plCancel').click();
+    current().plugins.ask = null;
+    // A plugin row has no empty icon space: its text starts at the card's padding.
+    const pad = frame.contentWindow.getComputedStyle(rows()[1]).paddingLeft;
+    assert(pad === '16px', 'Plugin row padding: ' + pad);
     // With the switch on, the paragraph does not ask for it; a plugin without programs has none.
     current().settings.tools.allowSystem = true;
     frame.contentWindow.testRefresh();

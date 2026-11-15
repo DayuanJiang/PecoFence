@@ -1005,6 +1005,23 @@ impl App {
             let has_path = spec.is_some_and(|s| !s.path.is_empty());
             let plugin = spec.and_then(|s| super::plugins::plugin_id(&s.path));
             if let Some(id) = plugin {
+                // A plugin fence whose view holds a note (the notes plugin) is edited as a note.
+                if self.state.note_inputs.contains(&fence) {
+                    menu.item(
+                        CMD_FENCE_EDIT_NOTE,
+                        pecofence_core::i18n::text("编辑便签"),
+                        false,
+                        false,
+                    )
+                    .icon(glyph::EDIT)
+                    .item(
+                        CMD_FENCE_ADD_TODO,
+                        pecofence_core::i18n::text("添加待办"),
+                        false,
+                        false,
+                    )
+                    .icon(glyph::TODO);
+                }
                 // A plugin fence: its settings and details on the settings page, and a restart.
                 let has_settings = self
                     .plugin(id)
