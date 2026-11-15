@@ -632,7 +632,8 @@ impl App {
     }
 
     /// At start: removes the data folders (`scripts-data\<fence id>`) of script fences that are
-    /// gone, with what their scripts kept there. A fence a layout or a snapshot still has keeps its folder. Nothing goes when
+    /// gone, with what their scripts kept there, and the plugin fences' files
+    /// (`drop_files_of_deleted_fences`). A fence a layout or a snapshot still has keeps its folder. Nothing goes when
     /// the configuration is a new one or came from a backup: the fences it lacks may come back.
     pub(super) fn remove_left_script_data(&self) {
         let s = &self.state;
@@ -643,6 +644,7 @@ impl App {
         {
             return;
         }
+        self.drop_files_of_deleted_fences();
         let Some(dir) = s
             .config_path_on_disk()
             .parent()

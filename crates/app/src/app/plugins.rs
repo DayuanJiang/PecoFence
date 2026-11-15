@@ -19,9 +19,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 pub(super) const TIMER_PLUGINS_CHECK: usize = 101;
-/// A few seconds after a plugin fence is deleted: `drop_files_of_deleted_fences` (a plugin just
-/// stopped still writes its last view, and maybe data, when its thread handles the stop).
-pub(super) const TIMER_PLUGIN_FILES: usize = 102;
 /// A test instance's index (`http://127.0.0.1:` only); its files are on the same server. Its
 /// signature is checked only when the server has one.
 const URL_VAR: &str = "PECOFENCE_PLUGINS_URL";
@@ -895,19 +892,17 @@ impl App {
         self.plugins.reload(id);
     }
 
-    /// Deletes what is kept on disk for fences that are no plugin fence of any layout any more:
-    /// their cached views (`plugins-host\<fence>.view.json`, the plugin host's) and the data
-    /// files their plugin named after them (`plugins-data\<id>\<fence>-*`). At start, and
-    /// [`TIMER_PLUGIN_FILES`] after a plugin fence is deleted.
+    /// At start (`remove_left_script_data`, with its guard): deletes what is kept on disk for
+    /// plugin fences that are gone for good, in neither the configuration's scripts nor a
+    /// snapshot's: their cached views (`plugins-host\<fence>.view.json`, the plugin host's) and
+    /// the data files their plugin named after them (`plugins-data\<id>\<fence>-*`). Until
+    /// then an undo or a snapshot brings a deleted fence back with them.
     pub(super) fn drop_files_of_deleted_fences(&self) {
         let (views, data) = (self.views_dir(), self.plugins_data());
-        let layouts = self.state.config.layouts.iter();
-        let held: HashSet<FenceId> = layouts
-            .flat_map(|l| l.fences.iter().map(|f| f.id))
-            .collect();
-        let scripts = self.state.config.scripts.iter();
+        let c = &self.state.config;
+        let scripts = (c.scripts.iter()).chain(c.snapshots.iter().flat_map(|s| s.scripts.iter()));
         let keep: HashSet<String> = scripts
-            .filter(|(f, s)| plugin_id(&s.path).is_some() && held.contains(f))
+            .filter(|(_, s)| plugin_id(&s.path).is_some())
             .map(|(f, _)| f.to_string())
             .collect();
         let sweep = move || {
@@ -942,14 +937,6 @@ impl App {
             .spawn(sweep);
         if let Err(e) = spawned {
             tracing::warn!(error = %e, "plugins: view sweep did not start");
-        }
-    }
-
-    /// A fence was deleted: when it was a plugin fence, its cached view and data files go.
-    pub(super) fn fence_view_gone(&self, fence: FenceId) {
-        let script = self.state.config.scripts.get(&fence);
-        if script.is_some_and(|s| plugin_id(&s.path).is_some()) {
-            window::set_timer(self.control.hwnd(), TIMER_PLUGIN_FILES, 3000);
         }
     }
 
