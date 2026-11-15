@@ -39,6 +39,8 @@ pub(super) struct Usage {
     written: Instant,
     /// From the start of the process until the fences were up.
     startup_ms: u64,
+    /// The watchdog started this run because the one before ended with a crash's exit code.
+    restarted: bool,
 }
 
 /// The local date (`2026-11-14`) and the second of the day, for the recorder.
@@ -108,6 +110,7 @@ impl App {
             made_id: None,
             written: Instant::now(),
             startup_ms: self.started.elapsed().as_millis() as u64,
+            restarted: args.restarted_after_crash.is_some(),
         });
         let Some(last_app) = self.sync_usage() else {
             // Off before this start (unticked in Setup, say): a file an earlier installation
@@ -134,6 +137,9 @@ impl App {
                 "by_hand"
             },
         );
+        // Now too, not only at the first write: a start just before midnight would leave
+        // that day's report without its version and settings.
+        self.set_usage_facts();
     }
 
     /// Follows the 「发送使用统计」 switch. On: the recorder takes up `usage.json`, with a new
@@ -241,7 +247,10 @@ impl App {
         // The private commit: the working set is handed back whenever the program is idle.
         let memory_mb = pecofence_platform::memstats::MemoryStats::current()
             .map_or(0, |m| m.private_commit as u64 >> 20);
-        let (startup_ms, crashed) = (run.startup_ms, !self.previous_run_ended_normally());
+        let startup_ms = run.startup_ms;
+        let (crashed, cut_off) = self.previous_run_end();
+        // The exit code tells a crash also when the run had no time to log it.
+        let (crashed, cut_off) = (crashed || run.restarted, cut_off && !run.restarted);
         let edition = feedback::install_kind(self.portable);
         let windows = format!("10.0.{}", desktop::os_build());
         recorder::update(move |report| {
@@ -251,12 +260,15 @@ impl App {
             report.language = pecofence_core::i18n::language().tag().to_string();
             report.settings = settings.into();
             report.state = state;
-            // Whether a start of the day found that the run before it crashed or was cut off.
+            // Whether a start of the day found that the run before it crashed, or that it was
+            // cut off (hung and ended, ended from Task Manager, power lost).
             let crashed = crashed || report.health["crashed"] == true;
+            let cut_off = cut_off || report.health["cutOff"] == true;
             // The most the program held at one of the day's writes.
             let memory_mb = memory_mb.max(report.health["memoryMB"].as_u64().unwrap_or(0));
             report.health = serde_json::json!({
-                "startupMs": startup_ms, "memoryMB": memory_mb, "crashed": crashed,
+                "startupMs": startup_ms, "memoryMB": memory_mb,
+                "crashed": crashed, "cutOff": cut_off,
             });
         });
     }

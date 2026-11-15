@@ -21,7 +21,7 @@ minutes after the start.
   "app": "0.4.0", "edition": "installer", "windows": "10.0.26200", "language": "zh-CN",
   "settings": { "theme": "dark", "hideRealIcons": true, "customTheme": "unset" },
   "state": { "fences": 6, "tabs": 2, "portals": 1, "smart": 0, "tools": 1, "rules": 5, "items": 73 },
-  "health": { "startupMs": 420, "memoryMB": 31, "crashed": false },
+  "health": { "startupMs": 420, "memoryMB": 31, "crashed": false, "cutOff": false },
   "events": [ [32400, "start", "at_sign_in"], [32655, "hotkey", "peek"], [32671, "launch_item"] ] }
 ```
 
@@ -33,7 +33,7 @@ minutes after the start.
 | `windows`, `language` | The Windows build and PecoFence's display language. |
 | `settings` | The settings that are a switch, a choice from a list or a number, under their names in `config.json`. A setting that holds text (a custom theme, a shortcut, a tint colour) appears only as `"set"` or `"unset"`. |
 | `state` | How many fences, tabs, folder fences, smart fences, tool fences, rules and items there are. |
-| `health` | How long the last start took, the most memory the program held that day, and whether the run before a start of that day crashed or was cut off. |
+| `health` | How long the last start took, the most memory the program held that day, and whether the run before a start of that day crashed (`crashed`: its log says so, or the watchdog had to start PecoFence again) or was cut off: it hung and was ended, was ended from Task Manager, or the power went (`cutOff`). Version 0.4.0 counts both as `crashed`. |
 | `events` | What was used that day, in order: the second of the day, a name from the list below, and for some names a second word. At most 2,000 a day. |
 
 Between uploads the reports wait in `usage.json`, in `%LOCALAPPDATA%\PecoFence` (beside the
@@ -63,6 +63,15 @@ from a few central places of the program:
 
 - **`start`** with `at_sign_in`, `by_hand`, `after_update` or `after_crash`; **`exit`**.
 - **`hotkey`** with `peek`, `double_ctrl`, `dialog_jump` or `windows_desktop`.
+- **`dialog_jump`**, when 对话框跳转 sends an Open / Save dialog to a folder, with how it was
+  asked for: `on_return` (back in the dialog from Explorer or a folder fence), `fence_press`
+  (a folder fence pressed with the dialog in front), `ctrl_g` or `offer` (its offer card was
+  taken). Version 0.4.0 records only Ctrl+G, as `hotkey`.
+- **`notice`**, when a card in the corner was clicked or went away, with the card and how:
+  `undo`, `tip`, `whats_new`, `dialog_jump_offer`, `dialog_jump_on`, `roll_tip`, `folder_tip`,
+  `rule_tip`, `rule_added`, `live_wallpaper`, `update` or `rating`, then `.action` (clicked),
+  `.dismissed` (closed, or left until it went) or `.declined` (its 「不用」 button); for
+  example `update.action`. Version 0.4.0 records `notice` alone.
 - **`tray`** with `click` (the icon) or `menu` (its menu was opened).
 - **`menu`**, when an entry of a menu was chosen, with `tray`, `fence`, `item`, `columns`,
   `search_row` or `right_drag`.
@@ -114,8 +123,8 @@ from a few central places of the program:
   `new_fence_rect`, `marquee_offer`, `cancel_cut`, `toggle_peek`, `end_peek`,
   `peek_search_step`, `peek_search_page`, `peek_search_open`, `peek_search_open_row`,
   `peek_search_open_folder`, `peek_search_actions`, `peek_search_row_menu`, `apply_rules_now`,
-  `open_settings`, `open_options_for_fence`, `sort_column`, `notice` (a card in the corner was
-  clicked or went away), `card_keys` (F6: the keyboard goes to that card), `undo`.
+  `open_settings`, `open_options_for_fence`, `sort_column`, `card_keys` (F6: the keyboard
+  goes to a card in the corner), `undo`.
 
 Not recorded: what the program does by itself (redrawing, raising a fence that was clicked,
 taking a search result), what happens many times during one drag or one turn of the wheel, and

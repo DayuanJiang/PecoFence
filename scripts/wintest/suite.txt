@@ -260,3 +260,5 @@ o6-align-scale     3   resize release free-placement.ps1             --part S --
 # Usage statistics: operations appear in usage.json, nothing typed does, an upload, the switch.
 usage-stats        4   ec2    release usage.ps1
 usage-desc         2   ec2    debug   usage-description.ps1
+# Usage statistics: notice cards, dialog jumps, cut-off and crashed runs (Midnight=1 needs the box clock set: see the file).
+usage-gaps         4   ec2    release usage-gaps.ps1
