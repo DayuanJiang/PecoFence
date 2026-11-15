@@ -46,7 +46,7 @@ fn profile_name(instance: Option<&str>) -> String {
 /// The WebView2 environment. Kept alive across opens (warm start ≈ 200 ms); the browser
 /// processes exit by themselves when no controller is alive.
 pub struct WebEnvironment {
-    env: Environment,
+    pub(crate) env: Environment,
 }
 
 impl WebEnvironment {
@@ -63,16 +63,20 @@ impl WebEnvironment {
                     .as_deref(),
             ));
         let _ = std::fs::create_dir_all(&user_data);
-        let mut options =
-            EnvironmentOptions::new().user_data_folder(user_data.to_string_lossy().to_string());
+        // The web plugins' pages share this environment: no WebRTC (it would reach hosts the
+        // page's CSP does not list).
+        let mut args = String::from("--force-webrtc-ip-handling-policy=disable_non_proxied_udp");
         // Debug builds: `PECOFENCE_WEBVIEW_ARGS=--remote-debugging-port=9352` lets a test drive
         // the page (the options always pass browser arguments, so WebView2's own
         // WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS is not honoured).
         if cfg!(debug_assertions)
-            && let Ok(args) = pecofence_core::brand::var("PECOFENCE_WEBVIEW_ARGS")
+            && let Ok(more) = pecofence_core::brand::var("PECOFENCE_WEBVIEW_ARGS")
         {
-            options = options.additional_browser_arguments(args);
+            args = format!("{args} {more}");
         }
+        let options = EnvironmentOptions::new()
+            .user_data_folder(user_data.to_string_lossy().to_string())
+            .additional_browser_arguments(args);
         tracing::debug!("settings: creating WebView2 environment");
         let env = Environment::with_options(&options)?;
         tracing::debug!("settings: WebView2 environment ready");

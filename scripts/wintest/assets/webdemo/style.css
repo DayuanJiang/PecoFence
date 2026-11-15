@@ -1,0 +1,21 @@
+:root { color-scheme: light dark; --ink: #1b1b1b; --soft: rgba(0, 0, 0, 0.62); --plate: rgba(255, 255, 255, 0.42); --line: rgba(0, 0, 0, 0.12); --accent: #0067c0; }
+@media (prefers-color-scheme: dark) {
+  :root { --ink: #ffffff; --soft: rgba(255, 255, 255, 0.72); --plate: rgba(255, 255, 255, 0.10); --line: rgba(255, 255, 255, 0.14); --accent: #4cc2ff; }
+}
+html, body { margin: 0; background: transparent; }
+body { padding: 10px 12px; font: 13px/1.45 "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif; color: var(--ink); overflow: hidden; height: 100vh; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; user-select: none; }
+header { display: flex; align-items: center; gap: 8px; }
+h1 { font-size: 15px; font-weight: 600; margin: 0; }
+.lead { margin: 0; color: var(--soft); }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { transform: scale(0.6); opacity: 0.5; } 50% { transform: scale(1.15); opacity: 1; } }
+.row { display: flex; align-items: center; gap: 10px; }
+button { font: inherit; color: var(--ink); background: var(--plate); border: 1px solid var(--line); border-radius: 4px; padding: 4px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:active { transform: translateY(1px); }
+#out { color: var(--soft); font-variant-numeric: tabular-nums; }
+input { font: inherit; color: var(--ink); background: var(--plate); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; outline: none; user-select: text; }
+input:focus { border-color: var(--accent); }
+ul { flex: 1; min-height: 60px; margin: 0; padding: 0; list-style: none; overflow-y: auto; border-top: 1px solid var(--line); }
+li { padding: 4px 2px; border-bottom: 1px solid var(--line); }
+li:nth-child(odd) { color: var(--soft); }

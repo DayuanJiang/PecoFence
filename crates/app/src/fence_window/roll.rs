@@ -866,6 +866,8 @@ impl FenceViewState {
             self.content_panel
                 .visual
                 .set_offset(self.content_x as f32, top as f32, 0.0);
+            self.layout_web();
+            self.web_shown(true);
             if !mid_roll {
                 self.content_panel.visual.set_opacity(0.0);
             }

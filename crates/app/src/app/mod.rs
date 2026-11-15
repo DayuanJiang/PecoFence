@@ -3177,6 +3177,7 @@ impl App {
                 self.new_script_example_of(example, x, y)
             }
             Command::NewScript { x, y } => self.new_script_near(x, y, None),
+            Command::StartWebFence(host) => self.start_web_fence(host),
             Command::EditNote { fence, caret } => self.edit_note(fence, caret),
             Command::NoteEditState {
                 fence,

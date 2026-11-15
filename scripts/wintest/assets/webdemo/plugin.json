@@ -1,0 +1,10 @@
+{
+  "id": "webdemo",
+  "version": "1.0.0",
+  "layer": "web",
+  "name": { "en": "Web demo", "zh-CN": "网页示例" },
+  "description": { "en": "A test web plugin: text, a button, a text box, an animation, a list.", "zh-CN": "测试用的网页插件：文字、按钮、输入框、动画和列表。" },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.4.0",
+  "permissions": { "network": ["example.org"] }
+}

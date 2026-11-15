@@ -275,6 +275,7 @@ impl FrameHandle {
                 }
                 v.content_panel.visual.set_opacity(1.0);
                 v.content_panel.visual.set_visible(!rolled);
+                v.web_shown(desktop::is_visible(hwnd));
                 // Rolled up after a hover peek raised it: back among the other fences.
                 if rolled && std::mem::take(&mut v.hover_raised) {
                     v.queue.push(Command::EndHoverRaise(hwnd));

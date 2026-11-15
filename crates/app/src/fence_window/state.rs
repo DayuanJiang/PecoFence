@@ -318,6 +318,8 @@ pub struct FenceViewState {
     pub(super) tool_line_step: f32,
     /// 脚本栅栏: the fence shown is a script fence with this output and footer.
     pub(super) script: Option<ScriptView>,
+    /// 网页层: the web plugin's page shown in place of the content.
+    pub(super) web: Option<Rc<crate::web_plugin::WebFence>>,
     /// Its clickable rows as last drawn: row index and (left, top, right, bottom) in content
     /// DIPs.
     pub(super) script_rows: Vec<(usize, usize, [f32; 4])>,
@@ -1140,7 +1142,7 @@ impl FenceViewState {
     /// The fence shown is a tool (小工具) in place of items: it takes no drops, merges or
     /// marquee, and counts no items.
     pub(super) fn shows_tool(&self) -> bool {
-        self.note.is_some() || self.clock.is_some() || self.script.is_some()
+        self.note.is_some() || self.clock.is_some() || self.script.is_some() || self.web.is_some()
     }
 
     /// 时钟与日期 rolled up (feedback #175): the title row shows the time, hours and minutes in

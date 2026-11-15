@@ -160,12 +160,63 @@ impl App {
         pecofence_core::updates::parse_version(version).map(|_| dir.join(version))
     }
 
-    /// The file a fence's script path runs: a plugin's `main.js`, or the path itself.
+    /// The file a fence's script path runs: a plugin's `main.js` (a web plugin's `index.html`),
+    /// or the path itself.
     pub(super) fn script_file(&self, path: &str) -> PathBuf {
         match plugin_id(path) {
-            Some(id) => self.plugin_dir(id).unwrap_or_default().join("main.js"),
+            Some(id) => {
+                let web = self.plugin_manifest(id).is_some_and(|m| m.layer == "web");
+                let main = if web { "index.html" } else { "main.js" };
+                self.plugin_dir(id).unwrap_or_default().join(main)
+            }
             None => PathBuf::from(path),
         }
+    }
+
+    /// 网页层: the installed web plugin fence `fence` shows (none when it is taken down).
+    pub(super) fn web_plugin_of(
+        &self,
+        fence: pecofence_core::FenceId,
+    ) -> Option<crate::web_plugin::Plugin> {
+        let spec = self.state.config.scripts.get(&fence)?;
+        let id = plugin_id(&spec.path)?;
+        let m = self.plugin_manifest(id).filter(|m| m.layer == "web")?;
+        let dir = self.plugin_dir(id)?;
+        let ok = dir.join("index.html").is_file() && self.plugin_disabled(id).is_none();
+        ok.then(|| crate::web_plugin::Plugin {
+            id: id.to_string(),
+            dir,
+            network: m.permissions.network,
+        })
+    }
+
+    /// `Command::StartWebFence`: the page of the web plugin the window of `host` shows.
+    pub(super) fn start_web_fence(&mut self, host: pecofence_core::FenceId) {
+        let Some(shown) = self.fences.get(&host).map(|w| w.active_fence()) else {
+            return;
+        };
+        let Some(plugin) = self.web_plugin_of(shown) else {
+            return;
+        };
+        if self
+            .fences
+            .get(&host)
+            .and_then(|w| w.web_plugin())
+            .as_deref()
+            == Some(&plugin.id)
+        {
+            return;
+        }
+        // Made once, as for the settings window (it pumps messages until the browser is there).
+        if !self.ensure_web_env() {
+            return;
+        }
+        let (Some(w), Some(env)) = (self.fences.get(&host), self.web_env.as_ref()) else {
+            return;
+        };
+        let web =
+            crate::web_plugin::WebFence::start(&env.env, &self.ctx.stack, w.hwnd(), shown, plugin);
+        w.set_web(Some(web));
     }
 
     /// The installed plugin's `plugin.json` (it stays while the plugin is taken down).
@@ -428,6 +479,7 @@ impl App {
         }
         if let Some(current) = self.plugin_dir(id) {
             let _ = std::fs::remove_file(current.join("main.js"));
+            let _ = std::fs::remove_file(current.join("index.html"));
         }
         if let Err(e) = std::fs::write(dir.join("disabled.txt"), why) {
             tracing::warn!(id, error = %e, "plugins: disabled.txt not written");

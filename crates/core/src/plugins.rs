@@ -8,14 +8,27 @@ use std::collections::BTreeMap;
 
 pub const REPO: &str = "DayuanJiang/PecoFence-plugins";
 /// The files a plugin may have, with the most bytes each may have.
-pub const FILES: [(&str, u64); 4] = [
+pub const FILES: [(&str, u64); 5] = [
     ("plugin.json", 64 * 1024),
     ("main.js", 200 * 1024),
+    ("index.html", 200 * 1024),
     ("README.md", 64 * 1024),
     ("screenshot.png", 300 * 1024),
 ];
-/// The files an install downloads (this version shows no screenshot).
-pub const INSTALL_FILES: [&str; 3] = ["plugin.json", "main.js", "README.md"];
+/// The files an install downloads, those of them the plugin has (this version shows no
+/// screenshot).
+pub const INSTALL_FILES: [&str; 4] = ["plugin.json", "main.js", "index.html", "README.md"];
+
+/// The files a plugin of `layer` cannot do without: a light plugin runs `main.js`, a web
+/// plugin shows `index.html` (its `main.js` is optional).
+pub fn needed_files(layer: &str) -> [&'static str; 3] {
+    let main = if layer == "web" {
+        "index.html"
+    } else {
+        "main.js"
+    };
+    ["plugin.json", main, "README.md"]
+}
 /// The newest plugin interface this PecoFence knows (`api` in plugin.json).
 pub const API: u32 = 1;
 /// The most bytes `index.json` may have.
@@ -66,7 +79,8 @@ pub struct Manifest {
     pub permissions: Permissions,
     #[serde(default = "first_api")]
     pub api: u32,
-    /// `light`: main.js in PecoFence's QuickJS, which draws the plugin's view.
+    /// `light`: main.js in PecoFence's QuickJS, which draws the plugin's view; `web`: the
+    /// plugin's own page (`index.html`) shown in the fence.
     #[serde(default = "light")]
     pub layer: String,
     #[serde(default)]
@@ -186,7 +200,7 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
     {
         return Err(format!("{}: name or description missing or too long", m.id));
     }
-    if m.api == 0 || m.api > API || m.layer != "light" {
+    if m.api == 0 || m.api > API || !matches!(m.layer.as_str(), "light" | "web") {
         return Err(format!(
             "{}: api {} or layer {:?} not known",
             m.id, m.api, m.layer
@@ -210,7 +224,7 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
 }
 
 /// An index entry's checks: its manifest's and its files' (only the allowed names, each once,
-/// within its size, with a SHA-256; the three an install needs are there).
+/// within its size, with a SHA-256; the three its layer needs are there).
 pub fn check_entry(e: &Entry) -> Result<(), String> {
     check_manifest(&e.manifest)?;
     let id = &e.manifest.id;
@@ -225,7 +239,7 @@ pub fn check_entry(e: &Entry) -> Result<(), String> {
             return Err(format!("{id}: {} listed twice", f.name));
         }
     }
-    if let Some(missing) = INSTALL_FILES
+    if let Some(missing) = needed_files(&e.manifest.layer)
         .iter()
         .find(|n| !e.files.iter().any(|f| f.name == **n))
     {
@@ -434,6 +448,22 @@ mod tests {
         assert_eq!(index.commit, COMMIT);
         let why = index.get("taken-down").unwrap().disabled.as_deref();
         assert_eq!(why, Some("Sends data it does not declare"));
+    }
+
+    #[test]
+    fn a_web_plugin_needs_its_page_and_may_have_main_js() {
+        let check = |files: &[&str]| {
+            let mut v = entry("webdemo");
+            v["layer"] = "web".into();
+            v["files"] = files
+                .iter()
+                .map(|n| serde_json::json!({ "name": n, "size": 10, "sha256": HASH }))
+                .collect();
+            check_entry(&serde_json::from_value(v).unwrap())
+        };
+        assert!(check(&["plugin.json", "index.html", "README.md"]).is_ok());
+        assert!(check(&["plugin.json", "index.html", "main.js", "README.md"]).is_ok());
+        assert!(check(&["plugin.json", "main.js", "README.md"]).is_err());
     }
 
     #[test]

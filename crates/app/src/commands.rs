@@ -343,6 +343,8 @@ pub enum Command {
         x: i32,
         y: i32,
     },
+    /// 网页层: the window of this host fence shows a web plugin: start its page.
+    StartWebFence(FenceId),
     /// 脚本栅栏: pick a script, then a new script fence near the screen point.
     NewScript {
         x: i32,

@@ -10,14 +10,14 @@ function IsDebugBuild() { return [Text.Encoding]::ASCII.GetString([IO.File]::Rea
 # is the settings page in an editor-only mode, titled 'PecoFence smart fence editor').
 $script:PageClass = 'PecoFence.Settings'
 # CDP: connects to the settings page of a debug build started with
-# PECOFENCE_WEBVIEW_ARGS=--remote-debugging-port=9352 (-Editor: the smart fence editor's page);
-# $true when connected.
-function CdpOpen($port = 9352, $sec = 30, [switch]$Editor) {
+# PECOFENCE_WEBVIEW_ARGS=--remote-debugging-port=9352 (-Editor: the smart fence editor's page;
+# -Url: the page whose address is like it, a web plugin's); $true when connected.
+function CdpOpen($port = 9352, $sec = 30, [switch]$Editor, [string]$Url = '') {
   if ($script:Cdp) { try { $script:Cdp.Dispose() } catch { }; $script:Cdp = $null }
   for ($i = 0; $i -lt $sec; $i++) {
     try {
       $list = (New-Object Net.WebClient).DownloadString("http://127.0.0.1:$port/json") | ConvertFrom-Json
-      $page = @($list | Where-Object { $_.type -eq 'page' -and (($_.title -eq 'PecoFence smart fence editor') -eq [bool]$Editor) }) | Select-Object -First 1
+      $page = @($list | Where-Object { $_.type -eq 'page' -and $(if ($Url) { $_.url -like $Url } else { $_.url -notlike '*.plugins.pecofence/*' -and (($_.title -eq 'PecoFence smart fence editor') -eq [bool]$Editor) }) }) | Select-Object -First 1
       if ($page) {
         $ws = New-Object Net.WebSockets.ClientWebSocket
         $ws.ConnectAsync([Uri]$page.webSocketDebuggerUrl, [Threading.CancellationToken]::None).Wait(10000) | Out-Null

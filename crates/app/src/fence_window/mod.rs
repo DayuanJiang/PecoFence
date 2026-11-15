@@ -87,6 +87,7 @@ mod tabs;
 #[cfg(test)]
 mod tests;
 mod tooltip;
+mod web;
 mod window_drag;
 
 pub use api::FenceWindow;

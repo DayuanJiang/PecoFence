@@ -317,7 +317,27 @@ impl App {
         w.set_note(self.state.note_text(shown).map(str::to_string));
         let seconds = self.state.config.settings.tools.clock_seconds;
         w.set_clock((tool == Some(FenceTool::Clock)).then_some(seconds));
-        w.set_script((tool == Some(FenceTool::Script)).then(|| self.script_view(shown)));
+        let web = (tool == Some(FenceTool::Script))
+            .then(|| self.web_plugin_of(shown))
+            .flatten();
+        match web {
+            Some(plugin) => {
+                if w.web_plugin().as_deref() != Some(&plugin.id) {
+                    // 正在运行… until the page is there.
+                    w.set_script(Some(ScriptView {
+                        rows: Vec::new(),
+                        footer: String::new(),
+                        footer_short: String::new(),
+                        quiet: true,
+                    }));
+                    self.queue.push(Command::StartWebFence(host));
+                }
+            }
+            None => {
+                w.set_web(None);
+                w.set_script((tool == Some(FenceTool::Script)).then(|| self.script_view(shown)));
+            }
+        }
     }
 
     /// 脚本栅栏: what fence `id` shows: the last output (or what went wrong) and a footer with
@@ -499,6 +519,9 @@ impl App {
             return;
         };
         if spec.path.is_empty() || !self.state.config.settings.tools.enabled {
+            return;
+        }
+        if self.web_plugin_of(id).is_some() {
             return;
         }
         if spec.held {
