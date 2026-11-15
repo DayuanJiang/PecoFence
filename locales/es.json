@@ -1074,5 +1074,6 @@
   "重新启动": "Reiniciar",
   "选择插件可以读取的文件夹": "Elegir una carpeta que el plugin pueda leer",
   "一次运行超过了 50 毫秒": "una ejecución tardó más de 50 ms",
-  "用的内存超过了 8 MB": "usó más de 8 MB de memoria"
+  "用的内存超过了 8 MB": "usó más de 8 MB de memoria",
+  "升级为插件之前": "Antes del cambio a plugins"
 }

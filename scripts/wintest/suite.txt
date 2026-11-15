@@ -73,6 +73,7 @@ peek-cold-icons    3   ec2    debug   peek-cold-icons.ps1
 peek-chinese       4   ec2    debug   peek-chinese-input.ps1
 update-check       6   ec2    debug   update-check.ps1
 plugins            2   ec2    debug   plugins.ps1
+plugin-migrate     3   ec2    release plugin-migrate.ps1
 smart-filter       1   ec2    release smart-filter.ps1
 smart-fallback     2   ec2    release smart-fallback.ps1
 smart-idle-log     1   ec2    release smart-idle-log.ps1
@@ -164,7 +165,7 @@ issues-conflict    5   ec2    release issues-crash.ps1               --var Part=
 shellext-load      1   ec2    release shellext-fault.ps1             --extra @shellext --var Part=A
 shellext-hang      2   ec2    release shellext-fault.ps1             --extra @shellext --var Part=H
 shellext-stall     2   ec2    debug   shellext-fault.ps1             --extra @shellext --var Part=S
-owner-script-rows  2   ec2    release owner-script-rows.ps1          --extra crates/app/assets/scripts
+owner-script-rows  2   ec2    release owner-script-rows.ps1          --extra scripts/wintest/assets/old-examples
 script-cells       1   ec2    release pr223-cells.ps1
 script-cell-gate   1   ec2    release pr223-cell-gate.ps1
 plugin-api         2   ec2    release plugin-api.ps1

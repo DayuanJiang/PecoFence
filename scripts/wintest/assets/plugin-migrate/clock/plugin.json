@@ -1,0 +1,26 @@
+{
+  "id": "clock",
+  "version": "1.0.0",
+  "api": 1,
+  "layer": "light",
+  "name": {
+    "en": "Clock",
+    "zh-CN": "时钟"
+  },
+  "description": {
+    "en": "Stand-in for the upgrade test (plugin-migrate.ps1)."
+  },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.4.0",
+  "permissions": {},
+  "settings": [
+    {
+      "key": "seconds",
+      "type": "switch",
+      "label": {
+        "en": "Show seconds"
+      },
+      "default": false
+    }
+  ]
+}

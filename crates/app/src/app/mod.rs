@@ -75,6 +75,7 @@ mod live_wallpaper;
 mod lnk_targets;
 mod menu_frames;
 mod menus;
+mod migrate;
 mod motion;
 mod peek;
 mod plugins;
@@ -2452,6 +2453,8 @@ impl App {
             app.schedule_save();
         }
         window::set_coalescable_timer(app.control.hwnd(), TIMER_HOUSEKEEPING, 60_000, 5_000);
+        // 升级为插件: before the scripts of examples that plugins replace start.
+        app.migrate_tools(true);
         // 脚本栅栏: the first results, without waiting for the minute.
         app.run_due_scripts();
         // 智能栅栏: the first search, likewise.
@@ -3174,9 +3177,6 @@ impl App {
             }
             Command::ClearFenceFilter(fence) => {
                 self.set_fence_filter(fence, String::new(), "esc in the fence")
-            }
-            Command::NewScriptExample { example, x, y } => {
-                self.new_script_example_of(example, x, y)
             }
             Command::NewScript { x, y } => self.new_script_near(x, y, None),
             Command::StartWebFence(host) => self.start_web_fence(host),

@@ -1,0 +1,26 @@
+{
+  "id": "weather",
+  "version": "1.0.0",
+  "api": 1,
+  "layer": "light",
+  "name": {
+    "en": "Weather",
+    "zh-CN": "天气"
+  },
+  "description": {
+    "en": "Stand-in for the upgrade test (plugin-migrate.ps1)."
+  },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.4.0",
+  "permissions": {},
+  "settings": [
+    {
+      "key": "city",
+      "type": "text",
+      "label": {
+        "en": "City"
+      },
+      "default": ""
+    }
+  ]
+}

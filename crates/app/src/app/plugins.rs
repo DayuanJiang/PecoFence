@@ -302,6 +302,7 @@ impl App {
         if shown() && installed > 0 {
             self.fetch_plugins();
         }
+        self.migrate_tools(true);
     }
 
     /// 设置 › 小工具 was shown.
@@ -351,12 +352,16 @@ impl App {
                     self.plugins.index = Some(index);
                     self.plugins.status = Status::Ready;
                     self.apply_plugin_index();
+                    self.migrate_tools(true);
                 }
                 Done::Index(Err(e)) => {
                     tracing::warn!(error = %e, "plugins: index not read");
                     self.plugins.status = Status::Offline;
                 }
-                Done::Downloaded(id, update, result) => self.plugin_downloaded(&id, update, result),
+                Done::Downloaded(id, update, result) => {
+                    self.plugin_downloaded(&id, update, result);
+                    self.migrate_tools(false);
+                }
             }
         }
         self.push_settings_state();
@@ -511,6 +516,20 @@ impl App {
         let made = self.create_tool_fence(tool, Some(&title), Some(rect), x, y);
         tracing::info!(id, made = made.is_some(), "plugins: fence added");
         self.tool_clear_of = None;
+    }
+
+    /// 升级为插件 (`migrate.rs`): installs plugins `ids` without a fence or a notice, from the
+    /// index when it is there; else the index is asked for (its arrival calls again).
+    pub(super) fn install_for_migration(&mut self, ids: &[&str]) {
+        match self.plugins.status {
+            Status::Ready if self.plugins.index.is_some() => {
+                for id in ids {
+                    self.start_plugin_download(id, true);
+                }
+            }
+            Status::Loading => {}
+            _ => self.fetch_plugins(),
+        }
     }
 
     fn uninstall_plugin(&mut self, id: &str) {

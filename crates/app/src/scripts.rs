@@ -512,18 +512,12 @@ impl Drop for Stream {
     }
 }
 
-/// Whether `path` holds the 电脑状态 example as PecoFence wrote it (Some(true) for the Chinese
-/// one). PecoFence then shows the same screens itself: the PowerShell that would run it takes
-/// about 100 MB of memory and asks WMI every 2 seconds. An edited copy runs as a script.
+/// Whether `path` holds a 电脑状态 example as PecoFence wrote it (Some(true) for a Chinese one).
+/// PecoFence then shows the same screens itself: the PowerShell that would run it takes about
+/// 100 MB of memory and asks WMI every 2 seconds. An edited copy runs as a script.
 fn unchanged_status(path: &Path) -> Option<bool> {
-    let small = std::fs::metadata(path).is_ok_and(|m| m.len() <= 16 * 1024);
-    if !small {
-        return None;
-    }
-    let now = unify_lines(&std::fs::read_to_string(path).ok()?);
-    [true, false]
-        .into_iter()
-        .find(|&chinese| unify_lines(example(Example::Status, chinese)) == now)
+    let (plugin, chinese) = unchanged_example(path)?;
+    (plugin == "pc-status").then_some(chinese)
 }
 
 /// The 电脑状态 example's screens, every 2 seconds, from a thread of their own: CPU and memory
@@ -773,95 +767,30 @@ fn strip_escapes(line: &str) -> String {
     out
 }
 
-/// The script fence examples, as (Chinese, English) texts: the comments and labels are in
-/// that language (the weather's conditions come from the service as they are).
-pub fn example(kind: Example, chinese: bool) -> &'static str {
-    match (kind, chinese) {
-        (Example::Weather, true) => include_str!("../assets/scripts/weather.zh.ps1"),
-        (Example::Weather, false) => include_str!("../assets/scripts/weather.en.ps1"),
-        (Example::GitHub, true) => include_str!("../assets/scripts/github.zh.ps1"),
-        (Example::GitHub, false) => include_str!("../assets/scripts/github.en.ps1"),
-        (Example::Status, true) => include_str!("../assets/scripts/status.zh.ps1"),
-        (Example::Status, false) => include_str!("../assets/scripts/status.en.ps1"),
-    }
-}
-
-/// The text an example's file gets: Windows PowerShell 5.1 reads a script without a BOM in the
-/// ANSI code page (the emoji and Chinese text need the BOM), and Notepad keeps CRLF.
-pub fn example_file_text(kind: Example, chinese: bool) -> String {
-    format!(
-        "\u{feff}{}",
-        unify_lines(example(kind, chinese)).replace('\n', "\r\n")
-    )
-}
-
 /// Without a BOM, with LF line ends.
 fn unify_lines(text: &str) -> String {
     text.trim_start_matches('\u{feff}').replace("\r\n", "\n")
 }
 
-/// Examples as earlier versions wrote them, with the example and language that replace each:
-/// 0.3.0 and 0.3.1's PC status showed the IPv4 address of a disconnected adapter and drive C:
-/// only. The GitHub and weather examples of 0.3.0 to 0.3.3 printed text from the network
-/// unchanged, which could read as a row's parameters (a forged issue title started a program);
-/// the PC status of 0.3.2 and 0.3.3 lacks the header line its `run=` row now needs.
-const OLD_EXAMPLES: [(&str, Example, bool); 8] = [
-    (
-        include_str!("../assets/scripts/old/status.zh.0.3.0.ps1"),
-        Example::Status,
-        true,
-    ),
-    (
-        include_str!("../assets/scripts/old/status.en.0.3.0.ps1"),
-        Example::Status,
-        false,
-    ),
-    (
-        include_str!("../assets/scripts/old/status.zh.0.3.2.ps1"),
-        Example::Status,
-        true,
-    ),
-    (
-        include_str!("../assets/scripts/old/status.en.0.3.2.ps1"),
-        Example::Status,
-        false,
-    ),
-    (
-        include_str!("../assets/scripts/old/github.zh.0.3.0.ps1"),
-        Example::GitHub,
-        true,
-    ),
-    (
-        include_str!("../assets/scripts/old/github.en.0.3.0.ps1"),
-        Example::GitHub,
-        false,
-    ),
-    (
-        include_str!("../assets/scripts/old/weather.zh.0.3.0.ps1"),
-        Example::Weather,
-        true,
-    ),
-    (
-        include_str!("../assets/scripts/old/weather.en.0.3.0.ps1"),
-        Example::Weather,
-        false,
-    ),
+/// The built-in script fence examples of 0.3.0 to 0.4.0 (their texts are in
+/// `scripts/wintest/assets/old-examples`), by [`fingerprint`]: the plugin that does the same
+/// now (升级为插件) and whether the copy is the Chinese one.
+const EXAMPLES: [(&str, &str, bool); 14] = [
+    ("8a75815ee466c716", "weather", true),
+    ("c23ca258f50b0241", "weather", false),
+    ("c621790e6dd6b4cb", "weather", true),
+    ("94243be0c09d5316", "weather", false),
+    ("faff0f24d86c05d7", "github", true),
+    ("f8dfee797a990c73", "github", false),
+    ("c240092566c8ca8c", "github", true),
+    ("ba006aaaf6eecfea", "github", false),
+    ("1261a29200618fca", "pc-status", true),
+    ("4b8cf37e27cc4321", "pc-status", false),
+    ("7de6b92989962c3f", "pc-status", true),
+    ("4a99a5b96532b7e9", "pc-status", false),
+    ("555cdd68647abbb2", "pc-status", true),
+    ("aba934a36e483ceb", "pc-status", false),
 ];
-
-/// The record of the examples PecoFence wrote, in their folder: for each file, the example and
-/// language it holds and the fingerprint of the text written. A copy that still has that
-/// fingerprint was not edited, so it can get the example of a later PecoFence.
-const EXAMPLES_RECORD: &str = "examples.json";
-
-/// An example as PecoFence wrote it (an entry of [`EXAMPLES_RECORD`]).
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
-struct WrittenExample {
-    /// [`Example::name`].
-    example: String,
-    chinese: bool,
-    /// [`fingerprint`] of the text written.
-    fingerprint: String,
-}
 
 /// FNV-1a (64 bits) of a script without its BOM and with LF line ends: the same whatever an
 /// editor did to the line ends, and from one build of PecoFence to the next.
@@ -874,138 +803,22 @@ fn fingerprint(text: &str) -> String {
     format!("{hash:016x}")
 }
 
-/// The record of the folder of `script`; empty when there is none (or it cannot be read).
-fn read_examples_record(script: &Path) -> std::collections::BTreeMap<String, WrittenExample> {
-    script
-        .parent()
-        .and_then(|dir| std::fs::read_to_string(dir.join(EXAMPLES_RECORD)).ok())
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
-}
-
-/// Notes in the record that `path` holds example `kind` as `text`.
-fn note_written_example(path: &Path, kind: Example, chinese: bool, text: &str) {
-    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
-        return;
-    };
-    let mut record = read_examples_record(path);
-    record.insert(
-        name.to_string_lossy().to_string(),
-        WrittenExample {
-            example: kind.name().to_string(),
-            chinese,
-            fingerprint: fingerprint(text),
-        },
-    );
-    let written = serde_json::to_string_pretty(&record)
-        .map_err(std::io::Error::other)
-        .and_then(|json| std::fs::write(dir.join(EXAMPLES_RECORD), json));
-    if let Err(e) = written {
-        tracing::warn!(error = %e, "recording the example script failed");
-    }
-}
-
-/// Writes example `kind` to `path` and notes it in the record (for its later updates).
-pub fn write_example(path: &Path, kind: Example, chinese: bool) -> std::io::Result<()> {
-    let text = example_file_text(kind, chinese);
-    std::fs::write(path, &text)?;
-    note_written_example(path, kind, chinese, &text);
-    Ok(())
-}
-
-/// The example (and language) a script file is to be replaced with: an earlier version's example
-/// that nobody edited. A file PecoFence recorded is compared with its record; an older one with
-/// the texts of [`OLD_EXAMPLES`].
-fn outdated_example(path: &Path) -> Option<(Example, bool)> {
-    let name = path.file_name()?.to_string_lossy().to_string();
-    if let Some(written) = read_examples_record(path).remove(&name) {
-        let kind = Example::parse(&written.example)?;
-        if fingerprint(&std::fs::read_to_string(path).ok()?) == written.fingerprint {
-            let current = fingerprint(example(kind, written.chinese));
-            return (current != written.fingerprint).then_some((kind, written.chinese));
-        }
-        // Changed since it was written: edited, unless it is an earlier version's text word
-        // for word (an old copy put back), which the check below knows.
-    }
-    // Only small files can be one of the old texts (a script fence may run a large .exe).
+/// The plugin a script file stands for when it holds a built-in example nobody edited (see
+/// [`EXAMPLES`]), and whether it is the Chinese one.
+fn unchanged_example(path: &Path) -> Option<(&'static str, bool)> {
+    // Only small files can be one (a script fence may run a large .exe).
     if std::fs::metadata(path).map_or(true, |m| m.len() > 16 * 1024) {
         return None;
     }
-    let now = unify_lines(&std::fs::read_to_string(path).ok()?);
-    OLD_EXAMPLES
-        .iter()
-        .find(|(old, _, _)| unify_lines(old) == now)
-        .map(|&(_, kind, chinese)| (kind, chinese))
+    let print = fingerprint(&std::fs::read_to_string(path).ok()?);
+    let (_, plugin, chinese) = EXAMPLES.iter().find(|(f, _, _)| *f == print)?;
+    Some((plugin, *chinese))
 }
 
-/// A script file that still holds an earlier version's example unchanged gets the current one,
-/// so a fence made from an old example shows its fixes; an edited copy stays as it is. True
-/// when the file was replaced.
-pub fn update_old_example(path: &Path) -> bool {
-    let Some((kind, chinese)) = outdated_example(path) else {
-        return false;
-    };
-    match write_example(path, kind, chinese) {
-        Ok(()) => {
-            tracing::info!(
-                example = kind.name(),
-                chinese,
-                "unedited example script of an earlier version replaced by the current one"
-            );
-            true
-        }
-        Err(e) => {
-            tracing::warn!(example = kind.name(), error = %e, "updating an old example script failed");
-            false
-        }
-    }
-}
-
-/// 「添加示例…」: the script fence examples.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Example {
-    /// Today's weather (wttr.in).
-    Weather,
-    /// A GitHub repository's newest issues and pull requests: rows that open in the browser.
-    GitHub,
-    /// The computer's state every 2 seconds (a streaming script): colours, copy, run.
-    Status,
-}
-
-impl Example {
-    pub const ALL: [Self; 3] = [Self::Weather, Self::GitHub, Self::Status];
-
-    /// The example a settings page button names (`name()`).
-    pub fn parse(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|e| e.name() == name)
-    }
-
-    /// Its line in the menu.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Weather => pecofence_core::i18n::text("天气"),
-            Self::GitHub => pecofence_core::i18n::text("GitHub 仓库动态"),
-            Self::Status => pecofence_core::i18n::text("电脑状态"),
-        }
-    }
-
-    /// The file it is written to in the configuration's `scripts` folder.
-    pub fn file_name(self) -> &'static str {
-        match self {
-            Self::Weather => pecofence_core::i18n::text("天气.ps1"),
-            Self::GitHub => pecofence_core::i18n::text("GitHub 动态.ps1"),
-            Self::Status => pecofence_core::i18n::text("电脑状态.ps1"),
-        }
-    }
-
-    /// For the log.
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Weather => "weather",
-            Self::GitHub => "github",
-            Self::Status => "status",
-        }
-    }
+/// 升级为插件: the plugin that does what script `path` does, when it is a built-in example
+/// nobody edited.
+pub fn example_plugin(path: &str) -> Option<&'static str> {
+    unchanged_example(Path::new(path)).map(|(plugin, _)| plugin)
 }
 
 /// The folders in `dir` (`scripts-data`) named after a fence that `keep` does not list: what
@@ -1074,63 +887,6 @@ mod tests {
     }
 
     #[test]
-    fn a_recorded_example_follows_pecofence_until_it_is_edited() {
-        let dir = std::env::temp_dir().join(format!("pf-recorded-example-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("status.ps1");
-        // Written by this build: up to date, nothing to do.
-        write_example(&path, Example::Status, false).unwrap();
-        assert!(!update_old_example(&path));
-        // As an earlier build wrote it (another text, recorded): the current one replaces it,
-        // whatever an editor did to its line ends.
-        let earlier =
-            "\u{feff}# <pecofence.type>streamable</pecofence.type>\r\n'an earlier player'\r\n";
-        std::fs::write(&path, earlier).unwrap();
-        note_written_example(&path, Example::Status, false, earlier);
-        std::fs::write(&path, earlier.replace("\r\n", "\n")).unwrap();
-        assert!(update_old_example(&path));
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            example_file_text(Example::Status, false)
-        );
-        assert!(!update_old_example(&path));
-        // An edited copy (an API key put in) stays as it is.
-        std::fs::write(&path, earlier).unwrap();
-        note_written_example(&path, Example::Status, false, earlier);
-        let edited = earlier.replace("earlier", "edited");
-        std::fs::write(&path, &edited).unwrap();
-        assert!(!update_old_example(&path));
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
-        // A file the record does not name is left to the old texts.
-        assert!(!update_old_example(&dir.join("mine.ps1")));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn an_unedited_old_example_gets_the_current_one() {
-        let dir = std::env::temp_dir().join(format!("pf-old-example-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        for (old, kind, chinese) in OLD_EXAMPLES {
-            // As 0.3.0 wrote it: a BOM and CRLF.
-            let written = format!("\u{feff}{}", unify_lines(old).replace('\n', "\r\n"));
-            let path = dir.join(format!("{}-{chinese}.ps1", kind.name()));
-            std::fs::write(&path, &written).unwrap();
-            assert!(update_old_example(&path));
-            let now = std::fs::read_to_string(&path).unwrap();
-            assert_eq!(now, example_file_text(kind, chinese));
-            assert_ne!(now, written);
-            // The current one is left alone, and so is an edited old copy.
-            assert!(!update_old_example(&path));
-            let edited = format!("{written}# my own line\r\n");
-            std::fs::write(&path, &edited).unwrap();
-            assert!(!update_old_example(&path));
-            assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
-        }
-        assert!(!update_old_example(&dir.join("missing.ps1")));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
     fn pecofence_shows_the_unchanged_pc_status_example_itself() {
         use pecofence_core::script_output::{RowAction, ScriptLine, parse};
         use pecofence_platform::sysinfo::Drive;
@@ -1173,7 +929,7 @@ mod tests {
             assert_eq!(rows[5].color.as_deref(), Some("red"), "D: has 5 % left");
             assert!(rows[4].text.contains("50 GB") && rows[4].text.contains("50%"));
             // The script says the same: an edit of the example shows here.
-            let script = example(Example::Status, chinese);
+            let script = if chinese { STATUS_ZH } else { STATUS_EN };
             let fixed: &[&str] = if chinese {
                 &[
                     "内存已用 $mem% | color=",
@@ -1208,21 +964,65 @@ mod tests {
         assert!(no_ip.contains("没有连接网络") && no_ip.contains("color=green icon=🧠"));
     }
 
+    /// An example as an earlier version wrote it (the texts the app no longer has).
+    macro_rules! old_example {
+        ($name:literal) => {
+            include_str!(concat!(
+                "../../../scripts/wintest/assets/old-examples/",
+                $name
+            ))
+        };
+    }
+    const STATUS_ZH: &str = old_example!("status.zh.0.4.0.ps1");
+    const STATUS_EN: &str = old_example!("status.en.0.4.0.ps1");
+
     #[test]
-    fn only_an_unchanged_pc_status_example_skips_powershell() {
-        let dir = std::env::temp_dir().join(format!("pf-status-example-{}", std::process::id()));
+    fn every_example_of_earlier_versions_is_known_by_its_fingerprint() {
+        let dir = std::env::temp_dir().join(format!("pf-examples-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("status.ps1");
-        for chinese in [true, false] {
-            std::fs::write(&path, example_file_text(Example::Status, chinese)).unwrap();
-            assert_eq!(unchanged_status(&path), Some(chinese));
+        let texts = [
+            (old_example!("weather.zh.0.4.0.ps1"), "weather", true),
+            (old_example!("weather.en.0.4.0.ps1"), "weather", false),
+            (old_example!("weather.zh.0.3.0.ps1"), "weather", true),
+            (old_example!("weather.en.0.3.0.ps1"), "weather", false),
+            (old_example!("github.zh.0.4.0.ps1"), "github", true),
+            (old_example!("github.en.0.4.0.ps1"), "github", false),
+            (old_example!("github.zh.0.3.0.ps1"), "github", true),
+            (old_example!("github.en.0.3.0.ps1"), "github", false),
+            (STATUS_ZH, "pc-status", true),
+            (STATUS_EN, "pc-status", false),
+            (old_example!("status.zh.0.3.2.ps1"), "pc-status", true),
+            (old_example!("status.en.0.3.2.ps1"), "pc-status", false),
+            (old_example!("status.zh.0.3.0.ps1"), "pc-status", true),
+            (old_example!("status.en.0.3.0.ps1"), "pc-status", false),
+        ];
+        let path = dir.join("example.ps1");
+        for (text, plugin, chinese) in texts {
+            // As PecoFence wrote it (a BOM and CRLF), and as an editor may save it (LF).
+            for written in [
+                format!("\u{feff}{}", unify_lines(text).replace('\n', "\r\n")),
+                unify_lines(text),
+            ] {
+                std::fs::write(&path, &written).unwrap();
+                assert_eq!(
+                    unchanged_example(&path),
+                    Some((plugin, chinese)),
+                    "{plugin} {chinese}"
+                );
+                assert_eq!(
+                    unchanged_status(&path),
+                    (plugin == "pc-status").then_some(chinese)
+                );
+            }
+            // An edited copy is the user's own script.
+            std::fs::write(&path, format!("{text}# my own line\n")).unwrap();
+            assert_eq!(example_plugin(&path.to_string_lossy()), None);
         }
-        let edited = example_file_text(Example::Status, true)
-            .replace("Start-Sleep -Seconds 2", "Start-Sleep -Seconds 5");
-        std::fs::write(&path, edited).unwrap();
-        assert_eq!(unchanged_status(&path), None);
-        std::fs::write(&path, example_file_text(Example::Weather, true)).unwrap();
-        assert_eq!(unchanged_status(&path), None);
+        assert_eq!(example_plugin("plugin:weather"), None);
+        assert_eq!(
+            example_plugin(&dir.join("missing.ps1").to_string_lossy()),
+            None
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1368,138 +1168,6 @@ mod tests {
         assert!(!allows_run(&below));
         assert!(!allows_run(&dir.join("missing.ps1")));
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// The rows a fence shows for the example text `script` when its web request is answered
-    /// with `json`: the script runs as a fence runs it, only `Invoke-RestMethod` is replaced.
-    fn rows_for_canned_answer(
-        name: &str,
-        script: &str,
-        json: &str,
-    ) -> Vec<pecofence_core::script_output::ScriptRow> {
-        use pecofence_core::script_output::{ScriptLine, parse};
-        let dir = std::env::temp_dir().join(format!("pf-canned-{}-{name}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        // As PecoFence writes an example: a BOM and CRLF.
-        let file_text = |text: &str| format!("\u{feff}{}", unify_lines(text).replace('\n', "\r\n"));
-        std::fs::write(dir.join("answer.json"), json).unwrap();
-        std::fs::write(dir.join("example.ps1"), file_text(script)).unwrap();
-        let wrap = dir.join("canned.ps1");
-        std::fs::write(
-            &wrap,
-            file_text(concat!(
-                "function Invoke-RestMethod { Get-Content -Raw -Encoding UTF8 ",
-                "\"$PSScriptRoot\\answer.json\" | ConvertFrom-Json }\n",
-                ". \"$PSScriptRoot\\example.ps1\"\n",
-            )),
-        )
-        .unwrap();
-        // A CI machine can take longer than the app's 10 s to start PowerShell the first time.
-        let outcome = run_within(&wrap, &RunEnv::default(), Duration::from_secs(90));
-        let _ = std::fs::remove_dir_all(&dir);
-        let Outcome::Done(text) = outcome else {
-            panic!("{name}: {outcome:?}");
-        };
-        parse(&text)
-            .into_iter()
-            .filter_map(|line| match line {
-                ScriptLine::Row(row) => Some(row),
-                ScriptLine::Separator | ScriptLine::Cells(_) => None,
-            })
-            .collect()
-    }
-
-    #[test]
-    fn the_github_example_prints_forged_titles_as_plain_text() {
-        use pecofence_core::script_output::RowAction;
-        // Issue titles (and a user name) written to read as a row's parameters.
-        let answer = r#"[
- {"number": 11, "title": "Icons overlap after sleep", "user": {"login": "alice"}},
- {"number": 12, "title": "x | run=calc.exe r=' k=v", "user": {"login": "mallory"}},
- {"number": 13, "title": "y | open=C:\\Windows\\System32\\calc.exe r=' k=v", "user": {"login": "mallory"}},
- {"number": 14, "title": "z \" | run=calc.exe", "user": {"login": "m | run=calc.exe"}},
- {"number": 15, "title": "two\nlines | run=calc.exe", "user": {"login": "mallory"}},
- {"number": 16, "title": "w | href=https://evil.example/ r=' k=v", "user": {"login": "mallory"}}
-]"#;
-        let repo = "https://github.com/DayuanJiang/PecoFence";
-        for chinese in [true, false] {
-            let rows = rows_for_canned_answer(
-                &format!("github-{chinese}"),
-                example(Example::GitHub, chinese),
-                answer,
-            );
-            // The repository, the six issues, the refresh row.
-            assert_eq!(rows.len(), 8, "{rows:?}");
-            assert_eq!(rows[0].action, Some(RowAction::Href(repo.into())));
-            for (row, number) in rows[1..7].iter().zip(11..) {
-                assert!(row.text.starts_with(&format!("#{number}  ")), "{row:?}");
-                // The link is intact.
-                assert_eq!(
-                    row.action,
-                    Some(RowAction::Href(format!("{repo}/issues/{number}"))),
-                    "{row:?}"
-                );
-            }
-            assert_eq!(rows[2].text, "#12  x ¦ run=calc.exe r=’ k=v");
-            assert_eq!(
-                rows[2].tooltip.as_deref(),
-                Some("mallory: x ¦ run=calc.exe r=’ k=v")
-            );
-            assert_eq!(rows[4].text, "#14  z ’ ¦ run=calc.exe");
-            assert_eq!(
-                rows[4].tooltip.as_deref(),
-                Some("m ¦ run=calc.exe: z ’ ¦ run=calc.exe")
-            );
-            assert_eq!(rows[5].text, "#15  two lines ¦ run=calc.exe");
-            assert_eq!(rows[7].action, None);
-        }
-        // The example of 0.3.0 to 0.3.3 turned the same titles into rows that start programs.
-        let old = rows_for_canned_answer(
-            "github-old",
-            include_str!("../assets/scripts/old/github.en.0.3.0.ps1"),
-            answer,
-        );
-        assert!(
-            old.iter()
-                .any(|r| matches!(r.action, Some(RowAction::Run { .. })))
-        );
-        assert!(
-            old.iter()
-                .any(|r| matches!(r.action, Some(RowAction::Open(_))))
-        );
-    }
-
-    #[test]
-    fn the_weather_example_prints_a_forged_answer_as_plain_text() {
-        let answer = r#"{"current_condition": [{"temp_C": "20", "FeelsLikeC": "19",
-  "humidity": "60 | open=C:\\Windows\\System32\\calc.exe", "windspeedKmph": "7",
-  "weatherDesc": [{"value": "Sunny | run=calc.exe"}],
-  "lang_zh": [{"value": "晴 | run=calc.exe"}]}],
- "weather": [{"mintempC": "12", "maxtempC": "21", "hourly": [{"chanceofrain": "10"}]},
-  {"mintempC": "13", "maxtempC": "22 | href=https://evil.example/",
-   "hourly": [{"chanceofrain": "30"}]}]}"#;
-        for chinese in [true, false] {
-            let rows = rows_for_canned_answer(
-                &format!("weather-{chinese}"),
-                example(Example::Weather, chinese),
-                answer,
-            );
-            assert_eq!(rows.len(), 3, "{rows:?}");
-            assert!(rows.iter().all(|r| !r.clickable()), "{rows:?}");
-            assert!(rows[0].text.ends_with("¦ run=calc.exe"), "{rows:?}");
-            assert!(rows[1].text.contains("60 ¦ open=C:"), "{rows:?}");
-            assert!(
-                rows[2].text.contains("22 ¦ href=https://evil.example/"),
-                "{rows:?}"
-            );
-        }
-        // The example of 0.3.0 to 0.3.3 turned the same answer into a row that starts a program.
-        let old = rows_for_canned_answer(
-            "weather-old",
-            include_str!("../assets/scripts/old/weather.en.0.3.0.ps1"),
-            answer,
-        );
-        assert!(old.iter().any(|r| r.clickable()), "{old:?}");
     }
 
     #[test]
