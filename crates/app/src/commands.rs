@@ -417,6 +417,12 @@ pub enum Command {
         /// The second click of a double-click: the row's `dblaction=` runs.
         double: bool,
     },
+    /// A plugin fence's one-line box closed: its text (None after Esc).
+    PluginLineClosed {
+        fence: FenceId,
+        row: usize,
+        text: Option<String>,
+    },
     /// A click on the row under a fence's empty-state text (a smart fence that needs
     /// Everything: 「启动 Everything」 / 「安装 Everything」).
     EmptyActionClicked {

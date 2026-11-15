@@ -118,6 +118,9 @@ impl App {
 
     /// Starts plugin `id`'s `main` for fence `fence` (again, when it ran).
     pub(super) fn start_light(&mut self, fence: FenceId, id: &str, main: &std::path::Path) {
+        if self.hold_light(fence, Some((id, main))) {
+            return;
+        }
         let (Ok(code), Some(m)) = (std::fs::read_to_string(main), self.plugin_manifest(id)) else {
             return;
         };
@@ -183,6 +186,9 @@ impl App {
     }
 
     pub(super) fn stop_light(&mut self, fence: FenceId) {
+        if self.hold_light(fence, None) {
+            return;
+        }
         self.light.stopped.remove(&fence);
         self.light.stops.remove(&fence);
         if let Some(Ok(mut plugins)) = self.light.host.as_ref().map(|h| h.plugins.lock()) {
@@ -335,6 +341,7 @@ impl App {
                 clickable: true,
                 ..ScriptCellView::default()
             }],
+            plugin: true,
             ..ScriptRowView::default()
         });
         Some(rows)

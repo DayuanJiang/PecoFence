@@ -189,7 +189,7 @@ impl App {
                 outcome: None,
                 output: Some(text.join("\n")),
                 last_run: None,
-                running: self.light_runs(id) && !view.rows.iter().any(|r| r.color.is_some()),
+                running: self.light.running.contains_key(&id),
             });
         }
         let last = self.script_runs.last.get(&id);

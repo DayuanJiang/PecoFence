@@ -25,6 +25,8 @@ thread_local! {
 pub enum RenameTarget {
     Fence(FenceId),
     Item(ItemId),
+    /// A plugin fence's one-line box: the fence and the row.
+    PluginLine(FenceId, usize),
 }
 
 struct RenameSession {
@@ -238,6 +240,50 @@ pub fn begin_inline_rename(
         queue,
         ink,
     );
+}
+
+/// A plugin fence's one-line box (`input: { type: "line" }`) over `rect` (screen px, the field
+/// the fence draws), framed as an icon's name box: its edit has the keyboard and the input
+/// method. Enter or a click elsewhere hands the text to the plugin, Esc keeps the old one.
+/// `placeholder` shows grey while the box is empty.
+#[allow(clippy::too_many_arguments)]
+pub fn begin_line_input(
+    fence_hwnd: HWND,
+    rect: RECT,
+    at: (FenceId, usize),
+    current: String,
+    placeholder: String,
+    queue: CommandQueue,
+    ink: ColorF,
+) {
+    let dpi = monitors::dpi_for_window(fence_hwnd).max(96);
+    let px = |dip: f32| (dip * dpi as f32 / 96.0).round() as i32;
+    let item_box = ItemBox {
+        pad_x: px(6.0),
+        edit_x: px(6.0),
+        pad_top: 0,
+        pad_bottom: 0,
+        line_h: 0,
+        max_lines: 1,
+        align: TitleAlign::Left,
+    };
+    let face = pecofence_platform::fonts::text_face();
+    begin_rename_at(
+        rect,
+        dpi,
+        14.0,
+        RenameTarget::PluginLine(at.0, at.1),
+        current,
+        None,
+        Some((item_box, face, 400)),
+        queue,
+        ink,
+    );
+    ACTIVE.with(|a| {
+        if let Some(s) = a.borrow().as_ref() {
+            s.edit.set_cue(&placeholder);
+        }
+    });
 }
 
 /// The colours of a name box: the text in the colour of the name the box replaces (`ink`, as
@@ -742,11 +788,23 @@ pub fn end_active(commit: bool) {
                     let name = text.replace(['\r', '\n'], "");
                     s.queue.push(Command::RenameItemCommit { item, name })
                 }
+                RenameTarget::PluginLine(fence, row) => s.queue.push(Command::PluginLineClosed {
+                    fence,
+                    row,
+                    text: Some(text.replace(['\r', '\n'], " ")),
+                }),
             }
         } else {
+            if let RenameTarget::PluginLine(fence, row) = s.target {
+                s.queue.push(Command::PluginLineClosed {
+                    fence,
+                    row,
+                    text: None,
+                });
+            }
             s.queue.push(Command::RedrawAll);
         }
-        if let RenameTarget::Fence(fence) = s.target {
+        if let RenameTarget::Fence(fence) | RenameTarget::PluginLine(fence, _) = s.target {
             tracing::debug!(%fence, commit, had_keyboard, "fence name box closed");
             if had_keyboard {
                 s.queue.push(Command::FocusFence(fence));

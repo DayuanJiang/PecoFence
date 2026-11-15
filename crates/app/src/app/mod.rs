@@ -534,6 +534,8 @@ pub struct App {
     plugins: plugins::Plugins,
     light: light::Light,
     web_pages: web::Web,
+    /// Plugin restarts held while a plugin fence's input is open (`view.rs`).
+    held: view::Held,
     /// `--light` / `--dark`: pin the theme this run.
     theme_override: Option<ThemeMode>,
     peek_class: WindowClass,
@@ -2133,6 +2135,7 @@ impl App {
             plugins,
             light: light::Light::default(),
             web_pages: web::Web::default(),
+            held: view::Held::default(),
             theme_override: if args.light {
                 Some(ThemeMode::Light)
             } else if args.dark {
@@ -3225,9 +3228,27 @@ impl App {
                 }
             }
             Command::NoteEditMenu { x, y } => crate::note_edit::text_menu(x, y),
-            Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
-            Command::MoveNoteLine { fence, from, to } => self.move_note_line(fence, from, to),
+            Command::ToggleNoteLine { fence, line } => {
+                let before = self.state.note_text(fence).map(str::to_string);
+                self.toggle_note_line(fence, line);
+                self.plugin_note_changed(fence, before);
+            }
+            Command::MoveNoteLine { fence, from, to } => {
+                let before = self.state.note_text(fence).map(str::to_string);
+                self.move_note_line(fence, from, to);
+                self.plugin_note_changed(fence, before);
+            }
             Command::OpenNoteLink { fence, line, start } => self.open_note_link(fence, line, start),
+            Command::ScriptRowClicked {
+                fence,
+                row,
+                cell,
+                fraction,
+                dragging,
+                double,
+            } if self.light_runs(fence) => {
+                self.plugin_row_clicked(fence, row, cell, fraction, dragging, double)
+            }
             Command::ScriptRowClicked {
                 fence,
                 row,
@@ -3240,9 +3261,16 @@ impl App {
                     self.script_row_clicked(fence, row, cell, fraction, dragging, double)
                 }
             }
+            Command::PluginLineClosed { fence, row, text } => {
+                self.plugin_line_closed(fence, row, text)
+            }
             Command::EmptyActionClicked { fence } => self.smart_everything_clicked(fence),
             Command::EndNoteEdit => crate::note_edit::end_active(true),
-            Command::NoteEdited { fence, text } => self.note_edited(fence, &text),
+            Command::NoteEdited { fence, text } => {
+                let before = self.state.note_text(fence).map(str::to_string);
+                self.note_edited(fence, &text);
+                self.plugin_note_changed(fence, before);
+            }
             Command::NewFenceRect(rect) => self.offer_new_fence(rect),
             Command::MarqueeOffer(event) => self.on_marquee_offer(event),
             Command::DesktopMarquee(event) => self.on_desktop_marquee(event),

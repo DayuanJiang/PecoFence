@@ -552,6 +552,33 @@ pub fn decode_scaled(path: &Path, max_width: u32, max_height: u32) -> Result<Dec
     })
 }
 
+/// [`decode_scaled`] for a picture of at most `limit` pixels on a side (a plugin's): a larger
+/// one is not scaled and gives an error.
+pub fn decode_scaled_within(
+    path: &Path,
+    max_width: u32,
+    max_height: u32,
+    limit: u32,
+) -> Result<DecodedImage> {
+    let mut big = false;
+    let image = decode(path, |w, h| {
+        big = w > limit || h > limit;
+        if big {
+            return ((1, 1), [0, 0, 1, 1]);
+        }
+        let scale = (max_width as f32 / w as f32)
+            .min(max_height as f32 / h as f32)
+            .min(1.0);
+        let dst_w = ((w as f32 * scale).round() as u32).max(1);
+        let dst_h = ((h as f32 * scale).round() as u32).max(1);
+        ((dst_w, dst_h), [0, 0, dst_w, dst_h])
+    })?;
+    if big {
+        return Err(windows_core::Error::from_hresult(E_FAIL));
+    }
+    Ok(image)
+}
+
 /// Decodes `path` at its own size and keeps at most `max_width` x `max_height` pixels of it:
 /// the middle when `centered`, else the top-left corner. That is all a monitor of that size
 /// shows of a centred or a tiled picture.

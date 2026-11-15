@@ -30,6 +30,7 @@ use pecofence_platform::window::{
     self, MessageHandler, StandardCursor, Window, WindowBuilder, WindowClass, style,
 };
 use pecofence_platform::{HWND, RECT, desktop, dwm, hotkey, monitors, msg};
+use pecofence_plugin_host::view as host_view;
 use pecofence_render::fence_chrome::{
     Backdrop, BackdropCrop, ContentDraw, EmptyAction, FenceChrome, FenceStyle, GroupHeaderDraw,
     HeaderColumn, ItemCell, RAIL_BOTTOM, RAIL_COLLAPSED_BOTTOM, RAIL_ROW_H, RAIL_ROW_INSET,
@@ -633,6 +634,20 @@ pub struct ScriptRowView {
     pub bold: bool,
     /// A row of cells side by side (a `::` line): the fields above are not used then.
     pub cells: Vec<ScriptCellView>,
+    /// A plugin's row: its pictures are limited in size, and a view of plugin rows with no text
+    /// shows no hint.
+    pub plugin: bool,
+    /// A plugin row's parts (`pecofence_plugin_host::view::Row`): its id (clicks go to the
+    /// plugin with it), pieces of one line, the text or picture blurred until the pointer is on
+    /// it, a bar under the text, a chart and a drawing.
+    pub id: Option<String>,
+    pub spans: Vec<host_view::Span>,
+    pub blur: bool,
+    pub progress: Option<f32>,
+    pub chart: Option<host_view::Chart>,
+    pub canvas: Option<Rc<host_view::Canvas>>,
+    /// A plugin row's input: `note` (the fence is a note) or `line` (a one-line box).
+    pub input: Option<host_view::Input>,
 }
 
 /// One cell of a row of cells: a button (clickable), a slider (`slider`) or text.
@@ -656,6 +671,9 @@ pub struct ScriptCellView {
     pub image_height: f32,
     pub fill: bool,
     pub under: bool,
+    /// A plugin cell's id, and whether its text or picture is blurred until the pointer is on it.
+    pub id: Option<String>,
+    pub blur: bool,
 }
 
 impl ScriptRowView {
@@ -714,6 +732,7 @@ impl ScriptRowView {
                             image_height: c.height.unwrap_or(96.0),
                             fill: c.fill,
                             under: c.under,
+                            ..ScriptCellView::default()
                         })
                         .collect(),
                     ..Self::default()

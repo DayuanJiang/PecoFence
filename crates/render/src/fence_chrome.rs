@@ -9,12 +9,14 @@ use crate::panel::Clip;
 use crate::text::TextLayouts;
 use crate::text_shadow::TextShadows;
 use crate::theme::{TextFx, Theme, font_display, font_small, font_text, lerp, with_alpha};
+use pecofence_plugin_host::view::{Canvas, Chart, Span};
 use std::cell::{Cell, Ref, RefCell};
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use windows_canvas::{
-    Brush, ColorF, DrawingSession, FontWeight, GradientStop, Matrix3x2, Paint, ParagraphAlignment,
-    Rect, RoundedRect, TextAlignment, TextFormat, TextLayout, Vector2, WordWrapping,
+    Brush, ColorF, DrawingSession, Ellipse, FontWeight, GradientStop, Matrix3x2, Paint,
+    ParagraphAlignment, Rect, RoundedRect, TextAlignment, TextFormat, TextLayout, Vector2,
+    WordWrapping,
 };
 use windows_core::{Interface, Result};
 
@@ -115,10 +117,12 @@ pub struct FenceChrome {
     /// clock, which the text sizes are measured with.
     clock_time_format: TextFormat,
     clock_date_format: TextFormat,
-    /// The clock's time and date formats at the sizes last drawn (there is one clock at most).
-    clock_fonts: RefCell<Option<ClockFonts>>,
-    /// Plugin rows in a size or weight of their own: their formats by (DIPs, bold).
-    row_fonts: RefCell<Vec<((u32, bool), TextFormat)>>,
+    /// The clock's time and date formats at the sizes drawn last, the latest first: clocks of
+    /// different sizes (plugin clocks too) each keep theirs.
+    clock_fonts: RefCell<Vec<ClockFonts>>,
+    /// Plugin rows in a size or weight of their own: their formats by (DIPs, bold, the
+    /// display face of a `fit` row), the latest first.
+    row_fonts: RefCell<Vec<((u32, bool, bool), TextFormat)>>,
     /// The blurred masks of a theme's soft text shadow, shared by all fences.
     text_shadows: RefCell<TextShadows>,
     /// Labels and row names shaped for an earlier frame, shared by all fences.
@@ -4720,6 +4724,19 @@ pub struct ScriptRowDraw<'a> {
     pub image: Option<ScriptImageDraw<'a>>,
     /// `hidden=true`: not drawn, no room taken.
     pub hidden: bool,
+    /// A plugin row's parts: `fit` (its short text; the text is sized with the fence as the
+    /// clock's time), pieces of one line, the text blurred until the pointer is on it, a bar
+    /// under the text (0 to 1), a chart, a drawing with its pictures by step, a one-line box
+    /// (its value and its placeholder), and `hover`: the row reports the pointer (its tip, its
+    /// blur) also when a click does nothing.
+    pub fit: Option<&'a str>,
+    pub spans: &'a [Span],
+    pub blur: bool,
+    pub progress: Option<f32>,
+    pub chart: Option<&'a Chart>,
+    pub canvas: Option<(&'a Canvas, &'a [Option<ScriptImageDraw<'a>>])>,
+    pub line: Option<(&'a str, &'a str)>,
+    pub hover: bool,
 }
 
 /// The picture of an `image=` row: its decoded pixels, their cache key and the height (DIPs) it
@@ -4757,6 +4774,18 @@ pub struct ScriptCellDraw<'a> {
     pub fill: bool,
     /// `under=true`: the cell goes under the one before it, in the same column.
     pub under: bool,
+    /// A plugin cell's text is blurred until the pointer is on it.
+    pub blur: bool,
+}
+
+/// How far a plugin's blurred text is blurred (the Gaussian's deviation, DIPs).
+const PLUGIN_BLUR_DIP: f32 = 4.0;
+
+/// A plugin's colour (a name or `#rrggbb`) in the shade for `theme`'s plate.
+fn plugin_color(theme: &Theme, color: Option<&str>) -> Option<ColorF> {
+    let dark = theme.text_primary.r > 0.5;
+    let [r, g, b] = pecofence_core::script_output::color_rgb(color?, dark)?;
+    Some(ColorF::from_rgba8(r, g, b, 0xFF))
 }
 
 /// A cell that holds only characters of Unicode's private use area is an icon of the Segoe
@@ -5324,18 +5353,28 @@ impl FenceChrome {
     /// The format of a plugin row in a size or weight of its own (`size` over the normal text
     /// size of `tt`), made once and kept.
     fn script_row_format(&self, tt: &ToolText, size: f32, bold: bool) -> Result<TextFormat> {
-        let key = ((TOOL_TEXT_SIZES[1] * tt.k * size).round() as u32, bold);
+        self.plugin_format(TOOL_TEXT_SIZES[1] * tt.k * size, bold, false)
+    }
+
+    /// A plugin row's format at `dip` (whole DIPs), bold or not; `display`: the clock's light
+    /// display face on one line (a `fit` row). Made once and kept, the 32 used last.
+    fn plugin_format(&self, dip: f32, bold: bool, display: bool) -> Result<TextFormat> {
+        let key = (dip.round().max(1.0) as u32, bold, display);
         let mut fonts = self.row_fonts.borrow_mut();
-        if let Some((_, f)) = fonts.iter().find(|(k, _)| *k == key) {
-            return Ok(f.clone());
+        if let Some(i) = fonts.iter().position(|(k, _)| *k == key) {
+            let kept = fonts.remove(i);
+            fonts.insert(0, kept);
+            return Ok(fonts[0].1.clone());
         }
-        let weight = if bold {
-            FontWeight(600)
-        } else {
-            FontWeight::NORMAL
+        let weight = match (bold, display) {
+            (true, _) => FontWeight(600),
+            (false, true) => FontWeight(300),
+            (false, false) => FontWeight::NORMAL,
         };
-        let format = Self::build_tool_format(font_text(), key.0 as f32, weight, true)?;
-        fonts.push((key, format.clone()));
+        let face = if display { font_display() } else { font_text() };
+        let format = Self::build_tool_format(face, key.0 as f32, weight, !display)?;
+        fonts.insert(0, (key, format.clone()));
+        fonts.truncate(32);
         Ok(format)
     }
 
@@ -5485,6 +5524,14 @@ impl FenceChrome {
         let arrow_w = (SCRIPT_ARROW_W * tt.k).round();
         let glyph_w = (14.0 * tt.k).round();
         let mut hits = Vec::new();
+        // A `fit` row's text is sized for the room the other rows leave it, as the clock's time
+        // is for its fence.
+        let others = rows.iter().filter(|r| !r.hidden && r.fit.is_none()).count();
+        let fit_h =
+            (height - NOTE_PAD_TOP - others as f32 * row_step).max(CLOCK_BASE_H * CLOCK_SCALE_MIN);
+        // A one-line box's text stands this far in from its frame; a bar under a row's text.
+        let (box_x, box_y) = ((6.0 * tt.k).round(), (4.0 * tt.k).round());
+        let (bar_gap, bar_h) = ((3.0 * tt.k).round(), (3.0 * tt.k).round().max(2.0));
         // The rows before `pinned` stay in place; from there on, the band scrolls: `y` is where
         // the next row goes on the surface (the offset already taken off), `band_top` where the
         // band starts, and the clip keeps its rows out of the pinned ones and of the footer.
@@ -5574,14 +5621,46 @@ impl FenceChrome {
                 if in_band {
                     tops.push(y + offset - band_y0);
                 }
+                let x = NOTE_PAD_X + (area_w - w) / 2.0;
                 if script_row_in_view(in_band, band_top, height, y, h)
                     && let Ok(bitmap) =
                         bitmaps
                             .borrow_mut()
                             .get_or_upload(session, picture.key, picture.image)
                 {
-                    let x = NOTE_PAD_X + (area_w - w) / 2.0;
                     session.draw_bitmap(&bitmap, &Rect::from_xywh(x, y, w, h), 1.0);
+                }
+                if row.hover {
+                    hits.push((i, 0, Rect::from_xywh(x, y, w, h)));
+                }
+                y += h + 2.0 * SCRIPT_ROW_PAD_Y;
+                continue;
+            }
+            // A chart or a drawing: as tall as the plugin asked, as wide as the fence (a drawing
+            // from its very edges, as `pf.fence.width` says).
+            let drawn_h = row
+                .chart
+                .map(|c| c.height.unwrap_or(40.0))
+                .or(row.canvas.map(|(c, _)| c.height));
+            if let Some(h) = drawn_h {
+                if in_band {
+                    tops.push(y + offset - band_y0);
+                }
+                let area = match row.chart {
+                    Some(_) => Rect::from_xywh(NOTE_PAD_X, y, w, h),
+                    None => Rect::from_xywh(0.0, y, width, h),
+                };
+                if script_row_in_view(in_band, band_top, height, y, h) {
+                    match (row.chart, row.canvas) {
+                        (Some(chart), _) => self.draw_chart(session, theme, chart, area)?,
+                        (None, Some((canvas, pictures))) => {
+                            self.draw_canvas(session, theme, canvas, pictures, area, bitmaps)?
+                        }
+                        _ => {}
+                    }
+                }
+                if row.hover {
+                    hits.push((i, 0, area));
                 }
                 y += h + 2.0 * SCRIPT_ROW_PAD_Y;
                 continue;
@@ -5609,7 +5688,11 @@ impl FenceChrome {
             if row.todo.is_some() {
                 x += tt.todo_room();
             }
+            // A Segoe Fluent Icons character in that font, an emoji in the text's.
             let icon = match row.icon {
+                Some(icon) if is_icon_text(icon) => {
+                    Some(self.layout_in(icon, &tt.icon, w, f32::MAX)?)
+                }
                 Some(icon) => Some(self.layout_in(icon, &tt.body, w, f32::MAX)?),
                 None => None,
             };
@@ -5617,20 +5700,54 @@ impl FenceChrome {
                 l.metrics().width_including_trailing_whitespace + 6.0 * tt.k
             });
             let arrow = if row.opens { arrow_w } else { 0.0 };
-            let text_w = (width - text_x - NOTE_PAD_X - arrow).max(1.0);
-            let text = if row.text.is_empty() { " " } else { row.text };
-            let layout = if row.size != 1.0 || row.bold {
-                let format = self.script_row_format(tt, row.size, row.bold)?;
-                self.layout_in(text, &format, text_w, f32::MAX)?
-            } else {
-                self.layout_in(text, &tt.body, text_w, f32::MAX)?
+            // A one-line box: the text inside its frame.
+            let inset = if row.line.is_some() { box_x } else { 0.0 };
+            let text_w = (width - text_x - NOTE_PAD_X - arrow - 2.0 * inset).max(1.0);
+            // A `fit` row: its text or its short form, at the size the fence gives it.
+            let (text, fit_dip) = match row.fit {
+                Some(short) => {
+                    let (shown, _) = self.clock_time(width, fit_h, row.text, &[short], "");
+                    (
+                        shown,
+                        Some(self.clock_text_sizes(width, fit_h, shown, "").0),
+                    )
+                }
+                None => (row.text, None),
             };
-            let h = layout.metrics().height.max(line_h);
+            let placeholder = row.line.is_some_and(|(value, _)| value.is_empty());
+            let text = match row.line {
+                Some((_, hint)) if placeholder => hint,
+                Some((value, _)) => value,
+                None => text,
+            };
+            let base_dip = fit_dip.unwrap_or(TOOL_TEXT_SIZES[1] * tt.k * row.size);
+            let format = match fit_dip {
+                Some(dip) => self.plugin_format(dip, row.bold, true)?,
+                None if row.size != 1.0 || row.bold => {
+                    self.script_row_format(tt, row.size, row.bold)?
+                }
+                None => tt.body.clone(),
+            };
+            let one_line;
+            let text = if row.line.is_some() {
+                one_line = self.fit_width(text, &format, text_w);
+                one_line.as_str()
+            } else {
+                text
+            };
+            let text = if text.is_empty() { " " } else { text };
+            let layout = self.layout_in(text, &format, text_w, f32::MAX)?;
+            let text_h = layout.metrics().height.max(line_h);
+            let text_y = y + if row.line.is_some() { box_y } else { 0.0 };
+            let mut h = text_h + if row.line.is_some() { 2.0 * box_y } else { 0.0 };
+            if row.progress.is_some() {
+                h += bar_gap + bar_h;
+            }
             if in_band {
                 tops.extend(
-                    layout_line_tops(&layout, h)
+                    layout_line_tops(&layout, text_h)
                         .into_iter()
-                        .map(|t| y + offset - band_y0 + t),
+                        .map(|t| text_y + offset - band_y0 + t),
                 );
             }
             if !script_row_in_view(in_band, band_top, height, y, h) {
@@ -5671,13 +5788,23 @@ impl FenceChrome {
                 w + 2.0 * SCRIPT_ROW_PAD_X,
                 y + h + SCRIPT_ROW_PAD_Y - plate_top,
             );
-            // How far this row's plate has faded in.
+            // How far this row's plate has faded in, and how far the pointer has taken a blur
+            // off.
             let hot = if row.clickable {
                 fade_of(hover, (i, 0))
             } else {
                 0.0
             };
-            if hot > 0.0 {
+            let reveal = fade_of(hover, (i, 0));
+            let field = Rect::from_xywh(NOTE_PAD_X, y, w, text_h + 2.0 * box_y);
+            if row.line.is_some() {
+                // A text box as WinUI draws one: a faint field in a hairline frame.
+                plate.set_color(with_alpha(theme.text_primary, 0.05 + 0.04 * hot));
+                session.fill_rounded_rect(&RoundedRect::uniform(field, 4.0), &plate);
+                rule.set_color(with_alpha(theme.text_primary, 0.32));
+                session.draw_rounded_rect(&px.ring(field, 4.0), &rule, px.hair());
+                rule.set_color(with_alpha(theme.text_primary, 0.14));
+            } else if hot > 0.0 {
                 // Held: the pressed fill, lighter than the hover's (as a WinUI list row).
                 let strength = if pressed == Some((i, 0)) { 0.04 } else { 0.07 };
                 plate.set_color(with_alpha(theme.text_primary, strength * hot));
@@ -5695,22 +5822,69 @@ impl FenceChrome {
                 );
             }
             if let Some(icon) = &icon {
-                session.draw_text_layout_color(Vector2::new(x, y), icon, &primary);
+                session.draw_text_layout_color(Vector2::new(x, text_y), icon, &primary);
             }
             let own = match row.color {
                 Some(c) => Some(session.create_solid_brush(c)?),
                 None => None,
             };
-            let brush = match (&own, row.todo) {
-                (Some(b), _) => b,
-                (None, Some(true)) => &secondary,
-                (None, _) => &primary,
+            let (brush, color) = match (&own, row.todo) {
+                (Some(b), _) => (b, row.color.unwrap_or(theme.text_primary)),
+                (None, Some(true)) => (&secondary, theme.text_secondary),
+                (None, _) if placeholder => (&secondary, theme.text_secondary),
+                (None, _) => (&primary, theme.text_primary),
             };
-            // A row in a colour of its own keeps it bare: the halo is the fence text's.
-            if let (Some((halo, down)), None) = (&halo, &own) {
-                session.draw_text_layout(Vector2::new(text_x, y + down), &layout, halo);
+            let at = Vector2::new(text_x + inset, text_y);
+            if !row.spans.is_empty() {
+                // Pieces of one line side by side; the one that reaches the edge ends with an
+                // ellipsis.
+                let bold = self.plugin_format(base_dip, true, fit_dip.is_some())?;
+                let (mut sx, right) = (at.x, at.x + text_w);
+                for span in row.spans {
+                    if sx >= right - 1.0 {
+                        break;
+                    }
+                    let f = if span.bold { &bold } else { &format };
+                    let shown = self.fit_width(&span.text, f, right - sx);
+                    let l = self.layout_in(&shown, f, f32::MAX, f32::MAX)?;
+                    let own = plugin_color(theme, span.color.as_deref());
+                    let c = own.unwrap_or(color);
+                    let spot = Vector2::new(sx, at.y);
+                    if row.blur {
+                        self.draw_text_blurred(session, &l, &shown, f, spot, c, reveal)?;
+                    } else {
+                        if let (Some((halo, down)), None, None) = (&halo, &own, row.color) {
+                            session.draw_text_layout(Vector2::new(sx, at.y + down), &l, halo);
+                        }
+                        let b = session.create_solid_brush(c)?;
+                        session.draw_text_layout_color(spot, &l, &b);
+                    }
+                    sx += l.metrics().width_including_trailing_whitespace;
+                }
+            } else if row.blur {
+                self.draw_text_blurred(session, &layout, text, &format, at, color, reveal)?;
+            } else {
+                // A row in a colour of its own keeps it bare: the halo is the fence text's.
+                if let (Some((halo, down)), None) = (&halo, &own) {
+                    session.draw_text_layout(Vector2::new(at.x, at.y + down), &layout, halo);
+                }
+                session.draw_text_layout_color(at, &layout, brush);
             }
-            session.draw_text_layout_color(Vector2::new(text_x, y), &layout, brush);
+            if let Some(done) = row.progress {
+                // A thin bar under the text, filled to `done` in the row's colour or the accent.
+                let top = text_y + text_h + bar_gap;
+                let bar_w = (width - text_x - NOTE_PAD_X).max(1.0);
+                let bar = |w: f32| {
+                    RoundedRect::uniform(Rect::from_xywh(text_x, top, w, bar_h), bar_h / 2.0)
+                };
+                rule.set_color(with_alpha(theme.text_primary, 0.16));
+                session.fill_rounded_rect(&bar(bar_w), &rule);
+                rule.set_color(with_alpha(theme.text_primary, 0.14));
+                if done > 0.0 {
+                    let fill = session.create_solid_brush(row.color.unwrap_or(theme.accent))?;
+                    session.fill_rounded_rect(&bar((bar_w * done).max(bar_h)), &fill);
+                }
+            }
             if hot > 0.0 && row.opens {
                 arrow_brush.set_color(with_alpha(theme.text_secondary, hot));
                 session.draw_text(
@@ -5720,8 +5894,14 @@ impl FenceChrome {
                     &arrow_brush,
                 );
             }
-            if row.clickable {
-                hits.push((i, 0, plate_rect));
+            if row.clickable || row.hover {
+                // A one-line box's area is its field: its editor opens over it.
+                let area = if row.line.is_some() {
+                    field
+                } else {
+                    plate_rect
+                };
+                hits.push((i, 0, area));
             }
             y += h + 2.0 * SCRIPT_ROW_PAD_Y;
         }
@@ -6035,9 +6215,10 @@ impl FenceChrome {
                 group_w[leader[c]]
             };
             let fitted;
+            let mut shown = String::new();
             let layout = if cell.fill {
                 let format = if cell.bold { &tt.bold } else { &tt.body };
-                let shown = self.fit_width(cell.text, format, (w - room).max(1.0));
+                shown = self.fit_width(cell.text, format, (w - room).max(1.0));
                 fitted = self.layout_in(
                     if shown.is_empty() { " " } else { &shown },
                     format,
@@ -6077,6 +6258,14 @@ impl FenceChrome {
                     session.fill_rounded_rect(&RoundedRect::uniform(plate_rect, 4.0), &plate);
                 }
                 hits.push((row, c, plate_rect));
+            } else if cell.blur {
+                let area = Rect::from_xywh(
+                    cx,
+                    ty - SCRIPT_ROW_PAD_Y,
+                    w,
+                    line_h + 2.0 * SCRIPT_ROW_PAD_Y,
+                );
+                hits.push((row, c, area));
             }
             if let Some(done) = cell.checkbox {
                 todo.draw(tt, session, px, (cx, ty), line_h, done, TodoBoxState::Rest);
@@ -6085,6 +6274,24 @@ impl FenceChrome {
             let icon = is_icon_text(cell.text);
             let top = ty + (line_h - layout.metrics().height) / 2.0;
             let at = Vector2::new(text_x, if icon { top } else { ty });
+            if cell.blur {
+                // Blurred until the pointer is on it (a password in a clipboard history).
+                let format = if cell.bold {
+                    &tt.bold
+                } else if icon {
+                    &tt.icon
+                } else {
+                    &tt.body
+                };
+                let text = if cell.fill { shown.as_str() } else { cell.text };
+                let color = cell.color.unwrap_or(theme.text_primary);
+                let reveal = fade_of(hover, (row, c));
+                self.draw_text_blurred(session, layout, text, format, at, color, reveal)?;
+                if !under {
+                    x += w + gap_after(cell);
+                }
+                continue;
+            }
             // Text in the fence's own colour gets its halo, as a plain row's does.
             if let (Some((halo, down)), None, false) = (halo, &own, icon) {
                 session.draw_text_layout(Vector2::new(at.x, at.y + down), layout, halo);
@@ -6095,6 +6302,172 @@ impl FenceChrome {
             }
         }
         Ok(lines as f32 * cell_h + (lines - 1) as f32 * 2.0 * SCRIPT_ROW_PAD_Y)
+    }
+
+    /// `layout` (of `text` in `format`) at `at` in `color`, blurred: its blurred shape (a mask
+    /// kept as a text shadow's), crossing over to the sharp text as the pointer comes onto it
+    /// (`reveal`, 0 to 1).
+    #[allow(clippy::too_many_arguments)]
+    fn draw_text_blurred(
+        &self,
+        session: &DrawingSession<'_>,
+        layout: &TextLayout,
+        text: &str,
+        format: &TextFormat,
+        at: Vector2,
+        color: ColorF,
+        reveal: f32,
+    ) -> Result<()> {
+        if reveal < 1.0 {
+            let blurred = with_alpha(color, color.a * (1.0 - reveal));
+            if let Ok(mut masks) = self.text_shadows.try_borrow_mut() {
+                masks.draw(
+                    session,
+                    layout,
+                    text,
+                    format,
+                    at,
+                    PLUGIN_BLUR_DIP,
+                    0.0,
+                    blurred,
+                );
+            }
+        }
+        if reveal > 0.0 {
+            let sharp = session.create_solid_brush(with_alpha(color, color.a * reveal))?;
+            session.draw_text_layout_color(at, layout, &sharp);
+        }
+        Ok(())
+    }
+
+    /// A plugin's chart: its values as a line through `area`, the lowest at the bottom and the
+    /// highest at the top, in its colour or the accent.
+    fn draw_chart(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        chart: &Chart,
+        area: Rect,
+    ) -> Result<()> {
+        let values = &chart.values;
+        let (lo, hi) = values
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)));
+        let color = plugin_color(theme, chart.color.as_deref()).unwrap_or(theme.accent);
+        let brush = session.create_solid_brush(color)?;
+        let n = values.len();
+        let point = |i: usize| {
+            let x = if n > 1 {
+                i as f32 / (n - 1) as f32
+            } else {
+                0.5
+            };
+            let y = if hi > lo {
+                (values[i] - lo) / (hi - lo)
+            } else {
+                0.5
+            };
+            Vector2::new(
+                area.left + x * area.width(),
+                area.bottom - 1.0 - y * (area.height() - 2.0),
+            )
+        };
+        for i in 1..n {
+            session.draw_line(point(i - 1), point(i), &brush, 1.5);
+        }
+        if n == 1 {
+            session.fill_ellipse(&Ellipse::circle(point(0), 2.0), &brush);
+        }
+        Ok(())
+    }
+
+    /// A plugin's drawing in `area` (the fence's width, the canvas' height): its steps in
+    /// order, in DIPs from the area's top left, clipped to it. `pictures` holds each image
+    /// step's picture.
+    fn draw_canvas(
+        &self,
+        session: &DrawingSession<'_>,
+        theme: &Theme,
+        canvas: &Canvas,
+        pictures: &[Option<ScriptImageDraw<'_>>],
+        area: Rect,
+        bitmaps: &RefCell<crate::bitmaps::BitmapCache>,
+    ) -> Result<()> {
+        let _clip = pecofence_platform::d2d::push_axis_aligned_clip(
+            session.raw(),
+            area.left,
+            area.top,
+            area.right,
+            area.bottom,
+        )?;
+        let ink = session.create_solid_brush(theme.text_primary)?;
+        let at = |v: &[f32], i: usize| v.get(i).copied().unwrap_or(0.0);
+        let p = |v: &[f32], i: usize| Vector2::new(area.left + at(v, i), area.top + at(v, i + 1));
+        for (k, step) in canvas.draw.iter().enumerate() {
+            let stroke = plugin_color(theme, step.color.as_deref()).unwrap_or(theme.text_primary);
+            let fill = plugin_color(theme, step.fill.as_deref());
+            let outline = step.color.is_some() || fill.is_none();
+            let width = step.width.unwrap_or(1.0).clamp(0.0, 64.0);
+            if let Some(v) = &step.line {
+                ink.set_color(stroke);
+                session.draw_line(p(v, 0), p(v, 2), &ink, width);
+            } else if let Some(v) = &step.rect {
+                let r = Rect::from_xywh(
+                    area.left + at(v, 0),
+                    area.top + at(v, 1),
+                    at(v, 2),
+                    at(v, 3),
+                );
+                let r = RoundedRect::uniform(r, step.radius.unwrap_or(0.0).max(0.0));
+                if let Some(f) = fill {
+                    ink.set_color(f);
+                    session.fill_rounded_rect(&r, &ink);
+                }
+                if outline {
+                    ink.set_color(stroke);
+                    session.draw_rounded_rect(&r, &ink, width);
+                }
+            } else if let Some(v) = &step.circle {
+                let e = Ellipse::circle(p(v, 0), at(v, 2).max(0.0));
+                if let Some(f) = fill {
+                    ink.set_color(f);
+                    session.fill_ellipse(&e, &ink);
+                }
+                if outline {
+                    ink.set_color(stroke);
+                    session.draw_ellipse(&e, &ink, width);
+                }
+            } else if let Some(text) = &step.text {
+                let format = self.plugin_format(
+                    step.size.unwrap_or(14.0).clamp(4.0, 400.0),
+                    step.bold,
+                    false,
+                )?;
+                let room = (area.width() - at(&step.at, 0)).max(1.0);
+                let layout = self.layout_in(text, &format, room, f32::MAX)?;
+                ink.set_color(stroke);
+                session.draw_text_layout_color(p(&step.at, 0), &layout, &ink);
+            } else if let Some(Some(picture)) = pictures.get(k)
+                && let Ok(bitmap) =
+                    bitmaps
+                        .borrow_mut()
+                        .get_or_upload(session, picture.key, picture.image)
+            {
+                let (w, h) = (picture.image.width as f32, picture.image.height as f32);
+                let (dw, dh) = match step.at.len() {
+                    4.. => (at(&step.at, 2), at(&step.at, 3)),
+                    _ => (w, h),
+                };
+                let to = Rect::from_xywh(
+                    area.left + at(&step.at, 0),
+                    area.top + at(&step.at, 1),
+                    dw,
+                    dh,
+                );
+                session.draw_bitmap(&bitmap, &to, 1.0);
+            }
+        }
+        Ok(())
     }
 
     /// The width and height (DIPs) of a cell that holds a picture: as tall as asked (never under
@@ -6116,6 +6489,10 @@ fn script_is_empty(rows: &[ScriptRowDraw<'_>]) -> bool {
                 && r.text.trim().is_empty()
                 && r.todo.is_none()
                 && r.icon.is_none()
+                && r.spans.is_empty()
+                && r.chart.is_none()
+                && r.canvas.is_none()
+                && r.line.is_none()
     })
 }
 
@@ -6310,31 +6687,46 @@ impl FenceChrome {
     ) -> Result<(f32, f32)> {
         session.clear(ColorF::TRANSPARENT);
         let (time_dip, date_dip) = self.clock_text_sizes(width, height, time, date);
-        let fresh = self
-            .clock_fonts
-            .borrow()
-            .as_ref()
-            .is_some_and(|f| f.time == time_dip && f.date == date_dip);
-        if !fresh {
-            *self.clock_fonts.borrow_mut() = Some(ClockFonts {
-                time: time_dip,
-                date: date_dip,
-                time_format: Self::build_tool_format(
-                    font_display(),
-                    time_dip,
-                    FontWeight(300),
-                    false,
-                )?,
-                date_format: Self::build_tool_format(
-                    font_text(),
-                    date_dip,
-                    FontWeight::NORMAL,
-                    true,
-                )?,
-            });
+        {
+            let mut kept = self.clock_fonts.borrow_mut();
+            match kept
+                .iter()
+                .position(|f| f.time == time_dip && f.date == date_dip)
+            {
+                Some(i) => {
+                    let fonts = kept.remove(i);
+                    kept.insert(0, fonts);
+                }
+                None => {
+                    tracing::debug!(
+                        time_dip,
+                        date_dip,
+                        kept = kept.len(),
+                        "clock fonts made for a new size"
+                    );
+                    let fonts = ClockFonts {
+                        time: time_dip,
+                        date: date_dip,
+                        time_format: Self::build_tool_format(
+                            font_display(),
+                            time_dip,
+                            FontWeight(300),
+                            false,
+                        )?,
+                        date_format: Self::build_tool_format(
+                            font_text(),
+                            date_dip,
+                            FontWeight::NORMAL,
+                            true,
+                        )?,
+                    };
+                    kept.insert(0, fonts);
+                    kept.truncate(8);
+                }
+            }
         }
         let fonts = self.clock_fonts.borrow();
-        let Some(fonts) = fonts.as_ref() else {
+        let Some(fonts) = fonts.first() else {
             return Ok((time_dip, date_dip));
         };
         let primary = session.create_solid_brush(theme.text_primary)?;
@@ -6679,6 +7071,14 @@ mod tests {
             cells: &[],
             image: None,
             hidden: false,
+            fit: None,
+            spans: &[],
+            blur: false,
+            progress: None,
+            chart: None,
+            canvas: None,
+            line: None,
+            hover: false,
         }
     }
 
@@ -6751,19 +7151,24 @@ mod tests {
             image: None,
             fill,
             under,
+            blur: false,
         }
     }
 
     /// The areas of the clickable cells of one row of `cells` in a fence `width` DIPs wide.
     fn cells_hits(width: f32, cells: &[ScriptCellDraw<'_>]) -> Vec<ScriptHit> {
-        let _ole = pecofence_platform::com::OleGuard::init().unwrap();
-        let gpu = windows_canvas::GpuDevice::new_or_warp().unwrap();
-        let target = gpu.create_render_target(width as u32, 200).unwrap();
-        let chrome = FenceChrome::new().unwrap();
-        let theme = Theme::dark();
         let mut row = script_row("", false);
         row.cells = cells;
-        let rows = [row];
+        rows_drawn(width, &[row]).hits
+    }
+
+    /// `rows` drawn in a fence `width` x 400 DIPs.
+    fn rows_drawn(width: f32, rows: &[ScriptRowDraw<'_>]) -> ScriptDrawn {
+        let _ole = pecofence_platform::com::OleGuard::init().unwrap();
+        let gpu = windows_canvas::GpuDevice::new_or_warp().unwrap();
+        let target = gpu.create_render_target(width as u32, 400).unwrap();
+        let chrome = FenceChrome::new().unwrap();
+        let theme = Theme::dark();
         let bitmaps = RefCell::new(crate::bitmaps::BitmapCache::new());
         let bar = |_: ScriptBand| None;
         let scroll = ScriptScroll {
@@ -6780,9 +7185,9 @@ mod tests {
                     &theme,
                     1.0,
                     width,
-                    200.0,
+                    400.0,
                     1,
-                    &rows,
+                    rows,
                     &[],
                     None,
                     &bitmaps,
@@ -6793,7 +7198,48 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        drawn.unwrap().hits
+        drawn.unwrap()
+    }
+
+    /// A plugin's chart and drawing take the heights it asked for (a drawing the fence's whole
+    /// width), a blurred row reports the pointer without being clickable, and a one-line box's
+    /// area is its field.
+    #[test]
+    fn plugin_rows_take_their_heights_and_report_the_pointer() {
+        let chart = Chart {
+            values: vec![1.0, 3.0, 2.0],
+            color: None,
+            height: Some(50.0),
+        };
+        let canvas = Canvas {
+            height: 70.0,
+            draw: Vec::new(),
+        };
+        let mut rows = vec![
+            script_row("secret", false),
+            script_row("", false),
+            script_row("", false),
+            script_row("", true),
+        ];
+        rows[0].blur = true;
+        rows[0].hover = true;
+        rows[1].chart = Some(&chart);
+        rows[1].hover = true;
+        rows[2].canvas = Some((&canvas, &[]));
+        rows[2].hover = true;
+        rows[3].line = Some(("", "Type here"));
+        let hits = rows_drawn(320.0, &rows).hits;
+        let size = |i: usize| {
+            hits.iter()
+                .find(|h| h.0 == i)
+                .map(|h| (h.2.width(), h.2.height()))
+        };
+        assert_eq!(hits.len(), 4, "{hits:?}");
+        assert_eq!(size(1), Some((320.0 - 2.0 * NOTE_PAD_X, 50.0)));
+        assert_eq!(size(2), Some((320.0, 70.0)));
+        let field = hits.iter().find(|h| h.0 == 3).unwrap().2;
+        assert_eq!(field.left, NOTE_PAD_X);
+        assert!(field.top >= hits.iter().find(|h| h.0 == 2).unwrap().2.bottom);
     }
 
     #[test]
