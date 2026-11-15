@@ -94,6 +94,7 @@ mod undo;
 mod updates;
 mod usage;
 mod vdesktops;
+mod view;
 mod visuals;
 mod wallpaper_refresh;
 mod welcome;

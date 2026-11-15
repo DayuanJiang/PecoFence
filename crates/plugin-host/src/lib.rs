@@ -6,40 +6,22 @@
 
 use pecofence_core::FenceId;
 use rquickjs::{CaughtError, Context, Ctx, Function, Object, Runtime};
-use serde::Deserialize;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+pub mod view;
+pub use view::{Row, View};
 
 pub const MEMORY_LIMIT: usize = 8 * 1024 * 1024;
 pub const CALL_LIMIT: Duration = Duration::from_millis(50);
 /// `pf.show` takes effect at most 10 times a second: a view that comes sooner waits, and a
 /// later one takes its place.
 const SHOW_GAP: Duration = Duration::from_millis(100);
-const MAX_ROWS: usize = 300;
 const MAX_TIMERS: usize = 20;
 /// `pf.time.format(unix_ms, kind)`: the time in Windows' region format.
 pub type Format = fn(i64, &str) -> String;
-
-/// What a plugin shows: rows from the top.
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
-#[serde(default)]
-pub struct View {
-    pub rows: Vec<Row>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
-#[serde(default)]
-pub struct Row {
-    pub text: String,
-    /// What shows when `text` is too wide for the fence (a `fit` row).
-    pub short: Option<String>,
-    /// `small`, `normal`, `large`, `xlarge`, `huge`, or `fit` (scaled with the fence).
-    pub size: Option<String>,
-    pub bold: bool,
-    pub color: Option<String>,
-}
 
 /// Fence `fence`'s plugin starts: its code and what `pf` says about the fence.
 pub struct Start {
@@ -171,11 +153,8 @@ impl Plugin {
             n.set("settings", s.settings.to_string())?;
             n.set("fence", fence.to_string())?;
             let to = shared.clone();
-            let show = move |json: String| match serde_json::from_str::<View>(&json) {
-                Ok(mut view) => {
-                    view.rows.truncate(MAX_ROWS);
-                    to.borrow_mut().view = Some(view);
-                }
+            let show = move |json: String| match view::parse(&json) {
+                Ok(view) => to.borrow_mut().view = Some(view),
                 Err(e) => tracing::debug!(error = %e, "plugin view not read"),
             };
             n.set("show", Function::new(ctx.clone(), show)?)?;

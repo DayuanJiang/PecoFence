@@ -4,7 +4,6 @@
 //! views they show.
 
 use super::*;
-use crate::fence_window::{ScriptRowView, ScriptView};
 use pecofence_plugin_host as host;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -18,9 +17,16 @@ pub(super) struct Light {
     out: Arc<Mutex<Vec<host::Output>>>,
     /// The fences whose plugin runs: the rows it last showed (None before its first view), and
     /// whether it was last told that the fence shows and how big it is.
-    pub(super) running: HashMap<FenceId, (Option<Vec<ScriptRowView>>, bool, (f32, f32))>,
+    pub(super) running: HashMap<
+        FenceId,
+        (
+            Option<Vec<crate::fence_window::ScriptRowView>>,
+            bool,
+            (f32, f32),
+        ),
+    >,
     /// The plugins PecoFence stopped, and why: they wait for 立即运行.
-    stopped: HashMap<FenceId, String>,
+    pub(super) stopped: HashMap<FenceId, String>,
 }
 
 impl App {
@@ -149,22 +155,13 @@ impl App {
         for output in outputs {
             match output {
                 host::Output::Show(fence, view) => {
-                    let Some((rows, ..)) = self.light.running.get_mut(&fence) else {
+                    if !self.light.running.contains_key(&fence) {
                         continue;
-                    };
-                    *rows = Some(
-                        view.rows
-                            .into_iter()
-                            .map(|r| ScriptRowView {
-                                text: r.text,
-                                color: r.color,
-                                size: r.size,
-                                short: r.short,
-                                bold: r.bold,
-                                ..ScriptRowView::default()
-                            })
-                            .collect(),
-                    );
+                    }
+                    let shown = self.plugin_rows(fence, view);
+                    if let Some((rows, ..)) = self.light.running.get_mut(&fence) {
+                        *rows = Some(shown);
+                    }
                     hosts.push(self.state.host_of(fence));
                 }
                 host::Output::Stopped(fence, why) => {
@@ -194,24 +191,6 @@ impl App {
         });
         // A hide that came without its window message still pauses the plugin.
         self.sync_light();
-    }
-
-    /// A light plugin fence's view: its rows (正在运行… until the first), or why it stopped.
-    pub(super) fn light_view(&self, fence: FenceId) -> Option<ScriptView> {
-        let stopped = self.light.stopped.get(&fence).map(|why| {
-            let text = pecofence_core::i18n::format(
-                "插件停止了：{0}。右键这个栅栏，选“立即运行”重新启动。",
-                std::slice::from_ref(why),
-            );
-            ScriptRowView::failed(&text, "")
-        });
-        let rows = stopped.or_else(|| self.light.running.get(&fence)?.0.clone());
-        let quiet = rows.is_none() && self.light.running.contains_key(&fence);
-        (quiet || rows.is_some()).then(|| ScriptView {
-            rows: rows.unwrap_or_default(),
-            quiet,
-            ..ScriptView::default()
-        })
     }
 
     /// A switch of the plugin fence's settings (its fence menu) turned over.
