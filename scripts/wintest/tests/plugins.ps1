@@ -428,8 +428,8 @@ $p = @(PluginFences 'pf-place')
 $over = @($p | ForEach-Object { "$($_.windowRect.x),$($_.windowRect.y) on [$(OverlapsOf $_.id)]" })
 Shot 'two-plugin-fences-in-a-row'
 Check 'two fences, neither over another fence' ($p.Count -eq 2 -and @($p | Where-Object { OverlapsOf $_.id }).Count -eq 0) ($over -join ' | ')
-$dlg = UninstallVia 'PF Place' 'pf-place'
-[L]::PostMessageW($dlg, 0x111, [IntPtr]6, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 2
+UninstallVia 'PF Place' 'pf-place' | Out-Null
+UninstallYes
 $script:Offer.Remove('pf-place')
 
 Case 'an older index served again counts as none'
