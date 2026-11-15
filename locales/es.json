@@ -1092,7 +1092,7 @@
   "用的内存超过了 8 MB": "usó más de 8 MB de memoria",
   "升级为插件之前": "Antes del cambio a plugins",
   "需要 WebView2 才能显示这个插件。": "Este plugin necesita WebView2 para mostrarse.",
-  "这个插件需要更新 WebView2。": "Este plugin necesita una versión más reciente de WebView2.",
+  "这个插件需要更新 WebView2。更新以后，请重新启动 PecoFence。": "Este plugin necesita una versión más reciente de WebView2. Después de actualizarlo, reinicie PecoFence.",
   "下载 WebView2": "Descargar WebView2",
   "重新加载": "Volver a cargar",
   "插件的网页一小时里停了三次，最后一次是因为{0}。": "La página del plugin se detuvo tres veces en una hora; la última vez, porque {0}.",

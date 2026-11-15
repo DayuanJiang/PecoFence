@@ -115,7 +115,12 @@ impl App {
                 i18n::text("需要 WebView2 才能显示这个插件。").to_string(),
                 true,
             ),
-            Stop::OldWebView2 => (i18n::text("这个插件需要更新 WebView2。").to_string(), true),
+            // The browser of the WebView2 already started stays until PecoFence quits.
+            Stop::OldWebView2 => (
+                i18n::text("这个插件需要更新 WebView2。更新以后，请重新启动 PecoFence。")
+                    .to_string(),
+                true,
+            ),
             Stop::Failed(f) => {
                 let reason = match f {
                     Failure::BrowserExited => i18n::text("WebView2 的浏览器进程退出了"),
