@@ -216,6 +216,10 @@ impl App {
                 tracing::debug!(plugin, %fence, "web plugin: the page posts to its main.js");
                 self.plugin_event(fence, "message", data);
             }
+            "navigate" => {
+                let uri = crate::web_plugin::short(args[0].as_str().unwrap_or(""));
+                tracing::info!(plugin, %fence, uri, "web plugin: navigation to another site refused in the page");
+            }
             "menu" if pressed => {
                 let p = window::cursor_pos();
                 tracing::debug!(plugin, %fence, "web plugin: right-click on the page, the fence menu");

@@ -6,7 +6,9 @@
 //!
 //! The plugin's files come from PecoFence at `https://<id>.plugins.pecofence/`, every response
 //! with a fixed Content-Security-Policy whose `connect-src` lists only the plugin's `network`
-//! hosts (and the plugin's own files). Permission requests, other sites, new windows and
+//! hosts (and the plugin's own files), and a Connection-Allowlist of the same hosts, which the
+//! browser applies to every connection (`Plugin::allowlist`). Permission requests, other sites,
+//! new windows, external protocols (`mailto:`, `ms-settings:`: they start as navigations) and
 //! downloads are refused. The page calls `pf.*` through `postMessage`; only its own main frame is
 //! heard, and the app answers it with the code the light layer uses (`App::web_call`). Events
 //! (`show`, `hide`, `resize`, `theme`, `settings`, ...) reach the page as messages too.
@@ -93,6 +95,20 @@ impl Plugin {
         format!(
             "default-src 'self'; connect-src 'self'{connect}; frame-src 'none'; form-action 'none'"
         )
+    }
+
+    /// The Connection-Allowlist header every response gets too (WebView2 152 and later): the
+    /// browser refuses each connection of the page, its blank frames and its workers to anything
+    /// but the plugin's own files and its `network` hosts, also those the CSP does not cover
+    /// (`dns-prefetch`, `preconnect`), and all of WebRTC. Redirects are left to the CSP, which
+    /// checks each one.
+    fn allowlist(&self) -> String {
+        let hosts: String = self
+            .network
+            .iter()
+            .map(|h| format!(" \"https://{h}/*\""))
+            .collect();
+        format!("(response-origin{hosts}); redirects=allow")
     }
 }
 
@@ -215,7 +231,16 @@ impl WebFence {
         let ms = self.started.elapsed().as_millis() as u64;
         match self.ready(comp) {
             Ok(()) => {
-                tracing::info!(plugin = %self.plugin.id, fence = %self.fence, ms, version = self.version, background = self.plugin.background, "web plugin: page loading")
+                tracing::info!(plugin = %self.plugin.id, fence = %self.fence, ms, version = self.version, background = self.plugin.background, "web plugin: page loading");
+                let major: u32 = self
+                    .version
+                    .split('.')
+                    .next()
+                    .and_then(|m| m.parse().ok())
+                    .unwrap_or(0);
+                if major < 152 {
+                    tracing::warn!(plugin = %self.plugin.id, version = self.version, "web plugin: this WebView2 runtime ignores Connection-Allowlist; dns-prefetch and preconnect to other hosts are not blocked, WebRTC only by its removal from the page")
+                }
             }
             Err(e) => {
                 tracing::warn!(plugin = %self.plugin.id, error = %e, "web plugin: browser setup failed")
@@ -249,7 +274,12 @@ impl WebFence {
         let mut events = Vec::new();
         // The plugin's files, each with the fixed CSP.
         {
-            let (dir, csp, origin) = (self.plugin.dir.clone(), self.plugin.csp(), origin.clone());
+            let (dir, csp, allow, origin) = (
+                self.plugin.dir.clone(),
+                self.plugin.csp(),
+                self.plugin.allowlist(),
+                origin.clone(),
+            );
             events.push(
                 webview.on_web_resource_requested(&format!("{origin}*"), move |req| {
                     let uri = req.uri();
@@ -268,7 +298,11 @@ impl WebFence {
                         Some(b) => WebResourceResponse::new(b).content_type(mime(path)),
                         None => WebResourceResponse::new(Vec::new()).status(404, "Not Found"),
                     };
-                    Some(response.header("Content-Security-Policy", &csp))
+                    Some(
+                        response
+                            .header("Content-Security-Policy", &csp)
+                            .header("Connection-Allowlist", &allow),
+                    )
                 })?,
             );
         }
@@ -661,12 +695,15 @@ fn scheme(dark: bool) -> PreferredColorScheme {
 /// `pf` for the page, made before its own scripts run (scripts the host adds are not subject
 /// to the page's CSP). Every call goes to the app as `{id, call, args}` and comes back as
 /// `{id, result}` or `{id, error}`; events come as `{event, data}`. A right-click the page does
-/// not take (`preventDefault` on `contextmenu`) asks for the fence's menu.
+/// not take (`preventDefault` on `contextmenu`) asks for the fence's menu; a navigation to another
+/// site is cancelled in the page and told to the app (`navigate`, for the log).
 fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
     let origin = origin.trim_end_matches('/');
     format!(
         r#"(() => {{
-  // No WebRTC: it reaches hosts the CSP does not list, and no browser argument turns it off.
+  // No WebRTC: it reaches hosts the CSP does not list. Connection-Allowlist blocks it in the
+  // browser (WebView2 152 and later); removing it here covers older runtimes. The script runs in
+  // every frame, blank ones too.
   for (const k of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCRtpSender", "RTCRtpReceiver", "RTCIceTransport"]) delete window[k];
   if (location.origin !== "{origin}" || window.top !== window || !window.chrome || !chrome.webview) return;
   const wv = chrome.webview, waiting = new Map(), handlers = {{}}, state = {init};
@@ -702,6 +739,13 @@ fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
   for (const k of ["lang", "theme", "settings", "fence"]) Object.defineProperty(pf, k, {{ get: () => state[k], enumerable: true }});
   Object.defineProperty(window, "pf", {{ value: Object.freeze(pf) }});
   addEventListener("contextmenu", e => setTimeout(() => {{ if (!e.defaultPrevented) wv.postMessage({{ call: "menu", args: [] }}); }}));
+  // A link or a script that leads to another site or protocol stops here and the page stays:
+  // the browser would block it (Connection-Allowlist) and show its error page in place of this one.
+  navigation.addEventListener("navigate", e => {{
+    if (!e.cancelable || new URL(e.destination.url).origin === location.origin) return;
+    e.preventDefault();
+    wv.postMessage({{ call: "navigate", args: [e.destination.url] }});
+  }});
 }})();"#,
         calls = CALLS,
     )
@@ -723,7 +767,7 @@ fn mime(path: &str) -> &'static str {
 }
 
 /// An address for the log: no query, at most 80 characters.
-fn short(uri: &str) -> String {
+pub(crate) fn short(uri: &str) -> String {
     uri.split('?')
         .next()
         .unwrap_or("")

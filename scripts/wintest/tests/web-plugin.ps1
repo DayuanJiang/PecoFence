@@ -33,6 +33,31 @@ function GroupMem() {
   foreach ($id in $ids) { $p = Get-Process -Id $id -ErrorAction SilentlyContinue; if ($p) { $commit += $p.PrivateMemorySize64; if ($p.Name -eq 'msedgewebview2') { $web++ } } }
   return @{ ws = [Math]::Round($ws / 1MB, 1); commit = [Math]::Round($commit / 1MB, 1); procs = $ids.Count; web = $web }
 }
+# One CDP call on the page's connection: the whole answer.
+function CdpCall([string]$method, $params = @{}) {
+  $script:CdpN++
+  $id = $script:CdpN
+  $bytes = [Text.Encoding]::UTF8.GetBytes((@{ id = $id; method = $method; params = $params } | ConvertTo-Json -Depth 6 -Compress))
+  $none = [Threading.CancellationToken]::None
+  $script:Cdp.SendAsync((New-Object 'ArraySegment[byte]' -ArgumentList (, $bytes)), [Net.WebSockets.WebSocketMessageType]::Text, $true, $none).Wait()
+  while ($true) {
+    $ms = New-Object IO.MemoryStream
+    $buf = New-Object byte[] 65536
+    do { $r = $script:Cdp.ReceiveAsync((New-Object 'ArraySegment[byte]' -ArgumentList (, $buf)), $none).Result; $ms.Write($buf, 0, $r.Count) } while (-not $r.EndOfMessage)
+    $resp = [Text.Encoding]::UTF8.GetString($ms.ToArray()) | ConvertFrom-Json
+    if ($resp.id -eq $id) { return $resp }
+  }
+}
+# A value (a Promise is awaited) from an isolated world of the page: globals of its own, so what
+# the bridge script removes is there; the page's connection rules still hold.
+function JsIsolated([string]$expr) {
+  $frame = (CdpCall 'Page.getFrameTree').result.frameTree.frame.id
+  $ctx = (CdpCall 'Page.createIsolatedWorld' @{ frameId = $frame; worldName = 'test' }).result.executionContextId
+  $r = CdpCall 'Runtime.evaluate' @{ expression = $expr; contextId = $ctx; awaitPromise = $true; returnByValue = $true }
+  if ($r.result.exceptionDetails) { return "exception: $($r.result.exceptionDetails.exception.description)" }
+  return $r.result.result.value
+}
+
 # The median of three readings 5 s apart, logged and kept for the table.
 function MemNow([string]$what) {
   $r = @(1..3 | ForEach-Object { GroupMem; Start-Sleep -Seconds 5 })
@@ -133,6 +158,22 @@ if ($Part -eq 'A') {
   Check 'the host refused the new window' ($null -ne (PfWaitLog 'web plugin: new window refused' 5)) ''
   Check 'the host refused permissions' ($null -ne (PfWaitLog 'web plugin: permission refused' 5)) ''
   Check 'the host refused the download' ($null -ne (PfWaitLog 'web plugin: download refused' 5)) ''
+  # What the CSP does not cover, blocked by the page's Connection-Allowlist: hints to an undeclared
+  # host from the page and from a blank frame of it (a listener here, the DNS cache), and WebRTC
+  # (an isolated world has RTCPeerConnection; the STUN server is a host the plugin did not declare).
+  $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1).IPAddress
+  $tl = @(18765, 18766 | ForEach-Object { $t = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Any, $_); $t.Start(); $t })
+  $tag = Get-Random -Minimum 100000 -Maximum 999999
+  Js "(() => { const f = document.createElement('iframe'); document.body.appendChild(f); for (const [d, rel, href] of [[document, 'preconnect', 'http://${ip}:18765/'], [document, 'dns-prefetch', 'https://pf-hint-$tag.example.net/'], [f.contentDocument, 'preconnect', 'http://${ip}:18766/'], [f.contentDocument, 'dns-prefetch', 'https://pf-hint-frame-$tag.example.net/']]) { const l = d.createElement('link'); l.rel = rel; l.href = href; d.head.appendChild(l); } return 1; })()" | Out-Null
+  Start-Sleep -Seconds 4
+  $hit = @($tl | Where-Object { $_.Pending() } | ForEach-Object { $_.LocalEndpoint.Port }) -join ','
+  $tl | ForEach-Object { $_.Stop() }
+  Check 'preconnect to an undeclared host, from the page and a blank frame, connects nowhere' ($hit -eq '') "connected: $hit"
+  Check 'dns-prefetch of an undeclared host, from the page and a blank frame, asks no DNS' ((ipconfig /displaydns | Out-String) -notmatch "pf-hint-(frame-)?$tag") ''
+  $rtc = JsIsolated "(async () => { try { const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }); const found = []; const done = new Promise(ok => { pc.onicecandidate = e => { if (e.candidate) found.push(e.candidate.type || '?'); else ok(); }; setTimeout(ok, 4000); }); pc.createDataChannel('x'); await pc.setLocalDescription(await pc.createOffer()); await done; pc.close(); return 'candidates: ' + (found.join(',') || 'none'); } catch (e) { return 'threw ' + e.name; } })()"
+  Check 'WebRTC with globals of its own (an isolated world) finds no candidates' ("$rtc" -eq 'candidates: none' -or "$rtc" -like 'threw*') "$rtc"
+  Js "(location.href = 'mailto:pf@example.com', 1)" | Out-Null; Start-Sleep -Seconds 2
+  Check 'a mailto: navigation is refused and the page stays as it was' ((Js "location.href") -like 'https://webdemo.plugins.pecofence/*' -and (Js "window.demo.clicks") -eq 1) "$(Js 'location.href')"
   Js "(tryNavigate(), 1)" | Out-Null; Start-Sleep -Seconds 2
   $reached = CdpOpen -Url 'https://webdemo.plugins.pecofence/*' -sec 5
   $href = if ($reached) { Js "location.href" } else { '' }
