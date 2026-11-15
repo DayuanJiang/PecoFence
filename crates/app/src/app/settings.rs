@@ -284,6 +284,7 @@ impl App {
         self.sync_windows_desktop_hotkey();
         self.apply_icon_variant();
         self.refresh_visuals(true);
+        self.migrate_tools(true);
         // Written before the page lists the backups: the first save of a day adds one.
         self.state.save_and_wait("import");
         self.push_settings_state();
@@ -1063,11 +1064,7 @@ impl App {
                         ));
                     }
                 }
-                Some(name @ ("newNote" | "newClock" | "newScript" | "newScriptExample")) => {
-                    let example = v
-                        .get("example")
-                        .and_then(|e| e.as_str())
-                        .and_then(crate::scripts::Example::parse);
+                Some(name @ ("newNote" | "newClock" | "newScript")) => {
                     // Clear of this window, which would cover it (`place_new_tool`). Only a
                     // maximized window leaves no such spot: then beside the middle of the
                     // primary monitor's work area, where a free spot is looked for.
@@ -1084,11 +1081,7 @@ impl App {
                         match name {
                             "newNote" => self.new_note_near(x, y),
                             "newClock" => self.new_clock_near(x, y),
-                            "newScript" => self.new_script_near(x, y, None),
-                            _ => match example {
-                                Some(kind) => self.new_script_example_of(kind, x, y),
-                                None => tracing::warn!("unknown script example on the page"),
-                            },
+                            _ => self.new_script_near(x, y, None),
                         }
                         self.tool_clear_of = None;
                     }
@@ -1219,6 +1212,7 @@ impl App {
                             pecofence_core::i18n::text("恢复快照前"),
                         );
                         let held = self.show_restored_layout();
+                        self.migrate_after_restore(id);
                         // The notice offers 撤销 for a few seconds, as after a delete: the
                         // layout from before is in the snapshot just taken.
                         self.settings_kept.restore_undo = before;
@@ -1245,6 +1239,7 @@ impl App {
                     {
                         self.state.delete_snapshot(before);
                         tracing::info!("snapshot restore undone from the page's notice");
+                        self.migrate_after_restore(before);
                         if self.show_restored_layout() > 0 {
                             self.settings_error(scripts_held_text());
                         }

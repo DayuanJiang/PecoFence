@@ -30,7 +30,7 @@ function ToolSubmenu($h) {
   $p = MenuPoint $h '^New tool'
   if (-not $p) { return $null }
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 700
-  foreach ($m in @([W]::Tops('#32768'))) { if ((MenuTexts $m) -match 'Weather') { return $m } }
+  foreach ($m in @([W]::Tops('#32768'))) { if ((MenuTexts $m) -match '^Your own script') { return $m } }
   return $null
 }
 
@@ -47,19 +47,19 @@ Check 'the fence menu has New note and New tool (in Add to desktop)' ($texts -ma
 Check 'no old New clock / New script fence items' ($texts -notmatch 'New clock' -and $texts -notmatch 'New script fence') $texts
 $sub = ToolSubmenu $h
 $subTexts = if ($sub) { MenuTexts $sub } else { '' }
-Check 'New tool lists Clock, the three examples and Your own script' ($subTexts -match '^Clock \| Weather \| GitHub repository activity \| PC status \| Your own script') $subTexts
-Check 'no To-dos (todo.txt) example' ($subTexts -notmatch 'todo') $subTexts
+# The tools are plugins from the store now (升级为插件): only the own script is left.
+Check 'New tool lists only Your own script' ($subTexts -match '^Your own script' -and $subTexts -notmatch '\|') $subTexts
 Shot 't01-submenu'
-if ($sub) { MenuPick '^Clock$' $sub | Out-Null }
-Start-Sleep -Seconds 2
-Check 'Clock from the submenu makes a clock' ((ToolFences 'clock').Count -eq 1) "clocks=$((ToolFences 'clock').Count)"
 CloseMenus
+Pf fence create --tool clock --title Clock --rect '900,120,260,140' | Out-Null
+Start-Sleep -Seconds 2
+Check 'a clock from the CLI' ((ToolFences 'clock').Count -eq 1) "clocks=$((ToolFences 'clock').Count)"
 
 Case 'one clock'
 $h = AddToDesktop (FenceMenu (PlainFence))
 $sub = ToolSubmenu $h
 $subTexts = if ($sub) { MenuTexts $sub } else { '' }
-Check 'with a clock on the desktop, New tool has no Clock' ($subTexts -notmatch '^Clock' -and $subTexts -match 'Weather') $subTexts
+Check 'with a clock on the desktop, New tool has no Clock' ($subTexts -notmatch '^Clock') $subTexts
 CloseMenus
 $r = & "$PfBin\pecofence-cli.exe" fence create --tool clock --title Second 2>&1 | Out-String
 $code = $LASTEXITCODE
@@ -92,13 +92,16 @@ Check 'one switch on the page' ((Js "document.querySelectorAll('#page-tools .tog
 $clock = Js "(() => { const b = document.getElementById('newClock'); return { disabled: b.disabled, text: b.textContent }; })()"
 Check 'with a clock, its button is greyed: On the desktop' ($clock.disabled -and $clock.text -eq 'On the desktop') ($clock | ConvertTo-Json -Compress)
 Shot 't03-tools-page'
-PageClick '#addStatus'; Start-Sleep -Seconds 6
+# A streaming script stands in for the PC status example the page added before (a plugin now).
+Set-Content C:\pf\run\status.ps1 -Encoding UTF8 -Value "# <pecofence.type>streamable</pecofence.type>`nwhile (`$true) { 'CPU 5%'; '~~~'; Start-Sleep -Seconds 2 }"
+Pf fence create --script C:\pf\run\status.ps1 --title status --rect '900,400,300,200' | Out-Null
+Start-Sleep -Seconds 6
 $st = @(ToolFences 'script' | Where-Object { $_.title -match 'status' })
-Check 'Add on PC status makes its script fence' ($st.Count -eq 1) ((ToolFences 'script' | ForEach-Object { $_.title }) -join ', ')
+Check 'a streaming script fence' ($st.Count -eq 1) ((ToolFences 'script' | ForEach-Object { $_.title }) -join ', ')
 if ($st.Count) {
   $g = PfJson fence get $st[0].id
   $s = if ($g.fence) { $g.fence.script } else { $g.script }
-  Check 'PC status keeps running and prints its rows' ($s.running -and "$($s.output)" -match 'CPU') "running=$($s.running) output=$(("$($s.output)" -split "`n")[0])"
+  Check 'it keeps running and prints its rows' ($s.running -and "$($s.output)" -match 'CPU') "running=$($s.running) output=$(("$($s.output)" -split "`n")[0])"
 }
 PageClick '#newNote'
 $ed = WaitWin 'PecoFence.NoteEdit' 10

@@ -332,12 +332,6 @@ pub enum Command {
         x: i32,
         y: i32,
     },
-    /// 新建小工具 › an example: its script fence near the screen point.
-    NewScriptExample {
-        example: crate::scripts::Example,
-        x: i32,
-        y: i32,
-    },
     /// 时钟: a new clock fence near the screen point (none while the desktop has one).
     NewClock {
         x: i32,

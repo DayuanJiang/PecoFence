@@ -1070,5 +1070,6 @@
   "卸载“{0}”？它的栅栏和它保存的数据都会删掉。": "Désinstaller « {0} » ? Ses groupes et les données enregistrées seront supprimées.",
   "插件停止了：{0}。右键这个栅栏，选“立即运行”重新启动。": "Le plugin s’est arrêté : {0}. Faites un clic droit sur ce groupe et choisissez « Exécuter maintenant » pour le relancer.",
   "一次运行超过了 50 毫秒": "une exécution a duré plus de 50 ms",
-  "用的内存超过了 8 MB": "il a utilisé plus de 8 Mo de mémoire"
+  "用的内存超过了 8 MB": "il a utilisé plus de 8 Mo de mémoire",
+  "升级为插件之前": "Avant le passage aux plugins"
 }

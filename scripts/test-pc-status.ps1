@@ -159,7 +159,7 @@ $expectedDisks = @(
 
 $failures = 0
 foreach ($language in 'en', 'zh') {
-    $path = Join-Path $root "crates/app/assets/scripts/status.$language.ps1"
+    $path = Join-Path $root "scripts/wintest/assets/old-examples/status.$language.0.4.0.ps1"
     $source = [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8)
     foreach ($case in $cases) {
         $script:configurations = $case.Configurations

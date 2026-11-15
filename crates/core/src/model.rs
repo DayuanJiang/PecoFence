@@ -120,6 +120,19 @@ pub struct Snapshot {
 
 pub const MAX_SNAPSHOTS: usize = 20;
 
+/// The snapshot saved before the first tool fence became a plugin fence (升级为插件之前): it
+/// keeps the fences as they were, and restoring it brings them back.
+pub const BEFORE_PLUGINS: Uuid = Uuid::from_u128(0x7065_636f_6665_6e63_6550_6c75_6769_6e73);
+
+/// 升级为插件: a fence of an earlier version's tool that a plugin does now (see
+/// [`Config::plugin_moves`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PluginMove {
+    pub fence: FenceId,
+    /// `notes`, `clock`, or the plugin an unchanged built-in example names.
+    pub plugin: &'static str,
+}
+
 /// Note texts and scripts by fence, kept apart from the configuration for a while (see
 /// [`Config::tool_data_of`]).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -2124,11 +2137,75 @@ impl Config {
                 .map(|f| f.id)
                 .collect()
         };
-        let (notes, scripts) = (kept(FenceTool::Note), kept(FenceTool::Script));
+        // A notes plugin fence (a script fence) keeps its text in `notes` too.
+        let scripts = kept(FenceTool::Script);
+        let notes: HashSet<FenceId> = kept(FenceTool::Note).union(&scripts).copied().collect();
         let before = self.notes.len() + self.scripts.len();
         self.notes.retain(|id, _| notes.contains(id));
         self.scripts.retain(|id, _| scripts.contains(id));
         before - self.notes.len() - self.scripts.len()
+    }
+
+    /// The layouts and snapshots that tool fences move out of: all but [`BEFORE_PLUGINS`].
+    fn movable_layouts(&mut self) -> impl Iterator<Item = &mut Layout> {
+        let snapshots = self.snapshots.iter_mut().filter(|s| s.id != BEFORE_PLUGINS);
+        (self.layouts.iter_mut()).chain(snapshots.flat_map(|s| s.layouts.iter_mut()))
+    }
+
+    /// 升级为插件: the fences of every layout and snapshot (but [`BEFORE_PLUGINS`]) that a
+    /// plugin does now: note and clock fences, and script fences whose script `example` knows
+    /// as a built-in example nobody edited (it names the plugin). Each fence once, sorted.
+    pub fn plugin_moves(&self, example: impl Fn(&str) -> Option<&'static str>) -> Vec<PluginMove> {
+        let snapshots = self.snapshots.iter().filter(|s| s.id != BEFORE_PLUGINS);
+        let fences = (self.layouts.iter())
+            .chain(snapshots.flat_map(|s| s.layouts.iter()))
+            .flat_map(|l| l.fences.iter());
+        let mut moves: Vec<PluginMove> = fences
+            .filter_map(|f| {
+                let plugin = match f.tool? {
+                    FenceTool::Note => "notes",
+                    FenceTool::Clock => "clock",
+                    FenceTool::Script => example(&self.scripts.get(&f.id)?.path)?,
+                };
+                Some(PluginMove {
+                    fence: f.id,
+                    plugin,
+                })
+            })
+            .collect();
+        moves.sort_by_key(|m| m.fence);
+        moves.dedup();
+        moves
+    }
+
+    /// Makes `m.fence` a fence of plugin `m.plugin` in every layout and snapshot but
+    /// [`BEFORE_PLUGINS`]: a note keeps its text in `notes`, a clock takes 显示秒 along as its
+    /// `seconds` setting, an example keeps its interval and `held` with default settings.
+    pub fn move_to_plugin(&mut self, m: &PluginMove) {
+        let (mut clock, mut script) = (false, false);
+        for f in self.movable_layouts().flat_map(|l| l.fences.iter_mut()) {
+            if f.id == m.fence {
+                clock |= f.tool == Some(FenceTool::Clock);
+                script |= f.tool == Some(FenceTool::Script);
+                f.tool = Some(FenceTool::Script);
+            }
+        }
+        let path = format!("plugin:{}", m.plugin);
+        // Moved before (a snapshot brought it back as it was): its plugin settings stay.
+        if self.scripts.get(&m.fence).is_some_and(|s| s.path == path) {
+            return;
+        }
+        let fresh = ScriptSpec::new("");
+        let spec = self.scripts.entry(m.fence).or_insert(fresh.clone());
+        if !script {
+            *spec = fresh;
+        }
+        spec.path = path;
+        spec.settings.clear();
+        if clock {
+            let seconds = self.settings.tools.clock_seconds;
+            spec.settings.insert("seconds".into(), seconds.into());
+        }
     }
 
     /// Marks every script of this configuration as held (see [`ScriptSpec::held`]): it is a
@@ -2748,6 +2825,155 @@ mod tests {
         c.snapshots.clear();
         assert_eq!(c.prune_notes(), 1);
         assert!(c.notes.is_empty());
+    }
+
+    /// A configuration as 0.3.x (`old`) or 0.4.0 wrote it: a note, a clock, an unchanged
+    /// weather example, an edited GitHub example, a script of the user's own and a plain fence
+    /// in two monitor layouts; a clock only a snapshot has; an undo snapshot with texts.
+    fn config_with_tools(old: bool) -> (Config, [FenceId; 6]) {
+        let fence = |title: &str, tool| {
+            let mut f = Fence::new(title, FenceKind::Virtual, note_geo());
+            f.tool = tool;
+            f
+        };
+        let (note, clock, weather) = (
+            fence("便签", Some(FenceTool::Note)),
+            fence("时钟", Some(FenceTool::Clock)),
+            fence("天气", Some(FenceTool::Script)),
+        );
+        let (github, own, plain) = (
+            fence("GitHub", Some(FenceTool::Script)),
+            fence("mine", Some(FenceTool::Script)),
+            fence("plain", None),
+        );
+        let old_clock = fence("old clock", Some(FenceTool::Clock));
+        let ids = [
+            note.id,
+            clock.id,
+            weather.id,
+            github.id,
+            own.id,
+            old_clock.id,
+        ];
+        let layout = Layout {
+            fingerprint: Vec::new(),
+            fences: vec![note, clock, weather, github, own, plain],
+            shown: 1,
+        };
+        let mut c = Config::default();
+        c.settings.tools.clock_seconds = true;
+        c.layouts = vec![layout.clone(), layout.clone()];
+        c.notes.insert(ids[0], "[ ] milk\n[x] rent".into());
+        c.scripts.insert(ids[2], ScriptSpec::new("C:/s/天气.ps1"));
+        c.scripts
+            .insert(ids[3], ScriptSpec::new("C:/s/GitHub 动态.ps1"));
+        c.scripts.insert(ids[4], ScriptSpec::new("C:/s/mine.ps1"));
+        let mut gone = layout.clone();
+        gone.fences = vec![old_clock];
+        let snapshot = |name: &str, layouts| Snapshot {
+            id: Uuid::new_v4(),
+            name: name.into(),
+            ts: 0,
+            layouts,
+            notes: Default::default(),
+            scripts: Default::default(),
+        };
+        c.snapshots = vec![
+            snapshot("快照 1", vec![gone]),
+            snapshot("导入前", vec![layout]),
+        ];
+        c.snapshots[1].notes = c.notes.clone();
+        c.snapshots[1].scripts = c.scripts.clone();
+        // Read back as that version wrote it: the fields it did not know are missing.
+        let mut v = serde_json::to_value(&c).unwrap();
+        if old {
+            v.as_object_mut().unwrap().remove("savedBy");
+            for s in v["snapshots"].as_array_mut().unwrap() {
+                s.as_object_mut().unwrap().remove("scripts");
+            }
+        } else {
+            v["savedBy"] = "0.4.0".into();
+        }
+        (serde_json::from_value(v).unwrap(), ids)
+    }
+
+    #[test]
+    fn tool_fences_of_0_3_and_0_4_become_plugin_fences_once() {
+        let example = |path: &str| (path == "C:/s/天气.ps1").then_some("weather");
+        for old in [true, false] {
+            let (mut c, [note, clock, weather, github, own, old_clock]) = config_with_tools(old);
+            let mut want = vec![
+                (note, "notes"),
+                (clock, "clock"),
+                (weather, "weather"),
+                (old_clock, "clock"),
+            ];
+            want.sort();
+            let moves = c.plugin_moves(example);
+            let found: Vec<_> = moves.iter().map(|m| (m.fence, m.plugin)).collect();
+            assert_eq!(
+                found, want,
+                "each fence once, from every layout and snapshot"
+            );
+            // The snapshot taken before the first move keeps the fences as they were.
+            let mut before = c.snapshots[0].clone();
+            before.id = BEFORE_PLUGINS;
+            c.snapshots.push(before.clone());
+            for m in &moves {
+                c.move_to_plugin(m);
+            }
+            let all = (c.layouts.iter()).chain(c.snapshots[..2].iter().flat_map(|s| &s.layouts));
+            for id in [note, clock, weather, old_clock, github, own] {
+                let mut tools = all.clone().flat_map(|l| &l.fences).filter(|f| f.id == id);
+                assert!(tools.all(|f| f.tool == Some(FenceTool::Script)));
+            }
+            let json = |l: &Vec<Layout>| serde_json::to_string(l).unwrap();
+            assert_eq!(json(&c.snapshots[2].layouts), json(&before.layouts));
+            assert_eq!(c.scripts[&note].path, "plugin:notes");
+            assert_eq!(c.notes[&note], "[ ] milk\n[x] rent");
+            assert_eq!(c.scripts[&clock].path, "plugin:clock");
+            assert_eq!(c.scripts[&clock].settings["seconds"], true);
+            assert_eq!(c.scripts[&old_clock].path, "plugin:clock");
+            assert_eq!(c.scripts[&weather].path, "plugin:weather");
+            assert!(c.scripts[&weather].settings.is_empty());
+            assert_eq!(c.scripts[&github].path, "C:/s/GitHub 动态.ps1");
+            assert_eq!(c.scripts[&own].path, "C:/s/mine.ps1");
+            // The converted note keeps its text through a save.
+            c.prune_notes();
+            assert_eq!(c.notes[&note], "[ ] milk\n[x] rent");
+            // A second run finds nothing, and moving again changes nothing.
+            assert!(c.plugin_moves(example).is_empty());
+            let saved = serde_json::to_value(&c).unwrap();
+            for m in &moves {
+                c.move_to_plugin(m);
+            }
+            assert!(
+                serde_json::to_value(&c).unwrap() == saved,
+                "a second move changed nothing"
+            );
+            // A snapshot from before brings the clock back as it was: it moves again and keeps
+            // the settings it has as a plugin fence.
+            (c.scripts.get_mut(&clock).unwrap().settings).insert("seconds".into(), false.into());
+            c.layouts[1].fences[1].tool = Some(FenceTool::Clock);
+            let again = c.plugin_moves(example);
+            assert_eq!(again.len(), 1);
+            c.move_to_plugin(&again[0]);
+            assert_eq!(c.scripts[&clock].settings["seconds"], false);
+            assert!(c.plugin_moves(example).is_empty());
+        }
+    }
+
+    #[test]
+    fn an_imported_example_moves_with_its_hold() {
+        let (mut c, [_, _, weather, ..]) = config_with_tools(false);
+        c.hold_scripts();
+        c.scripts.get_mut(&weather).unwrap().interval_minutes = 60;
+        c.move_to_plugin(&PluginMove {
+            fence: weather,
+            plugin: "weather",
+        });
+        let spec = &c.scripts[&weather];
+        assert!(spec.held && spec.interval_minutes == 60 && spec.path == "plugin:weather");
     }
 
     #[test]

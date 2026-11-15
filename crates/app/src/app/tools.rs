@@ -9,9 +9,9 @@ use pecofence_core::{FenceTool, ScriptSpec};
 use std::collections::HashMap;
 use std::time::Instant;
 
-/// The entries of 新建小工具 (tray and fence menus): 时钟, each script example, 用自己的脚本….
-/// The menus reserve this many command ids.
-pub(super) const TOOL_MENU_ENTRIES: u32 = 2 + crate::scripts::Example::ALL.len() as u32;
+/// The entries of 新建小工具 (tray and fence menus): 用自己的脚本… (the tools are plugins from
+/// the store now). The menus reserve this many command ids.
+pub(super) const TOOL_MENU_ENTRIES: u32 = 1;
 
 /// 脚本栅栏 at run time (nothing of it is saved): each fence's last result and when it came,
 /// the fences whose script is running (with the script it runs), when each is next due, a
@@ -265,19 +265,11 @@ impl App {
         }
     }
 
-    /// 新建小工具 (tray and fence menu), command ids `base`..`base + TOOL_MENU_ENTRIES`: 时钟 (while
-    /// the desktop has none), the script examples, then 用自己的脚本….
+    /// 新建小工具 (tray and fence menu), command id `base`: 用自己的脚本….
     pub(super) fn new_tool_submenu(&self, base: u32) -> PopupMenu {
-        use crate::scripts::Example;
         let menu = PopupMenu::new();
-        if !self.has_clock() {
-            menu.item(base, pecofence_core::i18n::text("时钟"), false, false);
-        }
-        for (i, kind) in Example::ALL.iter().enumerate() {
-            menu.item(base + 1 + i as u32, kind.label(), false, false);
-        }
-        menu.separator().item(
-            base + 1 + Example::ALL.len() as u32,
+        menu.item(
+            base,
             pecofence_core::i18n::text("用自己的脚本…"),
             false,
             false,
@@ -285,17 +277,9 @@ impl App {
         menu
     }
 
-    /// Entry `index` of `new_tool_submenu`, for a fence near (`x`, `y`).
-    pub(super) fn new_tool_command(&mut self, index: u32, x: i32, y: i32) {
-        use crate::scripts::Example;
-        match index {
-            0 => self.queue.push(Command::NewClock { x, y }),
-            i if (i as usize) <= Example::ALL.len() => {
-                let example = Example::ALL[i as usize - 1];
-                self.queue.push(Command::NewScriptExample { example, x, y });
-            }
-            _ => self.queue.push(Command::NewScript { x, y }),
-        }
+    /// The entry of `new_tool_submenu`, for a fence near (`x`, `y`).
+    pub(super) fn new_tool_command(&mut self, _index: u32, x: i32, y: i32) {
+        self.queue.push(Command::NewScript { x, y });
     }
 
     /// Pushes what each window's shown fence needs of its tool (note text, clock seconds),
@@ -537,10 +521,6 @@ impl App {
                 tracing::debug!(%id, "script fence not started: its plugin is not installed or was taken down");
             }
             return self.push_tool_view(self.state.host_of(id));
-        }
-        if !self.script_runs.streams.contains_key(&id) && crate::scripts::update_old_example(&path)
-        {
-            tracing::info!(%id, "script fence runs the updated example");
         }
         if crate::scripts::is_streamable(&path) {
             self.start_stream(id, &spec, action);
@@ -1110,50 +1090,6 @@ impl App {
         self.create_tool_fence(script, None, None, x, y);
     }
 
-    /// The weather example (the test script's `new-script-example`).
-    pub(super) fn new_script_example(&mut self, x: i32, y: i32) {
-        self.new_script_example_of(crate::scripts::Example::Weather, x, y);
-    }
-
-    /// 脚本栅栏 example `kind`: writes its script into the configuration's `scripts` folder
-    /// (kept when it is there already: an unedited copy of an earlier version gets the current
-    /// one when it runs, see `scripts::update_old_example`) and makes a fence for it.
-    pub(super) fn new_script_example_of(&mut self, kind: crate::scripts::Example, x: i32, y: i32) {
-        let Some(dir) = self
-            .state
-            .config_path_on_disk()
-            .parent()
-            .map(|d| d.join("scripts"))
-        else {
-            return;
-        };
-        let path = dir.join(kind.file_name());
-        if !path.is_file() {
-            let chinese = matches!(
-                pecofence_core::i18n::language(),
-                pecofence_core::i18n::Language::SimplifiedChinese
-                    | pecofence_core::i18n::Language::TraditionalChinese
-            );
-            let written = std::fs::create_dir_all(&dir)
-                .and_then(|_| crate::scripts::write_example(&path, kind, chinese));
-            if let Err(e) = written {
-                tracing::warn!(error = %e, example = kind.name(), "writing the example failed");
-                return;
-            }
-        }
-        tracing::info!(example = kind.name(), "example script fence");
-        // Room for the example's rows (DIPs).
-        let (w, h) = match kind {
-            crate::scripts::Example::Weather => (280.0, 160.0),
-            crate::scripts::Example::GitHub => (360.0, 300.0),
-            crate::scripts::Example::Status => (280.0, 300.0),
-        };
-        let rect = self.place_new_tool(w, h, x, y);
-        let script = NewTool::Script(path.to_string_lossy().to_string());
-        // Titled as its menu line reads (a file is named `pc-status` in some languages).
-        self.create_tool_fence(script, Some(kind.label()), Some(rect), x, y);
-    }
-
     /// Fence menu: another script for fence `id` (runs it at once).
     pub(super) fn pick_script_for(&mut self, id: FenceId) {
         let owner = self.window_for(id).map(|w| w.hwnd());
@@ -1206,6 +1142,13 @@ impl App {
         if self.script_runs.streams.remove(&id).is_some() {
             tracing::info!(%id, "script fence stream stopped");
         }
+    }
+
+    /// Fence `id` runs a plugin from now on (升级为插件): its script's runs are forgotten.
+    pub(super) fn forget_script(&mut self, id: FenceId) {
+        self.stop_script(id);
+        self.script_runs.last.remove(&id);
+        self.script_runs.due.remove(&id);
     }
 
     pub(super) fn refresh_script(&mut self, id: FenceId) {
@@ -1449,6 +1392,10 @@ impl App {
         // The window draws the stored note again, which has the editor's text by now.
         if let Some(w) = self.window_for(fence) {
             w.set_note_edit(None);
+        }
+        // 升级为插件 waits while a note is being edited.
+        if self.state.note_text(fence).is_some() {
+            self.migrate_tools(false);
         }
     }
 
