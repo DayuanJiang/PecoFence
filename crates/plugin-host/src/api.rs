@@ -45,6 +45,14 @@ pub enum Note {
         ms: f64,
         memory: usize,
     },
+    /// An error escaped a handler, a timer or a Promise in run `what` (`click`, `timer`,
+    /// `answer to http.get`, ...): logged, and the plugin goes on. `at` is the first line of
+    /// its stack.
+    Error {
+        what: String,
+        message: String,
+        at: String,
+    },
 }
 
 /// Why the manifest `p` does not allow call `name` with `args`, if it does not (the text names
