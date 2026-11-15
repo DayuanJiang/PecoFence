@@ -211,6 +211,18 @@ fn remove_dir(dir: &Path) -> std::io::Result<()> {
     std::fs::remove_dir_all(dir)
 }
 
+/// Names `version` the one in use: `current.txt` is written beside it and renamed over it, so a
+/// failure leaves the version before in use.
+fn write_current(dir: &Path, version: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let temp = dir.join("current.txt.new");
+    let mut f = std::fs::File::create(&temp)?;
+    f.write_all(version.as_bytes())?;
+    f.sync_all()?;
+    drop(f);
+    std::fs::rename(&temp, dir.join("current.txt"))
+}
+
 fn read_text(path: &Path) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
     Some(text.trim().to_string())
@@ -636,7 +648,9 @@ impl App {
                     fences = fences.len(),
                     "plugins: installed, its fences start again"
                 );
+                // A web plugin's page, its rules and its main.js are the new version's.
                 for fence in fences {
+                    self.restart_web_page(fence);
                     self.start_script(fence);
                 }
             }
@@ -658,18 +672,29 @@ impl App {
                 format!("{version} is lower than the installed {before:?}"),
             ));
         }
-        for fence in self.plugin_fences(id) {
-            self.stop_script(fence);
+        let fences = self.plugin_fences(id);
+        for fence in &fences {
+            self.stop_script(*fence);
         }
         let dir = self.plugins.root.join(id);
         let to = dir.join(version);
         let _ = std::fs::remove_dir_all(&to);
         let swapped = std::fs::create_dir_all(&dir)
             .and_then(|()| std::fs::rename(temp, &to))
-            .and_then(|()| std::fs::write(dir.join("current.txt"), version));
-        swapped.map_err(|e| (false, e.to_string()))?;
-        for name in ["disabled.txt", "failed.txt"] {
-            let _ = std::fs::remove_file(dir.join(name));
+            .and_then(|()| write_current(&dir, version));
+        if let Err(e) = swapped {
+            // The version before is still the one in use: its fences run it again.
+            tracing::warn!(id, version, error = %e, fences = fences.len(), "plugins: switch failed, the fences start again");
+            self.plugins.reload(id);
+            for fence in fences {
+                self.start_script(fence);
+            }
+            return Err((false, e.to_string()));
+        }
+        let _ = std::fs::remove_file(dir.join("failed.txt"));
+        if before.is_none() {
+            // A web plugin installed again keeps the profile its uninstall could not delete.
+            crate::web_plugin::keep_profile(id);
         }
         for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
@@ -716,7 +741,7 @@ impl App {
         if !back {
             return;
         }
-        let written = std::fs::write(dir.join("current.txt"), &before)
+        let written = write_current(&dir, &before)
             .and_then(|()| std::fs::write(dir.join("failed.txt"), &failed));
         if let Err(e) = written {
             return tracing::warn!(id, error = %e, "plugins: could not go back");
