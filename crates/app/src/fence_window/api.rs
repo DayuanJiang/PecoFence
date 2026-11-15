@@ -192,6 +192,7 @@ impl FenceWindow {
             col_drag: None,
             is_portal: false,
             note: None,
+            web: None,
             note_edit: None,
             note_drag: false,
             todo_drag: None,
@@ -859,6 +860,7 @@ impl FenceWindow {
             let _ = v.motion.stop(&v.content_panel.visual, Prop::Opacity);
             v.content_panel.visual.set_opacity(1.0);
             v.content_panel.visual.set_visible(!rolled);
+            v.web_shown(desktop::is_visible(v.hwnd));
             if rolled {
                 // `rect` is the expanded rect: the title row sits at its top, or at its bottom
                 // for a fence that last opened upward.

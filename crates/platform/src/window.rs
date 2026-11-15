@@ -555,6 +555,16 @@ pub fn set_standard_cursor(kind: StandardCursor) {
     }
 }
 
+/// Sets the cursor to `cursor`, an `HCURSOR` another component made (a web page's).
+pub fn set_cursor_handle(cursor: *mut core::ffi::c_void) {
+    if !cursor.is_null() {
+        // SAFETY: a cursor handle; SetCursor only reads it.
+        unsafe {
+            let _ = SetCursor(Some(HICON(cursor)));
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StandardCursor {
     Arrow,

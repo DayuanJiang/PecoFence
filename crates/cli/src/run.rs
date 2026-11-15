@@ -384,6 +384,7 @@ fn run_fence(ctx: &Ctx, cmd: FenceCmd) -> Result<Reply, IpcError> {
             // The app would resolve a relative path against its own working directory.
             if prop == "scriptPath"
                 && let Some(p) = value.as_str()
+                && !p.starts_with("plugin:")
                 && let Ok(abs) = std::path::absolute(p)
             {
                 value = serde_json::Value::String(abs.display().to_string());

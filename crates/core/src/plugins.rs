@@ -60,6 +60,10 @@ pub struct Manifest {
     pub min_pecofence: String,
     #[serde(default)]
     pub streamable: bool,
+    /// `web`: the plugin is its own page (`index.html`) shown in the fence; anything else runs
+    /// `main.ps1`.
+    #[serde(default)]
+    pub layer: String,
     #[serde(default)]
     pub permissions: Permissions,
 }

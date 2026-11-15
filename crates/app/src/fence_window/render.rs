@@ -1202,6 +1202,7 @@ impl FenceViewState {
         self.content_panel
             .visual
             .set_visible(!self.rolled_up || self.roll_anim.is_some());
+        self.layout_web();
         Ok(())
     }
 
@@ -1954,6 +1955,9 @@ impl FenceViewState {
         self.sync_idle_fade(Instant::now());
         self.content_look
             .set(Some(self.material_foreground().label_look()));
+        if self.web.is_some() {
+            return self.redraw_web();
+        }
         if self.note.is_some() {
             return self.redraw_note();
         }
