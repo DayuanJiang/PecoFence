@@ -32,9 +32,10 @@ pub const BUDGET: Duration = Duration::from_millis(200);
 /// later one takes its place.
 const SHOW_GAP: Duration = Duration::from_millis(100);
 const MAX_TIMERS: usize = 20;
-/// Requests (`pf.http`) a plugin may have going at once, and calls of any kind.
-const MAX_REQUESTS: usize = 4;
-const MAX_CALLS: usize = 16;
+/// Requests (`pf.http`) a plugin may have going at once, and calls of any kind (a web plugin's
+/// page too).
+pub const MAX_REQUESTS: usize = 4;
+pub const MAX_CALLS: usize = 16;
 /// What `call` names the run of main.js itself: an error there stops the plugin (in any other
 /// run it is logged and the plugin goes on).
 const MAIN: &str = "main.js";
@@ -59,9 +60,9 @@ pub const EVENTS: [&str; 14] = [
     "message",
     "theme",
 ];
-/// The most bytes one `pf.post` may carry (as JSON), and the most messages and bytes that may
-/// wait to go out from one run of the plugin.
-const MAX_POST: usize = 1024 * 1024;
+/// The most bytes one `pf.post` may carry (as JSON; a web plugin page's message too), and the
+/// most messages and bytes that may wait to go out from one run of the plugin.
+pub const MAX_POST: usize = 1024 * 1024;
 const MAX_POSTS: usize = 100;
 const MAX_POSTED: usize = 4 * 1024 * 1024;
 /// `pf.time.format(unix_ms, kind)`: the time in Windows' region format.

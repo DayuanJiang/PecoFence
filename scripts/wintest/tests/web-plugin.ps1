@@ -291,6 +291,14 @@ if ($Part -eq 'C') {
   $op = Js "window.demo.open"
   Check 'after a click pf.open passes the click rule (the host rule then refuses example.com)' ("$op" -ne '' -and "$op" -notmatch 'click') "$op"
 
+  Case "the light layer's limits for the page's calls"
+  Js "(window.limitResult = null, Promise.allSettled(Array.from({ length: 20 }, () => pf.http.get('https://example.org/'))).then((r) => window.limitResult = r.map((x) => x.status === 'fulfilled' ? 'ok' : String(x.reason && x.reason.message))), 1)" | Out-Null
+  $r = @(JsWait "window.limitResult" 60)
+  $ok = @($r | Where-Object { $_ -eq 'ok' }).Count; $many = @($r | Where-Object { $_ -match 'too many calls at once' }).Count
+  Check 'twenty requests at once: four go, sixteen are refused at once' ($ok -eq 4 -and $many -eq 16) ($r -join ' | ')
+  Js "(chrome.webview.postMessage({ id: 1, call: 'time.now', args: ['x'.repeat(1100 * 1024)] }), 1)" | Out-Null
+  Check 'a message over 1 MB is ignored' ([bool](PfWaitLog 'web plugin: a message over 1 MB ignored' 5)) ''
+
   Case 'main.js and the page'
   Check 'the web plugin main.js runs beside the page' ($null -ne (PfWaitLog 'plugin fence starts its main.js' 5)) ''
   Js "(pf.post({ n: 41 }), 1)" | Out-Null

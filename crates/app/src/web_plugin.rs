@@ -317,8 +317,12 @@ impl WebFence {
                     tracing::info!(plugin = %id, uri = %short(&source), "web plugin: message from another page ignored");
                     return;
                 }
-                let m: serde_json::Value =
-                    serde_json::from_str(&args.web_message_as_json()).unwrap_or_default();
+                let json = args.web_message_as_json();
+                if json.len() > pecofence_plugin_host::MAX_POST {
+                    tracing::info!(plugin = %id, bytes = json.len(), "web plugin: a message over 1 MB ignored");
+                    return;
+                }
+                let m: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
                 let call = m["call"].as_str().unwrap_or("").to_string();
                 let args = m.get("args").cloned().unwrap_or_else(|| serde_json::json!([]));
                 let id = m.get("id").cloned().unwrap_or_default();

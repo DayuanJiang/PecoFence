@@ -13,8 +13,13 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// A web page's `pf` call waiting for its answer.
-type Reply = Box<dyn FnOnce(std::result::Result<Value, String>)>;
+/// A web page's `pf` call waiting for its answer: its fence, whether it is a request
+/// (`pf.http`), and what gets the answer.
+type Reply = (
+    FenceId,
+    bool,
+    Box<dyn FnOnce(std::result::Result<Value, String>)>,
+);
 
 /// A stopped plugin starts again by itself this long after, unless it stopped this often in
 /// the last hour (a web plugin's page too: it is made anew at once).
@@ -380,9 +385,20 @@ impl App {
             tracing::info!(%fence, plugin = m.id, name, why, "web plugin call refused");
             return reply(Err(why));
         }
+        // The light layer's limits: at most 16 calls and 4 requests of a fence at once.
+        let request = name.starts_with("http.");
+        let going = self.light.replies.values().filter(|r| r.0 == fence);
+        let (calls, requests) = going.fold((0, 0), |(c, r), g| (c + 1, r + usize::from(g.1)));
+        if calls >= host::MAX_CALLS || (request && requests >= host::MAX_REQUESTS) {
+            let (most_requests, most_calls) = (host::MAX_REQUESTS, host::MAX_CALLS);
+            tracing::info!(%fence, plugin = m.id, name, calls, requests, "web plugin call refused: too many at once");
+            return reply(Err(format!(
+                "{name}: too many calls at once (at most {most_requests} requests and {most_calls} calls)"
+            )));
+        }
         self.light.next_reply += 1;
         let number = self.light.next_reply;
-        self.light.replies.insert(number, Box::new(reply));
+        (self.light.replies).insert(number, (fence, request, Box::new(reply)));
         let api = self.light_host();
         let (jobs, control) = (self.light.jobs.clone(), self.control.hwnd().0 as isize);
         let (name, agent) = (
@@ -395,14 +411,14 @@ impl App {
             .spawn(move || {
                 let result = host::perform(&*api, fence, &m.permissions, &agent, &name, args);
                 let job: UiJob = Box::new(move |app: &mut App| {
-                    if let Some(reply) = app.light.replies.remove(&number) {
+                    if let Some((.., reply)) = app.light.replies.remove(&number) {
                         reply(result);
                     }
                 });
                 Self::post_job(&jobs, control, job);
             });
         if worker.is_err()
-            && let Some(reply) = self.light.replies.remove(&number)
+            && let Some((.., reply)) = self.light.replies.remove(&number)
         {
             reply(Err("no thread for the call".into()));
         }
