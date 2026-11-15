@@ -643,8 +643,16 @@ impl GpuGlass {
         }
         let w = rect[2].max(1) as u32;
         let h = rect[3].max(1) as u32;
+        let started = std::time::Instant::now();
         if effects.geometry(&context, w, h, scale, radius, self.lens.refraction)? {
             self.stats.map_builds += 1;
+            tracing::trace!(
+                target: "pecofence::render_timing",
+                w,
+                h,
+                us = started.elapsed().as_micros(),
+                "glass map built"
+            );
         }
         matrix(
             &effects.position,
