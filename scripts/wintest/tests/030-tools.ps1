@@ -30,7 +30,7 @@ function ToolSubmenu($h) {
   $p = MenuPoint $h '^New tool'
   if (-not $p) { return $null }
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 700
-  foreach ($m in @([W]::Tops('#32768'))) { if ((MenuTexts $m) -match '^Your own script') { return $m } }
+  foreach ($m in @([W]::Tops('#32768'))) { if ((MenuTexts $m) -match 'Your own script') { return $m } }
   return $null
 }
 
@@ -47,8 +47,9 @@ Check 'the fence menu has New note and New tool (in Add to desktop)' ($texts -ma
 Check 'no old New clock / New script fence items' ($texts -notmatch 'New clock' -and $texts -notmatch 'New script fence') $texts
 $sub = ToolSubmenu $h
 $subTexts = if ($sub) { MenuTexts $sub } else { '' }
-# The tools are plugins from the store now (升级为插件): only the own script is left.
-Check 'New tool lists only Your own script' ($subTexts -match '^Your own script' -and $subTexts -notmatch '\|') $subTexts
+# The tools are plugins from the store now (升级为插件): the installed plugins (none here), More
+# plugins… and the own script.
+Check 'New tool lists More plugins and Your own script, no plugin is installed' ($subTexts -match '^More plugins' -and $subTexts -match 'Your own script' -and @($subTexts -split ' \| ').Count -eq 2) $subTexts
 Shot 't01-submenu'
 CloseMenus
 Pf fence create --tool clock --title Clock --rect '900,120,260,140' | Out-Null
