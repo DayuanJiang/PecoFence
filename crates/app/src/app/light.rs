@@ -103,6 +103,7 @@ pub(super) struct Light {
     /// Interface 2 (`launch.rs`): each fence's `view.menu`, the files of its last drop, the
     /// shortcuts registered (by hotkey id) and the ones another program holds.
     pub(super) menus: HashMap<FenceId, Vec<host::view::MenuItem>>,
+    pub(super) menu_shown: std::cell::RefCell<Vec<String>>,
     pub(super) drops: Vec<(u64, FenceId, Vec<std::path::PathBuf>)>,
     pub(super) next_drop: u64,
     pub(super) keys: HashMap<i32, (FenceId, String, Hotkey)>,

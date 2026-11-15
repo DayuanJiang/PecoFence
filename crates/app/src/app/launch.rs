@@ -33,6 +33,8 @@ impl App {
         let Some(items) = self.light.menus.get(&fence).filter(|m| !m.is_empty()) else {
             return;
         };
+        // The ids as shown: a choice means these even when the plugin shows another menu meanwhile.
+        *self.light.menu_shown.borrow_mut() = items.iter().map(|m| m.id.clone()).collect();
         let sub = PopupMenu::new();
         let many = items.iter().filter(|m| !m.separator).count() > 3;
         let to = if many { &sub } else { menu.separator() };
@@ -49,8 +51,8 @@ impl App {
     }
 
     pub(super) fn plugin_menu_chosen(&mut self, fence: FenceId, i: usize) {
-        let item = self.light.menus.get(&fence).and_then(|m| m.get(i));
-        let Some(id) = item.map(|m| m.id.clone()) else {
+        let id = self.light.menu_shown.borrow().get(i).cloned();
+        let Some(id) = id.filter(|id| !id.is_empty()) else {
             return;
         };
         tracing::info!(%fence, id, "plugin fence: its menu entry chosen");
