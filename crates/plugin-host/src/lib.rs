@@ -44,7 +44,7 @@ const LOGGED_ERRORS: usize = 100;
 /// The last view goes into the fence's cache file at most this often (and when it stops).
 const CACHE_GAP: Duration = Duration::from_secs(60);
 /// The events PecoFence sends ([`Command::Event`] takes one of these names).
-pub const EVENTS: [&str; 14] = [
+pub const EVENTS: [&str; 16] = [
     "start",
     "show",
     "hide",
@@ -59,6 +59,10 @@ pub const EVENTS: [&str; 14] = [
     "stop",
     "message",
     "theme",
+    // Interface 2: a command of the fence menu (`view.menu`) or a shortcut ({id, via}), and
+    // files dropped on the fence ({files: [{name, size, folder}]}).
+    "command",
+    "drop",
 ];
 /// The most bytes one `pf.post` may carry (as JSON; a web plugin page's message too), and the
 /// most messages and bytes that may wait to go out from one run of the plugin.
@@ -199,8 +203,11 @@ struct Plugin {
     /// `permissions.background`: timers and the clipboard go on while the fence is hidden.
     background: bool,
     reads_clipboard: bool,
-    /// A click or dblclick handler runs: `pf.open` works only then.
+    /// A click, dblclick or command handler runs (the user did something): `pf.open`,
+    /// `pf.launch.open` and `pf.launch.pick` work only then.
     click: Rc<Cell<bool>>,
+    /// A drop handler runs: `pf.launch.add` works only then.
+    dropping: Rc<Cell<bool>>,
     /// The JavaScript time used in the second that began then.
     second: (Instant, Duration),
     cache: Option<PathBuf>,
@@ -274,6 +281,7 @@ impl Plugin {
             background: p.background,
             reads_clipboard: p.clipboard.reads(),
             click: Rc::default(),
+            dropping: Rc::default(),
             second: (Instant::now(), Duration::ZERO),
             cache: s.cache.clone(),
             cached: None,
@@ -282,6 +290,7 @@ impl Plugin {
             logged: HashSet::new(),
         };
         let (shared, click, fence) = (plugin.shared.clone(), plugin.click.clone(), s.fence);
+        let dropping = plugin.dropping.clone();
         let agent = format!("PecoFence-plugin/{} {}", s.id, s.version);
         let (id, permissions) = (s.id, Arc::new(s.permissions));
         let noting = host.wants_notes();
@@ -383,8 +392,12 @@ impl Plugin {
             let call = move |ctx: Ctx<'_>, name: String, args: String| {
                 let args: Value = serde_json::from_str(&args).unwrap_or(json!([]));
                 let mut refused = refusal(&permissions, &name, &args);
-                if refused.is_none() && name == "open" && !click.get() {
-                    refused = Some("pf.open works only in a click or dblclick handler".into());
+                let by_user = ["open", "launch.open", "launch.pick"].contains(&name.as_str());
+                if refused.is_none() && by_user && !click.get() {
+                    refused = Some(format!("pf.{name} works only in a click, dblclick or command handler"));
+                }
+                if refused.is_none() && name == "launch.add" && !dropping.get() {
+                    refused = Some("pf.launch.add works only in a drop handler".into());
                 }
                 let mut s = to.borrow_mut();
                 let requests = s.calls.values().filter(|c| c.starts_with("http.")).count();
@@ -726,9 +739,12 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                         tracing::debug!(%fence, reads = p.reads_clipboard, "plugin not told of the clipboard");
                     }
                     let data = (!data.is_null()).then(|| data.to_string());
-                    p.click.set(matches!(name, "click" | "dblclick"));
+                    p.click
+                        .set(matches!(name, "click" | "dblclick" | "command"));
+                    p.dropping.set(name == "drop");
                     let result = if told { p.emit(name, data) } else { Ok(()) };
                     p.click.set(false);
+                    p.dropping.set(false);
                     if let Err(why) = result {
                         failed.push((fence, p.number, why));
                     }
@@ -934,7 +950,7 @@ mod tests {
             "{out:?}"
         );
         // Out of memory in an async function is a limit all the same.
-        let code = "pf.on('start', async () => { await 0; const a = []; for (;;) a.push('x'.repeat(1000) + a.length); });";
+        let code = "pf.on('start', async () => { await 0; const a = []; for (;;) a.push('x'.repeat(100000) + a.length); });";
         assert_eq!(
             stop_of(&outputs(code, true, 50, vec![])),
             Some(Stopped::TooMuchMemory)
@@ -1160,7 +1176,7 @@ mod tests {
         for want in [
             "http refused: http.get needs an https address with example.com in permissions.network",
             "clipboard refused: clipboard.text needs permissions.clipboard read",
-            "open refused: pf.open works only in a click or dblclick handler",
+            "open refused: pf.open works only in a click, dblclick or command handler",
             "data refused: data.read needs a name",
             "http 200 https://a.com/x",
             r#"["sys.battery",[]]"#,
@@ -1221,6 +1237,58 @@ mod tests {
             vec![event("clipboard")],
         );
         assert!(texts(&out).join("\n").contains("4 1 "), "{out:?}");
+    }
+
+    #[test]
+    fn launch_calls_only_with_the_permission_add_in_a_drop_open_by_the_user() {
+        let code = r#"
+            const out = [];
+            const tryIt = (what, f) => { try { f(); out.push(what + ' ok'); } catch (e) { out.push(what + ' refused: ' + e.message); } };
+            const show = () => pf.show({ rows: [{ text: out.join(' | ') }], menu: [
+                { id: 'add', title: 'Add a program…\nsecond line' }, { separator: true }, { title: 'no id' },
+                ...Array.from({ length: 9 }, (_, i) => ({ id: 'm' + i, title: 'x'.repeat(50) })),
+            ] });
+            pf.on('start', () => { tryIt('add', () => pf.launch.add(0)); tryIt('open', () => pf.launch.open('a')); tryIt('list', () => pf.launch.list()); show(); });
+            pf.on('drop', (d) => { tryIt('drop add', () => pf.launch.add(d.files.length - 1)); show(); });
+            pf.on('command', (c) => { tryIt(c.via + ' open', () => pf.launch.open('a')); tryIt('pick', () => pf.launch.pick('program')); show(); });
+        "#;
+        let p = Permissions {
+            launch: true,
+            ..Permissions::default()
+        };
+        let drop = json!({ "files": [{ "name": "a.exe", "size": 3, "folder": false }] });
+        let then = vec![
+            Command::Event(FenceId::new_v4(), "drop", drop),
+            Command::Event(
+                FenceId::new_v4(),
+                "command",
+                json!({ "id": "x", "via": "key" }),
+            ),
+        ];
+        let out = run_with(code, p, Arc::new(Fake::default()), true, 150, then);
+        let text = texts(&out).join("\n");
+        for want in [
+            "add refused: pf.launch.add works only in a drop handler",
+            "open refused: pf.launch.open works only in a click, dblclick or command handler",
+            "list ok",
+            "drop add ok",
+            "key open ok",
+            "pick ok",
+        ] {
+            assert!(text.contains(want), "{want:?} not in {text}");
+        }
+        // The menu: entries with an id and a title or separators, at most 8, one line of 40.
+        let Some(Output::Show(_, _, view)) = out.iter().rfind(|o| matches!(o, Output::Show(..)))
+        else {
+            panic!("no view");
+        };
+        assert_eq!(view.menu.len(), view::MAX_MENU);
+        assert_eq!(view.menu[0].title, "Add a program…");
+        assert!(view.menu[1].separator && view.menu[2].id == "m0");
+        assert_eq!(view.menu[2].title.chars().count(), 40);
+        // Without permissions.launch every launch call is refused.
+        let out = outputs(code, true, 100, vec![]);
+        assert!(texts(&out)[0].contains("list refused: launch.list needs permissions.launch"));
     }
 
     #[test]

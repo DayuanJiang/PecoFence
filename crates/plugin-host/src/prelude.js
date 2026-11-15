@@ -45,6 +45,7 @@
     clipboard: ["text", "files", "image", "setText", "setFiles", "setImage"],
     sys: ["cpu", "memory", "drives", "ip", "network", "battery"],
     folder: ["pick", "list", "read"],
+    launch: ["pick", "add", "list", "remove", "open"],
   })) {
     pf[group] = Object.freeze(Object.fromEntries(names.map((k) => [k, (...args) => call(`${group}.${k}`, args)])));
   }

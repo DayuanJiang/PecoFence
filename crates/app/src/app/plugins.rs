@@ -988,6 +988,7 @@ impl App {
             ("pluginAdd", Some(id)) if self.plugin(id).is_some() => self.add_plugin_fence(id),
             ("pluginUninstall", Some(id)) => self.uninstall_plugin(id),
             ("pluginSetting", _) => self.set_plugin_setting(v),
+            ("pluginKey" | "pluginItemRemove", _) => self.launch_page_action(name, v),
             ("pluginPage", Some(id)) => {
                 if let Some(index) = &self.plugins.index {
                     let url = list::page_url(&index.commit, id);
@@ -1044,7 +1045,8 @@ impl App {
                     let fences: Vec<_> = self.plugin_fences(id).into_iter().map(|f| {
                         let saved = self.state.config.scripts.get(&f).map(|s| s.settings.clone()).unwrap_or_default();
                         let title = self.state.fence(f).map(|f| f.title.clone()).unwrap_or_default();
-                        serde_json::json!({ "id": f, "title": title, "values": list::fence_settings(&mine.manifest, &saved) })
+                        let (items, keys) = self.launch_json(f, &mine.manifest);
+                        serde_json::json!({ "id": f, "title": title, "values": list::fence_settings(&mine.manifest, &saved), "items": items, "keys": keys })
                     }).collect();
                     (settings, fences)
                 });
@@ -1053,7 +1055,8 @@ impl App {
                     "id": id, "name": texts(&m.name), "description": texts(&m.description),
                     "author": m.author, "version": m.version, "installed": mine.is_some(), "layer": m.layer,
                     "network": p.network, "links": p.links, "system": p.system, "background": p.background,
-                    "folders": p.folders, "notify": p.notify,
+                    "folders": p.folders, "notify": p.notify, "launch": p.launch, "drop": p.drop,
+                    "commands": p.commands.iter().map(|c| list::pick(&c.title, lang)).collect::<Vec<_>>(),
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),
                     "state": state, "reason": reason, "page": index.is_some(),
                     "settings": settings, "fences": fences, "shown": list::shown_key(m),

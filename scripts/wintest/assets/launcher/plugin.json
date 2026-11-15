@@ -1,0 +1,18 @@
+{
+  "id": "launcher",
+  "version": "1.0.0",
+  "api": 2,
+  "layer": "light",
+  "name": { "en": "Launcher", "zh-CN": "启动器" },
+  "description": {
+    "en": "Put the programs, files and folders you use often into it; one click opens them.",
+    "zh-CN": "把常用的程序、文件和文件夹放进来，点一下就能打开。"
+  },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": {
+    "launch": true,
+    "drop": ["files"],
+    "commands": [{ "id": "show", "title": { "en": "Show the launcher", "zh-CN": "显示启动器" } }]
+  }
+}

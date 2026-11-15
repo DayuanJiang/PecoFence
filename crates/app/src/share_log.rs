@@ -690,6 +690,9 @@ mod tests {
         // Explorer's desktop windows: class names, handles and counts.
         ("layers", "%desktop::describe_desktop_windows()"),
         ("command", "name"), // `Command` variant name
+        // A plugin's command id: from its reviewed plugin.json (letters, digits, -).
+        ("command", "command"),
+        ("command", "k.1"),
         // shell::path_place: fixed words for the kind of place a path is on.
         ("place", "shell::path_place(&primary)"),
         ("place", "shell::path_place(path)"),
@@ -708,12 +711,14 @@ mod tests {
         ("target_ext", "target_ext.as_deref()"),
         // shell::path_place of a shortcut's target.
         ("target_place", "target_place.as_deref()"),
-        ("generation", "?generation"),        // DesktopGeneration enum
-        ("generation", "generation"),         // GPU device generation (u64)
-        ("hotkey", "%c"),                     // Hotkey: modifier and key names ("Ctrl+Alt+Space")
-        ("hotkey", "%h"),                     // Hotkey
-        ("host_kind", "?host_kind"),          // Option<HostKind> enum
-        ("install", "install.as_str()"),      // feedback::install_kind: fixed names
+        ("generation", "?generation"), // DesktopGeneration enum
+        ("generation", "generation"),  // GPU device generation (u64)
+        ("hotkey", "%c"),              // Hotkey: modifier and key names ("Ctrl+Alt+Space")
+        ("hotkey", "%h"),              // Hotkey
+        ("hotkey", "%k.2"),            // Hotkey of a plugin command
+        ("hotkey", "?h.map(|h|h.to_string())"), // Hotkey of a plugin command, or none
+        ("host_kind", "?host_kind"),   // Option<HostKind> enum
+        ("install", "install.as_str()"), // feedback::install_kind: fixed names
         ("source", "source.as_str()"), // smart fence: where its results came from (fixed names)
         ("source", "r.source.as_str()"), // the same, of a smart fence worker's result
         ("language", "language.tag()"), // BCP 47 tag of a Language variant

@@ -101,6 +101,10 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
         }
         "folder.pick" | "folder.list" | "folder.read" => (p.folders, "permissions.folders".into()),
         "notify" => (p.notify, "permissions.notify".into()),
+        n if n.starts_with("launch.") => (
+            p.launch && ["pick", "add", "list", "remove", "open"].contains(&&n[7..]),
+            "permissions.launch".into(),
+        ),
         "openSystem" => (arg(0) == "taskmgr", "the name taskmgr".into()),
         "data.list" => (true, String::new()),
         n if n.starts_with("sys.") => (true, String::new()),

@@ -1818,7 +1818,9 @@
     const clip = { write: t("写入剪贴板"), read: t("读取剪贴板"), readwrite: t("读取和写入剪贴板") }[p.clipboard];
     const d = [p.network.length && tf("联网：{0}", p.network.join(', ')), p.links.length && tf("在浏览器里打开这些网站：{0}", p.links.join(', ')),
       clip, p.background && t("栅栏隐藏时继续运行"), p.folders && t("读取你选的文件夹，只读不写"), p.notify && t("显示提示，发出提示音"),
-      p.system.length && tf("启动这些程序：{0}", p.system.join(', ')), p.layer === 'web' && t("用网页显示内容，占用内存较多")].filter(Boolean);
+      p.system.length && tf("启动这些程序：{0}", p.system.join(', ')), p.layer === 'web' && t("用网页显示内容，占用内存较多"),
+      p.launch && t("打开你放进这个栅栏的文件、文件夹和程序"), p.drop.length && t("你拖到它上面的文件和文字，它能读取"),
+      p.commands.length && tf("有这些命令：{0}。可以在插件详情里给它们设快捷键", p.commands.join(', '))].filter(Boolean);
     return d.length ? d : [t("只显示内容，不联网，也不读剪贴板")];
   }
   function plButton(p) {
@@ -1865,14 +1867,49 @@
       row.append(plEl('span', '', s.label || s.key), c);
       box.append(row);
     }
+    // A launcher's items: what the user put into the fence, each with 移除.
+    if (p.launch && !f.items.length) box.append(plEl('div', 's', t("这个栅栏里还没有项目")));
+    for (const it of p.launch ? f.items : []) {
+      const row = plEl('div', 'pl-field'), rm = plEl('button', '', t("移除"));
+      rm.onclick = () => send({ type: 'action', name: 'pluginItemRemove', id: p.id, fence: f.id, item: it.id });
+      row.append(plEl('span', '', it.name), rm);
+      box.append(row);
+    }
+    // A shortcut per command, recorded as 临时显示 Windows 桌面's; the recorders are made once the
+    // box is on the page (plKeysMade).
+    for (const k of f.keys) {
+      const id = `plk-${f.id}-${k.id}`, row = plEl('div', 'pl-field');
+      const text = plEl('div'), edit = plEl('div', 'hotkey-edit'), key = plEl('button', 'hotkey-box');
+      text.append(plEl('span', '', k.title), plEl('div', 's'));
+      text.firstChild.id = id + 'Title'; text.lastChild.id = id + 'Help';
+      key.type = 'button'; key.id = id; key.setAttribute('aria-labelledby', `${id}Title ${id}Keys`);
+      key.append(plEl('span', 'keys'), plEl('span', 'ic', '\uE70F')); key.firstChild.id = id + 'Keys';
+      const win = plEl('label', 'hotkey-win'), box2 = plEl('input');
+      box2.type = 'checkbox'; box2.id = id + 'Win'; win.append(box2, t("包含 Win 键"));
+      const clear = plEl('button', '', t("清除"));
+      clear.hidden = !k.key;
+      clear.onclick = () => send({ type: 'action', name: 'pluginKey', id: p.id, fence: f.id, command: k.id, box: id });
+      edit.append(key, win, clear); row.append(text, edit); box.append(row);
+      plKeysWaiting.push([id, p, f, k]);
+    }
     return box;
+  }
+  const plKeys = {}, plKeysWaiting = [];
+  function plKeysMade() {
+    for (const [id, p, f, k] of plKeysWaiting.splice(0)) {
+      const r = hotkeyRecorder(id, 'pluginKeyRecording', 'pluginKey', () => ({ on: true, keys: k.key && k.key.keys,
+        help: k.taken ? tf("{0} 已被其他程序占用，请换一个", k.key.label) : '', tone: k.taken ? 'error' : '' }));
+      r.extra = { id: p.id, fence: f.id, command: k.id, box: id };
+      r.render();
+      plKeys[id] = r;
+    }
   }
   function renderPlugins() {
     const pl = state.plugins, list = document.getElementById('pluginList');
     if (!pl) return;
     // A setting being typed keeps its box: the list is drawn again when it is left.
     const a = document.activeElement;
-    if (list.contains(a) && a.matches('input, select')) { plPending = true; return; }
+    if (list.contains(a) && a.matches('input, select, .hotkey-box.recording')) { plPending = true; return; }
     plPending = false;
     if (pl.open && pl.open[0] !== plOpenSeq) { plOpenSeq = pl.open[0]; plOpen.add(pl.open[1]); plFocus = [pl.open[1], pl.open[2]]; }
     // 安装 was refused: the index changed what the plugin may do while its warning was open.
@@ -1900,12 +1937,13 @@
       const ul = plEl('ul', 's');
       for (const x of plLines(p)) ul.append(plEl('li', '', x));
       d.append(ul);
-      if (p.settings.length) for (const f of p.fences) d.append(plForm(p, f));
+      if (p.settings.length || p.launch || p.commands.length) for (const f of p.fences) d.append(plForm(p, f));
       if (p.settings.length && !p.fences.length) d.append(plEl('div', 's', t("添加到桌面后，可以在这里改每个栅栏的设置。")));
       const acts = plEl('div', 'actions');
       if (p.page) { const g = plEl('button', '', t("在 GitHub 上看介绍")); g.onclick = () => send({ type: 'action', name: 'pluginPage', id: p.id }); acts.append(g); }
       if (p.installed && p.state !== 'disabled') { const u = plEl('button', '', t("卸载")); u.onclick = () => send({ type: 'action', name: 'pluginUninstall', id: p.id }); acts.append(u); }
       d.append(acts); list.append(d);
+      plKeysMade();
     }
     if (pl.status === 'offline') {
       const c = plEl('div', 'card child'), l = plEl('div', 'l'), r = plEl('button', '', t("重试"));
@@ -2030,13 +2068,13 @@
     r.start = () => {
       if (r.recording || box.disabled) return;
       r.recording = true; held = 0; r.error = ''; waitForKeys(false);
-      send({ type: 'action', name: recordingAction, on: true });
+      send({ type: 'action', name: recordingAction, on: true, ...r.extra });
       r.render();
     };
     r.stop = () => {
       if (!r.recording) return;
       r.recording = false; held = 0; r.error = ''; waitForKeys(false);
-      send({ type: 'action', name: recordingAction, on: false });
+      send({ type: 'action', name: recordingAction, on: false, ...r.extra });
       r.render();
       if (r.onEnd) r.onEnd();
     };
@@ -2066,7 +2104,7 @@
       if (['Control', 'Alt', 'Shift', 'Meta', 'OS', 'AltGraph'].includes(e.key)) { r.error = ''; r.render(); return; }
       if (e.repeat) return;
       // keyCode is the Windows virtual-key code, which RegisterHotKey takes.
-      send({ type: 'action', name: setAction, mods: mods | (winBox.checked ? MOD_WIN : 0), vk: e.keyCode });
+      send({ type: 'action', name: setAction, mods: mods | (winBox.checked ? MOD_WIN : 0), vk: e.keyCode, ...r.extra });
     });
     box.addEventListener('keyup', e => { if (r.recording) { held = heldMods(e); r.render(); } });
     // Ticking Win starts a recording with it; clearing it during one drops it again.
@@ -3809,6 +3847,7 @@
     else if (m.type === 'peekHotkeyResult') { peekRecorder.result(m); renderPeekHotkey(); }
     else if (m.type === 'pinyin') { pinyinMap = m.map || {}; if (!searchList.hidden) renderSearch(); }
     else if (m.type === 'windowsDesktopHotkeyResult') wdRecorder.result(m);
+    else if (m.type === 'pluginKeyResult') { if (plKeys[m.box]) plKeys[m.box].result(m); }
     else if (m.type === 'editor') seRender(m);
     else if (m.type === 'editorFolder') seFolder(m);
     else if (m.type === 'editorError') seShowError(m.text);

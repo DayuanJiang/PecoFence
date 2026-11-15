@@ -534,6 +534,10 @@ impl pecofence_plugin_host::Host for AppHost {
             "run" => self.run(fence, &args),
             "folder.pick" => self.on_ui(move |app| Ok(app.pick_plugin_folder(fence))),
             "folder.list" | "folder.read" => self.folder(fence, name, &args),
+            n if n.starts_with("launch.") => {
+                let name = name.to_string();
+                self.on_ui(move |app| app.launch_call(fence, &name, &args))
+            }
             "open" | "openSystem" => {
                 let target = if name == "open" {
                     arg(0)

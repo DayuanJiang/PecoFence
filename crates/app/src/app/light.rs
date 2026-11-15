@@ -100,6 +100,12 @@ pub(super) struct Light {
     clipboard_changed: Arc<AtomicBool>,
     /// The corner card of `pf.notify`.
     pub(super) notice: Option<crate::notice::Notice>,
+    /// Interface 2 (`launch.rs`): each fence's `view.menu`, the files of its last drop, the
+    /// shortcuts registered (by hotkey id) and the ones another program holds.
+    pub(super) menus: HashMap<FenceId, Vec<host::view::MenuItem>>,
+    pub(super) drops: HashMap<FenceId, Vec<std::path::PathBuf>>,
+    pub(super) keys: HashMap<i32, (FenceId, String, Hotkey)>,
+    pub(super) keys_taken: Vec<(FenceId, String, Hotkey)>,
 }
 
 impl App {
@@ -164,6 +170,13 @@ impl App {
             "settings": pecofence_core::plugins::fence_settings(m, &saved),
             "fence": { "id": fence.to_string(), "width": size.0, "height": size.1 },
         })
+    }
+
+    /// Fence `fence`'s plugin runs, or starts again by itself (not stopped for good).
+    pub(super) fn light_keeps_going(&self, fence: FenceId) -> bool {
+        let stops = self.light.stops.get(&fence).map_or(0, Vec::len);
+        self.light.running.contains_key(&fence)
+            || (self.light.stopped.contains_key(&fence) && stops < STOPS_AN_HOUR)
     }
 
     pub(super) fn light_runs(&self, fence: FenceId) -> bool {
@@ -265,6 +278,7 @@ impl App {
             cache,
             number,
         })));
+        self.sync_plugin_keys();
     }
 
     /// Plugin fence `fence` draws light text now, or dark: its plugin's `pf.theme` follows.
@@ -288,6 +302,9 @@ impl App {
         if self.light.running.remove(&fence).is_some() {
             self.light_send(host::Command::Stop(fence));
         }
+        self.light.menus.remove(&fence);
+        self.light.drops.remove(&fence);
+        self.sync_plugin_keys();
     }
 
     /// Plugin `id` is being uninstalled: no call of its fences writes into its data folder from
@@ -452,7 +469,8 @@ impl App {
         }
         self.light.stopped.insert(fence, why);
         if !again {
-            return;
+            // Stopped for good: its shortcuts go until it is started again.
+            return self.sync_plugin_keys();
         }
         let (jobs, control) = (self.light.jobs.clone(), self.control.hwnd().0 as isize);
         let _ = std::thread::Builder::new()
@@ -493,7 +511,9 @@ impl App {
                 continue;
             }
             match output {
-                host::Output::Show(fence, _, view) => {
+                host::Output::Show(fence, _, mut view) => {
+                    let menu = std::mem::take(&mut view.menu);
+                    self.light.menus.insert(fence, menu);
                     let shown = self.plugin_rows(fence, view);
                     if let Some((rows, ..)) = self.light.running.get_mut(&fence) {
                         *rows = Some(shown);
