@@ -143,6 +143,7 @@ owner-frames-A     2   ec2    release owner-frame-pacing.ps1         --var Part=
 owner-frames-B     2   ec2    release owner-frame-pacing.ps1         --var Part=B
 owner-settings-open 2  ec2    release owner-settings-host.ps1        --var Part=OK
 owner-settings-page 2  ec2    debug   owner-settings-host.ps1        --var Part=RDK
+issues-settings    2   ec2    debug   issues-settings.ps1
 owner-settings-ui  1   ec2    debug   owner-settings-ui.ps1
 owner-editor-A     2   ec2    debug   owner-smart-editor.ps1         --var Part=A
 owner-editor-B     2   ec2    debug   owner-smart-editor.ps1         --var Part=B
