@@ -212,7 +212,7 @@ impl AppHost {
                 let dir = self.data_dir(fence)?;
                 let file = dir.join(&name);
                 let _com = pecofence_platform::com::MtaGuard::init();
-                self.write_data(fence, &file, bgra.len() as u64 / 4, |_| {
+                self.write_data(fence, &file, bgra.len() as u64, |_| {
                     clipboard::save_png(&file, w, h, &bgra).map_err(|e| e.to_string())
                 })?;
                 let size = std::fs::metadata(&file).map_or(0, |m| m.len());
