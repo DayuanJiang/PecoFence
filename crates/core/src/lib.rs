@@ -12,6 +12,7 @@ pub mod log_file;
 pub mod matcher;
 pub mod model;
 pub mod note;
+pub mod plugins;
 pub mod rules;
 pub mod script_output;
 pub mod smart;
