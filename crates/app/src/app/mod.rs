@@ -396,6 +396,11 @@ pub struct App {
     /// the last change left (`apply_icon_size`): stepping back to that size gives that height
     /// back, unless the height is no longer the one the last change left (sized by hand).
     icon_size_heights: HashMap<FenceId, (FenceId, u32, i32, i32)>,
+    /// 应用到所有栅栏: each window's saved rect before and after the last apply, for its 撤销.
+    apply_to_all_rects: Vec<(FenceId, RECT, RECT)>,
+    /// While 应用到所有栅栏 sets fence after fence: a fit takes its height at once, so the fences
+    /// below are pushed for the final height before the next one fits.
+    fits_at_once: bool,
     fs_pending: Arc<Mutex<Vec<FsEvent>>>,
     /// Finished shell file operations from the worker threads (see `fileops.rs`).
     fileops_done: fileops::FileOpResults,
@@ -2019,6 +2024,8 @@ impl App {
             watcher_retry: HashMap::new(),
             portal_back_armed: false,
             icon_size_heights: HashMap::new(),
+            apply_to_all_rects: Vec::new(),
+            fits_at_once: false,
             fs_pending,
             fileops_done: Arc::new(Mutex::new(Vec::new())),
             fileops_running: 0,

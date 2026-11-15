@@ -2200,9 +2200,11 @@
     });
     renderSwatches(fenceTintSwatches, tintSel, 'fenceTint');
     renderSwatches(fenceTabColorSwatches, tabSel, 'tabColor');
-    // 应用到所有栅栏: shown while another fence would take something.
+    // 应用到所有栅栏: shown while another fence would take something, and not for 「桌面」
+    // arranged like the desktop, whose plate, title and view nothing shows.
+    const deskLike = f.kind === 'inbox' && f.desktopLayout && !f.tabbed;
     for (const [card, props] of [['fenceLooksAll', LOOKS_PROPS], ['fenceLayoutAll', LAYOUT_PROPS]]) {
-      document.getElementById(card).hidden = !applyTargets(f, props).length;
+      document.getElementById(card).hidden = deskLike || !applyTargets(f, props).length;
       document.getElementById(card + 'Btn').onclick = () => applyToAll(f, props);
     }
     document.getElementById('fenceDock').onclick = () => { setFence(f.id, 'dockTop', null); toast(t("已停靠到屏幕顶部")); };

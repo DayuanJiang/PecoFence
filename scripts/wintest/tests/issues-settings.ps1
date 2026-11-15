@@ -135,6 +135,8 @@ if (-not $Part -or $Part -match 'B') {
   Pf fence set "$($src.id)" iconSize 64 | Out-Null
   Pf fence set "$($src.id)" tint '#E74856' | Out-Null
   Pf fence set "$($src.id)" opacity clear | Out-Null
+  # The source's new height glides for 250 ms; its height is read once it is there.
+  Start-Sleep -Seconds 1
   $before = @{}
   foreach ($o in $others) { $before["$($o.id)"] = FenceGet "$($o.id)" }
   $inboxBefore = FenceGet "$($inbox.id)"
@@ -206,5 +208,78 @@ if (-not $Part -or $Part -match 'B') {
   }
   $line = @(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -match 'options set on several fences' }) | Select-Object -Last 1
   Check 'the log says what was set' ([bool]$line) "$line"
+  foreach ($m in $made) { Remove-Item -LiteralPath $m -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+# C: what a review of the merged round found. 撤销 gives every fence back its place and height
+# (spacing and name lines fit a fence's height to its icons, a cell snap can move it left);
+# with 「桌面」 arranged like the desktop picked, the two rows are not offered; a tab whose title
+# follows the tint keeps following it when its window takes the looks.
+function RectText($f) { $r = $f.rect; return "$($r.x),$($r.y),$($r.w),$($r.h)" }
+if (-not $Part -or $Part -match 'C') {
+  Case '撤销 puts every fence back where it was and as high as it was'
+  PfStart -Lang zh-CN
+  $made = @()
+  foreach ($n in @('季度报告.txt', '会议记录 2026.txt', 'a.txt', '项目计划书最终版.txt', '清单.txt')) { $made += DeskFile $n }
+  foreach ($n in @('工作', '旧文件备份', '下载的安装包')) { $d = Join-Path $PfDesk $n; New-Item -ItemType Directory -Force $d | Out-Null; $made += $d }
+  Start-Sleep -Seconds 4
+  $all = @(TJson fence list) | Where-Object { $_ -and $_.id }
+  $regular = @($all | Where-Object { $_.kind -ne 'inbox' -and -not $_.tool })
+  $inbox = @($all | Where-Object { $_.kind -eq 'inbox' }) | Select-Object -First 1
+  $a = $regular[0]; $b = $regular[1]; $c = $regular[2]
+  Pf settings set snapping.sizeToCells true | Out-Null
+  # B sized by hand: taller than its icons need, a width off the cells, at the right edge.
+  $gb = FenceGet "$($b.id)"
+  Pf fence move "$($b.id)" --rect "1330,$($gb.rect.y),262,$($gb.rect.h + 150)" | Out-Null
+  Start-Sleep -Seconds 1
+  Pf fence set "$($a.id)" spacingPx -12 | Out-Null
+  Pf fence set "$($a.id)" iconSize 64 | Out-Null
+  Pf fence set "$($a.id)" labelLines 1 | Out-Null
+  Start-Sleep -Seconds 1
+  $before = @{}
+  foreach ($o in @($b, $c)) { $before["$($o.id)"] = RectText (FenceGet "$($o.id)") }
+  Log "before: B $($before["$($b.id)"]) C $($before["$($c.id)"])"
+  $ok = PfSettings
+  Check 'settings page open' $ok ''
+  Js "(() => { document.querySelector('[data-page=fences]').click(); const s = document.getElementById('fenceSel'); s.value = '$($a.id)'; s.dispatchEvent(new Event('change')); return true; })()" | Out-Null
+  Start-Sleep -Milliseconds 900
+  PageClick '#fenceLayoutAllBtn'
+  Start-Sleep -Milliseconds 1500
+  $mid = @{}
+  foreach ($o in @($b, $c)) { $mid["$($o.id)"] = RectText (FenceGet "$($o.id)") }
+  Log "after apply: B $($mid["$($b.id)"]) C $($mid["$($c.id)"])"
+  Check 'B took the layout' ((FenceGet "$($b.id)").spacingPx -eq -12) ''
+  Js "(() => { document.getElementById('toastUndo').click(); return true; })()" | Out-Null
+  Start-Sleep -Milliseconds 1500
+  $bad = @()
+  foreach ($o in @($b, $c)) { $now = RectText (FenceGet "$($o.id)"); if ($now -ne $before["$($o.id)"]) { $bad += "$($o.title): $now, was $($before["$($o.id)"]) (after apply $($mid["$($o.id)"]))" } }
+  Check '撤销 puts every fence back at its place and height (B sized by hand too)' ($bad.Count -eq 0) ($bad -join '; ')
+
+  Case 'with 「桌面」 arranged like the desktop picked, 应用到所有栅栏 is not offered'
+  Js "(() => { const s = document.getElementById('fenceSel'); s.value = '$($inbox.id)'; s.dispatchEvent(new Event('change')); return true; })()" | Out-Null
+  Start-Sleep -Milliseconds 900
+  $hidden = Js "document.getElementById('fenceLooksAll').hidden && document.getElementById('fenceLayoutAll').hidden"
+  Check 'both rows hidden for 「桌面」 arranged like the desktop' ([bool]$hidden) ''
+  [SW]::PostMessageW([G]::FindWindowW('PecoFence.Settings', [NullString]::Value), 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+  Start-Sleep -Seconds 1
+
+  Case 'a tab whose title follows the tint keeps following it'
+  Pf settings set snapping.sizeToCells false | Out-Null
+  Pf fence merge "$($c.id)" --into "$($b.id)" | Out-Null
+  Start-Sleep -Seconds 1
+  Pf fence set "$($b.id)" tint '#0078D4' | Out-Null
+  Pf fence set "$($c.id)" titleColor tint | Out-Null
+  Pf fence set "$($a.id)" tint '#E74856' | Out-Null
+  Pf fence set "$($a.id)" titleColor tint | Out-Null
+  Start-Sleep -Milliseconds 600
+  Check 'the tab follows the tint before' ((FenceGet "$($c.id)").titleColor -eq 'tint') "$((FenceGet "$($c.id)").titleColor)"
+  $ok = PfSettings
+  Js "(() => { document.querySelector('[data-page=fences]').click(); const s = document.getElementById('fenceSel'); s.value = '$($a.id)'; s.dispatchEvent(new Event('change')); return true; })()" | Out-Null
+  Start-Sleep -Milliseconds 900
+  PageClick '#fenceLooksAllBtn'
+  Start-Sleep -Milliseconds 1500
+  $gc = FenceGet "$($c.id)"
+  Check 'the window took the new tint' ((NoHash $gc.tint) -eq 'E74856') "$($gc.tint)"
+  Check 'the tab title still follows the tint (not the old blue)' ($gc.titleColor -eq 'tint') "$($gc.titleColor)"
   foreach ($m in $made) { Remove-Item -LiteralPath $m -Recurse -Force -ErrorAction SilentlyContinue }
 }

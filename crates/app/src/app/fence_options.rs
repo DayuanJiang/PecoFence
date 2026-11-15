@@ -848,6 +848,17 @@ impl App {
     }
 
     /// (tint, title colour, title size) of the host window's appearance override.
+    /// Where the state keeps a fence's window (device px, its expanded height).
+    fn saved_rect(&self, fence: FenceId) -> Option<RECT> {
+        let r = self.state.fence_px_rect(self.state.fence(fence)?);
+        Some(RECT {
+            left: r.left,
+            top: r.top,
+            right: r.right,
+            bottom: r.bottom,
+        })
+    }
+
     fn style_of(&self, host: FenceId) -> (Option<[u8; 3]>, Option<[u8; 3]>, Option<TitleSize>) {
         self.state
             .fence(host)
@@ -1044,8 +1055,34 @@ impl App {
             _ => "apply_to_all",
         };
         let changes = v.get("changes").and_then(|c| c.as_array());
+        // 撤销 gives each window back its place and height too: spacing, name lines and icon
+        // size fit a fence's height to its icons, the cell snap can move it left. A window moved
+        // or sized since the apply keeps where the user put it.
+        let windows: Vec<FenceId> = self
+            .state
+            .fences()
+            .iter()
+            .filter(|f| f.tab_host.is_none())
+            .map(|f| f.id)
+            .collect();
+        let put_back: Vec<(FenceId, RECT)> = if what == "apply_to_all_undo" {
+            std::mem::take(&mut self.apply_to_all_rects)
+                .into_iter()
+                .filter(|(id, before, after)| {
+                    before != after && self.saved_rect(*id) == Some(*after)
+                })
+                .map(|(id, before, _)| (id, before))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let rects_before: Vec<(FenceId, Option<RECT>)> = windows
+            .iter()
+            .map(|id| (*id, self.saved_rect(*id)))
+            .collect();
         let (mut changed, mut skipped) = (0, 0);
         let mut fences = std::collections::HashSet::new();
+        self.fits_at_once = true;
         for c in changes.into_iter().flatten() {
             let fence = c
                 .get("id")
@@ -1068,7 +1105,8 @@ impl App {
                     }
                     fences.insert(fence);
                     // As after one change of the CLI: the fences below make room for this one
-                    // before the next grows, so the last one in a column is the one kept short.
+                    // (its final height, see `fits_at_once`) before the next grows, so the last
+                    // one in a column is the one kept short.
                     self.reflow_pushed();
                 }
                 Ok(_) => skipped += 1,
@@ -1078,11 +1116,26 @@ impl App {
                 }
             }
         }
+        self.fits_at_once = false;
+        let placed = put_back.len();
+        for (id, rect) in put_back {
+            self.put_fence_at(id, rect);
+        }
+        if placed > 0 {
+            self.reflow_pushed();
+        }
+        if what == "apply_to_all" {
+            self.apply_to_all_rects = rects_before
+                .into_iter()
+                .filter_map(|(id, before)| Some((id, before?, self.saved_rect(id)?)))
+                .collect();
+        }
         tracing::info!(
             what,
             fences = fences.len(),
             changed,
             skipped,
+            placed,
             "settings: options set on several fences"
         );
         pecofence_core::usage::event_named("settings.fence", what);

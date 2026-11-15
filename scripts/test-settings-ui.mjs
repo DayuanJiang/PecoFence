@@ -629,6 +629,8 @@ async function runTests() {
     assert(fence('inbox').opacity === 'solid', 'The desktop-like 「桌面」 took the looks');
     doc.getElementById('fenceLooksAllBtn').click(); await settle();
     assert(doc.getElementById('toastText').textContent === '其他栅栏已经和它一样' && doc.getElementById('toastUndo').hidden, 'Nothing left to change, notice: ' + doc.getElementById('toastText').textContent);
+    change(doc, 'fenceSel', 'inbox'); await settle();
+    assert(doc.getElementById('fenceLooksAll').hidden && doc.getElementById('fenceLayoutAll').hidden, 'Offered for 「桌面」 arranged like the desktop');
   });
   await test('菜单颜色 offers 跟随颜色模式, 浅色 and 深色 and posts the choice', async () => {
     doc = await reset();

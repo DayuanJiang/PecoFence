@@ -514,7 +514,7 @@ impl App {
         if h == r.bottom - r.top {
             return None;
         }
-        let rect = w.apply_height(h, true);
+        let rect = w.apply_height(h, !self.fits_at_once);
         self.record_bounds(id, rect, false, h, "fit");
         self.schedule_save();
         Some(h)

@@ -587,7 +587,7 @@ impl App {
 
     /// Moves `fence` back to `rect` (its expanded rect) the way `fence move` does. False when
     /// it is gone, a tab, or placed by 像桌面一样排列.
-    fn put_fence_at(&mut self, fence: FenceId, rect: RECT) -> bool {
+    pub(super) fn put_fence_at(&mut self, fence: FenceId, rect: RECT) -> bool {
         if self.state.fence(fence).is_none_or(|f| f.tab_host.is_some()) {
             return false;
         }
