@@ -54,8 +54,11 @@ pub const EVENTS: [&str; 14] = [
     "message",
     "theme",
 ];
-/// The most bytes one `pf.post` may carry (as JSON).
+/// The most bytes one `pf.post` may carry (as JSON), and the most messages and bytes that may
+/// wait to go out from one run of the plugin.
 const MAX_POST: usize = 1024 * 1024;
+const MAX_POSTS: usize = 100;
+const MAX_POSTED: usize = 4 * 1024 * 1024;
 /// `pf.time.format(unix_ms, kind)`: the time in Windows' region format.
 pub type Format = fn(i64, &str) -> String;
 
@@ -107,8 +110,8 @@ pub enum Stopped {
 pub enum Output {
     Show(FenceId, u32, View),
     Stopped(FenceId, u32, Stopped),
-    /// `pf.post(data)`: for the page of the web plugin whose main.js this is.
-    Post(FenceId, u32, serde_json::Value),
+    /// `pf.post(data)`, as JSON: for the page of the web plugin whose main.js this is.
+    Post(FenceId, u32, String),
 }
 
 /// What reaches the plugin thread: the app's commands and the answers of the worker threads.
@@ -169,7 +172,8 @@ struct Shared {
     json: Option<String>,
     /// The calls on worker threads, by number: their names.
     calls: HashMap<u32, String>,
-    posts: Vec<serde_json::Value>,
+    /// What `pf.post` sent in this run, as JSON.
+    posts: Vec<String>,
 }
 
 struct Plugin {
@@ -282,12 +286,16 @@ impl Plugin {
             };
             n.set("show", Function::new(ctx.clone(), show)?)?;
             let to = shared.clone();
-            let post = move |json: String| match serde_json::from_str(&json) {
-                Ok(data) if json.len() <= MAX_POST => to.borrow_mut().posts.push(data),
-                _ => tracing::debug!(
-                    bytes = json.len(),
-                    "plugin post not sent: too big or not JSON"
-                ),
+            let post = move |ctx: Ctx<'_>, json: String| {
+                let mut s = to.borrow_mut();
+                let waiting = s.posts.iter().map(String::len).sum::<usize>();
+                if json.len() > MAX_POST || s.posts.len() >= MAX_POSTS || waiting + json.len() > MAX_POSTED {
+                    tracing::info!(%fence, bytes = json.len(), waiting, posts = s.posts.len(), "plugin post refused: too big or too much at once");
+                    let why = "pf.post: a message is at most 1 MB, and at most 100 messages or 4 MB go out at once";
+                    return Err(Exception::throw_range(&ctx, why));
+                }
+                s.posts.push(json);
+                Ok(())
             };
             n.set("post", Function::new(ctx.clone(), post)?)?;
             let (to, note_) = (shared.clone(), note.clone());
@@ -817,13 +825,44 @@ mod tests {
         let code = "pf.on('message', (m) => pf.post({ got: m.n + 1 }));";
         let message = Command::Event(FenceId::new_v4(), "message", serde_json::json!({ "n": 1 }));
         let out = outputs(code, true, 30, vec![message]);
-        let posts: Vec<_> = (out.iter())
+        let posts: Vec<Value> = (out.iter())
             .filter_map(|o| match o {
-                Output::Post(_, _, data) => Some(data.clone()),
+                Output::Post(_, _, data) => serde_json::from_str(data).ok(),
                 _ => None,
             })
             .collect();
         assert_eq!(posts, [serde_json::json!({ "got": 2 })]);
+    }
+
+    #[test]
+    fn posts_waiting_to_go_out_are_capped() {
+        let code = r#"
+            const big = 'x'.repeat(900 * 1024), out = [];
+            const tryIt = (what, f) => { try { f(); out.push(what + ' ok'); } catch (e) { out.push(what + ' ' + e.name); } };
+            tryIt('huge', () => pf.post('x'.repeat(1100 * 1024)));
+            for (let i = 0; i < 5; i++) tryIt('big' + i, () => pf.post(big));
+            pf.after(1, () => {
+                tryIt('later', () => pf.post(big));
+                for (let i = 0; i < 101; i++) tryIt('small' + i, () => pf.post(i));
+                pf.show({ rows: [{ text: out.join(' ') }] });
+            });
+        "#;
+        let out = outputs(code, true, 1100, vec![]);
+        let text = texts(&out).join("");
+        // Four of 900 KB fit into 4 MB, the fifth waits for none: refused; after the run they
+        // went out and there is room again; the 101st message of one run is refused.
+        for want in [
+            "huge RangeError",
+            "big3 ok",
+            "big4 RangeError",
+            "later ok",
+            "small98 ok",
+            "small99 RangeError",
+        ] {
+            assert!(text.contains(want), "{want} not in {text}");
+        }
+        let posts = out.iter().filter(|o| matches!(o, Output::Post(..))).count();
+        assert_eq!(posts, 4 + 1 + 99);
     }
 
     #[test]

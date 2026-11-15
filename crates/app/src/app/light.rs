@@ -20,6 +20,10 @@ type Reply = Box<dyn FnOnce(std::result::Result<Value, String>)>;
 /// the last hour (a web plugin's page too: it is made anew at once).
 const RESTART_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
 const STOPS_AN_HOUR: usize = 3;
+/// The most messages of plugins' main.js (`pf.post`) and their bytes that wait for this thread
+/// together; more are dropped while it is busy.
+const MAX_QUEUED_POSTS: usize = 1000;
+const MAX_QUEUED_BYTES: usize = 16 * 1024 * 1024;
 
 /// Records a stop of `fence`'s plugin or page in `stops` (those older than an hour dropped
 /// first): how many there are now, and whether it may start again by itself.
@@ -191,10 +195,28 @@ impl App {
         }
         if self.light.thread.is_none() {
             let (out, control) = (self.light.out.clone(), self.control.hwnd().0 as isize);
+            let full = AtomicBool::new(false);
             let spawned = host::spawn(api, pecofence_platform::fileinfo::time_text, move |o| {
-                if let Ok(mut out) = out.lock() {
-                    out.push(o);
+                let Ok(mut out) = out.lock() else {
+                    return;
+                };
+                if let host::Output::Post(fence, _, json) = &o {
+                    let posts = out.iter().filter_map(|o| match o {
+                        host::Output::Post(_, _, j) => Some(j.len()),
+                        _ => None,
+                    });
+                    let (count, bytes) = posts.fold((0, 0), |(n, b), len| (n + 1, b + len));
+                    let over = count >= MAX_QUEUED_POSTS || bytes + json.len() > MAX_QUEUED_BYTES;
+                    if over && !full.swap(true, Ordering::Relaxed) {
+                        tracing::info!(%fence, count, bytes, "plugin messages dropped: too many wait for PecoFence");
+                    }
+                    if over {
+                        return;
+                    }
+                    full.store(false, Ordering::Relaxed);
                 }
+                out.push(o);
+                drop(out);
                 window::post_message(
                     HWND(control as *mut core::ffi::c_void),
                     WM_APP_COMMAND,
@@ -459,7 +481,10 @@ impl App {
                     }
                     hosts.push(self.state.host_of(fence));
                 }
-                host::Output::Post(fence, _, data) => self.web_event(fence, "message", data),
+                host::Output::Post(fence, _, json) => {
+                    let data = serde_json::from_str(&json).unwrap_or_default();
+                    self.web_event(fence, "message", data);
+                }
                 host::Output::Stopped(fence, _, why) => {
                     use pecofence_core::i18n;
                     let why = match why {
