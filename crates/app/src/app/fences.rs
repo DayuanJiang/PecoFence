@@ -1529,8 +1529,10 @@ impl App {
     /// on the side with more room, level with its top. When a fence is there or the work area
     /// ends before it, the spots one gap apart from that one are compared (from a gap inside
     /// the work area's left and top edges, as the scan of `place_new_fence_dip`): off every
-    /// fence first, then the one the window covers least, then the nearest. None when the
-    /// window covers half or more of every spot (it is maximized).
+    /// fence first, then the one the window covers least, then the nearest. When each of those
+    /// is on a fence: the free spot whose title row the window leaves clear, covered least (the
+    /// fence shows its title beside the window and lies on no other fence). None when there is
+    /// none either: it is placed as a fence from a menu is.
     pub(super) fn place_clear_of(&self, w_dip: f32, h_dip: f32, win: RECT) -> Option<RECT> {
         let work = self.work_area_at((win.left + win.right) / 2, (win.top + win.bottom) / 2)?;
         let scale = work.scale();
@@ -1557,6 +1559,10 @@ impl App {
             .collect();
         // (on a fence, px the window covers, px from the wanted spot): the smallest wins.
         let mut best: Option<((bool, i64, i32), RECT)> = None;
+        // Off every fence with its title row (about 40 DIPs) clear of the window, any part of
+        // the rest covered: (px covered, px from the wanted spot).
+        let mut free: Option<((i64, i32), RECT)> = None;
+        let title = (40.0 * scale) as i32;
         let (first_left, first_top) = (work.left + gap, work.top + gap);
         let mut top = first_top + (want_top - first_top).rem_euclid(gap);
         while top + h <= work.bottom {
@@ -1565,25 +1571,30 @@ impl App {
                 let (right, bottom) = (left + w, top + h);
                 let covered = i64::from((right.min(win.right) - left.max(win.left)).max(0))
                     * i64::from((bottom.min(win.bottom) - top.max(win.top)).max(0));
-                if covered * 2 < i64::from(w) * i64::from(h) {
-                    // The snapping gap to every fence.
-                    let on_fence = fences.iter().any(|o| {
-                        left < o.right + fence_gap
-                            && right > o.left - fence_gap
-                            && top < o.bottom + fence_gap
-                            && bottom > o.top - fence_gap
-                    });
-                    let far = (left - want_left).abs() + (top - want_top).abs();
-                    let key = (on_fence, covered, far);
-                    if best.is_none_or(|(b, _)| key < b) {
-                        let rect = RECT {
-                            left,
-                            top,
-                            right,
-                            bottom,
-                        };
-                        best = Some((key, rect));
-                    }
+                // The snapping gap to every fence.
+                let on_fence = fences.iter().any(|o| {
+                    left < o.right + fence_gap
+                        && right > o.left - fence_gap
+                        && top < o.bottom + fence_gap
+                        && bottom > o.top - fence_gap
+                });
+                let far = (left - want_left).abs() + (top - want_top).abs();
+                let rect = RECT {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                };
+                let key = (on_fence, covered, far);
+                if covered * 2 < i64::from(w) * i64::from(h) && best.is_none_or(|(b, _)| key < b) {
+                    best = Some((key, rect));
+                }
+                let title_clear = top + title <= win.top
+                    || top >= win.bottom
+                    || right <= win.left
+                    || left >= win.right;
+                if !on_fence && title_clear && free.is_none_or(|(b, _)| (covered, far) < b) {
+                    free = Some(((covered, far), rect));
                 }
                 left += gap;
             }
@@ -1591,20 +1602,28 @@ impl App {
         }
         let window = (win.left, win.top, win.right, win.bottom);
         let work = (work.left, work.top, work.right, work.bottom);
-        let Some(((on_fence, covered, far), r)) = best else {
+        let mostly_clear = best.is_some_and(|((on_fence, ..), _)| !on_fence);
+        let picked = match best {
+            Some(((false, covered, far), r)) => Some((covered, far, r)),
+            _ => free.map(|((covered, far), r)| (covered, far, r)),
+        };
+        let Some((covered, far, r)) = picked else {
             tracing::info!(
                 ?window,
                 ?work,
                 size = ?(w, h),
-                "new fence from the settings page: no spot its window leaves mostly clear, placed as from a menu"
+                fences = fences.len(),
+                "new fence from the settings page: no free spot its window leaves mostly clear or with its title row clear, placed as from a menu"
             );
             return None;
         };
-        let reason = match (on_fence, covered, far) {
-            (false, 0, 0) => "beside the window",
-            (false, 0, _) => "the nearest free spot the window leaves clear",
-            (false, ..) => "no free spot clear of the window: the one it covers least",
-            (true, ..) => "no spot off the fences: the one the window covers least",
+        let reason = match (mostly_clear, covered, far) {
+            (true, 0, 0) => "beside the window",
+            (true, 0, _) => "the nearest free spot the window leaves clear",
+            (true, ..) => "no free spot clear of the window: the one it covers least",
+            (false, ..) => {
+                "every spot the window leaves mostly clear is on a fence: the free one with its title row clear, covered least"
+            }
         };
         tracing::info!(
             ?window,

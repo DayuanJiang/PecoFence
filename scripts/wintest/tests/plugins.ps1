@@ -16,7 +16,8 @@
 # Review 7: a deleted plugin fence keeps its files while an undo can bring it back and loses
 # them at the next start once it is gone for good; one or two errors of a new version keep it,
 # the third goes back (a web page's too); a plugin listed again whose download failed comes back
-# at the next index read.
+# at the next index read; two plugin fences added from the settings page in a row are placed
+# clear of the other fences.
 # English UI. Debug build (CDP on the settings page). The signed index is the kit's
 # assets\signed-feed (index.json, index.json.sig and the plugin files, signed with the
 # development key: made again with make_signed_feed.py when the release key replaces it).
@@ -86,6 +87,18 @@ function HostRow($id) {
   Refresh
   return (Js "(() => { const l = window.pfRows.v && window.pfRows.v.list.find(x => x.id === '$id'); return l ? { state: l.state, shown: l.shown } : null; })()")
 }
+# The titles of the fences whose window overlaps fence `id`'s (the inbox aside).
+function OverlapsOf($id) {
+  $all = @(@(PfJson fence list) | Where-Object { $_ -and $_.id -and $_.kind -ne 'inbox' -and $_.windowRect })
+  $a = (@($all | Where-Object { $_.id -eq $id }) | Select-Object -First 1).windowRect
+  if (-not $a) { return 'no window' }
+  $on = $all | Where-Object { $_.id -ne $id } | Where-Object { $b = $_.windowRect; $a.x -lt $b.x + $b.w -and $b.x -lt $a.x + $a.w -and $a.y -lt $b.y + $b.h -and $b.y -lt $a.y + $a.h }
+  return (@($on | ForEach-Object { $_.title }) -join ', ')
+}
+# A new plugin fence may lie behind the settings window (no free spot beside it): the window
+# moves down out of its way (its title bar left on the screen, the page still answers), and back.
+function SettingsAside() { $h = WaitWin 'PecoFence.Settings' 2; $script:SetRect = Rect $h; $r = $script:SetRect; [L]::MoveWindow($h, $r.L, 820, $r.R - $r.L, $r.B - $r.T, $true) | Out-Null; Start-Sleep -Milliseconds 600 }
+function SettingsBack() { $h = WaitWin 'PecoFence.Settings' 2; $r = $script:SetRect; [L]::MoveWindow($h, $r.L, $r.T, $r.R - $r.L, $r.B - $r.T, $true) | Out-Null; Start-Sleep -Milliseconds 600 }
 # The texts of a message box.
 function BoxText($dlg) {
   $t = New-Object Collections.Generic.List[string]
@@ -353,6 +366,7 @@ Offer 'pf-note' 'PF Note' '1.0.0' @{} "pf.on('start', () => pf.show({ rows: [{ i
 InstallVia 'PF Note' | Out-Null
 Start-Sleep -Seconds 3
 $f = @(PluginFences 'pf-note')[0]
+SettingsAside
 $r = $f.windowRect
 [G]::RClick($r.x + 120, $r.y + 14); $menu = MenuWin 5
 $texts = MenuTexts $menu
@@ -360,6 +374,7 @@ Shot 'note-plugin-menu'
 MenuPick '^Edit note$' $menu | Out-Null
 $editor = WaitWin 'PecoFence.NoteEdit' 5
 Start-Sleep -Milliseconds 500; [G]::Type('Buy milk'); Start-Sleep -Milliseconds 500
+SettingsBack
 $ok = ToolsPage; Start-Sleep -Seconds 1
 Check 'its menu has Edit note and Add to-do beside the plugin entries; Edit note opens the editor, which keeps what is typed' ($texts -match 'Edit note' -and $texts -match 'Add to-do' -and $texts -match 'Plugin settings' -and $editor -ne [IntPtr]::Zero -and (FenceGet $f.id).noteText -match 'Buy milk') "menu=$texts note=$((FenceGet $f.id).noteText)"
 $dlg = UninstallVia 'PF Note' 'pf-note'
@@ -375,6 +390,7 @@ InstallVia 'PF Tick' | Out-Null
 Start-Sleep -Seconds 3
 $tf = @(PluginFences 'pf-tick')[0]
 $tick = "$script:Config\plugins-data\pf-tick\tick.txt"
+SettingsAside
 $r = $tf.windowRect
 [G]::RClick($r.x + 120, $r.y + 14); MenuPick '^Edit note$' (MenuWin 5) | Out-Null
 $editor = WaitWin 'PecoFence.NoteEdit' 5
@@ -385,6 +401,7 @@ $t1 = Get-Content $tick -ErrorAction SilentlyContinue; Start-Sleep -Seconds 3; $
 Shot 'taken-down-with-note-open'
 $note = (FenceGet $tf.id).noteText
 Check 'the editor was open; after the take-down it is closed, the note keeps its text, the plugin''s timer writes no more' ($editor -ne [IntPtr]::Zero -and $down -and (WaitWin 'PecoFence.NoteEdit' 1) -eq [IntPtr]::Zero -and $note -match 'Keep me' -and $t1 -and $t1 -eq $t2) "tick $t1 then $t2 note=$note $down"
+SettingsBack
 
 Case 'listed again after its take-down: it comes back by itself and runs in its fence again, also when the first download fails'
 # The first download after the listing again fails (main.js is not the reviewed one).
@@ -399,6 +416,18 @@ Check 'disabled.txt gone, main.js back; the same fence runs it again and keeps i
 $dlg = UninstallVia 'PF Tick' 'pf-tick'
 [L]::PostMessageW($dlg, 0x111, [IntPtr]6, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 2
 $script:Offer.Remove('pf-tick')
+
+Case 'two plugin fences added from the settings page in a row: each is clear of the other fences'
+Offer 'pf-place' 'PF Place' '1.0.0'; Publish 592; Refresh
+InstallVia 'PF Place' | Out-Null
+Js "window.chrome.webview.postMessage({ type: 'action', name: 'pluginAdd', id: 'pf-place' })" | Out-Null; Start-Sleep -Seconds 3
+$p = @(PluginFences 'pf-place')
+$over = @($p | ForEach-Object { "$($_.windowRect.x),$($_.windowRect.y) on [$(OverlapsOf $_.id)]" })
+Shot 'two-plugin-fences-in-a-row'
+Check 'two fences, neither over another fence' ($p.Count -eq 2 -and @($p | Where-Object { OverlapsOf $_.id }).Count -eq 0) ($over -join ' | ')
+$dlg = UninstallVia 'PF Place' 'pf-place'
+[L]::PostMessageW($dlg, 0x111, [IntPtr]6, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 2
+$script:Offer.Remove('pf-place')
 
 Case 'an older index served again counts as none'
 $script:Serial = 5
