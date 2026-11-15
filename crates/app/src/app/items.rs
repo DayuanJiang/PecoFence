@@ -2,6 +2,7 @@
 //! routing of newly created desktop items, item view builder.
 
 use super::*;
+use pecofence_platform::dragdrop;
 
 /// Why [`App::rename_item_to`] declined.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -764,6 +765,7 @@ impl App {
             return;
         }
         let Some((paths, cut)) = clipboard::file_list() else {
+            self.paste_shell_items(fence);
             return;
         };
         let dest = self.state.portal_path(fence).or_else(shell::user_desktop);
@@ -841,6 +843,65 @@ impl App {
                 self.finish_cut_paste();
             }
         }
+    }
+
+    /// Pastes what only the shell can write out: files copied inside a .zip, an Outlook
+    /// attachment, a phone's photos (the clipboard has their contents or their shell items, no
+    /// file paths, `clipboard::shell_items`). The clipboard's data object goes to the
+    /// destination folder's own drop target, as Explorer's 粘贴 does: the shell writes the files
+    /// and asks about names that are taken. What lands on the desktop for a virtual fence goes
+    /// into that fence and is selected, as any pasted file. Runs the shell's progress and
+    /// conflict UI (no view borrow is held here).
+    fn paste_shell_items(&mut self, fence: FenceId) {
+        let Some((data, cut)) = clipboard::shell_items() else {
+            tracing::info!(%fence, clipboard = %clipboard::describe(), "nothing to paste: no files on the clipboard");
+            return;
+        };
+        let portal = self.state.portal_path(fence);
+        let on_desktop = portal.is_none();
+        let Some(dest) = portal.or_else(shell::user_desktop) else {
+            return;
+        };
+        let before = dir_entries(&dest);
+        let names = dragdrop::file_group_descriptor_names(&data);
+        let allowed = if cut {
+            dragdrop::DropEffect::Move
+        } else {
+            dragdrop::DropEffect::Copy
+        };
+        let effect = dragdrop::shell_folder_drop(
+            &dest,
+            &data,
+            0,
+            false,
+            dragdrop::DragPoint { x: 0, y: 0 },
+            allowed.to_raw(),
+        )
+        .unwrap_or_else(|error| {
+            tracing::warn!(%error, folder = %dest.display(), "paste through the shell failed");
+            dragdrop::DropEffect::None
+        });
+        let landed =
+            crate::fence_window::shell_drop_landed(&dest, &before, &dir_entries(&dest), &names);
+        tracing::info!(
+            %fence,
+            ?effect,
+            cut,
+            described = names.len(),
+            landed = landed.len(),
+            folder = %dest.display(),
+            "pasted through the shell: items without file paths (a .zip's files, an attachment)"
+        );
+        if effect == dragdrop::DropEffect::None {
+            return;
+        }
+        self.pasted = Some(self.paste_started(fence, landed.clone()));
+        self.shell_drop_landed(
+            fence,
+            if on_desktop { landed } else { Vec::new() },
+            on_desktop,
+        );
+        self.select_pasted();
     }
 
     /// Copies that pastes still running have made so far go into the fence pasted into: a

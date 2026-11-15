@@ -129,7 +129,7 @@ fn dir_entries(dir: &Path) -> HashSet<PathBuf> {
 /// `before`, plus the top-level names of the virtual files the source described that were not
 /// there before — the shell may still be copying them (a `folder\file.txt` entry lands as
 /// `folder`).
-pub(super) fn shell_drop_landed(
+pub fn shell_drop_landed(
     dir: &Path,
     before: &HashSet<PathBuf>,
     after: &HashSet<PathBuf>,
