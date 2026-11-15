@@ -874,8 +874,6 @@ dependencies = [
 [[package]]
 name = "windows-webview"
 version = "0.100.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66cef150353257d61d8405bfc663a1f9078790adb56a1f5f72f828f175d6a4bd"
 dependencies = [
  "windows-core",
  "windows-window",

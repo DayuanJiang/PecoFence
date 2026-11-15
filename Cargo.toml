@@ -57,6 +57,9 @@ manual_div_ceil = "allow"
 [patch.crates-io]
 windows-composition = { path = "vendor/windows-composition" }
 windows-canvas = { path = "vendor/windows-canvas" }
+# windows-webview: vendored 0.100.0 with the composition controller (web plugins in a fence's
+# visual tree) and TrySuspend / Resume.
+windows-webview = { path = "vendor/windows-webview" }
 
 [profile.release]
 opt-level = 3
