@@ -375,6 +375,10 @@ impl App {
             return;
         }
         let command = v["command"].as_str().unwrap_or_default().to_string();
+        let declared = self.light_manifest(fence);
+        if !declared.is_some_and(|m| m.permissions.commands.iter().any(|c| c.id == command)) {
+            return tracing::warn!(%fence, "plugin shortcut for a command its plugin does not have");
+        }
         let number = |key: &str| v.get(key).and_then(Value::as_u64);
         let h = number("vk").map(|vk| Hotkey::new(number("mods").unwrap_or(0) as u32, vk as u32));
         let recording = self.hotkeys_paused;
