@@ -359,6 +359,15 @@ impl App {
         self.light_send(host::Command::Event(fence, name, data));
     }
 
+    /// A web plugin page's `pf.post`: its main.js gets `message`; `waiting` counts the posts it
+    /// has not had yet.
+    pub(super) fn plugin_message(&mut self, fence: FenceId, data: Value, waiting: Arc<()>) {
+        if !self.light.running.contains_key(&fence) {
+            return tracing::debug!(%fence, "web plugin post dropped: its main.js does not run");
+        }
+        self.light_send(host::Command::Message(fence, data, waiting));
+    }
+
     /// A web plugin page's `pf.<name>(args)`: the same check against the installed manifest
     /// and the same work as a light plugin's call; `reply` gets the answer on this thread.
     pub(super) fn plugin_api(

@@ -97,6 +97,9 @@ pub enum Command {
     /// An event of [`EVENTS`]: `timechange`, `settings` (the new settings), `resize` ({width,
     /// height}), `click` ({id}), `clipboard`, ...
     Event(FenceId, &'static str, serde_json::Value),
+    /// A web plugin page's `pf.post`: main.js gets `message`. The `Arc` goes once it has, so
+    /// the app counts the posts still waiting (`Arc::strong_count`).
+    Message(FenceId, serde_json::Value, std::sync::Arc<()>),
     Stop(FenceId),
     /// Every plugin gets `stop`, then the thread ends.
     Quit,
@@ -664,6 +667,13 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
         };
         let at = |fence: FenceId, plugins: &[Plugin]| plugins.iter().position(|p| p.fence == fence);
         let mut failed: Vec<(FenceId, u32, Stopped)> = Vec::new();
+        let (msg, _waiting) = match msg {
+            Ok(Msg::Cmd(Command::Message(fence, data, waiting))) => (
+                Ok(Msg::Cmd(Command::Event(fence, "message", data))),
+                Some(waiting),
+            ),
+            msg => (msg, None),
+        };
         match msg {
             Err(RecvTimeoutError::Timeout) => {}
             Ok(Msg::Cmd(Command::Quit)) | Err(RecvTimeoutError::Disconnected) => {
@@ -711,6 +721,7 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                     failed.push((fence, plugins[i].number, why));
                 }
             }
+            Ok(Msg::Cmd(Command::Message(..))) => {}
             Ok(Msg::Cmd(Command::Event(fence, name, data))) => {
                 if let Some(p) = plugins.iter_mut().find(|p| p.fence == fence) {
                     if name == "timechange" {
@@ -838,6 +849,7 @@ mod tests {
             let cmd = match cmd {
                 Command::Shown(_, s) => Command::Shown(fence, s),
                 Command::Event(_, n, d) => Command::Event(fence, n, d),
+                Command::Message(_, d, w) => Command::Message(fence, d, w),
                 c => c,
             };
             tx.send(cmd).unwrap();
@@ -951,8 +963,11 @@ mod tests {
     #[test]
     fn a_web_plugins_main_js_and_its_page_pass_messages() {
         let code = "pf.on('message', (m) => pf.post({ got: m.n + 1 }));";
-        let message = Command::Event(FenceId::new_v4(), "message", serde_json::json!({ "n": 1 }));
+        let waiting = Arc::new(());
+        let message = Command::Message(FenceId::new_v4(), json!({ "n": 1 }), waiting.clone());
         let out = outputs(code, true, 30, vec![message]);
+        // Once main.js had it, the post no longer counts as waiting.
+        assert_eq!(Arc::strong_count(&waiting), 1);
         let posts: Vec<Value> = (out.iter())
             .filter_map(|o| match o {
                 Output::Post(_, _, data) => serde_json::from_str(data).ok(),

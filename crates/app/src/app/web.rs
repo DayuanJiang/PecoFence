@@ -9,8 +9,11 @@ use crate::web_plugin::{Failure, WebFence};
 use pecofence_core::i18n;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
+use std::sync::Arc;
 use std::time::Instant;
 
+/// The most posts of a page that may wait for its main.js.
+const MAX_WAITING_POSTS: usize = 64;
 const WEBVIEW2_DOWNLOAD: &str = "https://developer.microsoft.com/microsoft-edge/webview2/";
 
 /// Why a fence's page does not run; it waits for 重新加载.
@@ -26,6 +29,9 @@ pub(super) struct Web {
     /// When each fence's page failed within the last hour.
     failures: HashMap<FenceId, Vec<Instant>>,
     stopped: HashMap<FenceId, Stop>,
+    /// Per fence: its page's posts main.js has not had yet (`Arc::strong_count` - 1), and
+    /// whether the last one was refused (logged once).
+    posts: HashMap<FenceId, (Arc<()>, bool)>,
 }
 
 impl App {
@@ -221,9 +227,21 @@ impl App {
         let plugin = web.plugin.id.clone();
         match call.as_str() {
             "post" => {
+                let (waiting, refusing) = self.web_pages.posts.entry(fence).or_default();
+                let n = Arc::strong_count(waiting) - 1;
+                if n >= MAX_WAITING_POSTS {
+                    if !std::mem::replace(refusing, true) {
+                        tracing::info!(plugin, %fence, n, "web plugin: posts refused while 64 wait for main.js");
+                    }
+                    let why =
+                        format!("pf.post: at most {MAX_WAITING_POSTS} messages wait for main.js");
+                    return web.reply(&id, Err(why));
+                }
+                *refusing = false;
+                let waiting = waiting.clone();
                 let data = args.get(0).cloned().unwrap_or_default();
-                tracing::debug!(plugin, %fence, "web plugin: the page posts to its main.js");
-                self.plugin_event(fence, "message", data);
+                tracing::debug!(plugin, %fence, n, "web plugin: the page posts to its main.js");
+                self.plugin_message(fence, data, waiting);
                 web.reply(&id, Ok(serde_json::Value::Null));
             }
             "navigate" => {
