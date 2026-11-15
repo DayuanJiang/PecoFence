@@ -174,11 +174,10 @@ $clicked = OcrClick '^Restart$' $r.x $r.y $r.w $r.h
 Start-Sleep -Seconds 3
 Check 'Restart in the fence starts it again' ($clicked -and (WaitRow 'sys' '^ok' 10) -match '^ok') "clicked=$clicked out=$(FenceOut $script:Fid)"
 
-Case 'the last view is cached; quit stops the plugin thread'
+Case 'a plugin that may read the clipboard keeps no view on disk; quit stops the plugin thread'
 PfQuit
 $cache = "$script:Config\plugins-host\$($script:Fid).view.json"
-$text = if (Test-Path $cache) { Get-Content $cache -Raw -Encoding UTF8 } else { '' }
-Check 'the view cache file has the last rows' ($text -match '"rows"' -and $text -match 'http-declared') $cache
+Check 'no view cache file (its view can hold copied texts), the log says why' (-not (Test-Path $cache) -and [bool](PfWaitLog 'plugin view not cached: it may read the clipboard' 5)) $cache
 Check 'the log says every plugin stopped and the thread ended' ([bool](PfWaitLog 'plugin thread: every plugin stops' 5) -and [bool](PfWaitLog 'plugin thread ended' 5)) ''
 
 Case 'with a system proxy (Clash and the like on 127.0.0.1) requests go through it'

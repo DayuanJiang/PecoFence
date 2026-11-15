@@ -13,10 +13,10 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// A web page's `pf` call waiting for its answer: its fence, whether it is a request
+/// A web page's `pf` call waiting for its answer: its page, whether it is a request
 /// (`pf.http`), and what gets the answer.
 type Reply = (
-    FenceId,
+    std::rc::Weak<crate::web_plugin::WebFence>,
     bool,
     Box<dyn FnOnce(std::result::Result<Value, String>)>,
 );
@@ -73,8 +73,8 @@ pub(super) struct Light {
     )>,
     out: Arc<Mutex<Vec<host::Output>>>,
     /// The fences whose plugin runs: the rows it last showed (None before its first view),
-    /// whether it was last told that the fence shows and how big it is, and the number of its
-    /// start (what an earlier runtime of the fence sent is dropped).
+    /// whether it was last told that the fence shows and how big it is, the number of its
+    /// start (what an earlier runtime of the fence sent is dropped) and when it began.
     pub(super) running: HashMap<
         FenceId,
         (
@@ -82,6 +82,7 @@ pub(super) struct Light {
             bool,
             (f32, f32),
             u32,
+            Instant,
         ),
     >,
     starts: u32,
@@ -264,7 +265,7 @@ impl App {
         let number = self.light.starts;
         self.light
             .running
-            .insert(fence, (None, shown, size, number));
+            .insert(fence, (None, shown, size, number, Instant::now()));
         let config = self.state.config_path_on_disk();
         let cache = config
             .parent()
@@ -291,6 +292,22 @@ impl App {
             tracing::debug!(%fence, theme, "plugin told of its fence's text colour");
             self.light_send(host::Command::Event(fence, "theme", json!(theme)));
         }
+    }
+
+    /// The display language changed: every plugin's main.js and page hear `lang` (`pf.lang`
+    /// follows), so they show their texts in it without a restart.
+    pub(super) fn plugins_lang_changed(&mut self) {
+        let lang = pecofence_core::i18n::language().tag();
+        let fences: Vec<FenceId> = self.light.running.keys().copied().collect();
+        tracing::info!(
+            lang,
+            plugins = fences.len(),
+            "plugins told of the new language"
+        );
+        for fence in fences {
+            self.light_send(host::Command::Event(fence, "lang", json!(lang)));
+        }
+        self.web_events("lang", json!(lang));
     }
 
     pub(super) fn stop_light(&mut self, fence: FenceId) {
@@ -333,7 +350,7 @@ impl App {
         let fences: Vec<FenceId> = self.light.running.keys().copied().collect();
         for fence in fences {
             let (shown, size) = self.light_shown(fence);
-            let Some((_, was_shown, was_size, _)) = self.light.running.get_mut(&fence) else {
+            let Some((_, was_shown, was_size, ..)) = self.light.running.get_mut(&fence) else {
                 continue;
             };
             let resized = shown && (size.0 - was_size.0).abs() + (size.1 - was_size.1).abs() >= 1.0;
@@ -381,10 +398,20 @@ impl App {
         self.light_send(host::Command::Event(fence, name, data));
     }
 
+    /// A web plugin page's `pf.post`: its main.js gets `message`; `waiting` counts the posts it
+    /// has not had yet.
+    pub(super) fn plugin_message(&mut self, fence: FenceId, data: Value, waiting: Arc<()>) {
+        if !self.light.running.contains_key(&fence) {
+            return tracing::debug!(%fence, "web plugin post dropped: its main.js does not run");
+        }
+        self.light_send(host::Command::Message(fence, data, waiting));
+    }
+
     /// A web plugin page's `pf.<name>(args)`: the same check against the installed manifest
     /// and the same work as a light plugin's call; `reply` gets the answer on this thread.
     pub(super) fn plugin_api(
         &mut self,
+        page: &std::rc::Weak<crate::web_plugin::WebFence>,
         fence: FenceId,
         name: &str,
         args: Value,
@@ -410,9 +437,10 @@ impl App {
             tracing::info!(%fence, plugin = m.id, name, why, "web plugin call refused");
             return reply(Err(why));
         }
-        // The light layer's limits: at most 16 calls and 4 requests of a fence at once.
+        // The light layer's limits: at most 16 calls and 4 requests of a page at once (the calls
+        // of the page before a reload or a crash no longer count).
         let request = name.starts_with("http.");
-        let going = self.light.replies.values().filter(|r| r.0 == fence);
+        let going = self.light.replies.values().filter(|r| r.0.ptr_eq(page));
         let (calls, requests) = going.fold((0, 0), |(c, r), g| (c + 1, r + usize::from(g.1)));
         if calls >= host::MAX_CALLS || (request && requests >= host::MAX_REQUESTS) {
             let (most_requests, most_calls) = (host::MAX_REQUESTS, host::MAX_CALLS);
@@ -423,7 +451,8 @@ impl App {
         }
         self.light.next_reply += 1;
         let number = self.light.next_reply;
-        (self.light.replies).insert(number, (fence, request, Box::new(reply)));
+        let page = page.clone();
+        (self.light.replies).insert(number, (page, request, Box::new(reply)));
         let api = self.light_host();
         let (jobs, control) = (self.light.jobs.clone(), self.control.hwnd().0 as isize);
         let (name, agent) = (
@@ -516,11 +545,13 @@ impl App {
         for output in outputs {
             let (host::Output::Show(fence, number, _)
             | host::Output::Post(fence, number, _)
-            | host::Output::Stopped(fence, number, _)) = output;
-            if self.light.running.get(&fence).map(|r| r.3) != Some(number) {
+            | host::Output::Stopped(fence, number, _)
+            | host::Output::Errored(fence, number)) = output;
+            let start = self.light.running.get(&fence).filter(|r| r.3 == number);
+            let Some(began) = start.map(|r| r.4) else {
                 tracing::debug!(%fence, number, "plugin output of an earlier start dropped");
                 continue;
-            }
+            };
             match output {
                 host::Output::Show(fence, _, mut view) => {
                     let menu = std::mem::take(&mut view.menu);
@@ -550,8 +581,10 @@ impl App {
                     self.light_stopped(fence, why);
                     hosts.push(self.state.host_of(fence));
                     // In the first minute after an update, back to the version before.
-                    self.plugin_stopped(fence);
+                    self.plugin_stopped(fence, began, false);
                 }
+                // So do three errors that escaped a handler (logged, the plugin went on).
+                host::Output::Errored(fence, _) => self.plugin_stopped(fence, began, true),
             }
         }
         hosts.dedup();

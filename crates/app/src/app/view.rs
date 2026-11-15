@@ -316,6 +316,22 @@ impl App {
         true
     }
 
+    /// A take-down or an uninstall stops fence `fence`'s plugin at once: its open input closes
+    /// first (its text kept, as when the user closes it), and a restart held for it is dropped.
+    pub(super) fn close_plugin_input(&mut self, fence: FenceId) {
+        let note = crate::note_edit::open_for() == Some(fence);
+        let line = self.plugin_input_open(fence) && !note;
+        if note {
+            crate::note_edit::end_active(true);
+        } else if line {
+            crate::rename::end_active(true);
+        }
+        let held = self.held.starts.remove(&fence).is_some();
+        if note || line || held {
+            tracing::info!(%fence, note, line, held, "plugin fence: its input closes, the plugin stops now");
+        }
+    }
+
     fn release_held(&mut self, fence: FenceId) {
         match self.held.starts.remove(&fence) {
             Some(Some((id, main))) => {

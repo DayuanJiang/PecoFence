@@ -13,7 +13,7 @@ use pecofence_core::FenceId;
 use pecofence_core::i18n;
 use pecofence_core::plugins::{self as list, Entry, Index, Manifest, Update};
 use pecofence_platform::window;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -67,8 +67,9 @@ pub(super) struct Plugins {
     /// longer here (uninstalled or taken down meanwhile) is dropped.
     busy: HashMap<String, u64>,
     downloads: u64,
-    /// Plugins updated a moment ago: the version they came from, and when.
-    trial: HashMap<String, (String, Instant)>,
+    /// Plugins updated a moment ago: the version they came from, when, and the errors of the
+    /// new version that escaped a handler since.
+    trial: HashMap<String, (String, Instant, u32)>,
     /// Plugins gone back to their version before: their fences start again on the next turn,
     /// after the stops of the failed version still waiting are read.
     restart: Vec<String>,
@@ -211,16 +212,23 @@ fn remove_dir(dir: &Path) -> std::io::Result<()> {
     std::fs::remove_dir_all(dir)
 }
 
-/// Names `version` the one in use: `current.txt` is written beside it and renamed over it, so a
-/// failure leaves the version before in use.
-fn write_current(dir: &Path, version: &str) -> std::io::Result<()> {
+/// Writes `path` as `<path>.new` and renames that over it: a failure, or PecoFence ending halfway,
+/// leaves the file before whole.
+fn write_whole(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
-    let temp = dir.join("current.txt.new");
+    let mut temp = path.as_os_str().to_owned();
+    temp.push(".new");
     let mut f = std::fs::File::create(&temp)?;
-    f.write_all(version.as_bytes())?;
+    f.write_all(bytes)?;
     f.sync_all()?;
     drop(f);
-    std::fs::rename(&temp, dir.join("current.txt"))
+    std::fs::rename(&temp, path)
+}
+
+/// Names `version` the one in use (`current.txt`, written whole: a failure leaves the version
+/// before in use).
+fn write_current(dir: &Path, version: &str) -> std::io::Result<()> {
+    write_whole(&dir.join("current.txt"), version.as_bytes())
 }
 
 fn read_text(path: &Path) -> Option<String> {
@@ -471,8 +479,10 @@ impl App {
             match d {
                 Done::Index(Ok((index, bytes))) => {
                     tracing::info!(plugins = index.plugins.len(), serial = index.serial, commit = %index.commit, "plugins: index read");
+                    // Written whole: a torn file would read as no index at the next start, and an
+                    // older index served again would no longer be refused by its serial.
                     let saved = std::fs::create_dir_all(&self.plugins.root)
-                        .and_then(|()| std::fs::write(self.plugins.root.join("index.json"), bytes));
+                        .and_then(|()| write_whole(&self.plugins.root.join("index.json"), &bytes));
                     if let Err(e) = saved {
                         tracing::warn!(error = %e, "plugins: index not saved");
                     }
@@ -524,6 +534,9 @@ impl App {
             let offered = entry.manifest.version.clone();
             let failed = mine.failed.as_deref() == Some(offered.as_str());
             let (why, disabled) = (entry.disabled.clone(), mine.disabled.is_some());
+            // Its code is gone (a take-down took it, a download after the listing again failed):
+            // it comes again whatever failed.txt says, until it is there.
+            let gone = !mine.ready;
             tracing::info!(
                 id,
                 installed = mine.manifest.version,
@@ -531,11 +544,13 @@ impl App {
                 ?kind,
                 disabled,
                 failed,
+                gone,
                 "plugins: update check"
             );
             match why {
                 Some(why) if !disabled => self.disable_plugin(&id, &why),
-                None if kind == Update::Auto && !disabled && !failed => {
+                None if disabled => self.relist_plugin(&id, kind, failed),
+                None if gone || (kind == Update::Auto && !failed) => {
                     self.start_plugin_download(&id, false)
                 }
                 _ => {}
@@ -557,12 +572,21 @@ impl App {
             return;
         }
         let mine = self.plugin(id);
+        let app = env!("CARGO_PKG_VERSION");
+        // Not asked for by the user, an installed plugin changes only as an automatic update
+        // does, or comes again as it was (its code gone, the same version as it was OK'd).
+        let unasked = |p: &Installed| {
+            let same = !p.ready && list::shown_key(&p.manifest) == list::shown_key(&entry.manifest);
+            list::update_kind(&p.manifest, &entry.manifest, app) != Update::Auto && !same
+        };
         let refused = if entry.disabled.is_some() || mine.is_some_and(|p| p.disabled.is_some()) {
             Some("taken down")
-        } else if list::needs_newer_app(&entry.manifest, env!("CARGO_PKG_VERSION")) {
+        } else if list::needs_newer_app(&entry.manifest, app) {
             Some("needs a newer PecoFence")
         } else if mine.is_some_and(|p| p.ready && p.manifest.version == entry.manifest.version) {
             Some("this version is installed")
+        } else if !by_user && mine.is_some_and(unasked) {
+            Some("not asked for, and more than an automatic update")
         } else {
             None
         };
@@ -687,6 +711,8 @@ impl App {
             tracing::warn!(id, version, error = %e, fences = fences.len(), "plugins: switch failed, the fences start again");
             self.plugins.reload(id);
             for fence in fences {
+                // A web plugin's main.js starts with its page.
+                self.restart_web_page(fence);
                 self.start_script(fence);
             }
             return Err((false, e.to_string()));
@@ -706,7 +732,7 @@ impl App {
             Some(b) => self
                 .plugins
                 .trial
-                .insert(id.to_string(), (b.to_string(), Instant::now())),
+                .insert(id.to_string(), (b.to_string(), Instant::now(), 0)),
             None => self.plugins.trial.remove(id),
         };
         self.plugins.reload(id);
@@ -714,15 +740,30 @@ impl App {
         Ok(())
     }
 
-    /// A plugin fence stopped by itself (an error, too long, too much memory). In the first
-    /// minute after an update the plugin goes back to the version before, and that stays until
-    /// a version newer than the failed one comes.
-    pub(super) fn plugin_stopped(&mut self, fence: FenceId) {
+    /// A plugin fence stopped by itself (an error in main.js, too long, too much memory), or
+    /// (`errored`) an error escaped a handler or its page, in a start or page made at `began`.
+    /// In the first minute after an update the plugin goes back to the version before at a stop
+    /// or at the third error, and that stays until a version newer than the failed one comes.
+    /// What a start made before the update sends (one an open input held) does not count.
+    pub(super) fn plugin_stopped(&mut self, fence: FenceId, began: Instant, errored: bool) {
         let spec = self.state.config.scripts.get(&fence);
         let Some(id) = spec.and_then(|s| plugin_id(&s.path)).map(str::to_string) else {
             return;
         };
-        let Some((before, at)) = self.plugins.trial.remove(&id) else {
+        let Some((_, at, errors)) = self.plugins.trial.get_mut(&id) else {
+            return;
+        };
+        if began < *at {
+            return tracing::info!(id, %fence, errored, "plugins: a stop or error of a start before the update does not count");
+        }
+        if errored && at.elapsed() < TRIAL {
+            *errors += 1;
+            if *errors < pecofence_plugin_host::ERRORS_TOLD {
+                let errors = *errors;
+                return tracing::info!(id, %fence, errors, "plugins: an error of the new version in its first minute");
+            }
+        }
+        let Some((before, at, _)) = self.plugins.trial.remove(&id) else {
             return;
         };
         let dir = self.plugins.root.join(&id);
@@ -736,15 +777,18 @@ impl App {
             failed,
             before,
             back,
+            errored,
             "plugins: the new version stopped after its update"
         );
         if !back {
             return;
         }
-        let written = write_current(&dir, &before)
-            .and_then(|()| std::fs::write(dir.join("failed.txt"), &failed));
-        if let Err(e) = written {
+        if let Err(e) = write_current(&dir, &before) {
             return tracing::warn!(id, error = %e, "plugins: could not go back");
+        }
+        // The version before is in use from here on: its fences start again whatever comes.
+        if let Err(e) = std::fs::write(dir.join("failed.txt"), &failed) {
+            tracing::warn!(id, failed, error = %e, "plugins: failed.txt not written, the next check may offer the failed version again");
         }
         let _ = std::fs::remove_dir_all(dir.join(&failed));
         self.plugins.reload(&id);
@@ -757,10 +801,29 @@ impl App {
         self.plugins.busy.remove(id);
         self.plugins.trial.remove(id);
         for fence in self.plugin_fences(id) {
+            self.close_plugin_input(fence);
             self.stop_script(fence);
         }
         disable_files(&self.plugins.root.join(id), why);
         self.plugins.reload(id);
+        for fence in self.plugin_fences(id) {
+            self.push_tool_view(self.state.host_of(fence));
+        }
+    }
+
+    /// The index lists plugin `id` again after taking it down: `disabled.txt` goes, and its code
+    /// comes back as an update would (by itself unless it asks for more; its fences and their
+    /// settings stayed). Its code went with the take-down: it comes again at every index read
+    /// until it is there (`apply_plugin_index`), whatever failed.txt says.
+    fn relist_plugin(&mut self, id: &str, kind: Update, failed: bool) {
+        let removed = std::fs::remove_file(self.plugins.root.join(id).join("disabled.txt"));
+        self.plugins.reload(id);
+        let gone = self.plugin(id).is_some_and(|p| !p.ready);
+        let again = removed.is_ok() && (gone || (kind == Update::Auto && !failed));
+        tracing::info!(id, ?kind, failed, gone, again, error = ?removed.err(), "plugins: listed again after a take-down");
+        if again {
+            self.start_plugin_download(id, false);
+        }
         for fence in self.plugin_fences(id) {
             self.push_tool_view(self.state.host_of(fence));
         }
@@ -818,16 +881,23 @@ impl App {
         self.plugin_fence_at(id, x, y);
     }
 
-    fn uninstall_plugin(&mut self, id: &str) {
+    /// How many fences of plugin `id` hold a note with text (its uninstall names them).
+    fn plugin_notes(&self, id: &str) -> usize {
+        let fences = self.plugin_fences(id);
+        let notes = self.state.config.notes.iter();
+        notes
+            .filter(|(f, text)| fences.contains(f) && !text.trim().is_empty())
+            .count()
+    }
+
+    /// Uninstalls plugin `id`; `confirmed`: the page's dialog asked already, else a box asks.
+    fn uninstall_plugin(&mut self, id: &str, confirmed: bool) {
         let owner = self
             .settings
             .as_ref()
             .map_or(self.control.hwnd(), |h| h.hwnd());
         let fences = self.plugin_fences(id);
-        let notes = self.state.config.notes.iter();
-        let notes = notes
-            .filter(|(f, text)| fences.contains(f) && !text.trim().is_empty())
-            .count();
+        let notes = self.plugin_notes(id);
         let text = if notes > 0 {
             i18n::format(
                 "卸载“{0}”？它的栅栏和它保存的数据都会删掉，包括 {1} 个便签里的文字。",
@@ -839,14 +909,21 @@ impl App {
                 &[self.plugin_name(id)],
             )
         };
-        tracing::info!(id, fences = fences.len(), notes, "plugins: uninstall asked");
-        if !window::confirm(owner, &text, i18n::text("卸载")) {
+        tracing::info!(
+            id,
+            fences = fences.len(),
+            notes,
+            confirmed,
+            "plugins: uninstall asked"
+        );
+        if !confirmed && !window::confirm(owner, &text, i18n::text("卸载")) {
             return;
         }
         let cancelled = self.plugins.busy.remove(id);
         tracing::info!(id, fences = fences.len(), ?cancelled, "plugins: uninstall");
         self.plugins.trial.remove(id);
         for fence in fences {
+            self.close_plugin_input(fence);
             self.stop_script(fence);
             self.delete_fence(fence);
         }
@@ -860,35 +937,44 @@ impl App {
         self.plugins.reload(id);
     }
 
-    /// Deletes the cached views (`plugins-host\<fence>.view.json`, the plugin host's) of fences
-    /// that are no plugin fence any more: at start, and a few seconds after a plugin fence is
-    /// deleted (`wait`: a plugin just stopped still writes its last view when its thread handles
-    /// the stop).
-    pub(super) fn drop_stale_views(&self, wait: bool) {
-        let dir = self.views_dir();
-        let scripts = self.state.config.scripts.iter();
-        let keep: std::collections::HashSet<String> = scripts
-            .filter(|(f, s)| plugin_id(&s.path).is_some() && self.state.fence(**f).is_some())
-            .map(|(f, _)| format!("{f}.view.json"))
+    /// At start (`remove_left_script_data`, with its guard): deletes what is kept on disk for
+    /// plugin fences that are gone for good, in neither the configuration's scripts nor a
+    /// snapshot's: their cached views (`plugins-host\<fence>.view.json`, the plugin host's) and
+    /// the data files their plugin named after them (`plugins-data\<id>\<fence>-*`). Until
+    /// then an undo or a snapshot brings a deleted fence back with them.
+    pub(super) fn drop_files_of_deleted_fences(&self) {
+        let (views, data) = (self.views_dir(), self.plugins_data());
+        let c = &self.state.config;
+        let scripts = (c.scripts.iter()).chain(c.snapshots.iter().flat_map(|s| s.scripts.iter()));
+        let keep: HashSet<String> = scripts
+            .filter(|(_, s)| plugin_id(&s.path).is_some())
+            .map(|(f, _)| f.to_string())
             .collect();
         let sweep = move || {
-            if wait {
-                std::thread::sleep(Duration::from_secs(3));
-            }
-            let mut gone = 0;
-            for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
-                let name = e.file_name().to_string_lossy().to_string();
-                if name.ends_with(".view.json")
-                    && !keep.contains(&name)
-                    && std::fs::remove_file(e.path()).is_ok()
-                {
-                    gone += 1;
+            // The files in `dir` that `fence` names a fence of, which is not kept.
+            let remove_stale = |dir: &Path, fence: fn(&str) -> Option<&str>| {
+                let mut gone = 0;
+                for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                    let name = e.file_name().to_string_lossy().to_ascii_lowercase();
+                    let f = fence(&name).filter(|f| uuid::Uuid::try_parse(f).is_ok());
+                    if f.is_some_and(|f| !keep.contains(f))
+                        && std::fs::remove_file(e.path()).is_ok()
+                    {
+                        gone += 1;
+                    }
                 }
-            }
+                gone
+            };
+            let views = remove_stale(&views, |n| n.strip_suffix(".view.json"));
+            let named: fn(&str) -> Option<&str> =
+                |n| n.get(..36).filter(|_| n.as_bytes().get(36) == Some(&b'-'));
+            let plugins = std::fs::read_dir(&data).into_iter().flatten().flatten();
+            let data: usize = plugins.map(|p| remove_stale(&p.path(), named)).sum();
             tracing::info!(
-                gone,
+                views,
+                data,
                 kept = keep.len(),
-                "plugins: cached views of fences that went deleted"
+                "plugins: cached views and data files of fences that went deleted, deleted"
             );
         };
         let spawned = std::thread::Builder::new()
@@ -896,17 +982,6 @@ impl App {
             .spawn(sweep);
         if let Err(e) = spawned {
             tracing::warn!(error = %e, "plugins: view sweep did not start");
-        }
-    }
-
-    /// A fence was deleted: when it was a plugin fence that showed something, its cached view goes.
-    pub(super) fn fence_view_gone(&self, fence: FenceId) {
-        if self
-            .views_dir()
-            .join(format!("{fence}.view.json"))
-            .is_file()
-        {
-            self.drop_stale_views(true);
         }
     }
 
@@ -986,7 +1061,12 @@ impl App {
                 }
             }
             ("pluginAdd", Some(id)) if self.plugin(id).is_some() => self.add_plugin_fence(id),
-            ("pluginUninstall", Some(id)) => self.uninstall_plugin(id),
+            ("pluginUninstall", Some(id)) => {
+                // The page's dialog asked, unless it named fewer notes than there are now.
+                let shown = v["notes"].as_u64().unwrap_or(0) as usize;
+                let asked = v["confirmed"] == true && shown >= self.plugin_notes(id);
+                self.uninstall_plugin(id, asked)
+            }
             ("pluginSetting", _) => self.set_plugin_setting(v),
             ("pluginKey" | "pluginItemRemove", _) => self.launch_page_action(name, v),
             ("pluginPage", Some(id)) => {
@@ -1035,6 +1115,8 @@ impl App {
                 };
                 // A row offering an update describes what it brings.
                 let m = if state == "confirm" { offered? } else { mine.map(|p| &p.manifest).or(offered)? };
+                // The warning of an update by another author names the one before.
+                let before = mine.map(|p| &p.manifest.author).filter(|a| state == "confirm" && **a != m.author);
                 let p = &m.permissions;
                 // The settings form of each fence of the installed plugin.
                 let form = mine.map(|mine| {
@@ -1053,13 +1135,14 @@ impl App {
                 let (settings, fences) = form.unwrap_or_default();
                 Some(serde_json::json!({
                     "id": id, "name": texts(&m.name), "description": texts(&m.description),
-                    "author": m.author, "version": m.version, "installed": mine.is_some(), "layer": m.layer,
+                    "author": m.author, "authorBefore": before, "version": m.version, "installed": mine.is_some(), "layer": m.layer,
                     "network": p.network, "links": p.links, "system": p.system, "background": p.background,
                     "folders": p.folders, "notify": p.notify, "launch": p.launch, "drop": p.drop,
                     "commands": p.commands.iter().map(|c| list::pick(&c.title, lang)).collect::<Vec<_>>(),
                     "media": format!("{:?}", p.media).to_lowercase(), "apps": p.apps,
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),
                     "state": state, "reason": reason, "page": index.is_some(),
+                    "notes": mine.map(|_| self.plugin_notes(id)),
                     "settings": settings, "fences": fences, "shown": list::shown_key(m),
                 }))
             })
@@ -1070,5 +1153,24 @@ impl App {
             Status::Ready => "ready",
         };
         serde_json::json!({ "status": status, "held": self.held_scripts_wait(), "open": self.plugins.open, "ask": self.plugins.ask, "list": rows })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_file_written_whole_replaces_the_one_before_and_leaves_no_temporary_file() {
+        let dir = std::env::temp_dir().join(format!("pf-whole-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("index.json");
+        super::write_whole(&path, b"first").unwrap();
+        // A second name of the file before: written in place, it would read "second" too.
+        let before = dir.join("before.json");
+        std::fs::hard_link(&path, &before).unwrap();
+        super::write_whole(&path, b"second").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "second");
+        assert_eq!(std::fs::read_to_string(&before).unwrap(), "first");
+        assert!(!dir.join("index.json.new").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

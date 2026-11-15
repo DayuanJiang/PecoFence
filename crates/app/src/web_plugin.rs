@@ -4,7 +4,8 @@
 //! rounded clip, roll-up and fades apply to it; the fence forwards the mouse and the cursor, and a
 //! press in the page hands it the keyboard (`focus`).
 //!
-//! The plugin's files come from PecoFence at `https://<id>.plugins.pecofence/`, every response
+//! The plugin's files come from PecoFence at `pecofence-plugin://<id>/` (`SCHEME`: never the
+//! network or a proxy, a secure context with an origin per plugin), every response
 //! with a fixed Content-Security-Policy whose `connect-src` lists only the plugin's `network`
 //! hosts (and the plugin's own files), and a Connection-Allowlist of the same hosts, which the
 //! browser applies to every connection (`Plugin::allowlist`). Permission requests, other sites,
@@ -27,6 +28,9 @@ use windows_webview::{
     ProcessFailedKind, WebResourceResponse, WebView,
 };
 
+/// The custom scheme of the plugins' pages (registered with the environment,
+/// `WebEnvironment::create`).
+pub const SCHEME: &str = "pecofence-plugin";
 /// `WM_TIMER` id on the fence window: its hidden page is suspended.
 pub const TIMER_WEB_SUSPEND: usize = 0x5E0;
 /// `WM_TIMER` id on the fence window: the browser is made, the page is set up (`setup`). Not in
@@ -76,7 +80,7 @@ pub enum Failure {
 
 impl Plugin {
     fn origin(&self) -> String {
-        format!("https://{}.plugins.pecofence/", self.id)
+        format!("{SCHEME}://{}/", self.id)
     }
 
     /// The header every response gets; what the plugin writes itself does not count.
@@ -132,6 +136,8 @@ pub struct WebFence {
     /// What `pf` says about the fence when the page starts (`lang`, `theme`, `settings`,
     /// `fence`); events bring the changes.
     init: serde_json::Value,
+    /// Where the page starts (its own address before it loaded anew), else index.html.
+    at: Option<String>,
     dark: Cell<bool>,
     /// The WebView2 runtime's version, for the log.
     version: String,
@@ -142,7 +148,7 @@ pub struct WebFence {
     live: RefCell<Option<Live>>,
     /// The browser WebView2 made, until `setup` takes it.
     made: RefCell<Option<CompositionController>>,
-    started: std::time::Instant,
+    pub started: std::time::Instant,
     /// The page's place in the window's client area (px) and the fence's scale.
     bounds: Cell<(i32, i32, i32, i32, f64)>,
     shown: Cell<bool>,
@@ -166,6 +172,7 @@ impl WebFence {
         plugin: Plugin,
         queue: CommandQueue,
         init: serde_json::Value,
+        at: Option<String>,
     ) -> Rc<Self> {
         let web = Rc::new_cyclic(|me| Self {
             visual: stack.compositor.create_container_visual(),
@@ -176,6 +183,7 @@ impl WebFence {
             queue,
             dark: Cell::new(init["theme"] == "dark"),
             init,
+            at,
             version: env.browser_version(),
             pressed: Cell::new(None),
             told: Cell::new((0, 0)),
@@ -232,15 +240,6 @@ impl WebFence {
         match self.ready(comp) {
             Ok(()) => {
                 tracing::info!(plugin = %self.plugin.id, fence = %self.fence, ms, version = self.version, background = self.plugin.background, "web plugin: page loading");
-                let major: u32 = self
-                    .version
-                    .split('.')
-                    .next()
-                    .and_then(|m| m.parse().ok())
-                    .unwrap_or(0);
-                if major < 152 {
-                    tracing::warn!(plugin = %self.plugin.id, version = self.version, "web plugin: this WebView2 runtime ignores Connection-Allowlist; dns-prefetch and preconnect to other hosts are not blocked, WebRTC only by its removal from the page")
-                }
             }
             Err(e) => {
                 tracing::warn!(plugin = %self.plugin.id, error = %e, "web plugin: browser setup failed")
@@ -298,21 +297,37 @@ impl WebFence {
                         Some(b) => WebResourceResponse::new(b).content_type(mime(path)),
                         None => WebResourceResponse::new(Vec::new()).status(404, "Not Found"),
                     };
+                    // nosniff: a file runs as a script only when it is one (a picture that is
+                    // also valid JavaScript does not).
                     Some(
                         response
                             .header("Content-Security-Policy", &csp)
-                            .header("Connection-Allowlist", &allow),
+                            .header("Connection-Allowlist", &allow)
+                            .header("X-Content-Type-Options", "nosniff"),
                     )
                 })?,
             );
         }
         {
-            let (id, origin) = (id.clone(), origin.clone());
+            let (id, origin, page, queue) = (
+                id.clone(),
+                origin.clone(),
+                self.me.clone(),
+                self.queue.clone(),
+            );
+            let first = Cell::new(true);
             events.push(webview.on_navigation_starting(move |args| {
                 let uri = args.uri();
                 if !uri.starts_with(&origin) {
                     let _ = args.set_cancel(true);
                     tracing::info!(plugin = %id, uri = %short(&uri), "web plugin: navigation to another site refused");
+                } else if !first.replace(false) {
+                    // `location.reload()` or another page of its own: a new page there, so it
+                    // gets what `pf` says now and its calls count alone.
+                    let _ = args.set_cancel(true);
+                    tracing::info!(plugin = %id, uri = %short(&uri), "web plugin: the page loads anew, made again");
+                    let page = page.clone();
+                    queue.push(Command::WebPageReload { page, uri });
                 }
             })?);
         }
@@ -398,7 +413,7 @@ impl WebFence {
         controller.set_rasterization_scale(scale)?;
         controller.set_bounds(x, y, x + w, y + h)?;
         controller.set_visible(true)?;
-        webview.navigate(&format!("{origin}index.html"))?;
+        webview.navigate(self.at.as_deref().unwrap_or(&format!("{origin}index.html")))?;
         self.look_for_browser_window();
         *self.live.borrow_mut() = Some(Live {
             comp,
@@ -715,13 +730,17 @@ fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
   if (location.origin !== "{origin}" || window.top !== window || !window.chrome || !chrome.webview) return;
   const wv = chrome.webview, waiting = new Map(), handlers = {{}}, state = {init};
   // Ids start anywhere: an answer meant for the page before a reload finds nothing waiting.
-  let n = Math.floor(Math.random() * 1e9);
+  let n = Math.floor(Math.random() * 1e9), errors = 0;
+  // An error nobody caught: the first three count as main.js's do after an update.
+  const failed = () => {{ if (++errors <= 3) wv.postMessage({{ call: "errored", args: [] }}); }};
+  addEventListener("error", failed);
+  addEventListener("unhandledrejection", failed);
   wv.addEventListener("message", e => {{
     const m = e.data;
     if (m && m.event) {{
-      if (m.event === "settings" || m.event === "theme") state[m.event] = m.data;
+      if (m.event === "settings" || m.event === "theme" || m.event === "lang") state[m.event] = m.data;
       if (m.event === "resize") Object.assign(state.fence, m.data);
-      for (const fn of handlers[m.event] || []) try {{ fn(m.data); }} catch (err) {{ console.error(err); }}
+      for (const fn of handlers[m.event] || []) try {{ fn(m.data); }} catch (err) {{ console.error(err); failed(); }}
       return;
     }}
     const w = m && waiting.get(m.id);
@@ -729,14 +748,17 @@ fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
     waiting.delete(m.id);
     if ("error" in m) w[1](new Error(m.error)); else w[0](m.result);
   }});
+  // A message over 1 MB is refused here: PecoFence drops it unanswered (as JSON in UTF-8, as it
+  // measures).
   const call = (name, args) => new Promise((ok, fail) => {{
-    const id = ++n;
+    const id = ++n, m = {{ id, call: name, args }};
+    if (new TextEncoder().encode(JSON.stringify(m)).length > {max}) throw new RangeError(`pf.${{name}}: a message to PecoFence is at most 1 MB`);
     waiting.set(id, [ok, fail]);
-    wv.postMessage({{ id, call: name, args }});
+    wv.postMessage(m);
   }});
   const pf = {{
     on(name, fn) {{ (handlers[name] = handlers[name] || []).push(fn); }},
-    post(data) {{ wv.postMessage({{ call: "post", args: [data === undefined ? null : data] }}); }},
+    post: data => call("post", [data === undefined ? null : data]),
   }};
   for (const name of "{calls}".split(" ")) {{
     const [a, b] = name.split("."), f = (...args) => call(name, args);
@@ -755,6 +777,7 @@ fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
   }});
 }})();"#,
         calls = CALLS,
+        max = pecofence_plugin_host::MAX_POST,
     )
 }
 
@@ -766,6 +789,7 @@ fn mime(path: &str) -> &'static str {
         "json" => "application/json",
         "svg" => "image/svg+xml",
         "png" => "image/png",
+        "gif" => "image/gif",
         "jpg" | "jpeg" => "image/jpeg",
         "webp" => "image/webp",
         "woff2" => "font/woff2",

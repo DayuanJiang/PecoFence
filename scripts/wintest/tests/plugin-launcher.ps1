@@ -312,9 +312,9 @@ if ($Part -eq 'A') {
   MenuPick '^重新启动插件' (MenuWin 5) | Out-Null
   Check 'B started by hand: Ctrl+Alt+K is registered again' (WaitCount 'plugin shortcut registered.*Ctrl\+Alt\+K' 2 10) ''
   PfSettings | Out-Null
-  Js "window.chrome.webview.postMessage({ type: 'action', name: 'pluginUninstall', id: 'launcher-b' })" | Out-Null
-  $dlg = WaitWin '#32770' 5
-  [L]::PostMessageW($dlg, 0x111, [IntPtr]6, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 2
+  # As the page's own uninstall dialog sends it after its OK.
+  Js "window.chrome.webview.postMessage({ type: 'action', name: 'pluginUninstall', id: 'launcher-b', confirmed: true })" | Out-Null
+  Start-Sleep -Seconds 2
   Check 'B uninstalled: Ctrl+Alt+K is unregistered' ((WaitCount $UnregK 2 10) -and (Last 'K') -match 'unregistered' -and -not (Test-Path "$script:Config\plugins\launcher-b\1.0.0\main.js")) ''
 
   Case 'the Peek''s key is refused for a command, by its name'

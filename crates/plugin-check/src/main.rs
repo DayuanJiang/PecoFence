@@ -12,7 +12,7 @@
 //! soft rules of the repository's AGENTS.md.
 
 use pecofence_core::FenceId;
-use pecofence_core::plugins::{Manifest, fence_settings};
+use pecofence_core::plugins::{fence_settings, parse_manifest};
 use pecofence_plugin_host::{self as host, Command, Host, Note, Output, Start, Stopped};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -299,8 +299,10 @@ fn main() {
 
 /// Runs the plugin and prints the report; whether it passed.
 fn check(a: Args) -> Result<bool, String> {
-    let manifest: Manifest = serde_json::from_value(read_json(&a.dir.join("plugin.json"))?)
-        .map_err(|e| format!("plugin.json: {e}"))?;
+    // PecoFence's own check first: what it would refuse to install does not pass here either.
+    let path = a.dir.join("plugin.json");
+    let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let manifest = parse_manifest(&bytes).map_err(|e| format!("plugin.json: {e}"))?;
     let main = a.dir.join("main.js");
     if !main.exists() && manifest.layer == "web" {
         println!(
@@ -362,6 +364,7 @@ fn check(a: Args) -> Result<bool, String> {
     send(Command::Event(fence, "settings", settings));
     wait(0.35);
     send(Command::Event(fence, "timechange", Value::Null));
+    send(Command::Event(fence, "lang", json!(a.lang)));
     wait(0.4);
     let view = fake.log().last_view.clone();
     let clicks = clicks(&view);
@@ -391,8 +394,8 @@ fn check(a: Args) -> Result<bool, String> {
             }
             Output::Stopped(_, _, Stopped::TooMuchMemory) => stops.push("it used over 8 MB".into()),
             Output::Stopped(_, _, Stopped::Error(e)) => stops.push(format!("an error: {e}")),
-            // A web plugin's main.js posting to its page: nothing to check here.
-            Output::Post(..) => {}
+            // A web plugin's main.js posting to its page, and an error the notes have already.
+            Output::Post(..) | Output::Errored(..) => {}
         }
     }
     let log = fake.log();
@@ -442,6 +445,8 @@ fn check(a: Args) -> Result<bool, String> {
         log.memory / 1024
     ));
     match shows.first().map(|t| (*t - begun).as_secs_f64()) {
+        // A web plugin's page is its view: its main.js need not show one.
+        None if manifest.layer == "web" => {}
         None => fails.push("the plugin never showed a view (pf.show)".to_string()),
         Some(s) if s > 1.0 => {
             warns.push(format!("the first view came after {s:.1} s (at most 1 s)"))

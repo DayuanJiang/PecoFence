@@ -14,7 +14,8 @@ const T = {
   ru: { none: "Сейчас ничего не играет", paused: "Пауза", prev: "Назад", play: "Воспроизвести или пауза", next: "Вперёд", runs: "{0} запущен" },
   it: { none: "Non è in riproduzione niente", paused: "In pausa", prev: "Precedente", play: "Riproduci o metti in pausa", next: "Successivo", runs: "{0} è aperto" },
 };
-const t = T[pf.lang] || T[pf.lang.split("-")[0]] || T.en;
+const texts = () => T[pf.lang] || T[pf.lang.split("-")[0]] || T.en;
+let t = texts();
 // Segoe Fluent Icons: previous, play, pause, next.
 const [PREV, PLAY, PAUSE, NEXT] = [0xe892, 0xe768, 0xe769, 0xe893].map((c) => String.fromCharCode(c));
 
@@ -56,6 +57,8 @@ async function apps() {
 }
 
 pf.on("media", read);
+// The interface language changed: the texts again.
+pf.on("lang", () => { t = texts(); draw(); });
 pf.on("show", () => { read(); apps(); });
 pf.on("click", async (e) => {
   if (!now || !["previous", "playpause", "next"].includes(e.id)) return;

@@ -470,6 +470,11 @@ async function runTests() {
     await settle();
     assert(!back.hidden && !doc.getElementById('plChanged').hidden && doc.getElementById('plChanged').offsetHeight > 0, 'The warning did not show again');
     doc.getElementById('plCancel').click();
+    // Cancelled: opening and closing a row draws the list again, without the warning.
+    rows()[0].click();
+    rows()[0].click();
+    await settle();
+    assert(back.hidden, 'The warning came back after its cancel');
     current().plugins.ask = null;
     // A plugin row has no empty icon space: its text starts at the card's padding.
     const pad = frame.contentWindow.getComputedStyle(rows()[1]).paddingLeft;
@@ -485,6 +490,18 @@ async function runTests() {
     assert(sys.hidden && back.textContent.includes('用网页显示内容，占用内存较多'), 'Web plugin warning: ' + back.textContent);
     doc.getElementById('plCancel').click();
     assert(last().name !== 'pluginInstall' || last().id === 'runner', 'Cancel installed');
+    // An update by another author names the one before.
+    const runner = current().plugins.list[1];
+    current().plugins.list[1] = { ...runner, state: 'confirm', installed: true, authorBefore: 'first-author' };
+    frame.contentWindow.testRefresh();
+    await settle();
+    rows()[1].querySelector('button').click();
+    const by = doc.getElementById('plBy').textContent;
+    assert(by === '作者换了，原来是 first-author，现在是 tester。审查过的版本是 2.0.0。', 'Author change: ' + by);
+    doc.getElementById('plCancel').click();
+    current().plugins.list[1] = runner;
+    frame.contentWindow.testRefresh();
+    await settle();
     // 插件设置 in a fence's menu: the details open at that fence's settings.
     rows()[0].click();
     await settle();

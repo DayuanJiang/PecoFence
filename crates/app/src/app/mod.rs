@@ -2505,7 +2505,6 @@ impl App {
         app.remove_old_update_downloads();
         app.arm_update_check(true);
         app.arm_plugins_check(true);
-        app.drop_stale_views(false);
         // Last of the startup balloons, so it is the one left showing.
         app.offer_crash_feedback();
         app.offer_welcome();
@@ -3210,6 +3209,7 @@ impl App {
                 args,
             } => self.web_call(page, id, call, args),
             Command::WebPageFailed { page, failure } => self.web_page_failed(page, failure),
+            Command::WebPageReload { page, uri } => self.reload_web_page(page, uri),
             Command::EditNote { fence, caret } => self.edit_note(fence, caret),
             Command::NoteEditState {
                 fence,

@@ -316,9 +316,9 @@ impl App {
     /// extensions and network drives take their time there) and saved in the plugin's data
     /// folder while the plugin is installed; then the plugin hears `settings` and draws them.
     fn make_launch_pictures(&mut self, fence: FenceId, items: Vec<(String, PathBuf)>) {
-        if items.is_empty() {
+        let Some(dir) = self.plugin_data_dir(fence).filter(|_| !items.is_empty()) else {
             return;
-        }
+        };
         let (api, jobs, control) = (
             self.light_host(),
             self.light.jobs.clone(),
@@ -333,8 +333,8 @@ impl App {
                     let saved = (pecofence_platform::shell::shell_image(path, 48, true))
                         .map_err(|e| e.to_string())
                         .and_then(|img| {
-                            api.write_data(fence, |dir| {
-                                let file = dir.join(icon_name(fence, id));
+                            let file = dir.join(icon_name(fence, id));
+                            api.write_data(fence, &file, img.bgra.len() as u64, |_| {
                                 pecofence_platform::clipboard::save_png(
                                     &file, img.width, img.height, &img.bgra,
                                 )

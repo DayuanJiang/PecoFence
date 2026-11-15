@@ -312,6 +312,17 @@ fn valid_program(p: &str) -> bool {
     exe && (name || path)
 }
 
+/// A WebView2 runtime of `version` ("157.0.4341.60") applies all a web plugin's page is held
+/// to: 152 is the first that reads the page's Connection-Allowlist (dns-prefetch, preconnect and
+/// WebRTC to hosts the plugin did not declare). A version that cannot be read does not.
+pub fn webview2_enough(version: &str) -> bool {
+    let major = version
+        .split('.')
+        .next()
+        .and_then(|m| m.parse::<u32>().ok());
+    major.is_some_and(|m| m >= 152)
+}
+
 /// `pf.theme` of a fence: `dark` where it draws light text (a dark background), else `light`.
 pub fn theme(light_text: bool) -> &'static str {
     if light_text { "dark" } else { "light" }
@@ -614,7 +625,8 @@ pub fn needs_newer_app(m: &Manifest, app: &str) -> bool {
 }
 
 /// What to do with the index's `entry` when `installed` is on this computer and PecoFence is
-/// version `app`. A plugin with `system`, or one that changes its layer, always asks.
+/// version `app`. A plugin with `system`, or one that changes its layer or its author, always
+/// asks.
 pub fn update_kind(installed: &Manifest, entry: &Manifest, app: &str) -> Update {
     let (old, new) = (&installed.permissions, &entry.permissions);
     if !crate::updates::is_newer(&entry.version, &installed.version) {
@@ -623,6 +635,7 @@ pub fn update_kind(installed: &Manifest, entry: &Manifest, app: &str) -> Update 
         Update::NeedsNewerApp
     } else if !new.system.is_empty()
         || installed.layer != entry.layer
+        || installed.author != entry.author
         || !more_permissions(old, new).is_empty()
     {
         Update::Confirm
@@ -631,11 +644,14 @@ pub fn update_kind(installed: &Manifest, entry: &Manifest, app: &str) -> Update 
     }
 }
 
-/// What the install warning shows of plugin `m` (its version, layer and permissions), as one
-/// text: the page sends it back with 安装, and a different one now means the index changed
-/// while the warning was open, so the warning is shown again.
+/// What the install warning shows of plugin `m` (its version, layer, author and permissions),
+/// as one text: the page sends it back with 安装, and a different one now means the index
+/// changed while the warning was open, so the warning is shown again.
 pub fn shown_key(m: &Manifest) -> String {
-    format!("{} {} {:?}", m.version, m.layer, m.permissions)
+    format!(
+        "{} {} {:?} {:?}",
+        m.version, m.layer, m.author, m.permissions
+    )
 }
 
 /// The text for UI language `lang` ("zh-CN"): that language, another one of the same family,
@@ -659,6 +675,14 @@ pub fn pick<'a>(texts: &'a BTreeMap<String, String>, lang: &str) -> &'a str {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn web_pages_need_webview2_152() {
+        assert!(webview2_enough("157.0.4341.60") && webview2_enough("152.0.0.0"));
+        for old in ["151.0.3405.125", "86.0.616.0", "", "x.1"] {
+            assert!(!webview2_enough(old), "{old}");
+        }
+    }
 
     #[test]
     fn plain_names_are_no_device_names_and_end_without_a_dot() {
@@ -1119,6 +1143,12 @@ mod tests {
             v["layer"] = "web".into();
         });
         assert_eq!(update_kind(&installed, &web, "0.4.0"), Update::Confirm);
+        // So does one whose author is someone else now.
+        let other = manifest(|v| {
+            v["version"] = "1.0.2".into();
+            v["author"] = "someone-else".into();
+        });
+        assert_eq!(update_kind(&installed, &other, "0.4.0"), Update::Confirm);
     }
 
     #[test]
@@ -1131,6 +1161,7 @@ mod tests {
             manifest(|v| v["permissions"]["clipboard"] = "read".into()),
             manifest(|v| v["permissions"]["network"] = json!(["x.com"])),
             manifest(|v| v["permissions"]["notify"] = true.into()),
+            manifest(|v| v["author"] = "someone-else".into()),
         ];
         for other in changed {
             assert_ne!(shown_key(&m), shown_key(&other), "{other:?}");

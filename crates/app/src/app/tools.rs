@@ -9,9 +9,9 @@ use pecofence_core::{FenceTool, ScriptSpec};
 use std::collections::HashMap;
 use std::time::Instant;
 
-/// The entries of 新建小工具 (tray and fence menus): 用自己的脚本… (the tools are plugins from
-/// the store now). The menus reserve this many command ids.
-pub(super) const TOOL_MENU_ENTRIES: u32 = 1;
+/// The entries of 新建小工具 (tray and fence menus): 用自己的脚本…, 更多插件… and up to 8
+/// installed plugins. The menus reserve this many command ids.
+pub(super) const TOOL_MENU_ENTRIES: u32 = 10;
 
 /// 脚本栅栏 at run time (nothing of it is saved): each fence's last result and when it came,
 /// the fences whose script is running (with the script it runs), when each is next due, a
@@ -279,6 +279,15 @@ impl App {
     /// 新建小工具 (tray and fence menu), command id `base`: 用自己的脚本….
     pub(super) fn new_tool_submenu(&self, base: u32) -> PopupMenu {
         let menu = PopupMenu::new();
+        for (i, (name, _)) in self.tool_menu_plugins().iter().enumerate() {
+            menu.item(base + 2 + i as u32, name, false, false);
+        }
+        menu.item(
+            base + 1,
+            pecofence_core::i18n::text("更多插件…"),
+            false,
+            false,
+        );
         menu.item(
             base,
             pecofence_core::i18n::text("用自己的脚本…"),
@@ -288,9 +297,31 @@ impl App {
         menu
     }
 
-    /// The entry of `new_tool_submenu`, for a fence near (`x`, `y`).
-    pub(super) fn new_tool_command(&mut self, _index: u32, x: i32, y: i32) {
-        self.queue.push(Command::NewScript { x, y });
+    /// The installed plugins 新建小工具 offers (a taken-down one left out), by their name.
+    fn tool_menu_plugins(&self) -> Vec<(String, String)> {
+        let installed = self.plugins.installed.iter().filter(|(_, p)| p.usable());
+        let mut list: Vec<_> = installed
+            .map(|(id, _)| (self.plugin_name(id), id.clone()))
+            .collect();
+        list.sort();
+        list.truncate(TOOL_MENU_ENTRIES as usize - 2);
+        list
+    }
+
+    /// The entry of `new_tool_submenu`, for a fence near (`x`, `y`): a script, 设置 › 小工具's
+    /// plugin list, or a fence of an installed plugin.
+    pub(super) fn new_tool_command(&mut self, index: u32, x: i32, y: i32) {
+        match index {
+            0 => self.queue.push(Command::NewScript { x, y }),
+            1 => self.open_settings_page("tools", Some("plugins")),
+            i => {
+                let id = self.tool_menu_plugins().into_iter().nth(i as usize - 2);
+                tracing::info!(index, id = ?id.as_ref().map(|p| &p.1), "新建小工具: a plugin fence");
+                if let Some((_, id)) = id {
+                    self.new_plugin_fence(&id, x, y);
+                }
+            }
+        }
     }
 
     /// Pushes what each window's shown fence needs of its tool (note text, clock seconds),
@@ -647,7 +678,8 @@ impl App {
     }
 
     /// At start: removes the data folders (`scripts-data\<fence id>`) of script fences that are
-    /// gone, with what their scripts kept there. A fence a layout or a snapshot still has keeps its folder. Nothing goes when
+    /// gone, with what their scripts kept there, and the plugin fences' files
+    /// (`drop_files_of_deleted_fences`). A fence a layout or a snapshot still has keeps its folder. Nothing goes when
     /// the configuration is a new one or came from a backup: the fences it lacks may come back.
     pub(super) fn remove_left_script_data(&self) {
         let s = &self.state;
@@ -658,6 +690,7 @@ impl App {
         {
             return;
         }
+        self.drop_files_of_deleted_fences();
         let Some(dir) = s
             .config_path_on_disk()
             .parent()
@@ -1382,6 +1415,10 @@ impl App {
             self.schedule_save();
         }
         self.push_note(fence);
+        // 设置 › 小工具's uninstall question names the notes with text: it gets the new count.
+        if self.settings.is_some() {
+            self.push_settings_state();
+        }
         // The window draws the stored note again, which has the editor's text by now.
         if let Some(w) = self.window_for(fence) {
             w.set_note_edit(None);

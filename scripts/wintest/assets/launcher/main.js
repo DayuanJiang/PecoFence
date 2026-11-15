@@ -1,10 +1,10 @@
 // Launcher: the programs, files and folders the user put into this fence; a click opens one.
 // It knows each item by its id, name and picture only: PecoFence keeps the paths and opens them
 // as a fence icon opens.
-const zh = pf.lang.startsWith("zh");
-const t = zh
+const texts = () => pf.lang.startsWith("zh")
   ? { program: "添加程序…", file: "添加文件…", empty: "把程序、文件或文件夹拖到这里，或者右键这个栅栏来添加。" }
   : { program: "Add a program…", file: "Add a file…", empty: "Drop programs, files or folders here, or right-click this fence to add one." };
+let t = texts();
 let items = [];
 let last = { id: "", at: 0 };
 
@@ -25,6 +25,8 @@ async function load() {
 }
 
 pf.on("start", load);
+// The interface language changed: the texts and the menu again.
+pf.on("lang", () => { t = texts(); draw(); });
 // An item removed in the plugin's details.
 pf.on("settings", load);
 pf.on("command", async (c) => {

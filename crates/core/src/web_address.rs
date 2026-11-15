@@ -74,28 +74,39 @@ impl fmt::Display for WebAddress {
 
 /// Whether the address WinHTTP connects a plugin's request to (`93.184.215.14`, `2606:2800::1`,
 /// with a port or a zone perhaps) is public. Not public: this computer (127/8, ::1), the local
-/// network (10/8, 172.16/12, 192.168/16, 169.254/16, fc00::/7, fe80::/10), 0/8, the broadcast
-/// address and anything unreadable. A name a plugin declared may resolve, or be made to resolve,
-/// to these: the router and the computer's own services must stay out of its reach. Public on
-/// purpose: 198.18/15 (the fake-ip answers of proxy tools such as Clash) and 100.64/10 (CGNAT).
+/// network (10/8, 172.16/12, 192.168/16, 169.254/16, 100.64/10 where Tailscale puts its devices,
+/// fd00::/8, fe80::/10), 0/8, multicast (224/4, ff00::/8), 240/4 with the broadcast address, and
+/// anything unreadable; 64:ff9b::/96 (NAT64) and 2002::/16 (6to4) as the IPv4 address inside
+/// them. A name a plugin declared may resolve, or be made to resolve, to these: the router and
+/// the computer's own services must stay out of its reach. Public on purpose, as Chromium counts
+/// them: 198.18/15 and fc00::/8 (the fake-ip answers of proxy tools such as Clash and sing-box).
 pub fn public_ip(text: &str) -> bool {
     let ip = text.parse::<SocketAddr>().map(|a| a.ip()).or_else(|_| {
         let bare = text.split('%').next().unwrap_or_default();
         bare.trim_matches(['[', ']']).parse::<IpAddr>()
     });
     let v4 = |ip: Ipv4Addr| {
-        !(ip.is_loopback() || ip.is_private() || ip.is_link_local())
-            && !(ip.octets()[0] == 0 || ip.is_broadcast())
+        let [a, b, ..] = ip.octets();
+        let shared = a == 100 && (64..128).contains(&b);
+        !(ip.is_loopback() || ip.is_private() || ip.is_link_local() || shared)
+            && !(a == 0 || ip.is_multicast() || a >= 240)
     };
     match ip {
         Ok(IpAddr::V4(ip)) => v4(ip),
-        Ok(IpAddr::V6(ip)) => match ip.to_ipv4_mapped() {
-            Some(mapped) => v4(mapped),
-            None => {
-                !(ip.is_loopback() || ip.is_unspecified())
-                    && !(ip.is_unique_local() || ip.is_unicast_link_local())
+        Ok(IpAddr::V6(ip)) => {
+            let s = ip.segments();
+            let inside = |hi: u16, lo: u16| Ipv4Addr::from((u32::from(hi) << 16) | u32::from(lo));
+            if let Some(mapped) = ip.to_ipv4_mapped() {
+                v4(mapped)
+            } else if s[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                v4(inside(s[6], s[7]))
+            } else if s[0] == 0x2002 {
+                v4(inside(s[1], s[2]))
+            } else {
+                !(ip.is_loopback() || ip.is_unspecified() || ip.is_multicast())
+                    && !(s[0] & 0xff00 == 0xfd00 || ip.is_unicast_link_local())
             }
-        },
+        }
         Err(_) => false,
     }
 }
@@ -138,13 +149,16 @@ mod tests {
     #[test]
     fn only_public_addresses_are_public() {
         let public = "93.184.215.14 140.82.112.6:443 2606:2800:21f:cb07::1 [2606:2800::1]:443 \
-            172.32.0.1 100.64.0.1 198.18.0.5";
+            172.32.0.1 100.63.255.255 100.128.0.1 198.18.0.5 198.19.255.1 fc00::1 fc00:4000::5 \
+            64:ff9b::808:808 2002:808:808::1 223.255.255.1";
         for ip in public.split_whitespace() {
             assert!(public_ip(ip), "{ip}");
         }
         let not = "127.0.0.1 127.1.2.3:443 10.0.0.1 172.16.0.1 172.31.255.255 192.168.1.1 \
-            169.254.169.254 0.0.0.0 0.1.2.3 255.255.255.255 ::1 [::1]:443 :: fc00::1 fd12:3456::1 \
-            fe80::1 fe80::1%3 [fe80::1%3]:80 ::ffff:127.0.0.1 ::ffff:192.168.0.1 localhost 1.2.3";
+            169.254.169.254 0.0.0.0 0.1.2.3 255.255.255.255 ::1 [::1]:443 :: fd00::1 fd12:3456::1 \
+            fe80::1 fe80::1%3 [fe80::1%3]:80 ::ffff:127.0.0.1 ::ffff:192.168.0.1 localhost 1.2.3 \
+            100.64.0.1 100.101.102.103 100.127.255.255 224.0.0.251 239.255.255.250 240.0.0.1 \
+            ff02::1 ff05::fb 64:ff9b::7f00:1 64:ff9b::c0a8:101 2002:c0a8:101::1 2002:7f00:1::";
         for ip in not.split_whitespace().chain([""]) {
             assert!(!public_ip(ip), "{ip}");
         }
