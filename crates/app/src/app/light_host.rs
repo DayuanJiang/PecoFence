@@ -93,7 +93,7 @@ impl AppHost {
 
     /// Runs `write` in fence `fence`'s data folder (made first) while its plugin is still
     /// installed: an uninstall waits for it, and a write after the uninstall finds no plugin.
-    fn write_data<T>(
+    pub(super) fn write_data<T>(
         &self,
         fence: FenceId,
         write: impl FnOnce(&Path) -> Result<T, String>,

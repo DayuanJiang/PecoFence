@@ -91,7 +91,7 @@ pub(super) struct Light {
     stops: HashMap<FenceId, Vec<Instant>>,
     /// The app's side of the `pf` calls, and the work it hands to this thread.
     host: Option<Arc<AppHost>>,
-    jobs: Arc<Mutex<Vec<UiJob>>>,
+    pub(super) jobs: Arc<Mutex<Vec<UiJob>>>,
     replies: HashMap<u32, Reply>,
     next_reply: u32,
     /// The hidden window that hears of clipboard changes (made for the first plugin that may
@@ -103,7 +103,8 @@ pub(super) struct Light {
     /// Interface 2 (`launch.rs`): each fence's `view.menu`, the files of its last drop, the
     /// shortcuts registered (by hotkey id) and the ones another program holds.
     pub(super) menus: HashMap<FenceId, Vec<host::view::MenuItem>>,
-    pub(super) drops: HashMap<FenceId, Vec<std::path::PathBuf>>,
+    pub(super) drops: Vec<(u64, FenceId, Vec<std::path::PathBuf>)>,
+    pub(super) next_drop: u64,
     pub(super) keys: HashMap<i32, (FenceId, String, Hotkey)>,
     pub(super) keys_taken: Vec<(FenceId, String, Hotkey)>,
 }
@@ -116,7 +117,7 @@ impl App {
     }
 
     /// The app's side of the `pf` calls (made with the first plugin or web page call).
-    fn light_host(&mut self) -> Arc<AppHost> {
+    pub(super) fn light_host(&mut self) -> Arc<AppHost> {
         let data = self.plugins_data();
         let jobs = self.light.jobs.clone();
         let control = self.control.hwnd();
@@ -128,7 +129,7 @@ impl App {
     }
 
     /// Hands `job` to this thread from another one.
-    fn post_job(jobs: &Mutex<Vec<UiJob>>, control: isize, job: UiJob) {
+    pub(super) fn post_job(jobs: &Mutex<Vec<UiJob>>, control: isize, job: UiJob) {
         if let Ok(mut jobs) = jobs.lock() {
             jobs.push(job);
         }
@@ -304,7 +305,7 @@ impl App {
             self.light_send(host::Command::Stop(fence));
         }
         self.light.menus.remove(&fence);
-        self.light.drops.remove(&fence);
+        self.light.drops.retain(|d| d.1 != fence);
         self.sync_plugin_keys();
         self.sync_media();
     }

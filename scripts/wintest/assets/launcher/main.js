@@ -32,9 +32,8 @@ pf.on("command", async (c) => {
   if ((c.id === "program" || c.id === "file") && (await pf.launch.pick(c.id))) load();
 });
 pf.on("drop", async (d) => {
-  // Added while the drop is handled: pf.launch.add works only here.
-  const added = d.files.map((_, i) => pf.launch.add(i));
-  await Promise.allSettled(added);
+  // All of the drop in one call, while it is handled: pf.launch.add works only here.
+  await pf.launch.add(d.files.map((_, i) => i)).catch(() => {});
   load();
 });
 pf.on("click", (c) => {

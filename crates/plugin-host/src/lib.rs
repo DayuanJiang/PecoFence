@@ -207,8 +207,9 @@ struct Plugin {
     /// A click, dblclick or command handler runs (the user did something): `pf.open`,
     /// `pf.launch.open` and `pf.launch.pick` work only then.
     click: Rc<Cell<bool>>,
-    /// A drop handler runs: `pf.launch.add` works only then.
-    dropping: Rc<Cell<bool>>,
+    /// A drop handler runs, of the drop with this number: `pf.launch.add` works only then, and
+    /// goes to the app with the number (the app adds that drop's files, not a later one's).
+    dropping: Rc<Cell<Option<u64>>>,
     /// The JavaScript time used in the second that began then.
     second: (Instant, Duration),
     cache: Option<PathBuf>,
@@ -391,14 +392,20 @@ impl Plugin {
             // host on a worker thread; the answer comes back as `Msg::Done`.
             let to = shared.clone();
             let call = move |ctx: Ctx<'_>, name: String, args: String| {
-                let args: Value = serde_json::from_str(&args).unwrap_or(json!([]));
+                let mut args: Value = serde_json::from_str(&args).unwrap_or(json!([]));
                 let mut refused = refusal(&permissions, &name, &args);
                 let by_user = ["open", "launch.open", "launch.pick", "media.control"].contains(&name.as_str());
                 if refused.is_none() && by_user && !click.get() {
                     refused = Some(format!("pf.{name} works only in a click, dblclick or command handler"));
                 }
-                if refused.is_none() && name == "launch.add" && !dropping.get() {
-                    refused = Some("pf.launch.add works only in a drop handler".into());
+                if name == "launch.add" {
+                    match dropping.get() {
+                        Some(drop) => args = json!([args.get(0).cloned().unwrap_or_default(), drop]),
+                        None if refused.is_none() => {
+                            refused = Some("pf.launch.add works only in a drop handler".into());
+                        }
+                        None => {}
+                    }
                 }
                 let mut s = to.borrow_mut();
                 let requests = s.calls.values().filter(|c| c.starts_with("http.")).count();
@@ -744,13 +751,14 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                     if !told {
                         tracing::debug!(%fence, name, reads = p.reads_clipboard, runs = p.runs(), "plugin not told of the clipboard or the media session");
                     }
+                    let drop = data.get("drop").and_then(Value::as_u64);
                     let data = (!data.is_null()).then(|| data.to_string());
                     p.click
                         .set(matches!(name, "click" | "dblclick" | "command"));
-                    p.dropping.set(name == "drop");
+                    p.dropping.set(drop.filter(|_| name == "drop"));
                     let result = if told { p.emit(name, data) } else { Ok(()) };
                     p.click.set(false);
-                    p.dropping.set(false);
+                    p.dropping.set(None);
                     if let Err(why) = result {
                         failed.push((fence, p.number, why));
                     }
@@ -1285,15 +1293,15 @@ mod tests {
                 { id: 'add', title: 'Add a program…\nsecond line' }, { separator: true }, { title: 'no id' },
                 ...Array.from({ length: 9 }, (_, i) => ({ id: 'm' + i, title: 'x'.repeat(50) })),
             ] });
-            pf.on('start', () => { tryIt('add', () => pf.launch.add(0)); tryIt('open', () => pf.launch.open('a')); tryIt('list', () => pf.launch.list()); show(); });
-            pf.on('drop', (d) => { tryIt('drop add', () => pf.launch.add(d.files.length - 1)); show(); });
+            pf.on('start', () => { tryIt('add', () => pf.launch.add([0])); tryIt('open', () => pf.launch.open('a')); tryIt('list', () => pf.launch.list()); show(); });
+            pf.on('drop', (d) => { tryIt('drop add', () => pf.launch.add([d.files.length - 1, 0], 99)); show(); });
             pf.on('command', (c) => { tryIt(c.via + ' open', () => pf.launch.open('a')); tryIt('pick', () => pf.launch.pick('program')); show(); });
         "#;
         let p = Permissions {
             launch: true,
             ..Permissions::default()
         };
-        let drop = json!({ "files": [{ "name": "a.exe", "size": 3, "folder": false }] });
+        let drop = json!({ "files": [{ "name": "a.exe", "size": 3, "folder": false }], "drop": 7 });
         let then = vec![
             Command::Event(FenceId::new_v4(), "drop", drop),
             Command::Event(
@@ -1302,8 +1310,20 @@ mod tests {
                 json!({ "id": "x", "via": "key" }),
             ),
         ];
-        let out = run_with(code, p, Arc::new(Fake::default()), true, 150, then);
+        let fake = Arc::new(Fake::default());
+        let out = run_with(code, p, fake.clone(), true, 150, then);
         let text = texts(&out).join("\n");
+        // One call for the whole drop, with the number of the drop it was made in (not the
+        // plugin's own second argument).
+        let added = fake.notes.lock().unwrap().iter().find_map(|n| match n {
+            Note::Call {
+                name,
+                args,
+                refused: None,
+            } if name == "launch.add" => Some(args.clone()),
+            _ => None,
+        });
+        assert_eq!(added, Some(json!([[0, 0], 7])));
         for want in [
             "add refused: pf.launch.add works only in a drop handler",
             "open refused: pf.launch.open works only in a click, dblclick or command handler",

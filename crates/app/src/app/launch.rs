@@ -16,10 +16,14 @@ pub(super) const CMD_PLUGIN_MENU_END: u32 =
 pub(super) const HOTKEY_PLUGIN_FIRST: i32 = 0x100;
 const KEYS: &str = "__keys";
 const LAUNCH: &str = "__launch";
+/// The most items of one launcher fence.
+const MAX_ITEMS: usize = 200;
+/// The drops kept for `launch.add` (a call of one may come after the next drop).
+const DROPS_KEPT: usize = 8;
 
-/// A launcher item's picture in its plugin's data folder.
-fn icon_name(item: &str) -> String {
-    format!("launch-{item}.png")
+/// A launcher item's picture in its plugin's data folder (named after its fence: it goes with it).
+fn icon_name(fence: FenceId, item: &str) -> String {
+    format!("{fence}-launch-{item}.png")
 }
 
 impl App {
@@ -120,7 +124,8 @@ impl App {
     }
 
     /// `WM_HOTKEY` of a plugin command: its fence shows like a Peek of it alone and its plugin
-    /// wakes, then gets `command`; pressed again while that Peek is open, the Peek ends.
+    /// wakes, then gets `command`; pressed again while that Peek is open, the Peek ends. A Peek of
+    /// another fence alone ends first.
     pub(super) fn plugin_key_pressed(&mut self, id: i32) {
         let Some((fence, command, h)) = self.light.keys.get(&id).cloned() else {
             return;
@@ -140,9 +145,17 @@ impl App {
         if ours {
             return self.end_peek("hotkey or tray menu");
         }
+        if self.peek.is_some() && self.peek_only.is_some() {
+            tracing::info!(%fence, "plugin shortcut: the Peek of another fence alone ends first");
+            self.end_peek_now();
+        }
         if self.peek.is_none() {
             self.peek_only = Some(hwnd);
             self.toggle_peek();
+            if self.peek.is_none() {
+                tracing::info!(%fence, "plugin shortcut: no Peek opened, the fence shows as it is");
+                self.peek_only = None;
+            }
         }
         self.sync_light();
         self.plugin_event(fence, "command", json!({ "id": command, "via": "key" }));
@@ -157,7 +170,8 @@ impl App {
     }
 
     /// Files dropped on plugin fence `fence`: its plugin gets `drop` with their names and sizes
-    /// (folders only by name), and may add them as launcher items while it handles it.
+    /// (folders only by name) and the drop's number, and may add them as launcher items while it
+    /// handles it (the plugin host adds the number to that `launch.add`).
     pub(super) fn plugin_dropped(&mut self, fence: FenceId, paths: Vec<PathBuf>) {
         if self.plugin_takes_drops(fence).is_none() || !self.light.running.contains_key(&fence) {
             return tracing::info!(%fence, files = paths.len(), "drop on a plugin fence refused: its plugin takes none or does not run");
@@ -171,9 +185,14 @@ impl App {
                 json!({ "name": name, "size": size, "folder": folder })
             })
             .collect();
-        tracing::info!(%fence, files = files.len(), "files dropped on a plugin fence: its plugin is told");
-        self.light.drops.insert(fence, paths);
-        self.plugin_event(fence, "drop", json!({ "files": files }));
+        self.light.next_drop += 1;
+        let drop = self.light.next_drop;
+        tracing::info!(%fence, files = files.len(), drop, "files dropped on a plugin fence: its plugin is told");
+        self.light.drops.push((drop, fence, paths));
+        if self.light.drops.len() > DROPS_KEPT {
+            self.light.drops.remove(0);
+        }
+        self.plugin_event(fence, "drop", json!({ "files": files, "drop": drop }));
     }
 
     /// The launcher items of `fence`: `{id, path, name}` each.
@@ -187,8 +206,10 @@ impl App {
     fn shown_item(&self, fence: FenceId, item: &Value) -> Value {
         let id = item["id"].as_str().unwrap_or_default();
         let data = self.plugin_data_dir(fence);
-        let icon = data.map(|d| d.join(icon_name(id))).filter(|f| f.is_file());
-        json!({ "id": id, "name": item["name"], "icon": icon.map(|_| icon_name(id)) })
+        let icon = data
+            .map(|d| d.join(icon_name(fence, id)))
+            .filter(|f| f.is_file());
+        json!({ "id": id, "name": item["name"], "icon": icon.map(|_| icon_name(fence, id)) })
     }
 
     fn plugin_data_dir(&self, fence: FenceId) -> Option<PathBuf> {
@@ -199,21 +220,45 @@ impl App {
         )
     }
 
-    /// Adds `path` as an item of launcher fence `fence` (and its picture in the plugin's data
-    /// folder). Nothing of PecoFence's own folder (its configuration, plugins and their data).
+    /// Adds `path` as an item of launcher fence `fence` and returns its id (its picture comes
+    /// later, [`Self::make_launch_pictures`]). Nothing of PecoFence's own folder (its
+    /// configuration, plugins and their data), nor a shortcut to it; a path once; at most
+    /// [`MAX_ITEMS`]. The errors name no path (the plugin gets them).
     fn add_launch_item(
         &mut self,
         fence: FenceId,
         path: &Path,
-    ) -> std::result::Result<Value, String> {
+    ) -> std::result::Result<String, String> {
         let config = self.state.config_path_on_disk();
         let own = config.parent().and_then(|d| std::fs::canonicalize(d).ok());
-        let real = std::fs::canonicalize(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        if own.is_some_and(|own| real.starts_with(own)) {
-            tracing::info!(%fence, "launcher item refused: a file of PecoFence's own folder");
+        let real = std::fs::canonicalize(path).map_err(|e| format!("launch: {e}"))?;
+        let lnk = path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("lnk"));
+        let target = lnk
+            .then(|| pecofence_platform::shell::shortcut_target_expanded(path))
+            .flatten()
+            .and_then(|t| std::fs::canonicalize(t).ok());
+        if own.is_some_and(|own| {
+            real.starts_with(&own) || target.is_some_and(|t| t.starts_with(&own))
+        }) {
+            tracing::info!(%fence, lnk, "launcher item refused: a file of PecoFence's own folder or a shortcut to one");
             return Err("a file of PecoFence's own folder cannot be an item".into());
         }
         let items = self.launch_items(fence);
+        let text = path.to_string_lossy();
+        if items.iter().any(|i| {
+            i["path"]
+                .as_str()
+                .is_some_and(|p| p.eq_ignore_ascii_case(&text))
+        }) {
+            tracing::info!(%fence, "launcher item refused: the fence has it already");
+            return Err("the fence has this item already".into());
+        }
+        if items.len() >= MAX_ITEMS {
+            tracing::info!(%fence, items = items.len(), "launcher item refused: the fence is full");
+            return Err(format!("a launcher fence holds at most {MAX_ITEMS} items"));
+        }
         let next = items
             .iter()
             .filter_map(|i| i["id"].as_str()?.parse::<u32>().ok());
@@ -224,24 +269,98 @@ impl App {
                 .to_string_lossy()
                 .into()
         });
-        if let Some(dir) = self.plugin_data_dir(fence)
-            && let Ok(img) = pecofence_platform::shell::shell_image(path, 48, true)
-        {
-            let file = dir.join(icon_name(&id));
-            let saved = std::fs::create_dir_all(&dir)
-                .map_err(|e| e.to_string())
-                .and_then(|_| {
-                    pecofence_platform::clipboard::save_png(&file, img.width, img.height, &img.bgra)
-                        .map_err(|e| e.to_string())
-                });
-            if let Err(e) = saved {
-                tracing::info!(%fence, error = e, "launcher item: no picture saved");
+        let item = json!({ "id": id, "path": text, "name": name });
+        self.set_launch_items(fence, items.into_iter().chain([item]).collect());
+        tracing::info!(%fence, id, kind = pecofence_platform::shell::log_ext(path), "launcher item added");
+        Ok(id)
+    }
+
+    /// Adds `paths` as items of `fence` (refused ones are left out, each with a log line) and
+    /// makes their pictures; what the plugin sees of the ones added.
+    fn add_launch_items(&mut self, fence: FenceId, paths: &[PathBuf]) -> Vec<Value> {
+        let mut added = Vec::new();
+        for path in paths {
+            match self.add_launch_item(fence, path) {
+                Ok(id) => added.push((id, path.clone())),
+                Err(e) => tracing::info!(%fence, error = e, "launcher item not added"),
             }
         }
-        let item = json!({ "id": id, "path": path.to_string_lossy(), "name": name });
-        self.set_launch_items(fence, items.into_iter().chain([item.clone()]).collect());
-        tracing::info!(%fence, id, kind = pecofence_platform::shell::log_ext(path), "launcher item added");
-        Ok(self.shown_item(fence, &item))
+        let shown = (added.iter())
+            .map(|(id, _)| {
+                self.shown_item(
+                    fence,
+                    &json!({ "id": id, "name": self.launch_name(fence, id) }),
+                )
+            })
+            .collect();
+        self.make_launch_pictures(fence, added);
+        shown
+    }
+
+    fn launch_name(&self, fence: FenceId, id: &str) -> Value {
+        let items = self.launch_items(fence);
+        let item = items.iter().find(|i| i["id"].as_str() == Some(id));
+        item.map(|i| i["name"].clone()).unwrap_or_default()
+    }
+
+    /// The pictures of new items, made on a thread of their own the way fence icons are (shell
+    /// extensions and network drives take their time there) and saved in the plugin's data
+    /// folder while the plugin is installed; then the plugin hears `settings` and draws them.
+    fn make_launch_pictures(&mut self, fence: FenceId, items: Vec<(String, PathBuf)>) {
+        if items.is_empty() {
+            return;
+        }
+        let (api, jobs, control) = (
+            self.light_host(),
+            self.light.jobs.clone(),
+            self.control.hwnd().0 as isize,
+        );
+        let spawned = std::thread::Builder::new()
+            .name("pecofence-launch-pictures".into())
+            .spawn(move || {
+                let _sta = pecofence_platform::com::OleGuard::init();
+                let mut made = 0;
+                for (id, path) in &items {
+                    let saved = (pecofence_platform::shell::shell_image(path, 48, true))
+                        .map_err(|e| e.to_string())
+                        .and_then(|img| {
+                            api.write_data(fence, |dir| {
+                                let file = dir.join(icon_name(fence, id));
+                                pecofence_platform::clipboard::save_png(
+                                    &file, img.width, img.height, &img.bgra,
+                                )
+                                .map_err(|e| e.to_string())
+                            })
+                        });
+                    match saved {
+                        Ok(()) => made += 1,
+                        Err(e) => {
+                            tracing::info!(%fence, id, error = e, "launcher item: no picture saved")
+                        }
+                    }
+                }
+                tracing::debug!(%fence, made, items = items.len(), "launcher item pictures made");
+                let job: super::light_host::UiJob = Box::new(move |app: &mut App| {
+                    if made > 0 {
+                        app.launch_redraw(fence);
+                    }
+                });
+                Self::post_job(&jobs, control, job);
+            });
+        if let Err(e) = spawned {
+            tracing::warn!(%fence, error = %e, "launcher item pictures: no thread");
+        }
+    }
+
+    /// The plugin draws its items again, as after a change of its settings.
+    fn launch_redraw(&mut self, fence: FenceId) {
+        let settings = self.light_manifest(fence).map(|m| {
+            let saved = &self.state.config.scripts[&fence].settings;
+            pecofence_core::plugins::fence_settings(&m, saved)
+        });
+        if let Some(settings) = settings {
+            self.plugin_event(fence, "settings", settings);
+        }
     }
 
     fn set_launch_items(&mut self, fence: FenceId, items: Vec<Value>) {
@@ -261,7 +380,7 @@ impl App {
             return false;
         }
         if let Some(dir) = self.plugin_data_dir(fence) {
-            let _ = std::fs::remove_file(dir.join(icon_name(id)));
+            let _ = std::fs::remove_file(dir.join(icon_name(fence, id)));
         }
         self.set_launch_items(fence, items);
         tracing::info!(%fence, id, "launcher item removed");
@@ -292,11 +411,19 @@ impl App {
                 ))
             }
             "launch.add" => {
-                let i = args[0].as_u64().unwrap_or(u64::MAX) as usize;
-                let path = self.light.drops.get(&fence).and_then(|d| d.get(i)).cloned();
-                let path =
-                    path.ok_or_else(|| format!("launch.add: the last drop has no file {i}"))?;
-                self.add_launch_item(fence, &path)
+                // [indexes, the drop's number (from the plugin host)]: that drop's files.
+                let drop = (self.light.drops.iter())
+                    .find(|d| Some(d.0) == args[1].as_u64() && d.1 == fence);
+                let files = drop.ok_or("launch.add: that drop is gone")?.2.clone();
+                let wanted = args[0]
+                    .as_array()
+                    .ok_or("launch.add takes a list of the drop's file numbers")?;
+                let paths: Option<Vec<PathBuf>> = (wanted.iter())
+                    .map(|i| files.get(i.as_u64()? as usize).cloned())
+                    .collect();
+                let paths = paths
+                    .ok_or_else(|| format!("launch.add: the drop has {} files", files.len()))?;
+                Ok(json!(self.add_launch_items(fence, &paths)))
             }
             "launch.pick" => {
                 let owner = self.window_for(fence).map(|w| w.hwnd());
@@ -306,7 +433,13 @@ impl App {
                     i18n::text("添加文件")
                 };
                 match pecofence_platform::filedialog::pick_file(owner, title, id == "program") {
-                    Ok(Some(path)) => self.add_launch_item(fence, &path),
+                    Ok(Some(path)) => {
+                        let id = self.add_launch_item(fence, &path)?;
+                        let name = self.launch_name(fence, &id);
+                        let shown = self.shown_item(fence, &json!({ "id": id, "name": name }));
+                        self.make_launch_pictures(fence, vec![(id, path)]);
+                        Ok(shown)
+                    }
                     _ => Ok(Value::Null),
                 }
             }
@@ -365,12 +498,7 @@ impl App {
         };
         if name == "pluginItemRemove" {
             if self.remove_launch_item(fence, v["item"].as_str().unwrap_or_default()) {
-                let settings = self.light_manifest(fence).map(|m| {
-                    let saved = &self.state.config.scripts[&fence].settings;
-                    pecofence_core::plugins::fence_settings(&m, saved)
-                });
-                // The plugin draws its items again, as after a change of its settings.
-                self.plugin_event(fence, "settings", settings.unwrap_or_default());
+                self.launch_redraw(fence);
             }
             return;
         }

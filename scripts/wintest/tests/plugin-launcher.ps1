@@ -126,7 +126,10 @@ if ($Part -eq 'A') {
   $dlg = WaitWin '#32770' 10
   Check 'a file dialog titled 添加程序 opens' ($dlg -ne [IntPtr]::Zero -and [L]::Text($dlg) -eq '添加程序') "dlg=$dlg title=$([L]::Text($dlg))"
   [QS]::SetFileName($dlg, "$Lr\pfmark.exe"); Start-Sleep -Milliseconds 300; [G]::Press(0x0D)
-  Check 'the program is an item of the fence, with its picture' ((WaitOut 'pfmark') -and (WaitItems 1) -and (Test-Path "$script:Config\plugins-data\launcher\launch-1.png")) "$(FenceOut $script:Fid) items=$(@(Items).Count)"
+  # The picture is made after the item is saved, on a thread of its own; named after the fence.
+  $pic = "$script:Config\plugins-data\launcher\$script:Fid-launch-1.png"
+  for ($i = 0; $i -lt 20 -and -not (Test-Path $pic); $i++) { Start-Sleep -Milliseconds 250 }
+  Check 'the program is an item of the fence, with its picture' ((WaitOut 'pfmark') -and (WaitItems 1) -and (Test-Path $pic)) "$(FenceOut $script:Fid) items=$(@(Items).Count)"
   Check 'the fence keeps the path; the plugin got none (its view has the name only)' ((Items)[0].path -eq "$Lr\pfmark.exe" -and (FenceOut $script:Fid) -notmatch 'C:\\') "$((Items)[0].path)"
 } else { CloseMenus }
 
@@ -144,7 +147,7 @@ if ($Part -eq 'A') {
   Shot 'fence-items'
   CloseWindows
   $ex = ExOpen "$script:Config\plugins-data\launcher" 760 140 640 480
-  $p = ExPick $ex @('launch-1.png')
+  $p = ExPick $ex @("$script:Fid-launch-1.png")
   DragDrop $p[0] $p[1] $to[0] $to[1]
   Check 'a file of the plugin''s own data folder is refused' (@(Items).Count -eq 4 -and [bool](PfWaitLog 'launcher item refused: a file of PecoFence' 3)) "items=$(@(Items).Count)"
 }
