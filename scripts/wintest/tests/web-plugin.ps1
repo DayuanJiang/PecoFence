@@ -83,9 +83,17 @@ if ($Part -eq 'N') {
   New-Item -ItemType Directory -Force 'C:\pf\run\no-webview2' | Out-Null
   $env:WEBVIEW2_BROWSER_EXECUTABLE_FOLDER = 'C:\pf\run\no-webview2'
 }
-PfStart -Lang en
-$script:Config = Split-Path (PfJson status).configPath
+# The test plugins go in before the start: PecoFence reads the installed plugins once as it starts.
+$script:Config = "$PfApp\config"
 InstallDemo
+if ($Part -eq 'M') { InstallDemo 'webdemo2' }
+if ($Part -eq 'C') {
+  InstallDemo 'webbg'
+  $j = "$script:Config\plugins\webbg\1.0.0\plugin.json"
+  (Get-Content $j -Raw) -replace '"network": \["example.org"\]', '"network": ["example.org"], "background": true' | Set-Content $j -Encoding UTF8
+}
+PfStart -Lang en
+Check 'the portable configuration is where the plugins went' ((Split-Path (PfJson status).configPath) -eq $script:Config) (PfJson status).configPath
 Check 'the test plugin is installed' (Test-Path "$script:Config\plugins\webdemo\1.0.0\index.html") $script:Config
 
 if ($Part -eq 'A') {
@@ -218,7 +226,6 @@ if ($Part -eq 'B') {
 
 if ($Part -eq 'M') {
   Case 'memory'
-  InstallDemo 'webdemo2'
   Start-Sleep -Seconds 20
   $m0 = MemNow 'no web plugin'
   $f1 = NewWebFence 'Web 1' '420,160,380,460'
@@ -404,9 +411,6 @@ if ($Part -eq 'C') {
   Check 'the page works again' ($reached -and $ok) ''
 
   Case 'a background plugin is not suspended'
-  InstallDemo 'webbg'
-  $j = "$script:Config\plugins\webbg\1.0.0\plugin.json"
-  (Get-Content $j -Raw) -replace '"network": \["example.org"\]', '"network": ["example.org"], "background": true' | Set-Content $j -Encoding UTF8
   $fb = NewWebFence 'Bg' '820,160,380,460' 'webbg'
   Check 'the background plugin page loads' ($null -ne (PfWaitLog 'page loading plugin=webbg.*background=true' 30)) ''
   $reached = CdpOpen -Url 'https://webbg.plugins.pecofence/*' -sec 30

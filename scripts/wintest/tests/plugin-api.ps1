@@ -20,12 +20,14 @@ function Output() { return "$((FenceGet $script:Fid).script.output)" }
 
 Case 'setup: the test plugin in a plugin fence'
 CloseWindows
-PfStart -Lang en
-$script:Config = Split-Path (PfJson status).configPath
+# Placed before the start: PecoFence reads the installed plugins once as it starts.
+$script:Config = "$PfApp\config"
 $script:Data = "$script:Config\plugins-data\plugin-api"
 New-Item -ItemType Directory -Force "$script:Config\plugins\plugin-api\1.0.0", $script:Data | Out-Null
 Copy-Item "$Kit\*" "$script:Config\plugins\plugin-api\1.0.0" -Force
 Set-Content "$script:Config\plugins\plugin-api\current.txt" '1.0.0' -Encoding ASCII -NoNewline
+PfStart -Lang en
+Check 'the portable configuration is where the plugin went' ((Split-Path (PfJson status).configPath) -eq $script:Config) (PfJson status).configPath
 Set-Content 'C:\pf\run\idle.cmd' '@echo off' -Encoding ASCII
 $f = PfJson fence create --title 'API' --script 'C:\pf\run\idle.cmd' --rect '420,120,560,620'
 $script:Fid = if ($f.fence) { $f.fence.id } else { $f.id }
