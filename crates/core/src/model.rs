@@ -2126,7 +2126,9 @@ impl Config {
         };
         let (notes, scripts) = (kept(FenceTool::Note), kept(FenceTool::Script));
         let before = self.notes.len() + self.scripts.len();
-        self.notes.retain(|id, _| notes.contains(id));
+        // A plugin fence whose view holds a note keeps its text here too.
+        self.notes
+            .retain(|id, _| notes.contains(id) || scripts.contains(id));
         self.scripts.retain(|id, _| scripts.contains(id));
         before - self.notes.len() - self.scripts.len()
     }

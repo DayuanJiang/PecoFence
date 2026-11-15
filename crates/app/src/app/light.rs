@@ -51,6 +51,9 @@ impl App {
 
     /// Starts plugin `id`'s `main` for fence `fence` (again, when it ran).
     pub(super) fn start_light(&mut self, fence: FenceId, id: &str, main: &std::path::Path) {
+        if self.hold_light(fence, Some((id, main))) {
+            return;
+        }
         let (Ok(code), Some(m)) = (std::fs::read_to_string(main), self.plugin_manifest(id)) else {
             return;
         };
@@ -95,7 +98,21 @@ impl App {
         })));
     }
 
+    /// pf-view's stub of pf-api's `plugin_event` (the same signature): the event goes to the
+    /// plugin thread.
+    pub(super) fn plugin_event(&mut self, fence: FenceId, name: &str, data: serde_json::Value) {
+        let name = ["click", "dblclick", "change", "text"]
+            .into_iter()
+            .find(|n| *n == name);
+        if let Some(name) = name {
+            self.light_send(host::Command::Event(fence, name, data));
+        }
+    }
+
     pub(super) fn stop_light(&mut self, fence: FenceId) {
+        if self.hold_light(fence, None) {
+            return;
+        }
         self.light.stopped.remove(&fence);
         if self.light.running.remove(&fence).is_some() {
             self.light_send(host::Command::Stop(fence));

@@ -1954,6 +1954,27 @@ impl FenceWindow {
         self.show_script_row_tip((index, cell), &text, secs * 1000);
     }
 
+    /// Where row `row` (cell `cell`) of the script fence shown is drawn now, on screen (px): a
+    /// plugin's one-line box opens over it. None when it is not in view.
+    pub fn script_row_screen_rect(&self, row: usize, cell: usize) -> Option<RECT> {
+        let guard = self.view.borrow();
+        let v = guard.as_ref()?;
+        let r = v
+            .script_rows
+            .iter()
+            .find(|(r, c, _)| *r == row && *c == cell)?
+            .2;
+        let win = window::window_rect(v.hwnd);
+        let (x, y, scale) = (win.left + v.content_x, win.top + v.content_y, v.scale());
+        let px = |dip: f32| (dip * scale).round() as i32;
+        Some(RECT {
+            left: x + px(r[0]),
+            top: y + px(r[1]),
+            right: x + px(r[2]),
+            bottom: y + px(r[3]),
+        })
+    }
+
     /// `text` in a non-activating tip beside the pointer for `ms`, as the result of a click
     /// on script row `at` (its row and cell).
     fn show_script_row_tip(&self, at: (usize, usize), text: &str, ms: u32) {

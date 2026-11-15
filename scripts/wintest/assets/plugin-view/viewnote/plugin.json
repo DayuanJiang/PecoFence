@@ -1,0 +1,10 @@
+{
+  "id": "viewnote",
+  "version": "1.0.0",
+  "layer": "light",
+  "name": { "en": "Note demo", "zh-CN": "便签示例" },
+  "description": { "en": "A test plugin: a note PecoFence edits and keeps.", "zh-CN": "测试用的插件：由 PecoFence 编辑和保存的便签。" },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.4.0",
+  "permissions": {}
+}

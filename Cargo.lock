@@ -382,6 +382,7 @@ dependencies = [
  "bezier_easing",
  "pecofence-core",
  "pecofence-platform",
+ "pecofence-plugin-host",
  "serde_json",
  "tracing",
  "windows-canvas",

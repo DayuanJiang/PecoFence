@@ -1685,7 +1685,17 @@ impl FenceViewState {
     /// 脚本栅栏: the key of the decoded picture of an `image=` row, decoding the file when it is
     /// new (or changed): at most as tall as `height_dip` and, to keep memory small, no bigger
     /// than twice that on screen. The last 40 pictures are kept (a list of pictures shows that many at once).
-    fn script_image_key(&mut self, path: &str, height_dip: f32, scale: f32) -> String {
+    /// A plugin's picture (`plugin`) is read only when it is at most 20 MB and 4096 pixels on a
+    /// side; `blur` keeps it blurred (a plugin row's `blur`).
+    fn script_image_key(
+        &mut self,
+        path: &str,
+        height_dip: f32,
+        scale: f32,
+        plugin: bool,
+        blur: bool,
+    ) -> String {
+        use pecofence_plugin_host::view::{MAX_IMAGE_BYTES, MAX_IMAGE_SIDE};
         const KEPT: usize = 40;
         let bound = ((height_dip * scale).ceil() as u32 * 2).clamp(64, 1024);
         // A picture comes from this computer's own disks: a share or a mapped network drive is
@@ -1701,7 +1711,7 @@ impl FenceViewState {
         .and_then(|m| Some((m.modified().ok()?, m.len())))
         .and_then(|(t, len)| Some((t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs(), len)))
         .unwrap_or_default();
-        let key = format!("scriptimg:{path}|{}|{}|{bound}", stamp.0, stamp.1);
+        let key = format!("scriptimg:{path}|{}|{}|{bound}|{blur}", stamp.0, stamp.1);
         if self.script_images.iter().any(|(k, _)| *k == key) {
             return key;
         }
@@ -1711,14 +1721,35 @@ impl FenceViewState {
                 "script fence picture not on this computer's disks: not read"
             );
             None
+        } else if plugin && stamp.1 > MAX_IMAGE_BYTES {
+            tracing::warn!(bytes = stamp.1, path, "plugin picture over 20 MB: not read");
+            None
         } else {
-            pecofence_platform::wallpaper::decode_scaled(std::path::Path::new(path), bound, bound)
-                .map(|d| Image {
-                    width: d.width,
-                    height: d.height,
-                    bgra: d.bgra,
+            let file = std::path::Path::new(path);
+            let decoded = if plugin {
+                pecofence_platform::wallpaper::decode_scaled_within(
+                    file,
+                    bound,
+                    bound,
+                    MAX_IMAGE_SIDE,
+                )
+            } else {
+                pecofence_platform::wallpaper::decode_scaled(file, bound, bound)
+            };
+            decoded
+                .map(|d| {
+                    let mut image = Image {
+                        width: d.width,
+                        height: d.height,
+                        bgra: d.bgra,
+                    };
+                    // Decoded at up to twice its size on screen: the blur is as wide there.
+                    if blur {
+                        image.blur(8.0 * scale);
+                    }
+                    image
                 })
-                .map_err(|e| tracing::warn!(error = %e, path, "script fence picture not decoded"))
+                .map_err(|e| tracing::warn!(error = %e, path, plugin, "script fence picture not decoded (a plugin's: past 4096 pixels on a side, or not a picture)"))
                 .ok()
         };
         self.script_images.push((key.clone(), decoded));
@@ -1807,12 +1838,29 @@ impl FenceViewState {
         };
         // A plugin's `fit` row and the row under it: drawn as the native clock draws its time
         // and date, scaled with the fence, in their short forms when it is narrow.
-        if let Some(i) = script
+        let plain = |r: &ScriptRowView| {
+            r.cells.is_empty()
+                && r.image.is_none()
+                && r.spans.is_empty()
+                && r.chart.is_none()
+                && r.canvas.is_none()
+                && r.input.is_none()
+                && r.progress.is_none()
+                && r.todo.is_none()
+                && r.icon.is_none()
+                && !r.blur
+                && !r.separator
+        };
+        // A clock's view (a `fit` row first, at most a date under it): drawn as the native
+        // clock. A `fit` row in other views is sized among the rows (`draw_script`).
+        if script
             .rows
-            .iter()
-            .position(|r| r.size.as_deref() == Some("fit"))
+            .first()
+            .is_some_and(|r| r.size.as_deref() == Some("fit"))
+            && script.rows.len() <= 2
+            && script.rows.iter().all(plain)
         {
-            let (big, under) = (&script.rows[i], script.rows.get(i + 1));
+            let (big, under) = (&script.rows[0], script.rows.get(1));
             let short = |r: &ScriptRowView| r.short.clone().unwrap_or_default();
             let (time, time_short) = (big.text.clone(), short(big));
             let (date, date_short) =
@@ -1902,25 +1950,57 @@ impl FenceViewState {
         };
         let scale = self.scale();
         // The pictures first: decoding changes `self`, and the rows then borrow what it decoded.
-        let image_keys: Vec<Option<String>> = script
-            .rows
-            .iter()
-            .map(|r| {
-                r.image
-                    .as_deref()
-                    .map(|path| self.script_image_key(path, r.image_height, scale))
+        // A blurred one is sharp while the pointer is on it.
+        let hovered = self.script_hover;
+        let image_keys: Vec<Option<String>> = (0..script.rows.len())
+            .map(|i| {
+                let r = &script.rows[i];
+                let blur = r.blur && hovered != Some((i, 0));
+                let path = r.image.as_deref()?;
+                Some(self.script_image_key(path, r.image_height, scale, r.plugin, blur))
             })
             .collect();
-        let cell_keys: Vec<Vec<Option<String>>> = script
+        let cell_keys: Vec<Vec<Option<String>>> = (0..script.rows.len())
+            .map(|i| {
+                let r = &script.rows[i];
+                (0..r.cells.len())
+                    .map(|c| {
+                        let cell = &r.cells[c];
+                        let blur = cell.blur && hovered != Some((i, c));
+                        let path = cell.image.as_deref()?;
+                        Some(self.script_image_key(path, cell.image_height, scale, r.plugin, blur))
+                    })
+                    .collect()
+            })
+            .collect();
+        // A drawing's pictures, by step, at the size the step asks (else 256 DIPs at most).
+        let canvas_keys: Vec<Vec<Option<String>>> = script
             .rows
             .iter()
             .map(|r| {
-                r.cells
+                let steps = r.canvas.as_ref().map_or(&[][..], |c| &c.draw[..]);
+                steps
                     .iter()
-                    .map(|c| {
-                        c.image
-                            .as_deref()
-                            .map(|path| self.script_image_key(path, c.image_height, scale))
+                    .map(|step| {
+                        let path = step.image.as_deref()?;
+                        let h = step.at.get(3).copied().unwrap_or(256.0).clamp(8.0, 2000.0);
+                        Some(self.script_image_key(path, h, scale, true, false))
+                    })
+                    .collect()
+            })
+            .collect();
+        let canvas_pictures: Vec<Vec<Option<ScriptImageDraw<'_>>>> = canvas_keys
+            .iter()
+            .map(|keys| {
+                keys.iter()
+                    .map(|key| {
+                        let key = key.as_deref()?;
+                        let (_, image) = self.script_images.iter().find(|(k, _)| k == key)?;
+                        Some(ScriptImageDraw {
+                            key,
+                            image: image.as_ref()?,
+                            height: 0.0,
+                        })
                     })
                     .collect()
             })
@@ -1955,6 +2035,7 @@ impl FenceViewState {
                         checkbox: c.checkbox,
                         fill: c.fill,
                         under: c.under,
+                        blur: c.blur,
                         image: key.as_deref().and_then(|key| {
                             let (_, image) = self.script_images.iter().find(|(k, _)| k == key)?;
                             Some(ScriptImageDraw {
@@ -1972,7 +2053,20 @@ impl FenceViewState {
             .iter()
             .zip(&cells)
             .zip(&image_keys)
-            .map(|((r, cells), key)| ScriptRowDraw {
+            .zip(&canvas_pictures)
+            .map(|(((r, cells), key), pictures)| ScriptRowDraw {
+                fit: (r.size.as_deref() == Some("fit")).then(|| r.short.as_deref().unwrap_or("")),
+                spans: &r.spans,
+                blur: r.blur,
+                progress: r.progress,
+                chart: r.chart.as_ref(),
+                canvas: r.canvas.as_deref().map(|c| (c, &pictures[..])),
+                line: r
+                    .input
+                    .as_ref()
+                    .filter(|i| i.kind == "line")
+                    .map(|l| (l.value.as_str(), l.placeholder.as_str())),
+                hover: r.plugin && (r.blur || r.tip.is_some() || r.clickable),
                 cells,
                 image: key.as_deref().and_then(|key| {
                     let (_, image) = self.script_images.iter().find(|(k, _)| k == key)?;
@@ -2008,6 +2102,8 @@ impl FenceViewState {
         let bitmaps = self.bitmaps.clone();
         let hint = if script.quiet {
             pecofence_core::i18n::text("正在运行…")
+        } else if script.rows.iter().any(|r| r.plugin) {
+            ""
         } else {
             pecofence_core::i18n::text("脚本没有输出文字")
         };
@@ -2015,7 +2111,6 @@ impl FenceViewState {
         // others out.
         let now = Instant::now();
         let animate = self.motion.enabled();
-        let hovered = self.script_hover;
         if let Some(at) = hovered {
             self.script_fades.set(animate, at, 1.0, now);
         }

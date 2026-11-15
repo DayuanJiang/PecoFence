@@ -422,7 +422,7 @@ impl App {
             Some(crate::rename::RenameTarget::Fence(fence)) => {
                 (None, self.window_for(fence).map(|w| w.hwnd()))
             }
-            None => (None, None),
+            Some(crate::rename::RenameTarget::PluginLine(..)) | None => (None, None),
         };
         for w in self.fences.values() {
             if keep_item.is_none() || w.renaming_item() != keep_item {
