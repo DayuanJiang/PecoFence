@@ -122,12 +122,12 @@ Check 'the log says the plugin was told' ([bool](PfWaitLog 'plugin shown or hidd
 VdOnlyOne
 
 Case 'a fence too narrow for the seconds shows the short form'
-Pf fence resize (ClockFence).id --width 120 | Out-Null; Pf fence resize Native --width 120 | Out-Null
+Log "resize: $(Pf fence resize (ClockFence).id --w 70) $(Pf fence resize Native --w 70)"
 Start-Sleep -Seconds 2
 $nat = (PfFence 'Native').windowRect; $plg = (ClockFence).windowRect
 $tn = OcrText $nat.x ($nat.y + 30) $nat.w 70 'narrow-native'; $tp = OcrText $plg.x ($plg.y + 30) $plg.w 70 'narrow-plugin'
 Shot 'narrow-native-left-plugin-right'
-Check 'both show the time without seconds' ($tp -match '\d{1,2}:\d{2}' -and $tp -notmatch '\d:\d{2}:\d{2}' -and $tn -notmatch '\d:\d{2}:\d{2}') "plugin=$tp native=$tn view=$(Shows)"
+Check 'both show the time without seconds, the same text' ($tp -eq $tn -and $tp -match '\d{1,2}.?\d{2}' -and $tp -notmatch '\d:\d{2}:\d{2}' -and $tn -notmatch '\d:\d{2}:\d{2}') "plugin=$tp native=$tn view=$(Shows)"
 
 Case 'quit stops the plugins and the plugin thread'
 PfQuit
