@@ -431,13 +431,20 @@ impl App {
         );
         let made = window::WindowClass::register("PecoFence.PluginClipboard", Default::default())
             .and_then(|class| {
-                let handler = Box::new(move |_: HWND, message: u32, _: usize, _: isize| {
-                    (message == WM_CLIPBOARDUPDATE).then(|| {
-                        changed.store(true, Ordering::Relaxed);
-                        let control = HWND(control as *mut core::ffi::c_void);
-                        window::post_message(control, WM_APP_COMMAND, 0, 0);
-                        0
-                    })
+                // One copy can change the clipboard several times (emptied, then filled): the
+                // plugins hear of it once, 100 ms after the last change.
+                let handler = Box::new(move |hwnd: HWND, message: u32, wparam: usize, _: isize| {
+                    match message {
+                        WM_CLIPBOARDUPDATE => window::set_timer(hwnd, 1, 100),
+                        msg::WM_TIMER if wparam == 1 => {
+                            window::kill_timer(hwnd, 1);
+                            changed.store(true, Ordering::Relaxed);
+                            let control = HWND(control as *mut core::ffi::c_void);
+                            window::post_message(control, WM_APP_COMMAND, 0, 0);
+                        }
+                        _ => return None,
+                    }
+                    Some(0)
                 });
                 let w = window::WindowBuilder::new(&class).create(handler)?;
                 Ok((w, class))

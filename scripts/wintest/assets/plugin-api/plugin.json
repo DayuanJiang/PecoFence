@@ -1,0 +1,18 @@
+{
+  "id": "plugin-api",
+  "version": "1.0.0",
+  "api": 1,
+  "layer": "light",
+  "name": { "en": "API test", "zh-CN": "接口测试" },
+  "description": { "en": "A test plugin that calls every pf function and shows what came back.", "zh-CN": "测试用的插件：调用每个 pf 接口，显示得到的结果。" },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.4.0",
+  "permissions": {
+    "network": ["api.github.com"],
+    "links": ["github.com"],
+    "clipboard": "readwrite",
+    "background": false,
+    "system": ["ipconfig"],
+    "notify": true
+  }
+}

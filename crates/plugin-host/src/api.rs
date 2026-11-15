@@ -87,7 +87,10 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
         "clipboard.setText" | "clipboard.setFiles" => {
             (writes, "permissions.clipboard write".into())
         }
-        "clipboard.setImage" => (writes && named(0), "clipboard write and a data name".into()),
+        "clipboard.setImage" => (
+            writes && valid_data_name(arg(0)),
+            "clipboard write and a data name".into(),
+        ),
         "data.read" | "data.write" | "data.remove" => (
             valid_data_name(arg(0)),
             "a name of letters, digits, . _ - (at most 64, no dot first)".into(),
@@ -299,6 +302,7 @@ mod tests {
         }
         assert_eq!(refused("data.write", json!(["history-1.json", "x"])), None);
         assert!(refused("clipboard.setImage", json!(["../x.png"])).is_some());
+        assert!(refused("clipboard.setImage", json!([])).is_some());
     }
 
     #[test]
