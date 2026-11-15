@@ -187,13 +187,14 @@ $s0 = @(Snaps | ForEach-Object { "$($_.id)" })
 # The settings window would be over the fence.
 [L]::PostMessageW((WaitWin 'PecoFence.Settings' 2), 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 1
 $r = (FenceGet $third).windowRect
-[G]::RClick($r.x + 120, $r.y + 14); MenuPick '^Delete fence' (MenuWin 5) | Out-Null; Start-Sleep -Seconds 2
+# Undo after 5 s (the notice stays 30 s): later than a sweep of the files 3 s after the delete.
+[G]::RClick($r.x + 120, $r.y + 14); MenuPick '^Delete fence' (MenuWin 5) | Out-Null; Start-Sleep -Seconds 5
 $gone = @(PluginFences pf-test | Where-Object { $_.id -eq $third }).Count -eq 0
 $notice = [G]::FindWindowW('PecoFence.Notice', [NullString]::Value)
 if ($notice -ne [IntPtr]::Zero) { $nr = Rect $notice; [G]::Click($nr.R - 50, $nr.B - 30) }
 Start-Sleep -Seconds 5
 $back = @(PluginFences pf-test | Where-Object { $_.id -eq $third }).Count -eq 1
-Check 'deleted from its menu, back with Undo: 5 s later its cached view and its data file are still there' ($made -and $gone -and $back -and (Test-Path $cache) -and (Test-Path "$data\$third-history.json")) "made=$made gone=$gone back=$back view=$(Test-Path $cache) left=$((Get-ChildItem $data -Name | Sort-Object) -join ' ')"
+Check 'deleted from its menu, back with Undo 5 s later: then and 5 s after that its cached view and its data file are there' ($made -and $gone -and $back -and (Test-Path $cache) -and (Test-Path "$data\$third-history.json")) "made=$made gone=$gone back=$back view=$(Test-Path $cache) left=$((Get-ChildItem $data -Name | Sort-Object) -join ' ')"
 # Gone for good: deleted again from the command line (no snapshot of a fence without icons), and
 # the snapshot the menu's delete made deleted too.
 Pf fence delete $third | Out-Null
