@@ -7,7 +7,7 @@
 //! works. It runs again at every chance, and a second run finds nothing to do.
 
 use super::App;
-use pecofence_core::{BEFORE_PLUGINS, i18n};
+use pecofence_core::{BEFORE_PLUGINS, FenceId, FenceTool, i18n};
 
 impl App {
     /// Moves the fences whose plugin is installed. `fetch`: the missing plugins are installed
@@ -75,6 +75,7 @@ impl App {
     /// After a snapshot restore. 升级为插件之前 is the way back to the tools as they were: its
     /// fences stay as they are until the configuration comes in again (the next start).
     pub(super) fn migrate_after_restore(&mut self, snapshot: uuid::Uuid) {
+        self.plugins_after_replace();
         if snapshot == BEFORE_PLUGINS {
             tracing::info!(
                 "upgrade to plugins: 升级为插件之前 restored, its fences stay as they are"
@@ -82,6 +83,42 @@ impl App {
             return;
         }
         self.migrate_tools(true);
+    }
+
+    /// A configuration came in (import, backup, snapshot) while plugins ran: each running
+    /// plugin gets its fence's settings as they are now, and one whose fence names another
+    /// plugin now (or none) stops, and the fence starts what it names.
+    pub(super) fn plugins_after_replace(&mut self) {
+        let light: Vec<FenceId> = self.light.running.keys().copied().collect();
+        let mut running: Vec<(FenceId, String)> = (light.into_iter())
+            .filter_map(|fence| Some((fence, self.light_manifest(fence)?.id.clone())))
+            .collect();
+        let pages = self.fences.values().filter_map(|w| w.web());
+        running.extend(pages.map(|web| (web.fence, web.plugin.id.clone())));
+        running.sort();
+        running.dedup();
+        for (fence, runs) in running {
+            let script =
+                (self.state.fence(fence)).is_some_and(|f| f.tool == Some(FenceTool::Script));
+            let spec = (self.state.config.scripts.get(&fence)).filter(|_| script);
+            let names = spec.and_then(|s| super::plugins::plugin_id(&s.path));
+            if names != Some(runs.as_str()) {
+                tracing::info!(%fence, runs, names, "configuration came in: the fence runs another plugin now, it starts again");
+                self.stop_script(fence);
+                self.restart_web_page(fence);
+                if script {
+                    self.start_script(fence);
+                }
+                continue;
+            }
+            let settings = spec.map(|s| s.settings.clone()).unwrap_or_default();
+            let Some(p) = self.plugin(&runs) else {
+                continue;
+            };
+            let settings = pecofence_core::plugins::fence_settings(&p.manifest, &settings);
+            tracing::info!(%fence, plugin = runs, "configuration came in: the plugin gets its fence's settings");
+            self.plugin_event(fence, "settings", settings);
+        }
     }
 
     /// 升级为插件之前, saved before the first fence moves. False when the list is full of
