@@ -89,6 +89,10 @@ try {
   }
   foreach ($d in 'kit', 'bin', 'extra') { Copy-Item -ToSession $s -Path (Join-Path $base "$Stage\$d") -Destination 'C:\pf\' -Recurse -Force }
   L ('copied: ' + (G { (Get-ChildItem -Recurse -File C:\pf\kit, C:\pf\bin, C:\pf\extra | Measure-Object).Count }) + ' files')
+  # What steps need an administrator for (a driver, a machine setting): --extra's prepare-guest.ps1
+  # runs once in the guest before the jobs; the checkpoint restore takes it away again.
+  $pre = G { if (Test-Path C:\pf\extra\prepare-guest.ps1) { & C:\pf\extra\prepare-guest.ps1 2>&1 | Out-String } }
+  if ($pre) { L "prepare-guest: $pre" }
 
   foreach ($name in $Steps.Split('+')) {
     L "== $name"
