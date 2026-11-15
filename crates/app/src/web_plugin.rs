@@ -6,18 +6,23 @@
 //!
 //! The plugin's files come from PecoFence at `https://<id>.plugins.pecofence/`, every response
 //! with a fixed Content-Security-Policy whose `connect-src` lists only the plugin's `network`
-//! hosts. Permission requests, other sites, new windows and downloads are refused. The page calls
-//! `pf.*` through `postMessage`; only its own main frame is answered.
+//! hosts (and the plugin's own files). Permission requests, other sites, new windows and
+//! downloads are refused. The page calls `pf.*` through `postMessage`; only its own main frame is
+//! heard, and the app answers it with the code the light layer uses (`App::web_call`). Events
+//! (`show`, `hide`, `resize`, `theme`, `settings`, ...) reach the page as messages too.
 
+use crate::commands::{Command, CommandQueue};
 use pecofence_core::FenceId;
 use pecofence_platform::{HWND, msg, window};
 use pecofence_render::ContainerVisual;
 use std::cell::{Cell, RefCell};
-use std::path::PathBuf;
-use std::rc::Rc;
+use std::path::{Path, PathBuf};
+use std::rc::{Rc, Weak};
+use std::time::{Duration, Instant};
 use windows_webview::{
     Color, CompositionController, Controller, ControllerOptions, Environment, EventRegistration,
-    MemoryUsageTargetLevel, MoveFocusReason, PermissionState, WebResourceResponse, WebView,
+    MemoryUsageTargetLevel, MoveFocusReason, PermissionState, PreferredColorScheme,
+    ProcessFailedKind, WebResourceResponse, WebView,
 };
 
 /// `WM_TIMER` id on the fence window: its hidden page is suspended.
@@ -36,12 +41,35 @@ const WM_MOUSEWHEEL: u32 = 0x020A;
 const WM_MOUSEHWHEEL: u32 = 0x020E;
 /// `MK_LBUTTON | MK_RBUTTON | MK_MBUTTON | MK_XBUTTON1 | MK_XBUTTON2`.
 const MK_BUTTONS: usize = 0x0001 | 0x0002 | 0x0010 | 0x0020 | 0x0040;
+/// `pf.open` and the fence's menu need a press in the page this recently.
+const PRESS_GRACE: Duration = Duration::from_secs(1);
+/// The `pf.*` calls a page has, all answered by the app (`App::web_call`) with a Promise.
+const CALLS: &str = "time.now time.format http.get http.post data.read data.write data.list \
+    data.remove clipboard.text clipboard.files clipboard.image clipboard.setText \
+    clipboard.setFiles clipboard.setImage sys.cpu sys.memory sys.drives sys.ip sys.network \
+    sys.battery open openSystem run folder.pick folder.list folder.read notify";
 
 /// An installed web plugin a fence shows.
 pub struct Plugin {
     pub id: String,
     pub dir: PathBuf,
     pub network: Vec<String>,
+    /// `background`: its page keeps running while the fence is hidden (no low memory, no
+    /// suspend).
+    pub background: bool,
+    /// It may read the clipboard: its page gets the `clipboard` event.
+    pub clipboard_read: bool,
+}
+
+/// Why a page stopped (`Command::WebPageFailed`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Failure {
+    /// The browser process ended: every page and the settings window went with it.
+    BrowserExited,
+    /// The page's render process ended (a crash, or ended from outside).
+    PageExited,
+    /// The page stopped answering.
+    PageHung,
 }
 
 impl Plugin {
@@ -57,11 +85,14 @@ impl Plugin {
             .map(|h| format!("https://{h} wss://{h}"))
             .collect();
         let connect = if hosts.is_empty() {
-            "'none'".to_string()
+            String::new()
         } else {
-            hosts.join(" ")
+            format!(" {}", hosts.join(" "))
         };
-        format!("default-src 'self'; connect-src {connect}; frame-src 'none'; form-action 'none'")
+        // 'self': the plugin may fetch its own files (a JSON of its own).
+        format!(
+            "default-src 'self'; connect-src 'self'{connect}; frame-src 'none'; form-action 'none'"
+        )
     }
 }
 
@@ -80,6 +111,18 @@ pub struct WebFence {
     /// The visual the page is drawn into; the fence puts it into its content panel.
     pub visual: ContainerVisual,
     hwnd: HWND,
+    me: Weak<Self>,
+    queue: CommandQueue,
+    /// What `pf` says about the fence when the page starts (`lang`, `theme`, `settings`,
+    /// `fence`); events bring the changes.
+    init: serde_json::Value,
+    dark: Cell<bool>,
+    /// The WebView2 runtime's version, for the log.
+    version: String,
+    /// The last press of a mouse button in the page.
+    pressed: Cell<Option<Instant>>,
+    /// The size last told to the page (`resize`, DIPs).
+    told: Cell<(i32, i32)>,
     live: RefCell<Option<Live>>,
     /// The browser WebView2 made, until `setup` takes it.
     made: RefCell<Option<CompositionController>>,
@@ -97,19 +140,29 @@ pub struct WebFence {
 
 impl WebFence {
     /// Starts the page of `plugin` for the fence window `hwnd`; WebView2 makes its browser in the
-    /// background and the page loads when it is ready (`ready`).
+    /// background and the page loads when it is ready (`ready`). `init` is what `pf` says about
+    /// the fence at first; the page's calls and failures go to the app through `queue`.
     pub fn start(
         env: &Environment,
         stack: &pecofence_render::RenderStack,
         hwnd: HWND,
         fence: FenceId,
         plugin: Plugin,
+        queue: CommandQueue,
+        init: serde_json::Value,
     ) -> Rc<Self> {
-        let web = Rc::new(Self {
+        let web = Rc::new_cyclic(|me| Self {
             visual: stack.compositor.create_container_visual(),
             plugin,
             fence,
             hwnd,
+            me: me.clone(),
+            queue,
+            dark: Cell::new(init["theme"] == "dark"),
+            init,
+            version: env.browser_version(),
+            pressed: Cell::new(None),
+            told: Cell::new((0, 0)),
             live: RefCell::new(None),
             made: RefCell::new(None),
             started: std::time::Instant::now(),
@@ -162,7 +215,7 @@ impl WebFence {
         let ms = self.started.elapsed().as_millis() as u64;
         match self.ready(comp) {
             Ok(()) => {
-                tracing::info!(plugin = %self.plugin.id, fence = %self.fence, ms, "web plugin: page loading")
+                tracing::info!(plugin = %self.plugin.id, fence = %self.fence, ms, version = self.version, background = self.plugin.background, "web plugin: page loading")
             }
             Err(e) => {
                 tracing::warn!(plugin = %self.plugin.id, error = %e, "web plugin: browser setup failed")
@@ -186,6 +239,10 @@ impl WebFence {
             let debug = cfg!(debug_assertions)
                 && pecofence_core::brand::var("PECOFENCE_WEBVIEW_ARGS").is_ok();
             let _ = s.set_dev_tools_enabled(debug);
+        }
+        // prefers-color-scheme follows PecoFence's theme (the profile is the plugin's own).
+        if let Ok(profile) = webview.profile() {
+            let _ = profile.set_preferred_color_scheme(scheme(self.dark.get()));
         }
         let id = self.plugin.id.clone();
         let origin = self.plugin.origin();
@@ -246,18 +303,47 @@ impl WebFence {
                 tracing::info!(plugin = %id, "web plugin: download refused");
             })?);
         }
-        // `pf.*`: only the plugin's own main frame is answered.
+        // `pf.*`: only the plugin's own main frame is heard; the app answers.
         {
-            let (id, origin, page) = (id.clone(), origin.clone(), webview.clone());
+            let (id, origin, page, queue) = (
+                id.clone(),
+                origin.clone(),
+                self.me.clone(),
+                self.queue.clone(),
+            );
             events.push(webview.on_web_message_received(move |args| {
                 let source = args.source();
                 if !source.starts_with(&origin) {
                     tracing::info!(plugin = %id, uri = %short(&source), "web plugin: message from another page ignored");
                     return;
                 }
-                let reply = answer(&args.web_message_as_json());
-                tracing::debug!(plugin = %id, reply = %short(&reply), "web plugin: pf call answered");
-                let _ = page.post_web_message_as_json(&reply);
+                let m: serde_json::Value =
+                    serde_json::from_str(&args.web_message_as_json()).unwrap_or_default();
+                let call = m["call"].as_str().unwrap_or("").to_string();
+                let args = m.get("args").cloned().unwrap_or_else(|| serde_json::json!([]));
+                let id = m.get("id").cloned().unwrap_or_default();
+                let page = page.clone();
+                queue.push(Command::WebCall { page, id, call, args });
+            })?);
+        }
+        // A crashed or hung page: the app makes it anew, or shows why (`App::web_page_failed`).
+        {
+            let (id, fence, page, queue) =
+                (id.clone(), self.fence, self.me.clone(), self.queue.clone());
+            events.push(webview.on_process_failed(move |args| {
+                let kind = args.kind();
+                let failure = match kind {
+                    ProcessFailedKind::BrowserProcessExited => Failure::BrowserExited,
+                    ProcessFailedKind::RenderProcessExited => Failure::PageExited,
+                    ProcessFailedKind::RenderProcessUnresponsive => Failure::PageHung,
+                    _ => {
+                        // WebView2 starts a GPU or utility process again by itself.
+                        return tracing::info!(plugin = %id, %fence, ?kind, "web plugin: a helper process failed, the page goes on");
+                    }
+                };
+                tracing::warn!(plugin = %id, %fence, ?kind, "web plugin: the page failed");
+                let page = page.clone();
+                queue.push(Command::WebPageFailed { page, failure });
             })?);
         }
         {
@@ -269,7 +355,7 @@ impl WebFence {
                 }
             })?);
         }
-        webview.add_script_to_execute_on_document_created(&bridge_script(&origin))?;
+        webview.add_script_to_execute_on_document_created(&bridge_script(&origin, &self.init))?;
         let (x, y, w, h, scale) = self.bounds.get();
         controller.set_rasterization_scale(scale)?;
         controller.set_bounds(x, y, x + w, y + h)?;
@@ -299,6 +385,60 @@ impl WebFence {
             }
             let _ = live.controller.set_bounds(x, y, x + w.max(1), y + h.max(1));
         }
+        let dips = ((f64::from(w) / scale) as i32, (f64::from(h) / scale) as i32);
+        if self.told.replace(dips) != dips {
+            let size = serde_json::json!({ "width": dips.0, "height": dips.1 });
+            self.event("resize", &size);
+        }
+    }
+
+    /// Event `name` for the page (`pf.on(name)`), when it is there.
+    pub fn event(&self, name: &str, data: &serde_json::Value) {
+        if let Some(live) = self.live.borrow().as_ref() {
+            let m = serde_json::json!({ "event": name, "data": data });
+            let ok = live
+                .webview
+                .post_web_message_as_json(&m.to_string())
+                .is_ok();
+            tracing::debug!(plugin = %self.plugin.id, fence = %self.fence, name, ok, "web plugin: event to the page");
+        }
+    }
+
+    /// The answer to the page's call `id`: its Promise resolves or rejects.
+    pub fn reply(&self, id: &serde_json::Value, result: Result<serde_json::Value, String>) {
+        let ok = result.is_ok();
+        let m = match result {
+            Ok(v) => serde_json::json!({ "id": id, "result": v }),
+            Err(e) => serde_json::json!({ "id": id, "error": e }),
+        };
+        if let Some(live) = self.live.borrow().as_ref() {
+            let _ = live.webview.post_web_message_as_json(&m.to_string());
+        }
+        tracing::debug!(plugin = %self.plugin.id, fence = %self.fence, ok, "web plugin: pf call answered");
+    }
+
+    /// A mouse button went down in the page within the last second (`pf.open`, the menu).
+    pub fn pressed_lately(&self) -> bool {
+        self.pressed
+            .get()
+            .is_some_and(|t| t.elapsed() < PRESS_GRACE)
+    }
+
+    /// PecoFence's theme changed: `prefers-color-scheme` and `pf.theme` follow.
+    pub fn set_theme(&self, dark: bool) {
+        if self.dark.replace(dark) == dark {
+            return;
+        }
+        if let Some(live) = self.live.borrow().as_ref()
+            && let Ok(profile) = live.webview.profile()
+        {
+            let _ = profile.set_preferred_color_scheme(scheme(dark));
+        }
+        tracing::info!(plugin = %self.plugin.id, fence = %self.fence, dark, "web plugin: the page follows the theme");
+        self.event(
+            "theme",
+            &serde_json::json!(if dark { "dark" } else { "light" }),
+        );
     }
 
     /// A mouse message of the fence window: sent on to the page when it is over the page (or a
@@ -330,6 +470,9 @@ impl WebFence {
         // A button went down (WM_LBUTTONDOWN, ...): the page keeps the mouse until all are up.
         let down = matches!(message, 0x0201 | 0x0204 | 0x0207 | 0x020B);
         let up = matches!(message, 0x0202 | 0x0205 | 0x0208 | 0x020C);
+        if down {
+            self.pressed.set(Some(Instant::now()));
+        }
         if down && !self.captured.replace(true) {
             window::set_capture(self.hwnd);
         }
@@ -356,7 +499,8 @@ impl WebFence {
     /// layered window, no activation): it would take the mouse that visual hosting has the
     /// fence send on (`mouse`), so the fence's resize edges, the keyboard hand-over and the wheel
     /// did not work. It gets WS_EX_TRANSPARENT: the mouse goes through it to the fence. Looked
-    /// for every 100 ms until it is there (at most 4 s after the page loads or shows again).
+    /// for every 100 ms until it is there (at most 4 s after the page loads or shows again). The
+    /// log names the WebView2 version each time, so a runtime that works another way shows.
     pub fn pass_mouse_through(&self) {
         const WS_EX_TRANSPARENT: u32 = 0x20;
         const WS_EX_LAYERED: u32 = 0x8_0000;
@@ -381,8 +525,10 @@ impl WebFence {
             let ex = pecofence_platform::desktop::ex_style(win);
             if ex & WS_EX_LAYERED != 0 && ex & WS_EX_TRANSPARENT == 0 {
                 pecofence_platform::desktop::set_ex_style(win, ex | WS_EX_TRANSPARENT);
-                tracing::info!(plugin = %self.plugin.id, ex, "web plugin: the mouse goes through the browser's window to the fence");
+                tracing::info!(plugin = %self.plugin.id, ex, version = self.version, "web plugin: the mouse goes through the browser's window to the fence");
             }
+        } else if tries == 0 && self.shown.get() {
+            tracing::info!(plugin = %self.plugin.id, version = self.version, "web plugin: no browser window over the page found, the fence gets the mouse as it is");
         }
         if over.is_some() || tries == 0 {
             window::kill_timer(self.hwnd, TIMER_WEB_INPUT);
@@ -437,6 +583,14 @@ impl WebFence {
         if self.shown.replace(shown) == shown {
             return;
         }
+        self.event(
+            if shown { "show" } else { "hide" },
+            &serde_json::Value::Null,
+        );
+        if !shown && self.plugin.background {
+            // A background plugin's page goes on as it is (music keeps playing).
+            return tracing::info!(plugin = %self.plugin.id, fence = %self.fence, "web plugin: page hidden, runs on in the background");
+        }
         if let Some(live) = self.live.borrow().as_ref() {
             let level = if shown {
                 let _ = live.controller.set_visible(true);
@@ -486,48 +640,60 @@ impl Drop for WebFence {
     }
 }
 
-/// The answer to one `pf.*` call from the page: `{id, call, args}` gives `{id, result}` or
-/// `{id, error}`.
-fn answer(json: &str) -> String {
-    let message: serde_json::Value = serde_json::from_str(json).unwrap_or_default();
-    let id = message.get("id").cloned().unwrap_or_default();
-    let call = message.get("call").and_then(|c| c.as_str()).unwrap_or("");
-    let reply = match call {
-        "time.now" => {
-            let ms = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_millis() as u64);
-            serde_json::json!({ "id": id, "result": ms })
-        }
-        _ => serde_json::json!({ "id": id, "error": format!("unknown call {call:?}") }),
-    };
-    reply.to_string()
+fn scheme(dark: bool) -> PreferredColorScheme {
+    if dark {
+        PreferredColorScheme::Dark
+    } else {
+        PreferredColorScheme::Light
+    }
 }
 
-/// `pf.*` for the page, made before its own scripts run (scripts the host adds are not subject
-/// to the page's CSP).
-fn bridge_script(origin: &str) -> String {
+/// `pf` for the page, made before its own scripts run (scripts the host adds are not subject
+/// to the page's CSP). Every call goes to the app as `{id, call, args}` and comes back as
+/// `{id, result}` or `{id, error}`; events come as `{event, data}`. A right-click the page does
+/// not take (`preventDefault` on `contextmenu`) asks for the fence's menu.
+fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
     let origin = origin.trim_end_matches('/');
     format!(
         r#"(() => {{
   // No WebRTC: it reaches hosts the CSP does not list, and no browser argument turns it off.
   for (const k of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCRtpSender", "RTCRtpReceiver", "RTCIceTransport"]) delete window[k];
   if (location.origin !== "{origin}" || window.top !== window || !window.chrome || !chrome.webview) return;
-  const wv = chrome.webview, waiting = new Map();
-  let n = 0;
+  const wv = chrome.webview, waiting = new Map(), handlers = {{}}, state = {init};
+  // Ids start anywhere: an answer meant for the page before a reload finds nothing waiting.
+  let n = Math.floor(Math.random() * 1e9);
   wv.addEventListener("message", e => {{
-    const m = e.data, w = m && waiting.get(m.id);
+    const m = e.data;
+    if (m && m.event) {{
+      if (m.event === "settings" || m.event === "theme") state[m.event] = m.data;
+      if (m.event === "resize") Object.assign(state.fence, m.data);
+      for (const fn of handlers[m.event] || []) try {{ fn(m.data); }} catch (err) {{ console.error(err); }}
+      return;
+    }}
+    const w = m && waiting.get(m.id);
     if (!w) return;
     waiting.delete(m.id);
-    if (m.error) w[1](new Error(m.error)); else w[0](m.result);
+    if ("error" in m) w[1](new Error(m.error)); else w[0](m.result);
   }});
   const call = (name, args) => new Promise((ok, fail) => {{
     const id = ++n;
     waiting.set(id, [ok, fail]);
-    wv.postMessage({{ id, call: name, args: args || [] }});
+    wv.postMessage({{ id, call: name, args }});
   }});
-  Object.defineProperty(window, "pf", {{ value: Object.freeze({{ time: Object.freeze({{ now: () => call("time.now") }}) }}) }});
-}})();"#
+  const pf = {{
+    on(name, fn) {{ (handlers[name] = handlers[name] || []).push(fn); }},
+    post(data) {{ wv.postMessage({{ call: "post", args: [data === undefined ? null : data] }}); }},
+  }};
+  for (const name of "{calls}".split(" ")) {{
+    const [a, b] = name.split("."), f = (...args) => call(name, args);
+    if (b) (pf[a] = pf[a] || {{}})[b] = f; else pf[a] = f;
+  }}
+  for (const k of Object.keys(pf)) if (typeof pf[k] === "object") Object.freeze(pf[k]);
+  for (const k of ["lang", "theme", "settings", "fence"]) Object.defineProperty(pf, k, {{ get: () => state[k], enumerable: true }});
+  Object.defineProperty(window, "pf", {{ value: Object.freeze(pf) }});
+  addEventListener("contextmenu", e => setTimeout(() => {{ if (!e.defaultPrevented) wv.postMessage({{ call: "menu", args: [] }}); }}));
+}})();"#,
+        calls = CALLS,
     )
 }
 
@@ -560,4 +726,55 @@ fn pointer_in_client(hwnd: HWND) -> bool {
     let p = window::screen_to_client(hwnd, window::cursor_pos());
     let (w, h) = window::client_size_of(hwnd);
     p.x >= 0 && p.y >= 0 && p.x < w && p.y < h
+}
+
+/// The profiles of uninstalled plugins that were in use then, deleted before WebView2 starts.
+const LEFT_PROFILES: &str = "profiles-to-delete.txt";
+
+/// Uninstall (`App::uninstall_plugin`): the plugin's WebView2 profile, its cookies and storage,
+/// goes with it. A browser that still runs may hold its files: what is left is deleted before the
+/// next browser starts (`delete_left_profiles`).
+pub fn delete_profile(id: &str) {
+    let data = crate::settings_host::user_data_folder();
+    match std::fs::remove_dir_all(profile_dir(&data, id)) {
+        Ok(()) => tracing::info!(plugin = id, "web plugin: profile deleted"),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            tracing::info!(plugin = id, "web plugin: no profile to delete")
+        }
+        Err(e) => {
+            use std::io::Write;
+            let list = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(data.join(LEFT_PROFILES));
+            let kept = list.and_then(|mut f| writeln!(f, "{id}")).is_ok();
+            tracing::info!(plugin = id, error = %e, kept, "web plugin: profile in use, deleted before the browser starts next");
+        }
+    }
+}
+
+/// Before the browser starts (`WebEnvironment::create`): the profiles `delete_profile` left.
+pub fn delete_left_profiles(data: &Path) {
+    let list = data.join(LEFT_PROFILES);
+    let Ok(text) = std::fs::read_to_string(&list) else {
+        return;
+    };
+    for id in text
+        .lines()
+        .filter(|id| pecofence_core::plugins::valid_id(id))
+    {
+        let gone = std::fs::remove_dir_all(profile_dir(data, id));
+        tracing::info!(
+            plugin = id,
+            ok = gone.is_ok(),
+            "web plugin: profile left at the uninstall deleted"
+        );
+    }
+    let _ = std::fs::remove_file(&list);
+}
+
+/// Where WebView2 keeps the profile `plugin-<id>` in the user data folder `data`.
+fn profile_dir(data: &Path, id: &str) -> PathBuf {
+    data.join("EBWebView")
+        .join(format!("WV2Profile_plugin-{id}"))
 }

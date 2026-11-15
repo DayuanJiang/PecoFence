@@ -65,8 +65,12 @@ impl FenceWindow {
 
     /// The plugin whose page the fence shows.
     pub fn web_plugin(&self) -> Option<String> {
-        let view = self.view.borrow();
-        view.as_ref()?.web.as_ref().map(|w| w.plugin.id.clone())
+        self.web().map(|w| w.plugin.id.clone())
+    }
+
+    /// The page the fence shows.
+    pub fn web(&self) -> Option<Rc<WebFence>> {
+        self.view.borrow().as_ref()?.web.clone()
     }
 }
 

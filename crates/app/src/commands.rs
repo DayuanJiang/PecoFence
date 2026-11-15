@@ -345,6 +345,18 @@ pub enum Command {
     },
     /// 网页层: the window of this host fence shows a web plugin: start its page.
     StartWebFence(FenceId),
+    /// 网页层: a page's `pf.*` call (`App::web_call`), answered to that page.
+    WebCall {
+        page: std::rc::Weak<crate::web_plugin::WebFence>,
+        id: serde_json::Value,
+        call: String,
+        args: serde_json::Value,
+    },
+    /// 网页层: a page's browser or render process ended, or the page hung.
+    WebPageFailed {
+        page: std::rc::Weak<crate::web_plugin::WebFence>,
+        failure: crate::web_plugin::Failure,
+    },
     /// 脚本栅栏: pick a script, then a new script fence near the screen point.
     NewScript {
         x: i32,

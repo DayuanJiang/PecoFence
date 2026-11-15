@@ -3,7 +3,10 @@
 # answers, and what the plugin must not do is refused. Part B (release build): screenshots
 # next to a normal fence, clips of roll-up, fade, move and resize. Part M (release build): the
 # memory of PecoFence's process group with no web plugin, one, two, and after 60 s hidden.
-# Part I (debug build): Chinese typing with Microsoft Pinyin in the page. run.sh --var Part=A|B|M|I (default A).
+# Part I (debug build): Chinese typing with Microsoft Pinyin in the page. Part C (debug build): the
+# page's pf calls, main.js beside the page, the theme, the right-click menu, crashes and
+# 重新加载, a background plugin, the profile deleted at the uninstall. Part N: no WebView2.
+# run.sh --var Part=A|B|M|I|C|N (default A).
 if (-not $Part) { $Part = 'A' }
 $Demo = 'C:\pf\kit\assets\webdemo'
 
@@ -74,7 +77,12 @@ if ($Part -eq 'I') {
   $script:AddedZh = -not ($langs | Where-Object { $_.LanguageTag -like 'zh-Hans*' })
   if ($AddedZh) { $langs.Add('zh-Hans-CN'); Set-WinUserLanguageList $langs -Force }
 }
-if ($Part -in 'A', 'I' -and $PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352' }
+if ($Part -in 'A', 'I', 'C' -and $PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352' }
+if ($Part -eq 'N') {
+  # WebView2 is missing: the loader looks for the runtime in an empty folder.
+  New-Item -ItemType Directory -Force 'C:\pf\run\no-webview2' | Out-Null
+  $env:WEBVIEW2_BROWSER_EXECUTABLE_FOLDER = 'C:\pf\run\no-webview2'
+}
 PfStart -Lang en
 $script:Config = Split-Path (PfJson status).configPath
 InstallDemo
@@ -277,4 +285,172 @@ public static class WebIme {
   [WebIme]::English(); Start-Sleep -Milliseconds 800
   Shot 'I3-typed'
   if ($AddedZh) { $langs = Get-WinUserLanguageList; $zh = $langs | Where-Object { $_.LanguageTag -like 'zh-Hans*' }; foreach ($z in @($zh)) { [void]$langs.Remove($z) }; Set-WinUserLanguageList $langs -Force }
+}
+
+if ($Part -eq 'C') {
+  # The renderer processes of PecoFence's WebView2 browser (the plugin pages; the settings window
+  # is closed here).
+  function Renderers() {
+    $pf = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
+    $all = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name, CommandLine)
+    $ids = @([int]$pf.Id); $i = 0
+    while ($i -lt $ids.Count) { $ids += @($all | Where-Object { $_.ParentProcessId -eq $ids[$i] } | ForEach-Object { [int]$_.ProcessId }); $i++ }
+    return @($all | Where-Object { $ids -contains $_.ProcessId -and $_.Name -eq 'msedgewebview2.exe' -and $_.CommandLine -match '--type=renderer' } | ForEach-Object { [int]$_.ProcessId })
+  }
+  # Lines of this run's own log (the shareable copy has them too).
+  function LogCount([string]$regex) { return @(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -match $regex }).Count }
+  function WaitCount([string]$regex, [int]$n, $sec = 20) {
+    for ($i = 0; $i -lt $sec * 4; $i++) { if ((LogCount $regex) -ge $n) { return $true }; Start-Sleep -Milliseconds 250 }
+    return $false
+  }
+
+  Case 'pf calls from the page'
+  $fid = NewWebFence 'Web' '420,160,380,460'
+  Check 'the page loads' ($null -ne (PfWaitLog 'web plugin: page loading' 30)) ''
+  $h = FenceWin 'Web'
+  $reached = CdpOpen -Url 'https://webdemo.plugins.pecofence/*' -sec 30
+  $ok = JsWait "document.readyState === 'complete' && document.getElementById('list').children.length === 40" 15
+  Check 'CDP reaches the page and its script ran' ($reached -and $ok) ''
+  Js "(window.callResult = null, callTest().then(r => window.callResult = r), 1)" | Out-Null
+  $r = JsWait "window.callResult" 45
+  Log ("calls: " + ($r | ConvertTo-Json -Compress -Depth 5))
+  Check 'pf.time.now answers the time' ($r.now.ok -gt 1700000000000) "$($r.now | ConvertTo-Json -Compress)"
+  Check 'pf.http.get to the declared host answers 200' ($r.declared.ok.status -eq 200) "$($r.declared.ok.status) $($r.declared.refused)"
+  Check 'pf.http.get to an undeclared host is refused' ([bool]$r.undeclared.refused) "$($r.undeclared | ConvertTo-Json -Compress)"
+  Check 'pf.clipboard.text is refused without the clipboard permission' ([bool]$r.clipboard.refused) "$($r.clipboard | ConvertTo-Json -Compress)"
+  Check 'pf.open with no click just before is refused' ("$($r.openNoClick.refused)" -match 'click') "$($r.openNoClick | ConvertTo-Json -Compress)"
+  Check 'the page fetches its own file (connect-src self)' ($r.ownFile -eq 'webdemo') "$($r.ownFile)"
+  Check 'pf tells the theme, the language and the fence' ($r.theme -eq 'light' -and $r.lang -eq 'en' -and $r.fence.width -gt 100 -and $r.fence.id -eq $fid) "$($r.theme) $($r.lang) $($r.fence | ConvertTo-Json -Compress)"
+  Check 'the page cannot change pf' ($r.frozen -eq $true) ''
+  $o = WebRect $h '#open'
+  [G]::Click($o.cx, $o.cy); Start-Sleep -Milliseconds 1500
+  $op = Js "window.demo.open"
+  Check 'after a click pf.open passes the click rule (the host rule then refuses example.com)' ("$op" -ne '' -and "$op" -notmatch 'click') "$op"
+
+  Case 'main.js and the page'
+  Check 'the web plugin main.js runs beside the page' ($null -ne (PfWaitLog 'plugin fence starts its main.js' 5)) ''
+  Js "(pf.post({ n: 41 }), 1)" | Out-Null
+  $m = JsWait "window.demo.messages.length > 0 && window.demo.messages[0]" 10
+  Check "the page's message reaches main.js and its answer comes back" ($m.from -eq 'main.js' -and $m.echo.n -eq 41) "$($m | ConvertTo-Json -Compress)"
+
+  Case 'theme'
+  Check 'light theme: the page sees prefers-color-scheme light' (-not (Js "matchMedia('(prefers-color-scheme: dark)').matches")) ''
+  Shot 'C1-light'
+  Pf settings set theme dark | Out-Null
+  $d = JsWait "matchMedia('(prefers-color-scheme: dark)').matches" 10
+  Check 'dark theme: the page sees prefers-color-scheme dark' ($d -eq $true) ''
+  Check 'the page got the theme event and pf.theme says dark' ((Js "window.demo.events.includes('theme:dark') && pf.theme === 'dark'") -eq $true) (Js "window.demo.events.join(',')")
+  Start-Sleep -Milliseconds 800; ParkMouse
+  Shot 'C1-dark'
+  Pf settings set theme light | Out-Null
+  $l = JsWait "!matchMedia('(prefers-color-scheme: dark)').matches && pf.theme === 'light'" 10
+  Check 'back to light' ($l -eq $true) ''
+
+  Case 'right-click'
+  $l = WebRect $h '#list'
+  [G]::RClick($l.cx, $l.cy)
+  $m = MenuWin 3
+  $t = if ($m -ne [IntPtr]::Zero) { MenuTexts $m } else { '' }
+  Shot 'C2-menu'
+  Check 'a right-click on the page opens the fence menu' ($m -ne [IntPtr]::Zero -and $t -match 'Rename') $t
+  CloseMenus; Start-Sleep -Milliseconds 500
+  $n = WebRect $h '#nomenu'
+  [G]::RClick($n.cx, $n.cy)
+  $m = MenuWin 2
+  Check 'where the page calls preventDefault there is no menu' ($m -eq [IntPtr]::Zero -and (Js "window.demo.nomenu") -eq 1) "menu=$m nomenu=$(Js 'window.demo.nomenu')"
+  CloseMenus
+
+  Case 'show and hide events'
+  Pf fence roll $fid | Out-Null; Start-Sleep -Seconds 1
+  Pf fence unroll $fid | Out-Null; Start-Sleep -Seconds 2
+  $ev = Js "window.demo.events.join(',')"
+  Check 'the page got hide and show' ($ev -match 'hide' -and $ev -match 'show') "$ev"
+
+  Case 'a page that crashes'
+  $script:Cdp.Dispose(); $script:Cdp = $null
+  $loads = LogCount 'web plugin: page loading'
+  $k = Renderers; Log "renderers: $($k -join ',')"
+  $k | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+  Check 'the first crash is seen' (WaitCount 'page failed; made anew.*count=1 again=true' 1 15) ''
+  Check 'the page is made anew by itself' (WaitCount 'web plugin: page loading' ($loads + 1) 30) ''
+  Start-Sleep -Seconds 3
+  $k = Renderers; Log "renderers: $($k -join ',')"
+  $k | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+  Check 'the second crash: made anew again' ((WaitCount 'page failed; made anew.*count=2 again=true' 1 15) -and (WaitCount 'web plugin: page loading' ($loads + 2) 30)) ''
+  Start-Sleep -Seconds 3
+  $k = Renderers; Log "renderers: $($k -join ',')"
+  $k | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+  Check 'the third crash within the hour stays stopped' (WaitCount 'page failed; made anew.*count=3 again=false' 1 15) ''
+  Start-Sleep -Seconds 2
+  $out = (PfJson fence get $fid).script.output
+  Check 'the fence says why' ("$out" -match 'stopped three times' -and "$out" -match "process ended") "$out"
+  Check 'no page is made by itself after the third' ((LogCount 'web plugin: page loading') -eq $loads + 2) ''
+  $r = Rect $h
+  ParkMouse; Shot 'C3-stopped'
+  $clicked = OcrClick 'Reload' $r.L $r.T ($r.R - $r.L) ($r.B - $r.T)
+  Check '重新加载 is there and starts the page again' ($clicked -and (WaitCount 'web plugin: page loading' ($loads + 3) 30)) ''
+  $reached = CdpOpen -Url 'https://webdemo.plugins.pecofence/*' -sec 20
+  $ok = JsWait "document.getElementById('list').children.length === 40" 15
+  Check 'the page works again' ($reached -and $ok) ''
+
+  Case 'a background plugin is not suspended'
+  InstallDemo 'webbg'
+  $j = "$script:Config\plugins\webbg\1.0.0\plugin.json"
+  (Get-Content $j -Raw) -replace '"network": \["example.org"\]', '"network": ["example.org"], "background": true' | Set-Content $j -Encoding UTF8
+  $fb = NewWebFence 'Bg' '820,160,380,460' 'webbg'
+  Check 'the background plugin page loads' ($null -ne (PfWaitLog 'page loading plugin=webbg.*background=true' 30)) ''
+  $reached = CdpOpen -Url 'https://webbg.plugins.pecofence/*' -sec 30
+  JsWait "document.getElementById('list').children.length === 40" 15 | Out-Null
+  $t0 = Js "window.demo.ticks"
+  $script:Cdp.Dispose(); $script:Cdp = $null
+  Pf fence roll --all | Out-Null
+  Check 'the background page stays running when hidden' ($null -ne (PfWaitLog 'runs on in the background plugin=webbg' 8)) ''
+  Start-Sleep -Seconds 38
+  $sus = @(PfLogAll | Where-Object { $_ -match 'hidden page suspended' })
+  Check 'the other page is suspended, the background one is not' (@($sus | Where-Object { $_ -match 'plugin=webdemo' }).Count -ge 1 -and @($sus | Where-Object { $_ -match 'plugin=webbg' }).Count -eq 0) ($sus -join ' | ')
+  $reached = CdpOpen -Url 'https://webbg.plugins.pecofence/*' -sec 10
+  $t1 = Js "window.demo.ticks"
+  Check 'its timers ran on while hidden' ($t1 - $t0 -ge 35) "ticks $t0 -> $t1"
+  Check 'it got the hide event' ((Js "window.demo.events.includes('hide')") -eq $true) ''
+  Pf fence unroll --all | Out-Null; Start-Sleep -Seconds 2
+
+  Case 'uninstall deletes the profile'
+  $udf = Get-ChildItem "$env:LOCALAPPDATA\PecoFence\WebView2Profiles" -Directory | Sort-Object CreationTime -Descending | Select-Object -First 1
+  $prof = "$($udf.FullName)\EBWebView\WV2Profile_plugin-webdemo"
+  Log "profiles: $((Get-ChildItem "$($udf.FullName)\EBWebView" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }) -join ', ')"
+  Check 'the plugin has a profile folder of its own' (Test-Path $prof) $prof
+  $script:Cdp.Dispose(); $script:Cdp = $null
+  $set = PfSettings
+  Js "(window.chrome.webview.postMessage({ type: 'action', name: 'pluginUninstall', id: 'webdemo' }), 1)" | Out-Null
+  $dlg = WaitWin '#32770' 5
+  Check 'the uninstall asks first' ($dlg -ne [IntPtr]::Zero) ''
+  [L]::PostMessageW($dlg, 0x111, [IntPtr]6, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 3
+  $line = PfWaitLog 'web plugin: (profile deleted|profile in use)' 5
+  $left = Test-Path "$($udf.FullName)\profiles-to-delete.txt"
+  Check 'the uninstall deletes the profile folder, or marks it for the next start' (-not (Test-Path $prof) -or $left) "$line"
+  PfQuit
+  PfStart -Lang en
+  PfSettings | Out-Null; Start-Sleep -Seconds 2
+  Check 'after the next start the profile folder is gone' (-not (Test-Path $prof) -and -not (Test-Path "$($udf.FullName)\profiles-to-delete.txt")) ''
+  Check 'no errors in the log' (@(PfLogErrors).Count -eq 0) ((PfLogErrors) -join ' | ')
+}
+
+if ($Part -eq 'N') {
+  Case 'no WebView2'
+  $fid = NewWebFence 'Web' '420,160,380,460'
+  Check 'without WebView2 the fence says so' ($null -ne (PfWaitLog 'no WebView2, the fence says so' 30)) ''
+  Start-Sleep -Seconds 2
+  $out = (PfJson fence get $fid).script.output
+  Check 'the fence text names WebView2' ("$out" -match 'needs WebView2') "$out"
+  $h = FenceWin 'Web'; $r = Rect $h
+  ParkMouse; Shot 'N1-no-webview2'
+  $t = OcrText $r.L $r.T ($r.R - $r.L) ($r.B - $r.T) 'no-webview2'
+  Check 'the fence offers the download and 重新加载' ($t -match 'Download WebView2' -and $t -match 'Reload') "ocr: $t"
+  $clicked = OcrClick 'Reload' $r.L $r.T ($r.R - $r.L) ($r.B - $r.T)
+  $twice = @(PfLogAll | Where-Object { $_ -match 'no WebView2, the fence says so' }).Count
+  Start-Sleep -Seconds 2
+  $twice = @(PfLogAll | Where-Object { $_ -match 'no WebView2, the fence says so' }).Count
+  Check '重新加载 tries again (still missing here)' ($clicked -and $twice -ge 2) "tries=$twice"
+  Remove-Item Env:WEBVIEW2_BROWSER_EXECUTABLE_FOLDER -ErrorAction SilentlyContinue
+  Check 'no errors in the log' (@(PfLogErrors | Where-Object { $_ -notmatch 'WebView2 environment failed' }).Count -eq 0) ((PfLogErrors) -join ' | ')
 }

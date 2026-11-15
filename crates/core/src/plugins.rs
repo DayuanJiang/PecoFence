@@ -59,6 +59,8 @@ pub struct Permissions {
     pub clipboard: Clipboard,
     pub files: Files,
     pub run: bool,
+    /// Keeps running while its fence is hidden (a web plugin's page is not suspended).
+    pub background: bool,
 }
 
 /// A plugin's `plugin.json`, and the same fields in its index entry.

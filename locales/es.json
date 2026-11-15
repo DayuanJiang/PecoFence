@@ -1070,5 +1070,12 @@
   "卸载“{0}”？它的栅栏和它保存的数据都会删掉。": "¿Desinstalar «{0}»? Se borran sus grupos y los datos que guardó.",
   "插件停止了：{0}。右键这个栅栏，选“立即运行”重新启动。": "El plugin se detuvo: {0}. Haz clic derecho en este grupo y elige «Ejecutar ahora» para iniciarlo de nuevo.",
   "一次运行超过了 50 毫秒": "una ejecución tardó más de 50 ms",
-  "用的内存超过了 8 MB": "usó más de 8 MB de memoria"
+  "用的内存超过了 8 MB": "usó más de 8 MB de memoria",
+  "需要 WebView2 才能显示这个插件。": "Este plugin necesita WebView2 para mostrarse.",
+  "下载 WebView2": "Descargar WebView2",
+  "重新加载": "Volver a cargar",
+  "插件的网页一小时里停了三次，最后一次是因为{0}。": "La página del plugin se detuvo tres veces en una hora; la última vez, porque {0}.",
+  "WebView2 的浏览器进程退出了": "el proceso del navegador de WebView2 terminó",
+  "网页的进程退出了": "el proceso de la página terminó",
+  "网页没有响应": "la página dejó de responder"
 }

@@ -66,3 +66,32 @@ window.selfTest = async () => {
 };
 // The navigation test unloads the page if it is not refused: run it last, alone.
 window.tryNavigate = () => { location.href = "https://example.com/"; return location.href; };
+
+// 网页层 calls and events (web-plugin.ps1 part C).
+demo.ticks = 0;
+demo.events = [];
+demo.messages = [];
+demo.nomenu = 0;
+setInterval(() => demo.ticks++, 1000);
+for (const name of ["show", "hide", "resize", "theme", "settings", "timechange", "clipboard"]) {
+  pf.on(name, (data) => demo.events.push(name === "theme" ? `theme:${data}` : name));
+}
+pf.on("message", (m) => demo.messages.push(m));
+document.getElementById("nomenu").addEventListener("contextmenu", (e) => { e.preventDefault(); demo.nomenu++; });
+document.getElementById("open").addEventListener("click", () => {
+  // An undeclared host: the click lets the call through, the host check refuses it.
+  pf.open("https://example.com/").then(() => (demo.open = "opened"), (e) => (demo.open = `refused: ${e.message}`));
+});
+const outcome = (p) => settle(p.then((v) => ({ ok: v }), (e) => ({ refused: e.message })), 8000);
+window.callTest = async () => ({
+  now: await outcome(pf.time.now()),
+  declared: await outcome(pf.http.get("https://example.org/")),
+  undeclared: await outcome(pf.http.get("https://example.com/")),
+  clipboard: await outcome(pf.clipboard.text()),
+  openNoClick: await outcome(pf.open("https://example.org/")),
+  ownFile: await settle(fetch("plugin.json").then((r) => r.json()).then((m) => m.id, (e) => `refused: ${e.name}`)),
+  theme: pf.theme,
+  lang: pf.lang,
+  fence: pf.fence,
+  frozen: Object.isFrozen(pf) && Object.isFrozen(pf.http),
+});

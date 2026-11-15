@@ -1070,5 +1070,12 @@
   "卸载“{0}”？它的栅栏和它保存的数据都会删掉。": "Uninstall “{0}”? Its fences and the data it saved are deleted.",
   "插件停止了：{0}。右键这个栅栏，选“立即运行”重新启动。": "The plugin stopped: {0}. Right-click this fence and choose “Run now” to start it again.",
   "一次运行超过了 50 毫秒": "one run took longer than 50 ms",
-  "用的内存超过了 8 MB": "it used more than 8 MB of memory"
+  "用的内存超过了 8 MB": "it used more than 8 MB of memory",
+  "需要 WebView2 才能显示这个插件。": "This plugin needs WebView2 to show.",
+  "下载 WebView2": "Download WebView2",
+  "重新加载": "Reload",
+  "插件的网页一小时里停了三次，最后一次是因为{0}。": "The plugin's page stopped three times within an hour, the last time because {0}.",
+  "WebView2 的浏览器进程退出了": "WebView2's browser process ended",
+  "网页的进程退出了": "the page's process ended",
+  "网页没有响应": "the page stopped responding"
 }

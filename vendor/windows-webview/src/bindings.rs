@@ -2848,6 +2848,16 @@ windows_core::imp::define_interface!(
 );
 windows_core::imp::interface_hierarchy!(ICoreWebView2Environment, windows_core::IUnknown);
 impl ICoreWebView2Environment {
+    pub(crate) unsafe fn BrowserVersionString(&self) -> windows_core::Result<LPWSTR> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).BrowserVersionString)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .map(|| result__)
+        }
+    }
     pub(crate) unsafe fn CreateCoreWebView2Controller<P1>(
         &self,
         parentwindow: HWND,
@@ -2906,7 +2916,8 @@ pub struct ICoreWebView2Environment_Vtbl {
         windows_core::PCWSTR,
         *mut *mut core::ffi::c_void,
     ) -> windows_core::HRESULT,
-    BrowserVersionString: usize,
+    pub BrowserVersionString:
+        unsafe extern "system" fn(*mut core::ffi::c_void, *mut LPWSTR) -> windows_core::HRESULT,
     add_NewBrowserVersionAvailable: usize,
     remove_NewBrowserVersionAvailable: usize,
 }

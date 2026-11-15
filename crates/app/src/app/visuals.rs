@@ -1551,6 +1551,9 @@ impl App {
         if mode != self.theme_mode || force {
             apply_menu_colors(self.state.config.settings.menu_color, mode, "colour mode");
         }
+        if mode != self.theme_mode {
+            self.web_theme(mode == ThemeMode::Dark);
+        }
         self.theme_mode = mode;
         self.accent = accent;
         *self.ctx.theme.borrow_mut() = theme;

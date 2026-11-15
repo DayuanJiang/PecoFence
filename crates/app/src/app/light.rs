@@ -167,6 +167,7 @@ impl App {
                     );
                     hosts.push(self.state.host_of(fence));
                 }
+                host::Output::Post(fence, data) => self.web_event(fence, "message", data),
                 host::Output::Stopped(fence, why) => {
                     use pecofence_core::i18n;
                     let why = match why {
@@ -241,6 +242,31 @@ impl App {
         tracing::info!(%fence, key = setting.key, on, "plugin fence setting changed");
         self.state.mark_dirty();
         self.schedule_save();
+        self.web_event(fence, "settings", settings.clone());
         self.light_send(host::Command::Event(fence, "settings", settings));
+    }
+}
+
+// pf-web stub: replaced by pf-api's plugin_api and plugin_event (shared.md); only what the web
+// layer's tests need before that.
+impl App {
+    pub(super) fn plugin_api(
+        &mut self,
+        _fence: FenceId,
+        name: &str,
+        _args: serde_json::Value,
+        reply: impl FnOnce(std::result::Result<serde_json::Value, String>) + 'static,
+    ) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
+        reply(match name {
+            "time.now" => Ok(now.map_or(0, |d| d.as_millis() as u64).into()),
+            _ => Err(format!("pf.{name} is not available")),
+        })
+    }
+
+    pub(super) fn plugin_event(&mut self, fence: FenceId, name: &str, data: serde_json::Value) {
+        if name == "message" {
+            self.light_send(host::Command::Event(fence, "message", data));
+        }
     }
 }

@@ -19,6 +19,8 @@ pub const CALL_LIMIT: Duration = Duration::from_millis(50);
 const SHOW_GAP: Duration = Duration::from_millis(100);
 const MAX_ROWS: usize = 300;
 const MAX_TIMERS: usize = 20;
+/// The most bytes one `pf.post` may carry (as JSON).
+const MAX_POST: usize = 1024 * 1024;
 /// `pf.time.format(unix_ms, kind)`: the time in Windows' region format.
 pub type Format = fn(i64, &str) -> String;
 
@@ -75,6 +77,8 @@ pub enum Stopped {
 pub enum Output {
     Show(FenceId, View),
     Stopped(FenceId, Stopped),
+    /// `pf.post(data)`: for the page of the web plugin whose main.js this is.
+    Post(FenceId, serde_json::Value),
 }
 
 /// Starts the plugin thread; `out` gets what the plugins show (on that thread).
@@ -118,6 +122,7 @@ impl Timer {
 struct Shared {
     timers: Vec<Timer>,
     view: Option<View>,
+    posts: Vec<serde_json::Value>,
 }
 
 struct Plugin {
@@ -179,6 +184,15 @@ impl Plugin {
                 Err(e) => tracing::debug!(error = %e, "plugin view not read"),
             };
             n.set("show", Function::new(ctx.clone(), show)?)?;
+            let to = shared.clone();
+            let post = move |json: String| match serde_json::from_str(&json) {
+                Ok(data) if json.len() <= MAX_POST => to.borrow_mut().posts.push(data),
+                _ => tracing::debug!(
+                    bytes = json.len(),
+                    "plugin post not sent: too big or not JSON"
+                ),
+            };
+            n.set("post", Function::new(ctx.clone(), post)?)?;
             let to = shared.clone();
             let every = move |id: u32, seconds: f64, align: String| {
                 let mut s = to.borrow_mut();
@@ -245,7 +259,12 @@ impl Plugin {
             }
         }
         self.deadline.set(None);
-        result.map_err(stopped)
+        // Out of memory with no room left for the error itself throws a bare null.
+        let full = || self.rt.memory_usage().memory_used_size as usize > MEMORY_LIMIT / 20 * 19;
+        result.map_err(|text| match stopped(text) {
+            Stopped::Error(_) if full() => Stopped::TooMuchMemory,
+            why => why,
+        })
     }
 
     fn emit(&mut self, name: &str, data: Option<String>) -> Result<(), Stopped> {
@@ -394,6 +413,10 @@ pub fn run(rx: Receiver<Command>, format: Format, out: impl Fn(Output)) {
             if let Some(view) = p.view_to_send(now) {
                 out(Output::Show(p.fence, view));
             }
+            let posts = std::mem::take(&mut p.shared.borrow_mut().posts);
+            for data in posts {
+                out(Output::Post(p.fence, data));
+            }
         }
     }
 }
@@ -447,7 +470,7 @@ mod tests {
                     .collect::<Vec<_>>()
                     .join("|"),
             ),
-            Output::Stopped(..) => None,
+            _ => None,
         });
         rows.collect()
     }
@@ -455,8 +478,22 @@ mod tests {
     fn stop_of(out: &[Output]) -> Option<Stopped> {
         out.iter().find_map(|o| match o {
             Output::Stopped(_, why) => Some(why.clone()),
-            Output::Show(..) => None,
+            _ => None,
         })
+    }
+
+    #[test]
+    fn a_web_plugins_main_js_and_its_page_pass_messages() {
+        let code = "pf.on('message', (m) => pf.post({ got: m.n + 1 }));";
+        let message = Command::Event(FenceId::new_v4(), "message", serde_json::json!({ "n": 1 }));
+        let out = outputs(code, true, 30, vec![message]);
+        let posts: Vec<_> = (out.iter())
+            .filter_map(|o| match o {
+                Output::Post(_, data) => Some(data.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(posts, [serde_json::json!({ "got": 2 })]);
     }
 
     #[test]
