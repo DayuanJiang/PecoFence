@@ -254,11 +254,25 @@ pub fn theme(light_text: bool) -> &'static str {
     if light_text { "dark" } else { "light" }
 }
 
-/// A plain name: letters, digits, `.`, `_` and `-`, at most 64, not starting with a dot. The
-/// names `pf.data` keeps files under and pictures of the data folder are such names.
+/// A plain name: letters, digits, `.`, `_` and `-`, at most 64, not starting or ending with a
+/// dot, and none of Windows' device names (`con`, `nul`, `com1`, ... with any extension: Windows
+/// would open the device). The names `pf.data` keeps files under and pictures of the data folder
+/// are such names.
 pub fn valid_plain_name(name: &str) -> bool {
+    let stem = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let numbered = |p: &str| {
+        stem.len() == 4 && stem.starts_with(p) && (b'1'..=b'9').contains(&stem.as_bytes()[3])
+    };
+    let device =
+        ["con", "prn", "aux", "nul"].contains(&stem.as_str()) || numbered("com") || numbered("lpt");
     (1..=64).contains(&name.len())
         && !name.starts_with('.')
+        && !name.ends_with('.')
+        && !device
         && name
             .bytes()
             .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
@@ -532,6 +546,36 @@ pub fn pick<'a>(texts: &'a BTreeMap<String, String>, lang: &str) -> &'a str {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn plain_names_are_no_device_names_and_end_without_a_dot() {
+        for bad in [
+            "con",
+            "NUL",
+            "nul.txt",
+            "aux.tar.gz",
+            "Com1",
+            "lpt9.log",
+            "prn.",
+            "a.",
+            "a..",
+            ".a",
+        ] {
+            assert!(!valid_plain_name(bad), "{bad}");
+        }
+        for good in [
+            "console.js",
+            "com10",
+            "lpt0",
+            "com",
+            "nul_",
+            "a.b",
+            "history-1.json",
+        ] {
+            assert!(valid_plain_name(good), "{good}");
+        }
+        assert!(!valid_file_name("images/con.png"));
+    }
 
     const HASH: &str = "db47f4c49907d313d7588e63a07e8b1ed1b6331993499aeae4e578e4a338b488";
     const COMMIT: &str = "a89e80aa191bc052eb10b7ab0c0088f9ffa92a84";

@@ -30,6 +30,9 @@ pub(super) struct AppHost {
     pub(super) plugins: Mutex<HashMap<FenceId, Arc<Manifest>>>,
     /// `<config>\plugins-data`.
     data: PathBuf,
+    /// Held while a call writes into a data folder, and by an uninstall while it forgets the
+    /// plugin ([`Self::forget`]): a write either ends before the folder goes or finds no plugin.
+    writing: Mutex<()>,
     cpu: Mutex<Option<sysinfo::CpuTimes>>,
 }
 
@@ -49,6 +52,7 @@ impl AppHost {
             jobs,
             plugins: Mutex::default(),
             data,
+            writing: Mutex::default(),
             cpu: Mutex::default(),
         }
     }
@@ -84,6 +88,29 @@ impl AppHost {
         Ok(self.data.join(&m.id))
     }
 
+    /// Runs `write` in fence `fence`'s data folder (made first) while its plugin is still
+    /// installed: an uninstall waits for it, and a write after the uninstall finds no plugin.
+    fn write_data<T>(
+        &self,
+        fence: FenceId,
+        write: impl FnOnce(&Path) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let _writing = self.writing.lock().map_err(|_| "PecoFence is closing")?;
+        let dir = self.data_dir(fence)?;
+        std::fs::create_dir_all(&dir).map_err(io)?;
+        write(&dir)
+    }
+
+    /// Plugin `id` is being uninstalled: its fences' calls find no plugin from now on, and a
+    /// write already going ends first.
+    pub(super) fn forget(&self, id: &str) {
+        let _writing = self.writing.lock();
+        if let Ok(mut plugins) = self.plugins.lock() {
+            plugins.retain(|_, m| m.id != id);
+        }
+        tracing::info!(id, "plugin forgotten: its data folder takes no more writes");
+    }
+
     /// Bytes in the data folder, without `except` (a file about to be written again).
     fn data_used(dir: &Path, except: &Path) -> u64 {
         let files = std::fs::read_dir(dir).into_iter().flatten().flatten();
@@ -97,17 +124,21 @@ impl AppHost {
     fn data(&self, fence: FenceId, name: &str, args: &Value) -> Result<Value, String> {
         let dir = self.data_dir(fence)?;
         let file = dir.join(args[0].as_str().unwrap_or_default());
+        let big = || format!("{} is larger than 20 MB", args[0]);
         match name {
-            "data.read" => match std::fs::read(&file) {
-                Ok(bytes) => Ok(String::from_utf8_lossy(&bytes).into()),
+            "data.read" => match std::fs::metadata(&file) {
+                Ok(m) if m.len() > MAX_FILE => Err(big()),
+                Ok(_) => Ok(String::from_utf8_lossy(&std::fs::read(&file).map_err(io)?).into()),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Value::Null),
                 Err(e) => Err(io(e)),
             },
             "data.write" => {
                 let text = text_of(&args[1]);
+                if text.len() as u64 > MAX_FILE {
+                    return Err(big());
+                }
                 self.room(&dir, &file, text.len() as u64)?;
-                std::fs::create_dir_all(&dir).map_err(io)?;
-                std::fs::write(&file, text).map_err(io)?;
+                self.write_data(fence, |dir| replace_file(dir, &file, text.as_bytes()))?;
                 Ok(Value::Null)
             }
             "data.remove" => match std::fs::remove_file(&file) {
@@ -116,8 +147,10 @@ impl AppHost {
             },
             _ => {
                 let entries = std::fs::read_dir(&dir).into_iter().flatten().flatten();
+                // Without the temporary files of writes going on (no plain name starts with a dot).
                 let mut names: Vec<String> = entries
                     .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .filter(|n| !n.starts_with('.'))
                     .collect();
                 names.sort();
                 Ok(json!(names))
@@ -171,9 +204,10 @@ impl AppHost {
                 let dir = self.data_dir(fence)?;
                 let file = dir.join(&name);
                 self.room(&dir, &file, bgra.len() as u64 / 4)?;
-                std::fs::create_dir_all(&dir).map_err(io)?;
                 let _com = pecofence_platform::com::MtaGuard::init();
-                clipboard::save_png(&file, w, h, &bgra).map_err(|e| e.to_string())?;
+                self.write_data(fence, |_| {
+                    clipboard::save_png(&file, w, h, &bgra).map_err(|e| e.to_string())
+                })?;
                 let size = std::fs::metadata(&file).map_or(0, |m| m.len());
                 if size > MAX_IMAGE_BYTES {
                     let _ = std::fs::remove_file(&file);
@@ -202,11 +236,19 @@ impl AppHost {
                     .ok_or_else(|| "the clipboard is busy".into())
             }
             _ => {
-                // The shell's data object lives on the UI thread, as Explorer's copy does.
+                // Only files of the plugin's data folder and of the folders the user picked.
+                let mut roots = self.picked(fence)?;
+                roots.push(self.data_dir(fence)?);
                 let paths: Vec<PathBuf> = (args[0].as_array().into_iter().flatten())
-                    .filter_map(Value::as_str)
-                    .map(PathBuf::from)
-                    .collect();
+                    .map(|p| {
+                        let p = p.as_str().unwrap_or_default();
+                        inside(p, &roots).map(|_| PathBuf::from(p))
+                    })
+                    .collect::<Result<_, String>>()
+                    .inspect_err(|why| {
+                        tracing::info!(%fence, why, "plugin clipboard.setFiles refused");
+                    })?;
+                // The shell's data object lives on the UI thread, as Explorer's copy does.
                 self.on_ui(move |_| {
                     let paths: Vec<&Path> = paths.iter().map(PathBuf::as_path).collect();
                     clipboard::set_files(&paths, false).map_err(|e| e.to_string())?;
@@ -342,19 +384,19 @@ impl AppHost {
         Ok(json!({ "code": code, "output": output }))
     }
 
+    /// The folders the user picked for fence `fence`'s plugin.
+    fn picked(&self, fence: FenceId) -> Result<Vec<PathBuf>, String> {
+        let picked = self.on_ui(move |app| Ok(app.plugin_folders(fence)))?;
+        Ok(picked.into_iter().map(PathBuf::from).collect())
+    }
+
     /// `pf.folder.list` / `read`: inside a folder the user picked for this fence, read only.
     fn folder(&self, fence: FenceId, name: &str, args: &Value) -> Result<Value, String> {
-        let picked = self.on_ui(move |app| Ok(app.plugin_folders(fence)))?;
         let asked = args[0].as_str().unwrap_or_default();
-        let path = std::fs::canonicalize(asked).map_err(|e| format!("{asked}: {e}"))?;
-        let inside = (picked.iter().filter_map(|f| std::fs::canonicalize(f).ok()))
-            .any(|f| path.starts_with(f));
-        if !inside {
-            tracing::info!(%fence, name, "plugin folder call refused: not inside a picked folder");
-            return Err(format!(
-                "{name}: {asked} is not inside a folder the user picked"
-            ));
-        }
+        let path = inside(asked, &self.picked(fence)?).map_err(|why| {
+            tracing::info!(%fence, name, why, "plugin folder call refused");
+            format!("{name}: {why}")
+        })?;
         if name == "folder.read" {
             let size = std::fs::metadata(&path).map_err(io)?.len();
             if size > MAX_FILE {
@@ -382,6 +424,46 @@ impl AppHost {
             .collect();
         Ok(json!(list))
     }
+}
+
+/// `asked`, resolved, when it is inside one of `folders`: first by its text, so nothing on disk
+/// (or on the network) is touched for a path outside them, then as Windows resolves both, so no
+/// link leads out.
+fn inside(asked: &str, folders: &[PathBuf]) -> Result<PathBuf, String> {
+    let lower = |p: &Path| PathBuf::from(p.to_string_lossy().to_lowercase());
+    let path = Path::new(asked);
+    let up = path
+        .components()
+        .any(|c| c == std::path::Component::ParentDir);
+    let outside = || format!("{asked} is not inside a folder the user picked");
+    if !path.is_absolute() || up || !folders.iter().any(|f| lower(path).starts_with(lower(f))) {
+        return Err(outside());
+    }
+    let path = std::fs::canonicalize(path).map_err(|e| format!("{asked}: {e}"))?;
+    let mut resolved = folders.iter().filter_map(|f| std::fs::canonicalize(f).ok());
+    resolved
+        .any(|f| path.starts_with(f))
+        .then_some(path)
+        .ok_or_else(outside)
+}
+
+/// Writes `bytes` to `file` whole: into a temporary file in `dir` first, then renamed over it,
+/// so a failed write (a full disk) leaves the file as it was.
+fn replace_file(dir: &Path, file: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(1);
+    let name = file.file_name().unwrap_or_default().to_string_lossy();
+    let temp = dir.join(format!(
+        ".{name}.{}.tmp",
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let written = std::fs::write(&temp, bytes).and_then(|_| std::fs::rename(&temp, file));
+    if let Err(e) = written {
+        let _ = std::fs::remove_file(&temp);
+        tracing::info!(file = %file.display(), error = %e, "plugin data not written, the old file stays");
+        return Err(io(e));
+    }
+    Ok(())
 }
 
 impl pecofence_plugin_host::Host for AppHost {
@@ -456,5 +538,98 @@ impl pecofence_plugin_host::Host for AppHost {
 
     fn wants_notes(&self) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pecofence_plugin_host::Host;
+
+    fn temp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("pf-light-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// A host whose plugin `t` runs in one fence (no UI thread: only calls that need none).
+    fn host(data: &Path) -> (AppHost, FenceId) {
+        let host = AppHost::new(HWND(std::ptr::null_mut()), Arc::default(), data.into());
+        let m: Manifest = serde_json::from_value(json!({
+            "id": "t", "version": "1.0.0", "api": 1, "layer": "light",
+            "name": { "en": "T" }, "description": { "en": "T" },
+            "author": "a", "minPecoFence": "0.4.0", "permissions": {},
+        }))
+        .unwrap();
+        let fence = FenceId::new_v4();
+        host.plugins.lock().unwrap().insert(fence, Arc::new(m));
+        (host, fence)
+    }
+
+    #[test]
+    fn data_files_are_replaced_whole_and_hold_at_most_20_mb() {
+        let dir = temp("data");
+        let (host, fence) = host(&dir);
+        let call = |name: &str, args: Value| host.call(fence, name, args);
+        call("data.write", json!(["a.txt", "one"])).unwrap();
+        call("data.write", json!(["a.txt", "two"])).unwrap();
+        assert_eq!(call("data.read", json!(["a.txt"])), Ok(json!("two")));
+        // No temporary file is left or listed.
+        assert_eq!(call("data.list", json!([])), Ok(json!(["a.txt"])));
+        assert_eq!(std::fs::read_dir(dir.join("t")).unwrap().count(), 1);
+        let big = "x".repeat(MAX_FILE as usize + 1);
+        let why = call("data.write", json!(["big.txt", big])).unwrap_err();
+        assert!(why.contains("20 MB"), "{why}");
+        std::fs::write(dir.join("t").join("big.txt"), &big).unwrap();
+        let why = call("data.read", json!(["big.txt"])).unwrap_err();
+        assert!(why.contains("20 MB"), "{why}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn after_an_uninstall_no_write_makes_the_data_folder_again() {
+        let dir = temp("forget");
+        let (host, fence) = host(&dir);
+        host.call(fence, "data.write", json!(["a.txt", "one"]))
+            .unwrap();
+        host.forget("t");
+        std::fs::remove_dir_all(dir.join("t")).unwrap();
+        assert!(
+            host.call(fence, "data.write", json!(["a.txt", "two"]))
+                .is_err()
+        );
+        assert!(!dir.join("t").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn paths_outside_the_picked_folders_are_refused_before_anything_is_read() {
+        let dir = temp("inside");
+        let picked = dir.join("Picked");
+        std::fs::create_dir_all(picked.join("sub")).unwrap();
+        std::fs::create_dir_all(dir.join("Picked2")).unwrap();
+        std::fs::write(picked.join("sub").join("a.txt"), "a").unwrap();
+        let folders = [picked.clone()];
+        let ask = |p: &Path| inside(&p.to_string_lossy(), &folders);
+        assert!(ask(&picked.join("sub").join("a.txt")).is_ok());
+        let upper = PathBuf::from(picked.to_string_lossy().to_uppercase()).join("SUB");
+        assert!(ask(&upper).is_ok(), "{upper:?}");
+        for outside in [
+            dir.join("Picked2"),
+            picked.join("..").join("Picked2"),
+            PathBuf::from(r"C:\Windows\win.ini"),
+            PathBuf::from("sub"),
+        ] {
+            let why = ask(&outside).unwrap_err();
+            assert!(why.contains("not inside a folder"), "{outside:?}: {why}");
+        }
+        // A network path is refused at once, without asking the network.
+        let begun = Instant::now();
+        let why = inside(r"\\pf-no-such-host.invalid\share\x", &folders).unwrap_err();
+        assert!(why.contains("not inside a folder"), "{why}");
+        assert!(begun.elapsed() < Duration::from_millis(200));
+        assert!(inside(r"C:\x", &[]).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

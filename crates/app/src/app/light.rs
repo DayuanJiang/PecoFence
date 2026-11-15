@@ -252,6 +252,14 @@ impl App {
         }
     }
 
+    /// Plugin `id` is being uninstalled: no call of its fences writes into its data folder from
+    /// now on (call before the folder is deleted).
+    pub(super) fn forget_light(&self, id: &str) {
+        if let Some(host) = &self.light.host {
+            host.forget(id);
+        }
+    }
+
     /// Exit: every plugin gets `stop` (each within its 50 ms), then the thread ends.
     pub(super) fn quit_light(&mut self) {
         if let Some((tx, thread)) = self.light.thread.take() {
