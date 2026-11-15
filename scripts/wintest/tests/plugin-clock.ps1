@@ -16,9 +16,8 @@ $Feed = 'C:\pf\run\pfeed'
 # The sample is published as clock-sample: the upgrade to plugins moves a native clock to the
 # plugin `clock` once that is installed, and the native clock beside it must stay native.
 $SampleId = 'clock-sample'
-function ClockFence() { return @(@((PfJson fence list)) | Where-Object { $_ -and $_.script -and $_.script.path -eq "plugin:$SampleId" })[0] }
+function ClockFence() { return @(PluginFences $SampleId)[0] }
 function Shows() { return (ClockFence).script.output }
-function Rows() { return (Js "[...document.querySelectorAll('#pluginList .pl-row')].map(r => r.textContent).join(' / ')") }
 
 Case 'setup: a test index with the clock plugin'
 CloseWindows
@@ -29,22 +28,14 @@ Copy-Item "$PfExtra\clock\*" $dir
 $m = Get-Content "$dir\plugin.json" -Raw -Encoding UTF8 | ConvertFrom-Json
 $m | Add-Member files @(foreach ($f in Get-ChildItem $dir -File) { [ordered]@{ name = $f.Name; size = $f.Length; sha256 = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower() } })
 [IO.File]::WriteAllText("$Feed\index.json", ([ordered]@{ format = 1; commit = $commit; plugins = @($m) } | ConvertTo-Json -Depth 8))
-$server = @'
-$l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse('127.0.0.1'), 8731); $l.Start()
-while ($true) { $c = $l.AcceptTcpClient(); try { $s = $c.GetStream(); $r = New-Object IO.StreamReader($s); $line = $r.ReadLine(); while ($r.ReadLine()) {}
-  $path = 'C:\pf\run\pfeed' + (($line -split ' ')[1] -replace '/', '\')
-  if (Test-Path -LiteralPath $path -PathType Leaf) { $b = [IO.File]::ReadAllBytes($path); $h = "HTTP/1.1 200 OK`r`nContent-Length: $($b.Length)`r`nConnection: close`r`n`r`n" } else { $b = @(); $h = "HTTP/1.1 404 Not Found`r`nContent-Length: 0`r`nConnection: close`r`n`r`n" }
-  $hb = [Text.Encoding]::ASCII.GetBytes($h); $s.Write($hb, 0, $hb.Length); if ($b.Length) { $s.Write($b, 0, $b.Length) }; $s.Flush() } catch {} finally { $c.Close() } }
-'@
-Set-Content 'C:\pf\run\pfeed-serve.ps1' $server
-$feedProc = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\pf\run\pfeed-serve.ps1' -WindowStyle Hidden -PassThru
+$feedProc = PfFeed 8731
 $env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:8731/index.json'
 $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'
 PfStart -Lang en
 $script:Config = Split-Path (PfJson status).configPath
 $ok = PfSettings
 PageClick 'nav a[data-page=tools]'; Start-Sleep -Seconds 3
-Check 'the tools page offers Clock' ($ok -and (Rows) -match 'Clock.*Install') (Rows)
+Check 'the tools page offers Clock' ($ok -and (PluginRows) -match 'Clock.*Install') (PluginRows)
 
 Case 'install: the plugin fence runs main.js'
 PageClick '#pluginList .pl-row button' ([int](Js "[...document.querySelectorAll('#pluginList .pl-row')].findIndex(r => r.textContent.startsWith('Clock'))"))

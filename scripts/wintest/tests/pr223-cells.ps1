@@ -27,9 +27,8 @@ function ClickCell($title, $i) {
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 900; ParkMouse
   return $true
 }
-function Out0() { return "$((FenceGet $script:Id).script.output)" }
 function WaitOut($pattern, $sec = 10) {
-  for ($k = 0; $k -lt $sec * 4; $k++) { if ((Out0) -match $pattern) { return $true }; Start-Sleep -Milliseconds 250 }
+  for ($k = 0; $k -lt $sec * 4; $k++) { if ((FenceOut $script:Id) -match $pattern) { return $true }; Start-Sleep -Milliseconds 250 }
   return $false
 }
 function Red($w, $x, $y) {
@@ -73,7 +72,7 @@ Pf fence create --script $path --rect '200,110,420,560' | Out-Null
 FenceIds; $script:Id = $script:Id['CellsTest']
 Check 'the fence takes the title of <pecofence.title>' ([bool]$script:Id) "fences: $($script:IdTitle.Values -join ', ')"
 $started = WaitOut 'Row 120' 20
-$lines = @((Out0) -split "`n")
+$lines = @((FenceOut $script:Id) -split "`n")
 Check 'all 125 lines of the streaming screen are kept' ($started -and $lines.Count -ge 125) "lines=$($lines.Count)"
 Check 'PECOFENCE_LANGUAGE is the app language' ($lines[0] -match '^lang=en ') $lines[0]
 $data = if ($lines[0] -match 'data=(.+)$') { $Matches[1].Trim() } else { '' }
@@ -88,9 +87,9 @@ Check 'the row has its five cells' (@($c | Where-Object { $_ }).Count -eq 5) (Du
 Check 'the filling cell is the widest' ($fill -gt 2 * ($c[1].r - $c[1].l)) "fill=$fill shuffle=$($c[1].r - $c[1].l)"
 Check 'under=true puts Low under Top, in its column' ($low.t -ge $top.b - 1 -and [math]::Abs($low.l - $top.l) -lt 2) "top=$($top.l),$($top.t),$($top.b) low=$($low.l),$($low.t)"
 $clicked = ClickCell 'CellsTest' 101
-Check 'a click on the check box reaches the script' ($clicked -and (WaitOut 'got=shuffle' 5) -and (Out0) -match 'checkbox=true') ((Out0) -split "`n" | Select-Object -First 2)
+Check 'a click on the check box reaches the script' ($clicked -and (WaitOut 'got=shuffle' 5) -and (FenceOut $script:Id) -match 'checkbox=true') ((FenceOut $script:Id) -split "`n" | Select-Object -First 2)
 $clicked = ClickCell 'CellsTest' 100
-Check 'a click on the icon button reaches the script' ($clicked -and (WaitOut 'got=play' 5)) ((Out0) -split "`n" | Select-Object -First 1)
+Check 'a click on the icon button reaches the script' ($clicked -and (WaitOut 'got=play' 5)) ((FenceOut $script:Id) -split "`n" | Select-Object -First 1)
 
 Case 'pictures'
 $w = DumpOf 'CellsTest' 5

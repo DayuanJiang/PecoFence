@@ -41,15 +41,12 @@ function Publish([int]$n) {
   [IO.File]::WriteAllText("$Feed\index.json", ([ordered]@{ format = 1; commit = $commit; plugins = @($entries) } | ConvertTo-Json -Depth 8))
   Log "published $(($script:Offer.Keys | ForEach-Object { "$_ $($script:Offer[$_].version)" }) -join ', ') at $commit"
 }
-function Rows() { return (Js "[...document.querySelectorAll('#pluginList .pl-row')].map(r => r.textContent).join(' / ')") }
 function RowButton($name) { return (Js "[...document.querySelectorAll('#pluginList .pl-row')].findIndex(r => r.textContent.startsWith('$name'))") }
 # The page asks for the index again (as when 设置 › 小工具 opens).
 function Refresh() { Js "window.chrome.webview.postMessage({ type: 'action', name: 'pluginsRefresh' })" | Out-Null; Start-Sleep -Seconds 3 }
 function Installed($id = 'pf-test') { $v = Get-Content "$script:Config\plugins\$id\current.txt" -ErrorAction SilentlyContinue; if ($v -and (Test-Path "$script:Config\plugins\$id\$v\plugin.json")) { return $v }; return $null }
 function Versions($id = 'pf-test') { return (@(Get-ChildItem "$script:Config\plugins\$id" -Directory -ErrorAction SilentlyContinue | ForEach-Object Name) | Sort-Object) -join ' ' }
-function PluginFences($id = 'pf-test') { return @(@((PfJson fence list)) | Where-Object { $_ -and $_.script -and $_.script.path -eq "plugin:$id" }) }
 function Temps() { return @(Get-ChildItem "$script:Config\plugins" -Directory -Filter '.new-*' -ErrorAction SilentlyContinue).Count }
-function LogCount($regex) { return @(PfLogAll | Where-Object { $_ -match $regex }).Count }
 function Saved($id) { return (Get-Content "$script:Config\config.json" -Raw -Encoding UTF8 | ConvertFrom-Json).scripts.$id.settings }
 # Clicks 安装 / 更新 in the row of `name`, then the warning's OK; the warning's texts.
 function InstallVia($name, [switch]$Cancel) {
@@ -62,18 +59,7 @@ function InstallVia($name, [switch]$Cancel) {
   return $d
 }
 # The feed: files under C:\pf\run\pfeed; a file with a .slow marker beside it comes 8 s late.
-function StartFeed() {
-  $server = @'
-$l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse('127.0.0.1'), 8731); $l.Start()
-while ($true) { $c = $l.AcceptTcpClient(); try { $s = $c.GetStream(); $r = New-Object IO.StreamReader($s); $line = $r.ReadLine(); while ($r.ReadLine()) {}
-  $path = 'C:\pf\run\pfeed' + (($line -split ' ')[1] -replace '/', '\'); Add-Content 'C:\pf\run\pfeed.log' "$line"
-  if (Test-Path -LiteralPath "$path.slow") { Start-Sleep -Seconds 8 }
-  if (Test-Path -LiteralPath $path -PathType Leaf) { $b = [IO.File]::ReadAllBytes($path); $h = "HTTP/1.1 200 OK`r`nContent-Length: $($b.Length)`r`nConnection: close`r`n`r`n" } else { $b = @(); $h = "HTTP/1.1 404 Not Found`r`nContent-Length: 0`r`nConnection: close`r`n`r`n" }
-  $hb = [Text.Encoding]::ASCII.GetBytes($h); $s.Write($hb, 0, $hb.Length); if ($b.Length) { $s.Write($b, 0, $b.Length) }; $s.Flush() } catch {} finally { $c.Close() } }
-'@
-  Set-Content 'C:\pf\run\pfeed-serve.ps1' $server
-  $script:FeedProc = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\pf\run\pfeed-serve.ps1' -WindowStyle Hidden -PassThru
-}
+function StartFeed() { $script:FeedProc = PfFeed 8731 -log 'C:\pf\run\pfeed.log' -Slow }
 function StopFeed() { if ($script:FeedProc) { Stop-Process -Id $script:FeedProc.Id -Force -ErrorAction SilentlyContinue; $script:FeedProc = $null } }
 function ToolsPage() { $ok = PfSettings; PageClick 'nav a[data-page=tools]'; Start-Sleep -Seconds 3; return $ok }
 
@@ -90,7 +76,7 @@ PfStart -Lang en
 $script:Config = Split-Path (PfJson status).configPath
 $ok = ToolsPage
 Check 'the feed runs, the settings page is reachable' ($script:FeedProc -and -not $script:FeedProc.HasExited -and $ok) "config=$script:Config"
-Check 'the tools page lists both plugins with 安装' ((Rows) -match '^PF Test.*Install / PF Bad.*Install$') (Rows)
+Check 'the tools page lists both plugins with 安装' ((PluginRows) -match '^PF Test.*Install / PF Bad.*Install$') (PluginRows)
 
 Case '设置 › 小工具: the 小工具 switch, the own script, the plugin list and the switch for Windows functions'
 $p = Js "(() => ({ rows: [...document.querySelectorAll('#page-tools .card.child:not(.pl-row) .t')].map(t => t.textContent), binds: [...document.querySelectorAll('#page-tools .toggle')].map(t => t.dataset.bind), head: document.getElementById('plugins').textContent }))()"
@@ -101,12 +87,12 @@ Case 'install: the warning first, then the plugin fence runs with its data folde
 $d = InstallVia 'PF Test'
 Check 'the warning shows the author, the version, what it does and the promise' ($d.shown -and $d.text -match 'By tester\. The reviewed version is 1\.0\.0' -and $d.text -match 'It will:' -and $d.text -match 'Only shows things' -and $d.text -match 'A plugin can only do what is listed here' -and -not $d.system) $d.text
 $line = PfWaitLog 'plugins: fence added' 15
-$f = @(PluginFences)
+$f = @(PluginFences pf-test)
 Shot 'plugin-fence-v1'
 Check 'installed into plugins\pf-test\1.0.0, one fence titled after the plugin' ((Installed) -eq '1.0.0' -and $f.Count -eq 1 -and $f[0].title -eq 'PF Test' -and $line) "fences=$($f.Count) $line"
-Start-Sleep -Seconds 3; $f = @(PluginFences)
+Start-Sleep -Seconds 3; $f = @(PluginFences pf-test)
 Check 'the fence runs main.js' ($f[0].script.output -match 'pf-test 1\.0\.0') "output=$($f[0].script.output)"
-Check 'the row now offers nothing to install' ((Rows) -match '^PF Test.*On the desktop') (Rows)
+Check 'the row now offers nothing to install' ((PluginRows) -match '^PF Test.*On the desktop') (PluginRows)
 
 Case 'a file whose SHA-256 is not the index''s is refused'
 $d = InstallVia 'PF Bad'
@@ -119,31 +105,31 @@ Case 'the index signature: a signed index is taken, a wrong signature counts as 
 Copy-Item "$PfExtra\signed\*" $Feed -Recurse -Force
 Refresh
 $same = (Get-FileHash "$Feed\index.json").Hash -eq (Get-FileHash "$script:Config\plugins\index.json" -ErrorAction SilentlyContinue).Hash
-Check 'signed with the development key: its plugin is listed, the index is saved as it came' ((Rows) -match 'PF Signed.*Install' -and $same) "saved=$same rows=$(Rows)"
+Check 'signed with the development key: its plugin is listed, the index is saved as it came' ((PluginRows) -match 'PF Signed.*Install' -and $same) "saved=$same rows=$(PluginRows)"
 Set-Content "$Feed\index.json.sig" ('0' * 128) -NoNewline
 Refresh
 $offline = Js "document.getElementById('pluginList').textContent.includes('reach the plugin list')"
 Check 'a wrong signature: the page cannot reach the list, the log says why' ($offline -and [bool](PfWaitLog 'index not taken from this address.*signature does not match' 5)) "offline=$offline"
 Publish 2; Refresh
-Check 'a test index without a signature is taken again' ((Rows) -match '^PF Test' -and (Rows) -notmatch 'PF Signed') (Rows)
+Check 'a test index without a signature is taken again' ((PluginRows) -match '^PF Test' -and (PluginRows) -notmatch 'PF Signed') (PluginRows)
 
 Case 'the settings form of the details changes one fence only'
 $second = "$((PfJson fence create --script plugin:pf-test --title Second --rect '900,420,300,160').fence.id)"
 Start-Sleep -Seconds 3
-$first = (@(PluginFences) | Where-Object id -ne $second)[0].id
+$first = (@(PluginFences pf-test) | Where-Object id -ne $second)[0].id
 PageClick '#pluginList .pl-row' ([int](RowButton 'PF Test')); Start-Sleep -Milliseconds 800
 $forms = Js "document.querySelectorAll('#pluginList .pl-form').length"
 Js "(() => { const i = document.querySelector('[data-fence=`"$second`"] input'); i.value = 'B'; i.dispatchEvent(new Event('change')); return true; })()" | Out-Null
 Start-Sleep -Seconds 3
 Js "document.querySelector('[data-fence=`"$second`"]').scrollIntoView({ block: 'center' })" | Out-Null; Start-Sleep -Milliseconds 400
 Shot 'plugin-details-form'
-$out = @{}; foreach ($f in PluginFences) { $out[$f.id] = $f.script.output }
+$out = @{}; foreach ($f in (PluginFences pf-test)) { $out[$f.id] = $f.script.output }
 Check 'two forms; the second fence keeps B and shows it, the first is unchanged' ($forms -eq 2 -and (Saved $second).label -eq 'B' -and -not (Saved $first).label -and $out[$second] -match 'pf-test 1\.0\.0 B' -and $out[$first] -notmatch ' B') "forms=$forms first=$($out[$first]) second=$($out[$second])"
 
 Case 'an update that asks for nothing more installs by itself and keeps the version before'
 Offer 'pf-test' 'PF Test' '1.1.0'; Publish 3
 Refresh; PfWaitLog 'plugins: installed, its fences start again' 15 | Out-Null; Start-Sleep -Seconds 3
-$out = @{}; foreach ($f in PluginFences) { $out[$f.id] = $f.script.output }
+$out = @{}; foreach ($f in (PluginFences pf-test)) { $out[$f.id] = $f.script.output }
 Check 'pf-test is 1.1.0 beside 1.0.0; both fences run it, the second still with B' ((Installed) -eq '1.1.0' -and (Versions) -eq '1.0.0 1.1.0' -and $out[$first] -match '1\.1\.0' -and $out[$second] -match '1\.1\.0 B') "versions=$(Versions) out=$($out.Values -join ' | ')"
 
 Case 'a new version that fails to start goes back to the version before'
@@ -151,7 +137,7 @@ Offer 'pf-test' 'PF Test' '1.2.0' -js "throw new Error('broken 1.2.0');`r`n"; Pu
 $downloads = LogCount 'plugins: download id="pf-test".*1\.2\.0'
 Refresh
 $back = PfWaitLog 'the new version stopped after its update.*back=true' 15; Start-Sleep -Seconds 3
-$f = @(PluginFences)
+$f = @(PluginFences pf-test)
 Check 'back on 1.1.0, 1.2.0 deleted and remembered as failed, the fences run 1.1.0' ($back -and (Installed) -eq '1.1.0' -and (Versions) -notmatch '1\.2\.0' -and (Get-Content "$script:Config\plugins\pf-test\failed.txt") -eq '1.2.0' -and $f[0].script.output -match '1\.1\.0') "versions=$(Versions) $back"
 Refresh
 $again = LogCount 'plugins: download id="pf-test".*1\.2\.0'
@@ -160,22 +146,22 @@ Check 'the next check does not take 1.2.0 again' ($again -eq $downloads + 1 -and
 Case 'an update that asks for more waits for the OK'
 Offer 'pf-test' 'PF Test' '2.0.0' @{ network = @('example.com') }; Publish 5
 Refresh
-Check 'not installed by itself, the row asks' ((Installed) -eq '1.1.0' -and (Rows) -match 'PF Test.*Network.*An update waits for your OK') (Rows)
+Check 'not installed by itself, the row asks' ((Installed) -eq '1.1.0' -and (PluginRows) -match 'PF Test.*Network.*An update waits for your OK') (PluginRows)
 $d = InstallVia 'PF Test'
 Check 'the warning lists the new host' ($d.shown -and $d.text -match 'Network: example\.com') $d.text
 Start-Sleep -Seconds 2
-Check 'after the OK it is 2.0.0, its fences kept' ((Installed) -eq '2.0.0' -and @(PluginFences).Count -eq 2) "installed=$(Installed)"
+Check 'after the OK it is 2.0.0, its fences kept' ((Installed) -eq '2.0.0' -and @(PluginFences pf-test).Count -eq 2) "installed=$(Installed)"
 
 Case 'a plugin that starts programs: the stricter warning, and every update asks'
 Offer 'pf-sys' 'PF Sys' '1.0.0' @{ system = @('ipconfig.exe'); clipboard = 'write' }; Publish 6
 Refresh
-Check 'its row has the tags Clipboard and Starts programs' ((Rows) -match 'PF Sys.*Clipboard.*Starts programs') (Rows)
+Check 'its row has the tags Clipboard and Starts programs' ((PluginRows) -match 'PF Sys.*Clipboard.*Starts programs') (PluginRows)
 $d = InstallVia 'PF Sys'
 Check 'the warning names the program, says what it can do and that the switch is off' ($d.system -and $d.off -and $d.text -match 'Take special care with the programs it starts: ipconfig\.exe' -and $d.text -match 'Starts these programs: ipconfig\.exe' -and $d.text -match 'can do anything your account can do' -and $d.text -match 'Writes to the clipboard') $d.text
 Start-Sleep -Seconds 2
 Offer 'pf-sys' 'PF Sys' '1.0.1' @{ system = @('ipconfig.exe'); clipboard = 'write' }; Publish 7
 Refresh
-Check 'installed, and 1.0.1 asking for nothing more still waits for the OK' ((Installed 'pf-sys') -eq '1.0.0' -and (Rows) -match 'PF Sys.*An update waits for your OK') (Rows)
+Check 'installed, and 1.0.1 asking for nothing more still waits for the OK' ((Installed 'pf-sys') -eq '1.0.0' -and (PluginRows) -match 'PF Sys.*An update waits for your OK') (PluginRows)
 
 Case 'the switch for Windows functions'
 PageClick '[data-bind="tools.allowSystem"]'; Start-Sleep -Seconds 2
@@ -211,7 +197,7 @@ Refresh
 Shot 'plugin-taken-down'
 $left = @(Get-ChildItem "$script:Config\plugins\pf-sys" -Recurse -File | ForEach-Object Name) -join ' '
 Check 'its code deleted, plugin.json and disabled.txt with the reason left' ((($left -split ' ' | Sort-Object) -join ' ') -eq 'current.txt disabled.txt plugin.json') "left=$left"
-Check 'the row says so and offers 卸载' ((Rows) -match 'PF Sys.*Taken down: Test reason.*Uninstall') (Rows)
+Check 'the row says so and offers 卸载' ((PluginRows) -match 'PF Sys.*Taken down: Test reason.*Uninstall') (PluginRows)
 
 Case 'uninstall during a download: the download''s result is dropped'
 $export = 'C:\pf\run\plugins-export.json'
@@ -227,23 +213,23 @@ Js "[...document.querySelectorAll('#pluginList .pl-detail[data-plugin=pf-test] b
 $dlg = WaitWin '#32770' 5
 Check 'a Yes / No question comes first' ($dlg -ne [IntPtr]::Zero -and $started) "started=$started"
 [L]::PostMessageW($dlg, 0x111, [IntPtr]6, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 2
-Check 'no plugin fence, no plugin folder, no data folder' (@(PluginFences).Count -eq 0 -and -not (Test-Path "$script:Config\plugins\pf-test") -and -not (Test-Path "$script:Config\plugins-data\pf-test")) ''
+Check 'no plugin fence, no plugin folder, no data folder' (@(PluginFences pf-test).Count -eq 0 -and -not (Test-Path "$script:Config\plugins\pf-test") -and -not (Test-Path "$script:Config\plugins-data\pf-test")) ''
 $late = PfWaitLog 'plugins: a cancelled download ended' 15; Start-Sleep -Seconds 1
 Check 'the late download is dropped: nothing installed, no download folder left' ($late -and -not (Test-Path "$script:Config\plugins\pf-test") -and (Temps) -eq 0) "$late"
 
 Case 'an imported plugin fence whose plugin is not installed'
 $script:Offer['pf-test'].slow = $false; Publish 10
 Pf config import $export | Out-Null; Start-Sleep -Seconds 3
-$f = @(PluginFences)
+$f = @(PluginFences pf-test)
 Check 'the fences are back, nothing downloaded' ($f.Count -eq 2 -and -not (Test-Path "$script:Config\plugins\pf-test")) "fences=$($f.Count)"
 Pf settings set tools.enabled true | Out-Null; Start-Sleep -Seconds 3
-$r = (@(PluginFences))[0].windowRect
+$r = (@(PluginFences pf-test))[0].windowRect
 $t = OcrText $r.x $r.y $r.w $r.h 'not-installed'
 Shot 'plugin-not-installed-fence'
 Check 'with 小工具 on the fence says the plugin is not installed and how to install it' ($t -match "isn.t installed yet" -and $t -match 'Plugin.{1,2}details' -and -not (Test-Path "$script:Config\plugins-data\pf-test")) "ocr: $t"
 $ok = ToolsPage; Refresh
 InstallVia 'PF Test' | Out-Null
-Start-Sleep -Seconds 3; $f = @(PluginFences)
+Start-Sleep -Seconds 3; $f = @(PluginFences pf-test)
 Check 'installing it runs those fences, no third fence' ($f.Count -eq 2 -and $f[0].script.output -match '2\.1\.0') "fences=$($f.Count) output=$($f[0].script.output)"
 
 Case 'a take-down in the saved index applies at start, offline'
@@ -253,7 +239,7 @@ Copy-Item "$Feed\index.json" "$script:Config\plugins\index.json" -Force
 StopFeed
 PfStart -Lang en; Start-Sleep -Seconds 3
 $line = PfWaitLog 'plugins: taken down by the saved index' 5
-$t = ''; $f = @(PluginFences)
+$t = ''; $f = @(PluginFences pf-test)
 if ($f.Count) { $r = $f[0].windowRect; $t = OcrText $r.x $r.y $r.w $r.h 'taken-down-offline' }
 Check 'without the feed: main.js deleted, disabled.txt holds the reason, the fence says so' ($line -and -not (Test-Path "$script:Config\plugins\pf-test\2.1.0\main.js") -and (Get-Content "$script:Config\plugins\pf-test\disabled.txt") -eq 'Saved reason' -and $t -match 'Saved reason') "ocr: $t $line"
 PfQuit

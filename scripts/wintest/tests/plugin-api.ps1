@@ -16,22 +16,17 @@ function WaitRow($key, $regex, $sec = 20) {
   return (Rows)[$key]
 }
 function Command($cmd) { [IO.File]::WriteAllText("$script:Data\cmd.txt", $cmd) }
-function Output() { return "$((FenceGet $script:Fid).script.output)" }
 
 Case 'setup: the test plugin in a plugin fence'
 CloseWindows
 # Placed before the start: PecoFence reads the installed plugins once as it starts.
 $script:Config = "$PfApp\config"
 $script:Data = "$script:Config\plugins-data\plugin-api"
-New-Item -ItemType Directory -Force "$script:Config\plugins\plugin-api\1.0.0", $script:Data | Out-Null
-Copy-Item "$Kit\*" "$script:Config\plugins\plugin-api\1.0.0" -Force
-Set-Content "$script:Config\plugins\plugin-api\current.txt" '1.0.0' -Encoding ASCII -NoNewline
+New-Item -ItemType Directory -Force $script:Data | Out-Null
+PfPlacePlugin $Kit 'plugin-api'
 PfStart -Lang en
 Check 'the portable configuration is where the plugin went' ((Split-Path (PfJson status).configPath) -eq $script:Config) (PfJson status).configPath
-Set-Content 'C:\pf\run\idle.cmd' '@echo off' -Encoding ASCII
-$f = PfJson fence create --title 'API' --script 'C:\pf\run\idle.cmd' --rect '420,120,560,620'
-$script:Fid = if ($f.fence) { $f.fence.id } else { $f.id }
-Pf fence set $script:Fid scriptPath 'plugin:plugin-api' | Out-Null
+$script:Fid = PfPluginFence 'API' '420,120,560,620' 'plugin-api'
 $line = PfWaitLog 'plugin fence starts its main.js' 20
 Check 'the plugin starts' ([bool]$line) "$line"
 $v = WaitRow 'sys' '^ok'
@@ -92,7 +87,7 @@ PrivateCopy 'ExcludeClipboardContentFromMonitorProcessing' ([byte[]](1, 0, 0, 0)
 Start-Sleep -Seconds 2
 PrivateCopy 'CanIncludeInClipboardHistory' ([byte[]](0, 0, 0, 0))
 Start-Sleep -Seconds 2
-Check 'private copies (two kinds of marker): no clipboard event' ((Rows)['clipboard-count'] -eq $before -and (Output) -notmatch 'secret') "count=$((Rows)['clipboard-count']) before=$before"
+Check 'private copies (two kinds of marker): no clipboard event' ((Rows)['clipboard-count'] -eq $before -and (FenceOut $script:Fid) -notmatch 'secret') "count=$((Rows)['clipboard-count']) before=$before"
 Command 'read-text'
 $v = WaitRow 'cmd-read-text' '^(ok|error)'
 Check 'a private copy: text() reads nothing' ($v -eq 'ok null') $v
@@ -124,24 +119,24 @@ Check 'setText() puts text on the clipboard' ($v -eq 'ok null' -and (Get-Clipboa
 Case 'limits: 200 ms a second, then two endless loops: restarts after 5 s, the third stop waits for Restart'
 Command 'busy'
 $busy = $false
-for ($i = 0; $i -lt 20 -and -not $busy; $i++) { Start-Sleep -Milliseconds 500; $busy = (Output) -match 'longer than 200 ms within one second' }
-Check 'too much time in a second: the fence says so and that it starts again in 5 s' ($busy -and (Output) -match 'starts again by itself in 5 seconds') (Output)
+for ($i = 0; $i -lt 20 -and -not $busy; $i++) { Start-Sleep -Milliseconds 500; $busy = (FenceOut $script:Fid) -match 'longer than 200 ms within one second' }
+Check 'too much time in a second: the fence says so and that it starts again in 5 s' ($busy -and (FenceOut $script:Fid) -match 'starts again by itself in 5 seconds') (FenceOut $script:Fid)
 $again = PfWaitLog 'plugin starts again by itself' 12
 Check 'it starts again by itself' ([bool]$again) "$again"
 Start-Sleep -Seconds 3
 Command 'hang'
 $final = $false
-for ($i = 0; $i -lt 60 -and -not $final; $i++) { Start-Sleep -Milliseconds 500; $final = (Output) -match 'three times within an hour' }
-Check 'the third stop within an hour: it stays stopped' $final (Output)
-Check 'it stopped for the 50 ms limit' ((Output) -match 'one run took longer than 50 ms') (Output)
+for ($i = 0; $i -lt 60 -and -not $final; $i++) { Start-Sleep -Milliseconds 500; $final = (FenceOut $script:Fid) -match 'three times within an hour' }
+Check 'the third stop within an hour: it stays stopped' $final (FenceOut $script:Fid)
+Check 'it stopped for the 50 ms limit' ((FenceOut $script:Fid) -match 'one run took longer than 50 ms') (FenceOut $script:Fid)
 Shot 'stopped-three-times'
 Start-Sleep -Seconds 7
-Check 'and does not start again by itself' ((Output) -match 'three times within an hour') (Output)
+Check 'and does not start again by itself' ((FenceOut $script:Fid) -match 'three times within an hour') (FenceOut $script:Fid)
 Remove-Item "$script:Data\cmd.txt"
 $r = (FenceGet $script:Fid).windowRect
 $clicked = OcrClick '^Restart$' $r.x $r.y $r.w $r.h
 Start-Sleep -Seconds 3
-Check 'Restart in the fence starts it again' ($clicked -and (WaitRow 'sys' '^ok' 10) -match '^ok') "clicked=$clicked out=$(Output)"
+Check 'Restart in the fence starts it again' ($clicked -and (WaitRow 'sys' '^ok' 10) -match '^ok') "clicked=$clicked out=$(FenceOut $script:Fid)"
 
 Case 'the last view is cached; quit stops the plugin thread'
 PfQuit

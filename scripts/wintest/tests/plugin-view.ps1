@@ -9,22 +9,10 @@
 #   run.sh --bin target/wintest-bin-debug scripts/wintest/tests/plugin-view.ps1
 $Assets = 'C:\pf\kit\assets\plugin-view'
 
-function Install([string]$id) {
-  $to = "$script:Config\plugins\$id\1.0.0"
-  New-Item -ItemType Directory -Force $to | Out-Null
-  Copy-Item "$Assets\$id\*" $to -Force
-  Set-Content "$script:Config\plugins\$id\current.txt" '1.0.0' -Encoding ASCII -NoNewline
-}
 # A script fence at `rect` (x,y,w,h px) running `path`; its id.
 function NewScriptFence([string]$title, [string]$rect, [string]$path) {
   $f = PfJson fence create --title $title --script $path --rect $rect
   return "$(if ($f.fence) { $f.fence.id } else { $f.id })"
-}
-function NewPluginFence([string]$title, [string]$rect, [string]$id) {
-  Set-Content 'C:\pf\run\idle.cmd' '@echo off' -Encoding ASCII
-  $fid = NewScriptFence $title $rect 'C:\pf\run\idle.cmd'
-  Pf fence set $fid scriptPath "plugin:$id" | Out-Null
-  return $fid
 }
 function CellRects($w, $field = 'script_cells') {
   $v = DumpVal $w $field
@@ -58,12 +46,11 @@ function ClickHit($title, $row, $cell = 0) {
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 700; ParkMouse
   return $true
 }
-function Out0([string]$fid) { return "$((FenceGet $fid).script.output)" }
 function WaitOut([string]$fid, $pattern, $sec = 8) {
-  for ($k = 0; $k -lt $sec * 4; $k++) { if ((Out0 $fid) -match $pattern) { return $true }; Start-Sleep -Milliseconds 250 }
+  for ($k = 0; $k -lt $sec * 4; $k++) { if ((FenceOut $fid) -match $pattern) { return $true }; Start-Sleep -Milliseconds 250 }
   return $false
 }
-function Ev([string]$fid) { return @((Out0 $fid) -split "`n" | Where-Object { $_ -like 'event:*' })[0] }
+function Ev([string]$fid) { return @((FenceOut $fid) -split "`n" | Where-Object { $_ -like 'event:*' })[0] }
 function Page([string]$p) { ClickHit 'View' 0 (@('rows', 'cells', 'draw', 'input', 'list').IndexOf($p)) | Out-Null; WaitOut $script:View "event: click page:$p" | Out-Null; Start-Sleep -Milliseconds 600 }
 # The mean colour around content DIPs (x, y) of the window of `title`.
 function RgbAt($title, $x, $y) {
@@ -90,7 +77,7 @@ $script:AddedZh = -not ($langs | Where-Object { $_.LanguageTag -like 'zh-Hans*' 
 if ($AddedZh) { $langs.Add('zh-Hans-CN'); Set-WinUserLanguageList $langs -Force }
 # The test plugins go in before the start: PecoFence reads the installed plugins once as it starts.
 $script:Config = "$PfApp\config"
-Install 'viewdemo'; Install 'viewnote'
+PfPlacePlugin "$Assets\viewdemo" 'viewdemo'; PfPlacePlugin "$Assets\viewnote" 'viewnote'
 PfStart -Lang en -Script (DumpScript 400 30 3000)
 Check 'the portable configuration is where the plugins went' ((Split-Path (PfJson status).configPath) -eq $script:Config) (PfJson status).configPath
 Pf settings set tools.enabled true | Out-Null
@@ -103,16 +90,16 @@ $bmp = New-Object Drawing.Bitmap 200, 80; $g = [Drawing.Graphics]::FromImage($bm
 $g.FillRectangle([Drawing.Brushes]::Red, 0, 0, 100, 80); $g.FillRectangle([Drawing.Brushes]::Blue, 100, 0, 100, 80); $g.Dispose()
 $bmp.Save("$data\pic.png"); $bmp.Dispose()
 Copy-Item "$data\pic.png" "$PfRun\pic.png"
-$script:View = NewPluginFence 'View' '60,20,380,720' 'viewdemo'
+$script:View = PfPluginFence 'View' '60,20,380,720' 'viewdemo'
 $ok = WaitOut $script:View 'event: -' 15
 # Fences sized for the scale: 380 x 720 px at 100 %.
 $k = Dpi (DumpOf 'View' 8); if (-not $k) { $k = 1.0 }
 $fw = [int](380 * $k); $fh = [int][math]::Min(720 * $k, 860)
 if ($k -ne 1.0) { Pf fence move $script:View --rect "60,20,$fw,$fh" | Out-Null; Start-Sleep -Seconds 2 }
-Check 'the plugin fence shows the plugin''s view' $ok "scale=$k $((Out0 $script:View) -split "`n" | Select-Object -First 4)"
+Check 'the plugin fence shows the plugin''s view' $ok "scale=$k $((FenceOut $script:View) -split "`n" | Select-Object -First 4)"
 
 Case 'rows: a click, a double-click, a to-do, a blur'
-$out = Out0 $script:View
+$out = FenceOut $script:View
 Check 'every text row is there' ($out -match 'small text' -and $out -match 'huge' -and $out -match 'bold red' -and $out -match 'Disk C') (($out -split "`n") -join ' / ')
 ClickHit 'View' 11 | Out-Null
 Check 'a click on a row with an id sends click' (WaitOut $script:View 'event: click row1') (Ev $script:View)
@@ -165,10 +152,10 @@ Shot 'cells'
 
 Case 'a plugin that hangs: the reason and 重新启动'
 ClickHit 'View' 5 2 | Out-Null
-Check 'the fence says the plugin stopped' (WaitOut $script:View 'The plugin stopped: one run took longer than 50 ms' 5) ((Out0 $script:View) -split "`n" | Select-Object -First 2)
+Check 'the fence says the plugin stopped' (WaitOut $script:View 'The plugin stopped: one run took longer than 50 ms' 5) ((FenceOut $script:View) -split "`n" | Select-Object -First 2)
 Shot 'stopped'
 ClickHit 'View' 1 0 | Out-Null
-Check '重新启动 starts it again' (WaitOut $script:View 'event: -' 8) ((Out0 $script:View) -split "`n" | Select-Object -First 2)
+Check '重新启动 starts it again' (WaitOut $script:View 'event: -' 8) ((FenceOut $script:View) -split "`n" | Select-Object -First 2)
 
 Case 'draw: pictures, a chart, a canvas'
 Page 'draw'
@@ -187,37 +174,24 @@ $box = WaitWin 'PecoFence.Rename' 5
 Check 'a click opens the one-line box' ($box -ne [IntPtr]::Zero) "box=$box"
 Shot 'input-open'
 [G]::Type('hello'); Start-Sleep -Milliseconds 300; [G]::Press(0x0D); Start-Sleep -Milliseconds 800
-Check 'Enter sends text and the row shows it' ((WaitOut $script:View 'event: text q hello') -and (Out0 $script:View) -match 'typed: hello') (Ev $script:View)
+Check 'Enter sends text and the row shows it' ((WaitOut $script:View 'event: text q hello') -and (FenceOut $script:View) -match 'typed: hello') (Ev $script:View)
 ClickHit 'View' 2 | Out-Null
 WaitWin 'PecoFence.Rename' 5 | Out-Null
-Add-Type @"
-using System; using System.Runtime.InteropServices;
-public static class LineIme {
-  [DllImport("user32.dll")] static extern IntPtr LoadKeyboardLayoutW(string id, uint flags);
-  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
-  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
-  [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
-  public static void Chinese() { var hkl = LoadKeyboardLayoutW("00000804", 1); PostMessageW(GetForegroundWindow(), 0x50, IntPtr.Zero, hkl); }
-  public static void English() { var hkl = LoadKeyboardLayoutW("00000409", 1); PostMessageW(GetForegroundWindow(), 0x50, IntPtr.Zero, hkl); }
-  public static string Layout() { var t = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero); return GetKeyboardLayout(t).ToInt64().ToString("X"); }
-}
-"@
-[LineIme]::Chinese(); Start-Sleep -Milliseconds 1500
-if ([LineIme]::Layout() -notlike '*0804') { Chord 0x5B 0x20; Start-Sleep -Milliseconds 1500 }
-Log "layout in the box: $([LineIme]::Layout())"
+[L]::Ime('00000804'); Start-Sleep -Milliseconds 1500
+if ([L]::Layout() -notlike '*0804') { Chord 0x5B 0x20; Start-Sleep -Milliseconds 1500 }
+Log "layout in the box: $([L]::Layout())"
 foreach ($ch in 'NIHAO'.ToCharArray()) { [G]::Press([uint16][int]$ch); Start-Sleep -Milliseconds 150 }
 Start-Sleep -Milliseconds 1200
 Shot 'input-composing'
 [G]::Press(0x20); Start-Sleep -Milliseconds 800
-[LineIme]::English(); Start-Sleep -Milliseconds 600
+[L]::Ime('00000409'); Start-Sleep -Milliseconds 600
 [G]::Press(0x0D); Start-Sleep -Milliseconds 800
-$typed = @((Out0 $script:View) -split "`n" | Where-Object { $_ -like 'typed:*' })[0]
-Check 'Chinese typed with Microsoft Pinyin reaches the plugin' ($typed -match '[一-鿿]') "$typed layout=$([LineIme]::Layout())"
+$typed = @((FenceOut $script:View) -split "`n" | Where-Object { $_ -like 'typed:*' })[0]
+Check 'Chinese typed with Microsoft Pinyin reaches the plugin' ($typed -match '[一-鿿]') "$typed layout=$([L]::Layout())"
 ClickHit 'View' 2 | Out-Null
 WaitWin 'PecoFence.Rename' 5 | Out-Null
 [G]::Type('xyz'); Start-Sleep -Milliseconds 300; [G]::Press(0x1B); Start-Sleep -Milliseconds 800
-Check 'Esc closes the box and sends nothing' ((Out0 $script:View) -notmatch 'xyz' -and (WaitGoneWin 'PecoFence.Rename' 3)) (Ev $script:View)
+Check 'Esc closes the box and sends nothing' ((FenceOut $script:View) -notmatch 'xyz' -and (WaitGoneWin 'PecoFence.Rename' 3)) (Ev $script:View)
 $p = HitPt 'View' 2
 [G]::Click($p[0], $p[1]); WaitWin 'PecoFence.Rename' 5 | Out-Null
 [G]::Type('abc'); Start-Sleep -Milliseconds 300
@@ -238,7 +212,7 @@ Check 'the rows above the pane stay' ((Hit 'View' 0 0).t -eq $nav.t) "nav top $(
 Shot 'list'
 
 Case 'note: edited in place, a to-do ticked without the editor'
-$script:Note = NewPluginFence 'Note' "$([int](60 + $fw + 40)),20,$fw,$([int](300 * $k))" 'viewnote'
+$script:Note = PfPluginFence 'Note' "$([int](60 + $fw + 40)),20,$fw,$([int](300 * $k))" 'viewnote'
 $ok = $null -ne (PfWaitLog 'its view holds a note now' 10)
 Start-Sleep -Seconds 1
 Check 'a note view makes the fence a note' ($ok -and (FenceGet $script:Note).noteText -eq '') "note=$((FenceGet $script:Note).noteText)"
@@ -255,11 +229,11 @@ $runs = $null -ne (PfWaitLog 'the held restart runs now' 5)
 Check 'a restart waits while the note is edited, and runs after' ($held -and $runs) "held=$held ran=$runs"
 $saved = (FenceGet $script:Note).noteText
 Check 'the note is saved as a note fence''s' ($saved -match '^first line\n\[ \] milk$') "note=$saved"
-Check 'the plugin gets the text' (WaitOut $script:Note 'got: note first line\|\[ \] milk' 8) (Out0 $script:Note)
+Check 'the plugin gets the text' (WaitOut $script:Note 'got: note first line\|\[ \] milk' 8) (FenceOut $script:Note)
 $wn = DumpOf 'Note' 5
 $box = @(CellRects $wn 'note_boxes')[0]
 if ($box) { $p = ContentPt $wn (($box.l + $box.r) / 2) (($box.t + $box.b) / 2); [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 900; ParkMouse }
-Check 'a to-do ticks without the editor and the plugin gets it' ((WaitGoneWin 'PecoFence.NoteEdit' 1) -and (FenceGet $script:Note).noteText -match '\n\[x\] milk' -and (WaitOut $script:Note 'got: note first line\|\[x\] milk' 8)) "note=$((FenceGet $script:Note).noteText) out=$(Out0 $script:Note)"
+Check 'a to-do ticks without the editor and the plugin gets it' ((WaitGoneWin 'PecoFence.NoteEdit' 1) -and (FenceGet $script:Note).noteText -match '\n\[x\] milk' -and (WaitOut $script:Note 'got: note first line\|\[x\] milk' 8)) "note=$((FenceGet $script:Note).noteText) out=$(FenceOut $script:Note)"
 $cfg = Get-Content "$script:Config\config.json" -Raw -Encoding UTF8 | ConvertFrom-Json
 Check 'the text is in the config''s notes' ("$($cfg.notes.$script:Note)" -match 'milk') ''
 Shot 'note'
@@ -292,7 +266,7 @@ foreach ($theme in 'light', 'dark') {
     if ($ps) { Pf fence set $script:Script scriptPath $ps | Out-Null; Start-Sleep -Seconds 3; Pair "pair-$pg-$theme-$sk" @('View', 'Script') }
     else { Pair "page-$pg-$theme-$sk" @('View') }
   }
-  $script:Note = NewPluginFence 'Note' "$([int](60 + $fw + 40)),20,$fw,$([int](300 * $k))" 'viewnote'
+  $script:Note = PfPluginFence 'Note' "$([int](60 + $fw + 40)),20,$fw,$([int](300 * $k))" 'viewnote'
   Pf fence delete $script:Script | Out-Null; Start-Sleep -Seconds 2
   Pair "page-note-$theme-$sk" @('Note')
   Pf fence delete $script:Note | Out-Null

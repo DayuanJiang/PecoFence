@@ -56,9 +56,8 @@ if ($Part -eq 'Old') {
 
 $Feed = 'C:\pf\run\pfeed'
 $script:Fences = [ordered]@{}
-function Plugin($id) { return @(@((PfJson fence list)) | Where-Object { $_ -and $_.script -and $_.script.path -eq "plugin:$id" })[0] }
+function Plugin($id) { return @(PluginFences $id)[0] }
 function Shows($id) { return [string](FenceGet (Plugin $id).id).script.output }
-function Rows() { return (Js "[...document.querySelectorAll('#pluginList .pl-row')].map(r => r.textContent).join(' / ')") }
 function Config() { return Get-Content "$script:Config\config.json" -Raw -Encoding UTF8 | ConvertFrom-Json }
 # A click on row `row` (cell `cell`) of plugin `id`'s fence, read from the fence's dump.
 function ClickRow($id, $row, $cell = -1, [switch]$Double) {
@@ -94,15 +93,7 @@ Case 'setup: a test index with the six plugins'
 CloseWindows
 Remove-Item $Feed -Recurse -Force -ErrorAction SilentlyContinue
 Copy-Item "$PfExtra\feed" $Feed -Recurse
-$server = @'
-$l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse('127.0.0.1'), 8731); $l.Start()
-while ($true) { $c = $l.AcceptTcpClient(); try { $s = $c.GetStream(); $r = New-Object IO.StreamReader($s); $line = $r.ReadLine(); while ($r.ReadLine()) {}
-  $path = 'C:\pf\run\pfeed' + (($line -split ' ')[1] -replace '/', '\')
-  if (Test-Path -LiteralPath $path -PathType Leaf) { $b = [IO.File]::ReadAllBytes($path); $h = "HTTP/1.1 200 OK`r`nContent-Length: $($b.Length)`r`nConnection: close`r`n`r`n" } else { $b = @(); $h = "HTTP/1.1 404 Not Found`r`nContent-Length: 0`r`nConnection: close`r`n`r`n" }
-  $hb = [Text.Encoding]::ASCII.GetBytes($h); $s.Write($hb, 0, $hb.Length); if ($b.Length) { $s.Write($b, 0, $b.Length) }; $s.Flush() } catch {} finally { $c.Close() } }
-'@
-Set-Content 'C:\pf\run\pfeed-serve.ps1' $server
-$feedProc = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\pf\run\pfeed-serve.ps1' -WindowStyle Hidden -PassThru
+$feedProc = PfFeed 8731
 $env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:8731/index.json'
 $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'
 PfStart -Script (DumpScript) -Lang zh-CN
@@ -111,7 +102,7 @@ Room
 $ok = PfSettings
 PageClick 'nav a[data-page=tools]'; Start-Sleep -Seconds 3
 $names = [ordered]@{ notes = '便签'; clock = '时钟'; 'pc-status' = '电脑状态'; weather = '天气'; github = 'GitHub 仓库动态'; 'clipboard-history' = '剪贴板历史' }
-Check 'the tools page lists the six plugins' ($ok -and @($names.Values | Where-Object { (Rows) -notmatch [regex]::Escape($_) }).Count -eq 0) (Rows)
+Check 'the tools page lists the six plugins' ($ok -and @($names.Values | Where-Object { (PluginRows) -notmatch [regex]::Escape($_) }).Count -eq 0) (PluginRows)
 
 Case 'install: each plugin from its row, each in a fence'
 foreach ($id in $names.Keys) {

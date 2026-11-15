@@ -2,7 +2,7 @@
 # example, an unchanged PC status example of 0.3.0, an edited GitHub example and a script of the
 # user's own. With the plugin index unreachable nothing changes and all still work; with a local
 # test index holding stand-ins of notes, clock, weather, github and pc-status
-# (assets/plugin-migrate) the four move to their plugins once installed, the note keeps its
+# (lib.ps1's PfStandIn) the four move to their plugins once installed, the note keeps its
 # text, the edited copy and the own script stay; a restart moves nothing more; an import of the
 # old configuration moves them again; the snapshot 升级为插件之前 brings the old fences back.
 $Feed = 'C:\pf\run\pfeed'; $Assets = 'C:\pf\kit\assets'; $Ex = 'C:\pf\run\ex'
@@ -61,21 +61,13 @@ Case 'index reachable: the four move once their plugins are installed'
 $commit = 'e19'.PadLeft(40, 'a')
 $entries = foreach ($id in 'notes', 'clock', 'weather', 'github', 'pc-status') {
   $dir = "$Feed\$commit\plugins\$id"; New-Item -ItemType Directory -Force $dir | Out-Null
-  Copy-Item "$Assets\plugin-migrate\$id\*" $dir
+  Copy-Item "$(PfStandIn $id)\*" $dir
   $m = Get-Content "$dir\plugin.json" -Raw -Encoding UTF8 | ConvertFrom-Json
   $m | Add-Member files @(foreach ($f in Get-ChildItem $dir -File) { [ordered]@{ name = $f.Name; size = $f.Length; sha256 = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower() } })
   $m
 }
 [IO.File]::WriteAllText("$Feed\index.json", ([ordered]@{ format = 1; commit = $commit; plugins = @($entries) } | ConvertTo-Json -Depth 8))
-$server = @'
-$l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse('127.0.0.1'), 8733); $l.Start()
-while ($true) { $c = $l.AcceptTcpClient(); try { $s = $c.GetStream(); $r = New-Object IO.StreamReader($s); $line = $r.ReadLine(); while ($r.ReadLine()) {}
-  $path = 'C:\pf\run\pfeed' + (($line -split ' ')[1] -replace '/', '\')
-  if (Test-Path -LiteralPath $path -PathType Leaf) { $b = [IO.File]::ReadAllBytes($path); $h = "HTTP/1.1 200 OK`r`nContent-Length: $($b.Length)`r`nConnection: close`r`n`r`n" } else { $b = @(); $h = "HTTP/1.1 404 Not Found`r`nContent-Length: 0`r`nConnection: close`r`n`r`n" }
-  $hb = [Text.Encoding]::ASCII.GetBytes($h); $s.Write($hb, 0, $hb.Length); if ($b.Length) { $s.Write($b, 0, $b.Length) }; $s.Flush() } catch {} finally { $c.Close() } }
-'@
-Set-Content "$PfRun\pfeed-serve.ps1" $server
-$feedProc = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$PfRun\pfeed-serve.ps1" -WindowStyle Hidden -PassThru
+$feedProc = PfFeed 8733
 $env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:8733/index.json'
 PfStart -Lang en
 for ($w = 0; $w -lt 60 -and (Moved) -lt 4; $w++) { Start-Sleep -Milliseconds 500 }

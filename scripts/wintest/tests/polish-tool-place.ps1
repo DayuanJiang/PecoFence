@@ -77,7 +77,7 @@ Case 'the first-run fences leave no room beside the window'
 CloseWindows
 Set-Culture en-US
 $env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:9/index.json'
-foreach ($id in 'notes', 'clock', 'weather', 'github', 'pc-status') { PfPlacePlugin "C:\pf\kit\assets\plugin-migrate\$id" $id }
+foreach ($id in 'notes', 'clock', 'weather', 'github', 'pc-status') { PfPlacePlugin (PfStandIn $id) $id }
 PfStart -Lang en
 Start-Sleep -Seconds 4
 $screenW = [G]::GetSystemMetrics(0)

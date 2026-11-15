@@ -182,7 +182,7 @@ Set-Content "$PfRun\Shared docs\plan.txt" 'plan'
 # 新建便签 makes a fence of the notes plugin: a stand-in of it is installed, and no plugin index
 # is reached (nothing else is installed, the native note and clock below stay as they are).
 $env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:9/index.json'
-PfPlacePlugin 'C:\pf\kit\assets\plugin-migrate\notes' 'notes'
+PfPlacePlugin (PfStandIn 'notes') 'notes'
 PfStart
 Pf settings set theme light | Out-Null
 Pf fence create --title Work --rect '300,150,520,300' | Out-Null

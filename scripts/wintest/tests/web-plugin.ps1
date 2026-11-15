@@ -10,23 +10,6 @@
 if (-not $Part) { $Part = 'A' }
 $Demo = 'C:\pf\kit\assets\webdemo'
 
-# Installs the test plugin as `id` (a copy of webdemo under another id for the second plugin),
-# as an install does: in its version's folder, which current.txt names.
-function InstallDemo([string]$id = 'webdemo') {
-  $to = "$script:Config\plugins\$id\1.0.0"
-  New-Item -ItemType Directory -Force $to | Out-Null
-  Copy-Item "$Demo\*" $to -Force
-  Set-Content "$script:Config\plugins\$id\current.txt" '1.0.0' -Encoding ASCII -NoNewline
-  if ($id -ne 'webdemo') { (Get-Content "$to\plugin.json" -Raw) -replace '"webdemo"', "`"$id`"" | Set-Content "$to\plugin.json" -Encoding UTF8 }
-}
-# A script fence at `rect` (x,y,w,h px) switched to plugin `id`; its fence id.
-function NewWebFence([string]$title, [string]$rect, [string]$id = 'webdemo') {
-  Set-Content 'C:\pf\run\idle.cmd' '@echo off' -Encoding ASCII
-  $f = PfJson fence create --title $title --script 'C:\pf\run\idle.cmd' --rect $rect
-  $fid = if ($f.fence) { $f.fence.id } else { $f.id }
-  Pf fence set $fid scriptPath "plugin:$id" | Out-Null
-  return $fid
-}
 function FenceWin([string]$title) { return @([W]::Tops('PecoFence.Fence') | Where-Object { [L]::Text($_) -eq $title }) | Select-Object -First 1 }
 # Screen rect of an element of the plugin page in fence window $h: the page fills the window
 # below the title row (a fence has no frame outside its client area), so it ends at its bottom right.
@@ -43,18 +26,9 @@ function WebRect($h, [string]$sel) {
 function GroupMem() {
   $pf = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $pf) { return $null }
-  $all = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name)
-  $ids = @([int]$pf.Id); $i = 0
-  while ($i -lt $ids.Count) { $ids += @($all | Where-Object { $_.ParentProcessId -eq $ids[$i] -and $_.Name -ne 'pecofence-watchdog.exe' } | ForEach-Object { [int]$_.ProcessId }); $i++ }
+  $ids = PfGroup $pf.Id 'pecofence-watchdog.exe'
   $ws = 0.0
-  $s = (Get-Counter '\Process(*)\ID Process', '\Process(*)\Working Set - Private' -ErrorAction SilentlyContinue).CounterSamples
-  $byInst = @{}
-  foreach ($x in $s) {
-    $inst = $x.Path.Split('(')[1].Split(')')[0]
-    if (-not $byInst[$inst]) { $byInst[$inst] = @{} }
-    if ($x.Path -like '*\id process') { $byInst[$inst].id = [int]$x.CookedValue } else { $byInst[$inst].ws = $x.CookedValue }
-  }
-  foreach ($v in $byInst.Values) { if ($ids -contains $v.id) { $ws += $v.ws } }
+  foreach ($v in (PrivateWs $ids).Values) { $ws += $v }
   $commit = 0.0; $web = 0
   foreach ($id in $ids) { $p = Get-Process -Id $id -ErrorAction SilentlyContinue; if ($p) { $commit += $p.PrivateMemorySize64; if ($p.Name -eq 'msedgewebview2') { $web++ } } }
   return @{ ws = [Math]::Round($ws / 1MB, 1); commit = [Math]::Round($commit / 1MB, 1); procs = $ids.Count; web = $web }
@@ -85,10 +59,10 @@ if ($Part -eq 'N') {
 }
 # The test plugins go in before the start: PecoFence reads the installed plugins once as it starts.
 $script:Config = "$PfApp\config"
-InstallDemo
-if ($Part -eq 'M') { InstallDemo 'webdemo2' }
+PfPlacePlugin $Demo 'webdemo'
+if ($Part -eq 'M') { PfPlacePlugin $Demo 'webdemo2' }
 if ($Part -eq 'C') {
-  InstallDemo 'webbg'
+  PfPlacePlugin $Demo 'webbg'
   $j = "$script:Config\plugins\webbg\1.0.0\plugin.json"
   (Get-Content $j -Raw) -replace '"network": \["example.org"\]', '"network": ["example.org"], "background": true' | Set-Content $j -Encoding UTF8
 }
@@ -98,7 +72,7 @@ Check 'the test plugin is installed' (Test-Path "$script:Config\plugins\webdemo\
 
 if ($Part -eq 'A') {
   Case 'page in the fence'
-  $fid = NewWebFence 'Web' '420,160,380,460'
+  $fid = PfPluginFence 'Web' '420,160,380,460' 'webdemo'
   $loaded = PfWaitLog 'web plugin: page loading' 30
   Check 'the browser is made and the page loads' ($null -ne $loaded) "$loaded"
   $h = FenceWin 'Web'
@@ -194,7 +168,7 @@ if ($Part -eq 'B') {
   Case 'looks'
   ClearFences
   Pf fence create --title 'Normal' --rect '120,150,380,460' | Out-Null
-  $fid = NewWebFence 'Web' '540,150,380,460'
+  $fid = PfPluginFence 'Web' '540,150,380,460' 'webdemo'
   Check 'the page loads' ($null -ne (PfWaitLog 'web plugin: page loading' 30)) ''
   Check 'the mouse goes through the browser window' ($null -ne (PfWaitLog 'goes through the browser' 10)) ''
   Start-Sleep -Seconds 3; ParkMouse
@@ -228,11 +202,11 @@ if ($Part -eq 'M') {
   Case 'memory'
   Start-Sleep -Seconds 20
   $m0 = MemNow 'no web plugin'
-  $f1 = NewWebFence 'Web 1' '420,160,380,460'
+  $f1 = PfPluginFence 'Web 1' '420,160,380,460' 'webdemo'
   Check 'the first page loads' ($null -ne (PfWaitLog 'web plugin: page loading' 30)) ''
   Start-Sleep -Seconds 15
   $m1 = MemNow 'one web plugin'
-  $f2 = NewWebFence 'Web 2' '820,160,380,460' 'webdemo2'
+  $f2 = PfPluginFence 'Web 2' '820,160,380,460' 'webdemo2'
   Check 'the second page loads' ($null -ne (PfWaitLog 'page loading plugin=webdemo2' 30)) ''
   Start-Sleep -Seconds 15
   $m2 = MemNow 'two web plugins'
@@ -249,22 +223,8 @@ if ($Part -eq 'M') {
 }
 
 if ($Part -eq 'I') {
-  Add-Type @"
-using System; using System.Runtime.InteropServices;
-public static class WebIme {
-  [DllImport("user32.dll")] static extern IntPtr LoadKeyboardLayoutW(string id, uint flags);
-  [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
-  // Asks the foreground window to switch to Chinese (PRC) with its default IME, Microsoft Pinyin.
-  public static void Chinese() { var hkl = LoadKeyboardLayoutW("00000804", 1); PostMessageW(GetForegroundWindow(), 0x50, IntPtr.Zero, hkl); }
-  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
-  [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
-  public static string Layout() { var t = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero); return GetKeyboardLayout(t).ToInt64().ToString("X"); }
-  public static void English() { var hkl = LoadKeyboardLayoutW("00000409", 1); PostMessageW(GetForegroundWindow(), 0x50, IntPtr.Zero, hkl); }
-}
-"@
   Case 'chinese input'
-  $fid = NewWebFence 'Web' '420,160,380,460'
+  $fid = PfPluginFence 'Web' '420,160,380,460' 'webdemo'
   Check 'the page loads' ($null -ne (PfWaitLog 'web plugin: page loading' 30)) ''
   $h = FenceWin 'Web'
   $reached = CdpOpen -Url 'https://webdemo.plugins.pecofence/*' -sec 30
@@ -272,10 +232,10 @@ public static class WebIme {
   Start-Sleep -Seconds 2
   $t = WebRect $h '#box'
   [G]::Click($t.cx, $t.cy); Start-Sleep -Milliseconds 800
-  [WebIme]::Chinese(); Start-Sleep -Milliseconds 1500
-  Log "layout after the request: $([WebIme]::Layout())"
-  if ([WebIme]::Layout() -notlike '*0804') { Chord 0x5B 0x20; Start-Sleep -Milliseconds 1500; Log "layout after Win+Space: $([WebIme]::Layout())" }
-  Check 'the fence thread has the Chinese layout' ([WebIme]::Layout() -like '*0804') ([WebIme]::Layout())
+  [L]::Ime('00000804'); Start-Sleep -Milliseconds 1500
+  Log "layout after the request: $([L]::Layout())"
+  if ([L]::Layout() -notlike '*0804') { Chord 0x5B 0x20; Start-Sleep -Milliseconds 1500; Log "layout after Win+Space: $([L]::Layout())" }
+  Check 'the fence thread has the Chinese layout' ([L]::Layout() -like '*0804') ([L]::Layout())
   foreach ($c in 'NIHAO'.ToCharArray()) { [G]::Press([uint16][int]$c); Start-Sleep -Milliseconds 150 }
   Start-Sleep -Milliseconds 1200
   Shot 'I1-composing'
@@ -289,7 +249,7 @@ public static class WebIme {
   $v = Js "document.getElementById('box').value"
   Log "box: $v"
   Check 'a second word follows the first' ($v.Length -ge 4) "value='$v'"
-  [WebIme]::English(); Start-Sleep -Milliseconds 800
+  [L]::Ime('00000409'); Start-Sleep -Milliseconds 800
   Shot 'I3-typed'
   if ($AddedZh) { $langs = Get-WinUserLanguageList; $zh = $langs | Where-Object { $_.LanguageTag -like 'zh-Hans*' }; foreach ($z in @($zh)) { [void]$langs.Remove($z) }; Set-WinUserLanguageList $langs -Force }
 }
@@ -298,11 +258,8 @@ if ($Part -eq 'C') {
   # The renderer processes of PecoFence's WebView2 browser (the plugin pages; the settings window
   # is closed here).
   function Renderers() {
-    $pf = Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1
-    $all = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name, CommandLine)
-    $ids = @([int]$pf.Id); $i = 0
-    while ($i -lt $ids.Count) { $ids += @($all | Where-Object { $_.ParentProcessId -eq $ids[$i] } | ForEach-Object { [int]$_.ProcessId }); $i++ }
-    return @($all | Where-Object { $ids -contains $_.ProcessId -and $_.Name -eq 'msedgewebview2.exe' -and $_.CommandLine -match '--type=renderer' } | ForEach-Object { [int]$_.ProcessId })
+    $ids = PfGroup (Get-Process pecofence -ErrorAction SilentlyContinue | Select-Object -First 1).Id
+    return @(Get-CimInstance Win32_Process | Where-Object { $ids -contains $_.ProcessId -and $_.Name -eq 'msedgewebview2.exe' -and $_.CommandLine -match '--type=renderer' } | ForEach-Object { [int]$_.ProcessId })
   }
   # Lines of this run's own log (the shareable copy has them too).
   function LogCount([string]$regex) { return @(Get-Content (PfLogPath) -Encoding UTF8 | Where-Object { $_ -match $regex }).Count }
@@ -312,7 +269,7 @@ if ($Part -eq 'C') {
   }
 
   Case 'pf calls from the page'
-  $fid = NewWebFence 'Web' '420,160,380,460'
+  $fid = PfPluginFence 'Web' '420,160,380,460' 'webdemo'
   Check 'the page loads' ($null -ne (PfWaitLog 'web plugin: page loading' 30)) ''
   $h = FenceWin 'Web'
   $reached = CdpOpen -Url 'https://webdemo.plugins.pecofence/*' -sec 30
@@ -411,7 +368,7 @@ if ($Part -eq 'C') {
   Check 'the page works again' ($reached -and $ok) ''
 
   Case 'a background plugin is not suspended'
-  $fb = NewWebFence 'Bg' '820,160,380,460' 'webbg'
+  $fb = PfPluginFence 'Bg' '820,160,380,460' 'webbg'
   Check 'the background plugin page loads' ($null -ne (PfWaitLog 'page loading plugin=webbg.*background=true' 30)) ''
   $reached = CdpOpen -Url 'https://webbg.plugins.pecofence/*' -sec 30
   JsWait "document.getElementById('list').children.length === 40" 15 | Out-Null
@@ -451,7 +408,7 @@ if ($Part -eq 'C') {
 
 if ($Part -eq 'N') {
   Case 'no WebView2'
-  $fid = NewWebFence 'Web' '420,160,380,460'
+  $fid = PfPluginFence 'Web' '420,160,380,460' 'webdemo'
   Check 'without WebView2 the fence says so' ($null -ne (PfWaitLog 'no WebView2, the fence says so' 30)) ''
   Start-Sleep -Seconds 2
   $out = (PfJson fence get $fid).script.output
