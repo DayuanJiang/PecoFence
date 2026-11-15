@@ -1423,6 +1423,7 @@ impl App {
         self.sync_desktop_if_available("hide-real-icons toggled");
         self.refresh_all();
         self.push_workspace_summary();
+        self.follow_desktop_paste(desktop::foreground_window());
     }
 
     fn apply_desktop_icons_hidden(&self, hidden: bool) -> bool {

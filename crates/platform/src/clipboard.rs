@@ -8,6 +8,7 @@ use std::sync::OnceLock;
 use windows_core::Result;
 
 static PREFERRED_EFFECT_FORMAT: OnceLock<u16> = OnceLock::new();
+static PASTE_SUCCEEDED_FORMAT: OnceLock<u16> = OnceLock::new();
 /// `CF_DIB`: a picture (a browser's 「复制图片」).
 const CF_DIB: u16 = 8;
 
@@ -95,10 +96,25 @@ pub fn set_files(paths: &[&Path], cut: bool) -> Result<()> {
     } else {
         (DROPEFFECT_COPY | DROPEFFECT_LINK) as u32
     };
-    let fmt = dragdrop::hglobal_format(dragdrop::registered_format(
+    set_dword(
+        &data,
         "Preferred DropEffect",
         &PREFERRED_EFFECT_FORMAT,
-    ));
+        effect,
+    )?;
+    // SAFETY: plain OLE call.
+    unsafe { OleSetClipboard(&data).ok() }
+}
+
+/// Writes one of the shell's DWORD formats (`Preferred DropEffect`, `Paste Succeeded`) onto
+/// `data`.
+fn set_dword(
+    data: &IDataObject,
+    name: &'static str,
+    slot: &'static OnceLock<u16>,
+    value: u32,
+) -> Result<()> {
+    let fmt = dragdrop::hglobal_format(dragdrop::registered_format(name, slot));
     // SAFETY: the global block is filled while locked; on success the data object owns it
     // (fRelease = TRUE), otherwise it is freed here.
     unsafe {
@@ -108,7 +124,7 @@ pub fn set_files(paths: &[&Path], cut: bool) -> Result<()> {
             let _ = GlobalFree(mem);
             return Err(E_FAIL.into());
         }
-        dst.write_unaligned(effect);
+        dst.write_unaligned(value);
         let _ = GlobalUnlock(mem);
         let medium = STGMEDIUM {
             tymed: TYMED_HGLOBAL as u32,
@@ -118,10 +134,51 @@ pub fn set_files(paths: &[&Path], cut: bool) -> Result<()> {
         let set = data.SetData(&fmt, &medium, true);
         if set.is_err() {
             let _ = GlobalFree(mem);
-            return set.ok();
         }
-        OleSetClipboard(&data).ok()
+        set.ok()
     }
+}
+
+/// Pastes the clipboard's shell items ([`shell_items`]) into `dest` through the folder's own
+/// drop target, as Explorer's 粘贴 does: copied, or moved when they were cut. After a move the
+/// source is told so (`Paste Succeeded`: a source that left the removal of the originals to the
+/// paste does it then) and the clipboard is emptied, as Explorer does after pasting cut files,
+/// unless something else was copied meanwhile. Returns the effect the shell performed.
+///
+/// **Runs the shell's modal UI** (progress, name conflicts): the caller must hold no
+/// `RefCell` borrow.
+pub fn paste_shell_items(dest: &Path) -> Result<dragdrop::DropEffect> {
+    let (data, cut) = shell_items().ok_or(windows_core::Error::from(E_FAIL))?;
+    let before = sequence();
+    let allowed = if cut {
+        DROPEFFECT_MOVE
+    } else {
+        DROPEFFECT_COPY
+    } as u32;
+    let effect = dragdrop::shell_folder_drop(
+        dest,
+        &data,
+        0,
+        false,
+        dragdrop::DragPoint { x: 0, y: 0 },
+        allowed,
+    )?;
+    if effect == dragdrop::DropEffect::Move {
+        let unchanged = sequence() == before;
+        if let Err(error) = set_dword(
+            &data,
+            "Paste Succeeded",
+            &PASTE_SUCCEEDED_FORMAT,
+            DROPEFFECT_MOVE as u32,
+        ) {
+            tracing::debug!(%error, "Paste Succeeded not taken by the source");
+        }
+        if unchanged {
+            clear();
+        }
+        tracing::debug!(cleared = unchanged, "cut items pasted through the shell");
+    }
+    Ok(effect)
 }
 
 /// Cheap check for menu enabling: is there a file list on the clipboard, or items only the

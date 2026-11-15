@@ -6,9 +6,11 @@
 #   copied in File Explorer (it worked), a file copied inside a .zip (a virtual file, no file
 #   path on the clipboard), each by Ctrl+V and by the fence menu's 粘贴, and Ctrl+V on an empty
 #   spot of the desktop.
-# Parts: run.sh --var Part=A or --var Part=B (about 2 min each); default AB. Part R records the
+# Part C: Ctrl+V after the desktop was in front reaches the window in front then; Ctrl+Z and a
+#   second Ctrl+V after a paste through the shell.
+# Parts: run.sh --var Part=A, B or C (about 2 min each); default ABC. Part R records the
 # before/after clips (--var Tag=main or fix).
-if (-not $Part) { $Part = 'AB' }
+if (-not $Part) { $Part = 'ABC' }
 trap { PfTrap $_; continue }
 
 $Ip = "$PfRun\ip"
@@ -407,8 +409,122 @@ function PartR() {
   CloseWindows
 }
 
+# Part C: Ctrl+V once the desktop has been in front goes to the window in front then (review of
+# the merged round): a folder fence after a click on the desktop and after Win+D, a fence's name
+# box, PecoFence started while the desktop is in front, a cut from a .zip pasted twice, and
+# Ctrl+Z after a paste through the shell.
+function WorkFile($leaf) { return (Join-Path "$Ip\work" $leaf) }
+function PartC() {
+  trap { PfTrap $_; continue }
+  SetupB
+  New-Item -ItemType Directory -Force "$Ip\work" | Out-Null
+  $r = FreeRect 300 220 120 430
+  Pf fence create --portal "$Ip\work" --title '工作' --rect "$($r[0]),$($r[1]),300,220" | Out-Null
+  Start-Sleep -Seconds 2
+  function ClickWork() { $w = (FenceGet '工作').windowRect; [G]::Click($w.x + $w.w - 30, $w.y + $w.h - 24); Start-Sleep -Milliseconds 500 }
+  Log "C fences: $(((@(PfJson fence list) | Where-Object { $_ -and $_.title }) | ForEach-Object { $_.title }) -join ', ')"
+
+  Case 'C1 after a click on the desktop, Ctrl+V in a folder fence pastes into its folder'
+  $ok = CopyIn $ExPlain $Plain
+  DeskClick 500 700 | Out-Null
+  ClickWork
+  Log "C1 foreground $(Fg)"
+  Chord 0x11 0x56
+  Start-Sleep -Seconds 2
+  $inWork = Test-Path -LiteralPath (WorkFile $Plain)
+  $onDesk = Test-Path -LiteralPath (Join-Path $PfDesk $Plain)
+  Check 'C1 the file is in the folder of 工作, not on the desktop' ($ok -and $inWork -and -not $onDesk) "copied $ok; in the folder $inWork, on the desktop $onDesk"
+  Remove-Item -LiteralPath (WorkFile $Plain), (Join-Path $PfDesk $Plain) -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 800
+
+  Case 'C2 after Win+D, Ctrl+V in a folder fence pastes into its folder'
+  $ok = CopyIn $ExPlain $Plain
+  Chord 0x5B 0x44; Start-Sleep -Seconds 2
+  Log "C2 after Win+D: foreground $(Fg)"
+  ClickWork
+  Chord 0x11 0x56
+  Start-Sleep -Seconds 2
+  $inWork = Test-Path -LiteralPath (WorkFile $Plain)
+  $onDesk = Test-Path -LiteralPath (Join-Path $PfDesk $Plain)
+  Check 'C2 the file is in the folder of 工作, not on the desktop' ($ok -and $inWork -and -not $onDesk) "copied $ok; in the folder $inWork, on the desktop $onDesk"
+  Remove-Item -LiteralPath (WorkFile $Plain), (Join-Path $PfDesk $Plain) -Force -ErrorAction SilentlyContinue
+  Chord 0x5B 0x44; Start-Sleep -Seconds 2
+
+  Case 'C3 after a click on the desktop, Ctrl+V in a fence''s name box pastes the text'
+  Set-Content -LiteralPath (Join-Path $PfDesk 'ip 改名 前.txt') 'to rename' -Encoding UTF8
+  Start-Sleep -Seconds 2
+  Pf item move (Join-Path $PfDesk 'ip 改名 前.txt') --to Bravo | Out-Null
+  Start-Sleep -Seconds 1
+  DeskClick 500 700 | Out-Null
+  $p = IconPt 'Bravo' 'ip 改名 前'
+  [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 500
+  [G]::Press(0x71); Start-Sleep -Milliseconds 800
+  Set-Clipboard -Value 'ip 改名 后'
+  Log "C3 name box: foreground $(Fg)"
+  Chord 0x11 0x56; Start-Sleep -Milliseconds 500
+  [G]::Press(0x0D); Start-Sleep -Seconds 2
+  $renamed = Test-Path -LiteralPath (Join-Path $PfDesk 'ip 改名 后.txt')
+  Check 'C3 the text went into the name box (the file is renamed)' $renamed "files: $((@(Get-ChildItem -LiteralPath $PfDesk -Filter 'ip 改名*') | ForEach-Object { $_.Name }) -join ', ')"
+  Get-ChildItem -LiteralPath $PfDesk -Filter 'ip 改名*' | Remove-Item -Force -ErrorAction SilentlyContinue
+
+  Case 'C4 Ctrl+Z after a paste from a .zip does not undo an older step'
+  # A step Windows records (a copy pasted into Bravo), then the paste through the shell.
+  $ok = CopyIn $ExPlain $Plain
+  ClickBravo; Chord 0x11 0x56
+  $first = FileAt $Plain
+  $ok2 = CopyIn $ExZip $Zipped
+  ClickBravo; Chord 0x11 0x56
+  $second = FileAt $Zipped 8
+  Start-Sleep -Seconds 1
+  ClickBravo; Chord 0x11 0x5A; Start-Sleep -Seconds 3
+  $plainStays = Test-Path -LiteralPath (Join-Path $PfDesk $Plain)
+  $zipGone = -not (Test-Path -LiteralPath (Join-Path $PfDesk $Zipped))
+  Log "C4 after Ctrl+Z: the plain copy stays $plainStays, the file from the .zip gone $zipGone"
+  $undoLine = @(PfLogAll | Where-Object { $_ -match 'undone kind="' } | Select-Object -Last 1)
+  Log "C4 the app's undo: $undoLine"
+  Check 'C4 both pasted' ($ok -and $ok2 -and $first -and $second) "copied $ok $ok2; pasted $first $second"
+  Check 'C4 Ctrl+Z stops at the paste from the .zip, the older paste is not undone' ($plainStays -and "$undoLine" -match 'kind="pasted through the shell"') "the plain copy stays $plainStays, the .zip file gone $zipGone; $undoLine"
+  DropPasted $Plain; DropPasted $Zipped
+
+  Case 'C5 a file cut inside a .zip, pasted twice'
+  [Windows.Forms.Clipboard]::Clear()
+  $el = ExItem $ExZip $Zipped
+  $q = ExPt $el; $wr = Rect $ExZip
+  [G]::Click($wr.L + 400, $wr.B - 60); Start-Sleep -Milliseconds 500
+  [G]::Click($q[0], $q[1]); Start-Sleep -Milliseconds 500
+  Chord 0x11 0x58; Start-Sleep -Milliseconds 1200
+  $formats = ClipFormats
+  Log "C5 cut in the .zip: clipboard $formats"
+  ClickBravo; Chord 0x11 0x56
+  $there = FileAt $Zipped 8
+  Start-Sleep -Seconds 2
+  $after = ClipFormats
+  ClickBravo; Chord 0x11 0x56; Start-Sleep -Seconds 3
+  $copies = @(Get-ChildItem -LiteralPath $PfDesk -Filter 'ip 压缩内*').Count
+  Check 'C5 the cut file is pasted' $there "clipboard at the cut: $formats"
+  Check 'C5 a second Ctrl+V makes no second copy' ($copies -eq 1) "copies on the desktop $copies; clipboard after the first paste: $after"
+  DropPasted $Zipped
+  Get-ChildItem -LiteralPath $PfDesk -Filter 'ip 压缩内*' | Remove-Item -Force -ErrorAction SilentlyContinue
+
+  Case 'C6 PecoFence started with the desktop in front: Ctrl+V on the desktop pastes into 「桌面」'
+  $ok = CopyIn $ExPlain $Plain
+  CloseWindows
+  PfQuit
+  DeskClick 500 700 | Out-Null
+  Log "C6 before the start: foreground $(Fg)"
+  PfStart -Lang 'zh-CN'
+  Start-Sleep -Seconds 3
+  Log "C6 after the start: foreground $(Fg)"
+  Chord 0x11 0x56
+  $there = FileAt $Plain
+  Check 'C6 the file is on the desktop' ($ok -and $there) "copied $ok; foreground $(Fg)"
+  Check 'C6 it is in 「桌面」' ((WaitItemFence $Plain $Inbox 6) -eq $Inbox) "in '$(ItemFence $Plain)'"
+  DropPasted $Plain
+}
+
 if ($Part -match 'A') { PartA }
 if ($Part -match 'B') { PartB }
+if ($Part -match 'C') { PartC }
 if ($Part -match 'R') { PartR }
 
 Case 'cleanup'

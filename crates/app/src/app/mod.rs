@@ -253,6 +253,8 @@ const HOTKEY_WINDOWS_DESKTOP: i32 = 3;
 /// Ctrl+V while Explorer's desktop is in front with its icons hidden (`follow_desktop_paste`).
 /// 4 is the dialog jump's Ctrl+G.
 const HOTKEY_DESKTOP_PASTE: i32 = 5;
+/// The undo step of a paste through the shell (`finish_shell_paste`): Ctrl+Z stops there.
+const SHELL_PASTE_STEP: &str = "pasted through the shell";
 
 /// How long a fence-menu "新建" keeps its claim on the next desktop item (plan §5.8).
 const PENDING_CREATION_SECS: u64 = 15;
@@ -601,8 +603,8 @@ pub struct App {
     /// 「临时显示 Windows 桌面」 is on: every fence hidden, the icons PecoFence hid shown. Never
     /// saved.
     windows_desktop: bool,
-    /// Ctrl+V is registered for the desktop (`follow_desktop_paste`).
-    desktop_paste_key: bool,
+    /// A paste through the shell waiting for the App to be free (`paste_shell_items`).
+    shell_paste: Option<items::ShellPaste>,
     /// 在哪个虚拟桌面显示 (see `vdesktops.rs`): whether the virtual-desktop poll runs, and (a
     /// test-script switch) whether only the poll is followed, as the Store edition must.
     desktop_poll: bool,
@@ -990,8 +992,27 @@ impl App {
                     match message {
                         WM_APP_COMMAND => {
                             if let Ok(mut guard) = cell.try_borrow_mut() {
-                                if let Some(app) = guard.as_mut() {
+                                let paste = guard.as_mut().and_then(|app| {
                                     app.process_commands();
+                                    app.take_shell_paste()
+                                });
+                                drop(guard);
+                                // The shell's paste runs with the App free: its progress and
+                                // name-conflict dialogs are a modal loop, in which hotkeys,
+                                // timers and the fences' messages need the App.
+                                if let Some(job) = paste {
+                                    let effect = items::run_shell_paste(&job);
+                                    match cell.try_borrow_mut() {
+                                        Ok(mut guard) => {
+                                            if let Some(app) = guard.as_mut() {
+                                                app.finish_shell_paste(job, effect);
+                                            }
+                                        }
+                                        Err(_) => tracing::warn!(
+                                            ?effect,
+                                            "paste through the shell done while the App is busy: not filed"
+                                        ),
+                                    }
                                 }
                             } else {
                                 // The App is borrowed (modal loop inside a handler: menu, file
@@ -1164,10 +1185,19 @@ impl App {
                             Some(0)
                         }
                         msg::WM_HOTKEY if wparam as i32 == HOTKEY_DESKTOP_PASTE => {
-                            if let Ok(mut guard) = cell.try_borrow_mut()
-                                && let Some(app) = guard.as_mut()
-                            {
-                                app.paste_on_desktop();
+                            // Decided by the window in front now; a busy App (a modal loop in
+                            // one of its handlers) cannot decide, and the key goes on.
+                            let taken = match cell.try_borrow_mut() {
+                                Ok(mut guard) => {
+                                    guard.as_mut().is_some_and(|app| app.on_desktop_paste_key())
+                                }
+                                Err(_) => false,
+                            };
+                            if !taken {
+                                items::pass_on_desktop_paste(
+                                    hwnd,
+                                    "not the desktop in front, or the App busy",
+                                );
                             }
                             Some(0)
                         }
@@ -2118,7 +2148,7 @@ impl App {
             peek_hotkey_wanted: None,
             hotkeys_paused: false,
             windows_desktop: false,
-            desktop_paste_key: false,
+            shell_paste: None,
             desktop_poll: false,
             vd_poll_only: false,
             windows_desktop_hotkey: None,
@@ -2195,6 +2225,8 @@ impl App {
                 );
             }));
         }
+        // Started with the desktop in front (at sign-in), no foreground change comes to say so.
+        app.follow_desktop_paste(desktop::foreground_window());
 
         let not_encrypted = app
             .state
