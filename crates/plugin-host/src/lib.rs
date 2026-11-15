@@ -68,11 +68,9 @@ pub struct Start {
     pub version: String,
     pub permissions: Permissions,
     pub code: String,
-    pub settings: serde_json::Value,
-    pub lang: String,
-    pub theme: String,
-    /// The content area in DIPs.
-    pub size: (f32, f32),
+    /// `pf.lang`, `pf.theme`, `pf.settings` and `pf.fence` ({id, width, height}: the content
+    /// area in DIPs), as a web plugin's page gets them.
+    pub init: serde_json::Value,
     pub shown: bool,
     /// Where the fence's last view is kept (`plugins-host\<fence>.view.json`): shown at start
     /// until the plugin's first `pf.show`.
@@ -245,7 +243,6 @@ impl Plugin {
         let (shared, click, fence) = (plugin.shared.clone(), plugin.click.clone(), s.fence);
         let agent = format!("PecoFence-plugin/{} {}", s.id, s.version);
         let (id, permissions) = (s.id, Arc::new(s.permissions));
-        let size = json!({ "id": fence.to_string(), "width": s.size.0, "height": s.size.1 });
         let noting = host.wants_notes();
         let note = {
             let host = host.clone();
@@ -260,10 +257,10 @@ impl Plugin {
         };
         plugin.call("start", move |ctx| {
             let n = Object::new(ctx.clone())?;
-            n.set("lang", s.lang)?;
-            n.set("theme", s.theme)?;
-            n.set("settings", s.settings.to_string())?;
-            n.set("fence", size.to_string())?;
+            n.set("lang", s.init["lang"].as_str().unwrap_or_default())?;
+            n.set("theme", s.init["theme"].as_str().unwrap_or_default())?;
+            n.set("settings", s.init["settings"].to_string())?;
+            n.set("fence", s.init["fence"].to_string())?;
             let (to, note_) = (shared.clone(), note.clone());
             let show = move |json: String| {
                 if noting {
@@ -741,10 +738,10 @@ mod tests {
             version: "1.0.0".into(),
             permissions,
             code: code.into(),
-            settings: serde_json::json!({ "seconds": true }),
-            lang: "zh-CN".into(),
-            theme: "dark".into(),
-            size: (240.0, 104.0),
+            init: json!({
+                "lang": "zh-CN", "theme": "dark", "settings": { "seconds": true },
+                "fence": { "id": fence.to_string(), "width": 240.0, "height": 104.0 },
+            }),
             shown,
             cache: None,
         };

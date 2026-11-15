@@ -2,18 +2,16 @@
 //! beside it (the light layer), the page's `pf.*` calls, the events pages get, and a page that
 //! crashed or cannot start (WebView2 missing): the fence shows why, with 重新加载.
 
+use super::light::{note_stop, stopped_rows};
 use super::*;
-use crate::fence_window::{FenceWindow, ScriptCellView, ScriptRowView, ScriptView};
+use crate::fence_window::{FenceWindow, ScriptView};
 use crate::web_plugin::{Failure, WebFence};
 use pecofence_core::i18n;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 const WEBVIEW2_DOWNLOAD: &str = "https://developer.microsoft.com/microsoft-edge/webview2/";
-/// The third failure of a page within this time stays stopped until 重新加载.
-const FAILURE_WINDOW: Duration = Duration::from_secs(3600);
-const FAILURES_KEPT_STOPPED: usize = 3;
 
 /// Why a fence's page does not run; it waits for 重新加载.
 enum Stop {
@@ -57,24 +55,13 @@ impl App {
         if plugin.clipboard_read {
             self.ensure_clipboard_listener();
         }
-        let saved = self.state.config.scripts.get(&shown);
-        let saved = saved.map(|s| s.settings.clone()).unwrap_or_default();
-        let settings = self
-            .plugin(&plugin.id)
-            .map(|p| pecofence_core::plugins::fence_settings(&p.manifest, &saved));
-        let (Some(w), Some(env)) = (self.fences.get(&host), self.web_env.as_ref()) else {
+        let init = self.plugin(&plugin.id);
+        let init = init.map(|p| self.plugin_init(shown, &p.manifest));
+        let (Some(w), Some(env), Some(init)) =
+            (self.fences.get(&host), self.web_env.as_ref(), init)
+        else {
             return;
         };
-        let size = w.content_dips();
-        // What the fence draws: light text (a dark page) even in the light theme over a dark
-        // wallpaper, dark text over a bright one in the dark theme.
-        let dark = w.draws_light_text(self.theme_mode);
-        let init = serde_json::json!({
-            "lang": i18n::language().tag(),
-            "theme": pecofence_core::plugins::theme(dark),
-            "settings": settings.unwrap_or_else(|| serde_json::json!({})),
-            "fence": { "id": shown.to_string(), "width": size.0, "height": size.1 },
-        });
         let queue = self.queue.clone();
         let web = WebFence::start(
             &env.env,
@@ -124,23 +111,13 @@ impl App {
                 (text, false)
             }
         };
-        let button = |text: &str| ScriptCellView {
-            text: text.to_string(),
-            clickable: true,
-            ..ScriptCellView::default()
-        };
-        let mut cells = Vec::new();
+        let mut buttons = Vec::new();
         if download {
-            cells.push(button(i18n::text("下载 WebView2")));
+            buttons.push(i18n::text("下载 WebView2"));
         }
-        cells.push(button(i18n::text("重新加载")));
-        let mut rows = ScriptRowView::failed(&why, "");
-        rows.push(ScriptRowView {
-            cells,
-            ..ScriptRowView::default()
-        });
+        buttons.push(i18n::text("重新加载"));
         Some(ScriptView {
-            rows,
+            rows: stopped_rows(&why, &buttons, false),
             ..ScriptView::default()
         })
     }
@@ -204,12 +181,7 @@ impl App {
         if failure == Failure::BrowserExited {
             self.web_env = None;
         }
-        let now = Instant::now();
-        let times = self.web_pages.failures.entry(fence).or_default();
-        times.retain(|t| now.duration_since(*t) < FAILURE_WINDOW);
-        times.push(now);
-        let count = times.len();
-        let again = count < FAILURES_KEPT_STOPPED;
+        let (count, again) = note_stop(&mut self.web_pages.failures, fence);
         tracing::warn!(%fence, ?failure, count, again, "web plugin: page failed; made anew when again, else the fence shows why");
         if !again {
             self.web_pages.stopped.insert(fence, Stop::Failed(failure));

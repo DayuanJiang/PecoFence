@@ -17,9 +17,44 @@ use std::sync::{Arc, Mutex};
 type Reply = Box<dyn FnOnce(std::result::Result<Value, String>)>;
 
 /// A stopped plugin starts again by itself this long after, unless it stopped this often in
-/// the last hour.
+/// the last hour (a web plugin's page too: it is made anew at once).
 const RESTART_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
 const STOPS_AN_HOUR: usize = 3;
+
+/// Records a stop of `fence`'s plugin or page in `stops` (those older than an hour dropped
+/// first): how many there are now, and whether it may start again by itself.
+pub(super) fn note_stop(
+    stops: &mut HashMap<FenceId, Vec<Instant>>,
+    fence: FenceId,
+) -> (usize, bool) {
+    let now = Instant::now();
+    let times = stops.entry(fence).or_default();
+    times.retain(|t| now.duration_since(*t) < std::time::Duration::from_secs(3600));
+    times.push(now);
+    (times.len(), times.len() < STOPS_AN_HOUR)
+}
+
+/// The rows of a fence whose plugin or page stays stopped: `why`, then a row of `buttons`
+/// (`plugin`: a plugin's row).
+pub(super) fn stopped_rows(
+    why: &str,
+    buttons: &[&str],
+    plugin: bool,
+) -> Vec<crate::fence_window::ScriptRowView> {
+    use crate::fence_window::{ScriptCellView, ScriptRowView};
+    let button = |text: &&str| ScriptCellView {
+        text: text.to_string(),
+        clickable: true,
+        ..ScriptCellView::default()
+    };
+    let mut rows = ScriptRowView::failed(why, "");
+    rows.push(ScriptRowView {
+        cells: buttons.iter().map(button).collect(),
+        plugin,
+        ..ScriptRowView::default()
+    });
+    rows
+}
 
 #[derive(Default)]
 pub(super) struct Light {
@@ -96,6 +131,29 @@ impl App {
         })
     }
 
+    /// What a plugin is told as it starts, in either layer: `pf.lang`, `pf.theme` (what the fence
+    /// draws: light text, a dark page, even in the light theme over a dark wallpaper),
+    /// `pf.settings` (the fence's, the manifest's defaults for the rest) and `pf.fence` (its id
+    /// and content size in DIPs).
+    pub(super) fn plugin_init(
+        &self,
+        fence: FenceId,
+        m: &pecofence_core::plugins::Manifest,
+    ) -> Value {
+        let saved = self.state.config.scripts.get(&fence);
+        let saved = saved.map(|s| s.settings.clone()).unwrap_or_default();
+        let dark = (self.window_for(fence)).map_or(self.theme_mode == ThemeMode::Dark, |w| {
+            w.draws_light_text(self.theme_mode)
+        });
+        let (_, size) = self.light_shown(fence);
+        json!({
+            "lang": pecofence_core::i18n::language().tag(),
+            "theme": pecofence_core::plugins::theme(dark),
+            "settings": pecofence_core::plugins::fence_settings(m, &saved),
+            "fence": { "id": fence.to_string(), "width": size.0, "height": size.1 },
+        })
+    }
+
     pub(super) fn light_runs(&self, fence: FenceId) -> bool {
         self.light.running.contains_key(&fence) || self.light.stopped.contains_key(&fence)
     }
@@ -150,21 +208,11 @@ impl App {
         if p.clipboard.reads() {
             self.ensure_clipboard_listener();
         }
-        let saved = self
-            .state
-            .config
-            .scripts
-            .get(&fence)
-            .map(|s| s.settings.clone());
-        let settings = pecofence_core::plugins::fence_settings(&m, &saved.unwrap_or_default());
+        let init = self.plugin_init(fence, &m);
         let (shown, size) = self.light_shown(fence);
         tracing::info!(%fence, id, version = m.version, shown, ?size, background = p.background, "plugin fence starts its main.js");
         self.light.stopped.remove(&fence);
         self.light.running.insert(fence, (None, shown, size));
-        // What the fence draws, as a web plugin's page has it (`draws_light_text`).
-        let dark = (self.window_for(fence)).map_or(self.theme_mode == ThemeMode::Dark, |w| {
-            w.draws_light_text(self.theme_mode)
-        });
         let config = self.state.config_path_on_disk();
         let cache = config
             .parent()
@@ -175,10 +223,7 @@ impl App {
             version: m.version.clone(),
             permissions: m.permissions.clone(),
             code,
-            settings,
-            lang: pecofence_core::i18n::language().tag().to_string(),
-            theme: pecofence_core::plugins::theme(dark).into(),
-            size,
+            init,
             shown,
             cache,
         })));
@@ -334,35 +379,21 @@ impl App {
         &self,
         fence: FenceId,
     ) -> Option<Vec<crate::fence_window::ScriptRowView>> {
-        use crate::fence_window::{ScriptCellView, ScriptRowView};
         use pecofence_core::i18n;
         let why = std::slice::from_ref(self.light.stopped.get(&fence)?);
         if self.light.stops.get(&fence).map_or(0, Vec::len) < STOPS_AN_HOUR {
             let text = i18n::format("插件停止了：{0}。5 秒后自动重新启动。", why);
-            return Some(ScriptRowView::failed(&text, ""));
+            return Some(crate::fence_window::ScriptRowView::failed(&text, ""));
         }
         let text = i18n::format("插件停止了：{0}。一小时里停了三次，不再自动启动。", why);
-        let mut rows = ScriptRowView::failed(&text, "");
-        rows.push(ScriptRowView {
-            cells: vec![ScriptCellView {
-                text: i18n::text("重新启动").to_string(),
-                clickable: true,
-                ..ScriptCellView::default()
-            }],
-            plugin: true,
-            ..ScriptRowView::default()
-        });
-        Some(rows)
+        Some(stopped_rows(&text, &[i18n::text("重新启动")], true))
     }
 
     /// A plugin stopped by PecoFence: it starts again in 5 s, unless this is its third stop
     /// within an hour.
     fn light_stopped(&mut self, fence: FenceId, why: String) {
-        let stops = self.light.stops.entry(fence).or_default();
-        stops.retain(|at| at.elapsed() < std::time::Duration::from_secs(3600));
-        stops.push(Instant::now());
-        let again = stops.len() < STOPS_AN_HOUR;
-        tracing::warn!(%fence, why, stops = stops.len(), again, "plugin fence stopped");
+        let (stops, again) = note_stop(&mut self.light.stops, fence);
+        tracing::warn!(%fence, why, stops, again, "plugin fence stopped");
         if self.light.running.remove(&fence).is_none() {
             return;
         }

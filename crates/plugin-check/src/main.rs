@@ -327,10 +327,10 @@ fn check(a: Args) -> Result<bool, String> {
         version: manifest.version.clone(),
         permissions: manifest.permissions.clone(),
         code,
-        settings: settings.clone(),
-        lang: a.lang.clone(),
-        theme: "dark".into(),
-        size: (320.0, 240.0),
+        init: json!({
+            "lang": a.lang, "theme": "dark", "settings": settings,
+            "fence": { "id": fence.to_string(), "width": 320.0, "height": 240.0 },
+        }),
         shown: true,
         cache: None,
     })));
