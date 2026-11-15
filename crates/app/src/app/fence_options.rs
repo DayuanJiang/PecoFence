@@ -745,6 +745,14 @@ impl App {
         if follow {
             title_rgb = tint;
         }
+        // The other tabs whose title follows the window's tint follow the new one.
+        for tab in self.state.tabs_of(host) {
+            let (tab_tint, tab_title, tab_size) = self.style_of(tab);
+            if tab != host && tab_title.is_some() && tab_title == old_tint {
+                self.state.set_style(tab, tab_tint, tint, tab_size);
+                self.refresh_fence(tab);
+            }
+        }
         self.set_fence_style(fence, tint, title_rgb, title_size);
     }
 
