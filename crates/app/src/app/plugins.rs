@@ -75,6 +75,9 @@ pub(super) struct Plugins {
     /// The row the page opens (插件详情, 插件设置 with its fence), numbered so that the page
     /// opens it again after the user closed it.
     open: Option<(u32, String, Option<FenceId>)>,
+    /// The plugin whose install warning the page shows again (the index changed what it may do
+    /// while the warning was open): in the one state sent right after the refused 安装.
+    ask: Option<String>,
     done: Arc<Mutex<Vec<Done>>>,
 }
 
@@ -110,8 +113,9 @@ fn get_first(urls: &[String]) -> Result<Vec<u8>, String> {
 }
 
 /// The index from the first address whose copy is signed by the plugin repository's key (a
-/// wrong or missing signature counts as no index there).
-fn fetch_index(test: Option<String>) -> Result<(Index, Vec<u8>), String> {
+/// wrong or missing signature, or a serial lower than `serial` of the index kept, counts as no
+/// index there).
+fn fetch_index(test: Option<String>, serial: u64) -> Result<(Index, Vec<u8>), String> {
     let urls = test
         .clone()
         .map_or_else(|| list::index_urls().to_vec(), |u| vec![u]);
@@ -126,7 +130,14 @@ fn fetch_index(test: Option<String>) -> Result<(Index, Vec<u8>), String> {
                 Err(e) => Err(format!("no signature: {e}")),
             }
         });
-        match got.and_then(|bytes| Ok((list::parse_index(&bytes)?, bytes))) {
+        let got = got.and_then(|bytes| Ok((list::parse_index(&bytes)?, bytes)));
+        let got = got.and_then(|((index, dropped), bytes)| match index.serial {
+            older if older < serial => Err(format!(
+                "an older index (serial {older}, the one kept has {serial})"
+            )),
+            _ => Ok(((index, dropped), bytes)),
+        });
+        match got {
             Ok(((index, dropped), bytes)) => {
                 for why in dropped {
                     tracing::warn!(why, "plugins: index entry left out");
@@ -409,7 +420,8 @@ impl App {
         }
         self.plugins.status = Status::Loading;
         let test = test_url(self.instance.is_some());
-        self.run_plugin_job(move || Done::Index(fetch_index(test)));
+        let serial = self.plugins.index.as_ref().map_or(0, |i| i.serial);
+        self.run_plugin_job(move || Done::Index(fetch_index(test, serial)));
         self.push_settings_state();
     }
 
@@ -446,7 +458,7 @@ impl App {
         for d in done {
             match d {
                 Done::Index(Ok((index, bytes))) => {
-                    tracing::info!(plugins = index.plugins.len(), commit = %index.commit, "plugins: index read");
+                    tracing::info!(plugins = index.plugins.len(), serial = index.serial, commit = %index.commit, "plugins: index read");
                     let saved = std::fs::create_dir_all(&self.plugins.root)
                         .and_then(|()| std::fs::write(self.plugins.root.join("index.json"), bytes));
                     if let Err(e) = saved {
@@ -473,6 +485,23 @@ impl App {
     /// Takes down what the index marks disabled and updates what may update by itself.
     fn apply_plugin_index(&mut self) {
         let app = env!("CARGO_PKG_VERSION");
+        // A first install under way of a plugin taken down now: its result will be dropped.
+        let index = self.plugins.index.as_ref();
+        let down: Vec<String> = (self.plugins.busy.keys())
+            .filter(|id| {
+                index
+                    .and_then(|i| i.get(id))
+                    .is_some_and(|e| e.disabled.is_some())
+            })
+            .cloned()
+            .collect();
+        for id in down {
+            tracing::warn!(
+                id,
+                "plugins: taken down by the index during its download, cancelled"
+            );
+            self.plugins.busy.remove(&id);
+        }
         let ids: Vec<String> = self.plugins.installed.keys().cloned().collect();
         for id in ids {
             let entry = self.plugins.index.as_ref().and_then(|i| i.get(&id));
@@ -515,6 +544,20 @@ impl App {
         if self.plugins.busy.contains_key(id) {
             return;
         }
+        let mine = self.plugin(id);
+        let refused = if entry.disabled.is_some() || mine.is_some_and(|p| p.disabled.is_some()) {
+            Some("taken down")
+        } else if list::needs_newer_app(&entry.manifest, env!("CARGO_PKG_VERSION")) {
+            Some("needs a newer PecoFence")
+        } else if mine.is_some_and(|p| p.ready && p.manifest.version == entry.manifest.version) {
+            Some("this version is installed")
+        } else {
+            None
+        };
+        if let Some(why) = refused {
+            let version = &entry.manifest.version;
+            return tracing::warn!(id, by_user, version, why, "plugins: download refused");
+        }
         self.plugins.downloads += 1;
         let n = self.plugins.downloads;
         self.plugins.busy.insert(id.to_string(), n);
@@ -542,16 +585,26 @@ impl App {
         result: Result<String, (bool, String)>,
     ) {
         let temp = self.plugins.root.join(format!(".new-{id}-{n}"));
-        if self.plugins.busy.get(id) != Some(&n) {
+        let ours = self.plugins.busy.get(id) == Some(&n);
+        if ours {
+            self.plugins.busy.remove(id);
+        }
+        // Checked again right before the switch: a plugin the index takes down is not installed.
+        let index = self.plugins.index.as_ref();
+        let down = index
+            .and_then(|i| i.get(id))
+            .is_some_and(|e| e.disabled.is_some())
+            || self.plugin(id).is_some_and(|p| p.disabled.is_some());
+        if !ours || down {
             tracing::info!(
                 id,
                 n,
+                down,
                 "plugins: a cancelled download ended, its files are dropped"
             );
             let _ = std::fs::remove_dir_all(&temp);
             return;
         }
-        self.plugins.busy.remove(id);
         let before = self.plugin(id).map(|p| p.manifest.version.clone());
         let result =
             result.and_then(|version| self.switch_plugin(id, &temp, &version, before.as_deref()));
@@ -818,9 +871,24 @@ impl App {
                 self.settings_error(super::settings::scripts_held_text())
             }
             ("pluginInstall", Some(id)) => {
-                // Like the built-in examples, an install switches 小工具 on.
-                self.ensure_tool_on(pecofence_core::FenceTool::Script);
-                self.start_plugin_download(id, true);
+                // The warning showed this version and these permissions; when the index has
+                // changed them since, the warning is shown again.
+                let shown = v.get("shown").and_then(|s| s.as_str());
+                let now = self.plugins.index.as_ref().and_then(|i| i.get(id));
+                let now = now.map(|e| list::shown_key(&e.manifest));
+                if shown.is_none() || shown != now.as_deref() {
+                    tracing::warn!(
+                        id,
+                        shown,
+                        now,
+                        "plugins: install refused, the warning showed another entry; shown again"
+                    );
+                    self.plugins.ask = Some(id.to_string());
+                } else {
+                    // Like the built-in examples, an install switches 小工具 on.
+                    self.ensure_tool_on(pecofence_core::FenceTool::Script);
+                    self.start_plugin_download(id, true);
+                }
             }
             ("pluginAdd", Some(id)) if self.plugin(id).is_some() => self.add_plugin_fence(id),
             ("pluginUninstall", Some(id)) => self.uninstall_plugin(id),
@@ -834,6 +902,8 @@ impl App {
             _ => {}
         }
         self.push_settings_state();
+        // Asked once: a page opened later shows no warning by itself.
+        self.plugins.ask = None;
     }
 
     /// 设置 › 小工具's plugin list: the installed plugins, then the others of the index (those
@@ -891,7 +961,7 @@ impl App {
                     "folders": p.folders, "notify": p.notify,
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),
                     "state": state, "reason": reason, "page": index.is_some(),
-                    "settings": settings, "fences": fences,
+                    "settings": settings, "fences": fences, "shown": list::shown_key(m),
                 }))
             })
             .collect();
@@ -900,6 +970,6 @@ impl App {
             Status::Offline => "offline",
             Status::Ready => "ready",
         };
-        serde_json::json!({ "status": status, "held": self.held_scripts_wait(), "open": self.plugins.open, "list": rows })
+        serde_json::json!({ "status": status, "held": self.held_scripts_wait(), "open": self.plugins.open, "ask": self.plugins.ask, "list": rows })
     }
 }

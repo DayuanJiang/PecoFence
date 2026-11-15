@@ -1080,6 +1080,7 @@
   "下载没有完成，检查网络后再试一次。": "O download não terminou. Verifique a rede e tente de novo.",
   "下载的文件和审查过的不一样，已经放弃安装。": "Os arquivos baixados são diferentes dos revisados, então nada foi instalado.",
   "卸载“{0}”？它的栅栏和它保存的数据都会删掉。": "Desinstalar “{0}”? Os grupos dele e os dados salvos serão apagados.",
+  "插件目录刚刚更新了这个插件，请再看一遍它会做的事。": "A lista de plugins acabou de mudar este plugin. Leia de novo o que ele vai fazer.",
   "插件停止了：{0}。5 秒后自动重新启动。": "O plugin parou: {0}. Ele reinicia sozinho em 5 segundos.",
   "插件停止了：{0}。一小时里停了三次，不再自动启动。": "O plugin parou: {0}. Ele parou três vezes em uma hora e não reinicia mais sozinho.",
   "每秒合计运行超过了 200 毫秒": "ele rodou mais de 200 ms no total em um segundo",

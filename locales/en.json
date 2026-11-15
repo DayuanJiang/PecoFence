@@ -1080,6 +1080,7 @@
   "下载没有完成，检查网络后再试一次。": "The download didn't finish. Check the network and try again.",
   "下载的文件和审查过的不一样，已经放弃安装。": "The downloaded files differ from the reviewed ones, so nothing was installed.",
   "卸载“{0}”？它的栅栏和它保存的数据都会删掉。": "Uninstall “{0}”? Its fences and the data it saved are deleted.",
+  "插件目录刚刚更新了这个插件，请再看一遍它会做的事。": "The plugin list has just changed this plugin. Please read again what it will do.",
   "插件停止了：{0}。5 秒后自动重新启动。": "The plugin stopped: {0}. It starts again by itself in 5 seconds.",
   "插件停止了：{0}。一小时里停了三次，不再自动启动。": "The plugin stopped: {0}. It stopped three times within an hour, so it no longer starts by itself.",
   "每秒合计运行超过了 200 毫秒": "together it ran longer than 200 ms within one second",

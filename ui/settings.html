@@ -937,6 +937,7 @@
       </div>
       <div class="pl-back" id="plBack" hidden><div class="pl-dialog" role="dialog" aria-modal="true" aria-labelledby="plTitle">
         <h4 id="plTitle"></h4><p id="plBy"></p>
+        <p class="caution" id="plChanged" hidden>插件目录刚刚更新了这个插件，请再看一遍它会做的事。</p>
         <div class="pl-warn"><p>它会做：</p><ul id="plDoes"></ul><p>插件只能做这里列出的事，每个版本都经过自动检查和审查。</p></div>
         <div class="pl-warn strict" id="plSystem" hidden><p id="plSystemText"></p><p id="plSystemOff">打开“允许插件使用 Windows 底层功能”后才能用这些功能。</p></div>
         <p id="plToolsOn" hidden>安装后会打开“小工具”开关。</p>
@@ -1871,6 +1872,9 @@
     if (list.contains(a) && a.matches('input, select')) { plPending = true; return; }
     plPending = false;
     if (pl.open && pl.open[0] !== plOpenSeq) { plOpenSeq = pl.open[0]; plOpen.add(pl.open[1]); plFocus = [pl.open[1], pl.open[2]]; }
+    // 安装 was refused: the index changed what the plugin may do while its warning was open.
+    const again = pl.ask && pl.list.find(x => x.id === pl.ask && (x.state === 'install' || x.state === 'confirm'));
+    if (again) plConfirm(again, true);
     list.replaceChildren();
     for (const p of pl.list) {
       const row = plEl('div', 'card child pl-row'), l = plEl('div', 'l'), box = plEl('div');
@@ -1918,8 +1922,9 @@
   }
   document.getElementById('pluginList').addEventListener('focusout', () => setTimeout(() => { if (plPending) renderPlugins(); }));
   // 安装 and a 更新 that asks for more: the warning first.
-  function plConfirm(p) {
+  function plConfirm(p, changed) {
     plAsk = p;
+    document.getElementById('plChanged').hidden = !changed;
     document.getElementById('plTitle').textContent = p.state === 'confirm' ? tf("更新“{0}”？", p.name) : tf("安装“{0}”？", p.name);
     document.getElementById('plBy').textContent = tf("作者 {0}，审查过的版本是 {1}。", p.author, p.version);
     document.getElementById('plDoes').replaceChildren(...plLines(p).map(x => plEl('li', '', x)));
@@ -1933,7 +1938,7 @@
   }
   function plClose(install) {
     document.getElementById('plBack').hidden = true;
-    if (install && plAsk) send({ type: 'action', name: 'pluginInstall', id: plAsk.id });
+    if (install && plAsk) send({ type: 'action', name: 'pluginInstall', id: plAsk.id, shown: plAsk.shown });
     plAsk = null;
   }
   document.getElementById('plCancel').onclick = () => plClose(false);
