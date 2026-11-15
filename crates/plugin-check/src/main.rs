@@ -112,16 +112,19 @@ impl Host for Fake {
                 .data
                 .remove(arg(0))
                 .map_or(json!(false), |_| json!(true))),
-            "clipboard.text" => Ok(json!("text on the clipboard")),
+            // The shapes of the app's answers (crates/app/src/app/light_host.rs).
+            "clipboard.text" => Ok(json!({ "text": "text on the clipboard", "truncated": false })),
             "clipboard.files" => Ok(json!([r"C:\Users\me\Desktop\notes.txt"])),
-            "sys.cpu" => Ok(json!(12.5)),
-            "sys.memory" => Ok(json!({ "used": 6_000_000_000u64, "total": 16_000_000_000u64 })),
+            "sys.cpu" => Ok(json!(12)),
+            "sys.memory" => Ok(json!(38)),
             "sys.drives" => Ok(json!([
-                { "name": "C:", "used": 200_000_000_000u64, "total": 500_000_000_000u64 }
+                { "letter": "C", "free": 200_000_000_000u64, "size": 500_000_000_000u64 }
             ])),
             "sys.ip" => Ok(json!("192.168.1.20")),
-            "sys.network" => Ok(json!({ "up": 1000, "down": 20000 })),
-            "sys.battery" => Ok(json!({ "percent": 80, "charging": true })),
+            "sys.network" => Ok(json!([{
+                "up": true, "gateway": true, "physical": true, "addresses": ["192.168.1.20"]
+            }])),
+            "sys.battery" => Ok(json!({ "percent": 80, "plugged": true })),
             "run" => Ok(json!({ "code": 0, "output": "" })),
             "folder.list" => Ok(json!([])),
             "folder.read" => Ok(json!("")),
@@ -499,7 +502,7 @@ fn check(a: Args) -> Result<bool, String> {
             "viewsPerSecondAtRest": rest_views, "showCallsPerSecondAtRest": rest_calls,
             "jsMs": log.js_ms, "jsMsPerSecondAtRest": rest_ms, "slowestMs": log.slowest.0,
             "slowest": log.slowest.1, "memoryBytes": log.memory, "stopped": stops,
-            "warnings": warns, "failures": fails,
+            "warnings": warns, "failures": fails, "lastView": log.last_view,
         });
         let text = serde_json::to_string_pretty(&result).unwrap_or_default();
         std::fs::write(path, text).map_err(|e| e.to_string())?;
