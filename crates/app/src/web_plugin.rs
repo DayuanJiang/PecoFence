@@ -252,7 +252,7 @@ impl WebFence {
             events.push(webview.on_web_message_received(move |args| {
                 let source = args.source();
                 if !source.starts_with(&origin) {
-                    tracing::info!(plugin = %id, source = %short(&source), "web plugin: message from another page ignored");
+                    tracing::info!(plugin = %id, uri = %short(&source), "web plugin: message from another page ignored");
                     return;
                 }
                 let reply = answer(&args.web_message_as_json());
