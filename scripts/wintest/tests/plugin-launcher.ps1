@@ -68,12 +68,12 @@ function FenceMid() { $r = FenceRect; return @([int]($r.x + $r.w / 2), [int]($r.
 function Items() { $s = (Get-Content "$script:Config\config.json" -Raw -Encoding UTF8 | ConvertFrom-Json).scripts."$script:Fid".settings; return @($s.__launch | Where-Object { $_ }) }
 function Keys() { return (Get-Content "$script:Config\config.json" -Raw -Encoding UTF8 | ConvertFrom-Json).scripts."$script:Fid".settings.__keys }
 function WaitItems($n, $sec = 8) { for ($i = 0; $i -lt $sec * 2; $i++) { if (@(Items).Count -eq $n) { return $true }; Start-Sleep -Milliseconds 500 }; return $false }
-function FenceHwnd() { $r = FenceRect; return @(@([W]::Tops('PecoFence.Fence')) | Where-Object { (Rect $_).L -eq $r.x -and (Rect $_).T -eq $r.y })[0] }
+function FenceHwnd($fid = $script:Fid) { $r = (FenceGet $fid).windowRect; return @(@([W]::Tops('PecoFence.Fence')) | Where-Object { (Rect $_).L -eq $r.x -and (Rect $_).T -eq $r.y })[0] }
 function WaitOut($regex, $sec = 10) { for ($i = 0; $i -lt $sec * 2; $i++) { if ((FenceOut $script:Fid) -match $regex) { return $true }; Start-Sleep -Milliseconds 500 }; return $false }
 function FenceMenu() { $r = FenceRect; [G]::RClick($r.x + 120, $r.y + $r.h - 40); return (MenuWin 5) }
 function Marks() { if (Test-Path $Marker) { return @(Get-Content $Marker | Where-Object { $_ }).Count }; return 0 }
 # The plugin index of the feed: launcher at `version` with `commands`, and `others` (id = api).
-function Publish([int]$n, [string]$version, $commands, $others = @{}) {
+function Publish([int]$n, [string]$version, $commands, $others = @{}, [string]$down = '') {
   $commit = ('{0:x}' -f $n).PadLeft(40, 'b')
   $entries = @()
   $all = @(@{ id = 'launcher'; api = 2; perms = [ordered]@{ launch = $true; drop = @('files'); commands = $commands } })
@@ -85,6 +85,7 @@ function Publish([int]$n, [string]$version, $commands, $others = @{}) {
     [IO.File]::WriteAllText("$dir\plugin.json", ($m | ConvertTo-Json -Depth 6))
     Copy-Item "$Kit\main.js", "$Kit\README.md" $dir
     $m.files = @(foreach ($f in Get-ChildItem $dir -File) { [ordered]@{ name = $f.Name; size = $f.Length; sha256 = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower() } })
+    if ($down -and $p.id -eq 'launcher') { $m.disabled = $down }
     $entries += $m
   }
   [IO.File]::WriteAllText("$Feed\index.json", ([ordered]@{ format = 1; serial = $n; commit = $commit; plugins = @($entries) } | ConvertTo-Json -Depth 8))
@@ -111,6 +112,13 @@ $env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:8732/index.json'
 $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'
 $script:Config = "$PfApp\config"
 PfPlacePlugin $Kit 'launcher'
+if ($Part -eq 'A') {
+  # A second launcher, B, whose command from its shortcut runs for ever: PecoFence stops it each time.
+  PfPlacePlugin $Kit 'launcher-b'
+  $bd = "$script:Config\plugins\launcher-b\1.0.0"
+  [IO.File]::WriteAllText("$bd\plugin.json", ([IO.File]::ReadAllText("$bd\plugin.json") -replace '"启动器"', '"B 启动器"'))
+  Add-Content "$bd\main.js" 'pf.on("command", (c) => { if (c.via === "key") for (;;) {} });'
+}
 PfStart -Lang zh-CN
 $script:Fid = PfPluginFence '启动器' '80,140,320,360' 'launcher'
 Check 'the launcher starts and shows its hint' ([bool](PfWaitLog 'plugin fence starts its main.js' 20) -and (WaitOut '拖到这里|右键')) (FenceOut $script:Fid)
@@ -239,5 +247,88 @@ if ($Part -eq 'A') {
   Pf config import $file | Out-Null; Start-Sleep -Seconds 4
   Check 'no items and no shortcut after the import (the fence stays, held as the file''s scripts are)' ((WaitItems 0) -and $null -eq (Keys) -and (FenceGet $script:Fid).script.path -eq 'plugin:launcher') "items=$(@(Items).Count) keys=$(Keys) out=$(FenceOut $script:Fid)"
   Check 'its shortcut was unregistered' ([bool](PfWaitLog 'plugin shortcut unregistered' 3)) ''
+}
+if ($Part -eq 'A') {
+  function Key([int]$vk) { [G]::KeyDown(0x11); [G]::KeyDown(0x12); [G]::Press($vk); [G]::KeyUp(0x12); [G]::KeyUp(0x11); Start-Sleep -Seconds 2 }
+  # Records Ctrl+Alt+<vk> for 显示启动器 of fence `fid` in the plugin details; the help text under it.
+  function SetKey($fid, [int]$vk) {
+    PfSettings | Out-Null; $sw = WaitWin 'PecoFence.Settings' 5
+    [L]::MoveWindow($sw, 760, 60, 900, 900, $true) | Out-Null
+    Js "window.chrome.webview.postMessage({ type: 'action', name: 'pluginsRefresh' })" | Out-Null
+    PageClick 'nav a[data-page=tools]'; Start-Sleep -Seconds 3
+    $box = "plk-$fid-show"
+    Js "(() => { for (let i = 0; i < 12; i++) { const r = [...document.querySelectorAll('#pluginList .pl-row')].find(r => r.getAttribute('aria-expanded') !== 'true'); if (!r) break; r.click(); } const b = document.getElementById('$box'); if (b) b.scrollIntoView({ block: 'center' }); return !!b; })()" | Out-Null
+    Start-Sleep -Milliseconds 500; PageClick "#$box"; Start-Sleep -Milliseconds 500
+    Key $vk
+    $help = Js "(document.getElementById('${box}Help') || {}).innerText"
+    [L]::PostMessageW($sw, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 2
+    return "$help"
+  }
+  function WaitCount($regex, [int]$n, $sec = 15) { for ($i = 0; $i -lt $sec * 2; $i++) { if ((LogCount $regex) -ge $n) { return $true }; Start-Sleep -Milliseconds 500 }; return $false }
+  $UnregL = 'plugin shortcut unregistered.*Ctrl\+Alt\+L'; $UnregK = 'plugin shortcut unregistered.*Ctrl\+Alt\+K'
+  # The last log line of the shortcut: registered or unregistered.
+  function Last([string]$key) { return "$(PfWaitLog "plugin shortcut (un)?registered.*Ctrl\+Alt\+$key" 1)" }
+
+  Case 'a drop of 20 files: all of them become items, in one call'
+  New-Item -ItemType Directory -Force "$Lr\many" | Out-Null
+  $names = @(1..20 | ForEach-Object { 'm{0:d2}.txt' -f $_ })
+  foreach ($n in $names) { Set-Content "$Lr\many\$n" $n -Encoding ASCII }
+  $ex = ExOpen "$Lr\many" 760 40 700 960
+  $p = ExPick $ex $names
+  $to = FenceMid
+  DragDrop $p[0] $p[1] $to[0] $to[1]
+  Check 'twenty files are twenty items, no call refused for too many at once' ((WaitItems 20 10) -and (LogCount 'too many calls at once') -eq 0) "items=$(@(Items).Count)"
+  CloseWindows
+
+  Case 'two launchers: the shortcut of B while the launcher is up alone ends that Peek and shows B'
+  $script:FidB = PfPluginFence 'B' '440,520,280,240' 'launcher-b'
+  Start-Sleep -Seconds 3
+  $a = SetKey $script:Fid 0x4C; $b = SetKey $script:FidB 0x4B
+  Check 'Ctrl+Alt+L for the launcher, Ctrl+Alt+K for B' ((WaitCount 'plugin shortcut registered.*Ctrl\+Alt\+K' 1 5) -and (Keys).show -eq 'Ctrl+Alt+L') "help: $a | $b"
+  $ex = ExOpen $Lr 40 100 1000 760
+  Key 0x4C
+  $aFirst = [LX]::Topmost((FenceHwnd))
+  Key 0x4B
+  $aThen = [LX]::Topmost((FenceHwnd)); $bThen = [LX]::Topmost((FenceHwnd $script:FidB))
+  Shot 'shortcut-b-over-launcher'
+  Check 'B is up, the launcher went back below' ($aFirst -and $bThen -and -not $aThen -and [bool](PfWaitLog 'the Peek of another fence alone ends first' 3)) "launcher up first=$aFirst, then launcher=$aThen B=$bThen"
+
+  Case 'B stops a third time within an hour: its shortcut goes, the launcher keeps its own'
+  # Its command from the key above stopped it once; it starts again 5 s after each stop.
+  for ($n = 2; $n -le 3; $n++) { Key 0x4B; Start-Sleep -Seconds 5; Key 0x4B }
+  $l = LogCount $UnregL
+  Check 'three stops, then Ctrl+Alt+K is unregistered' ((WaitCount 'plugin fence stopped' 3) -and (WaitCount $UnregK 1 8) -and (Last 'K') -match 'unregistered' -and (LogCount $UnregL) -eq $l) "stops=$(LogCount 'plugin fence stopped') unregistered K=$(LogCount $UnregK)"
+  [G]::Press(0x1B); Start-Sleep -Seconds 1; CloseWindows
+
+  Case 'uninstalled: the shortcut goes'
+  $r = (FenceGet $script:FidB).windowRect; [G]::RClick($r.x + 120, $r.y + $r.h - 40)
+  MenuPick '^重新启动插件' (MenuWin 5) | Out-Null
+  Check 'B started by hand: Ctrl+Alt+K is registered again' (WaitCount 'plugin shortcut registered.*Ctrl\+Alt\+K' 2 10) ''
+  PfSettings | Out-Null
+  Js "window.chrome.webview.postMessage({ type: 'action', name: 'pluginUninstall', id: 'launcher-b' })" | Out-Null
+  Check 'B uninstalled: Ctrl+Alt+K is unregistered' ((WaitCount $UnregK 2 10) -and (Last 'K') -match 'unregistered' -and -not (Test-Path "$script:Config\plugins\launcher-b\1.0.0\main.js")) ''
+
+  Case 'the Peek''s key is refused for a command, by its name'
+  Pf settings set peek.doubleCtrl false | Out-Null; Start-Sleep -Seconds 1
+  $help = SetKey $script:Fid 0x20
+  Check 'Ctrl+Alt+Space: 已经是“速览”的快捷键, the shortcut stays Ctrl+Alt+L' ($help -match '已经是“速览”的快捷键' -and (Keys).show -eq 'Ctrl+Alt+L') "$help"
+
+  Case 'an update without the command: the shortcut goes'
+  $l = LogCount $UnregL
+  Publish 3 '1.2.0' @()
+  PfSettings | Out-Null; HostRow 'launcher' | Out-Null
+  Check 'launcher 1.2.0 without 显示启动器 installs by itself, Ctrl+Alt+L is unregistered' ((WaitCount $UnregL ($l + 1) 20) -and (Last 'L') -match 'unregistered' -and (Get-Content "$script:Config\plugins\launcher\current.txt") -eq '1.2.0') "current=$(Get-Content "$script:Config\plugins\launcher\current.txt")"
+
+  Case 'taken down: the shortcut goes'
+  Publish 4 '1.3.0' $cmds
+  HostRow 'launcher' | Out-Null
+  Js "(() => { const l = window.pfRows.v.list.find(x => x.id === 'launcher'); window.chrome.webview.postMessage({ type: 'action', name: 'pluginInstall', id: 'launcher', shown: l.shown }); return true; })()" | Out-Null
+  PfWaitLog 'plugins: installed, its fences start again' 20 | Out-Null; Start-Sleep -Seconds 3
+  $help = SetKey $script:Fid 0x4C
+  $l = LogCount $UnregL
+  Check 'with 1.3.0 the command is back and Ctrl+Alt+L is set again' ((Get-Content "$script:Config\plugins\launcher\current.txt") -eq '1.3.0' -and (Last 'L') -notmatch 'unregistered') "$help"
+  Publish 5 '1.3.0' $cmds @{} 'Test reason'
+  PfSettings | Out-Null; HostRow 'launcher' | Out-Null
+  Check 'the take-down unregisters Ctrl+Alt+L' ((WaitCount $UnregL ($l + 1) 15) -and (Last 'L') -match 'unregistered') ''
 }
 Stop-Process -Id $feedProc.Id -Force -ErrorAction SilentlyContinue

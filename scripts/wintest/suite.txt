@@ -79,7 +79,7 @@ web-plugin-C       3   ec2    debug   web-plugin.ps1                 --var Part=
 web-plugin-L       2   ec2    debug   web-plugin.ps1                 --var Part=L
 plugin-migrate     3   ec2    release plugin-migrate.ps1
 plugin-view        3   ec2    debug   plugin-view.ps1
-plugin-launcher    2   ec2    debug   plugin-launcher.ps1
+plugin-launcher    5   ec2    debug   plugin-launcher.ps1
 plugin-media       2   ec2    debug   plugin-media.ps1
 plugin-media-store 1   manual debug   plugin-media-store.ps1 --extra packaging/msix
 plugins-six        3   manual debug   plugins-six.ps1
