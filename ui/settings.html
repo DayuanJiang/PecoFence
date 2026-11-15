@@ -680,6 +680,8 @@
         </div></div>
       <div class="card"><div class="l"><span class="ic" data-alt="&#xE793;">&#xE7A1;</span><div><div class="t">颜色模式</div></div></div>
         <select data-bind="theme"><option value="followWindowsMode">跟随 Windows 模式</option><option value="followAppMode">跟随应用模式</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE700;</span><div><div class="t">菜单颜色</div><div class="s">托盘菜单，以及栅栏和图标的右键菜单</div></div></div>
+        <select data-bind="menuColor"><option value="followMode">跟随颜色模式</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8D3;</span><div><div class="t">文字颜色</div><div class="s">图标名称，以及标题颜色为“跟随主题”的栅栏标题和标签页。自动：每个栅栏按它背后壁纸的明暗选深色或浅色</div></div></div>
         <select data-bind="labelColor"><option value="auto">自动</option><option value="white">白色</option><option value="black">黑色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E4;</span><div><div class="t">标题对齐</div></div></div>
@@ -805,6 +807,7 @@
         <select id="fenceTextSizeSel" data-fence="textSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">显示标题栏</div><div class="s">鼠标悬停时显示：平时隐藏标题栏，鼠标移到栅栏上才出现</div></div></div>
         <select id="fenceTitleOnHover" data-fence="titleOnHover"><option value="default">跟随常规设置</option><option value="always">始终显示</option><option value="hover">鼠标悬停时显示</option></select></div>
+      <div class="card" id="fenceLooksAll"><div class="l"><span class="ic">&#xE8C8;</span><div><div class="t">所有栅栏用同样的外观</div><div class="s">把上面的不透明度、色调、标题颜色、标题字号和标题栏设置用到其他栅栏</div></div></div><button id="fenceLooksAllBtn">应用到所有栅栏</button></div>
       <div id="fenceLayoutGroup">
       <h3>布局</h3>
       <div class="card"><div class="l"><span class="ic">&#xE8A9;</span><div><div class="t">视图</div></div></div>
@@ -823,6 +826,7 @@
         <select id="fenceLabelLines" data-fence="labelLines"><option value="0"></option><option value="1"></option><option value="2"></option><option value="3"></option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E3;</span><div><div class="t">图标对齐</div><div class="s">一行排不满时，居中把空出的宽度平分到左右两边；右对齐让每一行从右边排起；只用于图标视图</div></div></div>
         <select id="fenceIconAlign" data-fence="iconAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div>
+      <div class="card" id="fenceLayoutAll"><div class="l"><span class="ic">&#xE8C8;</span><div><div class="t">所有栅栏用同样的布局</div><div class="s">把上面的视图、排序、图标大小、间距、名称和对齐用到其他栅栏</div></div></div><button id="fenceLayoutAllBtn">应用到所有栅栏</button></div>
       </div>
       <h3>行为</h3>
       <div class="card"><div class="l"><span class="ic">&#xE72E;</span><div><div class="t">锁定位置和大小</div><div class="s">边框不再可拖动缩放；标题仍可点击、右键、双击。鼠标移到栅栏上时，标题栏里会显示一个锁的图标</div></div></div><div class="toggle" role="switch" tabindex="0" data-fence="locked"></div></div>
@@ -2196,6 +2200,13 @@
     });
     renderSwatches(fenceTintSwatches, tintSel, 'fenceTint');
     renderSwatches(fenceTabColorSwatches, tabSel, 'tabColor');
+    // 应用到所有栅栏: shown while another fence would take something, and not for 「桌面」
+    // arranged like the desktop, whose plate, title and view nothing shows.
+    const deskLike = f.kind === 'inbox' && f.desktopLayout && !f.tabbed;
+    for (const [card, props] of [['fenceLooksAll', LOOKS_PROPS], ['fenceLayoutAll', LAYOUT_PROPS]]) {
+      document.getElementById(card).hidden = deskLike || !applyTargets(f, props).length;
+      document.getElementById(card + 'Btn').onclick = () => applyToAll(f, props);
+    }
     document.getElementById('fenceDock').onclick = () => { setFence(f.id, 'dockTop', null); toast(t("已停靠到屏幕顶部")); };
     // 在哪个虚拟桌面显示: once there is more than one desktop; 「桌面」 shows on every one.
     const desktops = state.virtualDesktops || [];
@@ -2208,6 +2219,25 @@
     vdSel.value = vdOn ? vdOn.id : '';
     vdSel.onchange = () => setFence(f.id, 'virtualDesktops', vdSel.value || 'all');
     ringFence();
+  }
+  // 「应用到所有栅栏」: the options of one group of this fence go to every other fence, as
+  // Explorer's 「应用到文件夹」 gives one folder's view to all; the notice's 撤销 sets back what
+  // each fence had. The tint comes before the title colour, which can follow it. 「桌面」 while
+  // arranged like the desktop has no plate, title or view of its own and is left out; tool
+  // fences take the looks only.
+  const LOOKS_PROPS = ['opacity', 'transparentOnHover', 'tint', 'tintTitleOnly', 'titleColor', 'titleSize', 'titleOnHover'];
+  const LAYOUT_PROPS = ['layout', 'sort', 'reverse', 'foldersFirst', 'iconSize', 'spacingPx', 'labelLines', 'iconAlign'];
+  const applyTargets = (src, props) => (state.fences || []).filter(x => x.id !== src.id
+    && !(x.kind === 'inbox' && x.desktopLayout && !x.tabbed) && !(props === LAYOUT_PROPS && x.tool));
+  const applyToAllChanges = (src, props) => applyTargets(src, props).flatMap(x => props
+    .filter(p => JSON.stringify(x[p] ?? null) !== JSON.stringify(src[p] ?? null))
+    .map(p => ({ id: x.id, prop: p, value: src[p] ?? null, old: x[p] ?? null })));
+  function applyToAll(src, props) {
+    const changes = applyToAllChanges(src, props);
+    const fences = new Set(changes.map(c => c.id)).size;
+    if (!fences) { toast(t("其他栅栏已经和它一样")); return; }
+    send({ type: 'setFences', what: 'apply_to_all', changes: changes.map(({ id, prop, value }) => ({ id, prop, value })) });
+    toast(tf("已用到其他 {0} 个栅栏", fences), false, () => send({ type: 'setFences', what: 'apply_to_all_undo', changes: changes.map(({ id, prop, old }) => ({ id, prop, value: old })) }));
   }
   // 智能栅栏: the 「搜索条件」 group of the selected fence: the search in one line, what the last
   // run found, and 编辑条件… (the smart fence editor's window), 立即刷新 and Everything's button.

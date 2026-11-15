@@ -255,11 +255,14 @@ impl FenceViewState {
         self.shadow_timer = false;
         let r = self.plate_rect();
         let resized = self.shadow.body_size() != Some((r.right - r.left, r.bottom - r.top));
-        // A roll or an auto-height settle brings a new bitmap with every frame: they go
-        // through one DIB section, tall enough for the taller end of the animation.
-        let tallest = self.height_animating().then(|| {
+        // A roll, an auto-height settle or the glide of a title row that shows on hover brings
+        // a new bitmap with every frame: they go through one DIB section, tall enough for the
+        // taller end of the animation (the glide's: the plate with the whole title row).
+        let gliding = !self.title_reveal.is_done(Instant::now());
+        let tallest = (self.height_animating() || gliding).then(|| {
             let h = r.bottom - r.top;
-            h.max(
+            let whole = if gliding { h + self.plate_inset_px } else { h };
+            whole.max(
                 self.height_target_px()
                     .map_or(h, |t| t - self.plate_inset_px + self.square_top_px()),
             )
@@ -301,6 +304,12 @@ impl FenceViewState {
         if (alpha - self.plate_alpha).abs() > f32::EPSILON {
             self.plate_alpha = alpha;
             self.apply_shadow_alpha(Instant::now());
+        }
+        // The glide is over: the shadow's bitmaps no longer share a kept section. Its last
+        // frames often move the plate by no pixel, so no shadow update came after it, and the
+        // section stayed with the fence until its next resize.
+        if !self.height_animating() && self.title_reveal.is_done(Instant::now()) {
+            self.shadow.keep_upload(None);
         }
     }
 
@@ -894,6 +903,16 @@ impl FenceViewState {
         // for, and it is hidden while rolled).
         if self.tabs.len() > 1 && self.tab_drag.is_none() && !self.tabs_on_rail() {
             self.sync_tab_slides(&prev, now);
+        }
+        // 时钟与日期 (feedback #175): the title row swaps the name for the time, or back; the new
+        // caption fades in as a folder's name does, and the clock ticks at what it now shows.
+        if self.clock.is_some() {
+            if self.motion.enabled() {
+                self.chrome_fades.snap(ChromeKey::TitleSwap, 1.0, now);
+                self.chrome_fades.set(true, ChromeKey::TitleSwap, 0.0, now);
+            }
+            self.arm_clock();
+            tracing::debug!(fence = %self.fence_id, rolled, "clock: the title row shows the {}", if rolled { "time" } else { "name" });
         }
         self.frames.request();
     }

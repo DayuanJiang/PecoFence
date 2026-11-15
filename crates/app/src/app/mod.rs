@@ -101,9 +101,9 @@ use fences::work_areas;
 use fileops::{FileOp, FileOpThen};
 use peek::peek_hotkey_label;
 use visuals::{
-    StartupBackdrops, backdrop_mode_for, custom_theme_names, fence_style_for, icon_variant_for,
-    load_custom_theme, pick_theme_mode, shadow_style_for, text_size_index, theme_for,
-    tray_icon_image, verify_wallpaper_later, write_example_themes,
+    StartupBackdrops, apply_menu_colors, backdrop_mode_for, custom_theme_names, fence_style_for,
+    icon_variant_for, load_custom_theme, pick_theme_mode, shadow_style_for, text_size_index,
+    theme_for, tray_icon_image, verify_wallpaper_later, write_example_themes,
 };
 use wallpaper_refresh::{
     BackdropCache, FIRST_CHECK_MS, RefreshSchedule, WallpaperReader, supersedes,
@@ -250,6 +250,11 @@ const HOTKEY_PEEK: i32 = 1;
 const HOTKEY_PROBE: i32 = 2;
 /// 「临时显示 Windows 桌面」.
 const HOTKEY_WINDOWS_DESKTOP: i32 = 3;
+/// Ctrl+V while Explorer's desktop is in front with its icons hidden (`follow_desktop_paste`).
+/// 4 is the dialog jump's Ctrl+G.
+const HOTKEY_DESKTOP_PASTE: i32 = 5;
+/// The undo step of a paste through the shell (`finish_shell_paste`): Ctrl+Z stops there.
+const SHELL_PASTE_STEP: &str = "pasted through the shell";
 
 /// How long a fence-menu "新建" keeps its claim on the next desktop item (plan §5.8).
 const PENDING_CREATION_SECS: u64 = 15;
@@ -393,6 +398,11 @@ pub struct App {
     /// the last change left (`apply_icon_size`): stepping back to that size gives that height
     /// back, unless the height is no longer the one the last change left (sized by hand).
     icon_size_heights: HashMap<FenceId, (FenceId, u32, i32, i32)>,
+    /// 应用到所有栅栏: each window's saved rect before and after the last apply, for its 撤销.
+    apply_to_all_rects: Vec<(FenceId, RECT, RECT)>,
+    /// While 应用到所有栅栏 sets fence after fence: a fit takes its height at once, so the fences
+    /// below are pushed for the final height before the next one fits.
+    fits_at_once: bool,
     fs_pending: Arc<Mutex<Vec<FsEvent>>>,
     /// Finished shell file operations from the worker threads (see `fileops.rs`).
     fileops_done: fileops::FileOpResults,
@@ -593,6 +603,8 @@ pub struct App {
     /// 「临时显示 Windows 桌面」 is on: every fence hidden, the icons PecoFence hid shown. Never
     /// saved.
     windows_desktop: bool,
+    /// A paste through the shell waiting for the App to be free (`paste_shell_items`).
+    shell_paste: Option<items::ShellPaste>,
     /// 在哪个虚拟桌面显示 (see `vdesktops.rs`): whether the virtual-desktop poll runs, and (a
     /// test-script switch) whether only the poll is followed, as the Store edition must.
     desktop_poll: bool,
@@ -906,7 +918,7 @@ impl App {
         log_start_state(&state);
 
         let theme_mode = pick_theme_mode(state.config.settings.theme, &args);
-        tray::set_dark_menus(theme_mode == ThemeMode::Dark);
+        apply_menu_colors(state.config.settings.menu_color, theme_mode, "start");
         let accent = systheme::accent_palette();
         let loaded = load_custom_theme(&state);
         let custom_theme_error = loaded.as_ref().err().cloned();
@@ -980,8 +992,27 @@ impl App {
                     match message {
                         WM_APP_COMMAND => {
                             if let Ok(mut guard) = cell.try_borrow_mut() {
-                                if let Some(app) = guard.as_mut() {
+                                let paste = guard.as_mut().and_then(|app| {
                                     app.process_commands();
+                                    app.take_shell_paste()
+                                });
+                                drop(guard);
+                                // The shell's paste runs with the App free: its progress and
+                                // name-conflict dialogs are a modal loop, in which hotkeys,
+                                // timers and the fences' messages need the App.
+                                if let Some(job) = paste {
+                                    let effect = items::run_shell_paste(&job);
+                                    match cell.try_borrow_mut() {
+                                        Ok(mut guard) => {
+                                            if let Some(app) = guard.as_mut() {
+                                                app.finish_shell_paste(job, effect);
+                                            }
+                                        }
+                                        Err(_) => tracing::warn!(
+                                            ?effect,
+                                            "paste through the shell done while the App is busy: not filed"
+                                        ),
+                                    }
                                 }
                             } else {
                                 // The App is borrowed (modal loop inside a handler: menu, file
@@ -1151,6 +1182,23 @@ impl App {
                         msg::WM_HOTKEY if wparam as i32 == crate::dialog_jump::HOTKEY_ID => {
                             pecofence_core::usage::event_with("hotkey", "dialog_jump");
                             crate::dialog_jump::on_hotkey();
+                            Some(0)
+                        }
+                        msg::WM_HOTKEY if wparam as i32 == HOTKEY_DESKTOP_PASTE => {
+                            // Decided by the window in front now; a busy App (a modal loop in
+                            // one of its handlers) cannot decide, and the key goes on.
+                            let taken = match cell.try_borrow_mut() {
+                                Ok(mut guard) => {
+                                    guard.as_mut().is_some_and(|app| app.on_desktop_paste_key())
+                                }
+                                Err(_) => false,
+                            };
+                            if !taken {
+                                items::pass_on_desktop_paste(
+                                    hwnd,
+                                    "not the desktop in front, or the App busy",
+                                );
+                            }
                             Some(0)
                         }
                         msg::WM_HOTKEY if wparam as i32 == HOTKEY_WINDOWS_DESKTOP => {
@@ -1587,6 +1635,9 @@ impl App {
                                 });
                                 if wparam == 1 {
                                     app.notices_below(HWND(lparam as *mut core::ffi::c_void));
+                                    app.follow_desktop_paste(HWND(
+                                        lparam as *mut core::ffi::c_void,
+                                    ));
                                 }
                             }
                             if wparam == 1 {
@@ -2003,6 +2054,8 @@ impl App {
             watcher_retry: HashMap::new(),
             portal_back_armed: false,
             icon_size_heights: HashMap::new(),
+            apply_to_all_rects: Vec::new(),
+            fits_at_once: false,
             fs_pending,
             fileops_done: Arc::new(Mutex::new(Vec::new())),
             fileops_running: 0,
@@ -2095,6 +2148,7 @@ impl App {
             peek_hotkey_wanted: None,
             hotkeys_paused: false,
             windows_desktop: false,
+            shell_paste: None,
             desktop_poll: false,
             vd_poll_only: false,
             windows_desktop_hotkey: None,
@@ -2171,6 +2225,8 @@ impl App {
                 );
             }));
         }
+        // Started with the desktop in front (at sign-in), no foreground change comes to say so.
+        app.follow_desktop_paste(desktop::foreground_window());
 
         let not_encrypted = app
             .state

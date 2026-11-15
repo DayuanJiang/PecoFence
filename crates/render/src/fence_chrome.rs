@@ -460,6 +460,8 @@ pub struct TitleState {
     /// Title-on-hover fold: the plate (glass, tint, rim) starts this many DIPs below the
     /// window top, so a resting fence begins at its content; 0 once the title row is shown.
     pub plate_top: f32,
+    /// Where `plate_top` comes to rest when the title row's glide is over (equal to it at rest).
+    pub plate_top_rest: f32,
     /// How far a fully transparent fence (外观 → 全透明) has cleared its plate: 0 = drawn,
     /// 1 = no glass, tint or rim at all (the resting look away from the pointer).
     pub plate_clear: f32,
@@ -1125,6 +1127,7 @@ fn draw_plate(
     width: f32,
     height: f32,
     outer: Rect,
+    rest_top: f32,
     radius: f32,
     backdrop: &Backdrop<'_>,
     opacity: f32,
@@ -1160,15 +1163,18 @@ fn draw_plate(
             rect,
             scale,
         } => {
-            // A folded title row moves the lens (and its bezel) down to the plate top.
+            // A folded title row moves the lens (and its bezel) down to the plate top. While
+            // the row glides, the lens is built for the height it ends at and stretched.
             let inset = (plate_top * scale).round() as i32;
             let lens = [rect[0], rect[1] + inset, rect[2], (rect[3] - inset).max(1)];
+            let rest_h = (rect[3] - (rest_top * scale).round() as i32).max(1);
             material.borrow_mut().set_lens(theme.lens);
             let result = material.borrow_mut().draw(
                 session,
                 &mut bitmaps.glass_wallpaper,
                 wallpaper,
                 lens,
+                rest_h,
                 inset as f32,
                 scale,
                 radius,
@@ -3019,6 +3025,7 @@ impl FenceChrome {
         // hover keeps that row folded away (the compositor clip cuts the surface at its top).
         // A fully transparent fence fades the whole plate with `plate_a`.
         let plate_top = state.plate_top.clamp(0.0, (height - 1.0).max(0.0));
+        let plate_top_rest = state.plate_top_rest.clamp(0.0, (height - 1.0).max(0.0));
         let plate_a = 1.0 - state.plate_clear.clamp(0.0, 1.0);
         let outer = Rect::from_xywh(0.0, plate_top, width, height - plate_top);
         let radius = theme
@@ -3045,6 +3052,7 @@ impl FenceChrome {
                 width,
                 height,
                 outer,
+                plate_top_rest,
                 radius,
                 &backdrop,
                 opacity,

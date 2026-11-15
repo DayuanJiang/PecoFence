@@ -745,6 +745,14 @@ impl App {
         if follow {
             title_rgb = tint;
         }
+        // The other tabs whose title follows the window's tint follow the new one.
+        for tab in self.state.tabs_of(host) {
+            let (tab_tint, tab_title, tab_size) = self.style_of(tab);
+            if tab != host && tab_title.is_some() && tab_title == old_tint {
+                self.state.set_style(tab, tab_tint, tint, tab_size);
+                self.refresh_fence(tab);
+            }
+        }
         self.set_fence_style(fence, tint, title_rgb, title_size);
     }
 
@@ -848,6 +856,17 @@ impl App {
     }
 
     /// (tint, title colour, title size) of the host window's appearance override.
+    /// Where the state keeps a fence's window (device px, its expanded height).
+    fn saved_rect(&self, fence: FenceId) -> Option<RECT> {
+        let r = self.state.fence_px_rect(self.state.fence(fence)?);
+        Some(RECT {
+            left: r.left,
+            top: r.top,
+            right: r.right,
+            bottom: r.bottom,
+        })
+    }
+
     fn style_of(&self, host: FenceId) -> (Option<[u8; 3]>, Option<[u8; 3]>, Option<TitleSize>) {
         self.state
             .fence(host)
@@ -1014,6 +1033,120 @@ impl App {
         if !is_live_tick(v) {
             pecofence_core::usage::event_named("settings.fence", prop);
         }
+        self.push_settings_state();
+    }
+
+    /// `{"type":"setFences","what":…,"changes":[{"id":…,"prop":…,"value":…}, …]}` from the
+    /// page: 「应用到所有栅栏」 (`what` = `apply_to_all`) and its 撤销 (`apply_to_all_undo`) set
+    /// options on many fences and send one new state. Only the options of the 外观 and 布局
+    /// groups are taken, and none about icons on a tool fence.
+    pub(super) fn on_set_fences(&mut self, v: &serde_json::Value) {
+        const PROPS: &[&str] = &[
+            "opacity",
+            "transparentOnHover",
+            "tint",
+            "tintTitleOnly",
+            "titleColor",
+            "titleSize",
+            "titleOnHover",
+            "layout",
+            "sort",
+            "reverse",
+            "foldersFirst",
+            "iconSize",
+            "spacingPx",
+            "labelLines",
+            "iconAlign",
+        ];
+        let what = match v.get("what").and_then(|w| w.as_str()) {
+            Some("apply_to_all_undo") => "apply_to_all_undo",
+            _ => "apply_to_all",
+        };
+        let changes = v.get("changes").and_then(|c| c.as_array());
+        // 撤销 gives each window back its place and height too: spacing, name lines and icon
+        // size fit a fence's height to its icons, the cell snap can move it left. A window moved
+        // or sized since the apply keeps where the user put it.
+        let windows: Vec<FenceId> = self
+            .state
+            .fences()
+            .iter()
+            .filter(|f| f.tab_host.is_none())
+            .map(|f| f.id)
+            .collect();
+        let put_back: Vec<(FenceId, RECT)> = if what == "apply_to_all_undo" {
+            std::mem::take(&mut self.apply_to_all_rects)
+                .into_iter()
+                .filter(|(id, before, after)| {
+                    before != after && self.saved_rect(*id) == Some(*after)
+                })
+                .map(|(id, before, _)| (id, before))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let rects_before: Vec<(FenceId, Option<RECT>)> = windows
+            .iter()
+            .map(|id| (*id, self.saved_rect(*id)))
+            .collect();
+        let (mut changed, mut skipped) = (0, 0);
+        let mut fences = std::collections::HashSet::new();
+        self.fits_at_once = true;
+        for c in changes.into_iter().flatten() {
+            let fence = c
+                .get("id")
+                .and_then(|i| i.as_str())
+                .and_then(|i| uuid::Uuid::parse_str(i).ok());
+            let prop = c.get("prop").and_then(|p| p.as_str());
+            let value = c.get("value").cloned().unwrap_or(serde_json::Value::Null);
+            let (Some(fence), Some(prop)) = (fence, prop.filter(|p| PROPS.contains(p))) else {
+                skipped += 1;
+                continue;
+            };
+            let Some(is_tool) = self.state.fence(fence).map(|f| f.tool.is_some()) else {
+                skipped += 1;
+                continue;
+            };
+            match parse_fence_prop(prop, &value) {
+                Ok(p) if !(is_tool && p.is_about_icons()) => {
+                    if self.apply_fence_prop(fence, p) {
+                        changed += 1;
+                    }
+                    fences.insert(fence);
+                    // As after one change of the CLI: the fences below make room for this one
+                    // (its final height, see `fits_at_once`) before the next grows, so the last
+                    // one in a column is the one kept short.
+                    self.reflow_pushed();
+                }
+                Ok(_) => skipped += 1,
+                Err(error) => {
+                    tracing::warn!(prop, %error, "bad fence property in setFences");
+                    skipped += 1;
+                }
+            }
+        }
+        self.fits_at_once = false;
+        let placed = put_back.len();
+        for (id, rect) in put_back {
+            self.put_fence_at(id, rect);
+        }
+        if placed > 0 {
+            self.reflow_pushed();
+        }
+        if what == "apply_to_all" {
+            self.apply_to_all_rects = rects_before
+                .into_iter()
+                .filter_map(|(id, before)| Some((id, before?, self.saved_rect(id)?)))
+                .collect();
+        }
+        tracing::info!(
+            what,
+            fences = fences.len(),
+            changed,
+            skipped,
+            placed,
+            "settings: options set on several fences"
+        );
+        pecofence_core::usage::event_named("settings.fence", what);
         self.push_settings_state();
     }
 

@@ -8,6 +8,9 @@ use std::sync::OnceLock;
 use windows_core::Result;
 
 static PREFERRED_EFFECT_FORMAT: OnceLock<u16> = OnceLock::new();
+static PASTE_SUCCEEDED_FORMAT: OnceLock<u16> = OnceLock::new();
+/// `CF_DIB`: a picture (a browser's 「复制图片」).
+const CF_DIB: u16 = 8;
 
 /// Files currently on the clipboard and whether they were cut (`true`) or copied (`false`).
 /// A missing `Preferred DropEffect` counts as copy, as in Explorer.
@@ -21,16 +24,61 @@ pub fn file_list() -> Option<(Vec<PathBuf>, bool)> {
     if paths.is_empty() {
         return None;
     }
+    let cut = is_cut(&data);
+    Some((paths, cut))
+}
+
+/// Did the source cut (`Preferred DropEffect` says move and not copy)?
+fn is_cut(data: &IDataObject) -> bool {
     let fmt = dragdrop::hglobal_format(dragdrop::registered_format(
         "Preferred DropEffect",
         &PREFERRED_EFFECT_FORMAT,
     ));
-    let effect = dragdrop::hglobal_bytes(&data, &fmt)
+    let effect = dragdrop::hglobal_bytes(data, &fmt)
         .filter(|b| b.len() >= 4)
         .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
         .unwrap_or(DROPEFFECT_COPY as u32);
-    let cut = effect & DROPEFFECT_MOVE as u32 != 0 && effect & DROPEFFECT_COPY as u32 == 0;
-    Some((paths, cut))
+    effect & DROPEFFECT_MOVE as u32 != 0 && effect & DROPEFFECT_COPY as u32 == 0
+}
+
+/// The clipboard's data object when it holds items only the shell can write out and no file
+/// list: files copied inside a .zip, an Outlook attachment, a phone's photos
+/// ([`dragdrop::has_shell_items`]: their contents or shell items, no file paths). With whether
+/// they were cut.
+pub fn shell_items() -> Option<(IDataObject, bool)> {
+    // SAFETY: plain OLE call; the returned object is released when dropped.
+    let data = unsafe { OleGetClipboard() }.ok()?;
+    if dragdrop::has_hdrop(&data) || !dragdrop::has_shell_items(&data) {
+        return None;
+    }
+    let cut = is_cut(&data);
+    Some((data, cut))
+}
+
+/// What the clipboard holds, for the log line of a paste that found nothing to paste: which of
+/// a few standard kinds it offers (no contents).
+pub fn describe() -> String {
+    // SAFETY: plain OLE call.
+    let Ok(data) = (unsafe { OleGetClipboard() }) else {
+        return "unreadable".into();
+    };
+    let has = |cf: u16| {
+        let fmt = dragdrop::hglobal_format(cf);
+        // SAFETY: COM call with a fully initialized FORMATETC.
+        unsafe { data.QueryGetData(&fmt).is_ok() }
+    };
+    let kinds = [
+        ("files", dragdrop::has_hdrop(&data)),
+        ("shell items", dragdrop::has_shell_items(&data)),
+        ("text", has(CF_UNICODETEXT as u16)),
+        ("image", has(CF_DIB)),
+    ];
+    let found: Vec<&str> = kinds.iter().filter(|k| k.1).map(|k| k.0).collect();
+    if found.is_empty() {
+        "nothing known".into()
+    } else {
+        found.join(", ")
+    }
 }
 
 /// Puts the files `paths` on the clipboard as Explorer's Ctrl+C / Ctrl+X does: the shell's own
@@ -48,10 +96,25 @@ pub fn set_files(paths: &[&Path], cut: bool) -> Result<()> {
     } else {
         (DROPEFFECT_COPY | DROPEFFECT_LINK) as u32
     };
-    let fmt = dragdrop::hglobal_format(dragdrop::registered_format(
+    set_dword(
+        &data,
         "Preferred DropEffect",
         &PREFERRED_EFFECT_FORMAT,
-    ));
+        effect,
+    )?;
+    // SAFETY: plain OLE call.
+    unsafe { OleSetClipboard(&data).ok() }
+}
+
+/// Writes one of the shell's DWORD formats (`Preferred DropEffect`, `Paste Succeeded`) onto
+/// `data`.
+fn set_dword(
+    data: &IDataObject,
+    name: &'static str,
+    slot: &'static OnceLock<u16>,
+    value: u32,
+) -> Result<()> {
+    let fmt = dragdrop::hglobal_format(dragdrop::registered_format(name, slot));
     // SAFETY: the global block is filled while locked; on success the data object owns it
     // (fRelease = TRUE), otherwise it is freed here.
     unsafe {
@@ -61,7 +124,7 @@ pub fn set_files(paths: &[&Path], cut: bool) -> Result<()> {
             let _ = GlobalFree(mem);
             return Err(E_FAIL.into());
         }
-        dst.write_unaligned(effect);
+        dst.write_unaligned(value);
         let _ = GlobalUnlock(mem);
         let medium = STGMEDIUM {
             tymed: TYMED_HGLOBAL as u32,
@@ -71,17 +134,59 @@ pub fn set_files(paths: &[&Path], cut: bool) -> Result<()> {
         let set = data.SetData(&fmt, &medium, true);
         if set.is_err() {
             let _ = GlobalFree(mem);
-            return set.ok();
         }
-        OleSetClipboard(&data).ok()
+        set.ok()
     }
 }
 
-/// Cheap check for menu enabling: is there a file list on the clipboard?
+/// Pastes the clipboard's shell items ([`shell_items`]) into `dest` through the folder's own
+/// drop target, as Explorer's 粘贴 does: copied, or moved when they were cut. After a move the
+/// source is told so (`Paste Succeeded`: a source that left the removal of the originals to the
+/// paste does it then) and the clipboard is emptied, as Explorer does after pasting cut files,
+/// unless something else was copied meanwhile. Returns the effect the shell performed.
+///
+/// **Runs the shell's modal UI** (progress, name conflicts): the caller must hold no
+/// `RefCell` borrow.
+pub fn paste_shell_items(dest: &Path) -> Result<dragdrop::DropEffect> {
+    let (data, cut) = shell_items().ok_or(windows_core::Error::from(E_FAIL))?;
+    let before = sequence();
+    let allowed = if cut {
+        DROPEFFECT_MOVE
+    } else {
+        DROPEFFECT_COPY
+    } as u32;
+    let effect = dragdrop::shell_folder_drop(
+        dest,
+        &data,
+        0,
+        false,
+        dragdrop::DragPoint { x: 0, y: 0 },
+        allowed,
+    )?;
+    if effect == dragdrop::DropEffect::Move {
+        let unchanged = sequence() == before;
+        if let Err(error) = set_dword(
+            &data,
+            "Paste Succeeded",
+            &PASTE_SUCCEEDED_FORMAT,
+            DROPEFFECT_MOVE as u32,
+        ) {
+            tracing::debug!(%error, "Paste Succeeded not taken by the source");
+        }
+        if unchanged {
+            clear();
+        }
+        tracing::debug!(cleared = unchanged, "cut items pasted through the shell");
+    }
+    Ok(effect)
+}
+
+/// Cheap check for menu enabling: is there a file list on the clipboard, or items only the
+/// shell writes out ([`shell_items`])?
 pub fn has_file_list() -> bool {
     // SAFETY: plain OLE call.
     unsafe { OleGetClipboard() }
-        .map(|d| dragdrop::has_hdrop(&d))
+        .map(|d| dragdrop::has_hdrop(&d) || dragdrop::has_shell_items(&d))
         .unwrap_or(false)
 }
 

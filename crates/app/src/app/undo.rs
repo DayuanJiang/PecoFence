@@ -516,8 +516,13 @@ impl App {
                 count
             }
             UndoStep::Shell { .. } => usize::from(self.ask_windows_to_undo()),
-            UndoStep::Permanent { .. } => {
-                self.toast(pecofence_core::i18n::text("永久删除的文件无法撤销。").to_string());
+            UndoStep::Permanent { what } => {
+                let text = if what == SHELL_PASTE_STEP {
+                    pecofence_core::i18n::text("这次粘贴无法撤销，可以手动删除粘贴进来的文件。")
+                } else {
+                    pecofence_core::i18n::text("永久删除的文件无法撤销。")
+                };
+                self.toast(text.to_string());
                 0
             }
             UndoStep::Merged {
@@ -587,7 +592,7 @@ impl App {
 
     /// Moves `fence` back to `rect` (its expanded rect) the way `fence move` does. False when
     /// it is gone, a tab, or placed by 像桌面一样排列.
-    fn put_fence_at(&mut self, fence: FenceId, rect: RECT) -> bool {
+    pub(super) fn put_fence_at(&mut self, fence: FenceId, rect: RECT) -> bool {
         if self.state.fence(fence).is_none_or(|f| f.tab_host.is_some()) {
             return false;
         }
