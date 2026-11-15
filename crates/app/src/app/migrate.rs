@@ -49,6 +49,14 @@ impl App {
             return;
         }
         for m in &moving {
+            // A note whose editor just closed: its text, still on its way in the command queue,
+            // goes into the note first (the plugin fence it becomes would not take it).
+            if let Some(text) = crate::note_edit::take_committed(m.fence) {
+                let saved = self
+                    .state
+                    .set_note_text(m.fence, &text.replace("\r\n", "\n"));
+                tracing::info!(fence = %m.fence, saved, "upgrade to plugins: the note's last edit kept first");
+            }
             self.forget_script(m.fence);
             self.state.config.move_to_plugin(m);
             tracing::info!(fence = %m.fence, plugin = m.plugin, "upgrade to plugins: fence moved");
