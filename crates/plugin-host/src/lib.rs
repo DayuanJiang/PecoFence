@@ -193,6 +193,8 @@ struct Plugin {
     fence: FenceId,
     number: u32,
     id: String,
+    /// The run going on or made last (`call`'s `what`): the log of a stop names it.
+    last_run: String,
     // The context is dropped before its runtime.
     ctx: Context,
     rt: Runtime,
@@ -290,6 +292,7 @@ impl Plugin {
             fence: s.fence,
             number: s.number,
             id: s.id.clone(),
+            last_run: MAIN.to_string(),
             ctx,
             rt,
             deadline,
@@ -467,6 +470,7 @@ impl Plugin {
         f: impl for<'js> FnOnce(&Ctx<'js>) -> rquickjs::Result<()>,
     ) -> Result<(), Stopped> {
         let begun = Instant::now();
+        self.last_run = what.to_string();
         if begun >= self.second.0 + Duration::from_secs(1) {
             self.second = (begun, Duration::ZERO);
         }
@@ -714,7 +718,7 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                 }
             }
             Ok(Msg::Cmd(Command::Start(s))) => {
-                let (fence, number) = (s.fence, s.number);
+                let (fence, number, id) = (s.fence, s.number, s.id.clone());
                 if let Some(i) = at(fence, &plugins) {
                     plugins.remove(i).stop();
                 }
@@ -730,7 +734,10 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                         }
                         plugins.push(p);
                     }
-                    Err(why) => failed.push((fence, number, why)),
+                    Err(why) => {
+                        tracing::warn!(%fence, plugin = id, run = MAIN, ?why, "plugin did not start");
+                        failed.push((fence, number, why))
+                    }
                 }
             }
             Ok(Msg::Cmd(Command::Stop(fence))) => {
@@ -778,7 +785,11 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
             }
         }
         for (fence, number, why) in failed {
-            tracing::warn!(%fence, number, ?why, "plugin stopped by PecoFence");
+            // The run that broke a limit or failed (a plugin that did not start was in main.js).
+            let (plugin, run) = at(fence, &plugins).map_or((String::new(), MAIN.into()), |i| {
+                (plugins[i].id.clone(), plugins[i].last_run.clone())
+            });
+            tracing::warn!(%fence, plugin, number, run, ?why, "plugin stopped by PecoFence");
             if let Some(i) = at(fence, &plugins) {
                 plugins.remove(i).save_view(true);
             }
