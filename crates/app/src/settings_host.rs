@@ -87,9 +87,15 @@ impl WebEnvironment {
         {
             args = format!("{args} {more}");
         }
+        // The web plugins' pages (`web_plugin::SCHEME`): a scheme of the app's own never goes to
+        // the network, so a system proxy does not hear which plugins the user has.
         let options = EnvironmentOptions::new()
             .user_data_folder(user_data.to_string_lossy().to_string())
-            .additional_browser_arguments(args);
+            .additional_browser_arguments(args)
+            .custom_scheme(
+                crate::web_plugin::SCHEME,
+                &[&format!("{}://*", crate::web_plugin::SCHEME)],
+            );
         tracing::debug!("settings: creating WebView2 environment");
         let env = Environment::with_options(&options)?;
         tracing::debug!("settings: WebView2 environment ready");

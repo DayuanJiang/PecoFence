@@ -17,7 +17,7 @@ function CdpOpen($port = 9352, $sec = 30, [switch]$Editor, [string]$Url = '') {
   for ($i = 0; $i -lt $sec; $i++) {
     try {
       $list = (New-Object Net.WebClient).DownloadString("http://127.0.0.1:$port/json") | ConvertFrom-Json
-      $page = @($list | Where-Object { $_.type -eq 'page' -and $(if ($Url) { $_.url -like $Url } else { $_.url -notlike '*.plugins.pecofence/*' -and (($_.title -eq 'PecoFence smart fence editor') -eq [bool]$Editor) }) }) | Select-Object -First 1
+      $page = @($list | Where-Object { $_.type -eq 'page' -and $(if ($Url) { $_.url -like $Url } else { $_.url -notlike 'pecofence-plugin://*' -and (($_.title -eq 'PecoFence smart fence editor') -eq [bool]$Editor) }) }) | Select-Object -First 1
       if ($page) {
         $ws = New-Object Net.WebSockets.ClientWebSocket
         $ws.ConnectAsync([Uri]$page.webSocketDebuggerUrl, [Threading.CancellationToken]::None).Wait(10000) | Out-Null

@@ -44,6 +44,7 @@ pub struct EnvironmentOptions {
     allow_single_sign_on_using_os_primary_account: bool,
     are_browser_extensions_enabled: bool,
     scrollbar_style: ScrollBarStyle,
+    custom_schemes: Vec<(String, Vec<String>)>,
 }
 
 impl EnvironmentOptions {
@@ -104,6 +105,16 @@ impl EnvironmentOptions {
         self
     }
 
+    /// Adds the custom scheme `name` (`name://host/path`): its pages are secure contexts with the
+    /// origin `name://host`, its requests reach only [`WebView::on_web_resource_requested`] and
+    /// never the network. Requests with an `Origin` header (POST, CORS) are allowed from
+    /// `allowed_origins` (patterns with `*`, as the request filter takes).
+    pub fn custom_scheme(mut self, name: impl Into<String>, allowed_origins: &[&str]) -> Self {
+        let origins = allowed_origins.iter().map(|o| (*o).to_string()).collect();
+        self.custom_schemes.push((name.into(), origins));
+        self
+    }
+
     pub(crate) fn create_environment<F: FnOnce(Result<Environment>) + 'static>(
         &self,
         handler: F,
@@ -140,11 +151,60 @@ pub(crate) struct OptionsObject {
     allow_single_sign_on_using_os_primary_account: BOOL,
     are_browser_extensions_enabled: BOOL,
     scrollbar_style: COREWEBVIEW2_SCROLLBAR_STYLE,
+    custom_schemes: Vec<ICoreWebView2CustomSchemeRegistration>,
 }
 
 implement_decl! {
     impl OptionsObject as pub(crate) OptionsObject_Impl:
-        [ICoreWebView2EnvironmentOptions, ICoreWebView2EnvironmentOptions6, ICoreWebView2EnvironmentOptions8]
+        [ICoreWebView2EnvironmentOptions, ICoreWebView2EnvironmentOptions4, ICoreWebView2EnvironmentOptions6, ICoreWebView2EnvironmentOptions8]
+}
+
+/// Read-only COM registration of one custom scheme ([`EnvironmentOptions::custom_scheme`]): a
+/// secure standard scheme with a host.
+struct SchemeObject {
+    name: String,
+    allowed_origins: Vec<String>,
+}
+
+implement_decl! {
+    impl SchemeObject as SchemeObject_Impl: [ICoreWebView2CustomSchemeRegistration]
+}
+
+/// A `CoTaskMemAlloc` array of `items` for WebView2, which frees it.
+fn com_array<T>(items: impl ExactSizeIterator<Item = Result<*mut T>>) -> Result<(u32, *mut *mut T)> {
+    let n = items.len();
+    let list = unsafe { CoTaskMemAlloc(n.max(1) * size_of::<*mut T>()) } as *mut *mut T;
+    if list.is_null() {
+        return Err(Error::from_hresult(E_OUTOFMEMORY));
+    }
+    for (i, item) in items.enumerate() {
+        unsafe { list.add(i).write(item?) };
+    }
+    Ok((n as u32, list))
+}
+
+impl ICoreWebView2CustomSchemeRegistration_Impl for SchemeObject_Impl {
+    fn SchemeName(&self) -> Result<LPWSTR> {
+        unsafe { string::allocate(&self.name) }
+    }
+
+    fn TreatAsSecure(&self) -> Result<BOOL> {
+        Ok(true.into())
+    }
+
+    fn GetAllowedOrigins(&self) -> Result<(u32, *mut LPWSTR)> {
+        com_array(self.allowed_origins.iter().map(|o| unsafe { string::allocate(o) }))
+    }
+
+    fn HasAuthorityComponent(&self) -> Result<BOOL> {
+        Ok(true.into())
+    }
+}
+
+impl ICoreWebView2EnvironmentOptions4_Impl for OptionsObject_Impl {
+    fn GetCustomSchemeRegistrations(&self) -> Result<(u32, *mut *mut core::ffi::c_void)> {
+        com_array(self.custom_schemes.iter().map(|s| Ok(s.clone().into_raw())))
+    }
 }
 
 /// Default `TargetCompatibleBrowserVersion`; WebView2 rejects an empty value.
@@ -167,6 +227,15 @@ impl OptionsObject {
                 .into(),
             are_browser_extensions_enabled: options.are_browser_extensions_enabled.into(),
             scrollbar_style: options.scrollbar_style.to_raw(),
+            custom_schemes: (options.custom_schemes.iter())
+                .map(|(name, allowed_origins)| {
+                    SchemeObject {
+                        name: name.clone(),
+                        allowed_origins: allowed_origins.clone(),
+                    }
+                    .into()
+                })
+                .collect(),
         }
     }
 }

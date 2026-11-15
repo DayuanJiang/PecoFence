@@ -4,7 +4,8 @@
 //! rounded clip, roll-up and fades apply to it; the fence forwards the mouse and the cursor, and a
 //! press in the page hands it the keyboard (`focus`).
 //!
-//! The plugin's files come from PecoFence at `https://<id>.plugins.pecofence/`, every response
+//! The plugin's files come from PecoFence at `pecofence-plugin://<id>/` (`SCHEME`: never the
+//! network or a proxy, a secure context with an origin per plugin), every response
 //! with a fixed Content-Security-Policy whose `connect-src` lists only the plugin's `network`
 //! hosts (and the plugin's own files), and a Connection-Allowlist of the same hosts, which the
 //! browser applies to every connection (`Plugin::allowlist`). Permission requests, other sites,
@@ -27,6 +28,9 @@ use windows_webview::{
     ProcessFailedKind, WebResourceResponse, WebView,
 };
 
+/// The custom scheme of the plugins' pages (registered with the environment,
+/// `WebEnvironment::create`).
+pub const SCHEME: &str = "pecofence-plugin";
 /// `WM_TIMER` id on the fence window: its hidden page is suspended.
 pub const TIMER_WEB_SUSPEND: usize = 0x5E0;
 /// `WM_TIMER` id on the fence window: the browser is made, the page is set up (`setup`). Not in
@@ -76,7 +80,7 @@ pub enum Failure {
 
 impl Plugin {
     fn origin(&self) -> String {
-        format!("https://{}.plugins.pecofence/", self.id)
+        format!("{SCHEME}://{}/", self.id)
     }
 
     /// The header every response gets; what the plugin writes itself does not count.
