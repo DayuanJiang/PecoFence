@@ -171,7 +171,7 @@ Offer 'pf-sys' 'PF Sys' '1.0.0' @{ system = @('ipconfig.exe'); clipboard = 'writ
 Refresh
 Check 'its row has the tags Clipboard and Starts programs' ((Rows) -match 'PF Sys.*Clipboard.*Starts programs') (Rows)
 $d = InstallVia 'PF Sys'
-Check 'the warning names the program, says what it can do and that the switch is off' ($d.system -and $d.off -and $d.text -match 'It also starts these programs: ipconfig\.exe' -and $d.text -match 'can do anything your account can do' -and $d.text -match 'Writes to the clipboard') $d.text
+Check 'the warning names the program, says what it can do and that the switch is off' ($d.system -and $d.off -and $d.text -match 'Take special care with the programs it starts: ipconfig\.exe' -and $d.text -match 'Starts these programs: ipconfig\.exe' -and $d.text -match 'can do anything your account can do' -and $d.text -match 'Writes to the clipboard') $d.text
 Start-Sleep -Seconds 2
 Offer 'pf-sys' 'PF Sys' '1.0.1' @{ system = @('ipconfig.exe'); clipboard = 'write' }; Publish 7
 Refresh
@@ -222,7 +222,7 @@ $r = (@(PluginFences))[0].windowRect
 $t = OcrText $r.x $r.y $r.w $r.h 'not-installed'
 Shot 'plugin-not-installed-fence'
 Check 'with 小工具 on the fence says the plugin is not installed and how to install it' ($t -match "isn.t installed yet" -and $t -match 'Plugin.{1,2}details' -and -not (Test-Path "$script:Config\plugins-data\pf-test")) "ocr: $t"
-$ok = ToolsPage
+$ok = ToolsPage; Refresh
 InstallVia 'PF Test' | Out-Null
 Start-Sleep -Seconds 3; $f = @(PluginFences)
 Check 'installing it runs those fences, no third fence' ($f.Count -eq 2 -and $f[0].script.output -match '2\.1\.0') "fences=$($f.Count) output=$($f[0].script.output)"

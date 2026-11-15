@@ -1064,7 +1064,7 @@
   "启动这些程序：{0}": "Startet diese Programme: {0}",
   "在浏览器里打开这些网站：{0}": "Öffnet diese Websites im Browser: {0}",
   "它会做：": "Es wird:",
-  "它还会启动这些程序：{0}。这些程序能做你的账号能做的任何事，只在你信任它的作者时安装。": "Es startet auch diese Programme: {0}. Diese Programme können alles tun, was Ihr Konto tun kann. Installieren Sie es nur, wenn Sie dem Autor vertrauen.",
+  "请特别注意它要启动的程序：{0}。这些程序能做你的账号能做的任何事，只在你信任它的作者时安装。": "Achten Sie besonders auf die Programme, die es startet: {0}. Diese Programme können alles tun, was Ihr Konto tun kann. Installieren Sie es nur, wenn Sie dem Autor vertrauen.",
   "打开“允许插件使用 Windows 底层功能”后才能用这些功能。": "Diese Funktionen gehen erst, wenn Sie „Plugins Windows-Systemfunktionen nutzen lassen“ einschalten.",
   "打开后，声明了要启动程序的插件可以启动它列出的程序。关着时这些插件照常运行，只是不能启动程序": "Wenn eingeschaltet, können Plugins, die Programme angeben, diese Programme starten. Ausgeschaltet laufen diese Plugins normal, starten aber keine Programme",
   "插件": "Plugins",

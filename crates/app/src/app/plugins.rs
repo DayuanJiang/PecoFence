@@ -260,10 +260,14 @@ impl Plugins {
             ..Default::default()
         };
         let dirs = std::fs::read_dir(&p.root).into_iter().flatten().flatten();
-        let ids: Vec<String> = dirs
+        let names: Vec<String> = dirs
             .map(|d| d.file_name().to_string_lossy().to_string())
-            .filter(|id| list::valid_id(id))
             .collect();
+        // A download that PecoFence quit during left its folder.
+        for temp in names.iter().filter(|n| n.starts_with(".new-")) {
+            let _ = std::fs::remove_dir_all(p.root.join(temp));
+        }
+        let ids = names.into_iter().filter(|id| list::valid_id(id));
         for id in ids {
             p.reload(&id);
             let why = p.index.as_ref().and_then(|i| i.get(&id)?.disabled.clone());

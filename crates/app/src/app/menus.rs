@@ -1646,8 +1646,9 @@ impl App {
             CMD_FENCE_SCRIPT_FOLDER => self.open_script_folder(fence),
             CMD_FENCE_PLUGIN_SETTINGS => {
                 let spec = self.state.config.scripts.get(&fence);
-                if let Some(id) = spec.and_then(|s| super::plugins::plugin_id(&s.path)) {
-                    self.show_plugin(&id.to_string(), Some(fence));
+                let id = spec.and_then(|s| super::plugins::plugin_id(&s.path));
+                if let Some(id) = id.map(str::to_string) {
+                    self.show_plugin(&id, Some(fence));
                 }
             }
             c if (CMD_FENCE_SCRIPT_INTERVAL_BASE

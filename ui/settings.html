@@ -1809,13 +1809,12 @@
   // The tags in a plugin's row.
   const plTags = (p) => [p.network.length && t("联网"), p.clipboard !== 'none' && t("剪贴板"), p.background && t("后台运行"),
     p.system.length && t("启动程序"), p.layer === 'web' && t("占用内存较多")].filter(Boolean);
-  // What it does, in its details and its install warning (`warning`: the programs get a
-  // paragraph of their own there).
-  function plLines(p, warning) {
+  // What it does, in its details and its install warning.
+  function plLines(p) {
     const clip = { write: t("写入剪贴板"), read: t("读取剪贴板"), readwrite: t("读取和写入剪贴板") }[p.clipboard];
     const d = [p.network.length && tf("联网：{0}", p.network.join(', ')), p.links.length && tf("在浏览器里打开这些网站：{0}", p.links.join(', ')),
       clip, p.background && t("栅栏隐藏时继续运行"), p.folders && t("读取你选的文件夹，只读不写"), p.notify && t("显示提示，发出提示音"),
-      !warning && p.system.length && tf("启动这些程序：{0}", p.system.join(', ')), p.layer === 'web' && t("用网页显示内容，占用内存较多")].filter(Boolean);
+      p.system.length && tf("启动这些程序：{0}", p.system.join(', ')), p.layer === 'web' && t("用网页显示内容，占用内存较多")].filter(Boolean);
     return d.length ? d : [t("只显示内容，不联网，也不读剪贴板")];
   }
   function plButton(p) {
@@ -1923,9 +1922,9 @@
     plAsk = p;
     document.getElementById('plTitle').textContent = p.state === 'confirm' ? tf("更新“{0}”？", p.name) : tf("安装“{0}”？", p.name);
     document.getElementById('plBy').textContent = tf("作者 {0}，审查过的版本是 {1}。", p.author, p.version);
-    document.getElementById('plDoes').replaceChildren(...plLines(p, true).map(x => plEl('li', '', x)));
+    document.getElementById('plDoes').replaceChildren(...plLines(p).map(x => plEl('li', '', x)));
     document.getElementById('plSystem').hidden = !p.system.length;
-    document.getElementById('plSystemText').textContent = tf("它还会启动这些程序：{0}。这些程序能做你的账号能做的任何事，只在你信任它的作者时安装。", p.system.join(', '));
+    document.getElementById('plSystemText').textContent = tf("请特别注意它要启动的程序：{0}。这些程序能做你的账号能做的任何事，只在你信任它的作者时安装。", p.system.join(', '));
     document.getElementById('plSystemOff').hidden = !!(state.settings && state.settings.tools && state.settings.tools.allowSystem);
     document.getElementById('plToolsOn').hidden = !!(state.settings && state.settings.tools && state.settings.tools.enabled);
     document.getElementById('plOk').textContent = p.state === 'confirm' ? t("更新插件") : t("安装并添加");

@@ -455,7 +455,7 @@ async function runTests() {
     rows()[1].querySelector('button').click();
     const back = doc.getElementById('plBack'), sys = doc.getElementById('plSystem');
     const text = back.textContent;
-    assert(!back.hidden && text.includes('它会做：') && text.includes('写入剪贴板') && text.includes('插件只能做这里列出的事，每个版本都经过自动检查和审查。'), 'Warning: ' + text);
+    assert(!back.hidden && text.includes('它会做：') && text.includes('写入剪贴板') && text.includes('启动这些程序：ipconfig.exe') && text.includes('插件只能做这里列出的事，每个版本都经过自动检查和审查。'), 'Warning: ' + text);
     assert(!sys.hidden && sys.textContent.includes('ipconfig.exe') && sys.textContent.includes('这些程序能做你的账号能做的任何事') && !doc.getElementById('plSystemOff').hidden, 'Programs paragraph: ' + sys.textContent);
     const box = frame.contentWindow.getComputedStyle(back.querySelector('.pl-warn')).backgroundColor;
     assert(box === 'rgb(67, 53, 25)', 'The warning box is not the caution colour: ' + box);
