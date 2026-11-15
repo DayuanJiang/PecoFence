@@ -3194,6 +3194,7 @@ impl App {
                 args,
             } => self.web_call(page, id, call, args),
             Command::WebPageFailed { page, failure } => self.web_page_failed(page, failure),
+            Command::WebPageReload { page, uri } => self.reload_web_page(page, uri),
             Command::EditNote { fence, caret } => self.edit_note(fence, caret),
             Command::NoteEditState {
                 fence,

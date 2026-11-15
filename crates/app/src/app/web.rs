@@ -29,6 +29,8 @@ pub(super) struct Web {
     /// When each fence's page failed within the last hour.
     failures: HashMap<FenceId, Vec<Instant>>,
     stopped: HashMap<FenceId, Stop>,
+    /// Where a fence's next page starts: its own address, when the page before loaded anew.
+    at: HashMap<FenceId, String>,
     /// Per fence: its page's posts main.js has not had yet (`Arc::strong_count` - 1), and
     /// whether the last one was refused (logged once).
     posts: HashMap<FenceId, (Arc<()>, bool)>,
@@ -76,7 +78,7 @@ impl App {
         else {
             return;
         };
-        let queue = self.queue.clone();
+        let (queue, at) = (self.queue.clone(), self.web_pages.at.remove(&shown));
         let web = WebFence::start(
             &env.env,
             &self.ctx.stack,
@@ -85,6 +87,7 @@ impl App {
             plugin,
             queue,
             init,
+            at,
         );
         w.set_web(Some(web));
     }
@@ -153,6 +156,26 @@ impl App {
             tracing::info!(%fence, was_stopped, "web plugin: the page starts again for the new version");
             self.push_tool_view(host);
         }
+    }
+
+    /// `Command::WebPageReload`: the fence's page loads anew by itself; a new page is made at
+    /// `uri`, with what `pf` says now (settings, theme, size) and calls counted for it alone.
+    pub(super) fn reload_web_page(&mut self, page: Weak<WebFence>, uri: String) {
+        let Some(web) = page.upgrade() else {
+            return;
+        };
+        let (fence, host) = (web.fence, self.state.host_of(web.fence));
+        let Some(w) = self
+            .fences
+            .get(&host)
+            .filter(|w| w.web().is_some_and(|c| Rc::ptr_eq(&c, &web)))
+        else {
+            return;
+        };
+        tracing::info!(%fence, uri = %crate::web_plugin::short(&uri), "web plugin: the page starts again where it loads");
+        self.web_pages.at.insert(fence, uri);
+        w.set_web(None);
+        self.push_tool_view(host);
     }
 
     /// A click in a stopped page's fence (true: it was one): 下载 WebView2 opens its page in the

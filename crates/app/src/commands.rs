@@ -346,6 +346,12 @@ pub enum Command {
         call: String,
         args: serde_json::Value,
     },
+    /// 网页层: a page loads anew by itself (`location.reload()`, another page of its own): it is
+    /// made again at `uri`.
+    WebPageReload {
+        page: std::rc::Weak<crate::web_plugin::WebFence>,
+        uri: String,
+    },
     /// 网页层: a page's browser or render process ended, or the page hung.
     WebPageFailed {
         page: std::rc::Weak<crate::web_plugin::WebFence>,

@@ -385,6 +385,16 @@ if ($Part -eq 'C') {
   $d = JsWait "$IsDark && pf.theme === 'dark'" 20
   Check 'dark theme, dark wallpaper: the page sees prefers-color-scheme dark and pf.theme dark' ($d -eq $true) ''
   Check 'the page got the theme event' ((Js "window.demo.events.includes('theme:dark')") -eq $true) (Js "window.demo.events.join(',')")
+  # The page loads anew by itself while four of its requests hang: the new page says the theme
+  # of now (not the one when the page was made) and its calls count alone.
+  Js "(window.hung = Array.from({ length: 4 }, () => pf.http.get('https://example.org:81/')), 1)" | Out-Null
+  Start-Sleep -Milliseconds 500
+  Js "(window.oldDoc = 1, setTimeout(() => location.reload(), 100), 1)" | Out-Null
+  Start-Sleep -Seconds 3
+  $again = (CdpOpen -Url 'pecofence-plugin://webdemo/*' -sec 15) -and (JsWait "!window.oldDoc && document.readyState === 'complete'" 15)
+  $theme = if ($again) { Js "pf.theme" } else { '' }
+  $req = if ($again) { Js "(window.after = null, pf.http.get('https://example.org/').then(() => window.after = 'ok', e => window.after = e.message), 1)" | Out-Null; JsWait "window.after" 10 } else { '' }
+  Check 'after its own location.reload() the page says the theme of now (dark) and its first request goes' ($again -and $theme -eq 'dark' -and "$req" -eq 'ok') "again=$again theme=$theme request=$req $(PfWaitLog 'web plugin: the page loads anew' 1)"
   Start-Sleep -Milliseconds 800; ParkMouse
   Shot 'C1-dark'
   $wp = @('C:\Windows\Web\Wallpaper\Windows\img0.jpg', 'C:\Windows\Web\Screen\img100.jpg') | Where-Object { Test-Path $_ } | Select-Object -First 1

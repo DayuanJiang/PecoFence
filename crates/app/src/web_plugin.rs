@@ -136,6 +136,8 @@ pub struct WebFence {
     /// What `pf` says about the fence when the page starts (`lang`, `theme`, `settings`,
     /// `fence`); events bring the changes.
     init: serde_json::Value,
+    /// Where the page starts (its own address before it loaded anew), else index.html.
+    at: Option<String>,
     dark: Cell<bool>,
     /// The WebView2 runtime's version, for the log.
     version: String,
@@ -170,6 +172,7 @@ impl WebFence {
         plugin: Plugin,
         queue: CommandQueue,
         init: serde_json::Value,
+        at: Option<String>,
     ) -> Rc<Self> {
         let web = Rc::new_cyclic(|me| Self {
             visual: stack.compositor.create_container_visual(),
@@ -180,6 +183,7 @@ impl WebFence {
             queue,
             dark: Cell::new(init["theme"] == "dark"),
             init,
+            at,
             version: env.browser_version(),
             pressed: Cell::new(None),
             told: Cell::new((0, 0)),
@@ -305,12 +309,25 @@ impl WebFence {
             );
         }
         {
-            let (id, origin) = (id.clone(), origin.clone());
+            let (id, origin, page, queue) = (
+                id.clone(),
+                origin.clone(),
+                self.me.clone(),
+                self.queue.clone(),
+            );
+            let first = Cell::new(true);
             events.push(webview.on_navigation_starting(move |args| {
                 let uri = args.uri();
                 if !uri.starts_with(&origin) {
                     let _ = args.set_cancel(true);
                     tracing::info!(plugin = %id, uri = %short(&uri), "web plugin: navigation to another site refused");
+                } else if !first.replace(false) {
+                    // `location.reload()` or another page of its own: a new page there, so it
+                    // gets what `pf` says now and its calls count alone.
+                    let _ = args.set_cancel(true);
+                    tracing::info!(plugin = %id, uri = %short(&uri), "web plugin: the page loads anew, made again");
+                    let page = page.clone();
+                    queue.push(Command::WebPageReload { page, uri });
                 }
             })?);
         }
@@ -396,7 +413,7 @@ impl WebFence {
         controller.set_rasterization_scale(scale)?;
         controller.set_bounds(x, y, x + w, y + h)?;
         controller.set_visible(true)?;
-        webview.navigate(&format!("{origin}index.html"))?;
+        webview.navigate(self.at.as_deref().unwrap_or(&format!("{origin}index.html")))?;
         self.look_for_browser_window();
         *self.live.borrow_mut() = Some(Live {
             comp,
