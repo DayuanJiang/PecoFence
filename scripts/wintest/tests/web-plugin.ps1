@@ -452,5 +452,7 @@ if ($Part -eq 'N') {
   $twice = @(PfLogAll | Where-Object { $_ -match 'no WebView2, the fence says so' }).Count
   Check '重新加载 tries again (still missing here)' ($clicked -and $twice -ge 2) "tries=$twice"
   Remove-Item Env:WEBVIEW2_BROWSER_EXECUTABLE_FOLDER -ErrorAction SilentlyContinue
-  Check 'no errors in the log' (@(PfLogErrors | Where-Object { $_ -notmatch 'WebView2 environment failed' }).Count -eq 0) ((PfLogErrors) -join ' | ')
+  Check 'no errors in the log but the missing WebView2' (@(PfLogErrors | Where-Object { $_ -notmatch 'WebView2 environment failed' }).Count -eq 0) ((PfLogErrors) -join ' | ')
+  # The missing WebView2 is logged as an error on purpose: the end-of-job check would count it.
+  $PfAllowLogErrors = $true
 }
