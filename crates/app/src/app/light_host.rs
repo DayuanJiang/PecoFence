@@ -190,14 +190,15 @@ impl AppHost {
                 )
             })),
             "clipboard.image" => {
-                let Some((w, h, bgra)) = clipboard::read_image() else {
-                    return Ok(Value::Null);
+                let (w, h, bgra) = match clipboard::read_image(MAX_IMAGE_SIDE) {
+                    None => return Ok(Value::Null),
+                    Some(Err((w, h))) => {
+                        return Err(format!(
+                            "the picture is larger than 4096 x 4096 ({w} x {h})"
+                        ));
+                    }
+                    Some(Ok(picture)) => picture,
                 };
-                if w > MAX_IMAGE_SIDE || h > MAX_IMAGE_SIDE {
-                    return Err(format!(
-                        "the picture is larger than 4096 x 4096 ({w} x {h})"
-                    ));
-                }
                 let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
                 let ms = ms.unwrap_or_default().as_millis();
                 let name = arg.map_or_else(|| format!("clipboard-{ms}.png"), str::to_string);
