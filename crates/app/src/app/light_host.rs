@@ -337,9 +337,18 @@ impl AppHost {
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(io)?;
+        // What the program starts goes with it: the job ends them all when the program ends
+        // or runs too long, which closes the pipes, so the readers below finish too.
+        let Some(job) = pecofence_platform::job::KillOnCloseJob::new().filter(|j| j.assign(&child))
+        else {
+            let _ = child.kill();
+            tracing::warn!(%fence, program, "pf.run: no job object, the program was ended");
+            return Err(format!("{program} could not be run (no job object)"));
+        };
         let begun = Instant::now();
         // Both pipes are read to the end (a full pipe would stall the program); 1 MB is kept.
         let drain = |pipe: Option<Box<dyn Read + Send>>| {
+            let (tx, rx) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
                 let (mut kept, mut chunk) = (Vec::new(), [0u8; 16 * 1024]);
                 if let Some(mut pipe) = pipe {
@@ -348,8 +357,9 @@ impl AppHost {
                         kept.extend_from_slice(&chunk[..n.min(room)]);
                     }
                 }
-                kept
-            })
+                let _ = tx.send(kept);
+            });
+            rx
         };
         let out = drain(
             child
@@ -368,20 +378,24 @@ impl AppHost {
                 break status.code();
             }
             if begun.elapsed() > RUN_TIME {
-                let _ = child.kill();
-                tracing::info!(%fence, program, "pf.run: the program ran 30 s and was ended");
+                job.terminate();
+                let _ = child.wait();
+                tracing::info!(%fence, program, "pf.run: the program ran 30 s and was ended with what it started");
                 return Err(format!("{program} ran longer than 30 s and was ended"));
             }
             std::thread::sleep(Duration::from_millis(50));
         };
-        let mut bytes = out.join().unwrap_or_default();
-        bytes.extend(err.join().unwrap_or_default());
+        let left = job.has_processes();
+        drop(job);
+        let wait = Duration::from_secs(1);
+        let mut bytes = out.recv_timeout(wait).unwrap_or_default();
+        bytes.extend(err.recv_timeout(wait).unwrap_or_default());
         bytes.truncate(RUN_OUTPUT);
         let output = match std::str::from_utf8(&bytes) {
             Ok(s) => s.to_string(),
             Err(_) => pecofence_platform::wide::from_ansi(&bytes),
         };
-        tracing::info!(%fence, program, ?code, ms = begun.elapsed().as_millis(), bytes = bytes.len(), "pf.run: the program ended");
+        tracing::info!(%fence, program, ?code, ms = begun.elapsed().as_millis(), bytes = bytes.len(), left, "pf.run: the program ended (left: what it started was still running and was ended)");
         Ok(json!({ "code": code, "output": output }))
     }
 
