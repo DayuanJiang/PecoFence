@@ -2292,6 +2292,7 @@ impl App {
             );
             t.show_info("PecoFence", &text, true);
         }
+        app.remove_left_script_data();
         // Desktop folder moved since last run? Re-point the item records before syncing, or
         // every item would be orphaned and re-routed by the rules.
         if let Some(desk) = shell::user_desktop() {
@@ -3197,7 +3198,14 @@ impl App {
             Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
             Command::MoveNoteLine { fence, from, to } => self.move_note_line(fence, from, to),
             Command::OpenNoteLink { fence, line, start } => self.open_note_link(fence, line, start),
-            Command::ScriptRowClicked { fence, row } => self.script_row_clicked(fence, row),
+            Command::ScriptRowClicked {
+                fence,
+                row,
+                cell,
+                fraction,
+                dragging,
+                double,
+            } => self.script_row_clicked(fence, row, cell, fraction, dragging, double),
             Command::EmptyActionClicked { fence } => self.smart_everything_clicked(fence),
             Command::EndNoteEdit => crate::note_edit::end_active(true),
             Command::NoteEdited { fence, text } => self.note_edited(fence, &text),
@@ -3466,6 +3474,8 @@ impl App {
         pecofence_core::usage::event("exit");
         self.save_usage();
         self.tray = None;
+        // Last, with the fences and the tray icon already gone: it may take up to a second.
+        self.end_streams_at_quit();
     }
 }
 

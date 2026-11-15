@@ -212,6 +212,10 @@ impl FenceWindow {
             script: None,
             script_rows: Vec::new(),
             script_hover: None,
+            slider_drag: None,
+            script_scroll: ScriptScrollState::default(),
+            quiet_glide: false,
+            script_images: Vec::new(),
             script_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             script_footer_form: "full",
             note_box_hover: None,
@@ -565,7 +569,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} idle_opacity={:.2} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={} rolled_caption={:?}",
+            "title={:?} idle_opacity={:.2} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} script_cells={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={} rolled_caption={:?}",
             v.title,
             v.idle_layer.opacity(),
             v.title_count,
@@ -622,7 +626,19 @@ impl FenceWindow {
                     .map(|&(line, _, r)| (line, r))
                     .collect::<Vec<_>>(),
             ),
-            dump_rects(&v.script_rows),
+            // By row (as before rows of cells), and by row * 100 + cell.
+            dump_rects(
+                &v.script_rows
+                    .iter()
+                    .map(|&(row, _, r)| (row, r))
+                    .collect::<Vec<_>>()
+            ),
+            dump_rects(
+                &v.script_rows
+                    .iter()
+                    .map(|&(row, cell, r)| (row * 100 + cell, r))
+                    .collect::<Vec<_>>()
+            ),
             v.off_desktop,
             v.desktop_tip,
             v.filter_tag,
@@ -1914,18 +1930,18 @@ impl FenceWindow {
     }
 
     /// A script's copy action uses a short, non-activating tip beside the pointer.
-    pub fn show_script_copy_result(&self, index: usize, copied: bool) {
+    pub fn show_script_copy_result(&self, index: usize, cell: usize, copied: bool) {
         let text = if copied {
             pecofence_core::i18n::text("已复制")
         } else {
             pecofence_core::i18n::text("复制失败，请重试")
         };
-        self.show_script_row_tip(index, text, 2000);
+        self.show_script_row_tip((index, cell), text, 2000);
     }
 
     /// A click on a script row that would start a program, in a script whose header does not
     /// allow that: the tip beside the pointer says so and names the line to add.
-    pub fn show_script_row_refused(&self, index: usize) {
+    pub fn show_script_row_refused(&self, index: usize, cell: usize) {
         // The line to add goes on a line of its own, so the tip does not break it in two.
         let text = pecofence_core::i18n::format(
             "这个脚本不能启动程序。要允许，在脚本开头的注释里加上：{0}",
@@ -1933,15 +1949,15 @@ impl FenceWindow {
         );
         // Long enough to read both sentences.
         let secs = pecofence_platform::sysparams::message_duration_secs().max(8);
-        self.show_script_row_tip(index, &text, secs * 1000);
+        self.show_script_row_tip((index, cell), &text, secs * 1000);
     }
 
     /// `text` in a non-activating tip beside the pointer for `ms`, as the result of a click
-    /// on script row `index`.
-    fn show_script_row_tip(&self, index: usize, text: &str, ms: u32) {
+    /// on script row `at` (its row and cell).
+    fn show_script_row_tip(&self, at: (usize, usize), text: &str, ms: u32) {
         self.with_view(|v| {
             v.hide_tip();
-            v.tip_target = Some(TipTarget::ScriptRow(index));
+            v.tip_target = Some(TipTarget::ScriptRow(at.0, at.1));
             let (x, y, above) = pointer_tip_place(v.scale());
             v.show_tip_text_at(text, x, y, above);
             window::set_timer(v.hwnd, TIMER_TIP_HIDE, ms);
@@ -1990,6 +2006,8 @@ impl FenceWindow {
                 if script.is_none() {
                     v.script_rows.clear();
                     v.script_hover = None;
+                    v.slider_drag = None;
+                    v.script_scroll = ScriptScrollState::default();
                 }
                 // The first result takes the place of 「正在运行…」 with the content's
                 // cross-fade (83 ms, as a change of view), not in one frame.

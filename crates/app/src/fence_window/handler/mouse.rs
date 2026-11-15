@@ -324,8 +324,18 @@ pub(super) fn on_lbuttondown(
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
-        // A note's check box, a script fence's clickable row: pressed look now, the action on
-        // a release over it.
+        // A slider of a script's row of cells: the script gets the position at once, and the
+        // pointer keeps moving it until the release.
+        if let Some(cmd) = v.script_slider_press(x, y) {
+            let _ = v.redraw_content();
+            drop(guard);
+            window::set_capture(hwnd);
+            queue.push(cmd);
+            queue.push(Command::RaiseFence(hwnd));
+            return Some(0);
+        }
+        // A note's check box, a script fence's clickable row or button: pressed look now, the
+        // action on a release over it.
         if v.press_tool_at(x, y, false).is_some() {
             drop(guard);
             window::set_capture(hwnd);
@@ -458,6 +468,22 @@ pub(super) fn on_lbuttonup(
     let fence_id = h.fence_id;
     let x = msg::lo_i16(lparam);
     let y = msg::hi_i16(lparam);
+    // A slider of a script fence let go: its last position.
+    let slider_up = view
+        .borrow_mut()
+        .as_mut()
+        .filter(|v| v.slider_drag.is_some())
+        .map(|v| v.slider_drag_end(x as i32));
+    if let Some(cmd) = slider_up {
+        window::release_capture();
+        if let Some(cmd) = cmd {
+            queue.push(cmd);
+        }
+        if let Some(v) = view.borrow_mut().as_mut() {
+            let _ = v.redraw_content();
+        }
+        return Some(0);
+    }
     let release = window::client_to_screen(hwnd, pecofence_platform::POINT { x, y });
     flush_window_drag(view, hwnd, Instant::now(), Some((release.x, release.y)));
     let remote = view.borrow_mut().as_mut().and_then(|v| {
@@ -596,7 +622,7 @@ pub(super) fn on_lbuttonup(
             | PressTarget::Header(_)
             | PressTarget::NoteBox(_)
             | PressTarget::NoteLink(..)
-            | PressTarget::ScriptRow(_),
+            | PressTarget::ScriptRow(..),
             _,
         )) => {
             need_content = true;
@@ -625,9 +651,13 @@ pub(super) fn on_lbuttonup(
                 line,
                 start,
             }),
-            PressTarget::ScriptRow(row) => queue.push(Command::ScriptRowClicked {
+            PressTarget::ScriptRow(row, cell) => queue.push(Command::ScriptRowClicked {
                 fence: v.active,
                 row,
+                cell,
+                fraction: None,
+                dragging: false,
+                double: false,
             }),
             // Also while a roll is still in flight: the toggle goes against the state it is
             // rolling to (`is_rolled`), so the roll turns round.
@@ -722,6 +752,7 @@ pub(super) fn on_capturechanged(
     let mut guard = view.borrow_mut();
     if let Some(v) = guard.as_mut() {
         v.drag = None;
+        v.slider_drag = None;
         v.click_pending = None;
         v.rbutton_press = None;
         // A note press that lost the capture is no click, and a dragged to-do goes back. A
@@ -817,7 +848,23 @@ pub(super) fn on_lbuttondblclk(
         if v.chevron_at(x, y) {
             return Some(0);
         }
-        // In a note the second click is another press: a check box ticks back.
+        // A script row or cell with a `dblaction=` sends it on the second click; a slider of a
+        // row of cells takes the second press as it took the first.
+        if let Some(cmd) = v
+            .script_double_click(x, y)
+            .or_else(|| v.script_slider_press(x, y))
+        {
+            let capture = v.slider_drag.is_some();
+            let _ = v.redraw_content();
+            drop(guard);
+            if capture {
+                window::set_capture(hwnd);
+            }
+            queue.push(cmd);
+            return Some(0);
+        }
+        // In a note the second click is another press: a check box ticks back. So it is on a
+        // button of a script's row of cells: rapid clicks on Next all count.
         if v.press_tool_at(x, y, true).is_some() {
             drop(guard);
             window::set_capture(hwnd);
@@ -1252,19 +1299,20 @@ pub(super) fn on_mousewheel(
         // and are applied 1:1 on the next frame with no glide, like
         // DirectManipulation tracking the fingers; easing each ~5 DIP
         // message would leave the content a glide behind the finger.
-        let (layout, view_h) = v.scroll_extent();
         // A note or a script fence scrolls its lines of text as a list scrolls its rows.
+        let dims = v.scroll_dims();
         let text = v.scrolls_text();
         let step = wheel_step_dip(
             behavior.wheel_lines.get(),
             delta as f32 / msg::WHEEL_DELTA as f32,
-            v.scroll_row_step(&layout),
-            view_h,
-            matches!(layout, ItemLayout::Grid(_)) && !text,
+            dims.row_step,
+            dims.view_h,
+            dims.grid,
         );
         if step == 0.0 {
             return Some(0);
         }
+        v.note_user_scroll();
         let cap = if delta.abs() < msg::WHEEL_DELTA {
             Duration::ZERO
         } else {

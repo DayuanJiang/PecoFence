@@ -35,6 +35,15 @@ pub(super) fn on_mousemove(
         queue.push(Command::PortalPointerIn(v.active));
     }
     v.set_mouse_inside(true);
+    // A held slider of a script fence follows the pointer, wherever it goes.
+    if v.slider_drag.is_some() {
+        let cmd = v.slider_drag_move(x as i32);
+        drop(guard);
+        if let Some(cmd) = cmd {
+            queue.push(cmd);
+        }
+        return Some(0);
+    }
     // A press on a locked fence that turns into a drag: the lock glyph pulses.
     v.note_lock_drag((pt.x, pt.y));
     if v.marquee.is_some() {
@@ -77,6 +86,7 @@ pub(super) fn on_mousemove(
                 v.dismiss_rename_for_scroll();
             }
             v.scroll_y = next;
+            v.note_user_scroll();
         }
         // Keep the hot zone current so a release with the pointer off
         // the bar starts the contract delay at once.
@@ -448,7 +458,7 @@ pub(super) fn on_mousemove(
                 | PressTarget::Header(_)
                 | PressTarget::NoteBox(_)
                 | PressTarget::NoteLink(..)
-                | PressTarget::ScriptRow(_)
+                | PressTarget::ScriptRow(..)
         )
     {
         if p == PressTarget::Chevron {
@@ -484,7 +494,7 @@ pub(super) fn on_mousemove(
                 PressTarget::Header(c) => v.header_hover = inside.then_some(c),
                 PressTarget::NoteBox(l) => v.note_box_hover = inside.then_some(l),
                 PressTarget::NoteLink(l, s) => v.note_link_hover = inside.then_some((l, s)),
-                PressTarget::ScriptRow(r) => v.script_hover = inside.then_some(r),
+                PressTarget::ScriptRow(r, c) => v.script_hover = inside.then_some((r, c)),
                 _ => {}
             }
             v.redraw_for_press(p);
@@ -566,7 +576,7 @@ pub(super) fn on_mousemove(
         Some(TipTarget::Chevron)
     } else {
         v.tip_target_at(x, y, hit.filter(|_| behavior.info_tips.get()))
-            .or(script_row.map(TipTarget::ScriptRow))
+            .or(script_row.map(|(row, cell)| TipTarget::ScriptRow(row, cell)))
     };
     v.update_tip_target(tip, x, y);
     let header = if divider.is_some() || on_control {

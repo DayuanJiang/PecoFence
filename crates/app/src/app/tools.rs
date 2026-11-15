@@ -9,6 +9,10 @@ use pecofence_core::{FenceTool, ScriptSpec};
 use std::collections::HashMap;
 use std::time::Instant;
 
+/// The entries of 新建小工具 (tray and fence menus): 时钟, each script example, 用自己的脚本….
+/// The menus reserve this many command ids.
+pub(super) const TOOL_MENU_ENTRIES: u32 = 2 + crate::scripts::Example::ALL.len() as u32;
+
 /// 脚本栅栏 at run time (nothing of it is saved): each fence's last result and when it came,
 /// the fences whose script is running (with the script it runs), when each is next due, a
 /// click that came while its script ran, and the streaming scripts that keep running.
@@ -134,9 +138,13 @@ impl App {
         let default_title = match &tool {
             NewTool::Note(_) => pecofence_core::i18n::text("便签").to_string(),
             NewTool::Clock => pecofence_core::i18n::text("时钟").to_string(),
-            NewTool::Script(path) => std::path::Path::new(path)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
+            // The title the script asks for, else its file name.
+            NewTool::Script(path) => crate::scripts::title_of(std::path::Path::new(path))
+                .or_else(|| {
+                    std::path::Path::new(path)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                })
                 .unwrap_or_else(|| pecofence_core::i18n::text("脚本").to_string()),
         };
         let title = title
@@ -244,8 +252,8 @@ impl App {
         }
     }
 
-    /// 新建小工具 (tray and fence menu), command ids `base`..`base + 5`: 时钟 (while the
-    /// desktop has none), the script examples, then 用自己的脚本….
+    /// 新建小工具 (tray and fence menu), command ids `base`..`base + TOOL_MENU_ENTRIES`: 时钟 (while
+    /// the desktop has none), the script examples, then 用自己的脚本….
     pub(super) fn new_tool_submenu(&self, base: u32) -> PopupMenu {
         use crate::scripts::Example;
         let menu = PopupMenu::new();
@@ -595,6 +603,35 @@ impl App {
         }
     }
 
+    /// At start: removes the data folders (`scripts-data\<fence id>`) of script fences that are
+    /// gone, with what their scripts kept there. A fence a layout or a snapshot still has keeps its folder. Nothing goes when
+    /// the configuration is a new one or came from a backup: the fences it lacks may come back.
+    pub(super) fn remove_left_script_data(&self) {
+        let s = &self.state;
+        if s.first_run
+            || s.recovered_from.is_some()
+            || !s.load_failures.is_empty()
+            || s.locked_config.is_some()
+        {
+            return;
+        }
+        let Some(dir) = s
+            .config_path_on_disk()
+            .parent()
+            .map(|d| d.join("scripts-data"))
+        else {
+            return;
+        };
+        let keep: std::collections::HashSet<String> = (s.config.scripts.keys())
+            .chain(s.config.snapshots.iter().flat_map(|x| x.scripts.keys()))
+            .map(|id| id.to_string())
+            .collect();
+        for folder in crate::scripts::left_data_folders(&dir, &keep) {
+            let removed = std::fs::remove_dir_all(&folder);
+            tracing::info!(folder = ?folder.file_name(), ok = removed.is_ok(), "script data folder of a deleted fence removed");
+        }
+    }
+
     /// What a run of fence `id`'s script is told (environment variables).
     fn script_env(&self, id: FenceId, action: String) -> crate::scripts::RunEnv {
         let data_dir = self
@@ -615,7 +652,33 @@ impl App {
                 "light"
             },
             fence: id.to_string(),
+            language: pecofence_core::i18n::language().tag(),
         }
+    }
+
+    /// PecoFence quits: the scripts that keep running get their input closed and up to a second
+    /// to end by themselves, so one that keeps files only while it runs can remove them. What still runs after that is ended as before.
+    pub(super) fn end_streams_at_quit(&mut self) {
+        const GRACE: std::time::Duration = std::time::Duration::from_millis(1000);
+        let streams = &mut self.script_runs.streams;
+        if streams.is_empty() {
+            return;
+        }
+        for (_, _, stream) in streams.values_mut() {
+            stream.close_input();
+        }
+        let asked = Instant::now();
+        while asked.elapsed() < GRACE && streams.values().any(|(_, _, s)| s.running()) {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let left = streams.values().filter(|(_, _, s)| s.running()).count();
+        tracing::info!(
+            scripts = streams.len(),
+            still_running = left,
+            waited_ms = asked.elapsed().as_millis() as u64,
+            "quit: streaming scripts asked to end; the ones still running are ended now"
+        );
+        streams.clear();
     }
 
     /// Ends the streaming scripts whose fence went, lost its script or had the tool switched
@@ -751,18 +814,43 @@ impl App {
         });
     }
 
-    /// A click on row `index` of script fence `fence`: what its parameters ask for.
-    pub(super) fn script_row_clicked(&mut self, fence: FenceId, index: usize) {
+    /// A click on row `index` of script fence `fence` (on its cell `cell` when the row is a row
+    /// of cells): what its parameters ask for. A slider's `fraction` (0 to 1) is added to its
+    /// action; `dragging` clicks (a slider held and moved) go to a script that keeps running
+    /// only.
+    pub(super) fn script_row_clicked(
+        &mut self,
+        fence: FenceId,
+        index: usize,
+        cell: usize,
+        fraction: Option<f32>,
+        dragging: bool,
+        double: bool,
+    ) {
         use pecofence_core::script_output::{
             RowAction, ScriptLine, TargetKind, click_allowed, parse,
         };
         let Some((Outcome::Done(text), at)) = self.script_runs.last.get(&fence).cloned() else {
             return;
         };
-        let Some(ScriptLine::Row(row)) = parse(&text).into_iter().nth(index) else {
-            return;
+        let mut row = match parse(&text).into_iter().nth(index) {
+            Some(ScriptLine::Row(row)) => row,
+            Some(ScriptLine::Cells(cells)) => match cells.into_iter().nth(cell) {
+                Some(row) => row,
+                None => return,
+            },
+            _ => return,
         };
-        if !row.clickable() {
+        if double {
+            // The second click of a double-click runs the row's `dblaction=` and nothing else.
+            let Some(action) = row.dbl_action.take() else {
+                return;
+            };
+            row.action = Some(RowAction::Script(action));
+            row.refresh = false;
+            row.todo = None;
+        }
+        if !row.clickable() || (dragging && !self.script_runs.streams.contains_key(&fence)) {
             return;
         }
         let script = self
@@ -797,9 +885,14 @@ impl App {
             Some(RowAction::Script(_)) => "action",
             None => "refresh",
         };
-        tracing::info!(%fence, index, what = kind, refresh = row.refresh, "script row clicked");
+        if dragging {
+            tracing::debug!(%fence, index, cell, ?fraction, "script slider dragged");
+        } else {
+            tracing::info!(%fence, index, cell, what = kind, refresh = row.refresh, "script row clicked");
+        }
         // A row starts a program only when the script's header allows it: what a script prints
-        // can be text from the network that reads as parameters.
+        // can be text from the network that reads as parameters. A cell of a row of cells and a
+        // `dblaction=` are rows of their own here and go through the same check.
         if let Some(action) = &row.action {
             let allows = script.as_deref().is_some_and(crate::scripts::allows_run);
             let target = match &opens {
@@ -816,7 +909,7 @@ impl App {
                     .unwrap_or_default();
                 tracing::info!(%fence, script, key = kind, "script row refused: the script's header does not allow starting programs");
                 if let Some(w) = self.window_for(fence) {
-                    w.show_script_row_refused(index);
+                    w.show_script_row_refused(index, cell);
                 }
                 return;
             }
@@ -874,10 +967,15 @@ impl App {
                 let copied = pecofence_platform::clipboard::set_text(self.control.hwnd(), &text);
                 tracing::info!(%fence, copied, "script row: text copied");
                 if let Some(w) = self.window_for(fence) {
-                    w.show_script_copy_result(index, copied);
+                    w.show_script_copy_result(index, cell, copied);
                 }
             }
             Some(RowAction::Script(action)) => {
+                // A slider hands its position over after the action: `seek:0.3700`.
+                let action = match (row.slider, fraction) {
+                    (Some(_), Some(f)) => format!("{action}:{f:.4}"),
+                    _ => action,
+                };
                 // A to-do ticks at once; the script's next output has the final say.
                 if row.todo.is_some()
                     && let Some(flipped) = pecofence_core::note::toggle(&text, index)
@@ -927,7 +1025,8 @@ impl App {
     }
 
     /// 脚本栅栏 example `kind`: writes its script into the configuration's `scripts` folder
-    /// (kept when it is there already) and makes a fence for it.
+    /// (kept when it is there already: an unedited copy of an earlier version gets the current
+    /// one when it runs, see `scripts::update_old_example`) and makes a fence for it.
     pub(super) fn new_script_example_of(&mut self, kind: crate::scripts::Example, x: i32, y: i32) {
         let Some(dir) = self
             .state
@@ -944,8 +1043,8 @@ impl App {
                 pecofence_core::i18n::Language::SimplifiedChinese
                     | pecofence_core::i18n::Language::TraditionalChinese
             );
-            let text = crate::scripts::example_file_text(kind, chinese);
-            let written = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, text));
+            let written = std::fs::create_dir_all(&dir)
+                .and_then(|_| crate::scripts::write_example(&path, kind, chinese));
             if let Err(e) = written {
                 tracing::warn!(error = %e, example = kind.name(), "writing the example failed");
                 return;

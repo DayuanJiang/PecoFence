@@ -320,13 +320,23 @@ pub struct FenceViewState {
     pub(super) script: Option<ScriptView>,
     /// Its clickable rows as last drawn: row index and (left, top, right, bottom) in content
     /// DIPs.
-    pub(super) script_rows: Vec<(usize, [f32; 4])>,
-    /// The clickable row under the pointer.
-    pub(super) script_hover: Option<usize>,
-    /// The hover plates of its rows fading in and out, by row index (as `item_hover`).
-    pub(super) script_fades: Fades<usize>,
+    pub(super) script_rows: Vec<(usize, usize, [f32; 4])>,
+    /// The clickable row and cell under the pointer (cell 0 for a plain row).
+    pub(super) script_hover: Option<(usize, usize)>,
+    /// The hover plates of its rows and cells fading in and out (as `item_hover`).
+    pub(super) script_fades: Fades<(usize, usize)>,
     /// Which form of the footer was drawn last (`FenceChrome::script_footer`), for the log.
     pub(super) script_footer_form: &'static str,
+    /// The pictures of `image=` rows decoded (the newest last, a few kept): their key (path,
+    /// modification time and size), None when the file could not be decoded.
+    pub(super) script_images: Vec<(String, Option<Image>)>,
+    /// How the rows of the script scroll, as last drawn (the offset is `scroll_y`).
+    pub(super) script_scroll: ScriptScrollState,
+    /// The glide running was started by a script following a line: its end does not light up
+    /// the scrollbar.
+    pub(super) quiet_glide: bool,
+    /// A slider of the script being dragged (the mouse is captured).
+    pub(super) slider_drag: Option<SliderDrag>,
     /// 便签与待办: the line whose check box is under the pointer.
     pub(super) note_box_hover: Option<usize>,
     /// 便签与待办: the web address under the pointer (its line and start).
@@ -955,8 +965,8 @@ impl FenceViewState {
             .map(|&(line, start, _)| (line, start))
     }
 
-    /// 脚本栅栏: the clickable row at client point (`x`, `y`).
-    pub(super) fn script_row_at(&self, x: i32, y: i32) -> Option<usize> {
+    /// 脚本栅栏: the clickable row and cell at client point (`x`, `y`).
+    pub(super) fn script_row_at(&self, x: i32, y: i32) -> Option<(usize, usize)> {
         if self.script.is_none() || self.rolled_up || y < self.content_y || x < self.content_x {
             return None;
         }
@@ -965,8 +975,117 @@ impl FenceViewState {
         let cy = (y - self.content_y) as f32 / scale;
         self.script_rows
             .iter()
-            .find(|(_, r)| cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3])
-            .map(|&(row, _)| row)
+            .find(|(_, _, r)| cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3])
+            .map(|&(row, cell, _)| (row, cell))
+    }
+
+    /// 脚本栅栏: where client x `x` is on a slider drawn in `rect` (content DIPs), 0 to 1.
+    pub(super) fn slider_fraction(&self, rect: [f32; 4], x: i32) -> f32 {
+        let inset = pecofence_render::fence_chrome::SCRIPT_SLIDER_INSET;
+        let cx = (x - self.content_x) as f32 / self.scale();
+        ((cx - rect[0] - inset) / (rect[2] - rect[0] - 2.0 * inset).max(1.0)).clamp(0.0, 1.0)
+    }
+
+    /// 脚本栅栏: row `row` is a row of cells (a `::` line).
+    pub(super) fn script_row_has_cells(&self, row: usize) -> bool {
+        self.script
+            .as_ref()
+            .and_then(|s| s.rows.get(row))
+            .is_some_and(|r| !r.cells.is_empty())
+    }
+
+    /// 脚本栅栏: a press on a slider of a row of cells hands its position to the script at once
+    /// and starts a drag (the caller captures the mouse). Rows and buttons act on the release
+    /// instead (`press_tool_at`).
+    pub(super) fn script_slider_press(&mut self, x: i32, y: i32) -> Option<Command> {
+        let (row, cell) = self.script_row_at(x, y)?;
+        let slider = self
+            .script
+            .as_ref()?
+            .rows
+            .get(row)?
+            .cells
+            .get(cell)
+            .is_some_and(|c| c.slider.is_some());
+        if !slider {
+            return None;
+        }
+        let rect = self
+            .script_rows
+            .iter()
+            .find(|(r, c, _)| *r == row && *c == cell)
+            .map(|h| h.2)?;
+        let fraction = self.slider_fraction(rect, x);
+        self.slider_drag = Some(SliderDrag {
+            row,
+            cell,
+            rect,
+            last: Instant::now(),
+            moved: false,
+        });
+        Some(Command::ScriptRowClicked {
+            fence: self.active,
+            row,
+            cell,
+            fraction: Some(fraction),
+            dragging: false,
+            double: false,
+        })
+    }
+
+    /// 脚本栅栏: the second click of a double-click at client point (`x`, `y`) on a row or cell
+    /// with a `dblaction=`: the command that sends it.
+    pub(super) fn script_double_click(&self, x: i32, y: i32) -> Option<Command> {
+        let (row, cell) = self.script_row_at(x, y)?;
+        let view = self.script.as_ref()?.rows.get(row)?;
+        let dbl = match view.cells.get(cell) {
+            Some(c) => c.dbl,
+            None => view.dbl,
+        };
+        dbl.then_some(Command::ScriptRowClicked {
+            fence: self.active,
+            row,
+            cell,
+            fraction: None,
+            dragging: false,
+            double: true,
+        })
+    }
+
+    /// 脚本栅栏: the pointer moved to client x `x` while a slider is held: the command that
+    /// tells the script, at most every 80 ms.
+    pub(super) fn slider_drag_move(&mut self, x: i32) -> Option<Command> {
+        let (row, cell, rect) = {
+            let sd = self.slider_drag.as_mut()?;
+            sd.moved = true;
+            if sd.last.elapsed() < std::time::Duration::from_millis(80) {
+                return None;
+            }
+            sd.last = Instant::now();
+            (sd.row, sd.cell, sd.rect)
+        };
+        Some(Command::ScriptRowClicked {
+            fence: self.active,
+            row,
+            cell,
+            fraction: Some(self.slider_fraction(rect, x)),
+            dragging: true,
+            double: false,
+        })
+    }
+
+    /// 脚本栅栏: the slider is let go at client x `x`: its last position, when the pointer
+    /// moved at all since the press.
+    pub(super) fn slider_drag_end(&mut self, x: i32) -> Option<Command> {
+        let sd = self.slider_drag.take()?;
+        sd.moved.then(|| Command::ScriptRowClicked {
+            fence: self.active,
+            row: sd.row,
+            cell: sd.cell,
+            fraction: Some(self.slider_fraction(sd.rect, x)),
+            dragging: false,
+            double: false,
+        })
     }
 
     /// The empty state's action row as drawn now: only under the text the app set (a drag
@@ -1088,4 +1207,14 @@ impl FenceViewState {
     pub(super) fn content_size_px(&self) -> (i32, i32) {
         self.content_panel.size_px()
     }
+}
+
+/// A script fence's slider held down: where it is drawn (content DIPs), when the script was last
+/// told its position and whether the pointer moved since the press.
+pub(super) struct SliderDrag {
+    pub(super) row: usize,
+    pub(super) cell: usize,
+    pub(super) rect: [f32; 4],
+    pub(super) last: Instant,
+    pub(super) moved: bool,
 }

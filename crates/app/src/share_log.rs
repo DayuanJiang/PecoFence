@@ -698,10 +698,11 @@ mod tests {
         ("place", "shell::path_place(&path)"),
         ("place", "shell::path_place(&folder)"),
         ("place", "crate::shell::path_place(&dir)"),
+        ("place", "place"), // shell::drive_kind of a script picture: fixed names
         ("command", "a.worst_command"), // `Command` variant name (command_name)
         ("command", "command.as_deref()"), // hangwatch::running_command: a `Command` variant name
-        ("effect", "?effect"),          // DropEffect enum
-        ("family", "%f.family"),        // installed font family
+        ("effect", "?effect"), // DropEffect enum
+        ("family", "%f.family"), // installed font family
         // shell::log_ext: an extension of up to 10 ASCII letters and digits, `other`, `none`.
         ("file_ext", "ext.as_str()"),
         ("target_ext", "target_ext.as_deref()"),
