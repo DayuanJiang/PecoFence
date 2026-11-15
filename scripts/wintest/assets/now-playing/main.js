@@ -57,11 +57,11 @@ async function apps() {
 
 pf.on("media", read);
 pf.on("show", () => { read(); apps(); });
-pf.on("click", (e) => {
+pf.on("click", async (e) => {
   if (!now || !["previous", "playpause", "next"].includes(e.id)) return;
-  pf.media.control(e.id);
-  // The button turns at once; the next media event says what the app did.
-  if (e.id === "playpause") { now.playing = !now.playing; draw(); }
+  await pf.media.control(e.id).catch(() => false);
+  // What the app did with it; a later media event says the rest.
+  read();
 });
 pf.every(5, apps);
 draw();
