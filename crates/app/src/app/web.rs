@@ -227,20 +227,21 @@ impl App {
         let plugin = web.plugin.id.clone();
         match call.as_str() {
             "post" => {
-                let (waiting, refusing) = self.web_pages.posts.entry(fence).or_default();
-                let n = Arc::strong_count(waiting) - 1;
-                if n >= MAX_WAITING_POSTS {
-                    if !std::mem::replace(refusing, true) {
-                        tracing::info!(plugin, %fence, n, "web plugin: posts refused while 64 wait for main.js");
+                let posts = self.web_pages.posts.entry(fence).or_default();
+                let waiting = match may_wait(posts) {
+                    Ok(waiting) => waiting,
+                    Err(first) => {
+                        if first {
+                            tracing::info!(plugin, %fence, "web plugin: posts refused while 64 wait for main.js");
+                        }
+                        let why = format!(
+                            "pf.post: at most {MAX_WAITING_POSTS} messages wait for main.js"
+                        );
+                        return web.reply(&id, Err(why));
                     }
-                    let why =
-                        format!("pf.post: at most {MAX_WAITING_POSTS} messages wait for main.js");
-                    return web.reply(&id, Err(why));
-                }
-                *refusing = false;
-                let waiting = waiting.clone();
+                };
                 let data = args.get(0).cloned().unwrap_or_default();
-                tracing::debug!(plugin, %fence, n, "web plugin: the page posts to its main.js");
+                tracing::debug!(plugin, %fence, "web plugin: the page posts to its main.js");
                 self.plugin_message(fence, data, waiting);
                 web.reply(&id, Ok(serde_json::Value::Null));
             }
@@ -289,5 +290,33 @@ impl App {
                 web.event(name, &data);
             }
         }
+    }
+}
+
+/// One more post of a page may wait for its main.js unless 64 do (`posts`: [`Web::posts`] of
+/// its fence): what it carries to count as waiting, or whether this is the first refusal since
+/// one went (the log says so once).
+fn may_wait(posts: &mut (Arc<()>, bool)) -> std::result::Result<Arc<()>, bool> {
+    let (waiting, refusing) = posts;
+    // The fence's own is one of the counts.
+    if Arc::strong_count(waiting) > MAX_WAITING_POSTS {
+        return Err(!std::mem::replace(refusing, true));
+    }
+    *refusing = false;
+    Ok(waiting.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn at_most_64_posts_of_a_page_wait_for_its_main_js() {
+        let mut posts = Default::default();
+        let mut held: Vec<_> = (0..64).map(|_| super::may_wait(&mut posts)).collect();
+        assert!(held.iter().all(std::result::Result::is_ok));
+        // The 65th is refused, logged once; one that main.js had makes room again.
+        assert_eq!(super::may_wait(&mut posts), Err(true));
+        assert_eq!(super::may_wait(&mut posts), Err(false));
+        held.pop();
+        assert!(super::may_wait(&mut posts).is_ok());
     }
 }

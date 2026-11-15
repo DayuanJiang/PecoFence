@@ -1123,10 +1123,13 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("pf-whole-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("index.json");
-        for text in ["first", "second"] {
-            super::write_whole(&path, text.as_bytes()).unwrap();
-        }
+        super::write_whole(&path, b"first").unwrap();
+        // A second name of the file before: written in place, it would read "second" too.
+        let before = dir.join("before.json");
+        std::fs::hard_link(&path, &before).unwrap();
+        super::write_whole(&path, b"second").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "second");
+        assert_eq!(std::fs::read_to_string(&before).unwrap(), "first");
         assert!(!dir.join("index.json.new").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
