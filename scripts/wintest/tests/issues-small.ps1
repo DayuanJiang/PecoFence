@@ -14,6 +14,8 @@ if (-not (Get-Variable Part -ErrorAction SilentlyContinue) -or -not $Part) { $Pa
 
 Case 'setup'
 CloseWindows
+# A run cut short in part U may have left Explorer's single-click open on.
+if ([Th]::SingleClick()) { [Th]::SetSingleClick($false) }
 Set-Culture en-US
 GreyWallpaper
 . C:\pf\kit\rec.ps1
@@ -184,6 +186,31 @@ function PartU() {
   Check 'U a double-click on a file in the subfolder opens it and stays there' ($note -match 'b' -and (FolderOf $id) -like '*a子文件夹') "notepad='$note' folder=$(FolderOf $id)"
   CloseWindows
 
+  Case 'U single-click open: a double-click on a subfolder goes in and stays there'
+  # The subfolder comes third and holds one file, so the second click of the double-click lands on
+  # empty space of the folder the first click (single-click open) went into.
+  $r2 = "$PfRun\单击打开"
+  New-Item -ItemType Directory -Force "$r2\c子文件夹" | Out-Null
+  Set-Content -LiteralPath "$r2\a1.txt" '1'
+  Set-Content -LiteralPath "$r2\a2.txt" '2'
+  Set-Content -LiteralPath "$r2\c子文件夹\唯一的文件.txt" '3'
+  $sid = "$((PfJson fence create --portal $r2 --rect '300,560,440,240').fence.id)"
+  Pf fence set $sid foldersFirst false | Out-Null
+  Start-Sleep -Seconds 2
+  [Th]::SetSingleClick($true)
+  Start-Sleep -Seconds 2
+  $seen = PfWaitLog 'click to open setting changed' 4
+  $p = ItemAt $sid 'c子文件夹'
+  DoubleClick $p[0] $p[1]; Start-Sleep -Milliseconds 2000
+  $in2 = FolderOf $sid
+  Check 'U single-click open: a double-click on a subfolder goes in and stays in it' ($in2 -like '*c子文件夹') "folder=$in2 setting seen=$([bool]$seen)"
+  $e3 = EmptySpot $sid
+  DoubleClick $e3[0] $e3[1]; Start-Sleep -Milliseconds 1500
+  Check 'U single-click open: a double-click on empty space still goes up' ((FolderOf $sid) -eq $r2) "folder=$(FolderOf $sid)"
+  [Th]::SetSingleClick($false)
+  Start-Sleep -Seconds 1
+  CloseWindows
+
   Case 'U a plain fence: double-click on empty space changes nothing'
   DeskFile '普通文件.txt' | Out-Null
   $pid2 = "$((PfJson fence create --title 普通栅栏 --rect '900,180,360,260').fence.id)"
@@ -246,6 +273,20 @@ function PartR() {
     $w = DumpById $id
     Crop "R-$layout-48" $w.l $w.t ($w.r - $w.l) ($w.b - $w.t) | Out-Null
   }
+  # The Menu key opens the item menu under the name's box, inside the row: at icon size 96 the
+  # box's rect ended 8 DIPs into the next row, and so did the menu's top.
+  Pf fence set $id layout list | Out-Null
+  Pf fence set $id iconSize 96 | Out-Null; Start-Sleep -Milliseconds 1200
+  Pf fence fit $id | Out-Null; Start-Sleep -Milliseconds 1000
+  $wr = (FenceGet $id).windowRect
+  $rowTop = $wr.y + 36 + 4
+  [G]::Click([int]($wr.x + 120), [int]($rowTop + 24)); Start-Sleep -Milliseconds 700
+  [G]::Press(0x5D); Start-Sleep -Milliseconds 900
+  $m = MenuWin 5
+  $mt = if ($m -ne [IntPtr]::Zero) { (Rect $m).T } else { $null }
+  Check 'R list at 96: the Menu key opens the menu inside the first row, not lower' ($mt -ne $null -and $mt -le $rowTop + 48) "menu top=$mt row top=$rowTop row bottom=$($rowTop + 48)"
+  [G]::Press(0x1B); Start-Sleep -Milliseconds 500
+  DeskClick; Start-Sleep -Milliseconds 400
   # Ctrl+wheel over the rows steps the icon size there too (it did nothing in these views).
   Pf fence set $id layout list | Out-Null
   Pf fence set $id iconSize 48 | Out-Null; Start-Sleep -Milliseconds 1000
