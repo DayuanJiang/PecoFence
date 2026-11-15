@@ -4,7 +4,8 @@
 //! rounded clip, roll-up and fades apply to it; the fence forwards the mouse and the cursor, and a
 //! press in the page hands it the keyboard (`focus`).
 //!
-//! The plugin's files come from PecoFence at `https://<id>.plugins.pecofence/`, every response
+//! The plugin's files come from PecoFence at `pecofence-plugin://<id>/` (`SCHEME`: never the
+//! network or a proxy, a secure context with an origin per plugin), every response
 //! with a fixed Content-Security-Policy whose `connect-src` lists only the plugin's `network`
 //! hosts (and the plugin's own files), and a Connection-Allowlist of the same hosts, which the
 //! browser applies to every connection (`Plugin::allowlist`). Permission requests, other sites,
@@ -27,6 +28,9 @@ use windows_webview::{
     ProcessFailedKind, WebResourceResponse, WebView,
 };
 
+/// The custom scheme of the plugins' pages (registered with the environment,
+/// `WebEnvironment::create`).
+pub const SCHEME: &str = "pecofence-plugin";
 /// `WM_TIMER` id on the fence window: its hidden page is suspended.
 pub const TIMER_WEB_SUSPEND: usize = 0x5E0;
 /// `WM_TIMER` id on the fence window: the browser is made, the page is set up (`setup`). Not in
@@ -76,7 +80,7 @@ pub enum Failure {
 
 impl Plugin {
     fn origin(&self) -> String {
-        format!("https://{}.plugins.pecofence/", self.id)
+        format!("{SCHEME}://{}/", self.id)
     }
 
     /// The header every response gets; what the plugin writes itself does not count.
@@ -232,15 +236,6 @@ impl WebFence {
         match self.ready(comp) {
             Ok(()) => {
                 tracing::info!(plugin = %self.plugin.id, fence = %self.fence, ms, version = self.version, background = self.plugin.background, "web plugin: page loading");
-                let major: u32 = self
-                    .version
-                    .split('.')
-                    .next()
-                    .and_then(|m| m.parse().ok())
-                    .unwrap_or(0);
-                if major < 152 {
-                    tracing::warn!(plugin = %self.plugin.id, version = self.version, "web plugin: this WebView2 runtime ignores Connection-Allowlist; dns-prefetch and preconnect to other hosts are not blocked, WebRTC only by its removal from the page")
-                }
             }
             Err(e) => {
                 tracing::warn!(plugin = %self.plugin.id, error = %e, "web plugin: browser setup failed")
@@ -730,14 +725,17 @@ fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
     waiting.delete(m.id);
     if ("error" in m) w[1](new Error(m.error)); else w[0](m.result);
   }});
+  // A message over 1 MB is refused here: PecoFence drops it unanswered (as JSON in UTF-8, as it
+  // measures).
   const call = (name, args) => new Promise((ok, fail) => {{
-    const id = ++n;
+    const id = ++n, m = {{ id, call: name, args }};
+    if (new TextEncoder().encode(JSON.stringify(m)).length > {max}) throw new RangeError(`pf.${{name}}: a message to PecoFence is at most 1 MB`);
     waiting.set(id, [ok, fail]);
-    wv.postMessage({{ id, call: name, args }});
+    wv.postMessage(m);
   }});
   const pf = {{
     on(name, fn) {{ (handlers[name] = handlers[name] || []).push(fn); }},
-    post(data) {{ wv.postMessage({{ call: "post", args: [data === undefined ? null : data] }}); }},
+    post: data => call("post", [data === undefined ? null : data]),
   }};
   for (const name of "{calls}".split(" ")) {{
     const [a, b] = name.split("."), f = (...args) => call(name, args);
@@ -756,6 +754,7 @@ fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
   }});
 }})();"#,
         calls = CALLS,
+        max = pecofence_plugin_host::MAX_POST,
     )
 }
 

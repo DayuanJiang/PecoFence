@@ -3610,6 +3610,128 @@ impl ICoreWebView2EnvironmentOptions8_Vtbl {
     }
 }
 impl windows_core::RuntimeName for ICoreWebView2EnvironmentOptions8 {}
+// Not from the metadata the rest of this file comes from: the two interfaces a custom scheme
+// needs (WebView2.h, SDK 1.0.1587), implemented by the app (`options.rs`), never called by it.
+windows_core::imp::define_interface!(
+    ICoreWebView2CustomSchemeRegistration,
+    ICoreWebView2CustomSchemeRegistration_Vtbl,
+    0xd60ac92c_37a6_4b26_a39e_95cfe59047bb
+);
+windows_core::imp::interface_hierarchy!(ICoreWebView2CustomSchemeRegistration, windows_core::IUnknown);
+#[repr(C)]
+pub struct ICoreWebView2CustomSchemeRegistration_Vtbl {
+    pub base__: windows_core::IUnknown_Vtbl,
+    pub SchemeName: unsafe extern "system" fn(*mut core::ffi::c_void, *mut LPWSTR) -> windows_core::HRESULT,
+    pub TreatAsSecure: unsafe extern "system" fn(*mut core::ffi::c_void, *mut windows_core::BOOL) -> windows_core::HRESULT,
+    pub SetTreatAsSecure: unsafe extern "system" fn(*mut core::ffi::c_void, windows_core::BOOL) -> windows_core::HRESULT,
+    pub GetAllowedOrigins: unsafe extern "system" fn(*mut core::ffi::c_void, *mut u32, *mut *mut LPWSTR) -> windows_core::HRESULT,
+    pub SetAllowedOrigins: unsafe extern "system" fn(*mut core::ffi::c_void, u32, *const windows_core::PCWSTR) -> windows_core::HRESULT,
+    pub HasAuthorityComponent: unsafe extern "system" fn(*mut core::ffi::c_void, *mut windows_core::BOOL) -> windows_core::HRESULT,
+    pub SetHasAuthorityComponent: unsafe extern "system" fn(*mut core::ffi::c_void, windows_core::BOOL) -> windows_core::HRESULT,
+}
+/// Read-only: the setters change nothing.
+pub trait ICoreWebView2CustomSchemeRegistration_Impl: windows_core::IUnknownImpl {
+    fn SchemeName(&self) -> windows_core::Result<LPWSTR>;
+    fn TreatAsSecure(&self) -> windows_core::Result<windows_core::BOOL>;
+    /// The number of strings and a `CoTaskMemAlloc` array of them, each allocated the same way.
+    fn GetAllowedOrigins(&self) -> windows_core::Result<(u32, *mut LPWSTR)>;
+    fn HasAuthorityComponent(&self) -> windows_core::Result<windows_core::BOOL>;
+}
+/// `this` of a COM call on the object `Identity` implements at `OFFSET`.
+unsafe fn com_this<'a, Identity, const OFFSET: isize>(this: *mut core::ffi::c_void) -> &'a Identity {
+    unsafe { &*((this as *const *const ()).offset(OFFSET) as *const Identity) }
+}
+/// A setter with two arguments of a read-only object.
+unsafe extern "system" fn com_ignore<A, B>(_: *mut core::ffi::c_void, _: A, _: B) -> windows_core::HRESULT {
+    windows_core::HRESULT(0)
+}
+/// `out` gets the value of a getter.
+unsafe fn com_out<T>(out: *mut T, value: windows_core::Result<T>) -> windows_core::HRESULT {
+    match value {
+        Ok(v) => {
+            unsafe { out.write(v) };
+            windows_core::HRESULT(0)
+        }
+        Err(err) => err.into(),
+    }
+}
+/// `count` and `list` get the two halves of a getter's list.
+unsafe fn com_list<T>(count: *mut u32, list: *mut *mut T, value: windows_core::Result<(u32, *mut T)>) -> windows_core::HRESULT {
+    match value {
+        Ok((n, l)) => {
+            unsafe { count.write(n) };
+            unsafe { list.write(l) };
+            windows_core::HRESULT(0)
+        }
+        Err(err) => err.into(),
+    }
+}
+impl ICoreWebView2CustomSchemeRegistration_Vtbl {
+    pub const fn new<Identity: ICoreWebView2CustomSchemeRegistration_Impl, const OFFSET: isize>() -> Self {
+        unsafe extern "system" fn SchemeName<Identity: ICoreWebView2CustomSchemeRegistration_Impl, const OFFSET: isize>(this: *mut core::ffi::c_void, value: *mut LPWSTR) -> windows_core::HRESULT {
+            unsafe { com_out(value, com_this::<Identity, OFFSET>(this).SchemeName()) }
+        }
+        unsafe extern "system" fn TreatAsSecure<Identity: ICoreWebView2CustomSchemeRegistration_Impl, const OFFSET: isize>(this: *mut core::ffi::c_void, value: *mut windows_core::BOOL) -> windows_core::HRESULT {
+            unsafe { com_out(value, com_this::<Identity, OFFSET>(this).TreatAsSecure()) }
+        }
+        unsafe extern "system" fn GetAllowedOrigins<Identity: ICoreWebView2CustomSchemeRegistration_Impl, const OFFSET: isize>(this: *mut core::ffi::c_void, count: *mut u32, origins: *mut *mut LPWSTR) -> windows_core::HRESULT {
+            unsafe { com_list(count, origins, com_this::<Identity, OFFSET>(this).GetAllowedOrigins()) }
+        }
+        unsafe extern "system" fn HasAuthorityComponent<Identity: ICoreWebView2CustomSchemeRegistration_Impl, const OFFSET: isize>(this: *mut core::ffi::c_void, value: *mut windows_core::BOOL) -> windows_core::HRESULT {
+            unsafe { com_out(value, com_this::<Identity, OFFSET>(this).HasAuthorityComponent()) }
+        }
+        unsafe extern "system" fn SetFlag(_: *mut core::ffi::c_void, _: windows_core::BOOL) -> windows_core::HRESULT {
+            windows_core::HRESULT(0)
+        }
+        Self {
+            base__: windows_core::IUnknown_Vtbl::new::<Identity, OFFSET>(),
+            SchemeName: SchemeName::<Identity, OFFSET>,
+            TreatAsSecure: TreatAsSecure::<Identity, OFFSET>,
+            SetTreatAsSecure: SetFlag,
+            GetAllowedOrigins: GetAllowedOrigins::<Identity, OFFSET>,
+            SetAllowedOrigins: com_ignore::<u32, *const windows_core::PCWSTR>,
+            HasAuthorityComponent: HasAuthorityComponent::<Identity, OFFSET>,
+            SetHasAuthorityComponent: SetFlag,
+        }
+    }
+    pub fn matches(iid: &windows_core::GUID) -> bool {
+        iid == &<ICoreWebView2CustomSchemeRegistration as windows_core::Interface>::IID
+    }
+}
+impl windows_core::RuntimeName for ICoreWebView2CustomSchemeRegistration {}
+windows_core::imp::define_interface!(
+    ICoreWebView2EnvironmentOptions4,
+    ICoreWebView2EnvironmentOptions4_Vtbl,
+    0xac52d13f_0d38_475a_9dca_876580d6793e
+);
+windows_core::imp::interface_hierarchy!(ICoreWebView2EnvironmentOptions4, windows_core::IUnknown);
+#[repr(C)]
+pub struct ICoreWebView2EnvironmentOptions4_Vtbl {
+    pub base__: windows_core::IUnknown_Vtbl,
+    pub GetCustomSchemeRegistrations: unsafe extern "system" fn(*mut core::ffi::c_void, *mut u32, *mut *mut *mut core::ffi::c_void) -> windows_core::HRESULT,
+    pub SetCustomSchemeRegistrations: unsafe extern "system" fn(*mut core::ffi::c_void, u32, *const *mut core::ffi::c_void) -> windows_core::HRESULT,
+}
+pub trait ICoreWebView2EnvironmentOptions4_Impl: windows_core::IUnknownImpl {
+    /// The number of registrations and a `CoTaskMemAlloc` array of their interface pointers, each
+    /// with a reference for the caller.
+    fn GetCustomSchemeRegistrations(&self) -> windows_core::Result<(u32, *mut *mut core::ffi::c_void)>;
+}
+impl ICoreWebView2EnvironmentOptions4_Vtbl {
+    pub const fn new<Identity: ICoreWebView2EnvironmentOptions4_Impl, const OFFSET: isize>() -> Self {
+        unsafe extern "system" fn GetCustomSchemeRegistrations<Identity: ICoreWebView2EnvironmentOptions4_Impl, const OFFSET: isize>(this: *mut core::ffi::c_void, count: *mut u32, list: *mut *mut *mut core::ffi::c_void) -> windows_core::HRESULT {
+            unsafe { com_list(count, list, com_this::<Identity, OFFSET>(this).GetCustomSchemeRegistrations()) }
+        }
+        Self {
+            base__: windows_core::IUnknown_Vtbl::new::<Identity, OFFSET>(),
+            GetCustomSchemeRegistrations: GetCustomSchemeRegistrations::<Identity, OFFSET>,
+            SetCustomSchemeRegistrations: com_ignore::<u32, *const *mut core::ffi::c_void>,
+        }
+    }
+    pub fn matches(iid: &windows_core::GUID) -> bool {
+        iid == &<ICoreWebView2EnvironmentOptions4 as windows_core::Interface>::IID
+    }
+}
+impl windows_core::RuntimeName for ICoreWebView2EnvironmentOptions4 {}
 windows_core::imp::define_interface!(
     ICoreWebView2ExecuteScriptCompletedHandler,
     ICoreWebView2ExecuteScriptCompletedHandler_Vtbl,

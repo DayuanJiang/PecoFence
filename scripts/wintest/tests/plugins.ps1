@@ -295,7 +295,7 @@ Offer 'pf-web' 'PF Web' '1.0.1' -Web; Publish 59; Refresh
 PfWaitLog 'plugins: installed, its fences start again.*pf-web' 15 | Out-Null
 for ($i = 0; $i -lt 30 -and (LogCount 'web plugin: page loading plugin=pf-web') -le $loads; $i++) { Start-Sleep -Seconds 1 }
 $text = ''
-if (CdpOpen -Url 'https://pf-web.plugins.pecofence/*' -sec 15) { $text = JsWait "document.body && document.body.innerText.includes('1.0.1') && document.body.innerText" 10 }
+if (CdpOpen -Url 'pecofence-plugin://pf-web/*' -sec 15) { $text = JsWait "document.body && document.body.innerText.includes('1.0.1') && document.body.innerText" 10 }
 Shot 'web-plugin-updated'
 $ok = CdpOpen
 Check 'after the update by itself the page loads again and shows 1.0.1' ($v1 -and (Installed 'pf-web') -eq '1.0.1' -and (LogCount 'web plugin: page loading plugin=pf-web') -gt $loads -and $text -match 'pf-web 1\.0\.1') "loads=$loads text=$text"

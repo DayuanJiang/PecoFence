@@ -1,6 +1,6 @@
 //! 网页层 in the app: a web plugin fence's page (`crate::web_plugin`) and its optional main.js
 //! beside it (the light layer), the page's `pf.*` calls, the events pages get, and a page that
-//! crashed or cannot start (WebView2 missing): the fence shows why, with 重新加载.
+//! crashed or cannot start (WebView2 missing or too old): the fence shows why, with 重新加载.
 
 use super::light::{note_stop, stopped_rows};
 use super::*;
@@ -9,13 +9,18 @@ use crate::web_plugin::{Failure, WebFence};
 use pecofence_core::i18n;
 use std::collections::HashMap;
 use std::rc::{Rc, Weak};
+use std::sync::Arc;
 use std::time::Instant;
 
+/// The most posts of a page that may wait for its main.js.
+const MAX_WAITING_POSTS: usize = 64;
 const WEBVIEW2_DOWNLOAD: &str = "https://developer.microsoft.com/microsoft-edge/webview2/";
 
 /// Why a fence's page does not run; it waits for 重新加载.
 enum Stop {
     NoWebView2,
+    /// Older than 152: it would not hold the page to its Connection-Allowlist.
+    OldWebView2,
     Failed(Failure),
 }
 
@@ -24,6 +29,9 @@ pub(super) struct Web {
     /// When each fence's page failed within the last hour.
     failures: HashMap<FenceId, Vec<Instant>>,
     stopped: HashMap<FenceId, Stop>,
+    /// Per fence: its page's posts main.js has not had yet (`Arc::strong_count` - 1), and
+    /// whether the last one was refused (logged once).
+    posts: HashMap<FenceId, (Arc<()>, bool)>,
 }
 
 impl App {
@@ -46,6 +54,12 @@ impl App {
         if !self.ensure_web_env() {
             tracing::warn!(fence = %shown, plugin = plugin.id, "web plugin: no WebView2, the fence says so");
             self.web_pages.stopped.insert(shown, Stop::NoWebView2);
+            return self.push_tool_view(host);
+        }
+        let version = (self.web_env.as_ref()).map_or(String::new(), |e| e.env.browser_version());
+        if !pecofence_core::plugins::webview2_enough(&version) {
+            tracing::warn!(fence = %shown, plugin = plugin.id, version, "web plugin: WebView2 older than 152 ignores Connection-Allowlist, the page is not loaded and the fence asks for an update");
+            self.web_pages.stopped.insert(shown, Stop::OldWebView2);
             return self.push_tool_view(host);
         }
         let main = plugin.dir.join("main.js");
@@ -91,13 +105,14 @@ impl App {
     }
 
     /// A stopped page's fence: why, in red, then 重新加载 (and the download of WebView2 when it
-    /// is missing).
+    /// is missing or too old).
     pub(super) fn web_stopped_view(&self, fence: FenceId) -> Option<ScriptView> {
         let (why, download) = match self.web_pages.stopped.get(&fence)? {
             Stop::NoWebView2 => (
                 i18n::text("需要 WebView2 才能显示这个插件。").to_string(),
                 true,
             ),
+            Stop::OldWebView2 => (i18n::text("这个插件需要更新 WebView2。").to_string(), true),
             Stop::Failed(f) => {
                 let reason = match f {
                     Failure::BrowserExited => i18n::text("WebView2 的浏览器进程退出了"),
@@ -146,7 +161,7 @@ impl App {
         let Some(stop) = self.web_pages.stopped.get(&fence) else {
             return false;
         };
-        let download = matches!(stop, Stop::NoWebView2);
+        let download = matches!(stop, Stop::NoWebView2 | Stop::OldWebView2);
         if row != 1 {
             return true;
         }
@@ -212,9 +227,22 @@ impl App {
         let plugin = web.plugin.id.clone();
         match call.as_str() {
             "post" => {
+                let (waiting, refusing) = self.web_pages.posts.entry(fence).or_default();
+                let n = Arc::strong_count(waiting) - 1;
+                if n >= MAX_WAITING_POSTS {
+                    if !std::mem::replace(refusing, true) {
+                        tracing::info!(plugin, %fence, n, "web plugin: posts refused while 64 wait for main.js");
+                    }
+                    let why =
+                        format!("pf.post: at most {MAX_WAITING_POSTS} messages wait for main.js");
+                    return web.reply(&id, Err(why));
+                }
+                *refusing = false;
+                let waiting = waiting.clone();
                 let data = args.get(0).cloned().unwrap_or_default();
-                tracing::debug!(plugin, %fence, "web plugin: the page posts to its main.js");
-                self.plugin_event(fence, "message", data);
+                tracing::debug!(plugin, %fence, n, "web plugin: the page posts to its main.js");
+                self.plugin_message(fence, data, waiting);
+                web.reply(&id, Ok(serde_json::Value::Null));
             }
             "navigate" => {
                 let uri = crate::web_plugin::short(args[0].as_str().unwrap_or(""));
@@ -237,7 +265,7 @@ impl App {
             _ => {
                 tracing::debug!(plugin, %fence, call, "web plugin: pf call");
                 drop(web);
-                self.plugin_api(fence, &call, args, move |result| {
+                self.plugin_api(&page.clone(), fence, &call, args, move |result| {
                     if let Some(web) = page.upgrade() {
                         web.reply(&id, result);
                     }

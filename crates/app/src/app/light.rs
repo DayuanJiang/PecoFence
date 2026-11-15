@@ -13,10 +13,10 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-/// A web page's `pf` call waiting for its answer: its fence, whether it is a request
+/// A web page's `pf` call waiting for its answer: its page, whether it is a request
 /// (`pf.http`), and what gets the answer.
 type Reply = (
-    FenceId,
+    std::rc::Weak<crate::web_plugin::WebFence>,
     bool,
     Box<dyn FnOnce(std::result::Result<Value, String>)>,
 );
@@ -359,10 +359,20 @@ impl App {
         self.light_send(host::Command::Event(fence, name, data));
     }
 
+    /// A web plugin page's `pf.post`: its main.js gets `message`; `waiting` counts the posts it
+    /// has not had yet.
+    pub(super) fn plugin_message(&mut self, fence: FenceId, data: Value, waiting: Arc<()>) {
+        if !self.light.running.contains_key(&fence) {
+            return tracing::debug!(%fence, "web plugin post dropped: its main.js does not run");
+        }
+        self.light_send(host::Command::Message(fence, data, waiting));
+    }
+
     /// A web plugin page's `pf.<name>(args)`: the same check against the installed manifest
     /// and the same work as a light plugin's call; `reply` gets the answer on this thread.
     pub(super) fn plugin_api(
         &mut self,
+        page: &std::rc::Weak<crate::web_plugin::WebFence>,
         fence: FenceId,
         name: &str,
         args: Value,
@@ -388,9 +398,10 @@ impl App {
             tracing::info!(%fence, plugin = m.id, name, why, "web plugin call refused");
             return reply(Err(why));
         }
-        // The light layer's limits: at most 16 calls and 4 requests of a fence at once.
+        // The light layer's limits: at most 16 calls and 4 requests of a page at once (the calls
+        // of the page before a reload or a crash no longer count).
         let request = name.starts_with("http.");
-        let going = self.light.replies.values().filter(|r| r.0 == fence);
+        let going = self.light.replies.values().filter(|r| r.0.ptr_eq(page));
         let (calls, requests) = going.fold((0, 0), |(c, r), g| (c + 1, r + usize::from(g.1)));
         if calls >= host::MAX_CALLS || (request && requests >= host::MAX_REQUESTS) {
             let (most_requests, most_calls) = (host::MAX_REQUESTS, host::MAX_CALLS);
@@ -401,7 +412,8 @@ impl App {
         }
         self.light.next_reply += 1;
         let number = self.light.next_reply;
-        (self.light.replies).insert(number, (fence, request, Box::new(reply)));
+        let page = page.clone();
+        (self.light.replies).insert(number, (page, request, Box::new(reply)));
         let api = self.light_host();
         let (jobs, control) = (self.light.jobs.clone(), self.control.hwnd().0 as isize);
         let (name, agent) = (

@@ -252,6 +252,17 @@ fn valid_program(p: &str) -> bool {
     exe && (name || path)
 }
 
+/// A WebView2 runtime of `version` ("157.0.4341.60") applies all a web plugin's page is held
+/// to: 152 is the first that reads the page's Connection-Allowlist (dns-prefetch, preconnect and
+/// WebRTC to hosts the plugin did not declare). A version that cannot be read does not.
+pub fn webview2_enough(version: &str) -> bool {
+    let major = version
+        .split('.')
+        .next()
+        .and_then(|m| m.parse::<u32>().ok());
+    major.is_some_and(|m| m >= 152)
+}
+
 /// `pf.theme` of a fence: `dark` where it draws light text (a dark background), else `light`.
 pub fn theme(light_text: bool) -> &'static str {
     if light_text { "dark" } else { "light" }
@@ -571,6 +582,14 @@ pub fn pick<'a>(texts: &'a BTreeMap<String, String>, lang: &str) -> &'a str {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn web_pages_need_webview2_152() {
+        assert!(webview2_enough("157.0.4341.60") && webview2_enough("152.0.0.0"));
+        for old in ["151.0.3405.125", "86.0.616.0", "", "x.1"] {
+            assert!(!webview2_enough(old), "{old}");
+        }
+    }
 
     #[test]
     fn plain_names_are_no_device_names_and_end_without_a_dot() {
