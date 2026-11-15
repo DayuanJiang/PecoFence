@@ -1028,5 +1028,12 @@
   "发送匿名的使用统计，例如用了哪些功能。文件名、路径和你输入的文字不会发送。": "Sends anonymous usage statistics, such as which features are used. File names, paths and anything you type are never sent.",
   "菜单颜色": "Menu color",
   "托盘菜单，以及栅栏和图标的右键菜单": "The tray menu, and the right-click menus of fences and icons",
-  "跟随颜色模式": "Use color mode"
+  "跟随颜色模式": "Use color mode",
+  "所有栅栏用同样的外观": "Same appearance for all fences",
+  "把上面的不透明度、色调、标题颜色、标题字号和标题栏设置用到其他栅栏": "Gives the other fences the opacity, tint, title color, title text size and title bar settings above",
+  "应用到所有栅栏": "Apply to all fences",
+  "所有栅栏用同样的布局": "Same layout for all fences",
+  "把上面的视图、排序、图标大小、间距、名称和对齐用到其他栅栏": "Gives the other fences the view, sort order, icon size, spacing, labels and alignment above",
+  "其他栅栏已经和它一样": "The other fences already look like this",
+  "已用到其他 {0} 个栅栏": "Applied to {0} other fences"
 }

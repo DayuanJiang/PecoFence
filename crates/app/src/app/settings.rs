@@ -995,6 +995,7 @@ impl App {
                 }
             }
             Some("setFence") => self.on_set_fence(&v),
+            Some("setFences") => self.on_set_fences(&v),
             // Usage statistics: a page of the navigation was shown.
             Some("page") => {
                 let name = v.get("name").and_then(|n| n.as_str());

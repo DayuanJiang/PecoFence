@@ -1017,6 +1017,78 @@ impl App {
         self.push_settings_state();
     }
 
+    /// `{"type":"setFences","what":…,"changes":[{"id":…,"prop":…,"value":…}, …]}` from the
+    /// page: 「应用到所有栅栏」 (`what` = `apply_to_all`) and its 撤销 (`apply_to_all_undo`) set
+    /// options on many fences and send one new state. Only the options of the 外观 and 布局
+    /// groups are taken, and none about icons on a tool fence.
+    pub(super) fn on_set_fences(&mut self, v: &serde_json::Value) {
+        const PROPS: &[&str] = &[
+            "opacity",
+            "transparentOnHover",
+            "tint",
+            "tintTitleOnly",
+            "titleColor",
+            "titleSize",
+            "titleOnHover",
+            "layout",
+            "sort",
+            "reverse",
+            "foldersFirst",
+            "iconSize",
+            "spacingPx",
+            "labelLines",
+            "iconAlign",
+        ];
+        let what = match v.get("what").and_then(|w| w.as_str()) {
+            Some("apply_to_all_undo") => "apply_to_all_undo",
+            _ => "apply_to_all",
+        };
+        let changes = v.get("changes").and_then(|c| c.as_array());
+        let (mut changed, mut skipped) = (0, 0);
+        let mut fences = std::collections::HashSet::new();
+        for c in changes.into_iter().flatten() {
+            let fence = c
+                .get("id")
+                .and_then(|i| i.as_str())
+                .and_then(|i| uuid::Uuid::parse_str(i).ok());
+            let prop = c.get("prop").and_then(|p| p.as_str());
+            let value = c.get("value").cloned().unwrap_or(serde_json::Value::Null);
+            let (Some(fence), Some(prop)) = (fence, prop.filter(|p| PROPS.contains(p))) else {
+                skipped += 1;
+                continue;
+            };
+            let Some(is_tool) = self.state.fence(fence).map(|f| f.tool.is_some()) else {
+                skipped += 1;
+                continue;
+            };
+            match parse_fence_prop(prop, &value) {
+                Ok(p) if !(is_tool && p.is_about_icons()) => {
+                    if self.apply_fence_prop(fence, p) {
+                        changed += 1;
+                    }
+                    fences.insert(fence);
+                    // As after one change of the CLI: the fences below make room for this one
+                    // before the next grows, so the last one in a column is the one kept short.
+                    self.reflow_pushed();
+                }
+                Ok(_) => skipped += 1,
+                Err(error) => {
+                    tracing::warn!(prop, %error, "bad fence property in setFences");
+                    skipped += 1;
+                }
+            }
+        }
+        tracing::info!(
+            what,
+            fences = fences.len(),
+            changed,
+            skipped,
+            "settings: options set on several fences"
+        );
+        pecofence_core::usage::event_named("settings.fence", what);
+        self.push_settings_state();
+    }
+
     /// Applies one parsed property to `fence` (window-level ones act on its host, see the
     /// module docs). Returns whether the persisted state actually changed.
     pub(super) fn apply_fence_prop(&mut self, fence: FenceId, prop: FenceProp) -> bool {

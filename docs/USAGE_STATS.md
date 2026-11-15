@@ -89,7 +89,8 @@ from a few central places of the program:
   `hide_when_empty`, `desktop_layout`, `free_placement`, `note_text`, `script_path`,
   `script_interval`, `smart_folder`, `smart_match`, `smart_subfolders`, `smart_within_days`,
   `smart_conditions`, `smart_name`, `smart_everything`, `smart_limit`, `virtual_desktops`,
-  `dock_top`.
+  `dock_top`, and `apply_to_all` or `apply_to_all_undo` when 「应用到所有栅栏」 or its 撤销 set
+  options of several fences.
 - **`cli`**, for a request of `pecofence-cli` that changed something, with the method:
   `fences.create`, `fences.delete`, `fences.rename`, `fences.refresh`, `fences.set_bounds`,
   `fences.move_to_monitor`, `fences.set_option`, `fences.fit`, `fences.roll`, `fences.dock_top`,
