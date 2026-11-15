@@ -365,6 +365,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pecofence-plugin-check"
+version = "0.4.0"
+dependencies = [
+ "pecofence-core",
+ "pecofence-plugin-host",
+ "serde_json",
+]
+
+[[package]]
 name = "pecofence-plugin-host"
 version = "0.4.0"
 dependencies = [
