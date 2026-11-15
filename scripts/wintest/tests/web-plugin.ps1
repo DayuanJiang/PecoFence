@@ -508,7 +508,7 @@ public static class LocalTls {
   $cert = New-SelfSignedCertificate -DnsName 'localtest.me' -CertStoreLocation 'Cert:\CurrentUser\My'
   $pw = ConvertTo-SecureString 'x' -AsPlainText -Force
   Export-PfxCertificate -Cert $cert -FilePath 'C:\pf\run\local.pfx' -Password $pw | Out-Null
-  Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)"
+  Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -DeleteKey
   [LocalTls]::Start((New-Object Security.Cryptography.X509Certificates.X509Certificate2('C:\pf\run\local.pfx', 'x')))
   Js "(window.got = null, fetch('https://localtest.me/').then(r => r.text()).then(t => window.got = 'loaded ' + t, e => window.got = 'refused: ' + e.name), 1)" | Out-Null
   Start-Sleep -Seconds 6
