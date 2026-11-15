@@ -48,6 +48,7 @@ pub mod everything;
 pub mod filedialog;
 pub mod fileinfo;
 pub mod fonts;
+pub mod fpu;
 pub mod frameclock;
 pub mod hangwatch;
 pub mod hotkey;

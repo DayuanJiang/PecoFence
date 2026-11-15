@@ -210,6 +210,18 @@ unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
         _ => "other",
     });
     let accessed = fault.map(|(_, accessed)| format!("{accessed:#x}"));
+    // A floating-point exception: the control word of the thread says which ones were unmasked
+    // (default 0x1f80, everything masked; see crate::fpu).
+    #[cfg(target_arch = "x86_64")]
+    let mxcsr = (matches!(code, 0xC000_008D..=0xC000_0093 | 0xC000_02B4 | 0xC000_02B5)
+        && !ctx.is_null())
+    .then(|| {
+        // SAFETY: the context record the OS handed to the filter.
+        let value = unsafe { (*ctx).MxCsr };
+        format!("{value:#06x}")
+    });
+    #[cfg(not(target_arch = "x86_64"))]
+    let mxcsr: Option<String> = None;
     let at_version = module_version(address);
     // This function is part of pecofence.exe: the build the exe's frames in the stack are from.
     let exe_version = module_version(filter as *const () as usize as u64);
@@ -241,6 +253,7 @@ unsafe extern "system" fn filter(info: *const EXCEPTION_POINTERS) -> i32 {
         module_owner = owner,
         access,
         address = accessed.as_deref(),
+        mxcsr = mxcsr.as_deref(),
         exe_version = exe_version.as_deref(),
         dump = ?dump,
         stack = %frames.join("\n"),
