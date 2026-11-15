@@ -180,6 +180,7 @@ impl FenceWindow {
             last_scroll: None,
             click_pending: None,
             suppress_dblclk: false,
+            up_on_dblclk: false,
             navigate_folders: false,
             portal_folder: None,
             layout: ViewLayout::Icons,
@@ -1003,6 +1004,8 @@ impl FenceWindow {
         self.with_view(|v| {
             v.scroll_anim = None;
             v.scroll_y = 0.0;
+            // A double-click under way began in the folder just left: it does not go up.
+            v.up_on_dblclk = false;
             v.select_after_nav = select.map(|id| (id, v.focus_visible));
             v.focus_first_after_nav = select.is_none() && v.focus_visible;
             if !v.rolled_up
