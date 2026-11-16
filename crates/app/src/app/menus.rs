@@ -491,12 +491,14 @@ impl App {
             if let Some(a) = self.anchor.borrow_mut().as_mut() {
                 a.dialog_opened_from(owner);
             }
+            let location = verb.eq_ignore_ascii_case(SHELL_VERB_TARGET_LOCATION);
+            let before = location.then(pecofence_platform::dialogs::explorer_windows);
             if let Err(e) = sm.invoke(cmd, owner, POINT { x, y }, shift) {
                 tracing::warn!(error = %e, %verb, "shell verb failed");
-            } else if verb.eq_ignore_ascii_case(SHELL_VERB_TARGET_LOCATION)
+            } else if let Some(before) = before
                 && let [p] = &paths[..]
             {
-                pecofence_platform::dialogs::select_after_open(p.clone(), true);
+                pecofence_platform::dialogs::select_after_open(p.clone(), true, before);
             }
             // Deletions / moves are picked up by the desktop watcher. What a namespace item's
             // verb changes (Empty Recycle Bin, hide This PC) arrives as a shell notification;
@@ -524,12 +526,13 @@ impl App {
                     && let Some(p) = item.path()
                 {
                     use std::os::windows::process::CommandExt;
+                    let before = pecofence_platform::dialogs::explorer_windows();
                     // `/select,"<path>"`: quoted as a whole (what `arg` does for a name with
                     // a space), the argument makes Explorer open Documents instead.
                     let _ = std::process::Command::new("explorer.exe")
                         .raw_arg(format!("/select,\"{p}\""))
                         .spawn();
-                    pecofence_platform::dialogs::select_after_open(p.into(), false);
+                    pecofence_platform::dialogs::select_after_open(p.into(), false, before);
                 }
             }
             CMD_ITEM_PROPERTIES => self.show_properties(fence, &items),
