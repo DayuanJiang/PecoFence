@@ -1185,21 +1185,23 @@ mod tests {
 
     #[test]
     fn more_than_200_ms_a_second_stops_the_plugin() {
-        // Each click takes 40 ms: the fifth in the same second goes over the budget.
+        // Each click takes 25 ms, half the 50 ms a run may take (a slow machine adds to it): the
+        // ninth in the same second goes over the budget, and twelve of them leave no doubt.
         let code =
-            "pf.on('click', () => { const end = Date.now() + 40; while (Date.now() < end) {} });";
-        let clicks = (0..6).map(|_| event("click")).collect();
+            "pf.on('click', () => { const end = Date.now() + 25; while (Date.now() < end) {} });";
+        let clicks = (0..12).map(|_| event("click")).collect();
         let out = outputs(code, true, 5, clicks);
         assert_eq!(stop_of(&out), Some(Stopped::TooBusy));
-        // Spread over seconds, the same work is fine.
+        // Spread over seconds (at most three clicks, 75 ms, in one), the same work is fine.
         let out = outputs(code, true, 400, (0..4).map(|_| event("click")).collect());
         assert_eq!(stop_of(&out), None);
     }
 
     #[test]
     fn a_memory_hog_is_stopped_at_8_mb() {
+        // 64 KB a step: 8 MB comes long before the 50 ms a run may take, also on a slow machine.
         let out = outputs(
-            "const a = []; while (true) a.push('x'.repeat(1000) + a.length);",
+            "const a = []; while (true) a.push('x'.repeat(65536) + a.length);",
             true,
             50,
             vec![],
