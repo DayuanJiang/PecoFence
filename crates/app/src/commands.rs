@@ -434,11 +434,27 @@ pub enum Command {
         fence: FenceId,
         light_text: bool,
     },
-    /// A plugin fence's one-line box closed: its text (None after Esc).
+    /// A plugin fence's text box closed: its text (None after Esc in a one-line box), and
+    /// whether a box of several lines was left with Ctrl+Enter.
     PluginLineClosed {
         fence: FenceId,
         row: usize,
         text: Option<String>,
+        submit: bool,
+    },
+    /// A plugin fence: the pointer went onto row `row`, which tells its plugin (`hover:
+    /// "event"`), or (None) off such a row.
+    PluginHover {
+        fence: FenceId,
+        row: Option<usize>,
+    },
+    /// A plugin fence: whole notches of the wheel over a `wheel: true` row or cell, positive
+    /// away from the user.
+    PluginWheel {
+        fence: FenceId,
+        row: usize,
+        cell: usize,
+        steps: i32,
     },
     /// A click on the row under a fence's empty-state text (a smart fence that needs
     /// Everything: 「启动 Everything」 / 「安装 Everything」).

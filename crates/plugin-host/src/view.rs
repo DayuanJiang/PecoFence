@@ -82,6 +82,50 @@ pub struct Row {
     /// the others scroll; the row after a `follow` row is kept in view.
     pub pane: Option<String>,
     pub follow: Option<String>,
+    /// A right-click on the row: these entries in the plugin's part of the fence menu (in place
+    /// of `view.menu`); a click sends `command` {id, via: "menu", row: the row's id}.
+    pub menu: Vec<MenuItem>,
+    /// The row's look under the pointer, or `"event"`: the plugin hears `enter` and `leave`.
+    pub hover: Option<Hover>,
+    /// The wheel over the row goes to the plugin (`wheel` {id, steps}), the fence does not scroll.
+    pub wheel: bool,
+}
+
+/// A row's or a cell's look under the pointer (`{color, text}`), drawn by PecoFence; or, on a
+/// row, `"event"`: `enter` and `leave` {row} go to the plugin.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Hover {
+    pub color: Option<String>,
+    pub text: Option<String>,
+    pub event: bool,
+}
+
+impl<'de> Deserialize<'de> for Hover {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Form {
+            Event(String),
+            Look {
+                #[serde(default)]
+                color: Option<String>,
+                #[serde(default)]
+                text: Option<String>,
+            },
+        }
+        match Form::deserialize(d)? {
+            Form::Event(e) if e == "event" => Ok(Hover {
+                event: true,
+                ..Hover::default()
+            }),
+            Form::Event(e) => Err(serde::de::Error::custom(format!("hover {e:?}"))),
+            Form::Look { color, text } => Ok(Hover {
+                color,
+                text,
+                event: false,
+            }),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
@@ -116,6 +160,8 @@ pub struct Cell {
     pub under: bool,
     #[serde(deserialize_with = "blur")]
     pub blur: bool,
+    pub hover: Option<Hover>,
+    pub wheel: bool,
 }
 
 /// `blur` may hide a password: anything but `false` (`1`, `"yes"`, `null`) blurs.
@@ -162,7 +208,8 @@ pub struct Step {
 }
 
 /// `type: "note"`: the fence's note, which PecoFence edits and keeps; `type: "line"`: a one-line
-/// box with `value` and a grey `placeholder` while it is empty.
+/// box with `value` and a grey `placeholder` while it is empty; `type: "text"`: a box of `lines`
+/// lines (2 to 12) that takes at most `max` characters, whose text the plugin keeps.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct Input {
@@ -171,6 +218,31 @@ pub struct Input {
     pub id: Option<String>,
     pub value: String,
     pub placeholder: String,
+    pub lines: usize,
+    pub max: Option<usize>,
+}
+
+/// The most a multi-line box holds: 64 KB (in UTF-8), and as many characters.
+pub const MAX_INPUT: usize = 64 * 1024;
+
+/// `text` cut to at most `max` characters and [`MAX_INPUT`] bytes, at a character's end.
+pub fn cut_input(text: &mut String, max: usize) {
+    let end = (text.char_indices())
+        .map(|(at, c)| at + c.len_utf8())
+        .take(max)
+        .take_while(|end| *end <= MAX_INPUT)
+        .last()
+        .unwrap_or(0);
+    text.truncate(end);
+}
+
+fn limit_menu(menu: &mut Vec<MenuItem>) {
+    menu.retain(|m| m.separator || (!m.id.is_empty() && !m.title.trim().is_empty()));
+    menu.truncate(MAX_MENU);
+    for m in menu {
+        let line = m.title.lines().next().unwrap_or_default();
+        m.title = line.chars().take(MAX_MENU_TEXT).collect();
+    }
 }
 
 fn cut(text: &mut String) {
@@ -234,8 +306,19 @@ impl Row {
             }
         }
         if let Some(input) = &mut self.input {
-            cut(&mut input.value);
             cut(&mut input.placeholder);
+            if input.kind == "text" {
+                input.lines = input.lines.clamp(2, 12);
+                input.max = Some(input.max.unwrap_or(MAX_INPUT).clamp(1, MAX_INPUT));
+                cut_input(&mut input.value, MAX_INPUT);
+            } else {
+                cut(&mut input.value);
+            }
+        }
+        limit_menu(&mut self.menu);
+        let looks = (self.cells.iter_mut().map(|c| &mut c.hover)).chain([&mut self.hover]);
+        for hover in looks.flatten() {
+            cut_some(&mut hover.text);
         }
     }
 }
@@ -264,13 +347,7 @@ pub fn read(json: &str) -> serde_json::Result<(View, Vec<String>)> {
     }
     let menu = value.get("menu").cloned().unwrap_or_default();
     view.menu = Vec::<MenuItem>::deserialize(menu).unwrap_or_default();
-    view.menu
-        .retain(|m| m.separator || (!m.id.is_empty() && !m.title.trim().is_empty()));
-    view.menu.truncate(MAX_MENU);
-    for m in &mut view.menu {
-        let line = m.title.lines().next().unwrap_or_default();
-        m.title = line.chars().take(MAX_MENU_TEXT).collect();
-    }
+    limit_menu(&mut view.menu);
     dropped.sort();
     dropped.dedup();
     Ok((view, dropped))
@@ -504,6 +581,56 @@ mod tests {
         );
         assert!(parse("not json").is_err());
         assert!(parse("{}").unwrap().rows.is_empty());
+    }
+
+    #[test]
+    fn row_menus_hover_wheel_and_the_text_box_are_read_to_their_limits() {
+        let items: Vec<String> = (0..12)
+            .map(|i| format!(r#"{{"id":"m{i}","title":"{}"}}"#, "字".repeat(50)))
+            .collect();
+        let long = "長".repeat(30_000);
+        let (view, dropped) = read(&format!(
+            r#"{{"rows":[
+            {{"id":"r1","menu":[{0},{{"title":"no id"}},{{"separator":true}}],
+              "hover":{{"color":"red","text":"Open"}},"wheel":true}},
+            {{"id":"r2","hover":"event","cells":[{{"id":"v","wheel":true,"hover":{{"text":"x"}}}}]}},
+            {{"text":"a","hover":"wave","menu":3}},
+            {{"input":{{"type":"text","id":"t","lines":40,"max":0,"value":"v"}}}},
+            {{"input":{{"type":"text","id":"t","value":"{long}"}}}},
+            {{"input":{{"type":"line","value":"{long}"}}}}
+        ]}}"#,
+            items.join(",")
+        ))
+        .unwrap();
+        let r = &view.rows;
+        assert_eq!(r[0].menu.len(), MAX_MENU);
+        assert!(r[0].menu.iter().all(|m| m.title.chars().count() == 40));
+        let look = r[0].hover.as_ref().unwrap();
+        assert_eq!(
+            (look.color.as_deref(), look.text.as_deref(), look.event),
+            (Some("red"), Some("Open"), false)
+        );
+        assert!(r[0].wheel && r[1].hover.as_ref().unwrap().event && r[1].cells[0].wheel);
+        assert_eq!(
+            r[1].cells[0].hover.as_ref().unwrap().text.as_deref(),
+            Some("x")
+        );
+        // A hover of another word and a menu that is no list are left out; the row shows.
+        assert_eq!(r[2].text, "a");
+        assert!(r[2].hover.is_none() && r[2].menu.is_empty());
+        assert_eq!(dropped, ["hover", "menu"]);
+        let small = r[3].input.as_ref().unwrap();
+        assert_eq!((small.lines, small.max), (12, Some(1)));
+        // 64 KB of a multi-line box (three bytes a character), 4096 characters of a one-line one.
+        let big = r[4].input.as_ref().unwrap();
+        assert_eq!(
+            (big.lines, big.max, big.value.len()),
+            (2, Some(MAX_INPUT), 65_535)
+        );
+        assert_eq!(r[5].input.as_ref().unwrap().value.chars().count(), 4096);
+        let mut text = "ab長c".to_string();
+        cut_input(&mut text, 3);
+        assert_eq!(text, "ab長");
     }
 
     #[test]

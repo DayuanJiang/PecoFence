@@ -2,11 +2,15 @@
 //! (`pecofence_plugin_host::view`) becomes script fence rows (`ScriptRowView`), which the fence
 //! draws as a script fence's. Clicks, double-clicks, check boxes, to-dos, sliders and typing go
 //! back to the plugin as events (`App::plugin_event`): `click` and `dblclick` with `{ id }`,
-//! `change` with `{ id, value }`, `text` with `{ id, text }`.
+//! `change` with `{ id, value }`, `text` with `{ id, text }`. The pointer onto and off a
+//! `hover: "event"` row and the wheel over a `wheel: true` row or cell send `enter`, `leave`
+//! and `wheel` (paced by the plugin host).
 //!
 //! A view with a note (`input: { type: "note" }`) makes the fence a note: its text is kept in
 //! `Config::notes` and edited and ticked as a note fence's. A one-line box opens the name box
-//! (`rename`) over it. While either is open the plugin is neither restarted nor updated.
+//! (`rename`) over it; a box of several lines (`type: "text"`) opens it with the note editor's
+//! multi-line control and keys, and ends with `change` {id, text} (Ctrl+Enter also `submit`).
+//! While any of them is open the plugin is neither restarted nor updated.
 
 use super::*;
 use crate::fence_window::{ScriptCellView, ScriptRowView, ScriptView};
@@ -53,7 +57,7 @@ impl App {
         view.rows
             .into_iter()
             .map(|r| {
-                let line = r.input.as_ref().is_some_and(|i| i.kind == "line");
+                let line = (r.input.as_ref()).is_some_and(|i| i.kind == "line" || i.kind == "text");
                 let canvas = r.canvas.map(|mut c| {
                     for step in &mut c.draw {
                         step.image = file(step.image.take());
@@ -85,6 +89,8 @@ impl App {
                     under: c.under,
                     id: c.id,
                     blur: c.blur,
+                    hover: c.hover,
+                    wheel: c.wheel,
                 });
                 ScriptRowView {
                     clickable: r.id.is_some() || line,
@@ -111,6 +117,9 @@ impl App {
                     chart: r.chart,
                     canvas,
                     input: r.input,
+                    menu: r.menu,
+                    hover: r.hover,
+                    wheel: r.wheel,
                     ..ScriptRowView::default()
                 }
             })
@@ -180,7 +189,9 @@ impl App {
                     ("click", id, None)
                 }
             }
-            None if row.input.as_ref().is_some_and(|i| i.kind == "line") && !double => {
+            None if (row.input.as_ref()).is_some_and(|i| i.kind == "line" || i.kind == "text")
+                && !double =>
+            {
                 return self.open_plugin_line(fence, index);
             }
             None => {
@@ -213,6 +224,41 @@ impl App {
         }
     }
 
+    /// The pointer went onto row `row` of plugin fence `fence`, which tells the plugin (None:
+    /// off such a row): `enter` {row: its id} or `leave`, which the plugin host paces.
+    pub(super) fn plugin_hover(&mut self, fence: FenceId, row: Option<usize>) {
+        let rows = self.light.running.get(&fence).and_then(|r| r.0.as_ref());
+        let on = row.and_then(|i| rows?.get(i));
+        let on = on.filter(|r| r.hover.as_ref().is_some_and(|h| h.event));
+        tracing::debug!(%fence, ?row, on = on.is_some(), "plugin fence: the pointer onto or off a row that tells");
+        match on.map(|r| r.id.clone()) {
+            Some(id) => self.plugin_event(fence, "enter", serde_json::json!({ "row": id })),
+            None => self.plugin_event(fence, "leave", serde_json::Value::Null),
+        }
+    }
+
+    /// Whole notches of the wheel over row `row`, cell `cell` of plugin fence `fence`: `wheel`
+    /// {id, steps} when the row or cell takes the wheel.
+    pub(super) fn plugin_wheel(&mut self, fence: FenceId, row: usize, cell: usize, steps: i32) {
+        let rows = self.light.running.get(&fence).and_then(|r| r.0.as_ref());
+        let Some(r) = rows.and_then(|rows| rows.get(row)) else {
+            return;
+        };
+        let id = match r.cells.get(cell) {
+            Some(c) if c.wheel => c.id.clone(),
+            None if r.wheel => r.id.clone(),
+            _ => {
+                return tracing::debug!(%fence, row, cell, "plugin fence: wheel over a part that does not take it");
+            }
+        };
+        tracing::debug!(%fence, row, cell, steps, "plugin fence: wheel");
+        self.plugin_event(
+            fence,
+            "wheel",
+            serde_json::json!({ "id": id, "steps": steps }),
+        );
+    }
+
     /// Opens the one-line box of row `index` of plugin fence `fence` over the row (the name
     /// box, which takes the input method as a title's does).
     fn open_plugin_line(&mut self, fence: FenceId, index: usize) {
@@ -233,28 +279,33 @@ impl App {
         // The box's text is as big as the fence's 文字大小, as the row under it.
         let text_size = self.state.fence(fence).map_or(1, super::text_size_index);
         let font_dip = pecofence_render::fence_chrome::TOOL_TEXT_SIZES[usize::from(text_size)];
-        tracing::info!(%fence, index, chars = line.value.chars().count(), font_dip, "plugin fence: its one-line box opens");
+        // A box of several lines takes `max` characters; a one-line box 4096 (the view's limit).
+        let lines = if line.kind == "text" { line.lines } else { 1 };
+        let max = line.max.unwrap_or(4096);
+        tracing::info!(%fence, index, chars = line.value.chars().count(), lines, max, font_dip, "plugin fence: its text box opens");
         crate::rename::begin_line_input(
             w.hwnd(),
             rect,
             (fence, index),
-            line.value,
-            line.placeholder,
+            (line.value, line.placeholder),
+            (lines, max),
             self.queue.clone(),
             w.label_ink(self.theme_mode),
             font_dip,
         );
     }
 
-    /// The one-line box of row `index` closed: with Enter or a click elsewhere its text goes
-    /// to the plugin (`text`) and shows in the row; Esc keeps the old one.
+    /// The text box of row `index` closed: with Enter or a click elsewhere its text goes to
+    /// the plugin (`text`; a box of several lines `change`, and `submit` after Ctrl+Enter) and
+    /// shows in the row; Esc keeps the old one in a one-line box.
     pub(super) fn plugin_line_closed(
         &mut self,
         fence: FenceId,
         index: usize,
         text: Option<String>,
+        submit: bool,
     ) {
-        if let Some(text) = text {
+        if let Some(mut text) = text {
             let row = self
                 .light
                 .running
@@ -263,13 +314,24 @@ impl App {
             if let Some(row) = row
                 && let Some(line) = &mut row.input
             {
+                let many = line.kind == "text";
+                if many {
+                    host::view::cut_input(&mut text, line.max.unwrap_or(host::view::MAX_INPUT));
+                }
                 line.value = text.clone();
                 let id = line.id.clone();
-                tracing::info!(%fence, index, chars = text.chars().count(), "plugin fence: one-line box sends its text");
+                tracing::info!(%fence, index, many, submit, chars = text.chars().count(), "plugin fence: text box sends its text");
                 self.push_tool_view(self.state.host_of(fence));
                 // A restart held while the box was open first: the new runtime gets the text.
                 self.release_held(fence);
-                self.plugin_event(fence, "text", serde_json::json!({ "id": id, "text": text }));
+                let (name, data) = match many {
+                    true => ("change", serde_json::json!({ "id": id, "text": text })),
+                    false => ("text", serde_json::json!({ "id": id, "text": text })),
+                };
+                self.plugin_event(fence, name, data);
+                if many && submit {
+                    self.plugin_event(fence, "submit", serde_json::json!({ "id": id }));
+                }
                 return;
             }
         }

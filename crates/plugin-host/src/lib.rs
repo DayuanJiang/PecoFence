@@ -47,7 +47,7 @@ pub const ERRORS_TOLD: u32 = 3;
 /// The last view goes into the fence's cache file at most this often (and when it stops).
 const CACHE_GAP: Duration = Duration::from_secs(60);
 /// The events PecoFence sends ([`Command::Event`] takes one of these names).
-pub const EVENTS: [&str; 18] = [
+pub const EVENTS: [&str; 22] = [
     "start",
     "show",
     "hide",
@@ -68,7 +68,17 @@ pub const EVENTS: [&str; 18] = [
     "drop",
     "media",
     "lang",
+    // A multi-line box's Ctrl+Enter ({id}); the pointer onto and off a `hover: "event"` row
+    // ({row}); the wheel over a `wheel: true` row or cell ({id, steps}). The last three are paced.
+    "submit",
+    "enter",
+    "leave",
+    "wheel",
 ];
+/// `enter` and `leave` reach a plugin at most 10 times a second, `wheel` 20 times: what comes
+/// sooner waits, the pointer's last row and the wheel's steps added up.
+const HOVER_GAP: Duration = Duration::from_millis(100);
+const WHEEL_GAP: Duration = Duration::from_millis(50);
 /// The most bytes one `pf.post` may carry (as JSON; a web plugin page's message too), and the
 /// most messages and bytes that may wait to go out from one run of the plugin.
 pub const MAX_POST: usize = 1024 * 1024;
@@ -184,6 +194,73 @@ impl Timer {
     }
 }
 
+/// The pointer's row and the wheel's steps, until they may go to the plugin.
+#[derive(Default)]
+struct Paced {
+    /// The row the plugin was told the pointer is on, and the one it is on now (the row's id).
+    told: Option<Value>,
+    on: Option<Value>,
+    hover_at: Option<Instant>,
+    /// The steps not told yet, by the id of the row or cell.
+    wheel: Vec<(Value, i64)>,
+    wheel_at: Option<Instant>,
+}
+
+impl Paced {
+    /// Takes `enter` ({row}), `leave` and `wheel` ({id, steps}) from the app.
+    fn take(&mut self, name: &str, data: &Value) {
+        match name {
+            "enter" => self.on = Some(data.get("row").cloned().unwrap_or_default()),
+            "leave" => self.on = None,
+            _ => {
+                let id = data.get("id").cloned().unwrap_or_default();
+                let steps = data.get("steps").and_then(Value::as_i64).unwrap_or(0);
+                match self.wheel.iter_mut().find(|(i, _)| *i == id) {
+                    Some((_, n)) => *n += steps,
+                    None => self.wheel.push((id, steps)),
+                }
+            }
+        }
+    }
+
+    /// The events that may go out now: `leave` of the row told before and `enter` of the new
+    /// one, and the wheel's steps by id.
+    fn due(&mut self, now: Instant) -> Vec<(&'static str, Value)> {
+        let mut out = Vec::new();
+        let free = |at: Option<Instant>, gap| at.is_none_or(|at| now >= at + gap);
+        if self.on != self.told && free(self.hover_at, HOVER_GAP) {
+            self.hover_at = Some(now);
+            if let Some(row) = self.told.take() {
+                out.push(("leave", json!({ "row": row })));
+            }
+            if let Some(row) = self.on.clone() {
+                out.push(("enter", json!({ "row": row })));
+            }
+            self.told = self.on.clone();
+        }
+        if !self.wheel.is_empty() && free(self.wheel_at, WHEEL_GAP) {
+            self.wheel_at = Some(now);
+            for (id, steps) in std::mem::take(&mut self.wheel) {
+                if steps != 0 {
+                    out.push(("wheel", json!({ "id": id, "steps": steps })));
+                }
+            }
+        }
+        out
+    }
+
+    fn next_due(&self) -> Option<Instant> {
+        let hover = (self.on != self.told).then(|| self.hover_at.map(|at| at + HOVER_GAP));
+        let wheel = (!self.wheel.is_empty()).then(|| self.wheel_at.map(|at| at + WHEEL_GAP));
+        // Waiting with no time yet: due at once.
+        [hover, wheel]
+            .into_iter()
+            .flatten()
+            .map(|at| at.unwrap_or_else(Instant::now))
+            .min()
+    }
+}
+
 /// What the plugin's calls into `pf` leave for the host.
 #[derive(Default)]
 struct Shared {
@@ -236,6 +313,7 @@ struct Plugin {
     logged: HashSet<String>,
     /// The errors that escaped a handler, and how many went out as [`Output::Errored`].
     errors: (u32, u32),
+    paced: Paced,
 }
 
 type Rejected = (Persistent<rquickjs::Value<'static>>, String);
@@ -326,6 +404,7 @@ impl Plugin {
             rejected,
             logged: HashSet::new(),
             errors: (0, 0),
+            paced: Paced::default(),
         };
         let (shared, click, fence) = (plugin.shared.clone(), plugin.click.clone(), s.fence);
         let dropping = plugin.dropping.clone();
@@ -691,7 +770,16 @@ impl Plugin {
         let s = self.shared.borrow();
         let timers = s.timers.iter().filter(|_| self.runs()).map(|t| t.next);
         let view = s.view.as_ref().and(self.sent).map(|at| at + SHOW_GAP);
-        timers.chain(view).min()
+        timers.chain(view).chain(self.paced.next_due()).min()
+    }
+
+    /// The pointer's row and the wheel's steps that may go to the plugin now.
+    fn pace(&mut self, now: Instant) -> Result<(), Stopped> {
+        for (name, data) in self.paced.due(now) {
+            tracing::debug!(fence = %self.fence, name, %data, "plugin told of the pointer or the wheel");
+            self.emit(name, Some(data.to_string()))?;
+        }
+        Ok(())
     }
 }
 
@@ -781,6 +869,14 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                 }
             }
             Ok(Msg::Cmd(Command::Message(..))) => {}
+            Ok(Msg::Cmd(Command::Event(fence, name, data)))
+                if matches!(name, "enter" | "leave" | "wheel") =>
+            {
+                // Goes out below, when its pace allows.
+                if let Some(p) = plugins.iter_mut().find(|p| p.fence == fence) {
+                    p.paced.take(name, &data);
+                }
+            }
             Ok(Msg::Cmd(Command::Event(fence, name, data))) => {
                 if let Some(p) = plugins.iter_mut().find(|p| p.fence == fence) {
                     if name == "timechange" {
@@ -816,7 +912,7 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
         }
         let now = Instant::now();
         for p in &mut plugins {
-            if let Err(why) = p.tick(now) {
+            if let Err(why) = p.tick(now).and_then(|_| p.pace(now)) {
                 failed.push((p.fence, p.number, why));
             }
         }
@@ -1096,6 +1192,63 @@ mod tests {
         assert_eq!(
             stop_of(&outputs(code, true, 50, vec![])),
             Some(Stopped::TooMuchMemory)
+        );
+    }
+
+    #[test]
+    fn the_pointer_and_the_wheel_reach_the_plugin_paced() {
+        let (mut p, t0) = (Paced::default(), Instant::now());
+        let ms = |n| t0 + Duration::from_millis(n);
+        let (none, at) = (Vec::<(&str, Value)>::new(), |r: &str| json!({ "row": r }));
+        p.take("enter", &at("a"));
+        assert_eq!(p.due(t0), [("enter", at("a"))]);
+        // Onto b, onto c within 100 ms: one change after the gap, to where the pointer is now.
+        for row in ["b", "c"] {
+            p.take("leave", &Value::Null);
+            p.take("enter", &at(row));
+        }
+        assert_eq!((p.due(ms(50)), p.next_due()), (none.clone(), Some(ms(100))));
+        assert_eq!(p.due(ms(100)), [("leave", at("a")), ("enter", at("c"))]);
+        // Off c and back before the plugin was told: nothing to tell.
+        p.take("leave", &Value::Null);
+        p.take("enter", &at("c"));
+        assert_eq!((p.due(ms(300)), p.next_due()), (none.clone(), None));
+        // The wheel: 20 times a second, the steps added up by id; steps that cancel out go nowhere.
+        let wheel = |id: &str, steps: i64| json!({ "id": id, "steps": steps });
+        for steps in [1, 1, 1, -1] {
+            p.take("wheel", &wheel("v", steps));
+        }
+        p.take("wheel", &wheel("w", 1));
+        p.take("wheel", &wheel("w", -1));
+        assert_eq!(p.due(ms(300)), [("wheel", wheel("v", 2))]);
+        p.take("wheel", &wheel("v", -3));
+        assert_eq!(p.due(ms(320)), none);
+        assert_eq!(p.due(ms(350)), [("wheel", wheel("v", -3))]);
+    }
+
+    #[test]
+    fn enter_leave_and_wheel_go_to_the_handlers() {
+        let code = "const got = []; for (const n of ['enter', 'leave', 'wheel', 'submit'])
+            pf.on(n, (e) => { got.push(n + ' ' + JSON.stringify(e)); pf.show({ rows: [{ text: got.join(' ') }] }); });";
+        let f = FenceId::new_v4();
+        let out = outputs(
+            code,
+            true,
+            30,
+            vec![
+                Command::Event(f, "enter", json!({ "row": "r1" })),
+                Command::Event(f, "leave", json!({ "row": "r1" })),
+                Command::Event(f, "wheel", json!({ "id": "v", "steps": -2 })),
+                Command::Event(f, "submit", json!({ "id": "t" })),
+            ],
+        );
+        // The leave 30 ms after the enter waits for the 100 ms between them.
+        assert_eq!(
+            texts(&out).last().map(String::as_str),
+            Some(
+                r#"enter {"row":"r1"} wheel {"id":"v","steps":-2} submit {"id":"t"} leave {"row":"r1"}"#
+            ),
+            "{out:?}"
         );
     }
 

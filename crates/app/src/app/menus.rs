@@ -1051,7 +1051,7 @@ impl App {
                     false,
                 )
                 .icon(glyph::REFRESH);
-                self.add_plugin_menu(&menu, fence, id);
+                self.add_plugin_menu(&menu, fence, id, (x, y));
             } else {
                 let interval = spec.map_or(0, |s| s.interval_minutes);
                 let interval_menu = PopupMenu::new();

@@ -28,9 +28,27 @@ fn icon_name(fence: FenceId, item: &str) -> String {
 
 impl App {
     /// The plugin's own entries at the end of its fence's menu (from its last `pf.show`), in a
-    /// submenu named after it when there are more than three.
-    pub(super) fn add_plugin_menu(&self, menu: &PopupMenu, fence: FenceId, id: &str) {
-        let Some(items) = self.light.menus.get(&fence).filter(|m| !m.is_empty()) else {
+    /// submenu named after it when there are more than three. A right-click at screen point
+    /// `at` on a row with a menu of its own shows the row's entries in their place.
+    pub(super) fn add_plugin_menu(
+        &self,
+        menu: &PopupMenu,
+        fence: FenceId,
+        id: &str,
+        at: (i32, i32),
+    ) {
+        let window = self.window_for(fence);
+        let row = window.and_then(|w| w.script_row_at_screen(at.0, at.1));
+        let rows = self.light.running.get(&fence).and_then(|r| r.0.as_ref());
+        let own = row
+            .and_then(|(i, _)| rows?.get(i))
+            .filter(|r| !r.menu.is_empty());
+        *self.light.menu_row.borrow_mut() = own.map(|r| json!(r.id));
+        if let Some(r) = own {
+            tracing::info!(%fence, row = ?row, id = ?r.id, entries = r.menu.len(), "plugin fence: the row's own menu");
+        }
+        let items = own.map(|r| &r.menu).or(self.light.menus.get(&fence));
+        let Some(items) = items.filter(|m| !m.is_empty()) else {
             return;
         };
         // The ids as shown: a choice means these even when the plugin shows another menu meanwhile.
@@ -55,8 +73,12 @@ impl App {
         let Some(id) = id.filter(|id| !id.is_empty()) else {
             return;
         };
-        tracing::info!(%fence, id, "plugin fence: its menu entry chosen");
-        self.plugin_event(fence, "command", json!({ "id": id, "via": "menu" }));
+        let mut data = json!({ "id": id, "via": "menu" });
+        if let Some(row) = self.light.menu_row.borrow().clone() {
+            data["row"] = row;
+        }
+        tracing::info!(%fence, %data, "plugin fence: its menu entry chosen");
+        self.plugin_event(fence, "command", data);
     }
 
     /// The shortcuts the fences give their plugins' commands: of fences whose plugin runs (or

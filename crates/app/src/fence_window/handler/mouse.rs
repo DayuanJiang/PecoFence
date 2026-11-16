@@ -131,6 +131,9 @@ pub(super) fn on_mouseleave(
         // Leaving the bar starts the 0.5 s contract delay, not an
         // instant collapse.
         v.set_scrollbar_pointer(None);
+        if let Some(cmd) = v.plugin_hover_moved(v.script_hover, None) {
+            h.queue.push(cmd);
+        }
         let content_changed = v.header_hover.take().is_some()
             | v.script_hover.take().is_some()
             | v.note_box_hover.take().is_some()
@@ -1285,6 +1288,24 @@ pub(super) fn on_mousewheel(
             // frozen surface of a rolling fence stays put.
             return Some(0);
         }
+        // Over a plugin's `wheel: true` row or cell the wheel is the plugin's: its whole
+        // notches go to it (positive away from the user) and the fence does not scroll.
+        if let Some((row, cell)) = v.plugin_wheel_at(pt.x, pt.y) {
+            v.wheel_plugin_accum += delta;
+            let steps = v.wheel_plugin_accum / msg::WHEEL_DELTA;
+            v.wheel_plugin_accum -= steps * msg::WHEEL_DELTA;
+            if steps != 0 {
+                let fence = v.active;
+                queue.push(Command::PluginWheel {
+                    fence,
+                    row,
+                    cell,
+                    steps,
+                });
+            }
+            return Some(0);
+        }
+        v.wheel_plugin_accum = 0;
         // Windows "lines per notch" (SPI_GETWHEELSCROLLLINES) rows in
         // List / Details, one grid row in Icons, a viewport when set to
         // "one screen at a time". Whole notches (|delta| >= 120) glide

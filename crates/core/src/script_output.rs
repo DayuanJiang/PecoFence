@@ -327,7 +327,9 @@ pub fn color_rgb(color: &str, dark: bool) -> Option<[u8; 3]> {
         "yellow" => ([0x8A, 0x6D, 0x00], [0xFF, 0xE4, 0x6B]),
         "blue" => ([0x00, 0x5F, 0xB8], [0x60, 0xCD, 0xFF]),
         "purple" => ([0x88, 0x17, 0x98], [0xD6, 0x9C, 0xF0]),
-        "gray" | "grey" => ([0x5F, 0x5F, 0x5F], [0xA0, 0xA0, 0xA0]),
+        // On light text Windows' own secondary text colour: #A0A0A0 read at about 2.2:1 on a
+        // blue glass plate.
+        "gray" | "grey" => ([0x5F, 0x5F, 0x5F], [0xC5, 0xC5, 0xC5]),
         _ => return None,
     };
     Some(if dark { on_dark } else { light })
@@ -661,6 +663,7 @@ mod tests {
         assert_eq!(color_rgb("#102030", false), Some([0x10, 0x20, 0x30]));
         assert_eq!(color_rgb("RED", false), Some([0xC4, 0x2B, 0x1C]));
         assert_ne!(color_rgb("red", true), color_rgb("red", false));
+        assert_eq!(color_rgb("gray", true), Some([0xC5, 0xC5, 0xC5]));
         assert_eq!(color_rgb("#12", false), None);
         assert_eq!(color_rgb("chartreuse", false), None);
     }

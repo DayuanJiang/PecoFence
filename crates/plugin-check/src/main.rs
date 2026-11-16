@@ -209,13 +209,27 @@ fn format(ms: i64, kind: &str) -> String {
     }
 }
 
-/// The events a user's clicks send for the view's rows and cells with an id.
+/// The events a user's clicks send for the view's rows and cells with an id, and for a row's
+/// own menu, a box of several lines, a row that hears of the pointer and the wheel.
 fn clicks(view: &Value) -> Vec<(&'static str, Value)> {
     let mut out = Vec::new();
     let rows = view.get("rows").and_then(Value::as_array).cloned();
     for row in rows.unwrap_or_default().iter().take(20) {
         let cells = row.get("cells").and_then(Value::as_array).cloned();
+        let row_id = row.get("id").cloned().unwrap_or_default();
+        let menu = row.get("menu").and_then(Value::as_array).cloned();
+        for m in menu.unwrap_or_default().iter().filter_map(|m| m.get("id")) {
+            out.push(("command", json!({ "id": m, "via": "menu", "row": row_id })));
+        }
+        if row.get("hover").and_then(Value::as_str) == Some("event") {
+            out.push(("enter", json!({ "row": row_id })));
+            out.push(("leave", json!({ "row": row_id })));
+        }
         for item in std::iter::once(row).chain(cells.unwrap_or_default().iter()) {
+            if item.get("wheel").and_then(Value::as_bool) == Some(true) {
+                let id = item.get("id").cloned().unwrap_or_default();
+                out.push(("wheel", json!({ "id": id, "steps": 1 })));
+            }
             let Some(id) = item.get("id").cloned() else {
                 continue;
             };
@@ -230,7 +244,15 @@ fn clicks(view: &Value) -> Vec<(&'static str, Value)> {
         }
         if let Some(input) = row.get("input") {
             let id = input.get("id").or(row.get("id")).cloned();
-            out.push(("text", json!({ "id": id, "text": "typed by the checker" })));
+            if input.get("type").and_then(Value::as_str) == Some("text") {
+                out.push((
+                    "change",
+                    json!({ "id": id, "text": "typed by\nthe checker" }),
+                ));
+                out.push(("submit", json!({ "id": id })));
+            } else {
+                out.push(("text", json!({ "id": id, "text": "typed by the checker" })));
+            }
         }
     }
     out

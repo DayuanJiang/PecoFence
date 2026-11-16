@@ -16,6 +16,7 @@ const ES_MULTILINE: i32 = 0x0004;
 const ES_AUTOVSCROLL: i32 = 0x0040;
 const ES_WANTRETURN: i32 = 0x1000;
 const EM_SETMARGINS: u32 = 0x00D3;
+const EM_SETLIMITTEXT: u32 = 0x00C5;
 const EM_GETLINECOUNT: u32 = 0x00BA;
 const EM_LINESCROLL: u32 = 0x00B6;
 const EM_SCROLLCARET: u32 = 0x00B7;
@@ -360,6 +361,14 @@ impl EditControl {
             if first > 0 {
                 SendMessageW(self.hwnd, EM_LINESCROLL, WPARAM(0), LPARAM(-first));
             }
+        }
+    }
+
+    /// The most characters (UTF-16 units) typing or pasting may leave in the control.
+    pub fn set_limit(&self, units: usize) {
+        // SAFETY: a plain message to our control.
+        unsafe {
+            SendMessageW(self.hwnd, EM_SETLIMITTEXT, WPARAM(units), LPARAM(0));
         }
     }
 
