@@ -515,6 +515,25 @@ async function runTests() {
     current().settings.tools.allowSystem = false;
     doc = await reset();
   });
+  await test('Plugin list without an index: no answer, or one that did not pass its check', async () => {
+    doc = await reset();
+    const shows = async (status) => {
+      current().plugins = { status, held: false, open: null, list: [] };
+      frame.contentWindow.testRefresh();
+      await settle();
+      doc.querySelector('[data-page=tools]').click();
+      const list = doc.getElementById('pluginList');
+      return [list.textContent, !![...list.querySelectorAll('button')].find(b => b.textContent === '重试')];
+    };
+    const [offline, retry1] = await shows('offline');
+    assert(offline.includes('暂时连不上插件目录') && retry1, 'Offline: ' + offline);
+    const [unverified, retry2] = await shows('unverified');
+    assert(unverified.includes('插件目录没有通过校验') && !unverified.includes('连不上') && retry2, 'Unverified: ' + unverified);
+    const lede = doc.querySelector('#page-tools .page-lede');
+    assert(lede && lede.textContent.includes('插件商店') && lede.textContent.includes('照常能用'), 'Lede: ' + (lede && lede.textContent));
+    delete current().plugins;
+    doc = await reset();
+  });
   await test('文字大小 for notes and script fences, not for a clock or an ordinary fence', async () => {
     doc = await reset();
     current().fences.push({ ...current().fences[0], id: 'clock-a', title: 'Clock', tool: { kind: 'clock' }, textSize: 'normal' });

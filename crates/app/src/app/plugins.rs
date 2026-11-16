@@ -31,6 +31,8 @@ enum Status {
     Idle,
     Loading,
     Offline,
+    /// The index came, but it is not signed right or older than the one kept: not used.
+    Unverified,
     Ready,
 }
 
@@ -83,8 +85,9 @@ pub(super) struct Plugins {
 }
 
 enum Done {
-    /// The index, and its bytes to keep.
-    Index(Result<(Index, Vec<u8>), String>),
+    /// The index, and its bytes to keep; Err(true, why) when it came but was not taken (its
+    /// signature, an older one), Err(false, why) when no address answered with it.
+    Index(Result<(Index, Vec<u8>), (bool, String)>),
     /// A download (its plugin, number, whether the user asked for it): the version, or Err(true,
     /// why) when a file is not the reviewed one, Err(false, why) when the network or the disk
     /// failed.
@@ -147,13 +150,14 @@ fn get_first(urls: &[String]) -> Result<Vec<u8>, String> {
 /// The index from the first address whose copy is signed by the plugin repository's key (a
 /// wrong or missing signature, or a serial lower than `serial` of the index kept, counts as no
 /// index there).
-fn fetch_index(test: Option<String>, serial: u64) -> Result<(Index, Vec<u8>), String> {
+fn fetch_index(test: Option<String>, serial: u64) -> Result<(Index, Vec<u8>), (bool, String)> {
     let urls = test
         .clone()
         .map_or_else(|| list::index_urls().to_vec(), |u| vec![u]);
-    let mut errors = Vec::new();
+    let (mut errors, mut came) = (Vec::new(), false);
     for url in urls {
         let got = super::updates::get_in_time(&url, "").and_then(|bytes| {
+            came = true;
             let sig = super::updates::get_in_time(&format!("{url}.sig"), "");
             match sig {
                 Ok(sig) if list::signed_by(&list::INDEX_KEY, &bytes, &sig) => Ok(bytes),
@@ -182,7 +186,7 @@ fn fetch_index(test: Option<String>, serial: u64) -> Result<(Index, Vec<u8>), St
             }
         }
     }
-    Err(errors.join("; "))
+    Err((came, errors.join("; ")))
 }
 
 /// Downloads `entry`'s files at the index's `commit` into `dir` (made afresh) and checks each
@@ -541,9 +545,13 @@ impl App {
                     self.apply_plugin_index();
                     self.migrate_tools(true);
                 }
-                Done::Index(Err(e)) => {
-                    tracing::warn!(error = %e, "plugins: index not read");
-                    self.plugins.status = Status::Offline;
+                Done::Index(Err((came, e))) => {
+                    tracing::warn!(error = %e, came, "plugins: index not read");
+                    self.plugins.status = if came {
+                        Status::Unverified
+                    } else {
+                        Status::Offline
+                    };
                 }
                 Done::Downloaded(id, n, by_user, result) => {
                     self.plugin_downloaded(&id, n, by_user, result);
@@ -1221,6 +1229,7 @@ impl App {
         let status = match self.plugins.status {
             Status::Idle | Status::Loading => "loading",
             Status::Offline => "offline",
+            Status::Unverified => "unverified",
             Status::Ready => "ready",
         };
         serde_json::json!({ "status": status, "held": self.held_scripts_wait(), "open": self.plugins.open, "ask": self.plugins.ask, "list": rows })
