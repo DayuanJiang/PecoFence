@@ -1,0 +1,11 @@
+{
+  "id": "uidemo",
+  "version": "1.0.0",
+  "api": 2,
+  "layer": "light",
+  "name": { "en": "UI demo", "zh-CN": "交互示例" },
+  "description": { "en": "A test plugin: row menus, hover, the wheel and a box of several lines.", "zh-CN": "测试用的插件：行上的菜单、悬停、滚轮和多行输入框。" },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": {}
+}
