@@ -440,6 +440,23 @@ pub fn confirm(owner: HWND, text: &str, caption: &str) -> bool {
     }
 }
 
+/// Modal warning box with OK owned by `owner`, for something the user did that cannot be done.
+/// Pumps messages like [`confirm`].
+pub fn warn(owner: Option<HWND>, text: &str, caption: &str) {
+    let text = to_wide(text);
+    let caption = to_wide(caption);
+    let flags = MB_OK | MB_ICONWARNING | MB_SETFOREGROUND;
+    // SAFETY: both strings are NUL-terminated and outlive the call.
+    unsafe {
+        MessageBoxW(
+            owner,
+            PCWSTR(text.as_ptr()),
+            PCWSTR(caption.as_ptr()),
+            flags as u32,
+        );
+    }
+}
+
 /// Presses and releases `vk` as if typed (the modifiers held stay as they are): a shortcut
 /// PecoFence registered but does not want this time goes on to the window in front.
 pub fn send_key(vk: u32) {

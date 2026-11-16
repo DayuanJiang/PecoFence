@@ -72,8 +72,10 @@ pub struct Permissions {
     /// The programs `pf.run` may start (a full path or a name in System32); `pf.run` works only
     /// while 允许插件使用 Windows 底层功能 is on.
     pub system: Vec<String>,
-    /// Reads a folder the user picks.
-    pub folders: bool,
+    /// Reads (`read`, or `true`) or reads and writes (`readwrite`, interface 2) the folders the
+    /// user picks.
+    #[serde(deserialize_with = "folders_field")]
+    pub folders: Folders,
     /// Shows notices and plays their sound.
     pub notify: bool,
     // Interface 2 (each needs `api: 2`, see [`API2_FIELDS`]).
@@ -95,6 +97,41 @@ pub struct Command {
     pub id: String,
     #[serde(default)]
     pub title: BTreeMap<String, String>,
+}
+
+/// What a plugin may do in the folders the user picks for it: none < read < readwrite.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Folders {
+    #[default]
+    None,
+    Read,
+    Readwrite,
+}
+
+impl Folders {
+    pub fn reads(self) -> bool {
+        self >= Self::Read
+    }
+    /// `pf.folder.write`, `mkdir` and `trash`.
+    pub fn writes(self) -> bool {
+        self == Self::Readwrite
+    }
+}
+
+/// `folders` as interface 1 wrote it (`true` reads, `false` is none) or by name.
+fn folders_field<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Folders, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Either {
+        Flag(bool),
+        Named(Folders),
+    }
+    Ok(match Either::deserialize(d)? {
+        Either::Flag(on) if on => Folders::Read,
+        Either::Flag(_) => Folders::None,
+        Either::Named(f) => f,
+    })
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
@@ -425,6 +462,9 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
     if m.settings.iter().any(|s| s.kind == "secret") {
         newer.push("secret settings");
     }
+    if p.folders.writes() {
+        newer.push("folders readwrite");
+    }
     if m.api < 2 && !newer.is_empty() {
         return Err(format!("{}: {} need api 2", m.id, newer.join(", ")));
     }
@@ -586,9 +626,9 @@ pub fn page_url(commit: &str, id: &str) -> String {
 
 /// The fields in which `new` asks for more than `old`: a host or program not asked for before
 /// (`network`, `links`, `system`; a link that was a network host is not new), reading or
-/// writing the clipboard when it did not before, or `background`, `folders`, `notify` turned on.
+/// writing the clipboard when it did not before, or `background`, `notify` turned on.
 /// Interface 2: a command or a kind of drop or a program of `apps` not there before, `launch`
-/// turned on, `media` from none to read to control.
+/// turned on, `media` from none to read to control, `folders` from none to read to readwrite.
 pub fn more_permissions(old: &Permissions, new: &Permissions) -> Vec<&'static str> {
     let added = |o: &[String], n: &[String]| {
         n.iter()
@@ -612,7 +652,7 @@ pub fn more_permissions(old: &Permissions, new: &Permissions) -> Vec<&'static st
                 || (new.clipboard.writes() && !old.clipboard.writes()),
         ),
         ("background", new.background && !old.background),
-        ("folders", new.folders && !old.folders),
+        ("folders", new.folders > old.folders),
         ("notify", new.notify && !old.notify),
     ]
     .into_iter()
@@ -1000,6 +1040,7 @@ mod tests {
             (json!({ "clipboard": "read" }), "clipboard"),
             (json!({ "background": true }), "background"),
             (json!({ "folders": true }), "folders"),
+            (json!({ "folders": "readwrite" }), "folders"),
             (json!({ "notify": true }), "notify"),
         ];
         for (change, field) in grows {
@@ -1122,9 +1163,35 @@ mod tests {
         let saved = json!({ "token": "plain", SECRETS: { "token": "0a0b" } });
         let shown = fence_settings(&secret(2, json!(null)), saved.as_object().unwrap());
         assert_eq!(shown, json!({ "token": null }));
+        // Folders: `true` is read; readwrite needs api 2 and is more than read, read than none.
+        let folders = |api: u32, f: serde_json::Value| with(api, json!({ "folders": f }));
+        assert_eq!(folders(1, json!(true)).permissions.folders, Folders::Read);
+        assert_eq!(folders(1, json!(false)).permissions.folders, Folders::None);
+        assert!(check_manifest(&folders(1, json!("read"))).is_ok());
+        let why = check_manifest(&folders(1, json!("readwrite"))).unwrap_err();
+        assert!(why.contains("folders readwrite need api 2"), "{why}");
+        assert!(check_manifest(&folders(2, json!("readwrite"))).is_ok());
+        for (from, to, more) in [
+            (json!(false), json!("read"), true),
+            (json!(true), json!("readwrite"), true),
+            (json!("read"), json!("readwrite"), true),
+            (json!("readwrite"), json!(true), false),
+            (json!("readwrite"), json!("none"), false),
+            (json!(true), json!("read"), false),
+        ] {
+            let got = more_permissions(
+                &folders(2, from.clone()).permissions,
+                &folders(2, to.clone()).permissions,
+            );
+            assert_eq!(got.contains(&"folders"), more, "{from} to {to}: {got:?}");
+        }
+        assert!(Folders::Readwrite.reads() && Folders::Readwrite.writes());
+        assert!(Folders::Read.reads() && !Folders::Read.writes() && !Folders::None.reads());
         // An unknown media level does not even read.
         let mut v = entry("countdown");
         v["permissions"] = json!({ "media": "write" });
+        assert!(serde_json::from_value::<Manifest>(v.clone()).is_err());
+        v["permissions"] = json!({ "folders": "write" });
         assert!(serde_json::from_value::<Manifest>(v).is_err());
     }
 

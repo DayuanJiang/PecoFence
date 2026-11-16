@@ -44,7 +44,7 @@
     data: ["read", "write", "list", "remove"],
     clipboard: ["text", "files", "image", "setText", "setFiles", "setImage"],
     sys: ["cpu", "memory", "drives", "ip", "network", "battery"],
-    folder: ["pick", "list", "read"],
+    folder: ["pick", "list", "read", "write", "mkdir", "trash"],
     launch: ["pick", "add", "list", "remove", "open"],
     media: ["current", "control"],
     apps: ["running", "front"],

@@ -515,13 +515,15 @@ impl App {
                 Ok(json!(self.add_launch_items(fence, &paths)))
             }
             "launch.pick" => {
+                use pecofence_platform::filedialog::{pick_file, pick_folder};
                 let owner = self.window_for(fence).map(|w| w.hwnd());
-                let title = if id == "program" {
-                    i18n::text("添加程序")
-                } else {
-                    i18n::text("添加文件")
+                let picked = match id.as_str() {
+                    "program" => pick_file(owner, i18n::text("添加程序"), true),
+                    "folder" => pick_folder(owner, i18n::text("添加文件夹")),
+                    _ => pick_file(owner, i18n::text("添加文件"), false),
                 };
-                match pecofence_platform::filedialog::pick_file(owner, title, id == "program") {
+                tracing::info!(%fence, kind = id, picked = matches!(picked, Ok(Some(_))), "launcher pick");
+                match picked {
                     Ok(Some(path)) => {
                         let id = self.add_launch_item(fence, &path)?;
                         let name = self.launch_name(fence, &id);

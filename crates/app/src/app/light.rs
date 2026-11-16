@@ -5,7 +5,7 @@
 //! for web plugin pages through [`App::plugin_api`]) and starts a stopped plugin again: after
 //! 5 s by itself, after the third stop within an hour only by 重新启动.
 
-use super::light_host::{AppHost, UiJob};
+use super::light_host::{self, AppHost, UiJob};
 use super::*;
 use pecofence_plugin_host as host;
 use serde_json::{Value, json};
@@ -798,16 +798,42 @@ impl App {
         }
     }
 
-    /// `pf.folder.pick`: the user picks a folder the plugin fence may read (kept in its
-    /// settings under `__folders`); None when cancelled.
+    /// `pf.folder.pick`: the user picks a folder the plugin fence may read, or with
+    /// `folders: "readwrite"` read and write (kept in its settings under `__folders`); None when
+    /// cancelled. A folder to write in is refused, with a message, when it is a link or junction
+    /// or a file directly in it could not be written (plan v6 change 5).
     pub(super) fn pick_plugin_folder(&mut self, fence: FenceId) -> Value {
         let owner = self.window_for(fence).map(|w| w.hwnd());
-        let title = pecofence_core::i18n::text("选择插件可以读取的文件夹");
+        let writes = (self.light_manifest(fence)).is_some_and(|m| m.permissions.folders.writes());
+        let title = if writes {
+            pecofence_core::i18n::text("选择插件可以读写的文件夹")
+        } else {
+            pecofence_core::i18n::text("选择插件可以读取的文件夹")
+        };
         let picked = pecofence_platform::filedialog::pick_folder(owner, title);
         let Ok(Some(path)) = picked else {
             tracing::info!(%fence, cancelled = picked.is_ok(), "plugin folder not picked");
             return Value::Null;
         };
+        let link = std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink());
+        let refused = match std::fs::canonicalize(&path) {
+            _ if !writes => None,
+            _ if link => Some("a link or junction".to_string()),
+            Ok(real) => {
+                let forbidden = light_host::forbidden_places(&self.plugins_data());
+                let child = real.join("x.txt");
+                pecofence_core::folder_write::place_refusal(&child.to_string_lossy(), &forbidden)
+            }
+            Err(e) => Some(e.to_string()),
+        };
+        if let Some(why) = refused {
+            tracing::info!(%fence, why, "plugin folder to write in refused");
+            let text = pecofence_core::i18n::text(
+                "插件不能写入这个文件夹。系统文件夹、程序文件夹、AppData、ProgramData、PecoFence 自己的文件夹、磁盘的根目录、你的用户文件夹本身、名字以点开头的文件夹，还有链接和目录连接点，都不能交给插件写入。请换一个文件夹，例如“文档”里的一个文件夹。",
+            );
+            pecofence_platform::window::warn(owner, text, "PecoFence");
+            return Value::Null;
+        }
         let path = path.to_string_lossy().to_string();
         if let Some(spec) = self.state.config.scripts.get_mut(&fence) {
             let folders = spec
@@ -822,7 +848,7 @@ impl App {
             self.state.mark_dirty();
             self.schedule_save();
         }
-        tracing::info!(%fence, "plugin folder picked");
+        tracing::info!(%fence, writes, "plugin folder picked");
         json!(path)
     }
 

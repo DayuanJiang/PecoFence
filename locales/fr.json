@@ -1115,5 +1115,9 @@
   "知道这些程序是否在运行、是否在最前面：{0}": "Sait si ces programmes tournent et s'ils sont au premier plan : {0}",
   "显示": "Afficher",
   "隐藏": "Masquer",
-  "插件能读到这个值。它加密保存在这台电脑上，换到另一台电脑后要重新填写。": "Le plugin peut lire cette valeur. Elle est enregistrée chiffrée sur cet ordinateur ; sur un autre ordinateur, il faut la saisir à nouveau."
+  "插件能读到这个值。它加密保存在这台电脑上，换到另一台电脑后要重新填写。": "Le plugin peut lire cette valeur. Elle est enregistrée chiffrée sur cet ordinateur ; sur un autre ordinateur, il faut la saisir à nouveau.",
+  "选择插件可以读写的文件夹": "Choisir un dossier que le plugin peut lire et modifier",
+  "读写你选的文件夹（装好后由你来选）": "Lit et écrit dans un dossier que vous choisissez (vous le choisissez après l'installation)",
+  "添加文件夹": "Ajouter un dossier",
+  "插件不能写入这个文件夹。系统文件夹、程序文件夹、AppData、ProgramData、PecoFence 自己的文件夹、磁盘的根目录、你的用户文件夹本身、名字以点开头的文件夹，还有链接和目录连接点，都不能交给插件写入。请换一个文件夹，例如“文档”里的一个文件夹。": "Le plugin ne peut pas écrire dans ce dossier. Les dossiers système, les dossiers des programmes, AppData, ProgramData, les dossiers de PecoFence, la racine d'un lecteur, votre dossier utilisateur lui-même, les dossiers dont le nom commence par un point, les liens et les jonctions ne sont jamais confiés à un plugin pour y écrire. Choisissez un autre dossier, par exemple un dossier dans Documents."
 }
