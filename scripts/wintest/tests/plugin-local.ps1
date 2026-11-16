@@ -41,17 +41,22 @@ function ExPick($hw, [string]$leaf) {
   if (-not $el) { Log "ExPick: '$leaf' not in the window"; return $null }
   $el.GetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern).Select(); Start-Sleep -Milliseconds 150
   $r = $el.Current.BoundingRectangle
+  Log "ExPick: '$leaf' selected"
   return @([int]($r.Left + 40), [int](($r.Top + $r.Bottom) / 2))
 }
+# Each step is logged: a run that stops in a drag (seen in long box sessions, 2026-11-16) says
+# whether it stopped before the press, in the glide or after the release.
 function DragDrop($x1, $y1, $x2, $y2, $shot = '') {
   [G]::MoveTo($x1, $y1); Start-Sleep -Milliseconds 150
   [G]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 200
+  Log "DragDrop: pressed at $x1,$y1"
   Glide $x1 $y1 ($x1 + 14) ($y1 + 14) 3 30
   Glide ($x1 + 14) ($y1 + 14) $x2 $y2 16 35
   Start-Sleep -Milliseconds 500
   [G]::MoveTo($x2 + 1, $y2 + 1); Start-Sleep -Milliseconds 500
   if ($shot) { Shot $shot }
   [G]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 1500
+  Log "DragDrop: released at $x2,$y2"
 }
 function FenceMid() { $r = (FenceGet $script:Fid).windowRect; return @([int]($r.x + $r.w / 2), [int]($r.y + $r.h / 2)) }
 # On the plugin's first row (tall, with the id hint).
