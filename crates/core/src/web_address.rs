@@ -110,7 +110,9 @@ pub fn public_ip(text: &str) -> bool {
 
 /// An address as WinHTTP and the resolver write it: with a port, in brackets, with a zone; an
 /// IPv4 address mapped into IPv6 as the IPv4 address.
-fn read_ip(text: &str) -> Option<IpAddr> {
+/// The IP address in `text` (`1.2.3.4`, `::1`, `[fe80::1%5]`, with or without a port), an IPv4
+/// address mapped into IPv6 as IPv4.
+pub fn read_ip(text: &str) -> Option<IpAddr> {
     let ip = text.parse::<SocketAddr>().map(|a| a.ip()).or_else(|_| {
         let bare = text.split('%').next().unwrap_or_default();
         bare.trim_matches(['[', ']']).parse::<IpAddr>()

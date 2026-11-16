@@ -3,7 +3,7 @@
 
 use crate::wide::to_wide;
 use core::ffi::c_void;
-use pecofence_core::web_address::{WebAddress, lan_ip, loopback_ip, public_ip};
+use pecofence_core::web_address::{WebAddress, lan_ip, loopback_ip, public_ip, read_ip};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::time::{Duration, Instant};
@@ -70,7 +70,8 @@ enum Reach {
     /// A plugin's request to the internet: public addresses only, through the system proxy.
     Internet,
     /// A plugin's request to `local`: this computer (`Loopback`) or the device the user typed
-    /// (`Lan`); only such an address, pinned for plain http, never through a proxy.
+    /// (`Lan`); only an address its name resolved to when it was checked, never through a
+    /// proxy.
     Loopback,
     Lan,
 }
@@ -92,6 +93,9 @@ struct Request {
     handle: *mut c_void,
     host: String,
     reach: Reach,
+    /// A `local` request connects only to these, the addresses of its kind its name resolved to
+    /// when it was checked (plain http to the one it was sent to).
+    pinned: Vec<std::net::IpAddr>,
     /// The name WinHTTP resolved last is not the host: it connects to a proxy.
     proxy: AtomicBool,
     /// The address a connection was refused for.
@@ -138,7 +142,8 @@ unsafe extern "system" fn on_status(
         }
     } else if status == WINHTTP_CALLBACK_STATUS_CONNECTING_TO_SERVER && !request.proxy.load(Relaxed)
     {
-        let fits = request.reach.fits(&text);
+        let pinned = |ip| request.pinned.is_empty() || request.pinned.contains(&ip);
+        let fits = request.reach.fits(&text) && read_ip(&text).is_some_and(pinned);
         let reach = request.reach;
         tracing::debug!(host = %request.host, ip = %text, ?reach, fits, "plugin request connects");
         if !fits {
@@ -238,8 +243,13 @@ pub fn post(url: &str, user_agent: &str, headers: &str, body: &[u8]) -> Result<u
 
 /// The address a `local` request to `name` connects to: the first it resolves to that is of
 /// `reach` (IPv4 first: a service on this computer often listens on 127.0.0.1 alone), as
-/// WinHTTP takes it (an IPv6 address in brackets, with its zone).
-fn local_address(name: &str, port: u16, reach: Reach) -> Result<String, String> {
+/// WinHTTP takes it (an IPv6 address in brackets, with its zone), and all of that kind it
+/// resolved to (where an https request, which WinHTTP resolves again, may connect).
+fn local_address(
+    name: &str,
+    port: u16,
+    reach: Reach,
+) -> Result<(String, Vec<std::net::IpAddr>), String> {
     use std::net::{SocketAddr, ToSocketAddrs};
     let found: Vec<SocketAddr> = (name, port)
         .to_socket_addrs()
@@ -255,12 +265,16 @@ fn local_address(name: &str, port: u16, reach: Reach) -> Result<String, String> 
         ?chosen,
         "plugin local request: the name resolved"
     );
+    let fitting = (found.iter())
+        .filter_map(|a| read_ip(&a.to_string()))
+        .filter(|ip| reach.fits(&ip.to_string()));
+    let fitting = fitting.collect();
     match chosen {
-        Some(SocketAddr::V4(a)) => Ok(a.ip().to_string()),
+        Some(SocketAddr::V4(a)) => Ok((a.ip().to_string(), fitting)),
         Some(SocketAddr::V6(a)) if a.scope_id() != 0 => {
-            Ok(format!("[{}%{}]", a.ip(), a.scope_id()))
+            Ok((format!("[{}%{}]", a.ip(), a.scope_id()), fitting))
         }
-        Some(SocketAddr::V6(a)) => Ok(format!("[{}]", a.ip())),
+        Some(SocketAddr::V6(a)) => Ok((format!("[{}]", a.ip()), fitting)),
         None => {
             let first = found
                 .first()
@@ -304,6 +318,7 @@ fn request(
     let plugin = reach != Reach::App;
     let (secure, name, port, path) = split_url(url, reach)?;
     let (mut server, mut headers) = (name.clone(), headers.to_string());
+    let mut pinned = Vec::new();
     if reach == Reach::Internet {
         use std::net::ToSocketAddrs;
         let found = (name.as_str(), port)
@@ -315,9 +330,14 @@ fn request(
             return Err(refusal(&name, &ip, reach));
         }
     } else if plugin {
-        let ip = local_address(&name, port, reach)?;
+        let (ip, fitting) = local_address(&name, port, reach)?;
         // Plain http goes to the address checked here; https by name, whose certificate names
-        // it, and `on_status` checks the address WinHTTP connects to.
+        // it, and `on_status` lets it connect only to an address checked here.
+        pinned = if secure {
+            fitting
+        } else {
+            read_ip(&ip).into_iter().collect()
+        };
         if !secure {
             let host = if port == 80 {
                 name.clone()
@@ -342,6 +362,12 @@ fn request(
         Reach::Loopback | Reach::Lan => WINHTTP_ACCESS_TYPE_NO_PROXY,
         _ => WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
     };
+    // A model on this computer or the local network may think for a minute or two first.
+    let receive = if matches!(reach, Reach::Loopback | Reach::Lan) {
+        120_000
+    } else {
+        30_000
+    };
     // SAFETY: the wide strings and `body` outlive the calls; handles close in reverse order
     // on drop.
     unsafe {
@@ -356,7 +382,7 @@ fn request(
             "WinHttpOpen",
         )?;
         check(
-            WinHttpSetTimeouts(session.0, 15_000, 15_000, 30_000, 30_000),
+            WinHttpSetTimeouts(session.0, 15_000, 15_000, 30_000, receive),
             "WinHttpSetTimeouts",
         )?;
         let connection = Handle::new(
@@ -379,6 +405,7 @@ fn request(
             handle,
             host: name,
             reach,
+            pinned,
             proxy: AtomicBool::new(false),
             refused: OnceLock::new(),
         };
@@ -599,24 +626,63 @@ mod tests {
             };
         };
         // A local request has no proxy: another name resolved is no reason to skip the check.
-        for (reach, resolved, ip, refused) in [
-            (Reach::Internet, "a.example", "10.0.0.1", Some("10.0.0.1")),
-            (Reach::Internet, "a.example", "93.184.215.14", None),
-            (Reach::Internet, "127.0.0.1", "127.0.0.1", None),
-            (Reach::Lan, "a.example", "192.168.1.20", None),
-            (Reach::Lan, "a.example", "127.0.0.1", Some("127.0.0.1")),
+        // It connects only to an address it was checked for (pinned), not to another one of
+        // its kind (a name whose answer changed since).
+        let pin = |ip: &str| vec![read_ip(ip).unwrap()];
+        for (reach, resolved, ip, pinned, refused) in [
+            (
+                Reach::Internet,
+                "a.example",
+                "10.0.0.1",
+                vec![],
+                Some("10.0.0.1"),
+            ),
+            (Reach::Internet, "a.example", "93.184.215.14", vec![], None),
+            (Reach::Internet, "127.0.0.1", "127.0.0.1", vec![], None),
+            (Reach::Lan, "a.example", "192.168.1.20", vec![], None),
+            (
+                Reach::Lan,
+                "a.example",
+                "127.0.0.1",
+                vec![],
+                Some("127.0.0.1"),
+            ),
             (
                 Reach::Lan,
                 "proxy.example",
                 "93.184.215.14",
+                vec![],
                 Some("93.184.215.14"),
             ),
-            (Reach::Loopback, "a.example", "::1", None),
+            (Reach::Loopback, "a.example", "::1", vec![], None),
             (
                 Reach::Loopback,
                 "proxy.example",
                 "10.0.0.1",
+                vec![],
                 Some("10.0.0.1"),
+            ),
+            (
+                Reach::Lan,
+                "a.example",
+                "192.168.1.20",
+                pin("192.168.1.20"),
+                None,
+            ),
+            (
+                Reach::Lan,
+                "a.example",
+                "192.168.1.21",
+                pin("192.168.1.20"),
+                Some("192.168.1.21"),
+            ),
+            (Reach::Loopback, "a.example", "[::1]", pin("::1"), None),
+            (
+                Reach::Loopback,
+                "a.example",
+                "127.0.0.2",
+                pin("127.0.0.1"),
+                Some("127.0.0.2"),
             ),
         ] {
             let session =
@@ -625,6 +691,7 @@ mod tests {
                 handle: session,
                 host: "a.example".into(),
                 reach,
+                pinned,
                 proxy: AtomicBool::new(false),
                 refused: OnceLock::new(),
             };
