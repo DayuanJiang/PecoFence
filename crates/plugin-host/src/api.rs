@@ -211,9 +211,23 @@ pub fn perform(
     headers.insert("User-Agent".into(), agent.into());
     let mut body = options.get("body").cloned().unwrap_or(Value::Null);
     let mut verb = name.to_string();
+    // Where the first request goes: the internet, `loopback` or `lan`.
+    let mut first = None;
     for hop in 0..=MAX_HOPS {
+        // A request to `local` says its class: the host connects only to such an address
+        // (and, for `lan`, only to a host the user typed), never through a proxy.
+        let address = WebAddress::parse(&url);
+        let local = (address.as_ref())
+            .filter(|a| !internet(p, a))
+            .and_then(|a| local_class(p, a));
+        let class = local.unwrap_or("internet");
+        let first = *first.get_or_insert(class);
         if hop > 0 {
-            let refused = refusal(p, &verb, &json!([url]));
+            // A redirect stays in its class: from the internet never to this computer or the
+            // local network (307 and 308 would take a POST's body along), nor back.
+            let refused = refusal(p, &verb, &json!([url])).or_else(|| {
+                (class != first).then(|| format!("a redirect from {first} to {class}"))
+            });
             let args = json!([url]);
             host.note(
                 fence,
@@ -228,12 +242,6 @@ pub fn perform(
                 return Err(format!("redirect refused: {why}"));
             }
         }
-        // A request to `local` says its class: the host connects only to such an address
-        // (and, for `lan`, only to a host the user typed), never through a proxy.
-        let address = WebAddress::parse(&url);
-        let local = (address.as_ref())
-            .filter(|a| !internet(p, a))
-            .and_then(|a| local_class(p, a));
         let answer = host.call(
             fence,
             &verb,
@@ -575,6 +583,71 @@ mod tests {
                 ("http://192.168.1.20:8123/api/states", &json!("lan")),
                 ("https://a.com/", &Value::Null),
                 ("http://192.168.1.20:8123/out", &json!("lan")),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_redirect_never_leaves_the_class_of_the_first_request() {
+        let p: Permissions = serde_json::from_value(json!({
+            "network": ["a.com"],
+            "local": { "loopback": [{ "port": 11434, "app": "Ollama" }], "lan": [{ "port": 8123, "app": "HA" }] },
+        }))
+        .unwrap();
+        let ok = json!({ "status": 200, "headers": {}, "body": "" });
+        let fake = Fake {
+            answers: vec![
+                (
+                    "https://a.com/in",
+                    moved(308, "http://localhost:11434/api/pull"),
+                ),
+                (
+                    "https://a.com/lan",
+                    moved(307, "http://192.168.1.20:8123/api"),
+                ),
+                (
+                    "http://192.168.1.20:8123/out",
+                    moved(302, "https://a.com/x"),
+                ),
+                (
+                    "http://localhost:11434/up",
+                    moved(302, "http://192.168.1.20:8123/"),
+                ),
+                ("http://localhost:11434/a", moved(302, "/b")),
+                ("http://localhost:11434/b", ok.clone()),
+            ],
+            ..Fake::default()
+        };
+        let fence = FenceId::new_v4();
+        let post = |url: &str| {
+            let args = json!([url, { "body": "secret" }]);
+            perform(&fake, fence, &p, "ua", "http.post", args)
+        };
+        for (from, to) in [
+            ("https://a.com/in", "internet to loopback"),
+            ("https://a.com/lan", "internet to lan"),
+            ("http://192.168.1.20:8123/out", "lan to internet"),
+            ("http://localhost:11434/up", "loopback to lan"),
+        ] {
+            let why = post(from).unwrap_err();
+            assert!(
+                why.contains(&format!("a redirect from {to}")),
+                "{from}: {why}"
+            );
+        }
+        assert_eq!(post("http://localhost:11434/a"), Ok(ok));
+        // Only the first requests and the one redirect within its class went out.
+        let calls = fake.calls.lock().unwrap();
+        let urls: Vec<&str> = calls.iter().map(|c| c.1[0].as_str().unwrap()).collect();
+        assert_eq!(
+            urls,
+            [
+                "https://a.com/in",
+                "https://a.com/lan",
+                "http://192.168.1.20:8123/out",
+                "http://localhost:11434/up",
+                "http://localhost:11434/a",
+                "http://localhost:11434/b",
             ]
         );
     }
