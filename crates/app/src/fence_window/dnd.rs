@@ -821,7 +821,8 @@ impl DropHandler for FenceDropHandler {
                 Some(_) => DropKind::Url,
                 None => DropKind::None,
             };
-            tracing::info!(internal, ?takes, kind = ?self.kind, "a drag over a plugin fence");
+            let fits = payload.is_some();
+            tracing::info!(internal, ?takes, fits, "a drag over a plugin fence");
             self.path_drag = false;
         }
         self.data = Some(data.clone());
