@@ -44,6 +44,15 @@ foreach ($f in $made) { Remove-Item -LiteralPath $f -Recurse -Force -ErrorAction
 New-Item -ItemType Directory -Force "$PfDesk\Alpha Folder" | Out-Null
 Set-Content "$PfDesk\Beta notes.txt" 'notes'
 $sc = (New-Object -ComObject WScript.Shell).CreateShortcut("$PfDesk\Gamma link.lnk"); $sc.TargetPath = "$tdir\Target doc.txt"; $sc.Save()
+# Windows opens a folder that has no saved view (no shell bag) with the item focused and not
+# selected, whoever asks: explorer /select, SHOpenFolderAndSelectItems and the shortcut's own
+# verb, with or without PecoFence (2026-11-16, ec2-13); the next opening selects. Other jobs
+# leave the bags in any state, so both folders get a saved view first: open them once, close.
+foreach ($d in @($tdir, $PfDesk)) { Start-Process explorer.exe -ArgumentList "`"$d`"" }
+for ($i = 0; $i -lt 40 -and @((New-Object -ComObject Shell.Application).Windows()).Count -lt 2; $i++) { Start-Sleep -Milliseconds 250 }
+Start-Sleep -Seconds 1
+Log "folders opened once for their saved view: $(@((New-Object -ComObject Shell.Application).Windows()).Count) windows"
+CloseWindows
 PfStart
 Pf fence create --title Work --rect '370,290,330,250' | Out-Null
 Pf item move "$PfDesk\Alpha Folder" "$PfDesk\Beta notes.txt" "$PfDesk\Gamma link.lnk" --to Work | Out-Null
@@ -110,6 +119,26 @@ Shot 'd01-two-menu'
 $built = @(PfLogAll | Where-Object { $_ -match 'item menu built' }) | Select-Object -Last 1
 Check 'two items: at most one Open file location, no entry twice' ($loc.Count -le 1 -and -not $dupes) "rows $($loc.Count); twice: $dupes; menu: $texts; log: $built"
 CloseMenus
+
+Case 'a folder never opened before: the target is selected all the same'
+# A new folder has no saved view: Windows' verb alone leaves the target focused, not selected
+# (the note in setup); PecoFence then selects it in the window that opened.
+$fresh = "$PfRun\never opened $(Get-Random)"
+New-Item -ItemType Directory -Force $fresh | Out-Null
+Set-Content "$fresh\Fresh doc.txt" 'fresh'
+$made += "$PfDesk\Delta link.lnk"
+$sc = (New-Object -ComObject WScript.Shell).CreateShortcut("$PfDesk\Delta link.lnk"); $sc.TargetPath = "$fresh\Fresh doc.txt"; $sc.Save()
+for ($i = 0; $i -lt 20 -and -not (ItemFence 'Delta link'); $i++) { Start-Sleep -Milliseconds 500 }
+Pf item move "$PfDesk\Delta link.lnk" --to Work | Out-Null
+Start-Sleep -Seconds 1
+$m = RClickItem 'Work' 'Delta link'
+$row = MenuPick '^Open file location$' $m
+$ex = ExplorerSel 'Fresh doc'
+Shot 'e01-fresh-location'
+Check 'a new folder opens with the target selected' ($row -and $ex.folder -eq $fresh -and (@($ex.sel) -contains "$fresh\Fresh doc.txt" -or @($ex.sel) -contains 'Fresh doc')) $ex.text
+$chk = @(PfLogAll | Where-Object { $_ -match 'open file location: selection checked' }) | Select-Object -Last 1
+Check 'the log says who selected it' ($chk -match 'outcome=') "$chk"
+CloseWindows
 
 Case 'cleanup'
 CloseWindows

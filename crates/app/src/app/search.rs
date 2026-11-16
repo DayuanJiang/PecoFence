@@ -958,8 +958,9 @@ fn open_containing_folder(path: &Path) {
     let spawned = std::process::Command::new("explorer.exe")
         .raw_arg(format!("/select,\"{}\"", path.display()))
         .spawn();
-    if let Err(e) = spawned {
-        tracing::warn!(error = %e, "search: Explorer did not start");
+    match spawned {
+        Ok(_) => pecofence_platform::dialogs::select_after_open(path.to_path_buf(), false),
+        Err(e) => tracing::warn!(error = %e, "search: Explorer did not start"),
     }
 }
 
