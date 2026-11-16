@@ -119,9 +119,11 @@ implement_decl! {
 
 impl DragStartingHandler_Impl for DragStartingSink_Impl {
     unsafe fn Invoke(&self, _sender: Raw, args: Raw) -> Result<()> {
-        // SAFETY: WebView2 passes live event args for the duration of the call.
-        let args = unsafe { IUnknown::from_raw_borrowed(&args) }.ok_or_else(Error::empty)?;
-        (*self.0.borrow_mut())(&DragStarting(args.cast()?));
+        // SAFETY: WebView2 passes the event's args, an `ICoreWebView2DragStartingEventArgs` (the
+        // type WebView2.h gives it: no QueryInterface that could fail and let the drag go on
+        // unchecked), live for the duration of the call.
+        let args = unsafe { ICoreWebView2DragStartingEventArgs::from_raw_borrowed(&args) };
+        (*self.0.borrow_mut())(&DragStarting(args.ok_or_else(Error::empty)?.clone()));
         Ok(())
     }
 }

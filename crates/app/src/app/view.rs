@@ -434,9 +434,10 @@ impl App {
 }
 
 /// What a drag of a plugin row may carry out (plan v6 change 2): a data file (.txt .md .json
-/// .csv .log .ics .png .jpg .gif .webp) of the plugin's data folder (`data`) or of a folder the
-/// user picked (`picked`), by its real path; a text; an http or https link whose host is in
-/// `links` or `network` (the check of `pf.open`).
+/// .csv .log .ics .png .jpg .gif .webp) of the plugin's data folder (`data`) or, with
+/// `permissions.folders`, of a folder the user picked (`picked`); a text; an http or https link
+/// whose host is in `links` or `network` (the check of `pf.open`). Checked by the text alone at
+/// every `pf.show`: the disk is read when the drag starts (`row_file`).
 fn row_drag(
     d: host::view::Drag,
     data: Option<&Path>,
@@ -454,23 +455,26 @@ fn row_drag(
         return Ok(RowDrag::Text(text));
     }
     let file = d.file.unwrap_or_default();
-    let path = if pecofence_core::plugins::valid_plain_name(&file) {
-        data.ok_or("no data folder")?.join(&file)
+    let (path, root) = if pecofence_core::plugins::valid_plain_name(&file) {
+        let data = data.ok_or("no data folder")?;
+        (data.join(&file), data.to_path_buf())
+    } else if p.folders.reads() {
+        let root = super::light_host::inside_by_text(&file, picked)?;
+        (PathBuf::from(&file), root)
     } else {
-        super::light_host::inside(&file, picked)?
+        return Err("a file of a picked folder needs permissions.folders".into());
     };
-    let real = crate::state::canonical_path(path);
-    if !real.is_file() || !pecofence_core::folder_write::is_data_file(&real.to_string_lossy()) {
-        return Err(
-            "a file that is there, of .txt .md .json .csv .log .ics .png .jpg .gif .webp".into(),
-        );
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    if !pecofence_core::folder_write::is_data_file(&name) {
+        return Err("a file of .txt .md .json .csv .log .ics .png .jpg .gif .webp".into());
     }
-    Ok(RowDrag::File(real))
+    Ok(RowDrag::File { path, root })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{RowDrag, host, row_drag};
+    use crate::fence_window::row_file;
     use serde_json::json;
 
     #[test]
@@ -489,33 +493,71 @@ mod tests {
         for f in files {
             std::fs::write(f, "x").unwrap();
         }
-        let p = serde_json::from_value(json!({ "links": ["example.com"] })).unwrap();
-        let drag = |v: serde_json::Value| {
+        let p = serde_json::from_value(json!({ "links": ["example.com"], "folders": "read" }));
+        let p = p.unwrap();
+        let drag = |v: serde_json::Value, p: &pecofence_core::plugins::Permissions| {
             let d: host::view::Drag = serde_json::from_value(v).unwrap();
-            row_drag(d, Some(&data), std::slice::from_ref(&picked), &p)
+            row_drag(d, Some(&data), std::slice::from_ref(&picked), p)
         };
-        let real = crate::state::canonical_path;
-        let file = |p: std::path::PathBuf| Ok(RowDrag::File(real(p)));
-        assert_eq!(drag(json!({ "file": "a.png" })), file(data.join("a.png")));
+        let file = |path: std::path::PathBuf, root: &std::path::Path| {
+            Ok(RowDrag::File {
+                path,
+                root: root.to_path_buf(),
+            })
+        };
+        // By the text alone: a file not there yet passes until the drag starts.
+        assert_eq!(
+            drag(json!({ "file": "a.png" }), &p),
+            file(data.join("a.png"), &data)
+        );
+        assert_eq!(
+            drag(json!({ "file": "gone.png" }), &p),
+            file(data.join("gone.png"), &data)
+        );
         let b = picked.join("b.txt").to_string_lossy().into_owned();
-        assert_eq!(drag(json!({ "file": b })), file(picked.join("b.txt")));
-        assert_eq!(drag(json!({ "text": "t" })), Ok(RowDrag::Text("t".into())));
-        let link = drag(json!({ "url": "https://example.com/a" }));
+        assert_eq!(
+            drag(json!({ "file": b }), &p),
+            file(picked.join("b.txt"), &picked)
+        );
+        assert_eq!(
+            drag(json!({ "text": "t" }), &p),
+            Ok(RowDrag::Text("t".into()))
+        );
+        let link = drag(json!({ "url": "https://example.com/a" }), &p);
         assert_eq!(link, Ok(RowDrag::Url("https://example.com/a".into())));
-        // Another type, a file outside the folders, a missing one, a way out by `..`, a link to
-        // another host or of another kind: refused.
+        // Another type, a file outside the folders, a way out by `..`, a link to another host or
+        // of another kind, a picked folder's file without `folders` in the manifest: refused.
         let c = outside.join("c.txt").to_string_lossy().into_owned();
         let up = picked.join("..").join("outside").join("c.txt");
         for bad in [
             json!({ "file": "run.hta" }),
             json!({ "file": c }),
-            json!({ "file": "gone.png" }),
             json!({ "file": up.to_string_lossy() }),
             json!({ "url": "https://other.org/" }),
             json!({ "url": "file:///C:/Windows/win.ini" }),
         ] {
-            assert!(drag(bad.clone()).is_err(), "{bad}");
+            assert!(drag(bad.clone(), &p).is_err(), "{bad}");
         }
+        let none = serde_json::from_value(json!({ "links": ["example.com"] })).unwrap();
+        assert!(drag(json!({ "file": b }), &none).is_err());
+        // When the drag starts: the file must be there, of a data type, really in its folder.
+        let real = crate::state::canonical_path;
+        assert_eq!(
+            row_file(&data.join("a.png"), &data),
+            Some(real(data.join("a.png")))
+        );
+        assert_eq!(row_file(&data.join("gone.png"), &data), None);
+        assert_eq!(row_file(&data.join("run.hta"), &data), None);
+        let out = data.join("out");
+        let made = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&out)
+            .arg(&outside)
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "{made:?}");
+        assert_eq!(row_file(&out.join("c.txt"), &data), None);
+        let _ = std::fs::remove_dir(&out);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

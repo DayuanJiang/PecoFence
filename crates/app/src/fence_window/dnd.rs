@@ -23,6 +23,9 @@ pub(super) struct InternalDrag {
 
 thread_local! {
     pub(super) static INTERNAL_DRAG: RefCell<Option<InternalDrag>> = const { RefCell::new(None) };
+    /// A drag out of a plugin row is on: PecoFence's own too, so no plugin fence takes its
+    /// file as one dropped from outside.
+    pub(super) static ROW_DRAG: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// What a drag would hit at a screen point inside this window.
@@ -375,7 +378,7 @@ const MAX_PLUGIN_DROP: usize = 20;
 const MAX_PLUGIN_TEXT: usize = 256 * 1024;
 
 /// What a drag gives a plugin fence that takes `takes`: the files (none of PecoFence's own
-/// drags, at most 20, folders only for a launcher), the text and the http or https link, each
+/// drags, a plugin row's too, at most 20, folders only for a launcher), the text and the http or https link, each
 /// only when the plugin takes that kind; None when that is nothing.
 fn plugin_payload(
     data: &IDataObject,
@@ -383,7 +386,8 @@ fn plugin_payload(
     internal: bool,
 ) -> Option<(Vec<PathBuf>, Option<String>, Option<String>)> {
     let fits = |p: &PathBuf| p.is_absolute() && (takes.folders || !p.is_dir());
-    let mut paths = if takes.files && !internal && dragdrop::has_hdrop(data) {
+    let own = internal || ROW_DRAG.with(std::cell::Cell::get);
+    let mut paths = if takes.files && !own && dragdrop::has_hdrop(data) {
         dragdrop::hdrop_paths(data)
     } else {
         Vec::new()
@@ -797,11 +801,18 @@ impl FenceDropHandler {
         use crate::web_plugin::DragStep;
         let data = data.or(self.data.as_ref())?.clone();
         let unknown = windows_core::Interface::cast(&data).ok()?;
+        // A view that is busy cannot tell whether the drag is its page's own: refused until it
+        // comes in again (never taken as a drag from outside).
+        let Ok(v) = self.view.try_borrow() else {
+            tracing::info!(?step, "a drag over a fence whose view is busy: refused");
+            self.kind = DropKind::None;
+            return Some(DropEffect::None);
+        };
         let (web, hwnd) = {
-            let v = self.view.try_borrow().ok()?;
             let v = v.as_ref()?;
             (v.web.clone()?, v.hwnd)
         };
+        drop(v);
         if !web.started_drag(&unknown) {
             return None;
         }

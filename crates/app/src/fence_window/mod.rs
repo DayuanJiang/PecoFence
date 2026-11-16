@@ -663,11 +663,25 @@ pub struct ScriptRowView {
 /// What a drag of a plugin row carries out.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RowDrag {
-    /// A data file, by its real path.
-    File(PathBuf),
+    /// A data file, by the path the plugin named, and the folder it must really be in (the
+    /// plugin's data folder or a picked folder): read from the disk when the drag starts.
+    File {
+        path: PathBuf,
+        root: PathBuf,
+    },
     Text(String),
     /// An http or https link.
     Url(String),
+}
+
+/// The real path of a plugin row's file `path` when it is a file there, of a data type and
+/// really inside `root` (no link leads out).
+pub(crate) fn row_file(path: &Path, root: &Path) -> Option<PathBuf> {
+    let real = crate::state::canonical_path(path.to_path_buf());
+    let name = real.file_name()?.to_string_lossy();
+    let inside = real.starts_with(crate::state::canonical_path(root.to_path_buf()));
+    let data = pecofence_core::folder_write::is_data_file(&name);
+    (inside && data && real.is_file()).then_some(real)
 }
 
 /// One cell of a row of cells: a button (clickable), a slider (`slider`) or text.

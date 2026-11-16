@@ -678,18 +678,20 @@ fn window_under_cursor() -> (HWND, String, bool) {
 }
 
 /// Drags out what a plugin row carries: its data file (a copy, never a move: the file stays
-/// in the plugin's folder) when it is still the file the app checked, its text, or its link.
+/// in the plugin's folder) when it really is a data file in its folder, its text, or its link.
 /// True when a target took it.
 fn row_drag_out(hwnd: HWND, drag: &RowDrag) -> bool {
     const COPY: u32 = 1;
     const LINK: u32 = 4;
     let (data, allowed, kind) = match drag {
-        RowDrag::File(path) => {
-            if crate::state::canonical_path(path.clone()) != *path || !path.is_file() {
-                tracing::info!("plugin row drag refused: its file is gone or is a link now");
+        RowDrag::File { path, root } => {
+            let Some(real) = row_file(path, root) else {
+                tracing::info!(
+                    "plugin row drag refused: its file is not there, not a data file, or not in its folder (a link out)"
+                );
                 return false;
-            }
-            (dragdrop::data_object_for_paths(&[path]), COPY, "file")
+            };
+            (dragdrop::data_object_for_paths(&[&real]), COPY, "file")
         }
         RowDrag::Text(t) => (dragdrop::data_object_for_text(t, false), COPY, "text"),
         RowDrag::Url(u) => (dragdrop::data_object_for_text(u, true), COPY | LINK, "link"),
@@ -702,7 +704,9 @@ fn row_drag_out(hwnd: HWND, drag: &RowDrag) -> bool {
         }
     };
     crate::peek::set_drag_click_through(true);
+    ROW_DRAG.with(|r| r.set(true));
     let outcome = dragdrop::do_drag_drop(hwnd, &data, allowed, None);
+    ROW_DRAG.with(|r| r.set(false));
     crate::peek::set_drag_click_through(false);
     let (_, class, on_desktop) = window_under_cursor();
     tracing::info!(kind, dropped = outcome.dropped, effect = ?outcome.effect, %class, on_desktop, "a drag out of a plugin row ended");

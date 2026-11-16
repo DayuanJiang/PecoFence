@@ -433,12 +433,25 @@ impl WebFence {
             let (id, origin, page) = (id.clone(), origin.clone(), self.me.clone());
             let hosts = [&self.plugin.network[..], &self.plugin.links[..]].concat();
             comp.on_drag_starting(move |args| {
-                if let Some(why) = page_drag_refusal(args, &hosts, &origin) {
-                    let _ = args.set_handled(true);
-                    return tracing::info!(plugin = %id, why, "web plugin: the drag out of the page is refused");
+                let page = page.upgrade();
+                let why = page_drag_refusal(args, &hosts, &origin);
+                if let Some(page) = &page {
+                    let data = if why.is_none() { args.data().ok() } else { None };
+                    *page.drag_data.borrow_mut() = data;
                 }
-                if let Some(page) = page.upgrade() {
-                    *page.drag_data.borrow_mut() = args.data().ok();
+                let Some(why) = why else {
+                    return;
+                };
+                tracing::info!(plugin = %id, why, "web plugin: the drag out of the page is refused");
+                // Should WebView2 not take the refusal, the drag goes on: no other drag starts in
+                // this page from now on.
+                if let Err(e) = args.set_handled(true) {
+                    tracing::warn!(plugin = %id, error = %e, "web plugin: WebView2 did not take the refusal of a drag; the page drags nothing out from now on");
+                    let live = page.as_ref().and_then(|p| p.live.try_borrow().ok());
+                    let stop = live.as_ref().and_then(|l| l.as_ref()).map(|l| {
+                        l.webview.execute_script(NO_DRAGS, |_| {})
+                    });
+                    tracing::info!(plugin = %id, stopped = stop.is_some_and(|r| r.is_ok()), "web plugin: drags in the page stopped");
                 }
             })
         };
@@ -638,8 +651,9 @@ impl WebFence {
         let over = self.shown.get() && self.over_page(p.x, p.y) && step != DragStep::Leave;
         let (px, py) = (p.x - x, p.y - y);
         let inside = self.drag_inside.get();
-        // The drag ends (left or dropped): its data object is held no longer.
-        if matches!(step, DragStep::Leave | DragStep::Drop) {
+        // Dropped: the drag is over. One that left the fence may come back, so it stays the
+        // page's own until then (or the page's next drag, or the page goes).
+        if step == DragStep::Drop {
             self.drag_data.borrow_mut().take();
         }
         // WebView2 takes a forwarded drag only while it allows external drops; the rest of the
@@ -850,11 +864,7 @@ fn scheme(dark: bool) -> PreferredColorScheme {
 fn bridge_script(origin: &str, init: &serde_json::Value, drags: bool) -> String {
     let origin = origin.trim_end_matches('/');
     // A WebView2 that cannot check a drag out of the page (`on_drag_starting`): none starts.
-    let no_drags = if drags {
-        ""
-    } else {
-        "addEventListener(\"dragstart\", e => e.preventDefault(), true);"
-    };
+    let no_drags = if drags { "" } else { NO_DRAGS };
     format!(
         r#"(() => {{
   // No WebRTC: it reaches hosts the CSP does not list. Connection-Allowlist blocks it in the
@@ -920,6 +930,9 @@ fn bridge_script(origin: &str, init: &serde_json::Value, drags: bool) -> String 
         no_drags = no_drags,
     )
 }
+
+/// Stops every drag in a page (for a WebView2 that cannot check them).
+const NO_DRAGS: &str = "addEventListener(\"dragstart\", e => e.preventDefault(), true);";
 
 /// [`drag_refusal`] of what the drag `args` carries (logged).
 fn page_drag_refusal(
