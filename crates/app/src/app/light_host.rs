@@ -639,8 +639,14 @@ impl AppHost {
                     return Err(refuse("the picked folder itself stays"));
                 }
                 std::fs::symlink_metadata(&real).map_err(|e| format!("{asked}: {e}"))?;
+                // The shell takes no `\\?\` path.
+                let text = real.to_string_lossy();
+                let plain = match text.strip_prefix(r"\\?\UNC\") {
+                    Some(unc) => format!(r"\\{unc}"),
+                    None => text.strip_prefix(r"\\?\").unwrap_or(&text).to_string(),
+                };
                 let _com = pecofence_platform::com::OleGuard::init();
-                let moved = pecofence_platform::shell::recycle_quietly(&real);
+                let moved = pecofence_platform::shell::recycle_quietly(Path::new(&plain));
                 let moved = moved.map_err(|e| format!("{name}: {e}"))?;
                 tracing::info!(%fence, moved, "plugin moved a file or folder of a picked folder to the Recycle Bin (false: the user kept it)");
                 Ok(json!(moved))

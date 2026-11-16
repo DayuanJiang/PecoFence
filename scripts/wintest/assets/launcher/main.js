@@ -2,8 +2,8 @@
 // It knows each item by its id, name and picture only: PecoFence keeps the paths and opens them
 // as a fence icon opens.
 const texts = () => pf.lang.startsWith("zh")
-  ? { program: "添加程序…", file: "添加文件…", empty: "把程序、文件或文件夹拖到这里，或者右键这个栅栏来添加。" }
-  : { program: "Add a program…", file: "Add a file…", empty: "Drop programs, files or folders here, or right-click this fence to add one." };
+  ? { program: "添加程序…", file: "添加文件…", folder: "添加文件夹…", empty: "把程序、文件或文件夹拖到这里，或者右键这个栅栏来添加。" }
+  : { program: "Add a program…", file: "Add a file…", folder: "Add a folder…", empty: "Drop programs, files or folders here, or right-click this fence to add one." };
 let t = texts();
 let items = [];
 let last = { id: "", at: 0 };
@@ -16,7 +16,7 @@ function draw() {
     ],
   }));
   if (!rows.length) rows.push({ text: t.empty });
-  pf.show({ rows, menu: [{ id: "program", title: t.program }, { id: "file", title: t.file }] });
+  pf.show({ rows, menu: [{ id: "program", title: t.program }, { id: "file", title: t.file }, { id: "folder", title: t.folder }] });
 }
 
 async function load() {
@@ -31,7 +31,7 @@ pf.on("lang", () => { t = texts(); draw(); });
 pf.on("settings", load);
 pf.on("command", async (c) => {
   // `show` comes from its shortcut: PecoFence has shown the fence already.
-  if ((c.id === "program" || c.id === "file") && (await pf.launch.pick(c.id))) load();
+  if (["program", "file", "folder"].includes(c.id) && (await pf.launch.pick(c.id))) load();
 });
 pf.on("drop", async (d) => {
   // All of the drop in one call, while it is handled: pf.launch.add works only here.
