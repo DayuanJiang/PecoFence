@@ -161,8 +161,8 @@ $same = (Get-FileHash "$Feed\index.json").Hash -eq (Get-FileHash "$script:Config
 Check 'signed with the development key: its plugin is listed, the index is saved as it came' ((PluginRows) -match 'PF Signed.*Install' -and $same) "saved=$same rows=$(PluginRows)"
 Set-Content "$Feed\index.json.sig" ('0' * 128) -NoNewline
 Refresh
-$offline = Js "document.getElementById('pluginList').textContent.includes('reach the plugin list')"
-Check 'a wrong signature: the page cannot reach the list, the log says why' ($offline -and [bool](PfWaitLog 'index not taken from this address.*signature does not match' 5)) "offline=$offline"
+$list = Js "document.getElementById('pluginList').textContent"
+Check 'a wrong signature: the page says the list did not pass its check (it came), the log says why' ("$list" -match 'did not pass its check' -and "$list" -notmatch 'reach the plugin list' -and [bool](PfWaitLog 'index not taken from this address.*signature does not match' 5)) "list=$list"
 Publish 2; Refresh
 Check 'a test index without a signature is taken again' ((PluginRows) -match '^PF Test' -and (PluginRows) -notmatch 'PF Signed') (PluginRows)
 
