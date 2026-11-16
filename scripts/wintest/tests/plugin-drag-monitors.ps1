@@ -17,7 +17,6 @@ public static class Px2 {
   [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] static extern void mouse_event(uint f, int dx, int dy, uint data, UIntPtr extra);
   [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
-  [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
   static void Aware() { SetThreadDpiAwarenessContext(new IntPtr(-4)); }
   public static int[] Rect(IntPtr h) { Aware(); RECT r; GetWindowRect(h, out r); return new[] { r.L, r.T, r.R, r.B }; }
@@ -25,14 +24,15 @@ public static class Px2 {
     Aware(); var b = new Bitmap(w, h); using (var g = Graphics.FromImage(b)) g.CopyFromScreen(x, y, 0, 0, b.Size); return b;
   }
   // Press at (x1, y1), glide to (x2, y2), rest; `shot` (a file) is the square of `side` px
-  // around the pointer then; with `cancel` Esc ends the drag there before the release.
-  public static void Drag(int x1, int y1, int x2, int y2, string shot, int side, bool cancel) {
+  // around the pointer then; with `back` the pointer glides back to (x1, y1) for the release.
+  public static void Drag(int x1, int y1, int x2, int y2, string shot, int side, bool back) {
     Aware(); SetCursorPos(x1, y1); Thread.Sleep(200);
     mouse_event(2, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(200);
     for (int i = 1; i <= 24; i++) { SetCursorPos(x1 + (x2 - x1) * i / 24, y1 + (y2 - y1) * i / 24); mouse_event(1, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(35); }
     Thread.Sleep(600); SetCursorPos(x2 + 1, y2 + 1); Thread.Sleep(600);
     if (shot != "") using (var b = Grab(x2 - side / 2, y2 - side / 2, side, side)) b.Save(shot);
-    if (cancel) { keybd_event(0x1B, 0, 0, UIntPtr.Zero); keybd_event(0x1B, 0, 2, UIntPtr.Zero); Thread.Sleep(300); }
+    if (back) for (int i = 1; i <= 24; i++) { SetCursorPos(x2 + (x1 - x2) * i / 24, y2 + (y1 - y2) * i / 24); mouse_event(1, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(35); }
+    if (back) Thread.Sleep(600);
     mouse_event(4, 0, 0, 0, UIntPtr.Zero); Thread.Sleep(1500);
   }
   // The box of the pixels that differ between two pictures of the same size (-1s: none).
@@ -78,11 +78,11 @@ function RowPt($row) {
   return @([int]($win[0] + [double](DumpVal $w 'content_x') + ($r.l + 40) * $sc), [int]($win[1] + [double](DumpVal $w 'content_y') + ($r.t + $r.b) / 2 * $sc))
 }
 # A drag picture: the square around the pointer with and without the drag, and where they differ.
-function DragShot($name, $x1, $y1, $x2, $y2, [switch]$Cancel) {
+function DragShot($name, $x1, $y1, $x2, $y2, [switch]$Back) {
   $side = 360
   $before = "$PfShots\$name-rest.png"
   $b = [Px2]::Grab($x2 - $side / 2, $y2 - $side / 2, $side, $side); $b.Save($before); $b.Dispose()
-  [Px2]::Drag($x1, $y1, $x2, $y2, "$PfShots\$name.png", $side, [bool]$Cancel)
+  [Px2]::Drag($x1, $y1, $x2, $y2, "$PfShots\$name.png", $side, [bool]$Back)
   $c = [Px2]::Changed($before, "$PfShots\$name.png")
   Log "drag picture $name changed box $($c -join ',') in a $side px square around the pointer"
   return $c
@@ -118,7 +118,7 @@ $mons = PfJson monitor list
 $list = @(@($mons.monitors) + @($mons) | Where-Object { $_ -and $_.id })
 $prim = $list | Where-Object { $_.primary } | Select-Object -First 1
 $other = $list | Where-Object { -not $_.primary } | Select-Object -First 1
-Check 'PecoFence sees two monitors with different scales' ($prim -and $other -and $prim.scale -ne $other.scale) "primary=$($prim.scale) other=$($other.scale) $($mons | ConvertTo-Json -Compress -Depth 5)"
+Check 'PecoFence sees two monitors with different scales' ($prim -and $other -and $prim.dpi -ne $other.dpi) "primary=$($prim.dpi) other=$($other.dpi)"
 $script:Fid = PfPluginFence 'Drag' '80,60,380,420' 'drag-demo'
 $script:Web = PfPluginFence 'Web' '500,60,460,380' 'webdrag'
 Check 'the page loads' ([bool](PfWaitLog 'web plugin: page loading' 40)) ''
@@ -135,7 +135,10 @@ Case 'on the 150 % monitor: the drop point and the row under a drop'
 $ex = [IntPtr]::Zero
 Start-Process explorer.exe "`"$Dr`""
 for ($i = 0; $i -lt 40 -and $ex -eq [IntPtr]::Zero; $i++) {
-  foreach ($win in @((New-Object -ComObject Shell.Application).Windows())) { if ((try { $win.Document.Folder.Self.Path } catch { '' }) -eq $Dr) { $ex = [IntPtr]$win.HWND } }
+  foreach ($win in @((New-Object -ComObject Shell.Application).Windows())) {
+    $at = try { $win.Document.Folder.Self.Path } catch { '' }
+    if ($at -eq $Dr) { $ex = [IntPtr]$win.HWND }
+  }
   Start-Sleep -Milliseconds 250
 }
 [L]::MoveWindow($ex, 40, 300, 700, 500, $true) | Out-Null; Start-Sleep -Seconds 2
@@ -150,7 +153,7 @@ foreach ($zone in 'z1', 'z2') {
   $z = ElPt "#$zone"
   $c = DragShot "M-file-over-$zone" $file[0] $file[1] $z[0] $z[1]
   Check "a file dropped on zone $zone of the page is found there (its point at 150 %)" (WaitPage "files=dropped.txt:19 .*zone=$zone") (PageOut)
-  Check "the file's drag picture is at the pointer ($zone)" ($c[0] -ge 0 -and $c[0] -lt 250 -and $c[1] -lt 250) "changed $($c -join ',')"
+  Check "the file's drag picture is at the pointer ($zone)" ($c[0] -ge 0 -and $c[0] -lt 250 -and $c[1] -lt 250 -and $c[2] - $c[0] -lt 300) "changed $($c -join ',')"
 }
 foreach ($row in @(@(0, 'pic'), @(2, 'link'))) {
   $p = RowPt $row[0]
@@ -159,14 +162,14 @@ foreach ($row in @(@(0, 'pic'), @(2, 'link'))) {
 }
 
 Case 'on the 150 % monitor: the drag pictures out of a row and out of the page'
-# Held over the 150 % monitor's bare desktop, then Esc: nothing lands anywhere.
+# Held over the 150 % monitor's bare desktop, then back to where it began: nothing lands elsewhere.
 $p = RowPt 0
-$c = DragShot 'M-row-file-out' $p[0] $p[1] $hold[0] $hold[1] -Cancel
-Check 'a row''s file: its drag picture is at the pointer on the 150 % monitor' ($c[0] -ge 0 -and $c[0] -lt 250 -and $c[1] -lt 250) "changed $($c -join ',')"
-Check 'Esc there: dragend says not dropped' (WaitOut 'dragend row=pic dropped=false') (Out)
+$c = DragShot 'M-row-file-out' $p[0] $p[1] $hold[0] $hold[1] -Back
+Check 'a row''s file: its drag picture is at the pointer on the 150 % monitor' ($c[0] -ge 0 -and $c[0] -lt 250 -and $c[1] -lt 250 -and $c[2] - $c[0] -lt 300) "changed $($c -join ',')"
+Check 'dragend after it' (WaitOut 'dragend row=pic dropped=') (Out)
 $p = ElPt '#pic'
-$c = DragShot 'M-page-pic-out' $p[0] $p[1] $hold[0] $hold[1] -Cancel
-Check 'the page''s picture: its drag picture is at the pointer on the 150 % monitor' ($c[0] -ge 0 -and $c[0] -lt 250 -and $c[1] -lt 250) "changed $($c -join ',')"
+$c = DragShot 'M-page-pic-out' $p[0] $p[1] $hold[0] $hold[1] -Back
+Check 'the page''s picture: its drag picture is at the pointer on the 150 % monitor' ($c[0] -ge 0 -and $c[0] -lt 250 -and $c[1] -lt 250 -and $c[2] - $c[0] -lt 300) "changed $($c -join ',')"
 $p = ElPt '#pic'
 [Px2]::Drag($p[0], $p[1], $file[0] + 120, $file[1] + 120, '', 0, $false)
 Check 'dropped into File Explorer on the 100 % monitor, the picture lands as a png' ((Get-ChildItem $Dr -Name) -match '\.png$') "$((Get-ChildItem $Dr -Name) -join ',')"
