@@ -1115,5 +1115,6 @@
   "知道这些程序是否在运行、是否在最前面：{0}": "Sa se questi programmi sono in esecuzione e se sono in primo piano: {0}",
   "显示": "Mostra",
   "隐藏": "Nascondi",
-  "插件能读到这个值。它加密保存在这台电脑上，换到另一台电脑后要重新填写。": "Il plugin può leggere questo valore. È salvato cifrato su questo computer; su un altro computer va inserito di nuovo."
+  "插件能读到这个值。它加密保存在这台电脑上，换到另一台电脑后要重新填写。": "Il plugin può leggere questo valore. È salvato cifrato su questo computer; su un altro computer va inserito di nuovo.",
+  "请在插件详情里给“{0}”的命令“{1}”换一个快捷键：{2} 已被系统或其他程序占用。": "Cambia nei dettagli del plugin la scorciatoia del comando «{1}» di «{0}»: {2} è già in uso."
 }

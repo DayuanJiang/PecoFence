@@ -24,6 +24,11 @@ pub use api::{Host, MAX_ANSWER, Note, perform, refusal, url_host};
 pub use view::{Row, View};
 
 pub const MEMORY_LIMIT: usize = 8 * 1024 * 1024;
+/// The most memory an answer's JSON text may take in the plugin, which then parses it: the text
+/// and the value must fit MEMORY_LIMIT together. A file read as text grows in JSON (a control
+/// character is 6 characters, `\u0000`; a byte that is not UTF-8 a U+FFFD), and QuickJS keeps
+/// a string in 2 bytes a character once one is past U+00FF.
+pub const MAX_ANSWER_JSON: usize = 2 * 1024 * 1024;
 pub const CALL_LIMIT: Duration = Duration::from_millis(50);
 /// JavaScript time a plugin may use in a second: starts, timers, events, answers and the
 /// Promise jobs they queue, together.
@@ -685,8 +690,18 @@ impl Plugin {
         if let Err(why) = &result {
             tracing::info!(fence = %self.fence, name, why, "plugin call failed");
         }
-        let (ok, text) = match result {
-            Ok(value) => (true, value.to_string()),
+        let (ok, text) = match result.map(|v| v.to_string()) {
+            Ok(text) if js_size(&text) > MAX_ANSWER_JSON => {
+                let size = js_size(&text);
+                tracing::info!(fence = %self.fence, name, size, "plugin call refused: its answer would not fit the plugin's memory");
+                (
+                    false,
+                    format!(
+                        "the answer would take {size} bytes in the plugin, more than {MAX_ANSWER_JSON}: read a smaller file or ask for less"
+                    ),
+                )
+            }
+            Ok(text) => (true, text),
             Err(why) => (false, why),
         };
         self.call(&format!("answer to {name}"), move |ctx| {
@@ -969,6 +984,14 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
             }
         }
     }
+}
+
+/// The bytes QuickJS keeps `text` in: one a character, two for all once one is past U+00FF.
+fn js_size(text: &str) -> usize {
+    let (units, wide) = (text.chars()).fold((0, false), |(n, wide), c| {
+        (n + c.len_utf16(), wide || c as u32 > 0xFF)
+    });
+    if wide { units * 2 } else { units }
 }
 
 #[cfg(test)]
@@ -1762,7 +1785,7 @@ mod tests {
     }
 
     #[test]
-    fn a_dropped_file_of_1_mb_fits_the_plugin_and_4_mb_would_not() {
+    fn a_dropped_file_of_1_mb_fits_the_plugin_and_4_mb_is_refused() {
         let code = r#"pf.on('drop', async () => {
             const b = await pf.drop.read(0); const t = await pf.drop.text(0);
             pf.show({ rows: [{ text: b.length + ' ' + t.length }] }); });"#;
@@ -1778,7 +1801,50 @@ mod tests {
         // The app's limit (MAX_DROP_READ in crates/app/src/app/light_host.rs).
         let out = run(1024 * 1024);
         assert_eq!(texts(&out), ["1398104 1048576"], "{out:?}");
-        assert_eq!(stop_of(&run(4 * 1024 * 1024)), Some(Stopped::TooMuchMemory));
+        // 4 MB (5.6 MB in base64) would stop the plugin for memory: the answer is refused.
+        let out = run(4 * 1024 * 1024);
+        assert_eq!((texts(&out), stop_of(&out)), (vec![], None), "{out:?}");
+    }
+
+    struct Answers(String);
+
+    impl Host for Answers {
+        fn call(&self, _: FenceId, _: &str, _: Value) -> Result<Value, String> {
+            Ok(json!(self.0))
+        }
+    }
+
+    #[test]
+    fn an_answer_too_large_for_the_plugin_is_refused_and_the_plugin_goes_on() {
+        let code = r#"pf.on('start', async () => {
+            let t; try { t = 'read ' + (await pf.data.read('f')).length; } catch (e) { t = String(e); }
+            pf.show({ rows: [{ text: t }] }); });"#;
+        let run = |text: String| {
+            let out = run_with(
+                code,
+                Permissions::default(),
+                Arc::new(Answers(text)),
+                true,
+                600,
+                vec![],
+            );
+            (texts(&out), stop_of(&out))
+        };
+        // At the limit: 2 MB of ASCII, and 1 M characters with one past U+00FF (2 bytes each).
+        let ascii = run("a".repeat(MAX_ANSWER_JSON - 2));
+        assert_eq!(ascii, (vec![format!("read {}", MAX_ANSWER_JSON - 2)], None));
+        let wide = run(format!("中{}", "a".repeat(MAX_ANSWER_JSON / 2 - 3)));
+        assert_eq!(
+            wide,
+            (vec![format!("read {}", MAX_ANSWER_JSON / 2 - 2)], None)
+        );
+        // 1 MB of NUL bytes read as text: 6 MB of JSON. Before: the plugin stopped for memory.
+        let (shown, stop) = run("\0".repeat(1024 * 1024));
+        assert_eq!(stop, None);
+        assert!(
+            shown[0].starts_with("Error: the answer would take 6291458 bytes"),
+            "{shown:?}"
+        );
     }
 
     #[test]

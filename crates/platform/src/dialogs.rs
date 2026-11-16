@@ -408,6 +408,106 @@ fn explorer_folder_inner(top: HWND) -> Result<PathBuf, String> {
     ))
 }
 
+/// After an 打开文件所在的位置: Windows opens a folder that has no saved view (no shell bag) with
+/// the item focused and not selected, whoever asks (explorer /select, SHOpenFolderAndSelectItems,
+/// a shortcut's own verb), and selects it only on the next opening (2026-11-16, Windows 11 24H2
+/// and Server 2025). For up to 5 s a short-lived thread looks for the Explorer window of the
+/// file's folder; once its view has items and none is selected, it selects the file as /select
+/// would. `link`: `file` is a shortcut whose target is meant (read on that thread).
+pub fn select_after_open(file: PathBuf, link: bool) {
+    let spawned = std::thread::Builder::new()
+        .name("open-location".into())
+        .spawn(move || {
+            let started = Instant::now();
+            let outcome = match crate::com::StaGuard::init() {
+                Err(e) => format!("no COM: {e}"),
+                Ok(_com) => {
+                    let target = if link {
+                        crate::shell::shortcut_target_expanded(&file)
+                    } else {
+                        Some(file.clone())
+                    };
+                    match target {
+                        None => "the shortcut has no target path".to_string(),
+                        Some(t) => loop {
+                            match select_once(&t) {
+                                Ok(done) => break done.to_string(),
+                                Err(why) if started.elapsed() > Duration::from_secs(5) => break why,
+                                Err(_) => std::thread::sleep(Duration::from_millis(200)),
+                            }
+                        },
+                    }
+                }
+            };
+            let ms = started.elapsed().as_millis() as u64;
+            tracing::info!(file = %file.display(), link, outcome, ms, "open file location: selection checked");
+        });
+    if let Err(e) = spawned {
+        tracing::warn!(error = %e, "open file location: no thread for the selection check");
+    }
+}
+
+/// One look for `file`'s folder among the Explorer windows: what was found when it is done, an
+/// error (the last reason) while the window or its items are not there yet.
+fn select_once(file: &Path) -> Result<&'static str, String> {
+    const SVGIO_SELECTION: u32 = 1;
+    const SVGIO_ALLVIEW: u32 = 2;
+    // SVSI_SELECT | SVSI_DESELECTOTHERS | SVSI_ENSUREVISIBLE | SVSI_FOCUSED
+    const SVSI_AS_SELECT: SVSIF = 0x1 | 0x4 | 0x8 | 0x10;
+    let folder = file.parent().ok_or("no parent folder")?;
+    // SAFETY: COM calls on interfaces this function owns; every result is checked; the id list
+    // is freed after its last use.
+    unsafe {
+        let windows: IShellWindows = CoCreateInstance(&ShellWindows, None, CLSCTX_ALL as u32)
+            .map_err(|e| format!("ShellWindows: {e}"))?;
+        let count = windows.Count().map_err(|e| format!("Count: {e}"))?;
+        for i in 0..count {
+            let mut index = VARIANT::default();
+            (*index.Anonymous.Anonymous).vt = VARTYPE(VT_I4 as u16);
+            (*index.Anonymous.Anonymous).Anonymous.lVal = i;
+            let Ok(view) = windows
+                .Item(&index)
+                .and_then(|item| item.cast::<IServiceProvider>())
+                .and_then(|sp| sp.QueryService::<IShellBrowser>(&SID_STopLevelBrowser))
+                .and_then(|b| b.QueryActiveShellView())
+            else {
+                continue;
+            };
+            let Ok(fv) = view.cast::<IFolderView>() else {
+                continue;
+            };
+            let shown = fv
+                .GetFolder::<IShellItem>()
+                .and_then(|f| f.GetDisplayName(SIGDN_FILESYSPATH))
+                .map(crate::shell::take_string)
+                .unwrap_or_default();
+            if !shown.eq_ignore_ascii_case(&folder.to_string_lossy()) {
+                continue;
+            }
+            if fv.ItemCount(SVGIO_ALLVIEW).unwrap_or(0) == 0 {
+                return Err("the folder's items are not there yet".into());
+            }
+            if fv.ItemCount(SVGIO_SELECTION).unwrap_or(0) > 0 {
+                return Ok("Windows selected it");
+            }
+            let w = to_wide(&file.to_string_lossy());
+            let mut pidl: LPITEMIDLIST = std::ptr::null_mut();
+            let hr = SHParseDisplayName(PCWSTR(w.as_ptr()), None, &mut pidl, SFGAOF(0), None);
+            if hr.is_err() || pidl.is_null() {
+                return Err(format!("SHParseDisplayName: {hr:?}"));
+            }
+            let hr = view.SelectItem(ILFindLastID(pidl), SVSI_AS_SELECT);
+            ILFree(Some(pidl));
+            return if hr.is_ok() {
+                Ok("nothing was selected: PecoFence selected it")
+            } else {
+                Err(format!("SelectItem: {hr:?}"))
+            };
+        }
+    }
+    Err(format!("no Explorer window of {}", folder.display()))
+}
+
 /// What a common file dialog is for, told apart by its file name box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DialogKind {

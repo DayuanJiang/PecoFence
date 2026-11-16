@@ -493,6 +493,10 @@ impl App {
             }
             if let Err(e) = sm.invoke(cmd, owner, POINT { x, y }, shift) {
                 tracing::warn!(error = %e, %verb, "shell verb failed");
+            } else if verb.eq_ignore_ascii_case(SHELL_VERB_TARGET_LOCATION)
+                && let [p] = &paths[..]
+            {
+                pecofence_platform::dialogs::select_after_open(p.clone(), true);
             }
             // Deletions / moves are picked up by the desktop watcher. What a namespace item's
             // verb changes (Empty Recycle Bin, hide This PC) arrives as a shell notification;
@@ -525,6 +529,7 @@ impl App {
                     let _ = std::process::Command::new("explorer.exe")
                         .raw_arg(format!("/select,\"{p}\""))
                         .spawn();
+                    pecofence_platform::dialogs::select_after_open(p.into(), false);
                 }
             }
             CMD_ITEM_PROPERTIES => self.show_properties(fence, &items),
