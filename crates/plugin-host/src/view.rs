@@ -89,6 +89,18 @@ pub struct Row {
     pub hover: Option<Hover>,
     /// The wheel over the row goes to the plugin (`wheel` {id, steps}), the fence does not scroll.
     pub wheel: bool,
+    /// What a drag of the row carries out (PecoFence starts it, then sends `dragend`).
+    pub drag: Option<Drag>,
+}
+
+/// A row's drag: one of a file (a name in the plugin's data folder, or a path in a folder the
+/// user picked), a text or an http or https link. The app checks the file and the link.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct Drag {
+    pub file: Option<String>,
+    pub text: Option<String>,
+    pub url: Option<String>,
 }
 
 /// A row's or a cell's look under the pointer (`{color, text}`), drawn by PecoFence; or, on a
@@ -322,6 +334,9 @@ impl Row {
             cut_input(&mut input.value, max);
         }
         limit_menu(&mut self.menu);
+        if let Some(Drag { text: Some(t), .. }) = &mut self.drag {
+            cut_input(t, MAX_INPUT);
+        }
         let looks = (self.cells.iter_mut().map(|c| &mut c.hover)).chain([&mut self.hover]);
         for hover in looks.flatten() {
             cut_some(&mut hover.text);
@@ -352,6 +367,16 @@ pub fn read(json: &str) -> serde_json::Result<(View, Vec<String>)> {
             if row.id.is_none() && row.hover.as_ref().is_some_and(|h| h.event) {
                 row.hover = None;
                 dropped.push("hover \"event\" (the row has no id)".into());
+            }
+            let kinds = row.drag.as_ref().map(|d| {
+                [d.file.is_some(), d.text.is_some(), d.url.is_some()]
+                    .iter()
+                    .filter(|k| **k)
+                    .count()
+            });
+            if kinds.is_some_and(|n| n != 1) {
+                row.drag = None;
+                dropped.push("drag (one of file, text or url)".into());
             }
             view.rows.push(row);
         }
@@ -655,6 +680,30 @@ mod tests {
         let mut text = "ab😀c".to_string();
         cut_input(&mut text, 3);
         assert_eq!(text, "ab");
+    }
+
+    #[test]
+    fn a_row_drags_one_thing_out() {
+        let long = "長".repeat(70_000);
+        let (view, dropped) = read(&format!(
+            r#"{{"rows":[
+            {{"id":"f","drag":{{"file":"a.png"}}}},
+            {{"id":"t","drag":{{"text":"{long}"}}}},
+            {{"id":"u","drag":{{"url":"https://example.com/"}}}},
+            {{"id":"two","drag":{{"text":"a","url":"https://example.com/"}}}},
+            {{"id":"none","drag":{{}}}},
+            {{"id":"bad","drag":"a.png"}}
+        ]}}"#
+        ))
+        .unwrap();
+        let r = &view.rows;
+        assert_eq!(r[0].drag.as_ref().unwrap().file.as_deref(), Some("a.png"));
+        let text = r[1].drag.as_ref().unwrap().text.as_ref().unwrap();
+        assert_eq!(text.chars().count(), MAX_INPUT);
+        assert!(r[2].drag.as_ref().unwrap().url.is_some());
+        // Two kinds or none: no drag, the row shows; the log says so.
+        assert!(r[3..].iter().all(|r| r.drag.is_none()) && r.len() == 6);
+        assert_eq!(dropped, ["drag", "drag (one of file, text or url)"]);
     }
 
     #[test]

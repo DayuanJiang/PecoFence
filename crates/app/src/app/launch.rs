@@ -212,23 +212,26 @@ impl App {
         (files || takes.text || takes.links).then_some(takes)
     }
 
-    /// Files, a text or a link dropped on plugin fence `fence`, on its row `row`: its plugin
-    /// gets `drop` with the files' names and sizes (folders only by name), the text, the link,
-    /// the row's id and the drop's number, and may add the files as launcher items while it
-    /// handles it (the plugin host adds the number to that `launch.add`) or read them
-    /// (`pf.drop.*`, the files of the fence's last drop with files, for 5 minutes).
+    /// Files, a text or a link dropped on plugin fence `fence`, on its row `row` or at `point`
+    /// of its web page: its plugin gets `drop` with the files' names and sizes (folders only by
+    /// name), the text, the link, the row's id (a page: `x` and `y`) and the drop's number, and
+    /// may add the files as launcher items while it handles it (the plugin host adds the number
+    /// to that `launch.add`) or read them (`pf.drop.*`, the files of the fence's last drop with
+    /// files, for 5 minutes). A web plugin's page hears of it as its main.js does.
     pub(super) fn plugin_dropped(
         &mut self,
         fence: FenceId,
         paths: Vec<PathBuf>,
         (text, url): (Option<String>, Option<String>),
-        row: Option<usize>,
+        (row, point): (Option<usize>, Option<(f32, f32)>),
     ) {
         let takes = self.plugin_takes_drops(fence).unwrap_or_default();
         let (text, url) = (text.filter(|_| takes.text), url.filter(|_| takes.links));
         let paths = if takes.files { paths } else { Vec::new() };
         let nothing = paths.is_empty() && text.is_none() && url.is_none();
-        if nothing || !self.light.running.contains_key(&fence) {
+        let page = self.window_for(fence).and_then(|w| w.web());
+        let page = page.is_some_and(|w| w.fence == fence);
+        if nothing || !(self.light.running.contains_key(&fence) || page) {
             return tracing::info!(%fence, files = paths.len(), "drop on a plugin fence refused: its plugin takes none of it or does not run");
         }
         let files: Vec<Value> = (paths.iter())
@@ -245,13 +248,32 @@ impl App {
         let chars = text.as_ref().map_or(0, |t| t.chars().count());
         let rows = self.light.running.get(&fence).and_then(|r| r.0.as_ref());
         let row = row.and_then(|i| rows?.get(i)?.id.clone());
-        tracing::info!(%fence, files = files.len(), chars, link = url.is_some(), drop, ?row, "dropped on a plugin fence: its plugin is told");
+        tracing::info!(%fence, files = files.len(), chars, link = url.is_some(), drop, ?row, ?point, page, "dropped on a plugin fence: its plugin is told");
         if !paths.is_empty() {
             self.light.drops.retain(|d| d.1 != fence);
             self.light.drops.push((drop, fence, paths, Instant::now()));
         }
-        let data = json!({ "files": files, "text": text, "url": url, "row": row, "drop": drop });
+        let mut data =
+            json!({ "files": files, "text": text, "url": url, "row": row, "drop": drop });
+        if let Some((x, y)) = point {
+            data["x"] = json!(x.round());
+            data["y"] = json!(y.round());
+        }
+        self.web_event(fence, "drop", data.clone());
         self.plugin_event(fence, "drop", data);
+    }
+
+    /// The number of fence `fence`'s last drop with files (a web page's `pf.drop.*` reads it).
+    pub(super) fn last_drop(&self, fence: FenceId) -> Option<u64> {
+        let drops = self.light.drops.iter().filter(|d| d.1 == fence);
+        drops.map(|d| d.0).max()
+    }
+
+    /// A drag out of a row (its id `row`) of plugin fence `fence` ended: its plugin hears
+    /// `dragend` {row, dropped}.
+    pub(super) fn plugin_drag_ended(&mut self, fence: FenceId, row: Option<String>, dropped: bool) {
+        tracing::info!(%fence, ?row, dropped, "a drag out of a plugin row ended: its plugin is told");
+        self.plugin_event(fence, "dragend", json!({ "row": row, "dropped": dropped }));
     }
 
     /// The files of drop `drop` on `fence`, while it is the fence's last and under 5 minutes old.

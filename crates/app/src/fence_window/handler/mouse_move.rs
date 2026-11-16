@@ -446,6 +446,33 @@ pub(super) fn on_mousemove(
             }
         }
     }
+    // A press on a plugin row with a drag that leaves the drag threshold: PecoFence drags out
+    // what the row carries, and its plugin hears `dragend`.
+    if let Some(PressTarget::ScriptRow(row, _)) = v.pressed
+        && let Some(r) = v.script.as_ref().and_then(|s| s.rows.get(row))
+        && let Some(drag) = r.drag.clone()
+    {
+        let (tx, ty) = window::drag_threshold();
+        let (sx, sy) = v.press_origin;
+        if (x - sx).abs() > tx || (y - sy).abs() > ty {
+            let (fence, id) = (v.active, r.id.clone());
+            v.pressed = None;
+            v.press_inside = false;
+            v.script_hover = None;
+            v.hide_tip();
+            let _ = v.redraw_content();
+            drop(guard);
+            // ReleaseCapture sends WM_CAPTURECHANGED synchronously: no borrow held.
+            window::release_capture();
+            let dropped = row_drag_out(hwnd, &drag);
+            queue.push(Command::PluginDragEnded {
+                fence,
+                row: id,
+                dropped,
+            });
+            return Some(0);
+        }
+    }
     // A release-fired button is held: track whether the pointer is still
     // over it (Win32 button semantics: pressed fill and hover fill both go
     // when the pointer leaves, both return with it); no tip updates
@@ -648,4 +675,36 @@ fn window_under_cursor() -> (HWND, String, bool) {
         "Progman" | "WorkerW" | "SHELLDLL_DefView" | "SysListView32"
     );
     (hit, class, on_desktop)
+}
+
+/// Drags out what a plugin row carries: its data file (a copy, never a move: the file stays
+/// in the plugin's folder) when it is still the file the app checked, its text, or its link.
+/// True when a target took it.
+fn row_drag_out(hwnd: HWND, drag: &RowDrag) -> bool {
+    const COPY: u32 = 1;
+    const LINK: u32 = 4;
+    let (data, allowed, kind) = match drag {
+        RowDrag::File(path) => {
+            if crate::state::canonical_path(path.clone()) != *path || !path.is_file() {
+                tracing::info!("plugin row drag refused: its file is gone or is a link now");
+                return false;
+            }
+            (dragdrop::data_object_for_paths(&[path]), COPY, "file")
+        }
+        RowDrag::Text(t) => (dragdrop::data_object_for_text(t, false), COPY, "text"),
+        RowDrag::Url(u) => (dragdrop::data_object_for_text(u, true), COPY | LINK, "link"),
+    };
+    let data = match data {
+        Ok(data) => data,
+        Err(e) => {
+            tracing::warn!(kind, error = %e, "plugin row drag: no data object");
+            return false;
+        }
+    };
+    crate::peek::set_drag_click_through(true);
+    let outcome = dragdrop::do_drag_drop(hwnd, &data, allowed, None);
+    crate::peek::set_drag_click_through(false);
+    let (_, class, on_desktop) = window_under_cursor();
+    tracing::info!(kind, dropped = outcome.dropped, effect = ?outcome.effect, %class, on_desktop, "a drag out of a plugin row ended");
+    outcome.dropped && outcome.effect != DropEffect::None
 }
