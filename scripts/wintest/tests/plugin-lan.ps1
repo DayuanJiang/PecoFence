@@ -20,7 +20,7 @@ New-Item -ItemType Directory -Force $Lr | Out-Null
 
 # A stand-in service of standin-http.ps1 on address:port; its log (one line per request).
 function Standin([string]$kind, [string]$address, [int]$port) {
-  $log = "$Lr\$kind-$port.log"
+  $log = "$Lr\$kind-$($address -replace '[:.]', '_')-$port.log"
   $p = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$Kit\standin-http.ps1", '-Kind', $kind, '-Address', $address, '-Port', $port, '-Log', $log, '-Token', $Token -WindowStyle Hidden -PassThru
   for ($i = 0; $i -lt 40 -and -not (Test-Path $log); $i++) { Start-Sleep -Milliseconds 250 }
   $script:Standins += $p
@@ -80,12 +80,15 @@ if ($Part -eq 'W') {
   $Pr = PfPluginFence 'Probe' '80,120,560,160' 'lan-probe'
   Start-Sleep -Seconds 2
   PfQuit
-  # The device and the address as the page would keep them (the page is tested in part A).
+  # The device and the address as the page would keep them (the page is tested in part A), into
+  # the file's text (PowerShell 5.1 writes its arrays back as objects).
+  Start-Sleep -Seconds 2
   $raw = Get-Content "$script:Config\config.json" -Raw -Encoding UTF8
-  $j = $raw | ConvertFrom-Json
-  $j.scripts."$Pr".settings | Add-Member -NotePropertyName '__devices' -NotePropertyValue ([pscustomobject]@{ host = $name }) -Force
-  $j.scripts."$Pr".settings | Add-Member -NotePropertyName 'url' -NotePropertyValue "http://${name}:8123/api/states" -Force
-  [IO.File]::WriteAllText("$script:Config\config.json", ($j | ConvertTo-Json -Depth 30), (New-Object Text.UTF8Encoding($false)))
+  # The fence has no settings yet, so the file has no "settings" for it: put them after its path.
+  $with = "`"path`": `"plugin:lan-probe`", `"settings`": { `"__devices`": { `"host`": `"$name`" }, `"url`": `"http://${name}:8123/api/states`" }"
+  $raw = [regex]::Replace($raw, '"path":\s*"plugin:lan-probe"', $with.Replace('$', '$$'))
+  [IO.File]::WriteAllText("$script:Config\config.json", $raw, (New-Object Text.UTF8Encoding($false)))
+  Log "config: $($raw.Substring($raw.IndexOf('plugin:lan-probe'), 160))"
   PfStart -Lang en
   $reached = WaitOut $Pr '-> 401 401: Unauthorized' 20
   $line = (PfLogAll | Where-Object { $_ -match 'plugin local request: the name resolved' } | Select-Object -Last 1)
@@ -93,8 +96,9 @@ if ($Part -eq 'W') {
   Check 'the stand-in heard it from the LAN address, Host the .local name' (@(Requests $Ha | Where-Object { $_ -match "host=$([regex]::Escape($name)):8123 hosts=1" }).Count -ge 1) ((Requests $Ha) -join ' | ')
   Shot 'local-name'
   foreach ($p in $script:Standins) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
-  return
 }
+# Outside the block: an error inside it skips the rest of the block, this line still runs.
+if ($Part -eq 'W') { return }
 
 Case 'setup: stand-ins of Ollama and of the ports that must stay untouched, the plugins, their fences'
 CloseWindows
@@ -103,7 +107,13 @@ $Ollama = Standin 'ollama' '127.0.0.1' 11434
 # the plugin did not declare.
 $Trap8123 = Standin 'ha' '127.0.0.1' 8123
 $Trap11435 = Standin 'ollama' '127.0.0.1' 11435
-Check 'the stand-ins listen' ((Get-Content $Ollama -ErrorAction SilentlyContinue) -match 'listening' -and (Get-Content $Trap8123 -ErrorAction SilentlyContinue) -match 'listening') ''
+# Lan=self (the suite): the Home Assistant stand-in on this box's own LAN address, a device of the
+# local network all the same.
+if ($Lan -eq 'self') {
+  $Lan = @(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -match '^(10|172\.(1[6-9]|2\d|3[01])|192\.168)\.' } | Select-Object -ExpandProperty IPAddress)[0]
+  $SelfHa = Standin 'ha' $Lan 8123
+}
+Check 'the stand-ins listen' ($Lan -and (Get-Content $Ollama -ErrorAction SilentlyContinue) -match 'listening' -and (Get-Content $Trap8123 -ErrorAction SilentlyContinue) -match 'listening') "LAN device $Lan"
 $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'
 $script:Config = "$PfApp\config"
 foreach ($p in 'ollama', 'home-assistant', 'lan-probe', 'local-web') { PfPlacePlugin "$Kit\$p" $p }

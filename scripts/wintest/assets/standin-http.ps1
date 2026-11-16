@@ -18,7 +18,7 @@ function States() {
   return ConvertTo-Json -InputObject $s -Depth 5 -Compress
 }
 $l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse($Address), $Port)
-$l.Start()
+try { $l.Start() } catch { Add-Content $Log "cannot listen on ${Address}:${Port}: $($_.Exception.Message)"; exit 1 }
 Add-Content $Log "listening $Kind on ${Address}:$Port"
 while ($true) {
   $c = $l.AcceptTcpClient()
