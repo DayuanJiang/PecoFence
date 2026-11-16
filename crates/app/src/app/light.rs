@@ -92,7 +92,7 @@ pub(super) struct Light {
     stops: HashMap<FenceId, Vec<Instant>>,
     /// The app's side of the `pf` calls, and the work it hands to this thread.
     host: Option<Arc<AppHost>>,
-    jobs: Arc<Mutex<Vec<UiJob>>>,
+    pub(super) jobs: Arc<Mutex<Vec<UiJob>>>,
     replies: HashMap<u32, Reply>,
     next_reply: u32,
     /// The hidden window that hears of clipboard changes (made for the first plugin that may
@@ -101,6 +101,14 @@ pub(super) struct Light {
     clipboard_changed: Arc<AtomicBool>,
     /// The corner card of `pf.notify`.
     pub(super) notice: Option<crate::notice::Notice>,
+    /// Interface 2 (`launch.rs`): each fence's `view.menu`, the files of its last drop, the
+    /// shortcuts registered (by hotkey id) and the ones another program holds.
+    pub(super) menus: HashMap<FenceId, Vec<host::view::MenuItem>>,
+    pub(super) menu_shown: std::cell::RefCell<Vec<String>>,
+    pub(super) drops: Vec<(u64, FenceId, Vec<std::path::PathBuf>)>,
+    pub(super) next_drop: u64,
+    pub(super) keys: HashMap<i32, (FenceId, String, Hotkey)>,
+    pub(super) keys_taken: Vec<(FenceId, String, Hotkey)>,
 }
 
 impl App {
@@ -111,7 +119,7 @@ impl App {
     }
 
     /// The app's side of the `pf` calls (made with the first plugin or web page call).
-    fn light_host(&mut self) -> Arc<AppHost> {
+    pub(super) fn light_host(&mut self) -> Arc<AppHost> {
         let data = self.plugins_data();
         let jobs = self.light.jobs.clone();
         let control = self.control.hwnd();
@@ -123,7 +131,7 @@ impl App {
     }
 
     /// Hands `job` to this thread from another one.
-    fn post_job(jobs: &Mutex<Vec<UiJob>>, control: isize, job: UiJob) {
+    pub(super) fn post_job(jobs: &Mutex<Vec<UiJob>>, control: isize, job: UiJob) {
         if let Ok(mut jobs) = jobs.lock() {
             jobs.push(job);
         }
@@ -165,6 +173,13 @@ impl App {
             "settings": pecofence_core::plugins::fence_settings(m, &saved),
             "fence": { "id": fence.to_string(), "width": size.0, "height": size.1 },
         })
+    }
+
+    /// Fence `fence`'s plugin runs, or starts again by itself (not stopped for good).
+    pub(super) fn light_keeps_going(&self, fence: FenceId) -> bool {
+        let stops = self.light.stops.get(&fence).map_or(0, Vec::len);
+        self.light.running.contains_key(&fence)
+            || (self.light.stopped.contains_key(&fence) && stops < STOPS_AN_HOUR)
     }
 
     pub(super) fn light_runs(&self, fence: FenceId) -> bool {
@@ -266,6 +281,8 @@ impl App {
             cache,
             number,
         })));
+        self.sync_plugin_keys();
+        self.sync_media();
     }
 
     /// Plugin fence `fence` draws light text now, or dark: its plugin's `pf.theme` follows.
@@ -305,6 +322,10 @@ impl App {
         if self.light.running.remove(&fence).is_some() {
             self.light_send(host::Command::Stop(fence));
         }
+        self.light.menus.remove(&fence);
+        self.light.drops.retain(|d| d.1 != fence);
+        self.sync_plugin_keys();
+        self.sync_media();
     }
 
     /// Plugin `id` is being uninstalled: no call of its fences writes into its data folder from
@@ -345,6 +366,7 @@ impl App {
                 self.light_send(host::Command::Event(fence, "resize", size));
             }
         }
+        self.sync_media();
     }
 
     /// The system time, the time zone or the region's format changed.
@@ -480,8 +502,11 @@ impl App {
             return;
         }
         self.light.stopped.insert(fence, why);
+        // No more media reads for it while it is stopped.
+        self.sync_media();
         if !again {
-            return;
+            // Stopped for good: its shortcuts go until it is started again.
+            return self.sync_plugin_keys();
         }
         let (jobs, control) = (self.light.jobs.clone(), self.control.hwnd().0 as isize);
         let _ = std::thread::Builder::new()
@@ -508,6 +533,10 @@ impl App {
         if self.light.clipboard_changed.swap(false, Ordering::Relaxed) {
             self.light_clipboard_changed();
         }
+        let media = self.light.host.as_ref().map(|h| h.media.changed.clone());
+        if media.is_some_and(|m| m.swap(false, Ordering::Relaxed)) {
+            self.light_media_changed();
+        }
         let outputs = match self.light.out.lock() {
             Ok(mut out) if !out.is_empty() => std::mem::take(&mut *out),
             _ => return,
@@ -524,7 +553,9 @@ impl App {
                 continue;
             };
             match output {
-                host::Output::Show(fence, _, view) => {
+                host::Output::Show(fence, _, mut view) => {
+                    let menu = std::mem::take(&mut view.menu);
+                    self.light.menus.insert(fence, menu);
                     let shown = self.plugin_rows(fence, view);
                     if let Some((rows, ..)) = self.light.running.get_mut(&fence) {
                         *rows = Some(shown);
@@ -628,6 +659,38 @@ impl App {
         tracing::debug!(plugins = readers.len(), "clipboard changed: plugins told");
         for fence in readers {
             self.light_send(host::Command::Event(fence, "clipboard", Value::Null));
+        }
+    }
+
+    /// The media session is read while a plugin that may see it runs in a fence that shows (or
+    /// in the background).
+    fn sync_media(&mut self) {
+        let Some(api) = self.light.host.clone() else {
+            return;
+        };
+        let wants = |f: &FenceId, shown: bool| {
+            let p = api.manifest(*f).map(|m| m.permissions.clone());
+            p.is_some_and(|p| p.media.reads() && (shown || p.background))
+        };
+        let on = (self.light.running.iter()).any(|(f, (_, shown, ..))| wants(f, *shown));
+        api.media.watch(on, self.control.hwnd().0 as isize);
+    }
+
+    /// The media session changed: the running plugins that may see it are told.
+    fn light_media_changed(&mut self) {
+        let Some(api) = self.light.host.clone() else {
+            return;
+        };
+        let told: Vec<FenceId> = (self.light.running.keys())
+            .filter(|f| {
+                api.manifest(**f)
+                    .is_some_and(|m| m.permissions.media.reads())
+            })
+            .copied()
+            .collect();
+        tracing::debug!(plugins = told.len(), "media session changed: plugins told");
+        for fence in told {
+            self.light_send(host::Command::Event(fence, "media", Value::Null));
         }
     }
 

@@ -1060,6 +1060,9 @@
   "后台运行": "Läuft im Hintergrund",
   "启动程序": "Startet Programme",
   "启动这些程序：{0}": "Startet diese Programme: {0}",
+  "看到正在播放的歌曲或视频：名字、歌手、专辑和封面": "Sieht das Lied oder Video, das gerade läuft: Titel, Interpret, Album und Cover",
+  "看到正在播放的歌曲或视频：名字、歌手、专辑和封面，并能暂停和切歌": "Sieht das Lied oder Video, das gerade läuft: Titel, Interpret, Album und Cover, und kann anhalten und weiterspringen",
+  "知道这些程序是否在运行：{0}": "Weiß, ob diese Programme laufen: {0}",
   "在浏览器里打开这些网站：{0}": "Öffnet diese Websites im Browser: {0}",
   "它会做：": "Es wird:",
   "请特别注意它要启动的程序：{0}。这些程序能做你的账号能做的任何事，只在你信任它的作者时安装。": "Achten Sie besonders auf die Programme, die es startet: {0}. Diese Programme können alles tun, was Ihr Konto tun kann. Installieren Sie es nur, wenn Sie dem Autor vertrauen.",
@@ -1101,5 +1104,12 @@
   "插件的网页一小时里停了三次，最后一次是因为{0}。": "Die Seite des Plugins ist innerhalb einer Stunde dreimal stehen geblieben, zuletzt weil {0}.",
   "WebView2 的浏览器进程退出了": "der Browserprozess von WebView2 beendet wurde",
   "网页的进程退出了": "der Prozess der Seite beendet wurde",
-  "网页没有响应": "die Seite nicht mehr reagierte"
+  "网页没有响应": "die Seite nicht mehr reagierte",
+  "打开你放进这个栅栏的文件、文件夹和程序": "Die Dateien, Ordner und Programme öffnen, die du in diesen Bereich legst",
+  "你拖到它上面的文件和文字，它能读取": "Kann die Dateien und Texte lesen, die du darauf ziehst",
+  "有这些命令：{0}。可以在插件详情里给它们设快捷键": "Hat diese Befehle: {0}. In den Details des Plugins kannst du ihnen Tastenkürzel geben",
+  "这个栅栏里还没有项目": "Noch nichts in diesem Bereich",
+  "移除": "Entfernen",
+  "添加程序": "Programm hinzufügen",
+  "添加文件": "Datei hinzufügen"
 }

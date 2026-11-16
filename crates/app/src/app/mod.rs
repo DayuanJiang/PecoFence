@@ -69,10 +69,12 @@ mod group;
 mod ipc;
 mod items;
 mod keyfocus;
+mod launch;
 mod light;
 mod light_host;
 mod live_wallpaper;
 mod lnk_targets;
+mod media;
 mod menu_frames;
 mod menus;
 mod migrate;
@@ -557,6 +559,8 @@ pub struct App {
     /// (`end_peek_now`).
     peek_from: Option<HWND>,
     peek_back: Option<HWND>,
+    /// The Peek shows this fence window alone (a plugin command's shortcut, `launch.rs`).
+    peek_only: Option<HWND>,
     /// The search list (rows, Everything's answer, a dialog waiting behind the Peek).
     search: search::SearchState,
     /// 「安装 Everything」 is running winget.
@@ -1211,6 +1215,15 @@ impl App {
                                     hwnd,
                                     "not the desktop in front, or the App busy",
                                 );
+                            }
+                            Some(0)
+                        }
+                        msg::WM_HOTKEY if wparam as i32 >= launch::HOTKEY_PLUGIN_FIRST => {
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                pecofence_core::usage::event_with("hotkey", "plugin");
+                                app.plugin_key_pressed(wparam as i32);
                             }
                             Some(0)
                         }
@@ -2153,6 +2166,7 @@ impl App {
             peek_rest_in: None,
             peek_from: None,
             peek_back: None,
+            peek_only: None,
             search: Default::default(),
             everything_installing: false,
             snap_held: false,
@@ -3136,6 +3150,7 @@ impl App {
                 landed,
                 on_desktop,
             } => self.shell_drop_landed(to, landed, on_desktop),
+            Command::PluginDrop { fence, paths } => self.plugin_dropped(fence, paths),
             Command::FenceMenu { fence, x, y } => self.show_fence_menu(fence, x, y),
             Command::HeaderMenu { fence, x, y } => self.show_header_menu(fence, x, y),
             Command::ItemMenu { fence, items, x, y } => self.show_item_menu(fence, items, x, y),

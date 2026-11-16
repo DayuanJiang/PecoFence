@@ -230,6 +230,7 @@ impl FenceWindow {
             filter_active: false,
             filter_tag: None,
             refuses_drops: false,
+            plugin_drop: None,
             label_w: 0.0,
             label_wide_w: 0.0,
             icons_pending: false,
@@ -1830,6 +1831,11 @@ impl FenceWindow {
     /// 智能栅栏: the fence shown takes no drops (it shows a search).
     pub fn set_refuses_drops(&self, on: bool) {
         self.with_view(|v| v.refuses_drops = on);
+    }
+
+    /// The plugin fence shown takes dropped files (Some: folders too, or not), or nothing.
+    pub fn set_plugin_drop(&self, takes: Option<bool>) {
+        self.with_view(|v| v.plugin_drop = takes);
     }
 
     /// The fence whose items this window currently shows (host or active tab).

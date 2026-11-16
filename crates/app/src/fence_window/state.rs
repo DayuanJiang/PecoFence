@@ -365,6 +365,9 @@ pub struct FenceViewState {
     pub(super) filter_tag: Option<(String, String, String)>,
     /// 智能栅栏: the fence shows a search, so nothing is dropped into it.
     pub(super) refuses_drops: bool,
+    /// A plugin fence whose plugin takes dropped files (`drop: ["files"]`): Some(whether folders
+    /// too, for a launcher).
+    pub(super) plugin_drop: Option<bool>,
     /// Width the cached labels were fitted for; a change invalidates them.
     pub(super) label_w: f32,
     /// The wider box an icon's name may take (`ensure_icons_and_labels`); `label_w` without one.

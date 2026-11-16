@@ -370,6 +370,20 @@ pub(super) struct Feedback {
 /// — a tab pill, a folder item, the insertion caret of a 手动 fence, or the whole content — and
 /// keeps the shell's drag image (with its "移动到 …" badge) informed through
 /// `IDropTargetHelper`, as Explorer's folder views do.
+/// The most files one drop gives a plugin.
+const MAX_PLUGIN_DROP: usize = 20;
+
+/// Screen point (sx, sy) is over the tab pill of another fence than the plugin fence shown:
+/// what is dropped there is not for its plugin.
+fn over_other_tab(v: &FenceViewState, sx: i32, sy: i32) -> bool {
+    let r = window::window_rect(v.hwnd);
+    let tab = (v.tabs.len() > 1)
+        .then(|| v.tab_at(sx - r.left, sy - r.top))
+        .flatten();
+    tab.and_then(|i| v.tabs.get(i))
+        .is_some_and(|t| t.id != v.active)
+}
+
 pub(super) struct FenceDropHandler {
     pub(super) queue: CommandQueue,
     pub(super) view: Rc<RefCell<Option<FenceViewState>>>,
@@ -598,6 +612,18 @@ impl FenceDropHandler {
                 ..none
             };
         };
+        if v.plugin_drop.is_some() && !over_other_tab(v, pt.x, pt.y) {
+            let effect = match self.kind {
+                DropKind::Files => dragdrop::resolve(DropEffect::Link, allowed),
+                _ => DropEffect::None,
+            };
+            let title = v.title.clone();
+            return Feedback {
+                effect,
+                description: Some(drop_description(effect, title)),
+                hwnd: v.hwnd,
+            };
+        }
         // A tool fence (便签, 时钟) holds no items and a smart fence shows a search: nothing
         // drops on them.
         if v.takes_no_drops() {
@@ -745,6 +771,30 @@ impl DropHandler for FenceDropHandler {
         );
         self.path_drag =
             self.kind == DropKind::Files && hdrop.as_ref().is_some_and(|paths| !paths.is_empty());
+        // A plugin fence that takes files: none of PecoFence's own drags, at most 20, folders
+        // only for a launcher.
+        let plugin = self
+            .view
+            .try_borrow()
+            .ok()
+            .and_then(|g| g.as_ref()?.plugin_drop);
+        if let (Some(folders), Some(paths)) = (plugin, hdrop.as_ref()) {
+            let fits = !internal
+                && self.kind == DropKind::Files
+                && paths.len() <= MAX_PLUGIN_DROP
+                && (folders || !paths.iter().any(|p| p.is_dir()));
+            tracing::info!(
+                files = paths.len(),
+                internal,
+                folders,
+                fits,
+                "a drag over a plugin fence"
+            );
+            if !fits {
+                self.kind = DropKind::None;
+            }
+            self.path_drag = false;
+        }
         self.data = Some(data.clone());
         self.last_description = None;
         self.right_button = key_state & dragdrop::MK_RBUTTON != 0;
@@ -858,6 +908,28 @@ impl DropHandler for FenceDropHandler {
         }
         let kind = std::mem::replace(&mut self.kind, DropKind::None);
         let internal = Self::internal();
+        let plugin = self.view.try_borrow_mut().ok().and_then(|mut g| {
+            let v = (g.as_mut())
+                .filter(|v| v.plugin_drop.is_some() && !over_other_tab(v, pt.x, pt.y))?;
+            v.apply_drop_feedback(None);
+            Some(v.active)
+        });
+        if let Some(fence) = plugin {
+            // The files go to the plugin as they are: nothing is moved or copied.
+            let effect = match kind {
+                DropKind::Files => dragdrop::resolve(DropEffect::Link, allowed),
+                _ => DropEffect::None,
+            };
+            if effect != DropEffect::None {
+                let paths = dragdrop::hdrop_paths(data);
+                self.queue.push(Command::PluginDrop { fence, paths });
+            }
+            self.forget_data(false);
+            if let Some(h) = &self.helper {
+                h.drop(data, pt, effect);
+            }
+            return effect;
+        }
         // Resolve the target and clear the highlights under one borrow.
         let resolved = self.view.try_borrow_mut().ok().and_then(|mut g| {
             g.as_mut().filter(|v| !v.takes_no_drops()).map(|v| {

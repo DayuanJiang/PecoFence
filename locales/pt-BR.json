@@ -1060,6 +1060,9 @@
   "后台运行": "Roda em segundo plano",
   "启动程序": "Inicia programas",
   "启动这些程序：{0}": "Inicia estes programas: {0}",
+  "看到正在播放的歌曲或视频：名字、歌手、专辑和封面": "Vê a música ou o vídeo que está tocando: título, artista, álbum e capa",
+  "看到正在播放的歌曲或视频：名字、歌手、专辑和封面，并能暂停和切歌": "Vê a música ou o vídeo que está tocando: título, artista, álbum e capa, e pode pausar e pular",
+  "知道这些程序是否在运行：{0}": "Sabe se estes programas estão abertos: {0}",
   "在浏览器里打开这些网站：{0}": "Abre estes sites no navegador: {0}",
   "它会做：": "Ele vai:",
   "请特别注意它要启动的程序：{0}。这些程序能做你的账号能做的任何事，只在你信任它的作者时安装。": "Preste atenção especial aos programas que ele inicia: {0}. Esses programas podem fazer tudo o que sua conta pode fazer. Só instale se você confia no autor.",
@@ -1101,5 +1104,12 @@
   "插件的网页一小时里停了三次，最后一次是因为{0}。": "A página do plugin parou três vezes em uma hora; a última vez porque {0}.",
   "WebView2 的浏览器进程退出了": "o processo do navegador do WebView2 terminou",
   "网页的进程退出了": "o processo da página terminou",
-  "网页没有响应": "a página parou de responder"
+  "网页没有响应": "a página parou de responder",
+  "打开你放进这个栅栏的文件、文件夹和程序": "Abrir os arquivos, pastas e programas que você colocar nesta cerca",
+  "你拖到它上面的文件和文字，它能读取": "Pode ler os arquivos e o texto que você arrastar para ela",
+  "有这些命令：{0}。可以在插件详情里给它们设快捷键": "Tem estes comandos: {0}. Você pode dar atalhos a eles nos detalhes do plugin",
+  "这个栅栏里还没有项目": "Ainda não há nada nesta cerca",
+  "移除": "Remover",
+  "添加程序": "Adicionar um programa",
+  "添加文件": "Adicionar um arquivo"
 }

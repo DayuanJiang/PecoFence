@@ -34,6 +34,11 @@ pub(super) struct AppHost {
     /// plugin ([`Self::forget`]): a write either ends before the folder goes or finds no plugin.
     writing: Mutex<()>,
     cpu: Mutex<Option<sysinfo::CpuTimes>>,
+    /// The media session for `pf.media` (its thread starts with the first plugin that may see it).
+    pub(super) media: super::media::MediaWatch,
+    /// The programs running, as last read for `pf.apps.running` (one read every 5 s at most, for
+    /// all plugins).
+    programs: Mutex<Option<(std::time::Instant, Arc<Vec<String>>)>>,
 }
 
 fn io(e: std::io::Error) -> String {
@@ -54,6 +59,8 @@ impl AppHost {
             data,
             writing: Mutex::default(),
             cpu: Mutex::default(),
+            media: Default::default(),
+            programs: Mutex::default(),
         }
     }
 
@@ -92,7 +99,7 @@ impl AppHost {
     /// installed: an uninstall waits for it, and a write after the uninstall finds no plugin.
     /// Writes go one at a time, each after the check that `bytes` more in `file` keep the folder
     /// within 200 MB: two at once cannot both pass it.
-    fn write_data<T>(
+    pub(super) fn write_data<T>(
         &self,
         fence: FenceId,
         file: &Path,
@@ -413,6 +420,81 @@ impl AppHost {
         Ok(json!({ "code": code, "output": output }))
     }
 
+    /// The programs running, read again when the last read is 5 s old.
+    fn programs(&self) -> Arc<Vec<String>> {
+        let Ok(mut last) = self.programs.lock() else {
+            return Arc::default();
+        };
+        match &*last {
+            Some((at, list)) if at.elapsed() < std::time::Duration::from_secs(5) => list.clone(),
+            _ => {
+                let list = Arc::new(pecofence_platform::process::running_programs());
+                tracing::debug!(
+                    programs = list.len(),
+                    "plugins: the running programs read (kept 5 s)"
+                );
+                *last = Some((std::time::Instant::now(), list.clone()));
+                list
+            }
+        }
+    }
+
+    /// `pf.media.current()`: what plays, or null. Its cover goes into the plugin's data folder
+    /// (`media-cover-<hash>.png` or `.jpg`, the one before deleted) for the view to show; `app`
+    /// only when it is one of the plugin's `apps`.
+    fn media_current(&self, fence: FenceId) -> Result<Value, String> {
+        let m = self.manifest(fence).ok_or("the plugin does not run")?;
+        let Some(p) = self.media.now.lock().ok().and_then(|n| n.clone()) else {
+            return Ok(Value::Null);
+        };
+        // A cover that cannot be saved is none; the rest still comes.
+        let cover = (p.cover.as_ref()).and_then(|(hash, bytes)| {
+            let saved = self.save_cover(fence, *hash, bytes);
+            if let Err(e) = &saved {
+                tracing::info!(%fence, error = e, "plugin: the media cover not saved, given as null");
+            }
+            saved.ok()
+        });
+        // The session names its app by its AppUserModelID: `Spotify.exe`, `MSEdge` (msedge.exe),
+        // `Chrome`; a Store app's (`Microsoft.ZuneMusic_…!…`) is no program name.
+        let apps = &m.permissions.apps;
+        let named = |a: &&String| {
+            let stem = a.get(..a.len().saturating_sub(4)).unwrap_or_default();
+            a.eq_ignore_ascii_case(&p.app) || stem.eq_ignore_ascii_case(&p.app)
+        };
+        let app = apps.iter().find(named);
+        tracing::debug!(%fence, listed = app.is_some(), "plugin: what plays, its app named only when listed in apps");
+        Ok(json!({
+            "app": app, "title": p.title, "artist": p.artist, "album": p.album,
+            "playing": p.playing, "position": p.position, "duration": p.duration, "cover": cover,
+        }))
+    }
+
+    fn save_cover(&self, fence: FenceId, hash: u64, bytes: &[u8]) -> Result<String, String> {
+        let kind = if bytes.starts_with(b"\x89PNG") {
+            "png"
+        } else {
+            "jpg"
+        };
+        let name = format!("media-cover-{hash:016x}.{kind}");
+        let dir = self.data_dir(fence)?;
+        let file = dir.join(&name);
+        if file.exists() {
+            return Ok(name);
+        }
+        self.write_data(fence, &file, bytes.len() as u64, |dir| {
+            let entries = std::fs::read_dir(dir).into_iter().flatten().flatten();
+            for old in
+                entries.filter(|e| e.file_name().to_string_lossy().starts_with("media-cover-"))
+            {
+                let _ = std::fs::remove_file(old.path());
+            }
+            replace_file(dir, &file, bytes)
+        })?;
+        tracing::debug!(%fence, bytes = bytes.len(), kind, "plugin: the media cover put into its data folder");
+        Ok(name)
+    }
+
     /// The folders the user picked for fence `fence`'s plugin.
     fn picked(&self, fence: FenceId) -> Result<Vec<PathBuf>, String> {
         let picked = self.on_ui(move |app| Ok(app.plugin_folders(fence)))?;
@@ -540,6 +622,10 @@ impl pecofence_plugin_host::Host for AppHost {
             "run" => self.run(fence, &args),
             "folder.pick" => self.on_ui(move |app| Ok(app.pick_plugin_folder(fence))),
             "folder.list" | "folder.read" => self.folder(fence, name, &args),
+            n if n.starts_with("launch.") => {
+                let name = name.to_string();
+                self.on_ui(move |app| app.launch_call(fence, &name, &args))
+            }
             "open" | "openSystem" => {
                 let target = if name == "open" {
                     arg(0)
@@ -552,6 +638,15 @@ impl pecofence_plugin_host::Host for AppHost {
                     tracing::info!(%fence, ok = opened.is_ok(), "plugin opened a page or Task Manager");
                     opened.map(|_| Value::Null).map_err(|e| e.to_string())
                 })
+            }
+            "media.current" => self.media_current(fence),
+            "media.control" => Ok(json!(self.media.control(&arg(0), self.control)?)),
+            "apps.running" => {
+                let m = self.manifest(fence).ok_or("the plugin does not run")?;
+                let running = self.programs();
+                let apps =
+                    (m.permissions.apps.iter()).filter(|a| running.contains(&a.to_lowercase()));
+                Ok(json!(apps.collect::<Vec<_>>()))
             }
             "notify" => {
                 let (title, body, sound) =

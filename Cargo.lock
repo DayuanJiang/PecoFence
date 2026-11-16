@@ -462,6 +462,7 @@ dependencies = [
  "windows-future",
  "windows-numerics",
  "windows-sys",
+ "windows-time",
 ]
 
 [[package]]

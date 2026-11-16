@@ -376,6 +376,8 @@ pub struct DesktopAnchor {
     /// Fences the Peek raises a moment later (`hold_for_peek`): another program's window hides
     /// them, and they must be transparent on screen before they come over it.
     peek_held: Vec<HWND>,
+    /// A Peek of this fence alone (a plugin command's shortcut): the others stay where they are.
+    pub peek_only: Option<HWND>,
     /// Called when another application takes the foreground during a peek.
     pub on_peek_interrupted: Option<Box<dyn Fn()>>,
     /// Foreground transitions also signal virtual-desktop switches before registry writes
@@ -565,6 +567,7 @@ impl DesktopAnchor {
             peeking: false,
             peek_shown: Vec::new(),
             peek_held: Vec::new(),
+            peek_only: None,
             on_peek_interrupted: None,
             on_foreground_changed: None,
             on_desktop_front: None,
@@ -859,7 +862,7 @@ impl DesktopAnchor {
         let mut refused = None;
         self.with_anchoring(|s| {
             for (f, shadow) in s.fences.clone() {
-                if s.peek_held.contains(&f) {
+                if s.peek_held.contains(&f) || s.peek_only.is_some_and(|only| only != f) {
                     continue;
                 }
                 for h in std::iter::once(f).chain(shadow) {
@@ -1501,6 +1504,9 @@ impl DesktopAnchor {
                     let _ = desktop::set_topmost(*w, true);
                 }
                 for (f, shadow) in s.fences.clone() {
+                    if s.peek_only.is_some_and(|only| only != f) {
+                        continue;
+                    }
                     // One that quick hide is still fading out is visible until the fade ends.
                     let quick_hidden =
                         s.quick.fences_hidden && !s.quick_hide_excluded.contains(&(f.0 as isize));
@@ -1525,6 +1531,7 @@ impl DesktopAnchor {
         } else {
             self.topmost_refused = false;
             self.peek_held.clear();
+            self.peek_only = None;
             self.with_anchoring(|s| {
                 for (f, shadow) in s.fences.clone() {
                     for h in std::iter::once(f).chain(shadow) {

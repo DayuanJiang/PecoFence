@@ -1023,9 +1023,13 @@ impl App {
                     .icon(glyph::TODO);
                 }
                 // A plugin fence: its settings and details on the settings page, and a restart.
-                let has_settings = self
-                    .plugin(id)
-                    .is_some_and(|p| !p.manifest.settings.is_empty());
+                // Items and shortcuts are settings of the fence too.
+                let has_settings = self.plugin(id).is_some_and(|p| {
+                    let m = &p.manifest;
+                    !m.settings.is_empty()
+                        || m.permissions.launch
+                        || !m.permissions.commands.is_empty()
+                });
                 menu.item(
                     CMD_FENCE_PLUGIN_SETTINGS,
                     pecofence_core::i18n::text("插件设置"),
@@ -1047,6 +1051,7 @@ impl App {
                     false,
                 )
                 .icon(glyph::REFRESH);
+                self.add_plugin_menu(&menu, fence, id);
             } else {
                 let interval = spec.map_or(0, |s| s.interval_minutes);
                 let interval_menu = PopupMenu::new();
@@ -1661,6 +1666,11 @@ impl App {
                 }
             }
             CMD_FENCE_SCRIPT_FOLDER => self.open_script_folder(fence),
+            c if (super::launch::CMD_PLUGIN_MENU..super::launch::CMD_PLUGIN_MENU_END)
+                .contains(&c) =>
+            {
+                self.plugin_menu_chosen(fence, (c - super::launch::CMD_PLUGIN_MENU) as usize)
+            }
             CMD_FENCE_PLUGIN_SETTINGS => {
                 let spec = self.state.config.scripts.get(&fence);
                 let id = spec.and_then(|s| super::plugins::plugin_id(&s.path));

@@ -73,10 +73,12 @@ impl WebEnvironment {
         // page's CSP does not list); Local Network Access on (off in WebView2 by default): a
         // request to a declared host that resolves to this computer or the local network is not
         // sent; no File System Access pickers (a file picked there is read or written without
-        // `folders`).
+        // `folders`); no media keys (they would reach a plugin page that plays: the pages share
+        // one browser, so the keys cannot be given to some plugins only).
         let mut args = String::from(
             "--force-webrtc-ip-handling-policy=disable_non_proxied_udp \
              --enable-features=LocalNetworkAccessChecks,msWebViewAllowLocalNetworkAccessChecks \
+             --disable-features=HardwareMediaKeyHandling \
              --disable-blink-features=FileSystemAccessLocal",
         );
         // Debug builds: `PECOFENCE_WEBVIEW_ARGS=--remote-debugging-port=9352` lets a test drive

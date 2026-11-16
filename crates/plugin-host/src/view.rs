@@ -26,6 +26,23 @@ pub const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
 #[serde(default)]
 pub struct View {
     pub rows: Vec<Row>,
+    /// The plugin's entries in its fence menu: a click sends `command` {id, via: "menu"}.
+    pub menu: Vec<MenuItem>,
+}
+
+/// At most this many menu entries, each of at most this many characters (one line).
+pub const MAX_MENU: usize = 8;
+const MAX_MENU_TEXT: usize = 40;
+
+/// One entry of `view.menu`: plain text, or a separator line.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct MenuItem {
+    pub id: String,
+    pub title: String,
+    pub checked: bool,
+    pub disabled: bool,
+    pub separator: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize)]
@@ -244,6 +261,15 @@ pub fn read(json: &str) -> serde_json::Result<(View, Vec<String>)> {
             row.limit();
             view.rows.push(row);
         }
+    }
+    let menu = value.get("menu").cloned().unwrap_or_default();
+    view.menu = Vec::<MenuItem>::deserialize(menu).unwrap_or_default();
+    view.menu
+        .retain(|m| m.separator || (!m.id.is_empty() && !m.title.trim().is_empty()));
+    view.menu.truncate(MAX_MENU);
+    for m in &mut view.menu {
+        let line = m.title.lines().next().unwrap_or_default();
+        m.title = line.chars().take(MAX_MENU_TEXT).collect();
     }
     dropped.sort();
     dropped.dedup();

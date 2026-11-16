@@ -1068,6 +1068,7 @@ impl App {
                 self.uninstall_plugin(id, asked)
             }
             ("pluginSetting", _) => self.set_plugin_setting(v),
+            ("pluginKey" | "pluginItemRemove", _) => self.launch_page_action(name, v),
             ("pluginPage", Some(id)) => {
                 if let Some(index) = &self.plugins.index {
                     let url = list::page_url(&index.commit, id);
@@ -1126,7 +1127,8 @@ impl App {
                     let fences: Vec<_> = self.plugin_fences(id).into_iter().map(|f| {
                         let saved = self.state.config.scripts.get(&f).map(|s| s.settings.clone()).unwrap_or_default();
                         let title = self.state.fence(f).map(|f| f.title.clone()).unwrap_or_default();
-                        serde_json::json!({ "id": f, "title": title, "values": list::fence_settings(&mine.manifest, &saved) })
+                        let (items, keys) = self.launch_json(f, &mine.manifest);
+                        serde_json::json!({ "id": f, "title": title, "values": list::fence_settings(&mine.manifest, &saved), "items": items, "keys": keys })
                     }).collect();
                     (settings, fences)
                 });
@@ -1135,7 +1137,9 @@ impl App {
                     "id": id, "name": texts(&m.name), "description": texts(&m.description),
                     "author": m.author, "authorBefore": before, "version": m.version, "installed": mine.is_some(), "layer": m.layer,
                     "network": p.network, "links": p.links, "system": p.system, "background": p.background,
-                    "folders": p.folders, "notify": p.notify,
+                    "folders": p.folders, "notify": p.notify, "launch": p.launch, "drop": p.drop,
+                    "commands": p.commands.iter().map(|c| list::pick(&c.title, lang)).collect::<Vec<_>>(),
+                    "media": format!("{:?}", p.media).to_lowercase(), "apps": p.apps,
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),
                     "state": state, "reason": reason, "page": index.is_some(),
                     "notes": mine.map(|_| self.plugin_notes(id)),

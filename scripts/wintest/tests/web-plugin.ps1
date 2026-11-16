@@ -353,6 +353,22 @@ if ($Part -eq 'C') {
   $op = Js "window.demo.open"
   Check 'after a click pf.open passes the click rule (the host rule then refuses example.com)' ("$op" -ne '' -and "$op" -notmatch 'click') "$op"
 
+  Case 'the calls that need a click: none without one, one for each click; launch.add never from the page'
+  # Straight to the host (the page's pf has no launch or media): the answers by id.
+  function Gated([string]$calls, [int]$first) {
+    Js "(() => { if (!window.gated) { window.gated = {}; chrome.webview.addEventListener('message', e => { const m = e.data; if (m && m.id >= 9000 && m.id < 9100) window.gated[m.id] = m.error || 'ok'; }); } '$calls'.split(' ').forEach((c, i) => chrome.webview.postMessage({ id: $first + i, call: c, args: ['playpause'] })); return 1; })()" | Out-Null
+  }
+  Gated 'launch.open launch.pick media.control launch.add' 9000
+  $g = JsWait "Object.keys(window.gated).length >= 4 && window.gated" 10
+  Log ("without a click: " + ($g | ConvertTo-Json -Compress))
+  Check 'launch.open, launch.pick and media.control without a click are refused' ("$($g.'9000')" -match 'click' -and "$($g.'9001')" -match 'click' -and "$($g.'9002')" -match 'click') ($g | ConvertTo-Json -Compress)
+  Check 'launch.add from the page is refused (no drop there)' ("$($g.'9003')" -match 'drop handler') "$($g.'9003')"
+  $b = WebRect $h '#btn'
+  [G]::Click($b.cx, $b.cy)
+  Gated 'media.control media.control' 9010
+  $g = JsWait "window.gated[9010] && window.gated[9011] && window.gated" 10
+  Check 'one click, two calls: the first passes the click rule (the manifest then refuses it), the second is refused' ("$($g.'9010')" -match 'permissions\.media' -and "$($g.'9011')" -match 'click') ($g | ConvertTo-Json -Compress)
+
   Case "the light layer's limits for the page's calls"
   Js "(window.limitResult = null, Promise.allSettled(Array.from({ length: 20 }, () => pf.http.get('https://example.org/'))).then((r) => window.limitResult = r.map((x) => x.status === 'fulfilled' ? 'ok' : String(x.reason && x.reason.message))), 1)" | Out-Null
   $r = @(JsWait "window.limitResult" 60)
