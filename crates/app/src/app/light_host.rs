@@ -764,6 +764,15 @@ mod tests {
     }
 
     #[test]
+    fn dropped_bytes_come_in_standard_base64() {
+        let cases = [("", ""), ("M", "TQ=="), ("Ma", "TWE="), ("Man", "TWFu")];
+        for (bytes, text) in cases {
+            assert_eq!(base64(bytes.as_bytes()), text);
+        }
+        assert_eq!(base64(&[0xFB, 0xFF]), "+/8=");
+    }
+
+    #[test]
     fn data_files_are_replaced_whole_and_hold_at_most_20_mb() {
         let dir = temp("data");
         let (host, fence) = host(&dir);

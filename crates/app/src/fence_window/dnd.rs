@@ -382,16 +382,15 @@ fn plugin_payload(
     takes: PluginDrops,
     internal: bool,
 ) -> Option<(Vec<PathBuf>, Option<String>, Option<String>)> {
-    let files = takes.files && !internal && dragdrop::has_hdrop(data);
-    let paths = files
-        .then(|| dragdrop::hdrop_paths(data))
-        .unwrap_or_default();
     let fits = |p: &PathBuf| p.is_absolute() && (takes.folders || !p.is_dir());
-    let paths = if paths.len() <= MAX_PLUGIN_DROP && paths.iter().all(fits) {
-        paths
+    let mut paths = if takes.files && !internal && dragdrop::has_hdrop(data) {
+        dragdrop::hdrop_paths(data)
     } else {
         Vec::new()
     };
+    if paths.len() > MAX_PLUGIN_DROP || !paths.iter().all(fits) {
+        paths.clear();
+    }
     let text = takes
         .text
         .then(|| dragdrop::dropped_text(data, MAX_PLUGIN_TEXT));
