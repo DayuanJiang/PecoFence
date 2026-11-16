@@ -127,9 +127,10 @@ Case 'a fence too narrow for the seconds shows the short form'
 Log "resize: $(Pf fence resize (ClockFence).id --w 70) $(Pf fence resize Native --w 70)"
 Start-Sleep -Seconds 2
 $nat = (PfFence 'Native').windowRect; $plg = (ClockFence).windowRect
-# OCR of a 70 px fence misses a digit or the whole time now and then (the native clock's more
-# often): the plugin's is read again on a miss, and the two clocks are compared by their ink, as
-# wide (a short form with "AM" cut by the fence's edge is wider than the native one).
+# OCR of a 70 px fence misses a digit or the whole time now and then: what it reads goes into the
+# log only, and the two clocks are compared by their ink. As wide as the native clock's short form
+# (no seconds, no AM or PM) means the same short form: one with seconds or with "AM" cut by the
+# fence's edge is wider.
 function TimeInk($r) {
   $b = [Px]::Grab($r.x + 6, $r.y + 30, $r.w - 12, 70)
   $p = [Px]::Ink($b, 0, 69); $b.Dispose()
@@ -145,7 +146,7 @@ for ($try = 0; $try -lt 3; $try++) {
 $tn = OcrText $nat.x ($nat.y + 30) $nat.w 70 'narrow-native'
 $in = TimeInk $nat; $ip = TimeInk $plg
 Shot 'narrow-native-left-plugin-right'
-Check 'the plugin clock shows the time without seconds' ($tp -match '\d{1,2}.?\d{2}' -and $tp -notmatch '\d:\d{2}:\d{2}') "plugin=$tp native=$tn view=$(Shows)"
+Log "narrow clocks read: plugin='$tp' native='$tn' view=$(Shows)"
 Check 'the two times are as wide (a form cut by the edge is wider than the native one)' ($in[0] -ge 0 -and $ip[0] -ge 0 -and [math]::Abs(($in[1] - $in[0]) - ($ip[1] - $ip[0])) -le 3) "native ink $($in -join '-') plugin ink $($ip -join '-') of $($nat.w) and $($plg.w) px"
 
 Case 'quit stops the plugins and the plugin thread'
