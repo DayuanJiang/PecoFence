@@ -8,7 +8,7 @@ const run = async (c) => {
   try {
     const f = pf.folder[c.op];
     const v = await (c.op === "write" ? f(c.path, c.text) : c.op === "pick" ? f() : f(c.path));
-    results[c.k] = "ok " + JSON.stringify(c.op === "list" ? v.map((e) => e.name).sort() : v);
+    results[c.k] = "ok " + JSON.stringify(c.op === "list" ? (v.cut ? "cut after " + v.items.length : v.items.map((e) => e.name).sort()) : v);
   } catch (e) {
     results[c.k] = "error " + e.message;
   }

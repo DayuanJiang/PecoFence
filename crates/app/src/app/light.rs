@@ -818,9 +818,16 @@ impl App {
             return Value::Null;
         };
         let link = std::fs::symlink_metadata(&path).is_ok_and(|m| m.file_type().is_symlink());
+        let text = path.to_string_lossy();
         let refused = match std::fs::canonicalize(&path) {
             _ if !writes => None,
             _ if link => Some("a link or junction".to_string()),
+            _ if text.starts_with(r"\\?\") || text.starts_with(r"\\.\") => {
+                Some("a \\\\?\\ or \\\\.\\ path".to_string())
+            }
+            _ if light_host::share_of_this_computer(&text) => {
+                Some("this computer's own folders over the network".to_string())
+            }
             Ok(real) => {
                 let forbidden = light_host::forbidden_places(&self.plugins_data());
                 let child = real.join("x.txt");

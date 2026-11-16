@@ -2,13 +2,16 @@
 # assets\folders-test runs the pf.folder calls the steps write into its data folder (cmd.json).
 # Picking a folder to write in: the dialog says so, a junction, the home folder, PecoFence's own
 # folder and a drive root are refused with a message, a plain folder is kept. Then write (a data
-# file, replaced whole, no temporary file left), mkdir, list, trash (to the Recycle Bin; the
-# picked folder itself stays); refused by the text (other kinds, a colon, a trailing dot, a
+# file, replaced whole, no temporary file left), mkdir, list (at most 2,000 entries, then cut),
+# trash (to the Recycle Bin; the picked folder itself, a folder with something in it, a program
+# file and a junction stay); refused by the text (other kinds, a colon, a trailing dot, a
 # device name, a dot folder, ..) and by the real path (a junction out of the folder, one into a
 # dot folder). An update from read to readwrite drops the folders picked before. The sample
 # assets\daily-log writes the lines typed into today's file and trashes it from its menu; the
-# launcher's 添加文件夹… (pf.launch.pick("folder")) adds a folder. Debug build (CDP on the
-# settings page), Chinese interface.
+# launcher's 添加文件夹… (pf.launch.pick("folder")) adds a folder. Last, trash never deletes for
+# good: with C:'s Recycle Bin switched off (NukeOnDelete) or too small (MaxCapacity 1 MB) it is
+# refused and the file stays (PecoFence restarted for each; the settings are put back). Debug
+# build (CDP on the settings page), Chinese interface.
 #   --var Part=B   the build before: the sample's fence and the details, the shots to compare
 if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'A' }
 $Kit = 'C:\pf\kit\assets'
@@ -151,6 +154,10 @@ $left = @(Get-ChildItem -Force "$Notes\2026" | ForEach-Object { $_.Name })
 Check 'a second write replaces it whole; no temporary file is left' ($v -eq 'ok null' -and [IO.File]::ReadAllText("$Notes\2026\a.md") -eq 'second' -and $left.Count -eq 1) "$v files=$($left -join ',')"
 $v = FCall 'w5-list' 'list' "$Notes\2026"
 Check 'list names it' ($v -eq 'ok ["a.md"]') $v
+New-Item -ItemType Directory -Force "$Notes\many" | Out-Null
+foreach ($i in 1..2005) { [IO.File]::WriteAllText("$Notes\many\f$i.txt", '') }
+$v = FCall 'w5b-list-many' 'list' "$Notes\many"
+Check 'a folder of 2,005 files: the list has 2,000 and says it was cut' ($v -eq 'ok "cut after 2000"') $v
 $v = FCall 'w6-read' 'read' "$Notes\2026\a.md"
 Check 'read gives the text' ($v -eq 'ok "second"') $v
 $bin = BinMd
@@ -160,7 +167,17 @@ $v = FCall 'w8-trash-folder' 'trash' "$Notes\2026"
 Check 'trash of a folder in it: the folder goes too' ($v -eq 'ok true' -and -not (Test-Path "$Notes\2026")) $v
 $v = FCall 'w9-trash-picked' 'trash' $Notes
 Check 'the picked folder itself stays' ($v -match '^error folder.trash: the picked folder itself stays' -and (Test-Path $Notes)) $v
-$n = @('plugin wrote a file into a picked folder', 'plugin made a folder in a picked folder', 'to the Recycle Bin.*moved=true') | ForEach-Object { MainCount $_ }
+New-Item -ItemType Directory -Force "$Notes\full" | Out-Null
+[IO.File]::WriteAllText("$Notes\full\keep.md", 'keep')
+$v = FCall 'wa-trash-full' 'trash' "$Notes\full"
+Check 'a folder with something in it stays (only empty folders go)' ($v -match '^error folder.trash: only an empty folder' -and (Test-Path "$Notes\full\keep.md")) $v
+[IO.File]::WriteAllText("$Notes\tool.exe", 'x')
+$v = FCall 'wb-trash-exe' 'trash' "$Notes\tool.exe"
+Check 'a program file stays (only data files go)' ($v -match '^error folder.trash: only these kinds of files' -and (Test-Path "$Notes\tool.exe")) $v
+Remove-Item "$Notes\tool.exe"
+$v = FCall 'wc-trash-junction' 'trash' "$Notes\inner"
+Check 'a junction stays, and so does the folder it leads to' ($v -match '^error folder.trash: a link or junction' -and (Test-Path "$Notes\inner") -and (Test-Path "$Notes\sub")) $v
+$n = @('plugin wrote a file into a picked folder', 'plugin made a folder in a picked folder', 'plugin moved a file or folder of a picked folder to the Recycle Bin') | ForEach-Object { MainCount $_ }
 Check 'the log has each write, folder and trash' (($n -join ',') -eq '2,2,2') "counts=$($n -join ',')"
 
 Case 'refused by the path''s text'
@@ -270,6 +287,45 @@ if ($dlg -ne [IntPtr]::Zero) { PickIn $dlg "$Lr\Box" }
 $items = @()
 for ($i = 0; $i -lt 20 -and $items.Count -eq 0; $i++) { Start-Sleep -Milliseconds 500; $items = @((Cfg).scripts."$script:Launch".settings.__launch | Where-Object { $_ }) }
 Check 'the folder is an item; the plugin has its name only' ((WaitOut $script:Launch 'Box') -and $items.Count -eq 1 -and $items[0].path -eq "$Lr\Box" -and (FenceOut $script:Launch) -notmatch 'C:\\') "items=$($items.Count) $(FenceOut $script:Launch)"
+
+# C:'s Recycle Bin settings of pf (one key per volume), switched for a case and put back.
+$BinKeys = @(Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\BitBucket\Volume' -ErrorAction SilentlyContinue)
+$BinSaved = @{}
+foreach ($k in $BinKeys) { $p = Get-ItemProperty $k.PSPath; $BinSaved[$k.PSPath] = @($p.NukeOnDelete, $p.MaxCapacity) }
+Log "recycle bin keys: $(($BinKeys | ForEach-Object { $_.PSChildName }) -join ',') saved $(($BinSaved.Values | ForEach-Object { $_ -join '/' }) -join ',')"
+function BinSet($nuke, $max) { foreach ($k in $BinKeys) { Set-ItemProperty $k.PSPath NukeOnDelete $nuke -Type DWord; if ($max) { Set-ItemProperty $k.PSPath MaxCapacity $max -Type DWord } } }
+function BinBack() {
+  foreach ($k in $BinKeys) {
+    $o = $BinSaved[$k.PSPath]
+    foreach ($pair in @(@('NukeOnDelete', $o[0]), @('MaxCapacity', $o[1]))) {
+      if ($null -eq $pair[1]) { Remove-ItemProperty $k.PSPath $pair[0] -ErrorAction SilentlyContinue } else { Set-ItemProperty $k.PSPath $pair[0] $pair[1] -Type DWord }
+    }
+  }
+  Log 'recycle bin settings put back'
+}
+# PecoFence started again (the shell reads these settings once per process), then a trash of
+# `file` that Windows would delete for good.
+function NukeCase($k, $what, $file) {
+  trap { PfTrap $_; continue }
+  PfStart -Lang zh-CN -Script (DumpScript 500 20)
+  PfWaitLog 'plugin fence starts its main.js' 20 | Out-Null
+  Start-Sleep -Seconds 2
+  $bin = @(Get-ChildItem -Force (RecycleDir) -Filter '$R*' -ErrorAction SilentlyContinue).Count
+  $v = FCall $k 'trash' $file
+  $after = @(Get-ChildItem -Force (RecycleDir) -Filter '$R*' -ErrorAction SilentlyContinue).Count
+  Check "$($what): refused with the reason, the file stays, nothing went to the bin" ($v -match '^error folder.trash: .*cannot go to the Recycle Bin' -and (Test-Path $file) -and $after -eq $bin) "$v bin=$bin then $after"
+}
+
+Case 'never deleted for good: what cannot go to the Recycle Bin stays where it is'
+Check 'C: has its Recycle Bin settings key' ($BinKeys.Count -ge 1) "keys=$($BinKeys.Count)"
+[IO.File]::WriteAllText("$Notes\nuke.md", 'keep me')
+BinSet 1 0
+NukeCase 'n1-off' 'the Recycle Bin of C: switched off' "$Notes\nuke.md"
+$big = [IO.File]::Create("$Notes\big.log"); $big.SetLength(3MB); $big.Close()
+BinSet 0 1
+NukeCase 'n2-small' 'a 3 MB file and a Recycle Bin of 1 MB' "$Notes\big.log"
+BinBack
+Check 'the Recycle Bin settings are back' (@($BinKeys | Where-Object { $o = $BinSaved[$_.PSPath]; $p = Get-ItemProperty $_.PSPath; "$($p.NukeOnDelete)/$($p.MaxCapacity)" -ne "$($o[0])/$($o[1])" }).Count -eq 0) ''
 
 Stop-Process -Id $feedProc.Id -Force -ErrorAction SilentlyContinue
 cmd /c "rmdir `"$Lr\JNotes`" `"$Notes\out`" `"$Notes\j`" `"$Notes\inner`" 2>&1" | Out-Null

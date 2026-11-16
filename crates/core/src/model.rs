@@ -2264,7 +2264,8 @@ impl Config {
 
     /// The plain values of plugin fences (and the snapshots' copies) under keys that
     /// `secret(plugin id, key)` says the plugin's manifest calls `secret` go: an older version
-    /// may have kept such a setting as `text`. Returns how many went.
+    /// may have kept such a setting as `text`. Returns how many went. (Any setting `secret`
+    /// picks goes: the app drops the picked folders of a plugin this way too.)
     pub fn drop_plain_secrets(&mut self, secret: impl Fn(&str, &str) -> bool) -> usize {
         let snapshots = self
             .snapshots

@@ -93,11 +93,28 @@ pub fn name_refusal(path: &str) -> Option<&'static str> {
 /// The folders no plugin writes in, as real paths, each with what it is for the log: nothing at
 /// or below `below` (Windows, the program folders, ProgramData, AppData, PecoFence's own
 /// folders), and neither `itself` (the home folder, the folder of homes) nor anything directly
-/// in it.
+/// in it. `this_computer`: the names and addresses of this computer in lowercase, whose shares
+/// (`\\localhost\C$`) lead to its own folders past these rules.
 #[derive(Debug, Default, Clone)]
 pub struct Forbidden {
     pub below: Vec<(String, &'static str)>,
     pub itself: Vec<(String, &'static str)>,
+    pub this_computer: Vec<String>,
+}
+
+/// Whether `server` (of a `\\server\share` path, in lowercase) is this computer: a name or
+/// address of `this_computer`, a loopback address, or such an address written as an
+/// `ipv6-literal.net` name (`0--1.ipv6-literal.net` is `::1`).
+pub fn this_computer(server: &str, this_computer: &[String]) -> bool {
+    let literal = server.strip_suffix(".ipv6-literal.net");
+    let ip = literal.map_or(server.to_string(), |l| {
+        l.replace('-', ":").replace('s', "%")
+    });
+    let ip = crate::web_address::read_ip(&ip);
+    let known = |t: &String| {
+        *t == server || ip.is_some_and(|ip| Some(ip) == crate::web_address::read_ip(t))
+    };
+    this_computer.iter().any(known) || ip.is_some_and(|ip| ip.is_loopback() || ip.is_unspecified())
 }
 
 /// Why the real path `real` (links resolved; for a file or folder that does not exist yet, its
@@ -109,6 +126,10 @@ pub fn place_refusal(real: &str, forbidden: &Forbidden) -> Option<String> {
         return Some(why.into());
     }
     let (root, parts) = split(real)?;
+    let server = root.strip_prefix(r"\\").and_then(|r| r.split('\\').next());
+    if server.is_some_and(|s| this_computer(s, &forbidden.this_computer)) {
+        return Some("this computer's own folders over the network".into());
+    }
     let lower: Vec<String> = parts.iter().map(|p| p.to_lowercase()).collect();
     // The first `n` parts of `real` are folder `f`.
     let is = |f: &str, n: usize| {
@@ -155,6 +176,7 @@ mod tests {
                 (r"C:\Users\me".into(), "the home folder"),
                 (r"C:\Users".into(), "the folder of homes"),
             ],
+            this_computer: vec!["localhost".into(), "pc-me".into(), "192.168.1.5".into()],
         }
     }
 
@@ -280,6 +302,14 @@ mod tests {
             (r"E:\System Volume Information\x\y.txt", "system folder"),
             (r"C:\Users\me\Documents\.ssh\id.txt", "dot"),
             (r"C:\Users\me\Documents\a.txt:s", "colon"),
+            (r"\\localhost\C$\Users\me\AppData\x.txt", "this computer"),
+            (r"\\?\UNC\LOCALHOST\c$\x\y.txt", "this computer"),
+            (r"\\127.0.0.1\c$\x\y.txt", "this computer"),
+            (r"\\127.1.2.3\share\x\y.txt", "this computer"),
+            (r"\\[::1]\share\x\y.txt", "this computer"),
+            (r"\\0--1.ipv6-literal.net\c$\x\y.txt", "this computer"),
+            (r"\\PC-ME\Users\me\AppData\x.txt", "this computer"),
+            (r"\\192.168.1.5\share\x\y.txt", "this computer"),
         ] {
             let got = why(bad).unwrap_or_default();
             assert!(got.contains(what), "{bad}: {got:?}");

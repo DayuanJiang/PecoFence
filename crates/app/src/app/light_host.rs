@@ -549,17 +549,9 @@ impl AppHost {
 
     /// A `lan` request goes only to a host the user typed in a `device` setting of this fence.
     fn typed_device(&self, fence: FenceId, url: &str) -> Result<(), String> {
-        let host = pecofence_plugin_host::url_host(url).unwrap_or_default();
         let typed = self.on_ui(move |app| Ok(app.plugin_devices(fence)))?;
-        let found = typed.iter().any(|d| d.eq_ignore_ascii_case(&host));
-        tracing::info!(%fence, host, devices = typed.len(), found, "plugin lan request: the host against the device addresses typed");
-        if found {
-            Ok(())
-        } else {
-            Err(format!(
-                "{host} is not the address of a device typed in this fence's settings: refused"
-            ))
-        }
+        tracing::info!(%fence, "plugin lan request: its host against the device addresses typed");
+        device_typed(url, &typed)
     }
 
     /// The folders the user picked for fence `fence`'s plugin.
@@ -569,6 +561,8 @@ impl AppHost {
     }
 
     /// `pf.folder.list` / `read`: inside a folder the user picked for this fence, read only.
+    /// `list` answers `{items, cut}`: at most [`MAX_LIST`] entries (`cut` when the folder has
+    /// more), as many small objects fill the plugin's memory long before 2 MB of JSON.
     fn folder(&self, fence: FenceId, name: &str, args: &Value) -> Result<Value, String> {
         let asked = args[0].as_str().unwrap_or_default();
         let path = inside(asked, &self.picked(fence)?).map_err(|why| {
@@ -582,8 +576,8 @@ impl AppHost {
             }
             return Ok(String::from_utf8_lossy(&std::fs::read(&path).map_err(io)?).into());
         }
-        let entries = std::fs::read_dir(&path).map_err(io)?.flatten().take(10_000);
-        let list: Vec<Value> = entries
+        let entries = std::fs::read_dir(&path).map_err(io)?.flatten();
+        let mut list: Vec<Value> = entries
             .filter_map(|e| {
                 let meta = e.metadata().ok()?;
                 let modified = meta
@@ -599,15 +593,21 @@ impl AppHost {
                     "modified": modified.as_millis() as u64,
                 }))
             })
+            .take(MAX_LIST + 1)
             .collect();
-        Ok(json!(list))
+        let cut = list.len() > MAX_LIST;
+        list.truncate(MAX_LIST);
+        tracing::debug!(%fence, items = list.len(), cut, "plugin listed a picked folder");
+        Ok(json!({ "items": list, "cut": cut }))
     }
 
     /// `pf.folder.write` / `mkdir` / `trash` (`folders: "readwrite"`): inside a folder the user
     /// picked for this fence, and every call checked (plan v6 change 5) first by the path's text,
     /// then by its real path (links resolved; a new file's parent). `write` takes a data file of
-    /// up to 20 MB, written to a temporary file and renamed over it; `trash` moves a file or
-    /// folder below the picked one to the Recycle Bin.
+    /// up to 20 MB, written to a temporary file and renamed over it; `trash` moves a data file
+    /// or an empty folder below the picked one to the Recycle Bin (never a link or junction,
+    /// never a folder with something in it, which could hold a place no plugin may touch), and
+    /// never deletes for good.
     fn folder_change(&self, fence: FenceId, name: &str, args: &Value) -> Result<Value, String> {
         let asked = args[0].as_str().unwrap_or_default();
         let refuse = |why: &str| {
@@ -653,7 +653,20 @@ impl AppHost {
                 if roots.any(|r| r == real) {
                     return Err(refuse("the picked folder itself stays"));
                 }
-                std::fs::symlink_metadata(&real).map_err(|e| format!("{asked}: {e}"))?;
+                // Itself, not what a link or junction points to (which the real path is).
+                let own = std::fs::symlink_metadata(asked).map_err(|e| format!("{asked}: {e}"))?;
+                if own.file_type().is_symlink() {
+                    return Err(refuse("a link or junction"));
+                }
+                if real.is_dir() {
+                    let mut entries = std::fs::read_dir(&real).map_err(io)?;
+                    if entries.next().is_some() {
+                        return Err(refuse("only an empty folder goes to the Recycle Bin"));
+                    }
+                } else if !folder_write::is_data_file(&real.to_string_lossy()) {
+                    let kinds = folder_write::DATA_TYPES.join(" ");
+                    return Err(refuse(&format!("only these kinds of files: {kinds}")));
+                }
                 // The shell takes no `\\?\` path.
                 let text = real.to_string_lossy();
                 let plain = match text.strip_prefix(r"\\?\UNC\") {
@@ -662,9 +675,12 @@ impl AppHost {
                 };
                 let _com = pecofence_platform::com::OleGuard::init();
                 let moved = pecofence_platform::shell::recycle_quietly(Path::new(&plain));
-                let moved = moved.map_err(|e| format!("{name}: {e}"))?;
-                tracing::info!(%fence, moved, "plugin moved a file or folder of a picked folder to the Recycle Bin (false: the user kept it)");
-                Ok(json!(moved))
+                if let Err(e) = moved {
+                    tracing::info!(%fence, error = %e, "plugin: a file or folder of a picked folder not moved to the Recycle Bin");
+                    return Err(format!("{name}: {asked}: {}", e.message()));
+                }
+                tracing::info!(%fence, "plugin moved a file or folder of a picked folder to the Recycle Bin");
+                Ok(json!(true))
             }
         }
     }
@@ -672,7 +688,8 @@ impl AppHost {
 
 /// The folders no plugin writes in (plan v6 change 5), as real paths: Windows, the program
 /// folders, ProgramData, AppData, PecoFence's own folders (the configuration's beside `data`,
-/// the program's), and the home folder and the folder of homes themselves.
+/// the program's), and the home folder and the folder of homes themselves; and this computer's
+/// names and addresses ([`own_names`]), whose shares lead to all of them.
 pub(super) fn forbidden_places(data: &Path) -> folder_write::Forbidden {
     let real = |p: &Path| {
         let p = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
@@ -702,7 +719,49 @@ pub(super) fn forbidden_places(data: &Path) -> folder_write::Forbidden {
         itself.push((real(h), "the home folder"));
         itself.extend(h.parent().map(|p| (real(p), "the folder of homes")));
     }
-    folder_write::Forbidden { below, itself }
+    let this_computer = own_names();
+    folder_write::Forbidden {
+        below,
+        itself,
+        this_computer,
+    }
+}
+
+/// This computer's names and addresses in lowercase: `localhost`, its name and the addresses
+/// its name resolves to (Windows answers that itself, no network is asked).
+fn own_names() -> Vec<String> {
+    use std::net::ToSocketAddrs;
+    let mut names = vec!["localhost".to_string()];
+    if let Ok(name) = std::env::var("COMPUTERNAME") {
+        let found = (name.as_str(), 0).to_socket_addrs().into_iter().flatten();
+        names.extend(found.map(|a| a.ip().to_string()));
+        names.push(name.to_lowercase());
+    }
+    names
+}
+
+/// For a folder picked to write in: whether `path` is a share whose server resolves to this
+/// computer (a loopback address or one of [`own_names`]), whatever name it goes by. Asks the
+/// network, which the folder dialog just reached.
+pub(super) fn share_of_this_computer(path: &str) -> bool {
+    use std::net::ToSocketAddrs;
+    let Some((root, _)) = folder_write::split(path) else {
+        return false;
+    };
+    let Some(server) = root.strip_prefix(r"\\").and_then(|r| r.split('\\').next()) else {
+        return false;
+    };
+    let own = own_names();
+    let found = (server, 445).to_socket_addrs().into_iter().flatten();
+    let here = found
+        .map(|a| a.ip().to_string())
+        .any(|ip| folder_write::this_computer(&ip, &own));
+    tracing::info!(
+        server,
+        here,
+        "plugin folder to write in: a share, is it this computer"
+    );
+    here
 }
 
 /// The real path of `path`: itself with its links resolved, or for one that does not exist yet
@@ -719,25 +778,53 @@ fn real_path(path: &Path) -> std::io::Result<PathBuf> {
     }
 }
 
-/// `asked`, resolved ([`real_path`]), when it is inside one of `folders`: first by its text, so
-/// nothing on disk (or on the network) is touched for a path outside them, then as Windows
-/// resolves both, so no link leads out.
-pub(super) fn inside(asked: &str, folders: &[PathBuf]) -> Result<PathBuf, String> {
+/// The folder of `folders` that `asked` is inside by its text alone (a full path, no `..`, any
+/// letter case): nothing on disk (or on the network) is touched.
+pub(super) fn inside_by_text(asked: &str, folders: &[PathBuf]) -> Result<PathBuf, String> {
     let lower = |p: &Path| PathBuf::from(p.to_string_lossy().to_lowercase());
     let path = Path::new(asked);
     let up = path
         .components()
         .any(|c| c == std::path::Component::ParentDir);
     let outside = || format!("{asked} is not inside a folder the user picked");
-    if !path.is_absolute() || up || !folders.iter().any(|f| lower(path).starts_with(lower(f))) {
-        return Err(outside());
+    let found = folders.iter().find(|f| lower(path).starts_with(lower(f)));
+    match found {
+        Some(f) if path.is_absolute() && !up => Ok(f.clone()),
+        _ => Err(outside()),
     }
-    let path = real_path(path).map_err(|e| format!("{asked}: {e}"))?;
+}
+
+/// `asked`, resolved ([`real_path`]), when it is inside one of `folders`: first by its text
+/// ([`inside_by_text`]), then as Windows resolves both, so no link leads out.
+pub(super) fn inside(asked: &str, folders: &[PathBuf]) -> Result<PathBuf, String> {
+    inside_by_text(asked, folders)?;
+    let outside = || format!("{asked} is not inside a folder the user picked");
+    let path = real_path(Path::new(asked)).map_err(|e| format!("{asked}: {e}"))?;
     let mut resolved = folders.iter().filter_map(|f| std::fs::canonicalize(f).ok());
     resolved
         .any(|f| path.starts_with(f))
         .then_some(path)
         .ok_or_else(outside)
+}
+
+/// Whether the host of `url` (as the request check reads it) is one of the device addresses
+/// `typed` (any letter case).
+fn device_typed(url: &str, typed: &[String]) -> Result<(), String> {
+    let host = pecofence_plugin_host::url_host(url).unwrap_or_default();
+    let found = !host.is_empty() && typed.iter().any(|d| d.eq_ignore_ascii_case(&host));
+    tracing::info!(
+        host,
+        devices = typed.len(),
+        found,
+        "plugin lan request: the host against the device addresses typed"
+    );
+    if found {
+        Ok(())
+    } else {
+        Err(format!(
+            "{host} is not the address of a device typed in this fence's settings: refused"
+        ))
+    }
 }
 
 /// The program of the window in front (`spotify.exe`, in lowercase).
@@ -767,17 +854,40 @@ fn base64(bytes: &[u8]) -> String {
     out
 }
 
+/// The most entries `pf.folder.list` answers with.
+const MAX_LIST: usize = 2_000;
+
+/// The number in the name of the next temporary file of [`replace_file`].
+static TEMP_NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+
 /// Writes `bytes` to `file` whole: into a temporary file in `dir` first, then renamed over it,
-/// so a failed write (a full disk) leaves the file as it was.
+/// so a failed write (a full disk) leaves the file as it was. The temporary file is always a
+/// new one (another name while one is there): a file or a hard link someone put at that name
+/// beforehand is never opened, so nothing it leads to is written.
 fn replace_file(dir: &Path, file: &Path, bytes: &[u8]) -> Result<(), String> {
-    use std::sync::atomic::{AtomicU32, Ordering};
-    static NEXT: AtomicU32 = AtomicU32::new(1);
+    use std::io::Write;
     let name = file.file_name().unwrap_or_default().to_string_lossy();
-    let temp = dir.join(format!(
-        ".{name}.{}.tmp",
-        NEXT.fetch_add(1, Ordering::Relaxed)
-    ));
-    let written = std::fs::write(&temp, bytes).and_then(|_| std::fs::rename(&temp, file));
+    let mut made = None;
+    for _ in 0..100 {
+        let n = TEMP_NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let temp = dir.join(format!(".{name}.{n}.tmp"));
+        let new = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp);
+        match new {
+            Ok(handle) => {
+                made = Some((temp, handle));
+                break;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(io(e)),
+        }
+    }
+    let (temp, mut handle) = made.ok_or("no free name for a temporary file")?;
+    let written = handle.write_all(bytes).and_then(|_| handle.flush());
+    drop(handle);
+    let written = written.and_then(|_| std::fs::rename(&temp, file));
     if let Err(e) = written {
         let _ = std::fs::remove_file(&temp);
         tracing::info!(file = %file.display(), error = %e, "plugin data not written, the old file stays");
@@ -984,6 +1094,24 @@ mod tests {
     }
 
     #[test]
+    fn a_file_or_link_at_the_temporary_name_is_never_written_through() {
+        let dir = temp("link");
+        let outside = dir.join("outside.txt");
+        std::fs::write(&outside, "keep").unwrap();
+        let data = dir.join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        // The temporary names `replace_file` would take next lead to a file outside.
+        let next = TEMP_NEXT.load(std::sync::atomic::Ordering::Relaxed);
+        for n in next..next + 50 {
+            std::fs::hard_link(&outside, data.join(format!(".a.txt.{n}.tmp"))).unwrap();
+        }
+        replace_file(&data, &data.join("a.txt"), b"new").unwrap();
+        assert_eq!(std::fs::read_to_string(data.join("a.txt")).unwrap(), "new");
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "keep");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn two_writes_at_once_cannot_both_pass_200_mb() {
         let dir = temp("room");
         let (host, fence) = host(&dir);
@@ -1051,6 +1179,72 @@ mod tests {
         assert!(why.contains("not inside a folder"), "{why}");
         assert!(begun.elapsed() < Duration::from_millis(200));
         assert!(inside(r"C:\x", &[]).is_err());
+        // A junction is followed: out of the folder refused, to a folder inside it allowed.
+        let junction = |at: PathBuf, to: PathBuf| {
+            let made = std::process::Command::new("cmd")
+                .args(["/c", "mklink", "/J"])
+                .args([at, to])
+                .output()
+                .unwrap();
+            assert!(made.status.success(), "{made:?}");
+        };
+        junction(picked.join("out"), dir.join("Picked2"));
+        junction(picked.join("in"), picked.join("sub"));
+        let why = ask(&picked.join("out").join("new.txt")).unwrap_err();
+        assert!(why.contains("not inside a folder"), "{why}");
+        let real = ask(&picked.join("in").join("a.txt")).unwrap();
+        assert!(real.ends_with(r"Picked\sub\a.txt"), "{real:?}");
+        for j in ["out", "in"] {
+            let _ = std::fs::remove_dir(picked.join(j));
+        }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_lan_request_goes_only_to_a_device_address_typed() {
+        let typed = [
+            "192.168.1.20".to_string(),
+            "homeassistant.local".to_string(),
+        ];
+        assert!(device_typed("http://192.168.1.20:8123/api", &typed).is_ok());
+        assert!(device_typed("https://HomeAssistant.local:8123/", &typed).is_ok());
+        for bad in [
+            "http://192.168.1.21:8123/",
+            "http://evil@192.168.1.20/",
+            "http://192.168.1.20.evil.example/",
+            "http://homeassistant.local.evil.example/",
+            "no address",
+        ] {
+            assert!(device_typed(bad, &typed).is_err(), "{bad}");
+        }
+        assert!(device_typed("http://192.168.1.20/", &[]).is_err());
+        assert!(device_typed("no address", &[String::new()]).is_err());
+    }
+
+    #[test]
+    fn the_forbidden_places_are_this_computer_s_own() {
+        let f = forbidden_places(Path::new(r"C:\pf-no-such\config\plugins-data"));
+        let why = |p: &str| folder_write::place_refusal(p, &f).unwrap_or_default();
+        let appdata = std::env::var("APPDATA").unwrap();
+        assert!(why(&format!(r"{appdata}\x\a.txt")).contains("AppData"));
+        let local = std::env::var("LOCALAPPDATA").unwrap();
+        assert!(why(&format!(r"{local}\PecoFence\a.txt")).contains("AppData"));
+        let windows = std::env::var("SystemRoot").unwrap();
+        assert!(why(&format!(r"{windows}\Temp\a.txt")).contains("Windows"));
+        assert!(why(r"C:\pf-no-such\config\x.txt").contains("PecoFence's own"));
+        let exe = std::env::current_exe().unwrap();
+        let beside = exe.with_file_name("a.txt");
+        assert!(why(&beside.to_string_lossy()).contains("PecoFence's own"));
+        let me = std::env::var("COMPUTERNAME").unwrap();
+        for unc in [
+            r"\\localhost\C$\x\a.txt".to_string(),
+            format!(r"\\{me}\share\x\a.txt"),
+            format!(r"\\{}\share\x\a.txt", me.to_lowercase()),
+        ] {
+            assert!(why(&unc).contains("this computer"), "{unc}");
+        }
+        let home = std::env::var("USERPROFILE").unwrap();
+        let docs = format!(r"{home}\Documents\Notes\a.txt");
+        assert_eq!(folder_write::place_refusal(&docs, &f), None, "{docs}");
     }
 }

@@ -797,21 +797,19 @@ impl App {
         let read_only = self.plugin(id).map(|p| p.manifest.permissions.folders);
         self.plugins.reload(id);
         self.drop_plain_secrets();
-        // Folders picked for reading are no folders to write in: the user picks them again.
+        // Folders picked for reading are no folders to write in: the user picks them again, in
+        // every fence of the plugin (of every layout) and in the snapshots' copies.
         let writes = self
             .plugin(id)
             .is_some_and(|p| p.manifest.permissions.folders.writes());
         if writes && read_only.is_some_and(|f| !f.writes()) {
-            for fence in &fences {
-                if let Some(spec) = self.state.config.scripts.get_mut(fence) {
-                    spec.settings.remove("__folders");
-                }
-            }
+            let picked = |plugin: &str, key: &str| plugin == id && key == "__folders";
+            let dropped = self.state.config.drop_plain_secrets(picked);
             self.state.mark_dirty();
             self.schedule_save();
             tracing::info!(
                 id,
-                fences = fences.len(),
+                dropped,
                 "plugins: folders read became readwrite, the folders picked before are dropped"
             );
         }

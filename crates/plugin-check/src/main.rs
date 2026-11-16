@@ -161,9 +161,8 @@ impl Host for Fake {
                         json!({ "name": name, "path": p, "folder": f.is_none(), "size": size, "modified": 0 }),
                     )
                 };
-                Ok(json!(
-                    log.folder.iter().filter_map(entry).collect::<Vec<_>>()
-                ))
+                let items: Vec<_> = log.folder.iter().filter_map(entry).collect();
+                Ok(json!({ "items": items, "cut": false }))
             }
             "folder.read" => Ok(json!(
                 log.folder
