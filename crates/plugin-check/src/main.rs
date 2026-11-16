@@ -12,6 +12,7 @@
 //! (exit code 0 or 1); WARN lines are the soft rules of the repository's AGENTS.md.
 
 use pecofence_core::FenceId;
+use pecofence_core::folder_write;
 use pecofence_core::plugins::{fence_settings, parse_manifest};
 use pecofence_plugin_host::{self as host, Command, Host, Note, Output, Start, Stopped};
 use serde_json::{Value, json};
@@ -20,6 +21,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+
+/// The folder the user picks (`pf.folder.pick`) in the checker.
+const PICKED: &str = r"C:\Users\me\Documents\Picked";
 
 const OFFLINE: &str =
     "offline (pecofence-plugin-check has no network; give answers with --fixture)";
@@ -38,6 +42,9 @@ struct Log {
     slowest: (f64, String),
     memory: usize,
     data: BTreeMap<String, String>,
+    /// What the plugin wrote into the picked folder [`PICKED`]: a file's text, or None for a
+    /// folder it made.
+    folder: BTreeMap<String, Option<String>>,
     /// Errors that escaped a handler, a timer or a Promise ("<run>: <message> <stack line>"),
     /// and how often each came.
     errors: BTreeMap<String, usize>,
@@ -128,8 +135,68 @@ impl Host for Fake {
             }])),
             "sys.battery" => Ok(json!({ "percent": 80, "plugged": true })),
             "run" => Ok(json!({ "code": 0, "output": "" })),
-            "folder.list" => Ok(json!([])),
-            "folder.read" => Ok(json!("")),
+            // The picked folder, empty at first, and what the plugin writes there, with the
+            // app's checks of the path (crates/app/src/app/light_host.rs).
+            "folder.pick" => Ok(json!(PICKED)),
+            "folder.list" => {
+                let dir = format!("{}\\", arg(0).trim_end_matches('\\'));
+                let entry = |(p, f): (&String, &Option<String>)| {
+                    let name = p.strip_prefix(&dir).filter(|n| !n.contains('\\'))?;
+                    let size = f.as_ref().map_or(0, String::len);
+                    Some(
+                        json!({ "name": name, "path": p, "folder": f.is_none(), "size": size, "modified": 0 }),
+                    )
+                };
+                Ok(json!(
+                    log.folder.iter().filter_map(entry).collect::<Vec<_>>()
+                ))
+            }
+            "folder.read" => Ok(json!(
+                log.folder
+                    .get(arg(0))
+                    .cloned()
+                    .flatten()
+                    .unwrap_or_default()
+            )),
+            "folder.write" | "folder.mkdir" | "folder.trash" => {
+                let path = arg(0).to_string();
+                let inside = path
+                    .to_lowercase()
+                    .starts_with(&format!("{}\\", PICKED.to_lowercase()));
+                if !inside {
+                    return Err(format!(
+                        "{name}: {path} is not inside a folder the user picked"
+                    ));
+                }
+                if let Some(why) = folder_write::name_refusal(&path) {
+                    return Err(format!("{name}: {why}"));
+                }
+                match name {
+                    "folder.write" if !folder_write::is_data_file(&path) => Err(format!(
+                        "{name}: only these kinds of files: {}",
+                        folder_write::DATA_TYPES.join(" ")
+                    )),
+                    "folder.write" => {
+                        let text = args.get(1).map_or(String::new(), |v| match v {
+                            Value::String(s) => s.clone(),
+                            v => v.to_string(),
+                        });
+                        log.folder.insert(path, Some(text));
+                        Ok(Value::Null)
+                    }
+                    "folder.mkdir" => {
+                        log.folder.entry(path).or_insert(None);
+                        Ok(Value::Null)
+                    }
+                    _ => {
+                        let below = format!("{path}\\");
+                        let before = log.folder.len();
+                        log.folder
+                            .retain(|p, _| *p != path && !p.starts_with(&below));
+                        Ok(json!(log.folder.len() < before))
+                    }
+                }
+            }
             // One launcher item; a drop's files become items (crates/app/src/app/launch.rs).
             "launch.list" => Ok(json!([{ "id": "1", "name": "notes.txt", "icon": null }])),
             "launch.add" => {
@@ -157,10 +224,9 @@ impl Host for Fake {
                 log.data.insert(arg(1).to_string(), "dropped notes".into());
                 Ok(Value::Null)
             }
-            // Nothing on the clipboard as a picture, the user cancels the folder and file
-            // dialogs, and opening, notices and clipboard writes only happen.
-            "clipboard.image" | "folder.pick" | "launch.pick" | "launch.open" | "openSystem"
-            | "open" | "notify" => Ok(Value::Null),
+            // Nothing on the clipboard as a picture, the user cancels the file dialog, and opening, notices and clipboard writes only happen.
+            "clipboard.image" | "launch.pick" | "launch.open" | "openSystem" | "open"
+            | "notify" => Ok(Value::Null),
             n if n.starts_with("clipboard.set") => Ok(Value::Null),
             _ => Err(format!("{name} is not a pf function")),
         }

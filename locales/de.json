@@ -1116,5 +1116,9 @@
   "显示": "Anzeigen",
   "隐藏": "Ausblenden",
   "插件能读到这个值。它加密保存在这台电脑上，换到另一台电脑后要重新填写。": "Das Plugin kann diesen Wert lesen. Er wird verschlüsselt auf diesem Computer gespeichert; auf einem anderen Computer geben Sie ihn neu ein.",
-  "请在插件详情里给“{0}”的命令“{1}”换一个快捷键：{2} 已被系统或其他程序占用。": "Ändere in den Plugin-Details die Tastenkombination für den Befehl „{1}“ von „{0}“: {2} ist belegt."
+  "请在插件详情里给“{0}”的命令“{1}”换一个快捷键：{2} 已被系统或其他程序占用。": "Ändere in den Plugin-Details die Tastenkombination für den Befehl „{1}“ von „{0}“: {2} ist belegt.",
+  "选择插件可以读写的文件夹": "Ordner wählen, den das Plugin lesen und beschreiben darf",
+  "读写你选的文件夹（装好后由你来选）": "Liest und schreibt in einem Ordner, den du wählst (du wählst ihn nach der Installation)",
+  "添加文件夹": "Ordner hinzufügen",
+  "插件不能写入这个文件夹。系统文件夹、程序文件夹、AppData、ProgramData、PecoFence 自己的文件夹、磁盘的根目录、你的用户文件夹本身、名字以点开头的文件夹，还有链接和目录连接点，都不能交给插件写入。请换一个文件夹，例如“文档”里的一个文件夹。": "Das Plugin kann in diesen Ordner nicht schreiben. Systemordner, Programmordner, AppData, ProgramData, die Ordner von PecoFence, das Stammverzeichnis eines Laufwerks, dein Benutzerordner selbst, Ordner, deren Name mit einem Punkt beginnt, Verknüpfungen und Verzeichnisverbindungen werden einem Plugin nie zum Schreiben gegeben. Bitte wähle einen anderen Ordner, zum Beispiel einen in Dokumente."
 }

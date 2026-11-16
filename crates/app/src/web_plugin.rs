@@ -53,7 +53,8 @@ const PRESS_GRACE: Duration = Duration::from_secs(1);
 const CALLS: &str = "time.now time.format http.get http.post data.read data.write data.list \
     data.remove clipboard.text clipboard.files clipboard.image clipboard.setText \
     clipboard.setFiles clipboard.setImage sys.cpu sys.memory sys.drives sys.ip sys.network \
-    sys.battery open openSystem run folder.pick folder.list folder.read notify launch.list \
+    sys.battery open openSystem run folder.pick folder.list folder.read folder.write folder.mkdir \
+    folder.trash notify launch.list \
     launch.open launch.pick launch.remove media.current media.control apps.running apps.front";
 
 /// An installed web plugin a fence shows.

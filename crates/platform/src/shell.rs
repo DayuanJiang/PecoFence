@@ -1373,6 +1373,33 @@ pub fn recycle_unrecorded(path: &Path) -> Result<bool> {
     }
 }
 
+/// Moves `path` to the Recycle Bin without Windows' questions, progress or error boxes, for a
+/// plugin's `pf.folder.trash`. Windows still asks before an item that cannot go to the bin (a
+/// network folder, a USB stick, one too large for it) is deleted for good: false when the user
+/// said no there. Blocks like [`transfer_to_folder`].
+pub fn recycle_quietly(path: &Path) -> Result<bool> {
+    const FOFX_RECYCLEONDELETE: u32 = 0x0008_0000;
+    const FOF_WANTNUKEWARNING: u32 = 0x4000;
+    const FOF_NOERRORUI: u32 = 0x0400;
+    let flags = (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT) as u32;
+    // SAFETY: COM calls on objects created here; the caller's thread has COM initialized.
+    unsafe {
+        let op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL as u32)?;
+        op.SetOperationFlags(FOFX_RECYCLEONDELETE | FOF_WANTNUKEWARNING | FOF_NOERRORUI | flags)
+            .ok()?;
+        op.DeleteItem(&shell_item(path)?, None).ok()?;
+        let performed = op.PerformOperations();
+        if op.GetAnyOperationsAborted().is_ok_and(|b| b.as_bool())
+            || performed == COPYENGINE_E_USER_CANCELLED
+            || performed == E_CANCELLED
+        {
+            return Ok(false);
+        }
+        performed.ok()?;
+        Ok(true)
+    }
+}
+
 /// Deletes `paths` as Explorer's Delete key does: to the Recycle Bin with a record in Windows'
 /// undo list, or for good with `permanent` (Shift+Delete), with Windows' own questions,
 /// progress and error boxes. Paths that are gone already are left out. Blocks like

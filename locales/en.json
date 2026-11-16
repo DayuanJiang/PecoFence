@@ -1116,5 +1116,9 @@
   "显示": "Show",
   "隐藏": "Hide",
   "插件能读到这个值。它加密保存在这台电脑上，换到另一台电脑后要重新填写。": "The plugin can read this value. It is saved encrypted on this computer; on another computer you type it again.",
-  "请在插件详情里给“{0}”的命令“{1}”换一个快捷键：{2} 已被系统或其他程序占用。": "Pick another shortcut for the command “{1}” of “{0}” in the plugin's details: {2} is in use."
+  "请在插件详情里给“{0}”的命令“{1}”换一个快捷键：{2} 已被系统或其他程序占用。": "Pick another shortcut for the command “{1}” of “{0}” in the plugin's details: {2} is in use.",
+  "选择插件可以读写的文件夹": "Choose a folder the plugin may read and write",
+  "读写你选的文件夹（装好后由你来选）": "Reads and writes a folder you pick (you pick it after installing)",
+  "添加文件夹": "Add a folder",
+  "插件不能写入这个文件夹。系统文件夹、程序文件夹、AppData、ProgramData、PecoFence 自己的文件夹、磁盘的根目录、你的用户文件夹本身、名字以点开头的文件夹，还有链接和目录连接点，都不能交给插件写入。请换一个文件夹，例如“文档”里的一个文件夹。": "The plugin cannot write in this folder. System folders, program folders, AppData, ProgramData, PecoFence's own folders, the root of a drive, your user folder itself, folders whose name starts with a dot, links and junctions are never given to a plugin to write in. Please pick another folder, for example one inside Documents."
 }

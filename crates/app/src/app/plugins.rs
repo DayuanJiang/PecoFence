@@ -793,8 +793,27 @@ impl App {
                 .insert(id.to_string(), (b.to_string(), Instant::now(), 0)),
             None => self.plugins.trial.remove(id),
         };
+        let read_only = self.plugin(id).map(|p| p.manifest.permissions.folders);
         self.plugins.reload(id);
         self.drop_plain_secrets();
+        // Folders picked for reading are no folders to write in: the user picks them again.
+        let writes = self
+            .plugin(id)
+            .is_some_and(|p| p.manifest.permissions.folders.writes());
+        if writes && read_only.is_some_and(|f| !f.writes()) {
+            for fence in &fences {
+                if let Some(spec) = self.state.config.scripts.get_mut(fence) {
+                    spec.settings.remove("__folders");
+                }
+            }
+            self.state.mark_dirty();
+            self.schedule_save();
+            tracing::info!(
+                id,
+                fences = fences.len(),
+                "plugins: folders read became readwrite, the folders picked before are dropped"
+            );
+        }
         tracing::info!(id, version, ?before, "plugins: switched to the new version");
         Ok(())
     }
@@ -1216,7 +1235,7 @@ impl App {
                     "id": id, "name": texts(&m.name), "description": texts(&m.description),
                     "author": m.author, "authorBefore": before, "version": m.version, "installed": mine.is_some(), "layer": m.layer,
                     "network": p.network, "links": p.links, "system": p.system, "background": p.background,
-                    "folders": p.folders, "notify": p.notify, "launch": p.launch, "drop": p.drop,
+                    "folders": format!("{:?}", p.folders).to_lowercase(), "notify": p.notify, "launch": p.launch, "drop": p.drop,
                     "commands": p.commands.iter().map(|c| list::pick(&c.title, lang)).collect::<Vec<_>>(),
                     "media": format!("{:?}", p.media).to_lowercase(), "apps": p.apps,
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),

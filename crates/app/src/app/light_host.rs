@@ -5,6 +5,7 @@
 
 use super::{App, HWND, WM_APP_COMMAND};
 use pecofence_core::FenceId;
+use pecofence_core::folder_write;
 use pecofence_core::plugins::Manifest;
 use pecofence_platform::{clipboard, sysinfo, window};
 use pecofence_plugin_host::view::{MAX_IMAGE_BYTES, MAX_IMAGE_SIDE};
@@ -586,11 +587,126 @@ impl AppHost {
             .collect();
         Ok(json!(list))
     }
+
+    /// `pf.folder.write` / `mkdir` / `trash` (`folders: "readwrite"`): inside a folder the user
+    /// picked for this fence, and every call checked (plan v6 change 5) first by the path's text,
+    /// then by its real path (links resolved; a new file's parent). `write` takes a data file of
+    /// up to 20 MB, written to a temporary file and renamed over it; `trash` moves a file or
+    /// folder below the picked one to the Recycle Bin.
+    fn folder_change(&self, fence: FenceId, name: &str, args: &Value) -> Result<Value, String> {
+        let asked = args[0].as_str().unwrap_or_default();
+        let refuse = |why: &str| {
+            tracing::info!(%fence, name, why, "plugin folder change refused");
+            format!("{name}: {why}")
+        };
+        if let Some(why) = folder_write::name_refusal(asked) {
+            return Err(refuse(why));
+        }
+        let picked = self.picked(fence)?;
+        let real = inside(asked, &picked).map_err(|why| refuse(&why))?;
+        let forbidden = forbidden_places(&self.data);
+        if let Some(why) = folder_write::place_refusal(&real.to_string_lossy(), &forbidden) {
+            return Err(refuse(&why));
+        }
+        match name {
+            "folder.write" => {
+                let file_name = real.file_name().unwrap_or_default().to_string_lossy();
+                if !folder_write::is_data_file(&file_name) {
+                    let kinds = folder_write::DATA_TYPES.join(" ");
+                    return Err(refuse(&format!("only these kinds of files: {kinds}")));
+                }
+                let text = text_of(&args[1]);
+                if text.len() as u64 > MAX_FILE {
+                    return Err(refuse("the text is larger than 20 MB"));
+                }
+                let dir = real.parent().ok_or("folder.write: no folder")?;
+                replace_file(dir, &real, text.as_bytes())?;
+                tracing::info!(%fence, bytes = text.len(), "plugin wrote a file into a picked folder");
+                Ok(Value::Null)
+            }
+            "folder.mkdir" => match std::fs::create_dir(&real) {
+                Err(e) if !(e.kind() == std::io::ErrorKind::AlreadyExists && real.is_dir()) => {
+                    Err(io(e))
+                }
+                _ => {
+                    tracing::info!(%fence, "plugin made a folder in a picked folder");
+                    Ok(Value::Null)
+                }
+            },
+            _ => {
+                let mut roots = picked.iter().filter_map(|f| std::fs::canonicalize(f).ok());
+                if roots.any(|r| r == real) {
+                    return Err(refuse("the picked folder itself stays"));
+                }
+                std::fs::symlink_metadata(&real).map_err(|e| format!("{asked}: {e}"))?;
+                // The shell takes no `\\?\` path.
+                let text = real.to_string_lossy();
+                let plain = match text.strip_prefix(r"\\?\UNC\") {
+                    Some(unc) => format!(r"\\{unc}"),
+                    None => text.strip_prefix(r"\\?\").unwrap_or(&text).to_string(),
+                };
+                let _com = pecofence_platform::com::OleGuard::init();
+                let moved = pecofence_platform::shell::recycle_quietly(Path::new(&plain));
+                let moved = moved.map_err(|e| format!("{name}: {e}"))?;
+                tracing::info!(%fence, moved, "plugin moved a file or folder of a picked folder to the Recycle Bin (false: the user kept it)");
+                Ok(json!(moved))
+            }
+        }
+    }
 }
 
-/// `asked`, resolved, when it is inside one of `folders`: first by its text, so nothing on disk
-/// (or on the network) is touched for a path outside them, then as Windows resolves both, so no
-/// link leads out.
+/// The folders no plugin writes in (plan v6 change 5), as real paths: Windows, the program
+/// folders, ProgramData, AppData, PecoFence's own folders (the configuration's beside `data`,
+/// the program's), and the home folder and the folder of homes themselves.
+pub(super) fn forbidden_places(data: &Path) -> folder_write::Forbidden {
+    let real = |p: &Path| {
+        let p = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        p.to_string_lossy().into_owned()
+    };
+    let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
+    let home = env("USERPROFILE");
+    let mut below = Vec::new();
+    for (k, what) in [
+        ("SystemRoot", "Windows"),
+        ("ProgramFiles", "a program folder"),
+        ("ProgramFiles(x86)", "a program folder"),
+        ("ProgramW6432", "a program folder"),
+        ("ProgramData", "ProgramData"),
+        ("APPDATA", "AppData"),
+        ("LOCALAPPDATA", "AppData"),
+    ] {
+        below.extend(env(k).map(|p| (real(&p), what)));
+    }
+    below.extend(home.as_ref().map(|h| (real(&h.join("AppData")), "AppData")));
+    let exe = std::env::current_exe().ok();
+    for own in [data.parent(), exe.as_deref().and_then(Path::parent)] {
+        below.extend(own.map(|p| (real(p), "PecoFence's own folder")));
+    }
+    let mut itself = Vec::new();
+    if let Some(h) = &home {
+        itself.push((real(h), "the home folder"));
+        itself.extend(h.parent().map(|p| (real(p), "the folder of homes")));
+    }
+    folder_write::Forbidden { below, itself }
+}
+
+/// The real path of `path`: itself with its links resolved, or for one that does not exist yet
+/// its parent's real path with its name.
+fn real_path(path: &Path) -> std::io::Result<PathBuf> {
+    match std::fs::canonicalize(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+                return Err(e);
+            };
+            Ok(std::fs::canonicalize(parent)?.join(name))
+        }
+        real => real,
+    }
+}
+
+/// `asked`, resolved ([`real_path`]), when it is inside one of `folders`: first by its text, so
+/// nothing on disk (or on the network) is touched for a path outside them, then as Windows
+/// resolves both, so no link leads out.
 fn inside(asked: &str, folders: &[PathBuf]) -> Result<PathBuf, String> {
     let lower = |p: &Path| PathBuf::from(p.to_string_lossy().to_lowercase());
     let path = Path::new(asked);
@@ -601,7 +717,7 @@ fn inside(asked: &str, folders: &[PathBuf]) -> Result<PathBuf, String> {
     if !path.is_absolute() || up || !folders.iter().any(|f| lower(path).starts_with(lower(f))) {
         return Err(outside());
     }
-    let path = std::fs::canonicalize(path).map_err(|e| format!("{asked}: {e}"))?;
+    let path = real_path(path).map_err(|e| format!("{asked}: {e}"))?;
     let mut resolved = folders.iter().filter_map(|f| std::fs::canonicalize(f).ok());
     resolved
         .any(|f| path.starts_with(f))
@@ -609,8 +725,6 @@ fn inside(asked: &str, folders: &[PathBuf]) -> Result<PathBuf, String> {
         .ok_or_else(outside)
 }
 
-/// Writes `bytes` to `file` whole: into a temporary file in `dir` first, then renamed over it,
-/// so a failed write (a full disk) leaves the file as it was.
 /// The program of the window in front (`spotify.exe`, in lowercase).
 pub(super) fn front_program() -> Option<String> {
     use pecofence_platform::desktop;
@@ -638,6 +752,8 @@ fn base64(bytes: &[u8]) -> String {
     out
 }
 
+/// Writes `bytes` to `file` whole: into a temporary file in `dir` first, then renamed over it,
+/// so a failed write (a full disk) leaves the file as it was.
 fn replace_file(dir: &Path, file: &Path, bytes: &[u8]) -> Result<(), String> {
     use std::sync::atomic::{AtomicU32, Ordering};
     static NEXT: AtomicU32 = AtomicU32::new(1);
@@ -701,6 +817,9 @@ impl pecofence_plugin_host::Host for AppHost {
             "run" => self.run(fence, &args),
             "folder.pick" => self.on_ui(move |app| Ok(app.pick_plugin_folder(fence))),
             "folder.list" | "folder.read" => self.folder(fence, name, &args),
+            "folder.write" | "folder.mkdir" | "folder.trash" => {
+                self.folder_change(fence, name, &args)
+            }
             n if n.starts_with("launch.") => {
                 let name = name.to_string();
                 self.on_ui(move |app| app.launch_call(fence, &name, &args))

@@ -99,7 +99,13 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
             let declared = p.system.iter().any(|s| s.eq_ignore_ascii_case(program));
             (declared, format!("{program} in permissions.system"))
         }
-        "folder.pick" | "folder.list" | "folder.read" => (p.folders, "permissions.folders".into()),
+        "folder.pick" | "folder.list" | "folder.read" => {
+            (p.folders.reads(), "permissions.folders".into())
+        }
+        "folder.write" | "folder.mkdir" | "folder.trash" => (
+            p.folders.writes() && args.get(0).is_some_and(Value::is_string),
+            "permissions.folders readwrite and a path".into(),
+        ),
         "notify" => (p.notify, "permissions.notify".into()),
         n if n.starts_with("launch.") => (
             p.launch && ["pick", "add", "list", "remove", "open"].contains(&&n[7..]),
@@ -245,7 +251,7 @@ pub fn perform(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pecofence_core::plugins::{Clipboard, Media};
+    use pecofence_core::plugins::{Clipboard, Folders, Media};
     use std::sync::Mutex;
 
     /// Answers requests from `answers` (by address) and remembers each call.
@@ -347,6 +353,21 @@ mod tests {
                 .unwrap()
                 .contains("permissions.apps")
         );
+        // Reading the picked folders is not writing them: write, mkdir and trash need readwrite.
+        let folders = |f: Folders| Permissions {
+            folders: f,
+            ..Permissions::default()
+        };
+        let (read, both) = (folders(Folders::Read), folders(Folders::Readwrite));
+        let path = json!([r"C:\Notes\a.md", "text"]);
+        for call in ["folder.write", "folder.mkdir", "folder.trash"] {
+            let why = refusal(&read, call, &path).unwrap();
+            assert!(why.contains("permissions.folders readwrite"), "{why}");
+            assert_eq!(refusal(&both, call, &path), None);
+            assert!(refusal(&both, call, &json!([3])).is_some());
+        }
+        assert_eq!(refusal(&read, "folder.read", &path), None);
+        assert_eq!(refusal(&both, "folder.pick", &json!([])), None);
         let media = |m: Media| Permissions {
             media: m,
             apps: vec!["spotify.exe".into()],

@@ -1116,5 +1116,9 @@
   "显示": "Mostrar",
   "隐藏": "Ocultar",
   "插件能读到这个值。它加密保存在这台电脑上，换到另一台电脑后要重新填写。": "O plugin consegue ler este valor. Ele fica salvo criptografado neste computador; em outro computador, é preciso digitá-lo de novo.",
-  "请在插件详情里给“{0}”的命令“{1}”换一个快捷键：{2} 已被系统或其他程序占用。": "Mude nos detalhes do plugin o atalho do comando “{1}” de “{0}”: {2} está em uso."
+  "请在插件详情里给“{0}”的命令“{1}”换一个快捷键：{2} 已被系统或其他程序占用。": "Mude nos detalhes do plugin o atalho do comando “{1}” de “{0}”: {2} está em uso.",
+  "选择插件可以读写的文件夹": "Escolher uma pasta que o plugin pode ler e gravar",
+  "读写你选的文件夹（装好后由你来选）": "Lê e grava em uma pasta que você escolhe (você escolhe depois de instalar)",
+  "添加文件夹": "Adicionar uma pasta",
+  "插件不能写入这个文件夹。系统文件夹、程序文件夹、AppData、ProgramData、PecoFence 自己的文件夹、磁盘的根目录、你的用户文件夹本身、名字以点开头的文件夹，还有链接和目录连接点，都不能交给插件写入。请换一个文件夹，例如“文档”里的一个文件夹。": "O plugin não pode gravar nesta pasta. Pastas do sistema, pastas de programas, AppData, ProgramData, as pastas do PecoFence, a raiz de uma unidade, a sua própria pasta de usuário, pastas cujo nome começa com um ponto, links e junções nunca são dados a um plugin para gravar. Escolha outra pasta, por exemplo uma dentro de Documentos."
 }
