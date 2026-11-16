@@ -111,6 +111,8 @@ pub(super) struct Light {
     pub(super) next_drop: u64,
     pub(super) keys: HashMap<i32, (FenceId, String, Hotkey)>,
     pub(super) keys_taken: Vec<(FenceId, String, Hotkey)>,
+    /// The taken shortcuts the tray has told of (once each while PecoFence runs).
+    pub(super) keys_told: Vec<(FenceId, String, Hotkey)>,
     /// Whether the programs are read for plugins (`apps`, every 5 s), and what each fence was
     /// last told (kept while the reads stop: a change meanwhile is told when they start again).
     apps: (bool, HashMap<FenceId, Value>),

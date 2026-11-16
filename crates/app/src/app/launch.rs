@@ -132,10 +132,40 @@ impl App {
                 tracing::info!(%fence, command, hotkey = %h, id, "plugin shortcut registered");
                 self.light.keys.insert(id, k);
             } else {
-                tracing::warn!(%fence, command, hotkey = %h, "plugin shortcut taken by Windows or another program");
+                let told = self.light.keys_told.contains(&k);
+                tracing::warn!(%fence, command, hotkey = %h, told, "plugin shortcut taken by Windows or another program");
+                if !told {
+                    self.tell_plugin_key_taken(&k);
+                    self.light.keys_told.push(k.clone());
+                }
                 self.light.keys_taken.push(k);
             }
         }
+    }
+
+    /// One tray notice the first time a fence's command shortcut cannot be registered.
+    fn tell_plugin_key_taken(&self, (fence, command, h): &(FenceId, String, Hotkey)) {
+        let spec = self.state.config.scripts.get(fence);
+        let id = spec.and_then(|s| super::plugins::plugin_id(&s.path));
+        let (Some(id), Some(tray)) = (id, &self.tray) else {
+            return;
+        };
+        let lang = i18n::language().tag();
+        let title = (self.plugin(id).into_iter())
+            .flat_map(|m| m.manifest.permissions.commands.iter())
+            .find(|c| c.id == *command)
+            .map(|c| pecofence_core::plugins::pick(&c.title, lang).to_string())
+            .unwrap_or_else(|| command.clone());
+        let text = i18n::format(
+            "请在插件详情里给“{0}”的命令“{1}”换一个快捷键：{2} 已被系统或其他程序占用。",
+            &[
+                self.plugin_name(id),
+                title,
+                super::peek::peek_hotkey_label(*h),
+            ],
+        );
+        tracing::info!(%fence, command, hotkey = %h, "plugin shortcut taken: tray notice shown");
+        tray.show_info("PecoFence", &text, false);
     }
 
     /// The settings page records a shortcut: the plugins' go until it ends.

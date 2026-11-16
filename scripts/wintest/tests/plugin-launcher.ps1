@@ -224,6 +224,33 @@ if ($Part -eq 'A') {
   Check 'pressed again, the Peek ends and File Explorer covers the fence again' ([W]::RootClassAt($mid[0], $mid[1]) -ne 'PecoFence.Fence' -and @([W]::Tops('PecoFence.PeekDimmer')).Count -eq 0) ([W]::RootClassAt($mid[0], $mid[1]))
   CloseWindows
 
+  Case 'another program holds the shortcut at the next start: one tray notice'
+  PfQuit
+  $hold = "$PfRun\hold-key.ps1"
+  Set-Content $hold @'
+Add-Type 'using System.Runtime.InteropServices; public static class HK { [DllImport("user32.dll")] public static extern bool RegisterHotKey(System.IntPtr h, int id, uint m, uint vk); }'
+$ok = [HK]::RegisterHotKey([System.IntPtr]::Zero, 7, 0x4003, 0x4C)
+Set-Content "$env:TEMP\pf-hold-key.txt" "registered=$ok"
+Start-Sleep -Seconds 120
+'@
+  Remove-Item "$env:TEMP\pf-hold-key.txt" -ErrorAction SilentlyContinue
+  $holder = Start-Process powershell.exe -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $hold -WindowStyle Hidden -PassThru
+  for ($i = 0; $i -lt 20 -and -not (Test-Path "$env:TEMP\pf-hold-key.txt"); $i++) { Start-Sleep -Milliseconds 500 }
+  $held = Get-Content "$env:TEMP\pf-hold-key.txt" -ErrorAction SilentlyContinue
+  $t0 = LogCount 'plugin shortcut taken by Windows'
+  PfStart -Lang zh-CN
+  # Each line is in the app log and in its shareable copy (a few µs apart): count them once.
+  function Told() { return @(PfLogAll | Where-Object { $_ -match 'plugin shortcut taken: tray notice shown' } | ForEach-Object { $_.Substring(0, 22) } | Sort-Object -Unique).Count }
+  $told = PfWaitLog 'plugin shortcut taken: tray notice shown' 20
+  Start-Sleep -Milliseconds 800; Shot 'shortcut-taken-notice'
+  $toast = ToastOcr 'PecoFence' 6
+  Check 'Ctrl+Alt+L held by another program: the tray tells once, naming the plugin and the command' ("$held" -match 'True' -and $told -match 'command="?show' -and (Told) -eq 1 -and $toast -match 'PecoFence') "holder: $held; notice: $toast; log: $told"
+  Start-Sleep -Seconds 3
+  Check 'both fences started and tried the key (two tries), the notice stays one' ((LogCount 'plugin shortcut taken by Windows') -ge $t0 + 2 -and (Told) -eq 1) "tries=$((LogCount 'plugin shortcut taken by Windows') - $t0) notices=$(Told)"
+  Stop-Process -Id $holder.Id -Force -ErrorAction SilentlyContinue
+  PfQuit; PfStart -Lang zh-CN
+  Check 'with the other program gone, the next start registers Ctrl+Alt+L again' ([bool](PfWaitLog 'plugin shortcut registered.*Ctrl\+Alt\+L' 20)) ''
+
   Case '移除 in the details takes an item out of the fence'
   $ok = PfSettings
   PageClick 'nav a[data-page=tools]'; Start-Sleep -Seconds 2
