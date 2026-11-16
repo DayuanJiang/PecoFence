@@ -5,6 +5,9 @@
 # starting, coming to the front and ending; a secret setting is typed masked with 显示, the plugin
 # reads it, the configuration keeps it encrypted, the log and an export never have it.
 # Debug build (CDP on the settings page), Chinese interface.
+#   --var Part=D   only the plugin's details, of a manifest the build before takes too (files and
+#                  Notepad): the shots to compare
+if (-not (Get-Variable Part -ErrorAction SilentlyContinue)) { $Part = 'A' }
 $Kit = 'C:\pf\kit\assets\local-demo'
 $Lr = 'C:\pf\run\local'
 $Token = 'tok-5f3a9c'
@@ -87,8 +90,27 @@ public static class DragSrc {
 $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'
 $script:Config = "$PfApp\config"
 PfPlacePlugin $Kit 'local-demo'
+if ($Part -eq 'D') {
+  $j = "$script:Config\plugins\local-demo\1.0.0\plugin.json"
+  $m = Get-Content $j -Raw -Encoding UTF8 | ConvertFrom-Json
+  $m.permissions.drop = @('files'); $m.settings = @()
+  [IO.File]::WriteAllText($j, ($m | ConvertTo-Json -Depth 6))
+}
 PfStart -Lang zh-CN
 $script:Fid = PfPluginFence '本机示例' '80,140,520,360' 'local-demo'
+if ($Part -eq 'D') {
+  Case 'the details of a plugin that takes files and knows of Notepad'
+  PfSettings | Out-Null
+  $sw = WaitWin 'PecoFence.Settings' 5
+  [L]::MoveWindow($sw, 760, 60, 900, 700, $true) | Out-Null
+  PageClick 'nav a[data-page=tools]'; Start-Sleep -Seconds 3
+  $i = [int](Js "[...document.querySelectorAll('#pluginList .pl-row')].findIndex(r => r.textContent.startsWith('本机示例'))")
+  PageClick '#pluginList .pl-row' $i; Start-Sleep -Seconds 1
+  $d = Js "(() => { const d = document.querySelector('#pluginList .pl-detail'); return d ? d.innerText : ''; })()"
+  Shot 'details'
+  Check 'the details list what it does' ($d -match '知道这些程序是否在运行') $d
+  return
+}
 Check 'the plugin starts: no secret yet, Notepad does not run' ([bool](PfWaitLog 'plugin fence starts its main.js' 20) -and (WaitOut 'token=none') -and (WaitOut 'running=none front=none')) (FenceOut $script:Fid)
 
 Case 'a text and a link dragged from another program: the plugin gets them, the drag copies'
@@ -100,6 +122,7 @@ Check 'the drag ended as a copy (the source keeps its text)' ((Effect) -eq 'Copy
 $src = DragSource 'link' 'https://example.com/page?q=1'
 DragDrop 760 220 $to[0] $to[1]
 Check 'a link: the drop event has the address (and its text)' (WaitOut 'url=https://example.com/page\?q=1') (FenceOut $script:Fid)
+ParkMouse; Shot 'after-link'
 $src = DragSource 'link' 'file:///C:/Windows/win.ini'
 DragDrop 760 220 $to[0] $to[1]
 Check 'a file: link is no link for the plugin (its text still comes)' ((WaitOut 'text=file:///C:/Windows/win.ini url=none')) (FenceOut $script:Fid)

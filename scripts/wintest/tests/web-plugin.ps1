@@ -9,8 +9,9 @@
 # Part L (debug build): a declared host that resolves to this computer, the File System Access
 # pickers, the page's requests through a system proxy. Review 7: a picture that is also JavaScript
 # does not run as a script (part A); a page that loads anew by itself gets the theme of now and
-# calls counted for it alone (part C).
-# run.sh --var Part=A|B|M|I|C|N|L (default A).
+# calls counted for it alone (part C). Part V (debug build): interface 2 in the page: launch (pick,
+# list, open, remove), media (current, the media event, control) and apps (running, front, the event).
+# run.sh --var Part=A|B|M|I|C|N|L|V (default A).
 if (-not $Part) { $Part = 'A' }
 $Demo = 'C:\pf\kit\assets\webdemo'
 
@@ -80,7 +81,7 @@ if ($Part -eq 'I') {
   $script:AddedZh = -not ($langs | Where-Object { $_.LanguageTag -like 'zh-Hans*' })
   if ($AddedZh) { $langs.Add('zh-Hans-CN'); Set-WinUserLanguageList $langs -Force }
 }
-if ($Part -in 'A', 'I', 'C', 'L' -and $PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352' }
+if ($Part -in 'A', 'I', 'C', 'L', 'V' -and $PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352' }
 # Part L: certificate errors are ignored, so only Local Network Access can stop the page's request
 # to the TLS server on this computer.
 if ($Part -eq 'L' -and $PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS += ' --ignore-certificate-errors' }
@@ -93,6 +94,12 @@ if ($Part -eq 'N') {
 $script:Config = "$PfApp\config"
 PfPlacePlugin $Demo 'webdemo'
 if ($Part -eq 'M') { PfPlacePlugin $Demo 'webdemo2' }
+if ($Part -eq 'V') {
+  # Interface 2 for the page: the launcher, the media session with control, Notepad in apps.
+  PfPlacePlugin $Demo 'webv6'
+  $j = "$script:Config\plugins\webv6\1.0.0\plugin.json"
+  (Get-Content $j -Raw) -replace '"minPecoFence": "0.4.0"', '"minPecoFence": "0.5.0", "api": 2' -replace '"network": \["example.org"\]', '"network": ["example.org"], "launch": true, "media": "control", "apps": ["notepad.exe"]' | Set-Content $j -Encoding UTF8
+}
 if ($Part -eq 'C') {
   PfPlacePlugin $Demo 'webbg'
   $j = "$script:Config\plugins\webbg\1.0.0\plugin.json"
@@ -601,6 +608,79 @@ public static class LocalTls {
   # plugin's name (with https://<id>.plugins.pecofence the proxy got CONNECT webdemo...:443).
   Check 'the proxy hears nothing of the plugin''s page' ($seen -notmatch 'webdemo|pecofence') "proxy saw: $seen"
   Check 'nor does the DNS' ((ipconfig /displaydns | Out-String) -notmatch 'webdemo|plugins\.pecofence') ''
+  Check 'no errors in the log' (@(PfLogErrors).Count -eq 0) ((PfLogErrors) -join ' | ')
+}
+
+if ($Part -eq 'V') {
+  $Lr = 'C:\pf\run\webv6'; $Marker = "$Lr\opened.txt"
+  New-Item -ItemType Directory -Force $Lr | Out-Null
+  Add-Type -OutputAssembly "$Lr\pfmark.exe" -OutputType WindowsApplication -TypeDefinition @"
+public static class PfMark { public static void Main(string[] a) { System.IO.File.AppendAllText(@"$Marker", "opened\r\n"); } }
+"@
+  # A gated call right after a click on the page's button (the click lets one call through).
+  function AfterClick([string]$js) { $b = WebRect $h '#btn'; [G]::Click($b.cx, $b.cy); Js "(window.r = undefined, ($js).then(v => window.r = (v === null ? 'null' : v), e => window.r = 'refused: ' + e.message), 1)" | Out-Null }
+  function Answer([string]$js, $sec = 10) { Js "(window.r = undefined, ($js).then(v => window.r = (v === null ? 'null' : v), e => window.r = 'refused: ' + e.message), 1)" | Out-Null; return (JsWait "window.r" $sec) }
+
+  Case 'the page''s pf has launch, media and apps; launch.add stays with main.js'
+  $fid = PfPluginFence 'Web6' '420,160,380,460' 'webv6'
+  $h = FenceWin 'Web6'
+  Check 'CDP reaches the page' ((CdpOpen -Url 'pecofence-plugin://webv6/*' -sec 30) -and (JsWait "document.readyState === 'complete'" 15)) ''
+  $kinds = Js "['launch.list', 'launch.open', 'launch.pick', 'launch.remove', 'media.current', 'media.control', 'apps.running', 'apps.front', 'launch.add'].map(n => { const [a, b] = n.split('.'); return typeof (pf[a] || {})[b]; }).join(' ')"
+  Check 'eight new calls are functions, launch.add is not there' ($kinds -eq 'function function function function function function function function undefined') $kinds
+  Js "(window.ev = { media: 0, apps: [] }, pf.on('media', () => window.ev.media++), pf.on('apps', a => window.ev.apps.push(a.running.join(',') + '|' + a.front)), 1)" | Out-Null
+
+  Case 'launch: pick in a click adds the item, list, open in a click, remove'
+  AfterClick "pf.launch.pick('program')"
+  $dlg = WaitWin '#32770' 10
+  Check 'pf.launch.pick after a click opens the file dialog' ($dlg -ne [IntPtr]::Zero) ''
+  [QS]::SetFileName($dlg, "$Lr\pfmark.exe"); Start-Sleep -Milliseconds 300; [G]::Press(0x0D)
+  $item = JsWait "window.r" 10
+  Check 'the picked program is an item: an id and its name, no path' ($item.id -and $item.name -eq 'pfmark' -and -not $item.path) ($item | ConvertTo-Json -Compress)
+  $l = Answer "pf.launch.list()"
+  Check 'pf.launch.list has it' (@($l).Count -eq 1 -and $l[0].id -eq $item.id) ($l | ConvertTo-Json -Compress)
+  $r = Answer "pf.launch.open('$($item.id)')"
+  Check 'pf.launch.open without a click is refused' ("$r" -match 'click') "$r"
+  AfterClick "pf.launch.open('$($item.id)')"
+  $r = JsWait "window.r" 10
+  for ($i = 0; $i -lt 20 -and -not (Test-Path $Marker); $i++) { Start-Sleep -Milliseconds 250 }
+  Check 'pf.launch.open after a click opens it' ((Test-Path $Marker) -and "$r" -eq 'null') "r=$r"
+  $r = Answer "pf.launch.remove('$($item.id)')"
+  $l = Answer "pf.launch.list()"
+  Check 'pf.launch.remove takes it away' ($r -eq $true -and @($l | Where-Object { $_ }).Count -eq 0) "remove=$r list=$($l | ConvertTo-Json -Compress)"
+
+  Case 'media: current, the media event, control in a click'
+  $Page = "$PfRun\media-page"
+  New-Item -ItemType Directory -Force $Page | Out-Null
+  Copy-Item 'C:\pf\kit\assets\media-page\*' $Page -Force
+  # Three minutes of silence (16-bit mono, 8 kHz).
+  $rate = 8000; $n = $rate * 180 * 2; $wav = New-Object byte[] (44 + $n)
+  $parts = @(@(0, [Text.Encoding]::ASCII.GetBytes('RIFF')), @(4, [BitConverter]::GetBytes([int](36 + $n))), @(8, [Text.Encoding]::ASCII.GetBytes('WAVEfmt ')),
+    @(16, [BitConverter]::GetBytes([int]16)), @(20, [BitConverter]::GetBytes([int16]1)), @(22, [BitConverter]::GetBytes([int16]1)),
+    @(24, [BitConverter]::GetBytes([int]$rate)), @(28, [BitConverter]::GetBytes([int]($rate * 2))), @(32, [BitConverter]::GetBytes([int16]2)),
+    @(34, [BitConverter]::GetBytes([int16]16)), @(36, [Text.Encoding]::ASCII.GetBytes('data')), @(40, [BitConverter]::GetBytes([int]$n)))
+  foreach ($p in $parts) { [Array]::Copy($p[1], 0, $wav, $p[0], $p[1].Length) }
+  [IO.File]::WriteAllBytes("$Page\tone.wav", $wav)
+  $url = 'file:///' + ($Page -replace '\\', '/') + '/play.html'
+  $edge = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
+  Start-Process $edge -ArgumentList @('--no-first-run', '--no-default-browser-check', "--user-data-dir=$PfRun\edge-media", '--autoplay-policy=no-user-gesture-required', '--window-position=860,60', '--window-size=640,420', $url) | Out-Null
+  $seen = JsWait "window.ev.media > 0" 30
+  $m = Answer "pf.media.current()"
+  Check 'the page gets the media event and pf.media.current names what Edge plays' ($seen -and $m.title -eq 'PecoFence test tone' -and $m.playing -eq $true) ($m | ConvertTo-Json -Compress)
+  AfterClick "pf.media.control('playpause')"
+  $r = JsWait "window.r" 10
+  $paused = $false
+  for ($i = 0; $i -lt 20 -and -not $paused; $i++) { Start-Sleep -Milliseconds 500; $paused = (Answer "pf.media.current()").playing -eq $false }
+  Check 'pf.media.control in a click pauses it' ($r -eq $true -and $paused) "r=$r"
+  Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+
+  Case 'apps: running, front and the apps event'
+  $np = Start-Process notepad.exe -PassThru
+  $ev = JsWait "window.ev.apps.find(a => a.startsWith('notepad.exe|')) || ''" 15
+  Check 'the page gets the apps event when Notepad starts' ("$ev" -match '^notepad.exe\|') "$ev"
+  [G]::SetForegroundWindow($np.MainWindowHandle) | Out-Null; Start-Sleep -Milliseconds 500
+  $run = Answer "pf.apps.running()"; $front = Answer "pf.apps.front()"
+  Check 'pf.apps.running and pf.apps.front name it' (@($run) -contains 'notepad.exe' -and $front -eq 'notepad.exe') "running=$($run -join ',') front=$front"
+  Stop-Process -Id $np.Id -Force
   Check 'no errors in the log' (@(PfLogErrors).Count -eq 0) ((PfLogErrors) -join ' | ')
 }
 
