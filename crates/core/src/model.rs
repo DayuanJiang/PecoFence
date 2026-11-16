@@ -2262,6 +2262,26 @@ impl Config {
         dropped
     }
 
+    /// The plain values of plugin fences (and the snapshots' copies) under keys that
+    /// `secret(plugin id, key)` says the plugin's manifest calls `secret` go: an older version
+    /// may have kept such a setting as `text`. Returns how many went.
+    pub fn drop_plain_secrets(&mut self, secret: impl Fn(&str, &str) -> bool) -> usize {
+        let snapshots = self
+            .snapshots
+            .iter_mut()
+            .flat_map(|s| s.scripts.values_mut());
+        let mut dropped = 0;
+        for spec in self.scripts.values_mut().chain(snapshots) {
+            let Some(id) = spec.path.strip_prefix("plugin:") else {
+                continue;
+            };
+            let before = spec.settings.len();
+            spec.settings.retain(|k, _| !secret(id, k));
+            dropped += before - spec.settings.len();
+        }
+        dropped
+    }
+
     /// Marks every script of this configuration as held (see [`ScriptSpec::held`]): it is a
     /// file from someone else about to be imported. Returns how many have a path to run.
     pub fn hold_scripts(&mut self) -> usize {
@@ -3067,6 +3087,28 @@ mod tests {
             );
         }
         assert_eq!(c.scripts[&old_clock].settings["seconds"], true);
+    }
+
+    #[test]
+    fn plain_values_of_secret_settings_go_from_fences_and_snapshots() {
+        let (mut c, [_, _, weather, _, _, old_clock]) = config_with_tools(false);
+        let spec = |path: &str| {
+            let mut spec = ScriptSpec::new(path);
+            spec.settings.insert("token".into(), "plain".into());
+            spec.settings.insert("city".into(), "Tokyo".into());
+            let sealed = serde_json::json!({ "token": "0a0b" });
+            spec.settings.insert(crate::plugins::SECRETS.into(), sealed);
+            spec
+        };
+        c.scripts.insert(weather, spec("plugin:weather"));
+        c.scripts.insert(old_clock, spec("C:/s/token.ps1"));
+        (c.snapshots[1].scripts).insert(weather, spec("plugin:weather"));
+        let secret = |id: &str, key: &str| id == "weather" && key == "token";
+        assert_eq!(c.drop_plain_secrets(secret), 2);
+        for s in [&c.scripts[&weather], &c.snapshots[1].scripts[&weather]] {
+            assert!(!s.settings.contains_key("token") && s.settings.len() == 2);
+        }
+        assert_eq!(c.scripts[&old_clock].settings["token"], "plain");
     }
 
     #[test]

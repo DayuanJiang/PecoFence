@@ -1148,8 +1148,10 @@ impl App {
             return false;
         }
         spec.path = path.to_string();
-        // A script the user chose himself is his own.
+        // A script the user chose himself is his own. What the fence's plugin before was given
+        // (its secrets, launcher items, folders, shortcuts) is none of the next one's.
         spec.held = false;
+        spec.settings.retain(|k, _| !k.starts_with("__"));
         tracing::info!(%id, "script fence script changed");
         self.state.mark_dirty();
         self.schedule_save();

@@ -2217,6 +2217,7 @@ impl App {
             live_told_page: None,
         };
         app.state.current_desktop = App::read_current_desktop();
+        app.drop_plain_secrets();
         // Watch the wallpaper settings, virtual-desktop state and Explorer's copies of the
         // picture; any signal starts a bounded burst of fast reads, because the image may arrive
         // after the notification.

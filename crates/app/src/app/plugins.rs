@@ -371,6 +371,23 @@ impl App {
             .join("plugins-data")
     }
 
+    /// The plain values the fences and snapshots keep under keys an installed plugin's manifest
+    /// calls `secret` go (at the start, after an install or update, after an import): they never
+    /// reach a plugin, the file or an export.
+    pub(super) fn drop_plain_secrets(&mut self) {
+        let installed = &self.plugins.installed;
+        let secret = |id: &str, key: &str| {
+            let m = installed.get(id).map(|p| &p.manifest.settings);
+            m.is_some_and(|s| s.iter().any(|s| s.key == key && s.kind == "secret"))
+        };
+        let dropped = self.state.config.drop_plain_secrets(secret);
+        if dropped > 0 {
+            tracing::info!(dropped, "plugins: plain values of secret settings dropped");
+            self.state.mark_dirty();
+            self.schedule_save();
+        }
+    }
+
     /// The installed plugin `id` (the in-memory table; no file is read).
     pub(super) fn plugin(&self, id: &str) -> Option<&Installed> {
         self.plugins.installed.get(id)
@@ -769,6 +786,7 @@ impl App {
             None => self.plugins.trial.remove(id),
         };
         self.plugins.reload(id);
+        self.drop_plain_secrets();
         tracing::info!(id, version, ?before, "plugins: switched to the new version");
         Ok(())
     }
@@ -1056,6 +1074,8 @@ impl App {
         };
         if secret {
             // Encrypted for this Windows account, under `__secrets`; an empty one is removed.
+            // A plain value an older version kept under the key goes.
+            spec.settings.remove(key);
             let text = value.as_str().unwrap_or_default();
             let sealed = pecofence_platform::dpapi::protect(text.as_bytes());
             let secrets =

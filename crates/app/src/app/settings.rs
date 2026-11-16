@@ -217,6 +217,7 @@ impl App {
         // script in snapshots and backups, and only the user's own turn of 小工具 takes it off.
         let file_scripts = if imported { cfg.hold_scripts() } else { 0 };
         self.state.replace_config(cfg);
+        self.drop_plain_secrets();
         if let Some(desk) = shell::user_desktop() {
             self.state.migrate_desktop_path(&desk);
         }
