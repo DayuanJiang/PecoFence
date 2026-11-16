@@ -547,8 +547,8 @@ pub struct FenceViewState {
     pub(super) wheel_zoom_accum: i32,
     /// Wheel-over-tabs accumulator: one tab per whole notch (touchpads deliver fractions).
     pub(super) wheel_tab_accum: i32,
-    /// The wheel over a plugin's `wheel: true` row or cell, short of a whole notch.
-    pub(super) wheel_plugin_accum: i32,
+    /// The wheel over a plugin's `wheel: true` row or cell (that one), short of a whole notch.
+    pub(super) wheel_plugin_accum: (Option<(usize, usize)>, i32),
     /// The tab TIMER_TAB_HOVER will switch to while the pointer stays on it.
     pub(super) tab_hover_switch: Option<usize>,
     /// A hover switched a tab of this strip: the next tabs wait `TAB_HOVER_NEXT_MS` only.

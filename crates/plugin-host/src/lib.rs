@@ -230,8 +230,9 @@ impl Paced {
     fn due(&mut self, now: Instant) -> Vec<(&'static str, Value)> {
         let mut out = Vec::new();
         let free = |at: Option<Instant>, gap| at.is_none_or(|at| now >= at + gap);
+        // The rates count events: after a `leave` and an `enter` the next change waits two gaps.
+        let after = |sent: usize, gap: Duration| now + gap * (sent.max(1) as u32 - 1);
         if self.on != self.told && free(self.hover_at, HOVER_GAP) {
-            self.hover_at = Some(now);
             if let Some(row) = self.told.take() {
                 out.push(("leave", json!({ "row": row })));
             }
@@ -239,14 +240,16 @@ impl Paced {
                 out.push(("enter", json!({ "row": row })));
             }
             self.told = self.on.clone();
+            self.hover_at = Some(after(out.len(), HOVER_GAP));
         }
         if !self.wheel.is_empty() && free(self.wheel_at, WHEEL_GAP) {
-            self.wheel_at = Some(now);
+            let hover = out.len();
             for (id, steps) in std::mem::take(&mut self.wheel) {
                 if steps != 0 {
                     out.push(("wheel", json!({ "id": id, "steps": steps })));
                 }
             }
+            self.wheel_at = Some(after(out.len() - hover, WHEEL_GAP));
         }
         out
     }
@@ -789,6 +792,12 @@ impl Plugin {
 
     /// The pointer's row and the wheel's steps that may go to the plugin now.
     fn pace(&mut self, now: Instant) -> Result<(), Stopped> {
+        if !self.shown {
+            // Hidden: what waits is not told, the pointer is over the fence no more.
+            self.paced.on = self.paced.told.clone();
+            self.paced.wheel.clear();
+            return Ok(());
+        }
         for (name, data) in self.paced.due(now) {
             tracing::debug!(fence = %self.fence, name, %data, "plugin told of the pointer or the wheel");
             self.emit(name, Some(data.to_string()))?;
@@ -1228,6 +1237,13 @@ mod tests {
         }
         assert_eq!((p.due(ms(50)), p.next_due()), (none.clone(), Some(ms(100))));
         assert_eq!(p.due(ms(100)), [("leave", at("a")), ("enter", at("c"))]);
+        // Those were two events: the next change waits two gaps.
+        p.take("enter", &at("d"));
+        assert_eq!(
+            (p.due(ms(250)), p.next_due()),
+            (none.clone(), Some(ms(300)))
+        );
+        p.take("enter", &at("c"));
         // Off c and back before the plugin was told: nothing to tell.
         p.take("leave", &Value::Null);
         p.take("enter", &at("c"));
@@ -1269,6 +1285,15 @@ mod tests {
             ),
             "{out:?}"
         );
+        // While the fence is hidden the pointer and the wheel are told nothing; a submit is.
+        let hidden = vec![
+            Command::Event(f, "enter", json!({ "row": "r1" })),
+            Command::Event(f, "wheel", json!({ "id": "v", "steps": 1 })),
+            Command::Event(f, "submit", json!({ "id": "t" })),
+        ];
+        let out = outputs(code, false, 30, hidden);
+        let last = texts(&out).last().cloned();
+        assert_eq!(last.as_deref(), Some(r#"submit {"id":"t"}"#), "{out:?}");
     }
 
     #[test]

@@ -25,6 +25,15 @@ function show() {
     { input: { type: "text", id: "t", lines: 4, value: text, placeholder: "Write here", max: 200 } },
     { text: "got: " + text.replace(/\n/g, "|") },
     { text: "██████", color: "gray", size: "huge", tip: "gray block" },
+    // Cells of text only: the row still has its menu and hears of the pointer.
+    {
+      id: "crow",
+      hover: "event",
+      menu: [{ id: "cmenu", title: "Cell row entry" }],
+      cells: [{ text: "Text cells" }, { text: "only" }],
+    },
+    // No id: it hears nothing, and the log says why.
+    { text: "Hover without an id", hover: "event" },
   ];
   for (let i = 1; i <= 30; i++) rows.push({ text: "filler " + i });
   pf.show({ menu: [{ id: "fence-cmd", title: "Fence command" }], rows });

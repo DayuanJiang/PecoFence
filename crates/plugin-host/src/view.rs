@@ -222,18 +222,21 @@ pub struct Input {
     pub max: Option<usize>,
 }
 
-/// The most a multi-line box holds: 64 KB (in UTF-8), and as many characters.
+/// The most a multi-line box holds, and what a one-line box holds: UTF-16 units, as the edit
+/// control counts them (an emoji takes two). What the box let the user type is kept whole.
 pub const MAX_INPUT: usize = 64 * 1024;
+pub const MAX_LINE: usize = 4096;
 
-/// `text` cut to at most `max` characters and [`MAX_INPUT`] bytes, at a character's end.
+/// `text` cut to at most `max` UTF-16 units, at a character's end.
 pub fn cut_input(text: &mut String, max: usize) {
-    let end = (text.char_indices())
-        .map(|(at, c)| at + c.len_utf8())
-        .take(max)
-        .take_while(|end| *end <= MAX_INPUT)
-        .last()
-        .unwrap_or(0);
-    text.truncate(end);
+    let mut units = 0;
+    let over = text.char_indices().find(|(_, c)| {
+        units += c.len_utf16();
+        units > max
+    });
+    if let Some((at, _)) = over {
+        text.truncate(at);
+    }
 }
 
 fn limit_menu(menu: &mut Vec<MenuItem>) {
@@ -307,13 +310,16 @@ impl Row {
         }
         if let Some(input) = &mut self.input {
             cut(&mut input.placeholder);
+            // The value as the box would let the user type it (a one-line box always 4096).
+            let max = match input.kind.as_str() {
+                "text" => input.max.unwrap_or(MAX_INPUT).clamp(1, MAX_INPUT),
+                _ => MAX_LINE,
+            };
             if input.kind == "text" {
                 input.lines = input.lines.clamp(2, 12);
-                input.max = Some(input.max.unwrap_or(MAX_INPUT).clamp(1, MAX_INPUT));
-                cut_input(&mut input.value, MAX_INPUT);
-            } else {
-                cut(&mut input.value);
             }
+            input.max = Some(max);
+            cut_input(&mut input.value, max);
         }
         limit_menu(&mut self.menu);
         let looks = (self.cells.iter_mut().map(|c| &mut c.hover)).chain([&mut self.hover]);
@@ -342,6 +348,11 @@ pub fn read(json: &str) -> serde_json::Result<(View, Vec<String>)> {
         });
         if let Some(mut row) = row {
             row.limit();
+            // `enter` and `leave` name the row by its id: a row without one tells nothing.
+            if row.id.is_none() && row.hover.as_ref().is_some_and(|h| h.event) {
+                row.hover = None;
+                dropped.push("hover \"event\" (the row has no id)".into());
+            }
             view.rows.push(row);
         }
     }
@@ -588,16 +599,17 @@ mod tests {
         let items: Vec<String> = (0..12)
             .map(|i| format!(r#"{{"id":"m{i}","title":"{}"}}"#, "字".repeat(50)))
             .collect();
-        let long = "長".repeat(30_000);
+        let long = "長".repeat(70_000);
         let (view, dropped) = read(&format!(
             r#"{{"rows":[
             {{"id":"r1","menu":[{0},{{"title":"no id"}},{{"separator":true}}],
               "hover":{{"color":"red","text":"Open"}},"wheel":true}},
             {{"id":"r2","hover":"event","cells":[{{"id":"v","wheel":true,"hover":{{"text":"x"}}}}]}},
             {{"text":"a","hover":"wave","menu":3}},
-            {{"input":{{"type":"text","id":"t","lines":40,"max":0,"value":"v"}}}},
+            {{"input":{{"type":"text","id":"t","lines":40,"max":0,"value":"vw"}}}},
             {{"input":{{"type":"text","id":"t","value":"{long}"}}}},
-            {{"input":{{"type":"line","value":"{long}"}}}}
+            {{"input":{{"type":"line","max":5,"value":"{long}"}}}},
+            {{"hover":"event","text":"no id"}}
         ]}}"#,
             items.join(",")
         ))
@@ -618,19 +630,31 @@ mod tests {
         // A hover of another word and a menu that is no list are left out; the row shows.
         assert_eq!(r[2].text, "a");
         assert!(r[2].hover.is_none() && r[2].menu.is_empty());
-        assert_eq!(dropped, ["hover", "menu"]);
-        let small = r[3].input.as_ref().unwrap();
-        assert_eq!((small.lines, small.max), (12, Some(1)));
-        // 64 KB of a multi-line box (three bytes a character), 4096 characters of a one-line one.
-        let big = r[4].input.as_ref().unwrap();
+        // A row that tells the pointer needs an id; the log says so.
+        assert!(r[6].hover.is_none() && r[6].text == "no id");
         assert_eq!(
-            (big.lines, big.max, big.value.len()),
-            (2, Some(MAX_INPUT), 65_535)
+            dropped,
+            ["hover", "hover \"event\" (the row has no id)", "menu"]
         );
-        assert_eq!(r[5].input.as_ref().unwrap().value.chars().count(), 4096);
+        // `max: 0` is one character, and the value is cut by it.
+        let small = r[3].input.as_ref().unwrap();
+        assert_eq!((small.lines, small.max, &*small.value), (12, Some(1), "v"));
+        // 64 K units of a multi-line box, 4096 of a one-line one whatever its `max`.
+        let big = r[4].input.as_ref().unwrap();
+        let chars = big.value.chars().count();
+        assert_eq!((big.lines, big.max, chars), (2, Some(MAX_INPUT), MAX_INPUT));
+        let line = r[5].input.as_ref().unwrap();
+        assert_eq!(
+            (line.max, line.value.chars().count()),
+            (Some(MAX_LINE), MAX_LINE)
+        );
         let mut text = "ab長c".to_string();
         cut_input(&mut text, 3);
         assert_eq!(text, "ab長");
+        // As the edit control counts: an emoji is two units.
+        let mut text = "ab😀c".to_string();
+        cut_input(&mut text, 3);
+        assert_eq!(text, "ab");
     }
 
     #[test]

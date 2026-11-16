@@ -19,10 +19,13 @@ use pecofence_plugin_host as host;
 /// The restarts and stops held while a plugin fence's input is open: for each fence, the
 /// plugin to start (its id and main.js) once it closes, or None to stop it. And the id of each
 /// plugin fence's note, for its `text` events (also while a restarted plugin has no view yet).
+/// And the text box open in a fence: its input's id, whether it has several lines, and the
+/// limit its edit control was given (the rows may change while it is open).
 #[derive(Default)]
 pub(super) struct Held {
     starts: HashMap<FenceId, Option<(String, PathBuf)>>,
     notes: HashMap<FenceId, Option<String>>,
+    lines: HashMap<(FenceId, usize), (Option<String>, bool, usize)>,
 }
 
 impl App {
@@ -279,10 +282,12 @@ impl App {
         // The box's text is as big as the fence's 文字大小, as the row under it.
         let text_size = self.state.fence(fence).map_or(1, super::text_size_index);
         let font_dip = pecofence_render::fence_chrome::TOOL_TEXT_SIZES[usize::from(text_size)];
-        // A box of several lines takes `max` characters; a one-line box 4096 (the view's limit).
-        let lines = if line.kind == "text" { line.lines } else { 1 };
-        let max = line.max.unwrap_or(4096);
-        tracing::info!(%fence, index, chars = line.value.chars().count(), lines, max, font_dip, "plugin fence: its text box opens");
+        // A box of several lines takes `max` UTF-16 units; a one-line box 4096 (the view's limit).
+        let many = line.kind == "text";
+        let lines = if many { line.lines } else { 1 };
+        let max = line.max.unwrap_or(host::view::MAX_LINE);
+        tracing::info!(%fence, index, id = ?line.id, chars = line.value.chars().count(), lines, max, font_dip, "plugin fence: its text box opens");
+        let id = line.id.clone();
         crate::rename::begin_line_input(
             w.hwnd(),
             rect,
@@ -293,6 +298,7 @@ impl App {
             w.label_ink(self.theme_mode),
             font_dip,
         );
+        self.held.lines.insert((fence, index), (id, many, max));
     }
 
     /// The text box of row `index` closed: with Enter or a click elsewhere its text goes to
@@ -305,35 +311,40 @@ impl App {
         text: Option<String>,
         submit: bool,
     ) {
-        if let Some(mut text) = text {
-            let row = self
+        // The input the box opened for, by its id (the row at `index` may be another by now).
+        let open = self.held.lines.remove(&(fence, index));
+        if let (Some(mut text), Some((id, many, max))) = (text, open) {
+            // As the edit control counted: nothing the user typed goes.
+            host::view::cut_input(&mut text, max);
+            let rows = self
                 .light
                 .running
                 .get_mut(&fence)
-                .and_then(|(rows, ..)| rows.as_mut()?.get_mut(index));
-            if let Some(row) = row
-                && let Some(line) = &mut row.input
-            {
-                let many = line.kind == "text";
-                if many {
-                    host::view::cut_input(&mut text, line.max.unwrap_or(host::view::MAX_INPUT));
-                }
+                .and_then(|r| r.0.as_mut());
+            let mut rows = rows.into_iter().flatten().enumerate();
+            let row = rows.find(|(i, r)| {
+                let input = r
+                    .input
+                    .as_ref()
+                    .filter(|l| l.kind == "line" || l.kind == "text");
+                input.is_some_and(|l| l.id == id && (id.is_some() || *i == index))
+            });
+            if let Some(line) = row.and_then(|(_, r)| r.input.as_mut()) {
                 line.value = text.clone();
-                let id = line.id.clone();
-                tracing::info!(%fence, index, many, submit, chars = text.chars().count(), "plugin fence: text box sends its text");
-                self.push_tool_view(self.state.host_of(fence));
-                // A restart held while the box was open first: the new runtime gets the text.
-                self.release_held(fence);
-                let (name, data) = match many {
-                    true => ("change", serde_json::json!({ "id": id, "text": text })),
-                    false => ("text", serde_json::json!({ "id": id, "text": text })),
-                };
-                self.plugin_event(fence, name, data);
-                if many && submit {
-                    self.plugin_event(fence, "submit", serde_json::json!({ "id": id }));
-                }
-                return;
             }
+            tracing::info!(%fence, index, ?id, many, submit, chars = text.chars().count(), "plugin fence: text box sends its text");
+            self.push_tool_view(self.state.host_of(fence));
+            // A restart held while the box was open first: the new runtime gets the text.
+            self.release_held(fence);
+            let (name, data) = match many {
+                true => ("change", serde_json::json!({ "id": id, "text": text })),
+                false => ("text", serde_json::json!({ "id": id, "text": text })),
+            };
+            self.plugin_event(fence, name, data);
+            if many && submit {
+                self.plugin_event(fence, "submit", serde_json::json!({ "id": id }));
+            }
+            return;
         }
         self.release_held(fence);
     }

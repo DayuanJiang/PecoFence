@@ -5683,6 +5683,17 @@ impl FenceChrome {
                     (bitmaps, halo.as_ref()),
                     &mut hits,
                 )?;
+                // A row with its own menu, tip, click or `hover: "event"`: where its cells take
+                // nothing, the row has the pointer (as cell `cells.len()`, after the cells).
+                if row.hover {
+                    let area = Rect::from_xywh(
+                        NOTE_PAD_X,
+                        y - SCRIPT_ROW_PAD_Y,
+                        w,
+                        h + 2.0 * SCRIPT_ROW_PAD_Y,
+                    );
+                    hits.push((i, row.cells.len(), area));
+                }
                 y += h + 2.0 * SCRIPT_ROW_PAD_Y;
                 continue;
             }

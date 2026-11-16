@@ -154,6 +154,21 @@ Check 'sixty row changes reach the plugin at most 10 times a second, the last ro
 ParkMouse; Start-Sleep -Milliseconds 700
 Check 'off the rows: leave' (WaitEv 'leave h1') (Ev)
 
+Case 'a row of text cells with a menu and hover: "event"'
+# Its cells take no pointer: the row has it, as cell 2 (after its two cells).
+$p = HitPt 12 2
+Check 'the row has the pointer where its cells are' ($null -ne $p) "hits $(DumpVal (DumpOf 'UI' 5) 'script_cells')"
+if ($p) {
+  [G]::MoveTo($p[0], $p[1]); Start-Sleep -Milliseconds 700
+  Check 'onto it: enter with its id' (WaitEv 'enter crow') (Ev)
+  [G]::RClick($p[0], $p[1]); $m = MenuWin 5; $texts = MenuTexts $m
+  Check 'a right-click shows its own menu' ($texts -match 'Cell row entry' -and $texts -notmatch 'Fence command') $texts
+  if (-not (MenuPick 'Cell row entry' $m)) { CloseMenus }
+  Check 'its entry sends command with the row''s id' (WaitEv 'command cmenu menu crow') (Ev)
+}
+ParkMouse; Start-Sleep -Milliseconds 500
+Check 'hover: "event" on a row without an id: the log says it is left out' ([bool](PfWaitLog 'the row has no id' 3)) ''
+
 Case 'the wheel'
 $scroll0 = DumpVal (DumpOf 'UI' 5) 'scroll'
 $p = HitPt 7 1

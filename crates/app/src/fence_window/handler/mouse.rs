@@ -1291,9 +1291,14 @@ pub(super) fn on_mousewheel(
         // Over a plugin's `wheel: true` row or cell the wheel is the plugin's: its whole
         // notches go to it (positive away from the user) and the fence does not scroll.
         if let Some((row, cell)) = v.plugin_wheel_at(pt.x, pt.y) {
-            v.wheel_plugin_accum += delta;
-            let steps = v.wheel_plugin_accum / msg::WHEEL_DELTA;
-            v.wheel_plugin_accum -= steps * msg::WHEEL_DELTA;
+            // What is short of a notch stays with its row or cell: none of it goes to the next.
+            let accum = &mut v.wheel_plugin_accum;
+            if accum.0 != Some((row, cell)) {
+                *accum = (Some((row, cell)), 0);
+            }
+            accum.1 += delta;
+            let steps = accum.1 / msg::WHEEL_DELTA;
+            accum.1 -= steps * msg::WHEEL_DELTA;
             if steps != 0 {
                 let fence = v.active;
                 queue.push(Command::PluginWheel {
@@ -1305,7 +1310,7 @@ pub(super) fn on_mousewheel(
             }
             return Some(0);
         }
-        v.wheel_plugin_accum = 0;
+        v.wheel_plugin_accum = (None, 0);
         // Windows "lines per notch" (SPI_GETWHEELSCROLLLINES) rows in
         // List / Details, one grid row in Icons, a viewport when set to
         // "one screen at a time". Whole notches (|delta| >= 120) glide
