@@ -1847,7 +1847,9 @@
       p.launch && t("打开你放进这个栅栏的文件、文件夹和程序"), p.drop.length && t("你拖到它上面的文件和文字，它能读取"),
       p.commands.length && [tf("有这些命令：{0}。可以在插件详情里给它们设快捷键", '\u0001'), p.commands],
       p.media === 'read' && t("看到正在播放的歌曲或视频：名字、歌手、专辑和封面"), p.media === 'control' && t("看到正在播放的歌曲或视频：名字、歌手、专辑和封面，并能暂停和切歌"),
-      p.apps && p.apps.length && [tf("知道这些程序是否在运行、是否在最前面：{0}", '\u0001'), p.apps]].filter(Boolean);
+      p.apps && p.apps.length && [tf("知道这些程序是否在运行、是否在最前面：{0}", '\u0001'), p.apps],
+      ...(p.local?.loopback || []).map(l => [tf("连接这台电脑上的 {0}（端口 {1}）", '\u0001', l.port), [l.app]]),
+      ...(p.local?.lan || []).map(l => tf("连接你在设置里填写的局域网设备（端口 {0}）", l.port))].filter(Boolean);
     return d.length ? d : [t("只显示内容，不联网，也不读剪贴板")];
   }
   // `el` with `text`, its \u0001 replaced by the names, each kept whole.
@@ -1908,11 +1910,14 @@
         c = plEl('input');
         c.type = s.type === 'number' ? 'number' : 'text';
         c.value = v ?? '';
+        // A device: the address the user types (an example address, the same in every language).
+        if (s.type === 'device') { c.classList.add('pl-device'); c.placeholder = '192.168.1.20'; c.spellcheck = false; }
         c.onchange = () => s.type !== 'number' ? set(c.value) : c.value !== '' && isFinite(+c.value) && set(+c.value);
       }
       c.setAttribute('aria-label', s.label || s.key);
       row.append(plEl('span', '', s.label || s.key), c);
       if (s.type === 'secret') row.append(plEl('div', 's', t("插件能读到这个值。它加密保存在这台电脑上，换到另一台电脑后要重新填写。")));
+      if (s.type === 'device') row.append(plEl('div', 's', t("这个插件会向这个地址发送请求。")));
       box.append(row);
     }
     // A launcher's items: what the user put into the fence, each with 移除.
@@ -2052,9 +2057,11 @@
     plAsk = p; plDrop = null;
     document.getElementById('plDoesBox').hidden = false;
     // Yellow when it reaches past its fence (the network, the clipboard, the background, a web
-    // page, programs, files, what plays, which programs run); grey when it only shows content.
+    // page, programs, files, what plays, which programs run, services of this computer and the
+    // local network); grey when it only shows content.
     const reaches = p.network.length || p.clipboard !== 'none' || p.background || p.layer === 'web' || p.system.length
-      || (p.folders && p.folders !== 'none') || p.launch || p.drop.length || p.media !== 'none' || (p.apps && p.apps.length);
+      || (p.folders && p.folders !== 'none') || p.launch || p.drop.length || p.media !== 'none' || (p.apps && p.apps.length)
+      || (p.local && (p.local.loopback.length || p.local.lan.length));
     document.getElementById('plDoesBox').classList.toggle('plain', !reaches);
     document.getElementById('plChanged').hidden = !changed;
     document.getElementById('plTitle').textContent = p.state === 'confirm' ? tf("更新“{0}”？", p.name) : tf("安装“{0}”？", p.name);

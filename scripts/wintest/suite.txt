@@ -87,6 +87,7 @@ plugin-local       2   ec2    debug   plugin-local.ps1
 plugin-folders     3   ec2    debug   plugin-folders.ps1
 plugin-drag        5   ec2    debug   plugin-drag.ps1
 plugin-drag-mon    3   manual debug   plugin-drag-monitors.ps1
+plugin-lan         2   ec2    debug   plugin-lan.ps1                 --var Lan=self
 plugin-media-store 1   manual debug   plugin-media-store.ps1 --extra packaging/msix
 plugins-six        3   manual debug   plugins-six.ps1
 smart-filter       1   ec2    release smart-filter.ps1

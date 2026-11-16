@@ -1120,5 +1120,9 @@
   "选择插件可以读写的文件夹": "Choose a folder the plugin may read and write",
   "读写你选的文件夹（装好后由你来选）": "Reads and writes a folder you pick (you pick it after installing)",
   "添加文件夹": "Add a folder",
-  "插件不能写入这个文件夹。系统文件夹、程序文件夹、AppData、ProgramData、PecoFence 自己的文件夹、磁盘的根目录、你的用户文件夹本身、名字以点开头的文件夹，还有链接和目录连接点，都不能交给插件写入。请换一个文件夹，例如“文档”里的一个文件夹。": "The plugin cannot write in this folder. System folders, program folders, AppData, ProgramData, PecoFence's own folders, the root of a drive, your user folder itself, folders whose name starts with a dot, links and junctions are never given to a plugin to write in. Please pick another folder, for example one inside Documents."
+  "插件不能写入这个文件夹。系统文件夹、程序文件夹、AppData、ProgramData、PecoFence 自己的文件夹、磁盘的根目录、你的用户文件夹本身、名字以点开头的文件夹，还有链接和目录连接点，都不能交给插件写入。请换一个文件夹，例如“文档”里的一个文件夹。": "The plugin cannot write in this folder. System folders, program folders, AppData, ProgramData, PecoFence's own folders, the root of a drive, your user folder itself, folders whose name starts with a dot, links and junctions are never given to a plugin to write in. Please pick another folder, for example one inside Documents.",
+  "连接这台电脑上的 {0}（端口 {1}）": "Connects to {0} on this computer (port {1})",
+  "连接你在设置里填写的局域网设备（端口 {0}）": "Connects to the local network device you enter in its settings (port {0})",
+  "这个插件会向这个地址发送请求。": "This plugin sends requests to this address.",
+  "请填写设备的地址，例如 192.168.1.20 或 homeassistant.local": "Enter the device's address, for example 192.168.1.20 or homeassistant.local"
 }

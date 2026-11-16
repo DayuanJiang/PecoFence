@@ -182,9 +182,10 @@ impl App {
         let spec = self.state.config.scripts.get(&id)?;
         // A light plugin: the texts of its rows, or why it stopped.
         if let Some(view) = self.web_stopped_view(id).or_else(|| self.light_view(id)) {
-            // A row of cells shows their texts (its own is not drawn).
+            // A row of cells shows their texts (its own is not drawn), a row of spans theirs.
             let text: Vec<String> = (view.rows.iter())
                 .map(|r| match r.cells.as_slice() {
+                    [] if r.text.is_empty() => r.spans.iter().map(|s| s.text.as_str()).collect(),
                     [] => r.text.clone(),
                     cells => cells
                         .iter()

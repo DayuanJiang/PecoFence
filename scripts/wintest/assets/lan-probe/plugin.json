@@ -1,0 +1,15 @@
+{
+  "id": "lan-probe",
+  "version": "1.0.0",
+  "api": 2,
+  "layer": "light",
+  "name": { "en": "LAN probe", "zh-CN": "局域网测试" },
+  "description": { "en": "A test plugin: requests the address of its url setting and shows what came back (tests/plugin-lan.ps1).", "zh-CN": "测试用的插件：请求设置里的地址，显示得到的结果。" },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": { "local": { "loopback": [{ "port": 11434, "app": "Ollama" }], "lan": [{ "port": 8123, "app": "Home Assistant" }] } },
+  "settings": [
+    { "key": "host", "type": "device", "label": { "en": "Device", "zh-CN": "设备" } },
+    { "key": "url", "type": "text", "default": "", "label": { "en": "Address to request", "zh-CN": "要请求的地址" } }
+  ]
+}

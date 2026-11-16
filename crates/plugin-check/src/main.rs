@@ -13,7 +13,10 @@
 
 use pecofence_core::FenceId;
 use pecofence_core::folder_write;
-use pecofence_core::plugins::{fence_settings, parse_manifest};
+use pecofence_core::plugins::{
+    DEVICES, Permissions, device_host, fence_settings, local_class, parse_manifest,
+};
+use pecofence_core::web_address::WebAddress;
 use pecofence_plugin_host::{self as host, Command, Host, Note, Output, Start, Stopped};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -33,7 +36,8 @@ const OFFLINE: &str =
 struct Log {
     calls: BTreeMap<String, u64>,
     refused: Vec<String>,
-    /// Requests by host: all of them, and those at rest.
+    /// Requests by host (`host:port` for one to permissions.local): all of them, and those at
+    /// rest.
     hosts: BTreeMap<String, (u64, u64)>,
     last_view: Value,
     rest_show_calls: usize,
@@ -59,6 +63,10 @@ struct Fake {
     /// `pf.apps.front` answers (the `apps` event later says it is not).
     app: Option<String>,
     front_asked: AtomicBool,
+    /// The device addresses of the fence's `device` settings (`--settings`): a `lan` request
+    /// goes only to one of them, as in the app.
+    devices: Vec<String>,
+    permissions: Permissions,
 }
 
 impl Fake {
@@ -95,6 +103,12 @@ impl Host for Fake {
         match name {
             "http.get" | "http.post" => {
                 let url = arg(0);
+                if args[1]["local"] == "lan" && !self.devices.contains(&url_host(url)) {
+                    return Err(format!(
+                        "{} is not the address of a device typed in this fence's settings: refused",
+                        url_host(url)
+                    ));
+                }
                 let answer = self
                     .fixture
                     .iter()
@@ -243,7 +257,17 @@ impl Host for Fake {
             } => {
                 *log.calls.entry(name.clone()).or_default() += 1;
                 if name.starts_with("http.") {
-                    let host = url_host(args.get(0).and_then(Value::as_str).unwrap_or_default());
+                    let url = args.get(0).and_then(Value::as_str).unwrap_or_default();
+                    let local = (WebAddress::parse(url))
+                        .filter(|a| local_class(&self.permissions, a).is_some());
+                    let host = match local {
+                        Some(a) => format!(
+                            "{}:{}",
+                            a.host,
+                            a.port.unwrap_or(if a.secure { 443 } else { 80 })
+                        ),
+                        None => url_host(url),
+                    };
                     let n = log.hosts.entry(host).or_default();
                     n.0 += 1;
                     n.1 += u64::from(rest);
@@ -439,18 +463,40 @@ fn check(a: Args) -> Result<bool, String> {
         },
         None => Vec::new(),
     };
+    // A device address given with --settings is what a user typed: the app keeps it under
+    // __devices (without one, the plugin sees null, as after an install).
+    let mut saved = a.settings.clone();
+    let mut devices = serde_json::Map::new();
+    for s in manifest.settings.iter().filter(|s| s.kind == "device") {
+        let typed = saved.remove(&s.key);
+        if let Some(host) = typed.as_ref().and_then(Value::as_str).and_then(device_host) {
+            devices.insert(s.key.clone(), host.into());
+        }
+    }
+    saved.insert(DEVICES.into(), devices.clone().into());
     let fake = Arc::new(Fake {
         fixture,
         rest: AtomicBool::new(false),
         log: Mutex::default(),
         app: manifest.permissions.apps.first().cloned(),
         front_asked: AtomicBool::new(false),
+        devices: devices
+            .values()
+            .filter_map(|d| d.as_str().map(str::to_string))
+            .collect(),
+        permissions: manifest.permissions.clone(),
     });
     let (out_tx, out_rx) = std::sync::mpsc::channel();
     let send_out = move |o: Output| _ = out_tx.send((Instant::now(), o));
     let (tx, thread) = host::spawn(fake.clone(), format, send_out).map_err(|e| e.to_string())?;
     let fence = FenceId::new_v4();
-    let settings = fence_settings(&manifest, &a.settings);
+    let mut settings = fence_settings(&manifest, &saved);
+    // A secret given with --settings is what the app decrypts for the plugin.
+    for s in manifest.settings.iter().filter(|s| s.kind == "secret") {
+        if let Some(v) = a.settings.get(&s.key).filter(|v| v.is_string()) {
+            settings[&s.key] = v.clone();
+        }
+    }
     let begun = Instant::now();
     let send = |c: Command| _ = tx.send(c);
     send(Command::Start(Box::new(Start {
@@ -586,7 +632,9 @@ fn check(a: Args) -> Result<bool, String> {
             .network
             .iter()
             .any(|h| h.eq_ignore_ascii_case(host));
-        let state = if declared {
+        let state = if host.contains(':') {
+            "a port of permissions.local"
+        } else if declared {
             "declared"
         } else {
             "NOT DECLARED, refused"

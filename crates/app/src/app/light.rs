@@ -864,6 +864,21 @@ impl App {
             .collect()
     }
 
+    /// The device addresses the user typed for plugin fence `fence` (its `device` settings, of
+    /// the keys its installed manifest declares).
+    pub(super) fn plugin_devices(&mut self, fence: FenceId) -> Vec<String> {
+        let (Some(m), Some(spec)) = (
+            self.light_manifest(fence),
+            self.state.config.scripts.get(&fence),
+        ) else {
+            return Vec::new();
+        };
+        let saved = pecofence_core::plugins::fence_settings(&m, &spec.settings);
+        let devices = m.settings.iter().filter(|s| s.kind == "device");
+        let typed = devices.filter_map(|s| saved.get(&s.key)?.as_str());
+        typed.map(str::to_string).collect()
+    }
+
     /// `pf.notify`: PecoFence's corner card with the plugin's name, and a system sound.
     pub(super) fn plugin_notify(&mut self, fence: FenceId, title: &str, body: &str, sound: bool) {
         let id = self

@@ -1,0 +1,42 @@
+{
+  "id": "home-assistant",
+  "version": "1.0.0",
+  "api": 2,
+  "layer": "light",
+  "name": {
+    "en": "Home Assistant", "zh-CN": "Home Assistant", "zh-TW": "Home Assistant", "ja": "Home Assistant", "ko": "Home Assistant",
+    "de": "Home Assistant", "fr": "Home Assistant", "es": "Home Assistant", "pt-BR": "Home Assistant", "ru": "Home Assistant", "it": "Home Assistant"
+  },
+  "description": {
+    "en": "Sensors, lights and switches of your Home Assistant on the local network; a click turns a light or switch on or off.",
+    "zh-CN": "显示局域网里 Home Assistant 的传感器、灯和开关，点一下可以开关灯和开关。",
+    "zh-TW": "顯示區域網路裡 Home Assistant 的感測器、燈和開關，點一下可以開關燈和開關。",
+    "ja": "LAN 内の Home Assistant のセンサー、照明、スイッチを表示し、クリックで照明やスイッチをオン・オフできます。",
+    "ko": "로컬 네트워크의 Home Assistant 센서, 조명, 스위치를 보여 주고, 클릭하면 조명과 스위치를 켜고 끌 수 있습니다.",
+    "de": "Sensoren, Lichter und Schalter Ihres Home Assistant im lokalen Netzwerk; ein Klick schaltet ein Licht oder einen Schalter ein oder aus.",
+    "fr": "Les capteurs, lumières et interrupteurs de votre Home Assistant sur le réseau local ; un clic allume ou éteint une lumière ou un interrupteur.",
+    "es": "Sensores, luces e interruptores de tu Home Assistant en la red local; un clic enciende o apaga una luz o un interruptor.",
+    "pt-BR": "Sensores, luzes e interruptores do seu Home Assistant na rede local; um clique liga ou desliga uma luz ou um interruptor.",
+    "ru": "Датчики, свет и выключатели вашего Home Assistant в локальной сети; щелчок включает или выключает свет или выключатель.",
+    "it": "Sensori, luci e interruttori del tuo Home Assistant sulla rete locale; un clic accende o spegne una luce o un interruttore."
+  },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": {
+    "local": { "lan": [{ "port": 8123, "app": "Home Assistant" }] }
+  },
+  "settings": [
+    {
+      "key": "host", "type": "device",
+      "label": { "en": "Home Assistant address", "zh-CN": "Home Assistant 的地址", "zh-TW": "Home Assistant 的位址", "ja": "Home Assistant のアドレス", "ko": "Home Assistant 주소", "de": "Adresse von Home Assistant", "fr": "Adresse de Home Assistant", "es": "Dirección de Home Assistant", "pt-BR": "Endereço do Home Assistant", "ru": "Адрес Home Assistant", "it": "Indirizzo di Home Assistant" }
+    },
+    {
+      "key": "token", "type": "secret",
+      "label": { "en": "Long-lived access token", "zh-CN": "长期访问令牌", "zh-TW": "長期存取權杖", "ja": "長期アクセストークン", "ko": "장기 액세스 토큰", "de": "Langlebiges Zugriffstoken", "fr": "Jeton d'accès longue durée", "es": "Token de acceso de larga duración", "pt-BR": "Token de acesso de longa duração", "ru": "Долгосрочный токен доступа", "it": "Token di accesso di lunga durata" }
+    },
+    {
+      "key": "entities", "type": "text", "default": "",
+      "label": { "en": "Entities to show (comma-separated; empty: all)", "zh-CN": "要显示的实体（用逗号分开；空着就显示全部）", "zh-TW": "要顯示的實體（用逗號分開；空著就顯示全部）", "ja": "表示するエンティティ（カンマ区切り、空欄ならすべて）", "ko": "표시할 엔티티 (쉼표로 구분, 비우면 전부)", "de": "Angezeigte Entitäten (durch Kommas getrennt; leer: alle)", "fr": "Entités à afficher (virgules entre elles ; vide : toutes)", "es": "Entidades que mostrar (separadas por comas; vacío: todas)", "pt-BR": "Entidades a mostrar (separadas por vírgulas; vazio: todas)", "ru": "Показываемые объекты (через запятую; пусто: все)", "it": "Entità da mostrare (separate da virgole; vuoto: tutte)" }
+    }
+  ]
+}

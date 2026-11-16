@@ -1120,5 +1120,9 @@
   "选择插件可以读写的文件夹": "Elegir una carpeta que el plugin pueda leer y escribir",
   "读写你选的文件夹（装好后由你来选）": "Lee y escribe en una carpeta que eliges (la eliges después de instalarlo)",
   "添加文件夹": "Añadir una carpeta",
-  "插件不能写入这个文件夹。系统文件夹、程序文件夹、AppData、ProgramData、PecoFence 自己的文件夹、磁盘的根目录、你的用户文件夹本身、名字以点开头的文件夹，还有链接和目录连接点，都不能交给插件写入。请换一个文件夹，例如“文档”里的一个文件夹。": "El plugin no puede escribir en esta carpeta. Las carpetas del sistema, las carpetas de programas, AppData, ProgramData, las carpetas de PecoFence, la raíz de una unidad, tu propia carpeta de usuario, las carpetas cuyo nombre empieza por un punto, los vínculos y las uniones de directorio nunca se dan a un plugin para escribir. Elige otra carpeta, por ejemplo una dentro de Documentos."
+  "插件不能写入这个文件夹。系统文件夹、程序文件夹、AppData、ProgramData、PecoFence 自己的文件夹、磁盘的根目录、你的用户文件夹本身、名字以点开头的文件夹，还有链接和目录连接点，都不能交给插件写入。请换一个文件夹，例如“文档”里的一个文件夹。": "El plugin no puede escribir en esta carpeta. Las carpetas del sistema, las carpetas de programas, AppData, ProgramData, las carpetas de PecoFence, la raíz de una unidad, tu propia carpeta de usuario, las carpetas cuyo nombre empieza por un punto, los vínculos y las uniones de directorio nunca se dan a un plugin para escribir. Elige otra carpeta, por ejemplo una dentro de Documentos.",
+  "连接这台电脑上的 {0}（端口 {1}）": "Se conecta a {0} en este equipo (puerto {1})",
+  "连接你在设置里填写的局域网设备（端口 {0}）": "Se conecta al dispositivo de la red local que escribas en su configuración (puerto {0})",
+  "这个插件会向这个地址发送请求。": "Este plugin envía solicitudes a esta dirección.",
+  "请填写设备的地址，例如 192.168.1.20 或 homeassistant.local": "Escribe la dirección del dispositivo, por ejemplo 192.168.1.20 o homeassistant.local"
 }

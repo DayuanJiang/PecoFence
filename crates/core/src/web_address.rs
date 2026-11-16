@@ -81,10 +81,7 @@ impl fmt::Display for WebAddress {
 /// the computer's own services must stay out of its reach. Public on purpose, as Chromium counts
 /// them: 198.18/15 and fc00::/8 (the fake-ip answers of proxy tools such as Clash and sing-box).
 pub fn public_ip(text: &str) -> bool {
-    let ip = text.parse::<SocketAddr>().map(|a| a.ip()).or_else(|_| {
-        let bare = text.split('%').next().unwrap_or_default();
-        bare.trim_matches(['[', ']']).parse::<IpAddr>()
-    });
+    let ip = read_ip(text).ok_or(());
     let v4 = |ip: Ipv4Addr| {
         let [a, b, ..] = ip.octets();
         let shared = a == 100 && (64..128).contains(&b);
@@ -108,6 +105,38 @@ pub fn public_ip(text: &str) -> bool {
             }
         }
         Err(_) => false,
+    }
+}
+
+/// An address as WinHTTP and the resolver write it: with a port, in brackets, with a zone; an
+/// IPv4 address mapped into IPv6 as the IPv4 address.
+fn read_ip(text: &str) -> Option<IpAddr> {
+    let ip = text.parse::<SocketAddr>().map(|a| a.ip()).or_else(|_| {
+        let bare = text.split('%').next().unwrap_or_default();
+        bare.trim_matches(['[', ']']).parse::<IpAddr>()
+    });
+    ip.ok().map(|ip| match ip {
+        IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(ip, IpAddr::V4),
+        v4 => v4,
+    })
+}
+
+/// This computer: 127/8 and ::1 (what `permissions.local.loopback` may reach).
+pub fn loopback_ip(text: &str) -> bool {
+    read_ip(text).is_some_and(|ip| ip.is_loopback())
+}
+
+/// A device of the local network (what `permissions.local.lan` may reach, at the address the
+/// user typed): 10/8, 172.16/12, 192.168/16, 169.254/16, 100.64/10 (Tailscale), fd00::/8 and
+/// fe80::/10. Not this computer's loopback, not the fake-ip answers of proxy tools (198.18/15).
+pub fn lan_ip(text: &str) -> bool {
+    match read_ip(text) {
+        Some(IpAddr::V4(ip)) => {
+            let [a, b, ..] = ip.octets();
+            ip.is_private() || ip.is_link_local() || (a == 100 && (64..128).contains(&b))
+        }
+        Some(IpAddr::V6(ip)) => ip.segments()[0] & 0xff00 == 0xfd00 || ip.is_unicast_link_local(),
+        None => false,
     }
 }
 
@@ -161,6 +190,23 @@ mod tests {
             ff02::1 ff05::fb 64:ff9b::7f00:1 64:ff9b::c0a8:101 2002:c0a8:101::1 2002:7f00:1::";
         for ip in not.split_whitespace().chain([""]) {
             assert!(!public_ip(ip), "{ip}");
+        }
+    }
+
+    #[test]
+    fn loopback_and_lan_addresses() {
+        for ip in "127.0.0.1 127.1.2.3:11434 ::1 [::1]:80 ::ffff:127.0.0.1".split_whitespace() {
+            assert!(loopback_ip(ip) && !lan_ip(ip), "{ip}");
+        }
+        let lan = "10.0.0.5 172.16.0.1 172.31.35.49:8123 192.168.1.20 169.254.10.1 100.101.1.2 \
+            fd12::5 fe80::1%3 [fe80::1%3]:8123 ::ffff:192.168.0.9";
+        for ip in lan.split_whitespace() {
+            assert!(lan_ip(ip) && !loopback_ip(ip), "{ip}");
+        }
+        let neither = "93.184.215.14 198.18.0.5 172.32.0.1 0.0.0.0 224.0.0.251 fc00::1 \
+            2606:2800::1 255.255.255.255 localhost";
+        for ip in neither.split_whitespace().chain([""]) {
+            assert!(!lan_ip(ip) && !loopback_ip(ip), "{ip}");
         }
     }
 

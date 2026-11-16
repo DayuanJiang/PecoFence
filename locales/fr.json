@@ -1120,5 +1120,9 @@
   "选择插件可以读写的文件夹": "Choisir un dossier que le plugin peut lire et modifier",
   "读写你选的文件夹（装好后由你来选）": "Lit et écrit dans un dossier que vous choisissez (vous le choisissez après l'installation)",
   "添加文件夹": "Ajouter un dossier",
-  "插件不能写入这个文件夹。系统文件夹、程序文件夹、AppData、ProgramData、PecoFence 自己的文件夹、磁盘的根目录、你的用户文件夹本身、名字以点开头的文件夹，还有链接和目录连接点，都不能交给插件写入。请换一个文件夹，例如“文档”里的一个文件夹。": "Le plugin ne peut pas écrire dans ce dossier. Les dossiers système, les dossiers des programmes, AppData, ProgramData, les dossiers de PecoFence, la racine d'un lecteur, votre dossier utilisateur lui-même, les dossiers dont le nom commence par un point, les liens et les jonctions ne sont jamais confiés à un plugin pour y écrire. Choisissez un autre dossier, par exemple un dossier dans Documents."
+  "插件不能写入这个文件夹。系统文件夹、程序文件夹、AppData、ProgramData、PecoFence 自己的文件夹、磁盘的根目录、你的用户文件夹本身、名字以点开头的文件夹，还有链接和目录连接点，都不能交给插件写入。请换一个文件夹，例如“文档”里的一个文件夹。": "Le plugin ne peut pas écrire dans ce dossier. Les dossiers système, les dossiers des programmes, AppData, ProgramData, les dossiers de PecoFence, la racine d'un lecteur, votre dossier utilisateur lui-même, les dossiers dont le nom commence par un point, les liens et les jonctions ne sont jamais confiés à un plugin pour y écrire. Choisissez un autre dossier, par exemple un dossier dans Documents.",
+  "连接这台电脑上的 {0}（端口 {1}）": "Se connecte à {0} sur cet ordinateur (port {1})",
+  "连接你在设置里填写的局域网设备（端口 {0}）": "Se connecte à l'appareil du réseau local que vous saisissez dans ses réglages (port {0})",
+  "这个插件会向这个地址发送请求。": "Ce plugin envoie des requêtes à cette adresse.",
+  "请填写设备的地址，例如 192.168.1.20 或 homeassistant.local": "Saisissez l'adresse de l'appareil, par exemple 192.168.1.20 ou homeassistant.local"
 }
