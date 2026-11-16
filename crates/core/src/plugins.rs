@@ -123,7 +123,7 @@ impl Local {
 pub const MAX_LOCAL_PORTS: usize = 4;
 /// Ports `local` may not name: debuggers and remote administration, whose services run code or
 /// take over a computer for whoever connects.
-pub const REFUSED_PORTS: [(u16, &str); 17] = [
+pub const REFUSED_PORTS: [(u16, &str); 19] = [
     (22, "SSH"),
     (23, "Telnet"),
     (135, "Windows RPC"),
@@ -132,6 +132,7 @@ pub const REFUSED_PORTS: [(u16, &str); 17] = [
     (2375, "Docker"),
     (2376, "Docker over TLS"),
     (3389, "Remote Desktop"),
+    (4444, "Selenium WebDriver"),
     (5037, "Android Debug Bridge"),
     (5555, "Android Debug Bridge over the network"),
     (5900, "VNC"),
@@ -140,6 +141,7 @@ pub const REFUSED_PORTS: [(u16, &str); 17] = [
     (6443, "Kubernetes API"),
     (9222, "Chrome and Edge DevTools"),
     (9229, "Node.js inspector"),
+    (9515, "ChromeDriver"),
     (10250, "Kubernetes kubelet"),
 ];
 
@@ -1357,6 +1359,14 @@ mod tests {
             (json!({ "lan": [port(5985, "x")] }), "5985 (WinRM)"),
             (json!({ "loopback": [port(2375, "Docker")] }), "2375"),
             (json!({ "loopback": [port(9229, "Node")] }), "9229"),
+            (
+                json!({ "loopback": [port(9515, "x")] }),
+                "9515 (ChromeDriver)",
+            ),
+            (
+                json!({ "lan": [port(4444, "x")] }),
+                "4444 (Selenium WebDriver)",
+            ),
             (
                 json!({ "loopback": [port(80, "a"), port(81, "b"), port(82, "c"), port(83, "d"), port(84, "e")] }),
                 "at most 4",

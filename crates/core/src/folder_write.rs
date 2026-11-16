@@ -48,12 +48,17 @@ pub fn split(path: &str) -> Option<(String, Vec<String>)> {
     Some((root.to_lowercase(), parts.collect()))
 }
 
-/// Windows' device names: a file of that name (with any extension) opens the device.
+/// Windows' device names: a file of that name (with any extension) opens the device. COM and
+/// LPT take a digit 0 to 9 or a superscript one, two or three.
 fn device(part: &str) -> bool {
     let stem = part.split('.').next().unwrap_or_default().trim_end();
     let stem = stem.to_ascii_lowercase();
     let numbered = |p: &str| {
-        stem.len() == 4 && stem.starts_with(p) && (b'1'..=b'9').contains(&stem.as_bytes()[3])
+        let mut n = stem.strip_prefix(p).unwrap_or_default().chars();
+        let digit = n
+            .next()
+            .is_some_and(|c| c.is_ascii_digit() || "¹²³".contains(c));
+        digit && n.next().is_none()
     };
     ["con", "prn", "aux", "nul", "conin$", "conout$"].contains(&stem.as_str())
         || numbered("com")
@@ -220,6 +225,10 @@ mod tests {
             (r"C:\Notes\nul.txt", "device"),
             (r"C:\Notes\COM1", "device"),
             (r"C:\Notes\lpt9.md", "device"),
+            (r"C:\Notes\COM0.txt", "device"),
+            (r"C:\Notes\lpt0", "device"),
+            ("C:\\Notes\\com\u{b9}.txt", "device"),
+            ("C:\\Notes\\LPT\u{b3}", "device"),
             (r"C:\Notes\.git\config.txt", "dot"),
             (r"C:\Notes\..\x.txt", "dot"),
             (r"C:\Notes\a?.txt", "sign"),
@@ -232,6 +241,8 @@ mod tests {
         // Names that only look like devices are files.
         assert_eq!(name_refusal(r"C:\Notes\console.txt"), None);
         assert_eq!(name_refusal(r"C:\Notes\com10.txt"), None);
+        assert_eq!(name_refusal("C:\\Notes\\com\u{b9}0.txt"), None);
+        assert_eq!(name_refusal("C:\\Notes\\com\u{b2}x"), None);
     }
 
     #[test]
