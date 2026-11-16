@@ -487,6 +487,7 @@
   .pl-dialog h4 { font-size: 20px; line-height: 28px; font-weight: 600; margin: 0 0 8px; overflow-wrap: anywhere; }
   .pl-dialog p { margin: 4px 0; }
   .pl-dialog .pl-warn { margin: 12px 0; padding: 8px 12px; border-radius: 4px; background: var(--caution-bg); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent); }
+  .pl-dialog .pl-warn.plain { background: var(--subtle); border-color: var(--line); }
   .pl-dialog .pl-warn.strict { border-color: var(--caution); background: color-mix(in srgb, var(--caution) 18%, var(--caution-bg)); }
   .pl-dialog .pl-warn.strict p:first-child { font-weight: 600; }
   .pl-dialog .pl-warn[hidden], .pl-dialog p[hidden] { display: none; }
@@ -1854,7 +1855,8 @@
   }
   const plLi = (x) => typeof x === 'string' ? plEl('li', '', x) : plFill(plEl('li'), ...x);
   function plButton(p) {
-    const asks = p.state === 'install' || p.state === 'confirm', b = plEl('button', asks && !state.plugins.held ? 'accent' : '');
+    // Plain buttons in the list: blue only for 更新插件, which waits for the user.
+    const asks = p.state === 'install' || p.state === 'confirm', b = plEl('button', p.state === 'confirm' && !state.plugins.held ? 'accent' : '');
     const [text, act] = {
       install: [t("安装"), () => plConfirm(p)], confirm: [t("更新插件"), () => plConfirm(p)],
       add: [t("添加到桌面"), () => send({ type: 'action', name: 'pluginAdd', id: p.id })],
@@ -1956,7 +1958,8 @@
       title.append(plEl('span', 'pl-meta', ' · ' + p.author + ' · ' + p.version));
       box.append(title, plEl('div', 's', p.description));
       const tags = plEl('div', 'pl-tags');
-      for (const tag of plTags(p)) tags.append(plEl('span', 'more', tag));
+      // Grey tags; only 启动程序 (a program that can do anything the account can) stays yellow.
+      for (const tag of plTags(p)) tags.append(plEl('span', tag === t("启动程序") ? 'more' : '', tag));
       if (tags.childElementCount) box.append(tags);
       if (p.state === 'confirm') box.append(plEl('div', 's caution', t("有更新，需要你确认")));
       if (p.state === 'disabled') box.append(plEl('div', 's caution', tf("已下架：{0}", p.reason || '')));
@@ -2031,6 +2034,11 @@
   function plConfirm(p, changed) {
     plAsk = p; plDrop = null;
     document.getElementById('plDoesBox').hidden = false;
+    // Yellow when it reaches past its fence (the network, the clipboard, the background, a web
+    // page, programs, files, what plays, which programs run); grey when it only shows content.
+    const reaches = p.network.length || p.clipboard !== 'none' || p.background || p.layer === 'web' || p.system.length
+      || p.folders || p.launch || p.drop.length || p.media !== 'none' || (p.apps && p.apps.length);
+    document.getElementById('plDoesBox').classList.toggle('plain', !reaches);
     document.getElementById('plChanged').hidden = !changed;
     document.getElementById('plTitle').textContent = p.state === 'confirm' ? tf("更新“{0}”？", p.name) : tf("安装“{0}”？", p.name);
     document.getElementById('plBy').textContent = p.authorBefore
