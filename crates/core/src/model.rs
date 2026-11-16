@@ -3057,6 +3057,11 @@ mod tests {
             );
             spec.settings
                 .insert("__keys".into(), serde_json::json!({ "show": "Ctrl+Alt+L" }));
+            // A device address typed there: a `lan` request would go to it here.
+            spec.settings.insert(
+                crate::plugins::DEVICES.into(),
+                serde_json::json!({ "host": "192.168.1.20" }),
+            );
             spec
         };
         // A plugin fence only a snapshot shows, one in the layouts, and a script in no layout.

@@ -1115,5 +1115,9 @@
   "知道这些程序是否在运行、是否在最前面：{0}": "Sabe si estos programas están abiertos y si están en primer plano: {0}",
   "显示": "Mostrar",
   "隐藏": "Ocultar",
-  "插件能读到这个值。它加密保存在这台电脑上，换到另一台电脑后要重新填写。": "El plugin puede leer este valor. Se guarda cifrado en este equipo; en otro equipo hay que escribirlo de nuevo."
+  "插件能读到这个值。它加密保存在这台电脑上，换到另一台电脑后要重新填写。": "El plugin puede leer este valor. Se guarda cifrado en este equipo; en otro equipo hay que escribirlo de nuevo.",
+  "连接这台电脑上的 {0}（端口 {1}）": "Se conecta a {0} en este equipo (puerto {1})",
+  "连接你在设置里填写的局域网设备（端口 {0}）": "Se conecta al dispositivo de la red local que escribas en su configuración (puerto {0})",
+  "这个插件会向这个地址发送请求。": "Este plugin envía solicitudes a esta dirección.",
+  "请填写设备的地址，例如 192.168.1.20 或 homeassistant.local": "Escribe la dirección del dispositivo, por ejemplo 192.168.1.20 o homeassistant.local"
 }

@@ -4,7 +4,7 @@
 //! a time, so that every host a request reaches is checked and seen.
 
 use pecofence_core::FenceId;
-use pecofence_core::plugins::{Permissions, valid_plain_name};
+use pecofence_core::plugins::{Permissions, local_class, valid_plain_name};
 use pecofence_core::web_address::WebAddress;
 use serde_json::{Value, json};
 
@@ -74,8 +74,10 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
     let named = |i: usize| args.get(i).is_none_or(Value::is_null) || valid_plain_name(arg(i));
     let (ok, need) = match name {
         "http.get" | "http.post" => (
-            address.as_ref().is_some_and(|a| a.secure) && host_in(&[&p.network]),
-            format!("an https address with {shown} in permissions.network"),
+            (address.as_ref()).is_some_and(|a| internet(p, a) || local_class(p, a).is_some()),
+            format!(
+                "an https address with {shown} in permissions.network, or its port in permissions.local"
+            ),
         ),
         "open" => (
             host_in(&[&p.network, &p.links]),
@@ -125,6 +127,11 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
     (!ok).then(|| format!("{name} needs {need}"))
 }
 
+/// A request to the internet: https to a host of `network`.
+fn internet(p: &Permissions, a: &WebAddress) -> bool {
+    a.secure && p.network.iter().any(|h| h.eq_ignore_ascii_case(&a.host))
+}
+
 /// The host of an http or https address, in lowercase (None when [`WebAddress`] does not read
 /// it).
 pub fn url_host(url: &str) -> Option<String> {
@@ -144,17 +151,22 @@ fn normalised(mut args: Value) -> Value {
     args
 }
 
-/// `location` (a redirect's target) read against the https address `base`.
+/// `location` (a redirect's target) read against the http or https address `base`.
 fn joined(base: &str, location: &str) -> Option<String> {
     if location.contains("://") {
         return Some(location.into());
     }
+    let scheme = if base.starts_with("https://") {
+        "https:"
+    } else {
+        "http:"
+    };
     if let Some(rest) = location.strip_prefix("//") {
-        return Some(format!("https://{rest}"));
+        return Some(format!("{scheme}//{rest}"));
     }
-    let rest = base.strip_prefix("https://")?;
+    let rest = base.strip_prefix(scheme)?.strip_prefix("//")?;
     let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let (origin, path) = base.split_at(8 + end);
+    let (origin, path) = base.split_at(scheme.len() + 2 + end);
     if location.starts_with('/') {
         return Some(format!("{origin}{location}"));
     }
@@ -210,10 +222,16 @@ pub fn perform(
                 return Err(format!("redirect refused: {why}"));
             }
         }
+        // A request to `local` says its class: the host connects only to such an address
+        // (and, for `lan`, only to a host the user typed), never through a proxy.
+        let address = WebAddress::parse(&url);
+        let local = (address.as_ref())
+            .filter(|a| !internet(p, a))
+            .and_then(|a| local_class(p, a));
         let answer = host.call(
             fence,
             &verb,
-            json!([url, { "headers": headers, "body": body }]),
+            json!([url, { "headers": headers, "body": body, "local": local }]),
         )?;
         if answer["body"]
             .as_str()
@@ -478,6 +496,69 @@ mod tests {
     }
 
     #[test]
+    fn local_requests_go_by_port_and_say_their_class() {
+        let p: Permissions = serde_json::from_value(json!({
+            "network": ["a.com"],
+            "local": { "loopback": [{ "port": 11434, "app": "Ollama" }], "lan": [{ "port": 8123, "app": "HA" }] },
+        }))
+        .unwrap();
+        for ok in [
+            "http://localhost:11434/api/tags",
+            "http://127.0.0.1:11434/api/generate",
+            "http://192.168.1.20:8123/api/states",
+            "https://homeassistant.local:8123/",
+            "https://a.com/",
+        ] {
+            assert_eq!(refusal(&p, "http.get", &json!([ok])), None, "{ok}");
+        }
+        for bad in [
+            "http://localhost:11435/",
+            "http://192.168.1.20:11434/",
+            "http://a.com/",
+            "http://localhost/",
+        ] {
+            let why = refusal(&p, "http.post", &json!([bad])).unwrap();
+            assert!(why.contains("permissions.local"), "{bad}: {why}");
+        }
+        assert!(refusal(&p, "open", &json!(["http://localhost:11434/"])).is_some());
+        let fence = FenceId::new_v4();
+        let ok = json!({ "status": 200, "headers": {}, "body": "" });
+        let fake = Fake {
+            answers: vec![
+                ("http://localhost:11434/api/tags", ok.clone()),
+                ("http://192.168.1.20:8123/x", moved(302, "/api/states")),
+                ("http://192.168.1.20:8123/api/states", ok.clone()),
+                (
+                    "http://192.168.1.20:8123/out",
+                    moved(302, "http://192.168.1.20:22/"),
+                ),
+                ("https://a.com/", ok),
+            ],
+            ..Fake::default()
+        };
+        let get = |url: &str| perform(&fake, fence, &p, "ua", "http.get", json!([url]));
+        get("http://localhost:11434/api/tags").unwrap();
+        get("http://192.168.1.20:8123/x").unwrap();
+        get("https://a.com/").unwrap();
+        let why = get("http://192.168.1.20:8123/out").unwrap_err();
+        assert!(why.contains("redirect refused"), "{why}");
+        let calls = fake.calls.lock().unwrap();
+        let sent: Vec<(&str, &Value)> = (calls.iter())
+            .map(|c| (c.1[0].as_str().unwrap(), &c.1[1]["local"]))
+            .collect();
+        assert_eq!(
+            sent,
+            [
+                ("http://localhost:11434/api/tags", &json!("loopback")),
+                ("http://192.168.1.20:8123/x", &json!("lan")),
+                ("http://192.168.1.20:8123/api/states", &json!("lan")),
+                ("https://a.com/", &Value::Null),
+                ("http://192.168.1.20:8123/out", &json!("lan")),
+            ]
+        );
+    }
+
+    #[test]
     fn relative_redirects() {
         let base = "https://a.com/x/y?q=1";
         assert_eq!(joined(base, "z").as_deref(), Some("https://a.com/x/z"));
@@ -489,6 +570,15 @@ mod tests {
         assert_eq!(
             joined("https://a.com", "z").as_deref(),
             Some("https://a.com/z")
+        );
+        let local = "http://192.168.1.20:8123/a/b";
+        assert_eq!(
+            joined(local, "c").as_deref(),
+            Some("http://192.168.1.20:8123/a/c")
+        );
+        assert_eq!(
+            joined(local, "//nas.local/").as_deref(),
+            Some("http://nas.local/")
         );
     }
 }

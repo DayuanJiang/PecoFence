@@ -3,7 +3,7 @@
 //! addresses of a plugin's files (from the reviewed commit, never from the index) and says what
 //! an update may do. It touches neither the network nor the disk.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const REPO: &str = "DayuanJiang/PecoFence-plugins";
@@ -87,6 +87,90 @@ pub struct Permissions {
     pub media: Media,
     /// The programs it may know are running or in front (`spotify.exe`).
     pub apps: Vec<String>,
+    /// Services of this computer and of a device of the local network, by port.
+    pub local: Local,
+}
+
+/// `local`: services `pf.http` may reach outside the internet (plain http too, never through a
+/// proxy), each a port with the program that answers there: on this computer (`loopback`), and
+/// on the device whose address the user typed in a `device` setting (`lan`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct Local {
+    pub loopback: Vec<LocalPort>,
+    pub lan: Vec<LocalPort>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct LocalPort {
+    pub port: u16,
+    pub app: String,
+}
+
+impl Local {
+    /// Every (class, port) it names: `("loopback", 11434)`, `("lan", 8123)`.
+    pub fn ports(&self) -> Vec<(&'static str, u16)> {
+        let loopback = self.loopback.iter().map(|p| ("loopback", p.port));
+        loopback
+            .chain(self.lan.iter().map(|p| ("lan", p.port)))
+            .collect()
+    }
+}
+
+/// The most ports `local` may name, both classes together.
+pub const MAX_LOCAL_PORTS: usize = 4;
+/// Ports `local` may not name: debuggers and remote administration, whose services run code or
+/// take over a computer for whoever connects.
+pub const REFUSED_PORTS: [(u16, &str); 17] = [
+    (22, "SSH"),
+    (23, "Telnet"),
+    (135, "Windows RPC"),
+    (139, "NetBIOS"),
+    (445, "SMB"),
+    (2375, "Docker"),
+    (2376, "Docker over TLS"),
+    (3389, "Remote Desktop"),
+    (5037, "Android Debug Bridge"),
+    (5555, "Android Debug Bridge over the network"),
+    (5900, "VNC"),
+    (5985, "WinRM"),
+    (5986, "WinRM over HTTPS"),
+    (6443, "Kubernetes API"),
+    (9222, "Chrome and Edge DevTools"),
+    (9229, "Node.js inspector"),
+    (10250, "Kubernetes kubelet"),
+];
+
+/// Which part of `local` lets a plugin reach address `a`: `loopback` for this computer by its
+/// name (`localhost`, `127.x.x.x`) on a `loopback` port, `lan` for any other host on a `lan`
+/// port (the app then checks that it is the address the user typed). The port is the address's,
+/// else 80 or 443.
+pub fn local_class(p: &Permissions, a: &crate::web_address::WebAddress) -> Option<&'static str> {
+    let port = a.port.unwrap_or(if a.secure { 443 } else { 80 });
+    let has = |list: &[LocalPort]| list.iter().any(|l| l.port == port);
+    let this = a.host == "localhost"
+        || a.host
+            .parse::<std::net::Ipv4Addr>()
+            .is_ok_and(|ip| ip.is_loopback());
+    if this && has(&p.local.loopback) {
+        Some("loopback")
+    } else if has(&p.local.lan) {
+        Some("lan")
+    } else {
+        None
+    }
+}
+
+/// The host a user typed in a `device` setting (`192.168.1.20`, `HomeAssistant.local.`, or
+/// `http://192.168.1.20:8123/` copied from a browser): in lowercase, without scheme, port, path
+/// or a dot at the end. None for anything else.
+pub fn device_host(typed: &str) -> Option<String> {
+    let t = typed.trim();
+    let t = (t
+        .strip_prefix("http://")
+        .or_else(|| t.strip_prefix("https://")))
+    .unwrap_or(t);
+    crate::web_address::WebAddress::parse(&format!("http://{t}")).map(|a| a.host)
 }
 
 /// One command of `commands`: its id and its title by language.
@@ -118,7 +202,7 @@ impl Media {
 /// The permissions interface 2 brought: a manifest using any of them must say `api: 2`, so that
 /// a PecoFence of interface 1 (which would not see them) shows 需要更新 PecoFence instead of
 /// installing it as asking for nothing more.
-pub const API2_FIELDS: [&str; 5] = ["commands", "drop", "launch", "media", "apps"];
+pub const API2_FIELDS: [&str; 6] = ["commands", "drop", "launch", "media", "apps", "local"];
 
 impl Permissions {
     /// The fields of [`API2_FIELDS`] that `self` uses.
@@ -129,6 +213,7 @@ impl Permissions {
             self.launch,
             self.media != Media::None,
             !self.apps.is_empty(),
+            !self.local.ports().is_empty(),
         ];
         API2_FIELDS
             .into_iter()
@@ -182,8 +267,10 @@ impl Manifest {
     }
 }
 
-/// One setting of a plugin fence (插件设置): `switch`, `text`, `number`, `choice` or `secret`
-/// (interface 2: typed by the user, kept encrypted under [`SECRETS`], no default).
+/// One setting of a plugin fence (插件设置): `switch`, `text`, `number`, `choice`, and of
+/// interface 2 (no default, only what the user types) `secret` (kept encrypted under
+/// [`SECRETS`]) and `device` (the address of a device of the local network, kept under
+/// [`DEVICES`]).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Setting {
     pub key: String,
@@ -219,16 +306,25 @@ pub fn fits(s: &Setting, v: &serde_json::Value) -> bool {
 /// The fence settings' key under which the app keeps the `secret` settings, encrypted for this
 /// Windows account (an import deletes it with every key that starts with `__`).
 pub const SECRETS: &str = "__secrets";
+/// The fence settings' key under which the app keeps the `device` settings ({key: host}), the
+/// addresses `local.lan` may reach (an import deletes it too).
+pub const DEVICES: &str = "__devices";
 
 /// A plugin fence's settings as its plugin sees them (`pf.settings`): what the fence saved
 /// when it fits the setting, else the setting's default. A `secret` is null here: the app puts
-/// in what it decrypts from [`SECRETS`].
+/// in what it decrypts from [`SECRETS`]. A `device` is the host kept under [`DEVICES`], or null.
 pub fn fence_settings(
     m: &Manifest,
     saved: &serde_json::Map<String, serde_json::Value>,
 ) -> serde_json::Value {
+    let null = serde_json::Value::Null;
     let value = |s: &Setting| {
-        let kept = (saved.get(&s.key)).filter(|v| s.kind != "secret" && fits(s, v));
+        let device = saved.get(DEVICES).and_then(|d| d.get(&s.key));
+        let kept = match s.kind.as_str() {
+            "secret" => None,
+            "device" => Some(device.filter(|v| v.is_string()).unwrap_or(&null)),
+            _ => (saved.get(&s.key)).filter(|v| fits(s, v)),
+        };
         (s.key.clone(), kept.unwrap_or(&s.default).clone())
     };
     serde_json::Value::Object(m.settings.iter().map(value).collect())
@@ -393,10 +489,10 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
             m.id, m.api, m.layer
         ));
     }
-    let kinds = ["switch", "text", "number", "choice", "secret"];
-    // A secret has no default: only what the user types.
+    let kinds = ["switch", "text", "number", "choice", "secret", "device"];
+    // A secret and a device have no default: only what the user types.
     let default_ok = |s: &Setting| match s.kind.as_str() {
-        "secret" => s.default.is_null(),
+        "secret" | "device" => s.default.is_null(),
         _ => fits(s, &s.default),
     };
     let good = |(i, s): (usize, &Setting)| {
@@ -425,8 +521,36 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
     if m.settings.iter().any(|s| s.kind == "secret") {
         newer.push("secret settings");
     }
+    let device = m.settings.iter().any(|s| s.kind == "device");
+    if device {
+        newer.push("device settings");
+    }
     if m.api < 2 && !newer.is_empty() {
         return Err(format!("{}: {} need api 2", m.id, newer.join(", ")));
+    }
+    let ports = p.local.ports();
+    let entries = (p.local.loopback.iter()).chain(&p.local.lan);
+    let app_named = |l: &LocalPort| !l.app.trim().is_empty() && l.app.chars().count() <= 40;
+    if ports.len() > MAX_LOCAL_PORTS
+        || (0..ports.len()).any(|i| ports[..i].contains(&ports[i]) || ports[i].1 == 0)
+        || !entries.clone().all(app_named)
+    {
+        return Err(format!(
+            "{}: bad local ports (at most {MAX_LOCAL_PORTS}, each once with its program)",
+            m.id
+        ));
+    }
+    if let Some((port, what)) =
+        (REFUSED_PORTS.iter()).find(|(r, _)| ports.iter().any(|p| p.1 == *r))
+    {
+        return Err(format!("{}: port {port} ({what}) may not be reached", m.id));
+    }
+    // A device setting is the address `local.lan` goes to: one is no use without the other.
+    if device != !p.local.lan.is_empty() {
+        return Err(format!(
+            "{}: a device setting and permissions.local.lan go together",
+            m.id
+        ));
     }
     let once = |list: &[&str]| (0..list.len()).all(|i| !list[..i].contains(&list[i]));
     let ids: Vec<&str> = p.commands.iter().map(|c| c.id.as_str()).collect();
@@ -588,8 +712,11 @@ pub fn page_url(commit: &str, id: &str) -> String {
 /// (`network`, `links`, `system`; a link that was a network host is not new), reading or
 /// writing the clipboard when it did not before, or `background`, `folders`, `notify` turned on.
 /// Interface 2: a command or a kind of drop or a program of `apps` not there before, `launch`
-/// turned on, `media` from none to read to control.
+/// turned on, `media` from none to read to control, a class and port of `local` not there
+/// before (`loopback` and `lan` apart).
 pub fn more_permissions(old: &Permissions, new: &Permissions) -> Vec<&'static str> {
+    let old_ports = old.local.ports();
+    let new_port = new.local.ports().iter().any(|p| !old_ports.contains(p));
     let added = |o: &[String], n: &[String]| {
         n.iter()
             .any(|h| !o.iter().any(|g| g.eq_ignore_ascii_case(h)))
@@ -603,6 +730,7 @@ pub fn more_permissions(old: &Permissions, new: &Permissions) -> Vec<&'static st
         ("launch", new.launch && !old.launch),
         ("media", new.media > old.media),
         ("apps", added(&old.apps, &new.apps)),
+        ("local", new_port),
         ("network", added(&old.network, &new.network)),
         ("links", added(&links, &new.links)),
         ("system", added(&old.system, &new.system)),
@@ -1039,7 +1167,9 @@ mod tests {
             json!({ "launch": true }),
             json!({ "media": "read" }),
             json!({ "apps": ["spotify.exe"] }),
+            json!({ "local": { "loopback": [{ "port": 11434, "app": "Ollama" }] } }),
         ];
+        assert_eq!(new.len(), API2_FIELDS.len());
         for (p, field) in new.iter().zip(API2_FIELDS) {
             let why = check_manifest(&with(1, p.clone())).unwrap_err();
             assert!(why.contains(field) && why.contains("api 2"), "{why}");
@@ -1126,6 +1256,144 @@ mod tests {
         let mut v = entry("countdown");
         v["permissions"] = json!({ "media": "write" });
         assert!(serde_json::from_value::<Manifest>(v).is_err());
+    }
+
+    #[test]
+    fn local_ports_are_few_named_and_no_debugger_and_each_new_one_asks() {
+        let ha = json!([{ "key": "host", "type": "device", "label": { "en": "Address" } }]);
+        let with = |api: u32, local: serde_json::Value, settings: &serde_json::Value| {
+            manifest(|v| {
+                v["api"] = api.into();
+                v["permissions"] = json!({ "local": local });
+                v["settings"] = settings.clone();
+            })
+        };
+        let port = |p: u16, app: &str| json!({ "port": p, "app": app });
+        let lan = json!({ "lan": [port(8123, "Home Assistant")] });
+        assert!(check_manifest(&with(2, lan.clone(), &ha)).is_ok());
+        let why = check_manifest(&with(1, lan.clone(), &ha)).unwrap_err();
+        assert!(why.contains("local, device settings need api 2"), "{why}");
+        // A device setting and `lan` only together; a device has no default.
+        let none = json!([]);
+        assert!(check_manifest(&with(2, lan.clone(), &none)).is_err());
+        let loopback = json!({ "loopback": [port(11434, "Ollama")] });
+        assert!(check_manifest(&with(2, loopback.clone(), &none)).is_ok());
+        assert!(check_manifest(&with(2, loopback.clone(), &ha)).is_err());
+        let mut defaulted = ha.clone();
+        defaulted[0]["default"] = "192.168.1.20".into();
+        assert!(check_manifest(&with(2, lan.clone(), &defaulted)).is_err());
+        for (bad, what) in [
+            (
+                json!({ "loopback": [port(9222, "Edge")] }),
+                "9222 (Chrome and Edge DevTools)",
+            ),
+            (json!({ "lan": [port(5985, "x")] }), "5985 (WinRM)"),
+            (json!({ "loopback": [port(2375, "Docker")] }), "2375"),
+            (json!({ "loopback": [port(9229, "Node")] }), "9229"),
+            (
+                json!({ "loopback": [port(80, "a"), port(81, "b"), port(82, "c"), port(83, "d"), port(84, "e")] }),
+                "at most 4",
+            ),
+            (
+                json!({ "loopback": [port(80, "a"), port(80, "b")] }),
+                "each once",
+            ),
+            (json!({ "loopback": [port(0, "a")] }), "each once"),
+            (json!({ "loopback": [port(80, " ")] }), "its program"),
+            (
+                json!({ "loopback": [port(80, &"x".repeat(41))] }),
+                "its program",
+            ),
+        ] {
+            let settings = if bad["lan"].is_null() { &none } else { &ha };
+            let why = check_manifest(&with(2, bad.clone(), settings)).unwrap_err();
+            assert!(why.contains(what), "{bad}: {why}");
+        }
+        // The same port in both classes is two entries; a port out of range does not read.
+        let both = json!({ "loopback": [port(8080, "a")], "lan": [port(8080, "a")] });
+        assert!(check_manifest(&with(2, both, &ha)).is_ok());
+        let mut v = entry("countdown");
+        v["permissions"] = json!({ "local": { "loopback": [{ "port": 70000, "app": "a" }] } });
+        assert!(serde_json::from_value::<Manifest>(v).is_err());
+        // Growth: any class and port not there before asks; moving a port to the other class
+        // too; another program name or fewer ports do not.
+        let perms = |local: serde_json::Value| -> Permissions {
+            serde_json::from_value(json!({ "local": local })).unwrap()
+        };
+        let old = perms(json!({ "loopback": [port(11434, "Ollama")], "lan": [port(8123, "HA")] }));
+        for (new, more) in [
+            (
+                json!({ "loopback": [port(11434, "Ollama 2")], "lan": [port(8123, "HA")] }),
+                false,
+            ),
+            (json!({ "loopback": [port(11434, "Ollama")] }), false),
+            (
+                json!({ "loopback": [port(11434, "Ollama"), port(11435, "x")] }),
+                true,
+            ),
+            (
+                json!({ "lan": [port(11434, "Ollama"), port(8123, "HA")] }),
+                true,
+            ),
+            (json!({ "loopback": [port(8123, "HA")] }), true),
+        ] {
+            let found = more_permissions(&old, &perms(new.clone()));
+            assert_eq!(found == ["local"], more, "{new}: {found:?}");
+            assert!(more || found.is_empty(), "{new}: {found:?}");
+        }
+        // A device is what the user typed (kept under __devices), never a plain value.
+        let m = with(2, lan.clone(), &ha);
+        let saved = json!({ "host": "10.0.0.1", DEVICES: { "host": "192.168.1.20" } });
+        assert_eq!(
+            fence_settings(&m, saved.as_object().unwrap()),
+            json!({ "host": "192.168.1.20" })
+        );
+        let saved = json!({ "host": "10.0.0.1" });
+        assert_eq!(
+            fence_settings(&m, saved.as_object().unwrap()),
+            json!({ "host": null })
+        );
+    }
+
+    #[test]
+    fn the_class_of_a_local_address_and_what_a_user_may_type_as_a_device() {
+        let p: Permissions = serde_json::from_value(json!({ "local": {
+            "loopback": [{ "port": 11434, "app": "Ollama" }],
+            "lan": [{ "port": 8123, "app": "HA" }, { "port": 80, "app": "NAS" }],
+        } }))
+        .unwrap();
+        let class =
+            |url: &str| local_class(&p, &crate::web_address::WebAddress::parse(url).unwrap());
+        assert_eq!(class("http://localhost:11434/api/tags"), Some("loopback"));
+        assert_eq!(class("http://127.0.0.1:11434/"), Some("loopback"));
+        assert_eq!(class("https://127.9.0.1:11434/"), Some("loopback"));
+        assert_eq!(class("http://192.168.1.20:8123/api/states"), Some("lan"));
+        assert_eq!(class("http://nas.local/"), Some("lan"));
+        // This computer on a lan port is a lan request: the app refuses its address.
+        assert_eq!(class("http://127.0.0.1:8123/"), Some("lan"));
+        for none in [
+            "http://192.168.1.20:11434/",
+            "http://localhost:3000/x",
+            "https://nas.local/",
+            "http://a.com:9222/",
+        ] {
+            assert_eq!(class(none), None, "{none}");
+        }
+        assert_eq!(
+            device_host(" 192.168.1.20 ").as_deref(),
+            Some("192.168.1.20")
+        );
+        assert_eq!(
+            device_host("HomeAssistant.local.").as_deref(),
+            Some("homeassistant.local")
+        );
+        assert_eq!(
+            device_host("http://192.168.1.20:8123/lovelace").as_deref(),
+            Some("192.168.1.20")
+        );
+        for bad in ["", "my box", "a@b.local", "[fe80::1]", "http://", "a..b"] {
+            assert_eq!(device_host(bad), None, "{bad:?}");
+        }
     }
 
     #[test]

@@ -3,7 +3,7 @@
 
 use crate::wide::to_wide;
 use core::ffi::c_void;
-use pecofence_core::web_address::{WebAddress, public_ip};
+use pecofence_core::web_address::{WebAddress, lan_ip, loopback_ip, public_ip};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use std::time::{Duration, Instant};
@@ -22,6 +22,7 @@ windows_core::link!("winhttp.dll" "system" fn WinHttpSetOption(handle: *mut c_vo
 windows_core::link!("winhttp.dll" "system" fn WinHttpSetStatusCallback(handle: *mut c_void, callback: StatusCallback, flags: u32, reserved: usize) -> isize);
 type StatusCallback = unsafe extern "system" fn(*mut c_void, usize, u32, *mut c_void, u32);
 
+const WINHTTP_ACCESS_TYPE_NO_PROXY: u32 = 1;
 const WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY: u32 = 4;
 const WINHTTP_FLAG_SECURE: u32 = 0x0080_0000;
 const WINHTTP_QUERY_STATUS_CODE: u32 = 19;
@@ -61,11 +62,36 @@ impl Drop for Handle {
     }
 }
 
+/// Where a request may connect to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Reach {
+    /// PecoFence's own requests (the updater, the statistics): not checked.
+    App,
+    /// A plugin's request to the internet: public addresses only, through the system proxy.
+    Internet,
+    /// A plugin's request to `local`: this computer (`Loopback`) or the device the user typed
+    /// (`Lan`); only such an address, pinned for plain http, never through a proxy.
+    Loopback,
+    Lan,
+}
+
+impl Reach {
+    fn fits(self, ip: &str) -> bool {
+        match self {
+            Self::App => true,
+            Self::Internet => public_ip(ip),
+            Self::Loopback => loopback_ip(ip),
+            Self::Lan => lan_ip(ip),
+        }
+    }
+}
+
 /// A request handle. For a plugin's request WinHTTP's status callback (`on_status`) checks the
 /// address each connection goes to and closes the handle itself when it refuses one.
 struct Request {
     handle: *mut c_void,
     host: String,
+    reach: Reach,
     /// The name WinHTTP resolved last is not the host: it connects to a proxy.
     proxy: AtomicBool,
     /// The address a connection was refused for.
@@ -103,7 +129,8 @@ unsafe extern "system" fn on_status(
         return;
     }
     let text = unsafe { PCWSTR(info as *const u16).to_string() }.unwrap_or_default();
-    if status == WINHTTP_CALLBACK_STATUS_RESOLVING_NAME {
+    // Only a request to the internet may go through a proxy (a local one has none).
+    if status == WINHTTP_CALLBACK_STATUS_RESOLVING_NAME && request.reach == Reach::Internet {
         let proxy = !text.eq_ignore_ascii_case(&request.host);
         request.proxy.store(proxy, Relaxed);
         if proxy {
@@ -111,10 +138,11 @@ unsafe extern "system" fn on_status(
         }
     } else if status == WINHTTP_CALLBACK_STATUS_CONNECTING_TO_SERVER && !request.proxy.load(Relaxed)
     {
-        let public = public_ip(&text);
-        tracing::debug!(host = %request.host, ip = %text, public, "plugin request connects");
-        if !public {
-            tracing::info!(host = %request.host, ip = %text, "plugin request refused: the host resolves to this computer or the local network");
+        let fits = request.reach.fits(&text);
+        let reach = request.reach;
+        tracing::debug!(host = %request.host, ip = %text, ?reach, fits, "plugin request connects");
+        if !fits {
+            tracing::info!(host = %request.host, ip = %text, ?reach, "plugin request refused: the address it connects to is not of its kind");
             if request.refused.set(text).is_ok() {
                 // SAFETY: the request's handle, closed once; closing cancels the request.
                 unsafe { WinHttpCloseHandle(request.handle) };
@@ -123,8 +151,13 @@ unsafe extern "system" fn on_status(
     }
 }
 
-fn refusal(host: &str, ip: &str) -> String {
-    format!("{host} resolves to {ip}, an address of this computer or the local network: refused")
+fn refusal(host: &str, ip: &str, reach: Reach) -> String {
+    let what = match reach {
+        Reach::Loopback => "not an address of this computer",
+        Reach::Lan => "not an address of the local network",
+        _ => "an address of this computer or the local network",
+    };
+    format!("{host} resolves to {ip}, {what}: refused")
 }
 
 fn check(ok: i32, what: &str) -> Result<(), String> {
@@ -135,11 +168,13 @@ fn check(ok: i32, what: &str) -> Result<(), String> {
     }
 }
 
-/// `https://host[:port]/path`; plain `http://` only for local test servers. Read by
-/// [`WebAddress`], the reading the plugin host checks a plugin's address with.
-fn split_url(url: &str) -> Result<(bool, String, u16, String), String> {
+/// `https://host[:port]/path`; plain `http://` only for local test servers and a plugin's
+/// `local` requests. Read by [`WebAddress`], the reading the plugin host checks a plugin's
+/// address with.
+fn split_url(url: &str, reach: Reach) -> Result<(bool, String, u16, String), String> {
     let a = WebAddress::parse(url).ok_or_else(|| format!("unsupported address {url}"))?;
-    if !a.secure && a.host != "127.0.0.1" {
+    let local = matches!(reach, Reach::Loopback | Reach::Lan);
+    if !a.secure && a.host != "127.0.0.1" && !local {
         return Err(format!("unsupported address {url}"));
     }
     let port = a.port.unwrap_or(if a.secure { 443 } else { 80 });
@@ -149,7 +184,7 @@ fn split_url(url: &str) -> Result<(bool, String, u16, String), String> {
 /// GETs `url` (following redirects) and returns the body of a 200 response, at most `limit`
 /// bytes. `headers` are extra request lines such as `Accept: …`, separated by `\r\n`.
 pub fn get(url: &str, user_agent: &str, headers: &str, limit: usize) -> Result<Vec<u8>, String> {
-    match request("GET", url, user_agent, headers, &[], limit, false)? {
+    match request("GET", url, user_agent, headers, &[], limit, Reach::App)? {
         (200, _, body) => Ok(body),
         (status, ..) => Err(format!("HTTP {status} from {url}")),
     }
@@ -166,13 +201,73 @@ pub fn fetch(
     body: &[u8],
     limit: usize,
 ) -> Result<(u32, String, Vec<u8>), String> {
-    request(verb, url, user_agent, headers, body, limit, true)
+    request(verb, url, user_agent, headers, body, limit, Reach::Internet)
+}
+
+/// A plugin's request to `permissions.local`, as [`fetch`] but http or https, to this computer
+/// (127/8, ::1) or with `lan` to the local network (the host the user typed; the app checked
+/// that), never through a proxy. The name is resolved here and the request goes to the first
+/// address of that kind (IPv4 first), named in the Host header as the plugin asked.
+pub fn fetch_local(
+    verb: &str,
+    url: &str,
+    user_agent: &str,
+    headers: &str,
+    body: &[u8],
+    limit: usize,
+    lan: bool,
+) -> Result<(u32, String, Vec<u8>), String> {
+    let reach = if lan { Reach::Lan } else { Reach::Loopback };
+    request(verb, url, user_agent, headers, body, limit, reach)
 }
 
 /// POSTs `body` to `url` and returns the HTTP status of the answer. `headers` as for [`get`].
 /// An error is a request that got no answer.
 pub fn post(url: &str, user_agent: &str, headers: &str, body: &[u8]) -> Result<u32, String> {
-    request("POST", url, user_agent, headers, body, 64 * 1024, false).map(|(status, ..)| status)
+    request(
+        "POST",
+        url,
+        user_agent,
+        headers,
+        body,
+        64 * 1024,
+        Reach::App,
+    )
+    .map(|(status, ..)| status)
+}
+
+/// The address a `local` request to `name` connects to: the first it resolves to that is of
+/// `reach` (IPv4 first: a service on this computer often listens on 127.0.0.1 alone), as
+/// WinHTTP takes it (an IPv6 address in brackets, with its zone).
+fn local_address(name: &str, port: u16, reach: Reach) -> Result<String, String> {
+    use std::net::{SocketAddr, ToSocketAddrs};
+    let found: Vec<SocketAddr> = (name, port)
+        .to_socket_addrs()
+        .map_err(|e| format!("{name} could not be resolved: {e}"))?
+        .collect();
+    let chosen = (found.iter())
+        .filter(|a| reach.fits(&a.ip().to_string()))
+        .min_by_key(|a| a.is_ipv6());
+    tracing::info!(
+        host = name,
+        ?reach,
+        ?found,
+        ?chosen,
+        "plugin local request: the name resolved"
+    );
+    match chosen {
+        Some(SocketAddr::V4(a)) => Ok(a.ip().to_string()),
+        Some(SocketAddr::V6(a)) if a.scope_id() != 0 => {
+            Ok(format!("[{}%{}]", a.ip(), a.scope_id()))
+        }
+        Some(SocketAddr::V6(a)) => Ok(format!("[{}]", a.ip())),
+        None => {
+            let first = found
+                .first()
+                .map_or("no address".into(), |a| a.ip().to_string());
+            Err(refusal(name, &first, reach))
+        }
+    }
 }
 
 /// The SHA-256 of `data` in lowercase hex, for a header that carries the hash of a body.
@@ -194,8 +289,8 @@ pub fn sha256_hex(data: &[u8]) -> String {
 }
 
 /// Sends `verb` for `url` with `body`; returns the status and, for a 200, the response's body
-/// (at most `limit` bytes). `plugin`: no redirect is followed, the header lines come back and
-/// so does the body of any status.
+/// (at most `limit` bytes). A plugin's request (`reach` not `App`): no redirect is followed, the
+/// header lines come back and so does the body of any status.
 fn request(
     verb: &str,
     url: &str,
@@ -203,11 +298,13 @@ fn request(
     headers: &str,
     body: &[u8],
     limit: usize,
-    plugin: bool,
+    reach: Reach,
 ) -> Result<(u32, String, Vec<u8>), String> {
     let started = Instant::now();
-    let (secure, name, port, path) = split_url(url)?;
-    if plugin {
+    let plugin = reach != Reach::App;
+    let (secure, name, port, path) = split_url(url, reach)?;
+    let (mut server, mut headers) = (name.clone(), headers.to_string());
+    if reach == Reach::Internet {
         use std::net::ToSocketAddrs;
         let found = (name.as_str(), port)
             .to_socket_addrs()
@@ -215,10 +312,24 @@ fn request(
             .flatten();
         if let Some(ip) = found.map(|a| a.ip().to_string()).find(|ip| !public_ip(ip)) {
             tracing::info!(host = %name, %ip, "plugin request refused before connecting: the host resolves to this computer or the local network");
-            return Err(refusal(&name, &ip));
+            return Err(refusal(&name, &ip, reach));
+        }
+    } else if plugin {
+        let ip = local_address(&name, port, reach)?;
+        // Plain http goes to the address checked here; https by name, whose certificate names
+        // it, and `on_status` checks the address WinHTTP connects to.
+        if !secure {
+            let host = if port == 80 {
+                name.clone()
+            } else {
+                format!("{name}:{port}")
+            };
+            headers = [format!("Host: {host}"), headers].join("\r\n");
+            server = ip;
         }
     }
-    let (agent, host, path) = (to_wide(user_agent), to_wide(&name), to_wide(&path));
+    let headers = headers.trim_end_matches("\r\n");
+    let (agent, host, path) = (to_wide(user_agent), to_wide(&server), to_wide(&path));
     let verb = to_wide(verb);
     let length = u32::try_from(body.len()).map_err(|_| "the request body is too large")?;
     let data = if body.is_empty() {
@@ -226,13 +337,18 @@ fn request(
     } else {
         body.as_ptr().cast()
     };
+    // A request to `local` never goes through the system proxy (Clash and the like).
+    let access = match reach {
+        Reach::Loopback | Reach::Lan => WINHTTP_ACCESS_TYPE_NO_PROXY,
+        _ => WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+    };
     // SAFETY: the wide strings and `body` outlive the calls; handles close in reverse order
     // on drop.
     unsafe {
         let session = Handle::new(
             WinHttpOpen(
                 PCWSTR(agent.as_ptr()),
-                WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                access,
                 PCWSTR::null(),
                 PCWSTR::null(),
                 0,
@@ -262,6 +378,7 @@ fn request(
         let request = Request {
             handle,
             host: name,
+            reach,
             proxy: AtomicBool::new(false),
             refused: OnceLock::new(),
         };
@@ -290,7 +407,7 @@ fn request(
         let context = &request as *const Request as usize;
         let sent = WinHttpSendRequest(handle, extra_ptr, extra_len, data, length, length, context);
         if let Some(ip) = request.refused.get() {
-            return Err(refusal(&request.host, ip));
+            return Err(refusal(&request.host, ip, reach));
         }
         check(sent, "WinHttpSendRequest")?;
         check(
@@ -422,6 +539,51 @@ mod tests {
     }
 
     #[test]
+    fn a_local_request_reaches_only_its_kind_of_address_and_names_the_host_asked_for() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            let n = stream.read(&mut request).unwrap();
+            stream
+                .write_all(response("200 OK", "models").as_bytes())
+                .unwrap();
+            String::from_utf8_lossy(&request[..n]).to_string()
+        });
+        // `localhost` resolves to ::1 first; the service listens on 127.0.0.1 alone.
+        let url = format!("http://localhost:{port}/api/tags");
+        let (status, _, body) =
+            fetch_local("GET", &url, "PecoFence-test", "Accept: x", &[], 100, false).unwrap();
+        assert_eq!((status, body.as_slice()), (200, b"models".as_slice()));
+        let request = seen.join().unwrap();
+        let hosts: Vec<&str> = request
+            .lines()
+            .filter(|l| l.to_ascii_lowercase().starts_with("host:"))
+            .collect();
+        assert_eq!(hosts, [format!("Host: localhost:{port}")], "{request}");
+        assert!(request.contains("Accept: x"), "{request}");
+        // This computer is no device of the local network, and no address goes to `loopback`
+        // that is not this computer's.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let url = format!(
+            "http://127.0.0.1:{}/",
+            listener.local_addr().unwrap().port()
+        );
+        let error = fetch_local("GET", &url, "t", "", &[], 100, true).unwrap_err();
+        assert!(
+            error.contains("not an address of the local network"),
+            "{error}"
+        );
+        let accepted = listener.accept().map(|_| ()).map_err(|e| e.kind());
+        assert_eq!(accepted, Err(std::io::ErrorKind::WouldBlock));
+        let error =
+            fetch_local("GET", "http://10.255.255.1:9/", "t", "", &[], 100, false).unwrap_err();
+        assert!(error.contains("not an address of this computer"), "{error}");
+    }
+
+    #[test]
     fn the_status_callback_refuses_a_local_address_unless_a_proxy_connects() {
         let status = |request: &Request, status: u32, text: &str| {
             let text = to_wide(text);
@@ -436,16 +598,33 @@ mod tests {
                 )
             };
         };
-        for (resolved, ip, refused) in [
-            ("a.example", "10.0.0.1", Some("10.0.0.1")),
-            ("a.example", "93.184.215.14", None),
-            ("127.0.0.1", "127.0.0.1", None),
+        // A local request has no proxy: another name resolved is no reason to skip the check.
+        for (reach, resolved, ip, refused) in [
+            (Reach::Internet, "a.example", "10.0.0.1", Some("10.0.0.1")),
+            (Reach::Internet, "a.example", "93.184.215.14", None),
+            (Reach::Internet, "127.0.0.1", "127.0.0.1", None),
+            (Reach::Lan, "a.example", "192.168.1.20", None),
+            (Reach::Lan, "a.example", "127.0.0.1", Some("127.0.0.1")),
+            (
+                Reach::Lan,
+                "proxy.example",
+                "93.184.215.14",
+                Some("93.184.215.14"),
+            ),
+            (Reach::Loopback, "a.example", "::1", None),
+            (
+                Reach::Loopback,
+                "proxy.example",
+                "10.0.0.1",
+                Some("10.0.0.1"),
+            ),
         ] {
             let session =
                 unsafe { WinHttpOpen(PCWSTR::null(), 1, PCWSTR::null(), PCWSTR::null(), 0) };
             let request = Request {
                 handle: session,
                 host: "a.example".into(),
+                reach,
                 proxy: AtomicBool::new(false),
                 refused: OnceLock::new(),
             };
@@ -454,7 +633,7 @@ mod tests {
             assert_eq!(
                 request.refused.get().map(String::as_str),
                 refused,
-                "{resolved} {ip}"
+                "{reach:?} {resolved} {ip}"
             );
         }
     }
@@ -462,17 +641,22 @@ mod tests {
     #[test]
     fn only_https_and_local_test_servers_are_allowed() {
         assert_eq!(
-            split_url("https://api.github.com/repos/x/y").unwrap(),
+            split_url("https://api.github.com/repos/x/y", Reach::App).unwrap(),
             (true, "api.github.com".into(), 443, "/repos/x/y".into())
         );
         assert_eq!(
-            split_url("http://127.0.0.1:8080").unwrap(),
+            split_url("http://127.0.0.1:8080", Reach::App).unwrap(),
             (false, "127.0.0.1".into(), 8080, "/".into())
         );
-        assert!(split_url("http://example.com/").is_err());
-        assert!(split_url("file:///C:/x").is_err());
+        assert!(split_url("http://example.com/", Reach::App).is_err());
+        assert!(split_url("http://example.com/", Reach::Internet).is_err());
+        assert_eq!(
+            split_url("http://nas.local:8123/api", Reach::Lan).unwrap(),
+            (false, "nas.local".into(), 8123, "/api".into())
+        );
+        assert!(split_url("file:///C:/x", Reach::App).is_err());
         // The host is the one the plugin host checked: no user name, backslash or NUL.
-        assert!(split_url("https://evil.example\u{0}@api.github.com/").is_err());
-        assert!(split_url("https://evil.com\\@api.github.com/").is_err());
+        assert!(split_url("https://evil.example\u{0}@api.github.com/", Reach::App).is_err());
+        assert!(split_url("https://evil.com\\@api.github.com/", Reach::App).is_err());
     }
 }

@@ -403,7 +403,7 @@ async function runTests() {
     doc = await reset();
     // Every field the host sends (plugins_json), so the page meets what the app gives it.
     const perms = { network: [], links: [], system: [], clipboard: 'none', background: false, folders: false, notify: false,
-      launch: false, drop: [], commands: [], media: 'none', apps: [] };
+      launch: false, drop: [], commands: [], media: 'none', apps: [], local: { loopback: [], lan: [] } };
     const settings = [
       { key: 'city', type: 'text', label: '城市', options: [] },
       { key: 'unit', type: 'choice', label: '单位', options: [{ value: 'c', label: '摄氏' }, { value: 'f', label: '华氏' }] },

@@ -1076,11 +1076,34 @@ impl App {
             return tracing::warn!(%fence, key, "plugins: setting refused, not of its kind");
         }
         let secret = fits.is_some_and(|s| s.kind == "secret");
+        let device = fits.is_some_and(|s| s.kind == "device");
+        let typed = value.as_str().unwrap_or_default();
+        let host = list::device_host(typed);
+        if device && host.is_none() && !typed.trim().is_empty() {
+            tracing::info!(%fence, key, "plugins: device address refused, not a host name or address");
+            self.settings_error(pecofence_core::i18n::text(
+                "请填写设备的地址，例如 192.168.1.20 或 homeassistant.local",
+            ));
+            return self.push_settings_state();
+        }
         let m = m.manifest.clone();
         let Some(spec) = self.state.config.scripts.get_mut(&fence) else {
             return;
         };
-        if secret {
+        if device {
+            // Under `__devices`, which an import drops: what a `lan` request may reach is only
+            // what the user typed on this computer. An empty box removes it.
+            let devices =
+                (spec.settings.entry(list::DEVICES)).or_insert_with(|| serde_json::json!({}));
+            if let Some(map) = devices.as_object_mut() {
+                map.remove(key);
+                if let Some(host) = &host {
+                    map.insert(key.to_string(), host.clone().into());
+                }
+            }
+            spec.settings.remove(key);
+            tracing::info!(%fence, key, host, "plugins: device address set");
+        } else if secret {
             // Encrypted for this Windows account, under `__secrets`; an empty one is removed.
             // A plain value an older version kept under the key goes.
             spec.settings.remove(key);
@@ -1105,6 +1128,10 @@ impl App {
         self.state.mark_dirty();
         self.schedule_save();
         self.plugin_event(fence, "settings", settings);
+        if device {
+            // The box shows the address as it was kept (`http://…:8123/` becomes the host).
+            self.push_settings_state();
+        }
     }
 
     /// The page's actions on the plugin rows.
@@ -1218,7 +1245,7 @@ impl App {
                     "network": p.network, "links": p.links, "system": p.system, "background": p.background,
                     "folders": p.folders, "notify": p.notify, "launch": p.launch, "drop": p.drop,
                     "commands": p.commands.iter().map(|c| list::pick(&c.title, lang)).collect::<Vec<_>>(),
-                    "media": format!("{:?}", p.media).to_lowercase(), "apps": p.apps,
+                    "media": format!("{:?}", p.media).to_lowercase(), "apps": p.apps, "local": p.local,
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),
                     "state": state, "reason": reason, "page": index.is_some(),
                     "notes": mine.map(|_| self.plugin_notes(id)),

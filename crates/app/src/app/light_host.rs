@@ -546,6 +546,21 @@ impl AppHost {
         Ok(name)
     }
 
+    /// A `lan` request goes only to a host the user typed in a `device` setting of this fence.
+    fn typed_device(&self, fence: FenceId, url: &str) -> Result<(), String> {
+        let host = pecofence_plugin_host::url_host(url).unwrap_or_default();
+        let typed = self.on_ui(move |app| Ok(app.plugin_devices(fence)))?;
+        let found = typed.iter().any(|d| d.eq_ignore_ascii_case(&host));
+        tracing::info!(%fence, host, devices = typed.len(), found, "plugin lan request: the host against the device addresses typed");
+        if found {
+            Ok(())
+        } else {
+            Err(format!(
+                "{host} is not the address of a device typed in this fence's settings: refused"
+            ))
+        }
+    }
+
     /// The folders the user picked for fence `fence`'s plugin.
     fn picked(&self, fence: FenceId) -> Result<Vec<PathBuf>, String> {
         let picked = self.on_ui(move |app| Ok(app.plugin_folders(fence)))?;
@@ -678,15 +693,34 @@ impl pecofence_plugin_host::Host for AppHost {
                 let verb = if name == "http.post" { "POST" } else { "GET" };
                 let url = arg(0);
                 let begun = Instant::now();
-                let (status, head, bytes) = pecofence_platform::http::fetch(
-                    verb,
-                    &url,
-                    &agent,
-                    lines.trim_end(),
-                    body,
-                    pecofence_plugin_host::MAX_ANSWER,
-                )?;
-                tracing::info!(%fence, host = pecofence_plugin_host::url_host(&url), status, bytes = bytes.len(), ms = begun.elapsed().as_millis(), "plugin request answered");
+                let max = pecofence_plugin_host::MAX_ANSWER;
+                let local = options["local"].as_str();
+                if local == Some("lan") {
+                    self.typed_device(fence, &url)?;
+                }
+                let (status, head, bytes) = match local {
+                    None => pecofence_platform::http::fetch(
+                        verb,
+                        &url,
+                        &agent,
+                        lines.trim_end(),
+                        body,
+                        max,
+                    ),
+                    Some(class) => {
+                        let lan = class == "lan";
+                        pecofence_platform::http::fetch_local(
+                            verb,
+                            &url,
+                            &agent,
+                            lines.trim_end(),
+                            body,
+                            max,
+                            lan,
+                        )
+                    }
+                }?;
+                tracing::info!(%fence, host = pecofence_plugin_host::url_host(&url), local, status, bytes = bytes.len(), ms = begun.elapsed().as_millis(), "plugin request answered");
                 let headers: serde_json::Map<String, Value> = (head.lines().skip(1))
                     .filter_map(|l| l.split_once(':'))
                     .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().into()))
