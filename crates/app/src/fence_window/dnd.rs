@@ -942,9 +942,11 @@ impl DropHandler for FenceDropHandler {
             let v = (g.as_mut())
                 .filter(|v| v.plugin_drop.is_some() && !over_other_tab(v, pt.x, pt.y))?;
             v.apply_drop_feedback(None);
-            Some((v.active, v.plugin_drop?))
+            let r = window::window_rect(v.hwnd);
+            let row = v.script_row_at(pt.x - r.left, pt.y - r.top).map(|h| h.0);
+            Some((v.active, v.plugin_drop?, row))
         });
-        if let Some((fence, takes)) = plugin {
+        if let Some((fence, takes, row)) = plugin {
             // The files go to the plugin as they are: nothing is moved or copied.
             let effect = plugin_effect(kind, allowed);
             let payload = plugin_payload(data, takes, internal.is_some());
@@ -954,6 +956,7 @@ impl DropHandler for FenceDropHandler {
                     paths,
                     text,
                     url,
+                    row,
                 });
             }
             self.forget_data(false);

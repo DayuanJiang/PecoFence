@@ -63,7 +63,7 @@ pub const EVENTS: [&str; 23] = [
     "message",
     "theme",
     // Interface 2: a command of the fence menu (`view.menu`) or a shortcut ({id, via}), what
-    // was dropped on the fence ({files: [{name, size, folder}], text, url, drop}), the media
+    // was dropped on the fence ({files: [{name, size, folder}], text, url, row, drop}), the media
     // session changed, a program of `apps` started, ended or came to the front ({running, front}).
     "command",
     "drop",
@@ -297,7 +297,7 @@ struct Plugin {
     /// `permissions.background`: timers and the clipboard go on while the fence is hidden.
     background: bool,
     reads_clipboard: bool,
-    /// A click, dblclick or command handler runs (the user did something): `pf.open`,
+    /// A click, dblclick, command or submit handler runs (the user did something): `pf.open`,
     /// `pf.launch.open` and `pf.launch.pick` work only then.
     click: Rc<Cell<bool>>,
     /// A drop handler runs, of the drop with this number: `pf.launch.add` works only then, and
@@ -515,7 +515,7 @@ impl Plugin {
                 let mut refused = refusal(&permissions, &name, &args);
                 let by_user = ["open", "launch.open", "launch.pick", "media.control"].contains(&name.as_str());
                 if refused.is_none() && by_user && !click.get() {
-                    refused = Some(format!("pf.{name} works only in a click, dblclick or command handler"));
+                    refused = Some(format!("pf.{name} works only in a click, dblclick, command or submit handler"));
                 }
                 if name == "launch.add" {
                     match dropping.get() {
@@ -911,11 +911,13 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                         tracing::debug!(%fence, name, reads = p.reads_clipboard, runs = p.runs(), "plugin not told of the clipboard or the media session");
                     }
                     let drop = data.get("drop").and_then(Value::as_u64);
+                    let files = data["files"].as_array().is_some_and(|f| !f.is_empty());
                     let data = (!data.is_null()).then(|| data.to_string());
                     p.click
-                        .set(matches!(name, "click" | "dblclick" | "command"));
+                        .set(matches!(name, "click" | "dblclick" | "command" | "submit"));
                     p.dropping.set(drop.filter(|_| name == "drop"));
-                    if name == "drop" {
+                    // `pf.drop.*` reads the last drop with files (a text or a link has none).
+                    if name == "drop" && files {
                         p.shared.borrow_mut().last_drop = drop;
                     }
                     let result = if told { p.emit(name, data) } else { Ok(()) };
@@ -1499,7 +1501,7 @@ mod tests {
         for want in [
             "http refused: http.get needs an https address with example.com in permissions.network",
             "clipboard refused: clipboard.text needs permissions.clipboard read",
-            "open refused: pf.open works only in a click, dblclick or command handler",
+            "open refused: pf.open works only in a click, dblclick, command or submit handler",
             "data refused: data.read needs a name",
             "http 200 https://a.com/x",
             r#"["sys.battery",[]]"#,
@@ -1547,7 +1549,7 @@ mod tests {
         let text = run(true, vec![event("click"), event("media")]);
         assert_eq!(
             text,
-            r#"pf.media.control works only in a click, dblclick or command handler|1|["media.control",["next"]]"#
+            r#"pf.media.control works only in a click, dblclick, command or submit handler|1|["media.control",["next"]]"#
         );
         // Hidden, it hears nothing of the media session.
         let shown = Command::Shown(FenceId::new_v4(), true);
@@ -1634,7 +1636,7 @@ mod tests {
         assert_eq!(added, Some(json!([[0, 0], 7])));
         for want in [
             "add refused: pf.launch.add works only in a drop handler",
-            "open refused: pf.launch.open works only in a click, dblclick or command handler",
+            "open refused: pf.launch.open works only in a click, dblclick, command or submit handler",
             "list ok",
             "drop add ok",
             "key open ok",
@@ -1673,10 +1675,28 @@ mod tests {
         };
         let fence = FenceId::new_v4();
         let drop = json!({ "files": [{ "name": "a.png", "size": 3, "folder": false }], "drop": 5 });
+        // A text dropped after the file: `pf.drop.*` still reads the file's drop.
         let then = vec![
             Command::Event(fence, "drop", drop),
+            Command::Event(
+                fence,
+                "drop",
+                json!({ "files": [], "text": "t", "drop": 6 }),
+            ),
             Command::Event(fence, "click", json!({ "id": "x" })),
         ];
+        // Without `apps`, pf.apps.front is refused.
+        let none = Permissions::default();
+        let out = texts(&run_with(
+            code,
+            none,
+            Arc::new(Fake::default()),
+            true,
+            50,
+            vec![],
+        ));
+        let refused = "front refused: apps.front needs permissions.apps";
+        assert!(out.join("\n").contains(refused), "{out:?}");
         let fake = Arc::new(Fake::default());
         let text = texts(&run_with(code, p, fake.clone(), true, 150, then)).join("\n");
         for want in [
@@ -1700,6 +1720,40 @@ mod tests {
             })
             .collect();
         assert_eq!(calls, [json!([0, null, 5]), json!([0, "a.png", 5])]);
+    }
+
+    /// Answers `drop.read` with a file of this many bytes in base64, `drop.text` with its text.
+    struct Dropped(usize);
+
+    impl Host for Dropped {
+        fn call(&self, _: FenceId, name: &str, _: Value) -> Result<Value, String> {
+            let n = if name == "drop.read" {
+                self.0.div_ceil(3) * 4
+            } else {
+                self.0
+            };
+            Ok(json!("A".repeat(n)))
+        }
+    }
+
+    #[test]
+    fn a_dropped_file_of_1_mb_fits_the_plugin_and_4_mb_would_not() {
+        let code = r#"pf.on('drop', async () => {
+            const b = await pf.drop.read(0); const t = await pf.drop.text(0);
+            pf.show({ rows: [{ text: b.length + ' ' + t.length }] }); });"#;
+        let p = Permissions {
+            drop: vec!["files".into()],
+            ..Permissions::default()
+        };
+        let drop = json!({ "files": [{ "name": "a.bin", "size": 1, "folder": false }], "drop": 1 });
+        let run = |bytes: usize| {
+            let then = vec![Command::Event(FenceId::new_v4(), "drop", drop.clone())];
+            run_with(code, p.clone(), Arc::new(Dropped(bytes)), true, 400, then)
+        };
+        // The app's limit (MAX_DROP_READ in crates/app/src/app/light_host.rs).
+        let out = run(1024 * 1024);
+        assert_eq!(texts(&out), ["1398104 1048576"], "{out:?}");
+        assert_eq!(stop_of(&run(4 * 1024 * 1024)), Some(Stopped::TooMuchMemory));
     }
 
     #[test]

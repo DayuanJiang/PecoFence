@@ -20,8 +20,9 @@ pub(super) type UiJob = Box<dyn FnOnce(&mut App) + Send>;
 const MAX_TEXT: usize = 256 * 1024;
 const MAX_DATA: u64 = 200 * 1024 * 1024;
 const MAX_FILE: u64 = 20 * 1024 * 1024;
-/// The most bytes of a dropped file `pf.drop.read` and `pf.drop.text` give a plugin.
-const MAX_DROP_READ: u64 = 4 * 1024 * 1024;
+/// The most bytes of a dropped file `pf.drop.read` and `pf.drop.text` give a plugin: in base64
+/// with its JSON copy, 4 MB would not fit the plugin's 8 MB.
+const MAX_DROP_READ: u64 = 1024 * 1024;
 const RUN_TIME: Duration = Duration::from_secs(30);
 const RUN_OUTPUT: usize = 1024 * 1024;
 
@@ -38,10 +39,14 @@ pub(super) struct AppHost {
     cpu: Mutex<Option<sysinfo::CpuTimes>>,
     /// The media session for `pf.media` (its thread starts with the first plugin that may see it).
     pub(super) media: super::media::MediaWatch,
-    /// The programs running, as last read for `pf.apps.running` (one read every 5 s at most, for
-    /// all plugins).
-    programs: Mutex<Option<(std::time::Instant, Arc<Vec<String>>)>>,
+    /// The programs running and the one in front, as last read for `pf.apps` and the `apps`
+    /// event (one read every 5 s at most, for all plugins).
+    programs: Mutex<Option<(std::time::Instant, Programs)>>,
 }
+
+/// The programs running and the program of the window in front (lowercase file names).
+#[derive(Clone, Default)]
+pub(super) struct Programs(pub Arc<Vec<String>>, pub Option<String>);
 
 fn io(e: std::io::Error) -> String {
     e.to_string()
@@ -422,45 +427,54 @@ impl AppHost {
         Ok(json!({ "code": code, "output": output }))
     }
 
-    /// The programs running, read again when the last read is 5 s old.
-    pub(super) fn programs(&self) -> Arc<Vec<String>> {
+    /// The programs running and the one in front, read again when the last read is 5 s old or
+    /// (`fresh`: the 5 s reads of the `apps` event) at once; what `pf.apps` answers is that read.
+    pub(super) fn programs(&self, fresh: bool) -> Programs {
         let Ok(mut last) = self.programs.lock() else {
-            return Arc::default();
+            return Programs::default();
         };
         match &*last {
-            Some((at, list)) if at.elapsed() < std::time::Duration::from_secs(5) => list.clone(),
+            Some((at, p)) if !fresh && at.elapsed() < std::time::Duration::from_secs(5) => {
+                p.clone()
+            }
             _ => {
-                let list = Arc::new(pecofence_platform::process::running_programs());
+                let running = pecofence_platform::process::running_programs();
+                let p = Programs(Arc::new(running), front_program());
                 tracing::debug!(
-                    programs = list.len(),
+                    programs = p.0.len(),
+                    fresh,
                     "plugins: the running programs read (kept 5 s)"
                 );
-                *last = Some((std::time::Instant::now(), list.clone()));
-                list
+                *last = Some((std::time::Instant::now(), p.clone()));
+                p
             }
         }
     }
 
     /// File `args[0]` of drop `args[2]` (the plugin host adds the last drop's number):
-    /// `drop.read` gives its bytes in base64 and `drop.text` its text, each up to 4 MB;
+    /// `drop.read` gives its bytes in base64 and `drop.text` its text, each up to 1 MB;
     /// `drop.save` copies it into the data folder as `args[1]` (up to 20 MB), so that a larger
-    /// file never goes through the plugin's memory.
+    /// file never goes through the plugin's memory. The file is opened once and read up to one
+    /// byte past the limit: one that grows meanwhile is refused all the same.
     fn dropped(&self, fence: FenceId, name: &str, args: &Value) -> Result<Value, String> {
+        use std::io::Read;
         let (i, drop) = (args[0].as_u64().unwrap_or(u64::MAX), args[2].as_u64());
         let path = self.on_ui(move |app| app.dropped_file(fence, drop, i as usize))?;
-        let size = std::fs::metadata(&path).map_err(io)?.len();
         let limit = if name == "drop.save" {
             MAX_FILE
         } else {
             MAX_DROP_READ
         };
+        let mut bytes = Vec::new();
+        let file = std::fs::File::open(&path).map_err(io)?;
+        file.take(limit + 1).read_to_end(&mut bytes).map_err(io)?;
+        let size = bytes.len() as u64;
         if size > limit {
-            tracing::info!(%fence, name, size, "plugin: a dropped file refused, too large");
+            tracing::info!(%fence, name, limit, "plugin: a dropped file refused, too large");
             return Err(format!(
-                "{name}: the file has {size} bytes, more than {limit} (pf.drop.save copies up to 20 MB into the data folder)"
+                "{name}: the file has more than {limit} bytes (pf.drop.save copies up to 20 MB into the data folder)"
             ));
         }
-        let bytes = std::fs::read(&path).map_err(io)?;
         tracing::info!(%fence, name, size, "plugin: a dropped file read");
         match name {
             "drop.text" => Ok(String::from_utf8_lossy(&bytes).into()),
@@ -708,7 +722,7 @@ impl pecofence_plugin_host::Host for AppHost {
             "media.control" => Ok(json!(self.media.control(&arg(0), self.control)?)),
             "apps.running" => {
                 let m = self.manifest(fence).ok_or("the plugin does not run")?;
-                let running = self.programs();
+                let running = self.programs(false).0;
                 let apps =
                     (m.permissions.apps.iter()).filter(|a| running.contains(&a.to_lowercase()));
                 Ok(json!(apps.collect::<Vec<_>>()))
@@ -716,7 +730,7 @@ impl pecofence_plugin_host::Host for AppHost {
             // The program of `apps` in front, as the manifest names it, or null.
             "apps.front" => {
                 let m = self.manifest(fence).ok_or("the plugin does not run")?;
-                let front = front_program();
+                let front = self.programs(false).1;
                 let app = (m.permissions.apps.iter()).find(|a| front == Some(a.to_lowercase()));
                 Ok(json!(app))
             }

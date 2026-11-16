@@ -1,9 +1,12 @@
 # 插件 interface 2, the rest of rows 5, 10 and 11 of plan v6 (assets\local-demo): a text and a link
-# dragged from a test program reach the plugin (copied, never moved); a file from File Explorer is
-# read as text and as base64 after the drop handler, and saved into the data folder; a file over
-# 4 MB is refused to the plugin and still saved; pf.apps.front and the apps event follow Notepad
-# starting, coming to the front and ending; a secret setting is typed masked with 显示, the plugin
-# reads it, the configuration keeps it encrypted, the log and an export never have it.
+# dragged from a test program reach the plugin (copied, never moved), with the id of the row under
+# the drop or null; a file from File Explorer is read as text and as base64 after the drop handler,
+# and saved into the data folder; a file of 1 MB is read whole, one byte more is refused to the
+# plugin and still saved; pf.apps.front and the apps event follow Notepad starting, coming to the
+# front and ending; a secret setting is typed masked with 显示, the plugin reads it, the
+# configuration keeps it encrypted, the log and an export never have it; a plain value under the
+# secret's key goes from the file and exports; another plugin in the fence gets none of the `__`
+# settings; the 5 s reads of the programs stop when the last such fence goes.
 # Debug build (CDP on the settings page), Chinese interface.
 #   --var Part=D   only the plugin's details, of a manifest the build before takes too (files and
 #                  Notepad): the shots to compare
@@ -51,6 +54,8 @@ function DragDrop($x1, $y1, $x2, $y2, $shot = '') {
   [G]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 1500
 }
 function FenceMid() { $r = (FenceGet $script:Fid).windowRect; return @([int]($r.x + $r.w / 2), [int]($r.y + $r.h / 2)) }
+# On the plugin's first row (tall, with the id hint).
+function HintPt() { $r = (FenceGet $script:Fid).windowRect; return @([int]($r.x + $r.w / 2), [int]($r.y + 75)) }
 function WaitOut($regex, $sec = 10) { for ($i = 0; $i -lt $sec * 2; $i++) { if ((FenceOut $script:Fid) -match $regex) { return $true }; Start-Sleep -Milliseconds 500 }; return $false }
 # The test program that starts an OLE drag of a text or a link (and its text) on a mouse press,
 # and writes the effect the drop took into effect.txt.
@@ -67,8 +72,9 @@ Case 'setup: the test plugin, its fence, the test files'
 CloseWindows
 New-Item -ItemType Directory -Force $Lr | Out-Null
 [IO.File]::WriteAllText("$Lr\notes-a.txt", 'a note')
-$big = New-Object byte[] (5MB); for ($i = 0; $i -lt $big.Length; $i += 4096) { $big[$i] = 7 }
-[IO.File]::WriteAllBytes("$Lr\big.bin", $big)
+# Text at the limit of pf.drop.read and pf.drop.text, and one byte over it.
+[IO.File]::WriteAllText("$Lr\limit.bin", ('a' * 1MB))
+[IO.File]::WriteAllText("$Lr\over.bin", ('a' * (1MB + 1)))
 Add-Type -OutputAssembly "$Lr\dragsrc.exe" -OutputType WindowsApplication -ReferencedAssemblies System.Windows.Forms, System.Drawing -TypeDefinition @'
 using System; using System.Drawing; using System.IO; using System.Text; using System.Windows.Forms;
 public static class DragSrc {
@@ -90,6 +96,7 @@ public static class DragSrc {
 $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'
 $script:Config = "$PfApp\config"
 PfPlacePlugin $Kit 'local-demo'
+PfPlacePlugin $Kit 'local-other'
 if ($Part -eq 'D') {
   $j = "$script:Config\plugins\local-demo\1.0.0\plugin.json"
   $m = Get-Content $j -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -117,11 +124,12 @@ Case 'a text and a link dragged from another program: the plugin gets them, the 
 $to = FenceMid
 $src = DragSource 'text' 'hello from the test'
 DragDrop 760 220 $to[0] $to[1] 'drop-text'
-Check 'the drop event has the text, no files and no link' (WaitOut 'drop files=none text=hello from the test url=none') (FenceOut $script:Fid)
+Check 'the drop event has the text, no files and no link; under the rows: no row' (WaitOut 'drop files=none text=hello from the test url=none row=null') (FenceOut $script:Fid)
 Check 'the drag ended as a copy (the source keeps its text)' ((Effect) -eq 'Copy') "effect=$(Effect)"
 $src = DragSource 'link' 'https://example.com/page?q=1'
-DragDrop 760 220 $to[0] $to[1]
-Check 'a link: the drop event has the address (and its text)' (WaitOut 'url=https://example.com/page\?q=1') (FenceOut $script:Fid)
+$hint = HintPt
+DragDrop 760 220 $hint[0] $hint[1]
+Check 'a link: the drop event has the address (and its text), and the id of the row under it' (WaitOut 'url=https://example.com/page\?q=1 row=hint') (FenceOut $script:Fid)
 ParkMouse; Shot 'after-link'
 $src = DragSource 'link' 'file:///C:/Windows/win.ini'
 DragDrop 760 220 $to[0] $to[1]
@@ -137,11 +145,14 @@ Check 'pf.drop.read: the bytes in base64' (WaitOut 'b64: YSBub3Rl') (FenceOut $s
 $saved = "$script:Config\plugins-data\local-demo\saved.bin"
 Check 'pf.drop.save: the file in the data folder, the same bytes' ((WaitOut 'saved: ok') -and (Test-Path $saved) -and [IO.File]::ReadAllText($saved) -eq 'a note') "$(FenceOut $script:Fid)"
 
-Case 'a file over 4 MB: not into the plugin, saved by PecoFence'
-$p = ExPick $ex 'big.bin'
+Case 'a file of 1 MB: read whole; one byte more: not into the plugin, saved by PecoFence'
+$p = ExPick $ex 'limit.bin'
 DragDrop $p[0] $p[1] $to[0] $to[1]
-Check 'pf.drop.read and pf.drop.text are refused with the size' ((WaitOut 'b64 refused: .*5242880 bytes') -and (FenceOut $script:Fid) -match 'text0 refused') (FenceOut $script:Fid)
-Check 'pf.drop.save copies all 5 MB' ((WaitOut 'saved: ok') -and (Get-Item $saved).Length -eq 5MB) "$((Get-Item $saved).Length)"
+Check 'pf.drop.read and pf.drop.text give all of 1 MB' ((WaitOut 'b64: length 1398104') -and (WaitOut 'text0: length 1048576')) (FenceOut $script:Fid)
+$p = ExPick $ex 'over.bin'
+DragDrop $p[0] $p[1] $to[0] $to[1]
+Check 'one byte more: pf.drop.read and pf.drop.text are refused with the limit' ((WaitOut 'b64 refused: .*more than 1048576 bytes') -and (FenceOut $script:Fid) -match 'text0 refused') (FenceOut $script:Fid)
+Check 'pf.drop.save copies all of it' ((WaitOut 'saved: ok') -and (Get-Item $saved).Length -eq 1MB + 1) "$((Get-Item $saved).Length)"
 CloseWindows
 
 Case 'apps: Notepad starts and comes to the front, goes behind, ends'
@@ -193,3 +204,29 @@ function Sealed() { return ((Get-Content "$script:Config\config.json" -Raw -Enco
 $gone = WaitOut 'token=none'
 for ($i = 0; $i -lt 20 -and (Sealed); $i++) { Start-Sleep -Milliseconds 500 }
 Check 'an empty box removes it' ($gone -and -not (Sealed)) (FenceOut $script:Fid)
+
+Case 'a plain value under the secret''s key, then another plugin in the fence'
+# An older version of the plugin kept the setting as text, beside a folder the fence was given.
+PfQuit
+$raw = Get-Content "$script:Config\config.json" -Raw -Encoding UTF8
+$at = $raw.IndexOf('"settings": {', $raw.IndexOf("`"$script:Fid`": {", $raw.IndexOf('"scripts"'))) + 13
+$sep = if ($raw.Substring($at).TrimStart().StartsWith('}')) { '' } else { ',' }
+$raw = $raw.Insert($at, '"__folders": ["C:\\pf"], "token": "plain-old-7"' + $sep)
+[IO.File]::WriteAllText("$script:Config\config.json", $raw, (New-Object Text.UTF8Encoding($false)))
+PfPlacePlugin $Kit 'local-other'
+PfStart -Lang zh-CN
+Check 'the plugin does not get the plain value' ([bool](PfWaitLog 'plugin fence starts its main.js' 20) -and (WaitOut 'token=none')) (FenceOut $script:Fid)
+for ($i = 0; $i -lt 20 -and (Get-Content "$script:Config\config.json" -Raw -Encoding UTF8) -match 'plain-old-7'; $i++) { Start-Sleep -Milliseconds 500 }
+Pf config export $file | Out-Null
+$cfg = Get-Content "$script:Config\config.json" -Raw -Encoding UTF8
+Check 'the file and an export no longer have it; the folder stays' ($cfg -notmatch 'plain-old-7' -and (Get-Content $file -Raw -Encoding UTF8) -notmatch 'plain-old-7' -and $cfg -match '"__folders"') ''
+function Internal() { $s = (Get-Content "$script:Config\config.json" -Raw -Encoding UTF8 | ConvertFrom-Json).scripts."$script:Fid".settings; return (@($s.PSObject.Properties.Name) -like '__*') -join ',' }
+Pf fence set $script:Fid scriptPath 'plugin:local-other' | Out-Null
+for ($i = 0; $i -lt 20 -and (Internal); $i++) { Start-Sleep -Milliseconds 500 }
+Check 'another plugin in the fence: none of the settings under __ stay' (-not (Internal)) "left: $(Internal)"
+
+Case 'the programs are read no more once no fence knows of them'
+$n = LogCount 'the 5 s reads stop'
+Pf fence delete $script:Fid | Out-Null
+for ($i = 0; $i -lt 30 -and (LogCount 'the 5 s reads stop') -eq $n; $i++) { Start-Sleep -Milliseconds 500 }
+Check 'the 5 s reads stop when the last such fence goes' ((LogCount 'the 5 s reads stop') -gt $n) ''

@@ -324,17 +324,20 @@ impl App {
     /// Event `name` for fence `fence`'s page, when it shows one.
     pub(super) fn web_event(&self, fence: FenceId, name: &str, data: serde_json::Value) {
         let web = self.window_for(fence).and_then(|w| w.web());
-        if let Some(web) = web.filter(|w| w.fence == fence) {
+        // The media session and the programs only while the page runs.
+        let told = |w: &Rc<WebFence>| !matches!(name, "media" | "apps") || w.runs();
+        if let Some(web) = web.filter(|w| w.fence == fence && told(w)) {
             web.event(name, &data);
         }
     }
 
     /// Event `name` for every page (`clipboard` and `media` only for the plugins that may read
-    /// them).
+    /// them, `media` only while the page runs).
     pub(super) fn web_events(&self, name: &str, data: serde_json::Value) {
         for web in self.fences.values().filter_map(|w| w.web()) {
             let p = &web.plugin;
-            if (name != "clipboard" || p.clipboard_read) && (name != "media" || p.media) {
+            let media = p.media && web.runs();
+            if (name != "clipboard" || p.clipboard_read) && (name != "media" || media) {
                 web.event(name, &data);
             }
         }

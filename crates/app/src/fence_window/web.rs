@@ -50,6 +50,8 @@ impl FenceWindow {
             if let Some(o) = v.web.take() {
                 v.content_panel.visual.children().remove(&o.visual);
                 old = Some(o);
+                // Whatever closed it: the media session and the programs may be read no more.
+                v.queue.push(Command::ToolShownChanged);
             }
             if let Some(w) = &web {
                 v.content_panel.visual.children().insert_at_top(&w.visual);

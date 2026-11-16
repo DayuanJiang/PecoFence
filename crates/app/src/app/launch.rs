@@ -18,8 +18,9 @@ const KEYS: &str = "__keys";
 const LAUNCH: &str = "__launch";
 /// The most items of one launcher fence.
 const MAX_ITEMS: usize = 200;
-/// The drops kept for `launch.add` (a call of one may come after the next drop).
-const DROPS_KEPT: usize = 8;
+/// How long the files of a fence's last drop stay readable (`pf.drop.*`, `launch.add`): a
+/// plugin cannot go on reading what the file holds later.
+const DROP_KEPT: Duration = Duration::from_secs(300);
 
 /// A launcher item's picture in its plugin's data folder (named after its fence: it goes with it).
 fn icon_name(fence: FenceId, item: &str) -> String {
@@ -211,16 +212,17 @@ impl App {
         (files || takes.text || takes.links).then_some(takes)
     }
 
-    /// Files, a text or a link dropped on plugin fence `fence`: its plugin gets `drop` with the
-    /// files' names and sizes (folders only by name), the text, the link and the drop's number,
-    /// and may add the files as launcher items while it handles it (the plugin host adds the
-    /// number to that `launch.add`) or read them (`pf.drop.*`, the last drop's).
+    /// Files, a text or a link dropped on plugin fence `fence`, on its row `row`: its plugin
+    /// gets `drop` with the files' names and sizes (folders only by name), the text, the link,
+    /// the row's id and the drop's number, and may add the files as launcher items while it
+    /// handles it (the plugin host adds the number to that `launch.add`) or read them
+    /// (`pf.drop.*`, the files of the fence's last drop with files, for 5 minutes).
     pub(super) fn plugin_dropped(
         &mut self,
         fence: FenceId,
         paths: Vec<PathBuf>,
-        text: Option<String>,
-        url: Option<String>,
+        (text, url): (Option<String>, Option<String>),
+        row: Option<usize>,
     ) {
         let takes = self.plugin_takes_drops(fence).unwrap_or_default();
         let (text, url) = (text.filter(|_| takes.text), url.filter(|_| takes.links));
@@ -241,13 +243,26 @@ impl App {
         self.light.next_drop += 1;
         let drop = self.light.next_drop;
         let chars = text.as_ref().map_or(0, |t| t.chars().count());
-        tracing::info!(%fence, files = files.len(), chars, link = url.is_some(), drop, "dropped on a plugin fence: its plugin is told");
-        self.light.drops.push((drop, fence, paths));
-        if self.light.drops.len() > DROPS_KEPT {
-            self.light.drops.remove(0);
+        let rows = self.light.running.get(&fence).and_then(|r| r.0.as_ref());
+        let row = row.and_then(|i| rows?.get(i)?.id.clone());
+        tracing::info!(%fence, files = files.len(), chars, link = url.is_some(), drop, ?row, "dropped on a plugin fence: its plugin is told");
+        if !paths.is_empty() {
+            self.light.drops.retain(|d| d.1 != fence);
+            self.light.drops.push((drop, fence, paths, Instant::now()));
         }
-        let data = json!({ "files": files, "text": text, "url": url, "drop": drop });
+        let data = json!({ "files": files, "text": text, "url": url, "row": row, "drop": drop });
         self.plugin_event(fence, "drop", data);
+    }
+
+    /// The files of drop `drop` on `fence`, while it is the fence's last and under 5 minutes old.
+    fn drop_files(
+        &self,
+        fence: FenceId,
+        drop: Option<u64>,
+    ) -> std::result::Result<&[PathBuf], String> {
+        let found = (self.light.drops.iter())
+            .find(|d| Some(d.0) == drop && d.1 == fence && d.3.elapsed() < DROP_KEPT);
+        Ok(&found.ok_or("that drop is gone")?.2)
     }
 
     /// File `i` of drop `drop` on `fence` for `pf.drop.*` (a folder is for a launcher only).
@@ -257,8 +272,9 @@ impl App {
         drop: Option<u64>,
         i: usize,
     ) -> std::result::Result<PathBuf, String> {
-        let found = (self.light.drops.iter()).find(|d| Some(d.0) == drop && d.1 == fence);
-        let files = &found.ok_or("pf.drop: that drop is gone")?.2;
+        let files = self
+            .drop_files(fence, drop)
+            .map_err(|e| format!("pf.drop: {e}"))?;
         let path = files
             .get(i)
             .ok_or_else(|| format!("pf.drop: the drop has {} files", files.len()))?;
@@ -485,9 +501,9 @@ impl App {
             }
             "launch.add" => {
                 // [indexes, the drop's number (from the plugin host)]: that drop's files.
-                let drop = (self.light.drops.iter())
-                    .find(|d| Some(d.0) == args[1].as_u64() && d.1 == fence);
-                let files = drop.ok_or("launch.add: that drop is gone")?.2.clone();
+                let files = (self.drop_files(fence, args[1].as_u64()))
+                    .map_err(|e| format!("launch.add: {e}"))?
+                    .to_vec();
                 let wanted = args[0]
                     .as_array()
                     .ok_or("launch.add takes a list of the drop's file numbers")?;

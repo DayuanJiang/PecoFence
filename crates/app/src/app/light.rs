@@ -107,12 +107,13 @@ pub(super) struct Light {
     pub(super) menu_shown: std::cell::RefCell<Vec<String>>,
     /// The id of the row whose own menu is shown (Some(null): a row without an id).
     pub(super) menu_row: std::cell::RefCell<Option<serde_json::Value>>,
-    pub(super) drops: Vec<(u64, FenceId, Vec<std::path::PathBuf>)>,
+    pub(super) drops: Vec<(u64, FenceId, Vec<std::path::PathBuf>, Instant)>,
     pub(super) next_drop: u64,
     pub(super) keys: HashMap<i32, (FenceId, String, Hotkey)>,
     pub(super) keys_taken: Vec<(FenceId, String, Hotkey)>,
-    /// While programs are read for plugins (`apps`): what each fence was last told.
-    apps: Option<HashMap<FenceId, Value>>,
+    /// Whether the programs are read for plugins (`apps`, every 5 s), and what each fence was
+    /// last told (kept while the reads stop: a change meanwhile is told when they start again).
+    apps: (bool, HashMap<FenceId, Value>),
 }
 
 /// The control window's timer of the programs read for `pf.apps` and the `apps` event.
@@ -674,7 +675,13 @@ impl App {
     /// in the background) or a web plugin's page that may see it is open; the same for the
     /// programs (`apps`, every 5 s).
     pub(super) fn sync_media(&mut self) {
-        let pages: Vec<_> = self.fences.values().filter_map(|w| w.web()).collect();
+        // A page counts while it shows, or hidden with `background`.
+        let pages: Vec<_> = self
+            .fences
+            .values()
+            .filter_map(|w| w.web())
+            .filter(|w| w.runs())
+            .collect();
         let media_page = pages.iter().any(|w| w.plugin.media);
         if self.light.host.is_none() && !media_page && !pages.iter().any(|w| w.plugin.apps) {
             return;
@@ -687,17 +694,17 @@ impl App {
         let on = (self.light.running.iter()).any(|(f, (_, shown, ..))| wants(f, *shown));
         api.media
             .watch(on || media_page, self.control.hwnd().0 as isize);
-        if self.light.apps.is_none() && !self.apps_watchers().is_empty() {
+        if !self.light.apps.0 && !self.apps_watchers().is_empty() {
             tracing::info!(
                 "plugins: one may know of programs, they are read every 5 s from now on"
             );
-            self.light.apps = Some(HashMap::new());
+            self.light.apps.0 = true;
             window::set_timer(self.control.hwnd(), TIMER_PLUGIN_APPS, APPS_EVERY_MS);
         }
     }
 
     /// The fences whose plugin may know of programs (`apps`) and runs in a fence that shows (or
-    /// in the background), or whose web page is open.
+    /// in the background), or whose web page runs.
     fn apps_watchers(&self) -> Vec<FenceId> {
         let Some(api) = self.light.host.as_ref() else {
             return Vec::new();
@@ -710,7 +717,11 @@ impl App {
         let mut fences: Vec<FenceId> = (running.filter(|(f, r)| wants(f, r.1)))
             .map(|(f, _)| *f)
             .collect();
-        let pages = self.fences.values().filter_map(|w| w.web());
+        let pages = self
+            .fences
+            .values()
+            .filter_map(|w| w.web())
+            .filter(|w| w.runs());
         fences.extend(pages.filter(|w| w.plugin.apps).map(|w| w.fence));
         fences.sort();
         fences.dedup();
@@ -721,14 +732,15 @@ impl App {
     /// plugins on a worker thread; the reads stop when no plugin wants them.
     pub(super) fn poll_plugin_apps(&mut self) {
         if self.apps_watchers().is_empty() {
-            self.light.apps = None;
+            self.light.apps.0 = false;
             return tracing::info!("plugins: none knows of programs now, the 5 s reads stop");
         }
         window::set_timer(self.control.hwnd(), TIMER_PLUGIN_APPS, APPS_EVERY_MS);
         let api = self.light_host();
         let (jobs, control) = (self.light.jobs.clone(), self.control.hwnd().0 as isize);
         let read = move || {
-            let (running, front) = (api.programs(), super::light_host::front_program());
+            // Read now, and kept as what `pf.apps` answers: calls and events agree.
+            let super::light_host::Programs(running, front) = api.programs(true);
             let job: UiJob = Box::new(move |app: &mut App| app.plugin_apps_read(&running, front));
             Self::post_job(&jobs, control, job);
         };
@@ -743,7 +755,7 @@ impl App {
     /// What each watching plugin may know of `running` and `front`; one whose part changed since
     /// the last read gets `apps` ({running, front}), its page too.
     fn plugin_apps_read(&mut self, running: &[String], front: Option<String>) {
-        if self.light.apps.is_none() {
+        if !self.light.apps.0 {
             return;
         }
         for fence in self.apps_watchers() {
@@ -755,7 +767,7 @@ impl App {
                 "running": apps.iter().filter(|a| running.contains(&a.to_lowercase())).collect::<Vec<_>>(),
                 "front": apps.iter().find(|a| front.as_deref() == Some(&*a.to_lowercase())),
             });
-            let seen = self.light.apps.get_or_insert_default();
+            let seen = &mut self.light.apps.1;
             if seen
                 .insert(fence, state.clone())
                 .is_some_and(|s| s != state)

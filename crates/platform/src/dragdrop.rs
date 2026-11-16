@@ -437,6 +437,11 @@ fn inet_url_format() -> FORMATETC {
 
 /// Reads a `TYMED_HGLOBAL` medium of `fmt` as raw bytes (copied out before release).
 pub(crate) fn hglobal_bytes(data: &IDataObject, fmt: &FORMATETC) -> Option<Vec<u8>> {
+    hglobal_bytes_max(data, fmt, usize::MAX)
+}
+
+/// [`hglobal_bytes`], at most the first `max` bytes of the block copied.
+fn hglobal_bytes_max(data: &IDataObject, fmt: &FORMATETC, max: usize) -> Option<Vec<u8>> {
     // SAFETY: standard GetData / GlobalLock protocol; the medium is released afterwards.
     unsafe {
         let medium = data.GetData(fmt).ok()?;
@@ -445,7 +450,7 @@ pub(crate) fn hglobal_bytes(data: &IDataObject, fmt: &FORMATETC) -> Option<Vec<u
         if !hglobal.0.is_null() {
             let ptr = GlobalLock(hglobal) as *const u8;
             if !ptr.is_null() {
-                let len = GlobalSize(hglobal);
+                let len = GlobalSize(hglobal).min(max);
                 out = Some(std::slice::from_raw_parts(ptr, len).to_vec());
                 let _ = GlobalUnlock(hglobal);
             }
@@ -479,9 +484,11 @@ pub fn inet_url(data: &IDataObject) -> Option<String> {
         .then_some(s)
 }
 
-/// The dragged text (`CF_UNICODETEXT`), at most `max` UTF-16 units of it.
+/// The dragged text (`CF_UNICODETEXT`), at most `max` UTF-16 units of it (no more is copied out
+/// of the block).
 pub fn dropped_text(data: &IDataObject, max: usize) -> Option<String> {
-    let bytes = hglobal_bytes(data, &hglobal_format(CF_UNICODETEXT as u16))?;
+    let format = hglobal_format(CF_UNICODETEXT as u16);
+    let bytes = hglobal_bytes_max(data, &format, max.saturating_mul(2))?;
     let units = bytes
         .as_chunks::<2>()
         .0

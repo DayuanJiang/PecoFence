@@ -48,6 +48,10 @@ struct Fake {
     fixture: Vec<(String, Value)>,
     rest: AtomicBool,
     log: Mutex<Log>,
+    /// The first program of `apps`: it runs all along, and is in front until the first
+    /// `pf.apps.front` answers (the `apps` event later says it is not).
+    app: Option<String>,
+    front_asked: AtomicBool,
 }
 
 impl Fake {
@@ -139,13 +143,20 @@ impl Host for Fake {
                 "app": null, "title": "A song", "artist": "An artist", "album": "", "playing": true,
                 "position": 30.0, "duration": 180.0, "cover": null
             })),
-            // None of the programs of `apps` runs.
-            "apps.running" => Ok(json!([])),
+            "apps.running" => Ok(json!(self.app.iter().collect::<Vec<_>>())),
+            "apps.front" if !self.front_asked.swap(true, Ordering::Relaxed) => Ok(json!(self.app)),
             "apps.front" => Ok(Value::Null),
-            // The dropped file notes.txt: its text, its bytes in base64; a save just happens.
+            // The dropped file notes.txt (the drop's file 0): its text, its bytes in base64; a
+            // save puts it into the data as the app does.
+            n if n.starts_with("drop.") && args[0] != 0 => {
+                Err("pf.drop: the drop has 1 files".into())
+            }
             "drop.text" => Ok(json!("dropped notes")),
             "drop.read" => Ok(json!("ZHJvcHBlZCBub3Rlcw==")),
-            "drop.save" => Ok(Value::Null),
+            "drop.save" => {
+                log.data.insert(arg(1).to_string(), "dropped notes".into());
+                Ok(Value::Null)
+            }
             // Nothing on the clipboard as a picture, the user cancels the folder and file
             // dialogs, and opening, notices and clipboard writes only happen.
             "clipboard.image" | "folder.pick" | "launch.pick" | "launch.open" | "openSystem"
@@ -366,6 +377,8 @@ fn check(a: Args) -> Result<bool, String> {
         fixture,
         rest: AtomicBool::new(false),
         log: Mutex::default(),
+        app: manifest.permissions.apps.first().cloned(),
+        front_asked: AtomicBool::new(false),
     });
     let (out_tx, out_rx) = std::sync::mpsc::channel();
     let send_out = move |o: Output| _ = out_tx.send((Instant::now(), o));
@@ -431,7 +444,7 @@ fn check(a: Args) -> Result<bool, String> {
         };
         let text = takes("text").then_some("a dropped text");
         let url = takes("links").then_some("https://example.com/");
-        let drop = json!({ "files": files, "text": text, "url": url, "drop": 1 });
+        let drop = json!({ "files": files, "text": text, "url": url, "row": null, "drop": 1 });
         clicks.push(("drop", drop));
     }
     if p.media.reads() {

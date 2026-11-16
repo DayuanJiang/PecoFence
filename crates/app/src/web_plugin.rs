@@ -642,6 +642,12 @@ impl WebFence {
         }
     }
 
+    /// The page shows, or runs on hidden (`background`): the media session and the programs are
+    /// read for it, and it hears of them.
+    pub fn runs(&self) -> bool {
+        self.shown.get() || self.plugin.background
+    }
+
     /// The fence shows its page (false: rolled up, hidden with the desktop). A hidden page goes to
     /// low memory at once; 30 s later it stops drawing and is suspended (`suspend`). It keeps
     /// drawing until then: a fence expanded again within 30 s shows its page in the same frame as
@@ -654,6 +660,8 @@ impl WebFence {
             if shown { "show" } else { "hide" },
             &serde_json::Value::Null,
         );
+        // The media session and the programs are read for it while it runs (`App::sync_media`).
+        self.queue.push(Command::ToolShownChanged);
         if !shown && self.plugin.background {
             // A background plugin's page goes on as it is (music keeps playing).
             return tracing::info!(plugin = %self.plugin.id, fence = %self.fence, "web plugin: page hidden, runs on in the background");
