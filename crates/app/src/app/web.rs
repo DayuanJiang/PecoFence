@@ -90,6 +90,8 @@ impl App {
             at,
         );
         w.set_web(Some(web));
+        // Its page may watch the media session or the programs.
+        self.sync_media();
     }
 
     /// `push_tool_view` of a web plugin fence: why its page stopped, or 正在运行… until the page
@@ -327,10 +329,12 @@ impl App {
         }
     }
 
-    /// Event `name` for every page (`clipboard` only for the plugins that may read it).
+    /// Event `name` for every page (`clipboard` and `media` only for the plugins that may read
+    /// them).
     pub(super) fn web_events(&self, name: &str, data: serde_json::Value) {
         for web in self.fences.values().filter_map(|w| w.web()) {
-            if name != "clipboard" || web.plugin.clipboard_read {
+            let p = &web.plugin;
+            if (name != "clipboard" || p.clipboard_read) && (name != "media" || p.media) {
                 web.event(name, &data);
             }
         }

@@ -2,6 +2,16 @@
 
 use super::*;
 
+/// What a plugin fence takes dropped on it (`drop` in its manifest): files (folders too for a
+/// launcher), text, links.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PluginDrops {
+    pub files: bool,
+    pub folders: bool,
+    pub text: bool,
+    pub links: bool,
+}
+
 /// 像桌面一样排列: where the fence arranges its icons (screen px).
 #[derive(Clone, Debug, PartialEq)]
 pub struct DesktopArea {
@@ -365,9 +375,8 @@ pub struct FenceViewState {
     pub(super) filter_tag: Option<(String, String, String)>,
     /// 智能栅栏: the fence shows a search, so nothing is dropped into it.
     pub(super) refuses_drops: bool,
-    /// A plugin fence whose plugin takes dropped files (`drop: ["files"]`): Some(whether folders
-    /// too, for a launcher).
-    pub(super) plugin_drop: Option<bool>,
+    /// A plugin fence whose plugin takes drops: what it takes.
+    pub(super) plugin_drop: Option<PluginDrops>,
     /// Width the cached labels were fitted for; a change invalidates them.
     pub(super) label_w: f32,
     /// The wider box an icon's name may take (`ensure_icons_and_labels`); `label_w` without one.

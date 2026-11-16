@@ -227,10 +227,13 @@ pub enum Command {
         to: FenceId,
         folder: Option<PathBuf>,
     },
-    /// Files dropped on plugin fence `fence` (its plugin takes them): its `drop` event.
+    /// Files, a text or a link dropped on plugin fence `fence` (its plugin takes them): its
+    /// `drop` event.
     PluginDrop {
         fence: FenceId,
         paths: Vec<PathBuf>,
+        text: Option<String>,
+        url: Option<String>,
     },
     /// A drop onto `to` was handed to the shell's folder drop target (Outlook mail, a
     /// Start-menu app): the portals show what landed in their folders; `landed` are the desktop

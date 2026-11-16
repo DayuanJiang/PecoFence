@@ -479,6 +479,18 @@ pub fn inet_url(data: &IDataObject) -> Option<String> {
         .then_some(s)
 }
 
+/// The dragged text (`CF_UNICODETEXT`), at most `max` UTF-16 units of it.
+pub fn dropped_text(data: &IDataObject, max: usize) -> Option<String> {
+    let bytes = hglobal_bytes(data, &hglobal_format(CF_UNICODETEXT as u16))?;
+    let units = bytes
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| u16::from_le_bytes(*c));
+    let units: Vec<u16> = units.take_while(|&u| u != 0).take(max).collect();
+    (!units.is_empty()).then(|| String::from_utf16_lossy(&units))
+}
+
 fn file_group_format() -> FORMATETC {
     hglobal_format(registered_format(
         "FileGroupDescriptorW",

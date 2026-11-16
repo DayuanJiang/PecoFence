@@ -109,7 +109,13 @@ pub(super) struct Light {
     pub(super) next_drop: u64,
     pub(super) keys: HashMap<i32, (FenceId, String, Hotkey)>,
     pub(super) keys_taken: Vec<(FenceId, String, Hotkey)>,
+    /// While programs are read for plugins (`apps`): what each fence was last told.
+    apps: Option<HashMap<FenceId, Value>>,
 }
+
+/// The control window's timer of the programs read for `pf.apps` and the `apps` event.
+pub(super) const TIMER_PLUGIN_APPS: usize = 134;
+const APPS_EVERY_MS: u32 = 5000;
 
 impl App {
     fn light_send(&self, cmd: host::Command) {
@@ -170,7 +176,7 @@ impl App {
         json!({
             "lang": pecofence_core::i18n::language().tag(),
             "theme": pecofence_core::plugins::theme(dark),
-            "settings": pecofence_core::plugins::fence_settings(m, &saved),
+            "settings": super::plugins::plugin_settings(m, &saved),
             "fence": { "id": fence.to_string(), "width": size.0, "height": size.1 },
         })
     }
@@ -663,21 +669,105 @@ impl App {
     }
 
     /// The media session is read while a plugin that may see it runs in a fence that shows (or
-    /// in the background).
-    fn sync_media(&mut self) {
-        let Some(api) = self.light.host.clone() else {
+    /// in the background) or a web plugin's page that may see it is open; the same for the
+    /// programs (`apps`, every 5 s).
+    pub(super) fn sync_media(&mut self) {
+        let pages: Vec<_> = self.fences.values().filter_map(|w| w.web()).collect();
+        let media_page = pages.iter().any(|w| w.plugin.media);
+        if self.light.host.is_none() && !media_page && !pages.iter().any(|w| w.plugin.apps) {
             return;
-        };
+        }
+        let api = self.light_host();
         let wants = |f: &FenceId, shown: bool| {
             let p = api.manifest(*f).map(|m| m.permissions.clone());
             p.is_some_and(|p| p.media.reads() && (shown || p.background))
         };
         let on = (self.light.running.iter()).any(|(f, (_, shown, ..))| wants(f, *shown));
-        api.media.watch(on, self.control.hwnd().0 as isize);
+        api.media
+            .watch(on || media_page, self.control.hwnd().0 as isize);
+        if self.light.apps.is_none() && !self.apps_watchers().is_empty() {
+            tracing::info!(
+                "plugins: one may know of programs, they are read every 5 s from now on"
+            );
+            self.light.apps = Some(HashMap::new());
+            window::set_timer(self.control.hwnd(), TIMER_PLUGIN_APPS, APPS_EVERY_MS);
+        }
     }
 
-    /// The media session changed: the running plugins that may see it are told.
+    /// The fences whose plugin may know of programs (`apps`) and runs in a fence that shows (or
+    /// in the background), or whose web page is open.
+    fn apps_watchers(&self) -> Vec<FenceId> {
+        let Some(api) = self.light.host.as_ref() else {
+            return Vec::new();
+        };
+        let wants = |f: &FenceId, shown: bool| {
+            let p = api.manifest(*f).map(|m| m.permissions.clone());
+            p.is_some_and(|p| !p.apps.is_empty() && (shown || p.background))
+        };
+        let running = self.light.running.iter();
+        let mut fences: Vec<FenceId> = (running.filter(|(f, r)| wants(f, r.1)))
+            .map(|(f, _)| *f)
+            .collect();
+        let pages = self.fences.values().filter_map(|w| w.web());
+        fences.extend(pages.filter(|w| w.plugin.apps).map(|w| w.fence));
+        fences.sort();
+        fences.dedup();
+        fences
+    }
+
+    /// `TIMER_PLUGIN_APPS`: the programs running and the one in front, read once for all the
+    /// plugins on a worker thread; the reads stop when no plugin wants them.
+    pub(super) fn poll_plugin_apps(&mut self) {
+        if self.apps_watchers().is_empty() {
+            self.light.apps = None;
+            return tracing::info!("plugins: none knows of programs now, the 5 s reads stop");
+        }
+        window::set_timer(self.control.hwnd(), TIMER_PLUGIN_APPS, APPS_EVERY_MS);
+        let api = self.light_host();
+        let (jobs, control) = (self.light.jobs.clone(), self.control.hwnd().0 as isize);
+        let read = move || {
+            let (running, front) = (api.programs(), super::light_host::front_program());
+            let job: UiJob = Box::new(move |app: &mut App| app.plugin_apps_read(&running, front));
+            Self::post_job(&jobs, control, job);
+        };
+        let spawned = std::thread::Builder::new()
+            .name("pecofence-apps".into())
+            .spawn(read);
+        if let Err(e) = spawned {
+            tracing::warn!(error = %e, "plugins: no thread to read the programs");
+        }
+    }
+
+    /// What each watching plugin may know of `running` and `front`; one whose part changed since
+    /// the last read gets `apps` ({running, front}), its page too.
+    fn plugin_apps_read(&mut self, running: &[String], front: Option<String>) {
+        if self.light.apps.is_none() {
+            return;
+        }
+        for fence in self.apps_watchers() {
+            let Some(m) = self.light_manifest(fence) else {
+                continue;
+            };
+            let apps = &m.permissions.apps;
+            let state = json!({
+                "running": apps.iter().filter(|a| running.contains(&a.to_lowercase())).collect::<Vec<_>>(),
+                "front": apps.iter().find(|a| front.as_deref() == Some(&*a.to_lowercase())),
+            });
+            let seen = self.light.apps.get_or_insert_default();
+            if seen
+                .insert(fence, state.clone())
+                .is_some_and(|s| s != state)
+            {
+                tracing::info!(%fence, "plugin: a program of its apps started, ended or came to the front, it is told");
+                self.plugin_event(fence, "apps", state.clone());
+                self.web_event(fence, "apps", state);
+            }
+        }
+    }
+
+    /// The media session changed: the running plugins that may see it are told, and the pages.
     fn light_media_changed(&mut self) {
+        self.web_events("media", Value::Null);
         let Some(api) = self.light.host.clone() else {
             return;
         };

@@ -141,6 +141,11 @@ impl Host for Fake {
             })),
             // None of the programs of `apps` runs.
             "apps.running" => Ok(json!([])),
+            "apps.front" => Ok(Value::Null),
+            // The dropped file notes.txt: its text, its bytes in base64; a save just happens.
+            "drop.text" => Ok(json!("dropped notes")),
+            "drop.read" => Ok(json!("ZHJvcHBlZCBub3Rlcw==")),
+            "drop.save" => Ok(Value::Null),
             // Nothing on the clipboard as a picture, the user cancels the folder and file
             // dialogs, and opening, notices and clipboard writes only happen.
             "clipboard.image" | "folder.pick" | "launch.pick" | "launch.open" | "openSystem"
@@ -393,12 +398,25 @@ fn check(a: Args) -> Result<bool, String> {
     for c in &p.commands {
         clicks.push(("command", json!({ "id": c.id, "via": "key" })));
     }
-    if p.drop.iter().any(|d| d == "files") {
+    // One drop with what it takes of a file, a text and a link.
+    let takes = |kind: &str| p.drop.iter().any(|d| d == kind);
+    if !p.drop.is_empty() {
         let file = json!({ "name": "notes.txt", "size": 120, "folder": false });
-        clicks.push(("drop", json!({ "files": [file], "drop": 1 })));
+        let files = if takes("files") {
+            json!([file])
+        } else {
+            json!([])
+        };
+        let text = takes("text").then_some("a dropped text");
+        let url = takes("links").then_some("https://example.com/");
+        let drop = json!({ "files": files, "text": text, "url": url, "drop": 1 });
+        clicks.push(("drop", drop));
     }
     if p.media.reads() {
         clicks.push(("media", Value::Null));
+    }
+    if !p.apps.is_empty() {
+        clicks.push(("apps", json!({ "running": [&p.apps[0]], "front": null })));
     }
     let clicked = clicks.len();
     for (name, data) in clicks {

@@ -182,7 +182,8 @@ impl Manifest {
     }
 }
 
-/// One setting of a plugin fence (插件设置): `switch`, `text`, `number` or `choice`.
+/// One setting of a plugin fence (插件设置): `switch`, `text`, `number`, `choice` or `secret`
+/// (interface 2: typed by the user, kept encrypted under [`SECRETS`], no default).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Setting {
     pub key: String,
@@ -215,14 +216,19 @@ pub fn fits(s: &Setting, v: &serde_json::Value) -> bool {
     }
 }
 
+/// The fence settings' key under which the app keeps the `secret` settings, encrypted for this
+/// Windows account (an import deletes it with every key that starts with `__`).
+pub const SECRETS: &str = "__secrets";
+
 /// A plugin fence's settings as its plugin sees them (`pf.settings`): what the fence saved
-/// when it fits the setting, else the setting's default.
+/// when it fits the setting, else the setting's default. A `secret` is null here: the app puts
+/// in what it decrypts from [`SECRETS`].
 pub fn fence_settings(
     m: &Manifest,
     saved: &serde_json::Map<String, serde_json::Value>,
 ) -> serde_json::Value {
     let value = |s: &Setting| {
-        let kept = saved.get(&s.key).filter(|v| fits(s, v));
+        let kept = (saved.get(&s.key)).filter(|v| s.kind != "secret" && fits(s, v));
         (s.key.clone(), kept.unwrap_or(&s.default).clone())
     };
     serde_json::Value::Object(m.settings.iter().map(value).collect())
@@ -387,7 +393,12 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
             m.id, m.api, m.layer
         ));
     }
-    let kinds = ["switch", "text", "number", "choice"];
+    let kinds = ["switch", "text", "number", "choice", "secret"];
+    // A secret has no default: only what the user types.
+    let default_ok = |s: &Setting| match s.kind.as_str() {
+        "secret" => s.default.is_null(),
+        _ => fits(s, &s.default),
+    };
     let good = |(i, s): (usize, &Setting)| {
         (1..=32).contains(&s.key.len())
             && s.key.bytes().all(|c| c.is_ascii_alphanumeric())
@@ -396,7 +407,7 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
             && short(&s.label, 60)
             && (s.kind != "choice" || (1..=50).contains(&s.options.len()))
             && s.options.iter().all(|o| short(&o.label, 60))
-            && fits(s, &s.default)
+            && default_ok(s)
     };
     if m.settings.len() > 20 || !m.settings.iter().enumerate().all(good) {
         return Err(format!("{}: bad settings", m.id));
@@ -410,7 +421,10 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
     if p.system.len() > 20 || !p.system.iter().all(|s| valid_program(s)) {
         return Err(format!("{}: bad system programs", m.id));
     }
-    let newer = p.api2_fields();
+    let mut newer = p.api2_fields();
+    if m.settings.iter().any(|s| s.kind == "secret") {
+        newer.push("secret settings");
+    }
     if m.api < 2 && !newer.is_empty() {
         return Err(format!("{}: {} need api 2", m.id, newer.join(", ")));
     }
@@ -425,9 +439,9 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
     if p.commands.len() > 8 || !once(&ids) || !p.commands.iter().all(command_ok) {
         return Err(format!("{}: bad commands", m.id));
     }
-    // Text and links come with the drops of the second batch: until then files only.
     let drops: Vec<&str> = p.drop.iter().map(String::as_str).collect();
-    if !once(&drops) || !drops.iter().all(|d| *d == "files") {
+    let drop_kinds = ["files", "text", "links"];
+    if !once(&drops) || !drops.iter().all(|d| drop_kinds.contains(d)) {
         return Err(format!("{}: bad drop kinds", m.id));
     }
     let app_ok = |a: &String| valid_plain_name(a) && a.to_ascii_lowercase().ends_with(".exe");
@@ -1049,6 +1063,7 @@ mod tests {
             ),
             (json!({ "commands": [{ "id": "Show" }] }), "commands"),
             (json!({ "drop": ["files", "text"] }), "drop"),
+            (json!({ "drop": ["links", "files"] }), "drop"),
             (json!({ "media": "control" }), "media"),
             (json!({ "apps": ["Spotify.exe", "obs64.exe"] }), "apps"),
         ] {
@@ -1074,8 +1089,8 @@ mod tests {
         for bad in [
             json!({ "drop": ["folders"] }),
             json!({ "drop": ["files", "files"] }),
-            json!({ "drop": ["text"] }),
-            json!({ "drop": ["files", "links"] }),
+            json!({ "drop": ["html"] }),
+            json!({ "drop": ["text", "Text"] }),
             json!({ "apps": ["C:\\x\\spotify.exe"] }),
             json!({ "apps": ["spotify"] }),
             json!({ "commands": [{ "id": "a b", "title": { "en": "A" } }] }),
@@ -1089,6 +1104,24 @@ mod tests {
             });
             assert!(check_manifest(&m).is_err(), "{bad}");
         }
+        // Text and links are taken (the files-only stopgap is gone).
+        let drops = with(2, json!({ "drop": ["text", "links", "files"] }));
+        assert!(check_manifest(&drops).is_ok());
+        // A secret setting: api 2, no default; the plugin's view of it is null until the app
+        // puts in what it decrypts, whatever plain value the fence's settings hold.
+        let secret = |api: u32, default: serde_json::Value| {
+            manifest(|v| {
+                v["api"] = api.into();
+                v["settings"] = json!([{ "key": "token", "type": "secret", "default": default }]);
+            })
+        };
+        assert!(check_manifest(&secret(2, json!(null))).is_ok());
+        let why = check_manifest(&secret(1, json!(null))).unwrap_err();
+        assert!(why.contains("secret settings need api 2"), "{why}");
+        assert!(check_manifest(&secret(2, json!("abc"))).is_err());
+        let saved = json!({ "token": "plain", SECRETS: { "token": "0a0b" } });
+        let shown = fence_settings(&secret(2, json!(null)), saved.as_object().unwrap());
+        assert_eq!(shown, json!({ "token": null }));
         // An unknown media level does not even read.
         let mut v = entry("countdown");
         v["permissions"] = json!({ "media": "write" });

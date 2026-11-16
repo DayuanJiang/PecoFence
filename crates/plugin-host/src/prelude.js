@@ -47,7 +47,8 @@
     folder: ["pick", "list", "read"],
     launch: ["pick", "add", "list", "remove", "open"],
     media: ["current", "control"],
-    apps: ["running"],
+    apps: ["running", "front"],
+    drop: ["read", "text", "save"],
   })) {
     pf[group] = Object.freeze(Object.fromEntries(names.map((k) => [k, (...args) => call(`${group}.${k}`, args)])));
   }

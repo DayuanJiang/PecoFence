@@ -512,6 +512,10 @@
   /* A text setting's box on its own line under its name, as wide as the card. */
   .pl-field:has(> input[type=text]) { flex-wrap: wrap; }
   .pl-field > input[type=text] { width: 100%; }
+  /* A secret: its box and 显示 on a line of their own, the note under them. */
+  .pl-field:has(> .pl-secret) { flex-wrap: wrap; }
+  .pl-secret { display: flex; gap: 8px; width: 100%; }
+  .pl-secret input { flex: 1; }
   /* A host name or a program's path stays whole: it goes to the next line as one. */
   .pl-name { display: inline-block; max-width: 100%; overflow-wrap: anywhere; }
   .fb-note[hidden], .fb-preview-box[hidden], .card[hidden] { display: none; }
@@ -1841,7 +1845,7 @@
       p.launch && t("打开你放进这个栅栏的文件、文件夹和程序"), p.drop.length && t("你拖到它上面的文件和文字，它能读取"),
       p.commands.length && [tf("有这些命令：{0}。可以在插件详情里给它们设快捷键", '\u0001'), p.commands],
       p.media === 'read' && t("看到正在播放的歌曲或视频：名字、歌手、专辑和封面"), p.media === 'control' && t("看到正在播放的歌曲或视频：名字、歌手、专辑和封面，并能暂停和切歌"),
-      p.apps && p.apps.length && [tf("知道这些程序是否在运行：{0}", '\u0001'), p.apps]].filter(Boolean);
+      p.apps && p.apps.length && [tf("知道这些程序是否在运行、是否在最前面：{0}", '\u0001'), p.apps]].filter(Boolean);
     return d.length ? d : [t("只显示内容，不联网，也不读剪贴板")];
   }
   // `el` with `text`, its \u0001 replaced by the names, each kept whole.
@@ -1887,6 +1891,16 @@
         for (const o of s.options) { const op = plEl('option', '', o.label || o.value); op.value = o.value; c.append(op); }
         c.value = v;
         c.onchange = () => set(c.value);
+      } else if (s.type === 'secret') {
+        // Typed hidden; 显示 shows it while the user checks it. Saved encrypted on this computer.
+        c = plEl('div', 'pl-secret');
+        const typed = plEl('input'), show = plEl('button', '', t("显示"));
+        typed.type = 'password'; typed.autocomplete = 'off'; typed.value = v ?? '';
+        typed.setAttribute('aria-label', s.label || s.key);
+        typed.onchange = () => set(typed.value);
+        show.type = 'button';
+        show.onclick = () => { const shown = typed.type === 'text'; typed.type = shown ? 'password' : 'text'; show.textContent = shown ? t("显示") : t("隐藏"); };
+        c.append(typed, show);
       } else {
         c = plEl('input');
         c.type = s.type === 'number' ? 'number' : 'text';
@@ -1895,6 +1909,7 @@
       }
       c.setAttribute('aria-label', s.label || s.key);
       row.append(plEl('span', '', s.label || s.key), c);
+      if (s.type === 'secret') row.append(plEl('div', 's', t("插件能读到这个值。它加密保存在这台电脑上，换到另一台电脑后要重新填写。")));
       box.append(row);
     }
     // A launcher's items: what the user put into the fence, each with 移除.

@@ -110,7 +110,13 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
             p.media.controls() && ["playpause", "next", "previous"].contains(&arg(0)),
             "permissions.media control and playpause, next or previous".into(),
         ),
-        "apps.running" => (!p.apps.is_empty(), "permissions.apps".into()),
+        "apps.running" | "apps.front" => (!p.apps.is_empty(), "permissions.apps".into()),
+        "drop.read" | "drop.text" | "drop.save" => (
+            p.drop.iter().any(|d| d == "files")
+                && args.get(0).is_some_and(Value::is_u64)
+                && (name != "drop.save" || valid_plain_name(arg(1))),
+            "permissions.drop files, a file number and for save a data name".into(),
+        ),
         "openSystem" => (arg(0) == "taskmgr", "the name taskmgr".into()),
         "data.list" => (true, String::new()),
         n if n.starts_with("sys.") => (true, String::new()),
@@ -222,10 +228,10 @@ pub fn perform(
             return Ok(answer);
         };
         let next = joined(&url, location).ok_or_else(|| format!("bad redirect {location}"))?;
-        if url_host(&next) != url_host(&url) {
-            headers.retain(|k, _| {
-                !["authorization", "cookie"].contains(&k.to_ascii_lowercase().as_str())
-            });
+        // To another scheme, host or port: none of the plugin's own headers go along.
+        let origin = |u: &str| WebAddress::parse(u).map(|a| (a.secure, a.host, a.port));
+        if origin(&next) != origin(&url) {
+            headers.retain(|k, _| k == "User-Agent");
         }
         if status == 303 || (verb == "http.post" && status < 307) {
             (verb, body) = ("http.get".into(), Value::Null);
@@ -378,6 +384,8 @@ mod tests {
                 ("https://b.com/3", ok.clone()),
                 ("https://a.com/away", moved(302, "https://c.com/")),
                 ("https://a.com/loop", moved(307, "loop")),
+                ("https://a.com/port", moved(302, "https://a.com:8443/p")),
+                ("https://a.com:8443/p", ok.clone()),
             ],
             ..Fake::default()
         };
@@ -395,20 +403,24 @@ mod tests {
         };
         let headers =
             json!({ "Authorization": "token", "Cookie": "c", "Accept": "x", "User-Agent": "mine" });
-        assert_eq!(get("https://a.com/1", headers), Ok(ok));
+        assert_eq!(get("https://a.com/1", headers), Ok(ok.clone()));
         let calls = fake.calls.lock().unwrap().clone();
         let urls: Vec<&str> = calls.iter().map(|c| c.1[0].as_str().unwrap()).collect();
         assert_eq!(
             urls,
             ["https://a.com/1", "https://a.com/2", "https://b.com/3"]
         );
-        // The same host keeps the credentials, another host does not; the agent is PecoFence's.
+        // The same origin keeps the plugin's headers; another host or port gets none of them,
+        // only PecoFence's agent.
         let sent = |i: usize| calls[i].1[1]["headers"].clone();
         assert_eq!(sent(1)["Authorization"], "token");
-        assert_eq!(
-            sent(2),
-            json!({ "Accept": "x", "User-Agent": "PecoFence-plugin/t 1.0.0" })
-        );
+        assert_eq!(sent(1)["Accept"], "x");
+        let agent_only = json!({ "User-Agent": "PecoFence-plugin/t 1.0.0" });
+        assert_eq!(sent(2), agent_only);
+        let headers = json!({ "Authorization": "token", "X-Key": "k" });
+        assert_eq!(get("https://a.com/port", headers), Ok(ok.clone()));
+        let calls = fake.calls.lock().unwrap().clone();
+        assert_eq!(calls[4].1[1]["headers"], agent_only, "{:?}", calls[4]);
         let why = get("https://a.com/away", json!({})).unwrap_err();
         assert!(why.contains("c.com in permissions.network"), "{why}");
         assert!(
@@ -416,7 +428,7 @@ mod tests {
                 .unwrap_err()
                 .contains("more than 5")
         );
-        assert_eq!(fake.calls.lock().unwrap().len(), 3 + 1 + 6);
+        assert_eq!(fake.calls.lock().unwrap().len(), 3 + 2 + 1 + 6);
     }
 
     #[test]

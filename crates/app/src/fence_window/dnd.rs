@@ -370,8 +370,48 @@ pub(super) struct Feedback {
 /// — a tab pill, a folder item, the insertion caret of a 手动 fence, or the whole content — and
 /// keeps the shell's drag image (with its "移动到 …" badge) informed through
 /// `IDropTargetHelper`, as Explorer's folder views do.
-/// The most files one drop gives a plugin.
+/// The most files one drop gives a plugin, and the most UTF-16 units of a dropped text.
 const MAX_PLUGIN_DROP: usize = 20;
+const MAX_PLUGIN_TEXT: usize = 256 * 1024;
+
+/// What a drag gives a plugin fence that takes `takes`: the files (none of PecoFence's own
+/// drags, at most 20, folders only for a launcher), the text and the http or https link, each
+/// only when the plugin takes that kind; None when that is nothing.
+fn plugin_payload(
+    data: &IDataObject,
+    takes: PluginDrops,
+    internal: bool,
+) -> Option<(Vec<PathBuf>, Option<String>, Option<String>)> {
+    let files = takes.files && !internal && dragdrop::has_hdrop(data);
+    let paths = files
+        .then(|| dragdrop::hdrop_paths(data))
+        .unwrap_or_default();
+    let fits = |p: &PathBuf| p.is_absolute() && (takes.folders || !p.is_dir());
+    let paths = if paths.len() <= MAX_PLUGIN_DROP && paths.iter().all(fits) {
+        paths
+    } else {
+        Vec::new()
+    };
+    let text = takes
+        .text
+        .then(|| dragdrop::dropped_text(data, MAX_PLUGIN_TEXT));
+    let link = takes.links.then(|| dragdrop::inet_url(data)).flatten();
+    let url = link.and_then(|u| pecofence_core::web_address::WebAddress::parse(&u));
+    let (text, url) = (text.flatten(), url.map(|u| u.to_string()));
+    (!paths.is_empty() || text.is_some() || url.is_some()).then_some((paths, text, url))
+}
+
+/// A plugin drop links files and copies a text or a link (never a move: the source keeps its
+/// text); `kind` is what [`plugin_payload`] found.
+fn plugin_effect(kind: DropKind, allowed: u32) -> DropEffect {
+    let order = match kind {
+        DropKind::Files => [DropEffect::Link, DropEffect::Copy],
+        DropKind::Url => [DropEffect::Copy, DropEffect::Link],
+        _ => return DropEffect::None,
+    };
+    let offered = order.into_iter().find(|e| e.to_raw() & allowed != 0);
+    offered.unwrap_or(DropEffect::None)
+}
 
 /// Screen point (sx, sy) is over the tab pill of another fence than the plugin fence shown:
 /// what is dropped there is not for its plugin.
@@ -613,10 +653,7 @@ impl FenceDropHandler {
             };
         };
         if v.plugin_drop.is_some() && !over_other_tab(v, pt.x, pt.y) {
-            let effect = match self.kind {
-                DropKind::Files => dragdrop::resolve(DropEffect::Link, allowed),
-                _ => DropEffect::None,
-            };
+            let effect = plugin_effect(self.kind, allowed);
             let title = v.title.clone();
             return Feedback {
                 effect,
@@ -771,28 +808,21 @@ impl DropHandler for FenceDropHandler {
         );
         self.path_drag =
             self.kind == DropKind::Files && hdrop.as_ref().is_some_and(|paths| !paths.is_empty());
-        // A plugin fence that takes files: none of PecoFence's own drags, at most 20, folders
-        // only for a launcher.
+        // A plugin fence: what it takes of the drag (`Files` with files, `Url` with only a text
+        // or a link), or nothing.
         let plugin = self
             .view
             .try_borrow()
             .ok()
             .and_then(|g| g.as_ref()?.plugin_drop);
-        if let (Some(folders), Some(paths)) = (plugin, hdrop.as_ref()) {
-            let fits = !internal
-                && self.kind == DropKind::Files
-                && paths.len() <= MAX_PLUGIN_DROP
-                && (folders || !paths.iter().any(|p| p.is_dir()));
-            tracing::info!(
-                files = paths.len(),
-                internal,
-                folders,
-                fits,
-                "a drag over a plugin fence"
-            );
-            if !fits {
-                self.kind = DropKind::None;
-            }
+        if let Some(takes) = plugin {
+            let payload = plugin_payload(data, takes, internal);
+            self.kind = match &payload {
+                Some((paths, ..)) if !paths.is_empty() => DropKind::Files,
+                Some(_) => DropKind::Url,
+                None => DropKind::None,
+            };
+            tracing::info!(internal, ?takes, kind = ?self.kind, "a drag over a plugin fence");
             self.path_drag = false;
         }
         self.data = Some(data.clone());
@@ -912,17 +942,19 @@ impl DropHandler for FenceDropHandler {
             let v = (g.as_mut())
                 .filter(|v| v.plugin_drop.is_some() && !over_other_tab(v, pt.x, pt.y))?;
             v.apply_drop_feedback(None);
-            Some(v.active)
+            Some((v.active, v.plugin_drop?))
         });
-        if let Some(fence) = plugin {
+        if let Some((fence, takes)) = plugin {
             // The files go to the plugin as they are: nothing is moved or copied.
-            let effect = match kind {
-                DropKind::Files => dragdrop::resolve(DropEffect::Link, allowed),
-                _ => DropEffect::None,
-            };
-            if effect != DropEffect::None {
-                let paths = dragdrop::hdrop_paths(data);
-                self.queue.push(Command::PluginDrop { fence, paths });
+            let effect = plugin_effect(kind, allowed);
+            let payload = plugin_payload(data, takes, internal.is_some());
+            if let Some((paths, text, url)) = payload.filter(|_| effect != DropEffect::None) {
+                self.queue.push(Command::PluginDrop {
+                    fence,
+                    paths,
+                    text,
+                    url,
+                });
             }
             self.forget_data(false);
             if let Some(h) = &self.helper {
