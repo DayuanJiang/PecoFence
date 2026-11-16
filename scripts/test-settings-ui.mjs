@@ -401,17 +401,20 @@ async function runTests() {
   });
   await test('Plugin list: tags, details with a form per fence, the install warning', async () => {
     doc = await reset();
-    const perms = { network: [], links: [], system: [], clipboard: 'none', background: false, folders: false, notify: false };
+    // Every field the host sends (plugins_json), so the page meets what the app gives it.
+    const perms = { network: [], links: [], system: [], clipboard: 'none', background: false, folders: false, notify: false,
+      launch: false, drop: [], commands: [], media: 'none', apps: [] };
     const settings = [
       { key: 'city', type: 'text', label: '城市', options: [] },
       { key: 'unit', type: 'choice', label: '单位', options: [{ value: 'c', label: '摄氏' }, { value: 'f', label: '华氏' }] },
       { key: 'tomorrow', type: 'switch', label: '显示明天', options: [] },
     ];
     const values = (city) => ({ city, unit: 'c', tomorrow: false });
+    const fence = (id, title, city) => ({ id, title, values: values(city), items: [], keys: [] });
     current().plugins = { status: 'ready', held: false, open: null, list: [
       { ...perms, id: 'weather', name: '天气', description: '今天和明天的天气', author: 'DayuanJiang', version: '1.0.0', installed: true, layer: 'light',
         network: ['wttr.in'], state: 'installed', reason: null, page: true, settings,
-        fences: [{ id: 'f-1', title: '东京', values: values('Tokyo') }, { id: 'f-2', title: '大阪', values: values('Osaka') }] },
+        fences: [fence('f-1', '东京', 'Tokyo'), fence('f-2', '大阪', 'Osaka')] },
       { ...perms, id: 'runner', name: 'Runner', description: 'Runs ipconfig', author: 'tester', version: '2.0.0', installed: false, layer: 'light',
         clipboard: 'write', system: ['ipconfig.exe'], state: 'install', reason: null, page: true, settings: [], fences: [], shown: '2.0.0 light runner' },
       { ...perms, id: 'webdemo', name: 'Web demo', description: 'A page', author: 'tester', version: '1.0.0', installed: false, layer: 'web',
@@ -424,6 +427,12 @@ async function runTests() {
     const tags = (i) => [...rows()[i].querySelectorAll('.pl-tags span')].map(s => s.textContent).join(' ');
     assert(rows().length === 3, 'Rows: ' + rows().length);
     assert(tags(0) === '联网' && tags(1) === '剪贴板 启动程序' && tags(2) === '占用内存较多', 'Tags: ' + [0, 1, 2].map(tags).join(' | '));
+    // Grey tags; only 启动程序 is yellow.
+    const colour = (s) => frame.contentWindow.getComputedStyle(s).backgroundColor;
+    const spans = rows().flatMap(r => [...r.querySelectorAll('.pl-tags span')]);
+    const yellow = spans.filter(s => s.textContent === '启动程序'), grey = spans.filter(s => s.textContent !== '启动程序');
+    assert(yellow.length === 1 && grey.every(s => colour(s) === colour(grey[0]) && colour(s) !== colour(yellow[0])),
+      'Tag colours: ' + spans.map(s => s.textContent + ' ' + colour(s)).join(' | '));
     rows()[0].click();
     await settle();
     const forms = [...doc.querySelectorAll('#pluginList .pl-form')];
@@ -470,8 +479,11 @@ async function runTests() {
     await settle();
     assert(!back.hidden && !doc.getElementById('plChanged').hidden && doc.getElementById('plChanged').offsetHeight > 0, 'The warning did not show again');
     doc.getElementById('plCancel').click();
-    // Cancelled: opening and closing a row draws the list again, without the warning.
+    // Cancelled: closing and opening a row draws the list again, without the warning. A row
+    // closes with the cards' motion (at most 400 ms).
+    const closing = () => new Promise(resolve => setTimeout(resolve, 420));
     rows()[0].click();
+    await closing();
     rows()[0].click();
     await settle();
     assert(back.hidden, 'The warning came back after its cancel');
@@ -504,7 +516,7 @@ async function runTests() {
     await settle();
     // 插件设置 in a fence's menu: the details open at that fence's settings.
     rows()[0].click();
-    await settle();
+    await closing();
     assert(!doc.querySelector('#pluginList .pl-detail'), 'Details did not close');
     current().plugins.open = [1, 'weather', 'f-2'];
     frame.contentWindow.testRefresh();
