@@ -984,12 +984,12 @@ fn drag_refusal(
         _ => {}
     }
     let shortcut = |n: &String| address.is_some() && n.to_ascii_lowercase().ends_with(".url");
-    match files.iter().find(|n| !data(n) && !shortcut(n)) {
-        Some(n) => Some(format!(
+    let other = files.iter().find(|n| !data(n) && !shortcut(n));
+    other.map(|n| {
+        format!(
             "a file {n} of another type than .txt .md .json .csv .log .ics .png .jpg .gif .webp"
-        )),
-        None => None,
-    }
+        )
+    })
 }
 
 fn mime(path: &str) -> &'static str {
