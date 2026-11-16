@@ -471,7 +471,8 @@ function PfStandIn([string]$id) {
 # A fence at `rect` (x,y,w,h px) running the installed plugin `id` (a script fence switched to
 # plugin:<id>); its id.
 function PfPluginFence([string]$title, [string]$rect, [string]$id) {
-  Set-Content 'C:\pf\run\idle.cmd' '@echo off' -Encoding ASCII
+  # Once: a fence made just before may be running it (cmd holds the file open a moment).
+  if (-not (Test-Path 'C:\pf\run\idle.cmd')) { Set-Content 'C:\pf\run\idle.cmd' '@echo off' -Encoding ASCII }
   $f = PfJson fence create --title $title --script 'C:\pf\run\idle.cmd' --rect $rect
   $fid = "$(if ($f.fence) { $f.fence.id } else { $f.id })"
   Pf fence set $fid scriptPath "plugin:$id" | Out-Null
