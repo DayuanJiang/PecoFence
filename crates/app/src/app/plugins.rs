@@ -417,6 +417,7 @@ impl App {
             id: id.to_string(),
             dir: p.dir.clone(),
             network: p.manifest.permissions.network.clone(),
+            links: p.manifest.permissions.links.clone(),
             background: p.manifest.permissions.background,
             clipboard_read: p.manifest.permissions.clipboard.reads(),
             media: p.manifest.permissions.media.reads(),

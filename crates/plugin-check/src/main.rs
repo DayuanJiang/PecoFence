@@ -6,7 +6,7 @@
 //! "offline", the clipboard and the computer's state are fixed values, nothing reaches Windows or
 //! the network. It drives the fence through what a user does (resize, hide and show, settings, a
 //! time change, a click on every row and cell with an id, each menu entry and command, a dropped
-//! file), then leaves it at rest, and reports every pf call, every refused permission, the hosts
+//! file, a drag out of each row with one), then leaves it at rest, and reports every pf call, every refused permission, the hosts
 //! the plugin tried, how often it showed a view, its memory and its slowest call. The plugin
 //! repository's checks run it on every pull request. Ends with `RESULT: PASS` or `RESULT: FAIL`
 //! (exit code 0 or 1); WARN lines are the soft rules of the repository's AGENTS.md.
@@ -513,6 +513,23 @@ fn check(a: Args) -> Result<bool, String> {
         let drop = json!({ "files": files, "text": text, "url": url, "row": null, "drop": 1 });
         clicks.push(("drop", drop));
     }
+    // A drag out of each row with one, and the drags PecoFence would refuse.
+    let mut drag_refused = Vec::new();
+    let rows = view.get("rows").and_then(Value::as_array).cloned();
+    for row in rows.unwrap_or_default().iter().take(20) {
+        let Some(d) = row.get("drag") else { continue };
+        let (url, file) = (d.get("url"), d.get("file").and_then(Value::as_str));
+        let why = match (url, file) {
+            (Some(u), _) => pecofence_plugin_host::refusal(p, "open", &json!([u])),
+            (_, Some(f)) if !pecofence_core::folder_write::is_data_file(f) => Some(format!(
+                "drag of {f} (.txt .md .json .csv .log .ics .png .jpg .gif .webp only)"
+            )),
+            _ => None,
+        };
+        drag_refused.extend(why.map(|w| format!("a row's drag: {w}")));
+        let id = row.get("id").cloned().unwrap_or_default();
+        clicks.push(("dragend", json!({ "row": id, "dropped": true })));
+    }
     if p.media.reads() {
         clicks.push(("media", Value::Null));
     }
@@ -551,7 +568,7 @@ fn check(a: Args) -> Result<bool, String> {
     }
     let log = fake.log();
     let m = &manifest;
-    let (mut fails, mut warns, mut info) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut fails, mut warns, mut info) = (drag_refused, Vec::new(), Vec::new());
     let calls: Vec<String> = log.calls.iter().map(|(k, v)| format!("{k} {v}")).collect();
     let calls = if calls.is_empty() {
         "none".into()

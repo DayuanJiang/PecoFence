@@ -30,7 +30,7 @@ mod webview;
 use bindings::*;
 use windows_core::*;
 
-pub use composition::CompositionController;
+pub use composition::{CompositionController, DragStarting};
 pub use controller::{Color, Controller, ControllerOptions};
 pub use cookie::{Cookie, CookieManager, SameSite};
 pub use deferral::Deferral;

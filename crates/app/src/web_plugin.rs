@@ -55,13 +55,25 @@ const CALLS: &str = "time.now time.format http.get http.post data.read data.writ
     clipboard.setFiles clipboard.setImage sys.cpu sys.memory sys.drives sys.ip sys.network \
     sys.battery open openSystem run folder.pick folder.list folder.read folder.write folder.mkdir \
     folder.trash notify launch.list \
-    launch.open launch.pick launch.remove media.current media.control apps.running apps.front";
+    launch.open launch.pick launch.remove media.current media.control apps.running apps.front \
+    drop.read drop.text drop.save";
+
+/// A step of a drag over the page (`WebFence::page_drag`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DragStep {
+    Enter = 0,
+    Over = 1,
+    Leave = 2,
+    Drop = 3,
+}
 
 /// An installed web plugin a fence shows.
 pub struct Plugin {
     pub id: String,
     pub dir: PathBuf,
     pub network: Vec<String>,
+    /// `links`: hosts it may open (and a link dragged out of its page may lead to).
+    pub links: Vec<String>,
     /// `background`: its page keeps running while the fence is hidden (no low memory, no
     /// suspend).
     pub background: bool,
@@ -163,6 +175,10 @@ pub struct WebFence {
     inside: Cell<bool>,
     /// A button went down in the page: the moves and the release go to it wherever they are.
     captured: Cell<bool>,
+    /// The page's own drag is over the page (it was sent DragEnter and no leave since), and
+    /// the data object of the drag it let start last, until that drag ends over the fence.
+    drag_inside: Cell<bool>,
+    drag_data: RefCell<Option<windows_core::IUnknown>>,
 }
 
 impl WebFence {
@@ -200,6 +216,8 @@ impl WebFence {
             input_tries: Cell::new(0),
             inside: Cell::new(false),
             captured: Cell::new(false),
+            drag_inside: Cell::new(false),
+            drag_data: RefCell::new(None),
         });
         let options = ControllerOptions::new()
             .profile_name(format!("plugin-{}", web.plugin.id))
@@ -404,6 +422,38 @@ impl WebFence {
                 queue.push(Command::WebPageFailed { page, failure });
             })?);
         }
+        // What the page drags out passes the allow-list of a row's drag, or does not start
+        // (runtime 144 and later; on an older one the bridge stops every drag in the page).
+        // Debug builds: `PECOFENCE_TEST_OLD_WEBVIEW` stands in for an older runtime.
+        let old = cfg!(debug_assertions)
+            && pecofence_core::brand::var("PECOFENCE_TEST_OLD_WEBVIEW").is_ok();
+        let drags = if old {
+            Err(windows_core::Error::empty())
+        } else {
+            let (id, origin, page) = (id.clone(), origin.clone(), self.me.clone());
+            let hosts = [&self.plugin.network[..], &self.plugin.links[..]].concat();
+            comp.on_drag_starting(move |args| {
+                if let Some(why) = page_drag_refusal(args, &hosts, &origin) {
+                    let _ = args.set_handled(true);
+                    return tracing::info!(plugin = %id, why, "web plugin: the drag out of the page is refused");
+                }
+                if let Some(page) = page.upgrade() {
+                    *page.drag_data.borrow_mut() = args.data().ok();
+                }
+            })
+        };
+        let drags = match drags {
+            Ok(r) => {
+                events.push(r);
+                true
+            }
+            Err(e) => {
+                tracing::info!(plugin = %id, version = self.version, error = %e, "web plugin: this WebView2 cannot check a drag out of the page, the page drags nothing out");
+                false
+            }
+        };
+        // The browser takes no drop itself: the fence hands the page what it declared (`drop`).
+        let _ = controller.set_allow_external_drop(false);
         {
             let hwnd = self.hwnd;
             let comp2 = comp.clone();
@@ -413,7 +463,9 @@ impl WebFence {
                 }
             })?);
         }
-        webview.add_script_to_execute_on_document_created(&bridge_script(&origin, &self.init))?;
+        webview.add_script_to_execute_on_document_created(&bridge_script(
+            &origin, &self.init, drags,
+        ))?;
         let (x, y, w, h, scale) = self.bounds.get();
         controller.set_rasterization_scale(scale)?;
         controller.set_bounds(x, y, x + w, y + h)?;
@@ -550,6 +602,73 @@ impl WebFence {
             );
         }
         true
+    }
+
+    /// Whether the drag of `data` is one this page started (and PecoFence let start).
+    pub fn started_drag(&self, data: &windows_core::IUnknown) -> bool {
+        let identity = |u: &windows_core::IUnknown| {
+            windows_core::Interface::cast::<windows_core::IUnknown>(u)
+                .map(|u| windows_core::Interface::as_raw(&u))
+                .ok()
+        };
+        let own = self.drag_data.borrow();
+        own.as_ref()
+            .and_then(identity)
+            .is_some_and(|o| Some(o) == identity(data))
+    }
+
+    /// The page's own drag at screen point (`sx`, `sy`): over the page the page gets it (its
+    /// drag and drop inside it works as in a browser), elsewhere on the fence it is told the
+    /// drag left. `keys`: the key state and the effects the source allows. The effect the page
+    /// takes (`DROPEFFECT_*`).
+    pub fn page_drag(
+        &self,
+        step: DragStep,
+        data: &windows_core::IUnknown,
+        keys: (u32, u32),
+        sx: i32,
+        sy: i32,
+    ) -> u32 {
+        let live = self.live.borrow();
+        let Some(live) = live.as_ref() else {
+            return 0;
+        };
+        let p = window::screen_to_client(self.hwnd, pecofence_platform::POINT { x: sx, y: sy });
+        let (x, y, ..) = self.bounds.get();
+        let over = self.shown.get() && self.over_page(p.x, p.y) && step != DragStep::Leave;
+        let (px, py) = (p.x - x, p.y - y);
+        let inside = self.drag_inside.get();
+        // The drag ends (left or dropped): its data object is held no longer.
+        if matches!(step, DragStep::Leave | DragStep::Drop) {
+            self.drag_data.borrow_mut().take();
+        }
+        // WebView2 takes a forwarded drag only while it allows external drops; the rest of the
+        // time it allows none (the fence hands the page what it declared).
+        let comp = &live.comp;
+        let mut sent = Ok(0);
+        if !over {
+            self.drag_inside.set(false);
+            if inside {
+                sent = comp.drag(DragStep::Leave as u8, None, keys, px, py);
+            }
+        } else if !inside {
+            let _ = live.controller.set_allow_external_drop(true);
+            self.drag_inside.set(true);
+            sent = comp.drag(DragStep::Enter as u8, Some(data), keys, px, py);
+        } else if step == DragStep::Over {
+            sent = comp.drag(DragStep::Over as u8, None, keys, px, py);
+        }
+        if over && step == DragStep::Drop {
+            self.drag_inside.set(false);
+            sent = comp.drag(DragStep::Drop as u8, Some(data), keys, px, py);
+        }
+        if !self.drag_inside.get() {
+            let _ = live.controller.set_allow_external_drop(false);
+        }
+        if step != DragStep::Over {
+            tracing::debug!(plugin = %self.plugin.id, ?step, over, effect = ?sent, "web plugin: the page's own drag over its page");
+        }
+        sent.unwrap_or(0)
     }
 
     /// Point (`px`, `py`) of the fence window's client area is over the page.
@@ -728,8 +847,14 @@ fn scheme(dark: bool) -> PreferredColorScheme {
 /// `{id, result}` or `{id, error}`; events come as `{event, data}`. A right-click the page does
 /// not take (`preventDefault` on `contextmenu`) asks for the fence's menu; a navigation to another
 /// site is cancelled in the page and told to the app (`navigate`, for the log).
-fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
+fn bridge_script(origin: &str, init: &serde_json::Value, drags: bool) -> String {
     let origin = origin.trim_end_matches('/');
+    // A WebView2 that cannot check a drag out of the page (`on_drag_starting`): none starts.
+    let no_drags = if drags {
+        ""
+    } else {
+        "addEventListener(\"dragstart\", e => e.preventDefault(), true);"
+    };
     format!(
         r#"(() => {{
   // No WebRTC: it reaches hosts the CSP does not list. Connection-Allowlist blocks it in the
@@ -740,6 +865,7 @@ fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
   // or dropped there would be read or written without `folders`.
   for (const k of ["showOpenFilePicker", "showSaveFilePicker", "showDirectoryPicker"]) delete window[k];
   if (window.DataTransferItem) delete DataTransferItem.prototype.getAsFileSystemHandle;
+  {no_drags}
   if (location.origin !== "{origin}" || window.top !== window || !window.chrome || !chrome.webview) return;
   const wv = chrome.webview, waiting = new Map(), handlers = {{}}, state = {init};
   // Ids start anywhere: an answer meant for the page before a reload finds nothing waiting.
@@ -791,7 +917,80 @@ fn bridge_script(origin: &str, init: &serde_json::Value) -> String {
 }})();"#,
         calls = CALLS,
         max = pecofence_plugin_host::MAX_POST,
+        no_drags = no_drags,
     )
+}
+
+/// [`drag_refusal`] of what the drag `args` carries (logged).
+fn page_drag_refusal(
+    args: &windows_webview::DragStarting,
+    hosts: &[String],
+    origin: &str,
+) -> Option<String> {
+    use pecofence_platform::dragdrop as dd;
+    let data = args
+        .data()
+        .and_then(|d| windows_core::Interface::cast::<dd::IDataObject>(&d));
+    let data = match data {
+        Ok(data) => data,
+        Err(e) => return Some(format!("no data ({e})")),
+    };
+    let formats = dd::format_names(&data);
+    let files = dd::file_group_descriptor_names(&data);
+    let link = (formats
+        .iter()
+        .any(|f| f.starts_with("UniformResourceLocator")))
+    .then(|| dd::inet_url_text(&data).unwrap_or_default());
+    let why = drag_refusal(&formats, link.as_deref(), &files, hosts, origin);
+    let shown = link.as_deref().map(short);
+    tracing::info!(?formats, ?files, link = shown, refused = why, at = ?args.position(), "web plugin: a drag out of the page");
+    why
+}
+
+/// Why a drag the page started may not leave it, if it may not: the allow-list of a plugin row's
+/// drag (plan v6 change 2). No file of the computer (`CF_HDROP`, a file name, shell items: a
+/// page has none of its own, and a download link would write any kind of file); a link (`link`,
+/// read from `UniformResourceLocatorW`)
+/// only to an http or https host of `hosts`, or to the page's own `origin` with a picture of it;
+/// the files the page makes (`files`, a picture dragged) only of the data types, and the
+/// link's own Internet Shortcut. Text and HTML go.
+fn drag_refusal(
+    formats: &[String],
+    link: Option<&str>,
+    files: &[String],
+    hosts: &[String],
+    origin: &str,
+) -> Option<String> {
+    const COMPUTER: [&str; 5] = [
+        "#15",
+        "FileName",
+        "FileNameW",
+        "Shell IDList Array",
+        "Shell Object Offsets",
+    ];
+    if let Some(f) = formats.iter().find(|f| COMPUTER.contains(&f.as_str())) {
+        return Some(format!("it carries files of the computer ({f})"));
+    }
+    let data = |n: &String| pecofence_core::folder_write::is_data_file(n);
+    let pictures = !files.is_empty() && files.iter().all(data);
+    let own = link.is_some_and(|l| l.starts_with(origin)) && pictures;
+    let address = link.and_then(pecofence_core::web_address::WebAddress::parse);
+    let listed = |h: &str| hosts.iter().any(|x| x.eq_ignore_ascii_case(h));
+    match (link, &address) {
+        (Some(_), _) if own => {}
+        (Some(l), None) => return Some(format!("a link of another kind ({})", short(l))),
+        (Some(_), Some(a)) if !listed(&a.host) => {
+            return Some(format!("a link to {}, not in links or network", a.host));
+        }
+        _ => {}
+    }
+    let shortcut = |n: &String| address.is_some() && n.to_ascii_lowercase().ends_with(".url");
+    let other = files.iter().find(|n| !data(n) && !shortcut(n));
+    other.map(|n| {
+        format!(
+            "a file {n} of another type than .txt .md .json .csv .log .ics .png .jpg .gif .webp"
+        )
+    })
 }
 
 fn mime(path: &str) -> &'static str {
@@ -905,4 +1104,52 @@ pub fn delete_left_profiles(data: &Path) {
 fn profile_dir(data: &Path, id: &str) -> PathBuf {
     data.join("EBWebView")
         .join(format!("WV2Profile_plugin-{id}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::drag_refusal;
+
+    #[test]
+    fn a_drag_out_of_a_page_carries_only_what_a_row_may() {
+        let f = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let hosts = f(&["example.com"]);
+        let origin = "pecofence-plugin://demo/";
+        let refused = |formats: &[&str], link: Option<&str>, files: &[&str]| {
+            drag_refusal(&f(formats), link, &f(files), &hosts, origin)
+        };
+        // Text, and a link to a listed host with its Internet Shortcut.
+        assert_eq!(refused(&["#13", "HTML Format"], None, &[]), None);
+        let link = Some("https://example.com/a");
+        assert_eq!(
+            refused(&["UniformResourceLocatorW", "#13"], link, &["A.url"]),
+            None
+        );
+        // A picture of the page with its own address goes; that address alone does not.
+        let own = Some("pecofence-plugin://demo/a.png");
+        assert_eq!(refused(&["UniformResourceLocatorW"], own, &["a.png"]), None);
+        assert!(refused(&["UniformResourceLocatorW"], own, &[]).is_some());
+        assert!(
+            refused(
+                &["UniformResourceLocatorW"],
+                Some("file:///C:/a.png"),
+                &["a.png"]
+            )
+            .is_some()
+        );
+        assert!(
+            refused(
+                &["UniformResourceLocatorW"],
+                Some("https://other.org/"),
+                &[]
+            )
+            .is_some()
+        );
+        // Files of the computer, a file of another type, a shortcut without a link.
+        assert!(refused(&["#15"], None, &[]).is_some());
+        assert!(refused(&["FileNameW"], None, &[]).is_some());
+        assert!(refused(&[], None, &["run.hta"]).is_some());
+        assert!(refused(&[], None, &["a.url"]).is_some());
+        assert!(refused(&[], link, &["a.png", "b.lnk"]).is_some());
+    }
 }

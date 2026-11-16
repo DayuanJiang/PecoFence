@@ -2077,6 +2077,7 @@ impl FenceViewState {
                         || r.clickable
                         || r.hover.is_some()
                         || r.wheel
+                        || r.drag.is_some()
                         || !r.menu.is_empty()),
                 cells,
                 image: picture(&self.script_images, key, r.image_height),

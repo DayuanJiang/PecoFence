@@ -5,7 +5,9 @@
 //! ([`CompositionController::cursor`]); the keyboard reaches the page through the parent window's
 //! focus ([`Controller::move_focus`]).
 //!
-//! Also `WebView::try_suspend` and `WebView::resume` (`ICoreWebView2_3`).
+//! Also `WebView::try_suspend` and `WebView::resume` (`ICoreWebView2_3`), and the drags a
+//! page starts ([`CompositionController::on_drag_starting`], `ICoreWebView2CompositionController5`,
+//! runtime 144 and later).
 
 #![allow(non_snake_case, non_camel_case_types)]
 
@@ -55,6 +57,106 @@ interface_decl! {
         TrySuspendCompletedHandler_Impl
     ) : IUnknown = 0x00f206a7_9d17_4605_91f6_4e8e4de192e3 {
         unsafe fn Invoke(&self, error: HRESULT, suspended: BOOL) -> Result<()>;
+    }
+}
+
+// The whole vtable from ICoreWebView2CompositionController up: only the last two are called.
+interface_decl! {
+    unsafe trait ICoreWebView2CompositionController5(
+        ICoreWebView2CompositionController5_Vtbl,
+        ICoreWebView2CompositionController5_Impl
+    ) : IUnknown = 0x8d0f82eb_7c33_5a4c_9108_84ca28ccc3b4 {
+        unsafe fn RootVisualTarget(&self, target: *mut Raw) -> Result<()>;
+        unsafe fn SetRootVisualTarget(&self, target: Raw) -> Result<()>;
+        unsafe fn SendMouseInput(&self, kind: i32, keys: i32, data: u32, point: POINT) -> Result<()>;
+        unsafe fn SendPointerInput(&self, kind: i32, info: Raw) -> Result<()>;
+        unsafe fn Cursor(&self, cursor: *mut Raw) -> Result<()>;
+        unsafe fn SystemCursorId(&self, id: *mut u32) -> Result<()>;
+        unsafe fn add_CursorChanged(&self, handler: Raw, token: *mut i64) -> Result<()>;
+        unsafe fn remove_CursorChanged(&self, token: i64) -> Result<()>;
+        unsafe fn AutomationProvider(&self, provider: *mut Raw) -> Result<()>;
+        unsafe fn DragEnter(&self, data: Raw, keys: u32, point: POINT, effect: *mut u32) -> Result<()>;
+        unsafe fn DragLeave(&self) -> Result<()>;
+        unsafe fn DragOver(&self, keys: u32, point: POINT, effect: *mut u32) -> Result<()>;
+        unsafe fn Drop(&self, data: Raw, keys: u32, point: POINT, effect: *mut u32) -> Result<()>;
+        unsafe fn GetNonClientRegionAtPoint(&self, point: POINT, kind: *mut i32) -> Result<()>;
+        unsafe fn QueryNonClientRegion(&self, kind: i32, rects: *mut Raw) -> Result<()>;
+        unsafe fn add_NonClientRegionChanged(&self, handler: Raw, token: *mut i64) -> Result<()>;
+        unsafe fn remove_NonClientRegionChanged(&self, token: i64) -> Result<()>;
+        unsafe fn add_DragStarting(&self, handler: Raw, token: *mut i64) -> Result<()>;
+        unsafe fn remove_DragStarting(&self, token: i64) -> Result<()>;
+    }
+}
+
+interface_decl! {
+    unsafe trait ICoreWebView2DragStartingEventHandler(
+        DragStartingHandler_Vtbl,
+        DragStartingHandler_Impl
+    ) : IUnknown = 0x3b149321_83c3_5d1f_b03f_a42899bc1c15 {
+        unsafe fn Invoke(&self, sender: Raw, args: Raw) -> Result<()>;
+    }
+}
+
+interface_decl! {
+    unsafe trait ICoreWebView2DragStartingEventArgs(
+        ICoreWebView2DragStartingEventArgs_Vtbl,
+        ICoreWebView2DragStartingEventArgs_Impl
+    ) : IUnknown = 0x8b8d9c7e_2f1a_4e6b_9d5a_3c8f7b9e1a2d {
+        unsafe fn AllowedDropEffects(&self, value: *mut u32) -> Result<()>;
+        unsafe fn Data(&self, value: *mut Raw) -> Result<()>;
+        unsafe fn Handled(&self, value: *mut BOOL) -> Result<()>;
+        unsafe fn SetHandled(&self, value: BOOL) -> Result<()>;
+        unsafe fn Position(&self, value: *mut POINT) -> Result<()>;
+        unsafe fn GetDeferral(&self, value: *mut Raw) -> Result<()>;
+    }
+}
+
+struct DragStartingSink(RefCell<Box<dyn FnMut(&DragStarting)>>);
+
+implement_decl! {
+    impl DragStartingSink as DragStartingSink_Impl: [ICoreWebView2DragStartingEventHandler]
+}
+
+impl DragStartingHandler_Impl for DragStartingSink_Impl {
+    unsafe fn Invoke(&self, _sender: Raw, args: Raw) -> Result<()> {
+        // SAFETY: WebView2 passes live event args for the duration of the call.
+        let args = unsafe { IUnknown::from_raw_borrowed(&args) }.ok_or_else(Error::empty)?;
+        (*self.0.borrow_mut())(&DragStarting(args.cast()?));
+        Ok(())
+    }
+}
+
+/// A drag the page starts (`DragStarting`): WebView2 calls `DoDragDrop` with [`Self::data`]
+/// after the handler unless it sets [`Self::set_handled`].
+pub struct DragStarting(ICoreWebView2DragStartingEventArgs);
+
+impl DragStarting {
+    /// The data object WebView2 would drag (an `IDataObject`).
+    pub fn data(&self) -> Result<IUnknown> {
+        let mut raw = std::ptr::null_mut();
+        unsafe {
+            self.0.Data(&mut raw)?;
+            Ok(IUnknown::from_raw(raw))
+        }
+    }
+
+    /// The OLE effects the drag allows (`DROPEFFECT_*`).
+    pub fn allowed_effects(&self) -> u32 {
+        let mut effects = 0;
+        let _ = unsafe { self.0.AllowedDropEffects(&mut effects) };
+        effects
+    }
+
+    /// True: WebView2 does not start the drag (the host does its own, or none).
+    pub fn set_handled(&self, handled: bool) -> Result<()> {
+        unsafe { self.0.SetHandled(handled.into()) }
+    }
+
+    /// Where the drag began, in the page's own pixels.
+    pub fn position(&self) -> (i32, i32) {
+        let mut p = POINT::default();
+        let _ = unsafe { self.0.Position(&mut p) };
+        (p.x, p.y)
     }
 }
 
@@ -170,6 +272,52 @@ impl CompositionController {
         let mut cursor = std::ptr::null_mut();
         let _ = unsafe { self.0.Cursor(&mut cursor) };
         cursor
+    }
+
+    /// Subscribes to the drags the page starts: `handler` sees what each carries and may stop it
+    /// ([`DragStarting::set_handled`]). An error on a runtime older than 144, which has no such
+    /// event (and starts every drag itself).
+    pub fn on_drag_starting<F: FnMut(&DragStarting) + 'static>(
+        &self,
+        handler: F,
+    ) -> Result<EventRegistration> {
+        let source: ICoreWebView2CompositionController5 = self.0.cast()?;
+        let handler: ICoreWebView2DragStartingEventHandler =
+            DragStartingSink(RefCell::new(Box::new(handler))).into();
+        let mut token = 0;
+        unsafe {
+            source.add_DragStarting(Interface::as_raw(&handler), &mut token)?;
+        }
+        Ok(EventRegistration::new(move || {
+            let _ = unsafe { source.remove_DragStarting(token) };
+        }))
+    }
+
+    /// A drag over the page, as `IDropTarget` would get it (`step`: 0 enter, 1 over, 2 leave,
+    /// 3 drop), `data` the dragged `IDataObject` for enter and drop, `allowed` the source's
+    /// effects, (`x`, `y`) in the page's own pixels: the effect the page takes. Runtime 144 and
+    /// later.
+    pub fn drag(
+        &self,
+        step: u8,
+        data: Option<&IUnknown>,
+        (keys, allowed): (u32, u32),
+        x: i32,
+        y: i32,
+    ) -> Result<u32> {
+        let target: ICoreWebView2CompositionController5 = self.0.cast()?;
+        let raw = data.map_or(std::ptr::null_mut(), Interface::as_raw);
+        // In and out, as IDropTarget's: the effects the source allows, then the one taken.
+        let (mut effect, point) = (allowed, POINT { x, y });
+        unsafe {
+            match step {
+                0 => target.DragEnter(raw, keys, point, &mut effect)?,
+                1 => target.DragOver(keys, point, &mut effect)?,
+                3 => target.Drop(raw, keys, point, &mut effect)?,
+                _ => target.DragLeave()?,
+            }
+        }
+        Ok(effect)
     }
 
     /// Subscribes to changes of [`cursor`](Self::cursor).

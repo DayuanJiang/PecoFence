@@ -52,7 +52,7 @@ pub const ERRORS_TOLD: u32 = 3;
 /// The last view goes into the fence's cache file at most this often (and when it stops).
 const CACHE_GAP: Duration = Duration::from_secs(60);
 /// The events PecoFence sends ([`Command::Event`] takes one of these names).
-pub const EVENTS: [&str; 23] = [
+pub const EVENTS: [&str; 24] = [
     "start",
     "show",
     "hide",
@@ -81,6 +81,8 @@ pub const EVENTS: [&str; 23] = [
     "enter",
     "leave",
     "wheel",
+    // A drag out of a row (`drag`) ended: {row: the row's id, dropped: whether a target took it}.
+    "dragend",
 ];
 /// `enter` and `leave` reach a plugin at most 10 times a second, `wheel` 20 times: what comes
 /// sooner waits, the pointer's last row and the wheel's steps added up.

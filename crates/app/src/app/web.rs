@@ -243,7 +243,8 @@ impl App {
     /// page did not take) opens the fence's menu, the rest run as the light layer's calls do
     /// (`plugin_api`, the same permission checks). The menu and the calls a light plugin may make
     /// only in a click need a press in the page within the last second, and each press lets one
-    /// through; `pf.launch.add` works only in main.js's `drop` handler (the page gets no drop).
+    /// through; `pf.launch.add` works only in main.js's `drop` handler (the page's `drop` event
+    /// comes after main.js's). The page's `pf.drop.*` read the fence's last drop with files.
     pub(super) fn web_call(
         &mut self,
         page: Weak<WebFence>,
@@ -305,13 +306,23 @@ impl App {
                 self.show_fence_menu(fence, p.x, p.y);
             }
             "launch.add" => {
-                tracing::info!(plugin, %fence, "web plugin: launch.add refused, the page gets no drop");
+                tracing::info!(plugin, %fence, "web plugin: launch.add refused, only main.js adds items");
                 let why = "pf.launch.add works only in a drop handler of main.js";
                 web.reply(&id, Err(why.into()));
+            }
+            name if name.starts_with("drop.") && self.last_drop(fence).is_none() => {
+                tracing::info!(plugin, %fence, call, "web plugin: pf.drop refused, no drop with files on the fence");
+                let why = format!("pf.{call} needs a drop on the fence first");
+                web.reply(&id, Err(why));
             }
             _ => {
                 tracing::debug!(plugin, %fence, call, "web plugin: pf call");
                 drop(web);
+                // [file number, name or null, the drop's number], as the plugin host adds it.
+                let args = match self.last_drop(fence).filter(|_| call.starts_with("drop.")) {
+                    Some(drop) => serde_json::json!([args.get(0), args.get(1), drop]),
+                    None => args,
+                };
                 self.plugin_api(&page.clone(), fence, &call, args, move |result| {
                     if let Some(web) = page.upgrade() {
                         web.reply(&id, result);

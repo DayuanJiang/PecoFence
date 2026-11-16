@@ -784,6 +784,41 @@ impl FenceDropHandler {
     }
 }
 
+impl FenceDropHandler {
+    /// A drag the fence's own page started: the page gets it (`WebFence::page_drag`) and the
+    /// shell's drag picture follows; None for any other drag.
+    fn page_drag(
+        &mut self,
+        step: crate::web_plugin::DragStep,
+        data: Option<&IDataObject>,
+        keys: (u32, u32),
+        pt: DragPoint,
+    ) -> Option<DropEffect> {
+        use crate::web_plugin::DragStep;
+        let data = data.or(self.data.as_ref())?.clone();
+        let unknown = windows_core::Interface::cast(&data).ok()?;
+        let (web, hwnd) = {
+            let v = self.view.try_borrow().ok()?;
+            let v = v.as_ref()?;
+            (v.web.clone()?, v.hwnd)
+        };
+        if !web.started_drag(&unknown) {
+            return None;
+        }
+        let effect = DropEffect::from_raw(web.page_drag(step, &unknown, keys, pt.x, pt.y));
+        self.data = (step == DragStep::Enter || step == DragStep::Over).then_some(data.clone());
+        if let Some(h) = &self.helper {
+            match step {
+                DragStep::Enter => h.drag_enter(hwnd, &data, pt, effect),
+                DragStep::Over => h.drag_over(pt, effect),
+                DragStep::Leave => h.drag_leave(),
+                DragStep::Drop => h.drop(&data, pt, effect),
+            }
+        }
+        Some(effect)
+    }
+}
+
 impl DropHandler for FenceDropHandler {
     fn drag_enter(
         &mut self,
@@ -792,6 +827,11 @@ impl DropHandler for FenceDropHandler {
         pt: DragPoint,
         allowed: u32,
     ) -> DropEffect {
+        use crate::web_plugin::DragStep;
+        if let Some(effect) = self.page_drag(DragStep::Enter, Some(data), (key_state, allowed), pt)
+        {
+            return effect;
+        }
         let internal = Self::internal().is_some();
         forget_link_folder();
         note_default_drop_effect();
@@ -865,6 +905,10 @@ impl DropHandler for FenceDropHandler {
     }
 
     fn drag_over(&mut self, key_state: u32, pt: DragPoint, allowed: u32) -> DropEffect {
+        let over = crate::web_plugin::DragStep::Over;
+        if let Some(effect) = self.page_drag(over, None, (key_state, allowed), pt) {
+            return effect;
+        }
         let started = self.over_stats.begin();
         if self.kind == DropKind::None {
             if let Some(h) = &self.helper {
@@ -884,6 +928,15 @@ impl DropHandler for FenceDropHandler {
     }
 
     fn drag_leave(&mut self) {
+        let leave = crate::web_plugin::DragStep::Leave;
+        let p = window::cursor_pos();
+        if self
+            .page_drag(leave, None, (0, 0), DragPoint { x: p.x, y: p.y })
+            .is_some()
+        {
+            self.data = None;
+            return;
+        }
         self.over_stats.report("leave");
         self.feedback(None, 0, 0);
         self.forget_data(true);
@@ -899,6 +952,10 @@ impl DropHandler for FenceDropHandler {
         pt: DragPoint,
         allowed: u32,
     ) -> DropEffect {
+        let step = crate::web_plugin::DragStep::Drop;
+        if let Some(effect) = self.page_drag(step, Some(data), (key_state, allowed), pt) {
+            return effect;
+        }
         self.over_stats.report("drop");
         let drop_started = Instant::now();
         if let Some(feedback) = self.shortcut_feedback(Some(pt), key_state, allowed) {
@@ -944,9 +1001,15 @@ impl DropHandler for FenceDropHandler {
             v.apply_drop_feedback(None);
             let r = window::window_rect(v.hwnd);
             let row = v.script_row_at(pt.x - r.left, pt.y - r.top).map(|h| h.0);
-            Some((v.active, v.plugin_drop?, row))
+            // On a web page: the point in the page (its CSS pixels are the fence's DIPs).
+            let point = v.web.as_ref().map(|_| {
+                let scale = v.scale();
+                let x = (pt.x - r.left - v.content_x) as f32 / scale;
+                (x, (pt.y - r.top - v.content_y) as f32 / scale)
+            });
+            Some((v.active, v.plugin_drop?, row, point))
         });
-        if let Some((fence, takes, row)) = plugin {
+        if let Some((fence, takes, row, point)) = plugin {
             // The files go to the plugin as they are: nothing is moved or copied.
             let effect = plugin_effect(kind, allowed);
             let payload = plugin_payload(data, takes, internal.is_some());
@@ -957,6 +1020,7 @@ impl DropHandler for FenceDropHandler {
                     text,
                     url,
                     row,
+                    point,
                 });
             }
             self.forget_data(false);

@@ -13,7 +13,7 @@
 //! While any of them is open the plugin is neither restarted nor updated.
 
 use super::*;
-use crate::fence_window::{ScriptCellView, ScriptRowView, ScriptView};
+use crate::fence_window::{RowDrag, ScriptCellView, ScriptRowView, ScriptView};
 use pecofence_plugin_host as host;
 
 /// The restarts and stops held while a plugin fence's input is open: for each fence, the
@@ -49,6 +49,20 @@ impl App {
             None => self.held.notes.remove(&fence),
         };
         let note = note.is_some();
+        let picked: Vec<PathBuf> = (self.plugin_folders(fence).into_iter())
+            .map(PathBuf::from)
+            .collect();
+        let manifest = self.light_manifest(fence);
+        let drag = |row: Option<&String>, d: Option<host::view::Drag>| {
+            let p = &manifest.as_ref()?.permissions;
+            match row_drag(d?, data.as_deref(), &picked, p) {
+                Ok(d) => Some(d),
+                Err(why) => {
+                    tracing::info!(%fence, ?row, why, "plugin row: its drag is refused");
+                    None
+                }
+            }
+        };
         let was = if note {
             !self.state.note_inputs.insert(fence)
         } else {
@@ -96,6 +110,7 @@ impl App {
                     wheel: c.wheel,
                 });
                 ScriptRowView {
+                    drag: drag(r.id.as_ref(), r.drag),
                     clickable: r.id.is_some() || line,
                     dbl: r.id.is_some(),
                     text: r.text,
@@ -415,5 +430,92 @@ impl App {
             Some(None) => self.stop_light(fence),
             None => {}
         }
+    }
+}
+
+/// What a drag of a plugin row may carry out (plan v6 change 2): a data file (.txt .md .json
+/// .csv .log .ics .png .jpg .gif .webp) of the plugin's data folder (`data`) or of a folder the
+/// user picked (`picked`), by its real path; a text; an http or https link whose host is in
+/// `links` or `network` (the check of `pf.open`).
+fn row_drag(
+    d: host::view::Drag,
+    data: Option<&Path>,
+    picked: &[PathBuf],
+    p: &pecofence_core::plugins::Permissions,
+) -> std::result::Result<RowDrag, String> {
+    if let Some(url) = d.url {
+        if let Some(why) = host::refusal(p, "open", &serde_json::json!([url])) {
+            return Err(why);
+        }
+        let address = pecofence_core::web_address::WebAddress::parse(&url);
+        return Ok(RowDrag::Url(address.ok_or("no link")?.to_string()));
+    }
+    if let Some(text) = d.text {
+        return Ok(RowDrag::Text(text));
+    }
+    let file = d.file.unwrap_or_default();
+    let path = if pecofence_core::plugins::valid_plain_name(&file) {
+        data.ok_or("no data folder")?.join(&file)
+    } else {
+        super::light_host::inside(&file, picked)?
+    };
+    let real = crate::state::canonical_path(path);
+    if !real.is_file() || !pecofence_core::folder_write::is_data_file(&real.to_string_lossy()) {
+        return Err(
+            "a file that is there, of .txt .md .json .csv .log .ics .png .jpg .gif .webp".into(),
+        );
+    }
+    Ok(RowDrag::File(real))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RowDrag, host, row_drag};
+    use serde_json::json;
+
+    #[test]
+    fn a_row_drags_out_only_a_data_file_of_its_folders_a_text_or_a_listed_link() {
+        let dir = std::env::temp_dir().join(format!("pf-row-drag-{}", std::process::id()));
+        let (data, picked, outside) = (dir.join("data"), dir.join("picked"), dir.join("outside"));
+        for d in [&data, &picked, &outside] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        let files = [
+            data.join("a.png"),
+            data.join("run.hta"),
+            picked.join("b.txt"),
+            outside.join("c.txt"),
+        ];
+        for f in files {
+            std::fs::write(f, "x").unwrap();
+        }
+        let p = serde_json::from_value(json!({ "links": ["example.com"] })).unwrap();
+        let drag = |v: serde_json::Value| {
+            let d: host::view::Drag = serde_json::from_value(v).unwrap();
+            row_drag(d, Some(&data), std::slice::from_ref(&picked), &p)
+        };
+        let real = crate::state::canonical_path;
+        let file = |p: std::path::PathBuf| Ok(RowDrag::File(real(p)));
+        assert_eq!(drag(json!({ "file": "a.png" })), file(data.join("a.png")));
+        let b = picked.join("b.txt").to_string_lossy().into_owned();
+        assert_eq!(drag(json!({ "file": b })), file(picked.join("b.txt")));
+        assert_eq!(drag(json!({ "text": "t" })), Ok(RowDrag::Text("t".into())));
+        let link = drag(json!({ "url": "https://example.com/a" }));
+        assert_eq!(link, Ok(RowDrag::Url("https://example.com/a".into())));
+        // Another type, a file outside the folders, a missing one, a way out by `..`, a link to
+        // another host or of another kind: refused.
+        let c = outside.join("c.txt").to_string_lossy().into_owned();
+        let up = picked.join("..").join("outside").join("c.txt");
+        for bad in [
+            json!({ "file": "run.hta" }),
+            json!({ "file": c }),
+            json!({ "file": "gone.png" }),
+            json!({ "file": up.to_string_lossy() }),
+            json!({ "url": "https://other.org/" }),
+            json!({ "url": "file:///C:/Windows/win.ini" }),
+        ] {
+            assert!(drag(bad.clone()).is_err(), "{bad}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

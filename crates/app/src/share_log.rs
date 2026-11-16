@@ -676,13 +676,14 @@ mod tests {
     /// removed. Before adding one, check that the value cannot hold a path, a file / folder /
     /// fence name, a title or anything else the user typed.
     const REVIEWED: &[(&str, &str)] = &[
-        ("access", "access"),      // crashlog: read / write / execute / other
-        ("at", "%at"),             // crashlog: `module+rva`
-        ("at", "script"),          // settings page script: fixed names
-        ("behavior", "?behavior"), // ShowDesktopBehavior enum
-        ("by", "by"),              // `&'static str`: what saved a fence rect / changed settings
-        ("class", "%class"),       // window class (under the cursor / above the desktop)
-        ("class", "%cls"),         // class of the window that ended a peek
+        ("access", "access"),       // crashlog: read / write / execute / other
+        ("at", "%at"),              // crashlog: `module+rva`
+        ("at", "script"),           // settings page script: fixed names
+        ("at", "?args.position()"), // where a drag began in a web page: two numbers
+        ("behavior", "?behavior"),  // ShowDesktopBehavior enum
+        ("by", "by"),               // `&'static str`: what saved a fence rect / changed settings
+        ("class", "%class"),        // window class (under the cursor / above the desktop)
+        ("class", "%cls"),          // class of the window that ended a peek
         ("class", "%desktop::class_name(front)"), // class of the window in front
         ("class", "%desktop::class_name(by)"), // class of the window that covered the fences
         // Class of the window the fences go above.
@@ -705,6 +706,7 @@ mod tests {
         ("command", "a.worst_command"), // `Command` variant name (command_name)
         ("command", "command.as_deref()"), // hangwatch::running_command: a `Command` variant name
         ("effect", "?effect"), // DropEffect enum
+        ("effect", "?outcome.effect"), // DropEffect enum (a drag out of a plugin row)
         ("family", "%f.family"), // installed font family
         // shell::log_ext: an extension of up to 10 ASCII letters and digits, `other`, `none`.
         ("file_ext", "ext.as_str()"),

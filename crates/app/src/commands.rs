@@ -228,13 +228,21 @@ pub enum Command {
         folder: Option<PathBuf>,
     },
     /// Files, a text or a link dropped on plugin fence `fence` (its plugin takes them), on its
-    /// row `row`: its `drop` event.
+    /// row `row`, or at `point` of its web page (DIPs): its `drop` event.
     PluginDrop {
         fence: FenceId,
         paths: Vec<PathBuf>,
         text: Option<String>,
         url: Option<String>,
         row: Option<usize>,
+        point: Option<(f32, f32)>,
+    },
+    /// A drag out of a row (its id `row`) of plugin fence `fence` ended; `dropped`: a target
+    /// took it.
+    PluginDragEnded {
+        fence: FenceId,
+        row: Option<String>,
+        dropped: bool,
     },
     /// A drop onto `to` was handed to the shell's folder drop target (Outlook mail, a
     /// Start-menu app): the portals show what landed in their folders; `landed` are the desktop

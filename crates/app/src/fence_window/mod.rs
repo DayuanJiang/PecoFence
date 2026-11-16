@@ -655,6 +655,19 @@ pub struct ScriptRowView {
     pub menu: Vec<host_view::MenuItem>,
     pub hover: Option<host_view::Hover>,
     pub wheel: bool,
+    /// A plugin row's drag, as the app checked it: a press that leaves the drag threshold
+    /// starts it, and the plugin hears `dragend`.
+    pub drag: Option<RowDrag>,
+}
+
+/// What a drag of a plugin row carries out.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RowDrag {
+    /// A data file, by its real path.
+    File(PathBuf),
+    Text(String),
+    /// An http or https link.
+    Url(String),
 }
 
 /// One cell of a row of cells: a button (clickable), a slider (`slider`) or text.

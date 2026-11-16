@@ -707,7 +707,7 @@ fn real_path(path: &Path) -> std::io::Result<PathBuf> {
 /// `asked`, resolved ([`real_path`]), when it is inside one of `folders`: first by its text, so
 /// nothing on disk (or on the network) is touched for a path outside them, then as Windows
 /// resolves both, so no link leads out.
-fn inside(asked: &str, folders: &[PathBuf]) -> Result<PathBuf, String> {
+pub(super) fn inside(asked: &str, folders: &[PathBuf]) -> Result<PathBuf, String> {
     let lower = |p: &Path| PathBuf::from(p.to_string_lossy().to_lowercase());
     let path = Path::new(asked);
     let up = path

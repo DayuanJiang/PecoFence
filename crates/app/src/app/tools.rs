@@ -348,8 +348,7 @@ impl App {
             .flatten();
         match web {
             Some(plugin) => {
-                // Drops on a web plugin come with the second batch of interface 2.
-                w.set_plugin_drop(None);
+                w.set_plugin_drop(self.plugin_takes_drops(shown));
                 self.push_web_view(w, host, shown, &plugin.id)
             }
             None => {
