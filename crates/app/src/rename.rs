@@ -42,6 +42,8 @@ struct RenameSession {
     committed: bool,
     /// An item's box: the frame around its edit (the fence title's edit fills its popup).
     item_box: Option<ItemBox>,
+    /// A plugin's box of several lines was left with Ctrl+Enter: the plugin also gets `submit`.
+    submit: bool,
 }
 
 /// Most lines the box of an icon's name grows to: the lines a selected icon's name unfolds to
@@ -79,6 +81,9 @@ struct ItemBox {
     /// A title's one line: where its text stands in the box (an icon's name is always centred,
     /// a row's starts at the left).
     align: TitleAlign,
+    /// A plugin's box of several lines: Enter starts a new line, the box keeps its height and
+    /// scrolls (the note editor's control and keys).
+    breaks: bool,
 }
 
 /// A fence title or a tab's caption as it is drawn (`FenceWindow::title_text_place`): `x` px
@@ -149,6 +154,7 @@ fn title_box_place(r: RECT, dpi: u32, title: &TitlePlace) -> (RECT, ItemBox) {
         line_h: 0,
         max_lines: 1,
         align,
+        breaks: false,
     };
     (rect, item_box)
 }
@@ -246,30 +252,40 @@ pub fn begin_inline_rename(
 /// the fence draws), framed as an icon's name box: its edit has the keyboard and the input
 /// method. Enter or a click elsewhere hands the text to the plugin, Esc keeps the old one.
 /// `placeholder` shows grey while the box is empty; its text is `font_dip` tall (the fence's
-/// 文字大小).
+/// 文字大小). A box of several lines (`type: "text"`, `lines` > 1) keys as the note editor:
+/// Enter starts a new line; Esc, Ctrl+Enter and a click elsewhere hand the text over. It takes
+/// at most `max` characters.
 #[allow(clippy::too_many_arguments)]
 pub fn begin_line_input(
     fence_hwnd: HWND,
     rect: RECT,
     at: (FenceId, usize),
-    current: String,
-    placeholder: String,
+    (current, placeholder): (String, String),
+    (lines, max): (usize, usize),
     queue: CommandQueue,
     ink: ColorF,
     font_dip: f32,
 ) {
     let dpi = monitors::dpi_for_window(fence_hwnd).max(96);
     let px = |dip: f32| (dip * dpi as f32 / 96.0).round() as i32;
+    // Several lines stand where the fence draws them, 4 DIPs under the frame's top.
+    let pad = if lines > 1 { px(4.0) } else { 0 };
     let item_box = ItemBox {
         pad_x: px(6.0),
         edit_x: px(6.0),
-        pad_top: 0,
-        pad_bottom: 0,
+        pad_top: pad,
+        pad_bottom: pad,
         line_h: 0,
         max_lines: 1,
         align: TitleAlign::Left,
+        breaks: lines > 1,
     };
     let face = pecofence_platform::fonts::text_face();
+    // The control breaks lines at "\r\n" only.
+    let current = match lines {
+        1 => current,
+        _ => current.replace("\r\n", "\n").replace('\n', "\r\n"),
+    };
     begin_rename_at(
         rect,
         dpi,
@@ -284,6 +300,11 @@ pub fn begin_line_input(
     ACTIVE.with(|a| {
         if let Some(s) = a.borrow().as_ref() {
             s.edit.set_cue(&placeholder);
+            s.edit.set_limit(max);
+            if lines > 1 {
+                // The caret after the text, as the note editor opens.
+                s.edit.focus_at_end();
+            }
         }
     });
 }
@@ -436,6 +457,7 @@ fn item_box_place(
                 line_h: 0,
                 max_lines: ITEM_BOX_MAX_LINES,
                 align: TitleAlign::Center,
+                breaks: false,
             }
         }
         None => {
@@ -454,6 +476,7 @@ fn item_box_place(
                 line_h: 0,
                 max_lines: 1,
                 align: TitleAlign::Left,
+                breaks: false,
             }
         }
     };
@@ -614,6 +637,18 @@ fn begin_rename_at(
     });
     let Some(window) = created else { return };
     let ctl = match item_box {
+        // A plugin's box of several lines: the note editor's control.
+        Some(b) if b.breaks => edit::EditControl::create_multiline(
+            window.hwnd(),
+            w - 2 * b.edit_x,
+            h - b.pad_top - b.pad_bottom,
+            dpi,
+            font_dip,
+            0.0,
+            &current,
+            dark,
+            on_key,
+        ),
         // An icon's name: wraps, sized to its lines below.
         Some(b) if b.max_lines > 1 => edit::EditControl::create_wrapping(
             window.hwnd(),
@@ -663,7 +698,10 @@ fn begin_rename_at(
     if let Some(b) = &item_box {
         // Rounded as a Fluent text box; Windows draws the corners where it can (a GPU).
         let _ = dwm::set_corner_preference(window.hwnd(), dwm::CornerPreference::RoundSmall);
-        if b.max_lines > 1 {
+        if b.breaks {
+            let text_h = h - b.pad_top - b.pad_bottom;
+            ctl.set_bounds(b.edit_x, b.pad_top, w - 2 * b.edit_x, text_h);
+        } else if b.max_lines > 1 {
             ctl.set_bounds(b.edit_x, b.pad_top, w - 2 * b.edit_x, b.line_h);
             fit_item_box(&window, &ctl, b);
         } else {
@@ -696,6 +734,7 @@ fn begin_rename_at(
             queue,
             committed: false,
             item_box,
+            submit: false,
         })
     });
     // Painted now and on screen before the caller takes the name off the icon or the title:
@@ -710,6 +749,27 @@ fn begin_rename_at(
 }
 
 fn on_key(vk: u32) -> bool {
+    // A plugin's box of several lines: Enter is a new line, Ctrl+Enter and Esc end it as the
+    // note editor's do.
+    let breaks = ACTIVE.with(|a| {
+        let a = a.borrow();
+        a.as_ref()
+            .and_then(|s| s.item_box)
+            .is_some_and(|b| b.breaks)
+    });
+    if breaks {
+        let ctrl = window::key_down(msg::VK_CONTROL);
+        let ends = vk == msg::VK_ESCAPE || (vk == msg::VK_RETURN && ctrl);
+        if ends {
+            ACTIVE.with(|a| {
+                if let Some(s) = a.borrow_mut().as_mut() {
+                    s.submit = vk == msg::VK_RETURN;
+                }
+            });
+            end_active(true);
+        }
+        return ends;
+    }
     match vk {
         k if k == msg::VK_RETURN => {
             // Explorer keeps the editor open on a name with a reserved character; the App says
@@ -790,11 +850,18 @@ pub fn end_active(commit: bool) {
                     let name = text.replace(['\r', '\n'], "");
                     s.queue.push(Command::RenameItemCommit { item, name })
                 }
-                RenameTarget::PluginLine(fence, row) => s.queue.push(Command::PluginLineClosed {
-                    fence,
-                    row,
-                    text: Some(text.replace(['\r', '\n'], " ")),
-                }),
+                RenameTarget::PluginLine(fence, row) => {
+                    let text = match s.item_box.is_some_and(|b| b.breaks) {
+                        true => text.replace("\r\n", "\n"),
+                        false => text.replace(['\r', '\n'], " "),
+                    };
+                    s.queue.push(Command::PluginLineClosed {
+                        fence,
+                        row,
+                        text: Some(text),
+                        submit: s.submit,
+                    })
+                }
             }
         } else {
             if let RenameTarget::PluginLine(fence, row) = s.target {
@@ -802,6 +869,7 @@ pub fn end_active(commit: bool) {
                     fence,
                     row,
                     text: None,
+                    submit: false,
                 });
             }
             s.queue.push(Command::RedrawAll);

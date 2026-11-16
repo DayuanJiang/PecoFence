@@ -105,6 +105,8 @@ pub(super) struct Light {
     /// shortcuts registered (by hotkey id) and the ones another program holds.
     pub(super) menus: HashMap<FenceId, Vec<host::view::MenuItem>>,
     pub(super) menu_shown: std::cell::RefCell<Vec<String>>,
+    /// The id of the row whose own menu is shown (Some(null): a row without an id).
+    pub(super) menu_row: std::cell::RefCell<Option<serde_json::Value>>,
     pub(super) drops: Vec<(u64, FenceId, Vec<std::path::PathBuf>)>,
     pub(super) next_drop: u64,
     pub(super) keys: HashMap<i32, (FenceId, String, Hotkey)>,

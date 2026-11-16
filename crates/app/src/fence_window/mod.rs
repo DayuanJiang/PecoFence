@@ -646,8 +646,15 @@ pub struct ScriptRowView {
     pub progress: Option<f32>,
     pub chart: Option<host_view::Chart>,
     pub canvas: Option<Rc<host_view::Canvas>>,
-    /// A plugin row's input: `note` (the fence is a note) or `line` (a one-line box).
+    /// A plugin row's input: `note` (the fence is a note), `line` (a one-line box) or `text` (a
+    /// box of several lines).
     pub input: Option<host_view::Input>,
+    /// A plugin row's entries for a right-click on it, its look under the pointer (or
+    /// `"event"`: the plugin hears the pointer come and go), and whether the wheel over it is
+    /// the plugin's.
+    pub menu: Vec<host_view::MenuItem>,
+    pub hover: Option<host_view::Hover>,
+    pub wheel: bool,
 }
 
 /// One cell of a row of cells: a button (clickable), a slider (`slider`) or text.
@@ -674,6 +681,9 @@ pub struct ScriptCellView {
     /// A plugin cell's id, and whether its text or picture is blurred until the pointer is on it.
     pub id: Option<String>,
     pub blur: bool,
+    /// A plugin cell's look under the pointer, and whether the wheel over it is the plugin's.
+    pub hover: Option<host_view::Hover>,
+    pub wheel: bool,
 }
 
 impl ScriptRowView {

@@ -4726,16 +4726,16 @@ pub struct ScriptRowDraw<'a> {
     pub hidden: bool,
     /// A plugin row's parts: `fit` (its short text; the text is sized with the fence as the
     /// clock's time), pieces of one line, the text blurred until the pointer is on it, a bar
-    /// under the text (0 to 1), a chart, a drawing with its pictures by step, a one-line box
-    /// (its value and its placeholder), and `hover`: the row reports the pointer (its tip, its
-    /// blur) also when a click does nothing.
+    /// under the text (0 to 1), a chart, a drawing with its pictures by step, a text box (its
+    /// value, its placeholder and how many lines tall it is), and `hover`: the row reports the
+    /// pointer (its tip, its blur, its menu) also when a click does nothing.
     pub fit: Option<&'a str>,
     pub spans: &'a [Span],
     pub blur: bool,
     pub progress: Option<f32>,
     pub chart: Option<&'a Chart>,
     pub canvas: Option<(&'a Canvas, &'a [Option<ScriptImageDraw<'a>>])>,
-    pub line: Option<(&'a str, &'a str)>,
+    pub line: Option<(&'a str, &'a str, usize)>,
     pub hover: bool,
 }
 
@@ -4776,6 +4776,8 @@ pub struct ScriptCellDraw<'a> {
     pub under: bool,
     /// A plugin cell's text is blurred until the pointer is on it.
     pub blur: bool,
+    /// The cell reports the pointer (its look under it, the wheel) also when a click does nothing.
+    pub hover: bool,
 }
 
 /// How far a plugin's blurred text is blurred (the Gaussian's deviation, DIPs).
@@ -5714,10 +5716,10 @@ impl FenceChrome {
                 }
                 None => (row.text, None),
             };
-            let placeholder = row.line.is_some_and(|(value, _)| value.is_empty());
+            let placeholder = row.line.is_some_and(|(value, ..)| value.is_empty());
             let text = match row.line {
-                Some((_, hint)) if placeholder => hint,
-                Some((value, _)) => value,
+                Some((_, hint, _)) if placeholder => hint,
+                Some((value, ..)) => value,
                 None => text,
             };
             let base_dip = fit_dip.unwrap_or(TOOL_TEXT_SIZES[1] * tt.k * row.size);
@@ -5729,7 +5731,8 @@ impl FenceChrome {
                 None => tt.body.clone(),
             };
             let one_line;
-            let text = if row.line.is_some() {
+            let lines = row.line.map_or(1, |l| l.2);
+            let text = if row.line.is_some() && lines == 1 {
                 one_line = self.fit_width(text, &format, text_w);
                 one_line.as_str()
             } else {
@@ -5737,7 +5740,11 @@ impl FenceChrome {
             };
             let text = if text.is_empty() { " " } else { text };
             let layout = self.layout_in(text, &format, text_w, f32::MAX)?;
-            let text_h = layout.metrics().height.max(line_h);
+            // A box of several lines is as tall as they are; more text is cut off at its bottom.
+            let text_h = match lines {
+                1 => layout.metrics().height.max(line_h),
+                n => line_h * n as f32,
+            };
             let text_y = y + if row.line.is_some() { box_y } else { 0.0 };
             let mut h = text_h + if row.line.is_some() { 2.0 * box_y } else { 0.0 };
             if row.progress.is_some() {
@@ -5835,6 +5842,17 @@ impl FenceChrome {
                 (None, _) => (&primary, theme.text_primary),
             };
             let at = Vector2::new(text_x + inset, text_y);
+            let _box_clip = if lines > 1 {
+                Some(pecofence_platform::d2d::push_axis_aligned_clip(
+                    session.raw(),
+                    field.left,
+                    field.top,
+                    field.right,
+                    field.bottom - box_y / 2.0,
+                )?)
+            } else {
+                None
+            };
             if !row.spans.is_empty() {
                 // Pieces of one line side by side; the one that reaches the edge ends with an
                 // ellipsis.
@@ -6262,7 +6280,7 @@ impl FenceChrome {
                     session.fill_rounded_rect(&RoundedRect::uniform(plate_rect, 4.0), &plate);
                 }
                 hits.push((row, c, plate_rect));
-            } else if cell.blur {
+            } else if cell.blur || cell.hover {
                 let area = Rect::from_xywh(
                     cx,
                     ty - SCRIPT_ROW_PAD_Y,
@@ -7175,6 +7193,7 @@ mod tests {
             fill,
             under,
             blur: false,
+            hover: false,
         }
     }
 
@@ -7216,7 +7235,7 @@ mod tests {
         rows[1].hover = true;
         rows[2].canvas = Some((&canvas, &[]));
         rows[2].hover = true;
-        rows[3].line = Some(("", "Type here"));
+        rows[3].line = Some(("", "Type here", 1));
         let hits = rows_drawn(320.0, &rows).hits;
         let size = |i: usize| {
             hits.iter()
@@ -7229,6 +7248,19 @@ mod tests {
         let field = hits.iter().find(|h| h.0 == 3).unwrap().2;
         assert_eq!(field.left, NOTE_PAD_X);
         assert!(field.top >= hits.iter().find(|h| h.0 == 2).unwrap().2.bottom);
+        // A box of two and of four lines: as tall as its lines in the same frame, whatever its
+        // text (a long one is cut off).
+        let long = "a long text ".repeat(80);
+        let tall = |lines: usize| {
+            let mut boxed = script_row("", true);
+            boxed.line = Some((&long, "", lines));
+            rows_drawn(320.0, &[boxed]).hits[0].2.height()
+        };
+        let (one, two, four) = (field.height(), tall(2), tall(4));
+        assert!(
+            ((four - one) - 3.0 * (two - one)).abs() < 0.5 && two > one,
+            "{one} {two} {four}"
+        );
     }
 
     #[test]

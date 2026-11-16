@@ -567,6 +567,9 @@ pub(super) fn on_mousemove(
     } else {
         v.note_link_at(x, y)
     };
+    if let Some(cmd) = v.plugin_hover_moved(v.script_hover, script_row) {
+        queue.push(cmd);
+    }
     let script_changed = (std::mem::replace(&mut v.script_hover, script_row) != script_row)
         | (std::mem::replace(&mut v.note_box_hover, note_box) != note_box)
         | (std::mem::replace(&mut v.note_link_hover, note_link) != note_link)

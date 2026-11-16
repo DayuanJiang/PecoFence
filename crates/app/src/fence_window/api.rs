@@ -315,6 +315,7 @@ impl FenceWindow {
             cut: HashSet::new(),
             wheel_zoom_accum: 0,
             wheel_tab_accum: 0,
+            wheel_plugin_accum: 0,
             tab_hover_switch: None,
             tab_hover_quick: false,
             tab_strip_left: None,
@@ -1980,6 +1981,14 @@ impl FenceWindow {
             right: x + px(r[2]),
             bottom: y + px(r[3]),
         })
+    }
+
+    /// The script row and cell under screen point (x, y), if any (a right-click's row).
+    pub fn script_row_at_screen(&self, x: i32, y: i32) -> Option<(usize, usize)> {
+        let guard = self.view.borrow();
+        let v = guard.as_ref()?;
+        let c = window::screen_to_client(v.hwnd, pecofence_platform::POINT { x, y });
+        v.script_row_at(c.x, c.y)
     }
 
     /// `text` in a non-activating tip beside the pointer for `ms`, as the result of a click

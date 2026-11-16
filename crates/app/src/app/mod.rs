@@ -3275,9 +3275,19 @@ impl App {
             Command::FenceInkChanged { fence, light_text } => {
                 self.plugin_ink_changed(fence, light_text)
             }
-            Command::PluginLineClosed { fence, row, text } => {
-                self.plugin_line_closed(fence, row, text)
-            }
+            Command::PluginLineClosed {
+                fence,
+                row,
+                text,
+                submit,
+            } => self.plugin_line_closed(fence, row, text, submit),
+            Command::PluginHover { fence, row } => self.plugin_hover(fence, row),
+            Command::PluginWheel {
+                fence,
+                row,
+                cell,
+                steps,
+            } => self.plugin_wheel(fence, row, cell, steps),
             Command::EmptyActionClicked { fence } => self.smart_everything_clicked(fence),
             Command::EndNoteEdit => crate::note_edit::end_active(true),
             Command::NoteEdited { fence, text } => {

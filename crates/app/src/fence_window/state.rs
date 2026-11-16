@@ -538,6 +538,8 @@ pub struct FenceViewState {
     pub(super) wheel_zoom_accum: i32,
     /// Wheel-over-tabs accumulator: one tab per whole notch (touchpads deliver fractions).
     pub(super) wheel_tab_accum: i32,
+    /// The wheel over a plugin's `wheel: true` row or cell, short of a whole notch.
+    pub(super) wheel_plugin_accum: i32,
     /// The tab TIMER_TAB_HOVER will switch to while the pointer stays on it.
     pub(super) tab_hover_switch: Option<usize>,
     /// A hover switched a tab of this strip: the next tabs wait `TAB_HOVER_NEXT_MS` only.
@@ -985,6 +987,34 @@ impl FenceViewState {
             .iter()
             .find(|(_, _, r)| cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3])
             .map(|&(row, cell, _)| (row, cell))
+    }
+
+    /// A plugin fence's pointer went from row `old` to row `new` (row, cell): what the App
+    /// hears, when one of the two rows tells its plugin (`hover: "event"`).
+    pub(super) fn plugin_hover_moved(
+        &self,
+        old: Option<(usize, usize)>,
+        new: Option<(usize, usize)>,
+    ) -> Option<Command> {
+        let (old, new) = (old.map(|h| h.0), new.map(|h| h.0));
+        let rows = &self.script.as_ref()?.rows;
+        let tells = |at: Option<usize>| {
+            let row = at.and_then(|i| rows.get(i));
+            row.and_then(|r| r.hover.as_ref()).is_some_and(|h| h.event)
+        };
+        let row = new.filter(|_| tells(new));
+        (old != new && (tells(old) || row.is_some())).then_some(Command::PluginHover {
+            fence: self.active,
+            row,
+        })
+    }
+
+    /// The plugin row or cell at client (x, y) whose wheel is the plugin's (`wheel: true`).
+    pub(super) fn plugin_wheel_at(&self, x: i32, y: i32) -> Option<(usize, usize)> {
+        let (row, cell) = self.script_row_at(x, y)?;
+        let r = self.script.as_ref()?.rows.get(row)?;
+        let on = r.cells.get(cell).map_or(r.wheel, |c| c.wheel);
+        on.then_some((row, cell))
     }
 
     /// 脚本栅栏: where client x `x` is on a slider drawn in `rect` (content DIPs), 0 to 1.

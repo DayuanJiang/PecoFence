@@ -2006,17 +2006,33 @@ impl FenceViewState {
                 .and_then(|c| pecofence_core::script_output::color_rgb(c, dark))
                 .map(|[cr, cg, cb]| ColorF::from_rgba8(cr, cg, cb, 0xFF))
         };
+        // A plugin row's or cell's look under the pointer (`hover: {color, text}`), in place of
+        // its own.
+        fn look(
+            on: bool,
+            hover: &Option<pecofence_plugin_host::view::Hover>,
+        ) -> Option<&pecofence_plugin_host::view::Hover> {
+            hover.as_ref().filter(|_| on)
+        }
         let cells: Vec<Vec<ScriptCellDraw<'_>>> = script
             .rows
             .iter()
             .zip(&cell_keys)
-            .map(|(r, keys)| {
+            .enumerate()
+            .map(|(i, (r, keys))| {
                 r.cells
                     .iter()
                     .zip(keys)
-                    .map(|(c, key)| ScriptCellDraw {
-                        text: &c.text,
-                        color: color_of(&c.color),
+                    .enumerate()
+                    .map(|(ci, (c, key))| ScriptCellDraw {
+                        text: look(hovered == Some((i, ci)), &c.hover)
+                            .and_then(|h| h.text.as_deref())
+                            .unwrap_or(&c.text),
+                        color: color_of(
+                            &look(hovered == Some((i, ci)), &c.hover).and_then(|h| h.color.clone()),
+                        )
+                        .or(color_of(&c.color)),
+                        hover: c.hover.is_some() || c.wheel,
                         clickable: c.clickable,
                         slider: c.slider,
                         width: c.width,
@@ -2039,30 +2055,41 @@ impl FenceViewState {
             .zip(&cells)
             .zip(&image_keys)
             .zip(&canvas_pictures)
-            .map(|(((r, cells), key), pictures)| ScriptRowDraw {
+            .enumerate()
+            .map(|(i, (((r, cells), key), pictures))| ScriptRowDraw {
                 fit: (r.size.as_deref() == Some("fit")).then(|| r.short.as_deref().unwrap_or("")),
                 spans: &r.spans,
                 blur: r.blur,
                 progress: r.progress,
                 chart: r.chart.as_ref(),
                 canvas: r.canvas.as_deref().map(|c| (c, &pictures[..])),
-                line: r
-                    .input
-                    .as_ref()
-                    .filter(|i| i.kind == "line")
-                    .map(|l| (l.value.as_str(), l.placeholder.as_str())),
-                hover: r.plugin && (r.blur || r.tip.is_some() || r.clickable),
+                line: (r.input.as_ref())
+                    .filter(|i| i.kind == "line" || i.kind == "text")
+                    .map(|l| {
+                        let lines = if l.kind == "text" { l.lines } else { 1 };
+                        (l.value.as_str(), l.placeholder.as_str(), lines)
+                    }),
+                // Also a row with a look under the pointer, the wheel or a menu of its own (a
+                // right-click finds it).
+                hover: r.plugin
+                    && (r.blur
+                        || r.tip.is_some()
+                        || r.clickable
+                        || r.hover.is_some()
+                        || r.wheel
+                        || !r.menu.is_empty()),
                 cells,
                 image: picture(&self.script_images, key, r.image_height),
                 hidden: r.hidden,
-                text: &r.text,
+                text: look(hovered == Some((i, 0)), &r.hover)
+                    .and_then(|h| h.text.as_deref())
+                    .unwrap_or(&r.text),
                 separator: r.separator,
                 todo: r.todo,
-                color: r
-                    .color
-                    .as_deref()
-                    .and_then(|c| pecofence_core::script_output::color_rgb(c, dark))
-                    .map(|[cr, cg, cb]| ColorF::from_rgba8(cr, cg, cb, 0xFF)),
+                color: color_of(
+                    &look(hovered == Some((i, 0)), &r.hover).and_then(|h| h.color.clone()),
+                )
+                .or(color_of(&r.color)),
                 icon: r.icon.as_deref(),
                 clickable: r.clickable,
                 opens: r.opens,
