@@ -365,6 +365,15 @@ impl App {
         !self.feedback.previous_run_crashed && !self.feedback.previous_run_unfinished
     }
 
+    /// How the previous run ended, as `(crashed, cut off)`: a crash its log records, or a log
+    /// that stops without its last line (known once `offer_crash_feedback` ran).
+    pub(super) fn previous_run_end(&self) -> (bool, bool) {
+        (
+            self.feedback.previous_run_crashed,
+            self.feedback.previous_run_unfinished,
+        )
+    }
+
     /// At startup: if the last run crashed, offer to report it from a tray balloon.
     pub(super) fn offer_crash_feedback(&mut self) {
         let previous = self.share_log(pecofence_core::brand::PREVIOUS_SHARE_LOG);
