@@ -84,6 +84,8 @@ plugin-launcher    5   ec2    debug   plugin-launcher.ps1
 plugin-media       2   ec2    debug   plugin-media.ps1
 plugin-ui          3   ec2    debug   plugin-ui.ps1
 plugin-local       2   ec2    debug   plugin-local.ps1
+plugin-drag        5   ec2    debug   plugin-drag.ps1
+plugin-drag-mon    3   manual debug   plugin-drag-monitors.ps1
 plugin-media-store 1   manual debug   plugin-media-store.ps1 --extra packaging/msix
 plugins-six        3   manual debug   plugins-six.ps1
 smart-filter       1   ec2    release smart-filter.ps1
