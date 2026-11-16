@@ -192,20 +192,42 @@ impl App {
         self.plugin_event(fence, "command", json!({ "id": command, "via": "key" }));
     }
 
-    /// Whether `fence`'s plugin takes dropped files: Some(folders too, for a launcher).
-    pub(super) fn plugin_takes_drops(&self, fence: FenceId) -> Option<bool> {
+    /// What `fence`'s plugin takes dropped (`drop`; folders only for a launcher), if anything.
+    pub(super) fn plugin_takes_drops(
+        &self,
+        fence: FenceId,
+    ) -> Option<crate::fence_window::PluginDrops> {
         let spec = self.state.config.scripts.get(&fence)?;
         let p = &self.plugin(super::plugins::plugin_id(&spec.path)?)?;
         let p = &p.manifest.permissions;
-        p.drop.iter().any(|d| d == "files").then_some(p.launch)
+        let has = |kind: &str| p.drop.iter().any(|d| d == kind);
+        let files = has("files");
+        let takes = crate::fence_window::PluginDrops {
+            files,
+            folders: files && p.launch,
+            text: has("text"),
+            links: has("links"),
+        };
+        (files || takes.text || takes.links).then_some(takes)
     }
 
-    /// Files dropped on plugin fence `fence`: its plugin gets `drop` with their names and sizes
-    /// (folders only by name) and the drop's number, and may add them as launcher items while it
-    /// handles it (the plugin host adds the number to that `launch.add`).
-    pub(super) fn plugin_dropped(&mut self, fence: FenceId, paths: Vec<PathBuf>) {
-        if self.plugin_takes_drops(fence).is_none() || !self.light.running.contains_key(&fence) {
-            return tracing::info!(%fence, files = paths.len(), "drop on a plugin fence refused: its plugin takes none or does not run");
+    /// Files, a text or a link dropped on plugin fence `fence`: its plugin gets `drop` with the
+    /// files' names and sizes (folders only by name), the text, the link and the drop's number,
+    /// and may add the files as launcher items while it handles it (the plugin host adds the
+    /// number to that `launch.add`) or read them (`pf.drop.*`, the last drop's).
+    pub(super) fn plugin_dropped(
+        &mut self,
+        fence: FenceId,
+        paths: Vec<PathBuf>,
+        text: Option<String>,
+        url: Option<String>,
+    ) {
+        let takes = self.plugin_takes_drops(fence).unwrap_or_default();
+        let (text, url) = (text.filter(|_| takes.text), url.filter(|_| takes.links));
+        let paths = if takes.files { paths } else { Vec::new() };
+        let nothing = paths.is_empty() && text.is_none() && url.is_none();
+        if nothing || !self.light.running.contains_key(&fence) {
+            return tracing::info!(%fence, files = paths.len(), "drop on a plugin fence refused: its plugin takes none of it or does not run");
         }
         let files: Vec<Value> = (paths.iter())
             .map(|p| {
@@ -218,12 +240,32 @@ impl App {
             .collect();
         self.light.next_drop += 1;
         let drop = self.light.next_drop;
-        tracing::info!(%fence, files = files.len(), drop, "files dropped on a plugin fence: its plugin is told");
+        let chars = text.as_ref().map_or(0, |t| t.chars().count());
+        tracing::info!(%fence, files = files.len(), chars, link = url.is_some(), drop, "dropped on a plugin fence: its plugin is told");
         self.light.drops.push((drop, fence, paths));
         if self.light.drops.len() > DROPS_KEPT {
             self.light.drops.remove(0);
         }
-        self.plugin_event(fence, "drop", json!({ "files": files, "drop": drop }));
+        let data = json!({ "files": files, "text": text, "url": url, "drop": drop });
+        self.plugin_event(fence, "drop", data);
+    }
+
+    /// File `i` of drop `drop` on `fence` for `pf.drop.*` (a folder is for a launcher only).
+    pub(super) fn dropped_file(
+        &self,
+        fence: FenceId,
+        drop: Option<u64>,
+        i: usize,
+    ) -> std::result::Result<PathBuf, String> {
+        let found = (self.light.drops.iter()).find(|d| Some(d.0) == drop && d.1 == fence);
+        let files = &found.ok_or("pf.drop: that drop is gone")?.2;
+        let path = files
+            .get(i)
+            .ok_or_else(|| format!("pf.drop: the drop has {} files", files.len()))?;
+        if !path.is_file() {
+            return Err("pf.drop: that is a folder or no longer there".into());
+        }
+        Ok(path.clone())
     }
 
     /// The launcher items of `fence`: `{id, path, name}` each.
@@ -387,7 +429,7 @@ impl App {
     fn launch_redraw(&mut self, fence: FenceId) {
         let settings = self.light_manifest(fence).map(|m| {
             let saved = &self.state.config.scripts[&fence].settings;
-            pecofence_core::plugins::fence_settings(&m, saved)
+            super::plugins::plugin_settings(&m, saved)
         });
         if let Some(settings) = settings {
             self.plugin_event(fence, "settings", settings);

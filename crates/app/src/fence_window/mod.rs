@@ -94,7 +94,7 @@ mod window_drag;
 pub use api::FenceWindow;
 pub use dnd::{filter_folder_paths, shell_drop_landed};
 pub use frame::FrameHandle;
-pub use state::{DesktopArea, WindowsIconPlaces};
+pub use state::{DesktopArea, PluginDrops, WindowsIconPlaces};
 
 use self::consts::*;
 use self::dnd::*;

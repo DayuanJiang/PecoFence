@@ -47,7 +47,7 @@ pub const ERRORS_TOLD: u32 = 3;
 /// The last view goes into the fence's cache file at most this often (and when it stops).
 const CACHE_GAP: Duration = Duration::from_secs(60);
 /// The events PecoFence sends ([`Command::Event`] takes one of these names).
-pub const EVENTS: [&str; 22] = [
+pub const EVENTS: [&str; 23] = [
     "start",
     "show",
     "hide",
@@ -62,12 +62,14 @@ pub const EVENTS: [&str; 22] = [
     "stop",
     "message",
     "theme",
-    // Interface 2: a command of the fence menu (`view.menu`) or a shortcut ({id, via}), and
-    // files dropped on the fence ({files: [{name, size, folder}]}).
+    // Interface 2: a command of the fence menu (`view.menu`) or a shortcut ({id, via}), what
+    // was dropped on the fence ({files: [{name, size, folder}], text, url, drop}), the media
+    // session changed, a program of `apps` started, ended or came to the front ({running, front}).
     "command",
     "drop",
     "media",
     "lang",
+    "apps",
     // A multi-line box's Ctrl+Enter ({id}); the pointer onto and off a `hover: "event"` row
     // ({row}); the wheel over a `wheel: true` row or cell ({id, steps}). The last three are paced.
     "submit",
@@ -274,6 +276,8 @@ struct Shared {
     dropped: HashSet<String>,
     /// What `pf.post` sent in this run, as JSON.
     posts: Vec<String>,
+    /// The number of the last drop on the fence: `pf.drop.*` reads its files (the app keeps them).
+    last_drop: Option<u64>,
 }
 
 struct Plugin {
@@ -518,6 +522,16 @@ impl Plugin {
                         Some(drop) => args = json!([args.get(0).cloned().unwrap_or_default(), drop]),
                         None if refused.is_none() => {
                             refused = Some("pf.launch.add works only in a drop handler".into());
+                        }
+                        None => {}
+                    }
+                }
+                // [file number, name or null, the last drop's number]: that drop's file.
+                if name.starts_with("drop.") {
+                    match to.borrow().last_drop {
+                        Some(drop) => args = json!([args.get(0), args.get(1), drop]),
+                        None if refused.is_none() => {
+                            refused = Some(format!("pf.{name} needs a drop on the fence first"));
                         }
                         None => {}
                     }
@@ -890,7 +904,7 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                     // media session (the app tells only plugins that may see it) the same.
                     let told = match name {
                         "clipboard" => p.reads_clipboard && p.runs(),
-                        "media" => p.runs(),
+                        "media" | "apps" => p.runs(),
                         _ => true,
                     };
                     if !told {
@@ -901,6 +915,9 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                     p.click
                         .set(matches!(name, "click" | "dblclick" | "command"));
                     p.dropping.set(drop.filter(|_| name == "drop"));
+                    if name == "drop" {
+                        p.shared.borrow_mut().last_drop = drop;
+                    }
                     let result = if told { p.emit(name, data) } else { Ok(()) };
                     p.click.set(false);
                     p.dropping.set(None);
@@ -1637,6 +1654,52 @@ mod tests {
         // Without permissions.launch every launch call is refused.
         let out = outputs(code, true, 100, vec![]);
         assert!(texts(&out)[0].contains("list refused: launch.list needs permissions.launch"));
+    }
+
+    #[test]
+    fn drop_calls_read_the_last_drop_and_apps_front_needs_apps() {
+        let code = r#"
+            const out = [];
+            const tryIt = (what, f) => { try { f(); out.push(what + ' ok'); } catch (e) { out.push(what + ' refused: ' + e.message); } };
+            const show = () => pf.show({ rows: [{ text: out.join(' | ') }] });
+            pf.on('start', () => { tryIt('early', () => pf.drop.read(0)); tryIt('front', () => pf.apps.front()); show(); });
+            pf.on('drop', () => { out.push('dropped'); show(); });
+            pf.on('click', () => { tryIt('text', () => pf.drop.text(0)); tryIt('save', () => pf.drop.save(0, 'a.png')); tryIt('bad', () => pf.drop.save(0, '../a')); show(); });
+        "#;
+        let p = Permissions {
+            drop: vec!["files".into()],
+            apps: vec!["spotify.exe".into()],
+            ..Permissions::default()
+        };
+        let fence = FenceId::new_v4();
+        let drop = json!({ "files": [{ "name": "a.png", "size": 3, "folder": false }], "drop": 5 });
+        let then = vec![
+            Command::Event(fence, "drop", drop),
+            Command::Event(fence, "click", json!({ "id": "x" })),
+        ];
+        let fake = Arc::new(Fake::default());
+        let text = texts(&run_with(code, p, fake.clone(), true, 150, then)).join("\n");
+        for want in [
+            "early refused: pf.drop.read needs a drop on the fence first",
+            "front ok",
+            "text ok",
+            "save ok",
+            "bad refused: drop.save needs permissions.drop files",
+        ] {
+            assert!(text.contains(want), "{want:?} not in {text}");
+        }
+        // After the handler too: the app gets the last drop's number with the call.
+        let calls: Vec<Value> = (fake.notes.lock().unwrap().iter())
+            .filter_map(|n| match n {
+                Note::Call {
+                    name,
+                    args,
+                    refused: None,
+                } if name.starts_with("drop.") => Some(args.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(calls, [json!([0, null, 5]), json!([0, "a.png", 5])]);
     }
 
     #[test]

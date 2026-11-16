@@ -5,11 +5,11 @@
 //! with fake host functions, on any system: `pf.http` answers come from the fixture or say
 //! "offline", the clipboard and the computer's state are fixed values, nothing reaches Windows or
 //! the network. It drives the fence through what a user does (resize, hide and show, settings, a
-//! time change, a click on every row and cell with an id), then leaves it at rest, and reports
-//! every pf call, every refused permission, the hosts the plugin tried, how often it showed a
-//! view, its memory and its slowest call. The plugin repository's checks run it on every pull
-//! request. Ends with `RESULT: PASS` or `RESULT: FAIL` (exit code 0 or 1); WARN lines are the
-//! soft rules of the repository's AGENTS.md.
+//! time change, a click on every row and cell with an id, each menu entry and command, a dropped
+//! file), then leaves it at rest, and reports every pf call, every refused permission, the hosts
+//! the plugin tried, how often it showed a view, its memory and its slowest call. The plugin
+//! repository's checks run it on every pull request. Ends with `RESULT: PASS` or `RESULT: FAIL`
+//! (exit code 0 or 1); WARN lines are the soft rules of the repository's AGENTS.md.
 
 use pecofence_core::FenceId;
 use pecofence_core::plugins::{fence_settings, parse_manifest};
@@ -126,9 +126,30 @@ impl Host for Fake {
             "run" => Ok(json!({ "code": 0, "output": "" })),
             "folder.list" => Ok(json!([])),
             "folder.read" => Ok(json!("")),
-            // Nothing on the clipboard as a picture, the user cancels the folder dialog, and
-            // opening, notices and clipboard writes only happen.
-            "clipboard.image" | "folder.pick" | "openSystem" | "open" | "notify" => Ok(Value::Null),
+            // One launcher item; a drop's files become items (crates/app/src/app/launch.rs).
+            "launch.list" => Ok(json!([{ "id": "1", "name": "notes.txt", "icon": null }])),
+            "launch.add" => {
+                let n = args[0].as_array().map_or(0, Vec::len);
+                let item =
+                    |i| json!({ "id": format!("d{i}"), "name": "dropped.txt", "icon": null });
+                Ok(json!((0..n).map(item).collect::<Vec<_>>()))
+            }
+            "launch.remove" | "media.control" => Ok(json!(true)),
+            "media.current" => Ok(json!({
+                "app": null, "title": "A song", "artist": "An artist", "album": "", "playing": true,
+                "position": 30.0, "duration": 180.0, "cover": null
+            })),
+            // None of the programs of `apps` runs.
+            "apps.running" => Ok(json!([])),
+            "apps.front" => Ok(Value::Null),
+            // The dropped file notes.txt: its text, its bytes in base64; a save just happens.
+            "drop.text" => Ok(json!("dropped notes")),
+            "drop.read" => Ok(json!("ZHJvcHBlZCBub3Rlcw==")),
+            "drop.save" => Ok(Value::Null),
+            // Nothing on the clipboard as a picture, the user cancels the folder and file
+            // dialogs, and opening, notices and clipboard writes only happen.
+            "clipboard.image" | "folder.pick" | "launch.pick" | "launch.open" | "openSystem"
+            | "open" | "notify" => Ok(Value::Null),
             n if n.starts_with("clipboard.set") => Ok(Value::Null),
             _ => Err(format!("{name} is not a pf function")),
         }
@@ -389,7 +410,36 @@ fn check(a: Args) -> Result<bool, String> {
     send(Command::Event(fence, "lang", json!(a.lang)));
     wait(0.4);
     let view = fake.log().last_view.clone();
-    let clicks = clicks(&view);
+    let mut clicks = clicks(&view);
+    // Its menu entries and its commands' shortcuts, then a file dropped on it.
+    let p = &manifest.permissions;
+    let menu = view.get("menu").and_then(Value::as_array).cloned();
+    for id in (menu.unwrap_or_default().iter()).filter_map(|m| m.get("id").cloned()) {
+        clicks.push(("command", json!({ "id": id, "via": "menu" })));
+    }
+    for c in &p.commands {
+        clicks.push(("command", json!({ "id": c.id, "via": "key" })));
+    }
+    // One drop with what it takes of a file, a text and a link.
+    let takes = |kind: &str| p.drop.iter().any(|d| d == kind);
+    if !p.drop.is_empty() {
+        let file = json!({ "name": "notes.txt", "size": 120, "folder": false });
+        let files = if takes("files") {
+            json!([file])
+        } else {
+            json!([])
+        };
+        let text = takes("text").then_some("a dropped text");
+        let url = takes("links").then_some("https://example.com/");
+        let drop = json!({ "files": files, "text": text, "url": url, "drop": 1 });
+        clicks.push(("drop", drop));
+    }
+    if p.media.reads() {
+        clicks.push(("media", Value::Null));
+    }
+    if !p.apps.is_empty() {
+        clicks.push(("apps", json!({ "running": [&p.apps[0]], "front": null })));
+    }
     let clicked = clicks.len();
     for (name, data) in clicks {
         send(Command::Event(fence, name, data));
@@ -430,7 +480,9 @@ fn check(a: Args) -> Result<bool, String> {
         calls.join(", ")
     };
     info.push(format!("pf calls: {calls}"));
-    info.push(format!("{clicked} clicks on rows and cells with an id"));
+    info.push(format!(
+        "{clicked} clicks on rows and cells with an id, menu entries, commands and drops"
+    ));
     info.push(format!("last view: {}", short(&log.last_view)));
     for (host, (all, at_rest)) in &log.hosts {
         let declared = m

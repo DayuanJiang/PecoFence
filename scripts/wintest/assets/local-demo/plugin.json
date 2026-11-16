@@ -1,0 +1,20 @@
+{
+  "id": "local-demo",
+  "version": "1.0.0",
+  "api": 2,
+  "layer": "light",
+  "name": { "en": "Local demo", "zh-CN": "本机示例" },
+  "description": {
+    "en": "A test plugin: drops of files, text and links, programs in front, a secret setting.",
+    "zh-CN": "测试用的插件：拖进来的文件、文字和链接，最前面的程序，密钥设置。"
+  },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": {
+    "drop": ["files", "text", "links"],
+    "apps": ["notepad.exe"]
+  },
+  "settings": [
+    { "key": "token", "type": "secret", "label": { "en": "Access token", "zh-CN": "访问令牌" } }
+  ]
+}

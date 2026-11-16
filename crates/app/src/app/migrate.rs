@@ -116,7 +116,7 @@ impl App {
             let Some(p) = self.plugin(&runs) else {
                 continue;
             };
-            let settings = pecofence_core::plugins::fence_settings(&p.manifest, &settings);
+            let settings = super::plugins::plugin_settings(&p.manifest, &settings);
             tracing::info!(%fence, plugin = runs, "configuration came in: the plugin gets its fence's settings");
             self.plugin_event(fence, "settings", settings);
         }

@@ -1834,8 +1834,8 @@ impl FenceWindow {
         self.with_view(|v| v.refuses_drops = on);
     }
 
-    /// The plugin fence shown takes dropped files (Some: folders too, or not), or nothing.
-    pub fn set_plugin_drop(&self, takes: Option<bool>) {
+    /// What the plugin fence shown takes dropped, or nothing.
+    pub fn set_plugin_drop(&self, takes: Option<PluginDrops>) {
         self.with_view(|v| v.plugin_drop = takes);
     }
 

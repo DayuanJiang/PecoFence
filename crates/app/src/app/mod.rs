@@ -1365,6 +1365,7 @@ impl App {
                                 | updates::TIMER_UPDATE_CARD
                                 | updates::TIMER_UPDATE_RESUME
                                 | plugins::TIMER_PLUGINS_CHECK
+                                | light::TIMER_PLUGIN_APPS
                                 | TIMER_PORTAL_BACK
                                 | TIMER_CONFIG_LOCKED
                                 | desktop_import::TIMER_WINDOWS_PLACES
@@ -1410,6 +1411,7 @@ impl App {
                                             plugins::TIMER_PLUGINS_CHECK => {
                                                 app.daily_plugins_check()
                                             }
+                                            light::TIMER_PLUGIN_APPS => app.poll_plugin_apps(),
                                             updates::TIMER_UPDATE_RESUME => {
                                                 app.update_check_after_resume()
                                             }
@@ -3150,7 +3152,12 @@ impl App {
                 landed,
                 on_desktop,
             } => self.shell_drop_landed(to, landed, on_desktop),
-            Command::PluginDrop { fence, paths } => self.plugin_dropped(fence, paths),
+            Command::PluginDrop {
+                fence,
+                paths,
+                text,
+                url,
+            } => self.plugin_dropped(fence, paths, text, url),
             Command::FenceMenu { fence, x, y } => self.show_fence_menu(fence, x, y),
             Command::HeaderMenu { fence, x, y } => self.show_header_menu(fence, x, y),
             Command::ItemMenu { fence, items, x, y } => self.show_item_menu(fence, items, x, y),

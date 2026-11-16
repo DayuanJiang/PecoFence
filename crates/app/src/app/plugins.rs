@@ -96,6 +96,37 @@ pub(super) fn plugin_id(path: &str) -> Option<&str> {
     path.strip_prefix("plugin:").filter(|id| list::valid_id(id))
 }
 
+/// `pf.settings` of a fence with settings `saved`: [`list::fence_settings`] and its `secret`
+/// settings decrypted (one that does not decrypt, made on another computer or account, is null).
+pub(super) fn plugin_settings(
+    m: &Manifest,
+    saved: &serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    let mut settings = list::fence_settings(m, saved);
+    let secrets = saved.get(list::SECRETS).and_then(|s| s.as_object());
+    for (key, sealed) in secrets.into_iter().flatten() {
+        let hex = sealed.as_str().unwrap_or_default();
+        let bytes: Option<Vec<u8>> = (0..hex.len() / 2)
+            .map(|i| u8::from_str_radix(hex.get(2 * i..2 * i + 2)?, 16).ok())
+            .collect();
+        let text = bytes.and_then(|b| pecofence_platform::dpapi::unprotect(&b));
+        let text = text.and_then(|t| String::from_utf8(t).ok());
+        let declared = m
+            .settings
+            .iter()
+            .any(|s| s.key == *key && s.kind == "secret");
+        match (settings.get_mut(key), text) {
+            (Some(slot), Some(text)) if declared => *slot = text.into(),
+            _ => tracing::info!(
+                key,
+                declared,
+                "plugin secret setting not given: not declared or not decrypted here"
+            ),
+        }
+    }
+    settings
+}
+
 fn test_url(test_instance: bool) -> Option<String> {
     let url = pecofence_core::brand::var(URL_VAR).ok();
     url.filter(|u| test_instance && u.starts_with("http://127.0.0.1:"))
@@ -367,6 +398,8 @@ impl App {
             network: p.manifest.permissions.network.clone(),
             background: p.manifest.permissions.background,
             clipboard_read: p.manifest.permissions.clipboard.reads(),
+            media: p.manifest.permissions.media.reads(),
+            apps: !p.manifest.permissions.apps.is_empty(),
         })
     }
 
@@ -1016,13 +1049,31 @@ impl App {
         if !fits.is_some_and(|s| list::fits(s, value)) {
             return tracing::warn!(%fence, key, "plugins: setting refused, not of its kind");
         }
+        let secret = fits.is_some_and(|s| s.kind == "secret");
         let m = m.manifest.clone();
         let Some(spec) = self.state.config.scripts.get_mut(&fence) else {
             return;
         };
-        spec.settings.insert(key.to_string(), value.clone());
-        let settings = list::fence_settings(&m, &spec.settings);
-        tracing::info!(%fence, id = m.id, key, "plugins: fence setting changed");
+        if secret {
+            // Encrypted for this Windows account, under `__secrets`; an empty one is removed.
+            let text = value.as_str().unwrap_or_default();
+            let sealed = pecofence_platform::dpapi::protect(text.as_bytes());
+            let secrets =
+                (spec.settings.entry(list::SECRETS)).or_insert_with(|| serde_json::json!({}));
+            if let (Some(sealed), Some(map)) = (sealed, secrets.as_object_mut()) {
+                map.remove(key);
+                if !text.is_empty() {
+                    let hex: String = sealed.iter().map(|b| format!("{b:02x}")).collect();
+                    map.insert(key.to_string(), hex.into());
+                }
+            } else {
+                return tracing::warn!(%fence, key, "plugins: secret setting not saved, it could not be encrypted");
+            }
+        } else {
+            spec.settings.insert(key.to_string(), value.clone());
+        }
+        let settings = plugin_settings(&m, &spec.settings);
+        tracing::info!(%fence, id = m.id, key, secret, "plugins: fence setting changed");
         self.state.mark_dirty();
         self.schedule_save();
         self.plugin_event(fence, "settings", settings);
@@ -1128,7 +1179,7 @@ impl App {
                         let saved = self.state.config.scripts.get(&f).map(|s| s.settings.clone()).unwrap_or_default();
                         let title = self.state.fence(f).map(|f| f.title.clone()).unwrap_or_default();
                         let (items, keys) = self.launch_json(f, &mine.manifest);
-                        serde_json::json!({ "id": f, "title": title, "values": list::fence_settings(&mine.manifest, &saved), "items": items, "keys": keys })
+                        serde_json::json!({ "id": f, "title": title, "values": plugin_settings(&mine.manifest, &saved), "items": items, "keys": keys })
                     }).collect();
                     (settings, fences)
                 });

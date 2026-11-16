@@ -163,7 +163,7 @@ if ($PfDebugBuild) {
   Js "(() => { for (const r of [...document.querySelectorAll('#pluginList .pl-row')].filter(r => r.textContent.startsWith('正在播放'))) if (r.getAttribute('aria-expanded') !== 'true') r.click(); return true; })()" | Out-Null
   Start-Sleep -Seconds 1
   $d = Js "(document.querySelector('#pluginList .pl-detail[data-plugin=now-playing]') || {}).innerText"
-  Check 'its details say what it may do: the media session with pausing and skipping, and whether spotify.exe runs' ($ok -and $d -match '看到正在播放的歌曲或视频：名字、歌手、专辑和封面，并能暂停和切歌' -and $d -match '知道这些程序是否在运行：spotify\.exe') "$d"
+  Check 'its details say what it may do: the media session with pausing and skipping, and whether spotify.exe runs' ($ok -and $d -match '看到正在播放的歌曲或视频：名字、歌手、专辑和封面，并能暂停和切歌' -and $d -match '知道这些程序是否在运行、是否在最前面：spotify\.exe') "$d"
   $r = PageRect '#pluginList .pl-detail[data-plugin=now-playing]'
   if ($r) { (Crop 'zh-details' ($r.x - 10) ($r.y - 90) ($r.w + 20) ($r.h + 100)).Dispose() }
 }

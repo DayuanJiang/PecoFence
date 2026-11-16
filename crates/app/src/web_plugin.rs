@@ -53,7 +53,8 @@ const PRESS_GRACE: Duration = Duration::from_secs(1);
 const CALLS: &str = "time.now time.format http.get http.post data.read data.write data.list \
     data.remove clipboard.text clipboard.files clipboard.image clipboard.setText \
     clipboard.setFiles clipboard.setImage sys.cpu sys.memory sys.drives sys.ip sys.network \
-    sys.battery open openSystem run folder.pick folder.list folder.read notify";
+    sys.battery open openSystem run folder.pick folder.list folder.read notify launch.list \
+    launch.open launch.pick launch.remove media.current media.control apps.running apps.front";
 
 /// An installed web plugin a fence shows.
 pub struct Plugin {
@@ -65,6 +66,9 @@ pub struct Plugin {
     pub background: bool,
     /// It may read the clipboard: its page gets the `clipboard` event.
     pub clipboard_read: bool,
+    /// It may see the media session (`media` event) and know of programs (`apps` event).
+    pub media: bool,
+    pub apps: bool,
 }
 
 /// Why a page stopped (`Command::WebPageFailed`).

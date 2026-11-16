@@ -20,6 +20,8 @@ pub(super) type UiJob = Box<dyn FnOnce(&mut App) + Send>;
 const MAX_TEXT: usize = 256 * 1024;
 const MAX_DATA: u64 = 200 * 1024 * 1024;
 const MAX_FILE: u64 = 20 * 1024 * 1024;
+/// The most bytes of a dropped file `pf.drop.read` and `pf.drop.text` give a plugin.
+const MAX_DROP_READ: u64 = 4 * 1024 * 1024;
 const RUN_TIME: Duration = Duration::from_secs(30);
 const RUN_OUTPUT: usize = 1024 * 1024;
 
@@ -421,7 +423,7 @@ impl AppHost {
     }
 
     /// The programs running, read again when the last read is 5 s old.
-    fn programs(&self) -> Arc<Vec<String>> {
+    pub(super) fn programs(&self) -> Arc<Vec<String>> {
         let Ok(mut last) = self.programs.lock() else {
             return Arc::default();
         };
@@ -435,6 +437,41 @@ impl AppHost {
                 );
                 *last = Some((std::time::Instant::now(), list.clone()));
                 list
+            }
+        }
+    }
+
+    /// File `args[0]` of drop `args[2]` (the plugin host adds the last drop's number):
+    /// `drop.read` gives its bytes in base64 and `drop.text` its text, each up to 4 MB;
+    /// `drop.save` copies it into the data folder as `args[1]` (up to 20 MB), so that a larger
+    /// file never goes through the plugin's memory.
+    fn dropped(&self, fence: FenceId, name: &str, args: &Value) -> Result<Value, String> {
+        let (i, drop) = (args[0].as_u64().unwrap_or(u64::MAX), args[2].as_u64());
+        let path = self.on_ui(move |app| app.dropped_file(fence, drop, i as usize))?;
+        let size = std::fs::metadata(&path).map_err(io)?.len();
+        let limit = if name == "drop.save" {
+            MAX_FILE
+        } else {
+            MAX_DROP_READ
+        };
+        if size > limit {
+            tracing::info!(%fence, name, size, "plugin: a dropped file refused, too large");
+            return Err(format!(
+                "{name}: the file has {size} bytes, more than {limit} (pf.drop.save copies up to 20 MB into the data folder)"
+            ));
+        }
+        let bytes = std::fs::read(&path).map_err(io)?;
+        tracing::info!(%fence, name, size, "plugin: a dropped file read");
+        match name {
+            "drop.text" => Ok(String::from_utf8_lossy(&bytes).into()),
+            "drop.read" => Ok(base64(&bytes).into()),
+            _ => {
+                let file = self
+                    .data_dir(fence)?
+                    .join(args[1].as_str().unwrap_or_default());
+                let size = bytes.len() as u64;
+                self.write_data(fence, &file, size, |dir| replace_file(dir, &file, &bytes))?;
+                Ok(Value::Null)
             }
         }
     }
@@ -560,6 +597,33 @@ fn inside(asked: &str, folders: &[PathBuf]) -> Result<PathBuf, String> {
 
 /// Writes `bytes` to `file` whole: into a temporary file in `dir` first, then renamed over it,
 /// so a failed write (a full disk) leaves the file as it was.
+/// The program of the window in front (`spotify.exe`, in lowercase).
+pub(super) fn front_program() -> Option<String> {
+    use pecofence_platform::desktop;
+    let pid = desktop::window_pid(desktop::foreground_window());
+    let path = pecofence_platform::process::image_path(pid)?;
+    Some(path.file_name()?.to_string_lossy().to_lowercase())
+}
+
+/// Standard base64 with padding.
+fn base64(bytes: &[u8]) -> String {
+    const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+        for k in 0..4 {
+            let c = ABC[(n >> (18 - 6 * k)) as usize & 63] as char;
+            out.push(if k <= chunk.len() { c } else { '=' });
+        }
+    }
+    out
+}
+
 fn replace_file(dir: &Path, file: &Path, bytes: &[u8]) -> Result<(), String> {
     use std::sync::atomic::{AtomicU32, Ordering};
     static NEXT: AtomicU32 = AtomicU32::new(1);
@@ -617,6 +681,7 @@ impl pecofence_plugin_host::Host for AppHost {
                 Ok(json!({ "status": status, "headers": headers, "body": body }))
             }
             n if n.starts_with("data.") => self.data(fence, name, &args),
+            n if n.starts_with("drop.") => self.dropped(fence, name, &args),
             n if n.starts_with("clipboard.") => self.clipboard(fence, name, &args),
             n if n.starts_with("sys.") => Ok(self.sys(name)),
             "run" => self.run(fence, &args),
@@ -647,6 +712,13 @@ impl pecofence_plugin_host::Host for AppHost {
                 let apps =
                     (m.permissions.apps.iter()).filter(|a| running.contains(&a.to_lowercase()));
                 Ok(json!(apps.collect::<Vec<_>>()))
+            }
+            // The program of `apps` in front, as the manifest names it, or null.
+            "apps.front" => {
+                let m = self.manifest(fence).ok_or("the plugin does not run")?;
+                let front = front_program();
+                let app = (m.permissions.apps.iter()).find(|a| front == Some(a.to_lowercase()));
+                Ok(json!(app))
             }
             "notify" => {
                 let (title, body, sound) =
@@ -689,6 +761,15 @@ mod tests {
         let fence = FenceId::new_v4();
         host.plugins.lock().unwrap().insert(fence, Arc::new(m));
         (host, fence)
+    }
+
+    #[test]
+    fn dropped_bytes_come_in_standard_base64() {
+        let cases = [("", ""), ("M", "TQ=="), ("Ma", "TWE="), ("Man", "TWFu")];
+        for (bytes, text) in cases {
+            assert_eq!(base64(bytes.as_bytes()), text);
+        }
+        assert_eq!(base64(&[0xFB, 0xFF]), "+/8=");
     }
 
     #[test]
