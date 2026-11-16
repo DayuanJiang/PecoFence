@@ -664,7 +664,8 @@ public static class PfMark { public static void Main(string[] a) { System.IO.Fil
   $edge = "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe"
   Start-Process $edge -ArgumentList @('--no-first-run', '--no-default-browser-check', "--user-data-dir=$PfRun\edge-media", '--autoplay-policy=no-user-gesture-required', '--window-position=860,60', '--window-size=640,420', $url) | Out-Null
   $seen = JsWait "window.ev.media > 0" 30
-  $m = Answer "pf.media.current()"
+  # The first event may come with the title, before Edge says it plays.
+  for ($i = 0; $i -lt 20; $i++) { $m = Answer "pf.media.current()"; if ($m.playing -eq $true) { break }; Start-Sleep -Milliseconds 500 }
   Check 'the page gets the media event and pf.media.current names what Edge plays' ($seen -and $m.title -eq 'PecoFence test tone' -and $m.playing -eq $true) ($m | ConvertTo-Json -Compress)
   AfterClick "pf.media.control('playpause')"
   $r = JsWait "window.r" 10

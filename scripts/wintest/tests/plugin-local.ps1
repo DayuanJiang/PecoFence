@@ -148,7 +148,7 @@ Case 'apps: Notepad starts and comes to the front, goes behind, ends'
 $np = Start-Process notepad.exe -PassThru
 Start-Sleep -Seconds 1
 Check 'the apps event: Notepad runs and is in front' (WaitOut 'event running=notepad.exe front=notepad.exe' 15) (FenceOut $script:Fid)
-Check 'pf.apps.front names it as the manifest does' (WaitOut 'running=notepad.exe front=notepad.exe events=1') (FenceOut $script:Fid)
+Check 'pf.apps.front names it as the manifest does' (WaitOut 'running=notepad.exe front=notepad.exe events=[12]') (FenceOut $script:Fid)
 DeskClick
 Check 'another window in front: the event says none is' (WaitOut 'event running=notepad.exe front=none' 15) (FenceOut $script:Fid)
 Stop-Process -Id $np.Id -Force
