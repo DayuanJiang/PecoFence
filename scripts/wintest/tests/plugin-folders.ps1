@@ -307,6 +307,8 @@ function BinBack() {
 # `file` that Windows would delete for good.
 function NukeCase($k, $what, $file) {
   trap { PfTrap $_; continue }
+  # The test plugin runs cmd.json again as it starts: nothing.
+  [IO.File]::WriteAllText("$script:Config\plugins-data\folders-test\cmd.json", '[]')
   PfStart -Lang zh-CN -Script (DumpScript 500 20)
   PfWaitLog 'plugin fence starts its main.js' 20 | Out-Null
   Start-Sleep -Seconds 2
