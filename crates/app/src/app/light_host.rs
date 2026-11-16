@@ -477,7 +477,7 @@ impl AppHost {
         }
         tracing::info!(%fence, name, size, "plugin: a dropped file read");
         match name {
-            "drop.text" => Ok(String::from_utf8_lossy(&bytes).into()),
+            "drop.text" => drop_text(bytes).map(Value::from),
             "drop.read" => Ok(base64(&bytes).into()),
             _ => {
                 let file = self
@@ -751,10 +751,34 @@ impl pecofence_plugin_host::Host for AppHost {
     }
 }
 
+/// `pf.drop.text`: a dropped file's text. A file with a NUL or that is not UTF-8 is refused (a
+/// lossy string of a binary file grows about six times in JSON, past the plugin's memory).
+fn drop_text(bytes: Vec<u8>) -> Result<String, String> {
+    match String::from_utf8(bytes) {
+        Ok(text) if !text.contains('\0') => Ok(text),
+        _ => Err("drop.text: not a text file; use pf.drop.read".into()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use pecofence_plugin_host::Host;
+
+    #[test]
+    fn drop_text_takes_text_and_refuses_binary_files() {
+        assert_eq!(
+            drop_text("à la carte\n".as_bytes().to_vec()),
+            Ok("à la carte\n".into())
+        );
+        for bad in [
+            b"PNG\0\x01".to_vec(),
+            vec![0xff, 0xfe, 0x41],
+            vec![b'a', 0xc3],
+        ] {
+            assert!(drop_text(bad).unwrap_err().contains("not a text file"));
+        }
+    }
 
     fn temp(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("pf-light-{name}-{}", std::process::id()));
