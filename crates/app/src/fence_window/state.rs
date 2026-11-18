@@ -104,6 +104,27 @@ pub struct FenceViewState {
     /// Expanded window height in physical pixels (restored when un-rolling).
     pub expanded_h_px: i32,
     pub icon_size: u32,
+    /// The factor the icons are drawn at while the fence is zoomed (1 = not zoomed). The
+    /// grid, the cell and every hit test read the icon size through it, so a zoom scales the
+    /// content instead of re-flowing it (`fence_window/zoom.rs`).
+    pub(super) zoom_icon: f32,
+    /// The rect to go back to when the zoom closes; `None` while the fence is not zoomed.
+    pub(super) zoom_home: Option<RECT>,
+    /// The centred box and the icon factor the zoom is heading for while it is open, kept so
+    /// an interrupted close can turn back out to the same place.
+    pub(super) zoom_far: Option<(RECT, f32)>,
+    /// The fence's own 名称行数 while the zoom shows `zoom.labelLines`; put back when the
+    /// zoom closes.
+    pub(super) zoom_label_restore: Option<u8>,
+    /// The fence's own glass opacity while the zoom shows `zoom.opacity`; put back on close.
+    pub(super) zoom_opacity_restore: Option<f32>,
+    /// The left button as the last zoom watch found it (edge detection for "a click outside").
+    pub(super) zoom_was_down: bool,
+    /// The zoom tween in flight.
+    pub(super) zoom_anim: Option<crate::fence_window::zoom::ZoomAnim>,
+    /// The window that was directly above this one before the zoom raised it; the zoom puts
+    /// it back there when it closes.
+    pub(super) zoom_prev: Option<HWND>,
     pub label_lines: u8,
     pub items: Vec<ItemView>,
     /// Tabs shown in the title row (the host itself first). One entry = plain title.

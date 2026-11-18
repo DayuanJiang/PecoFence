@@ -116,6 +116,14 @@ impl FenceWindow {
             is_inbox,
             expanded_h_px: expanded_h_px.max(1),
             icon_size,
+            zoom_icon: 1.0,
+            zoom_home: None,
+            zoom_far: None,
+            zoom_label_restore: None,
+            zoom_opacity_restore: None,
+            zoom_was_down: false,
+            zoom_anim: None,
+            zoom_prev: None,
             label_lines,
             items,
             tabs: Vec::new(),
@@ -2120,7 +2128,7 @@ impl FenceWindow {
     /// item at the current icon size, and at the size it still shows until that one arrives.
     pub fn needed_icons(&self, icons: &IconCache, out: &mut HashSet<String>) {
         if let Some(v) = self.view.borrow().as_ref() {
-            let px = crate::layout::icon_px(v.layout, v.icon_size, v.dpi);
+            let px = (v.icon_dip() * (v.dpi as f32 / 96.0)).round() as u32;
             for item in &v.items {
                 out.insert(icons.draw_key(&item.icon_key, px));
                 if item.icon.is_some() && item.icon_px != px {

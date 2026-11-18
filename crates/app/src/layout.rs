@@ -56,7 +56,20 @@ impl GridSpec {
 
     /// The icon grid of `count` items in `width` DIPs, its short rows aligned.
     pub fn grid(&self, line_h: f32, width: f32, count: usize, spans: &[GroupSpan]) -> Grid {
-        Grid::grouped(self.metrics(line_h), width, count, spans)
+        self.grid_zoomed(line_h, width, count, spans, 1.0)
+    }
+
+    /// The same grid with every length times `zoom`: a zoomed fence lays its icons out at a
+    /// larger scale and keeps the column count of the resting grid (`fence_window/zoom.rs`).
+    pub fn grid_zoomed(
+        &self,
+        line_h: f32,
+        width: f32,
+        count: usize,
+        spans: &[GroupSpan],
+        zoom: f32,
+    ) -> Grid {
+        Grid::grouped(self.metrics(line_h).scaled(zoom), width, count, spans)
             .centred(self.icon_align == IconAlign::Center)
             .right_aligned(self.icon_align == IconAlign::Right)
     }
@@ -102,6 +115,23 @@ impl GridMetrics {
             label_gap: 4.0,
         }
         .align_bare_icons()
+    }
+
+    /// Every length of the grid times `k`: a zoomed fence lays its icons out at a larger
+    /// scale, keeping the column count of the resting grid (labels keep their font size).
+    pub fn scaled(mut self, k: f32) -> Self {
+        if (k - 1.0).abs() < f32::EPSILON {
+            return self;
+        }
+        self.icon *= k;
+        self.cell_w *= k;
+        self.cell_h *= k;
+        self.pad_x *= k;
+        self.pad_y *= k;
+        self.line_h *= k;
+        self.icon_top *= k;
+        self.label_gap *= k;
+        self
     }
 
     /// Side padding puts the first icon of a grid without labels on the title's x. A labelled

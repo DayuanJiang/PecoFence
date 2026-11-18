@@ -96,6 +96,25 @@ pub struct FrameHandle {
 }
 
 impl FenceWindow {
+    /// The fence is zoomed, at rest or on its way back (`fence_window/zoom.rs`).
+    pub fn zoom_open(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| v.zoom_open())
+    }
+
+    /// The fence is anywhere inside the zoom gesture: opening, zoomed, or closing.
+    pub fn zoom_busy(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| v.zoom_busy())
+    }
+
+    /// Starts the close tween of a zoom another fence took over. Does nothing while a zoom
+    /// tween is already running or the fence is not zoomed.
+    pub fn close_zoom(&self) {
+        let hwnd = self.hwnd();
+        if let Some(v) = self.view.borrow_mut().as_mut() {
+            v.close_zoom(hwnd);
+        }
+    }
+
     pub fn frame_handle(&self) -> FrameHandle {
         FrameHandle {
             id: self.id,
@@ -153,6 +172,21 @@ impl FrameHandle {
     /// the next frame). Re-entrancy: the window is resized with no borrow held.
     pub fn on_frame(&self, now: Instant) -> bool {
         let hwnd = self.hwnd();
+        // Zoom (`fence_window/zoom.rs`): the window rect and the icon factor advance on the
+        // same tween. The rect is applied with no borrow held; the WM_SIZE that follows lays
+        // the content out at the new scale, so icons grow with the fence.
+        let zoom = self
+            .view
+            .borrow_mut()
+            .as_mut()
+            .and_then(|v| v.zoom_step(hwnd, now));
+        if let Some((r, done)) = zoom {
+            let _ =
+                window::set_window_bounds(hwnd, r.left, r.top, r.right - r.left, r.bottom - r.top);
+            if !done {
+                return true;
+            }
+        }
         let (glided, gliding) = self.tick_glide(now);
         let moved = flush_window_drag(&self.view, hwnd, now, None) | glided;
         // A title drag moved the window on mouse moves since the last frame: the backdrop

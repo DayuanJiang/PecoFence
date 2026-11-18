@@ -876,6 +876,10 @@ pub(super) fn on_lbuttondblclk(
             // does nothing, as before; nor when the first click opened or entered something.
             tracing::debug!(fence = %fence_id, x, y, "double-click on empty space in a subfolder: up one level");
             queue.push(Command::PortalUp(v.active));
+        } else if v.zoom_blank_at(x, y) {
+            // A double-click on the empty background zooms the fence to the middle of its
+            // monitor and back (`fence_window/zoom.rs`). Going up in a portal comes first.
+            v.zoom_toggle(hwnd, Instant::now());
         }
     }
     Some(0)

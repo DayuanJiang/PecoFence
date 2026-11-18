@@ -662,3 +662,17 @@ pub(super) fn on_timer_clock(h: &HandlerCtx) -> Option<isize> {
     }
     Some(0)
 }
+
+/// `TIMER_ZOOM_WATCH`: while a fence is zoomed, a press on the desktop outside it puts it
+/// back (`fence_window/zoom.rs`). The watch stops with the zoom.
+pub(super) fn on_timer_zoom_watch(h: &HandlerCtx, hwnd: HWND) -> Option<isize> {
+    let HandlerCtx { view, .. } = h;
+    let closed = view
+        .borrow_mut()
+        .as_mut()
+        .is_some_and(|v| v.zoom_watch(hwnd));
+    if closed {
+        tracing::debug!("zoom closed by a click outside the fence");
+    }
+    Some(0)
+}

@@ -146,6 +146,33 @@ pub const UNUSED_SETTINGS: &[&str] = &[
     "rollUp.closeGraceMs",
 ];
 
+/// 双击空白放大 (`fence_window/zoom.rs`).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(default, rename_all = "camelCase")]
+pub struct Zoom {
+    /// 双击栅栏空白处放大到屏幕中央（再双击收回）.
+    pub enabled: bool,
+    /// 放大后的图标大小 in DIP, `0` = as large as the window allows (the default).
+    pub icon_size: u32,
+    /// 放大后的名称行数, `None` = the fence's own setting.
+    pub label_lines: Option<u8>,
+    /// 放大后的不透明度 in percent of the fence's own glass thickness: `0` = 跟随栅栏,
+    /// `120` = thicker than usual (so a zoomed fence reads above the one behind it).
+    pub opacity: u32,
+}
+
+impl Default for Zoom {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            icon_size: 0,
+            label_lines: None,
+            opacity: 0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -153,6 +180,8 @@ pub struct Settings {
     #[serde(default = "crate::i18n::Language::legacy_default")]
     pub language: crate::i18n::Language,
     pub backdrop: Backdrop,
+    #[serde(default)]
+    pub zoom: Zoom,
     pub theme: ThemeSetting,
     /// 菜单颜色: light or dark popup menus (the tray menu, the fence and item menus with the
     /// entries Windows adds, their tips), on their own or following `theme`.
@@ -455,6 +484,7 @@ impl Default for Settings {
         Self {
             language: crate::i18n::Language::System,
             backdrop: Backdrop::Acrylic,
+            zoom: Zoom::default(),
             theme: ThemeSetting::FollowWindowsMode,
             menu_color: MenuColor::FollowMode,
             idle_opacity: 1.0,

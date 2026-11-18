@@ -409,6 +409,9 @@ impl FenceWindow {
                     msg::WM_TIMER if wparam == TIMER_FIT_AHEAD => {
                         timers::on_timer_fit_ahead(h, hwnd)
                     }
+                    msg::WM_TIMER if wparam == TIMER_ZOOM_WATCH => {
+                        timers::on_timer_zoom_watch(h, hwnd)
+                    }
                     msg::WM_TIMER if wparam == TIMER_SHADOW => {
                         timers::on_timer_shadow(h, hwnd, wparam, lparam)
                     }
