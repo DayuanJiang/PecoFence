@@ -804,6 +804,49 @@ pub fn set_window_bounds(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) ->
     }
 }
 
+/// Puts `hwnd` at the top of its z-order band without moving, resizing or activating it
+/// (`fence_window/zoom.rs`: a zoomed fence floats over the other fences).
+pub fn raise_window(hwnd: HWND) -> Result<()> {
+    // SAFETY: plain FFI call on a caller-supplied HWND.
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            Some(HWND_TOP),
+            0,
+            0,
+            0,
+            0,
+            swp::NOACTIVATE | swp::NOOWNERZORDER | swp::NOMOVE | swp::NOSIZE,
+        )
+        .ok()
+    }
+}
+
+/// The window directly above `hwnd` in z-order; a null handle when it is already the top of
+/// its band. Taken before a [`raise_window`] so the place can be given back.
+pub fn window_above(hwnd: HWND) -> HWND {
+    // SAFETY: plain FFI call on a caller-supplied HWND.
+    unsafe { GetWindow(hwnd, GW_HWNDPREV as u32) }
+}
+
+/// Puts `hwnd` directly below `above`, the handle [`window_above`] returned before the raise:
+/// the z-order a fence had before it was zoomed.
+pub fn put_below(hwnd: HWND, above: HWND) -> Result<()> {
+    // SAFETY: plain FFI call on caller-supplied HWNDs.
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            Some(above),
+            0,
+            0,
+            0,
+            0,
+            swp::NOACTIVATE | swp::NOOWNERZORDER | swp::NOMOVE | swp::NOSIZE,
+        )
+        .ok()
+    }
+}
+
 /// A window's new place in a batch ([`set_window_positions`]); without `size` it keeps its own.
 #[derive(Clone, Copy, Debug)]
 pub struct WindowPos {
