@@ -1036,5 +1036,14 @@
   "所有栅栏用同样的布局": "Same layout for all fences",
   "把上面的视图、排序、图标大小、间距、名称和对齐用到其他栅栏": "Gives the other fences the view, sort order, icon size, spacing, labels and alignment above",
   "其他栅栏已经和它一样": "The other fences already look like this",
-  "已用到其他 {0} 个栅栏": "Applied to {0} other fences"
+  "已用到其他 {0} 个栅栏": "Applied to {0} other fences",
+  "双击放大": "Double-click to zoom",
+  "双击空白处放大栅栏": "Double-click empty space to zoom the fence",
+  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Double-click a fence where there are no icons: it grows to the middle of the screen, icons and all; double-click again to put it back. While zoomed it cannot be dragged or resized, and fences arranged like the desktop are left out.",
+  "放大后的图标大小": "Icon size when zoomed",
+  "“跟随窗口”按窗口宽度自动放大，列数不变；选具体数值则用固定的图标大小": "“Follow the window” scales with the fence width and keeps the column count; a fixed number uses that icon size",
+  "放大后的不透明度": "Opacity when zoomed",
+  "放大时让栅栏更厚实一些，好和后面的栅栏区分开；“跟随栅栏”用栅栏自己的不透明度": "Makes the zoomed fence thicker so it reads above the one behind it; “Follow the fence” keeps its own opacity",
+  "跟随窗口": "Follow the window",
+  "跟随栅栏": "Follow the fence"
 }

@@ -1036,5 +1036,14 @@
   "所有栅栏用同样的布局": "Stessa disposizione per tutti i riquadri",
   "把上面的视图、排序、图标大小、间距、名称和对齐用到其他栅栏": "Dà agli altri riquadri la visualizzazione, l’ordine, la dimensione delle icone, la spaziatura, le etichette e l’allineamento qui sopra",
   "其他栅栏已经和它一样": "Gli altri riquadri sono già così",
-  "已用到其他 {0} 个栅栏": "Applicato ad altri {0} riquadri"
+  "已用到其他 {0} 个栅栏": "Applicato ad altri {0} riquadri",
+  "双击放大": "Doppio clic per ingrandire",
+  "双击空白处放大栅栏": "Doppio clic sullo spazio vuoto per ingrandire la recinzione",
+  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Doppio clic dove non ci sono icone: la recinzione si ingrandisce al centro dello schermo, icone comprese; un altro doppio clic la riporta. Da ingrandita non si può trascinare né ridimensionare, e le recinzioni «come il desktop» restano escluse.",
+  "放大后的图标大小": "Dimensione icone da ingrandita",
+  "“跟随窗口”按窗口宽度自动放大，列数不变；选具体数值则用固定的图标大小": "«Segui la finestra» scala con la larghezza mantenendo le colonne; un valore fisso usa quella dimensione",
+  "放大后的不透明度": "Opacità da ingrandita",
+  "放大时让栅栏更厚实一些，好和后面的栅栏区分开；“跟随栅栏”用栅栏自己的不透明度": "Rende la recinzione ingrandita più piena per distinguerla da quella dietro; «Segui la recinzione» mantiene la sua opacità",
+  "跟随窗口": "Segui la finestra",
+  "跟随栅栏": "Segui la recinzione"
 }

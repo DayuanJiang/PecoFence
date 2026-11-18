@@ -1036,5 +1036,14 @@
   "所有栅栏用同样的布局": "Gleiche Anordnung für alle Bereiche",
   "把上面的视图、排序、图标大小、间距、名称和对齐用到其他栅栏": "Gibt den anderen Bereichen die Ansicht, Sortierung, Symbolgröße, Abstände, Unterschriften und Ausrichtung von oben",
   "其他栅栏已经和它一样": "Die anderen Bereiche sind schon so",
-  "已用到其他 {0} 个栅栏": "Auf {0} weitere Bereiche angewendet"
+  "已用到其他 {0} 个栅栏": "Auf {0} weitere Bereiche angewendet",
+  "双击放大": "Doppelklick zum Vergrößern",
+  "双击空白处放大栅栏": "Leere Fläche doppelklicken, um den Zaun zu vergrößern",
+  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Doppelklick auf eine Stelle ohne Symbole: Der Zaun wächst in die Bildschirmmitte, die Symbole mit; ein weiterer Doppelklick stellt ihn zurück. Vergrößert lässt er sich weder ziehen noch skalieren, und Zäune mit „wie der Desktop angeordnet“ bleiben außen vor.",
+  "放大后的图标大小": "Symbolgröße beim Vergrößern",
+  "“跟随窗口”按窗口宽度自动放大，列数不变；选具体数值则用固定的图标大小": "„Fenster folgen“ skaliert mit der Breite und behält die Spaltenzahl; eine feste Zahl setzt die Symbolgröße",
+  "放大后的不透明度": "Deckkraft beim Vergrößern",
+  "放大时让栅栏更厚实一些，好和后面的栅栏区分开；“跟随栅栏”用栅栏自己的不透明度": "Macht den vergrößerten Zaun dicker, damit er sich vom Zaun dahinter abhebt; „Zaun folgen“ behält dessen Deckkraft",
+  "跟随窗口": "Fenster folgen",
+  "跟随栅栏": "Zaun folgen"
 }

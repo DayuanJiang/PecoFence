@@ -1036,5 +1036,14 @@
   "所有栅栏用同样的布局": "O mesmo layout para todos os grupos",
   "把上面的视图、排序、图标大小、间距、名称和对齐用到其他栅栏": "Dá aos outros grupos o modo de exibição, a ordem, o tamanho dos ícones, o espaçamento, os rótulos e o alinhamento acima",
   "其他栅栏已经和它一样": "Os outros grupos já estão assim",
-  "已用到其他 {0} 个栅栏": "Aplicado a outros {0} grupos"
+  "已用到其他 {0} 个栅栏": "Aplicado a outros {0} grupos",
+  "双击放大": "Duplo clique para ampliar",
+  "双击空白处放大栅栏": "Duplo clique no espaço vazio para ampliar a cerca",
+  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Dê um duplo clique onde não há ícones: a cerca cresce no centro da tela, ícones incluídos; outro duplo clique a devolve. Ampliada, ela não pode ser arrastada nem redimensionada, e as cercas “como a área de trabalho” ficam de fora.",
+  "放大后的图标大小": "Tamanho do ícone ao ampliar",
+  "“跟随窗口”按窗口宽度自动放大，列数不变；选具体数值则用固定的图标大小": "“Seguir a janela” escala com a largura e mantém as colunas; um valor fixo usa esse tamanho",
+  "放大后的不透明度": "Opacidade ao ampliar",
+  "放大时让栅栏更厚实一些，好和后面的栅栏区分开；“跟随栅栏”用栅栏自己的不透明度": "Deixa a cerca ampliada mais opaca para diferenciá-la da que está atrás; “Seguir a cerca” mantém a opacidade dela",
+  "跟随窗口": "Seguir a janela",
+  "跟随栅栏": "Seguir a cerca"
 }

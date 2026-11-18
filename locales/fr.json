@@ -1036,5 +1036,14 @@
   "所有栅栏用同样的布局": "Même disposition pour tous les groupes",
   "把上面的视图、排序、图标大小、间距、名称和对齐用到其他栅栏": "Donne aux autres groupes l’affichage, le tri, la taille des icônes, l’espacement, les noms et l’alignement ci-dessus",
   "其他栅栏已经和它一样": "Les autres groupes sont déjà ainsi",
-  "已用到其他 {0} 个栅栏": "Appliqué à {0} autres groupes"
+  "已用到其他 {0} 个栅栏": "Appliqué à {0} autres groupes",
+  "双击放大": "Double-clic pour agrandir",
+  "双击空白处放大栅栏": "Double-cliquez sur une zone vide pour agrandir la clôture",
+  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Double-cliquez sur une zone sans icônes : la clôture s'agrandit au centre de l'écran, icônes comprises ; un autre double-clic la remet en place. Agrandie, elle ne peut être ni déplacée ni redimensionnée, et les clôtures « disposées comme le bureau » sont exclues.",
+  "放大后的图标大小": "Taille des icônes agrandies",
+  "“跟随窗口”按窗口宽度自动放大，列数不变；选具体数值则用固定的图标大小": "« Suivre la fenêtre » s'adapte à la largeur en gardant le nombre de colonnes ; une valeur fixe impose cette taille",
+  "放大后的不透明度": "Opacité agrandie",
+  "放大时让栅栏更厚实一些，好和后面的栅栏区分开；“跟随栅栏”用栅栏自己的不透明度": "Rend la clôture agrandie plus opaque pour la détacher de celle du dessous ; « Suivre la clôture » garde son opacité",
+  "跟随窗口": "Suivre la fenêtre",
+  "跟随栅栏": "Suivre la clôture"
 }
