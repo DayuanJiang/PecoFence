@@ -108,6 +108,20 @@ pub struct FenceViewState {
     /// Expanded window height in physical pixels (restored when un-rolling).
     pub expanded_h_px: i32,
     pub icon_size: u32,
+    /// The factor the icons are drawn at while the fence is zoomed (1 = not zoomed). The
+    /// grid, the cell and every hit test read the icon size through it, so a zoom scales the
+    /// content instead of re-flowing it (`fence_window/zoom.rs`).
+    pub(super) zoom_icon: f32,
+    /// The rect to go back to when the zoom closes; `None` while the fence is not zoomed.
+    pub(super) zoom_home: Option<RECT>,
+    /// The centred box and the icon factor the zoom is heading for while it is open, kept so
+    /// an interrupted close can turn back out to the same place.
+    pub(super) zoom_far: Option<(RECT, f32)>,
+    /// While the fence is zoomed at rest: sees every mouse press, so one outside the fence
+    /// closes the zoom (`fence_window/zoom.rs`).
+    pub(super) zoom_press: Option<pecofence_platform::window::PressWatch>,
+    /// The zoom tween in flight.
+    pub(super) zoom_anim: Option<crate::fence_window::zoom::ZoomAnim>,
     pub label_lines: u8,
     pub items: Vec<ItemView>,
     /// Tabs shown in the title row (the host itself first). One entry = plain title.
@@ -255,10 +269,11 @@ pub struct FenceViewState {
     /// The last title click expanded the fence (click-to-expand); a WM_NCLBUTTONDBLCLK that
     /// completes it must not roll the fence back up.
     pub(super) suppress_dblclk: bool,
-    /// The last left press was on empty space of a subfolder, and the fence has shown no other
-    /// folder since: a double-click that completes it goes up one level (feedback #130). A
-    /// first click that opened or entered something (single-click open) leaves it false.
-    pub(super) up_on_dblclk: bool,
+    /// The last left press was on empty space, and the fence has shown no other folder since:
+    /// a double-click that completes it goes up one level in a subfolder (feedback #130) or
+    /// zooms the fence (`fence_window/zoom.rs`). A first click that opened or entered
+    /// something (single-click open) leaves it false.
+    pub(super) dblclk_blank: bool,
     /// Double-click on a folder item navigates inside the portal instead of launching it.
     pub(super) navigate_folders: bool,
     /// The folder the shown fence's drops land in when it is a portal (its current folder).

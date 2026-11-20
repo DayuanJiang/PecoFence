@@ -182,7 +182,7 @@ pub(super) fn on_lbuttondown(
         // double-click: a click that expanded the fence no longer swallows the next one.
         v.cancel_pending_rename();
         v.suppress_dblclk = false;
-        v.up_on_dblclk = v.deco.up_button && v.hit_item(x, y).is_none();
+        v.dblclk_blank = v.hit_item(x, y).is_none();
         v.hide_tip();
         // A press ends the short wait of hover switches that follow each other, and of rolled
         // fences that expand one after the other.
@@ -855,6 +855,7 @@ pub(super) fn on_lbuttondblclk(
             queue.push(Command::RaiseFence(hwnd));
             return Some(0);
         }
+        let blank_first = std::mem::take(&mut v.dblclk_blank);
         if let Some(i) = v.hit_item(x, y)
             && let Some(item) = v.items.get(i)
         {
@@ -864,7 +865,7 @@ pub(super) fn on_lbuttondblclk(
             }
         } else if v.tab_at(x, y).is_some() && !std::mem::take(&mut v.suppress_dblclk) {
             queue.push(Command::ToggleRollUp(fence_id));
-        } else if std::mem::take(&mut v.up_on_dblclk)
+        } else if blank_first
             && v.deco.up_button
             && !v.rolled_up
             && x >= v.content_x
@@ -876,6 +877,11 @@ pub(super) fn on_lbuttondblclk(
             // does nothing, as before; nor when the first click opened or entered something.
             tracing::debug!(fence = %fence_id, x, y, "double-click on empty space in a subfolder: up one level");
             queue.push(Command::PortalUp(v.active));
+        } else if blank_first && v.zoom_blank_at(x, y) {
+            // A double-click on the empty background zooms the fence to the middle of its
+            // monitor and back (`fence_window/zoom.rs`). Going up in a portal comes first, and
+            // a first click that opened or entered something zooms nothing.
+            v.zoom_toggle(hwnd, Instant::now());
         }
     }
     Some(0)

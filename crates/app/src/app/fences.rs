@@ -622,6 +622,12 @@ impl App {
             tracing::debug!(fence = %id, syncing = self.placing_layout, "auto height waits: the fence is not at its new place yet");
             return;
         }
+        // A zoomed fence shows its items at another scale for a moment (`fence_window/zoom.rs`):
+        // its height is measured again on the next pass after the zoom, never at the zoom's.
+        if w.zoom_busy() {
+            tracing::debug!(fence = %id, "auto height waits: the fence is zoomed");
+            return;
+        }
         // A rolled fence follows its tabs: collapsed to the left tab column, or back to a title
         // row at its expanded width.
         if let Some(rect) = w.settle_rolled_size() {

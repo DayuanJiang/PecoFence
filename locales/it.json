@@ -1041,5 +1041,7 @@
   "已用到其他 {0} 个栅栏": "Applicato ad altri {0} riquadri",
   "撤销提示": "Avvisi di annullamento",
   "删除栅栏、按规则整理或把栅栏移到别的虚拟桌面后，右下角显示可以撤销的提示，10 秒后消失。关闭后不再显示，在栅栏上按 Ctrl+Z 照样能撤销": "Dopo l’eliminazione di un riquadro, l’organizzazione con le regole o lo spostamento di un riquadro su un altro desktop virtuale, nell’angolo compare per 10 secondi un avviso con Annulla. Disattivato, non compare; Ctrl+Z su un riquadro annulla comunque",
-  "搜索别名\u0004撤销卡片|删除提示|通知|弹窗": "scheda annulla|avviso di eliminazione|notifiche|popup"
+  "搜索别名\u0004撤销卡片|删除提示|通知|弹窗": "scheda annulla|avviso di eliminazione|notifiche|popup",
+  "双击空白处放大栅栏": "Doppio clic sullo spazio vuoto per ingrandire la recinzione",
+  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Doppio clic dove non ci sono icone: la recinzione si ingrandisce al centro dello schermo, icone comprese; un altro doppio clic la riporta. Da ingrandita non si può trascinare né ridimensionare, e le recinzioni «come il desktop» restano escluse."
 }

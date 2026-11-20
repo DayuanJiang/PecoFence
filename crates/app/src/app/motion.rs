@@ -403,6 +403,17 @@ impl App {
         for w in self.fences.values().chain(self.dying.iter()) {
             more |= w.on_frame(now);
         }
+        // One zoom at a time: the fence that started zooming owns the screen, and every other
+        // fence that is still zoomed (at rest or mid-tween) closes back to where it came from
+        // before the new one grows (`fence_window/zoom.rs`).
+        if let Some(owner) = *self.ctx.behavior.zoom_owner.borrow() {
+            for (&id, w) in &self.fences {
+                if id != owner && w.zoom_open() {
+                    w.close_zoom();
+                    more = true;
+                }
+            }
+        }
         self.reflow_pushed();
         self.apply_frame_positions();
         // Peek dimmer: a layered window, so its alpha is a client tween ticked here. The last

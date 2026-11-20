@@ -671,3 +671,21 @@ pub(super) fn on_timer_clock(h: &HandlerCtx) -> Option<isize> {
     }
     Some(0)
 }
+
+/// `WM_APP_ZOOM_PRESS`: while a fence is zoomed, a press on the desktop outside it puts it
+/// back (`fence_window/zoom.rs`). The watch ends with the zoom.
+pub(super) fn on_zoom_press(h: &HandlerCtx, hwnd: HWND, lparam: isize) -> Option<isize> {
+    let HandlerCtx { view, .. } = h;
+    let pt = pecofence_platform::POINT {
+        x: msg::lo_i16(lparam),
+        y: msg::hi_i16(lparam),
+    };
+    let closed = view
+        .borrow_mut()
+        .as_mut()
+        .is_some_and(|v| v.zoom_press_at(hwnd, pt));
+    if closed {
+        tracing::debug!("zoom closed by a click outside the fence");
+    }
+    Some(0)
+}

@@ -783,6 +783,7 @@ fn not_recorded(cmd: &Command) -> bool {
             | Command::RaiseFence(_)
             | Command::RaiseForHover(_)
             | Command::EndHoverRaise(_)
+            | Command::ZoomEnded(_)
             | Command::PortalPointerIn(_)
             | Command::EndItemSelection { .. }
             | Command::EndNoteEdit
@@ -1993,6 +1994,8 @@ impl App {
                 ),
                 selection: std::cell::RefCell::new(Vec::new()),
                 pushed: std::cell::RefCell::new(Vec::new()),
+                zoom_enabled: std::cell::Cell::new(state.config.settings.zoom.enabled),
+                zoom_owner: std::cell::RefCell::new(None),
                 expand_room: std::cell::RefCell::new(Vec::new()),
                 size_move: std::cell::RefCell::new(None),
                 defer_backdrop: std::cell::Cell::new(false),
@@ -2786,6 +2789,13 @@ impl App {
                     .fences
                     .get(&fence)
                     .is_some_and(|w| w.is_desktop_arranged()) => {}
+            // A zoomed fence is only looked at for a moment (`fence_window/zoom.rs`): its window
+            // rect is not its place.
+            Command::FenceBoundsChanged { fence, rect }
+                if self.fences.get(&fence).is_some_and(|w| w.zoom_busy()) =>
+            {
+                tracing::debug!(%fence, ?rect, "bounds of a zoomed fence not saved");
+            }
             Command::FenceBoundsChanged { fence, rect } => {
                 let (rolled, expanded) = self
                     .fences
@@ -3248,6 +3258,7 @@ impl App {
                     a.raise_for_hover(hwnd);
                 }
             }
+            Command::ZoomEnded(fence) => self.apply_auto_height(fence),
             Command::EndHoverRaise(hwnd) => {
                 if let Some(a) = self.anchor.borrow_mut().as_mut() {
                     a.end_hover_raise(hwnd);

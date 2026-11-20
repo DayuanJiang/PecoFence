@@ -283,3 +283,7 @@ i1120-peek-key     1   ec2    debug   issues1120-peek.ps1           --var Part=C
 cpu-rest           2   ec2    release 241-cpu.ps1
 busy-line          3   ec2    release 241-busy-line.ps1
 cpu-layout         2   manual release 241-cpu-layout.ps1
+# PR #245 (GitHub #243): a double-click on empty space zooms a fence; nothing the app does while it is zoomed keeps the zoomed size.
+zoom-ZTF           2   ec2    release pr245-zoom.ps1                --var Part=ZTF
+zoom-R             2   ec2    release pr245-zoom.ps1                --var Part=R
+zoom-GP            3   ec2    release pr245-zoom.ps1                --var Part=GP

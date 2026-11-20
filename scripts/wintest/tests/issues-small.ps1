@@ -139,6 +139,9 @@ function PartC() {
 function PartU() {
   trap { PfTrap $_; continue }
   Case 'U double-click on empty space in a subfolder goes up (feedback #130)'
+  # These checks are about going up; with 「双击空白处放大栅栏」 on (PR #245, off by default, its
+  # own steps in pr245-zoom.ps1) a double-click on empty space at the root would zoom the fence.
+  Pf settings set zoom.enabled false | Out-Null
   ClearFences | Out-Null
   CloseWindows
   $root = TestTree '上级文件夹'

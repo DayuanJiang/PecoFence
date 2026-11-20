@@ -6,7 +6,7 @@
 use crate::anchor::{self, AnchorCell};
 use crate::commands::{
     Command, CommandQueue, DesktopDrop, TransferMode, WM_APP_DESKTOP_SHAPE, WM_APP_FADE_DONE,
-    WM_APP_SET_VISIBLE, WM_APP_TAB_RAIL, WM_APP_TAB_SWAP_DONE,
+    WM_APP_SET_VISIBLE, WM_APP_TAB_RAIL, WM_APP_TAB_SWAP_DONE, WM_APP_ZOOM_PRESS,
 };
 use crate::icons::{IconCache, Lookup};
 use crate::layout::{
@@ -88,6 +88,7 @@ mod tabs;
 mod tests;
 mod tooltip;
 mod window_drag;
+mod zoom;
 
 pub use api::FenceWindow;
 pub use dnd::{filter_folder_paths, shell_drop_landed};
@@ -187,6 +188,13 @@ pub struct Behavior {
     /// Fence windows moved down (or up) out of an expanded neighbour's way
     /// (`rollUp.pushNeighbors`). Owned by the App's push pass (`app/push.rs`).
     pub pushed: std::cell::RefCell<Vec<Pushed>>,
+    /// 双击空白放大 is on (`zoom.enabled`).
+    pub zoom_enabled: std::cell::Cell<bool>,
+    /// The fence double-clicked into the zoomed state (`fence_window/zoom.rs`). Only one at a
+    /// time: a fence that starts zooming claims it and the others close (see
+    /// `App::on_frame`). The push pass holds this window still, so a zoom never moves another
+    /// fence.
+    pub zoom_owner: std::cell::RefCell<Option<FenceId>>,
     /// For each fence window with 向上展开: the room above its bottom edge and below its top
     /// edge it may open into, the fences there sliding out of its way or not (`app/push.rs`).
     /// With `rollUp.pushNeighbors` also for every other fence that pushes: the room below its

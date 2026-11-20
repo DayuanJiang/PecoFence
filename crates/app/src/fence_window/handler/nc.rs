@@ -367,6 +367,11 @@ pub(super) fn on_nclbuttondown(
         peek_armed,
         ..
     } = h;
+    // A zoomed fence stays where the zoom put it: no title drag, no edge resize, so the
+    // rect it goes back to is still the one it came from (`fence_window/zoom.rs`).
+    if view.borrow().as_ref().is_some_and(|v| v.zoom_busy()) {
+        return Some(0);
+    }
     // Title press (drag start / click): raise above the other fences once the
     // modal move loop returns. A pending hover-peek must not open inside that
     // loop (SC_MOVE caption press or SC_SIZE edge press alike).
@@ -549,6 +554,11 @@ pub(super) fn on_nclbuttondblclk(
 ) -> Option<isize> {
     let HandlerCtx { view, queue, .. } = h;
     let fence_id = h.fence_id;
+    // A zoomed fence stays where the zoom put it: no title drag, no edge resize, so the
+    // rect it goes back to is still the one it came from (`fence_window/zoom.rs`).
+    if view.borrow().as_ref().is_some_and(|v| v.zoom_busy()) {
+        return Some(0);
+    }
     // The bottom edge, as Windows' edges stretch a window: the height that shows every icon
     // (适应内容大小). DefWindowProc would stretch the fence to the screen's height instead.
     if wparam as isize == msg::HTBOTTOM {

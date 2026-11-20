@@ -66,6 +66,9 @@ pub const WM_APP_SMART_FS: u32 = msg::WM_APP + 33;
 /// A save of the configuration failed on the saver thread (`state::saver_for`); the App takes
 /// the failure and says so on the tray.
 pub const WM_APP_SAVE_FAILED: u32 = msg::WM_APP + 23;
+/// A mouse press anywhere while a fence is zoomed (`fence_window/zoom.rs`; lParam the screen
+/// point, x in the low word and y in the high word).
+pub const WM_APP_ZOOM_PRESS: u32 = msg::WM_APP + 45;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -539,6 +542,9 @@ pub enum Command {
     RaiseForHover(HWND),
     /// That peek rolled it up again: back to its place among the other fences.
     EndHoverRaise(HWND),
+    /// A zoom ended (`fence_window/zoom.rs`): the fence's auto height, which waited, is
+    /// measured again.
+    ZoomEnded(FenceId),
     /// Details-view header click: sort by that column (again = reverse).
     SortColumn {
         fence: FenceId,

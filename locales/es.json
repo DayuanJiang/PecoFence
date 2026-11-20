@@ -1041,5 +1041,7 @@
   "已用到其他 {0} 个栅栏": "Aplicado a otros {0} grupos",
   "撤销提示": "Avisos para deshacer",
   "删除栅栏、按规则整理或把栅栏移到别的虚拟桌面后，右下角显示可以撤销的提示，10 秒后消失。关闭后不再显示，在栅栏上按 Ctrl+Z 照样能撤销": "Después de eliminar un grupo, organizar por reglas o enviar un grupo a otro escritorio virtual, se muestra en la esquina un aviso con Deshacer durante 10 segundos. Desactivado, no se muestra; Ctrl+Z en un grupo sigue deshaciendo",
-  "搜索别名\u0004撤销卡片|删除提示|通知|弹窗": "tarjeta deshacer|aviso de eliminación|notificaciones|ventana emergente"
+  "搜索别名\u0004撤销卡片|删除提示|通知|弹窗": "tarjeta deshacer|aviso de eliminación|notificaciones|ventana emergente",
+  "双击空白处放大栅栏": "Doble clic en un espacio vacío para ampliar la valla",
+  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Haz doble clic donde no hay iconos: la valla se agranda en el centro de la pantalla, iconos incluidos; otro doble clic la devuelve. Agrandada no se puede arrastrar ni redimensionar, y las vallas «como el escritorio» quedan fuera."
 }

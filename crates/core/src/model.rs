@@ -146,6 +146,16 @@ pub const UNUSED_SETTINGS: &[&str] = &[
     "rollUp.closeGraceMs",
 ];
 
+/// 双击空白放大 (`fence_window/zoom.rs`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(default, rename_all = "camelCase")]
+pub struct Zoom {
+    /// 双击栅栏空白处放大到屏幕中央（再双击收回）. Off by default: a new gesture does not
+    /// change what a double-click on a fence already does for everyone (as #216's fade).
+    pub enabled: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -153,6 +163,8 @@ pub struct Settings {
     #[serde(default = "crate::i18n::Language::legacy_default")]
     pub language: crate::i18n::Language,
     pub backdrop: Backdrop,
+    #[serde(default)]
+    pub zoom: Zoom,
     pub theme: ThemeSetting,
     /// 菜单颜色: light or dark popup menus (the tray menu, the fence and item menus with the
     /// entries Windows adds, their tips), on their own or following `theme`.
@@ -460,6 +472,7 @@ impl Default for Settings {
         Self {
             language: crate::i18n::Language::System,
             backdrop: Backdrop::Acrylic,
+            zoom: Zoom::default(),
             theme: ThemeSetting::FollowWindowsMode,
             menu_color: MenuColor::FollowMode,
             idle_opacity: 1.0,
