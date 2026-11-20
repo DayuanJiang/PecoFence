@@ -10,12 +10,12 @@ pub const REPO: &str = "DayuanJiang/PecoFence-plugins";
 /// The project website's copy of the index and the files: the third address, for networks that
 /// reach neither GitHub nor jsDelivr.
 pub const SITE: &str = "https://pecofence.jiang.jp/plugins";
-/// The Ed25519 key `index.json.sig` is checked with. A development key: the release key
-/// (`tools/make-key.py` in the plugin repository; its private half is the repository secret
-/// INDEX_SIGNING_KEY) replaces it before a release offers plugins.
+/// The Ed25519 key `index.json.sig` is checked with: the release key, made 2026-11-21. Its
+/// private half exists only as the plugin repository's secret INDEX_SIGNING_KEY, which the
+/// workflow that publishes index.json signs with.
 pub const INDEX_KEY: [u8; 32] = [
-    0x83, 0xf3, 0x36, 0xdd, 0xc5, 0x6e, 0xa4, 0x18, 0x92, 0x26, 0xc1, 0xb1, 0x0f, 0x01, 0x48, 0x48,
-    0xa0, 0xd8, 0x3f, 0xb0, 0x8f, 0xd7, 0x23, 0xb7, 0x41, 0x0b, 0x9f, 0xc3, 0xb8, 0xcd, 0x4b, 0x81,
+    0x95, 0x17, 0x28, 0x21, 0x9d, 0xdb, 0x87, 0x47, 0x3f, 0x71, 0xbf, 0x70, 0x1b, 0x01, 0x9d, 0xdc,
+    0x33, 0x42, 0x10, 0x81, 0xa1, 0xc2, 0x79, 0x76, 0xb4, 0x31, 0x21, 0xd7, 0x13, 0x6a, 0x6b, 0xe1,
 ];
 /// The files whose names are fixed, with the most bytes each may have. A light plugin has only
 /// these; a web plugin also has `index.html` and the files it uses (sub-folders allowed), each

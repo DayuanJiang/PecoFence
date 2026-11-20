@@ -19,8 +19,9 @@
 # at the next index read; two plugin fences added from the settings page in a row are placed
 # clear of the other fences.
 # English UI. Debug build (CDP on the settings page). The signed index is the kit's
-# assets\signed-feed (index.json, index.json.sig and the plugin files, signed with the
-# development key: made again with make_signed_feed.py when the release key replaces it).
+# assets\signed-feed (index.json, index.json.sig and the plugin files, signed with the old
+# development key, which the app no longer takes: the release key's private half exists only as the
+# plugin repository's secret, so no test feed can be signed with it).
 $Feed = 'C:\pf\run\pfeed'
 # The plugins the feed offers, by id: version, permissions, settings, main.js, a take-down reason,
 # whether its main.js differs from its hash ('bad') or is sent slowly ('slow').
@@ -154,11 +155,12 @@ Check 'nothing of pf-bad is left, the page says why' (-not (Test-Path "$script:C
 Check 'the log names the file' ([bool](PfWaitLog 'plugins: install or update failed.*refused=true.*main\.js: size or SHA-256' 5)) ''
 $script:Offer.Remove('pf-bad')
 
-Case 'the index signature: a signed index is taken, a wrong signature counts as no index'
+Case 'the index signature: an index signed with another key or a wrong signature counts as no index'
 Copy-Item 'C:\pf\kit\assets\signed-feed\*' $Feed -Recurse -Force
 Refresh
 $same = (Get-FileHash "$Feed\index.json").Hash -eq (Get-FileHash "$script:Config\plugins\index.json" -ErrorAction SilentlyContinue).Hash
-Check 'signed with the development key: its plugin is listed, the index is saved as it came' ((PluginRows) -match 'PF Signed.*Install' -and $same) "saved=$same rows=$(PluginRows)"
+$list = Js "document.getElementById('pluginList').textContent"
+Check 'signed with the old development key: not taken, the page says the list did not pass its check' ((PluginRows) -notmatch 'PF Signed' -and -not $same -and "$list" -match 'did not pass its check' -and [bool](PfWaitLog 'index not taken from this address.*signature does not match' 5)) "saved=$same list=$list"
 Set-Content "$Feed\index.json.sig" ('0' * 128) -NoNewline
 Refresh
 $list = Js "document.getElementById('pluginList').textContent"
