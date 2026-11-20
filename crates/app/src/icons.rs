@@ -176,6 +176,8 @@ fn describe_dull(
         target_there = target.as_deref().map(Path::exists),
         target_error,
         target_seen = target_seen.as_deref(),
+        // GitHub #244: where a Store edition on another drive sees its own data instead.
+        target_in_package_view = target.as_deref().map(shell::under_package_view_of_appdata),
         "icon is not the file's own picture"
     );
 }
