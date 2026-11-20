@@ -531,6 +531,9 @@ pub enum Command {
     RaiseForHover(HWND),
     /// That peek rolled it up again: back to its place among the other fences.
     EndHoverRaise(HWND),
+    /// A zoom ended (`fence_window/zoom.rs`): the fence's auto height, which waited, is
+    /// measured again.
+    ZoomEnded(FenceId),
     /// Details-view header click: sort by that column (again = reverse).
     SortColumn {
         fence: FenceId,

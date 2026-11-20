@@ -1537,6 +1537,12 @@ impl App {
         self.ctx.behavior.tab_bar.set(new.tab_bar);
         self.ctx.behavior.label_color.set(new.label_color);
         self.ctx.behavior.zoom_enabled.set(new.zoom.enabled);
+        // Switched off: a fence that is zoomed now goes back.
+        if !new.zoom.enabled {
+            for w in self.fences.values() {
+                w.close_zoom();
+            }
+        }
         self.ctx
             .behavior
             .hide_inactive_scrollbar

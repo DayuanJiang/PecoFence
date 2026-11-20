@@ -57,16 +57,22 @@ impl FenceViewState {
     /// (divider, chevron, note, script row, button, scrollbar, tab) before it gets here; the
     /// checks below are the ones that also matter for a double-click that reached the end.
     pub(super) fn zoom_blank_at(&self, x: i32, y: i32) -> bool {
-        // 双击空白放大 (`zoom.enabled`) can be switched off in Settings.
-        if !self.behavior.zoom_enabled.get() {
+        // 双击空白放大 (`zoom.enabled`), off by default, refuses a new zoom; one that is open
+        // still answers the double-click that puts it back.
+        if !self.behavior.zoom_enabled.get() && !self.zoom_busy() {
             return false;
         }
         // 像桌面一样排列 (`desktop_layout`) is laid out by the app around the other fences; a
         // zoom would be fought by that pass every frame, so the gesture is off there.
         // A rolled fence that hover-peeks is open only while the pointer stays: not zoomed.
+        // A roll, a height glide or a move in flight would carry on after the zoom and land
+        // with the zoomed rect: no zoom until it is over.
         !self.bare()
             && !self.rolled_up
             && !self.peeking
+            && self.roll_anim.is_none()
+            && self.height_anim.is_none()
+            && self.glide.is_none()
             && self.hit_item(x, y).is_none()
             && !self.title_row_at(x, y)
             && !self.chevron_at(x, y)
@@ -111,13 +117,8 @@ impl FenceViewState {
             if first {
                 self.zoom_home = Some(from);
             }
+            // Above the other fences: the double-click's first press raised it already.
             *self.behavior.zoom_owner.borrow_mut() = Some(self.fence_id);
-            if first {
-                // Over the other fences for the length of the zoom; the handle above it now
-                // is where it goes back to when the zoom ends.
-                self.zoom_prev = Some(window::window_above(hwnd));
-                let _ = window::raise_window(hwnd);
-            }
         }
         tracing::debug!(
             fence = %self.fence_id,
@@ -185,7 +186,7 @@ impl FenceViewState {
                 "zoom settled"
             );
             if !z.opening {
-                self.zoom_closed(hwnd);
+                self.zoom_closed();
             }
         } else {
             self.zoom_anim = Some(z);
@@ -197,22 +198,17 @@ impl FenceViewState {
         Some((rect, done))
     }
 
-    /// The zoom is over: the press watch ends, the z-order the fence had comes back, and no fence
-    /// owns the screen any more.
-    fn zoom_closed(&mut self, hwnd: HWND) {
+    /// The zoom is over: the press watch ends, no fence owns the screen any more, and the app
+    /// measures the fence's auto height again (it waited while the fence was zoomed).
+    fn zoom_closed(&mut self) {
         self.zoom_press = None;
         self.zoom_home = None;
         self.zoom_far = None;
         self.zoom_icon = 1.0;
-        // Back under the fence it was above before the zoom.
-        if let Some(above) = self.zoom_prev.take()
-            && !above.0.is_null()
-        {
-            let _ = window::put_below(hwnd, above);
-        }
         if *self.behavior.zoom_owner.borrow() == Some(self.fence_id) {
             *self.behavior.zoom_owner.borrow_mut() = None;
         }
+        self.queue.push(Command::ZoomEnded(self.fence_id));
     }
 
     /// Ends the zoom at once, opening, at rest or closing: the app is about to place or size
@@ -220,7 +216,7 @@ impl FenceViewState {
     /// what it measures and saves must be the fence's own rect and icons, never the zoomed
     /// ones. Returns the rect the window goes back to, for the caller to apply with no borrow
     /// held; `None` when the fence is not zoomed.
-    pub(super) fn end_zoom_now(&mut self, hwnd: HWND) -> Option<RECT> {
+    pub(super) fn end_zoom_now(&mut self) -> Option<RECT> {
         let home = self.zoom_home?;
         tracing::debug!(
             fence = %self.fence_id,
@@ -228,7 +224,7 @@ impl FenceViewState {
             "zoom ended at once: the fence is placed or sized"
         );
         self.zoom_anim = None;
-        self.zoom_closed(hwnd);
+        self.zoom_closed();
         Some(home)
     }
 
@@ -256,9 +252,10 @@ impl FenceViewState {
             // Inside the zoomed fence: its own clicks, not a dismissal.
             return false;
         }
-        if let Some(mon) = monitors::query(monitors::monitor_from_window(hwnd)) {
+        // The taskbar and the other shell bands of the monitor pressed on are not the desktop;
+        // the desktop of any monitor is.
+        if let Some(mon) = monitors::query(monitors::monitor_from_point(pt.x, pt.y)) {
             let w = mon.work_area;
-            // The taskbar and the other shell bands below the work area are not the desktop.
             if pt.y < w.top || pt.y >= w.bottom || pt.x < w.left || pt.x >= w.right {
                 return false;
             }
@@ -283,7 +280,22 @@ fn centred_target(v: &FenceViewState, hwnd: HWND) -> Option<(RECT, f32)> {
     // no fence can be set to, and the cache would have nothing that large to give.
     let base = crate::layout::icon_dip(v.layout, v.icon_size).max(1.0);
     let room = (ICON_MAX_DIP / base).max(1.0);
-    Some((to, ratio.clamp(1.05, room.min(4.0))))
+    let k = ratio.clamp(1.05, room.min(4.0));
+    // The box is as wide as the icons grow: wider, the grid would take more columns.
+    Some((narrowed(to, (cw as f32 * k).round() as i32), k))
+}
+
+/// `b` at most `w` wide, about the same centre.
+fn narrowed(b: RECT, w: i32) -> RECT {
+    if w >= b.right - b.left {
+        return b;
+    }
+    let left = b.left + (b.right - b.left - w) / 2;
+    RECT {
+        left,
+        right: left + w,
+        ..b
+    }
 }
 
 /// A box of `ratio` of the work area, centred on it.
@@ -355,6 +367,13 @@ mod tests {
         assert!(b.top >= work.top && b.bottom <= work.bottom);
         assert_eq!((b.left + b.right) / 2, (work.left + work.right) / 2);
         assert_eq!((b.top + b.bottom) / 2, (work.top + work.bottom) / 2);
+    }
+
+    #[test]
+    fn a_box_the_icons_cannot_fill_is_narrowed_about_its_centre() {
+        let b = r(224, 119, 1376, 732);
+        assert_eq!(tup(narrowed(b, 400)), (600, 119, 1000, 732));
+        assert_eq!(tup(narrowed(b, 2000)), tup(b));
     }
 
     #[test]

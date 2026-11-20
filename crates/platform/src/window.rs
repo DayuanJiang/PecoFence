@@ -562,11 +562,19 @@ unsafe extern "system" fn press_watch_proc(code: i32, wparam: WPARAM, lparam: LP
         .contains(&m)
     {
         // SAFETY: for WH_MOUSE_LL, lParam points to an MSLLHOOKSTRUCT, which starts with the
-        // pointer's position.
+        // pointer's position; plain FFI calls.
         let pt = unsafe { *(lparam.0 as *const POINT) };
-        let (target, message) = PRESS_TARGET.get();
-        let packed = (pt.x as u16 as u32 | ((pt.y as u16 as u32) << 16)) as isize;
-        post_message(target, message, m as usize, packed);
+        // A press on one of this thread's popup menus (a fence's menu) is the menu's.
+        let on_menu = unsafe {
+            let under = WindowFromPoint(pt);
+            GetWindowThreadProcessId(under, None) == GetCurrentThreadId()
+                && crate::desktop::class_name(under) == "#32768"
+        };
+        if !on_menu {
+            let (target, message) = PRESS_TARGET.get();
+            let packed = (pt.x as u16 as u32 | ((pt.y as u16 as u32) << 16)) as isize;
+            post_message(target, message, m as usize, packed);
+        }
     }
     // SAFETY: passes the event on unchanged.
     unsafe { CallNextHookEx(None, code, wparam, lparam) }
@@ -851,49 +859,6 @@ pub fn set_window_bounds(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) ->
             width,
             height,
             swp::NOACTIVATE | swp::NOZORDER | swp::NOOWNERZORDER,
-        )
-        .ok()
-    }
-}
-
-/// Puts `hwnd` at the top of its z-order band without moving, resizing or activating it
-/// (`fence_window/zoom.rs`: a zoomed fence floats over the other fences).
-pub fn raise_window(hwnd: HWND) -> Result<()> {
-    // SAFETY: plain FFI call on a caller-supplied HWND.
-    unsafe {
-        SetWindowPos(
-            hwnd,
-            Some(HWND_TOP),
-            0,
-            0,
-            0,
-            0,
-            swp::NOACTIVATE | swp::NOOWNERZORDER | swp::NOMOVE | swp::NOSIZE,
-        )
-        .ok()
-    }
-}
-
-/// The window directly above `hwnd` in z-order; a null handle when it is already the top of
-/// its band. Taken before a [`raise_window`] so the place can be given back.
-pub fn window_above(hwnd: HWND) -> HWND {
-    // SAFETY: plain FFI call on a caller-supplied HWND.
-    unsafe { GetWindow(hwnd, GW_HWNDPREV as u32) }
-}
-
-/// Puts `hwnd` directly below `above`, the handle [`window_above`] returned before the raise:
-/// the z-order a fence had before it was zoomed.
-pub fn put_below(hwnd: HWND, above: HWND) -> Result<()> {
-    // SAFETY: plain FFI call on caller-supplied HWNDs.
-    unsafe {
-        SetWindowPos(
-            hwnd,
-            Some(above),
-            0,
-            0,
-            0,
-            0,
-            swp::NOACTIVATE | swp::NOOWNERZORDER | swp::NOMOVE | swp::NOSIZE,
         )
         .ok()
     }

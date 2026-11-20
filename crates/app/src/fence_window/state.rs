@@ -118,9 +118,6 @@ pub struct FenceViewState {
     pub(super) zoom_press: Option<pecofence_platform::window::PressWatch>,
     /// The zoom tween in flight.
     pub(super) zoom_anim: Option<crate::fence_window::zoom::ZoomAnim>,
-    /// The window that was directly above this one before the zoom raised it; the zoom puts
-    /// it back there when it closes.
-    pub(super) zoom_prev: Option<HWND>,
     pub label_lines: u8,
     pub items: Vec<ItemView>,
     /// Tabs shown in the title row (the host itself first). One entry = plain title.

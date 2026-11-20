@@ -7,11 +7,13 @@
 #      it zooms; with single-click open a double-click on a subfolder goes in and does not zoom.
 #   G  what changes the fence while it is zoomed must not keep the zoomed size: auto height after
 #      a new item, a roll and expand from the command line, a quit, a display change.
+#   R  the review's cases: a double-click while a fence opens, 适应内容大小, auto height after the
+#      zoom, the switch off while zoomed, a fence under another, a large icon size, our own menu.
 #   T  a fence with tabs (a double-click on its tabs while zoomed keeps its size), animations off.
 #   P  cost: the frames of the tween (WM_SIZE frame times), the icon extractions of one zoom, CPU
 #      at rest while zoomed, memory after five zooms. Fluent and Liquid Glass.
 # 1600x900 box at 100 % (the same checks hold at 150 %: run with WINTEST_SCALE=150).
-if (-not (Get-Variable Part -ErrorAction SilentlyContinue) -or -not $Part) { $Part = 'ZTFGP' }
+if (-not (Get-Variable Part -ErrorAction SilentlyContinue) -or -not $Part) { $Part = 'ZTFGPR' }
 
 Case 'setup'
 CloseWindows
@@ -29,12 +31,13 @@ function WinOf($id) { foreach ($w in @(PfDump 6)) { if ($w.active -eq $id) { ret
 function R4($h) { $r = Rect $h; return @($r.L, $r.T, $r.R, $r.B) }
 function Saved($id) { $s = (FenceGet $id).rect; return @([int]$s.x, [int]$s.y, [int]($s.x + $s.w), [int]($s.y + $s.h)) }
 function Same($a, $b, $tol = 0) { for ($i = 0; $i -lt 4; $i++) { if ([math]::Abs($a[$i] - $b[$i]) -gt $tol) { return $false } }; return $true }
-# Zoomed: about 72 % of the work area wide and high, centred on it.
+# Zoomed: 72 % of the work area high, centred on it, and at most 72 % wide (narrower when the
+# icons reach their largest size first, so the columns stay).
 function IsZoomed($r) {
   $wa = Wa
   $w = $r[2] - $r[0]; $h = $r[3] - $r[1]
   $cx = ($r[0] + $r[2]) / 2; $cy = ($r[1] + $r[3]) / 2
-  return ([math]::Abs($w - $wa.Width * 0.72) -le 6 -and [math]::Abs($h - $wa.Height * 0.72) -le 6 -and [math]::Abs($cx - ($wa.Left + $wa.Width / 2)) -le 4 -and [math]::Abs($cy - ($wa.Top + $wa.Height / 2)) -le 4)
+  return ($w -le $wa.Width * 0.72 + 6 -and $w -ge 300 -and [math]::Abs($h - $wa.Height * 0.72) -le 6 -and [math]::Abs($cx - ($wa.Left + $wa.Width / 2)) -le 4 -and [math]::Abs($cy - ($wa.Top + $wa.Height / 2)) -le 4)
 }
 # A point near the bottom right of the window, where a fence of a few items has no icon.
 function Blank($h) { $r = Rect $h; return @(($r.R - 30), ($r.B - 24)) }
@@ -284,6 +287,122 @@ function PartT() {
   [Anim]::Set($true)
 }
 
+# R: the review's cases (2026-11-20, five reviewers): a double-click during the expand of a
+# rolled fence, 适应内容大小 from the command line, auto height done after the zoom, the switch
+# turned off while zoomed, a fence under another one, a large icon size, a press on our own menu.
+Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class ZoomWin {
+  [StructLayout(LayoutKind.Sequential)] public struct P { public int X, Y; }
+  [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(P p);
+  [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint f);
+  public static IntPtr RootAt(int x, int y) { var p = new P(); p.X = x; p.Y = y; return GetAncestor(WindowFromPoint(p), 2); }
+}
+'@
+function Fit($id) { return [int](FenceGet $id).fit.fittingHeight }
+function Cols($id) { return [int](FenceGet $id).fit.columns }
+
+function PartR() {
+  trap { PfTrap $_; continue }
+  Case 'R1 a double-click while a rolled fence opens'
+  CloseWindows
+  ClearFences | Out-Null
+  $a = NewPlain '展开中' '200,150,360,300' @('zr1.txt')
+  $h = WinOf $a; $r0 = R4 $h; $s0 = Saved $a
+  Pf fence roll $a | Out-Null; Start-Sleep -Milliseconds 1200
+  # The expand takes 333 ms: the double-click lands while it runs, on the open fence's lower right.
+  Pf fence unroll $a | Out-Null
+  DoubleClick ($r0[2] - 30) ($r0[3] - 24); Start-Sleep -Milliseconds 1500
+  if (IsZoomed (R4 $h)) { DblBlank $h }
+  Start-Sleep -Milliseconds 600
+  Check 'R1 the saved rect is the one it had' (Same (Saved $a) $s0 2) "saved=$((Saved $a) -join ',') was $($s0 -join ',')"
+  Check 'R1 and the window is back there' (Same (R4 $h) $s0 2) "window=$((R4 $h) -join ',')"
+
+  Case 'R2 适应内容大小 from the command line while zoomed'
+  $h = WinOf $a; $s0 = Saved $a
+  DblBlank $h
+  Pf fence fit $a | Out-Null; Start-Sleep -Milliseconds 1500
+  if (IsZoomed (R4 $h)) { DblBlank $h }
+  $s1 = Saved $a; $f = Fit $a
+  Check 'R2 the fence fits its own content, not the zoomed one' ((Same (R4 $h) $s1 2) -and (($s1[3] - $s1[1]) -eq $f) -and (($s1[2] - $s1[0]) -eq ($s0[2] - $s0[0]))) "saved=$($s1 -join ',') fitting=$f was $($s0 -join ',')"
+
+  Case 'R3 auto height is done once the zoom is over'
+  CloseWindows
+  ClearFences | Out-Null
+  # Three icons in four columns: the fourth place of the row is empty space to double-click.
+  $a = NewPlain '自动高度' '200,150,360,240' @('zh1.txt', 'zh2.txt', 'zh3.txt')
+  Pf fence set $a autoHeight true | Out-Null; Start-Sleep -Milliseconds 1500
+  $h = WinOf $a; $one = (R4 $h)
+  DblBlank $h
+  Check 'R3 zoomed' (IsZoomed (R4 $h)) "now=$((R4 $h) -join ',')"
+  foreach ($n in 'zh4.txt', 'zh5.txt') { DeskFile $n | Out-Null }
+  Start-Sleep -Milliseconds 800
+  foreach ($n in 'zh4.txt', 'zh5.txt') { Pf item move $n --to $a | Out-Null }
+  Start-Sleep -Milliseconds 1500
+  DblBlank $h; Start-Sleep -Milliseconds 1200
+  $r1 = R4 $h; $f = Fit $a
+  Check 'R3 after the zoom the fence has the height of its five icons' ((($r1[3] - $r1[1]) -eq $f) -and $f -gt ($one[3] - $one[1])) "height=$($r1[3] - $r1[1]) fitting=$f before=$($one[3] - $one[1])"
+
+  Case 'R4 the switch turned off while zoomed'
+  Pf fence set $a autoHeight false | Out-Null
+  Pf fence move $a --rect '200,150,360,330' | Out-Null; Start-Sleep -Milliseconds 800
+  CloseWindows
+  $r0 = R4 $h
+  DblBlank $h
+  Check 'R4 zoomed' (IsZoomed (R4 $h)) "now=$((R4 $h) -join ',')"
+  Pf settings set zoom.enabled false | Out-Null; Start-Sleep -Milliseconds 1200
+  Check 'R4 switching it off puts the zoomed fence back' (Same (R4 $h) $r0) "now=$((R4 $h) -join ',') was $($r0 -join ',')"
+  if (IsZoomed (R4 $h)) { DblBlank $h }
+  Pf settings set zoom.enabled true | Out-Null; Start-Sleep -Milliseconds 600
+
+  Case 'R5 a fence inside the zoom box is under the zoomed fence'
+  CloseWindows
+  ClearFences | Out-Null
+  # PecoFence keeps fences apart: the other fence lies inside the box the zoom grows to, and it
+  # was made last, so it is above the first one until the zoom.
+  $a = NewPlain '放大的' '200,150,360,240' @('zu1.txt')
+  $b = NewPlain '旁边的' '700,300,300,200' @('zu2.txt')
+  $ha = WinOf $a; $hb = WinOf $b
+  $before = [ZoomWin]::RootAt(850, 450)
+  DblBlank $ha
+  $at = [ZoomWin]::RootAt(850, 450)
+  Check 'R5 zoomed, the fence is over the other one' ((IsZoomed (R4 $ha)) -and $at -eq $ha -and $before -eq $hb) "zoomed=$(IsZoomed (R4 $ha)) at 850,450: $at (zoomed $ha other $hb, before $before)"
+  if (IsZoomed (R4 $ha)) { DblBlank $ha }
+
+  Case 'R6 a large icon size keeps its columns'
+  CloseWindows
+  ClearFences | Out-Null
+  $a = NewPlain '大图标' '200,150,200,420' @('zc1.txt', 'zc2.txt', 'zc3.txt')
+  Pf fence set $a iconSize 128 | Out-Null; Start-Sleep -Milliseconds 1500
+  # Taller than its three rows: empty space under them.
+  Pf fence move $a --rect '200,120,200,700' | Out-Null; Start-Sleep -Milliseconds 1000
+  $h = WinOf $a; $c0 = Cols $a; $rb = R4 $h
+  DblBlank $h
+  Check 'R6 zoomed' (-not (Same (R4 $h) $rb)) "now=$((R4 $h) -join ',') was $($rb -join ',')"
+  $c1 = Cols $a; $rz = R4 $h
+  Check 'R6 zoomed, the fence keeps its column count' ($c1 -eq $c0 -and $c0 -ge 1) "columns $c0 -> $c1 zoomed=$($rz -join ',')"
+  DblBlank $h
+
+  Case 'R7 a press on our own menu outside the zoomed fence'
+  CloseWindows
+  ClearFences | Out-Null
+  $a = NewPlain '菜单' '200,150,360,240' @('zm1.txt')
+  $h = WinOf $a
+  DblBlank $h
+  $z = R4 $h
+  [G]::RClick(($z[2] - 40), ($z[3] - 40)); Start-Sleep -Milliseconds 900
+  $m = MenuWin 3
+  # A row that only opens a submenu, pressed where the menu lies outside the fence.
+  $row = @(MenuRows $m) | Where-Object { $_.text -match '^(View|Sort by|视图|排序方式)$' } | Select-Object -First 1
+  Log "R7 menu: $(MenuTexts $m); picked '$($row.text)' at $($row.L),$($row.T)"
+  $px = [math]::Max([int]($z[2] + 12), [int](($row.L + $row.R) / 2))
+  if ($row -and $px -lt $row.R) { [G]::Click($px, [int](($row.T + $row.B) / 2)); Start-Sleep -Milliseconds 900 } else { $row = $null }
+  $still = IsZoomed (R4 $h)
+  CloseMenus; Start-Sleep -Milliseconds 400
+  Check 'R7 a press on its menu does not put the zoomed fence back' ($row -and $still) "row='$($row.text)' zoomed=$still"
+  if (IsZoomed (R4 $h)) { DblBlank $h }
+}
+
 # A: a recording for the report (no checks): zoom a fence with tabs, double-click its tabs, open
 # it again. --var Side=before|after names the recording.
 function PartA() {
@@ -308,6 +427,7 @@ function PartA() {
 }
 
 if ($Part -match 'A') { PartA }
+if ($Part -match 'R') { PartR }
 if ($Part -match 'Z') { PartZ }
 if ($Part -match 'T') { PartT }
 if ($Part -match 'F') { PartF }

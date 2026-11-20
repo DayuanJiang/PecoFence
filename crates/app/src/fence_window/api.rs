@@ -121,7 +121,6 @@ impl FenceWindow {
             zoom_far: None,
             zoom_press: None,
             zoom_anim: None,
-            zoom_prev: None,
             label_lines,
             items,
             tabs: Vec::new(),
@@ -535,15 +534,15 @@ impl FenceWindow {
         self.window.window_rect()
     }
 
-    /// Ends a zoom at once before the app places or sizes this fence (`fence_window/zoom.rs`),
-    /// so nothing starts from, measures or saves the zoomed rect.
-    fn end_zoom(&self) {
+    /// Ends a zoom at once before the app places, sizes or measures this fence
+    /// (`fence_window/zoom.rs`), so nothing starts from, measures or saves the zoomed rect.
+    pub fn end_zoom(&self) {
         let hwnd = self.hwnd();
         let home = self
             .view
             .borrow_mut()
             .as_mut()
-            .and_then(|v| v.end_zoom_now(hwnd));
+            .and_then(|v| v.end_zoom_now());
         if let Some(r) = home {
             let _ =
                 window::set_window_bounds(hwnd, r.left, r.top, r.right - r.left, r.bottom - r.top);

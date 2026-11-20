@@ -2759,6 +2759,8 @@ impl App {
                 f.title
             )));
         };
+        // Measured at the fence's own size, never at a zoom's (`fence_window/zoom.rs`).
+        w.end_zoom();
         let report = w
             .fit_report()
             .ok_or_else(|| IpcError::internal("the fence window has no view"))?;
