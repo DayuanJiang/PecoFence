@@ -4,6 +4,7 @@
 use crate::bindings::*;
 use crate::desktop::{class_name, is_cloaked, is_visible, shell_window, window_pid};
 use crate::window::window_rect;
+use std::sync::atomic::{AtomicBool, Ordering};
 use windows_core::PCWSTR;
 
 /// The child of `parent` after `after` (the first one for `None`), of `class` if given; a null
@@ -13,6 +14,40 @@ fn next_child(parent: Option<HWND>, after: Option<HWND>, class: Option<&str>) ->
     let class = wide.as_ref().map_or(PCWSTR::null(), |w| PCWSTR(w.as_ptr()));
     // SAFETY: the class string outlives the call.
     unsafe { FindWindowExW(parent, after, class, PCWSTR::null()) }
+}
+
+/// Window classes in the wallpaper layer that do not draw the wallpaper: Bing Wallpaper's
+/// widget (`BingWallpaper_Widget_Visual`, and the `BingWallpaper_Widget_Position` beside it)
+/// is a full-screen, click-through overlay above Explorer's wallpaper, drawn through
+/// DirectComposition and without a redirection bitmap. Taken for a live wallpaper, it left
+/// Liquid Glass fences a neutral colour (issue #247); the Windows wallpaper under it is the
+/// picture they should show.
+const WALLPAPER_OVERLAY_PREFIX: &str = "BingWallpaper_";
+
+/// Whether a window of `class` in the wallpaper layer draws the wallpaper itself, rather than
+/// an overlay above it (see [`WALLPAPER_OVERLAY_PREFIX`]).
+fn draws_wallpaper(class: &str) -> bool {
+    !class.starts_with(WALLPAPER_OVERLAY_PREFIX)
+}
+
+/// Whether an overlay was logged in this run: the scan runs every few seconds.
+static OVERLAY_TOLD: AtomicBool = AtomicBool::new(false);
+
+/// Whether `hwnd` in the wallpaper layer is such an overlay; the first one of a run is logged,
+/// so a report shows why it is not counted as a live wallpaper.
+fn is_overlay(hwnd: HWND) -> bool {
+    let class = class_name(hwnd);
+    if draws_wallpaper(&class) {
+        return false;
+    }
+    if !OVERLAY_TOLD.swap(true, Ordering::Relaxed) {
+        tracing::info!(
+            class = %class,
+            rect = ?window_rect(hwnd),
+            "wallpaper layer: a window above the wallpaper that draws none of it; not a live wallpaper"
+        );
+    }
+    true
 }
 
 /// Visible windows of programs other than Explorer that are direct children of Progman, of a
@@ -40,7 +75,11 @@ pub fn windows() -> Vec<(HWND, RECT)> {
     for parent in parents {
         let mut child = next_child(Some(parent), None, None);
         while !child.0.is_null() {
-            if window_pid(child) != explorer && is_visible(child) && !is_cloaked(child) {
+            if window_pid(child) != explorer
+                && is_visible(child)
+                && !is_cloaked(child)
+                && !is_overlay(child)
+            {
                 out.push((child, window_rect(child)));
             }
             child = next_child(Some(parent), Some(child), None);
@@ -137,5 +176,23 @@ pub fn capture<T>(
         let _ = DeleteObject(HGDIOBJ(dib.0));
         let _ = DeleteDC(dc);
         Ok((rect, pixels.ok_or("PrintWindow failed")?))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bing_wallpaper_s_widget_overlay_is_not_a_live_wallpaper() {
+        // Both cover the monitor and cannot be read (issue #247): the Windows wallpaper
+        // under them is still the picture the fences should show.
+        assert!(!draws_wallpaper("BingWallpaper_Widget_Visual"));
+        assert!(!draws_wallpaper("BingWallpaper_Widget_Position"));
+        // Players are still read as before.
+        assert!(draws_wallpaper("WPEDesktopDX11Window"));
+        assert!(draws_wallpaper("WPECloneView"));
+        assert!(draws_wallpaper("mpv"));
+        assert!(draws_wallpaper(""));
     }
 }

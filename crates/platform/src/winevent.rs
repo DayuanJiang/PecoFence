@@ -97,7 +97,9 @@ unsafe extern "system" fn event_proc(
         );
     }
     if let Some(mut cb) = taken {
+        let started = std::time::Instant::now();
         cb(event, hwnd);
+        crate::busy::note_event(event, started.elapsed());
         CALLBACKS.with(|c| {
             // Only restore if the hook was not dropped inside the callback.
             let mut map = c.borrow_mut();

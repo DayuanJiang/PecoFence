@@ -589,6 +589,24 @@ impl App {
         }
     }
 
+    /// A drag out of a fence during the Peek was let go over another program's window, which
+    /// takes the drop next (#238). File Explorer asks 「替换或跳过文件」 when the name is taken,
+    /// and our thread waits inside the drop for the answer: no frame and no message of ours
+    /// runs until then, so a fade would never finish, and the dimmer and the floating fences
+    /// would stay above the question and take its clicks. The Peek ends at once instead; the
+    /// dimmer is already faded out for the drag, so nothing jumps.
+    pub(super) fn end_peek_for_drop(&mut self) {
+        let Some(p) = self.peek.as_ref() else {
+            return;
+        };
+        tracing::info!(
+            closing = p.is_closing(),
+            "peek: a file goes to another window; ending the peek before the drop"
+        );
+        self.end_peek("file dropped on another window");
+        self.end_peek_now();
+    }
+
     /// The asynchronous focus handoff may have raised the topmost dimmer above the fences.
     /// Reapply the Peek band only if this completion belongs to the current overlay.
     pub(super) fn on_peek_focused(&mut self, dimmer: HWND) {

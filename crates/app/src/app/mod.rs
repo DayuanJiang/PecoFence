@@ -56,6 +56,7 @@ use std::time::{Duration, Instant};
 use windows_core::Result;
 
 mod arrange;
+mod busy;
 mod desktop_import;
 mod dnd;
 mod everything_setup;
@@ -373,6 +374,13 @@ pub struct App {
     /// Selection kept by a Ctrl / Shift desktop marquee in progress (empty for a plain one);
     /// `None` between marquees.
     marquee_base: Option<Vec<(HWND, FenceId)>>,
+    /// The last right-click on the bare desktop (Windows' desktop menu opened there): the next
+    /// new icons of 「桌面」 placed freely go under it, as 新建 and 粘贴 put them on a Windows
+    /// desktop (#238). Taken by the first icons placed, or too old after `MENU_PLACE_FOR`.
+    desktop_menu_at: Option<(Instant, POINT)>,
+    /// Whether 「桌面」 had saved cells in the last arrange: cells gone since mean a sort lined
+    /// the icons up again, and a right-click before it is dropped.
+    desktop_had_cells: bool,
     /// Our rubber band for desktop marquees (created on first use), and whether the marquee in
     /// progress shows it (only while Explorer's icons are hidden: Explorer draws its own).
     marquee_band: Option<crate::marquee_band::MarqueeBand>,
@@ -581,8 +589,14 @@ pub struct App {
     started: Instant,
     /// The last display change: when, and what it did (for feedback reports).
     last_display_change: Option<(Instant, DisplayChangeSummary)>,
+    /// The windows are being synced to another layout (a display change's, a restored
+    /// snapshot's, an imported file's): they still stand where the old one had them, so auto
+    /// height waits until they are placed (feedback #194); see `apply_auto_height`.
+    placing_layout: bool,
     /// Animation runs and slow commands since the last `activity` line; see `log_memory`.
     activity: Activity,
+    /// GitHub #241: the processor time of the last minute, for the busy line (`check_busy`).
+    busy: busy::BusyWatch,
     /// Fingerprint of the snapshot the current backdrops were built from.
     wallpaper_sig: Option<String>,
     /// Reads the wallpaper for the checks on a worker (see `WallpaperReader`).
@@ -703,6 +717,7 @@ fn log_start_state(state: &AppState) {
         offer_new_fence = s.offer_new_fence,
         per_desktop_fences = s.per_desktop_fences,
         feature_tips = s.feature_tips,
+        undo_notices = s.undo_notices,
         liquid_glass = s.theme_style == pecofence_core::ThemeStyle::LiquidGlass,
         custom_theme = s.custom_theme.is_some(),
         icon_size = s.icon_size,
@@ -774,6 +789,7 @@ fn not_recorded(cmd: &Command) -> bool {
         // timer, for a window that opened, closed, was pressed or came under the pointer,
         // with a worker's answer.
         Command::FenceBoundsChanged { .. }
+            | Command::GlideEnded(_)
             | Command::DesktopCellsPlaced { .. }
             | Command::DesktopIconsAtRest
             | Command::BeginFenceRename(_)
@@ -782,6 +798,7 @@ fn not_recorded(cmd: &Command) -> bool {
             | Command::RaiseFence(_)
             | Command::RaiseForHover(_)
             | Command::EndHoverRaise(_)
+            | Command::ZoomEnded(_)
             | Command::PortalPointerIn(_)
             | Command::EndItemSelection { .. }
             | Command::EndNoteEdit
@@ -789,6 +806,7 @@ fn not_recorded(cmd: &Command) -> bool {
             | Command::ClearFenceSelection
             | Command::PeekDragStarted
             | Command::PeekDragEnded { .. }
+            | Command::PeekDropElsewhere
             | Command::PeekSearchFaded
             | Command::NoteCaretBlink { .. }
             | Command::SmartResults { .. }
@@ -1989,6 +2007,7 @@ impl App {
                 hide_count_and_chevron: std::cell::Cell::new(
                     state.config.settings.roll_up.hide_count_and_chevron,
                 ),
+                compact_rolled: std::cell::Cell::new(state.config.settings.roll_up.compact_rolled),
                 wheel_lines: std::cell::Cell::new(sysparams::wheel_scroll_lines()),
                 single_click: std::cell::Cell::new(
                     pecofence_platform::shell_icons::single_click_open(),
@@ -2006,6 +2025,8 @@ impl App {
                 ),
                 selection: std::cell::RefCell::new(Vec::new()),
                 pushed: std::cell::RefCell::new(Vec::new()),
+                zoom_enabled: std::cell::Cell::new(state.config.settings.zoom.enabled),
+                zoom_owner: std::cell::RefCell::new(None),
                 expand_room: std::cell::RefCell::new(Vec::new()),
                 size_move: std::cell::RefCell::new(None),
                 defer_backdrop: std::cell::Cell::new(false),
@@ -2180,6 +2201,8 @@ impl App {
             test: None,
             usage: None,
             marquee_base: None,
+            desktop_menu_at: None,
+            desktop_had_cells: false,
             marquee_band: None,
             marquee_draws_band: false,
             peek_hotkey: None,
@@ -2198,7 +2221,9 @@ impl App {
             memory_logged: None,
             started,
             last_display_change: None,
+            placing_layout: false,
             activity: Activity::default(),
+            busy: busy::BusyWatch::default(),
             cut_items: HashSet::new(),
             cut_clip_seq: 0,
             cut_paste: None,
@@ -2602,6 +2627,7 @@ impl App {
     }
 
     fn housekeeping(&mut self) {
+        self.check_busy();
         self.check_cut_clipboard();
         self.run_due_scripts();
         // 智能栅栏: files age out of a time window, Everything may have started or stopped,
@@ -2807,6 +2833,13 @@ impl App {
                     .fences
                     .get(&fence)
                     .is_some_and(|w| w.is_desktop_arranged()) => {}
+            // A zoomed fence is only looked at for a moment (`fence_window/zoom.rs`): its window
+            // rect is not its place.
+            Command::FenceBoundsChanged { fence, rect }
+                if self.fences.get(&fence).is_some_and(|w| w.zoom_busy()) =>
+            {
+                tracing::debug!(%fence, ?rect, "bounds of a zoomed fence not saved");
+            }
             Command::FenceBoundsChanged { fence, rect } => {
                 let (rolled, expanded) = self
                     .fences
@@ -2840,7 +2873,12 @@ impl App {
             }
             Command::ToolShownChanged => self.sync_light(),
             Command::FenceDropped(fence) => self.move_out_of_overlap(fence),
+            Command::GlideEnded(fence) => {
+                tracing::debug!(%fence, "glide ended: auto height fits the fence where it stands");
+                self.apply_auto_height(fence);
+            }
             Command::ToggleRollUp(fence) => self.toggle_roll(fence),
+            Command::RolledWidthStale(fence) => self.apply_auto_height(fence),
             Command::FitToContent(fence) => {
                 self.fit_to_content_by_user(fence, "bottom edge double-click")
             }
@@ -2997,6 +3035,13 @@ impl App {
                         .and_then(|w| w.desktop_free_changes())
                     && self.state.place_desktop_cells(fence, &from, &cells)
                 {
+                    // New icons took their cells: a right-click before them was for them, the
+                    // next new ones take the first free cells again.
+                    if cells.iter().any(|(id, _)| !from.contains_key(id))
+                        && self.desktop_menu_at.take().is_some()
+                    {
+                        tracing::debug!("desktop menu's click used by the new icons");
+                    }
                     self.schedule_save();
                     // The window's copy of the saved cells catches up (it placed them so).
                     self.arrange_desktop_fence();
@@ -3321,6 +3366,7 @@ impl App {
                     a.raise_for_hover(hwnd);
                 }
             }
+            Command::ZoomEnded(fence) => self.apply_auto_height(fence),
             Command::EndHoverRaise(hwnd) => {
                 if let Some(a) = self.anchor.borrow_mut().as_mut() {
                     a.end_hover_raise(hwnd);
@@ -3377,6 +3423,7 @@ impl App {
                 self.end_peek("file dropped on another window")
             }
             Command::PeekDragEnded { elsewhere: false } => self.peek_drag(false),
+            Command::PeekDropElsewhere => self.end_peek_for_drop(),
             Command::PeekSearchType(text) => self.peek_search_type(&text),
             Command::PeekSearchChanged => self.update_peek_search(),
             Command::PeekSearchFaded => crate::peek_search::drop_faded(),

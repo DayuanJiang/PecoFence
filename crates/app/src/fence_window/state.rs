@@ -25,6 +25,10 @@ pub struct DesktopArea {
     /// 自由摆放 with no saved cells yet: where Windows' own desktop has the icons, so they keep
     /// those places (#204). Icons with a saved cell keep theirs.
     pub windows: Option<WindowsIconPlaces>,
+    /// 自由摆放: where the desktop menu was opened a moment ago (screen px). New icons without a
+    /// cell go to the free cell nearest to it, as 新建 and 粘贴 of that menu place them on a
+    /// Windows desktop (#238); without it they take the first free cell.
+    pub menu_at: Option<(i32, i32)>,
 }
 
 /// Windows' own desktop icons, as Explorer's desktop view had them when PecoFence read it.
@@ -114,6 +118,20 @@ pub struct FenceViewState {
     /// Expanded window height in physical pixels (restored when un-rolling).
     pub expanded_h_px: i32,
     pub icon_size: u32,
+    /// The factor the icons are drawn at while the fence is zoomed (1 = not zoomed). The
+    /// grid, the cell and every hit test read the icon size through it, so a zoom scales the
+    /// content instead of re-flowing it (`fence_window/zoom.rs`).
+    pub(super) zoom_icon: f32,
+    /// The rect to go back to when the zoom closes; `None` while the fence is not zoomed.
+    pub(super) zoom_home: Option<RECT>,
+    /// The centred box and the icon factor the zoom is heading for while it is open, kept so
+    /// an interrupted close can turn back out to the same place.
+    pub(super) zoom_far: Option<(RECT, f32)>,
+    /// While the fence is zoomed at rest: sees every mouse press, so one outside the fence
+    /// closes the zoom (`fence_window/zoom.rs`).
+    pub(super) zoom_press: Option<pecofence_platform::window::PressWatch>,
+    /// The zoom tween in flight.
+    pub(super) zoom_anim: Option<crate::fence_window::zoom::ZoomAnim>,
     pub label_lines: u8,
     pub items: Vec<ItemView>,
     /// Tabs shown in the title row (the host itself first). One entry = plain title.
@@ -261,10 +279,11 @@ pub struct FenceViewState {
     /// The last title click expanded the fence (click-to-expand); a WM_NCLBUTTONDBLCLK that
     /// completes it must not roll the fence back up.
     pub(super) suppress_dblclk: bool,
-    /// The last left press was on empty space of a subfolder, and the fence has shown no other
-    /// folder since: a double-click that completes it goes up one level (feedback #130). A
-    /// first click that opened or entered something (single-click open) leaves it false.
-    pub(super) up_on_dblclk: bool,
+    /// The last left press was on empty space, and the fence has shown no other folder since:
+    /// a double-click that completes it goes up one level in a subfolder (feedback #130) or
+    /// zooms the fence (`fence_window/zoom.rs`). A first click that opened or entered
+    /// something (single-click open) leaves it false.
+    pub(super) dblclk_blank: bool,
     /// Double-click on a folder item navigates inside the portal instead of launching it.
     pub(super) navigate_folders: bool,
     /// The folder the shown fence's drops land in when it is a portal (its current folder).
@@ -465,6 +484,9 @@ pub struct FenceViewState {
     /// The window is collapsed (or collapsing) to its left tab column: it is as narrow as the
     /// column, and `expanded_w_px` keeps its width.
     pub(super) column_collapsed: bool,
+    /// Rolled (or rolling) to the width its title row needs (`rollUp.compactRolled`):
+    /// `expanded_w_px` keeps its width.
+    pub(super) compact_collapsed: bool,
     pub(super) _target: DesktopWindowTarget,
     /// Root of the window's visual tree: whole-window fades / scales animate this.
     pub(super) root: ContainerVisual,

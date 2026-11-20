@@ -116,6 +116,11 @@ impl FenceWindow {
             is_inbox,
             expanded_h_px: expanded_h_px.max(1),
             icon_size,
+            zoom_icon: 1.0,
+            zoom_home: None,
+            zoom_far: None,
+            zoom_press: None,
+            zoom_anim: None,
             label_lines,
             items,
             tabs: Vec::new(),
@@ -180,7 +185,7 @@ impl FenceWindow {
             last_scroll: None,
             click_pending: None,
             suppress_dblclk: false,
-            up_on_dblclk: false,
+            dblclk_blank: false,
             navigate_folders: false,
             portal_folder: None,
             layout: ViewLayout::Icons,
@@ -267,6 +272,7 @@ impl FenceWindow {
             rail_dip: 0.0,
             expanded_w_px: bounds.right - bounds.left,
             column_collapsed: false,
+            compact_collapsed: false,
             _target: target,
             root,
             idle_layer,
@@ -528,11 +534,37 @@ impl FenceWindow {
     pub fn rect(&self) -> RECT {
         // During a display change's pass: where the window is about to glide to.
         if let Ok(guard) = self.view.try_borrow()
-            && let Some(r) = guard.as_ref().and_then(|v| v.pending_place)
+            && let Some(r) = guard.as_ref().and_then(|v| v.pending_place.or(v.zoom_home))
         {
+            // A zoomed fence is where it came from (`fence_window/zoom.rs`): the zoom is a
+            // moment's look, not a place the layout, the other fences or a save may use.
             return r;
         }
         self.window.window_rect()
+    }
+
+    /// The app has given the window a place it is not at yet: a display change's move that
+    /// waits (`defer_moves`), or a glide on its way there.
+    pub fn move_pending(&self) -> bool {
+        self.view.try_borrow().is_ok_and(|g| {
+            g.as_ref()
+                .is_some_and(|v| v.pending_place.is_some() || v.glide.is_some())
+        })
+    }
+
+    /// Ends a zoom at once before the app places, sizes or measures this fence
+    /// (`fence_window/zoom.rs`), so nothing starts from, measures or saves the zoomed rect.
+    pub fn end_zoom(&self) {
+        let hwnd = self.hwnd();
+        let home = self
+            .view
+            .borrow_mut()
+            .as_mut()
+            .and_then(|v| v.end_zoom_now());
+        if let Some(r) = home {
+            let _ =
+                window::set_window_bounds(hwnd, r.left, r.top, r.right - r.left, r.bottom - r.top);
+        }
     }
 
     /// A display change places every fence in one pass and reads the others' rects while it
@@ -814,6 +846,7 @@ impl FenceWindow {
     }
 
     fn place_window(&self, r: RECT) {
+        self.end_zoom();
         let cur = self.window.window_rect();
         let hwnd = self.hwnd();
         let deferred = self.view.borrow_mut().as_mut().is_some_and(|v| {
@@ -846,6 +879,7 @@ impl FenceWindow {
     /// A tab split/undo supplies complete geometry. Settle any hover expansion first
     /// so its old tween cannot pull the detached or restored window back on later frames.
     pub fn restore_geometry(&self, mut rect: RECT, rolled: bool, expanded_h: i32) {
+        self.end_zoom();
         // 像桌面一样排列 places the window itself (a display change or a restore lands here).
         if self.is_desktop_arranged() {
             self.arrange_desktop(true);
@@ -877,6 +911,7 @@ impl FenceWindow {
             v.capped_h_px = None;
             v.expanded_w_px = rect.right - rect.left;
             v.column_collapsed = rolled && v.tabs_on_rail();
+            v.compact_collapsed = rolled && v.compacts();
             v.rail_dip = v.measure_rail_w();
             v.roll_t = Tween::at(rolled as u8 as f32, Instant::now());
             v.arm_clock();
@@ -893,7 +928,7 @@ impl FenceWindow {
                 } else {
                     rect.bottom = rect.top + rolled_h;
                 }
-                if v.column_collapsed {
+                if v.narrowed() {
                     rect.right = rect.left + v.rolled_w_px();
                 }
             } else {
@@ -1026,7 +1061,7 @@ impl FenceWindow {
             v.scroll_anim = None;
             v.scroll_y = 0.0;
             // A double-click under way began in the folder just left: it does not go up.
-            v.up_on_dblclk = false;
+            v.dblclk_blank = false;
             v.select_after_nav = select.map(|id| (id, v.focus_visible));
             v.focus_first_after_nav = select.is_none() && v.focus_visible;
             if !v.rolled_up
@@ -2200,9 +2235,14 @@ impl FenceWindow {
     /// item at the current icon size, and at the size it still shows until that one arrives.
     pub fn needed_icons(&self, icons: &IconCache, out: &mut HashSet<String>) {
         if let Some(v) = self.view.borrow().as_ref() {
-            let px = crate::layout::icon_px(v.layout, v.icon_size, v.dpi);
+            let px = (v.icon_fetch_dip() * (v.dpi as f32 / 96.0)).round() as u32;
+            // A zoomed fence goes back to its own size: those pictures stay too.
+            let own = crate::layout::icon_px(v.layout, v.icon_size, v.dpi);
             for item in &v.items {
                 out.insert(icons.draw_key(&item.icon_key, px));
+                if v.zoom_busy() && own != px {
+                    out.insert(icons.draw_key(&item.icon_key, own));
+                }
                 if item.icon.is_some() && item.icon_px != px {
                     out.insert(item.draw_key(icons));
                 }
@@ -2228,6 +2268,7 @@ impl FenceWindow {
 
     /// Animates to the rolled/expanded state.
     pub fn set_rolled(&self, rolled: bool) {
+        self.end_zoom();
         self.with_view(|v| {
             v.peeking = false;
             if v.rolled_up == rolled && v.roll_anim.is_none() {
@@ -2359,17 +2400,18 @@ impl FenceWindow {
         r
     }
 
-    /// Width the window expands to while it is collapsed to its left tab column (None
-    /// otherwise: the window has its expanded width).
+    /// Width the window expands to while it is collapsed to its left tab column or rolled to
+    /// a compact title row (None otherwise: the window has its expanded width).
     pub fn collapsed_expanded_width_px(&self) -> Option<i32> {
         let guard = self.view.try_borrow().ok()?;
         let v = guard.as_ref()?;
-        v.column_collapsed.then_some(v.expanded_w_px)
+        v.narrowed().then_some(v.expanded_w_px)
     }
 
-    /// A rolled fence whose tabs changed (added, removed, renamed, or 标签栏位置 switched)
-    /// takes its rolled size again: the left tab column it is collapsed to, or its title row at
-    /// the expanded width. Returns the new window rect when it changed.
+    /// A rolled fence whose tabs changed (added, removed, renamed, or 标签栏位置 switched), or
+    /// whose name, count or `rollUp.compactRolled` changed, takes its rolled size again: the
+    /// left tab column it is collapsed to, its title row as wide as it needs, or its title row
+    /// at the expanded width. Returns the new window rect when it changed.
     pub fn settle_rolled_size(&self) -> Option<RECT> {
         let (w, h, upward) = {
             let mut guard = self.view.borrow_mut();
@@ -2381,12 +2423,15 @@ impl FenceWindow {
             let w = if v.tabs_on_rail() {
                 v.rail_dip = v.measure_rail_w();
                 v.rail_px()
-            } else if v.column_collapsed {
+            } else if v.compacts() {
+                v.compact_w_px()
+            } else if v.narrowed() {
                 v.expanded_w_px
             } else {
                 cur_w
             };
             v.column_collapsed = v.tabs_on_rail();
+            v.compact_collapsed = v.compacts();
             (w, v.rolled_h_px(), v.row_bottom)
         };
         let r = self.rect();
@@ -2427,6 +2472,7 @@ impl FenceWindow {
     /// there. False when the caller should place it at once: animations off, a hidden window,
     /// another size, or 2 px or less to go.
     pub fn glide_to(&self, to: RECT) -> bool {
+        self.end_zoom();
         self.start_glide(to, motion::FAST, Curve::Decelerate, true)
     }
 
@@ -2838,6 +2884,7 @@ impl FenceWindow {
     /// the final geometry either way, so the state persists it immediately. The borrow is
     /// released before SetWindowPos because WM_SIZE re-enters the handler.
     pub fn apply_height(&self, height_px: i32, animate: bool) -> RECT {
+        self.end_zoom();
         if self.is_desktop_arranged() {
             self.arrange_desktop(false);
             return self.window.window_rect();

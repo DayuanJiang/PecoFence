@@ -376,6 +376,7 @@ impl App {
     /// anything still moves.
     pub(super) fn on_frame(&mut self) {
         let now = Instant::now();
+        self.busy.frames = self.busy.frames.saturating_add(1);
         if std::mem::take(&mut self.hide_icons_at_frame) {
             self.hide_icons_as_fences_come();
         }
@@ -401,6 +402,17 @@ impl App {
         // fade's completion drops them.
         for w in self.fences.values().chain(self.dying.iter()) {
             more |= w.on_frame(now);
+        }
+        // One zoom at a time: the fence that started zooming owns the screen, and every other
+        // fence that is still zoomed (at rest or mid-tween) closes back to where it came from
+        // before the new one grows (`fence_window/zoom.rs`).
+        if let Some(owner) = *self.ctx.behavior.zoom_owner.borrow() {
+            for (&id, w) in &self.fences {
+                if id != owner && w.zoom_open() {
+                    w.close_zoom();
+                    more = true;
+                }
+            }
         }
         self.reflow_pushed();
         self.apply_frame_positions();

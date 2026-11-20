@@ -335,6 +335,15 @@ impl App {
             .values()
             .flat_map(|w| w.dragged_windows())
             .collect();
+        // The fence a double-click zoomed is held like a dragged one: it neither pushes its
+        // neighbours nor is pushed by them, so a zoom never moves another fence
+        // (`fence_window/zoom.rs`). The one closing back after another fence took the zoom
+        // over is held too: its rect passes over the screen and is not a layout to react to.
+        for w in self.fences.values() {
+            if w.zoom_busy() {
+                dragged.push(w.hwnd());
+            }
+        }
         let mut sized = None;
         if let Some(sm) = self.ctx.behavior.size_move.borrow().as_ref() {
             if sm.moving {

@@ -3,6 +3,10 @@
 
 use super::*;
 
+/// How long after a right-click on the desktop new icons of 「桌面」 still go under it: time to
+/// pick 新建 › 文本文档 or 粘贴 in Windows' menu; a file that comes later is not from it.
+pub(super) const MENU_PLACE_FOR: Duration = Duration::from_secs(30);
+
 #[cfg(debug_assertions)]
 thread_local! {
     /// `--test-script` `monitors`: stands in for the connected monitors.
@@ -573,11 +577,29 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
+        // A right-click on the desktop a moment ago: its 新建 or 粘贴 put the next new icons
+        // under it (#238). Not once the icons lost their saved cells (a sort lines them up
+        // again): that click was not for them. An empty 「桌面」 lost none, it had none.
+        let had_cells = std::mem::replace(
+            &mut self.desktop_had_cells,
+            free.as_ref().is_some_and(|cells| !cells.is_empty()),
+        );
+        if had_cells
+            && free.as_ref().is_some_and(|cells| cells.is_empty())
+            && self.desktop_menu_at.take().is_some()
+        {
+            tracing::debug!("desktop menu's click dropped: the icons are placed anew");
+        }
+        let menu_at = self
+            .desktop_menu_at
+            .filter(|(at, _)| at.elapsed() < MENU_PLACE_FOR)
+            .map(|(_, pt)| (pt.x, pt.y));
         w.set_desktop_area(Some(crate::fence_window::DesktopArea {
             work,
             covered,
             free,
             windows,
+            menu_at,
         }));
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.lower_desktop_fence();
@@ -589,6 +611,23 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
+        // Another layout is being shown (a display change, a snapshot restore, an import): the
+        // window still stands where the old one had it, or is on its way to its new place, and
+        // a rect saved now would go into the new layout. A fence put on the other monitor went
+        // back to where the one-monitor layout had it every time that monitor came back
+        // (feedback #194); a restored fence stayed where it had been moved. It is fitted once
+        // placed, and at the end of a glide: the bounds a restore's glide reports
+        // (`FenceBoundsChanged`), `GlideEnded` after a display change's.
+        if self.placing_layout || w.move_pending() {
+            tracing::debug!(fence = %id, syncing = self.placing_layout, "auto height waits: the fence is not at its new place yet");
+            return;
+        }
+        // A zoomed fence shows its items at another scale for a moment (`fence_window/zoom.rs`):
+        // its height is measured again on the next pass after the zoom, never at the zoom's.
+        if w.zoom_busy() {
+            tracing::debug!(fence = %id, "auto height waits: the fence is zoomed");
+            return;
+        }
         // A rolled fence follows its tabs: collapsed to the left tab column, or back to a title
         // row at its expanded width.
         if let Some(rect) = w.settle_rolled_size() {
@@ -655,8 +694,11 @@ impl App {
             "display changed"
         );
         let unplaced = self.state.unplaced.clone();
-        // A different monitor set may select a different layout: sync windows first.
+        // A different monitor set may select a different layout: sync windows first. Their
+        // auto height waits for their new places (see `apply_auto_height`).
+        self.placing_layout = true;
         self.sync_fence_windows();
+        self.placing_layout = false;
         // Fences that only move (the taskbar hid itself, another resolution at the same scale)
         // glide to their new places once all of them are placed, instead of jumping.
         for w in self.fences.values() {
@@ -668,6 +710,11 @@ impl App {
                 // a fence rolled in the old layout but expanded in the new one needs px.height().
                 self.place_from_state(&fence);
             }
+        }
+        // Now at their new places and scales, the fences with auto height fit their items
+        // there (one only gliding to its place keeps the height these monitors saved).
+        for id in self.fences.keys().copied().collect::<Vec<_>>() {
+            self.apply_auto_height(id);
         }
         // Fences new to these monitors (or whose monitor is gone) move out of the others' way;
         // the rest stay where this layout saved them. Then, as at startup, no two stay on top of
@@ -879,7 +926,11 @@ impl App {
         self.state.ensure_layout();
         // Restored or imported fences may name virtual desktops that are gone.
         self.follow_desktops_after("fences replaced");
+        // The windows still stand where the layout before had them: auto height waits until
+        // each is placed below (see `apply_auto_height`).
+        self.placing_layout = true;
         self.resync_windows();
+        self.placing_layout = false;
         for fence in self.state.host_fences() {
             if self.fences.contains_key(&fence.id) && !(glide && self.glide_from_state(&fence)) {
                 self.place_from_state(&fence);

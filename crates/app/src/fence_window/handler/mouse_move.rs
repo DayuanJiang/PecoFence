@@ -274,15 +274,31 @@ pub(super) fn on_mousemove(
         // there without Ctrl / Alt, the drag ends in the drop source instead and the items go
         // back to the inbox. A Windows icon that takes the drop (a folder) still gets it; a
         // portal's files really move to the desktop.
+        // During a Peek the release also ends the Peek when the files go to another program's
+        // window (#238): that window may ask a question while our thread waits in the drop.
         let skipped = std::rc::Rc::new(std::cell::Cell::new(false));
-        let skip_drop = (!from_portal).then(|| -> dragdrop::SkipDrop {
+        // The window under the pointer at the release: the drop's target may keep the drag
+        // going long after it (a question to answer), and by then the pointer is elsewhere.
+        let released_over: std::rc::Rc<std::cell::RefCell<Option<(String, bool)>>> =
+            std::rc::Rc::default();
+        let peeking = behavior.floating.get();
+        let skip_drop = (!from_portal || peeking).then(|| -> dragdrop::SkipDrop {
             let skipped = skipped.clone();
+            let released_over = released_over.clone();
+            let behavior = behavior.clone();
+            let queue = queue.clone();
             Box::new(move |keys| {
-                let (hit, _, on_desktop) = window_under_cursor();
-                let skip = on_desktop
+                let (hit, class, on_desktop) = window_under_cursor();
+                *released_over.borrow_mut() = Some((class.clone(), on_desktop));
+                let skip = !from_portal
+                    && on_desktop
                     && dragdrop::modifier_effect(keys, true) == DropEffect::Move
                     && !pecofence_platform::shell_icons::desktop_icon_drop_target(hit);
                 skipped.set(skip);
+                if behavior.floating.get() && !on_desktop && !class.starts_with("PecoFence.") {
+                    tracing::info!(%class, "drag out during the peek: let go over another window");
+                    queue.push_now(Command::PeekDropElsewhere);
+                }
                 skip
             })
         });
@@ -311,10 +327,15 @@ pub(super) fn on_mousemove(
                 None
             }
         };
-        // Where it landed, resolved before re-borrowing: WindowFromPoint
-        // sends WM_NCHITTEST to our own windows synchronously. The Peek
-        // dimmer stays see-through until then, so it is not the answer.
-        let (_, class, on_desktop) = window_under_cursor();
+        // Where it landed: where the button came up (#238: after a question of the target the
+        // pointer is where its answer was clicked, perhaps on the desktop), else resolved now,
+        // before re-borrowing: WindowFromPoint sends WM_NCHITTEST to our own windows
+        // synchronously. The Peek dimmer stays see-through until then, so it is not the answer.
+        let released = released_over.borrow_mut().take();
+        let (class, on_desktop) = released.unwrap_or_else(|| {
+            let (_, class, on_desktop) = window_under_cursor();
+            (class, on_desktop)
+        });
         crate::peek::set_drag_click_through(false);
         if effect.is_some() {
             // Dropped on another program's window: a Peek is done, that window is where the

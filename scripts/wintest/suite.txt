@@ -21,6 +21,7 @@ shortcut-menu      2   ec2    release 190-shortcut-menu.ps1
 tools-030          2   ec2    debug   030-tools.ps1
 everything-15      2   manual release 030-everything15.ps1
 tabs               4   ec2    release holdout-tabs.ps1
+tabs-compact       2   ec2    release tabs-column-compact.ps1
 users-day          4   signed release holdout-day.ps1                --extra @installers
 rules              2   ec2    debug   holdout-rules.ps1
 fixes-024-A        3   ec2    release holdout2-fixes.ps1             --var Part=A
@@ -127,6 +128,8 @@ polish-paste-D     2   ec2    release polish-paste.ps1               --var Part=
 issues-reorder     2   ec2    release issues-dragpaste.ps1           --var Part=A
 issues-paste       2   ec2    release issues-dragpaste.ps1           --var Part=B
 issues-paste-C     3   ec2    release issues-dragpaste.ps1           --var Part=C
+issues-vm-paste    1   resize release free-placement.ps1             --part V --steps issues-vm-paste.ps1
+issues-copy-peek   1   ec2    release issues-vm-paste.ps1            --var Part=P
 big-copy-save-A    2   ec2    release big-copy-save.ps1              --var Part=A
 big-copy-save-B    1   ec2    release big-copy-save.ps1              --var Part=B
 polish-undo        2   ec2    release polish-undo.ps1
@@ -269,6 +272,8 @@ o6-tray            3   ec2    debug   owner6-tray.ps1
 o6-livewall        4   ec2    release owner6-livewall.ps1
 o6-livewall-page   3   ec2    debug   owner6-livewall.ps1            --var Part=P
 o6-livewall-card   3   ec2    release owner6-livewall.ps1            --var Part=C
+# Bing Wallpaper's desktop widget in the wallpaper layer is no live wallpaper; players under it are (#247).
+wallpaper-overlay  4   ec2    release wallpaper-overlay.ps1
 o8-pane-tint       2   ec2    release owner8-pane-tint.ps1
 # The shell menu prewarm with a shortcut to a folder, a dead share and a missing drive first in
 # path order: an Administrator has to put the file on the public desktop first (the file's header).
@@ -283,3 +288,23 @@ usage-stats        4   ec2    release usage.ps1
 usage-desc         2   ec2    debug   usage-description.ps1
 # Usage statistics: notice cards, dialog jumps, cut-off and crashed runs (Midnight=1 needs the box clock set: see the file).
 usage-gaps         4   ec2    release usage-gaps.ps1
+# Feedback #194: a monitor goes and comes back, a scale change, the primary switch (two monitors in a Hyper-V guest: see the file).
+monitor-sets-move  6   manual release monitor-sets-move.ps1
+# 撤销提示 (feedback #185, #188): the undo card leaves after 10 s; the switch off shows none, Ctrl+Z still undoes.
+undo-notices       1   ec2    release undo-notices.ps1
+undo-page          2   ec2    debug   undo-notices.ps1               --var Part=P
+# 对话框跳转 with Directory Opus (#240): manual, Directory Opus has to be installed on the box first (the file's header).
+dialog-jump-dopus  2   manual release dialog-jump-dopus.ps1
+# A snapshot restore and an import put a fence with auto height back where they have it.
+restore-autoheight 1   ec2    release restore-auto-height.ps1
+# Issues round 2026-11-20: a Peek drop into an Explorer name clash, new icons under a desktop right-click, 自定义… by mouse.
+i1120-peek-drop    2   ec2    release issues1120-peek.ps1           --var Part=AB
+i1120-peek-key     1   ec2    debug   issues1120-peek.ps1           --var Part=C
+# GitHub #241: processor time at rest and with a moving pointer; the busy line in the log; the reporter layout at 200 % (manual: needs a 200 % session, WINTEST_SCALE=200).
+cpu-rest           2   ec2    release 241-cpu.ps1
+busy-line          3   ec2    release 241-busy-line.ps1
+cpu-layout         2   manual release 241-cpu-layout.ps1
+# PR #245 (GitHub #243): a double-click on empty space zooms a fence; nothing the app does while it is zoomed keeps the zoomed size.
+zoom-ZTF           2   ec2    release pr245-zoom.ps1                --var Part=ZTF
+zoom-R             2   ec2    release pr245-zoom.ps1                --var Part=R
+zoom-GP            3   ec2    release pr245-zoom.ps1                --var Part=GP

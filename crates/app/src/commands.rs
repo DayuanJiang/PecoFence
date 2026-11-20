@@ -66,6 +66,9 @@ pub const WM_APP_SMART_FS: u32 = msg::WM_APP + 33;
 /// A save of the configuration failed on the saver thread (`state::saver_for`); the App takes
 /// the failure and says so on the tray.
 pub const WM_APP_SAVE_FAILED: u32 = msg::WM_APP + 23;
+/// A mouse press anywhere while a fence is zoomed (`fence_window/zoom.rs`; lParam the screen
+/// point, x in the low word and y in the high word).
+pub const WM_APP_ZOOM_PRESS: u32 = msg::WM_APP + 45;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -96,10 +99,16 @@ pub enum Command {
     /// if it now covers another fence, it moves to the nearest free spot.
     FenceDropped(FenceId),
     ToggleRollUp(FenceId),
+    /// A rolled title row as wide as it needs (`rollUp.compactRolled`) needs another width: a
+    /// clock's time got longer or shorter (9:59 to 10:00).
+    RolledWidthStale(FenceId),
     /// A double-click on the bottom edge: the height that shows every icon (适应内容大小).
     FitToContent(FenceId),
     /// A hover-peeked fence was double-clicked: keep it expanded.
     CommitExpanded(FenceId),
+    /// A glide the app started for a display change reached its end (it reports no bounds):
+    /// the fence fits its items there, as auto height waited while it moved.
+    GlideEnded(FenceId),
     /// Open `item` from fence `from` (a folder opens in place when `from` is a navigating portal).
     /// `inside` is false when several items are opened at once: folders open in Explorer then.
     LaunchItem {
@@ -540,6 +549,11 @@ pub enum Command {
     PeekDragEnded {
         elsewhere: bool,
     },
+    /// A drag out of a fence during a Peek is let go over another program's window (sent at
+    /// the release, before that window takes the drop). The window may ask a question while our
+    /// thread waits for its answer (File Explorer's 「替换或跳过文件」, #238): the Peek ends at
+    /// once, so its dimmer and the floating fences do not cover the question.
+    PeekDropElsewhere,
     /// Text typed during a Peek while the search box did not have the keyboard yet: opens the
     /// box with it, or adds it to the box.
     PeekSearchType(String),
@@ -597,6 +611,9 @@ pub enum Command {
     RaiseForHover(HWND),
     /// That peek rolled it up again: back to its place among the other fences.
     EndHoverRaise(HWND),
+    /// A zoom ended (`fence_window/zoom.rs`): the fence's auto height, which waited, is
+    /// measured again.
+    ZoomEnded(FenceId),
     /// Details-view header click: sort by that column (again = reverse).
     SortColumn {
         fence: FenceId,
@@ -643,6 +660,17 @@ impl CommandQueue {
         if let Some(h) = *self.control.borrow() {
             // SAFETY-free: PostMessage through the platform wrapper.
             pecofence_platform::window::post_message(h, WM_APP_COMMAND, 0, 0);
+        }
+    }
+
+    /// Like [`Self::push`], and runs the queue now (a sent message instead of a posted one):
+    /// for the moment before a call that keeps the thread waiting without dispatching posted
+    /// messages. Only from a window handler that holds no borrow of the App or a fence view;
+    /// while the App is busy the command waits in the queue as with `push`.
+    pub fn push_now(&self, cmd: Command) {
+        self.queue.borrow_mut().push_back(cmd);
+        if let Some(h) = *self.control.borrow() {
+            pecofence_platform::window::send_message(h, WM_APP_COMMAND, 0, 0);
         }
     }
 

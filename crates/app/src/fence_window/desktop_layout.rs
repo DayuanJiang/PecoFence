@@ -248,6 +248,15 @@ impl FreeGrid {
     }
 }
 
+/// 自由摆放: which icons the desktop menu's click places (#238): the new ones, with no saved
+/// cell and no place on Windows' desktop; on an empty 「桌面」 the first new file is all there
+/// is. A pass that takes Windows' places (自由摆放 just started) places none there. After a sort
+/// cleared the cells the App has dropped the click already (`App::arrange_desktop_fence`).
+fn menu_asks(asked: &[Option<(i32, i32)>], windows_places: bool, menu: bool) -> Vec<bool> {
+    let use_menu = menu && !windows_places;
+    asked.iter().map(|a| use_menu && a.is_none()).collect()
+}
+
 /// Height (DIPs) a selected full name may take below a cell of `m`. Without labels nothing
 /// unfolds, so there is none.
 fn unfold_room_dip(m: &GridMetrics) -> f32 {
@@ -459,7 +468,32 @@ impl FenceViewState {
                         .is_some_and(|at| !grid.on_work(*at))
             })
             .collect();
+        // A right-click on the desktop a moment ago (#238): the new icons go to the free cell
+        // nearest to it, as 新建 and 粘贴 of that menu put them on a Windows desktop. It only
+        // says where to look, like a place on another monitor: an icon standing there stays.
+        let menu_cell = area
+            .menu_at
+            .filter(|at| grid.on_work(*at))
+            .map(|at| grid.cell_at(at.0, at.1));
+        let at_menu = menu_asks(&asked, area.windows.is_some(), menu_cell.is_some());
+        let asked: Vec<Option<(i32, i32)>> = asked
+            .iter()
+            .zip(&at_menu)
+            .map(|(a, m)| if *m { menu_cell } else { *a })
+            .collect();
+        let near: Vec<bool> = near.iter().zip(&at_menu).map(|(n, m)| *n || *m).collect();
         let placed = grid.place(&asked, &near);
+        let by_menu = at_menu.iter().filter(|m| **m).count();
+        if by_menu > 0 {
+            tracing::info!(
+                fence = %self.fence_id,
+                icons = by_menu,
+                click = ?area.menu_at,
+                cell = ?menu_cell,
+                first = ?at_menu.iter().zip(&placed).find(|(m, _)| **m).map(|(_, p)| *p),
+                "free placement: new icons placed at the desktop menu's click"
+            );
+        }
         let mut taken: HashSet<(i32, i32)> = placed.iter().copied().collect();
         let spare = grid.claim(&mut taken, None);
         let rects = placed
@@ -892,6 +926,42 @@ mod tests {
             placed,
             vec![(5, 2), (0, 1), (0, 0), (0, 2), (11, 1)],
             "saved cells stay; new icons fill column one from the top around them"
+        );
+    }
+
+    #[test]
+    fn only_new_icons_go_to_the_desktop_menu_click() {
+        let cell = Some((3, 1));
+        // A new file among icons that keep their cells: that one.
+        assert_eq!(menu_asks(&[cell, None], false, true), vec![false, true]);
+        // An empty 「桌面」 (everything in fences): the first new file goes there too.
+        assert_eq!(menu_asks(&[None], false, true), vec![true]);
+        // 自由摆放 just started (Windows' places are taken), or no click: none.
+        assert_eq!(menu_asks(&[cell, None], true, true), vec![false, false]);
+        assert_eq!(menu_asks(&[cell, None], false, false), vec![false, false]);
+    }
+
+    #[test]
+    fn new_icons_after_a_desktop_menu_go_next_to_its_click_around_the_icons_there() {
+        // #238: 新建 in the desktop menu opened over cell (6, 1), where an icon already stands
+        // (listed after the new ones, so order gives the new ones no claim to it).
+        let g = free_grid(&[]);
+        let click = g.cell_at(6 * 80 + 4 + 40, 100 + 4 + 50);
+        assert_eq!(click, (6, 1));
+        let placed = g.place(
+            &[Some(click), Some(click), Some((6, 1)), None],
+            &[true, true, false, false],
+        );
+        assert_eq!(placed[2], (6, 1), "the icon standing there keeps its cell");
+        let near = |c: (i32, i32)| (c.0 - 6).abs() <= 1 && (c.1 - 1).abs() <= 1;
+        assert!(
+            near(placed[0]) && near(placed[1]) && placed[0] != placed[1],
+            "the new ones take the free cells next to the click: {placed:?}"
+        );
+        assert_eq!(
+            placed[3],
+            (0, 0),
+            "an icon without the click takes the first free cell"
         );
     }
 

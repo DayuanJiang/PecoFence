@@ -1195,7 +1195,7 @@ impl FenceViewState {
         self.chrome_panel.resize(w, h)?;
         // A fence collapsed (or collapsing) to its left tab column keeps the width it returns
         // to; the column's width follows the expanded fence.
-        if !self.column_collapsed && self.roll_anim.as_ref().is_none_or(|a| a.width.is_none()) {
+        if !self.narrowed() && self.roll_anim.as_ref().is_none_or(|a| a.width.is_none()) {
             self.expanded_w_px = w;
         }
         self.rail_dip = self.measure_rail_w();
@@ -1285,7 +1285,8 @@ impl FenceViewState {
         bands: [std::ops::Range<usize>; 2],
         near: impl Fn(usize) -> bool,
     ) {
-        let icon_px = (self.icon_dip() * self.scale()).round() as u32;
+        // A zoom tween fetches at the size it ends at (`fence_window/zoom.rs`).
+        let icon_px = (self.icon_fetch_dip() * self.scale()).round() as u32;
         if (self.label_w - label_w).abs() > 0.5 || (self.label_wide_w - wide_w).abs() > 0.5 {
             self.label_w = label_w;
             self.label_wide_w = wide_w;
@@ -2568,7 +2569,7 @@ impl FenceViewState {
         let content = ContentDraw {
             items: &cells,
             group_headers: &group_headers,
-            icon_size: self.icon_size as f32,
+            icon_size: self.icon_size as f32 * self.zoom_icon,
             label_lines: self.label_lines,
             line_h: grid.metrics.line_h,
             icon_top: grid.metrics.icon_top,

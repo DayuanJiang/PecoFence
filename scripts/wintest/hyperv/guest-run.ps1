@@ -5,7 +5,7 @@
 # left as found. Guest account pf / pecofence with auto-logon and the PFJob task (see README).
 # Results: <Base>\res-<VM><Tag>\<step>.tar (C:\pf\run of each job) and jobs.txt; progress in
 # run-<VM><Tag>.log; done-<VM><Tag>.txt when it ends.
-param([string]$VM, [string]$Steps, [int]$Timeout = 1500, [int]$Width = 1600, [int]$Height = 900, [string]$Base = (Join-Path $env:TEMP 'pfwintest'), [string]$Stage = 'stage', [string]$Tag = '', [switch]$ClassicNotepad, [switch]$Elevated)
+param([string]$VM, [string]$Steps, [int]$Timeout = 1500, [int]$Width = 1600, [int]$Height = 900, [string]$Base = (Join-Path $env:TEMP 'pfwintest'), [string]$Stage = 'stage', [string]$Tag = '', [switch]$ClassicNotepad, [switch]$Elevated, [switch]$AdminPrep)
 $ErrorActionPreference = 'Continue'
 $base = $Base
 $res = Join-Path $base "res-$VM$Tag"
@@ -99,6 +99,11 @@ try {
   # runs once in the guest before the jobs; the checkpoint restore takes it away again.
   $pre = G { if (Test-Path C:\pf\extra\prepare-guest.ps1) { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\pf\extra\prepare-guest.ps1 2>&1 | Out-String } }
   if ($pre) { L "prepare-guest: $pre" }
+  if ($AdminPrep) {
+    # run-hyperv.sh --prep: the file runs here as administrator, before the first job.
+    $po = try { Invoke-Command -Session $s -FilePath (Join-Path $base "$Stage\prep.ps1") -ErrorAction Stop 2>&1 | Out-String } catch { "failed: $($_.Exception.Message)" }
+    L "prep script: $($po.Trim())"
+  }
 
   foreach ($name in $Steps.Split('+')) {
     L "== $name"

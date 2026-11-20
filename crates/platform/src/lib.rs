@@ -45,6 +45,7 @@ mod store_bindings;
 mod media_bindings;
 
 pub mod autostart;
+pub mod busy;
 pub mod clipboard;
 pub mod colordialog;
 pub mod com;
@@ -53,6 +54,7 @@ pub mod d2d;
 pub mod desktop;
 pub mod dialogs;
 pub mod dispatcher;
+pub mod dopus;
 pub mod dpapi;
 pub mod dragdrop;
 pub mod dwm;

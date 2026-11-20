@@ -1528,6 +1528,13 @@ impl App {
         self.ctx.behavior.title_align.set(new.title_align);
         self.ctx.behavior.tab_bar.set(new.tab_bar);
         self.ctx.behavior.label_color.set(new.label_color);
+        self.ctx.behavior.zoom_enabled.set(new.zoom.enabled);
+        // Switched off: a fence that is zoomed now goes back.
+        if !new.zoom.enabled {
+            for w in self.fences.values() {
+                w.close_zoom();
+            }
+        }
         self.ctx
             .behavior
             .hide_inactive_scrollbar
@@ -1557,6 +1564,26 @@ impl App {
         if chrome_changed {
             for w in self.fences.values() {
                 w.redraw();
+            }
+        }
+        // 收起时缩到标题的宽度 (GitHub #242): rolled fences narrow to their title rows or widen
+        // back; the count and chevron change what such a row needs.
+        self.ctx
+            .behavior
+            .compact_rolled
+            .set(new.roll_up.compact_rolled);
+        if new.roll_up.compact_rolled != old.roll_up.compact_rolled
+            || (new.roll_up.compact_rolled
+                && new.roll_up.hide_count_and_chevron != old.roll_up.hide_count_and_chevron)
+        {
+            tracing::info!(
+                compact = new.roll_up.compact_rolled,
+                hide_count = new.roll_up.hide_count_and_chevron,
+                "rolled fences take their rolled width again"
+            );
+            let hosts: Vec<FenceId> = self.fences.keys().copied().collect();
+            for host in hosts {
+                self.apply_auto_height(host);
             }
         }
         if new.tab_bar != old.tab_bar {

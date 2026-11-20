@@ -99,6 +99,13 @@ impl App {
             MarqueeEvent::DoubleClickInWindowsDesktop => {
                 self.set_windows_desktop(false, "double-click on the desktop");
             }
+            MarqueeEvent::MenuAt(pt) => {
+                tracing::debug!(
+                    ?pt,
+                    "desktop menu opened there: the next new icons go under it"
+                );
+                self.desktop_menu_at = Some((Instant::now(), pt));
+            }
         }
     }
 

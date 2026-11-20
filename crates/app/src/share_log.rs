@@ -700,6 +700,7 @@ mod tests {
         ("place", "shell::path_place(&dir)"),
         ("place", "shell::path_place(dir)"),
         ("place", "shell::path_place(&path)"),
+        ("place", "shell::path_place(&target)"),
         ("place", "shell::path_place(&folder)"),
         ("place", "crate::shell::path_place(&dir)"),
         ("place", "place"), // shell::drive_kind of a script picture: fixed names

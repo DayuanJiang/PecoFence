@@ -602,6 +602,8 @@ impl App {
         if let Some(w) = self.fences.get(&host) {
             w.set_locked(on);
         }
+        // A rolled row as wide as it needs makes room for the lock glyph, or gives it back.
+        self.apply_auto_height(host);
         self.schedule_save();
     }
 

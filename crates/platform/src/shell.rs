@@ -1800,6 +1800,43 @@ pub fn shell_execute(path: &Path, verb: Option<&str>, owner: Option<HWND>) -> Re
     result
 }
 
+/// Whether `path` lies where the Store edition, installed on another drive, sees its own data
+/// instead of the real folders: `<that drive>:\Users\<this user's profile name>\AppData\...`.
+/// Windows keeps a packaged program's data for that drive in `<drive>:\WpSystem\<SID>\AppData`
+/// and shows it to the program at that path (measured in a test guest, GitHub #244), so a
+/// program installed under such a folder is "not there" for PecoFence and only for it.
+pub fn under_package_view_of_appdata(path: &Path) -> bool {
+    let profile = std::env::var_os("USERPROFILE").map(PathBuf::from);
+    let Some(name) = profile.as_deref().and_then(Path::file_name) else {
+        return false;
+    };
+    let system = std::env::var("SystemDrive").unwrap_or_default();
+    in_appdata_view(path, &name.to_string_lossy(), &system)
+}
+
+/// [`under_package_view_of_appdata`] for a given profile folder name and system drive (`C:`).
+fn in_appdata_view(path: &Path, profile_name: &str, system_drive: &str) -> bool {
+    let text = path.to_string_lossy().to_lowercase();
+    let tail = format!(r":\users\{}\appdata\", profile_name.to_lowercase());
+    system_drive.len() == 2
+        && !text.starts_with(&system_drive.to_lowercase())
+        && text.get(1..).is_some_and(|rest| rest.starts_with(&tail))
+}
+
+/// Opens `path` with the shell in a `rundll32` process of its own. A program the Store edition
+/// starts runs outside its package and sees the real folders (see
+/// [`under_package_view_of_appdata`]), so a shortcut to a program installed there opens as it
+/// does from Explorer.
+pub fn shell_execute_outside(path: &Path) -> std::io::Result<()> {
+    let windows =
+        std::env::var_os("SystemRoot").map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from);
+    std::process::Command::new(windows.join("System32").join("rundll32.exe"))
+        .arg("shell32.dll,ShellExec_RunDLL")
+        .arg(path)
+        .spawn()
+        .map(drop)
+}
+
 #[link(name = "shlwapi")]
 unsafe extern "system" {
     // Not in the generated bindings.
@@ -2076,6 +2113,24 @@ mod place_tests {
         let packaged = format!(r"{system}\Users\jane\AppData\Local\Packages\x\LocalCache\a.json");
         assert_eq!(path_place(Path::new(&packaged)), "fixed+system+package");
         assert_eq!(path_place(Path::new("relative")), "unknown");
+    }
+
+    /// GitHub #244: only `<other drive>:\Users\<this profile>\AppData\...` is shown to a Store
+    /// package on that drive as its own data (measured in a guest with the package on D:).
+    #[test]
+    fn the_package_view_of_appdata_is_the_profile_name_on_another_drive() {
+        let view = |p: &str| super::in_appdata_view(Path::new(p), "Jane", "C:");
+        assert!(view(
+            r"D:\Users\jane\AppData\Local\Programs\WorkBuddy\WorkBuddy.exe"
+        ));
+        assert!(view(r"E:\USERS\Jane\AppData\Roaming\x.exe"));
+        assert!(!view(r"C:\Users\jane\AppData\Local\Programs\x.exe"));
+        assert!(!view(
+            r"D:\Users\someone\AppData\Local\Programs\Tool\Tool.exe"
+        ));
+        assert!(!view(r"D:\X\AppData\Local\Programs\Other\Other.exe"));
+        assert!(!view(r"D:\Users\jane\Desktop\a.lnk"));
+        assert!(!view(r"\\server\Users\jane\AppData\x.exe"));
     }
 }
 

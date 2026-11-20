@@ -159,6 +159,16 @@ pub const UNUSED_SETTINGS: &[&str] = &[
     "rollUp.closeGraceMs",
 ];
 
+/// 双击空白放大 (`fence_window/zoom.rs`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(default, rename_all = "camelCase")]
+pub struct Zoom {
+    /// 双击栅栏空白处放大到屏幕中央（再双击收回）. Off by default: a new gesture does not
+    /// change what a double-click on a fence already does for everyone (as #216's fade).
+    pub enabled: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "camelCase")]
@@ -166,6 +176,8 @@ pub struct Settings {
     #[serde(default = "crate::i18n::Language::legacy_default")]
     pub language: crate::i18n::Language,
     pub backdrop: Backdrop,
+    #[serde(default)]
+    pub zoom: Zoom,
     pub theme: ThemeSetting,
     /// 菜单颜色: light or dark popup menus (the tray menu, the fence and item menus with the
     /// entries Windows adds, their tips), on their own or following `theme`.
@@ -224,6 +236,11 @@ pub struct Settings {
     /// type dragged into one fence). Off shows none of them; the first start's tips stay.
     #[serde(default = "default_true")]
     pub feature_tips: bool,
+    /// 撤销提示: after a fence delete, 「立即应用」 of the rules or a fence sent to another
+    /// virtual desktop, a card with 撤销 shows in the corner for 10 seconds. Off shows none;
+    /// Ctrl+Z on a fence still undoes.
+    #[serde(default = "default_true")]
+    pub undo_notices: bool,
     /// 自动检查更新 (installer and ZIP editions): about a minute after start and then once a day,
     /// one request to GitHub's latest release; a new version is announced once.
     #[serde(default = "default_true")]
@@ -482,6 +499,7 @@ impl Default for Settings {
         Self {
             language: crate::i18n::Language::System,
             backdrop: Backdrop::Acrylic,
+            zoom: Zoom::default(),
             theme: ThemeSetting::FollowWindowsMode,
             menu_color: MenuColor::FollowMode,
             idle_opacity: 1.0,
@@ -500,6 +518,7 @@ impl Default for Settings {
             offer_new_fence: true,
             per_desktop_fences: false,
             feature_tips: true,
+            undo_notices: true,
             auto_check_updates: true,
             show_tray_icon: true,
             usage_stats: true,
@@ -723,6 +742,10 @@ pub struct RollUpSettings {
     /// Double-clicking the title and the fence menu still roll the fence up and down.
     #[serde(default)]
     pub hide_count_and_chevron: bool,
+    /// A rolled fence is only as wide as its title row needs (its name or its tabs, with the
+    /// count and chevron), and opens to its own width again (GitHub #242).
+    #[serde(default)]
+    pub compact_rolled: bool,
 }
 
 impl Default for RollUpSettings {
@@ -740,6 +763,7 @@ impl Default for RollUpSettings {
             push_neighbors: true,
             switch_tab_on_hover: true,
             hide_count_and_chevron: false,
+            compact_rolled: false,
         }
     }
 }
@@ -3325,6 +3349,7 @@ mod tests {
         let obj = json.as_object_mut().unwrap();
         assert!(obj.remove("offerNewFence").is_some());
         assert!(obj.remove("featureTips").is_some());
+        assert!(obj.remove("undoNotices").is_some());
         assert!(obj.remove("hideInboxWhenIconsShown").is_some());
         assert!(obj.remove("keepIconsHidden").is_some());
         assert!(obj.remove("showTrayIcon").is_some());
@@ -3332,6 +3357,7 @@ mod tests {
         assert!(legacy.show_tray_icon);
         assert!(legacy.offer_new_fence);
         assert!(legacy.feature_tips);
+        assert!(legacy.undo_notices);
         assert!(!legacy.hide_inbox_when_icons_shown);
         assert!(!legacy.keep_icons_hidden);
     }
