@@ -96,6 +96,9 @@ pub enum Command {
     /// if it now covers another fence, it moves to the nearest free spot.
     FenceDropped(FenceId),
     ToggleRollUp(FenceId),
+    /// A rolled title row as wide as it needs (`rollUp.compactRolled`) needs another width: a
+    /// clock's time got longer or shorter (9:59 to 10:00).
+    RolledWidthStale(FenceId),
     /// A double-click on the bottom edge: the height that shows every icon (适应内容大小).
     FitToContent(FenceId),
     /// A hover-peeked fence was double-clicked: keep it expanded.

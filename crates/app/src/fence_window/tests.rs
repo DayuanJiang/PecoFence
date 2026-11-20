@@ -296,30 +296,43 @@ fn collapsed_tab_column_has_no_chevron_room() {
 fn title_alignment_moves_the_rows_of_a_tab_column() {
     use pecofence_core::TitleAlign;
     let room = (12.0, 352.0);
+    let rows = (108.0, 108.0);
     assert_eq!(
-        rail_align_shift(TitleAlign::Left, 400.0, room, 108.0, 0.0),
+        rail_align_shift(TitleAlign::Left, 400.0, room, rows, 0.0),
         0.0
     );
     assert_eq!(
-        rail_align_shift(TitleAlign::Center, 400.0, room, 108.0, 0.0),
+        rail_align_shift(TitleAlign::Center, 400.0, room, rows, 0.0),
         134.0
     );
     assert_eq!(
-        rail_align_shift(TitleAlign::Right, 400.0, room, 108.0, 0.0),
+        rail_align_shift(TitleAlign::Right, 400.0, room, rows, 0.0),
         232.0
     );
     assert_eq!(
-        rail_align_shift(TitleAlign::Center, 400.0, room, 108.0, 0.5),
+        rail_align_shift(TitleAlign::Center, 400.0, room, rows, 0.5),
         67.0
     );
     assert_eq!(
-        rail_align_shift(TitleAlign::Center, 400.0, room, 108.0, 1.0),
+        rail_align_shift(TitleAlign::Center, 400.0, room, rows, 1.0),
         0.0
     );
     // Rows that fill their room stay where they are.
     assert_eq!(
-        rail_align_shift(TitleAlign::Center, 400.0, room, 340.0, 0.0),
+        rail_align_shift(TitleAlign::Center, 400.0, room, (340.0, 340.0), 0.0),
         0.0
+    );
+    // A merge drag opens a 32 DIP row (and its 4 DIP gap): the rows at the end move up so that
+    // the last one stays inside the room, above the chevron.
+    let gapped = (108.0, 144.0);
+    assert_eq!(
+        rail_align_shift(TitleAlign::Right, 400.0, room, gapped, 0.0),
+        196.0
+    );
+    assert!(12.0 + rail_align_shift(TitleAlign::Right, 400.0, room, gapped, 0.0) + 144.0 <= 352.0);
+    assert_eq!(
+        rail_align_shift(TitleAlign::Center, 400.0, room, gapped, 0.0),
+        134.0
     );
 }
 

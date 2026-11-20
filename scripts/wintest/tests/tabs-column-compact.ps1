@@ -7,6 +7,16 @@ trap { PfTrap $_; continue }
 Add-Type @"
 using System; using System.Runtime.InteropServices;
 public class Dpi { [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h); }
+public class Widths {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int L, T, R, B; }
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+  // The window's widths, each time it changes, for `ms` milliseconds.
+  public static int[] Sample(IntPtr h, int ms) {
+    var list = new System.Collections.Generic.List<int>(); var sw = System.Diagnostics.Stopwatch.StartNew();
+    while (sw.ElapsedMilliseconds < ms) { RECT r; GetWindowRect(h, out r); int w = r.R - r.L; if (list.Count == 0 || list[list.Count - 1] != w) list.Add(w); System.Threading.Thread.Sleep(1); }
+    return list.ToArray();
+  }
+}
 "@
 Case 'setup'
 CloseWindows
@@ -63,9 +73,32 @@ if ($Part -match 'A') {
     $d = DumpOf 'Host'
     $mid = ($d.rects[0][0] + $d.rects[-1][0] + $d.rects[-1][1]) / 2
     Check "192 ${style}: opened again, centred again" ([math]::Abs($mid - (($d.b - $d.t) / (K 'Host')) / 2) -le 2) "middle $mid"
+    # A fence dragged onto a column with 右对齐 opens a gap row there: the rows move up so the
+    # last tab stays inside the column, above the chevron's room (44 DIP).
+    Case "192 $style 右对齐, a fence dragged onto the column"
+    Pf settings set titleAlign right | Out-Null; Start-Sleep -Milliseconds 700
+    Pf fence create --title Extra --rect "$($wa.Left + 40),$($wa.Top + 80),260,200" | Out-Null; Start-Sleep -Milliseconds 900; Park
+    $d0 = DumpOf 'Host'; $k = K 'Host'; $hh = Win 'Host'; $e = Win 'Extra'
+    $ty = $hh.T + [int](($d0.rects[-1][0] + 16) * $k)
+    $sx = $e.L + 60; $sy = $e.T + [int](14 * $k)
+    [G]::MoveTo($sx, $sy); Start-Sleep -Milliseconds 200; MDown; Start-Sleep -Milliseconds 200
+    Glide $sx $sy ($hh.L + [int](40 * $k)) $ty 20 30
+    Start-Sleep -Milliseconds 700
+    $d = DumpOf 'Host'
+    Glide ($hh.L + [int](40 * $k)) $ty $sx $sy 20 30
+    Start-Sleep -Milliseconds 300; MUp; Start-Sleep -Milliseconds 900
+    $h = ($d.b - $d.t) / $k
+    $end = $d.rects[-1][0] + $d.rects[-1][1]
+    $rest = ($d0.rects | ForEach-Object { '(' + $_[0] + ',' + $_[1] + ')' }) -join ' '
+    $drag = ($d.rects | ForEach-Object { '(' + $_[0] + ',' + $_[1] + ')' }) -join ' '
+    Log "192 $style merge drag rects=$drag resting=$rest h=$h"
+    Check "192 ${style}: a merge drag opened a gap row in the column" ($drag -ne $rest) "resting $rest, during the drag $drag"
+    Check "192 ${style}: with the gap open the last tab stays above the chevron" ($d.rects.Count -eq 3 -and $end -le $h - 44 + 0.5) "last tab ends at $end, the room ends at $($h - 44)"
+    foreach ($f in @(PfJson fence list)) { if ($f -and $f.title -eq 'Extra') { Pf fence delete "$($f.id)" | Out-Null } }
+    Start-Sleep -Milliseconds 500
     # The top tab bar still centres the strip in the title row.
     Case "192 $style top bar unchanged"
-    Pf settings set tabBar top | Out-Null; Start-Sleep -Milliseconds 900
+    Pf settings set titleAlign center | Out-Null; Pf settings set tabBar top | Out-Null; Start-Sleep -Milliseconds 900
     $d = DumpOf 'Host'
     $w = ($d.r - $d.l) / (K 'Host')
     $smid = ($d.rects[0][0] + $d.rects[-1][0] + $d.rects[-1][1]) / 2
@@ -130,6 +163,37 @@ if ($Part -match 'B') {
     $o = Win 'Notes'; $ow = Win 'Work'
     Check "242 ${style}: opened at its own width again" (($o.R - $o.L) -eq $openW -and ($ow.R - $ow.L) -eq $openW) "Notes $($o.R - $o.L), Work $($ow.R - $ow.L), want $openW"
   }
+  # Locked, the rolled row makes room for the lock glyph; its edges only move it.
+  Case '242 lock and edges'
+  Pf fence roll 'Notes' | Out-Null; Park; Start-Sleep -Milliseconds 900
+  $r0 = Win 'Notes'; $k = K 'Notes'
+  Pf fence set 'Notes' locked true | Out-Null; Start-Sleep -Milliseconds 900
+  $r1 = Win 'Notes'
+  Check '242: locked, the rolled row is wider by the lock glyph' ((($r1.R - $r1.L) - ($r0.R - $r0.L)) / $k -ge 12) "width $($r0.R - $r0.L) -> $($r1.R - $r1.L) px"
+  Pf fence set 'Notes' locked false | Out-Null; Start-Sleep -Milliseconds 900
+  $r2 = Win 'Notes'
+  Check '242: unlocked, back to its width' (($r2.R - $r2.L) -eq ($r0.R - $r0.L)) "width $($r2.R - $r2.L), before $($r0.R - $r0.L)"
+  $hw = [G]::FindWindowW('PecoFence.Fence', 'Notes')
+  $hitR = NcHit $hw ($r2.R - 2) ($r2.T + [int](14 * $k)); $hitL = NcHit $hw ($r2.L + 1) ($r2.T + [int](14 * $k))
+  Check '242: the left and right edges of a compact rolled row only move it (HTCAPTION)' ($hitR -eq 2 -and $hitL -eq 2) "right edge $hitR, left edge $hitL"
+  # A clock rolled up is as wide as its time from the start: the width it lands at is the one a
+  # later settle gives it (it measured its name before the roll began).
+  Case '242 rolled clock'
+  Pf fence create --tool clock --title Clock --rect "$($wa.Left + 40),$($wa.Top + 560),260,160" | Out-Null; Start-Sleep -Seconds 2
+  $ch = [G]::FindWindowW('PecoFence.Fence', 'Clock')
+  Pf fence roll Clock | Out-Null
+  $ws = [Widths]::Sample($ch, 1500)
+  $grew = @(for ($i = 1; $i -lt $ws.Count; $i++) { if ($ws[$i] -gt $ws[$i - 1]) { "$($ws[$i - 1])->$($ws[$i])" } })
+  Check '242: a rolled clock narrows straight to the width of its time (no step back at the end)' ($grew.Count -eq 0) "widths $($ws -join ' ')"
+  Park; Start-Sleep -Milliseconds 600
+  $c1 = Win 'Clock'
+  Pf settings set rollUp.compactRolled false | Out-Null; Start-Sleep -Milliseconds 700
+  Pf settings set rollUp.compactRolled true | Out-Null; Start-Sleep -Milliseconds 900
+  $c2 = Win 'Clock'
+  Check '242: a rolled clock lands at the width of its time' ([math]::Abs(($c1.R - $c1.L) - ($c2.R - $c2.L)) -le 1 -and ($c2.R - $c2.L) -lt 260) "landed $($c1.R - $c1.L) px, settled $($c2.R - $c2.L) px"
+  Shot '242-clock-rolled'
+  foreach ($f in @(PfJson fence list)) { if ($f -and $f.title -eq 'Clock') { Pf fence delete "$($f.id)" | Out-Null } }
+  Pf fence unroll 'Notes' | Out-Null; Start-Sleep -Milliseconds 700
   # A restart keeps a compact rolled fence compact and its saved rect; the switch off widens it.
   Case '242 restart and switch off'
   Pf fence roll 'Notes' | Out-Null; Park; Start-Sleep -Milliseconds 900

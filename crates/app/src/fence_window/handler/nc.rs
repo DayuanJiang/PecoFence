@@ -130,8 +130,9 @@ pub(super) fn hit_code(v: &FenceViewState, rect: &RECT, x: i32, y: i32, locked: 
             msg::HTCLIENT
         };
     }
-    if rolled && v.tabs_on_rail() {
-        // Collapsed to the column: it only moves.
+    if rolled && (v.tabs_on_rail() || v.compact_collapsed) {
+        // Collapsed to the column, or a title row as wide as it needs
+        // (`rollUp.compactRolled`): it only moves.
         return msg::HTCAPTION;
     }
     if rolled {

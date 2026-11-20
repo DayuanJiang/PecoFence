@@ -2822,6 +2822,7 @@ impl App {
                 self.apply_auto_height(fence);
             }
             Command::ToggleRollUp(fence) => self.toggle_roll(fence),
+            Command::RolledWidthStale(fence) => self.apply_auto_height(fence),
             Command::FitToContent(fence) => {
                 self.fit_to_content_by_user(fence, "bottom edge double-click")
             }

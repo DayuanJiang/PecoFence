@@ -177,17 +177,18 @@ pub(super) fn rail_len_for(n: usize, bottom: f32) -> f32 {
 }
 
 /// How far 标题对齐 moves the rows of a left tab column (DIPs) from the top of their room
-/// `start..end`: centred on the column `len` long or at its end, never into the room's ends,
-/// and back to the top as the fence rolls up (`roll_t` 0 open, 1 rolled).
+/// `start..end`: the resting rows (`span` long) centred on the column `len` long or at its end,
+/// never into the room's ends, and no further than the rows with a merge gap open (`gapped`
+/// long) still fit; back to the top as the fence rolls up (`roll_t` 0 open, 1 rolled).
 pub(super) fn rail_align_shift(
     align: pecofence_core::TitleAlign,
     len: f32,
     (start, end): (f32, f32),
-    span: f32,
+    (span, gapped): (f32, f32),
     roll_t: f32,
 ) -> f32 {
     let at = pecofence_render::fence_chrome::aligned_x(align, len, start, end, span) - start;
-    at * (1.0 - roll_t.clamp(0.0, 1.0))
+    at.min((end - start - gapped).max(0.0)) * (1.0 - roll_t.clamp(0.0, 1.0))
 }
 
 /// Lays the tab strip out along the title row: `natural` are the pills' natural widths (DIPs,
@@ -527,12 +528,13 @@ impl FenceViewState {
                     align => {
                         let resting = tab_strip_rects_with(&natural, None, room);
                         let span = resting.last().map_or(0.0, |(y, h)| y + h - TAB_LEFT);
+                        let gapped = tab_strip_span(&natural, gap.map(|g| (g, RAIL_ROW_H)));
                         let len = self.chrome_panel.size_px().1 as f32 / self.scale();
                         rail_align_shift(
                             align,
                             len,
                             (start, end),
-                            span,
+                            (span, gapped),
                             self.roll_t.value_at(Instant::now()),
                         )
                     }
@@ -827,9 +829,13 @@ impl FenceViewState {
             };
             TAB_LEFT + span + end
         } else {
-            let title = self
-                .rolled_clock_caption()
-                .unwrap_or_else(|| self.title.clone());
+            // A clock's rolled row shows the time: measured here before a roll-up has started
+            // too, so the width does not jump when it lands.
+            let time = self
+                .clock
+                .map(|_| pecofence_platform::fileinfo::clock_texts(false).0)
+                .filter(|t| !t.is_empty());
+            let title = time.unwrap_or_else(|| self.title.clone());
             let row = self.chrome.lone_title_width(
                 &title,
                 self.title_count.as_deref(),
