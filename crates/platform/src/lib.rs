@@ -41,6 +41,7 @@ pub mod d2d;
 pub mod desktop;
 pub mod dialogs;
 pub mod dispatcher;
+pub mod dopus;
 pub mod dragdrop;
 pub mod dwm;
 pub mod edit;
