@@ -48,13 +48,16 @@ impl App {
         };
         let over = now.duration_since(at);
         let used = percent(cpu.saturating_sub(cpu_before), over);
-        if used < BUSY_PERCENT
-            || over < Duration::from_secs(30)
-            || watch.logged.is_some_and(|t| t.elapsed() < QUIET_AFTER_LINE)
-        {
+        let busy_line = used >= BUSY_PERCENT
+            && over >= Duration::from_secs(30)
+            && !watch.logged.is_some_and(|t| t.elapsed() < QUIET_AFTER_LINE);
+        // The same facts at debug level every minute (the test boxes log at debug).
+        if !busy_line && !tracing::enabled!(tracing::Level::DEBUG) {
             return;
         }
-        watch.logged = Some(now);
+        if busy_line {
+            watch.logged = Some(now);
+        }
         // Threads of one name (the software renderer's workers, say) count together.
         let mut by_name: HashMap<String, (Duration, u32)> = HashMap::new();
         for (id, name, t) in &threads {
@@ -90,16 +93,29 @@ impl App {
             .started
             .filter(|_| self.frame_prev.is_some())
             .map(|t| t.elapsed().as_secs());
-        tracing::info!(
-            percent_of_a_core = used,
-            cores = std::thread::available_parallelism().map_or(0, |n| n.get()),
-            seconds = over.as_secs(),
-            threads = %threads_text,
-            ui_thread_handled = %tally.join(", "),
-            frames,
-            frame_run_s,
-            "busy: PecoFence used the processor"
-        );
+        let cores = std::thread::available_parallelism().map_or(0, |n| n.get());
+        let handled = tally.join(", ");
+        if busy_line {
+            tracing::info!(
+                percent_of_a_core = used,
+                cores,
+                seconds = over.as_secs(),
+                threads = %threads_text,
+                ui_thread_handled = %handled,
+                frames,
+                frame_run_s,
+                "busy: PecoFence used the processor"
+            );
+        } else {
+            tracing::debug!(
+                percent_of_a_core = used,
+                seconds = over.as_secs(),
+                threads = %threads_text,
+                ui_thread_handled = %handled,
+                frames,
+                "processor over the last minute"
+            );
+        }
     }
 }
 
