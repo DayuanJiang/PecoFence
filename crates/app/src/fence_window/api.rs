@@ -527,11 +527,13 @@ impl FenceWindow {
         self.window.window_rect()
     }
 
-    /// A display change has given the window a place it has not moved to yet (`defer_moves`).
+    /// The app has given the window a place it is not at yet: a display change's move that
+    /// waits (`defer_moves`), or a glide on its way there.
     pub fn move_pending(&self) -> bool {
-        self.view
-            .try_borrow()
-            .is_ok_and(|g| g.as_ref().is_some_and(|v| v.pending_place.is_some()))
+        self.view.try_borrow().is_ok_and(|g| {
+            g.as_ref()
+                .is_some_and(|v| v.pending_place.is_some() || v.glide.is_some())
+        })
     }
 
     /// A display change places every fence in one pass and reads the others' rects while it

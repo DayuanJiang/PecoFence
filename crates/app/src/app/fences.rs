@@ -589,12 +589,14 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
-        // A display change: the window still stands where the old monitors had it (or waits
-        // to glide to its new place), and its rect saved now would go into the new monitors'
-        // layout. A fence put on the other monitor went back to where the one-monitor layout
-        // had it every time that monitor came back (feedback #194). It is fitted once placed.
-        if self.placing_monitors || w.move_pending() {
-            tracing::debug!(fence = %id, syncing = self.placing_monitors, "auto height waits: the fence is not at its new place yet");
+        // Another layout is being shown (a display change, a snapshot restore, an import): the
+        // window still stands where the old one had it, or is on its way to its new place, and
+        // a rect saved now would go into the new layout. A fence put on the other monitor went
+        // back to where the one-monitor layout had it every time that monitor came back
+        // (feedback #194); a restored fence stayed where it had been moved. It is fitted once
+        // placed (a glide's end fits it again).
+        if self.placing_layout || w.move_pending() {
+            tracing::debug!(fence = %id, syncing = self.placing_layout, "auto height waits: the fence is not at its new place yet");
             return;
         }
         // A rolled fence follows its tabs: collapsed to the left tab column, or back to a title
@@ -665,9 +667,9 @@ impl App {
         let unplaced = self.state.unplaced.clone();
         // A different monitor set may select a different layout: sync windows first. Their
         // auto height waits for their new places (see `apply_auto_height`).
-        self.placing_monitors = true;
+        self.placing_layout = true;
         self.sync_fence_windows();
-        self.placing_monitors = false;
+        self.placing_layout = false;
         // Fences that only move (the taskbar hid itself, another resolution at the same scale)
         // glide to their new places once all of them are placed, instead of jumping.
         for w in self.fences.values() {
@@ -895,7 +897,11 @@ impl App {
         self.state.ensure_layout();
         // Restored or imported fences may name virtual desktops that are gone.
         self.follow_desktops_after("fences replaced");
+        // The windows still stand where the layout before had them: auto height waits until
+        // each is placed below (see `apply_auto_height`).
+        self.placing_layout = true;
         self.resync_windows();
+        self.placing_layout = false;
         for fence in self.state.host_fences() {
             if self.fences.contains_key(&fence.id) && !(glide && self.glide_from_state(&fence)) {
                 self.place_from_state(&fence);
