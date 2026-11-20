@@ -270,5 +270,6 @@ usage-gaps         4   ec2    release usage-gaps.ps1
 monitor-sets-move  6   manual release monitor-sets-move.ps1
 # 撤销提示 (feedback #185, #188): the undo card leaves after 10 s; the switch off shows none, Ctrl+Z still undoes.
 undo-notices       1   ec2    release undo-notices.ps1
+undo-page          2   ec2    debug   undo-notices.ps1               --var Part=P
 # 对话框跳转 with Directory Opus (#240): manual, Directory Opus has to be installed on the box first (the file's header).
 dialog-jump-dopus  2   manual release dialog-jump-dopus.ps1

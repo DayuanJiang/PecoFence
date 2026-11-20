@@ -1,6 +1,40 @@
 # 撤销提示 (feedback #185, #188): the card 「已删除栅栏」 with 撤销 after a fence is deleted from
 # its menu leaves by itself after 10 s (it stayed 30 s); Settings › 常规 › 撤销提示 off
 # (`undoNotices`) shows no card, and Ctrl+Z on a fence still brings the fence back.
+#   run.sh --bin target/wintest-bin-debug --var Part=P tests/undo-notices.ps1   the switch on the
+#                                       settings page in Chinese (CDP: a debug build), with a shot
+if (-not $Part) { $Part = 'A' }
+if ($Part -eq 'P') {
+Case 'settings page switch'
+CloseWindows
+if ($PfDebugBuild) { $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352' }
+PfStart -Lang zh-CN
+$ok = PfSettings
+Check 'settings open over CDP' $ok "debug=$PfDebugBuild"
+PageRect '[data-bind=featureTips]' | Out-Null
+Start-Sleep -Milliseconds 500
+$r = PageRect '[data-bind=featureTips]'
+$w = Rect ([G]::FindWindowW('PecoFence.Settings', [NullString]::Value))
+if ($r) { Crop 'p-general-tips' ($w.L + 8) ($r.y - 150) ($w.R - $w.L - 16) 330 | Out-Null }
+$card = Js "(() => { const t = document.querySelector('[data-bind=undoNotices]'); if (!t) return null; const c = t.closest('.card'); return { title: c.querySelector('.t').textContent, on: t.getAttribute('aria-checked'), page: t.closest('section').id }; })()"
+Check '常规 has 撤销提示, on' ($card -and $card.title -eq '撤销提示' -and $card.on -eq 'true' -and $card.page -eq 'page-general') ($card | ConvertTo-Json -Compress)
+if ($card) {
+  PageClick '[data-bind=undoNotices]'
+  Start-Sleep -Seconds 1
+  Check 'a click on the switch turns undoNotices off' ((Pf settings get undoNotices) -match 'false') ((Pf settings get undoNotices) -join ' ')
+  PageClick '[data-bind=undoNotices]'
+  Start-Sleep -Seconds 1
+}
+Check 'a second click turns it back on' ((Pf settings get undoNotices) -match 'true') ((Pf settings get undoNotices) -join ' ')
+PageType '#settingsSearch' '删除提示'
+Start-Sleep -Milliseconds 800
+$hits = Js "document.getElementById('settingsSearchList').textContent"
+Check "查找设置: '删除提示' finds 撤销提示" ($hits -match '撤销提示') $hits
+PageType '#settingsSearch' ''
+PfQuit
+}
+
+if ($Part -eq 'A') {
 Case 'setup'
 PfStart
 ClearFences | Out-Null
@@ -70,3 +104,4 @@ Check 'Ctrl+Z still brings it back with the switch off' $back "Gone B listed: $b
 Pf settings set undoNotices true | Out-Null
 ParkMouse
 PfQuit
+}
