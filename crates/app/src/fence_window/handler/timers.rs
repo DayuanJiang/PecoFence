@@ -657,6 +657,15 @@ pub(super) fn on_timer_clock(h: &HandlerCtx) -> Option<isize> {
                     v.redraw_content()
                 }
             });
+            // A rolled row as wide as its time: 9:59 to 10:00 needs a wider one.
+            if v.compact_collapsed
+                && v.roll_anim.is_none()
+                && !v.peeking
+                && v.compact_w_px() != window::window_rect_size(v.hwnd).0
+            {
+                tracing::debug!(fence = %h.fence_id, "clock: the rolled row takes the new time's width");
+                h.queue.push(Command::RolledWidthStale(h.fence_id));
+            }
         }
         v.arm_clock();
     }

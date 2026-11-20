@@ -715,6 +715,7 @@
       <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时显示“新建栅栏”按钮</div><div class="s">在矩形右下角显示“新建栅栏”和“在此显示文件夹…”，几秒后消失。关闭后拖出矩形只用来框选</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
       <div class="card" id="perDesktopCard"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">每个虚拟桌面各用一套栅栏</div><div class="s">打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="perDesktopFences"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE82F;</span><div><div class="t">功能提示</div><div class="s">用得上某个功能时提示一次，例如栅栏多了可以收起、常开的文件夹可以放到桌面上。每条只出现一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="featureTips"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE7A7;</span><div><div class="t">撤销提示</div><div class="s">删除栅栏、按规则整理或把栅栏移到别的虚拟桌面后，右下角显示可以撤销的提示，10 秒后消失。关闭后不再显示，在栅栏上按 Ctrl+Z 照样能撤销</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="undoNotices"></div></div>
       <h3>隐藏栅栏</h3>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面空白处隐藏或显示栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="quickHide.enabled"></div></div>
       <div class="card" id="wdHotkeyCard"><div class="l"><span class="ic">&#xE7F4;</span><div><div class="t" id="wdHotkeyTitle">临时显示 Windows 桌面</div><div class="s" id="wdHotkeyHelp" aria-live="polite"></div></div></div>
@@ -733,6 +734,7 @@
           <select data-bind="rollUp.hoverSpeed" aria-labelledby="hoverSpeedTitle"><option value="fast">快</option><option value="normal">默认</option><option value="slow">慢</option></select></div>
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE74B;</span><div><div class="t">展开时把下面的栅栏推开</div><div class="s">收起后它们会回到原位</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.pushNeighbors"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE73F;</span><div><div class="t">收起时缩到标题的宽度</div><div class="s">收起的栅栏只有名称或标签页那么宽，展开后恢复原来的宽度</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.compactRolled"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE740;</span><div><div class="t">双击空白处放大栅栏</div><div class="s">双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="zoom.enabled"></div></div>
       <h3>标题栏与标签页</h3>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">鼠标悬停时才显示标题栏</div><div class="s">平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.titleOnHover"></div></div>
@@ -770,7 +772,7 @@
         <div class="card child" id="everythingCard"><div class="l"><div><div class="t" id="everythingStatus"></div><div class="s" id="everythingHelp"></div></div></div><button class="accent" id="everythingAction"></button></div>
       </div>
       <h3>文件对话框</h3>
-      <div class="card"><div class="l"><span class="ic">&#xE8DA;</span><div><div class="t">对话框跳转</div><div class="s">打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.dialogJump"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8DA;</span><div><div class="t">对话框跳转</div><div class="s">打开或保存文件时，切到资源管理器或 Directory Opus 再切回对话框，它就跳到那里打开的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="tools.dialogJump"></div></div>
       <div class="card child dj-demo" id="dialogJumpDemo"><div class="dj-head">怎么用</div><div class="dj-body"><div class="dj-pic" aria-hidden="true"></div><ol><li>“打开”对话框停在程序自己选的文件夹</li><li></li><li></li></ol></div></div>
     </section>
 
@@ -1389,6 +1391,7 @@
     ['[data-bind=showTrayIcon]', t("搜索别名\x04托盘|系统托盘|通知区域|任务栏图标|隐藏图标|右下角|tray")],
     ['#desktopIcons', t("搜索别名\x04隐藏桌面图标|显示桌面图标|系统图标|原来的图标")],
     ['[data-bind=featureTips]', t("搜索别名\x04小技巧|提示卡片|新手提示|引导")],
+    ['[data-bind=undoNotices]', t("搜索别名\x04撤销卡片|删除提示|通知|弹窗")],
     ['[data-bind="quickHide.enabled"]', t("搜索别名\x04一键隐藏|快速隐藏|隐藏全部")],
     ['#wdHotkey', t("搜索别名\x04看桌面|热键|组合键")],
     ['[data-bind=showDesktop]', t("搜索别名\x04最小化|显示桌面")],
@@ -1938,8 +1941,14 @@
     if (v === 'custom') {
       peekCustom = true;
       renderPeekHotkey();
-      peekRecorder.start();
-      document.getElementById('peekHotkey').focus();
+      // Picked with the mouse in the list the page draws (appearance: base-select), the list
+      // closes after this event and gives the focus back to itself: the box would lose it at
+      // once and end the recording before it began (feedback #189, #190). Start once that is over.
+      setTimeout(() => {
+        if (!peekCustom) return;
+        peekRecorder.start();
+        document.getElementById('peekHotkey').focus();
+      }, 0);
       return;
     }
     peekCustom = false;
@@ -2904,10 +2913,10 @@
     select.value = value;
     document.getElementById('desktopIconsHelp').textContent = {
       hide: t("桌面项目只显示在栅栏里，没有归类的放进“桌面”栅栏；回收站等系统图标也在“桌面”栅栏里"),
-      showWithInbox: t("Windows 桌面照常显示图标，没有归类的项目同时出现在“桌面”栅栏里"),
+      showWithInbox: t("Windows 桌面照常显示所有图标，栅栏里的项目在桌面上也看得到；没有归类的项目同时出现在“桌面”栅栏里"),
       showNoInbox: arranged
         ? t("“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关闭它的“像桌面一样排列”")
-        : t("没有归类的项目只留在 Windows 桌面上，不显示“桌面”栅栏"),
+        : t("Windows 桌面照常显示所有图标，栅栏里的项目在桌面上也看得到；不显示“桌面”栅栏"),
     }[value];
     reveal(document.getElementById('keepIconsCard'), value === 'hide');
     select.onchange = () => {

@@ -1574,6 +1574,26 @@ impl App {
                 w.redraw();
             }
         }
+        // 收起时缩到标题的宽度 (GitHub #242): rolled fences narrow to their title rows or widen
+        // back; the count and chevron change what such a row needs.
+        self.ctx
+            .behavior
+            .compact_rolled
+            .set(new.roll_up.compact_rolled);
+        if new.roll_up.compact_rolled != old.roll_up.compact_rolled
+            || (new.roll_up.compact_rolled
+                && new.roll_up.hide_count_and_chevron != old.roll_up.hide_count_and_chevron)
+        {
+            tracing::info!(
+                compact = new.roll_up.compact_rolled,
+                hide_count = new.roll_up.hide_count_and_chevron,
+                "rolled fences take their rolled width again"
+            );
+            let hosts: Vec<FenceId> = self.fences.keys().copied().collect();
+            for host in hosts {
+                self.apply_auto_height(host);
+            }
+        }
         if new.tab_bar != old.tab_bar {
             // The tab column takes (or gives back) width beside the items, and an auto-height
             // fence grows to show every tab in it.

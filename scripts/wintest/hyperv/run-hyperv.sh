@@ -1,20 +1,22 @@
 #!/bin/bash
 # Runs steps files in a Hyper-V guest of the Windows PC (Windows 11 or 10) and prints the same
 # table as run.sh does for an EC2 box.
-#   run-hyperv.sh --vm NAME [--bin DIR] [--extra DIR] [--out DIR] [--timeout SEC] [--keep-notepad] [--elevated] steps.ps1 ...
+#   run-hyperv.sh --vm NAME [--bin DIR] [--extra DIR] [--out DIR] [--timeout SEC] [--keep-notepad] [--elevated] [--prep FILE] steps.ps1 ...
 # The PC is `ssh $WINTEST_HV_SSH` (default win), an administrator with Hyper-V. The guest must be
 # Off with no checkpoint (another session's checkpoint means it is in use): guest-run.ps1 takes a
 # checkpoint, sets 1600x900 (the steps expect it), runs one PFJob job per steps file, and
 # restores the checkpoint and the video settings at the end. The Store Notepad is removed in the
 # guest first (it restores earlier jobs' tabs over the Open dialog) unless --keep-notepad.
 # --elevated runs the jobs with pf's full administrator token (PecoFence run as administrator).
+# --prep FILE runs a PowerShell file in the guest as administrator (PowerShell Direct) once the files
+# are copied and before the first job, for setup a job cannot do as pf (a driver, say).
 # Run this as the background command itself: it returns when the guest is restored.
 set -uo pipefail
 HV=$(cd "$(dirname "$0")" && pwd)
 KIT=$(cd "$HV/.." && pwd)
 REPO=$(cd "$KIT/../.." && pwd)
 SSHH=${WINTEST_HV_SSH:-win}
-VM=; BIN=$REPO/target/wintest-bin; EXTRA=; TIMEOUT=1500; NOTEPAD=-ClassicNotepad; ELEV=
+VM=; BIN=$REPO/target/wintest-bin; EXTRA=; TIMEOUT=1500; NOTEPAD=-ClassicNotepad; ELEV=; PREP=
 # The PID keeps two runs started in the same second (two guests at once) out of each other's folder on the PC.
 TAG=$(date +%m%d-%H%M%S)-$$
 OUT=${CLAUDE_JOB_DIR:-/tmp/pecofence-wintest}/tmp/wintest-hv-$TAG
@@ -27,12 +29,14 @@ while [ $# -gt 0 ]; do
     --timeout) TIMEOUT=$2; shift 2 ;;
     --keep-notepad) NOTEPAD=; shift ;;
     --elevated) ELEV=-Elevated; shift ;;
+    --prep) PREP=$2; shift 2 ;;
     -*) echo "unknown option $1"; exit 2 ;;
     *) break ;;
   esac
 done
 [ -n "$VM" ] && [ $# -ge 1 ] || { sed -n '2,12p' "$0"; exit 2; }
 for s in "$@"; do [ -f "$s" ] || { echo "no steps file $s"; exit 2; }; done
+[ -z "$PREP" ] || [ -f "$PREP" ] || { echo "no prep file $PREP"; exit 2; }
 [ -f "$BIN/pecofence.exe" ] || { echo "no build in $BIN"; exit 2; }
 mkdir -p "$OUT"
 STAGE=$OUT/.stage
@@ -62,6 +66,8 @@ EOF
 cp -r "$BIN"/. "$STAGE/stage/bin/"
 [ -n "$EXTRA" ] && cp -r "$EXTRA"/. "$STAGE/stage/extra/"
 cp "$HV/guest-run.ps1" "$STAGE/"
+PREPARG=
+if [ -n "$PREP" ]; then cp "$PREP" "$STAGE/stage/prep.ps1"; PREPARG=-AdminPrep; fi
 STEPS=$(for s in "$@"; do basename "$s" .ps1; done | paste -sd+)
 tar -cf "$OUT/stage.tar" -C "$STAGE" stage guest-run.ps1
 
@@ -79,7 +85,7 @@ Set-Location \$b
 if (-not \$v) { 'no VM $VM'; exit }
 \$cps = @(Get-VMSnapshot -VMName '$VM' -ErrorAction SilentlyContinue).Count
 if (\$v.State -ne 'Off' -or \$cps) { "VM $VM is in use: \$(\$v.State), \$cps checkpoints"; exit }
-\$cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \`"\$b\\guest-run.ps1\`" -VM $VM -Steps $STEPS -Timeout $TIMEOUT -Base \`"\$b\`" -Stage stage $NOTEPAD $ELEV"
+\$cmd = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \`"\$b\\guest-run.ps1\`" -VM $VM -Steps $STEPS -Timeout $TIMEOUT -Base \`"\$b\`" -Stage stage $NOTEPAD $ELEV $PREPARG"
 \$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = \$cmd; CurrentDirectory = \$b }
 "started \$(\$r.ReturnValue)"
 EOF

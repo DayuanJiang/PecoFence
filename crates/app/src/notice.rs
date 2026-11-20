@@ -1,7 +1,7 @@
 //! A notice in the corner above the taskbar, styled like a fence (`pecofence_render::notice`).
 //! Windows decides how long a tray balloon stays (5 s by default) and keeps none in the
 //! notification centre, so the one-time rating offer (`app/rating.rs`) uses this instead: it
-//! stays for [`SHOW_FOR`], longer while the pointer rests on it. It appears without taking
+//! stays for 30 s ([`Notice::stay_for`] sets another time), longer while the pointer rests on it. It appears without taking
 //! focus; a click on it is the user's input to PecoFence, so what the click opens (the Store's
 //! rating dialog) may come to the front.
 
@@ -26,6 +26,8 @@ const TIMER_DISMISS: usize = 1;
 const TIMER_FADE: usize = 2;
 /// How long the notice stays when the pointer leaves it alone.
 const SHOW_FOR_MS: u32 = 30_000;
+/// How long a card that offers 撤销 stays ([`Notice::stay_for`]): Ctrl+Z still undoes after it.
+pub const UNDO_SHOW_FOR_MS: u32 = 10_000;
 /// Re-check interval while the pointer rests on it.
 const HOVER_RECHECK_MS: u32 = 1_500;
 /// Gap to the work area's edge, in DIPs.
@@ -112,6 +114,8 @@ struct View {
     /// Answered and kept by the app for the card the answer may bring up ([`Notice::hold`]):
     /// it takes no more clicks until it has other texts.
     held: bool,
+    /// How long the card stays when the pointer leaves it alone, in ms.
+    show_for_ms: u32,
 }
 
 impl View {
@@ -322,6 +326,7 @@ impl Notice {
             declined: false,
             left: false,
             held: false,
+            show_for_ms: SHOW_FOR_MS,
         }));
         shared.borrow_mut().redraw();
         *view.borrow_mut() = Some(shared.clone());
@@ -347,8 +352,8 @@ impl Notice {
     /// Puts other texts on the card where it stands (「下一条」: the next tip). The card stays
     /// on screen with no fade and keeps its size: texts that need less room leave it between
     /// the text and the button. Only texts that need more make it taller (its bottom edge
-    /// keeps its place); [`Self::show_reserving`] gives the first card that room. The 30 s
-    /// until it leaves by itself start again, and a card that was fading out comes back.
+    /// keeps its place); [`Self::show_reserving`] gives the first card that room. The time
+    /// until it leaves by itself starts again, and a card that was fading out comes back.
     pub fn set_content(&self, title: &str, body: &str, action: &str, locale: &str) -> Result<()> {
         let hwnd = self.window.hwnd();
         let old = window::window_rect(hwnd);
@@ -410,8 +415,16 @@ impl Notice {
             self.view.borrow_mut().shadow.update(rect, dpi);
         }
         window::set_title(hwnd, title);
-        self.window.set_timer(TIMER_DISMISS, SHOW_FOR_MS);
+        let ms = self.view.borrow().show_for_ms;
+        self.window.set_timer(TIMER_DISMISS, ms);
         Ok(())
+    }
+
+    /// The card leaves by itself `ms` after now (and after each [`Self::set_content`]) instead
+    /// of after 30 seconds; the pointer on it or the keyboard keeps it, as before.
+    pub fn stay_for(&self, ms: u32) {
+        self.view.borrow_mut().show_for_ms = ms;
+        self.window.set_timer(TIMER_DISMISS, ms);
     }
 
     /// F6 in a fence or in the Peek: the card takes the keyboard and its button shows the focus

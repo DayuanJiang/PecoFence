@@ -1195,7 +1195,7 @@ impl FenceViewState {
         self.chrome_panel.resize(w, h)?;
         // A fence collapsed (or collapsing) to its left tab column keeps the width it returns
         // to; the column's width follows the expanded fence.
-        if !self.column_collapsed && self.roll_anim.as_ref().is_none_or(|a| a.width.is_none()) {
+        if !self.narrowed() && self.roll_anim.as_ref().is_none_or(|a| a.width.is_none()) {
             self.expanded_w_px = w;
         }
         self.rail_dip = self.measure_rail_w();

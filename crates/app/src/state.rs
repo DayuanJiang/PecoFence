@@ -182,7 +182,18 @@ fn saver_for(store: &ConfigStore) -> ConfigSaver {
             Ok(()) if took >= SLOW_SAVE => {
                 tracing::info!(ms, "config saved; the disk kept the save waiting")
             }
-            Ok(()) => tracing::debug!(ms, path = %primary.display(), "config saved"),
+            Ok(()) => {
+                // Once per run: the rename into place was refused (feedback #186).
+                if let Some(code) = pecofence_core::config_store::take_in_place_note() {
+                    tracing::info!(
+                        rename_error = code,
+                        config_in_package = in_package_folder(&primary),
+                        place = shell::path_place(&primary),
+                        "config saved in place: Windows refused the rename of the temp file here"
+                    );
+                }
+                tracing::debug!(ms, path = %primary.display(), "config saved")
+            }
             // config.json holds every change: no "cannot save" notice for the backup copy.
             Err(e) if e.config_written() => tracing::warn!(
                 error = %e.error,

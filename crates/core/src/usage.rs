@@ -247,6 +247,7 @@ const REPORTED_SETTINGS: &[&str] = &[
     "rollUp.pushNeighbors",
     "rollUp.switchTabOnHover",
     "rollUp.hideCountAndChevron",
+    "rollUp.compactRolled",
     "showDesktop",
     "hideRealIcons",
     "keepIconsHidden",
@@ -254,6 +255,8 @@ const REPORTED_SETTINGS: &[&str] = &[
     "offerNewFence",
     "perDesktopFences",
     "featureTips",
+    "undoNotices",
+    "idleOpacity",
     "autoCheckUpdates",
     "showTrayIcon",
     "snapping.enabled",
@@ -291,6 +294,7 @@ pub fn settings_report(settings: &Settings, rules: &RuleSet) -> Map<String, Valu
     // An `f32` reads as 0.6000000238418579.
     let strength = (f64::from(settings.icons.tint_strength) * 100.0).round() / 100.0;
     all["icons"]["tintStrength"] = json!(strength);
+    all["idleOpacity"] = json!((f64::from(settings.idle_opacity) * 100.0).round() / 100.0);
     let at = |path: &str| path.split('.').fold(&all, |value, part| &value[part]);
     let plain = REPORTED_SETTINGS
         .iter()

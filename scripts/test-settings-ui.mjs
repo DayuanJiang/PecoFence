@@ -14,11 +14,11 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN', idleOpacity: 1,
-    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, showTrayIcon: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
+    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, undoNotices: true, showTrayIcon: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', menuColor: 'followMode', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     zoom: { enabled: true },
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
-    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
+    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false, compactRolled: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace', doubleCtrl: false },
     tools: { enabled: false, clockSeconds: false, dialogJump: false, everything: false },
   },
@@ -1432,6 +1432,11 @@ async function runTests() {
     tips.click(); await settle();
     assert(current().settings.featureTips === false, 'Feature tips switch did not post');
     tips.click(); await settle();
+    const undo = doc.querySelector('[data-bind=undoNotices]');
+    assert(undo.getAttribute('aria-checked') === 'true', 'Undo notices not shown on');
+    undo.click(); await settle();
+    assert(current().settings.undoNotices === false, 'Undo notices switch did not post');
+    undo.click(); await settle();
   });
   await test('显示托盘图标: the switch, the 退出 card while it is off, and the search', async () => {
     doc = await reset();
@@ -2303,6 +2308,17 @@ async function runTests() {
     assert(!box.classList.contains('recording') && edit.hidden && choice().value === '3:75' && choiceText() === 'Ctrl + Alt + K', 'Saved shortcut not shown: ' + choiceText());
     assert(current().settings.peek.customHotkey === 'Ctrl+Alt+K', 'Shortcut not saved');
     assert(choice().options.length === 6, 'The recorded combination is not in the list');
+  });
+  await test('自定义… picked with the mouse in the list the page draws still records (feedback #189, #190)', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=peek]').click();
+    const box = doc.getElementById('peekHotkey'), edit = doc.getElementById('peekHotkeyEdit');
+    // The styled list (appearance: base-select) closes after its change event and gives the
+    // focus back to itself: the recording must survive that.
+    choose('custom'); choice().focus(); await settle();
+    assert(!edit.hidden && box.classList.contains('recording') && doc.activeElement === box && choice().value === 'custom', 'Recording ended when the list took the focus back');
+    press(box, 'k', 75, { ctrlKey: true, shiftKey: true }); await settle();
+    assert(current().settings.peek.customHotkey === 'Ctrl+Shift+K', 'Shortcut not saved: ' + current().settings.peek.customHotkey);
   });
   await test('A refused shortcut keeps recording with the reason; Esc cancels', async () => {
     doc = await reset();

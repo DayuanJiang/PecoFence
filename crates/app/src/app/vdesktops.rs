@@ -424,7 +424,10 @@ impl App {
             self.note_desktops_for_undo(host, before.unwrap_or_default());
             let card = self.offer_undo_desktops(host, &title, &names);
             tracing::info!(fence = %host, card, reason, "notice: the fence now shows on another desktop");
-            if !card && let Some(t) = &self.tray {
+            if !card
+                && self.state.config.settings.undo_notices
+                && let Some(t) = &self.tray
+            {
                 t.show_info(
                     "PecoFence",
                     &pecofence_core::i18n::format(

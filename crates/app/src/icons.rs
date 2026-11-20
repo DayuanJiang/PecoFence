@@ -157,6 +157,7 @@ fn describe_dull(
         .flatten();
     let target_ext = target.as_deref().map(shell::log_ext);
     let target_place = target.as_deref().map(shell::path_place);
+    let missing = target.as_deref().filter(|t| !t.exists()).map(missing_from);
     let error = error.map(|e| format!("{:#010x}", e as u32));
     tracing::info!(
         file_ext = ext.as_str(),
@@ -169,8 +170,38 @@ fn describe_dull(
         target_place = target_place.as_deref(),
         target_attrs = target.as_deref().map(shell::file_attributes),
         target_there = target.as_deref().map(Path::exists),
+        target_error = missing.and_then(|m| m.error),
+        target_seen = missing.map(|m| m.seen),
+        target_levels = missing.map(|m| m.levels),
+        // GitHub #244: where a Store edition on another drive sees its own data instead.
+        target_in_package_view = target.as_deref().map(shell::under_package_view_of_appdata),
         "icon is not the file's own picture"
     );
+}
+
+/// A shortcut target this process cannot see: the OS error of looking it up (2 or 3: not there,
+/// 5: refused), and how many of the path's `levels` (the drive, its folders, the file) it sees,
+/// from the drive down. Numbers only, so the shareable log keeps them. GitHub #244: the Store
+/// edition saw a target that Explorer and the EXE edition open; where its view of the path ends
+/// tells which folder Windows hides from packaged programs.
+#[derive(Clone, Copy, Debug)]
+struct Missing {
+    error: Option<i32>,
+    seen: usize,
+    levels: usize,
+}
+
+fn missing_from(target: &Path) -> Missing {
+    let error = std::fs::metadata(target)
+        .err()
+        .and_then(|e| e.raw_os_error());
+    let levels: Vec<&Path> = target.ancestors().collect();
+    let seen = levels.iter().filter(|p| p.exists()).count();
+    Missing {
+        error,
+        seen,
+        levels: levels.len(),
+    }
 }
 
 /// An extraction in flight (or waiting for a retry), with how often it has failed so far.
@@ -809,6 +840,20 @@ fn thumbnail_capable(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// GitHub #244: the log says where this process's view of a missing target ends.
+    #[test]
+    fn missing_target_says_how_far_its_folders_are_seen() {
+        let dir =
+            std::env::temp_dir().join(format!("pecofence-icons-missing-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("Programs").join("App").join("App.exe");
+        let m = missing_from(&target);
+        assert_eq!(m.levels, target.ancestors().count());
+        assert_eq!(m.seen, m.levels - 3);
+        assert!(matches!(m.error, Some(2 | 3)), "{m:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// Only what a window needs stays: the size it shows now, for the items it shows. Other
     /// sizes, a folder a portal left, an older version of a changed file and extractions

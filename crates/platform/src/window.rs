@@ -1073,6 +1073,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             handled = handler(hwnd, msg, wparam.0, lparam.0);
             MESSAGE_DEPTH.with(|d| d.set(depth));
             let spent = started.elapsed();
+            if depth == 0 {
+                crate::busy::note_message(msg, wparam.0, spent);
+            }
             if depth == 0 && spent >= std::time::Duration::from_millis(4) {
                 tracing::debug!(
                     ms = (spent.as_secs_f64() * 10000.0).round() / 10.0,

@@ -3,6 +3,8 @@
 //!
 //! - A dialog keeps its own folder when it opens.
 //! - Coming back to it from an Explorer window makes it jump, once, to that window's folder.
+//!   A Directory Opus lister counts like an Explorer window (#240): its folder comes from
+//!   Directory Opus's `dopusrt.exe` (`pecofence_platform::dopus`).
 //! - Pressing a folder fence (a folder portal, or a fence showing an opened folder) counts like
 //!   an Explorer window; with the dialog in front it jumps at once.
 //! - Ctrl+G in the dialog jumps there at any time. The shortcut is registered only while a
@@ -18,6 +20,7 @@
 //! the jump itself runs on a short-lived worker thread, as it waits for the other program.
 
 use pecofence_platform::dialogs::{self, JumpOutcome};
+use pecofence_platform::dopus;
 use pecofence_platform::winevent::{self, WinEventHook};
 use pecofence_platform::{HWND, desktop, hotkey};
 use std::cell::RefCell;
@@ -46,6 +49,8 @@ const OFFER_SETTLE_MS: u64 = 400;
 enum Source {
     /// An Explorer window: its folder is read when the jump runs.
     Explorer(isize),
+    /// A Directory Opus lister: its active tab's folder is read when the jump runs.
+    Opus(isize),
     /// A folder fence's folder.
     Folder(PathBuf),
 }
@@ -186,6 +191,13 @@ fn on_foreground(hwnd: HWND) {
             tracing::debug!(
                 explorer = raw,
                 "dialog jump: Explorer in front, noted as the source"
+            );
+        } else if dopus::is_lister(hwnd) {
+            j.source = Some(Source::Opus(raw));
+            j.pending = true;
+            tracing::info!(
+                lister = raw,
+                "dialog jump: Directory Opus lister in front, noted as the source"
             );
         }
     });
@@ -328,7 +340,7 @@ pub fn note_folder(dir: &Path) {
 }
 
 /// Ctrl+G (`WM_HOTKEY` with [`HOTKEY_ID`]): the dialog in front jumps to the last source, or
-/// to the topmost Explorer window when there is none yet.
+/// to the topmost Explorer window or Directory Opus lister when there is none yet.
 pub fn on_hotkey() {
     let front = desktop::foreground_window();
     if !dialogs::is_file_dialog(front) {
@@ -349,8 +361,7 @@ pub fn on_hotkey() {
         j.pending = false;
         j.source.clone()
     });
-    let source =
-        source.or_else(|| dialogs::topmost_explorer().map(|e| Source::Explorer(e.0 as isize)));
+    let source = source.or_else(topmost_file_window);
     match source {
         Some(s) => start_jump(front, s, "Ctrl+G"),
         None => tracing::info!("dialog jump: Ctrl+G, but no Explorer window or folder fence yet"),
@@ -385,6 +396,26 @@ pub fn send_to_dialog(dlg: HWND, path: PathBuf, is_folder: bool) {
     if let Err(e) = spawned {
         tracing::error!(error = %e, "dialog choose: worker thread failed to start");
     }
+}
+
+/// The Explorer window or Directory Opus lister nearest the top of the z-order.
+fn topmost_file_window() -> Option<Source> {
+    let explorer = dialogs::topmost_explorer();
+    let lister = dopus::topmost_lister();
+    let (e, l) = match (explorer, lister) {
+        (Some(e), Some(l)) => (e, l),
+        (Some(e), None) => return Some(Source::Explorer(e.0 as isize)),
+        (None, Some(l)) => return Some(Source::Opus(l.0 as isize)),
+        (None, None) => return None,
+    };
+    let first = desktop::top_level_windows()
+        .into_iter()
+        .find(|&w| w == e || w == l);
+    Some(if first == Some(l) {
+        Source::Opus(l.0 as isize)
+    } else {
+        Source::Explorer(e.0 as isize)
+    })
 }
 
 /// Listary (Listary.exe) has a window. Its Quick Switch moves the dialog from inside the
@@ -559,10 +590,20 @@ fn start_jump(dlg: HWND, source: Source, reason: &'static str) {
                     };
                     window.and_then(dialogs::explorer_folder)
                 }
+                Source::Opus(l) => {
+                    // The lister noted is closed: another one still open will do.
+                    let lister = if desktop::is_window(h(*l)) {
+                        Some(h(*l))
+                    } else {
+                        dopus::topmost_lister()
+                    };
+                    lister.and_then(dopus::lister_folder)
+                }
             };
             let Some(dir) = dir.filter(|d| d.is_dir()) else {
                 let kind = match &source {
                     Source::Explorer(_) => "Explorer",
+                    Source::Opus(_) => "Directory Opus",
                     Source::Folder(_) => "folder fence",
                 };
                 tracing::info!(

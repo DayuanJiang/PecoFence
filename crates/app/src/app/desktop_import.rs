@@ -57,6 +57,8 @@ impl App {
     /// 自由摆放 or 像桌面一样排列 was switched on: 「桌面」 takes Windows' places if it has
     /// no saved cells (it has none the first time).
     pub(super) fn want_windows_places(&mut self) {
+        // A right-click before it was not for icons placed anew (#238).
+        self.desktop_menu_at = None;
         if !matches!(self.windows_places.state, Stage::Reading(_)) {
             self.windows_places.state = Stage::Wanted;
         }

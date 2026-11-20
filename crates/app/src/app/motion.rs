@@ -376,6 +376,7 @@ impl App {
     /// anything still moves.
     pub(super) fn on_frame(&mut self) {
         let now = Instant::now();
+        self.busy.frames = self.busy.frames.saturating_add(1);
         if std::mem::take(&mut self.hide_icons_at_frame) {
             self.hide_icons_as_fences_come();
         }
