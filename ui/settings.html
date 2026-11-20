@@ -1939,8 +1939,14 @@
     if (v === 'custom') {
       peekCustom = true;
       renderPeekHotkey();
-      peekRecorder.start();
-      document.getElementById('peekHotkey').focus();
+      // Picked with the mouse in the list the page draws (appearance: base-select), the list
+      // closes after this event and gives the focus back to itself: the box would lose it at
+      // once and end the recording before it began (feedback #189, #190). Start once that is over.
+      setTimeout(() => {
+        if (!peekCustom) return;
+        peekRecorder.start();
+        document.getElementById('peekHotkey').focus();
+      }, 0);
       return;
     }
     peekCustom = false;

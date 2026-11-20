@@ -2308,6 +2308,17 @@ async function runTests() {
     assert(current().settings.peek.customHotkey === 'Ctrl+Alt+K', 'Shortcut not saved');
     assert(choice().options.length === 6, 'The recorded combination is not in the list');
   });
+  await test('自定义… picked with the mouse in the list the page draws still records (feedback #189, #190)', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=peek]').click();
+    const box = doc.getElementById('peekHotkey'), edit = doc.getElementById('peekHotkeyEdit');
+    // The styled list (appearance: base-select) closes after its change event and gives the
+    // focus back to itself: the recording must survive that.
+    choose('custom'); choice().focus(); await settle();
+    assert(!edit.hidden && box.classList.contains('recording') && doc.activeElement === box && choice().value === 'custom', 'Recording ended when the list took the focus back');
+    press(box, 'k', 75, { ctrlKey: true, shiftKey: true }); await settle();
+    assert(current().settings.peek.customHotkey === 'Ctrl+Shift+K', 'Shortcut not saved: ' + current().settings.peek.customHotkey);
+  });
   await test('A refused shortcut keeps recording with the reason; Esc cancels', async () => {
     doc = await reset();
     doc.querySelector('[data-page=peek]').click();
