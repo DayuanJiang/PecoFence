@@ -248,6 +248,21 @@ impl FreeGrid {
     }
 }
 
+/// 自由摆放: which icons the desktop menu's click places (#238): the ones that are really new,
+/// with no saved cell and no place on Windows' desktop, while others keep their saved cells.
+/// A pass where no icon has a saved cell (a sort lined them up again, or 自由摆放 just started)
+/// or one that takes Windows' places places every icon anew: none goes to the click then.
+fn menu_asks(
+    saved: &[Option<(i32, i32)>],
+    asked: &[Option<(i32, i32)>],
+    windows_places: bool,
+    menu: bool,
+) -> Vec<bool> {
+    let some_kept = saved.iter().any(Option::is_some);
+    let use_menu = menu && some_kept && !windows_places;
+    asked.iter().map(|a| use_menu && a.is_none()).collect()
+}
+
 /// Height (DIPs) a selected full name may take below a cell of `m`. Without labels nothing
 /// unfolds, so there is none.
 fn unfold_room_dip(m: &GridMetrics) -> f32 {
@@ -466,10 +481,7 @@ impl FenceViewState {
             .menu_at
             .filter(|at| grid.on_work(*at))
             .map(|at| grid.cell_at(at.0, at.1));
-        let at_menu: Vec<bool> = asked
-            .iter()
-            .map(|a| a.is_none() && menu_cell.is_some())
-            .collect();
+        let at_menu = menu_asks(&wanted, &asked, area.windows.is_some(), menu_cell.is_some());
         let asked: Vec<Option<(i32, i32)>> = asked
             .iter()
             .zip(&at_menu)
@@ -920,6 +932,31 @@ mod tests {
             placed,
             vec![(5, 2), (0, 1), (0, 0), (0, 2), (11, 1)],
             "saved cells stay; new icons fill column one from the top around them"
+        );
+    }
+
+    #[test]
+    fn only_really_new_icons_go_to_the_desktop_menu_click() {
+        let cell = Some((3, 1));
+        // A new file among icons that keep their cells: that one.
+        assert_eq!(
+            menu_asks(&[cell, None], &[cell, None], false, true),
+            vec![false, true]
+        );
+        // After a sort (every cell cleared) or when 自由摆放 starts: none, the icons line up
+        // from the top-left (or take Windows' places) as without the click.
+        assert_eq!(
+            menu_asks(&[None, None], &[None, None], false, true),
+            vec![false, false]
+        );
+        assert_eq!(
+            menu_asks(&[cell, None], &[cell, None], true, true),
+            vec![false, false]
+        );
+        // No click: none.
+        assert_eq!(
+            menu_asks(&[cell, None], &[cell, None], false, false),
+            vec![false, false]
         );
     }
 

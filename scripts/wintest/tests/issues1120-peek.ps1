@@ -171,6 +171,24 @@ function PartB() {
   $old = "$([int][Math]::Floor(($at[0] + 160 - 4) / 80)),$([int][Math]::Floor(($at[1] - 4) / 96))"
   Check 'a file half a minute after the click takes the first free cell' ($c3 -and $c3 -ne $old) "cell=$c3 click cell=$old"
   foreach ($n in $n1, $n2, $n3) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -ErrorAction SilentlyContinue }
+
+  # A right-click, Esc, then a new sort within the 30 s (as after trying Windows' own 排序方式
+  # first): the icons line up from the top left as without the click, none piles up around it.
+  Case 'B: a sort right after a desktop right-click lines the icons up from the top left'
+  $made = @()
+  foreach ($k in 1..4) { $p = Join-Path $PfDesk "pk238sort$k.pk238"; Set-Content -LiteralPath $p 'x'; $made += $p }
+  foreach ($k in 1..4) { WaitCell "pk238sort$k.pk238" | Out-Null }
+  $sortWas = (FenceGet $script:InboxId).sort
+  $sortNow = $sortWas -eq 'name'
+  Log "sort of 「桌面」 before: $sortWas"
+  [G]::RClick($at[0], $at[1]); Start-Sleep -Milliseconds 900
+  CloseDeskMenu
+  Pf fence set $script:InboxId sort ($(if ($sortNow) { 'date' } else { 'name' })) | Out-Null
+  Start-Sleep -Seconds 2
+  $cols = @(foreach ($k in 1..4) { $c = WaitCell "pk238sort$k.pk238"; if ($c) { [int]($c -split ',')[0] } else { -1 } })
+  Shot 'b-sorted'
+  Check 'after the sort every icon stands in the first column, none at the click' (@($cols | Where-Object { $_ -ne 0 }).Count -eq 0) "columns=$($cols -join ',') click cell=$want"
+  foreach ($p in $made) { Remove-Item -LiteralPath $p -ErrorAction SilentlyContinue }
 }
 
 # ---- C: 速览 › 快捷键 › 自定义…

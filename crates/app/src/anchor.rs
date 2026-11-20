@@ -1741,11 +1741,17 @@ impl DesktopAnchor {
     /// 新建 and 粘贴 make goes to that spot on a Windows desktop (#238). The App keeps the point
     /// for the next new icons of 「桌面」 when it places them freely.
     fn on_desktop_menu_button_up(&mut self) {
+        // With Windows' own icons shown 「桌面」 does not arrange like the desktop, and asking
+        // Explorer which icon is under the pointer (up to 200 ms) would come just as it builds
+        // its menu.
+        if !shell_icons::desktop_icons_hidden() {
+            return;
+        }
         let pt = window::cursor_pos();
         let hit = desktop::window_from_point(pt.x, pt.y);
         let root = desktop::root_ancestor(hit);
-        let bare =
-            !self.all_windows().contains(&root) && self.is_desktop_window(hit) && !on_icon(hit);
+        // Windows' icons are hidden here, so none can be under the pointer.
+        let bare = !self.all_windows().contains(&root) && self.is_desktop_window(hit);
         tracing::debug!(
             ?pt,
             bare,

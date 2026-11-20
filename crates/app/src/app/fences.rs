@@ -578,7 +578,13 @@ impl App {
             return;
         };
         // A right-click on the desktop a moment ago: its 新建 or 粘贴 put the next new icons
-        // under it (#238).
+        // under it (#238). Not once no icon has a saved cell (a sort lined them up again, or
+        // 自由摆放 just started): that click was not for them.
+        if free.as_ref().is_some_and(|cells| cells.is_empty())
+            && self.desktop_menu_at.take().is_some()
+        {
+            tracing::debug!("desktop menu's click dropped: the icons are placed anew");
+        }
         let menu_at = self
             .desktop_menu_at
             .filter(|(at, _)| at.elapsed() < MENU_PLACE_FOR)
