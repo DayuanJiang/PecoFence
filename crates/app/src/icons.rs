@@ -157,6 +157,11 @@ fn describe_dull(
         .flatten();
     let target_ext = target.as_deref().map(shell::log_ext);
     let target_place = target.as_deref().map(shell::path_place);
+    let (target_error, target_seen) = target
+        .as_deref()
+        .filter(|t| !t.exists())
+        .map(missing_from)
+        .unzip();
     let error = error.map(|e| format!("{:#010x}", e as u32));
     tracing::info!(
         file_ext = ext.as_str(),
@@ -169,8 +174,23 @@ fn describe_dull(
         target_place = target_place.as_deref(),
         target_attrs = target.as_deref().map(shell::file_attributes),
         target_there = target.as_deref().map(Path::exists),
+        target_error,
+        target_seen = target_seen.as_deref(),
         "icon is not the file's own picture"
     );
+}
+
+/// For a shortcut target this process cannot see: the OS error of looking it up (2 or 3: not
+/// there, 5: refused) and how many of its folders, from the drive down, it sees ("4/7").
+/// GitHub #244: the Store edition saw a target that Explorer and the EXE edition open; where its
+/// view of the path ends tells whether Windows hides a folder from packaged programs.
+fn missing_from(target: &Path) -> (Option<i32>, String) {
+    let error = std::fs::metadata(target)
+        .err()
+        .and_then(|e| e.raw_os_error());
+    let levels: Vec<&Path> = target.ancestors().collect();
+    let seen = levels.iter().filter(|p| p.exists()).count();
+    (error, format!("{seen}/{}", levels.len()))
 }
 
 /// An extraction in flight (or waiting for a retry), with how often it has failed so far.
@@ -809,6 +829,20 @@ fn thumbnail_capable(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// GitHub #244: the log says where this process's view of a missing target ends.
+    #[test]
+    fn missing_target_says_how_far_its_folders_are_seen() {
+        let dir =
+            std::env::temp_dir().join(format!("pecofence-icons-missing-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("Programs").join("App").join("App.exe");
+        let (error, seen) = missing_from(&target);
+        let levels = target.ancestors().count();
+        assert_eq!(seen, format!("{}/{levels}", levels - 3));
+        assert!(matches!(error, Some(2 | 3)), "{error:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// Only what a window needs stays: the size it shows now, for the items it shows. Other
     /// sizes, a folder a portal left, an older version of a changed file and extractions

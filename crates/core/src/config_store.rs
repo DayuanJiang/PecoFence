@@ -27,6 +27,27 @@ fn held_open(e: &io::Error) -> bool {
     matches!(e.raw_os_error(), Some(32 | 33))
 }
 
+/// A rename of the temp file over config.json that the Store edition's view of %APPDATA%
+/// refuses although writing the file in place works: os error 17 (ERROR_NOT_SAME_DEVICE) when
+/// %APPDATA% or the package was moved to another drive, os error 6 (ERROR_INVALID_HANDLE) on
+/// some Windows 11 25H2 PCs (feedback #186: every save failed, so every start was a first run;
+/// other packaged apps meet the same error on that build).
+fn rename_refused(e: &io::Error) -> bool {
+    e.kind() == io::ErrorKind::CrossesDevices || (cfg!(windows) && e.raw_os_error() == Some(6))
+}
+
+/// The OS error of the first rename [`ConfigStore::save`] gave up for an in-place write, for
+/// one line in the log: 0 until then, -1 once [`take_in_place_note`] took it.
+static IN_PLACE_NOTE: std::sync::atomic::AtomicI32 = std::sync::atomic::AtomicI32::new(0);
+
+/// Once per run: the OS error of the refused rename after which config.json was written in
+/// place (`None` when no save needed that, or the note was already taken).
+pub fn take_in_place_note() -> Option<i32> {
+    use std::sync::atomic::Ordering;
+    let code = IN_PLACE_NOTE.load(Ordering::Relaxed);
+    (code > 0 && IN_PLACE_NOTE.swap(-1, Ordering::Relaxed) == code).then_some(code)
+}
+
 #[derive(Debug)]
 pub enum LoadOutcome {
     /// Loaded from the primary file.
@@ -355,18 +376,19 @@ impl ConfigStore {
         match fs::rename(self.tmp_path(), &primary) {
             Ok(()) => {}
             // The Store edition sees %APPDATA% merged with its package's copy, and Windows
-            // refuses renames in it when %APPDATA% was moved to another drive (the .bak
-            // rotation above fails too). Write the file in place, keeping the old one as .bak.
-            // Without that copy a torn write would leave nothing readable, so it must succeed;
-            // the new file is flushed like the temp file before the temp file goes.
-            Err(e) if e.kind() == io::ErrorKind::CrossesDevices => {
-                if primary.exists() {
-                    fs::copy(&primary, self.bak_path()).map_err(at("keep config.bak"))?;
+            // refuses some renames in it (the .bak rotation above fails too): see
+            // [`rename_refused`]. Write the file in place, keeping the old one as .bak.
+            Err(e) if rename_refused(&e) => {
+                self.write_in_place(&json)
+                    .map_err(|(step, e)| at(step)(e))?;
+                if let Some(code) = e.raw_os_error() {
+                    let _ = IN_PLACE_NOTE.compare_exchange(
+                        0,
+                        code,
+                        std::sync::atomic::Ordering::Relaxed,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
                 }
-                let mut f = fs::File::create(&primary).map_err(at("write config.json"))?;
-                io::Write::write_all(&mut f, json.as_bytes()).map_err(at("write config.json"))?;
-                f.sync_all().map_err(at("flush config.json"))?;
-                let _ = fs::remove_file(self.tmp_path());
             }
             Err(e) => {
                 // Put the previous file back: a load never looks at the temp file.
@@ -377,6 +399,22 @@ impl ConfigStore {
             }
         }
         self.daily_backup(&json).map_err(at(DAILY_BACKUP_STEP))?;
+        Ok(())
+    }
+
+    /// config.json written over itself instead of renamed into place, the previous file kept
+    /// as .bak first: without that copy a torn write would leave nothing readable, so it must
+    /// succeed. The new file is flushed like the temp file before the temp file goes. The
+    /// error carries the step that failed.
+    fn write_in_place(&self, json: &str) -> Result<(), (&'static str, io::Error)> {
+        let primary = self.primary_path();
+        if primary.exists() {
+            fs::copy(&primary, self.bak_path()).map_err(|e| ("keep config.bak", e))?;
+        }
+        let mut f = fs::File::create(&primary).map_err(|e| ("write config.json", e))?;
+        io::Write::write_all(&mut f, json.as_bytes()).map_err(|e| ("write config.json", e))?;
+        f.sync_all().map_err(|e| ("flush config.json", e))?;
+        let _ = fs::remove_file(self.tmp_path());
         Ok(())
     }
 
@@ -982,6 +1020,41 @@ mod tests {
         assert!(store.primary_path().exists());
         assert!(!store.tmp_path().exists());
         assert_eq!(store.list_backups().len(), 1);
+    }
+
+    /// feedback #186: the Store edition on a Windows 11 25H2 PC got os error 6 for every
+    /// rename of the temp file, as other PCs get 17 with %APPDATA% on another drive; both
+    /// write in place. Other errors (access denied, a file held open) still fail the save.
+    #[test]
+    fn renames_the_store_view_refuses_write_in_place() {
+        assert!(rename_refused(&io::Error::from(
+            io::ErrorKind::CrossesDevices
+        )));
+        assert_eq!(
+            rename_refused(&io::Error::from_raw_os_error(6)),
+            cfg!(windows)
+        );
+        assert!(!rename_refused(&io::Error::from_raw_os_error(5)));
+        assert!(!rename_refused(&io::Error::from_raw_os_error(32)));
+    }
+
+    #[test]
+    fn in_place_write_keeps_the_last_file_as_bak_and_drops_the_temp_file() {
+        let store = ConfigStore::new(tmpdir("in-place"));
+        store.save(&titled("old")).unwrap();
+        fs::write(store.tmp_path(), "left by the refused rename").unwrap();
+        let json = ConfigStore::to_json(&titled("new")).unwrap();
+        store.write_in_place(&json).unwrap();
+        assert_eq!(saved_title(&store), "new");
+        assert!(!store.tmp_path().exists());
+        let bak = ConfigStore::parse_file(&store.bak_path()).unwrap();
+        assert_eq!(bak.layouts[0].fences[0].title, "old");
+        // The first save of a first run: nothing to keep yet.
+        let fresh = ConfigStore::new(tmpdir("in-place-fresh"));
+        fs::create_dir_all(fresh.dir()).unwrap();
+        fresh.write_in_place(&json).unwrap();
+        assert_eq!(saved_title(&fresh), "new");
+        assert!(!fresh.bak_path().exists());
     }
 
     /// A saver whose `done` reports every write on the returned channel and then waits for
