@@ -696,6 +696,7 @@ mod tests {
         ("place", "shell::path_place(&dir)"),
         ("place", "shell::path_place(dir)"),
         ("place", "shell::path_place(&path)"),
+        ("place", "shell::path_place(&target)"),
         ("place", "shell::path_place(&folder)"),
         ("place", "crate::shell::path_place(&dir)"),
         ("command", "a.worst_command"), // `Command` variant name (command_name)

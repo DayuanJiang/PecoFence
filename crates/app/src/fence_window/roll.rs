@@ -334,7 +334,7 @@ impl FenceViewState {
         if !(self.roll_target() || self.peeking) {
             return (0, 0);
         }
-        let right = if self.column_collapsed {
+        let right = if self.narrowed() {
             (rest.left + self.expanded_w_px - rest.right).max(0)
         } else {
             0
@@ -794,15 +794,17 @@ impl FenceViewState {
         let cur = window::window_rect(self.hwnd);
         let (cur_w, cur_h) = (cur.right - cur.left, cur.bottom - cur.top);
         // A fence with a left tab column collapses to the column (its title bar) rather than
-        // to a title row: the width moves with the height.
-        let to_w = self.tabs_on_rail().then(|| {
+        // to a title row, and with `rollUp.compactRolled` the title row is only as wide as it
+        // needs: the width moves with the height. Opening goes back to the width it keeps.
+        let to_w = (self.tabs_on_rail() || self.compacts() || self.narrowed()).then(|| {
             if rolled {
                 self.rolled_w_px()
             } else {
                 self.expanded_w_px
             }
         });
-        self.column_collapsed = rolled && to_w.is_some();
+        self.column_collapsed = rolled && self.tabs_on_rail();
+        self.compact_collapsed = rolled && self.compacts();
         self.capped_h_px = None;
         let to_h = if rolled {
             self.rolled_h_px()

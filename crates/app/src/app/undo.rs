@@ -654,6 +654,9 @@ impl App {
     /// undo offer takes the new texts; beside another kind of card (a tip, the update card) it
     /// shows at the nearest free place.
     pub(super) fn offer_undo_delete(&mut self, fence: FenceId, title: &str) {
+        if !self.undo_notices_on("fence deleted") {
+            return;
+        }
         let title = pecofence_core::i18n::format("已删除栅栏“{0}”", &[title.to_string()]);
         let body = pecofence_core::i18n::text("点“撤销”，或在栅栏上按 Ctrl+Z，就能把它找回来。");
         if self.retarget_undo_notice(&title, body, UndoNotice::Deleted(fence)) {
@@ -670,6 +673,7 @@ impl App {
         ) {
             Ok(notice) => {
                 tracing::info!(%fence, "undo notice shown");
+                notice.stay_for(crate::notice::UNDO_SHOW_FOR_MS);
                 self.undo_notice = Some((notice, UndoNotice::Deleted(fence)));
             }
             Err(error) => tracing::warn!(%error, "undo notice not shown"),
@@ -680,6 +684,9 @@ impl App {
     /// card of an earlier undo offer takes the new texts; beside another kind of card it shows
     /// at the nearest free place. Returns whether it is shown.
     pub(super) fn offer_undo_refiled(&mut self, id: u64, moved: usize) -> bool {
+        if !self.undo_notices_on("rules applied") {
+            return false;
+        }
         let title = pecofence_core::i18n::format("已按规则整理 {0} 个项目", &[moved.to_string()]);
         let body =
             pecofence_core::i18n::text("点“撤销”，或在栅栏上按 Ctrl+Z，就能把它们放回原处。");
@@ -697,6 +704,7 @@ impl App {
         ) {
             Ok(notice) => {
                 tracing::info!(moved, "undo notice shown for the rules applied");
+                notice.stay_for(crate::notice::UNDO_SHOW_FOR_MS);
                 self.undo_notice = Some((notice, UndoNotice::Refiled(id)));
                 true
             }
@@ -717,6 +725,9 @@ impl App {
     /// 只在“Y”上显示」 with 撤销, unless another notice is up (Ctrl+Z still undoes it then).
     /// Returns whether it is shown.
     pub(super) fn offer_undo_desktops(&mut self, fence: FenceId, title: &str, on: &str) -> bool {
+        if !self.undo_notices_on("fence sent to another desktop") {
+            return false;
+        }
         if self.notice_showing() {
             tracing::info!("undo notice not shown: another notice is up");
             return false;
@@ -736,6 +747,7 @@ impl App {
         ) {
             Ok(notice) => {
                 tracing::info!(%fence, "undo notice shown for the fence sent to another desktop");
+                notice.stay_for(crate::notice::UNDO_SHOW_FOR_MS);
                 self.undo_notice = Some((notice, UndoNotice::Desktops(fence)));
                 true
             }
@@ -744,6 +756,16 @@ impl App {
                 false
             }
         }
+    }
+
+    /// 撤销提示 (Settings › 常规, `undoNotices`) is on. Off: no card after `what`, said in the
+    /// log; Ctrl+Z on a fence still undoes it.
+    pub(super) fn undo_notices_on(&self, what: &str) -> bool {
+        let on = self.state.config.settings.undo_notices;
+        if !on {
+            tracing::info!(what, "undo notice not shown: 撤销提示 is off");
+        }
+        on
     }
 
     /// The undo notice was clicked, closed or timed out.

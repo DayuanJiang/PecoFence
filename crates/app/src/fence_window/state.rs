@@ -15,6 +15,10 @@ pub struct DesktopArea {
     /// 自由摆放 with no saved cells yet: where Windows' own desktop has the icons, so they keep
     /// those places (#204). Icons with a saved cell keep theirs.
     pub windows: Option<WindowsIconPlaces>,
+    /// 自由摆放: where the desktop menu was opened a moment ago (screen px). New icons without a
+    /// cell go to the free cell nearest to it, as 新建 and 粘贴 of that menu place them on a
+    /// Windows desktop (#238); without it they take the first free cell.
+    pub menu_at: Option<(i32, i32)>,
 }
 
 /// Windows' own desktop icons, as Explorer's desktop view had them when PecoFence read it.
@@ -438,6 +442,9 @@ pub struct FenceViewState {
     /// The window is collapsed (or collapsing) to its left tab column: it is as narrow as the
     /// column, and `expanded_w_px` keeps its width.
     pub(super) column_collapsed: bool,
+    /// Rolled (or rolling) to the width its title row needs (`rollUp.compactRolled`):
+    /// `expanded_w_px` keeps its width.
+    pub(super) compact_collapsed: bool,
     pub(super) _target: DesktopWindowTarget,
     /// Root of the window's visual tree: whole-window fades / scales animate this.
     pub(super) root: ContainerVisual,

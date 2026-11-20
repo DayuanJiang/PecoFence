@@ -138,11 +138,16 @@ impl FrameHandle {
         }
         if done {
             let handles = self.view.borrow_mut().as_mut().and_then(|v| {
-                let notify = v.glide.take().is_some_and(|g| g.notify);
-                notify.then(|| (v.queue.clone(), v.behavior.clone()))
+                let notify = v.glide.take()?.notify;
+                Some((notify, v.queue.clone(), v.behavior.clone()))
             });
-            if let Some((queue, behavior)) = handles {
-                queue_bounds_changed(&queue, &behavior, self.id, hwnd);
+            match handles {
+                Some((true, queue, behavior)) => {
+                    queue_bounds_changed(&queue, &behavior, self.id, hwnd)
+                }
+                // A display change's glide: auto height waited while it moved (`move_pending`).
+                Some((false, queue, _)) => queue.push(Command::GlideEnded(self.id)),
+                None => {}
             }
         }
         (moved, !done)

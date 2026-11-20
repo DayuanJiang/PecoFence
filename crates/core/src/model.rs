@@ -211,6 +211,11 @@ pub struct Settings {
     /// type dragged into one fence). Off shows none of them; the first start's tips stay.
     #[serde(default = "default_true")]
     pub feature_tips: bool,
+    /// 撤销提示: after a fence delete, 「立即应用」 of the rules or a fence sent to another
+    /// virtual desktop, a card with 撤销 shows in the corner for 10 seconds. Off shows none;
+    /// Ctrl+Z on a fence still undoes.
+    #[serde(default = "default_true")]
+    pub undo_notices: bool,
     /// 自动检查更新 (installer and ZIP editions): about a minute after start and then once a day,
     /// one request to GitHub's latest release; a new version is announced once.
     #[serde(default = "default_true")]
@@ -473,6 +478,7 @@ impl Default for Settings {
             offer_new_fence: true,
             per_desktop_fences: false,
             feature_tips: true,
+            undo_notices: true,
             auto_check_updates: true,
             show_tray_icon: true,
             usage_stats: true,
@@ -696,6 +702,10 @@ pub struct RollUpSettings {
     /// Double-clicking the title and the fence menu still roll the fence up and down.
     #[serde(default)]
     pub hide_count_and_chevron: bool,
+    /// A rolled fence is only as wide as its title row needs (its name or its tabs, with the
+    /// count and chevron), and opens to its own width again (GitHub #242).
+    #[serde(default)]
+    pub compact_rolled: bool,
 }
 
 impl Default for RollUpSettings {
@@ -713,6 +723,7 @@ impl Default for RollUpSettings {
             push_neighbors: true,
             switch_tab_on_hover: true,
             hide_count_and_chevron: false,
+            compact_rolled: false,
         }
     }
 }
@@ -2936,6 +2947,7 @@ mod tests {
         let obj = json.as_object_mut().unwrap();
         assert!(obj.remove("offerNewFence").is_some());
         assert!(obj.remove("featureTips").is_some());
+        assert!(obj.remove("undoNotices").is_some());
         assert!(obj.remove("hideInboxWhenIconsShown").is_some());
         assert!(obj.remove("keepIconsHidden").is_some());
         assert!(obj.remove("showTrayIcon").is_some());
@@ -2943,6 +2955,7 @@ mod tests {
         assert!(legacy.show_tray_icon);
         assert!(legacy.offer_new_fence);
         assert!(legacy.feature_tips);
+        assert!(legacy.undo_notices);
         assert!(!legacy.hide_inbox_when_icons_shown);
         assert!(!legacy.keep_icons_hidden);
     }

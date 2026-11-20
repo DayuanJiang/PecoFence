@@ -372,6 +372,8 @@
   "和 Windows 桌面一样，在快捷方式图标的左下角显示小箭头": "Muestra la pequeña flecha en la esquina inferior izquierda de los iconos de acceso directo, como en el escritorio de Windows",
   "立即切换界面语言；你的文件和自定义名称保持不变": "El idioma cambia al instante; tus archivos y los nombres personalizados no cambian",
   "收起后它们会回到原位": "Vuelven a su sitio cuando el grupo se contrae",
+  "收起时缩到标题的宽度": "Reducir los grupos contraídos al ancho del título",
+  "收起的栅栏只有名称或标签页那么宽，展开后恢复原来的宽度": "Un grupo contraído solo es tan ancho como su nombre o sus pestañas, y recupera su ancho al expandirse",
   "平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置": "Solo se ven los iconos hasta que pasas el cursor; puedes cambiarlo en cada grupo desde la página Grupos",
   "隐藏标题栏右侧的项目数和折叠箭头": "Ocultar el número de elementos y la flecha de contraer de la barra de título",
   "标题栏只显示名称；双击标题或用右键菜单收起和展开": "La barra de título solo muestra el nombre; para contraer y expandir, haz doble clic en el título o usa el menú contextual",
@@ -702,7 +704,7 @@
   "选择脚本": "Elegir script",
   "选择脚本…": "Elegir script…",
   "对话框跳转": "Saltar a la carpeta en los cuadros de diálogo",
-  "打开或保存文件时，切到资源管理器再切回对话框，它就跳到资源管理器里的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去": "En un cuadro de diálogo Abrir o Guardar, cambia al Explorador de archivos y vuelve: el cuadro va a la carpeta abierta allí. También funciona al hacer clic en un grupo de carpeta o pulsar Ctrl+G.",
+  "打开或保存文件时，切到资源管理器或 Directory Opus 再切回对话框，它就跳到那里打开的文件夹；点文件夹栅栏或按 Ctrl+G 也能跳过去": "En un cuadro de diálogo Abrir o Guardar, cambia al Explorador de archivos o a Directory Opus y vuelve: el cuadro va a la carpeta abierta allí. También funciona al hacer clic en un grupo de carpeta o pulsar Ctrl+G.",
   "速览时打字搜索，除了栅栏里的图标，也列出整台电脑上的文件和文件夹，由免费的 Everything 负责查找": "Al escribir durante la vista rápida, además de los iconos de tus grupos aparecen archivos y carpetas de todo el equipo. La búsqueda la hace Everything, que es gratuito.",
   "Everything {0} 正在运行": "Everything {0} está en ejecución",
   "可以用拼音找中文名，例如输入 ysb 找到“预算表”": "Los nombres chinos se encuentran por pinyin: por ejemplo, ysb encuentra «预算表».",
@@ -740,8 +742,8 @@
   "显示，也显示“桌面”栅栏": "Visibles, con el grupo «Escritorio»",
   "显示，不显示“桌面”栅栏": "Visibles, sin el grupo «Escritorio»",
   "桌面项目只显示在栅栏里，没有归类的放进“桌面”栅栏；回收站等系统图标也在“桌面”栅栏里": "Los elementos del escritorio se muestran solo en grupos; los no clasificados van al grupo «Escritorio», igual que iconos del sistema como la Papelera de reciclaje",
-  "Windows 桌面照常显示图标，没有归类的项目同时出现在“桌面”栅栏里": "El escritorio de Windows muestra sus iconos como siempre, y los elementos no clasificados también aparecen en el grupo «Escritorio»",
-  "没有归类的项目只留在 Windows 桌面上，不显示“桌面”栅栏": "Los elementos no clasificados se quedan solo en el escritorio de Windows y el grupo «Escritorio» no se muestra",
+  "Windows 桌面照常显示所有图标，栅栏里的项目在桌面上也看得到；没有归类的项目同时出现在“桌面”栅栏里": "El escritorio de Windows muestra todos sus iconos como siempre, también los de los grupos, y los elementos no clasificados también aparecen en el grupo «Escritorio»",
+  "Windows 桌面照常显示所有图标，栅栏里的项目在桌面上也看得到；不显示“桌面”栅栏": "El escritorio de Windows muestra todos sus iconos como siempre, también los de los grupos; el grupo «Escritorio» no se muestra",
   "收起的栅栏怎么展开": "Cómo se expanden los grupos contraídos",
   "自定义 · 主题文件": "Personalizado · archivo de tema",
   "主题文件": "Archivo de tema",
@@ -1036,5 +1038,8 @@
   "所有栅栏用同样的布局": "La misma distribución para todos los grupos",
   "把上面的视图、排序、图标大小、间距、名称和对齐用到其他栅栏": "Da a los demás grupos la vista, el orden, el tamaño de los iconos, el espaciado, las etiquetas y la alineación de arriba",
   "其他栅栏已经和它一样": "Los demás grupos ya están así",
-  "已用到其他 {0} 个栅栏": "Aplicado a otros {0} grupos"
+  "已用到其他 {0} 个栅栏": "Aplicado a otros {0} grupos",
+  "撤销提示": "Avisos para deshacer",
+  "删除栅栏、按规则整理或把栅栏移到别的虚拟桌面后，右下角显示可以撤销的提示，10 秒后消失。关闭后不再显示，在栅栏上按 Ctrl+Z 照样能撤销": "Después de eliminar un grupo, organizar por reglas o enviar un grupo a otro escritorio virtual, se muestra en la esquina un aviso con Deshacer durante 10 segundos. Desactivado, no se muestra; Ctrl+Z en un grupo sigue deshaciendo",
+  "搜索别名\u0004撤销卡片|删除提示|通知|弹窗": "tarjeta deshacer|aviso de eliminación|notificaciones|ventana emergente"
 }

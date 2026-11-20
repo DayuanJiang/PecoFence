@@ -3,11 +3,13 @@
 use crate::bindings::*;
 use windows_core::Result;
 
-/// Presses and releases of the primary button (the right one when the buttons are swapped).
+/// Presses and releases of the primary button (the right one when the buttons are swapped),
+/// and releases of the secondary one (the one that opens a context menu).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MouseButtons {
     pub left_down: bool,
     pub left_up: bool,
+    pub right_up: bool,
 }
 
 /// Registers `hwnd` to receive `WM_INPUT` for all mouse devices, even when not in the foreground.
@@ -57,14 +59,23 @@ pub fn mouse_buttons_from_wm_input(lparam: isize) -> Option<MouseButtons> {
     // button flags live in the low word of `ulButtons`.
     let flags = unsafe { raw.data.mouse.Anonymous.ulButtons } & 0xffff;
     // Raw input reports physical buttons.
-    let (down, up) = if buttons_swapped() {
-        (RI_MOUSE_RIGHT_BUTTON_DOWN, RI_MOUSE_RIGHT_BUTTON_UP)
+    let (down, up, menu_up) = if buttons_swapped() {
+        (
+            RI_MOUSE_RIGHT_BUTTON_DOWN,
+            RI_MOUSE_RIGHT_BUTTON_UP,
+            RI_MOUSE_LEFT_BUTTON_UP,
+        )
     } else {
-        (RI_MOUSE_LEFT_BUTTON_DOWN, RI_MOUSE_LEFT_BUTTON_UP)
+        (
+            RI_MOUSE_LEFT_BUTTON_DOWN,
+            RI_MOUSE_LEFT_BUTTON_UP,
+            RI_MOUSE_RIGHT_BUTTON_UP,
+        )
     };
     Some(MouseButtons {
         left_down: flags & down as u32 != 0,
         left_up: flags & up as u32 != 0,
+        right_up: flags & menu_up as u32 != 0,
     })
 }
 

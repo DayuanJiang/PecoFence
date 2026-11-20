@@ -2784,9 +2784,22 @@ impl FenceChrome {
         } else {
             title.to_string()
         };
+        self.lone_title_width(&shown, count, size, deco)
+    }
+
+    /// The title row (DIPs) in which a single `title` shows whole, with the same glyphs and
+    /// right end as [`Self::lone_title_min_width`]: a rolled fence as wide as its name
+    /// (`rollUp.compactRolled`, GitHub #242).
+    pub fn lone_title_width(
+        &self,
+        title: &str,
+        count: Option<&str>,
+        size: u8,
+        deco: TitleDeco,
+    ) -> f32 {
         // One DIP of slack: the fit compares the measured width with the room it is given.
         deco.title_x()
-            + crate::text::measure_width(&shown, &self.title_format(size)).ceil()
+            + crate::text::measure_width(title, &self.title_format(size)).ceil()
             + 1.0
             + TITLE_RIGHT_RESERVE
             + deco.lock_w()

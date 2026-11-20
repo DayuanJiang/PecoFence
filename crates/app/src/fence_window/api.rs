@@ -260,6 +260,7 @@ impl FenceWindow {
             rail_dip: 0.0,
             expanded_w_px: bounds.right - bounds.left,
             column_collapsed: false,
+            compact_collapsed: false,
             _target: target,
             root,
             idle_layer,
@@ -525,6 +526,15 @@ impl FenceWindow {
             return r;
         }
         self.window.window_rect()
+    }
+
+    /// The app has given the window a place it is not at yet: a display change's move that
+    /// waits (`defer_moves`), or a glide on its way there.
+    pub fn move_pending(&self) -> bool {
+        self.view.try_borrow().is_ok_and(|g| {
+            g.as_ref()
+                .is_some_and(|v| v.pending_place.is_some() || v.glide.is_some())
+        })
     }
 
     /// A display change places every fence in one pass and reads the others' rects while it
@@ -857,6 +867,7 @@ impl FenceWindow {
             v.capped_h_px = None;
             v.expanded_w_px = rect.right - rect.left;
             v.column_collapsed = rolled && v.tabs_on_rail();
+            v.compact_collapsed = rolled && v.compacts();
             v.rail_dip = v.measure_rail_w();
             v.roll_t = Tween::at(rolled as u8 as f32, Instant::now());
             v.arm_clock();
@@ -872,7 +883,7 @@ impl FenceWindow {
                 } else {
                     rect.bottom = rect.top + rolled_h;
                 }
-                if v.column_collapsed {
+                if v.narrowed() {
                     rect.right = rect.left + v.rolled_w_px();
                 }
             } else {
@@ -2279,17 +2290,18 @@ impl FenceWindow {
         r
     }
 
-    /// Width the window expands to while it is collapsed to its left tab column (None
-    /// otherwise: the window has its expanded width).
+    /// Width the window expands to while it is collapsed to its left tab column or rolled to
+    /// a compact title row (None otherwise: the window has its expanded width).
     pub fn collapsed_expanded_width_px(&self) -> Option<i32> {
         let guard = self.view.try_borrow().ok()?;
         let v = guard.as_ref()?;
-        v.column_collapsed.then_some(v.expanded_w_px)
+        v.narrowed().then_some(v.expanded_w_px)
     }
 
-    /// A rolled fence whose tabs changed (added, removed, renamed, or 标签栏位置 switched)
-    /// takes its rolled size again: the left tab column it is collapsed to, or its title row at
-    /// the expanded width. Returns the new window rect when it changed.
+    /// A rolled fence whose tabs changed (added, removed, renamed, or 标签栏位置 switched), or
+    /// whose name, count or `rollUp.compactRolled` changed, takes its rolled size again: the
+    /// left tab column it is collapsed to, its title row as wide as it needs, or its title row
+    /// at the expanded width. Returns the new window rect when it changed.
     pub fn settle_rolled_size(&self) -> Option<RECT> {
         let (w, h, upward) = {
             let mut guard = self.view.borrow_mut();
@@ -2301,12 +2313,15 @@ impl FenceWindow {
             let w = if v.tabs_on_rail() {
                 v.rail_dip = v.measure_rail_w();
                 v.rail_px()
-            } else if v.column_collapsed {
+            } else if v.compacts() {
+                v.compact_w_px()
+            } else if v.narrowed() {
                 v.expanded_w_px
             } else {
                 cur_w
             };
             v.column_collapsed = v.tabs_on_rail();
+            v.compact_collapsed = v.compacts();
             (w, v.rolled_h_px(), v.row_bottom)
         };
         let r = self.rect();
