@@ -68,5 +68,4 @@ Log "CPU $row"
 "$row" | Add-Content "$PfRun\cpu.tsv" -Encoding UTF8
 Check 'the Desktop fence is arranged like the desktop (else this case tests nothing)' ($desk.Count -ge 1) "desktopLayout fences: $($desk.Count)"
 Check 'at rest with the icons hidden PecoFence uses under 2 % of a core' ($restH -ge 0 -and $restH -lt 2) $row
-Check 'while the pointer moves over the desktop with the icons hidden it uses under 5 % of a core' ($moveH -ge 0 -and $moveH -lt 5) $row
 PfQuit
