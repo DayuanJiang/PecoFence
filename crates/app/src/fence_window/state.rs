@@ -113,11 +113,6 @@ pub struct FenceViewState {
     /// The centred box and the icon factor the zoom is heading for while it is open, kept so
     /// an interrupted close can turn back out to the same place.
     pub(super) zoom_far: Option<(RECT, f32)>,
-    /// The fence's own 名称行数 while the zoom shows `zoom.labelLines`; put back when the
-    /// zoom closes.
-    pub(super) zoom_label_restore: Option<u8>,
-    /// The fence's own glass opacity while the zoom shows `zoom.opacity`; put back on close.
-    pub(super) zoom_opacity_restore: Option<f32>,
     /// The left button as the last zoom watch found it (edge detection for "a click outside").
     pub(super) zoom_was_down: bool,
     /// The zoom tween in flight.

@@ -117,22 +117,6 @@ impl FenceViewState {
                 // is where it goes back to when the zoom ends.
                 self.zoom_prev = Some(window::window_above(hwnd));
                 let _ = window::raise_window(hwnd);
-                // 放大后的名称行数 (`zoom.labelLines`): shown while zoomed, then put back.
-                if let Some(lines) = self.behavior.zoom_label_lines.get()
-                    && lines != self.label_lines
-                {
-                    self.zoom_label_restore = Some(self.label_lines);
-                    self.label_lines = lines;
-                }
-                // 放大后的不透明度 (`zoom.opacity`, percent of the fence's own thickness).
-                let pct = self.behavior.zoom_opacity.get();
-                if pct > 0 {
-                    let thick = (pct as f32 / 100.0).clamp(0.3, 1.6);
-                    if (self.opacity - thick).abs() > f32::EPSILON {
-                        self.zoom_opacity_restore = Some(self.opacity);
-                        self.opacity = thick;
-                    }
-                }
             }
         }
         tracing::debug!(
@@ -214,19 +198,13 @@ impl FenceViewState {
         Some((rect, done))
     }
 
-    /// The zoom is over: the watch stops, the names, opacity and z-order the fence had come
-    /// back, and no fence owns the screen any more.
+    /// The zoom is over: the watch stops, the z-order the fence had comes back, and no fence
+    /// owns the screen any more.
     fn zoom_closed(&mut self, hwnd: HWND) {
         window::kill_timer(hwnd, TIMER_ZOOM_WATCH);
         self.zoom_home = None;
         self.zoom_far = None;
         self.zoom_icon = 1.0;
-        if let Some(lines) = self.zoom_label_restore.take() {
-            self.label_lines = lines;
-        }
-        if let Some(o) = self.zoom_opacity_restore.take() {
-            self.opacity = o;
-        }
         // Back under the fence it was above before the zoom.
         if let Some(above) = self.zoom_prev.take()
             && !above.0.is_null()
@@ -309,12 +287,6 @@ fn centred_target(v: &FenceViewState, hwnd: HWND) -> Option<(RECT, f32)> {
     // The built-in icon size stops at 256 DIP; past that the fence would show an icon size
     // no fence can be set to, and the cache would have nothing that large to give.
     let base = crate::layout::icon_dip(v.layout, v.icon_size).max(1.0);
-    // 放大后的图标大小 (`zoom.iconSize`) wins when it is set; 0 lets the window decide.
-    let wanted = v.behavior.zoom_icon_size.get();
-    if wanted > 0 {
-        let k = (wanted as f32 / base).clamp(0.5, ICON_MAX_DIP / base);
-        return Some((to, k));
-    }
     let room = (ICON_MAX_DIP / base).max(1.0);
     Some((to, ratio.clamp(1.05, room.min(4.0))))
 }

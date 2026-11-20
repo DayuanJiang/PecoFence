@@ -733,18 +733,13 @@
           <select data-bind="rollUp.hoverSpeed" aria-labelledby="hoverSpeedTitle"><option value="fast">快</option><option value="normal">默认</option><option value="slow">慢</option></select></div>
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE74B;</span><div><div class="t">展开时把下面的栅栏推开</div><div class="s">收起后它们会回到原位</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.pushNeighbors"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE740;</span><div><div class="t">双击空白处放大栅栏</div><div class="s">双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="zoom.enabled"></div></div>
       <h3>标题栏与标签页</h3>
       <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">鼠标悬停时才显示标题栏</div><div class="s">平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.titleOnHover"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE70E;</span><div><div class="t">隐藏标题栏右侧的项目数和折叠箭头</div><div class="s">标题栏只显示名称；双击标题或用右键菜单收起和展开</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideCountAndChevron"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE90C;</span><div><div class="t">标签栏位置</div><div class="s">有多个标签页时，标签排在标题栏里，或在栅栏左侧排成一列</div></div></div>
         <select data-bind="tabBar"><option value="top">顶部</option><option value="left">左侧</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE7C3;</span><div><div class="t">鼠标悬停时切换标签页</div><div class="s">鼠标在标签页上停留片刻就切换过去，不用点击；切换过一次后，再移到别的标签页上会马上切换</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.switchTabOnHover"></div></div>
-      <h3>双击放大</h3>
-      <div class="card"><div class="l"><span class="ic">&#xE740;</span><div><div class="t">双击空白处放大栅栏</div><div class="s">双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="zoom.enabled"></div></div>
-      <div class="card"><div class="l"><span class="ic">&#xE8A7;</span><div><div class="t" id="zoomIconTitle">放大后的图标大小</div><div class="s">“跟随窗口”按窗口宽度自动放大，列数不变；选具体数值则用固定的图标大小</div></div></div>
-        <select data-bind="zoom.iconSize" aria-labelledby="zoomIconTitle"><option value="0">跟随窗口</option><option value="64">64</option><option value="96">96</option><option value="128">128</option><option value="160">160</option><option value="192">192</option><option value="256">256</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE7F8;</span><div><div class="t" id="zoomOpacityTitle">放大后的不透明度</div><div class="s">放大时让栅栏更厚实一些，好和后面的栅栏区分开；“跟随栅栏”用栅栏自己的不透明度</div></div></div>
-        <select data-bind="zoom.opacity" aria-labelledby="zoomOpacityTitle"><option value="0">跟随栅栏</option><option value="80">80%</option><option value="100">100%</option><option value="120">120%</option><option value="140">140%</option></select></div>
       <h3>吸附与对齐</h3>
       <div class="group">
         <div class="card"><div class="l"><span class="ic">&#xE8E3;</span><div><div class="t">移动栅栏时吸附对齐</div><div class="s">拖动时吸附到其他栅栏、屏幕边缘和屏幕中线；按住 Alt 可暂时不吸附</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="snapping.enabled"></div></div>

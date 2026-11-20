@@ -188,12 +188,6 @@ pub struct Behavior {
     pub pushed: std::cell::RefCell<Vec<Pushed>>,
     /// 双击空白放大 is on (`zoom.enabled`).
     pub zoom_enabled: std::cell::Cell<bool>,
-    /// 放大后的图标大小 in DIP (`zoom.iconSize`); 0 = as large as the window allows.
-    pub zoom_icon_size: std::cell::Cell<u32>,
-    /// 放大后的名称行数 (`zoom.labelLines`); `None` = the fence's own.
-    pub zoom_label_lines: std::cell::Cell<Option<u8>>,
-    /// 放大后的不透明度 in percent (`zoom.opacity`); 0 = the fence's own.
-    pub zoom_opacity: std::cell::Cell<u32>,
     /// The fence double-clicked into the zoomed state (`fence_window/zoom.rs`). Only one at a
     /// time: a fence that starts zooming claims it and the others close (see
     /// `App::on_frame`). The push pass holds this window still, so a zoom never moves another

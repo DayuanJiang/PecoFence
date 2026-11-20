@@ -16,7 +16,7 @@ const fixture = {
     language: 'zh-CN', idleOpacity: 1,
     autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, showTrayIcon: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', menuColor: 'followMode', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
-    zoom: { enabled: true, iconSize: 0, labelLines: null, opacity: 0 },
+    zoom: { enabled: true },
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace', doubleCtrl: false },
@@ -1498,7 +1498,7 @@ async function runTests() {
   await test('常规 has the new headings in order, one card for the Windows desktop shortcut', async () => {
     doc.querySelector('[data-page=general]').click();
     const heads = [...doc.querySelectorAll('#page-general h3')].map(h => h.textContent).join(' / ');
-    assert(heads === '语言 / 外观 / 图标 / 桌面与启动 / 隐藏栅栏 / 收起与展开 / 标题栏与标签页 / 双击放大 / 吸附与对齐', 'Headings: ' + heads);
+    assert(heads === '语言 / 外观 / 图标 / 桌面与启动 / 隐藏栅栏 / 收起与展开 / 标题栏与标签页 / 吸附与对齐', 'Headings: ' + heads);
     const wd = doc.getElementById('wdHotkeyCard');
     assert(wd.contains(doc.getElementById('wdHotkey')) && !wd.classList.contains('child') && wd.querySelector('.t').textContent === '临时显示 Windows 桌面', 'The shortcut box is not in the 临时显示 Windows 桌面 card');
     assert(doc.getElementById('wdHotkeyHelp').textContent.includes('隐藏所有栅栏'), 'The card does not say what it does: ' + doc.getElementById('wdHotkeyHelp').textContent);

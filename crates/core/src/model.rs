@@ -153,23 +153,11 @@ pub const UNUSED_SETTINGS: &[&str] = &[
 pub struct Zoom {
     /// 双击栅栏空白处放大到屏幕中央（再双击收回）.
     pub enabled: bool,
-    /// 放大后的图标大小 in DIP, `0` = as large as the window allows (the default).
-    pub icon_size: u32,
-    /// 放大后的名称行数, `None` = the fence's own setting.
-    pub label_lines: Option<u8>,
-    /// 放大后的不透明度 in percent of the fence's own glass thickness: `0` = 跟随栅栏,
-    /// `120` = thicker than usual (so a zoomed fence reads above the one behind it).
-    pub opacity: u32,
 }
 
 impl Default for Zoom {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            icon_size: 0,
-            label_lines: None,
-            opacity: 0,
-        }
+        Self { enabled: true }
     }
 }
 

@@ -1537,9 +1537,6 @@ impl App {
         self.ctx.behavior.tab_bar.set(new.tab_bar);
         self.ctx.behavior.label_color.set(new.label_color);
         self.ctx.behavior.zoom_enabled.set(new.zoom.enabled);
-        self.ctx.behavior.zoom_icon_size.set(new.zoom.icon_size);
-        self.ctx.behavior.zoom_label_lines.set(new.zoom.label_lines);
-        self.ctx.behavior.zoom_opacity.set(new.zoom.opacity);
         self.ctx
             .behavior
             .hide_inactive_scrollbar

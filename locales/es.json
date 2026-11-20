@@ -1037,13 +1037,6 @@
   "把上面的视图、排序、图标大小、间距、名称和对齐用到其他栅栏": "Da a los demás grupos la vista, el orden, el tamaño de los iconos, el espaciado, las etiquetas y la alineación de arriba",
   "其他栅栏已经和它一样": "Los demás grupos ya están así",
   "已用到其他 {0} 个栅栏": "Aplicado a otros {0} grupos",
-  "双击放大": "Doble clic para ampliar",
   "双击空白处放大栅栏": "Doble clic en un espacio vacío para ampliar la valla",
-  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Haz doble clic donde no hay iconos: la valla se agranda en el centro de la pantalla, iconos incluidos; otro doble clic la devuelve. Agrandada no se puede arrastrar ni redimensionar, y las vallas «como el escritorio» quedan fuera.",
-  "放大后的图标大小": "Tamaño de icono al ampliar",
-  "“跟随窗口”按窗口宽度自动放大，列数不变；选具体数值则用固定的图标大小": "«Seguir la ventana» escala con el ancho y mantiene las columnas; un valor fijo usa ese tamaño",
-  "放大后的不透明度": "Opacidad al ampliar",
-  "放大时让栅栏更厚实一些，好和后面的栅栏区分开；“跟随栅栏”用栅栏自己的不透明度": "Hace la valla ampliada más opaca para distinguirla de la de detrás; «Seguir la valla» mantiene su opacidad",
-  "跟随窗口": "Seguir la ventana",
-  "跟随栅栏": "Seguir la valla"
+  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Haz doble clic donde no hay iconos: la valla se agranda en el centro de la pantalla, iconos incluidos; otro doble clic la devuelve. Agrandada no se puede arrastrar ni redimensionar, y las vallas «como el escritorio» quedan fuera."
 }
