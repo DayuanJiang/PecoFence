@@ -248,18 +248,12 @@ impl FreeGrid {
     }
 }
 
-/// 自由摆放: which icons the desktop menu's click places (#238): the ones that are really new,
-/// with no saved cell and no place on Windows' desktop, while others keep their saved cells.
-/// A pass where no icon has a saved cell (a sort lined them up again, or 自由摆放 just started)
-/// or one that takes Windows' places places every icon anew: none goes to the click then.
-fn menu_asks(
-    saved: &[Option<(i32, i32)>],
-    asked: &[Option<(i32, i32)>],
-    windows_places: bool,
-    menu: bool,
-) -> Vec<bool> {
-    let some_kept = saved.iter().any(Option::is_some);
-    let use_menu = menu && some_kept && !windows_places;
+/// 自由摆放: which icons the desktop menu's click places (#238): the new ones, with no saved
+/// cell and no place on Windows' desktop; on an empty 「桌面」 the first new file is all there
+/// is. A pass that takes Windows' places (自由摆放 just started) places none there. After a sort
+/// cleared the cells the App has dropped the click already (`App::arrange_desktop_fence`).
+fn menu_asks(asked: &[Option<(i32, i32)>], windows_places: bool, menu: bool) -> Vec<bool> {
+    let use_menu = menu && !windows_places;
     asked.iter().map(|a| use_menu && a.is_none()).collect()
 }
 
@@ -481,7 +475,7 @@ impl FenceViewState {
             .menu_at
             .filter(|at| grid.on_work(*at))
             .map(|at| grid.cell_at(at.0, at.1));
-        let at_menu = menu_asks(&wanted, &asked, area.windows.is_some(), menu_cell.is_some());
+        let at_menu = menu_asks(&asked, area.windows.is_some(), menu_cell.is_some());
         let asked: Vec<Option<(i32, i32)>> = asked
             .iter()
             .zip(&at_menu)
@@ -936,28 +930,15 @@ mod tests {
     }
 
     #[test]
-    fn only_really_new_icons_go_to_the_desktop_menu_click() {
+    fn only_new_icons_go_to_the_desktop_menu_click() {
         let cell = Some((3, 1));
         // A new file among icons that keep their cells: that one.
-        assert_eq!(
-            menu_asks(&[cell, None], &[cell, None], false, true),
-            vec![false, true]
-        );
-        // After a sort (every cell cleared) or when 自由摆放 starts: none, the icons line up
-        // from the top-left (or take Windows' places) as without the click.
-        assert_eq!(
-            menu_asks(&[None, None], &[None, None], false, true),
-            vec![false, false]
-        );
-        assert_eq!(
-            menu_asks(&[cell, None], &[cell, None], true, true),
-            vec![false, false]
-        );
-        // No click: none.
-        assert_eq!(
-            menu_asks(&[cell, None], &[cell, None], false, false),
-            vec![false, false]
-        );
+        assert_eq!(menu_asks(&[cell, None], false, true), vec![false, true]);
+        // An empty 「桌面」 (everything in fences): the first new file goes there too.
+        assert_eq!(menu_asks(&[None], false, true), vec![true]);
+        // 自由摆放 just started (Windows' places are taken), or no click: none.
+        assert_eq!(menu_asks(&[cell, None], true, true), vec![false, false]);
+        assert_eq!(menu_asks(&[cell, None], false, false), vec![false, false]);
     }
 
     #[test]

@@ -189,6 +189,28 @@ function PartB() {
   Shot 'b-sorted'
   Check 'after the sort every icon stands in the first column, none at the click' (@($cols | Where-Object { $_ -ne 0 }).Count -eq 0) "columns=$($cols -join ',') click cell=$want"
   foreach ($p in $made) { Remove-Item -LiteralPath $p -ErrorAction SilentlyContinue }
+
+  # #238's own case: everything is in fences and 「桌面」 holds nothing. The first new file goes
+  # under the right-click all the same.
+  Case 'B: an empty 「桌面」: the first new file goes under the right-click'
+  Start-Sleep -Seconds 2
+  $inTitle = (FenceGet $script:InboxId).title
+  $names = @(@(PfJson item list --fence $inTitle) | ForEach-Object { $_.name } | Where-Object { $_ })
+  foreach ($n in $names) { $r = Pf item move $n --to 'Folders'; Log "item move '$n' -> Folders: $r" }
+  Start-Sleep -Seconds 2
+  $left = @(@(PfJson item list --fence $inTitle) | Where-Object { $_.name }).Count
+  Check 'setup: 「桌面」 is empty' ($left -eq 0) "left=$left moved=$($names -join ', ')"
+  $at2 = @(($at[0] + 240), ($at[1] - 96))
+  $want2 = "$([int][Math]::Floor(($at2[0] - 4) / 80)),$([int][Math]::Floor(($at2[1] - 4) / 96))"
+  [G]::RClick($at2[0], $at2[1]); Start-Sleep -Milliseconds 900
+  CloseDeskMenu
+  $n4 = "pk238empty $(Get-Date -Format HHmmss).pk238"
+  Set-Content -LiteralPath (Join-Path $PfDesk $n4) 'x'
+  $c4 = WaitCell $n4
+  Shot 'b-empty-desktop'
+  Check 'on an empty 「桌面」 the new file takes the cell under the click' ($c4 -eq $want2) "cell=$c4 want=$want2"
+  Remove-Item -LiteralPath (Join-Path $PfDesk $n4) -ErrorAction SilentlyContinue
+  foreach ($n in $names) { Pf item move $n --to $inTitle | Out-Null }
 }
 
 # ---- C: 速览 › 快捷键 › 自定义…

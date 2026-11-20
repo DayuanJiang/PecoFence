@@ -578,9 +578,14 @@ impl App {
             return;
         };
         // A right-click on the desktop a moment ago: its 新建 or 粘贴 put the next new icons
-        // under it (#238). Not once no icon has a saved cell (a sort lined them up again, or
-        // 自由摆放 just started): that click was not for them.
-        if free.as_ref().is_some_and(|cells| cells.is_empty())
+        // under it (#238). Not once the icons lost their saved cells (a sort lines them up
+        // again): that click was not for them. An empty 「桌面」 lost none, it had none.
+        let had_cells = std::mem::replace(
+            &mut self.desktop_had_cells,
+            free.as_ref().is_some_and(|cells| !cells.is_empty()),
+        );
+        if had_cells
+            && free.as_ref().is_some_and(|cells| cells.is_empty())
             && self.desktop_menu_at.take().is_some()
         {
             tracing::debug!("desktop menu's click dropped: the icons are placed anew");

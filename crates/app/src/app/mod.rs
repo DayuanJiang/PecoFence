@@ -370,6 +370,9 @@ pub struct App {
     /// new icons of 「桌面」 placed freely go under it, as 新建 and 粘贴 put them on a Windows
     /// desktop (#238). Taken by the first icons placed, or too old after `MENU_PLACE_FOR`.
     desktop_menu_at: Option<(Instant, POINT)>,
+    /// Whether 「桌面」 had saved cells in the last arrange: cells gone since mean a sort lined
+    /// the icons up again, and a right-click before it is dropped.
+    desktop_had_cells: bool,
     /// Our rubber band for desktop marquees (created on first use), and whether the marquee in
     /// progress shows it (only while Explorer's icons are hidden: Explorer draws its own).
     marquee_band: Option<crate::marquee_band::MarqueeBand>,
@@ -2159,6 +2162,7 @@ impl App {
             usage: None,
             marquee_base: None,
             desktop_menu_at: None,
+            desktop_had_cells: false,
             marquee_band: None,
             marquee_draws_band: false,
             peek_hotkey: None,
