@@ -275,3 +275,6 @@ undo-page          2   ec2    debug   undo-notices.ps1               --var Part=
 dialog-jump-dopus  2   manual release dialog-jump-dopus.ps1
 # A snapshot restore and an import put a fence with auto height back where they have it.
 restore-autoheight 1   ec2    release restore-auto-height.ps1
+# Issues round 2026-11-20: a Peek drop into an Explorer name clash, new icons under a desktop right-click, 自定义… by mouse.
+i1120-peek-drop    2   ec2    release issues1120-peek.ps1           --var Part=AB
+i1120-peek-key     1   ec2    debug   issues1120-peek.ps1           --var Part=C
