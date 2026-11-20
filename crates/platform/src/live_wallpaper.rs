@@ -4,6 +4,7 @@
 use crate::bindings::*;
 use crate::desktop::{class_name, is_cloaked, is_visible, shell_window, window_pid};
 use crate::window::window_rect;
+use std::sync::atomic::{AtomicBool, Ordering};
 use windows_core::PCWSTR;
 
 /// The child of `parent` after `after` (the first one for `None`), of `class` if given; a null
@@ -27,6 +28,26 @@ const WALLPAPER_OVERLAY_PREFIX: &str = "BingWallpaper_";
 /// an overlay above it (see [`WALLPAPER_OVERLAY_PREFIX`]).
 fn draws_wallpaper(class: &str) -> bool {
     !class.starts_with(WALLPAPER_OVERLAY_PREFIX)
+}
+
+/// Whether an overlay was logged in this run: the scan runs every few seconds.
+static OVERLAY_TOLD: AtomicBool = AtomicBool::new(false);
+
+/// Whether `hwnd` in the wallpaper layer is such an overlay; the first one of a run is logged,
+/// so a report shows why it is not counted as a live wallpaper.
+fn is_overlay(hwnd: HWND) -> bool {
+    let class = class_name(hwnd);
+    if draws_wallpaper(&class) {
+        return false;
+    }
+    if !OVERLAY_TOLD.swap(true, Ordering::Relaxed) {
+        tracing::info!(
+            class = %class,
+            rect = ?window_rect(hwnd),
+            "wallpaper layer: a window above the wallpaper that draws none of it; not a live wallpaper"
+        );
+    }
+    true
 }
 
 /// Visible windows of programs other than Explorer that are direct children of Progman, of a
@@ -57,7 +78,7 @@ pub fn windows() -> Vec<(HWND, RECT)> {
             if window_pid(child) != explorer
                 && is_visible(child)
                 && !is_cloaked(child)
-                && draws_wallpaper(&class_name(child))
+                && !is_overlay(child)
             {
                 out.push((child, window_rect(child)));
             }
