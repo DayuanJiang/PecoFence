@@ -1036,5 +1036,8 @@
   "所有栅栏用同样的布局": "La misma distribución para todos los grupos",
   "把上面的视图、排序、图标大小、间距、名称和对齐用到其他栅栏": "Da a los demás grupos la vista, el orden, el tamaño de los iconos, el espaciado, las etiquetas y la alineación de arriba",
   "其他栅栏已经和它一样": "Los demás grupos ya están así",
-  "已用到其他 {0} 个栅栏": "Aplicado a otros {0} grupos"
+  "已用到其他 {0} 个栅栏": "Aplicado a otros {0} grupos",
+  "撤销提示": "Avisos para deshacer",
+  "删除栅栏、按规则整理或把栅栏移到别的虚拟桌面后，右下角显示可以撤销的提示，10 秒后消失。关闭后不再显示，在栅栏上按 Ctrl+Z 照样能撤销": "Después de eliminar un grupo, organizar por reglas o enviar un grupo a otro escritorio virtual, se muestra en la esquina un aviso con Deshacer durante 10 segundos. Desactivado, no se muestra; Ctrl+Z en un grupo sigue deshaciendo",
+  "搜索别名\u0004撤销卡片|删除提示|通知|弹窗": "tarjeta deshacer|aviso de eliminación|notificaciones|ventana emergente"
 }

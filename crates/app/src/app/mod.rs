@@ -692,6 +692,7 @@ fn log_start_state(state: &AppState) {
         offer_new_fence = s.offer_new_fence,
         per_desktop_fences = s.per_desktop_fences,
         feature_tips = s.feature_tips,
+        undo_notices = s.undo_notices,
         liquid_glass = s.theme_style == pecofence_core::ThemeStyle::LiquidGlass,
         custom_theme = s.custom_theme.is_some(),
         icon_size = s.icon_size,

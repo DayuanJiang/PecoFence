@@ -303,6 +303,9 @@ shows two small buttons at its bottom-right corner, 「新建栅栏」 and 「�
 default on), `featureTips` (「功能提示」: one-time cards in the corner when a
 feature would help, such as rolling up fences once there are many, showing a folder opened often on
 the desktop, or a rule for files of one type dragged into one fence; each shows once; default on),
+`undoNotices` (「撤销提示」: the card with 撤销 after a fence is deleted from its menu, after
+「立即应用」 of the rules and after a fence is sent to another virtual desktop, for 10 seconds;
+`false` shows none, and Ctrl+Z on a fence still undoes; default on),
 `showTrayIcon` (「显示托盘图标」: PecoFence's icon in the notification area of the taskbar; `false`
 takes it out at once, and it comes back only while a notification of PecoFence shows and in the
 two states whose notice names the tray menu (no Peek shortcut can be registered; the item menus

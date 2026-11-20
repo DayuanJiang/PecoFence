@@ -14,7 +14,7 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN', idleOpacity: 1,
-    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, showTrayIcon: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
+    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, undoNotices: true, showTrayIcon: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', menuColor: 'followMode', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
     rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
@@ -1431,6 +1431,11 @@ async function runTests() {
     tips.click(); await settle();
     assert(current().settings.featureTips === false, 'Feature tips switch did not post');
     tips.click(); await settle();
+    const undo = doc.querySelector('[data-bind=undoNotices]');
+    assert(undo.getAttribute('aria-checked') === 'true', 'Undo notices not shown on');
+    undo.click(); await settle();
+    assert(current().settings.undoNotices === false, 'Undo notices switch did not post');
+    undo.click(); await settle();
   });
   await test('显示托盘图标: the switch, the 退出 card while it is off, and the search', async () => {
     doc = await reset();

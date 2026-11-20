@@ -268,3 +268,5 @@ usage-desc         2   ec2    debug   usage-description.ps1
 usage-gaps         4   ec2    release usage-gaps.ps1
 # Feedback #194: a monitor goes and comes back, a scale change, the primary switch (two monitors in a Hyper-V guest: see the file).
 monitor-sets-move  6   manual release monitor-sets-move.ps1
+# 撤销提示 (feedback #185, #188): the undo card leaves after 10 s; the switch off shows none, Ctrl+Z still undoes.
+undo-notices       1   ec2    release undo-notices.ps1

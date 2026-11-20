@@ -715,6 +715,7 @@
       <div class="card"><div class="l"><span class="ic">&#xE8B3;</span><div><div class="t">在桌面空白处拖出矩形时显示“新建栅栏”按钮</div><div class="s">在矩形右下角显示“新建栅栏”和“在此显示文件夹…”，几秒后消失。关闭后拖出矩形只用来框选</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="offerNewFence"></div></div>
       <div class="card" id="perDesktopCard"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">每个虚拟桌面各用一套栅栏</div><div class="s">打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="perDesktopFences"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE82F;</span><div><div class="t">功能提示</div><div class="s">用得上某个功能时提示一次，例如栅栏多了可以收起、常开的文件夹可以放到桌面上。每条只出现一次</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="featureTips"></div></div>
+      <div class="card"><div class="l"><span class="ic">&#xE7A7;</span><div><div class="t">撤销提示</div><div class="s">删除栅栏、按规则整理或把栅栏移到别的虚拟桌面后，右下角显示可以撤销的提示，10 秒后消失。关闭后不再显示，在栅栏上按 Ctrl+Z 照样能撤销</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="undoNotices"></div></div>
       <h3>隐藏栅栏</h3>
       <div class="card"><div class="l"><span class="ic">&#xE890;</span><div><div class="t">双击桌面空白处隐藏或显示栅栏</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="quickHide.enabled"></div></div>
       <div class="card" id="wdHotkeyCard"><div class="l"><span class="ic">&#xE7F4;</span><div><div class="t" id="wdHotkeyTitle">临时显示 Windows 桌面</div><div class="s" id="wdHotkeyHelp" aria-live="polite"></div></div></div>
@@ -1388,6 +1389,7 @@
     ['[data-bind=showTrayIcon]', t("搜索别名\x04托盘|系统托盘|通知区域|任务栏图标|隐藏图标|右下角|tray")],
     ['#desktopIcons', t("搜索别名\x04隐藏桌面图标|显示桌面图标|系统图标|原来的图标")],
     ['[data-bind=featureTips]', t("搜索别名\x04小技巧|提示卡片|新手提示|引导")],
+    ['[data-bind=undoNotices]', t("搜索别名\x04撤销卡片|删除提示|通知|弹窗")],
     ['[data-bind="quickHide.enabled"]', t("搜索别名\x04一键隐藏|快速隐藏|隐藏全部")],
     ['#wdHotkey', t("搜索别名\x04看桌面|热键|组合键")],
     ['[data-bind=showDesktop]', t("搜索别名\x04最小化|显示桌面")],

@@ -1036,5 +1036,8 @@
   "所有栅栏用同样的布局": "Gleiche Anordnung für alle Bereiche",
   "把上面的视图、排序、图标大小、间距、名称和对齐用到其他栅栏": "Gibt den anderen Bereichen die Ansicht, Sortierung, Symbolgröße, Abstände, Unterschriften und Ausrichtung von oben",
   "其他栅栏已经和它一样": "Die anderen Bereiche sind schon so",
-  "已用到其他 {0} 个栅栏": "Auf {0} weitere Bereiche angewendet"
+  "已用到其他 {0} 个栅栏": "Auf {0} weitere Bereiche angewendet",
+  "撤销提示": "Hinweise zum Rückgängigmachen",
+  "删除栅栏、按规则整理或把栅栏移到别的虚拟桌面后，右下角显示可以撤销的提示，10 秒后消失。关闭后不再显示，在栅栏上按 Ctrl+Z 照样能撤销": "Nach dem Löschen eines Bereichs, dem Einsortieren nach Regeln oder dem Verschieben auf einen anderen virtuellen Desktop zeigt die Ecke 10 Sekunden lang einen Hinweis mit „Rückgängig“. Aus: kein Hinweis; Strg+Z in einem Bereich macht es weiterhin rückgängig",
+  "搜索别名\u0004撤销卡片|删除提示|通知|弹窗": "Rückgängig-Karte|Löschhinweis|Benachrichtigungen|Popup"
 }
