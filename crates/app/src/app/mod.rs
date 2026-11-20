@@ -56,6 +56,7 @@ use std::time::{Duration, Instant};
 use windows_core::Result;
 
 mod arrange;
+mod busy;
 mod desktop_import;
 mod dnd;
 mod everything_setup;
@@ -576,6 +577,8 @@ pub struct App {
     placing_layout: bool,
     /// Animation runs and slow commands since the last `activity` line; see `log_memory`.
     activity: Activity,
+    /// GitHub #241: the processor time of the last minute, for the busy line (`check_busy`).
+    busy: busy::BusyWatch,
     /// Fingerprint of the snapshot the current backdrops were built from.
     wallpaper_sig: Option<String>,
     /// Reads the wallpaper for the checks on a worker (see `WallpaperReader`).
@@ -2175,6 +2178,7 @@ impl App {
             last_display_change: None,
             placing_layout: false,
             activity: Activity::default(),
+            busy: busy::BusyWatch::default(),
             cut_items: HashSet::new(),
             cut_clip_seq: 0,
             cut_paste: None,
@@ -2573,6 +2577,7 @@ impl App {
     }
 
     fn housekeeping(&mut self) {
+        self.check_busy();
         self.check_cut_clipboard();
         self.run_due_scripts();
         // 智能栅栏: files age out of a time window, Everything may have started or stopped,

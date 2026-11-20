@@ -33,6 +33,7 @@ mod bindings;
 mod store_bindings;
 
 pub mod autostart;
+pub mod busy;
 pub mod clipboard;
 pub mod colordialog;
 pub mod com;
