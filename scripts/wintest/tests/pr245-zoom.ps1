@@ -275,6 +275,30 @@ function PartT() {
   [Anim]::Set($true)
 }
 
+# A: a recording for the report (no checks): zoom a fence with tabs, double-click its tabs, open
+# it again. --var Side=before|after names the recording.
+function PartA() {
+  trap { PfTrap $_; continue }
+  Case 'A recording'
+  . C:\pf\kit\rec.ps1
+  ClearFences | Out-Null
+  $a = NewPlain '标签甲' '300,180,420,300' @('zt1.txt', 'zt2.txt')
+  $b = NewPlain '标签乙' '900,180,300,240' @('zt3.txt')
+  Pf fence merge $b --into $a | Out-Null; Start-Sleep -Milliseconds 1500
+  $h = (DumpOf '标签甲').hwnd
+  ParkMouse 1500 820
+  RecStart "A-$Side" -X 160 -Y 60 -W 1280 -H 720 -Fps 12
+  RecMark '双击空白处：放大'
+  DblBlank $h; Start-Sleep -Milliseconds 600
+  RecMark '双击放大后的标签行：收起'
+  $z = R4 $h
+  DoubleClick ($z[0] + 60) ($z[1] + 16); Start-Sleep -Milliseconds 1400
+  RecMark '再展开'
+  Pf fence unroll $a | Out-Null; Start-Sleep -Milliseconds 1600
+  RecStop
+}
+
+if ($Part -match 'A') { PartA }
 if ($Part -match 'Z') { PartZ }
 if ($Part -match 'T') { PartT }
 if ($Part -match 'F') { PartF }
