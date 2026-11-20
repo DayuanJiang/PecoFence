@@ -139,8 +139,8 @@ function PartC() {
 function PartU() {
   trap { PfTrap $_; continue }
   Case 'U double-click on empty space in a subfolder goes up (feedback #130)'
-  # These checks are about going up; at a folder's root and in a plain fence a double-click on
-  # empty space zooms the fence now (PR #245, its own steps in pr245-zoom.ps1): off here.
+  # These checks are about going up; with 「双击空白处放大栅栏」 on (PR #245, off by default, its
+  # own steps in pr245-zoom.ps1) a double-click on empty space at the root would zoom the fence.
   Pf settings set zoom.enabled false | Out-Null
   ClearFences | Out-Null
   CloseWindows
@@ -246,7 +246,6 @@ function PartU() {
   Check 'U double-click on empty space goes back to the fence''s own icons' (-not $back -and $exp2 -eq $exp0) "openedFolder='$back' explorer $exp0 -> $exp2"
   Remove-Item -LiteralPath (Join-Path $PfDesk '普通文件.txt') -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
-  Pf settings set zoom.enabled true | Out-Null
 }
 
 function PartR() {

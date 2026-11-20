@@ -151,13 +151,14 @@ pub const UNUSED_SETTINGS: &[&str] = &[
 #[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
 #[serde(default, rename_all = "camelCase")]
 pub struct Zoom {
-    /// 双击栅栏空白处放大到屏幕中央（再双击收回）.
+    /// 双击栅栏空白处放大到屏幕中央（再双击收回）. Off by default: a new gesture does not
+    /// change what a double-click on a fence already does for everyone (as #216's fade).
     pub enabled: bool,
 }
 
 impl Default for Zoom {
     fn default() -> Self {
-        Self { enabled: true }
+        Self { enabled: false }
     }
 }
 

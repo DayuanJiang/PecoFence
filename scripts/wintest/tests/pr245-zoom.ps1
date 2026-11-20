@@ -48,6 +48,15 @@ function NewPlain($title, $rect, $files) {
   return $id
 }
 
+# The switch is off by default: a double-click on empty space changes nothing until it is on.
+Case 'setup: off by default'
+ClearFences | Out-Null
+$d = NewPlain '默认' '300,180,360,240' @('zd1.txt')
+$hd = WinOf $d; $rd = R4 $hd
+DblBlank $hd
+Check 'a double-click on empty space does not zoom with the default settings' (Same (R4 $hd) $rd) "now=$((R4 $hd) -join ',') was $($rd -join ',') zoom=$((PfJson settings get).zoom.enabled)"
+Pf settings set zoom.enabled true | Out-Null; Start-Sleep -Milliseconds 600
+
 function PartZ() {
   trap { PfTrap $_; continue }
   Case 'Z zoom and back'
