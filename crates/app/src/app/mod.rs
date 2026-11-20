@@ -771,6 +771,7 @@ fn not_recorded(cmd: &Command) -> bool {
         // timer, for a window that opened, closed, was pressed or came under the pointer,
         // with a worker's answer.
         Command::FenceBoundsChanged { .. }
+            | Command::GlideEnded(_)
             | Command::DesktopCellsPlaced { .. }
             | Command::DesktopIconsAtRest
             | Command::BeginFenceRename(_)
@@ -2812,6 +2813,10 @@ impl App {
                 self.arrange_desktop_fence();
             }
             Command::FenceDropped(fence) => self.move_out_of_overlap(fence),
+            Command::GlideEnded(fence) => {
+                tracing::debug!(%fence, "glide ended: auto height fits the fence where it stands");
+                self.apply_auto_height(fence);
+            }
             Command::ToggleRollUp(fence) => self.toggle_roll(fence),
             Command::FitToContent(fence) => {
                 self.fit_to_content_by_user(fence, "bottom edge double-click")

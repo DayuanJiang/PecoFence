@@ -5,8 +5,9 @@
 # change saved the window's place of the one-monitor layout (still where the window stood)
 # into the two-monitor layout. And a fence gliding back to B over A (another scale) came out a
 # sixth smaller: the glide took Windows' resize for A's scale. Also: a fence without auto
-# height on B, an auto-height fence that stays on A, a scale change of B and back, and B made
-# the primary monitor and back.
+# height on B, an auto-height fence that stays on A, a scale change of B and back, B made the
+# primary monitor and back, and items that come while an auto-height fence glides back (they
+# are fitted when the glide ends).
 #
 # Needs a Hyper-V guest with a second monitor, from the virtual display driver on the PC:
 #   scripts/wintest/hyperv/run-hyperv.sh --vm PF-Win11-2 --prep scripts/wintest/hyperv/vdd-prep.ps1 \
@@ -249,5 +250,60 @@ $l = MsWaitChange 2 $n0
 MsState 'A primary again'
 MsBack 'A primary again'
 
+Case 'monitor sets: items that come while a fence glides back'
+# Grow (auto height, on B) only moves when A comes back, so it glides there (250 ms), and auto
+# height waits while it moves. Items that come during the glide are fitted when it ends: the
+# fence kept its old height and cut them off before (the glide's end sent nothing).
+$GrFiles = @(1..4 | ForEach-Object { DeskFile "Gr a$_.txt" }) + @(1..8 | ForEach-Object { DeskFile "Gr b$_.txt" })
+Start-Sleep -Seconds 2
+$mons = MsMonitors; $MB = @($mons | Where-Object { -not $_.primary })[0]
+Pf fence create --title Grow --rect "$($MB.workArea.x + 820),$($MB.workArea.y + 380),600,200" | Out-Null
+Start-Sleep -Milliseconds 500
+Pf item move --glob 'Gr a*' --to Grow | Out-Null
+Pf fence set Grow autoHeight true | Out-Null
+Start-Sleep -Seconds 1
+$gj = (Pf fence get Grow) | ConvertFrom-Json; if ($gj.fence) { $gj = $gj.fence }
+$GrowId = $gj.id
+$Inbox = @(@(PfJson fence list) | Where-Object { $_.kind -eq 'inbox' })[0].id
+Log "Grow $GrowId at $(MsFmt $gj.windowRect), fit $($gj.fit.fittingHeight)"
+# Lines the app logged after byte $from of its log.
+function MsNewLines([long]$from) {
+  $fs = [IO.File]::Open((PfLogPath), 'Open', 'Read', 'ReadWrite')
+  try { $null = $fs.Seek($from, 'Begin'); $sr = New-Object IO.StreamReader($fs); return @{ text = $sr.ReadToEnd(); end = $fs.Length } } finally { $fs.Dispose() }
+}
+function MsGrowTry([int]$k) {
+  trap { PfTrap $_; continue }
+  $n0 = MsLogCount
+  [Mon2]::Topology(8) | Out-Null
+  MsWaitChange 1 $n0 | Out-Null
+  $from = (Get-Item (PfLogPath)).Length
+  [Mon2]::Topology(4) | Out-Null
+  $seen = $false; $t0 = Get-Date
+  while (((Get-Date) - $t0).TotalSeconds -lt 25) {
+    $r = MsNewLines $from
+    if ($r.text -match "fence goes to its landing place fence=$GrowId .*glide=true") { $seen = $true; break }
+    Start-Sleep -Milliseconds 10
+  }
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  $out = & "$PfApp\pecofence-cli.exe" item move --glob 'Gr b*' --to Grow 2>&1 | Out-String
+  $ms = $sw.ElapsedMilliseconds
+  Log "try ${k}: glide seen $seen, items moved $ms ms later: $($out.Trim())"
+  Start-Sleep -Seconds 3
+  $f = (Pf fence get Grow) | ConvertFrom-Json; if ($f.fence) { $f = $f.fence }
+  return @{ inTime = ($seen -and $ms -lt 200); ms = $ms; f = $f }
+}
+$res = $null
+foreach ($k in 1..3) {
+  $res = MsGrowTry $k
+  if ($res.inTime) { break }
+  # Too late for the glide: the items go back and the next try begins.
+  Pf item move --glob 'Gr b*' --to $Inbox | Out-Null
+  Start-Sleep -Seconds 2
+}
+Check 'the items came while Grow glided back' ($res -and $res.inTime) "$($res.ms) ms after the glide began"
+$f = $res.f
+Check 'after the glide, Grow is as tall as its twelve items' ($f -and -not $f.fit.overflow -and [math]::Abs($f.windowRect.h - $f.fit.fittingHeight) -le 4) "window $(MsFmt $f.windowRect), fits $($f.fit.fittingHeight), overflow $($f.fit.overflow)"
+Shot 'ms-grow-after-glide'
+
 PfQuit
-foreach ($p in $MsFiles) { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }
+foreach ($p in @($MsFiles) + @($GrFiles)) { Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue }

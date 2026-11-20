@@ -100,6 +100,9 @@ pub enum Command {
     FitToContent(FenceId),
     /// A hover-peeked fence was double-clicked: keep it expanded.
     CommitExpanded(FenceId),
+    /// A glide the app started for a display change reached its end (it reports no bounds):
+    /// the fence fits its items there, as auto height waited while it moved.
+    GlideEnded(FenceId),
     /// Open `item` from fence `from` (a folder opens in place when `from` is a navigating portal).
     /// `inside` is false when several items are opened at once: folders open in Explorer then.
     LaunchItem {

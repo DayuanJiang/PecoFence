@@ -605,7 +605,8 @@ impl App {
         // a rect saved now would go into the new layout. A fence put on the other monitor went
         // back to where the one-monitor layout had it every time that monitor came back
         // (feedback #194); a restored fence stayed where it had been moved. It is fitted once
-        // placed (a glide's end fits it again).
+        // placed, and at the end of a glide: the bounds a restore's glide reports
+        // (`FenceBoundsChanged`), `GlideEnded` after a display change's.
         if self.placing_layout || w.move_pending() {
             tracing::debug!(fence = %id, syncing = self.placing_layout, "auto height waits: the fence is not at its new place yet");
             return;
