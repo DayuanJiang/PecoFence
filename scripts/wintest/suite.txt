@@ -308,3 +308,5 @@ cpu-layout         2   manual release 241-cpu-layout.ps1
 zoom-ZTF           2   ec2    release pr245-zoom.ps1                --var Part=ZTF
 zoom-R             2   ec2    release pr245-zoom.ps1                --var Part=R
 zoom-GP            3   ec2    release pr245-zoom.ps1                --var Part=GP
+# Plugins in the Store edition: a test-signed package and the portable exe in one Hyper-V guest (manual: see the header of tests/msix-plugins.ps1).
+msix-plugins       6   manual debug   msix-plugins.ps1

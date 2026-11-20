@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The Store edition's very first start logs its configuration as kept in the Store package (`storage=store package`, and 「反馈」's startup line says so), as every later start does: with no folder yet it said `appdata`.
 - Settings › 常规 › 「Windows 桌面图标」: the two 显示 choices say that the items in fences show on the Windows desktop too (feedback #193, where files dragged into a fence seemed to stay on the desktop: with the Windows icons shown every desktop file is there as well).
 - Usage statistics also carry the 「撤销提示」 switch and 「闲置时的不透明度」 (rounded to whole percents), as every other switch and choice of the settings page.
 - Liquid Glass keeps its refraction with Bing Wallpaper's desktop widget on (GitHub #247, feedback #198; thanks to IRahman2024, who found the cause): the widget is a full-screen, click-through window above the wallpaper, and PecoFence took it for a live wallpaper whose picture it cannot read, so the fences became translucent panes over a neutral colour and a card said the live wallpaper could not be read. Such an overlay is no longer taken for a player; the fences show the daily Bing image, which Windows still has as the wallpaper, and the card and the line on the settings page stay away.

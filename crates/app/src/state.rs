@@ -384,7 +384,11 @@ impl AppState {
         if dir == config_dir(true) {
             return "portable";
         }
-        let in_package = in_package_folder(&self.store.primary_path()) || in_package_folder(dir);
+        // A Store edition's first start has no folder yet: with no real %APPDATA%\PecoFence its
+        // files go to the package's copy (the first start said "appdata" there).
+        let in_package = in_package_folder(&self.store.primary_path())
+            || in_package_folder(dir)
+            || (!dir.exists() && pecofence_platform::process::is_packaged());
         let old_name = dir
             .file_name()
             .is_some_and(|n| n == std::ffi::OsStr::new(pecofence_core::brand::LEGACY_DATA_DIR));
