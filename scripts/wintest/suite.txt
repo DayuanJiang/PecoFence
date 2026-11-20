@@ -109,6 +109,8 @@ polish-paste-D     2   ec2    release polish-paste.ps1               --var Part=
 issues-reorder     2   ec2    release issues-dragpaste.ps1           --var Part=A
 issues-paste       2   ec2    release issues-dragpaste.ps1           --var Part=B
 issues-paste-C     3   ec2    release issues-dragpaste.ps1           --var Part=C
+issues-vm-paste    1   resize release free-placement.ps1             --part V --steps issues-vm-paste.ps1
+issues-copy-peek   1   ec2    release issues-vm-paste.ps1            --var Part=P
 big-copy-save-A    2   ec2    release big-copy-save.ps1              --var Part=A
 big-copy-save-B    1   ec2    release big-copy-save.ps1              --var Part=B
 polish-undo        2   ec2    release polish-undo.ps1
