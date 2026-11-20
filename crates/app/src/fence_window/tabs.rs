@@ -176,6 +176,20 @@ pub(super) fn rail_len_for(n: usize, bottom: f32) -> f32 {
     RAIL_TOP + n * RAIL_ROW_H + (n - 1.0).max(0.0) * TAB_GAP + bottom
 }
 
+/// How far 标题对齐 moves the rows of a left tab column (DIPs) from the top of their room
+/// `start..end`: centred on the column `len` long or at its end, never into the room's ends,
+/// and back to the top as the fence rolls up (`roll_t` 0 open, 1 rolled).
+pub(super) fn rail_align_shift(
+    align: pecofence_core::TitleAlign,
+    len: f32,
+    (start, end): (f32, f32),
+    span: f32,
+    roll_t: f32,
+) -> f32 {
+    let at = pecofence_render::fence_chrome::aligned_x(align, len, start, end, span) - start;
+    at * (1.0 - roll_t.clamp(0.0, 1.0))
+}
+
 /// Lays the tab strip out along the title row: `natural` are the pills' natural widths (DIPs,
 /// already clamped), `available` the room between `TAB_LEFT` and the chevron zone. A phantom
 /// pill of `TAB_MERGE_GAP_W` at slot `gap` takes part in the proportional shrink and the
@@ -463,8 +477,8 @@ impl FenceViewState {
         let (start, end) = self.tab_strip_bounds();
         let natural = self.tab_natural_widths();
         if self.tabs_on_rail() {
-            // The column fills from its top; 标题对齐 only moves a title row. A merge opens
-            // one row there.
+            // The column fills from its top (标题对齐 may move the rows down, below). A merge
+            // opens one row there.
             let shift = start - TAB_LEFT;
             let room = (end - start).max(0.0);
             // The rows shrink as far as a caption needs (`RAIL_ROW_MIN`). A column still too
@@ -503,6 +517,26 @@ impl FenceViewState {
                     .collect();
             }
             self.tab_scroll.set(0.0);
+            // 标题对齐 moves the rows along the column as it moves a title row's strip (feedback
+            // #192): centred on the column, or at its end. Measured without the merge gap, so
+            // opening it never moves the slots under the pointer; a column that collapses takes
+            // its rows back to its top as it rolls up.
+            let shift = shift
+                + match self.behavior.title_align.get() {
+                    pecofence_core::TitleAlign::Left => 0.0,
+                    align => {
+                        let resting = tab_strip_rects_with(&natural, None, room);
+                        let span = resting.last().map_or(0.0, |(y, h)| y + h - TAB_LEFT);
+                        let len = self.chrome_panel.size_px().1 as f32 / self.scale();
+                        rail_align_shift(
+                            align,
+                            len,
+                            (start, end),
+                            span,
+                            self.roll_t.value_at(Instant::now()),
+                        )
+                    }
+                };
             return tab_strip_rects_with(&natural, gap.map(|g| (g, RAIL_ROW_H)), room)
                 .into_iter()
                 .map(|(y, h)| (y + shift, h))

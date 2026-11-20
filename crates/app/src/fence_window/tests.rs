@@ -289,6 +289,40 @@ fn collapsed_tab_column_has_no_chevron_room() {
     assert_eq!(rail_len_for(3, RAIL_COLLAPSED_BOTTOM), 120.0);
 }
 
+/// 标题对齐 in a left tab column (feedback #192): three rows (108 DIP) in a 400 DIP column whose
+/// rows may lie between 12 and 352 sit at the top, in the middle of the column or at the end
+/// of their room, and go back up as the fence rolls up.
+#[test]
+fn title_alignment_moves_the_rows_of_a_tab_column() {
+    use pecofence_core::TitleAlign;
+    let room = (12.0, 352.0);
+    assert_eq!(
+        rail_align_shift(TitleAlign::Left, 400.0, room, 108.0, 0.0),
+        0.0
+    );
+    assert_eq!(
+        rail_align_shift(TitleAlign::Center, 400.0, room, 108.0, 0.0),
+        134.0
+    );
+    assert_eq!(
+        rail_align_shift(TitleAlign::Right, 400.0, room, 108.0, 0.0),
+        232.0
+    );
+    assert_eq!(
+        rail_align_shift(TitleAlign::Center, 400.0, room, 108.0, 0.5),
+        67.0
+    );
+    assert_eq!(
+        rail_align_shift(TitleAlign::Center, 400.0, room, 108.0, 1.0),
+        0.0
+    );
+    // Rows that fill their room stay where they are.
+    assert_eq!(
+        rail_align_shift(TitleAlign::Center, 400.0, room, 340.0, 0.0),
+        0.0
+    );
+}
+
 #[test]
 fn narrow_tab_strips_cannot_cover_the_chevron_or_count() {
     for count in 2..=10 {
