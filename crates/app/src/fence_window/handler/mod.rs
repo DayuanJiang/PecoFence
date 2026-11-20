@@ -351,6 +351,7 @@ impl FenceWindow {
                     WM_APP_TAB_RAIL => misc::on_app_tab_rail(h, hwnd, wparam, lparam),
                     WM_APP_DESKTOP_SHAPE => misc::on_app_desktop_shape(h, hwnd, wparam, lparam),
                     WM_APP_FADE_DONE => misc::on_app_fade_done(h, hwnd, wparam, lparam),
+                    WM_APP_ZOOM_PRESS => timers::on_zoom_press(h, hwnd, lparam),
                     msg::WM_ENTERSIZEMOVE => nc::on_entersizemove(h, hwnd, wparam, lparam),
                     msg::WM_EXITSIZEMOVE => nc::on_exitsizemove(h, hwnd, wparam, lparam),
                     msg::WM_HOTKEY if wparam as i32 == HOTKEY_MOVE_ESC => {
@@ -408,9 +409,6 @@ impl FenceWindow {
                     }
                     msg::WM_TIMER if wparam == TIMER_FIT_AHEAD => {
                         timers::on_timer_fit_ahead(h, hwnd)
-                    }
-                    msg::WM_TIMER if wparam == TIMER_ZOOM_WATCH => {
-                        timers::on_timer_zoom_watch(h, hwnd)
                     }
                     msg::WM_TIMER if wparam == TIMER_SHADOW => {
                         timers::on_timer_shadow(h, hwnd, wparam, lparam)

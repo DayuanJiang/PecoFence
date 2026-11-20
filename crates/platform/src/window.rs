@@ -520,6 +520,58 @@ pub fn secondary_button_down_async() -> bool {
     key_down_async(vk as u32)
 }
 
+thread_local! {
+    /// Where [`PressWatch`] posts the presses it sees, and with which message.
+    static PRESS_TARGET: std::cell::Cell<(HWND, u32)> =
+        const { std::cell::Cell::new((HWND(std::ptr::null_mut()), 0)) };
+}
+
+/// While it lives, every press of a mouse button anywhere on the screen is posted to the
+/// target window: `lparam` is the screen point (x in the low word, y in the high word, both
+/// signed), `wparam` the button message. A low-level mouse hook on this thread, so a quick tap
+/// on a touchpad, pressed and released between two looks at the button state, counts too.
+pub struct PressWatch(HHOOK);
+
+impl PressWatch {
+    pub fn start(target: HWND, message: u32) -> Option<Self> {
+        PRESS_TARGET.set((target, message));
+        // SAFETY: a low-level hook needs no module handle.
+        let hook = unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(press_watch_proc), None, 0) };
+        (!hook.0.is_null()).then_some(Self(hook))
+    }
+}
+
+impl Drop for PressWatch {
+    fn drop(&mut self) {
+        // SAFETY: balances SetWindowsHookExW.
+        unsafe {
+            let _ = UnhookWindowsHookEx(self.0);
+        }
+    }
+}
+
+unsafe extern "system" fn press_watch_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    let m = wparam.0 as u32;
+    if code >= 0
+        && [
+            WM_LBUTTONDOWN as u32,
+            WM_RBUTTONDOWN as u32,
+            WM_MBUTTONDOWN as u32,
+            WM_XBUTTONDOWN as u32,
+        ]
+        .contains(&m)
+    {
+        // SAFETY: for WH_MOUSE_LL, lParam points to an MSLLHOOKSTRUCT, which starts with the
+        // pointer's position.
+        let pt = unsafe { *(lparam.0 as *const POINT) };
+        let (target, message) = PRESS_TARGET.get();
+        let packed = (pt.x as u16 as u32 | ((pt.y as u16 as u32) << 16)) as isize;
+        post_message(target, message, m as usize, packed);
+    }
+    // SAFETY: passes the event on unchanged.
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
 /// Gives `hwnd` the keyboard focus (a no-op unless this thread owns the foreground queue).
 pub fn set_focus(hwnd: HWND) {
     // SAFETY: plain FFI call.

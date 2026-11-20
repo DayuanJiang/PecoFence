@@ -190,18 +190,17 @@ impl FenceViewState {
         } else {
             self.zoom_anim = Some(z);
         }
-        if done && opening {
+        if done && opening && self.zoom_press.is_none() {
             // A click on the desktop, outside this fence, puts it back as well.
-            self.zoom_was_down = window::primary_button_down_async();
-            window::set_timer(hwnd, TIMER_ZOOM_WATCH, ZOOM_WATCH_MS);
+            self.zoom_press = window::PressWatch::start(hwnd, WM_APP_ZOOM_PRESS);
         }
         Some((rect, done))
     }
 
-    /// The zoom is over: the watch stops, the z-order the fence had comes back, and no fence
+    /// The zoom is over: the press watch ends, the z-order the fence had comes back, and no fence
     /// owns the screen any more.
     fn zoom_closed(&mut self, hwnd: HWND) {
-        window::kill_timer(hwnd, TIMER_ZOOM_WATCH);
+        self.zoom_press = None;
         self.zoom_home = None;
         self.zoom_far = None;
         self.zoom_icon = 1.0;
@@ -246,16 +245,12 @@ impl FenceViewState {
 }
 
 impl FenceViewState {
-    /// One look at the left button while the fence is zoomed: a press that lands outside it,
-    /// above the taskbar, closes the zoom. Returns whether it did.
-    pub(super) fn zoom_watch(&mut self, hwnd: HWND) -> bool {
-        let down = window::primary_button_down_async();
-        let pressed = down && !self.zoom_was_down;
-        self.zoom_was_down = down;
-        if !pressed {
+    /// A mouse button went down at `pt` (screen) while the fence is zoomed: a press that
+    /// lands outside it, above the taskbar, closes the zoom. Returns whether it did.
+    pub(super) fn zoom_press_at(&mut self, hwnd: HWND, pt: pecofence_platform::POINT) -> bool {
+        if self.zoom_press.is_none() {
             return false;
         }
-        let pt = window::cursor_pos();
         let r = window::window_rect(hwnd);
         if pt.x >= r.left && pt.x < r.right && pt.y >= r.top && pt.y < r.bottom {
             // Inside the zoomed fence: its own clicks, not a dismissal.

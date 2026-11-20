@@ -113,8 +113,9 @@ pub struct FenceViewState {
     /// The centred box and the icon factor the zoom is heading for while it is open, kept so
     /// an interrupted close can turn back out to the same place.
     pub(super) zoom_far: Option<(RECT, f32)>,
-    /// The left button as the last zoom watch found it (edge detection for "a click outside").
-    pub(super) zoom_was_down: bool,
+    /// While the fence is zoomed at rest: sees every mouse press, so one outside the fence
+    /// closes the zoom (`fence_window/zoom.rs`).
+    pub(super) zoom_press: Option<pecofence_platform::window::PressWatch>,
     /// The zoom tween in flight.
     pub(super) zoom_anim: Option<crate::fence_window::zoom::ZoomAnim>,
     /// The window that was directly above this one before the zoom raised it; the zoom puts

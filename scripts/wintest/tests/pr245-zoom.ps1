@@ -71,6 +71,12 @@ function PartZ() {
   DeskClick 1000 820 | Out-Null; Start-Sleep -Milliseconds 900
   Check 'Z a click on the desktop outside puts it back' (Same (R4 $ha) $r0) "now=$((R4 $ha) -join ',')"
 
+  # A touchpad tap: down and up at once, between two looks at the button state.
+  DblBlank $ha
+  $q = FreeSpot 1000 820
+  [G]::MoveTo($q[0], $q[1]); Start-Sleep -Milliseconds 150; MDown; MUp; Start-Sleep -Milliseconds 900
+  Check 'Z a quick tap on the desktop outside puts it back too' (Same (R4 $ha) $r0) "now=$((R4 $ha) -join ',') at $($q -join ',')"
+
   DblBlank $ha
   [G]::Click(700, ((Wa).Bottom + 20)); Start-Sleep -Milliseconds 900
   Check 'Z a click on the taskbar leaves it zoomed' (IsZoomed (R4 $ha)) "now=$((R4 $ha) -join ',')"
@@ -151,6 +157,8 @@ function PartG() {
 
   Case 'G roll and expand while zoomed'
   Pf fence set $a autoHeight false | Out-Null; Start-Sleep -Milliseconds 800
+  # Room under the one row of icons, for the double-clicks below at any scale.
+  Pf fence move $a --rect '200,150,360,330' | Out-Null; Start-Sleep -Milliseconds 800
   $r0 = R4 $h; $s0 = Saved $a
   DblBlank $h
   Pf fence roll $a | Out-Null; Start-Sleep -Milliseconds 1500

@@ -119,7 +119,7 @@ impl FenceWindow {
             zoom_icon: 1.0,
             zoom_home: None,
             zoom_far: None,
-            zoom_was_down: false,
+            zoom_press: None,
             zoom_anim: None,
             zoom_prev: None,
             label_lines,

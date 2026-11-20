@@ -72,11 +72,6 @@ pub(super) const TIMER_ACTIVE_SYNC_END: usize = 61;
 /// (`fit_ahead_tick`). Armed by a content draw while names are missing; it ends by itself
 /// when every item has its name, so a fence at rest has no timer.
 pub(super) const TIMER_FIT_AHEAD: usize = 62;
-/// While a fence is zoomed: watches for a press outside it (a click on the desktop puts it
-/// back, `fence_window/zoom.rs`).
-pub(super) const TIMER_ZOOM_WATCH: usize = 63;
-/// How often that watch looks at the button (~25 looks a second).
-pub(super) const ZOOM_WATCH_MS: u32 = 40;
 /// How long nothing must be drawn and no key or mouse input arrive before a piece is fitted.
 pub(super) const FIT_AHEAD_REST_MS: u32 = 300;
 /// The pause between two pieces: input and painting come first.
