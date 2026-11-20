@@ -7,10 +7,11 @@
 #      it zooms; with single-click open a double-click on a subfolder goes in and does not zoom.
 #   G  what changes the fence while it is zoomed must not keep the zoomed size: auto height after
 #      a new item, a roll and expand from the command line, a quit, a display change.
+#   T  a fence with tabs (a double-click on its tabs while zoomed keeps its size), animations off.
 #   P  cost: the frames of the tween (WM_SIZE frame times), the icon extractions of one zoom, CPU
 #      at rest while zoomed, memory after five zooms. Fluent and Liquid Glass.
 # 1600x900 box at 100 % (the same checks hold at 150 %: run with WINTEST_SCALE=150).
-if (-not (Get-Variable Part -ErrorAction SilentlyContinue) -or -not $Part) { $Part = 'ZFGP' }
+if (-not (Get-Variable Part -ErrorAction SilentlyContinue) -or -not $Part) { $Part = 'ZTFGP' }
 
 Case 'setup'
 CloseWindows
@@ -246,7 +247,36 @@ function PartP() {
   Pf settings set themeStyle fluent | Out-Null
 }
 
+function PartT() {
+  trap { PfTrap $_; continue }
+  Case 'T tabs and animations off'
+  ClearFences | Out-Null
+  $a = NewPlain '标签甲' '300,180,420,300' @('zt1.txt', 'zt2.txt')
+  $b = NewPlain '标签乙' '900,180,300,240' @('zt3.txt')
+  Pf fence merge $b --into $a | Out-Null; Start-Sleep -Milliseconds 1500
+  $h = (DumpOf '标签甲').hwnd; $r0 = R4 $h; $s0 = Saved $a
+  DblBlank $h
+  Check 'T a fence with tabs zooms' (IsZoomed (R4 $h)) "now=$((R4 $h) -join ',')"
+  Shot 'T-tabs-zoomed'
+  # The title row (the tabs) of the zoomed fence: a double-click there rolls or does nothing,
+  # and whatever it does, the fence keeps its own size.
+  $z = R4 $h
+  DoubleClick ($z[0] + 60) ($z[1] + 16); Start-Sleep -Milliseconds 1200
+  $f = FenceGet $a
+  if ($f.rolledUp) { Pf fence unroll $a | Out-Null; Start-Sleep -Milliseconds 1200 }
+  if (IsZoomed (R4 $h)) { DblBlank $h }
+  Check 'T after a double-click on the tabs of the zoomed fence it has its own size' (Same (R4 $h) $r0 2) "window=$((R4 $h) -join ',') was $($r0 -join ',') rolled=$($f.rolledUp)"
+  Check 'T and its saved rect' (Same (Saved $a) $s0 2) "saved=$((Saved $a) -join ',') was $($s0 -join ',')"
+  [Anim]::Set($false); Start-Sleep -Milliseconds 500
+  $p = Blank $h; DoubleClick $p[0] $p[1]; Start-Sleep -Milliseconds 150
+  Check 'T animations off: zoomed at once' (IsZoomed (R4 $h)) "now=$((R4 $h) -join ',')"
+  $p = Blank $h; DoubleClick $p[0] $p[1]; Start-Sleep -Milliseconds 150
+  Check 'T animations off: back at once' (Same (R4 $h) $r0) "now=$((R4 $h) -join ',')"
+  [Anim]::Set($true)
+}
+
 if ($Part -match 'Z') { PartZ }
+if ($Part -match 'T') { PartT }
 if ($Part -match 'F') { PartF }
 if ($Part -match 'G') { PartG }
 if ($Part -match 'P') { PartP }

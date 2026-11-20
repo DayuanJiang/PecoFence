@@ -263,5 +263,5 @@ usage-desc         2   ec2    debug   usage-description.ps1
 # Usage statistics: notice cards, dialog jumps, cut-off and crashed runs (Midnight=1 needs the box clock set: see the file).
 usage-gaps         4   ec2    release usage-gaps.ps1
 # PR #245 (GitHub #243): a double-click on empty space zooms a fence; nothing the app does while it is zoomed keeps the zoomed size.
-zoom-ZF            1   ec2    release pr245-zoom.ps1                --var Part=ZF
+zoom-ZTF           2   ec2    release pr245-zoom.ps1                --var Part=ZTF
 zoom-GP            3   ec2    release pr245-zoom.ps1                --var Part=GP
