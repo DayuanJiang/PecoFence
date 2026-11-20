@@ -15,6 +15,20 @@ fn next_child(parent: Option<HWND>, after: Option<HWND>, class: Option<&str>) ->
     unsafe { FindWindowExW(parent, after, class, PCWSTR::null()) }
 }
 
+/// Window classes in the wallpaper layer that do not draw the wallpaper: Bing Wallpaper's
+/// widget (`BingWallpaper_Widget_Visual`, and the `BingWallpaper_Widget_Position` beside it)
+/// is a full-screen, click-through overlay above Explorer's wallpaper, drawn through
+/// DirectComposition and without a redirection bitmap. Taken for a live wallpaper, it left
+/// Liquid Glass fences a neutral colour (issue #247); the Windows wallpaper under it is the
+/// picture they should show.
+const WALLPAPER_OVERLAY_PREFIX: &str = "BingWallpaper_";
+
+/// Whether a window of `class` in the wallpaper layer draws the wallpaper itself, rather than
+/// an overlay above it (see [`WALLPAPER_OVERLAY_PREFIX`]).
+fn draws_wallpaper(class: &str) -> bool {
+    !class.starts_with(WALLPAPER_OVERLAY_PREFIX)
+}
+
 /// Visible windows of programs other than Explorer that are direct children of Progman, of a
 /// WorkerW under Progman, or of one of Explorer's top-level WorkerW windows, with their screen
 /// rectangles. Windows 10 puts Lively's player into the top-level WorkerW behind the icons;
@@ -40,7 +54,11 @@ pub fn windows() -> Vec<(HWND, RECT)> {
     for parent in parents {
         let mut child = next_child(Some(parent), None, None);
         while !child.0.is_null() {
-            if window_pid(child) != explorer && is_visible(child) && !is_cloaked(child) {
+            if window_pid(child) != explorer
+                && is_visible(child)
+                && !is_cloaked(child)
+                && draws_wallpaper(&class_name(child))
+            {
                 out.push((child, window_rect(child)));
             }
             child = next_child(Some(parent), Some(child), None);
@@ -137,5 +155,23 @@ pub fn capture<T>(
         let _ = DeleteObject(HGDIOBJ(dib.0));
         let _ = DeleteDC(dc);
         Ok((rect, pixels.ok_or("PrintWindow failed")?))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bing_wallpaper_s_widget_overlay_is_not_a_live_wallpaper() {
+        // Both cover the monitor and cannot be read (issue #247): the Windows wallpaper
+        // under them is still the picture the fences should show.
+        assert!(!draws_wallpaper("BingWallpaper_Widget_Visual"));
+        assert!(!draws_wallpaper("BingWallpaper_Widget_Position"));
+        // Players are still read as before.
+        assert!(draws_wallpaper("WPEDesktopDX11Window"));
+        assert!(draws_wallpaper("WPECloneView"));
+        assert!(draws_wallpaper("mpv"));
+        assert!(draws_wallpaper(""));
     }
 }
