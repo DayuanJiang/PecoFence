@@ -82,7 +82,7 @@ from a few central places of the program:
   `roll_up.hover_peek`, `roll_up.click_to_expand`, `roll_up.hover_speed`,
   `roll_up.title_on_hover`, `roll_up.hide_inactive_scrollbar`, `roll_up.push_neighbors`,
   `roll_up.switch_tab_on_hover`, `roll_up.hide_count_and_chevron`, `roll_up.compact_rolled`,
-  `show_desktop`,
+  `zoom.enabled`, `show_desktop`,
   `hide_real_icons`, `keep_icons_hidden`, `hide_inbox_when_icons_shown`, `offer_new_fence`,
   `per_desktop_fences`, `feature_tips`, `undo_notices`, `idle_opacity`, `auto_check_updates`,
   `show_tray_icon`,
