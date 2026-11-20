@@ -266,3 +266,5 @@ usage-stats        4   ec2    release usage.ps1
 usage-desc         2   ec2    debug   usage-description.ps1
 # Usage statistics: notice cards, dialog jumps, cut-off and crashed runs (Midnight=1 needs the box clock set: see the file).
 usage-gaps         4   ec2    release usage-gaps.ps1
+# Feedback #194: a monitor goes and comes back, a scale change, the primary switch (two monitors in a Hyper-V guest: see the file).
+monitor-sets-move  6   manual release monitor-sets-move.ps1

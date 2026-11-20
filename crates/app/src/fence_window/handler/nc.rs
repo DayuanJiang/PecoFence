@@ -1288,11 +1288,14 @@ pub(super) fn on_dpichanged(
     let suggested = unsafe { *(lparam as *const RECT) };
     let placing = view.borrow_mut().as_mut().is_some_and(|v| {
         v.apply_dpi(new_dpi as u32);
-        v.placing
+        v.placing || v.glide.is_some()
     });
     // A drag onto another monitor takes the suggested rect (the same size in DIPs). The app's
     // own placement has sized the window for that monitor already: the suggested rect would
-    // scale it once more (a quarter bigger going from a 100 % monitor onto a 125 % one).
+    // scale it once more (a quarter bigger going from a 100 % monitor onto a 125 % one). So
+    // has a glide, which keeps the window's size to its end: one crossing a monitor of another
+    // scale on its way (back to its monitor after a display change) came out a sixth smaller
+    // (feedback #194).
     if !placing {
         let _ = window::set_window_bounds(
             hwnd,

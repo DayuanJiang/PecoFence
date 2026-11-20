@@ -589,6 +589,14 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
+        // A display change: the window still stands where the old monitors had it (or waits
+        // to glide to its new place), and its rect saved now would go into the new monitors'
+        // layout. A fence put on the other monitor went back to where the one-monitor layout
+        // had it every time that monitor came back (feedback #194). It is fitted once placed.
+        if self.placing_monitors || w.move_pending() {
+            tracing::debug!(fence = %id, syncing = self.placing_monitors, "auto height waits: the fence is not at its new place yet");
+            return;
+        }
         // A rolled fence follows its tabs: collapsed to the left tab column, or back to a title
         // row at its expanded width.
         if let Some(rect) = w.settle_rolled_size() {
@@ -655,8 +663,11 @@ impl App {
             "display changed"
         );
         let unplaced = self.state.unplaced.clone();
-        // A different monitor set may select a different layout: sync windows first.
+        // A different monitor set may select a different layout: sync windows first. Their
+        // auto height waits for their new places (see `apply_auto_height`).
+        self.placing_monitors = true;
         self.sync_fence_windows();
+        self.placing_monitors = false;
         // Fences that only move (the taskbar hid itself, another resolution at the same scale)
         // glide to their new places once all of them are placed, instead of jumping.
         for w in self.fences.values() {
@@ -668,6 +679,11 @@ impl App {
                 // a fence rolled in the old layout but expanded in the new one needs px.height().
                 self.place_from_state(&fence);
             }
+        }
+        // Now at their new places and scales, the fences with auto height fit their items
+        // there (one only gliding to its place keeps the height these monitors saved).
+        for id in self.fences.keys().copied().collect::<Vec<_>>() {
+            self.apply_auto_height(id);
         }
         // Fences new to these monitors (or whose monitor is gone) move out of the others' way;
         // the rest stay where this layout saved them. Then, as at startup, no two stay on top of

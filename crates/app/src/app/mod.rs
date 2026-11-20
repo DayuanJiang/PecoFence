@@ -566,6 +566,10 @@ pub struct App {
     started: Instant,
     /// The last display change: when, and what it did (for feedback reports).
     last_display_change: Option<(Instant, DisplayChangeSummary)>,
+    /// A display change is syncing the windows to the layout of the new monitors: they still
+    /// stand where the old layout had them, so auto height waits until they are placed
+    /// (feedback #194); see `on_display_changed`.
+    placing_monitors: bool,
     /// Animation runs and slow commands since the last `activity` line; see `log_memory`.
     activity: Activity,
     /// Fingerprint of the snapshot the current backdrops were built from.
@@ -2161,6 +2165,7 @@ impl App {
             memory_logged: None,
             started,
             last_display_change: None,
+            placing_monitors: false,
             activity: Activity::default(),
             cut_items: HashSet::new(),
             cut_clip_seq: 0,
