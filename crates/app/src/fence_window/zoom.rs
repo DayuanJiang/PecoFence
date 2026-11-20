@@ -63,7 +63,10 @@ impl FenceViewState {
         }
         // 像桌面一样排列 (`desktop_layout`) is laid out by the app around the other fences; a
         // zoom would be fought by that pass every frame, so the gesture is off there.
+        // A rolled fence that hover-peeks is open only while the pointer stays: not zoomed.
         !self.bare()
+            && !self.rolled_up
+            && !self.peeking
             && self.hit_item(x, y).is_none()
             && !self.title_row_at(x, y)
             && !self.chevron_at(x, y)
@@ -198,24 +201,7 @@ impl FenceViewState {
                 "zoom settled"
             );
             if !z.opening {
-                window::kill_timer(hwnd, TIMER_ZOOM_WATCH);
-                self.zoom_home = None;
-                self.zoom_far = None;
-                if let Some(lines) = self.zoom_label_restore.take() {
-                    self.label_lines = lines;
-                }
-                if let Some(o) = self.zoom_opacity_restore.take() {
-                    self.opacity = o;
-                }
-                // Back under the fence it was above before the zoom.
-                if let Some(above) = self.zoom_prev.take()
-                    && !above.0.is_null()
-                {
-                    let _ = window::put_below(hwnd, above);
-                }
-                if *self.behavior.zoom_owner.borrow() == Some(self.fence_id) {
-                    *self.behavior.zoom_owner.borrow_mut() = None;
-                }
+                self.zoom_closed(hwnd);
             }
         } else {
             self.zoom_anim = Some(z);
@@ -226,6 +212,58 @@ impl FenceViewState {
             window::set_timer(hwnd, TIMER_ZOOM_WATCH, ZOOM_WATCH_MS);
         }
         Some((rect, done))
+    }
+
+    /// The zoom is over: the watch stops, the names, opacity and z-order the fence had come
+    /// back, and no fence owns the screen any more.
+    fn zoom_closed(&mut self, hwnd: HWND) {
+        window::kill_timer(hwnd, TIMER_ZOOM_WATCH);
+        self.zoom_home = None;
+        self.zoom_far = None;
+        self.zoom_icon = 1.0;
+        if let Some(lines) = self.zoom_label_restore.take() {
+            self.label_lines = lines;
+        }
+        if let Some(o) = self.zoom_opacity_restore.take() {
+            self.opacity = o;
+        }
+        // Back under the fence it was above before the zoom.
+        if let Some(above) = self.zoom_prev.take()
+            && !above.0.is_null()
+        {
+            let _ = window::put_below(hwnd, above);
+        }
+        if *self.behavior.zoom_owner.borrow() == Some(self.fence_id) {
+            *self.behavior.zoom_owner.borrow_mut() = None;
+        }
+    }
+
+    /// Ends the zoom at once, opening, at rest or closing: the app is about to place or size
+    /// the fence (a display change, a roll, an undo, the command line, 适应内容大小...), and
+    /// what it measures and saves must be the fence's own rect and icons, never the zoomed
+    /// ones. Returns the rect the window goes back to, for the caller to apply with no borrow
+    /// held; `None` when the fence is not zoomed.
+    pub(super) fn end_zoom_now(&mut self, hwnd: HWND) -> Option<RECT> {
+        let home = self.zoom_home?;
+        tracing::debug!(
+            fence = %self.fence_id,
+            home = ?(home.left, home.top, home.right, home.bottom),
+            "zoom ended at once: the fence is placed or sized"
+        );
+        self.zoom_anim = None;
+        self.zoom_closed(hwnd);
+        Some(home)
+    }
+
+    /// The icon edge pictures are fetched at: during the tween the size it ends at, so a zoom
+    /// asks the icon cache for one new size instead of one per frame (the frames in between
+    /// draw the picture they have, scaled).
+    pub(super) fn icon_fetch_dip(&self) -> f32 {
+        let k = self
+            .zoom_anim
+            .as_ref()
+            .map_or(self.zoom_icon, |a| if a.opening { a.k_to } else { 1.0 });
+        crate::layout::icon_dip(self.layout, self.icon_size) * k
     }
 }
 

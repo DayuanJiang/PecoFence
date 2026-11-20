@@ -272,10 +272,11 @@ pub struct FenceViewState {
     /// The last title click expanded the fence (click-to-expand); a WM_NCLBUTTONDBLCLK that
     /// completes it must not roll the fence back up.
     pub(super) suppress_dblclk: bool,
-    /// The last left press was on empty space of a subfolder, and the fence has shown no other
-    /// folder since: a double-click that completes it goes up one level (feedback #130). A
-    /// first click that opened or entered something (single-click open) leaves it false.
-    pub(super) up_on_dblclk: bool,
+    /// The last left press was on empty space, and the fence has shown no other folder since:
+    /// a double-click that completes it goes up one level in a subfolder (feedback #130) or
+    /// zooms the fence (`fence_window/zoom.rs`). A first click that opened or entered
+    /// something (single-click open) leaves it false.
+    pub(super) dblclk_blank: bool,
     /// Double-click on a folder item navigates inside the portal instead of launching it.
     pub(super) navigate_folders: bool,
     /// The folder the shown fence's drops land in when it is a portal (its current folder).

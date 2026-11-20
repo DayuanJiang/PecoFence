@@ -1284,7 +1284,8 @@ impl FenceViewState {
         bands: [std::ops::Range<usize>; 2],
         near: impl Fn(usize) -> bool,
     ) {
-        let icon_px = (self.icon_dip() * self.scale()).round() as u32;
+        // A zoom tween fetches at the size it ends at (`fence_window/zoom.rs`).
+        let icon_px = (self.icon_fetch_dip() * self.scale()).round() as u32;
         if (self.label_w - label_w).abs() > 0.5 || (self.label_wide_w - wide_w).abs() > 0.5 {
             self.label_w = label_w;
             self.label_wide_w = wide_w;
