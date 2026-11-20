@@ -247,6 +247,7 @@ const REPORTED_SETTINGS: &[&str] = &[
     "rollUp.pushNeighbors",
     "rollUp.switchTabOnHover",
     "rollUp.hideCountAndChevron",
+    "rollUp.compactRolled",
     "showDesktop",
     "hideRealIcons",
     "keepIconsHidden",

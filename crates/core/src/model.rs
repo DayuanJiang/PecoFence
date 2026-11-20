@@ -702,6 +702,10 @@ pub struct RollUpSettings {
     /// Double-clicking the title and the fence menu still roll the fence up and down.
     #[serde(default)]
     pub hide_count_and_chevron: bool,
+    /// A rolled fence is only as wide as its title row needs (its name or its tabs, with the
+    /// count and chevron), and opens to its own width again (GitHub #242).
+    #[serde(default)]
+    pub compact_rolled: bool,
 }
 
 impl Default for RollUpSettings {
@@ -719,6 +723,7 @@ impl Default for RollUpSettings {
             push_neighbors: true,
             switch_tab_on_hover: true,
             hide_count_and_chevron: false,
+            compact_rolled: false,
         }
     }
 }

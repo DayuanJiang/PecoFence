@@ -17,7 +17,7 @@ const fixture = {
     autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, undoNotices: true, showTrayIcon: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', menuColor: 'followMode', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
-    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
+    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false, compactRolled: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace', doubleCtrl: false },
     tools: { enabled: false, clockSeconds: false, dialogJump: false, everything: false },
   },

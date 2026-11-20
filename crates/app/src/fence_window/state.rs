@@ -442,6 +442,9 @@ pub struct FenceViewState {
     /// The window is collapsed (or collapsing) to its left tab column: it is as narrow as the
     /// column, and `expanded_w_px` keeps its width.
     pub(super) column_collapsed: bool,
+    /// Rolled (or rolling) to the width its title row needs (`rollUp.compactRolled`):
+    /// `expanded_w_px` keeps its width.
+    pub(super) compact_collapsed: bool,
     pub(super) _target: DesktopWindowTarget,
     /// Root of the window's visual tree: whole-window fades / scales animate this.
     pub(super) root: ContainerVisual,

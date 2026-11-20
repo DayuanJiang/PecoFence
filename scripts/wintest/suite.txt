@@ -21,6 +21,7 @@ shortcut-menu      2   ec2    release 190-shortcut-menu.ps1
 tools-030          2   ec2    debug   030-tools.ps1
 everything-15      2   manual release 030-everything15.ps1
 tabs               4   ec2    release holdout-tabs.ps1
+tabs-compact       2   ec2    release tabs-column-compact.ps1
 users-day          4   signed release holdout-day.ps1                --extra @installers
 rules              2   ec2    debug   holdout-rules.ps1
 fixes-024-A        3   ec2    release holdout2-fixes.ps1             --var Part=A

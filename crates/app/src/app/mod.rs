@@ -1968,6 +1968,7 @@ impl App {
                 hide_count_and_chevron: std::cell::Cell::new(
                     state.config.settings.roll_up.hide_count_and_chevron,
                 ),
+                compact_rolled: std::cell::Cell::new(state.config.settings.roll_up.compact_rolled),
                 wheel_lines: std::cell::Cell::new(sysparams::wheel_scroll_lines()),
                 single_click: std::cell::Cell::new(
                     pecofence_platform::shell_icons::single_click_open(),

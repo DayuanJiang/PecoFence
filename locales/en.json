@@ -396,6 +396,8 @@
   "和 Windows 桌面一样，在快捷方式图标的左下角显示小箭头": "Shows the small arrow at the bottom left of shortcut icons, as on the Windows desktop",
   "立即切换界面语言；你的文件和自定义名称保持不变": "Changes apply immediately. Your file names and custom names aren't changed",
   "收起后它们会回到原位": "They slide back when it rolls up",
+  "收起时缩到标题的宽度": "Shrink rolled-up fences to their title",
+  "收起的栅栏只有名称或标签页那么宽，展开后恢复原来的宽度": "A rolled-up fence is only as wide as its name or its tabs, and gets its own width back when it opens",
   "平时只显示图标，让桌面更清爽；每个栅栏可在“栅栏”页单独设置": "Keep only icons visible until hovered; each fence can override this in its own settings",
   "隐藏标题栏右侧的项目数和折叠箭头": "Hide the item count and the roll-up arrow in the title bar",
   "标题栏只显示名称；双击标题或用右键菜单收起和展开": "The title bar shows only the name. Double-click the title or use its context menu to roll up and expand",

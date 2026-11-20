@@ -783,13 +783,68 @@ impl FenceViewState {
         }
     }
 
-    /// Window width (device px) of a rolled fence: its expanded width, or the left column's.
+    /// Window width (device px) of a rolled fence: its expanded width, the left column's, or
+    /// with `rollUp.compactRolled` the width its title row needs.
     pub(super) fn rolled_w_px(&self) -> i32 {
         if self.tabs_on_rail() {
             self.rail_px()
+        } else if self.compacts() {
+            self.compact_w_px()
         } else {
             self.expanded_w_px
         }
+    }
+
+    /// The window is narrower than the fence it opens to: collapsed to its left tab column, or
+    /// rolled to the width of its title row.
+    pub(super) fn narrowed(&self) -> bool {
+        self.column_collapsed || self.compact_collapsed
+    }
+
+    /// `rollUp.compactRolled` applies: rolled up, the title row (no left tab column) is only as
+    /// wide as it needs (GitHub #242).
+    pub(super) fn compacts(&self) -> bool {
+        self.behavior.compact_rolled.get() && !self.tabs_on_rail()
+    }
+
+    /// Width (device px) of a rolled title row that shows all of it: the name (or the time of a
+    /// clock) with its glyphs, or every tab at its natural width, then the item count, the lock
+    /// glyph and the chevron where they show; never wider than the fence opens to.
+    pub(super) fn compact_w_px(&self) -> i32 {
+        let hide = self.behavior.hide_count_and_chevron.get();
+        let count = if hide || !self.shows_rolled_count() {
+            0.0
+        } else {
+            self.rolled_count_room()
+        };
+        let lock = self.deco.lock_w();
+        let dip = if self.tabs.len() > 1 {
+            let span = tab_strip_span(&self.tab_natural_widths(), None);
+            let end = if hide && lock == 0.0 {
+                TAB_LEFT
+            } else {
+                TAB_RIGHT_RESERVE + lock + count
+            };
+            TAB_LEFT + span + end
+        } else {
+            let title = self
+                .rolled_clock_caption()
+                .unwrap_or_else(|| self.title.clone());
+            let row = self.chrome.lone_title_width(
+                &title,
+                self.title_count.as_deref(),
+                self.style.title_size,
+                self.deco,
+            );
+            // The count shows only where the row keeps 64 DIPs for the name and 44 for the
+            // chevron beside it (`header_count_width`).
+            if count > 0.0 {
+                row.max(self.deco.title_x() + 64.0 + 44.0 + lock) + count
+            } else {
+                row
+            }
+        };
+        ((dip * self.scale()).ceil() as i32).clamp(1, self.expanded_w_px.max(1))
     }
 
     /// `rail_w` in device pixels: where the content starts once laid out (`content_x`).
