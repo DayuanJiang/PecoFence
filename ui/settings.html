@@ -2912,10 +2912,10 @@
     select.value = value;
     document.getElementById('desktopIconsHelp').textContent = {
       hide: t("桌面项目只显示在栅栏里，没有归类的放进“桌面”栅栏；回收站等系统图标也在“桌面”栅栏里"),
-      showWithInbox: t("Windows 桌面照常显示图标，没有归类的项目同时出现在“桌面”栅栏里"),
+      showWithInbox: t("Windows 桌面照常显示所有图标，栅栏里的项目在桌面上也看得到；没有归类的项目同时出现在“桌面”栅栏里"),
       showNoInbox: arranged
         ? t("“桌面”栅栏像桌面一样排列时，它的图标已经在 Windows 桌面上，所以不显示它；要同时显示，先在“栅栏”页关闭它的“像桌面一样排列”")
-        : t("没有归类的项目只留在 Windows 桌面上，不显示“桌面”栅栏"),
+        : t("Windows 桌面照常显示所有图标，栅栏里的项目在桌面上也看得到；不显示“桌面”栅栏"),
     }[value];
     reveal(document.getElementById('keepIconsCard'), value === 'hide');
     select.onchange = () => {
