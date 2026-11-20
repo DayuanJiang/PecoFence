@@ -365,6 +365,10 @@ pub struct App {
     /// Selection kept by a Ctrl / Shift desktop marquee in progress (empty for a plain one);
     /// `None` between marquees.
     marquee_base: Option<Vec<(HWND, FenceId)>>,
+    /// The last right-click on the bare desktop (Windows' desktop menu opened there): the next
+    /// new icons of 「桌面」 placed freely go under it, as 新建 and 粘贴 put them on a Windows
+    /// desktop (#238). Taken by the first icons placed, or too old after `MENU_PLACE_FOR`.
+    desktop_menu_at: Option<(Instant, POINT)>,
     /// Our rubber band for desktop marquees (created on first use), and whether the marquee in
     /// progress shows it (only while Explorer's icons are hidden: Explorer draws its own).
     marquee_band: Option<crate::marquee_band::MarqueeBand>,
@@ -779,6 +783,7 @@ fn not_recorded(cmd: &Command) -> bool {
             | Command::ClearFenceSelection
             | Command::PeekDragStarted
             | Command::PeekDragEnded { .. }
+            | Command::PeekDropElsewhere
             | Command::PeekSearchFaded
             | Command::NoteCaretBlink { .. }
             | Command::SmartResults { .. }
@@ -2148,6 +2153,7 @@ impl App {
             test: None,
             usage: None,
             marquee_base: None,
+            desktop_menu_at: None,
             marquee_band: None,
             marquee_draws_band: false,
             peek_hotkey: None,
@@ -2957,6 +2963,13 @@ impl App {
                         .and_then(|w| w.desktop_free_changes())
                     && self.state.place_desktop_cells(fence, &from, &cells)
                 {
+                    // New icons took their cells: a right-click before them was for them, the
+                    // next new ones take the first free cells again.
+                    if cells.iter().any(|(id, _)| !from.contains_key(id))
+                        && self.desktop_menu_at.take().is_some()
+                    {
+                        tracing::debug!("desktop menu's click used by the new icons");
+                    }
                     self.schedule_save();
                     // The window's copy of the saved cells catches up (it placed them so).
                     self.arrange_desktop_fence();
@@ -3275,6 +3288,7 @@ impl App {
                 self.end_peek("file dropped on another window")
             }
             Command::PeekDragEnded { elsewhere: false } => self.peek_drag(false),
+            Command::PeekDropElsewhere => self.end_peek_for_drop(),
             Command::PeekSearchType(text) => self.peek_search_type(&text),
             Command::PeekSearchChanged => self.update_peek_search(),
             Command::PeekSearchFaded => crate::peek_search::drop_faded(),

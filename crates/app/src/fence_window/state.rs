@@ -15,6 +15,10 @@ pub struct DesktopArea {
     /// 自由摆放 with no saved cells yet: where Windows' own desktop has the icons, so they keep
     /// those places (#204). Icons with a saved cell keep theirs.
     pub windows: Option<WindowsIconPlaces>,
+    /// 自由摆放: where the desktop menu was opened a moment ago (screen px). New icons without a
+    /// cell go to the free cell nearest to it, as 新建 and 粘贴 of that menu place them on a
+    /// Windows desktop (#238); without it they take the first free cell.
+    pub menu_at: Option<(i32, i32)>,
 }
 
 /// Windows' own desktop icons, as Explorer's desktop view had them when PecoFence read it.

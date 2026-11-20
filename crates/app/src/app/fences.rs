@@ -3,6 +3,10 @@
 
 use super::*;
 
+/// How long after a right-click on the desktop new icons of 「桌面」 still go under it: time to
+/// pick 新建 › 文本文档 or 粘贴 in Windows' menu; a file that comes later is not from it.
+pub(super) const MENU_PLACE_FOR: Duration = Duration::from_secs(30);
+
 #[cfg(debug_assertions)]
 thread_local! {
     /// `--test-script` `monitors`: stands in for the connected monitors.
@@ -573,11 +577,18 @@ impl App {
         let Some(w) = self.fences.get(&id) else {
             return;
         };
+        // A right-click on the desktop a moment ago: its 新建 or 粘贴 put the next new icons
+        // under it (#238).
+        let menu_at = self
+            .desktop_menu_at
+            .filter(|(at, _)| at.elapsed() < MENU_PLACE_FOR)
+            .map(|(_, pt)| (pt.x, pt.y));
         w.set_desktop_area(Some(crate::fence_window::DesktopArea {
             work,
             covered,
             free,
             windows,
+            menu_at,
         }));
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.lower_desktop_fence();

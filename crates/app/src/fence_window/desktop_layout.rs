@@ -459,7 +459,35 @@ impl FenceViewState {
                         .is_some_and(|at| !grid.on_work(*at))
             })
             .collect();
+        // A right-click on the desktop a moment ago (#238): the new icons go to the free cell
+        // nearest to it, as 新建 and 粘贴 of that menu put them on a Windows desktop. It only
+        // says where to look, like a place on another monitor: an icon standing there stays.
+        let menu_cell = area
+            .menu_at
+            .filter(|at| grid.on_work(*at))
+            .map(|at| grid.cell_at(at.0, at.1));
+        let at_menu: Vec<bool> = asked
+            .iter()
+            .map(|a| a.is_none() && menu_cell.is_some())
+            .collect();
+        let asked: Vec<Option<(i32, i32)>> = asked
+            .iter()
+            .zip(&at_menu)
+            .map(|(a, m)| if *m { menu_cell } else { *a })
+            .collect();
+        let near: Vec<bool> = near.iter().zip(&at_menu).map(|(n, m)| *n || *m).collect();
         let placed = grid.place(&asked, &near);
+        let by_menu = at_menu.iter().filter(|m| **m).count();
+        if by_menu > 0 {
+            tracing::info!(
+                fence = %self.fence_id,
+                icons = by_menu,
+                click = ?area.menu_at,
+                cell = ?menu_cell,
+                first = ?at_menu.iter().zip(&placed).find(|(m, _)| **m).map(|(_, p)| *p),
+                "free placement: new icons placed at the desktop menu's click"
+            );
+        }
         let mut taken: HashSet<(i32, i32)> = placed.iter().copied().collect();
         let spare = grid.claim(&mut taken, None);
         let rects = placed
@@ -892,6 +920,30 @@ mod tests {
             placed,
             vec![(5, 2), (0, 1), (0, 0), (0, 2), (11, 1)],
             "saved cells stay; new icons fill column one from the top around them"
+        );
+    }
+
+    #[test]
+    fn new_icons_after_a_desktop_menu_go_next_to_its_click_around_the_icons_there() {
+        // #238: 新建 in the desktop menu opened over cell (6, 1), where an icon already stands
+        // (listed after the new ones, so order gives the new ones no claim to it).
+        let g = free_grid(&[]);
+        let click = g.cell_at(6 * 80 + 4 + 40, 100 + 4 + 50);
+        assert_eq!(click, (6, 1));
+        let placed = g.place(
+            &[Some(click), Some(click), Some((6, 1)), None],
+            &[true, true, false, false],
+        );
+        assert_eq!(placed[2], (6, 1), "the icon standing there keeps its cell");
+        let near = |c: (i32, i32)| (c.0 - 6).abs() <= 1 && (c.1 - 1).abs() <= 1;
+        assert!(
+            near(placed[0]) && near(placed[1]) && placed[0] != placed[1],
+            "the new ones take the free cells next to the click: {placed:?}"
+        );
+        assert_eq!(
+            placed[3],
+            (0, 0),
+            "an icon without the click takes the first free cell"
         );
     }
 
