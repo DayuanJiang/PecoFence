@@ -248,6 +248,8 @@ o6-tray            3   ec2    debug   owner6-tray.ps1
 o6-livewall        4   ec2    release owner6-livewall.ps1
 o6-livewall-page   3   ec2    debug   owner6-livewall.ps1            --var Part=P
 o6-livewall-card   3   ec2    release owner6-livewall.ps1            --var Part=C
+# Bing Wallpaper's desktop widget in the wallpaper layer is no live wallpaper; players under it are (#247).
+wallpaper-overlay  4   ec2    release wallpaper-overlay.ps1
 o8-pane-tint       2   ec2    release owner8-pane-tint.ps1
 # The shell menu prewarm with a shortcut to a folder, a dead share and a missing drive first in
 # path order: an Administrator has to put the file on the public desktop first (the file's header).
