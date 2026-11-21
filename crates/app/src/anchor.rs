@@ -372,6 +372,9 @@ pub struct DesktopAnchor {
     /// Fence windows of other virtual desktops than the current one: hidden, and not shown
     /// again by the anchor's own checks.
     off_desktop: std::collections::HashSet<isize>,
+    /// Fences that stay above every window (a magnifier): always in the topmost band, never
+    /// inserted above the icon host, and left in it when Peek ends.
+    floating: std::collections::HashSet<isize>,
     /// Peek in progress: fences are topmost and anchoring is suspended.
     peeking: bool,
     /// Fences (hidden by quick hide) that Peek showed and must hide again afterwards.
@@ -567,6 +570,7 @@ impl DesktopAnchor {
             on_marquee: None,
             quick_hide_excluded: std::collections::HashSet::new(),
             off_desktop: std::collections::HashSet::new(),
+            floating: std::collections::HashSet::new(),
             peeking: false,
             peek_shown: Vec::new(),
             peek_held: Vec::new(),
@@ -706,7 +710,60 @@ impl DesktopAnchor {
     pub fn unregister_fence(&mut self, hwnd: HWND) {
         self.fences.retain(|(h, _)| *h != hwnd);
         self.off_desktop.remove(&(hwnd.0 as isize));
+        self.floating.remove(&(hwnd.0 as isize));
         self.hover_raised.retain(|(h, _)| *h != hwnd);
+    }
+
+    fn is_floating(&self, hwnd: HWND) -> bool {
+        self.floating.contains(&(hwnd.0 as isize))
+    }
+
+    /// Puts `hwnd` (and its shadow) in the topmost band, above the others there.
+    fn float(&mut self, hwnd: HWND) {
+        let shadow = self
+            .fences
+            .iter()
+            .find(|(f, _)| *f == hwnd)
+            .and_then(|(_, s)| *s);
+        self.with_anchoring(|_| {
+            for h in std::iter::once(hwnd).chain(shadow) {
+                if !desktop::is_topmost(h) {
+                    let _ = desktop::set_topmost(h, true);
+                }
+            }
+            let _ = desktop::raise_in_band(hwnd);
+            if let Some(sh) = shadow {
+                let _ = desktop::insert_after(sh, hwnd);
+            }
+        });
+    }
+
+    /// A fence that stays above every window (`on`), or goes back to the desktop's band. A fence
+    /// that floats is left alone by the anchor's checks; one that stops floating is placed above
+    /// the icon host with the others.
+    pub fn set_floating(&mut self, hwnd: HWND, on: bool) {
+        let key = hwnd.0 as isize;
+        if on {
+            if self.floating.insert(key) {
+                tracing::info!(?hwnd, "fence floats above every window");
+            }
+            self.float(hwnd);
+        } else if self.floating.remove(&key) {
+            tracing::info!(?hwnd, "fence is back on the desktop");
+            let shadow = self
+                .fences
+                .iter()
+                .find(|(f, _)| *f == hwnd)
+                .and_then(|(_, s)| *s);
+            self.with_anchoring(|_| {
+                for h in std::iter::once(hwnd).chain(shadow) {
+                    let _ = desktop::set_topmost(h, false);
+                }
+            });
+            if !self.peeking {
+                self.reanchor("fence stopped floating");
+            }
+        }
     }
 
     /// Windows 10, a virtual-desktop switch seen by the foreground poll: the desktop's clicks are
@@ -846,7 +903,8 @@ impl DesktopAnchor {
 
     fn all_windows(&self) -> Vec<HWND> {
         let mut v: Vec<HWND> = Vec::with_capacity(self.fences.len() * 2 + 1);
-        for (f, s) in &self.fences {
+        // A floating fence is above every window: the anchor does not place it.
+        for (f, s) in self.fences.iter().filter(|(f, _)| !self.is_floating(*f)) {
             v.push(*f);
             if let Some(s) = s {
                 v.push(*s);
@@ -948,6 +1006,9 @@ impl DesktopAnchor {
             // Each fence is inserted directly above the host, so the *last* one placed ends up
             // lowest. Iterate in reverse: the end of `fences` (newest / last raised) is on top.
             for (f, shadow) in s.fences.clone().into_iter().rev() {
+                if s.is_floating(f) {
+                    continue;
+                }
                 match place(f) {
                     Ok(above) => placed_above = placed_above.or(above),
                     Err(e) => {
@@ -1537,6 +1598,9 @@ impl DesktopAnchor {
             self.peek_only = None;
             self.with_anchoring(|s| {
                 for (f, shadow) in s.fences.clone() {
+                    if s.is_floating(f) {
+                        continue;
+                    }
                     for h in std::iter::once(f).chain(shadow) {
                         let _ = desktop::set_topmost(h, false);
                     }

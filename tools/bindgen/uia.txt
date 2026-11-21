@@ -1,0 +1,27 @@
+--out crates/platform/src/uia_bindings.rs
+--flat --dead-code
+
+// UI Automation for the Magnifier's Follow the keyboard focus and Follow the text insertion point
+// (`uia.rs`): the element that has the focus, its rectangle, and the text caret (the caret range
+// of a TextPattern2, the selection of a TextPattern, or the caret object of the focused window
+// through IAccessible). Only what `uia.rs` calls is listed.
+--filter
+    CUIAutomation
+    IUIAutomation
+    IUIAutomationElement
+    IUIAutomationTextPattern
+    IUIAutomationTextPattern2
+    IUIAutomationTextRange
+    IUIAutomationTextRangeArray
+    IAccessible
+    AccessibleObjectFromWindow
+    OBJID_CARET
+    CoCreateInstance
+    CLSCTX_INPROC_SERVER
+    SAFEARRAY
+    SafeArrayGetLBound
+    SafeArrayGetUBound
+    SafeArrayAccessData
+    SafeArrayUnaccessData
+    SafeArrayDestroy
+    RECT

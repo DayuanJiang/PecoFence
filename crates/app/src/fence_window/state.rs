@@ -347,6 +347,10 @@ pub struct FenceViewState {
     pub(super) tool_line_step: f32,
     /// 脚本栅栏: the fence shown is a script fence with this output and footer.
     pub(super) script: Option<ScriptView>,
+    /// 放大镜: the runtime of the view's magnifier row (`fence_window/magnifier.rs`), and what
+    /// the window was last told about it: stays above every window, kept out of the captures.
+    pub(super) magnifier: Option<super::magnifier::MagnifierRun>,
+    pub(super) magnifier_window_told: (bool, bool),
     /// 网页层: the web plugin's page shown in place of the content.
     pub(super) web: Option<Rc<crate::web_plugin::WebFence>>,
     /// Its clickable rows as last drawn: row index and (left, top, right, bottom) in content

@@ -12,6 +12,8 @@ windows-numerics = { workspace = true }
 windows-future = "0.100"
 # TimeSpan and DateTime of the media session (media.rs).
 windows-time = "0.100"
+# The dirty regions of a captured frame (capture.rs).
+windows-collections = "0.100"
 tracing = { workspace = true }
 
 [dev-dependencies]

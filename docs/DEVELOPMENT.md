@@ -25,6 +25,13 @@ For an isolated test instance, use a separate directory, `--portable`,
 configuration. Portable startup leaves the Windows autostart entry alone.
 `--exit-after <milliseconds>` closes a smoke-test instance automatically.
 
+To try a plugin of the working copy as a user gets one (Settings > Tools: Install, then Add),
+without publishing it, run `./scripts/dev-plugin.ps1` (`-Plugin <folder of scripts/wintest/assets>`,
+default `magnifier`). It builds the working copy, serves the plugin from a local unsigned index on
+`http://127.0.0.1` (the only index address a test instance accepts, through
+`PECOFENCE_PLUGINS_URL`) and starts the build as the test instance `dev`, with its configuration
+in `.cache/dev-instance/config`, until that instance is closed.
+
 ## Verification
 
 ```powershell

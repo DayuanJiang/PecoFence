@@ -1264,6 +1264,7 @@ impl App {
                     "folders": format!("{:?}", p.folders).to_lowercase(), "notify": p.notify, "launch": p.launch, "drop": p.drop,
                     "commands": p.commands.iter().map(|c| list::pick(&c.title, lang)).collect::<Vec<_>>(),
                     "media": format!("{:?}", p.media).to_lowercase(), "apps": p.apps, "local": p.local,
+                    "screen": format!("{:?}", p.screen).to_lowercase(),
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),
                     "state": state, "reason": reason, "page": index.is_some(),
                     "notes": mine.map(|_| self.plugin_notes(id)),

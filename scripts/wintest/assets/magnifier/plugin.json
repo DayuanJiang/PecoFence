@@ -1,0 +1,160 @@
+{
+  "id": "magnifier",
+  "version": "1.0.0",
+  "api": 3,
+  "layer": "light",
+  "name": {
+    "en": "Magnifier", "zh-CN": "放大镜", "zh-TW": "放大鏡", "ja": "拡大鏡", "ko": "돋보기", "de": "Lupe",
+    "fr": "Loupe", "es": "Lupa", "pt-BR": "Lupa", "ru": "Лупа", "it": "Lente d'ingrandimento"
+  },
+  "description": {
+    "en": "A zoomed view of the part of the screen around the mouse pointer, in a fence. Zoom 1x to 20x, follow the pointer or lock the picture.",
+    "zh-CN": "在栅栏里显示鼠标指针周围屏幕区域的放大画面。放大 1 到 20 倍，可跟随指针，也可锁定画面。",
+    "zh-TW": "在圍欄裡顯示滑鼠游標周圍螢幕區域的放大畫面。放大 1 到 20 倍，可跟隨游標，也可鎖定畫面。",
+    "ja": "マウスポインター周辺の画面を拡大してフェンスに表示します。1 倍から 20 倍まで、ポインターへの追従と画像の固定を選べます。",
+    "ko": "마우스 포인터 주변 화면을 확대해 펜스에 표시합니다. 1배에서 20배까지, 포인터를 따라가거나 화면을 고정할 수 있습니다.",
+    "de": "Zeigt den Bildschirmbereich um den Mauszeiger vergrößert in einem Bereich. Vergrößerung 1x bis 20x, dem Zeiger folgen oder das Bild fixieren.",
+    "fr": "Une vue agrandie de la zone de l'écran autour du curseur de la souris, dans un groupe. Zoom de 1x à 20x, suivi du curseur ou image verrouillée.",
+    "es": "Una vista ampliada de la zona de la pantalla alrededor del puntero del ratón, en un grupo. Zoom de 1x a 20x, seguir el puntero o bloquear la imagen.",
+    "pt-BR": "Uma visão ampliada da área da tela ao redor do ponteiro do mouse, em um grupo. Zoom de 1x a 20x, seguir o ponteiro ou travar a imagem.",
+    "ru": "Увеличенный вид области экрана вокруг указателя мыши в области. Масштаб от 1x до 20x, слежение за указателем или фиксация изображения.",
+    "it": "Una vista ingrandita della zona dello schermo intorno al puntatore del mouse, in un riquadro. Zoom da 1x a 20x, segui il puntatore o blocca l'immagine."
+  },
+  "author": "xan2622",
+  "minPecoFence": "0.5.0",
+  "permissions": {
+    "screen": "magnify",
+    "commands": [
+      {
+        "id": "lock",
+        "title": {
+          "en": "Lock or unlock the picture", "zh-CN": "锁定或解锁画面", "zh-TW": "鎖定或解鎖畫面",
+          "ja": "画像の固定と解除", "ko": "화면 고정 또는 해제", "de": "Bild fixieren oder lösen",
+          "fr": "Verrouiller ou déverrouiller l'image", "es": "Bloquear o desbloquear la imagen",
+          "pt-BR": "Travar ou destravar a imagem", "ru": "Зафиксировать или отпустить изображение",
+          "it": "Blocca o sblocca l'immagine"
+        }
+      },
+      {
+        "id": "zoomin",
+        "title": {
+          "en": "Zoom in", "zh-CN": "放大", "zh-TW": "放大", "ja": "拡大", "ko": "확대", "de": "Vergrößern",
+          "fr": "Zoom avant", "es": "Acercar", "pt-BR": "Aumentar zoom", "ru": "Увеличить", "it": "Ingrandisci"
+        }
+      },
+      {
+        "id": "zoomout",
+        "title": {
+          "en": "Zoom out", "zh-CN": "缩小", "zh-TW": "縮小", "ja": "縮小", "ko": "축소", "de": "Verkleinern",
+          "fr": "Zoom arrière", "es": "Alejar", "pt-BR": "Diminuir zoom", "ru": "Уменьшить", "it": "Riduci"
+        }
+      }
+    ]
+  },
+  "settings": [
+    {
+      "key": "zoom",
+      "type": "choice",
+      "label": {
+        "en": "Zoom factor", "zh-CN": "放大倍数", "zh-TW": "放大倍數", "ja": "拡大率", "ko": "확대 배율",
+        "de": "Vergrößerung", "fr": "Facteur de zoom", "es": "Factor de zoom", "pt-BR": "Fator de zoom",
+        "ru": "Масштаб", "it": "Fattore di zoom"
+      },
+      "default": "2",
+      "options": [
+        { "value": "1", "label": { "en": "1x" } },
+        { "value": "2", "label": { "en": "2x" } },
+        { "value": "3", "label": { "en": "3x" } },
+        { "value": "4", "label": { "en": "4x" } },
+        { "value": "5", "label": { "en": "5x" } },
+        { "value": "6", "label": { "en": "6x" } },
+        { "value": "7", "label": { "en": "7x" } },
+        { "value": "8", "label": { "en": "8x" } },
+        { "value": "9", "label": { "en": "9x" } },
+        { "value": "10", "label": { "en": "10x" } },
+        { "value": "12", "label": { "en": "12x" } },
+        { "value": "14", "label": { "en": "14x" } },
+        { "value": "16", "label": { "en": "16x" } },
+        { "value": "18", "label": { "en": "18x" } },
+        { "value": "20", "label": { "en": "20x" } }
+      ]
+    },
+    {
+      "key": "follow",
+      "type": "switch",
+      "label": {
+        "en": "Follow the pointer", "zh-CN": "跟随鼠标指针", "zh-TW": "跟隨滑鼠游標", "ja": "ポインターに追従",
+        "ko": "포인터 따라가기", "de": "Dem Zeiger folgen", "fr": "Suivre le curseur", "es": "Seguir el puntero",
+        "pt-BR": "Seguir o ponteiro", "ru": "Следовать за указателем", "it": "Segui il puntatore"
+      },
+      "default": true
+    },
+    {
+      "key": "focus",
+      "type": "switch",
+      "label": {
+        "en": "Follow the keyboard focus", "zh-CN": "跟随键盘焦点", "zh-TW": "跟隨鍵盤焦點", "ja": "キーボード フォーカスに追従",
+        "ko": "키보드 포커스 따라가기", "de": "Dem Tastaturfokus folgen", "fr": "Suivre le focus du clavier", "es": "Seguir el foco del teclado",
+        "pt-BR": "Seguir o foco do teclado", "ru": "Следовать за фокусом клавиатуры", "it": "Segui il focus della tastiera"
+      },
+      "default": false
+    },
+    {
+      "key": "caret",
+      "type": "switch",
+      "label": {
+        "en": "Follow the text insertion point", "zh-CN": "跟随文本插入点", "zh-TW": "跟隨文字插入點", "ja": "テキスト挿入ポイントに追従",
+        "ko": "텍스트 삽입 지점 따라가기", "de": "Der Texteinfügemarke folgen", "fr": "Suivre le point d'insertion du texte",
+        "es": "Seguir el punto de inserción del texto", "pt-BR": "Seguir o ponto de inserção de texto",
+        "ru": "Следовать за точкой вставки текста", "it": "Segui il punto di inserimento del testo"
+      },
+      "default": false
+    },
+    {
+      "key": "lock",
+      "type": "switch",
+      "label": {
+        "en": "Allow locking the picture", "zh-CN": "允许锁定画面", "zh-TW": "允許鎖定畫面",
+        "ja": "画像の固定を許可", "ko": "화면 고정 허용", "de": "Fixieren des Bildes erlauben",
+        "fr": "Autoriser le verrouillage de l'image", "es": "Permitir bloquear la imagen",
+        "pt-BR": "Permitir travar a imagem", "ru": "Разрешить фиксацию изображения",
+        "it": "Consenti il blocco dell'immagine"
+      },
+      "default": true
+    },
+    {
+      "key": "smooth",
+      "type": "switch",
+      "label": {
+        "en": "Smooth enlargement", "zh-CN": "平滑放大", "zh-TW": "平滑放大", "ja": "なめらかに拡大",
+        "ko": "부드럽게 확대", "de": "Weiche Vergrößerung", "fr": "Agrandissement lissé",
+        "es": "Ampliación suave", "pt-BR": "Ampliação suave", "ru": "Плавное увеличение",
+        "it": "Ingrandimento morbido"
+      },
+      "default": true
+    },
+    {
+      "key": "pointer",
+      "type": "switch",
+      "label": {
+        "en": "Show the mouse pointer", "zh-CN": "显示鼠标指针", "zh-TW": "顯示滑鼠游標",
+        "ja": "マウスポインターを表示", "ko": "마우스 포인터 표시", "de": "Mauszeiger anzeigen",
+        "fr": "Afficher le pointeur de la souris", "es": "Mostrar el puntero del ratón",
+        "pt-BR": "Mostrar o ponteiro do mouse", "ru": "Показывать указатель мыши",
+        "it": "Mostra il puntatore del mouse"
+      },
+      "default": true
+    },
+    {
+      "key": "top",
+      "type": "switch",
+      "label": {
+        "en": "Stay above all windows", "zh-CN": "始终显示在窗口最前", "zh-TW": "一律顯示在視窗最前",
+        "ja": "常に最前面に表示", "ko": "항상 위에 표시", "de": "Immer im Vordergrund",
+        "fr": "Rester au premier plan", "es": "Mantener siempre al frente",
+        "pt-BR": "Manter sempre na frente", "ru": "Поверх всех окон", "it": "Sempre in primo piano"
+      },
+      "default": true
+    }
+  ]
+}

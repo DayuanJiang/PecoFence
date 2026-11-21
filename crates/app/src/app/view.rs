@@ -53,6 +53,9 @@ impl App {
             .map(PathBuf::from)
             .collect();
         let manifest = self.light_manifest(fence);
+        let screen = manifest
+            .as_ref()
+            .is_some_and(|m| m.permissions.screen.magnifies());
         let drag = |row: Option<&String>, d: Option<host::view::Drag>| {
             let p = &manifest.as_ref()?.permissions;
             match row_drag(d?, data.as_deref(), &picked, p) {
@@ -134,6 +137,8 @@ impl App {
                     progress: r.progress,
                     chart: r.chart,
                     canvas,
+                    // Only a plugin that asked for the screen (and was allowed) has one.
+                    magnifier: r.magnifier.filter(|_| screen),
                     input: r.input,
                     menu: r.menu,
                     hover: r.hover,

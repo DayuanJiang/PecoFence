@@ -316,6 +316,7 @@
   .hotkey-box.recording .ic { visibility: hidden; }
   .hotkey-box.recording:focus-visible { outline: none; }
   .hotkey-box:disabled kbd { color: var(--text-disabled); background: var(--control-disabled); outline: 1px solid var(--control-stroke); }
+  .hotkey-mods { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
   .hotkey-win { display: flex; align-items: center; gap: 8px; }
   .hotkey-win input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
   .disabled .hotkey-win { color: var(--text-disabled); }
@@ -770,7 +771,7 @@
       <div class="card" id="wdHotkeyCard"><div class="l"><span class="ic">&#xE7F4;</span><div><div class="t" id="wdHotkeyTitle">临时显示 Windows 桌面</div><div class="s" id="wdHotkeyHelp" aria-live="polite"></div></div></div>
           <div class="hotkey-edit">
             <button type="button" class="hotkey-box" id="wdHotkey" aria-labelledby="wdHotkeyTitle wdHotkeyKeys" aria-describedby="wdHotkeyHelp"><span class="keys" id="wdHotkeyKeys"></span><span class="ic">&#xE70F;</span></button>
-            <label class="hotkey-win"><input type="checkbox" id="wdHotkeyWin">包含 Win 键</label>
+            <span class="hotkey-mods" id="wdHotkeyMods"></span>
             <button type="button" id="wdHotkeyClear">清除</button>
           </div></div>
       <div class="card"><div class="l"><span class="ic">&#xE7C4;</span><div><div class="t">显示桌面 (Win+D) 时</div></div></div>
@@ -811,7 +812,7 @@
           <select id="peekHotkeyChoice" aria-labelledby="peekHotkeyTitle" aria-describedby="peekHotkeyHelp"></select>
           <div class="hotkey-edit" id="peekHotkeyEdit" hidden>
             <button type="button" class="hotkey-box" id="peekHotkey" aria-labelledby="peekHotkeyTitle peekHotkeyKeys" aria-describedby="peekHotkeyHelp"><span class="keys" id="peekHotkeyKeys"></span><span class="ic">&#xE70F;</span></button>
-            <label class="hotkey-win"><input type="checkbox" id="peekHotkeyWin">包含 Win 键</label>
+            <span class="hotkey-mods" id="peekHotkeyMods"></span>
           </div></div>
       </div>
       <div class="card"><div class="l"><span class="ic">&#xE708;</span><div><div class="t">速览时调暗背景</div><div class="s">栅栏之外的区域变暗，更容易看清</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="peek.dim"></div></div>
@@ -1852,6 +1853,7 @@
       p.commands.length && [tf("有这些命令：{0}。可以在插件详情里给它们设快捷键", '\u0001'), p.commands],
       p.media === 'read' && t("看到正在播放的歌曲或视频：名字、歌手、专辑和封面"), p.media === 'control' && t("看到正在播放的歌曲或视频：名字、歌手、专辑和封面，并能暂停和切歌"),
       p.apps && p.apps.length && [tf("知道这些程序是否在运行、是否在最前面：{0}", '\u0001'), p.apps],
+      p.screen === 'magnify' && t("显示放大的屏幕内容（由 PecoFence 截取并绘制，插件本身拿不到画面）"),
       ...(p.local?.loopback || []).map(l => [tf("连接这台电脑上的 {0}（端口 {1}）", '\u0001', l.port), [l.app]]),
       ...(p.local?.lan || []).map(l => tf("连接你在设置里填写的局域网设备（端口 {0}）", l.port))].filter(Boolean);
     return d.length ? d : [t("只显示内容，不联网，也不读剪贴板")];
@@ -1941,12 +1943,12 @@
       text.firstChild.id = id + 'Title'; text.lastChild.id = id + 'Help';
       key.type = 'button'; key.id = id; key.setAttribute('aria-labelledby', `${id}Title ${id}Keys`);
       key.append(plEl('span', 'keys'), plEl('span', 'ic', '\uE70F')); key.firstChild.id = id + 'Keys';
-      const win = plEl('label', 'hotkey-win'), box2 = plEl('input');
-      box2.type = 'checkbox'; box2.id = id + 'Win'; win.append(box2, t("包含 Win 键"));
+      const mods = plEl('span', 'hotkey-mods');
+      mods.id = id + 'Mods';
       const clear = plEl('button', '', t("清除"));
       clear.hidden = !k.key;
       clear.onclick = () => send({ type: 'action', name: 'pluginKey', id: p.id, fence: f.id, command: k.id, box: id });
-      edit.append(key, win, clear); row.append(text, edit); box.append(row);
+      edit.append(key, mods, clear); row.append(text, edit); box.append(row);
       plKeysWaiting.push([id, p, f, k]);
     }
     return box;
@@ -1954,7 +1956,7 @@
   const plKeys = {}, plKeysWaiting = [];
   function plKeysMade() {
     for (const [id, p, f, k] of plKeysWaiting.splice(0)) {
-      const r = hotkeyRecorder(id, 'pluginKeyRecording', 'pluginKey', () => ({ on: true, keys: k.key && k.key.keys,
+      const r = hotkeyRecorder(id, 'pluginKeyRecording', 'pluginKey', () => ({ on: true, keys: k.key && k.key.keys, mods: k.key && k.key.mods, vk: k.key && k.key.vk,
         help: k.taken ? tf("{0} 已被其他程序占用，请换一个", k.key.label) : '', tone: k.taken ? 'error' : '' }));
       r.extra = { id: p.id, fence: f.id, command: k.id, box: id };
       r.render();
@@ -2062,9 +2064,9 @@
     document.getElementById('plDoesBox').hidden = false;
     // Yellow when it reaches past its fence (the network, the clipboard, the background, a web
     // page, programs, files, what plays, which programs run, services of this computer and the
-    // local network); grey when it only shows content.
+    // local network, the screen); grey when it only shows content.
     const reaches = p.network.length || p.clipboard !== 'none' || p.background || p.layer === 'web' || p.system.length
-      || (p.folders && p.folders !== 'none') || p.launch || p.drop.length || p.media !== 'none' || (p.apps && p.apps.length)
+      || (p.folders && p.folders !== 'none') || p.launch || p.drop.length || p.media !== 'none' || (p.apps && p.apps.length) || (p.screen && p.screen !== 'none')
       || (p.local && (p.local.loopback.length || p.local.lan.length));
     document.getElementById('plDoesBox').classList.toggle('plain', !reaches);
     document.getElementById('plChanged').hidden = !changed;
@@ -2129,20 +2131,33 @@
 
   // The 快捷键 boxes (速览栅栏, 临时显示 Windows 桌面): a box records the next combination, the
   // host checks it, tries RegisterHotKey and answers with its result message (plus a fresh
-  // state once saved). Windows takes many Win combinations before the page sees them, so the
-  // checkbox adds Win instead.
+  // state once saved). Windows takes many Win combinations before the page sees them, and a
+  // combination can be built without the keyboard, so Ctrl, Alt, Shift and Win also have a check
+  // box: it adds the modifier to what is typed, and outside a recording it shows the modifiers
+  // of the saved shortcut and changes them.
   const MOD_ALT = 1, MOD_CTRL = 2, MOD_SHIFT = 4, MOD_WIN = 8;
   const heldMods = e => (e.altKey ? MOD_ALT : 0) | (e.ctrlKey ? MOD_CTRL : 0) | (e.shiftKey ? MOD_SHIFT : 0) | (e.metaKey ? MOD_WIN : 0);
   const modNames = mods => [[MOD_WIN, 'Win'], [MOD_CTRL, t("键名\x04Ctrl")], [MOD_ALT, 'Alt'], [MOD_SHIFT, t("键名\x04Shift")]]
     .filter(([bit]) => mods & bit).map(([, name]) => name);
   const keyCaps = keys => keys.map(k => `<kbd>${esc(k)}</kbd>`).join('');
   const sameKey = (a, b) => !!a && !!b && a.mods === b.mods && a.vk === b.vk;
-  // `id` names the box (its key caps, Win checkbox and help line add Keys, Win and Help);
+  // `id` names the box (its key caps, check boxes and help line add Keys, Mods and Help);
   // `recordingAction` and `setAction` are the messages to the host; `view()` tells what to
-  // show outside a recording: `{ on, keys, help, tone }` (keys null = none chosen).
+  // show outside a recording: `{ on, keys, mods, vk, help, tone }` (keys null = none chosen;
+  // mods and vk are the saved shortcut's codes).
   function hotkeyRecorder(id, recordingAction, setAction, view) {
     const box = document.getElementById(id), keysEl = document.getElementById(id + 'Keys');
-    const winBox = document.getElementById(id + 'Win'), helpEl = document.getElementById(id + 'Help');
+    const modsEl = document.getElementById(id + 'Mods'), helpEl = document.getElementById(id + 'Help');
+    // One check box per modifier, in the order Ctrl, Alt, Shift, Win; the names are set at each
+    // render, so they follow the page language.
+    const boxes = new Map(), boxNames = new Map();
+    for (const bit of [MOD_CTRL, MOD_ALT, MOD_SHIFT, MOD_WIN]) {
+      const label = document.createElement('label'), input = document.createElement('input'), name = document.createElement('span');
+      label.className = 'hotkey-win'; input.type = 'checkbox';
+      label.append(input, name); modsEl.append(label); boxes.set(bit, input); boxNames.set(bit, name);
+    }
+    const ticked = () => [...boxes].reduce((m, [bit, input]) => m | (input.checked ? bit : 0), 0);
+    const tick = mods => boxes.forEach((input, bit) => { input.checked = !!(mods & bit); });
     const r = { recording: false, error: '' };
     let held = 0, quiet = false, quietTimer = 0;
     // A combination another program holds never reaches the page, only its modifiers do: when
@@ -2156,22 +2171,26 @@
       const v = state && view();
       if (!v) return;
       if (!v.on && r.recording) r.stop();
-      box.disabled = winBox.disabled = !v.on;
+      box.disabled = !v.on;
+      boxes.forEach(input => { input.disabled = !v.on; });
+      boxNames.forEach((name, bit) => { name.textContent = modNames(bit)[0]; });
       box.classList.toggle('recording', r.recording);
-      const mods = held | (winBox.checked ? MOD_WIN : 0);
+      // Outside a recording the boxes show the saved shortcut's modifiers.
+      if (!r.recording) tick(v.keys ? v.mods | 0 : 0);
+      const mods = held | ticked();
       keysEl.innerHTML = !r.recording ? (v.keys ? keyCaps(v.keys) : `<span class="prompt">${esc(t("未设置"))}</span>`)
         : keyCaps(modNames(mods)) + `<span class="prompt">${esc(mods ? '…' : t("按下组合键…"))}</span>`;
-      // The checkbox belongs to the recording; the key caps show whether the shortcut has Win.
-      if (!r.recording) winBox.checked = false;
-      let help = v.help || t("点击方框，按下想用的组合键。要用 Win 键，请勾选“包含 Win 键”"), tone = v.help ? v.tone : '';
+      let help = v.help || t("点击方框，按下想用的组合键。也可以用复选框增减修饰键"), tone = v.help ? v.tone : '';
       if (r.error) { help = r.error; tone = 'error'; }
       else if (r.recording && quiet) { help = t("没有反应？这个组合键可能已被其他程序占用，请换一个"); tone = 'caution'; }
       else if (r.recording) { help = t("请按下组合键，按 Esc 取消"); tone = ''; }
       helpEl.textContent = help;
       helpEl.className = 's' + (tone ? ' ' + tone : '');
     };
-    r.start = () => {
+    // A recording starts with no box ticked, unless one was ticked to start it (`keep`).
+    r.start = keep => {
       if (r.recording || box.disabled) return;
+      if (!keep) tick(0);
       r.recording = true; held = 0; r.error = ''; waitForKeys(false);
       send({ type: 'action', name: recordingAction, on: true, ...r.extra });
       r.render();
@@ -2192,10 +2211,10 @@
       r.render();
       if (ended && r.onEnd) r.onEnd();
     };
-    box.onclick = r.start;
+    box.onclick = () => r.start();
     box.addEventListener('blur', r.stop);
-    // Clicking the checkbox while recording must not take the focus away from the box.
-    winBox.closest('label').addEventListener('mousedown', e => { if (r.recording) e.preventDefault(); });
+    // Clicking a check box while recording must not take the focus away from the box.
+    modsEl.addEventListener('mousedown', e => { if (r.recording) e.preventDefault(); });
     box.addEventListener('keydown', e => {
       if (!r.recording) return;
       const mods = heldMods(e);
@@ -2209,11 +2228,20 @@
       if (['Control', 'Alt', 'Shift', 'Meta', 'OS', 'AltGraph'].includes(e.key)) { r.error = ''; r.render(); return; }
       if (e.repeat) return;
       // keyCode is the Windows virtual-key code, which RegisterHotKey takes.
-      send({ type: 'action', name: setAction, mods: mods | (winBox.checked ? MOD_WIN : 0), vk: e.keyCode, ...r.extra });
+      send({ type: 'action', name: setAction, mods: mods | ticked(), vk: e.keyCode, ...r.extra });
     });
     box.addEventListener('keyup', e => { if (r.recording) { held = heldMods(e); r.render(); } });
-    // Ticking Win starts a recording with it; clearing it during one drops it again.
-    winBox.onchange = () => { r.start(); r.render(); box.focus(); };
+    // A box ticked during a recording adds to what is typed. Outside one, with a saved shortcut,
+    // it changes that shortcut's modifiers (the host checks it as any other); with none, it starts
+    // a recording with the modifier ticked.
+    boxes.forEach(input => {
+      input.onchange = () => {
+        const v = state && view();
+        if (r.recording) { r.render(); box.focus(); }
+        else if (v && v.on && v.keys && v.vk) { r.error = ''; send({ type: 'action', name: setAction, mods: ticked(), vk: v.vk, ...r.extra }); }
+        else { r.start(true); box.focus(); }
+      };
+    });
     return r;
   }
   // 速览栅栏 › 快捷键: one drop-down with the quick choices, the chosen combination when it is
@@ -2230,7 +2258,7 @@
     else if (on && !p.active) { help = tf("{0} 和备用的组合都已被占用，请换一个", p.chosen.label); tone = 'error'; }
     else if (on && !sameKey(p.active, p.chosen)) { help = tf("{0} 已被占用，现在使用 {1}", p.chosen.label, p.active.label); tone = 'caution'; }
     else if (!peekCustom) help = t("也可以选“双击 Ctrl”，或者选“自定义…”按下别的组合键");
-    return { on, keys: shown.keys, help, tone };
+    return { on, keys: shown.keys, mods: shown.mods, vk: shown.vk, help, tone };
   });
   peekRecorder.onEnd = () => { peekCustom = false; renderPeekHotkey(); };
   function renderPeekHotkey() {
@@ -2286,7 +2314,7 @@
     const w = state.windowsDesktopHotkey;
     if (!w) return null;
     const taken = w.chosen && !w.registered;
-    return { on: true, keys: w.chosen && w.chosen.keys, help: taken ? tf("{0} 已被其他程序占用，请换一个", w.chosen.label) : state.settings.showTrayIcon ? t("按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复；托盘菜单里也有这一项") : t("按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复"), tone: taken ? 'error' : '' };
+    return { on: true, keys: w.chosen && w.chosen.keys, mods: w.chosen && w.chosen.mods, vk: w.chosen && w.chosen.vk, help: taken ? tf("{0} 已被其他程序占用，请换一个", w.chosen.label) : state.settings.showTrayIcon ? t("按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复；托盘菜单里也有这一项") : t("按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复"), tone: taken ? 'error' : '' };
   });
   function renderWindowsDesktopHotkey() {
     const w = state && state.windowsDesktopHotkey;

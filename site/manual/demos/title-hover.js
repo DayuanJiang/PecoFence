@@ -31,7 +31,7 @@
         { ic: '\uE7C4', t: '每个虚拟桌面各用一套栅栏', s: '打开后，新建的栅栏只在当前虚拟桌面显示。已有的栅栏不变，可以在栅栏右键菜单或“栅栏”页里改', on: false },
         { ic: '\uE82F', t: '功能提示', s: '用得上某个功能时提示一次，例如栅栏多了可以收起、常开的文件夹可以放到桌面上。每条只出现一次', on: true },
     ];
-    // 隐藏栅栏: 临时显示 Windows 桌面 is one card with its shortcut box (none set) and 包含 Win 键.
+    // 隐藏栅栏: 临时显示 Windows 桌面 is one card with its shortcut box (none set) and the Ctrl, Alt, Shift and Win check boxes.
     // 收起与展开: 展开快慢 shows under 收起的栅栏怎么展开 while that is 鼠标停在上面时 (hoverSpeedCard)
     const QUICK_HIDE = { ic: '\uE890', t: '双击桌面空白处隐藏或显示栅栏', on: true };
     const WINDOWS_DESKTOP = { ic: '\uE7F4', t: '临时显示 Windows 桌面', s: '按快捷键隐藏所有栅栏、显示 Windows 桌面图标，再按一次恢复；托盘菜单里也有这一项' };
@@ -98,15 +98,21 @@
 
         SM.h3(g, '隐藏栅栏');
         toggleCard(g, QUICK_HIDE);
-        // the shortcut box and 包含 Win 键 go under the text, as the page wraps them when narrow
+        // the shortcut box and the Ctrl, Alt, Shift and Win check boxes go under the text, as the page wraps them when narrow
         const wd = SM.card(g, { ...WINDOWS_DESKTOP, h: 64, textW: g.cardW - 34 - 12 });
         wd.t.style.top = '7px';
         wd.s.style.top = '22px';
         wd.n.querySelector('.set-ic').style.top = '8px';
-        const winKey = SM.ctrl(wd, 'set-chk', 40, 13, { right: 10, top: 41, label: null });
-        el('i', null, winKey.n);
-        SM.grow(winKey, Math.ceil(SM.natW(el('span', null, winKey.n, T('包含 Win 键')))) + 16);
-        SM.button(wd, '未设置', 120, { right: 22 + winKey.w, top: 37 }).v.style.color = '#8a8a8a';
+        // none set: no box is ticked. Placed from the right (Win first), 10 px apart; the shortcut box
+        // stands 12 px left of the Ctrl check box.
+        let edge = 10;
+        for (const name of ['Win', 'Shift', 'Alt', 'Ctrl']) {
+            const chk = SM.ctrl(wd, 'set-chk', 40, 13, { right: edge, top: 41, label: null });
+            el('i', null, chk.n);
+            SM.grow(chk, Math.ceil(SM.natW(el('span', null, chk.n, name))) + 16);
+            edge += chk.w + 10;
+        }
+        SM.button(wd, '未设置', 120, { right: edge + 2, top: 37 }).v.style.color = '#8a8a8a';
         selectCard(g, { ic: '\uE7C4', t: '显示桌面 (Win+D) 时', v: '保持栅栏可见' });
 
         SM.h3(g, '收起与展开');

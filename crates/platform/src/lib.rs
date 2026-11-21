@@ -43,9 +43,35 @@ mod store_bindings;
     unused_imports
 )]
 mod media_bindings;
+// Windows.Graphics.Capture, kept apart from `bindings` (tools/bindgen/capture.txt).
+#[allow(
+    non_snake_case,
+    non_upper_case_globals,
+    non_camel_case_types,
+    clippy::upper_case_acronyms,
+    clippy::missing_transmute_annotations,
+    clippy::useless_transmute,
+    dead_code,
+    unused_imports
+)]
+mod capture_bindings;
+// UI Automation, kept apart from `bindings` (tools/bindgen/uia.txt).
+#[allow(
+    non_snake_case,
+    non_upper_case_globals,
+    non_camel_case_types,
+    clippy::upper_case_acronyms,
+    clippy::missing_transmute_annotations,
+    clippy::useless_transmute,
+    clippy::too_many_arguments,
+    dead_code,
+    unused_imports
+)]
+mod uia_bindings;
 
 pub mod autostart;
 pub mod busy;
+pub mod capture;
 pub mod clipboard;
 pub mod colordialog;
 pub mod com;
@@ -93,6 +119,7 @@ pub mod sysparams;
 pub mod theme;
 pub mod tooltip;
 pub mod tray;
+pub mod uia;
 pub mod wallpaper;
 pub mod watcher;
 pub mod wide;

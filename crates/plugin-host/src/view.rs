@@ -77,6 +77,9 @@ pub struct Row {
     pub progress: Option<f32>,
     pub chart: Option<Chart>,
     pub canvas: Option<Canvas>,
+    /// A zoomed part of the screen, drawn by PecoFence on the graphics card. Only a plugin with
+    /// `permissions.screen` has one: the app leaves the row out for the others.
+    pub magnifier: Option<Magnifier>,
     pub input: Option<Input>,
     /// As a script fence's `pane=` and `follow=`: the rows above the first `pane` row stay,
     /// the others scroll; the row after a `follow` row is kept in view.
@@ -219,6 +222,64 @@ pub struct Step {
     pub bold: bool,
 }
 
+/// The zoom factors a magnifier row may ask for.
+pub const MIN_ZOOM: f32 = 1.0;
+pub const MAX_ZOOM: f32 = 20.0;
+
+/// A zoomed part of the screen around the pointer, as wide as the fence and `height` DIPs tall
+/// (the rest of the fence's height when it has none). PecoFence captures the screen and draws
+/// the picture itself: the plugin only says how, and never receives a pixel.
+#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct Magnifier {
+    /// How many times larger than on the screen (1 to 20).
+    pub zoom: f32,
+    /// Smooth enlargement; false keeps the pixels square.
+    pub smooth: bool,
+    /// The mouse pointer is part of the picture.
+    pub pointer: bool,
+    /// The picture follows the pointer. With `focus` and `caret` off too, it holds the part of
+    /// the screen it showed last and stops the capture; the row takes one picture where the
+    /// pointer is when it appears, and another each time `shot` changes.
+    pub follow: bool,
+    /// The picture follows the keyboard focus: the element that has it (a button, a list item, a
+    /// text box). PecoFence finds it with UI Automation; the plugin never learns where it is.
+    pub focus: bool,
+    /// The picture follows the text insertion point (the caret of the text box being typed in).
+    /// With several of `follow`, `focus` and `caret`, the picture goes to whichever moved last.
+    pub caret: bool,
+    /// A number that changes each time the picture is to be taken again at the pointer's place
+    /// (when it does not follow: a snapshot).
+    pub shot: u32,
+    pub height: Option<f32>,
+    /// The fence stays above every window while it shows the magnifier (it would hide behind
+    /// the program the user works in otherwise).
+    pub top: bool,
+}
+
+impl Magnifier {
+    /// The picture is live: it follows the pointer, the focus or the caret.
+    pub fn follows(&self) -> bool {
+        self.follow || self.focus || self.caret
+    }
+}
+
+impl Default for Magnifier {
+    fn default() -> Self {
+        Self {
+            zoom: 2.0,
+            smooth: true,
+            pointer: true,
+            follow: true,
+            focus: false,
+            caret: false,
+            shot: 0,
+            height: None,
+            top: true,
+        }
+    }
+}
+
 /// `type: "note"`: the fence's note, which PecoFence edits and keeps; `type: "line"`: a one-line
 /// box with `value` and a grey `placeholder` while it is empty; `type: "text"`: a box of `lines`
 /// lines (2 to 12) that takes at most `max` characters, whose text the plugin keeps.
@@ -320,6 +381,14 @@ impl Row {
                 step.image = name(step.image.take());
             }
         }
+        if let Some(m) = &mut self.magnifier {
+            m.zoom = if m.zoom.is_finite() {
+                m.zoom.clamp(MIN_ZOOM, MAX_ZOOM)
+            } else {
+                Magnifier::default().zoom
+            };
+            m.height = height(m.height);
+        }
         if let Some(input) = &mut self.input {
             cut(&mut input.placeholder);
             // The value as the box would let the user type it (a one-line box always 4096).
@@ -402,6 +471,14 @@ fn without_wrong_fields(row: &Value, dropped: &mut Vec<String>) -> Option<Value>
         *list = (list.iter())
             .filter_map(|s| readable::<Span>(s, "spans.", dropped))
             .collect();
+    }
+    if let Some(m) = row.get_mut("magnifier") {
+        match readable::<Magnifier>(m, "magnifier.", dropped) {
+            Some(kept) => *m = kept,
+            None => {
+                row.as_object_mut()?.remove("magnifier");
+            }
+        }
     }
     let draw = row.get_mut("canvas").and_then(|c| c.get_mut("draw"));
     if let Some(list) = draw.and_then(Value::as_array_mut) {
@@ -511,6 +588,46 @@ mod tests {
             ("line", "v", "Search")
         );
         assert!(r[8].separator);
+    }
+
+    #[test]
+    fn a_magnifier_row_is_read_with_its_defaults_and_cut_to_its_limits() {
+        let view = parse(
+            r#"{ "rows": [
+            { "id": "m", "magnifier": {} },
+            { "magnifier": { "zoom": 3, "smooth": false, "pointer": false, "follow": false,
+                             "shot": 4, "height": 90, "top": false } },
+            { "magnifier": { "zoom": 99, "height": 99999 } },
+            { "magnifier": { "zoom": 0.1 } },
+            { "magnifier": { "zoom": "big", "follow": false } },
+            { "magnifier": { "follow": false, "focus": true } },
+            { "magnifier": { "follow": false, "caret": true } }
+        ] }"#,
+        )
+        .unwrap();
+        let m = |i: usize| view.rows[i].magnifier.unwrap();
+        assert_eq!(m(0), Magnifier::default());
+        assert_eq!(
+            (m(1).zoom, m(1).smooth, m(1).pointer, m(1).follow),
+            (3.0, false, false, false)
+        );
+        assert_eq!((m(1).shot, m(1).height, m(1).top), (4, Some(90.0), false));
+        assert_eq!((m(2).zoom, m(2).height), (MAX_ZOOM, Some(MAX_HEIGHT)));
+        assert_eq!(m(3).zoom, MIN_ZOOM);
+        // Following the focus or the caret, with or without the pointer, is following.
+        assert!(m(0).follows() && !m(0).focus && !m(0).caret);
+        assert!(!m(1).follows() && !m(4).follows());
+        assert!(m(5).follows() && m(5).focus && !m(5).caret);
+        assert!(m(6).follows() && m(6).caret && !m(6).focus);
+        // A wrong type leaves that field out; the rest of the magnifier reads.
+        let (view, dropped) =
+            read(r#"{ "rows": [{ "magnifier": { "zoom": "big", "follow": false } }] }"#).unwrap();
+        let m = view.rows[0].magnifier.unwrap();
+        assert!(!m.follow && m.zoom == Magnifier::default().zoom, "{m:?}");
+        assert!(
+            dropped.iter().any(|d| d.contains("magnifier")),
+            "{dropped:?}"
+        );
     }
 
     #[test]

@@ -4750,7 +4750,25 @@ pub struct ScriptRowDraw<'a> {
     pub canvas: Option<(&'a Canvas, &'a [Option<ScriptImageDraw<'a>>])>,
     pub line: Option<(&'a str, &'a str, usize)>,
     pub hover: bool,
+    /// A magnifier row: a zoomed part of the screen, drawn on the graphics card.
+    pub magnifier: Option<MagnifierDraw<'a>>,
 }
+
+/// A magnifier row as it is drawn now: the captures to draw from and what to show of them.
+pub struct MagnifierDraw<'a> {
+    pub magnifier: &'a RefCell<crate::magnifier::Magnifier>,
+    /// The point kept in the middle, in the pixels of the monitor it is on, and that monitor's
+    /// scale (1.0 at 96 DPI).
+    pub centre: (f32, f32),
+    pub src_scale: f32,
+    pub zoom: f32,
+    pub smooth: bool,
+    /// How tall it is (DIPs); None: what the fence has left under the rows before it.
+    pub height: Option<f32>,
+}
+
+/// The least height a magnifier row takes when it fills the rest of the fence (DIPs).
+const MAGNIFIER_MIN_H: f32 = 48.0;
 
 /// The picture of an `image=` row: its decoded pixels, their cache key and the height (DIPs) it
 /// is drawn at most.
@@ -5651,6 +5669,52 @@ impl FenceChrome {
                 y += h + 2.0 * SCRIPT_ROW_PAD_Y;
                 continue;
             }
+            if let Some(m) = &row.magnifier {
+                // The screen, zoomed: edge to edge, as tall as asked or what is left of the
+                // fence (it never makes the fence scroll for nothing).
+                let h = m
+                    .height
+                    .unwrap_or((height - y - SCRIPT_ROW_PAD_Y).max(MAGNIFIER_MIN_H));
+                if in_band {
+                    tops.push(y + offset - band_y0);
+                }
+                let area = Rect::from_xywh(0.0, y, width, h);
+                if script_row_in_view(in_band, band_top, height, y, h) {
+                    let _clip = pecofence_platform::d2d::push_axis_aligned_clip(
+                        session.raw(),
+                        area.left,
+                        area.top,
+                        area.right,
+                        area.bottom,
+                    )?;
+                    let drawn = m.magnifier.borrow_mut().draw(
+                        session,
+                        [area.left, area.top, width, h],
+                        m.centre,
+                        m.src_scale,
+                        m.zoom,
+                        m.smooth,
+                    );
+                    match drawn {
+                        Ok(true) => {}
+                        // No picture yet: a faint plate shows where it will be.
+                        Ok(false) => {
+                            let plate =
+                                session.create_solid_brush(with_alpha(theme.text_primary, 0.08))?;
+                            session.fill_rect(&area, &plate);
+                        }
+                        Err(error) if windows_canvas::is_device_lost(error.code()) => {
+                            return Err(error);
+                        }
+                        Err(error) => tracing::debug!(%error, "magnifier draw failed"),
+                    }
+                }
+                if row.hover {
+                    hits.push((i, 0, area));
+                }
+                y += h + 2.0 * SCRIPT_ROW_PAD_Y;
+                continue;
+            }
             // A chart or a drawing: as tall as the plugin asked, as wide as the fence (a drawing
             // from its very edges, as `pf.fence.width` says).
             let drawn_h = row
@@ -6542,6 +6606,7 @@ fn script_is_empty(rows: &[ScriptRowDraw<'_>]) -> bool {
                 && r.spans.is_empty()
                 && r.chart.is_none()
                 && r.canvas.is_none()
+                && r.magnifier.is_none()
                 && r.line.is_none()
     })
 }
@@ -7106,6 +7171,25 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_magnifier_row_is_a_view_and_not_an_empty_one() {
+        // A view with nothing but a magnifier row has no text, and shows the picture, not the
+        // script's "printed no text" hint.
+        let gpu = windows_canvas::GpuDevice::new_or_warp().unwrap();
+        let magnifier = RefCell::new(crate::magnifier::Magnifier::new(gpu));
+        let mut rows = [script_row("", false)];
+        assert!(script_is_empty(&rows));
+        rows[0].magnifier = Some(MagnifierDraw {
+            magnifier: &magnifier,
+            centre: (0.0, 0.0),
+            src_scale: 1.0,
+            zoom: 2.0,
+            smooth: true,
+            height: None,
+        });
+        assert!(!script_is_empty(&rows));
+    }
+
     /// A plain row of a script fence, clickable or not.
     fn script_row(text: &str, clickable: bool) -> ScriptRowDraw<'_> {
         ScriptRowDraw {
@@ -7129,6 +7213,7 @@ mod tests {
             canvas: None,
             line: None,
             hover: false,
+            magnifier: None,
         }
     }
 

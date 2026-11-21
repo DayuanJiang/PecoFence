@@ -1835,8 +1835,14 @@ impl FenceViewState {
             return Ok(None);
         };
         use pecofence_render::fence_chrome::{
-            ScriptBand, ScriptCellDraw, ScriptImageDraw, ScriptRowDraw, ScriptScroll, ScrollbarDraw,
+            MagnifierDraw, ScriptBand, ScriptCellDraw, ScriptImageDraw, ScriptRowDraw,
+            ScriptScroll, ScrollbarDraw,
         };
+        // 放大镜: the captures to draw from and the place they are at.
+        let magnifier = self
+            .magnifier
+            .as_ref()
+            .map(|run| (run.magnifier.clone(), run.point.unwrap_or_default()));
         // A plugin's `fit` row and the row under it: drawn as the native clock draws its time
         // and date, scaled with the fence, in their short forms when it is narrow.
         let plain = |r: &ScriptRowView| {
@@ -1845,6 +1851,7 @@ impl FenceViewState {
                 && r.spans.is_empty()
                 && r.chart.is_none()
                 && r.canvas.is_none()
+                && r.magnifier.is_none()
                 && r.input.is_none()
                 && r.progress.is_none()
                 && r.todo.is_none()
@@ -2064,6 +2071,18 @@ impl FenceViewState {
                 progress: r.progress,
                 chart: r.chart.as_ref(),
                 canvas: r.canvas.as_deref().map(|c| (c, &pictures[..])),
+                magnifier: r
+                    .magnifier
+                    .as_ref()
+                    .zip(magnifier.as_ref())
+                    .map(|(m, (rc, p))| MagnifierDraw {
+                        magnifier: rc,
+                        centre: (p.x, p.y),
+                        src_scale: p.scale,
+                        zoom: m.zoom,
+                        smooth: m.smooth,
+                        height: m.height,
+                    }),
                 line: (r.input.as_ref())
                     .filter(|i| i.kind == "line" || i.kind == "text")
                     .map(|l| {

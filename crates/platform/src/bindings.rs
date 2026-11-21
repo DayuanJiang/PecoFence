@@ -2665,6 +2665,11 @@ pub unsafe fn SetWinEventHook(
         )
     }
 }
+#[inline]
+pub unsafe fn SetWindowDisplayAffinity(hwnd: HWND, dwaffinity: u32) -> windows_core::BOOL {
+    windows_core::link!("user32.dll" "system" fn SetWindowDisplayAffinity(hwnd : HWND, dwaffinity : u32) -> windows_core::BOOL);
+    unsafe { SetWindowDisplayAffinity(hwnd, dwaffinity) }
+}
 #[cfg(any(
     target_arch = "aarch64",
     target_arch = "arm64ec",
@@ -20913,6 +20918,8 @@ pub const VirtualDesktopManager: windows_core::GUID =
 pub const WAIT_FAILED: u32 = 4294967295;
 pub const WAIT_OBJECT_0: i32 = 0;
 pub const WAIT_TIMEOUT: i32 = 258;
+pub const WDA_EXCLUDEFROMCAPTURE: i32 = 17;
+pub const WDA_NONE: i32 = 0;
 pub const WHEEL_DELTA: i32 = 120;
 pub const WH_CALLWNDPROC: i32 = 4;
 pub const WH_MOUSE_LL: i32 = 14;

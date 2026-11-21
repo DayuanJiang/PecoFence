@@ -77,6 +77,7 @@ mod group;
 mod handler;
 mod hit;
 mod items;
+mod magnifier;
 mod note_text;
 mod render;
 mod roll;
@@ -656,6 +657,9 @@ pub struct ScriptRowView {
     pub progress: Option<f32>,
     pub chart: Option<host_view::Chart>,
     pub canvas: Option<Rc<host_view::Canvas>>,
+    /// A plugin row's zoomed part of the screen (only a plugin with `permissions.screen` has
+    /// one); PecoFence captures and draws it.
+    pub magnifier: Option<host_view::Magnifier>,
     /// A plugin row's input: `note` (the fence is a note), `line` (a one-line box) or `text` (a
     /// box of several lines).
     pub input: Option<host_view::Input>,

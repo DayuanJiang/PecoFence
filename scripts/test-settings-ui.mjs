@@ -1534,7 +1534,7 @@ async function runTests() {
     doc.querySelector('[data-bind="snapping.enabled"]').click(); await settle();
     assert(!guides.closest('.card').classList.contains('disabled') && guides.tabIndex === 0, 'Guide lines did not return');
     doc.querySelector('[data-bind="peek.enabled"]').click(); await settle();
-    assert(hotkey.disabled && doc.getElementById('peekHotkeyWin').disabled && doc.getElementById('peekHotkeyChoice').disabled
+    assert(hotkey.disabled && [...doc.querySelectorAll('#peekHotkeyMods input')].every(i => i.disabled) && doc.getElementById('peekHotkeyChoice').disabled
       && !doc.querySelector('[data-bind="peek.dim"]').closest('.card').classList.contains('disabled'), 'Peek hotkey/dim dependency wrong');
     doc.querySelector('[data-bind="peek.enabled"]').click(); await settle();
     assert(!hotkey.disabled && !doc.getElementById('peekHotkeyChoice').disabled && !doc.getElementById('peekHotkeyCard').classList.contains('disabled'), 'Hotkey stayed disabled');
@@ -2428,6 +2428,8 @@ async function runTests() {
   const win = () => frame.contentWindow;
   const choice = () => doc.getElementById('peekHotkeyChoice');
   const choiceText = () => choice().selectedOptions[0]?.textContent;
+  // The ticked modifier boxes of the Peek shortcut, in the order Ctrl, Alt, Shift, Win.
+  const modTicks = () => [...doc.querySelectorAll('#peekHotkeyMods input')].map((input, i) => input.checked ? ['Ctrl', 'Alt', 'Shift', 'Win'][i] : '').filter(Boolean).join();
   // Picks an entry of the shortcut list the way a user does (the list sends `change`).
   const choose = value => { choice().focus(); choice().value = value; choice().dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true })); };
   await test('The Peek shortcut list records a combination through 自定义… and shows what the host saved', async () => {
@@ -2435,7 +2437,7 @@ async function runTests() {
     doc.querySelector('[data-page=peek]').click();
     const box = doc.getElementById('peekHotkey'), edit = doc.getElementById('peekHotkeyEdit'), help = doc.getElementById('peekHotkeyHelp');
     assert([...choice().options].map(o => o.textContent).join('|') === 'Ctrl + Alt + 空格|Win + Alt + 空格|Ctrl + Shift + 空格|双击 Ctrl|自定义…', 'Choices wrong: ' + [...choice().options].map(o => o.textContent).join('|'));
-    assert(choiceText() === 'Ctrl + Alt + 空格' && edit.hidden && !doc.getElementById('peekHotkeyWin').checked, 'Active shortcut not shown: ' + choiceText());
+    assert(choiceText() === 'Ctrl + Alt + 空格' && edit.hidden && modTicks() === 'Ctrl,Alt', 'Active shortcut not shown: ' + choiceText() + ' ' + modTicks());
     assert(help.textContent.includes('双击 Ctrl') && help.textContent.includes('自定义…'), 'Help does not mention the other choices: ' + help.textContent);
     choose('custom'); await settle();
     assert(!edit.hidden && box.classList.contains('recording') && doc.activeElement === box && sent('peekHotkeyRecording').at(-1)?.on === true, 'Recording did not start');
@@ -2463,7 +2465,7 @@ async function runTests() {
   await test('A refused shortcut keeps recording with the reason; Esc cancels', async () => {
     doc = await reset();
     doc.querySelector('[data-page=peek]').click();
-    const box = doc.getElementById('peekHotkey'), help = doc.getElementById('peekHotkeyHelp'), winBox = doc.getElementById('peekHotkeyWin');
+    const box = doc.getElementById('peekHotkey'), help = doc.getElementById('peekHotkeyHelp'), winBox = doc.querySelectorAll('#peekHotkeyMods input')[3];
     choose('custom'); await settle();
     press(box, 'k', 75); await settle();
     assert(help.classList.contains('error') && help.textContent.includes('Ctrl、Alt 或 Win') && box.classList.contains('recording'), 'No-modifier refusal not shown: ' + help.textContent);
@@ -2477,6 +2479,24 @@ async function runTests() {
     assert(!box.classList.contains('recording') && sent('peekHotkeyRecording').at(-1).on === false, 'Esc did not end the recording');
     assert(!winBox.checked && doc.getElementById('peekHotkeyEdit').hidden && choice().value === '3:32' && !help.classList.contains('error'), 'Cancel did not restore the shortcut');
     assert(current().settings.peek.customHotkey == null, 'A refused shortcut was saved');
+  });
+  await test('The modifier boxes show the saved shortcut, change it outside a recording and add to a typed one', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=peek]').click();
+    const inputs = () => [...doc.querySelectorAll('#peekHotkeyMods input')], box = doc.getElementById('peekHotkey');
+    assert(inputs().length === 4 && modTicks() === 'Ctrl,Alt', 'Boxes do not show Ctrl+Alt+空格: ' + modTicks());
+    // Outside a recording, a box changes the saved shortcut and keeps its key.
+    inputs()[2].click(); await settle();
+    const set = sent('setPeekHotkey').at(-1);
+    assert(set.mods === 7 && set.vk === 32 && !box.classList.contains('recording'), 'Shift was not added to the saved shortcut: ' + JSON.stringify(set));
+    // A recording starts with no box ticked; a box ticked during it adds its modifier.
+    choose('custom'); await settle();
+    assert(box.classList.contains('recording') && modTicks() === '', 'A recording did not start with the boxes cleared: ' + modTicks());
+    inputs()[0].click(); await settle();
+    assert(box.classList.contains('recording') && hotkeyText() === 'Ctrl', 'Ctrl box did not add to the recording');
+    press(box, 'k', 75); await settle();
+    assert(sent('setPeekHotkey').at(-1).mods === 2, 'Ticked Ctrl not sent with the typed key');
+    press(box, 'Escape', 27); await settle();
   });
   await test('Keys that stop arriving during a recording suggest the combination is taken', async () => {
     doc = await reset();
@@ -2514,7 +2534,7 @@ async function runTests() {
     const help = doc.getElementById('peekHotkeyHelp');
     assert(sent('setPeekHotkey').at(-1).mods === 6 && choice().value === '9:32' && help.classList.contains('error') && help.textContent.includes('已被 Windows 或其他程序占用'), 'Refused choice not reported: ' + help.textContent);
     // A shortcut with Win does not tick the box for the next recording.
-    const box = doc.getElementById('peekHotkey'), winBox = doc.getElementById('peekHotkeyWin');
+    const box = doc.getElementById('peekHotkey'), winBox = doc.querySelectorAll('#peekHotkeyMods input')[3];
     choose('custom'); await settle();
     assert(!winBox.checked && !help.classList.contains('error'), 'Win checkbox ticked or old error left at a new recording');
     winBox.click(); await settle();

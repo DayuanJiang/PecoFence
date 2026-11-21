@@ -40,6 +40,8 @@ struct Log {
     /// rest.
     hosts: BTreeMap<String, (u64, u64)>,
     last_view: Value,
+    /// A shown view had a `magnifier` row (the screen, drawn by PecoFence).
+    magnifier: bool,
     rest_show_calls: usize,
     js_ms: f64,
     rest_js_ms: f64,
@@ -273,6 +275,11 @@ impl Host for Fake {
                 }
                 if name == "show" {
                     log.last_view = args.get(0).cloned().unwrap_or_default();
+                    let rows = log.last_view.get("rows").and_then(Value::as_array);
+                    log.magnifier |= rows.is_some_and(|rows| {
+                        rows.iter()
+                            .any(|r| r.get("magnifier").is_some_and(Value::is_object))
+                    });
                     log.rest_show_calls += usize::from(rest);
                 }
                 if let Some(why) = refused {
@@ -669,6 +676,21 @@ fn check(a: Args) -> Result<bool, String> {
             warns.push(format!("the first view came after {s:.1} s (at most 1 s)"))
         }
         Some(_) => {}
+    }
+    // The screen: a magnifier row needs the permission (PecoFence leaves the row out without it),
+    // and the permission without a row is a right nobody uses.
+    let screen = m.permissions.screen.magnifies();
+    if log.magnifier {
+        info.push(
+            "a magnifier row: PecoFence captures and draws the screen, the plugin gets no pixel"
+                .into(),
+        );
+    }
+    if log.magnifier && !screen {
+        fails.push("a magnifier row needs permissions.screen: \"magnify\" (and api 3)".into());
+    }
+    if screen && !log.magnifier {
+        warns.push("permissions.screen is declared but no view had a magnifier row".into());
     }
     let soft = [
         (

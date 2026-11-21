@@ -32,7 +32,7 @@ pub const MAX_FILES: usize = 100;
 pub const MAX_TOTAL: u64 = 5 * 1024 * 1024;
 
 /// The newest plugin interface this PecoFence knows (`api` in plugin.json).
-pub const API: u32 = 2;
+pub const API: u32 = 3;
 /// The most bytes `index.json` may have.
 pub const MAX_INDEX: usize = 1024 * 1024;
 
@@ -91,6 +91,26 @@ pub struct Permissions {
     pub apps: Vec<String>,
     /// Services of this computer and of a device of the local network, by port.
     pub local: Local,
+    // Interface 3 (needs `api: 3`, see [`API3_FIELDS`]).
+    /// Shows a zoomed part of the screen (`magnify`): PecoFence captures the screen and draws it
+    /// in the plugin's fence on the graphics card. The plugin never receives a pixel.
+    pub screen: Screen,
+}
+
+/// What a plugin may do with the screen: nothing, or have PecoFence show a magnified part of it
+/// in its fence (a `magnifier` row). Neither lets the plugin read, keep or send the picture.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Screen {
+    #[default]
+    None,
+    Magnify,
+}
+
+impl Screen {
+    pub fn magnifies(self) -> bool {
+        self >= Self::Magnify
+    }
 }
 
 /// `local`: services `pf.http` may reach outside the internet (plain http too, never through a
@@ -243,7 +263,19 @@ impl Media {
 /// installing it as asking for nothing more.
 pub const API2_FIELDS: [&str; 6] = ["commands", "drop", "launch", "media", "apps", "local"];
 
+/// The permission interface 3 brought: a manifest using it must say `api: 3`.
+pub const API3_FIELDS: [&str; 1] = ["screen"];
+
 impl Permissions {
+    /// The fields of [`API3_FIELDS`] that `self` uses.
+    pub fn api3_fields(&self) -> Vec<&'static str> {
+        [self.screen != Screen::None]
+            .into_iter()
+            .zip(API3_FIELDS)
+            .filter_map(|(used, field)| used.then_some(field))
+            .collect()
+    }
+
     /// The fields of [`API2_FIELDS`] that `self` uses.
     pub fn api2_fields(&self) -> Vec<&'static str> {
         let used = [
@@ -570,6 +602,14 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
     if m.api < 2 && !newer.is_empty() {
         return Err(format!("{}: {} need api 2", m.id, newer.join(", ")));
     }
+    let newest = p.api3_fields();
+    if m.api < 3 && !newest.is_empty() {
+        return Err(format!("{}: {} need api 3", m.id, newest.join(", ")));
+    }
+    // The magnifier row is a light plugin's: a web page draws its own picture.
+    if p.screen != Screen::None && m.layer != "light" {
+        return Err(format!("{}: screen is for light plugins", m.id));
+    }
     let ports = p.local.ports();
     let entries = (p.local.loopback.iter()).chain(&p.local.lan);
     let app_named = |l: &LocalPort| !l.app.trim().is_empty() && l.app.chars().count() <= 40;
@@ -756,6 +796,7 @@ pub fn page_url(commit: &str, id: &str) -> String {
 /// Interface 2: a command or a kind of drop or a program of `apps` not there before, `launch`
 /// turned on, `media` from none to read to control, `folders` from none to read to readwrite,
 /// a class and port of `local` not there before (`loopback` and `lan` apart).
+/// Interface 3: `screen` from none to magnify.
 pub fn more_permissions(old: &Permissions, new: &Permissions) -> Vec<&'static str> {
     let old_ports = old.local.ports();
     let new_port = new.local.ports().iter().any(|p| !old_ports.contains(p));
@@ -784,6 +825,7 @@ pub fn more_permissions(old: &Permissions, new: &Permissions) -> Vec<&'static st
         ("background", new.background && !old.background),
         ("folders", new.folders > old.folders),
         ("notify", new.notify && !old.notify),
+        ("screen", new.screen > old.screen),
     ]
     .into_iter()
     .filter_map(|(field, more)| more.then_some(field))
@@ -1492,7 +1534,7 @@ mod tests {
         assert_eq!(update_kind(&installed, &needs, "0.5.0"), Update::Auto);
         let api = manifest(|v| {
             v["version"] = "1.1.0".into();
-            v["api"] = 3.into();
+            v["api"] = (API + 1).into();
         });
         assert!(check_manifest(&api).is_ok());
         assert_eq!(
@@ -1588,6 +1630,76 @@ mod tests {
             });
             assert!(check_manifest(&m).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn the_magnifier_plugin_of_the_working_copy_is_a_good_manifest() {
+        // What is submitted to the plugin repository: api 3, the screen and its three commands,
+        // each with an English title and a name and description in every language.
+        let bytes = include_bytes!("../../../scripts/wintest/assets/magnifier/plugin.json");
+        let m = parse_manifest(bytes).unwrap();
+        assert_eq!(
+            (m.id.as_str(), m.api, m.layer.as_str()),
+            ("magnifier", 3, "light")
+        );
+        assert_eq!(m.permissions.screen, Screen::Magnify);
+        let ids: Vec<&str> = m
+            .permissions
+            .commands
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        assert_eq!(ids, ["lock", "zoomin", "zoomout"]);
+        let languages = [
+            "en", "zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es", "pt-BR", "ru", "it",
+        ];
+        for texts in [&m.name, &m.description]
+            .into_iter()
+            .chain(m.permissions.commands.iter().map(|c| &c.title))
+            .chain(m.settings.iter().map(|s| &s.label))
+        {
+            assert!(
+                languages.iter().all(|l| texts.contains_key(*l)),
+                "{texts:?}"
+            );
+        }
+        assert!(!needs_newer_app(&m, "0.5.0"));
+        assert!(needs_newer_app(&m, "0.4.0"));
+    }
+
+    #[test]
+    fn the_screen_permission_needs_api_3_a_light_plugin_and_each_growth_asks() {
+        let with = |api: u32, layer: &str, p: serde_json::Value| {
+            manifest(|v| {
+                v["api"] = api.into();
+                v["layer"] = layer.into();
+                v["permissions"] = p;
+            })
+        };
+        let screen = json!({ "screen": "magnify" });
+        let why = check_manifest(&with(2, "light", screen.clone())).unwrap_err();
+        assert!(why.contains("screen") && why.contains("api 3"), "{why}");
+        assert!(check_manifest(&with(3, "light", screen.clone())).is_ok());
+        let why = check_manifest(&with(3, "web", screen.clone())).unwrap_err();
+        assert!(why.contains("light plugins"), "{why}");
+        // Only `magnify` exists: a name of a right it does not know is not read at all.
+        assert!(serde_json::from_value::<Permissions>(json!({ "screen": "capture" })).is_err());
+        // A PecoFence of interface 2 shows 需要更新 PecoFence for it; this one installs it.
+        assert!(needs_newer_app(&with(4, "light", json!({})), "0.5.0"));
+        assert!(!needs_newer_app(&with(3, "light", screen.clone()), "0.5.0"));
+        let perms = |p: serde_json::Value| -> Permissions { serde_json::from_value(p).unwrap() };
+        assert_eq!(
+            more_permissions(&Permissions::default(), &perms(screen.clone())),
+            ["screen"]
+        );
+        assert!(more_permissions(&perms(screen.clone()), &perms(screen.clone())).is_empty());
+        assert!(more_permissions(&perms(screen), &Permissions::default()).is_empty());
+        assert!(Screen::Magnify.magnifies() && !Screen::None.magnifies());
+        // An update that adds the permission asks the user.
+        let old = with(3, "light", json!({}));
+        let mut new = with(3, "light", json!({ "screen": "magnify" }));
+        new.version = "1.0.2".into();
+        assert_eq!(update_kind(&old, &new, "0.5.0"), Update::Confirm);
     }
 
     #[test]

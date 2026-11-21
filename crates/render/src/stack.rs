@@ -227,6 +227,19 @@ impl RenderStack {
         self.gpu.borrow().graphics.clone()
     }
 
+    /// The current D3D/D2D device (a clone of the handle) and its generation, which grows each
+    /// time [`RenderStack::recover`] replaces it. What was made with the old one (a capture of
+    /// the Magnifier) is made again when the generation changes.
+    pub fn gpu_device(&self) -> (GpuDevice, u32) {
+        let gpu = self.gpu.borrow();
+        (gpu.device.clone(), gpu.generation)
+    }
+
+    /// The generation of the current GPU device (see [`RenderStack::gpu_device`]), cheaply.
+    pub fn gpu_generation(&self) -> u32 {
+        self.gpu.borrow().generation
+    }
+
     /// True while a stack that started on the GPU draws with WARP: the hardware device could
     /// not be created when the lost one was replaced.
     pub fn on_fallback_warp(&self) -> bool {

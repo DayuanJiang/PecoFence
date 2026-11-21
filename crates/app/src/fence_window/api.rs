@@ -218,6 +218,8 @@ impl FenceWindow {
             script: None,
             script_rows: Vec::new(),
             script_hover: None,
+            magnifier: None,
+            magnifier_window_told: (false, false),
             slider_drag: None,
             script_scroll: ScriptScrollState::default(),
             quiet_glide: false,
@@ -2091,6 +2093,7 @@ impl FenceWindow {
                 // again, as a clock's tick (a plugin clock's rows change every second).
                 let rows_only = v.script.is_some() && script.is_some();
                 v.script = script;
+                v.sync_magnifier();
                 if first_result && v.content_swap_shows() {
                     tracing::debug!(fence = %v.active, "script fence: the first result fades in");
                     v.begin_content_swap(0);
@@ -2102,6 +2105,8 @@ impl FenceWindow {
                 }
             }
         });
+        // After the view's borrow: these calls send messages to the window.
+        self.apply_magnifier_window();
     }
 
     /// 文字大小 of the note or script fence shown (0 to 3, 1 = normal).

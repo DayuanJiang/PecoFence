@@ -21,6 +21,10 @@ impl FenceViewState {
         if let Some(web) = &self.web {
             web.set_shown(window_visible && !self.rolled_up);
         }
+        // A magnifier stops its capture while the fence is hidden: it starts again here.
+        if self.magnifier.is_some() && window_visible && !self.rolled_up {
+            self.frames.request();
+        }
     }
 
     /// The content panel under a page draws nothing: the page lies on the fence's glass.

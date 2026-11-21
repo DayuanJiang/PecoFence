@@ -1,0 +1,48 @@
+--out crates/platform/src/capture_bindings.rs
+--flat --dead-code
+
+// Screen capture for the Magnifier (`capture.rs`): Windows.Graphics.Capture on a monitor, frames
+// as GPU surfaces (never read back by the CPU). Only what `capture.rs` calls is listed; a class
+// comes with the methods it is used for, as the class entry alone would only be a name shell, and
+// the `...Statics` interfaces are those the generated classes reach their factories through
+// (`ICompositionObjectStatics`: the generator reaches that class and needs its factory interface
+// to compile).
+--filter
+    Windows.Graphics.Capture.GraphicsCaptureItem
+    Windows.Graphics.Capture.IGraphicsCaptureItem.Size
+    Windows.Graphics.Capture.IGraphicsCaptureItemStatics
+    Windows.Graphics.Capture.IGraphicsCaptureItemStatics2
+    Windows.Graphics.Capture.Direct3D11CaptureFramePool
+    Windows.Graphics.Capture.IDirect3D11CaptureFramePool.Recreate
+    Windows.Graphics.Capture.IDirect3D11CaptureFramePool.TryGetNextFrame
+    Windows.Graphics.Capture.IDirect3D11CaptureFramePool.CreateCaptureSession
+    Windows.Graphics.Capture.IDirect3D11CaptureFramePoolStatics
+    Windows.Graphics.Capture.IDirect3D11CaptureFramePoolStatics2.CreateFreeThreaded
+    Windows.Graphics.Capture.Direct3D11CaptureFrame
+    Windows.Graphics.Capture.IDirect3D11CaptureFrame.Surface
+    Windows.Graphics.Capture.IDirect3D11CaptureFrame.ContentSize
+    Windows.Graphics.Capture.IDirect3D11CaptureFrame2.DirtyRegions
+    Windows.Graphics.Capture.GraphicsCaptureSession
+    Windows.Graphics.Capture.IGraphicsCaptureSession.StartCapture
+    Windows.Graphics.Capture.IGraphicsCaptureSession2.IsCursorCaptureEnabled
+    Windows.Graphics.Capture.IGraphicsCaptureSession3.IsBorderRequired
+    Windows.Graphics.Capture.IGraphicsCaptureSessionStatics
+    Windows.Graphics.Capture.GraphicsCaptureAccess
+    Windows.Graphics.Capture.IGraphicsCaptureAccessStatics.RequestAccessAsync
+    Windows.Graphics.Capture.GraphicsCaptureAccessKind
+    Windows.Graphics.DirectX.DirectXPixelFormat
+    Windows.Graphics.DirectX.Direct3D11.IDirect3DDevice
+    Windows.Graphics.DirectX.Direct3D11.IDirect3DSurface
+    Windows.Graphics.SizeInt32
+    Windows.Graphics.RectInt32
+    Windows.Foundation.IClosable.Close
+    Windows.UI.Composition.ICompositionObjectStatics
+
+    // ---- Win32 interop (monitor item, device and surface wrappers)
+    IGraphicsCaptureItemInterop
+    CreateDirect3D11DeviceFromDXGIDevice
+    IDirect3DDxgiInterfaceAccess
+    IDXGIDevice
+    IDXGISurface
+    ID3D11Multithread
+    HMONITOR

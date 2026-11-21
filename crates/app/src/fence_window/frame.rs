@@ -53,6 +53,10 @@ impl FenceViewState {
         if self.content_busy {
             content = true;
         }
+        // 放大镜: the newest screen frame, and the pointer's place.
+        let (magnifier_redraw, magnifier_more) = self.tick_magnifier();
+        content |= magnifier_redraw;
+        more |= magnifier_more;
         if self.rolled_up && self.roll_anim.is_none() {
             // Rolled: nothing is visible. A glide caught by the roll ends on its destination
             // at once: the fence opens where its content was heading (back to its place after

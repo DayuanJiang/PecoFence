@@ -1008,6 +1008,19 @@ pub unsafe fn windowpos_move_rect(lparam: isize, current: RECT) -> Option<RECT> 
     })
 }
 
+/// Keeps `hwnd` out of every screen capture (a magnifier's own fence would otherwise show itself
+/// inside itself): the capture sees what is behind the window. Windows 10 2004 and later; on an
+/// older Windows the call fails and false is returned. `false` as `excluded` undoes it.
+pub fn set_capture_excluded(hwnd: HWND, excluded: bool) -> bool {
+    let affinity = if excluded {
+        WDA_EXCLUDEFROMCAPTURE
+    } else {
+        WDA_NONE
+    };
+    // SAFETY: plain FFI call on a window of this process.
+    unsafe { SetWindowDisplayAffinity(hwnd, affinity as u32).as_bool() }
+}
+
 /// Screen-space cursor position.
 pub fn cursor_pos() -> POINT {
     let mut pt = POINT::default();

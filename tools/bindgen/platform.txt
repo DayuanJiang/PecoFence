@@ -35,6 +35,9 @@
     SW_SHOWNOACTIVATE
     SW_SHOWNORMAL
     SetWindowPos
+    SetWindowDisplayAffinity
+    WDA_NONE
+    WDA_EXCLUDEFROMCAPTURE
     BeginDeferWindowPos
     DeferWindowPos
     EndDeferWindowPos
