@@ -275,6 +275,7 @@ const REPORTED_SETTINGS: &[&str] = &[
     "tools.enabled",
     "tools.clockSeconds",
     "tools.dialogJump",
+    "tools.allowSystem",
     "tools.everything",
     "rules.keepUpdated",
     "rules.unmatched",
