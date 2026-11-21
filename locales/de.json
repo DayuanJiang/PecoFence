@@ -1130,6 +1130,6 @@
   "撤销提示": "Hinweise zum Rückgängigmachen",
   "删除栅栏、按规则整理或把栅栏移到别的虚拟桌面后，右下角显示可以撤销的提示，10 秒后消失。关闭后不再显示，在栅栏上按 Ctrl+Z 照样能撤销": "Nach dem Löschen eines Bereichs, dem Einsortieren nach Regeln oder dem Verschieben auf einen anderen virtuellen Desktop zeigt die Ecke 10 Sekunden lang einen Hinweis mit „Rückgängig“. Aus: kein Hinweis; Strg+Z in einem Bereich macht es weiterhin rückgängig",
   "搜索别名\u0004撤销卡片|删除提示|通知|弹窗": "Rückgängig-Karte|Löschhinweis|Benachrichtigungen|Popup",
-  "双击空白处放大栅栏": "Leere Fläche doppelklicken, um den Zaun zu vergrößern",
-  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Doppelklick auf eine Stelle ohne Symbole: Der Zaun wächst in die Bildschirmmitte, die Symbole mit; ein weiterer Doppelklick stellt ihn zurück. Vergrößert lässt er sich weder ziehen noch skalieren, und Zäune mit „wie der Desktop angeordnet“ bleiben außen vor."
+  "双击空白处放大栅栏": "Leere Fläche doppelklicken, um den Bereich zu vergrößern",
+  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Doppelklick auf eine Stelle ohne Symbole: Der Bereich wächst in die Bildschirmmitte, die Symbole mit; ein weiterer Doppelklick stellt ihn zurück. Vergrößert lässt er sich weder ziehen noch in der Größe ändern, und Bereiche mit „Wie den Desktop anordnen“ bleiben außen vor."
 }
