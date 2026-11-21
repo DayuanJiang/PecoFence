@@ -1,0 +1,39 @@
+{
+ "format": 1,
+ "commit": "5555555555555555555555555555555555555555",
+ "plugins": [
+  {
+   "id": "pf-signed",
+   "version": "1.0.0",
+   "api": 1,
+   "layer": "light",
+   "name": {
+    "en": "PF Signed"
+   },
+   "description": {
+    "en": "From a signed index"
+   },
+   "author": "tester",
+   "minPecoFence": "0.4.0",
+   "permissions": {},
+   "settings": [],
+   "files": [
+    {
+     "name": "plugin.json",
+     "size": 244,
+     "sha256": "09d14f2cac2f77ace1fe590f216f91415a9b3e9987bf158c5ab58c640813968c"
+    },
+    {
+     "name": "main.js",
+     "size": 72,
+     "sha256": "a238d0dc0b5ec768c7bccc8ffa70e8b2a4be2ae1c944135e33988176eb6195c7"
+    },
+    {
+     "name": "README.md",
+     "size": 12,
+     "sha256": "5d255d28fa147e4a2e17d98c19f6e18e26f31de2bb0ff72b5e46f36ce55010e7"
+    }
+   ]
+  }
+ ]
+}

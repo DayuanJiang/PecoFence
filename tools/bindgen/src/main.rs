@@ -1,5 +1,5 @@
-//! Regenerates the platform, Composition, GPU glass, Store and capture bindings from Windows
-//! metadata.
+//! Regenerates the platform, Composition, GPU glass, Store, capture and media bindings from
+//! Windows metadata.
 //!
 //! Run from the workspace root: `cargo run -p tool_bindgen`.
 
@@ -13,6 +13,7 @@ fn main() {
             "tools/bindgen/gpu-glass.txt".to_string(),
             "tools/bindgen/store.txt".to_string(),
             "tools/bindgen/capture.txt".to_string(),
+            "tools/bindgen/media.txt".to_string(),
         ],
         v => v,
     };

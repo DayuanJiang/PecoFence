@@ -1,0 +1,10 @@
+{
+  "id": "viewdemo",
+  "version": "1.0.0",
+  "layer": "light",
+  "name": { "en": "View demo", "zh-CN": "界面示例" },
+  "description": { "en": "A test plugin: every part of a light plugin's view, on five pages.", "zh-CN": "测试用的插件：轻量插件界面的每一种零件，分五页显示。" },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.4.0",
+  "permissions": {}
+}

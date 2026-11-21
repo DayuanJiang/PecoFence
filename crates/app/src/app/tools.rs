@@ -9,6 +9,10 @@ use pecofence_core::{FenceTool, ScriptSpec};
 use std::collections::HashMap;
 use std::time::Instant;
 
+/// The entries of 新建小工具 (tray and fence menus): 用自己的脚本…, 更多插件… and up to 8
+/// installed plugins. The menus reserve this many command ids.
+pub(super) const TOOL_MENU_ENTRIES: u32 = 10;
+
 /// 脚本栅栏 at run time (nothing of it is saved): each fence's last result and when it came,
 /// the fences whose script is running (with the script it runs), when each is next due, a
 /// click that came while its script ran, and the streaming scripts that keep running.
@@ -134,9 +138,13 @@ impl App {
         let default_title = match &tool {
             NewTool::Note(_) => pecofence_core::i18n::text("便签").to_string(),
             NewTool::Clock => pecofence_core::i18n::text("时钟").to_string(),
-            NewTool::Script(path) => std::path::Path::new(path)
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
+            // The title the script asks for, else its file name.
+            NewTool::Script(path) => crate::scripts::title_of(std::path::Path::new(path))
+                .or_else(|| {
+                    std::path::Path::new(path)
+                        .file_stem()
+                        .map(|s| s.to_string_lossy().to_string())
+                })
                 .unwrap_or_else(|| pecofence_core::i18n::text("脚本").to_string()),
         };
         let title = title
@@ -163,7 +171,7 @@ impl App {
 
     /// Where a new tool fence of `w` x `h` DIPs goes: a free spot near (`x`, `y`), or, made
     /// from the settings page, a spot its window does not cover (`place_clear_of`).
-    fn place_new_tool(&self, w: f32, h: f32, x: i32, y: i32) -> RECT {
+    pub(super) fn place_new_tool(&self, w: f32, h: f32, x: i32, y: i32) -> RECT {
         self.tool_clear_of
             .and_then(|win| self.place_clear_of(w, h, win))
             .unwrap_or_else(|| self.place_new_fence_dip(w, h, x, y, None))
@@ -172,6 +180,29 @@ impl App {
     /// 脚本栅栏 for `fence get` / `fence list`: the script and its last run.
     pub(super) fn script_dto(&self, id: FenceId) -> Option<pecofence_ipc::ScriptDto> {
         let spec = self.state.config.scripts.get(&id)?;
+        // A light plugin: the texts of its rows, or why it stopped.
+        if let Some(view) = self.web_stopped_view(id).or_else(|| self.light_view(id)) {
+            // A row of cells shows their texts (its own is not drawn), a row of spans theirs.
+            let text: Vec<String> = (view.rows.iter())
+                .map(|r| match r.cells.as_slice() {
+                    [] if r.text.is_empty() => r.spans.iter().map(|s| s.text.as_str()).collect(),
+                    [] => r.text.clone(),
+                    cells => cells
+                        .iter()
+                        .map(|c| c.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                })
+                .collect();
+            return Some(pecofence_ipc::ScriptDto {
+                path: spec.path.clone(),
+                interval_minutes: spec.interval_minutes,
+                outcome: None,
+                output: Some(text.join("\n")),
+                last_run: None,
+                running: self.light.running.contains_key(&id),
+            });
+        }
         let last = self.script_runs.last.get(&id);
         let outcome = last.map(|(o, _)| match o {
             Outcome::Done(_) => "done",
@@ -209,7 +240,7 @@ impl App {
 
     /// Switches 小工具 on in the settings when it is off (a new tool fence would have no
     /// window otherwise).
-    fn ensure_tool_on(&mut self, tool: FenceTool) {
+    pub(super) fn ensure_tool_on(&mut self, tool: FenceTool) {
         if tool.enabled(&self.state.config.settings.tools) {
             return;
         }
@@ -238,25 +269,28 @@ impl App {
     /// 时钟与日期: the system time, the time zone or the region's time format changed (`why`).
     /// Every clock shows the new time now; it waited for its next tick, up to a minute.
     pub(super) fn refresh_clocks(&self, why: &'static str) {
+        self.light_time_changed();
+        self.web_events("timechange", serde_json::Value::Null);
         let drawn = self.fences.values().filter(|w| w.clock_changed()).count();
         if drawn > 0 {
             tracing::debug!(clocks = drawn, why, "clocks drawn again");
         }
     }
 
-    /// 新建小工具 (tray and fence menu), command ids `base`..`base + 5`: 时钟 (while the
-    /// desktop has none), the script examples, then 用自己的脚本….
+    /// 新建小工具 (tray and fence menu), command id `base`: 用自己的脚本….
     pub(super) fn new_tool_submenu(&self, base: u32) -> PopupMenu {
-        use crate::scripts::Example;
         let menu = PopupMenu::new();
-        if !self.has_clock() {
-            menu.item(base, pecofence_core::i18n::text("时钟"), false, false);
+        for (i, (name, _)) in self.tool_menu_plugins().iter().enumerate() {
+            menu.item(base + 2 + i as u32, name, false, false);
         }
-        for (i, kind) in Example::ALL.iter().enumerate() {
-            menu.item(base + 1 + i as u32, kind.label(), false, false);
-        }
-        menu.separator().item(
-            base + 1 + Example::ALL.len() as u32,
+        menu.item(
+            base + 1,
+            pecofence_core::i18n::text("更多插件…"),
+            false,
+            false,
+        );
+        menu.item(
+            base,
             pecofence_core::i18n::text("用自己的脚本…"),
             false,
             false,
@@ -264,16 +298,30 @@ impl App {
         menu
     }
 
-    /// Entry `index` of `new_tool_submenu`, for a fence near (`x`, `y`).
+    /// The installed plugins 新建小工具 offers (a taken-down one left out), by their name.
+    fn tool_menu_plugins(&self) -> Vec<(String, String)> {
+        let installed = self.plugins.installed.iter().filter(|(_, p)| p.usable());
+        let mut list: Vec<_> = installed
+            .map(|(id, _)| (self.plugin_name(id), id.clone()))
+            .collect();
+        list.sort();
+        list.truncate(TOOL_MENU_ENTRIES as usize - 2);
+        list
+    }
+
+    /// The entry of `new_tool_submenu`, for a fence near (`x`, `y`): a script, 设置 › 小工具's
+    /// plugin list, or a fence of an installed plugin.
     pub(super) fn new_tool_command(&mut self, index: u32, x: i32, y: i32) {
-        use crate::scripts::Example;
         match index {
-            0 => self.queue.push(Command::NewClock { x, y }),
-            i if (i as usize) <= Example::ALL.len() => {
-                let example = Example::ALL[i as usize - 1];
-                self.queue.push(Command::NewScriptExample { example, x, y });
+            0 => self.queue.push(Command::NewScript { x, y }),
+            1 => self.open_settings_page("tools", Some("plugins")),
+            i => {
+                let id = self.tool_menu_plugins().into_iter().nth(i as usize - 2);
+                tracing::info!(index, id = ?id.as_ref().map(|p| &p.1), "新建小工具: a plugin fence");
+                if let Some((_, id)) = id {
+                    self.new_plugin_fence(&id, x, y);
+                }
             }
-            _ => self.queue.push(Command::NewScript { x, y }),
         }
     }
 
@@ -296,7 +344,20 @@ impl App {
         w.set_note(self.state.note_text(shown).map(str::to_string));
         let seconds = self.state.config.settings.tools.clock_seconds;
         w.set_clock((tool == Some(FenceTool::Clock)).then_some(seconds));
-        w.set_script((tool == Some(FenceTool::Script)).then(|| self.script_view(shown)));
+        let web = (tool == Some(FenceTool::Script))
+            .then(|| self.web_plugin_of(shown))
+            .flatten();
+        match web {
+            Some(plugin) => {
+                w.set_plugin_drop(self.plugin_takes_drops(shown));
+                self.push_web_view(w, host, shown, &plugin.id)
+            }
+            None => {
+                w.set_web(None);
+                w.set_plugin_drop(self.plugin_takes_drops(shown));
+                w.set_script((tool == Some(FenceTool::Script)).then(|| self.script_view(shown)));
+            }
+        }
     }
 
     /// 脚本栅栏: what fence `id` shows: the last output (or what went wrong) and a footer with
@@ -317,12 +378,30 @@ impl App {
                 footer: String::new(),
                 footer_short: String::new(),
                 quiet: false,
+                caption: None,
             };
         };
-        let name = std::path::Path::new(&spec.path)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| spec.path.clone());
+        let plugin = super::plugins::plugin_id(&spec.path);
+        let name = match plugin {
+            Some(id) => self.plugin_name(id),
+            None => std::path::Path::new(&spec.path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| spec.path.clone()),
+        };
+        // A plugin that is not installed (an import, a restore) or was taken down says so.
+        if let Some(text) = plugin.and_then(|id| self.plugin_blocked_text(id)) {
+            return ScriptView {
+                rows: ScriptRowView::plain(&text),
+                footer: name,
+                footer_short: String::new(),
+                quiet: false,
+                caption: None,
+            };
+        }
+        if let Some(view) = plugin.and_then(|_| self.light_view(id)) {
+            return view;
+        }
         // A run started by the interval says so only once it has taken a while.
         let running = self.script_runs.running.contains_key(&id)
             && self
@@ -337,6 +416,7 @@ impl App {
                 footer: name,
                 footer_short: String::new(),
                 quiet: true,
+                caption: None,
             };
         };
         let when = pecofence_platform::fileinfo::format_local_time(*at);
@@ -391,6 +471,7 @@ impl App {
             footer: status,
             footer_short: short,
             quiet: false,
+            caption: None,
         }
     }
 
@@ -410,6 +491,7 @@ impl App {
             .map(|f| f.id)
             .filter(|id| !self.script_runs.running.contains_key(id))
             .filter(|id| !self.script_runs.streams.contains_key(id))
+            .filter(|id| !self.light_runs(*id))
             .filter(|id| self.script_runs.due.get(id).is_none_or(|&at| at <= now))
             .collect();
         for id in due {
@@ -463,15 +545,22 @@ impl App {
         if spec.path.is_empty() || !self.state.config.settings.tools.enabled {
             return;
         }
+        if self.web_plugin_of(id).is_some() {
+            return;
+        }
         if spec.held {
             // From an imported configuration and not allowed yet, whatever the switch says.
             tracing::debug!(%id, "script fence not started: held since the import");
             return;
         }
-        let path = std::path::PathBuf::from(&spec.path);
-        if !self.script_runs.streams.contains_key(&id) && crate::scripts::update_old_example(&path)
-        {
-            tracing::info!(%id, "script fence runs the updated example");
+        let path = self.script_file(&spec.path);
+        if let Some(plugin) = super::plugins::plugin_id(&spec.path) {
+            if path.is_file() {
+                self.start_light(id, plugin, &path);
+            } else {
+                tracing::debug!(%id, "script fence not started: its plugin is not installed or was taken down");
+            }
+            return self.push_tool_view(self.state.host_of(id));
         }
         if crate::scripts::is_streamable(&path) {
             self.start_stream(id, &spec, action);
@@ -546,10 +635,8 @@ impl App {
             let env = self.script_env(id, String::new());
             let tx = self.script_runs.tx.clone();
             let control = self.control.hwnd().0 as isize;
-            let started = crate::scripts::Stream::start(
-                std::path::Path::new(&spec.path),
-                &env,
-                move |event| {
+            let started =
+                crate::scripts::Stream::start(&self.script_file(&spec.path), &env, move |event| {
                     let _ = tx.send(ScriptMsg::Stream {
                         id,
                         start,
@@ -562,8 +649,7 @@ impl App {
                         0,
                         0,
                     );
-                },
-            );
+                });
             match started {
                 Ok(stream) => {
                     tracing::info!(%id, start, "script fence stream started");
@@ -595,12 +681,41 @@ impl App {
         }
     }
 
-    /// What a run of fence `id`'s script is told (environment variables).
-    fn script_env(&self, id: FenceId, action: String) -> crate::scripts::RunEnv {
-        let data_dir = self
-            .state
+    /// At start: removes the data folders (`scripts-data\<fence id>`) of script fences that are
+    /// gone, with what their scripts kept there, and the plugin fences' files
+    /// (`drop_files_of_deleted_fences`). A fence a layout or a snapshot still has keeps its folder. Nothing goes when
+    /// the configuration is a new one or came from a backup: the fences it lacks may come back.
+    pub(super) fn remove_left_script_data(&self) {
+        let s = &self.state;
+        if s.first_run
+            || s.recovered_from.is_some()
+            || !s.load_failures.is_empty()
+            || s.locked_config.is_some()
+        {
+            return;
+        }
+        self.drop_files_of_deleted_fences();
+        let Some(dir) = s
             .config_path_on_disk()
             .parent()
+            .map(|d| d.join("scripts-data"))
+        else {
+            return;
+        };
+        let keep: std::collections::HashSet<String> = (s.config.scripts.keys())
+            .chain(s.config.snapshots.iter().flat_map(|x| x.scripts.keys()))
+            .map(|id| id.to_string())
+            .collect();
+        for folder in crate::scripts::left_data_folders(&dir, &keep) {
+            let removed = std::fs::remove_dir_all(&folder);
+            tracing::info!(folder = ?folder.file_name(), ok = removed.is_ok(), "script data folder of a deleted fence removed");
+        }
+    }
+
+    /// What a run of fence `id`'s script is told (environment variables).
+    fn script_env(&self, id: FenceId, action: String) -> crate::scripts::RunEnv {
+        // A plugin's fence runs no script (`start_script_with`): its data is under plugins-data.
+        let data_dir = (self.state.config_path_on_disk().parent())
             .map(|d| d.join("scripts-data").join(id.to_string()))
             .unwrap_or_default();
         if let Err(e) = std::fs::create_dir_all(&data_dir) {
@@ -615,7 +730,33 @@ impl App {
                 "light"
             },
             fence: id.to_string(),
+            language: pecofence_core::i18n::language().tag(),
         }
+    }
+
+    /// PecoFence quits: the scripts that keep running get their input closed and up to a second
+    /// to end by themselves, so one that keeps files only while it runs can remove them. What still runs after that is ended as before.
+    pub(super) fn end_streams_at_quit(&mut self) {
+        const GRACE: std::time::Duration = std::time::Duration::from_millis(1000);
+        let streams = &mut self.script_runs.streams;
+        if streams.is_empty() {
+            return;
+        }
+        for (_, _, stream) in streams.values_mut() {
+            stream.close_input();
+        }
+        let asked = Instant::now();
+        while asked.elapsed() < GRACE && streams.values().any(|(_, _, s)| s.running()) {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let left = streams.values().filter(|(_, _, s)| s.running()).count();
+        tracing::info!(
+            scripts = streams.len(),
+            still_running = left,
+            waited_ms = asked.elapsed().as_millis() as u64,
+            "quit: streaming scripts asked to end; the ones still running are ended now"
+        );
+        streams.clear();
     }
 
     /// Ends the streaming scripts whose fence went, lost its script or had the tool switched
@@ -645,6 +786,20 @@ impl App {
                 self.script_runs.streams.remove(&id);
                 tracing::info!(%id, tool_on = on, "script fence stream ended by PecoFence");
             }
+        }
+        // A plugin whose fence went, shows something else now or had the tool switched off.
+        let gone: Vec<FenceId> = (self.light.running.keys())
+            .filter(|id| {
+                let f = self.state.fence(**id);
+                let spec = self.state.config.scripts.get(id);
+                !on || f.is_none_or(|f| f.tool != Some(FenceTool::Script))
+                    || spec.is_none_or(|s| super::plugins::plugin_id(&s.path).is_none())
+            })
+            .copied()
+            .collect();
+        for id in gone {
+            tracing::info!(%id, tool_on = on, "plugin fence stopped by PecoFence");
+            self.stop_light(id);
         }
     }
 
@@ -751,18 +906,43 @@ impl App {
         });
     }
 
-    /// A click on row `index` of script fence `fence`: what its parameters ask for.
-    pub(super) fn script_row_clicked(&mut self, fence: FenceId, index: usize) {
+    /// A click on row `index` of script fence `fence` (on its cell `cell` when the row is a row
+    /// of cells): what its parameters ask for. A slider's `fraction` (0 to 1) is added to its
+    /// action; `dragging` clicks (a slider held and moved) go to a script that keeps running
+    /// only.
+    pub(super) fn script_row_clicked(
+        &mut self,
+        fence: FenceId,
+        index: usize,
+        cell: usize,
+        fraction: Option<f32>,
+        dragging: bool,
+        double: bool,
+    ) {
         use pecofence_core::script_output::{
             RowAction, ScriptLine, TargetKind, click_allowed, parse,
         };
         let Some((Outcome::Done(text), at)) = self.script_runs.last.get(&fence).cloned() else {
             return;
         };
-        let Some(ScriptLine::Row(row)) = parse(&text).into_iter().nth(index) else {
-            return;
+        let mut row = match parse(&text).into_iter().nth(index) {
+            Some(ScriptLine::Row(row)) => row,
+            Some(ScriptLine::Cells(cells)) => match cells.into_iter().nth(cell) {
+                Some(row) => row,
+                None => return,
+            },
+            _ => return,
         };
-        if !row.clickable() {
+        if double {
+            // The second click of a double-click runs the row's `dblaction=` and nothing else.
+            let Some(action) = row.dbl_action.take() else {
+                return;
+            };
+            row.action = Some(RowAction::Script(action));
+            row.refresh = false;
+            row.todo = None;
+        }
+        if !row.clickable() || (dragging && !self.script_runs.streams.contains_key(&fence)) {
             return;
         }
         let script = self
@@ -770,7 +950,15 @@ impl App {
             .config
             .scripts
             .get(&fence)
-            .map(|s| std::path::PathBuf::from(&s.path));
+            .map(|s| self.script_file(&s.path));
+        // A plugin's rows start programs only when its installed plugin.json says so too.
+        let plugin_may_run = self
+            .state
+            .config
+            .scripts
+            .get(&fence)
+            .and_then(|s| super::plugins::plugin_id(&s.path))
+            .is_none_or(|id| self.plugin_may_run(id));
         let dir = script
             .as_deref()
             .and_then(|s| s.parent().map(|d| d.to_path_buf()));
@@ -797,11 +985,17 @@ impl App {
             Some(RowAction::Script(_)) => "action",
             None => "refresh",
         };
-        tracing::info!(%fence, index, what = kind, refresh = row.refresh, "script row clicked");
+        if dragging {
+            tracing::debug!(%fence, index, cell, ?fraction, "script slider dragged");
+        } else {
+            tracing::info!(%fence, index, cell, what = kind, refresh = row.refresh, "script row clicked");
+        }
         // A row starts a program only when the script's header allows it: what a script prints
-        // can be text from the network that reads as parameters.
+        // can be text from the network that reads as parameters. A cell of a row of cells and a
+        // `dblaction=` are rows of their own here and go through the same check.
         if let Some(action) = &row.action {
-            let allows = script.as_deref().is_some_and(crate::scripts::allows_run);
+            let allows =
+                plugin_may_run && script.as_deref().is_some_and(crate::scripts::allows_run);
             let target = match &opens {
                 Some((target, path)) if !allows => crate::scripts::target_kind(target, path),
                 _ => TargetKind::Other,
@@ -816,7 +1010,7 @@ impl App {
                     .unwrap_or_default();
                 tracing::info!(%fence, script, key = kind, "script row refused: the script's header does not allow starting programs");
                 if let Some(w) = self.window_for(fence) {
-                    w.show_script_row_refused(index);
+                    w.show_script_row_refused(index, cell);
                 }
                 return;
             }
@@ -874,10 +1068,15 @@ impl App {
                 let copied = pecofence_platform::clipboard::set_text(self.control.hwnd(), &text);
                 tracing::info!(%fence, copied, "script row: text copied");
                 if let Some(w) = self.window_for(fence) {
-                    w.show_script_copy_result(index, copied);
+                    w.show_script_copy_result(index, cell, copied);
                 }
             }
             Some(RowAction::Script(action)) => {
+                // A slider hands its position over after the action: `seek:0.3700`.
+                let action = match (row.slider, fraction) {
+                    (Some(_), Some(f)) => format!("{action}:{f:.4}"),
+                    _ => action,
+                };
                 // A to-do ticks at once; the script's next output has the final say.
                 if row.todo.is_some()
                     && let Some(flipped) = pecofence_core::note::toggle(&text, index)
@@ -921,49 +1120,6 @@ impl App {
         self.create_tool_fence(script, None, None, x, y);
     }
 
-    /// The weather example (the test script's `new-script-example`).
-    pub(super) fn new_script_example(&mut self, x: i32, y: i32) {
-        self.new_script_example_of(crate::scripts::Example::Weather, x, y);
-    }
-
-    /// 脚本栅栏 example `kind`: writes its script into the configuration's `scripts` folder
-    /// (kept when it is there already) and makes a fence for it.
-    pub(super) fn new_script_example_of(&mut self, kind: crate::scripts::Example, x: i32, y: i32) {
-        let Some(dir) = self
-            .state
-            .config_path_on_disk()
-            .parent()
-            .map(|d| d.join("scripts"))
-        else {
-            return;
-        };
-        let path = dir.join(kind.file_name());
-        if !path.is_file() {
-            let chinese = matches!(
-                pecofence_core::i18n::language(),
-                pecofence_core::i18n::Language::SimplifiedChinese
-                    | pecofence_core::i18n::Language::TraditionalChinese
-            );
-            let text = crate::scripts::example_file_text(kind, chinese);
-            let written = std::fs::create_dir_all(&dir).and_then(|_| std::fs::write(&path, text));
-            if let Err(e) = written {
-                tracing::warn!(error = %e, example = kind.name(), "writing the example failed");
-                return;
-            }
-        }
-        tracing::info!(example = kind.name(), "example script fence");
-        // Room for the example's rows (DIPs).
-        let (w, h) = match kind {
-            crate::scripts::Example::Weather => (280.0, 160.0),
-            crate::scripts::Example::GitHub => (360.0, 300.0),
-            crate::scripts::Example::Status => (280.0, 300.0),
-        };
-        let rect = self.place_new_tool(w, h, x, y);
-        let script = NewTool::Script(path.to_string_lossy().to_string());
-        // Titled as its menu line reads (a file is named `pc-status` in some languages).
-        self.create_tool_fence(script, Some(kind.label()), Some(rect), x, y);
-    }
-
     /// Fence menu: another script for fence `id` (runs it at once).
     pub(super) fn pick_script_for(&mut self, id: FenceId) {
         let owner = self.window_for(id).map(|w| w.hwnd());
@@ -996,8 +1152,10 @@ impl App {
             return false;
         }
         spec.path = path.to_string();
-        // A script the user chose himself is his own.
+        // A script the user chose himself is his own. What the fence's plugin before was given
+        // (its secrets, launcher items, folders, shortcuts) is none of the next one's.
         spec.held = false;
+        spec.settings.retain(|k, _| !k.starts_with("__"));
         tracing::info!(%id, "script fence script changed");
         self.state.mark_dirty();
         self.schedule_save();
@@ -1010,6 +1168,21 @@ impl App {
 
     /// 立即运行, `refresh=true` and `fence refresh`: runs fence `id`'s script now (after the
     /// run still going); a streaming script starts again.
+    /// Ends fence `id`'s streaming script (a plugin is updated, taken down or uninstalled).
+    pub(super) fn stop_script(&mut self, id: FenceId) {
+        self.stop_light(id);
+        if self.script_runs.streams.remove(&id).is_some() {
+            tracing::info!(%id, "script fence stream stopped");
+        }
+    }
+
+    /// Fence `id` runs a plugin from now on (升级为插件): its script's runs are forgotten.
+    pub(super) fn forget_script(&mut self, id: FenceId) {
+        self.stop_script(id);
+        self.script_runs.last.remove(&id);
+        self.script_runs.due.remove(&id);
+    }
+
     pub(super) fn refresh_script(&mut self, id: FenceId) {
         if self.script_runs.streams.remove(&id).is_some() {
             tracing::info!(%id, "script fence stream restarted");
@@ -1030,7 +1203,7 @@ impl App {
             return;
         };
         let started = std::process::Command::new("notepad.exe")
-            .arg(&spec.path)
+            .arg(self.script_file(&spec.path))
             .spawn();
         tracing::info!(%id, ok = started.is_ok(), "script fence: script opened in Notepad");
     }
@@ -1050,12 +1223,13 @@ impl App {
         // The path goes in between quotes. No file's path holds a quote, but one in an edited
         // or imported configuration can: it would end the argument early and hand Explorer the
         // rest as arguments of its own.
-        if spec.path.contains('"') {
+        let path = self.script_file(&spec.path).to_string_lossy().to_string();
+        if path.contains('"') {
             tracing::info!(%id, "script fence: its folder not opened, the path holds a quote");
             return;
         }
         let _ = std::process::Command::new("explorer.exe")
-            .raw_arg(format!("/select,\"{}\"", spec.path))
+            .raw_arg(format!("/select,\"{path}\""))
             .spawn();
     }
 
@@ -1247,9 +1421,17 @@ impl App {
             self.schedule_save();
         }
         self.push_note(fence);
+        // 设置 › 小工具's uninstall question names the notes with text: it gets the new count.
+        if self.settings.is_some() {
+            self.push_settings_state();
+        }
         // The window draws the stored note again, which has the editor's text by now.
         if let Some(w) = self.window_for(fence) {
             w.set_note_edit(None);
+        }
+        // 升级为插件 waits while a note is being edited.
+        if self.state.note_text(fence).is_some() {
+            self.migrate_tools(false);
         }
     }
 

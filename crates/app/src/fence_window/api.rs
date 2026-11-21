@@ -116,6 +116,11 @@ impl FenceWindow {
             is_inbox,
             expanded_h_px: expanded_h_px.max(1),
             icon_size,
+            zoom_icon: 1.0,
+            zoom_home: None,
+            zoom_far: None,
+            zoom_press: None,
+            zoom_anim: None,
             label_lines,
             items,
             tabs: Vec::new(),
@@ -180,7 +185,7 @@ impl FenceWindow {
             last_scroll: None,
             click_pending: None,
             suppress_dblclk: false,
-            up_on_dblclk: false,
+            dblclk_blank: false,
             navigate_folders: false,
             portal_folder: None,
             layout: ViewLayout::Icons,
@@ -193,6 +198,7 @@ impl FenceWindow {
             col_drag: None,
             is_portal: false,
             note: None,
+            web: None,
             note_edit: None,
             note_drag: false,
             todo_drag: None,
@@ -212,6 +218,10 @@ impl FenceWindow {
             script: None,
             script_rows: Vec::new(),
             script_hover: None,
+            slider_drag: None,
+            script_scroll: ScriptScrollState::default(),
+            quiet_glide: false,
+            script_images: Vec::new(),
             script_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             script_footer_form: "full",
             note_box_hover: None,
@@ -225,6 +235,7 @@ impl FenceWindow {
             filter_active: false,
             filter_tag: None,
             refuses_drops: false,
+            plugin_drop: None,
             label_w: 0.0,
             label_wide_w: 0.0,
             icons_pending: false,
@@ -245,6 +256,7 @@ impl FenceWindow {
             glass_dark_text: Cell::new(None),
             plate_halo: Cell::new(false),
             bare_dark_text: Cell::new(None),
+            light_text: Cell::new(None),
             content_look: Cell::new(None),
             backdrops: ctx.backdrops.borrow().clone(),
             backdrop_crop: None,
@@ -260,6 +272,7 @@ impl FenceWindow {
             rail_dip: 0.0,
             expanded_w_px: bounds.right - bounds.left,
             column_collapsed: false,
+            compact_collapsed: false,
             _target: target,
             root,
             idle_layer,
@@ -308,6 +321,7 @@ impl FenceWindow {
             cut: HashSet::new(),
             wheel_zoom_accum: 0,
             wheel_tab_accum: 0,
+            wheel_plugin_accum: (None, 0),
             tab_hover_switch: None,
             tab_hover_quick: false,
             tab_strip_left: None,
@@ -520,11 +534,37 @@ impl FenceWindow {
     pub fn rect(&self) -> RECT {
         // During a display change's pass: where the window is about to glide to.
         if let Ok(guard) = self.view.try_borrow()
-            && let Some(r) = guard.as_ref().and_then(|v| v.pending_place)
+            && let Some(r) = guard.as_ref().and_then(|v| v.pending_place.or(v.zoom_home))
         {
+            // A zoomed fence is where it came from (`fence_window/zoom.rs`): the zoom is a
+            // moment's look, not a place the layout, the other fences or a save may use.
             return r;
         }
         self.window.window_rect()
+    }
+
+    /// The app has given the window a place it is not at yet: a display change's move that
+    /// waits (`defer_moves`), or a glide on its way there.
+    pub fn move_pending(&self) -> bool {
+        self.view.try_borrow().is_ok_and(|g| {
+            g.as_ref()
+                .is_some_and(|v| v.pending_place.is_some() || v.glide.is_some())
+        })
+    }
+
+    /// Ends a zoom at once before the app places, sizes or measures this fence
+    /// (`fence_window/zoom.rs`), so nothing starts from, measures or saves the zoomed rect.
+    pub fn end_zoom(&self) {
+        let hwnd = self.hwnd();
+        let home = self
+            .view
+            .borrow_mut()
+            .as_mut()
+            .and_then(|v| v.end_zoom_now());
+        if let Some(r) = home {
+            let _ =
+                window::set_window_bounds(hwnd, r.left, r.top, r.right - r.left, r.bottom - r.top);
+        }
     }
 
     /// A display change places every fence in one pass and reads the others' rects while it
@@ -565,7 +605,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} idle_opacity={:.2} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={} rolled_caption={:?}",
+            "title={:?} idle_opacity={:.2} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} script_cells={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={} rolled_caption={:?}",
             v.title,
             v.idle_layer.opacity(),
             v.title_count,
@@ -622,7 +662,19 @@ impl FenceWindow {
                     .map(|&(line, _, r)| (line, r))
                     .collect::<Vec<_>>(),
             ),
-            dump_rects(&v.script_rows),
+            // By row (as before rows of cells), and by row * 100 + cell.
+            dump_rects(
+                &v.script_rows
+                    .iter()
+                    .map(|&(row, _, r)| (row, r))
+                    .collect::<Vec<_>>()
+            ),
+            dump_rects(
+                &v.script_rows
+                    .iter()
+                    .map(|&(row, cell, r)| (row * 100 + cell, r))
+                    .collect::<Vec<_>>()
+            ),
             v.off_desktop,
             v.desktop_tip,
             v.filter_tag,
@@ -636,8 +688,9 @@ impl FenceWindow {
             v.peek_faded,
             v.clock_date,
             v.clock_time,
-            // What a rolled-up clock shows in its title row in place of its name (#175).
-            v.rolled_clock_caption(),
+            // What a rolled-up clock or plugin shows in its title row in place of its name
+            // (#175).
+            v.rolled_caption(),
         )
     }
 
@@ -794,6 +847,7 @@ impl FenceWindow {
     }
 
     fn place_window(&self, r: RECT) {
+        self.end_zoom();
         let cur = self.window.window_rect();
         let hwnd = self.hwnd();
         let deferred = self.view.borrow_mut().as_mut().is_some_and(|v| {
@@ -826,6 +880,7 @@ impl FenceWindow {
     /// A tab split/undo supplies complete geometry. Settle any hover expansion first
     /// so its old tween cannot pull the detached or restored window back on later frames.
     pub fn restore_geometry(&self, mut rect: RECT, rolled: bool, expanded_h: i32) {
+        self.end_zoom();
         // 像桌面一样排列 places the window itself (a display change or a restore lands here).
         if self.is_desktop_arranged() {
             self.arrange_desktop(true);
@@ -857,12 +912,14 @@ impl FenceWindow {
             v.capped_h_px = None;
             v.expanded_w_px = rect.right - rect.left;
             v.column_collapsed = rolled && v.tabs_on_rail();
+            v.compact_collapsed = rolled && v.compacts();
             v.rail_dip = v.measure_rail_w();
             v.roll_t = Tween::at(rolled as u8 as f32, Instant::now());
             v.arm_clock();
             let _ = v.motion.stop(&v.content_panel.visual, Prop::Opacity);
             v.content_panel.visual.set_opacity(1.0);
             v.content_panel.visual.set_visible(!rolled);
+            v.web_shown(desktop::is_visible(v.hwnd));
             if rolled {
                 // `rect` is the expanded rect: the title row sits at its top, or at its bottom
                 // for a fence that last opened upward.
@@ -872,7 +929,7 @@ impl FenceWindow {
                 } else {
                     rect.bottom = rect.top + rolled_h;
                 }
-                if v.column_collapsed {
+                if v.narrowed() {
                     rect.right = rect.left + v.rolled_w_px();
                 }
             } else {
@@ -1005,7 +1062,7 @@ impl FenceWindow {
             v.scroll_anim = None;
             v.scroll_y = 0.0;
             // A double-click under way began in the folder just left: it does not go up.
-            v.up_on_dblclk = false;
+            v.dblclk_blank = false;
             v.select_after_nav = select.map(|id| (id, v.focus_visible));
             v.focus_first_after_nav = select.is_none() && v.focus_visible;
             if !v.rolled_up
@@ -1813,6 +1870,11 @@ impl FenceWindow {
         self.with_view(|v| v.refuses_drops = on);
     }
 
+    /// What the plugin fence shown takes dropped, or nothing.
+    pub fn set_plugin_drop(&self, takes: Option<PluginDrops>) {
+        self.with_view(|v| v.plugin_drop = takes);
+    }
+
     /// The fence whose items this window currently shows (host or active tab).
     pub fn active_fence(&self) -> FenceId {
         self.view
@@ -1914,18 +1976,18 @@ impl FenceWindow {
     }
 
     /// A script's copy action uses a short, non-activating tip beside the pointer.
-    pub fn show_script_copy_result(&self, index: usize, copied: bool) {
+    pub fn show_script_copy_result(&self, index: usize, cell: usize, copied: bool) {
         let text = if copied {
             pecofence_core::i18n::text("已复制")
         } else {
             pecofence_core::i18n::text("复制失败，请重试")
         };
-        self.show_script_row_tip(index, text, 2000);
+        self.show_script_row_tip((index, cell), text, 2000);
     }
 
     /// A click on a script row that would start a program, in a script whose header does not
     /// allow that: the tip beside the pointer says so and names the line to add.
-    pub fn show_script_row_refused(&self, index: usize) {
+    pub fn show_script_row_refused(&self, index: usize, cell: usize) {
         // The line to add goes on a line of its own, so the tip does not break it in two.
         let text = pecofence_core::i18n::format(
             "这个脚本不能启动程序。要允许，在脚本开头的注释里加上：{0}",
@@ -1933,15 +1995,44 @@ impl FenceWindow {
         );
         // Long enough to read both sentences.
         let secs = pecofence_platform::sysparams::message_duration_secs().max(8);
-        self.show_script_row_tip(index, &text, secs * 1000);
+        self.show_script_row_tip((index, cell), &text, secs * 1000);
+    }
+
+    /// Where row `row` (cell `cell`) of the script fence shown is drawn now, on screen (px): a
+    /// plugin's one-line box opens over it. None when it is not in view.
+    pub fn script_row_screen_rect(&self, row: usize, cell: usize) -> Option<RECT> {
+        let guard = self.view.borrow();
+        let v = guard.as_ref()?;
+        let r = v
+            .script_rows
+            .iter()
+            .find(|(r, c, _)| *r == row && *c == cell)?
+            .2;
+        let win = window::window_rect(v.hwnd);
+        let (x, y, scale) = (win.left + v.content_x, win.top + v.content_y, v.scale());
+        let px = |dip: f32| (dip * scale).round() as i32;
+        Some(RECT {
+            left: x + px(r[0]),
+            top: y + px(r[1]),
+            right: x + px(r[2]),
+            bottom: y + px(r[3]),
+        })
+    }
+
+    /// The script row and cell under screen point (x, y), if any (a right-click's row).
+    pub fn script_row_at_screen(&self, x: i32, y: i32) -> Option<(usize, usize)> {
+        let guard = self.view.borrow();
+        let v = guard.as_ref()?;
+        let c = window::screen_to_client(v.hwnd, pecofence_platform::POINT { x, y });
+        v.script_row_at(c.x, c.y)
     }
 
     /// `text` in a non-activating tip beside the pointer for `ms`, as the result of a click
-    /// on script row `index`.
-    fn show_script_row_tip(&self, index: usize, text: &str, ms: u32) {
+    /// on script row `at` (its row and cell).
+    fn show_script_row_tip(&self, at: (usize, usize), text: &str, ms: u32) {
         self.with_view(|v| {
             v.hide_tip();
-            v.tip_target = Some(TipTarget::ScriptRow(index));
+            v.tip_target = Some(TipTarget::ScriptRow(at.0, at.1));
             let (x, y, above) = pointer_tip_place(v.scale());
             v.show_tip_text_at(text, x, y, above);
             window::set_timer(v.hwnd, TIMER_TIP_HIDE, ms);
@@ -1990,17 +2081,40 @@ impl FenceWindow {
                 if script.is_none() {
                     v.script_rows.clear();
                     v.script_hover = None;
+                    v.slider_drag = None;
+                    v.script_scroll = ScriptScrollState::default();
                 }
                 // The first result takes the place of 「正在运行…」 with the content's
                 // cross-fade (83 ms, as a change of view), not in one frame.
                 let first_result = v.script.as_ref().is_some_and(|s| s.quiet)
                     && script.as_ref().is_some_and(|s| !s.quiet);
+                // New rows of a fence that shows rows already: only the content is drawn
+                // again, as a clock's tick (a plugin clock's rows change every second).
+                let rows_only = v.script.is_some() && script.is_some();
+                let caption_changed = v.script.as_ref().and_then(|s| s.caption.as_deref())
+                    != script.as_ref().and_then(|s| s.caption.as_deref());
                 v.script = script;
                 if first_result && v.content_swap_shows() {
                     tracing::debug!(fence = %v.active, "script fence: the first result fades in");
                     v.begin_content_swap(0);
                 }
-                let _ = v.redraw();
+                if !rows_only {
+                    let _ = v.redraw();
+                } else if !v.rolled_up {
+                    let _ = v.redraw_content();
+                } else if caption_changed {
+                    // Rolled up, the caption is the title row (feedback #175).
+                    let _ = v.redraw_chrome_only();
+                }
+                if caption_changed
+                    && v.compact_collapsed
+                    && v.roll_anim.is_none()
+                    && !v.peeking
+                    && v.compact_w_px() != window::window_rect_size(v.hwnd).0
+                {
+                    tracing::debug!(fence = %v.fence_id, "plugin caption: the rolled row takes its width");
+                    v.queue.push(Command::RolledWidthStale(v.fence_id));
+                }
             }
         });
     }
@@ -2112,6 +2226,33 @@ impl FenceWindow {
             .is_some_and(|v| v.roll_target() || v.peeking)
     }
 
+    /// What the native clock's tick asks before it draws: the content shows (not rolled up,
+    /// the window not hidden).
+    pub fn shows_content(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| {
+            !v.rolled_up && !v.retired && pecofence_platform::desktop::is_visible(v.hwnd)
+        })
+    }
+
+    /// Rolled up, the title row shows the plugin's `view.caption` (feedback #175): the plugin
+    /// still counts as shown, so a clock's caption keeps the time.
+    pub fn shows_rolled_caption(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| {
+            v.rolled_up
+                && !v.retired
+                && v.script.as_ref().is_some_and(|s| s.caption.is_some())
+                && pecofence_platform::desktop::is_visible(v.hwnd)
+        })
+    }
+
+    /// The content area in DIPs.
+    pub fn content_dips(&self) -> (f32, f32) {
+        self.view.borrow().as_ref().map_or((0.0, 0.0), |v| {
+            let (w, h) = v.content_size_px();
+            (w as f32 / v.scale(), h as f32 / v.scale())
+        })
+    }
+
     pub fn dpi(&self) -> u32 {
         self.view.borrow().as_ref().map(|v| v.dpi).unwrap_or(96)
     }
@@ -2120,9 +2261,14 @@ impl FenceWindow {
     /// item at the current icon size, and at the size it still shows until that one arrives.
     pub fn needed_icons(&self, icons: &IconCache, out: &mut HashSet<String>) {
         if let Some(v) = self.view.borrow().as_ref() {
-            let px = crate::layout::icon_px(v.layout, v.icon_size, v.dpi);
+            let px = (v.icon_fetch_dip() * (v.dpi as f32 / 96.0)).round() as u32;
+            // A zoomed fence goes back to its own size: those pictures stay too.
+            let own = crate::layout::icon_px(v.layout, v.icon_size, v.dpi);
             for item in &v.items {
                 out.insert(icons.draw_key(&item.icon_key, px));
+                if v.zoom_busy() && own != px {
+                    out.insert(icons.draw_key(&item.icon_key, own));
+                }
                 if item.icon.is_some() && item.icon_px != px {
                     out.insert(item.draw_key(icons));
                 }
@@ -2148,6 +2294,7 @@ impl FenceWindow {
 
     /// Animates to the rolled/expanded state.
     pub fn set_rolled(&self, rolled: bool) {
+        self.end_zoom();
         self.with_view(|v| {
             v.peeking = false;
             if v.rolled_up == rolled && v.roll_anim.is_none() {
@@ -2279,17 +2426,18 @@ impl FenceWindow {
         r
     }
 
-    /// Width the window expands to while it is collapsed to its left tab column (None
-    /// otherwise: the window has its expanded width).
+    /// Width the window expands to while it is collapsed to its left tab column or rolled to
+    /// a compact title row (None otherwise: the window has its expanded width).
     pub fn collapsed_expanded_width_px(&self) -> Option<i32> {
         let guard = self.view.try_borrow().ok()?;
         let v = guard.as_ref()?;
-        v.column_collapsed.then_some(v.expanded_w_px)
+        v.narrowed().then_some(v.expanded_w_px)
     }
 
-    /// A rolled fence whose tabs changed (added, removed, renamed, or 标签栏位置 switched)
-    /// takes its rolled size again: the left tab column it is collapsed to, or its title row at
-    /// the expanded width. Returns the new window rect when it changed.
+    /// A rolled fence whose tabs changed (added, removed, renamed, or 标签栏位置 switched), or
+    /// whose name, count or `rollUp.compactRolled` changed, takes its rolled size again: the
+    /// left tab column it is collapsed to, its title row as wide as it needs, or its title row
+    /// at the expanded width. Returns the new window rect when it changed.
     pub fn settle_rolled_size(&self) -> Option<RECT> {
         let (w, h, upward) = {
             let mut guard = self.view.borrow_mut();
@@ -2301,12 +2449,15 @@ impl FenceWindow {
             let w = if v.tabs_on_rail() {
                 v.rail_dip = v.measure_rail_w();
                 v.rail_px()
-            } else if v.column_collapsed {
+            } else if v.compacts() {
+                v.compact_w_px()
+            } else if v.narrowed() {
                 v.expanded_w_px
             } else {
                 cur_w
             };
             v.column_collapsed = v.tabs_on_rail();
+            v.compact_collapsed = v.compacts();
             (w, v.rolled_h_px(), v.row_bottom)
         };
         let r = self.rect();
@@ -2347,6 +2498,7 @@ impl FenceWindow {
     /// there. False when the caller should place it at once: animations off, a hidden window,
     /// another size, or 2 px or less to go.
     pub fn glide_to(&self, to: RECT) -> bool {
+        self.end_zoom();
         self.start_glide(to, motion::FAST, Curve::Decelerate, true)
     }
 
@@ -2758,6 +2910,7 @@ impl FenceWindow {
     /// the final geometry either way, so the state persists it immediately. The borrow is
     /// released before SetWindowPos because WM_SIZE re-enters the handler.
     pub fn apply_height(&self, height_px: i32, animate: bool) -> RECT {
+        self.end_zoom();
         if self.is_desktop_arranged() {
             self.arrange_desktop(false);
             return self.window.window_rect();
@@ -2878,6 +3031,13 @@ impl FenceWindow {
             })
         });
         picked.unwrap_or(Theme::for_mode(mode).text_primary)
+    }
+
+    /// Whether the content is drawn in light text now (on a dark plate or a dark wallpaper):
+    /// the `pf.theme` of a plugin in this fence is `dark` then.
+    pub fn draws_light_text(&self, mode: pecofence_render::ThemeMode) -> bool {
+        let picked = self.view.borrow().as_ref().map(|v| v.material_foreground());
+        picked.unwrap_or(Theme::for_mode(mode)).text_primary.r > 0.5
     }
 
     /// The title of `fence` as it is drawn, for its name box (`rename::begin_inline_rename`):

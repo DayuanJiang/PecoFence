@@ -1,0 +1,14 @@
+{
+  "id": "daily-log",
+  "version": "1.0.0",
+  "api": 2,
+  "layer": "light",
+  "name": { "en": "Daily log", "zh-CN": "每日记录" },
+  "description": {
+    "en": "Write a line, press Ctrl+Enter: it goes into today's Markdown file in a folder you pick, with the time.",
+    "zh-CN": "写一句话，按 Ctrl+Enter，它就带着时间记进你选的文件夹里当天的 Markdown 文件。"
+  },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": { "folders": "readwrite" }
+}

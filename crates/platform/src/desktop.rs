@@ -82,6 +82,14 @@ pub fn ex_style(hwnd: HWND) -> u32 {
     unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) as u32 }
 }
 
+/// Sets a window's extended style (`GWL_EXSTYLE`), also of another process's window.
+pub fn set_ex_style(hwnd: HWND, ex: u32) {
+    // SAFETY: plain FFI call on a window handle.
+    unsafe {
+        let _ = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex as isize);
+    }
+}
+
 pub fn is_visible(hwnd: HWND) -> bool {
     // SAFETY: plain FFI call.
     unsafe { IsWindowVisible(hwnd).as_bool() }

@@ -425,7 +425,8 @@ pub(super) fn parse_fence_prop(
         "noteText" => FenceProp::NoteText(as_str(&["<text>"])?.replace("\r\n", "\n")),
         "scriptPath" => {
             let path = as_str(&["<full path of a script>"])?;
-            if !std::path::Path::new(path).is_file() {
+            // `plugin:<id>`: an installed plugin (a test or a script makes plugin fences so).
+            if super::plugins::plugin_id(path).is_none() && !std::path::Path::new(path).is_file() {
                 return Err(IpcError::invalid_value(
                     format!("no such script: {path}"),
                     &["<full path of an existing .ps1, .py, .cmd, .bat, .js or .exe>"],
@@ -601,6 +602,8 @@ impl App {
         if let Some(w) = self.fences.get(&host) {
             w.set_locked(on);
         }
+        // A rolled row as wide as it needs makes room for the lock glyph, or gives it back.
+        self.apply_auto_height(host);
         self.schedule_save();
     }
 

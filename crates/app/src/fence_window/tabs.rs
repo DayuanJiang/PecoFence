@@ -176,6 +176,21 @@ pub(super) fn rail_len_for(n: usize, bottom: f32) -> f32 {
     RAIL_TOP + n * RAIL_ROW_H + (n - 1.0).max(0.0) * TAB_GAP + bottom
 }
 
+/// How far 标题对齐 moves the rows of a left tab column (DIPs) from the top of their room
+/// `start..end`: the resting rows (`span` long) centred on the column `len` long or at its end,
+/// never into the room's ends, and no further than the rows with a merge gap open (`gapped`
+/// long) still fit; back to the top as the fence rolls up (`roll_t` 0 open, 1 rolled).
+pub(super) fn rail_align_shift(
+    align: pecofence_core::TitleAlign,
+    len: f32,
+    (start, end): (f32, f32),
+    (span, gapped): (f32, f32),
+    roll_t: f32,
+) -> f32 {
+    let at = pecofence_render::fence_chrome::aligned_x(align, len, start, end, span) - start;
+    at.min((end - start - gapped).max(0.0)) * (1.0 - roll_t.clamp(0.0, 1.0))
+}
+
 /// Lays the tab strip out along the title row: `natural` are the pills' natural widths (DIPs,
 /// already clamped), `available` the room between `TAB_LEFT` and the chevron zone. A phantom
 /// pill of `TAB_MERGE_GAP_W` at slot `gap` takes part in the proportional shrink and the
@@ -463,8 +478,8 @@ impl FenceViewState {
         let (start, end) = self.tab_strip_bounds();
         let natural = self.tab_natural_widths();
         if self.tabs_on_rail() {
-            // The column fills from its top; 标题对齐 only moves a title row. A merge opens
-            // one row there.
+            // The column fills from its top (标题对齐 may move the rows down, below). A merge
+            // opens one row there.
             let shift = start - TAB_LEFT;
             let room = (end - start).max(0.0);
             // The rows shrink as far as a caption needs (`RAIL_ROW_MIN`). A column still too
@@ -503,6 +518,27 @@ impl FenceViewState {
                     .collect();
             }
             self.tab_scroll.set(0.0);
+            // 标题对齐 moves the rows along the column as it moves a title row's strip (feedback
+            // #192): centred on the column, or at its end. Measured without the merge gap, so
+            // opening it never moves the slots under the pointer; a column that collapses takes
+            // its rows back to its top as it rolls up.
+            let shift = shift
+                + match self.behavior.title_align.get() {
+                    pecofence_core::TitleAlign::Left => 0.0,
+                    align => {
+                        let resting = tab_strip_rects_with(&natural, None, room);
+                        let span = resting.last().map_or(0.0, |(y, h)| y + h - TAB_LEFT);
+                        let gapped = tab_strip_span(&natural, gap.map(|g| (g, RAIL_ROW_H)));
+                        let len = self.chrome_panel.size_px().1 as f32 / self.scale();
+                        rail_align_shift(
+                            align,
+                            len,
+                            (start, end),
+                            (span, gapped),
+                            self.roll_t.value_at(Instant::now()),
+                        )
+                    }
+                };
             return tab_strip_rects_with(&natural, gap.map(|g| (g, RAIL_ROW_H)), room)
                 .into_iter()
                 .map(|(y, h)| (y + shift, h))
@@ -749,13 +785,70 @@ impl FenceViewState {
         }
     }
 
-    /// Window width (device px) of a rolled fence: its expanded width, or the left column's.
+    /// Window width (device px) of a rolled fence: its expanded width, the left column's, or
+    /// with `rollUp.compactRolled` the width its title row needs.
     pub(super) fn rolled_w_px(&self) -> i32 {
         if self.tabs_on_rail() {
             self.rail_px()
+        } else if self.compacts() {
+            self.compact_w_px()
         } else {
             self.expanded_w_px
         }
+    }
+
+    /// The window is narrower than the fence it opens to: collapsed to its left tab column, or
+    /// rolled to the width of its title row.
+    pub(super) fn narrowed(&self) -> bool {
+        self.column_collapsed || self.compact_collapsed
+    }
+
+    /// `rollUp.compactRolled` applies: rolled up, the title row (no left tab column) is only as
+    /// wide as it needs (GitHub #242).
+    pub(super) fn compacts(&self) -> bool {
+        self.behavior.compact_rolled.get() && !self.tabs_on_rail()
+    }
+
+    /// Width (device px) of a rolled title row that shows all of it: the name (or the time of a
+    /// clock) with its glyphs, or every tab at its natural width, then the item count, the lock
+    /// glyph and the chevron where they show; never wider than the fence opens to.
+    pub(super) fn compact_w_px(&self) -> i32 {
+        let hide = self.behavior.hide_count_and_chevron.get();
+        let count = if hide || !self.shows_rolled_count() {
+            0.0
+        } else {
+            self.rolled_count_room()
+        };
+        let lock = self.deco.lock_w();
+        let dip = if self.tabs.len() > 1 {
+            let span = tab_strip_span(&self.tab_natural_widths(), None);
+            let end = if hide && lock == 0.0 {
+                TAB_LEFT
+            } else {
+                TAB_RIGHT_RESERVE + lock + count
+            };
+            TAB_LEFT + span + end
+        } else {
+            // A clock's rolled row shows the time, a plugin's its caption: measured here before
+            // a roll-up has started too, so the width does not jump when it lands.
+            let title = self
+                .caption_when_rolled()
+                .unwrap_or_else(|| self.title.clone());
+            let row = self.chrome.lone_title_width(
+                &title,
+                self.title_count.as_deref(),
+                self.style.title_size,
+                self.deco,
+            );
+            // The count shows only where the row keeps 64 DIPs for the name and 44 for the
+            // chevron beside it (`header_count_width`).
+            if count > 0.0 {
+                row.max(self.deco.title_x() + 64.0 + 44.0 + lock) + count
+            } else {
+                row
+            }
+        };
+        ((dip * self.scale()).ceil() as i32).clamp(1, self.expanded_w_px.max(1))
     }
 
     /// `rail_w` in device pixels: where the content starts once laid out (`content_x`).

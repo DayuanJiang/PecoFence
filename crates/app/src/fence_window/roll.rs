@@ -334,7 +334,7 @@ impl FenceViewState {
         if !(self.roll_target() || self.peeking) {
             return (0, 0);
         }
-        let right = if self.column_collapsed {
+        let right = if self.narrowed() {
             (rest.left + self.expanded_w_px - rest.right).max(0)
         } else {
             0
@@ -794,15 +794,17 @@ impl FenceViewState {
         let cur = window::window_rect(self.hwnd);
         let (cur_w, cur_h) = (cur.right - cur.left, cur.bottom - cur.top);
         // A fence with a left tab column collapses to the column (its title bar) rather than
-        // to a title row: the width moves with the height.
-        let to_w = self.tabs_on_rail().then(|| {
+        // to a title row, and with `rollUp.compactRolled` the title row is only as wide as it
+        // needs: the width moves with the height. Opening goes back to the width it keeps.
+        let to_w = (self.tabs_on_rail() || self.compacts() || self.narrowed()).then(|| {
             if rolled {
                 self.rolled_w_px()
             } else {
                 self.expanded_w_px
             }
         });
-        self.column_collapsed = rolled && to_w.is_some();
+        self.column_collapsed = rolled && self.tabs_on_rail();
+        self.compact_collapsed = rolled && self.compacts();
         self.capped_h_px = None;
         let to_h = if rolled {
             self.rolled_h_px()
@@ -854,6 +856,9 @@ impl FenceViewState {
             );
         } else {
             self.rolled_up = false;
+            if self.script.is_some() {
+                self.queue.push(Command::ToolShownChanged);
+            }
             // Rasterise the content once at its final size; the growing HWND reveals it.
             let w = to_w.unwrap_or_else(|| self.chrome_panel.size_px().0);
             let top = self.content_y;
@@ -863,6 +868,8 @@ impl FenceViewState {
             self.content_panel
                 .visual
                 .set_offset(self.content_x as f32, top as f32, 0.0);
+            self.layout_web();
+            self.web_shown(true);
             if !mid_roll {
                 self.content_panel.visual.set_opacity(0.0);
             }
@@ -904,15 +911,18 @@ impl FenceViewState {
         if self.tabs.len() > 1 && self.tab_drag.is_none() && !self.tabs_on_rail() {
             self.sync_tab_slides(&prev, now);
         }
-        // 时钟与日期 (feedback #175): the title row swaps the name for the time, or back; the new
-        // caption fades in as a folder's name does, and the clock ticks at what it now shows.
-        if self.clock.is_some() {
+        // 时钟与日期 or a plugin with a caption (feedback #175): the title row swaps the name for
+        // the time (the caption), or back; the new text fades in as a folder's name does, and
+        // the clock ticks at what it now shows.
+        if self.caption_when_rolled().is_some() {
             if self.motion.enabled() {
                 self.chrome_fades.snap(ChromeKey::TitleSwap, 1.0, now);
                 self.chrome_fades.set(true, ChromeKey::TitleSwap, 0.0, now);
             }
-            self.arm_clock();
-            tracing::debug!(fence = %self.fence_id, rolled, "clock: the title row shows the {}", if rolled { "time" } else { "name" });
+            if self.clock.is_some() {
+                self.arm_clock();
+            }
+            tracing::debug!(fence = %self.fence_id, rolled, "rolled caption: the title row shows the {}", if rolled { "caption" } else { "name" });
         }
         self.frames.request();
     }

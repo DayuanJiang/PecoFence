@@ -6,7 +6,7 @@
 use crate::anchor::{self, AnchorCell};
 use crate::commands::{
     Command, CommandQueue, DesktopDrop, TransferMode, WM_APP_DESKTOP_SHAPE, WM_APP_FADE_DONE,
-    WM_APP_SET_VISIBLE, WM_APP_TAB_RAIL, WM_APP_TAB_SWAP_DONE,
+    WM_APP_SET_VISIBLE, WM_APP_TAB_RAIL, WM_APP_TAB_SWAP_DONE, WM_APP_ZOOM_PRESS,
 };
 use crate::icons::{IconCache, Lookup};
 use crate::layout::{
@@ -30,6 +30,7 @@ use pecofence_platform::window::{
     self, MessageHandler, StandardCursor, Window, WindowBuilder, WindowClass, style,
 };
 use pecofence_platform::{HWND, RECT, desktop, dwm, hotkey, monitors, msg};
+use pecofence_plugin_host::view as host_view;
 use pecofence_render::fence_chrome::{
     Backdrop, BackdropCrop, ContentDraw, EmptyAction, FenceChrome, FenceStyle, GroupHeaderDraw,
     HeaderColumn, ItemCell, RAIL_BOTTOM, RAIL_COLLAPSED_BOTTOM, RAIL_ROW_H, RAIL_ROW_INSET,
@@ -87,12 +88,14 @@ mod tabs;
 #[cfg(test)]
 mod tests;
 mod tooltip;
+mod web;
 mod window_drag;
+mod zoom;
 
 pub use api::FenceWindow;
 pub use dnd::{filter_folder_paths, shell_drop_landed};
 pub use frame::FrameHandle;
-pub use state::{DesktopArea, WindowsIconPlaces};
+pub use state::{DesktopArea, PluginDrops, WindowsIconPlaces};
 
 use self::consts::*;
 use self::dnd::*;
@@ -166,6 +169,8 @@ pub struct Behavior {
     pub switch_tab_on_hover: std::cell::Cell<bool>,
     /// No rolled item count and no roll chevron (`rollUp.hideCountAndChevron`).
     pub hide_count_and_chevron: std::cell::Cell<bool>,
+    /// A rolled fence only as wide as its title row needs (`rollUp.compactRolled`).
+    pub compact_rolled: std::cell::Cell<bool>,
     /// `SPI_GETWHEELSCROLLLINES`: rows per wheel notch; `u32::MAX` (`WHEEL_PAGESCROLL`) = one
     /// viewport, 0 = the wheel does not scroll. Refreshed on WM_SETTINGCHANGE.
     pub wheel_lines: std::cell::Cell<u32>,
@@ -185,6 +190,13 @@ pub struct Behavior {
     /// Fence windows moved down (or up) out of an expanded neighbour's way
     /// (`rollUp.pushNeighbors`). Owned by the App's push pass (`app/push.rs`).
     pub pushed: std::cell::RefCell<Vec<Pushed>>,
+    /// 双击空白放大 is on (`zoom.enabled`).
+    pub zoom_enabled: std::cell::Cell<bool>,
+    /// The fence double-clicked into the zoomed state (`fence_window/zoom.rs`). Only one at a
+    /// time: a fence that starts zooming claims it and the others close (see
+    /// `App::on_frame`). The push pass holds this window still, so a zoom never moves another
+    /// fence.
+    pub zoom_owner: std::cell::RefCell<Option<FenceId>>,
     /// For each fence window with 向上展开: the room above its bottom edge and below its top
     /// edge it may open into, the fences there sliding out of its way or not (`app/push.rs`).
     /// With `rollUp.pushNeighbors` also for every other fence that pushes: the room below its
@@ -586,6 +598,9 @@ pub struct ScriptView {
     /// The first run has not ended: the empty body says 「正在运行…」 in place of the "printed
     /// no text" hint.
     pub quiet: bool,
+    /// A light plugin's `view.caption`: the title row shows it in place of the name while the
+    /// fence is rolled up (a clock's time, feedback #175).
+    pub caption: Option<String>,
 }
 
 /// A note while its editor is open (`crate::note_edit`): the text as it stands in the
@@ -613,6 +628,102 @@ pub struct ScriptRowView {
     pub clickable: bool,
     /// A click opens a URL or a file (an arrow shows on hover).
     pub opens: bool,
+    /// A double-click has an action of its own (`dblaction=`).
+    pub dbl: bool,
+    /// A picture (`image=`) in place of text, and how tall it is at most (DIPs).
+    pub image: Option<String>,
+    pub image_height: f32,
+    /// `hidden=true`: nothing is drawn and the row takes no room.
+    pub hidden: bool,
+    /// `pane=<key>`: the rows above this one stay in place, the rows below scroll (a new key
+    /// brings them back to their top).
+    pub pane: Option<String>,
+    /// `follow=<key>`: the row after this one is kept in the middle of the scrolling rows, each
+    /// time the key changes.
+    pub follow: Option<String>,
+    /// A plugin row's `size` (`small` to `huge`, or `fit`), its narrow form and bold.
+    pub size: Option<String>,
+    pub short: Option<String>,
+    pub bold: bool,
+    /// A row of cells side by side (a `::` line): the fields above are not used then.
+    pub cells: Vec<ScriptCellView>,
+    /// A plugin's row: its pictures are limited in size, and a view of plugin rows with no text
+    /// shows no hint.
+    pub plugin: bool,
+    /// A plugin row's parts (`pecofence_plugin_host::view::Row`): its id (clicks go to the
+    /// plugin with it), pieces of one line, the text or picture blurred until the pointer is on
+    /// it, a bar under the text, a chart and a drawing.
+    pub id: Option<String>,
+    pub spans: Vec<host_view::Span>,
+    pub blur: bool,
+    pub progress: Option<f32>,
+    pub chart: Option<host_view::Chart>,
+    pub canvas: Option<Rc<host_view::Canvas>>,
+    /// A plugin row's input: `note` (the fence is a note), `line` (a one-line box) or `text` (a
+    /// box of several lines).
+    pub input: Option<host_view::Input>,
+    /// A plugin row's entries for a right-click on it, its look under the pointer (or
+    /// `"event"`: the plugin hears the pointer come and go), and whether the wheel over it is
+    /// the plugin's.
+    pub menu: Vec<host_view::MenuItem>,
+    pub hover: Option<host_view::Hover>,
+    pub wheel: bool,
+    /// A plugin row's drag, as the app checked it: a press that leaves the drag threshold
+    /// starts it, and the plugin hears `dragend`.
+    pub drag: Option<RowDrag>,
+}
+
+/// What a drag of a plugin row carries out.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RowDrag {
+    /// A data file, by the path the plugin named, and the folder it must really be in (the
+    /// plugin's data folder or a picked folder): read from the disk when the drag starts.
+    File {
+        path: PathBuf,
+        root: PathBuf,
+    },
+    Text(String),
+    /// An http or https link.
+    Url(String),
+}
+
+/// The real path of a plugin row's file `path` when it is a file there, of a data type and
+/// really inside `root` (no link leads out).
+pub(crate) fn row_file(path: &Path, root: &Path) -> Option<PathBuf> {
+    let real = crate::state::canonical_path(path.to_path_buf());
+    let name = real.file_name()?.to_string_lossy();
+    let inside = real.starts_with(crate::state::canonical_path(root.to_path_buf()));
+    let data = pecofence_core::folder_write::is_data_file(&name);
+    (inside && data && real.is_file()).then_some(real)
+}
+
+/// One cell of a row of cells: a button (clickable), a slider (`slider`) or text.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ScriptCellView {
+    pub text: String,
+    pub color: Option<String>,
+    pub tip: Option<String>,
+    pub clickable: bool,
+    /// The slider's position, 0 to 1.
+    pub slider: Option<f32>,
+    pub width: Option<f32>,
+    pub align: f32,
+    pub checked: bool,
+    pub bold: bool,
+    pub gap: Option<f32>,
+    pub dbl: bool,
+    pub checkbox: Option<bool>,
+    /// A picture in the cell (`image=`), `image_height` tall at most (DIPs).
+    pub image: Option<String>,
+    pub image_height: f32,
+    pub fill: bool,
+    pub under: bool,
+    /// A plugin cell's id, and whether its text or picture is blurred until the pointer is on it.
+    pub id: Option<String>,
+    pub blur: bool,
+    /// A plugin cell's look under the pointer, and whether the wheel over it is the plugin's.
+    pub hover: Option<host_view::Hover>,
+    pub wheel: bool,
 }
 
 impl ScriptRowView {
@@ -651,15 +762,47 @@ impl ScriptRowView {
                     separator: true,
                     ..Self::default()
                 },
+                ScriptLine::Cells(cells) => Self {
+                    cells: cells
+                        .into_iter()
+                        .map(|c| ScriptCellView {
+                            tip: c.tooltip.clone().or_else(|| c.target().map(str::to_string)),
+                            clickable: c.clickable(),
+                            text: c.text,
+                            color: c.color,
+                            slider: c.slider,
+                            width: c.width,
+                            align: c.align,
+                            checked: c.checked,
+                            bold: c.bold,
+                            gap: c.gap,
+                            dbl: c.dbl_action.is_some(),
+                            checkbox: c.checkbox,
+                            image: c.image,
+                            image_height: c.height.unwrap_or(96.0),
+                            fill: c.fill,
+                            under: c.under,
+                            ..ScriptCellView::default()
+                        })
+                        .collect(),
+                    ..Self::default()
+                },
                 ScriptLine::Row(r) => Self {
                     tip: r.tooltip.clone().or_else(|| r.target().map(str::to_string)),
                     clickable: r.clickable(),
                     opens: matches!(r.action, Some(RowAction::Href(_) | RowAction::Open(_))),
+                    dbl: r.dbl_action.is_some(),
+                    image: r.image.clone(),
+                    hidden: r.hidden,
+                    pane: r.pane.clone(),
+                    follow: r.follow.clone(),
+                    image_height: r.height.unwrap_or(96.0),
                     text: r.text,
                     separator: false,
                     todo: r.todo,
                     color: r.color,
                     icon: r.icon,
+                    ..Self::default()
                 },
             })
             .collect()

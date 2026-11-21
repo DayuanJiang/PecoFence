@@ -66,6 +66,9 @@ pub const WM_APP_SMART_FS: u32 = msg::WM_APP + 33;
 /// A save of the configuration failed on the saver thread (`state::saver_for`); the App takes
 /// the failure and says so on the tray.
 pub const WM_APP_SAVE_FAILED: u32 = msg::WM_APP + 23;
+/// A mouse press anywhere while a fence is zoomed (`fence_window/zoom.rs`; lParam the screen
+/// point, x in the low word and y in the high word).
+pub const WM_APP_ZOOM_PRESS: u32 = msg::WM_APP + 45;
 
 /// What a file drop does with the dropped paths (Explorer's Move / Copy / Create shortcut, the
 /// effect the drop target reported).
@@ -96,10 +99,16 @@ pub enum Command {
     /// if it now covers another fence, it moves to the nearest free spot.
     FenceDropped(FenceId),
     ToggleRollUp(FenceId),
+    /// A rolled title row as wide as it needs (`rollUp.compactRolled`) needs another width: a
+    /// clock's time got longer or shorter (9:59 to 10:00).
+    RolledWidthStale(FenceId),
     /// A double-click on the bottom edge: the height that shows every icon (适应内容大小).
     FitToContent(FenceId),
     /// A hover-peeked fence was double-clicked: keep it expanded.
     CommitExpanded(FenceId),
+    /// A glide the app started for a display change reached its end (it reports no bounds):
+    /// the fence fits its items there, as auto height waited while it moved.
+    GlideEnded(FenceId),
     /// Open `item` from fence `from` (a folder opens in place when `from` is a navigating portal).
     /// `inside` is false when several items are opened at once: folders open in Explorer then.
     LaunchItem {
@@ -227,6 +236,23 @@ pub enum Command {
         to: FenceId,
         folder: Option<PathBuf>,
     },
+    /// Files, a text or a link dropped on plugin fence `fence` (its plugin takes them), on its
+    /// row `row`, or at `point` of its web page (DIPs): its `drop` event.
+    PluginDrop {
+        fence: FenceId,
+        paths: Vec<PathBuf>,
+        text: Option<String>,
+        url: Option<String>,
+        row: Option<usize>,
+        point: Option<(f32, f32)>,
+    },
+    /// A drag out of a row (its id `row`) of plugin fence `fence` ended; `dropped`: a target
+    /// took it.
+    PluginDragEnded {
+        fence: FenceId,
+        row: Option<String>,
+        dropped: bool,
+    },
     /// A drop onto `to` was handed to the shell's folder drop target (Outlook mail, a
     /// Start-menu app): the portals show what landed in their folders; `landed` are the desktop
     /// entries a virtual fence's drop created, to be filed into `to`. `on_desktop`: the drop
@@ -332,16 +358,30 @@ pub enum Command {
         x: i32,
         y: i32,
     },
-    /// 新建小工具 › an example: its script fence near the screen point.
-    NewScriptExample {
-        example: crate::scripts::Example,
-        x: i32,
-        y: i32,
-    },
     /// 时钟: a new clock fence near the screen point (none while the desktop has one).
     NewClock {
         x: i32,
         y: i32,
+    },
+    /// 网页层: the window of this host fence shows a web plugin: start its page.
+    StartWebFence(FenceId),
+    /// 网页层: a page's `pf.*` call (`App::web_call`), answered to that page.
+    WebCall {
+        page: std::rc::Weak<crate::web_plugin::WebFence>,
+        id: serde_json::Value,
+        call: String,
+        args: serde_json::Value,
+    },
+    /// 网页层: a page loads anew by itself (`location.reload()`, another page of its own): it is
+    /// made again at `uri`.
+    WebPageReload {
+        page: std::rc::Weak<crate::web_plugin::WebFence>,
+        uri: String,
+    },
+    /// 网页层: a page's browser or render process ended, or the page hung.
+    WebPageFailed {
+        page: std::rc::Weak<crate::web_plugin::WebFence>,
+        failure: crate::web_plugin::Failure,
     },
     /// 脚本栅栏: pick a script, then a new script fence near the screen point.
     NewScript {
@@ -400,6 +440,42 @@ pub enum Command {
     ScriptRowClicked {
         fence: FenceId,
         row: usize,
+        /// The cell of a row of cells (0 for a plain row).
+        cell: usize,
+        /// Where a slider was pressed or dragged to, 0 to 1.
+        fraction: Option<f32>,
+        /// Sent while a slider is dragged: only a script that keeps running gets these.
+        dragging: bool,
+        /// The second click of a double-click: the row's `dblaction=` runs.
+        double: bool,
+    },
+    /// A script fence's content turned to light text or back (the wallpaper behind it, the
+    /// theme): its light plugin's `pf.theme` follows.
+    FenceInkChanged {
+        fence: FenceId,
+        light_text: bool,
+    },
+    /// A plugin fence's text box closed: its text (None after Esc in a one-line box), and
+    /// whether a box of several lines was left with Ctrl+Enter.
+    PluginLineClosed {
+        fence: FenceId,
+        row: usize,
+        text: Option<String>,
+        submit: bool,
+    },
+    /// A plugin fence: the pointer went onto row `row`, which tells its plugin (`hover:
+    /// "event"`), or (None) off such a row.
+    PluginHover {
+        fence: FenceId,
+        row: Option<usize>,
+    },
+    /// A plugin fence: whole notches of the wheel over a `wheel: true` row or cell, positive
+    /// away from the user.
+    PluginWheel {
+        fence: FenceId,
+        row: usize,
+        cell: usize,
+        steps: i32,
     },
     /// A click on the row under a fence's empty-state text (a smart fence that needs
     /// Everything: 「启动 Everything」 / 「安装 Everything」).
@@ -473,6 +549,11 @@ pub enum Command {
     PeekDragEnded {
         elsewhere: bool,
     },
+    /// A drag out of a fence during a Peek is let go over another program's window (sent at
+    /// the release, before that window takes the drop). The window may ask a question while our
+    /// thread waits for its answer (File Explorer's 「替换或跳过文件」, #238): the Peek ends at
+    /// once, so its dimmer and the floating fences do not cover the question.
+    PeekDropElsewhere,
     /// Text typed during a Peek while the search box did not have the keyboard yet: opens the
     /// box with it, or adds it to the box.
     PeekSearchType(String),
@@ -521,6 +602,8 @@ pub enum Command {
     SettingsActivated,
     /// A retired fence window (deleted / merged) finished fading out: destroy it now.
     FadeOutDone(HWND),
+    /// A tool fence's window was shown, hidden, rolled up or opened: its plugin learns it.
+    ToolShownChanged,
     /// The user clicked a fence: bring it above the other fences.
     RaiseFence(HWND),
     /// A hover peek (or a file drag resting on its title) opened a rolled fence: above the
@@ -528,6 +611,9 @@ pub enum Command {
     RaiseForHover(HWND),
     /// That peek rolled it up again: back to its place among the other fences.
     EndHoverRaise(HWND),
+    /// A zoom ended (`fence_window/zoom.rs`): the fence's auto height, which waited, is
+    /// measured again.
+    ZoomEnded(FenceId),
     /// Details-view header click: sort by that column (again = reverse).
     SortColumn {
         fence: FenceId,
@@ -574,6 +660,17 @@ impl CommandQueue {
         if let Some(h) = *self.control.borrow() {
             // SAFETY-free: PostMessage through the platform wrapper.
             pecofence_platform::window::post_message(h, WM_APP_COMMAND, 0, 0);
+        }
+    }
+
+    /// Like [`Self::push`], and runs the queue now (a sent message instead of a posted one):
+    /// for the moment before a call that keeps the thread waiting without dispatching posted
+    /// messages. Only from a window handler that holds no borrow of the App or a fence view;
+    /// while the App is busy the command waits in the queue as with `push`.
+    pub fn push_now(&self, cmd: Command) {
+        self.queue.borrow_mut().push_back(cmd);
+        if let Some(h) = *self.control.borrow() {
+            pecofence_platform::window::send_message(h, WM_APP_COMMAND, 0, 0);
         }
     }
 

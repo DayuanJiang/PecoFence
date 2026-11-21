@@ -954,12 +954,14 @@ fn scroll_top(top: usize, sel: usize, results: usize, window: usize) -> usize {
 
 /// Explorer with `path` selected in its folder.
 fn open_containing_folder(path: &Path) {
+    let before = pecofence_platform::dialogs::explorer_windows();
     // `/select,"<path>"`: quoted as a whole.
     let spawned = std::process::Command::new("explorer.exe")
         .raw_arg(format!("/select,\"{}\"", path.display()))
         .spawn();
-    if let Err(e) = spawned {
-        tracing::warn!(error = %e, "search: Explorer did not start");
+    match spawned {
+        Ok(_) => pecofence_platform::dialogs::select_after_open(path.to_path_buf(), false, before),
+        Err(e) => tracing::warn!(error = %e, "search: Explorer did not start"),
     }
 }
 

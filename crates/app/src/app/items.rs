@@ -422,7 +422,7 @@ impl App {
             Some(crate::rename::RenameTarget::Fence(fence)) => {
                 (None, self.window_for(fence).map(|w| w.hwnd()))
             }
-            None => (None, None),
+            Some(crate::rename::RenameTarget::PluginLine(..)) | None => (None, None),
         };
         for w in self.fences.values() {
             if keep_item.is_none() || w.renaming_item() != keep_item {
@@ -1245,6 +1245,22 @@ impl App {
             self.note_opened(item);
             return;
         }
+        // GitHub #244: the Store edition installed on another drive does not see that drive's
+        // `\Users\<name>\AppData`, so a shortcut to a program there would only bring up Windows'
+        // "the item has been changed or moved" box. A process outside the package opens it.
+        if let Some(target) = hidden_from_package(&path) {
+            let outcome = shell::shell_execute_outside(&path);
+            tracing::info!(
+                place = shell::path_place(&target),
+                started = outcome.is_ok(),
+                error = outcome.as_ref().err().map(|e| e.to_string()),
+                "launch: the shortcut's program is hidden from the Store edition here; opened through rundll32"
+            );
+            if outcome.is_ok() {
+                self.note_opened(item);
+                return;
+            }
+        }
         let _loads = pecofence_platform::shell_menu::LoadWatch::new("Launch");
         match shell::shell_execute(&path, None, None) {
             Ok(()) => {
@@ -1439,6 +1455,22 @@ pub(super) fn pasted_duplicates(
         .collect();
     copies.sort();
     copies
+}
+
+/// For the Store edition: the program of the `.lnk` at `path` when it lies where the package
+/// sees its own data instead of the real folders and this process therefore cannot see it
+/// (`shell::under_package_view_of_appdata`, GitHub #244). Cheap for other files: the shortcut
+/// is read only in the Store edition, the disk only for such a target.
+fn hidden_from_package(path: &Path) -> Option<PathBuf> {
+    if !path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("lnk"))
+        || !pecofence_platform::process::is_packaged()
+    {
+        return None;
+    }
+    shell::shortcut_target_expanded(path)
+        .filter(|t| shell::under_package_view_of_appdata(t) && !t.exists())
 }
 
 /// The folder that double-clicking the item at `path` opens: the item itself, or the folder a

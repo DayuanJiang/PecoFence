@@ -488,6 +488,8 @@ impl App {
         if w.is_rolled() {
             return None;
         }
+        // Measured at the fence's own size, never at a zoom's (`fence_window/zoom.rs`).
+        w.end_zoom();
         let fit = w.fit_report()?;
         let r = w.rect();
         let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;

@@ -202,8 +202,10 @@ if ($IcPart -match 'B') {
   Case 'B setup: three fences, a merged tab, a rolled fence, Peek a few times, the settings open'
   CloseWindows
   foreach ($n in 'cov 甲 文件.txt', 'cov Beta.txt', 'cov 丙 计划 表.txt', 'cov Delta.txt') { Set-Content -LiteralPath (Made (Join-Path $PfDesk $n)) 'cov' }
-  PfFresh @('sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 3600000')
+  # The app's script counts its 25 s from its own start: so does $t0 (taken after PfFresh it was
+  # about 3.3 s late, and each KeepBelow below started within 0.3 s of the report it is for).
   $t0 = Get-Date
+  PfFresh @('sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 25000', 'feedback-info', 'sleep 3600000')
   Start-Sleep -Seconds 3
   ClearFences
   Pf fence create --title '覆盖 甲' --rect '420,120,300,260' | Out-Null
@@ -258,7 +260,7 @@ if ($IcPart -match 'B') {
   Start-Sleep -Milliseconds 800
   $wait = 100 - ((Get-Date) - $t0).TotalSeconds - 3
   if ($wait -gt 0) { Start-Sleep -Seconds ([int]$wait) }
-  if ($np) { [Zb]::KeepBelow($np, (UiThreadFence), 6000) }
+  if ($np) { [Zb]::KeepBelow($np, (UiThreadFence), 6000); Log "Notepad kept below the fences for 6 s from now (t0 + $([math]::Round(((Get-Date) - $t0).TotalSeconds, 1)) s)" }
   $fi4 = NthFeedbackInfo 4
   $b4 = [Zb]::Between()
   Log "state 4: $($fi4.system.state)"
@@ -269,7 +271,7 @@ if ($IcPart -match 'B') {
   $st = @([W]::Tops('PecoFence.Settings'))[0]
   $wait = 125 - ((Get-Date) - $t0).TotalSeconds - 3
   if ($wait -gt 0) { Start-Sleep -Seconds ([int]$wait) }
-  if ($st) { [Zb]::KeepBelow($st, (UiThreadFence), 6000) }
+  if ($st) { [Zb]::KeepBelow($st, (UiThreadFence), 6000); Log "the settings kept below the fences for 6 s from now (t0 + $([math]::Round(((Get-Date) - $t0).TotalSeconds, 1)) s)" }
   $fi5 = NthFeedbackInfo 5
   $b5 = [Zb]::Between()
   Log "state 5: $($fi5.system.state)"

@@ -1,0 +1,28 @@
+{
+  "id": "ollama",
+  "version": "1.0.0",
+  "api": 2,
+  "layer": "light",
+  "name": {
+    "en": "Ollama", "zh-CN": "Ollama", "zh-TW": "Ollama", "ja": "Ollama", "ko": "Ollama", "de": "Ollama",
+    "fr": "Ollama", "es": "Ollama", "pt-BR": "Ollama", "ru": "Ollama", "it": "Ollama"
+  },
+  "description": {
+    "en": "The models of Ollama on this computer, and a box to ask one of them a question.",
+    "zh-CN": "显示这台电脑上 Ollama 的模型，可以在框里向模型提问。",
+    "zh-TW": "顯示這台電腦上 Ollama 的模型，可以在框裡向模型提問。",
+    "ja": "このパソコンの Ollama にあるモデルを表示し、ボックスからモデルに質問できます。",
+    "ko": "이 컴퓨터의 Ollama 모델을 보여 주고, 상자에 질문을 입력해 모델에 물어볼 수 있습니다.",
+    "de": "Die Modelle von Ollama auf diesem Computer und ein Feld, um einem davon eine Frage zu stellen.",
+    "fr": "Les modèles d'Ollama sur cet ordinateur, et une zone pour poser une question à l'un d'eux.",
+    "es": "Los modelos de Ollama en este equipo y un cuadro para hacer una pregunta a uno de ellos.",
+    "pt-BR": "Os modelos do Ollama neste computador e uma caixa para fazer uma pergunta a um deles.",
+    "ru": "Модели Ollama на этом компьютере и поле, чтобы задать вопрос одной из них.",
+    "it": "I modelli di Ollama su questo computer e una casella per fare una domanda a uno di essi."
+  },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": {
+    "local": { "loopback": [{ "port": 11434, "app": "Ollama" }] }
+  }
+}

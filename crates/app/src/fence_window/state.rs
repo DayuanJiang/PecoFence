@@ -2,6 +2,16 @@
 
 use super::*;
 
+/// What a plugin fence takes dropped on it (`drop` in its manifest): files (folders too for a
+/// launcher), text, links.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PluginDrops {
+    pub files: bool,
+    pub folders: bool,
+    pub text: bool,
+    pub links: bool,
+}
+
 /// 像桌面一样排列: where the fence arranges its icons (screen px).
 #[derive(Clone, Debug, PartialEq)]
 pub struct DesktopArea {
@@ -15,6 +25,10 @@ pub struct DesktopArea {
     /// 自由摆放 with no saved cells yet: where Windows' own desktop has the icons, so they keep
     /// those places (#204). Icons with a saved cell keep theirs.
     pub windows: Option<WindowsIconPlaces>,
+    /// 自由摆放: where the desktop menu was opened a moment ago (screen px). New icons without a
+    /// cell go to the free cell nearest to it, as 新建 and 粘贴 of that menu place them on a
+    /// Windows desktop (#238); without it they take the first free cell.
+    pub menu_at: Option<(i32, i32)>,
 }
 
 /// Windows' own desktop icons, as Explorer's desktop view had them when PecoFence read it.
@@ -104,6 +118,20 @@ pub struct FenceViewState {
     /// Expanded window height in physical pixels (restored when un-rolling).
     pub expanded_h_px: i32,
     pub icon_size: u32,
+    /// The factor the icons are drawn at while the fence is zoomed (1 = not zoomed). The
+    /// grid, the cell and every hit test read the icon size through it, so a zoom scales the
+    /// content instead of re-flowing it (`fence_window/zoom.rs`).
+    pub(super) zoom_icon: f32,
+    /// The rect to go back to when the zoom closes; `None` while the fence is not zoomed.
+    pub(super) zoom_home: Option<RECT>,
+    /// The centred box and the icon factor the zoom is heading for while it is open, kept so
+    /// an interrupted close can turn back out to the same place.
+    pub(super) zoom_far: Option<(RECT, f32)>,
+    /// While the fence is zoomed at rest: sees every mouse press, so one outside the fence
+    /// closes the zoom (`fence_window/zoom.rs`).
+    pub(super) zoom_press: Option<pecofence_platform::window::PressWatch>,
+    /// The zoom tween in flight.
+    pub(super) zoom_anim: Option<crate::fence_window::zoom::ZoomAnim>,
     pub label_lines: u8,
     pub items: Vec<ItemView>,
     /// Tabs shown in the title row (the host itself first). One entry = plain title.
@@ -251,10 +279,11 @@ pub struct FenceViewState {
     /// The last title click expanded the fence (click-to-expand); a WM_NCLBUTTONDBLCLK that
     /// completes it must not roll the fence back up.
     pub(super) suppress_dblclk: bool,
-    /// The last left press was on empty space of a subfolder, and the fence has shown no other
-    /// folder since: a double-click that completes it goes up one level (feedback #130). A
-    /// first click that opened or entered something (single-click open) leaves it false.
-    pub(super) up_on_dblclk: bool,
+    /// The last left press was on empty space, and the fence has shown no other folder since:
+    /// a double-click that completes it goes up one level in a subfolder (feedback #130) or
+    /// zooms the fence (`fence_window/zoom.rs`). A first click that opened or entered
+    /// something (single-click open) leaves it false.
+    pub(super) dblclk_blank: bool,
     /// Double-click on a folder item navigates inside the portal instead of launching it.
     pub(super) navigate_folders: bool,
     /// The folder the shown fence's drops land in when it is a portal (its current folder).
@@ -318,15 +347,27 @@ pub struct FenceViewState {
     pub(super) tool_line_step: f32,
     /// 脚本栅栏: the fence shown is a script fence with this output and footer.
     pub(super) script: Option<ScriptView>,
+    /// 网页层: the web plugin's page shown in place of the content.
+    pub(super) web: Option<Rc<crate::web_plugin::WebFence>>,
     /// Its clickable rows as last drawn: row index and (left, top, right, bottom) in content
     /// DIPs.
-    pub(super) script_rows: Vec<(usize, [f32; 4])>,
-    /// The clickable row under the pointer.
-    pub(super) script_hover: Option<usize>,
-    /// The hover plates of its rows fading in and out, by row index (as `item_hover`).
-    pub(super) script_fades: Fades<usize>,
+    pub(super) script_rows: Vec<(usize, usize, [f32; 4])>,
+    /// The clickable row and cell under the pointer (cell 0 for a plain row).
+    pub(super) script_hover: Option<(usize, usize)>,
+    /// The hover plates of its rows and cells fading in and out (as `item_hover`).
+    pub(super) script_fades: Fades<(usize, usize)>,
     /// Which form of the footer was drawn last (`FenceChrome::script_footer`), for the log.
     pub(super) script_footer_form: &'static str,
+    /// The pictures of `image=` rows decoded (the newest last, a few kept): their key (path,
+    /// modification time and size), None when the file could not be decoded.
+    pub(super) script_images: Vec<(String, Option<Image>)>,
+    /// How the rows of the script scroll, as last drawn (the offset is `scroll_y`).
+    pub(super) script_scroll: ScriptScrollState,
+    /// The glide running was started by a script following a line: its end does not light up
+    /// the scrollbar.
+    pub(super) quiet_glide: bool,
+    /// A slider of the script being dragged (the mouse is captured).
+    pub(super) slider_drag: Option<SliderDrag>,
     /// 便签与待办: the line whose check box is under the pointer.
     pub(super) note_box_hover: Option<usize>,
     /// 便签与待办: the web address under the pointer (its line and start).
@@ -353,6 +394,8 @@ pub struct FenceViewState {
     pub(super) filter_tag: Option<(String, String, String)>,
     /// 智能栅栏: the fence shows a search, so nothing is dropped into it.
     pub(super) refuses_drops: bool,
+    /// A plugin fence whose plugin takes drops: what it takes.
+    pub(super) plugin_drop: Option<PluginDrops>,
     /// Width the cached labels were fitted for; a change invalidates them.
     pub(super) label_w: f32,
     /// The wider box an icon's name may take (`ensure_icons_and_labels`); `label_w` without one.
@@ -404,6 +447,9 @@ pub struct FenceViewState {
     /// Last contrast choice of a fully transparent fence for the bare wallpaper (its plate
     /// hidden); `glass_dark_text` keeps the one for its plate. Reset with it.
     pub(super) bare_dark_text: Cell<Option<bool>>,
+    /// A script fence: whether its content was last drawn in light text (a plugin's `pf.theme`
+    /// is `dark` then).
+    pub(super) light_text: Cell<Option<bool>>,
     /// The text colour and halo the content was last drawn with (`Theme::label_look`): a
     /// fully transparent fence draws its content again when its plate comes or goes and the
     /// pick changes (`redraw_chrome_only`).
@@ -438,6 +484,9 @@ pub struct FenceViewState {
     /// The window is collapsed (or collapsing) to its left tab column: it is as narrow as the
     /// column, and `expanded_w_px` keeps its width.
     pub(super) column_collapsed: bool,
+    /// Rolled (or rolling) to the width its title row needs (`rollUp.compactRolled`):
+    /// `expanded_w_px` keeps its width.
+    pub(super) compact_collapsed: bool,
     pub(super) _target: DesktopWindowTarget,
     /// Root of the window's visual tree: whole-window fades / scales animate this.
     pub(super) root: ContainerVisual,
@@ -520,6 +569,8 @@ pub struct FenceViewState {
     pub(super) wheel_zoom_accum: i32,
     /// Wheel-over-tabs accumulator: one tab per whole notch (touchpads deliver fractions).
     pub(super) wheel_tab_accum: i32,
+    /// The wheel over a plugin's `wheel: true` row or cell (that one), short of a whole notch.
+    pub(super) wheel_plugin_accum: (Option<(usize, usize)>, i32),
     /// The tab TIMER_TAB_HOVER will switch to while the pointer stays on it.
     pub(super) tab_hover_switch: Option<usize>,
     /// A hover switched a tab of this strip: the next tabs wait `TAB_HOVER_NEXT_MS` only.
@@ -955,8 +1006,8 @@ impl FenceViewState {
             .map(|&(line, start, _)| (line, start))
     }
 
-    /// 脚本栅栏: the clickable row at client point (`x`, `y`).
-    pub(super) fn script_row_at(&self, x: i32, y: i32) -> Option<usize> {
+    /// 脚本栅栏: the clickable row and cell at client point (`x`, `y`).
+    pub(super) fn script_row_at(&self, x: i32, y: i32) -> Option<(usize, usize)> {
         if self.script.is_none() || self.rolled_up || y < self.content_y || x < self.content_x {
             return None;
         }
@@ -965,8 +1016,145 @@ impl FenceViewState {
         let cy = (y - self.content_y) as f32 / scale;
         self.script_rows
             .iter()
-            .find(|(_, r)| cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3])
-            .map(|&(row, _)| row)
+            .find(|(_, _, r)| cx >= r[0] && cx < r[2] && cy >= r[1] && cy < r[3])
+            .map(|&(row, cell, _)| (row, cell))
+    }
+
+    /// A plugin fence's pointer went from row `old` to row `new` (row, cell): what the App
+    /// hears, when one of the two rows tells its plugin (`hover: "event"`).
+    pub(super) fn plugin_hover_moved(
+        &self,
+        old: Option<(usize, usize)>,
+        new: Option<(usize, usize)>,
+    ) -> Option<Command> {
+        let (old, new) = (old.map(|h| h.0), new.map(|h| h.0));
+        let rows = &self.script.as_ref()?.rows;
+        let tells = |at: Option<usize>| {
+            let row = at.and_then(|i| rows.get(i));
+            row.and_then(|r| r.hover.as_ref()).is_some_and(|h| h.event)
+        };
+        let row = new.filter(|_| tells(new));
+        (old != new && (tells(old) || row.is_some())).then_some(Command::PluginHover {
+            fence: self.active,
+            row,
+        })
+    }
+
+    /// The plugin row or cell at client (x, y) whose wheel is the plugin's (`wheel: true`).
+    pub(super) fn plugin_wheel_at(&self, x: i32, y: i32) -> Option<(usize, usize)> {
+        let (row, cell) = self.script_row_at(x, y)?;
+        let r = self.script.as_ref()?.rows.get(row)?;
+        let on = r.cells.get(cell).map_or(r.wheel, |c| c.wheel);
+        on.then_some((row, cell))
+    }
+
+    /// 脚本栅栏: where client x `x` is on a slider drawn in `rect` (content DIPs), 0 to 1.
+    pub(super) fn slider_fraction(&self, rect: [f32; 4], x: i32) -> f32 {
+        let inset = pecofence_render::fence_chrome::SCRIPT_SLIDER_INSET;
+        let cx = (x - self.content_x) as f32 / self.scale();
+        ((cx - rect[0] - inset) / (rect[2] - rect[0] - 2.0 * inset).max(1.0)).clamp(0.0, 1.0)
+    }
+
+    /// 脚本栅栏: row `row` is a row of cells (a `::` line).
+    pub(super) fn script_row_has_cells(&self, row: usize) -> bool {
+        self.script
+            .as_ref()
+            .and_then(|s| s.rows.get(row))
+            .is_some_and(|r| !r.cells.is_empty())
+    }
+
+    /// 脚本栅栏: a press on a slider of a row of cells hands its position to the script at once
+    /// and starts a drag (the caller captures the mouse). Rows and buttons act on the release
+    /// instead (`press_tool_at`).
+    pub(super) fn script_slider_press(&mut self, x: i32, y: i32) -> Option<Command> {
+        let (row, cell) = self.script_row_at(x, y)?;
+        let slider = self
+            .script
+            .as_ref()?
+            .rows
+            .get(row)?
+            .cells
+            .get(cell)
+            .is_some_and(|c| c.slider.is_some());
+        if !slider {
+            return None;
+        }
+        let rect = self
+            .script_rows
+            .iter()
+            .find(|(r, c, _)| *r == row && *c == cell)
+            .map(|h| h.2)?;
+        let fraction = self.slider_fraction(rect, x);
+        self.slider_drag = Some(SliderDrag {
+            row,
+            cell,
+            rect,
+            last: Instant::now(),
+            moved: false,
+        });
+        Some(Command::ScriptRowClicked {
+            fence: self.active,
+            row,
+            cell,
+            fraction: Some(fraction),
+            dragging: false,
+            double: false,
+        })
+    }
+
+    /// 脚本栅栏: the second click of a double-click at client point (`x`, `y`) on a row or cell
+    /// with a `dblaction=`: the command that sends it.
+    pub(super) fn script_double_click(&self, x: i32, y: i32) -> Option<Command> {
+        let (row, cell) = self.script_row_at(x, y)?;
+        let view = self.script.as_ref()?.rows.get(row)?;
+        let dbl = match view.cells.get(cell) {
+            Some(c) => c.dbl,
+            None => view.dbl,
+        };
+        dbl.then_some(Command::ScriptRowClicked {
+            fence: self.active,
+            row,
+            cell,
+            fraction: None,
+            dragging: false,
+            double: true,
+        })
+    }
+
+    /// 脚本栅栏: the pointer moved to client x `x` while a slider is held: the command that
+    /// tells the script, at most every 80 ms.
+    pub(super) fn slider_drag_move(&mut self, x: i32) -> Option<Command> {
+        let (row, cell, rect) = {
+            let sd = self.slider_drag.as_mut()?;
+            sd.moved = true;
+            if sd.last.elapsed() < std::time::Duration::from_millis(80) {
+                return None;
+            }
+            sd.last = Instant::now();
+            (sd.row, sd.cell, sd.rect)
+        };
+        Some(Command::ScriptRowClicked {
+            fence: self.active,
+            row,
+            cell,
+            fraction: Some(self.slider_fraction(rect, x)),
+            dragging: true,
+            double: false,
+        })
+    }
+
+    /// 脚本栅栏: the slider is let go at client x `x`: its last position, when the pointer
+    /// moved at all since the press.
+    pub(super) fn slider_drag_end(&mut self, x: i32) -> Option<Command> {
+        let sd = self.slider_drag.take()?;
+        sd.moved.then(|| Command::ScriptRowClicked {
+            fence: self.active,
+            row: sd.row,
+            cell: sd.cell,
+            fraction: Some(self.slider_fraction(sd.rect, x)),
+            dragging: false,
+            double: false,
+        })
     }
 
     /// The empty state's action row as drawn now: only under the text the app set (a drag
@@ -1021,18 +1209,30 @@ impl FenceViewState {
     /// The fence shown is a tool (小工具) in place of items: it takes no drops, merges or
     /// marquee, and counts no items.
     pub(super) fn shows_tool(&self) -> bool {
-        self.note.is_some() || self.clock.is_some() || self.script.is_some()
+        self.note.is_some() || self.clock.is_some() || self.script.is_some() || self.web.is_some()
     }
 
-    /// 时钟与日期 rolled up (feedback #175): the title row shows the time, hours and minutes in
-    /// Windows' region format (12 or 24 hours), in place of the fence's name. None for any other
-    /// fence, an open clock, or when Windows gives no time.
-    pub(super) fn rolled_clock_caption(&self) -> Option<String> {
-        if self.clock.is_none() || !self.roll_target() {
-            return None;
-        }
-        let time = pecofence_platform::fileinfo::clock_texts(false).0;
-        (!time.is_empty()).then_some(time)
+    /// What the title row shows in place of the fence's name once the fence is rolled up
+    /// (feedback #175): 时钟与日期's time, hours and minutes in Windows' region format (12 or 24
+    /// hours), or a light plugin's `view.caption` (the 时钟 plugin's time). None for any other
+    /// fence, or when Windows gives no time. Asked rolled or not: the compact rolled width
+    /// measures it before a roll-up starts.
+    pub(super) fn caption_when_rolled(&self) -> Option<String> {
+        let time = (self.clock)
+            .is_some()
+            .then(|| pecofence_platform::fileinfo::clock_texts(false).0);
+        rolled_caption_of(
+            time,
+            self.script.as_ref().and_then(|s| s.caption.as_deref()),
+        )
+    }
+
+    /// [`Self::caption_when_rolled`] while the fence is rolled (or rolling) up: the title row's
+    /// text in place of the name.
+    pub(super) fn rolled_caption(&self) -> Option<String> {
+        self.roll_target()
+            .then(|| self.caption_when_rolled())
+            .flatten()
     }
 
     /// The rolled title shows 「N 项」 before the chevron: not for a tool (no items), a smart
@@ -1087,5 +1287,27 @@ impl FenceViewState {
     /// scrolling and redraws keep addressing the frozen surface).
     pub(super) fn content_size_px(&self) -> (i32, i32) {
         self.content_panel.size_px()
+    }
+}
+
+/// A script fence's slider held down: where it is drawn (content DIPs), when the script was last
+/// told its position and whether the pointer moved since the press.
+pub(super) struct SliderDrag {
+    pub(super) row: usize,
+    pub(super) cell: usize,
+    pub(super) rect: [f32; 4],
+    pub(super) last: Instant,
+    pub(super) moved: bool,
+}
+
+/// The rolled title row's text in place of the name: a clock's time (`clock_time`, None for a
+/// fence that is no clock; an empty time is none), else a plugin's `view.caption`.
+pub(super) fn rolled_caption_of(
+    clock_time: Option<String>,
+    plugin: Option<&str>,
+) -> Option<String> {
+    match clock_time {
+        Some(time) => (!time.is_empty()).then_some(time),
+        None => plugin.map(str::to_string),
     }
 }

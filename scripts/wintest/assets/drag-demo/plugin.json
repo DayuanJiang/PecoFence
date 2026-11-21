@@ -1,0 +1,18 @@
+{
+  "id": "drag-demo",
+  "version": "1.0.0",
+  "api": 2,
+  "layer": "light",
+  "name": { "en": "Drag demo", "zh-CN": "拖出示例" },
+  "description": {
+    "en": "A test plugin: rows that drag a file, a text and links out, and what was dropped on it.",
+    "zh-CN": "测试用的插件：能拖出文件、文字和链接的行，以及拖到它上面的东西。"
+  },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": {
+    "links": ["example.com"],
+    "folders": true,
+    "drop": ["files", "text"]
+  }
+}

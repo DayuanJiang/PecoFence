@@ -1,0 +1,8 @@
+html, body { margin: 0; height: 100%; font: 14px "Segoe UI", sans-serif; color: CanvasText; }
+body { display: grid; grid-template-rows: 1fr 1fr auto; gap: 4px; padding: 4px; box-sizing: border-box; }
+.zones { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.zones div { border: 1px dashed GrayText; display: flex; align-items: center; justify-content: center; }
+.drags { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; align-items: center; justify-items: center; }
+.drags > * { padding: 6px 10px; border: 1px solid GrayText; border-radius: 4px; }
+img { width: 48px; height: 48px; padding: 0; }
+pre { margin: 0; white-space: pre-wrap; font-size: 11px; }

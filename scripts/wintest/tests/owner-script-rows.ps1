@@ -5,7 +5,7 @@
 # Run with the example scripts as the extra folder (the first fence runs the real GitHub example
 # of 0.3.3 on a canned answer, as an edited copy on a user's disk would; the last one runs the
 # current example on the same answer):
-#   run.sh --extra crates/app/assets/scripts scripts/wintest/tests/owner-script-rows.ps1
+#   run.sh --extra scripts/wintest/assets/old-examples scripts/wintest/tests/owner-script-rows.ps1
 #
 # Payloads are harmless: Notepad, and .bat files that write a marker file into C:\pf\run.
 # On 0.3.0 to 0.3.3 and on main before the fix the "starts no program" and "refused" checks fail.
@@ -100,7 +100,7 @@ $canned = @'
 ]
 '@
 Set-Content "$PfRun\canned.json" -Value $canned -Encoding UTF8
-$old = "$PfExtra\old\github.en.0.3.0.ps1"
+$old = "$PfExtra\github.en.0.3.0.ps1"
 Check 'the GitHub example of 0.3.3 is in the extra folder' (Test-Path $old) $old
 # The example itself, unchanged (with the byte order mark PecoFence writes); only its request is
 # answered from the canned file.
@@ -280,7 +280,7 @@ EndNotepads
 
 # ---- 4. The current GitHub example on the same canned answer: forged titles are plain text
 Case 'the current GitHub example'
-$now = "$PfExtra\github.en.ps1"
+$now = "$PfExtra\github.en.0.4.0.ps1"
 Check 'the current GitHub example is in the extra folder' (Test-Path $now) $now
 Set-Content "$PfRun\github-now.ps1" -Value (Get-Content -Raw -Encoding UTF8 $now) -Encoding UTF8
 $wrap = @"

@@ -250,6 +250,7 @@ impl App {
         if self.windows_desktop_hotkey.is_some() {
             hotkey::unregister(hwnd, HOTKEY_WINDOWS_DESKTOP);
         }
+        self.drop_plugin_keys();
         self.hotkeys_paused = true;
         self.sync_double_ctrl();
     }
@@ -278,6 +279,7 @@ impl App {
         // Settings applied during the recording (pecofence-cli, say) take effect now.
         self.sync_peek_hotkey();
         self.sync_windows_desktop_hotkey();
+        self.sync_plugin_keys();
         if (self.peek_hotkey, self.windows_desktop_hotkey) != before {
             self.push_settings_state();
         }
@@ -404,6 +406,7 @@ impl App {
         let held = self.prepare_peek_fade();
         if let Some(a) = self.anchor.borrow_mut().as_mut() {
             a.hold_for_peek(&held);
+            a.peek_only = self.peek_only;
             a.set_peek(true, &over);
         }
         if !held.is_empty() {
@@ -451,6 +454,7 @@ impl App {
         let held: Vec<HWND> = self
             .fences
             .values()
+            .filter(|w| self.peek_only.is_none_or(|only| only == w.hwnd()))
             .filter(|w| covered.contains(&w.hwnd()) && w.peek_fade_prepare())
             .map(|w| w.hwnd())
             .collect();
@@ -583,6 +587,24 @@ impl App {
             p.set_dragging(dragging, Instant::now());
             self.ctx.frames.request();
         }
+    }
+
+    /// A drag out of a fence during the Peek was let go over another program's window, which
+    /// takes the drop next (#238). File Explorer asks 「替换或跳过文件」 when the name is taken,
+    /// and our thread waits inside the drop for the answer: no frame and no message of ours
+    /// runs until then, so a fade would never finish, and the dimmer and the floating fences
+    /// would stay above the question and take its clicks. The Peek ends at once instead; the
+    /// dimmer is already faded out for the drag, so nothing jumps.
+    pub(super) fn end_peek_for_drop(&mut self) {
+        let Some(p) = self.peek.as_ref() else {
+            return;
+        };
+        tracing::info!(
+            closing = p.is_closing(),
+            "peek: a file goes to another window; ending the peek before the drop"
+        );
+        self.end_peek("file dropped on another window");
+        self.end_peek_now();
     }
 
     /// The asynchronous focus handoff may have raised the topmost dimmer above the fences.
@@ -882,6 +904,7 @@ impl App {
         // Dropping the windows destroys them (after the fences left the topmost band).
         self.peek = None;
         self.peek_from = None;
+        self.peek_only = None;
         // A Peek opened from the desktop (or a fence) and closed by the user: the keyboard
         // goes back there. With the dimmer gone Windows gave it to the next window in line,
         // the taskbar, and the arrow keys moved through the taskbar's buttons.

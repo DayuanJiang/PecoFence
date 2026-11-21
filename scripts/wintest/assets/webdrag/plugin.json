@@ -1,0 +1,17 @@
+{
+  "id": "webdrag",
+  "version": "1.0.0",
+  "api": 2,
+  "layer": "web",
+  "name": { "en": "Web drag demo", "zh-CN": "网页拖放示例" },
+  "description": {
+    "en": "A test web plugin: drops into the page, and links, text and a picture dragged out of it.",
+    "zh-CN": "测试用的网页插件：拖进网页的东西，以及从网页拖出的链接、文字和图片。"
+  },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": {
+    "links": ["example.com"],
+    "drop": ["files", "text", "links"]
+  }
+}

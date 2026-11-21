@@ -120,12 +120,14 @@ sozinhos, e os arquivos ficam onde estão.
 
 ![New smart fence… no menu de um grupo abre uma janela pequena; o modelo Downloads of the last 7 days preenche as condições; Create coloca na área de trabalho um grupo com seis arquivos, e um download novo aparece nele sozinho.](../assets/smart.gif)
 
-### Notas, um relógio e seus próprios scripts.
+### Notas, tarefas e mais na loja de plugins.
 
-Adicione em **Configurações → Ferramentas**: uma nota em que as linhas que começam com `[ ]` viram tarefas,
-um relógio com a data e grupos de script que mostram o que um script imprime, como o clima.
+Instale o que precisar em **Configurações → Ferramentas**: notas, um relógio, o clima, tarefas,
+uma contagem regressiva, o status do PC, o histórico da área de transferência e mais. Um plugin só
+pode fazer o que lista, e cada versão é verificada automaticamente e revisada. Suas notas e relógios
+de antes viram plugins sozinhos, e seu próprio script continua podendo mostrar o que imprime.
 
-![Nas Configurações, New note coloca uma nota na área de trabalho e um clique marca a primeira tarefa dela; Add coloca um relógio ao lado e depois um grupo com o clima em Tóquio.](../assets/tools.gif)
+![Configurações → Ferramentas lista os plugins da loja e o que cada um faz; na área de trabalho, o grupo do plugin Tarefas tem duas tarefas, uma delas marcada.](../assets/plugins.png)
 
 Mais no manual: [grupos separados para cada área de trabalho virtual](https://pecofence.jiang.jp/pt-BR/manual/#vdesk) ([GIF](../assets/vdesk.gif)),
 [ícones da área de trabalho que ficam onde você os coloca](https://pecofence.jiang.jp/pt-BR/manual/#free-place) ([GIF](../assets/free-place.gif)) e
@@ -145,7 +147,7 @@ Mais no manual: [grupos separados para cada área de trabalho virtual](https://p
 | **Arquivos do jeito que você conhece** | Menus de contexto do Explorador de Arquivos, arrastar e soltar, copiar e colar, seleção múltipla, miniaturas e exibição em ícones, lista ou detalhes. |
 | **Pastas sempre à mão** | Coloque na área de trabalho uma pasta de verdade, sempre atualizada. Navegue pelas subpastas e veja as mudanças na hora. O botão Voltar do mouse sobe uma pasta e o Avançar volta para dentro. |
 | **Espaço quando você precisa** | Recolha um grupo até o título. Passe o mouse para expandir. Bloqueie o layout quando estiver do seu jeito. Clique duas vezes na área de trabalho para ocultar os grupos. Clique duas vezes de novo para trazê-los de volta. |
-| **Pequenas ferramentas nos grupos** | Notas com tarefas, um relógio com a data e grupos de script que mostram o que o seu próprio script imprime, como o clima; um clique nas linhas pode abrir um link ou marcar uma tarefa. Você pode adicioná-las logo em Configurações → Ferramentas ou pelo menu da bandeja. |
+| **Ferramentas da loja de plugins** | Notas, um relógio, o clima, tarefas, uma contagem regressiva, o status do PC, o histórico da área de transferência e mais, instalados em Configurações → Ferramentas. Um plugin só pode fazer o que lista, cada versão é verificada automaticamente e revisada, e uma atualização que não pede nada novo se instala sozinha. Seu próprio script continua mostrando o que imprime. [Escreva seu próprio plugin](https://github.com/DayuanJiang/PecoFence-plugins) |
 | **Um caminho de volta** | Instantâneos de layout, backups diários, importação e exportação da configuração e troca de grupos entre monitores. |
 | **Localizar uma configuração** | Digite na caixa no alto das Configurações (Ctrl+F) para achar qualquer configuração pelas palavras dela ou por outros nomes comuns. |
 | **Leve de verdade** | Um aplicativo nativo em Rust que, ocioso, usa só cerca de 2 a 5 MB de memória (segundo o Gerenciador de Tarefas). O painel de configurações em WebView2 só carrega quando necessário. |

@@ -130,8 +130,9 @@ pub(super) fn hit_code(v: &FenceViewState, rect: &RECT, x: i32, y: i32, locked: 
             msg::HTCLIENT
         };
     }
-    if rolled && v.tabs_on_rail() {
-        // Collapsed to the column: it only moves.
+    if rolled && (v.tabs_on_rail() || v.compact_collapsed) {
+        // Collapsed to the column, or a title row as wide as it needs
+        // (`rollUp.compactRolled`): it only moves.
         return msg::HTCAPTION;
     }
     if rolled {
@@ -366,6 +367,11 @@ pub(super) fn on_nclbuttondown(
         peek_armed,
         ..
     } = h;
+    // A zoomed fence stays where the zoom put it: no title drag, no edge resize, so the
+    // rect it goes back to is still the one it came from (`fence_window/zoom.rs`).
+    if view.borrow().as_ref().is_some_and(|v| v.zoom_busy()) {
+        return Some(0);
+    }
     // Title press (drag start / click): raise above the other fences once the
     // modal move loop returns. A pending hover-peek must not open inside that
     // loop (SC_MOVE caption press or SC_SIZE edge press alike).
@@ -548,6 +554,11 @@ pub(super) fn on_nclbuttondblclk(
 ) -> Option<isize> {
     let HandlerCtx { view, queue, .. } = h;
     let fence_id = h.fence_id;
+    // A zoomed fence stays where the zoom put it: no title drag, no edge resize, so the
+    // rect it goes back to is still the one it came from (`fence_window/zoom.rs`).
+    if view.borrow().as_ref().is_some_and(|v| v.zoom_busy()) {
+        return Some(0);
+    }
     // The bottom edge, as Windows' edges stretch a window: the height that shows every icon
     // (适应内容大小). DefWindowProc would stretch the fence to the screen's height instead.
     if wparam as isize == msg::HTBOTTOM {
@@ -1288,11 +1299,14 @@ pub(super) fn on_dpichanged(
     let suggested = unsafe { *(lparam as *const RECT) };
     let placing = view.borrow_mut().as_mut().is_some_and(|v| {
         v.apply_dpi(new_dpi as u32);
-        v.placing
+        v.placing || v.glide.is_some()
     });
     // A drag onto another monitor takes the suggested rect (the same size in DIPs). The app's
     // own placement has sized the window for that monitor already: the suggested rect would
-    // scale it once more (a quarter bigger going from a 100 % monitor onto a 125 % one).
+    // scale it once more (a quarter bigger going from a 100 % monitor onto a 125 % one). So
+    // has a glide, which keeps the window's size to its end: one crossing a monitor of another
+    // scale on its way (back to its monitor after a display change) came out a sixth smaller
+    // (feedback #194).
     if !placing {
         let _ = window::set_window_bounds(
             hwnd,

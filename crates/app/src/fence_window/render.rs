@@ -923,10 +923,9 @@ impl FenceViewState {
             _ => Backdrop::Solid,
         };
         let bitmaps = self.bitmaps.clone();
-        // A clock is never a tab (tool fences take no part in tabs): its one title is enough.
-        let title = self
-            .rolled_clock_caption()
-            .unwrap_or_else(|| self.title.clone());
+        // A clock or a plugin fence is never a tab (tool fences take no part in tabs): its one
+        // title is enough.
+        let title = self.rolled_caption().unwrap_or_else(|| self.title.clone());
         let rolled = self.roll_target();
         // A roll set / cancelled without the animation (reduced motion, retire, external
         // geometry) leaves the progress tween behind: rest it at the settled state.
@@ -1195,7 +1194,7 @@ impl FenceViewState {
         self.chrome_panel.resize(w, h)?;
         // A fence collapsed (or collapsing) to its left tab column keeps the width it returns
         // to; the column's width follows the expanded fence.
-        if !self.column_collapsed && self.roll_anim.as_ref().is_none_or(|a| a.width.is_none()) {
+        if !self.narrowed() && self.roll_anim.as_ref().is_none_or(|a| a.width.is_none()) {
             self.expanded_w_px = w;
         }
         self.rail_dip = self.measure_rail_w();
@@ -1210,6 +1209,7 @@ impl FenceViewState {
         self.content_panel
             .visual
             .set_visible(!self.rolled_up || self.roll_anim.is_some());
+        self.layout_web();
         Ok(())
     }
 
@@ -1284,7 +1284,8 @@ impl FenceViewState {
         bands: [std::ops::Range<usize>; 2],
         near: impl Fn(usize) -> bool,
     ) {
-        let icon_px = (self.icon_dip() * self.scale()).round() as u32;
+        // A zoom tween fetches at the size it ends at (`fence_window/zoom.rs`).
+        let icon_px = (self.icon_fetch_dip() * self.scale()).round() as u32;
         if (self.label_w - label_w).abs() > 0.5 || (self.label_wide_w - wide_w).abs() > 0.5 {
             self.label_w = label_w;
             self.label_wide_w = wide_w;
@@ -1681,60 +1682,461 @@ impl FenceViewState {
         (scroll, self.scrollbar_draw_in(&layout, view_h))
     }
 
-    /// 脚本栅栏: the script's output lines and the footer in place of items.
-    pub(super) fn redraw_script(&mut self) -> Result<()> {
-        let Some(script) = self.script.clone() else {
-            return Ok(());
+    /// 脚本栅栏: the key of the decoded picture of an `image=` row, decoding the file when it is
+    /// new (or changed): at most as tall as `height_dip` and, to keep memory small, no bigger
+    /// than twice that on screen. The last 40 pictures are kept (a list of pictures shows that many at once).
+    /// A plugin's picture (`plugin`) is read only when it is at most 20 MB and 4096 pixels on a
+    /// side; `blur` keeps it blurred (a plugin row's `blur`).
+    fn script_image_key(
+        &mut self,
+        path: &str,
+        height_dip: f32,
+        scale: f32,
+        plugin: bool,
+        blur: bool,
+    ) -> String {
+        use pecofence_plugin_host::view::{MAX_IMAGE_BYTES, MAX_IMAGE_SIDE};
+        const KEPT: usize = 40;
+        let bound = ((height_dip * scale).ceil() as u32 * 2).clamp(64, 1024);
+        // A picture comes from this computer's own disks: a share or a mapped network drive is
+        // not even asked whether the file is there (that already signs in to the server, with
+        // no click, and the fence would wait for a slow one at every draw).
+        let place = pecofence_platform::shell::drive_kind(std::path::Path::new(path));
+        let network = !matches!(place, "fixed" | "removable" | "ramdisk");
+        let stamp = if network {
+            None
+        } else {
+            std::fs::metadata(path).ok()
+        }
+        .and_then(|m| Some((m.modified().ok()?, m.len())))
+        .and_then(|(t, len)| Some((t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs(), len)))
+        .unwrap_or_default();
+        let key = format!("scriptimg:{path}|{}|{}|{bound}|{blur}", stamp.0, stamp.1);
+        if self.script_images.iter().any(|(k, _)| *k == key) {
+            return key;
+        }
+        let decoded = if network {
+            tracing::warn!(
+                place,
+                "script fence picture not on this computer's disks: not read"
+            );
+            None
+        } else if plugin && stamp.1 > MAX_IMAGE_BYTES {
+            tracing::warn!(bytes = stamp.1, path, "plugin picture over 20 MB: not read");
+            None
+        } else {
+            let file = std::path::Path::new(path);
+            let decoded = if plugin {
+                pecofence_platform::wallpaper::decode_scaled_within(
+                    file,
+                    bound,
+                    bound,
+                    MAX_IMAGE_SIDE,
+                )
+            } else {
+                pecofence_platform::wallpaper::decode_scaled(file, bound, bound)
+            };
+            decoded
+                .map(|d| {
+                    let mut image = Image {
+                        width: d.width,
+                        height: d.height,
+                        bgra: d.bgra,
+                    };
+                    // Decoded at up to twice its size on screen: the blur is as wide there.
+                    if blur {
+                        image.blur(8.0 * scale);
+                    }
+                    image
+                })
+                .map_err(|e| tracing::warn!(error = %e, path, plugin, "script fence picture not decoded (a plugin's: past 4096 pixels on a side, or not a picture)"))
+                .ok()
         };
-        use pecofence_render::fence_chrome::ScriptRowDraw;
+        self.script_images.push((key.clone(), decoded));
+        while self.script_images.len() > KEPT {
+            let (old, _) = self.script_images.remove(0);
+            self.bitmaps.borrow_mut().remove(&old);
+        }
+        key
+    }
+
+    /// 脚本栅栏: the script's output lines and the footer in place of items, scrolled as the
+    /// view's offset says. A second drawing follows when the first one had to move the offset
+    /// (the rows shrank under it, a followed line went to its place at once).
+    pub(super) fn redraw_script(&mut self) -> Result<()> {
+        for _ in 0..2 {
+            let Some((band, follow)) = self.draw_script_rows()? else {
+                return Ok(());
+            };
+            if !self.settle_script_scroll(band, follow) {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// 脚本栅栏: what a drawing of the rows leaves to do about the offset. The offset the rows
+    /// outgrew goes back inside them, and a followed row (`follow=`) whose key changed is
+    /// brought to the middle of the band: by a glide, at once when the pane is a new one, and
+    /// not at all while the user's own scrolling is recent. True when the offset moved at once.
+    fn settle_script_scroll(
+        &mut self,
+        band: pecofence_render::fence_chrome::ScriptBand,
+        follow: Option<(f32, f32)>,
+    ) -> bool {
+        let max = (band.content - band.height).max(0.0);
+        let mut moved = false;
+        if self.scroll_y > max + 0.01 {
+            self.scroll_anim = None;
+            self.scroll_y = max;
+            moved = true;
+        }
+        let key = self
+            .script
+            .as_ref()
+            .and_then(|s| s.rows.iter().find_map(|r| r.follow.clone()));
+        if key == self.script_scroll.follow {
+            return moved;
+        }
+        self.script_scroll.follow = key.clone();
+        let (Some(_), Some((top, height))) = (key, follow) else {
+            return moved;
+        };
+        let target = (top + height / 2.0 - band.height / 2.0).clamp(0.0, max);
+        if std::mem::take(&mut self.script_scroll.follow_now) {
+            let target = snap_offset(target, self.scale()).clamp(0.0, max);
+            self.scroll_anim = None;
+            if (target - self.scroll_y).abs() > 0.01 {
+                self.scroll_y = target;
+                moved = true;
+            }
+        } else if !self
+            .script_scroll
+            .user_at
+            .is_some_and(|at| at.elapsed() < SCRIPT_FOLLOW_PAUSE)
+        {
+            self.scroll_to_quietly(target, motion::SLOW);
+        }
+        moved
+    }
+
+    /// 脚本栅栏: draws the rows once. Returns the band that scrolls and the place of the
+    /// followed row in it (None: nothing was drawn).
+    fn draw_script_rows(
+        &mut self,
+    ) -> Result<
+        Option<(
+            pecofence_render::fence_chrome::ScriptBand,
+            Option<(f32, f32)>,
+        )>,
+    > {
+        let Some(script) = self.script.clone() else {
+            return Ok(None);
+        };
+        use pecofence_render::fence_chrome::{
+            ScriptBand, ScriptCellDraw, ScriptImageDraw, ScriptRowDraw, ScriptScroll, ScrollbarDraw,
+        };
+        // A plugin's `fit` row and the row under it: drawn as the native clock draws its time
+        // and date, scaled with the fence, in their short forms when it is narrow.
+        let plain = |r: &ScriptRowView| {
+            r.cells.is_empty()
+                && r.image.is_none()
+                && r.spans.is_empty()
+                && r.chart.is_none()
+                && r.canvas.is_none()
+                && r.input.is_none()
+                && r.progress.is_none()
+                && r.todo.is_none()
+                && r.icon.is_none()
+                && !r.blur
+                && !r.separator
+        };
+        // A clock's view (a `fit` row first, at most a date under it): drawn as the native
+        // clock. A `fit` row in other views is sized among the rows (`draw_script`).
+        if script
+            .rows
+            .first()
+            .is_some_and(|r| r.size.as_deref() == Some("fit"))
+            && script.rows.len() <= 2
+            && script.rows.iter().all(plain)
+        {
+            let (big, under) = (&script.rows[0], script.rows.get(1));
+            let short = |r: &ScriptRowView| r.short.clone().unwrap_or_default();
+            let (time, time_short) = (big.text.clone(), short(big));
+            let (date, date_short) =
+                under.map_or_else(Default::default, |r| (r.text.clone(), short(r)));
+            let theme = self
+                .material_foreground()
+                .with_label_color(self.behavior.label_color.get());
+            let chrome = self.chrome.clone();
+            let ok = self
+                .content_panel
+                .draw_ex(self.dpi, |session, _clip, wd, hd| {
+                    let (time, _) = chrome.clock_time(wd, hd, &time, &[time_short.as_str()], &date);
+                    let (shown, _) = chrome.clock_date(wd, hd, time, &date, &date_short);
+                    chrome.draw_clock(session, &theme, wd, hd, time, &date, shown)?;
+                    Ok(())
+                })?;
+            self.note_draw_result(ok);
+            return Ok(None);
+        }
+        // Another page of a list, another tab: the rows go back to their top.
+        let pane = script.rows.iter().find_map(|r| r.pane.clone());
+        if pane != self.script_scroll.pane {
+            self.script_scroll.pane = pane;
+            self.script_scroll.follow = None;
+            self.script_scroll.follow_now = true;
+            self.script_scroll.user_at = None;
+            self.scroll_anim = None;
+            self.scroll_y = 0.0;
+        }
+        let pinned_rows = script
+            .rows
+            .iter()
+            .position(|r| r.pane.is_some())
+            .unwrap_or(0);
+        let follow_row = script
+            .rows
+            .iter()
+            .position(|r| r.follow.is_some())
+            .map(|i| i + 1)
+            .filter(|&i| i < script.rows.len());
+        // The scrollbar, as the view's tweens have it now; its thumb is placed once the rows
+        // say how tall they are.
+        self.sync_scrollbar_alpha();
+        let now = Instant::now();
+        let (bar_alpha, bar_width, bar_parts) = (
+            self.sb_alpha.value_at(now),
+            self.sb_width.value_at(now),
+            self.sb_parts.value_at(now),
+        );
+        let arrow_hover = [
+            self.sb_arrow_fades.value(&ScrollHit::ArrowUp, now),
+            self.sb_arrow_fades.value(&ScrollHit::ArrowDown, now),
+        ];
+        let held = |h: ScrollHit| self.page_repeat == Some(h) && self.sb_pointer == Some(h);
+        let arrow_pressed = [held(ScrollHit::ArrowUp), held(ScrollHit::ArrowDown)];
+        let (above, radius) = (
+            self.content_y as f32 / self.scale(),
+            self.theme.corner_radius,
+        );
+        let bar = move |band: ScriptBand| {
+            let max = (band.content - band.height).max(0.0);
+            if max <= 0.0 || bar_alpha <= 0.0 {
+                return None;
+            }
+            // The band less what the window's rounded corners would cut, as the hit test has
+            // it (`scrollbar_geometry_in`).
+            let (top, h) = scrollbar_band(band.top, band.height, above + band.top, radius);
+            let (track_top, track_h) = scrollbar_track(top, h);
+            let thumb_h = scrollbar_thumb_h(track_h, band.height, band.content);
+            Some(ScrollbarDraw {
+                thumb_y: track_top + (track_h - thumb_h) * (band.offset.clamp(0.0, max) / max),
+                thumb_h,
+                width: bar_width,
+                alpha: bar_alpha,
+                parts: bar_parts,
+                band_top: top,
+                band_h: h,
+                arrow_hover,
+                arrow_pressed,
+            })
+        };
+        let scroll = ScriptScroll {
+            pinned_rows,
+            offset: self.scroll_y,
+            follow_row,
+            bar: &bar,
+        };
         let scale = self.scale();
+        // The pictures first: decoding changes `self`, and the rows then borrow what it decoded.
+        // A blurred one is sharp while the pointer is on it.
+        let hovered = self.script_hover;
+        let image_keys: Vec<Option<String>> = (0..script.rows.len())
+            .map(|i| {
+                let r = &script.rows[i];
+                let blur = r.blur && hovered != Some((i, 0));
+                let path = r.image.as_deref()?;
+                Some(self.script_image_key(path, r.image_height, scale, r.plugin, blur))
+            })
+            .collect();
+        let cell_keys: Vec<Vec<Option<String>>> = (0..script.rows.len())
+            .map(|i| {
+                let r = &script.rows[i];
+                (0..r.cells.len())
+                    .map(|c| {
+                        let cell = &r.cells[c];
+                        let blur = cell.blur && hovered != Some((i, c));
+                        let path = cell.image.as_deref()?;
+                        Some(self.script_image_key(path, cell.image_height, scale, r.plugin, blur))
+                    })
+                    .collect()
+            })
+            .collect();
+        // A drawing's pictures, by step, at the size the step asks (else 256 DIPs at most).
+        let canvas_keys: Vec<Vec<Option<String>>> = script
+            .rows
+            .iter()
+            .map(|r| {
+                let steps = r.canvas.as_ref().map_or(&[][..], |c| &c.draw[..]);
+                steps
+                    .iter()
+                    .map(|step| {
+                        let path = step.image.as_deref()?;
+                        let h = step.at.get(3).copied().unwrap_or(256.0).clamp(8.0, 2000.0);
+                        Some(self.script_image_key(path, h, scale, true, false))
+                    })
+                    .collect()
+            })
+            .collect();
+        let canvas_pictures: Vec<Vec<Option<ScriptImageDraw<'_>>>> = canvas_keys
+            .iter()
+            .map(|keys| {
+                keys.iter()
+                    .map(|key| picture(&self.script_images, key, 0.0))
+                    .collect()
+            })
+            .collect();
         let picked = self.material_foreground();
         // Colour names take the shade for the plate they are on: light text means a dark one.
         let dark = picked.text_primary.r > 0.5;
         let theme = picked.with_label_color(self.behavior.label_color.get());
+        let color_of = |c: &Option<String>| {
+            c.as_deref()
+                .and_then(|c| pecofence_core::script_output::color_rgb(c, dark))
+                .map(|[cr, cg, cb]| ColorF::from_rgba8(cr, cg, cb, 0xFF))
+        };
+        // A plugin row's or cell's look under the pointer (`hover: {color, text}`), in place of
+        // its own.
+        fn look(
+            on: bool,
+            hover: &Option<pecofence_plugin_host::view::Hover>,
+        ) -> Option<&pecofence_plugin_host::view::Hover> {
+            hover.as_ref().filter(|_| on)
+        }
+        let cells: Vec<Vec<ScriptCellDraw<'_>>> = script
+            .rows
+            .iter()
+            .zip(&cell_keys)
+            .enumerate()
+            .map(|(i, (r, keys))| {
+                r.cells
+                    .iter()
+                    .zip(keys)
+                    .enumerate()
+                    .map(|(ci, (c, key))| ScriptCellDraw {
+                        text: look(hovered == Some((i, ci)), &c.hover)
+                            .and_then(|h| h.text.as_deref())
+                            .unwrap_or(&c.text),
+                        color: color_of(
+                            &look(hovered == Some((i, ci)), &c.hover).and_then(|h| h.color.clone()),
+                        )
+                        .or(color_of(&c.color)),
+                        hover: c.hover.is_some() || c.wheel,
+                        clickable: c.clickable,
+                        slider: c.slider,
+                        width: c.width,
+                        align: c.align,
+                        checked: c.checked,
+                        bold: c.bold,
+                        gap: c.gap,
+                        checkbox: c.checkbox,
+                        fill: c.fill,
+                        under: c.under,
+                        blur: c.blur,
+                        image: picture(&self.script_images, key, c.image_height),
+                    })
+                    .collect()
+            })
+            .collect();
         let rows: Vec<ScriptRowDraw<'_>> = script
             .rows
             .iter()
-            .map(|r| ScriptRowDraw {
-                text: &r.text,
+            .zip(&cells)
+            .zip(&image_keys)
+            .zip(&canvas_pictures)
+            .enumerate()
+            .map(|(i, (((r, cells), key), pictures))| ScriptRowDraw {
+                fit: (r.size.as_deref() == Some("fit")).then(|| r.short.as_deref().unwrap_or("")),
+                spans: &r.spans,
+                blur: r.blur,
+                progress: r.progress,
+                chart: r.chart.as_ref(),
+                canvas: r.canvas.as_deref().map(|c| (c, &pictures[..])),
+                line: (r.input.as_ref())
+                    .filter(|i| i.kind == "line" || i.kind == "text")
+                    .map(|l| {
+                        let lines = if l.kind == "text" { l.lines } else { 1 };
+                        (l.value.as_str(), l.placeholder.as_str(), lines)
+                    }),
+                // Also a row with a look under the pointer, the wheel or a menu of its own (a
+                // right-click finds it).
+                hover: r.plugin
+                    && (r.blur
+                        || r.tip.is_some()
+                        || r.clickable
+                        || r.hover.is_some()
+                        || r.wheel
+                        || r.drag.is_some()
+                        || !r.menu.is_empty()),
+                cells,
+                image: picture(&self.script_images, key, r.image_height),
+                hidden: r.hidden,
+                text: look(hovered == Some((i, 0)), &r.hover)
+                    .and_then(|h| h.text.as_deref())
+                    .unwrap_or(&r.text),
                 separator: r.separator,
                 todo: r.todo,
-                color: r
-                    .color
-                    .as_deref()
-                    .and_then(|c| pecofence_core::script_output::color_rgb(c, dark))
-                    .map(|[cr, cg, cb]| ColorF::from_rgba8(cr, cg, cb, 0xFF)),
+                color: color_of(
+                    &look(hovered == Some((i, 0)), &r.hover).and_then(|h| h.color.clone()),
+                )
+                .or(color_of(&r.color)),
                 icon: r.icon.as_deref(),
                 clickable: r.clickable,
                 opens: r.opens,
+                size: match r.size.as_deref() {
+                    Some("small") => 0.86,
+                    Some("large") => 1.3,
+                    Some("xlarge") => 1.7,
+                    Some("huge") => 2.4,
+                    _ => 1.0,
+                },
+                bold: r.bold,
             })
             .collect();
         let chrome = self.chrome.clone();
+        let bitmaps = self.bitmaps.clone();
         let hint = if script.quiet {
             pecofence_core::i18n::text("正在运行…")
+        } else if script.rows.iter().any(|r| r.plugin) {
+            ""
         } else {
             pecofence_core::i18n::text("脚本没有输出文字")
         };
-        // The hover plates fade like an icon's: the row under the pointer in, the others out.
+        // The hover plates fade like an icon's: the row or button under the pointer in, the
+        // others out.
         let now = Instant::now();
         let animate = self.motion.enabled();
-        let hovered = self.script_hover;
-        if let Some(row) = hovered {
-            self.script_fades.set(animate, row, 1.0, now);
+        if let Some(at) = hovered {
+            self.script_fades.set(animate, at, 1.0, now);
         }
         self.script_fades
-            .release_unless(animate, now, |row| hovered == Some(*row));
-        let hover: Vec<(usize, f32)> = (0..rows.len())
-            .map(|row| (row, self.script_fades.value(&row, now)))
+            .release_unless(animate, now, |at| hovered == Some(*at));
+        let hover: Vec<((usize, usize), f32)> = rows
+            .iter()
+            .enumerate()
+            .flat_map(|(row, r)| (0..r.cells.len().max(1)).map(move |cell| (row, cell)))
+            .map(|at| (at, self.script_fades.value(&at, now)))
             .filter(|(_, a)| *a > 0.0)
             .collect();
-        self.script_fades.prune(now, |row| *row < rows.len());
+        self.script_fades.prune(now, |&(row, cell)| {
+            rows.get(row).is_some_and(|r| cell < r.cells.len().max(1))
+        });
         let pressed = match self.pressed {
-            Some(PressTarget::ScriptRow(row)) if self.press_inside => Some(row),
+            Some(PressTarget::ScriptRow(row, cell)) if self.press_inside => Some((row, cell)),
             _ => None,
         };
         let text_size = self.text_size;
-        // Rows that do not fit scroll above the footer.
         let width_dip = self.content_size_px().0 as f32 / scale;
         // A fence too narrow for the footer's line shows the status without the script's name.
         let (footer, footer_form) =
@@ -1749,16 +2151,14 @@ impl FenceViewState {
             );
             self.script_footer_form = footer_form;
         }
-        let extent = chrome.script_extent(width_dip, text_size, &rows, &footer)?;
-        let (scroll, scrollbar) = self.scroll_tool_text(extent);
-        let mut hits = Vec::new();
+        let mut drawn = None;
         let ok = self
             .content_panel
             .draw_ex(self.dpi, |session, _clip, wd, hd| {
-                hits = chrome.draw_script(
-                    session, &theme, scale, wd, hd, text_size, &rows, &hover, pressed, hint,
-                    &footer, scroll, scrollbar,
-                )?;
+                drawn = Some(chrome.draw_script(
+                    session, &theme, scale, wd, hd, text_size, &rows, &hover, pressed, &bitmaps,
+                    hint, &footer, &scroll,
+                )?);
                 Ok(())
             })?;
         self.note_draw_result(ok);
@@ -1767,11 +2167,21 @@ impl FenceViewState {
         if self.content_busy {
             self.frames.request();
         }
-        self.script_rows = hits
+        let Some(drawn) = drawn else {
+            return Ok(None);
+        };
+        self.script_rows = drawn
+            .hits
             .into_iter()
-            .map(|(row, r)| (row, [r.left, r.top, r.right, r.bottom]))
+            .map(|(row, cell, r)| (row, cell, [r.left, r.top, r.right, r.bottom]))
             .collect();
-        Ok(())
+        self.script_scroll.band_top = drawn.band.top;
+        self.script_scroll.band_h = drawn.band.height;
+        self.script_scroll.content_h = drawn.band.content;
+        self.script_scroll.row_step = drawn.row_step;
+        // The wheel and a thumb let go rest on a line's top, as in a note.
+        self.tool_line_tops = drawn.tops;
+        Ok(Some((drawn.band, drawn.follow)))
     }
 
     /// 便签与待办: the note's lines in place of items.
@@ -1960,8 +2370,24 @@ impl FenceViewState {
 
     pub(super) fn redraw_content(&mut self) -> Result<()> {
         self.sync_idle_fade(Instant::now());
-        self.content_look
-            .set(Some(self.material_foreground().label_look()));
+        let picked = self.material_foreground();
+        self.content_look.set(Some(picked.label_look()));
+        // A plugin's theme is what the fence draws (the content is drawn again when that
+        // changes): light text means `dark`.
+        let light_text = picked.text_primary.r > 0.5;
+        if let Some(web) = &self.web {
+            web.set_theme(light_text);
+            return self.redraw_web();
+        }
+        if self.script.is_some()
+            && let Some(was) = self.light_text.replace(Some(light_text))
+            && was != light_text
+        {
+            self.queue.push(Command::FenceInkChanged {
+                fence: self.active,
+                light_text,
+            });
+        }
         if self.note.is_some() {
             return self.redraw_note();
         }
@@ -2142,7 +2568,7 @@ impl FenceViewState {
         let content = ContentDraw {
             items: &cells,
             group_headers: &group_headers,
-            icon_size: self.icon_size as f32,
+            icon_size: self.icon_size as f32 * self.zoom_icon,
             label_lines: self.label_lines,
             line_h: grid.metrics.line_h,
             icon_top: grid.metrics.icon_top,
@@ -2443,6 +2869,22 @@ impl FenceViewState {
         self.arm_fit_ahead();
         Ok(())
     }
+}
+
+/// The picture of a script or plugin row by its cache key, when it is decoded: drawn `height`
+/// DIPs tall (0: as the drawing's step asks).
+fn picture<'a>(
+    images: &'a [(String, Option<Image>)],
+    key: &'a Option<String>,
+    height: f32,
+) -> Option<pecofence_render::fence_chrome::ScriptImageDraw<'a>> {
+    let key = key.as_deref()?;
+    let (_, image) = images.iter().find(|(k, _)| k == key)?;
+    Some(pecofence_render::fence_chrome::ScriptImageDraw {
+        key,
+        image: image.as_ref()?,
+        height,
+    })
 }
 
 /// Localised caption of a "按时间分组" section (literal keys keep `check-locales.py` honest).

@@ -12,7 +12,7 @@
 - [Custom themes: the theme file format](THEMES.md)
 - [Usage statistics: what is sent and how to switch it off](USAGE_STATS.md)
 - [Complete feature list, in Chinese](FEATURES.md)
-- [Tools (小工具): notes, clocks, script fences and jump in file dialogs, in Chinese](FEATURES.md#8-小工具); [the same from the command line](CLI.md#tools-小工具)
+- [Tools (小工具) and plugins: the plugin store, notes, clocks, script fences, in Chinese](FEATURES.md#9-小工具); [the same from the command line](CLI.md#tools-小工具), [plugins from the command line](CLI.md#plugins); writing a plugin: `AGENTS.md` of [DayuanJiang/PecoFence-plugins](https://github.com/DayuanJiang/PecoFence-plugins)
 - [README in other languages](readme/): the root README is English; translations live in `docs/readme/`
 
 The development checkout may retain historical design proposals and implementation

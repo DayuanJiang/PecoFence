@@ -257,6 +257,9 @@ pub enum MarqueeEvent {
     /// the App, which owns that mode, ends it (the anchor showing the fences by itself left
     /// them over Windows' own icons, with the fences kept on quick hide still away).
     DoubleClickInWindowsDesktop,
+    /// The right button came up on the bare desktop, at this point: Windows' desktop menu opens
+    /// there.
+    MenuAt(POINT),
 }
 
 fn marquee_rect(a: POINT, b: POINT) -> RECT {
@@ -376,6 +379,8 @@ pub struct DesktopAnchor {
     /// Fences the Peek raises a moment later (`hold_for_peek`): another program's window hides
     /// them, and they must be transparent on screen before they come over it.
     peek_held: Vec<HWND>,
+    /// A Peek of this fence alone (a plugin command's shortcut): the others stay where they are.
+    pub peek_only: Option<HWND>,
     /// Called when another application takes the foreground during a peek.
     pub on_peek_interrupted: Option<Box<dyn Fn()>>,
     /// Foreground transitions also signal virtual-desktop switches before registry writes
@@ -565,6 +570,7 @@ impl DesktopAnchor {
             peeking: false,
             peek_shown: Vec::new(),
             peek_held: Vec::new(),
+            peek_only: None,
             on_peek_interrupted: None,
             on_foreground_changed: None,
             on_desktop_front: None,
@@ -859,7 +865,7 @@ impl DesktopAnchor {
         let mut refused = None;
         self.with_anchoring(|s| {
             for (f, shadow) in s.fences.clone() {
-                if s.peek_held.contains(&f) {
+                if s.peek_held.contains(&f) || s.peek_only.is_some_and(|only| only != f) {
                     continue;
                 }
                 for h in std::iter::once(f).chain(shadow) {
@@ -1501,6 +1507,9 @@ impl DesktopAnchor {
                     let _ = desktop::set_topmost(*w, true);
                 }
                 for (f, shadow) in s.fences.clone() {
+                    if s.peek_only.is_some_and(|only| only != f) {
+                        continue;
+                    }
                     // One that quick hide is still fading out is visible until the fade ends.
                     let quick_hidden =
                         s.quick.fences_hidden && !s.quick_hide_excluded.contains(&(f.0 as isize));
@@ -1525,6 +1534,7 @@ impl DesktopAnchor {
         } else {
             self.topmost_refused = false;
             self.peek_held.clear();
+            self.peek_only = None;
             self.with_anchoring(|s| {
                 for (f, shadow) in s.fences.clone() {
                     for h in std::iter::once(f).chain(shadow) {
@@ -1678,6 +1688,9 @@ impl DesktopAnchor {
         if buttons.left_down {
             self.quick.seen.presses += 1;
         }
+        if buttons.right_up {
+            self.on_desktop_menu_button_up();
+        }
         if !buttons.left_down && !buttons.left_up {
             self.track_marquee();
             return;
@@ -1728,6 +1741,32 @@ impl DesktopAnchor {
             );
             self.quick.pending_toggle = Some(pt);
             self.sentinel.set_timer(TIMER_QUICKHIDE, QUICKHIDE_DELAY_MS);
+        }
+    }
+
+    /// The right button came up: on the bare desktop Windows opens its menu there, and what its
+    /// 新建 and 粘贴 make goes to that spot on a Windows desktop (#238). The App keeps the point
+    /// for the next new icons of 「桌面」 when it places them freely.
+    fn on_desktop_menu_button_up(&mut self) {
+        // With Windows' own icons shown 「桌面」 does not arrange like the desktop, and asking
+        // Explorer which icon is under the pointer (up to 200 ms) would come just as it builds
+        // its menu.
+        if !shell_icons::desktop_icons_hidden() {
+            return;
+        }
+        let pt = window::cursor_pos();
+        let hit = desktop::window_from_point(pt.x, pt.y);
+        let root = desktop::root_ancestor(hit);
+        // Windows' icons are hidden here, so none can be under the pointer.
+        let bare = !self.all_windows().contains(&root) && self.is_desktop_window(hit);
+        tracing::debug!(
+            ?pt,
+            bare,
+            hit = %desktop::class_name(hit),
+            "right button up while the desktop is in front"
+        );
+        if bare {
+            self.emit_marquee(MarqueeEvent::MenuAt(pt));
         }
     }
 

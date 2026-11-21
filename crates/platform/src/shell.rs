@@ -5,7 +5,7 @@ use crate::wide::to_wide;
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use windows_core::{GUID, Interface, PCWSTR, PWSTR, Result};
+use windows_core::{GUID, HRESULT, Interface, PCWSTR, PWSTR, Result};
 
 // FOLDERID_Desktop / FOLDERID_PublicDesktop (KnownFolders.h).
 const FOLDERID_DESKTOP: GUID = GUID::from_u128(0xB4BFCC3A_DB2C_424C_B029_7FE99A87C641);
@@ -1373,6 +1373,208 @@ pub fn recycle_unrecorded(path: &Path) -> Result<bool> {
     }
 }
 
+/// Moves `path` to the Recycle Bin without Windows' questions, progress or error boxes, for a
+/// plugin's `pf.folder.trash`. Never deletes for good: an item the shell would delete instead
+/// (a network folder, a USB stick, one too large for the bin, a drive whose bin is switched
+/// off) is left where it is, and the error says so. Blocks like [`transfer_to_folder`].
+pub fn recycle_quietly(path: &Path) -> Result<()> {
+    const FOFX_RECYCLEONDELETE: u32 = 0x0008_0000;
+    const FOF_NOERRORUI: u32 = 0x0400;
+    let flags = (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT) as u32;
+    let nuke = std::sync::Arc::new(AtomicBool::new(false));
+    // An item larger than the whole bin is deleted for good, though the shell's sink is told
+    // it would be recycled.
+    let size = std::fs::metadata(path).map_or(0, |m| m.len());
+    let max = bin_capacity_mb(path);
+    tracing::debug!(
+        size,
+        ?max,
+        "move to the Recycle Bin: the item's size and the bin's"
+    );
+    if max.is_some_and(|mb| size > u64::from(mb) * 1024 * 1024) {
+        return Err(not_recyclable());
+    }
+    // SAFETY: COM calls on objects created here; the caller's thread has COM initialized.
+    unsafe {
+        let op: IFileOperation = CoCreateInstance(&FileOperation, None, CLSCTX_ALL as u32)?;
+        op.SetOperationFlags(FOFX_RECYCLEONDELETE | FOF_NOERRORUI | flags)
+            .ok()?;
+        let sink: IRecycleOnly = RecycleOnly(nuke.clone()).into();
+        let sink = sink.cast::<IFileOperationProgressSink>()?;
+        op.DeleteItem(&shell_item(path)?, &sink).ok()?;
+        let performed = op.PerformOperations();
+        if nuke.load(Ordering::Relaxed) {
+            return Err(not_recyclable());
+        }
+        if op.GetAnyOperationsAborted().is_ok_and(|b| b.as_bool()) {
+            return Err(E_CANCELLED.into());
+        }
+        performed.ok()
+    }
+}
+
+fn not_recyclable() -> windows_core::Error {
+    windows_core::Error::new(
+        COPYENGINE_E_RECYCLE_BIN_NOT_FOUND,
+        "it cannot go to the Recycle Bin (a network folder, a USB stick, too large for the bin, or the bin is off for that drive); nothing was deleted",
+    )
+}
+
+/// The most MB the Recycle Bin of `path`'s drive holds, as Windows keeps it for the user
+/// (`BitBucket\Volume\{GUID}\MaxCapacity`), when it says.
+fn bin_capacity_mb(path: &Path) -> Option<u32> {
+    windows_core::link!("kernel32.dll" "system" fn GetVolumePathNameW(file: PCWSTR, root: PWSTR, len: u32) -> i32);
+    windows_core::link!("kernel32.dll" "system" fn GetVolumeNameForVolumeMountPointW(root: PCWSTR, name: PWSTR, len: u32) -> i32);
+    let file = to_wide(&path.to_string_lossy());
+    let (mut root, mut name) = ([0u16; 261], [0u16; 64]);
+    // SAFETY: a NUL-terminated input and buffers of the lengths passed.
+    let found = unsafe {
+        GetVolumePathNameW(PCWSTR(file.as_ptr()), PWSTR(root.as_mut_ptr()), 261) != 0
+            && GetVolumeNameForVolumeMountPointW(
+                PCWSTR(root.as_ptr()),
+                PWSTR(name.as_mut_ptr()),
+                64,
+            ) != 0
+    };
+    let name = String::from_utf16_lossy(&name);
+    let guid = name
+        .get(name.find('{')?..=name.find('}')?)
+        .filter(|_| found)?;
+    let key =
+        format!(r"Software\Microsoft\Windows\CurrentVersion\Explorer\BitBucket\Volume\{guid}");
+    reg_dword(HKEY_CURRENT_USER, &key, "MaxCapacity")
+}
+
+// The shell's progress sink of [`recycle_quietly`], with the SDK's method names.
+mod recycle_sink {
+    #![allow(non_snake_case)]
+    use super::*;
+
+    /// `TSF_DELETE_RECYCLE_IF_POSSIBLE`: in `PreDeleteItem`, the item goes to the Recycle Bin.
+    const TSF_DELETE_RECYCLE_IF_POSSIBLE: u32 = 0x80;
+    pub const COPYENGINE_E_RECYCLE_BIN_NOT_FOUND: windows_core::HRESULT =
+        windows_core::HRESULT(0x8027_003A_u32 as _);
+    type Raw = *mut core::ffi::c_void;
+
+    // IFileOperationProgressSink (shobjidl_core.h) as the shell calls it, for
+    // [`recycle_quietly`]: an item the shell would delete for good (its `PreDeleteItem` lacks
+    // TSF_DELETE_RECYCLE_IF_POSSIBLE) stops the operation before anything is deleted.
+    windows_core::interface_decl! {
+        unsafe trait IRecycleOnly(IRecycleOnly_Vtbl, IRecycleOnly_Impl) : windows_core::IUnknown
+            = 0x04b0f1a7_9490_44bc_96e1_4296a31252e2
+        {
+            unsafe fn StartOperations(&self) -> HRESULT;
+            unsafe fn FinishOperations(&self, result: HRESULT) -> HRESULT;
+            unsafe fn PreRenameItem(&self, flags: u32, item: Raw, name: Raw) -> HRESULT;
+            unsafe fn PostRenameItem(&self, flags: u32, item: Raw, name: Raw, result: HRESULT, made: Raw) -> HRESULT;
+            unsafe fn PreMoveItem(&self, flags: u32, item: Raw, to: Raw, name: Raw) -> HRESULT;
+            unsafe fn PostMoveItem(&self, flags: u32, item: Raw, to: Raw, name: Raw, result: HRESULT, made: Raw) -> HRESULT;
+            unsafe fn PreCopyItem(&self, flags: u32, item: Raw, to: Raw, name: Raw) -> HRESULT;
+            unsafe fn PostCopyItem(&self, flags: u32, item: Raw, to: Raw, name: Raw, result: HRESULT, made: Raw) -> HRESULT;
+            unsafe fn PreDeleteItem(&self, flags: u32, item: Raw) -> HRESULT;
+            unsafe fn PostDeleteItem(&self, flags: u32, item: Raw, result: HRESULT, made: Raw) -> HRESULT;
+            unsafe fn PreNewItem(&self, flags: u32, to: Raw, name: Raw) -> HRESULT;
+            unsafe fn PostNewItem(&self, flags: u32, to: Raw, name: Raw, template: Raw, attributes: u32, result: HRESULT, made: Raw) -> HRESULT;
+            unsafe fn UpdateProgress(&self, total: u32, done: u32) -> HRESULT;
+            unsafe fn ResetTimer(&self) -> HRESULT;
+            unsafe fn PauseTimer(&self) -> HRESULT;
+            unsafe fn ResumeTimer(&self) -> HRESULT;
+        }
+    }
+
+    /// True once the shell meant to delete an item for good.
+    pub struct RecycleOnly(pub std::sync::Arc<AtomicBool>);
+
+    windows_core::implement_decl! {
+        impl RecycleOnly as pub RecycleOnly_Impl: [IRecycleOnly]
+    }
+
+    impl IRecycleOnly_Impl for RecycleOnly_Impl {
+        unsafe fn PreDeleteItem(&self, flags: u32, _: Raw) -> HRESULT {
+            if flags & TSF_DELETE_RECYCLE_IF_POSSIBLE != 0 {
+                return S_OK;
+            }
+            tracing::info!(
+                flags,
+                "move to the Recycle Bin: the shell would delete the item for good, stopped"
+            );
+            self.0.store(true, Ordering::Relaxed);
+            COPYENGINE_E_RECYCLE_BIN_NOT_FOUND
+        }
+        unsafe fn StartOperations(&self) -> HRESULT {
+            S_OK
+        }
+        unsafe fn FinishOperations(&self, _: HRESULT) -> HRESULT {
+            S_OK
+        }
+        unsafe fn PreRenameItem(&self, _: u32, _: Raw, _: Raw) -> HRESULT {
+            S_OK
+        }
+        unsafe fn PostRenameItem(&self, _: u32, _: Raw, _: Raw, _: HRESULT, _: Raw) -> HRESULT {
+            S_OK
+        }
+        unsafe fn PreMoveItem(&self, _: u32, _: Raw, _: Raw, _: Raw) -> HRESULT {
+            S_OK
+        }
+        unsafe fn PostMoveItem(
+            &self,
+            _: u32,
+            _: Raw,
+            _: Raw,
+            _: Raw,
+            _: HRESULT,
+            _: Raw,
+        ) -> HRESULT {
+            S_OK
+        }
+        unsafe fn PreCopyItem(&self, _: u32, _: Raw, _: Raw, _: Raw) -> HRESULT {
+            S_OK
+        }
+        unsafe fn PostCopyItem(
+            &self,
+            _: u32,
+            _: Raw,
+            _: Raw,
+            _: Raw,
+            _: HRESULT,
+            _: Raw,
+        ) -> HRESULT {
+            S_OK
+        }
+        unsafe fn PostDeleteItem(&self, _: u32, _: Raw, _: HRESULT, _: Raw) -> HRESULT {
+            S_OK
+        }
+        unsafe fn PreNewItem(&self, _: u32, _: Raw, _: Raw) -> HRESULT {
+            S_OK
+        }
+        unsafe fn PostNewItem(
+            &self,
+            _: u32,
+            _: Raw,
+            _: Raw,
+            _: Raw,
+            _: u32,
+            _: HRESULT,
+            _: Raw,
+        ) -> HRESULT {
+            S_OK
+        }
+        unsafe fn UpdateProgress(&self, _: u32, _: u32) -> HRESULT {
+            S_OK
+        }
+        unsafe fn ResetTimer(&self) -> HRESULT {
+            S_OK
+        }
+        unsafe fn PauseTimer(&self) -> HRESULT {
+            S_OK
+        }
+        unsafe fn ResumeTimer(&self) -> HRESULT {
+            S_OK
+        }
+    }
+}
+use recycle_sink::{COPYENGINE_E_RECYCLE_BIN_NOT_FOUND, IRecycleOnly, RecycleOnly};
+
 /// Deletes `paths` as Explorer's Delete key does: to the Recycle Bin with a record in Windows'
 /// undo list, or for good with `permanent` (Shift+Delete), with Windows' own questions,
 /// progress and error boxes. Paths that are gone already are left out. Blocks like
@@ -1596,6 +1798,43 @@ pub fn shell_execute(path: &Path, verb: Option<&str>, owner: Option<HWND>) -> Re
         unsafe { ILFree(Some(pidl)) };
     }
     result
+}
+
+/// Whether `path` lies where the Store edition, installed on another drive, sees its own data
+/// instead of the real folders: `<that drive>:\Users\<this user's profile name>\AppData\...`.
+/// Windows keeps a packaged program's data for that drive in `<drive>:\WpSystem\<SID>\AppData`
+/// and shows it to the program at that path (measured in a test guest, GitHub #244), so a
+/// program installed under such a folder is "not there" for PecoFence and only for it.
+pub fn under_package_view_of_appdata(path: &Path) -> bool {
+    let profile = std::env::var_os("USERPROFILE").map(PathBuf::from);
+    let Some(name) = profile.as_deref().and_then(Path::file_name) else {
+        return false;
+    };
+    let system = std::env::var("SystemDrive").unwrap_or_default();
+    in_appdata_view(path, &name.to_string_lossy(), &system)
+}
+
+/// [`under_package_view_of_appdata`] for a given profile folder name and system drive (`C:`).
+fn in_appdata_view(path: &Path, profile_name: &str, system_drive: &str) -> bool {
+    let text = path.to_string_lossy().to_lowercase();
+    let tail = format!(r":\users\{}\appdata\", profile_name.to_lowercase());
+    system_drive.len() == 2
+        && !text.starts_with(&system_drive.to_lowercase())
+        && text.get(1..).is_some_and(|rest| rest.starts_with(&tail))
+}
+
+/// Opens `path` with the shell in a `rundll32` process of its own. A program the Store edition
+/// starts runs outside its package and sees the real folders (see
+/// [`under_package_view_of_appdata`]), so a shortcut to a program installed there opens as it
+/// does from Explorer.
+pub fn shell_execute_outside(path: &Path) -> std::io::Result<()> {
+    let windows =
+        std::env::var_os("SystemRoot").map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from);
+    std::process::Command::new(windows.join("System32").join("rundll32.exe"))
+        .arg("shell32.dll,ShellExec_RunDLL")
+        .arg(path)
+        .spawn()
+        .map(drop)
 }
 
 #[link(name = "shlwapi")]
@@ -1874,6 +2113,24 @@ mod place_tests {
         let packaged = format!(r"{system}\Users\jane\AppData\Local\Packages\x\LocalCache\a.json");
         assert_eq!(path_place(Path::new(&packaged)), "fixed+system+package");
         assert_eq!(path_place(Path::new("relative")), "unknown");
+    }
+
+    /// GitHub #244: only `<other drive>:\Users\<this profile>\AppData\...` is shown to a Store
+    /// package on that drive as its own data (measured in a guest with the package on D:).
+    #[test]
+    fn the_package_view_of_appdata_is_the_profile_name_on_another_drive() {
+        let view = |p: &str| super::in_appdata_view(Path::new(p), "Jane", "C:");
+        assert!(view(
+            r"D:\Users\jane\AppData\Local\Programs\WorkBuddy\WorkBuddy.exe"
+        ));
+        assert!(view(r"E:\USERS\Jane\AppData\Roaming\x.exe"));
+        assert!(!view(r"C:\Users\jane\AppData\Local\Programs\x.exe"));
+        assert!(!view(
+            r"D:\Users\someone\AppData\Local\Programs\Tool\Tool.exe"
+        ));
+        assert!(!view(r"D:\X\AppData\Local\Programs\Other\Other.exe"));
+        assert!(!view(r"D:\Users\jane\Desktop\a.lnk"));
+        assert!(!view(r"\\server\Users\jane\AppData\x.exe"));
     }
 }
 

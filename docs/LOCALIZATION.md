@@ -51,15 +51,16 @@ filenames, rule names, snapshot names or fence titles.
 Default group/rule names are localized when created. They are then saved as names
 and are not rewritten by later language changes.
 
-The same holds for the titles of new tool fences (便签, 时钟) and for the three
-examples of 脚本栅栏 (天气, GitHub 仓库动态 and 电脑状态 on the 小工具 page): the file name of each follows the display language
-when it is written (`天气.ps1`, `weather.ps1`, `Wetter.ps1`; `GitHub 动态.ps1`,
-`github.ps1`; `电脑状态.ps1`, `pc-status.ps1` and so on), its
-comments and labels are Chinese for both Chinese languages and English for every other
-language, and a later language change leaves the file as it is. The clock (时钟)
-writes the time and the date in the Windows region format, so their language and the
-12 or 24 hour time follow the Windows region setting, whatever display language
-PecoFence uses.
+The same holds for the titles of new tool fences (便签, 时钟, and a plugin's fence, titled with
+the plugin's name in the display language): a later language change leaves them as they are. A
+plugin brings its own name, description, settings and texts in the languages it has
+(`plugin.json`, its `main.js`); PecoFence picks the display language, another one of the same
+family, English, or any, and tells the plugin the language (`pf.lang`, and the `lang` event when
+it changes). The clock (时钟) writes the time and the date in the Windows region format, so their
+language and the 12 or 24 hour time follow the Windows region setting, whatever display language
+PecoFence uses. The three examples of 脚本栅栏 that 0.3.0 to 0.4.0 wrote (天气, GitHub 仓库动态 and
+电脑状态, file names in the display language) are plugins now; files already written stay as
+they are.
 
 ## Validation and adding a language
 

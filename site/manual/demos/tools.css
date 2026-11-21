@@ -1,4 +1,4 @@
-/* Lessons 4.4 (search: .sr-*), 7.1 (tools: .tl-*), 7.2 (script-rows: .sx-*), 7.3 (write-scripts,
+/* Lessons 4.4 (search: .sr-*), 7.1 (tools: .tl-*, the plugin store), 7.2 (script-rows: .sx-*), 7.3 (write-scripts,
    a reading lesson: .ws-*) and 7.4 (dialog-jump: .dj-*). Windows reuse the app windows of
    demos/peek.css (.pk-win, .pk-titlebar, .pk-caps, .pk-ribbon, .pk-tip). */
 
@@ -129,7 +129,8 @@
         #fff;
 }
 
-/* ---------- 小工具 (fence_chrome.rs draw_note / draw_clock, note_edit.rs) ---------- */
+/* ---------- 小工具: the plugin list, the install warning, plugin fences (ui/settings.html
+   #page-tools, plConfirm; plugins/todo, plugins/weather) ---------- */
 
 .tl-lede {
     left: 2px;
@@ -139,18 +140,85 @@
     white-space: normal;
 }
 
-/* a button that cannot be pressed (时钟's 「已在桌面上」) */
+/* a row: 「名称 · 作者 · 版本」, the author and version in the secondary colour; grey tags under the
+   description for what reaches past the fence */
+.stage-inner .tl-meta { position: static; color: #5d5d5d; font-size: 9.5px }
+.tl-tags { left: 12px; display: flex; gap: 3px }
+.stage-inner .tl-tags span { position: static; padding: 0 4px; border-radius: 3px; background: rgba(0, 0, 0, .055); color: #5d5d5d; font-size: 9px; line-height: 13px }
+
+/* a button that cannot be pressed (正在下载…, 已在桌面上) */
 .set-btn.tl-dis, .set-btn.tl-dis.hot { background: rgba(249, 249, 249, .3); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .06); color: rgba(0, 0, 0, .36) }
 
-/* a note is edited in place: nothing changes but a caret after the typed text */
-.stage-inner .tl-lines .tl-caret { display: inline-block; width: 1px; height: 15px; margin-left: 1px; vertical-align: -3px; background: #1b2133 }
+/* the install warning: the window dimmed, the dialog in the middle of the page */
+.tl-back { background: rgba(0, 0, 0, .3); border-radius: 8px; z-index: 5 }
+.tl-dlg {
+    padding: 12px 14px;
+    border-radius: 6px;
+    background: #fbfbfb;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .08), 0 8px 24px rgba(0, 0, 0, .25);
+    color: #1b1b1b;
+}
+.stage-inner .tl-dlg * { position: relative }
+.tl-dlg-h { font-size: 13px; font-weight: 600; line-height: 18px; margin-bottom: 4px }
+.tl-dlg-p { font-size: 9.5px; line-height: 13px; margin: 2px 0 }
+.tl-dlg-warn {
+    margin: 8px 0;
+    padding: 5px 8px;
+    border-radius: 3px;
+    background: #fff4ce;
+    box-shadow: inset 0 0 0 1px rgba(157, 93, 0, .3);
+}
+.tl-dlg-warn.plain { background: rgba(0, 0, 0, .04); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1) }
+.tl-dlg-warn ul { margin: 2px 0 4px; padding-left: 14px; font-size: 9.5px; line-height: 13px }
+.stage-inner .tl-dlg-warn li { display: list-item }
+.tl-dlg-btns { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px }
+.tl-dlg-btn {
+    min-width: 52px;
+    padding: 0 10px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, .7);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1);
+    font-size: 10px;
+    line-height: 22px;
+    text-align: center;
+}
+.tl-dlg-btn.acc { background: #005fb8; color: #fff; box-shadow: none }
+.tl-dlg-btn.acc.hot { background: rgba(0, 95, 184, .9) }
+.tl-dlg-btn.acc.down { background: rgba(0, 95, 184, .8); color: rgba(255, 255, 255, .8) }
 
-/* lines of a note or of a script's output: 14 px in, 5 px apart */
+/* the 待办 plugin: a line to type into on top, then the tasks with their check boxes */
+.tl-add {
+    left: 12px;
+    right: 12px;
+    top: 4px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, .6);
+    box-shadow: inset 0 0 0 1px rgba(27, 33, 51, .14);
+    font-size: 11.5px;
+    line-height: 22px;
+    color: #1b2133;
+    white-space: nowrap;
+    overflow: hidden;
+}
+.tl-add.ph { color: rgba(27, 33, 51, .5) }
+.tl-add.focus { box-shadow: inset 0 0 0 1px rgba(27, 33, 51, .14), inset 0 -2px 0 var(--win-accent) }
+.stage-inner .tl-add > * { position: relative }
+.stage-inner .tl-add .tl-caret { display: inline-block; width: 1px; height: 14px; margin-left: 1px; vertical-align: -2px; background: #1b2133 }
+.tl-tasks { top: 34px }
+
+/* lines of a plugin fence: 14 px in, 5 px apart */
 .tl-lines, .tl-out { left: 14px; right: 14px; top: 2px }
+.tl-lines.tl-tasks { top: 34px }
 .stage-inner .tl-lines *, .stage-inner .tl-out * { position: relative }
 .tl-line { display: block; margin-bottom: 5px; font-size: 12.5px; line-height: 17px; color: #1b2133 }
 .tl-line.todo { padding-left: 20px }
 .tl-line.todo.done { color: rgba(27, 33, 51, .55) }
+.tl-line.tl-gray { color: rgba(27, 33, 51, .55); font-size: 11px; line-height: 15px; white-space: normal }
+.tl-line.tl-small { font-size: 10.5px }
+.tl-line.tl-big { font-size: 15px; line-height: 20px; font-weight: 600 }
+.tl-wait { left: 14px; right: 14px; top: 4px }
 
 .stage-inner .tl-box {
     position: absolute;
@@ -166,20 +234,9 @@
 .tl-line.done .tl-box { background: var(--win-accent); box-shadow: none }
 .tl-line.done .tl-box svg { display: block }
 
-/* clock: the time in large light digits, the date under it in the secondary colour */
-.tl-time {
-    left: 14px;
-    top: -4px;
-    font: 300 36px/44px "Segoe UI Variable Display", "Segoe UI", sans-serif;
-    letter-spacing: -.5px;
-    white-space: nowrap;
-}
-
-.tl-date { left: 14px; right: 14px; top: 40px; color: rgba(27, 33, 51, .62); font-size: 12px; line-height: 16px }
-
-/* script fence: its output from the top, the status line at the bottom; lines that do not fit
-   above the status line are cut off, as the app does */
-.tl-out { bottom: 28px; overflow: hidden }
+/* a plugin's lines from the top (the weather), cut off at the fence's bottom as the app does;
+   .tl-foot is a script fence's status line (7.2) */
+.tl-out { bottom: 8px; overflow: hidden }
 .tl-out .tl-line { font-size: 11.5px; line-height: 15px; margin-bottom: 3px }
 
 .tl-foot {

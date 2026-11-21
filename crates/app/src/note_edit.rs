@@ -68,14 +68,15 @@ pub fn open_for() -> Option<FenceId> {
     ACTIVE.with(|a| a.try_borrow().ok()?.as_ref().map(|s| s.fence))
 }
 
-/// The App applied the editor's text for `fence`: forget it.
-pub fn take_committed(fence: FenceId) {
+/// The App applied the editor's text for `fence`: forget it. The text, when it was still there.
+pub fn take_committed(fence: FenceId) -> Option<String> {
     COMMITTED.with(|c| {
         let mut c = c.borrow_mut();
         if c.as_ref().is_some_and(|(id, _)| *id == fence) {
-            *c = None;
+            return c.take().map(|(_, text)| text);
         }
-    });
+        None
+    })
 }
 
 struct Session {

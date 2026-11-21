@@ -1,0 +1,16 @@
+{
+ "id": "pf-signed",
+ "version": "1.0.0",
+ "api": 1,
+ "layer": "light",
+ "name": {
+  "en": "PF Signed"
+ },
+ "description": {
+  "en": "From a signed index"
+ },
+ "author": "tester",
+ "minPecoFence": "0.4.0",
+ "permissions": {},
+ "settings": []
+}

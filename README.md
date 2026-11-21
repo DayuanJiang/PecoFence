@@ -120,12 +120,14 @@ themselves, and the files stay where they are.
 
 ![New smart fence… in a fence's menu opens a small window; the template Downloads of the last 7 days fills in the conditions; Create puts a fence with six files on the desktop, and a new download appears in it by itself.](docs/assets/smart.gif)
 
-### Notes, a clock and your own scripts.
+### Notes, to-dos and more from the plugin store.
 
-Add them in **Settings → Tools**: a note whose lines that start with `[ ]` become to-dos, a clock
-with the date, and script fences that show what a script prints, such as the weather.
+Open **Settings → Tools** and install what you need: notes, a clock, the weather, a to-do list,
+a countdown, PC status, clipboard history and more. A plugin can only do what it lists, and every
+version is checked automatically and reviewed. Notes and clocks from earlier versions become
+plugins by themselves, and your own script can still show what it prints.
 
-![In Settings, New note puts a note on the desktop and a click ticks its first to-do; Add puts a clock beside it, then a fence with the weather in Tokyo.](docs/assets/tools.gif)
+![Settings → Tools lists the plugins of the store and what each one does; on the desktop, the fence of the To-do plugin holds two tasks, one of them ticked.](docs/assets/plugins.png)
 
 More in the manual: [a set of fences for each virtual desktop](https://pecofence.jiang.jp/manual/#vdesk) ([GIF](docs/assets/vdesk.gif)),
 [desktop icons that stay where you put them](https://pecofence.jiang.jp/manual/#free-place) ([GIF](docs/assets/free-place.gif)) and
@@ -145,7 +147,7 @@ More in the manual: [a set of fences for each virtual desktop](https://pecofence
 | **Familiar file handling** | File Explorer context menus, drag and drop, copy/paste, multi-select, thumbnails and icon/list/details views. |
 | **Keep folders close** | Put a live folder on your desktop. Browse subfolders and see changes as they happen. The mouse's back button goes up a folder and forward goes back in. |
 | **Space when you need it** | Roll a fence up to its title. Hover to expand. Lock a layout you like. Double-click the desktop to hide your fences. Double-click again to bring them back. |
-| **Small tools in fences** | Notes with to-dos, a clock with the date, and script fences that show what your own script prints, such as the weather; their rows can open a link or tick a to-do when you click them. You can add them right away in Settings → Tools or from the tray menu. |
+| **Tools from the plugin store** | Notes, a clock, the weather, to-dos, a countdown, PC status, clipboard history and more, installed in Settings → Tools. A plugin can only do what it lists, every version is checked automatically and reviewed, and an update that asks for nothing new installs by itself. Your own scripts still show what they print. [Write your own plugin](https://github.com/DayuanJiang/PecoFence-plugins) |
 | **A way back** | Layout snapshots, daily backups, configuration import/export and swapping fences between displays. |
 | **Find a setting** | Type in the box at the top of Settings (Ctrl+F) to find any setting by its words, by pinyin in a Chinese interface, or by a common other name such as startup, hotkey or dark mode. |
 | **A small footprint** | A native Rust application that uses only about 2 to 5 MB of memory at rest in Task Manager. The WebView2 settings panel loads on demand. |

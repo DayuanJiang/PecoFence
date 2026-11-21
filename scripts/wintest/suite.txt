@@ -21,6 +21,7 @@ shortcut-menu      2   ec2    release 190-shortcut-menu.ps1
 tools-030          2   ec2    debug   030-tools.ps1
 everything-15      2   manual release 030-everything15.ps1
 tabs               4   ec2    release holdout-tabs.ps1
+tabs-compact       2   ec2    release tabs-column-compact.ps1
 users-day          4   signed release holdout-day.ps1                --extra @installers
 rules              2   ec2    debug   holdout-rules.ps1
 fixes-024-A        3   ec2    release holdout2-fixes.ps1             --var Part=A
@@ -72,6 +73,26 @@ type-filter        4   ec2    release type-filter.ps1
 peek-cold-icons    3   ec2    debug   peek-cold-icons.ps1
 peek-chinese       4   ec2    debug   peek-chinese-input.ps1
 update-check       6   ec2    debug   update-check.ps1
+plugins            2   ec2    debug   plugins.ps1
+# A light plugin's pf.show caption in the rolled title row (feedback #175 for the store's 时钟).
+plugin-caption     1   ec2    debug   plugin-caption.ps1
+plugin-clock       2   ec2    debug   plugin-clock.ps1
+web-plugin-A       2   ec2    debug   web-plugin.ps1                 --var Part=A
+web-plugin-C       3   ec2    debug   web-plugin.ps1                 --var Part=C
+web-plugin-L       2   ec2    debug   web-plugin.ps1                 --var Part=L
+web-plugin-V       1   ec2    debug   web-plugin.ps1                 --var Part=V
+plugin-migrate     3   ec2    release plugin-migrate.ps1
+plugin-view        3   ec2    debug   plugin-view.ps1
+plugin-launcher    5   ec2    debug   plugin-launcher.ps1
+plugin-media       2   ec2    debug   plugin-media.ps1
+plugin-ui          3   ec2    debug   plugin-ui.ps1
+plugin-local       2   ec2    debug   plugin-local.ps1
+plugin-folders     3   ec2    debug   plugin-folders.ps1
+plugin-drag        5   ec2    debug   plugin-drag.ps1
+plugin-drag-mon    3   manual debug   plugin-drag-monitors.ps1
+plugin-lan         2   ec2    debug   plugin-lan.ps1                 --var Lan=self
+plugin-media-store 1   manual debug   plugin-media-store.ps1 --extra packaging/msix
+plugins-six        3   manual debug   plugins-six.ps1
 smart-filter       1   ec2    release smart-filter.ps1
 smart-fallback     2   ec2    release smart-fallback.ps1
 smart-idle-log     1   ec2    release smart-idle-log.ps1
@@ -109,6 +130,8 @@ polish-paste-D     2   ec2    release polish-paste.ps1               --var Part=
 issues-reorder     2   ec2    release issues-dragpaste.ps1           --var Part=A
 issues-paste       2   ec2    release issues-dragpaste.ps1           --var Part=B
 issues-paste-C     3   ec2    release issues-dragpaste.ps1           --var Part=C
+issues-vm-paste    1   resize release free-placement.ps1             --part V --steps issues-vm-paste.ps1
+issues-copy-peek   1   ec2    release issues-vm-paste.ps1            --var Part=P
 big-copy-save-A    2   ec2    release big-copy-save.ps1              --var Part=A
 big-copy-save-B    1   ec2    release big-copy-save.ps1              --var Part=B
 polish-undo        2   ec2    release polish-undo.ps1
@@ -163,7 +186,10 @@ issues-conflict    5   ec2    release issues-crash.ps1               --var Part=
 shellext-load      1   ec2    release shellext-fault.ps1             --extra @shellext --var Part=A
 shellext-hang      2   ec2    release shellext-fault.ps1             --extra @shellext --var Part=H
 shellext-stall     2   ec2    debug   shellext-fault.ps1             --extra @shellext --var Part=S
-owner-script-rows  2   ec2    release owner-script-rows.ps1          --extra crates/app/assets/scripts
+owner-script-rows  2   ec2    release owner-script-rows.ps1          --extra scripts/wintest/assets/old-examples
+script-cells       1   ec2    release pr223-cells.ps1
+script-cell-gate   1   ec2    release pr223-cell-gate.ps1
+plugin-api         2   ec2    release plugin-api.ps1
 owner-hover-tabs   2   ec2    release owner-small.ps1                --var Part=HT
 owner-right-drag   2   ec2    release owner-small.ps1                --var Part=RD
 owner-drop-effect  3   manual release owner-small.ps1                --var Part=DDT
@@ -248,6 +274,8 @@ o6-tray            3   ec2    debug   owner6-tray.ps1
 o6-livewall        4   ec2    release owner6-livewall.ps1
 o6-livewall-page   3   ec2    debug   owner6-livewall.ps1            --var Part=P
 o6-livewall-card   3   ec2    release owner6-livewall.ps1            --var Part=C
+# Bing Wallpaper's desktop widget in the wallpaper layer is no live wallpaper; players under it are (#247).
+wallpaper-overlay  4   ec2    release wallpaper-overlay.ps1
 o8-pane-tint       2   ec2    release owner8-pane-tint.ps1
 # The shell menu prewarm with a shortcut to a folder, a dead share and a missing drive first in
 # path order: an Administrator has to put the file on the public desktop first (the file's header).
@@ -262,3 +290,25 @@ usage-stats        4   ec2    release usage.ps1
 usage-desc         2   ec2    debug   usage-description.ps1
 # Usage statistics: notice cards, dialog jumps, cut-off and crashed runs (Midnight=1 needs the box clock set: see the file).
 usage-gaps         4   ec2    release usage-gaps.ps1
+# Feedback #194: a monitor goes and comes back, a scale change, the primary switch (two monitors in a Hyper-V guest: see the file).
+monitor-sets-move  6   manual release monitor-sets-move.ps1
+# 撤销提示 (feedback #185, #188): the undo card leaves after 10 s; the switch off shows none, Ctrl+Z still undoes.
+undo-notices       1   ec2    release undo-notices.ps1
+undo-page          2   ec2    debug   undo-notices.ps1               --var Part=P
+# 对话框跳转 with Directory Opus (#240): manual, Directory Opus has to be installed on the box first (the file's header).
+dialog-jump-dopus  2   manual release dialog-jump-dopus.ps1
+# A snapshot restore and an import put a fence with auto height back where they have it.
+restore-autoheight 1   ec2    release restore-auto-height.ps1
+# Issues round 2026-11-20: a Peek drop into an Explorer name clash, new icons under a desktop right-click, 自定义… by mouse.
+i1120-peek-drop    2   ec2    release issues1120-peek.ps1           --var Part=AB
+i1120-peek-key     1   ec2    debug   issues1120-peek.ps1           --var Part=C
+# GitHub #241: processor time at rest and with a moving pointer; the busy line in the log; the reporter layout at 200 % (manual: needs a 200 % session, WINTEST_SCALE=200).
+cpu-rest           2   ec2    release 241-cpu.ps1
+busy-line          3   ec2    release 241-busy-line.ps1
+cpu-layout         2   manual release 241-cpu-layout.ps1
+# PR #245 (GitHub #243): a double-click on empty space zooms a fence; nothing the app does while it is zoomed keeps the zoomed size.
+zoom-ZTF           2   ec2    release pr245-zoom.ps1                --var Part=ZTF
+zoom-R             2   ec2    release pr245-zoom.ps1                --var Part=R
+zoom-GP            3   ec2    release pr245-zoom.ps1                --var Part=GP
+# Plugins in the Store edition: a test-signed package and the portable exe in one Hyper-V guest (manual: see the header of tests/msix-plugins.ps1).
+msix-plugins       6   manual debug   msix-plugins.ps1

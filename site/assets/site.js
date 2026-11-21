@@ -16,7 +16,9 @@
     var frame = panel.querySelector(".feature-demo");
     if (!frame || frame.hidden === false) return;
     var media = frame.parentNode;
-    media.querySelector("video").controls = false;
+    // the tools block has a still in place of a recording
+    var video = media.querySelector("video");
+    if (video) video.controls = false;
     frame.addEventListener("load", function () { media.classList.add("has-demo"); });
     frame.hidden = false;
     frame.src = frame.getAttribute("data-src");

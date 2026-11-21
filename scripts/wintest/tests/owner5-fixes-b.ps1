@@ -6,7 +6,7 @@
 #      writes a marker file into the job's run folder.
 #   D  a snapshot deleted on the settings page and brought back with 撤销 keeps the note
 #      texts and script paths of its fences
-#   P  a note made from the settings page lands off the fence beside the window, also while
+#   P  a tool made from the settings page (the clock plugin's row) lands off the fence beside the window, also while
 #      「桌面」 (arranged like the desktop) spans the whole screen
 #   K  AltGr with a digit or a letter in the Peek search box opens no result and no menu
 #      (Windows reports AltGr as Ctrl and Alt)
@@ -44,9 +44,14 @@ function O5Clean() {
   foreach ($n in $O5Files) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue }
   Get-ChildItem -LiteralPath $PfDesk -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^o5 ' } | Remove-Item -Force -ErrorAction SilentlyContinue
 }
-# A first start on "another computer", in Chinese, with a note of the user's own.
+# A first start on "another computer", in Chinese, with a note of the user's own. The clock is a
+# plugin now: a stand-in of it is installed (no plugin index is reached), and its row on the
+# settings page adds a clock fence.
 function O5Another() {
   PfFresh
+  PfQuit
+  PfPlacePlugin (PfStandIn 'clock') 'clock'
+  PfStart
   Start-Sleep -Seconds 3
   Pf settings set language zh-CN | Out-Null
   CloseNotice | Out-Null
@@ -58,6 +63,9 @@ Case 'setup'
 CloseWindows
 O5Clean
 $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'
+$env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:9/index.json'
+# The clock plugin's row on the settings page: its button (添加到桌面 while it has no fence).
+function O5AddClock() { PageClick '#pluginList .pl-row button' ([int](Js "[...document.querySelectorAll('#pluginList .pl-row')].findIndex(r => r.textContent.startsWith('时钟'))")) }
 
 # ---- S: imported scripts wait for the user's own turn of the switch
 function O5Import() {
@@ -84,7 +92,7 @@ function O5Import() {
 
   # A first start again: a script that ran a moment ago in this run is not due for its
   # interval, whoever turns the switch.
-  Case 'S2 the same file, then 新建便签 and the clock''s 添加 on the settings page'
+  Case 'S2 the same file, then the clock plugin''s 添加到桌面 on the settings page'
   O5Another
   Pf config import $theirs | Out-Null; Start-Sleep -Seconds 3
   Remove-Item $Mark -ErrorAction SilentlyContinue
@@ -93,23 +101,18 @@ function O5Import() {
   $held = "$(Js "(document.getElementById('toolsHeld') || { textContent: '' }).textContent")"
   Shot 's2-tools-page-held'
   Check 'S2 the card of the 小工具 switch lists the script that waits' ($held -match 'o5-script\.cmd') "card: [$held]"
-  PageClick '#newNote'; Start-Sleep -Seconds 5
+  # The page has no 新建便签 and no tool rows of its own now: a tool is a plugin's row.
+  O5AddClock; Start-Sleep -Seconds 5
   $toast = PageToast
-  Check 'S2 新建便签 starts no imported script' (-not (Test-Path $Mark)) "script ran=$(Test-Path $Mark) tools.enabled=$((O5Tools).enabled) notice=[$($toast.text)]"
-  Check 'S2 the page says that the scripts wait for the switch' ($toast.text -match '脚本' -and (O5Fences '便签') -eq 0) "notice=[$($toast.text)] new notes=$(O5Fences '便签')"
-  if (-not (Test-Path $Mark)) {
-    PageClick '#newClock'; Start-Sleep -Seconds 5
-    Check 'S2 the clock''s 添加 starts no imported script' (-not (Test-Path $Mark)) "script ran=$(Test-Path $Mark) tools.enabled=$((O5Tools).enabled)"
-  }
+  Check 'S2 the clock plugin''s 添加到桌面 starts no imported script' (-not (Test-Path $Mark)) "script ran=$(Test-Path $Mark) tools.enabled=$((O5Tools).enabled) notice=[$($toast.text)] clocks=$(O5Fences '时钟')"
 
   Case 'S3 the user turns 小工具 on himself'
   if (-not (O5Tools).enabled) { PageClick '[data-bind="tools.enabled"]' }
   Check 'S3 the script starts with the user''s own turn of the switch' (O5WaitFile $Mark 15) "tools.enabled=$((O5Tools).enabled)"
   $hidden = Js "(document.getElementById('toolsHeld') || { hidden: true }).hidden"
   Check 'S3 the card no longer lists a waiting script' ($hidden -eq $true) "hidden=$hidden"
-  PageClick '#newNote'; Start-Sleep -Seconds 2
-  [G]::Press(0x1B); Start-Sleep -Milliseconds 500
-  Check 'S3 新建便签 makes a note again' ((O5Fences '便签') -ge 1) "notes titled 便签: $(O5Fences '便签')"
+  Pf fence create --tool note --title '便签' | Out-Null; Start-Sleep -Seconds 2
+  Check 'S3 a note can be made again' ((O5Fences '便签') -ge 1) "notes titled 便签: $(O5Fences '便签')"
   $json = [IO.File]::ReadAllText((PfJson status).configPath)
   Check 'S3 the saved configuration holds no script any more' ($json -notmatch '"held"') ''
 
@@ -178,6 +181,9 @@ function O5Place() {
   Case 'P0 「桌面」 spans the screen, a fence stands beside the settings window'
   DeskFile 'o5 右下角.txt' | Out-Null
   PfFresh
+  PfQuit
+  PfPlacePlugin (PfStandIn 'clock') 'clock'
+  PfStart
   Start-Sleep -Seconds 3
   Pf settings set language zh-CN | Out-Null
   CloseNotice | Out-Null
@@ -199,15 +205,14 @@ function O5Place() {
   Start-Sleep -Seconds 1
   PageClick 'nav a[data-page=tools]'; Start-Sleep -Milliseconds 600
 
-  Case 'P1 新建便签 on the settings page'
-  PageClick '#newNote'; Start-Sleep -Seconds 2
-  [G]::Press(0x1B); Start-Sleep -Milliseconds 600
-  $n = (FenceGet '便签').windowRect; $b = (FenceGet '挡路的').windowRect
+  Case 'P1 the clock plugin''s 添加到桌面 on the settings page'
+  O5AddClock; Start-Sleep -Seconds 3
+  $n = (FenceGet '时钟').windowRect; $b = (FenceGet '挡路的').windowRect
   $ox = [math]::Max(0, [math]::Min($n.x + $n.w, $b.x + $b.w) - [math]::Max($n.x, $b.x))
   $oy = [math]::Max(0, [math]::Min($n.y + $n.h, $b.y + $b.h) - [math]::Max($n.y, $b.y))
   $line = @(PfLogAll | Where-Object { $_ -match 'new fence from the settings page' }) | Select-Object -Last 1
   Shot 'p1-new-note'
-  Check 'P1 the new note does not lie on the fence beside the window' ($n -and $ox * $oy -eq 0) "note $($n.x),$($n.y) $($n.w)x$($n.h); fence $($b.x),$($b.y) $($b.w)x$($b.h); overlap ${ox}x${oy} px"
+  Check 'P1 the new clock does not lie on the fence beside the window' ($n -and $ox * $oy -eq 0) "clock $($n.x),$($n.y) $($n.w)x$($n.h); fence $($b.x),$($b.y) $($b.w)x$($b.h); overlap ${ox}x${oy} px"
   Check 'P1 the log: a spot off every fence was found' ($line -notmatch 'no spot off the fences') ("$line" -replace '^\S+\s+\S+\s+', '')
   PfQuit
   O5Clean

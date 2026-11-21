@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- A media session for tests/plugin-media.ps1: Edge plays tone.wav (silence, written by the
+     steps) with a title, an artist, an album and a cover, as a music site would. -->
+<meta charset="utf-8">
+<title>PecoFence media test</title>
+<audio id="a" src="tone.wav"></audio>
+<p id="state">starting</p>
+<!-- The window title says what happened last (the steps read it): playing, paused, nexttrack 1. -->
+<script>
+  const a = document.getElementById("a"), state = document.getElementById("state");
+  const say = (text) => { state.textContent = text; document.title = "PecoFence media test: " + text; };
+  a.onplay = () => say("playing");
+  a.onpause = () => say("paused");
+  // The cover: orange over purple. A data: address, as Edge takes no file: one for artwork.
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d");
+  g.fillStyle = "#ff8c00"; g.fillRect(0, 0, 256, 128);
+  g.fillStyle = "#9370db"; g.fillRect(0, 128, 256, 128);
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: "PecoFence test tone", artist: "Test artist", album: "Test album",
+    artwork: [{ src: c.toDataURL("image/png"), sizes: "256x256", type: "image/png" }],
+  });
+  // Next and previous are offered (and counted) only when the page handles them.
+  let skips = 0;
+  for (const action of ["nexttrack", "previoustrack"]) {
+    navigator.mediaSession.setActionHandler(action, () => { skips++; say(action + " " + skips); });
+  }
+  a.play().catch((e) => say("blocked " + e));
+</script>

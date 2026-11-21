@@ -303,6 +303,9 @@ shows two small buttons at its bottom-right corner, 「新建栅栏」 and 「�
 default on), `featureTips` (「功能提示」: one-time cards in the corner when a
 feature would help, such as rolling up fences once there are many, showing a folder opened often on
 the desktop, or a rule for files of one type dragged into one fence; each shows once; default on),
+`undoNotices` (「撤销提示」: the card with 撤销 after a fence is deleted from its menu, after
+「立即应用」 of the rules and after a fence is sent to another virtual desktop, for 10 seconds;
+`false` shows none, and Ctrl+Z on a fence still undoes; default on),
 `showTrayIcon` (「显示托盘图标」: PecoFence's icon in the notification area of the taskbar; `false`
 takes it out at once, and it comes back only while a notification of PecoFence shows and in the
 two states whose notice names the tray menu (no Peek shortcut can be registered; the item menus
@@ -356,7 +359,9 @@ opens in full again once there is room, while a fence opened on hover still open
 default on), `rollUp.titleOnHover` (the title row folds away until the
 pointer is over the fence; for every fence whose `titleOnHover` is `default`),
 `rollUp.hideCountAndChevron` (no item count on a rolled title and no roll-up chevron, so the title
-bar shows the name only; double-clicking the title and the fence menu still roll up; default off), `snapping.enabled`, `snapping.gapPx` (the gap, in DIPs,
+bar shows the name only; double-clicking the title and the fence menu still roll up; default off),
+`rollUp.compactRolled` (a rolled fence is only as wide as its name, or its tabs, with the count and
+chevron; it opens to its own width, which `rect` keeps; default off), `snapping.enabled`, `snapping.gapPx` (the gap, in DIPs,
 fences keep to each other and the screen edges while snapping; 0 to 64, default 8),
 `snapping.sizeToCells` (resizing keeps whole icon columns and rows), `snapping.guideLines`
 (alignment guides while dragging, default on), `icons.chameleon`,
@@ -389,8 +394,10 @@ rule.
 
 ## Tools (小工具)
 
-A tool fence shows a tool in place of desktop items. One switch in `settings`, `tools.enabled`
-(Settings › 小工具, `true` by default), covers note, clock and script fences: while it is off nothing
+A tool fence shows a tool in place of desktop items. Most tools are plugins from the plugin store
+(Settings › 小工具 › 插件, see [Plugins](#plugins)); notes, clocks and script fences of your own are
+also built in. One switch in `settings`, `tools.enabled` (Settings › 小工具, `true` by default),
+covers plugin, note, clock and script fences: while it is off nothing
 runs and tool fences have no window until it is switched on again. `fence create --tool` (and
 `--script`) switches it on. The desktop has one clock at most: a second `fence create --tool clock`
 fails with `limitReached`. Tool fences hold no items (rules, `item move --to` and drops refuse them) and take no
@@ -414,11 +421,13 @@ finds on the whole computer; Everything has to be running, and version 1.5 also 
 names by pinyin. Files and folders opened from the search box are counted in `config.json` under
 `searchHistory` (lower-case paths, at most 300) and rank higher next time.
 
-- **Notes and to-dos** (`--tool note`): lines of text; a line starting with `[ ]` (or `[x]`, after
+- **Notes and to-dos** (`--tool note`): PecoFence's own note fence (the 便签 plugin's fences are the
+  same note, and a `--tool note` fence becomes one once that plugin is installed): lines of text; a line starting with `[ ]` (or `[x]`, after
   an optional `- ` or `* `) is a to-do whose box ticks with a click. `fence get` reports
   `noteText`; `fence set <FENCE> noteText "..."` replaces it (use `\n` for line breaks in JSON).
   The text is kept in `config.json` under `notes`, so exports and daily backups carry it.
-- **Clock** (`--tool clock`): the time and the long date in Windows' region format;
+- **Clock** (`--tool clock`): PecoFence's own clock fence (it becomes a fence of the 时钟 plugin once
+  that plugin is installed): the time and the long date in Windows' region format;
   `settings set tools.clockSeconds true` (显示秒 in the clock's fence menu) adds the seconds.
 - **Script fences** (`--script <FILE>`): runs a .ps1, .py, .pyw, .cmd, .bat, .js or .exe every
   `scriptInterval` minutes (30 by default) without a window, at most 10 seconds, and shows what it
@@ -428,15 +437,35 @@ names by pinyin. Files and folders opened from the search box are counted in `co
   `outcome` (`done`, `failed`, `timedOut`, `missing`, `unsupported`, `notStarted`), `output`,
   `lastRun` and `running`. PowerShell scripts are run with UTF-8 output; Python with
   `PYTHONIOENCODING=utf-8`. PecoFence itself does not go online for this: the script does.
-  The 添加 buttons in Settings › 小工具 (and 新建小工具 in the tray and fence menus) write ready
-  examples into the configuration folder's `scripts` folder: 天气 (weather), GitHub 仓库动态 (a
-  repository's newest issues and pull requests) and 电脑状态 (a streaming script).
+  The examples 0.3.0 to 0.4.0 wrote into the configuration folder's `scripts` folder (天气, GitHub
+  仓库动态, 电脑状态) are plugins now: a script fence that still runs an example nobody edited
+  becomes a fence of that plugin, and an edited one stays a script fence.
 
 ```powershell
 pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent`n[ ] Call Anna"
 pecofence-cli fence create --script "$env:USERPROFILE\Scripts\weather.ps1" --title Weather
 pecofence-cli fence set Weather scriptInterval 15
 ```
+
+## Plugins
+
+Plugins come from the plugin store (the repository DayuanJiang/PecoFence-plugins on GitHub) and are
+installed, updated and uninstalled in Settings › 小工具 › 插件, where each install first shows what
+the plugin will do; the CLI has no install command. A fence of an installed plugin runs
+`plugin:<id>` as its script:
+
+```powershell
+pecofence-cli fence create --script plugin:countdown --title Holidays
+pecofence-cli fence set Holidays scriptPath plugin:todo
+```
+
+`fence create --script plugin:<id>` fails with `invalidValue` when the plugin is not installed. `fence get` of a
+plugin fence reports `script` with `path` (`plugin:<id>`) and `output`, the text of the rows the
+plugin shows now (or why it stopped). `settings set tools.allowSystem true` is Settings › 小工具 ›
+「允许插件使用 Windows 底层功能」 (`false` by default): only with it on may a plugin that lists
+programs to start start them. A plugin's settings, its commands' shortcuts and its data are kept in
+the configuration and in `<config folder>\plugins-data\<id>\`; the plugin itself is in
+`<config folder>\plugins\<id>\<version>\`.
 
 ## Script fence output
 
@@ -469,7 +498,8 @@ A row has one action: with several, the first of `href`, `open`, `run`, `copy`, 
 |---|---|
 | `color=` | the text colour: `red`, `green`, `orange` (or `amber`), `yellow`, `blue`, `purple`, `gray` (or `grey`) or `#rrggbb`. The named colours are Windows' status colours and get a lighter shade in the dark theme; `#rrggbb` is used as written |
 | `icon=` | text drawn before the row, such as an emoji |
-| `tooltip=` | shown while the pointer rests on a clickable row; without it the tooltip shows the URL, path, program or text to copy |
+| `tooltip=` | shown while the pointer rests on a clickable row (`\n` in it starts a new line); without it the tooltip shows the URL, path, program or text to copy |
+| `hidden=true` | the row is not drawn and takes no room; its other parameters still count (`pane=` and `follow=` below) |
 
 A clickable row gets a light plate under the pointer and the hand cursor; a row with `href=` or
 `open=` also shows a small arrow on the right. A click on a to-do with `action=` ticks or unticks
@@ -484,9 +514,10 @@ Every run gets these environment variables:
 |---|---|
 | `PECOFENCE` | `1` |
 | `PECOFENCE_ACTION` | the clicked row's `action=` value; empty for a timed run, 立即运行, `refresh=true` and `fence refresh` |
-| `PECOFENCE_DATA` | a folder of this fence's own for what the script keeps: `<config folder>\scripts-data\<fence id>` (`pecofence-cli paths` shows the config folder). PecoFence creates it |
+| `PECOFENCE_DATA` | a folder of this fence's own for what the script keeps: `<config folder>\scripts-data\<fence id>` (`pecofence-cli paths` shows the config folder). PecoFence creates it, and removes it with what is in it at the first start after the fence is deleted (not while a snapshot still has the fence, and not after a start from a backup) |
 | `PECOFENCE_THEME` | `light` or `dark`, PecoFence's theme |
 | `PECOFENCE_FENCE` | the fence's id |
+| `PECOFENCE_LANGUAGE` | PecoFence's display language: `en`, `zh-CN`, `zh-TW`, `ja`, `ko`, `de`, `fr`, `es`, `pt-BR`, `ru` or `it` |
 
 A to-do list kept in a text file and ticked from the fence (Windows PowerShell 5.1 reads a script
 without a BOM in the ANSI code page: save a script that contains non-ASCII text, such as emoji or
@@ -508,6 +539,111 @@ for ($i = 0; $i -lt $lines.Count; $i++) { "$($lines[$i]) | action=toggle:$i" }
 'PecoFence on GitHub | href=https://github.com/DayuanJiang/PecoFence color=blue'
 ```
 
+### Rows of cells
+
+A line that is `::` alone or followed by a space or a tab is a row of cells side by side (so text
+such as the IPv6 address `::1` stays text). Cells are separated by `::` outside a quoted value, and
+each one is written like a row: `text | key=value ...`. A row of cells may be 2000 characters long.
+A quoted value is one of a cell's parameters (after its `|`); in the text of a cell a quote is only
+a letter, but a `::` there ends the cell. A script that shows text it did not write (a file name,
+a copied text) replaces `::` and `|` in it first, and `"` in what it puts into a quoted value. A
+cell takes no `icon=`, and a text that starts with `[ ]` or `[x]` loses that mark (use `checkbox=`).
+
+```
+:: 0:42 | color=gray width=36 :: | slider=0.25 action=seek tooltip="Position" :: 3:15 | color=gray
+:: <U+E892> | action=prev tooltip="Previous" :: <U+E768> | action=play tooltip="Play" checked=true
+```
+
+| Cell parameter | Effect |
+|---|---|
+| `action=`, `run=`, `open=`, `href=`, `copy=` | the cell is a button, with a plate under the pointer and its own `tooltip=` |
+| a text of Segoe Fluent Icons characters only (private use area, such as U+E768) | drawn as an icon, a little larger than the text |
+| `slider=0.4` (0 to 1) | a horizontal slider that takes the width the other cells leave; a click or a drag runs its `action=` with the position after a colon (`seek:0.37`), about every 80 ms while it is dragged for a streaming script |
+| `checked=true` | the button is drawn pressed in (a function that is on) |
+| `checkbox=true` / `checkbox=false` | a check box, ticked or not, before the text; a click on the cell is a click on the box |
+| `width=44`, `align=left\|center\|right` | a fixed width in DIPs and the place of the text in it, so the cells of two rows line up |
+| `fill=true` | the cell takes the width the other cells leave, as a slider does (several sliders and filling cells share it), so the cells after it stay against the right edge of the fence, whatever its width; a text ends with an ellipsis where it does not fit, a picture stays at its own ratio. A row with one does not go on to a new line |
+| `under=true` | the cell goes under the cell before it, in the same column (two small buttons one above the other); the column is as wide as its widest cell and the row as tall as its tallest column |
+| `gap=4` | the space after the cell, in DIPs (`gap=0` sets the pieces of a word side by side) |
+| `bold=true` | bold text |
+| `image=C:\path\p.png` with `height=80` and `width=250` | a picture in the cell, as tall as `height=` DIPs at most (96 by default) and as wide as `width=` (its own ratio without one), in its own ratio; a click on it is a click on the cell (`action=`). The line takes the height of its tallest picture and the other cells sit in the middle of it, so a picture can have buttons at its right |
+| `dblaction=<value>` | a double-click sends this action (the first click of the double-click already sent `action=`); also on a plain row |
+
+A row without sliders or `fill=true` cells goes on to a new line when the next cell does not fit; in a row with them,
+the cells past the right edge are not drawn.
+
+A whole streaming script with three buttons, a slider, two check boxes and a list that scrolls
+under them (save it as UTF-8 with a BOM). Each click arrives as a line on the standard input: the
+script changes its state and prints the screen again.
+
+```powershell
+# <pecofence.type>streamable</pecofence.type>
+$playing = $false; $pos = 0.3; $shuffle = $true; $loop = $false; $now = 3
+$in = New-Object IO.StreamReader([Console]::OpenStandardInput())
+$read = $in.ReadLineAsync()
+function Show {
+  $play = if ($playing) { [string][char]0xE769 } else { [string][char]0xE768 }   # Pause, Play
+  $rows = @(
+    ":: $([char]0xE892) | action=prev tooltip=""Previous"" :: $play | action=play tooltip=""Play or pause"" checked=$("$playing".ToLower()) :: $([char]0xE893) | action=next tooltip=""Next"" :: Song $now | color=gray",
+    ":: 1:15 | color=gray width=40 :: | slider=$pos action=seek :: 4:02 | color=gray width=40 align=right",
+    ":: Shuffle | checkbox=$("$shuffle".ToLower()) action=shuffle :: Repeat one | checkbox=$("$loop".ToLower()) action=loop",
+    '---',
+    ' | pane=songs hidden=true')
+  1..40 | ForEach-Object { $rows += "Song $_ | action=song:$_$(if ($_ -eq $now) { ' color=blue' })" }
+  Write-Output ("~~~`n" + ($rows -join "`n"))
+}
+Show
+while ($true) {
+  if ($read.IsCompleted) {
+    $line = $read.Result; if ($null -eq $line) { break }   # the fence is gone
+    $read = $in.ReadLineAsync()
+    $name, $value = $line -split ':', 2
+    switch ($name) {
+      'play' { $playing = -not $playing }
+      'seek' { $pos = [double]$value }
+      'shuffle' { $shuffle = -not $shuffle }
+      'loop' { $loop = -not $loop }
+      'next' { $now++ }
+      'prev' { $now-- }
+      'song' { $now = [int]$value }
+    }
+    Show
+  }
+  Start-Sleep -Milliseconds 60
+}
+```
+
+### Scrolling
+
+Rows that do not fit the fence scroll: the mouse wheel moves them, and the overlay scrollbar on the
+right edge (the arrows and the thumb work as in any fence) shows where they are. Two hidden rows
+(`hidden=true`) shape it:
+
+| Parameter | Effect |
+|---|---|
+| `pane=<key>` | the rows above this one stay in place, the rows below it scroll under them (the tabs and buttons of a list, the player's controls above its lyrics). While the key stays the same, the scrolling is kept across the script's outputs; a new key (another page of a list, another tab) brings the rows back to their top. A fence too short to leave about 110 DIPs to the scrolling rows scrolls everything instead. Without a `pane=` row, all the rows scroll |
+| `follow=<key>` | the row right after this one is brought to the middle of the scrolling rows each time the key changes (the line of a song being sung), by a short glide, at once the first time after a new `pane=` key. A user who scrolled by hand less than 6 seconds ago keeps what they see |
+
+```powershell
+'Songs | color=gray'
+' | pane=songs:page1 hidden=true'
+1..100 | ForEach-Object { "Song $_ | action=play:$_" }
+```
+
+### Pictures
+
+A row with `image=C:\path\cover.jpg` shows that picture, centred, in its own ratio, at most
+`height=` DIPs tall (96 by default) and never wider than the fence. It is decoded with WIC at no
+more than twice the size it is drawn, once per file (a file that changes, by its modification time
+or its size, is read again), and the last 40 pictures are kept. A file that cannot be decoded
+draws nothing. The file must be on a disk of this computer (a hard disk, a USB stick, a RAM disk): a picture on a network place
+(`\\server\share\...`) or on a mapped network drive is not read and draws nothing. The path is written in the line, so it must fit in its 300 characters.
+
+### Fence title
+
+A comment `<pecofence.title>Media Controls</pecofence.title>` within the first 8 KB of the script is
+the title a fence made from it gets, instead of the file name. A fence that exists keeps its title.
+
 ### Rows that start programs
 
 Rows start programs only in a script that allows it in a comment within the first 8 KB of the
@@ -523,7 +659,8 @@ only, and `open=` opens folders, documents and `http://` / `https://` addresses 
 with a space or a double quote in it does not count as one: write `%20` and `%22`). A click that
 is refused shows a short message beside the pointer that names the line to add, and the log gets
 an info line with the script's file name and the parameter (never its value). With the line every
-parameter works as the table says. `copy=`, `action=` and `refresh=true` need no line: they start
+parameter works as the table says. Each cell of a row of cells follows the same rule as a row. `copy=`,
+`action=`, `dblaction=` and `refresh=true` need no line: they start
 nothing but the script itself. In a .cmd or .bat file write the line after `::` (in a `rem` line
 cmd.exe takes `<` and `>` as redirections). A program (.exe) used as the script cannot carry the
 line: start it from a small .cmd or .ps1 that does.
@@ -557,13 +694,19 @@ works too), keeps running: the 10-second limit does not apply. Every line it pri
 added below what the fence shows. A line `~~~` marks a new screen: the next line printed replaces
 everything the fence showed, and the lines after it are added below again. So a script may print
 `~~~` before each new block, as SwiftBar scripts do, or after it; the old block stays until the
-next line arrives. The fence keeps the newest 40 lines. Python streaming scripts get
+next line arrives. The fence keeps the newest 300 lines (a fence that is shorter than that
+scrolls, see *Scrolling*). Lines that reach the fence together, a screen printed in one write,
+show together. Python streaming scripts get
 `PYTHONUNBUFFERED=1`, so their lines arrive as they are printed.
 
 A click on a row with `action=` sends the value as one line to the script's standard input
 (`PECOFENCE_ACTION` stays empty for a streaming script). The script, and the programs it started,
 end when its fence is deleted or gets another script, when `tools.enabled` is switched off and when
-PecoFence exits. When the script ends by itself, the fence keeps what it showed last (after a
+PecoFence exits. At exit PecoFence first closes the script's standard input and waits up to a
+second: a script that sees its input end (a read that returns nothing) can remove what it keeps only
+while it runs and end by itself; what still runs after that second is ended. In the other cases the
+script is ended at once, so it should also tidy up what an earlier run left when it starts. When the
+script ends by itself, the fence keeps what it showed last (after a
 failure, the error and the exit code), and PecoFence starts the script again at the next
 interval. 立即运行, `refresh=true` and `fence refresh` start it again at once.
 

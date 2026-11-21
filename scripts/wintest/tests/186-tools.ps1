@@ -66,21 +66,11 @@ Shot 't05-script'
 
 Case 'restart keeps everything'
 PfQuit
-PfStart -Script @('sleep 4000', 'new-script-example 1100 500', 'sleep 3600000')
+PfStart -Script @('sleep 3600000')
 Start-Sleep -Seconds 3
 $note = NoteFence
 Check 'the note text survives a restart' ($note.noteText -like '`[x`] pay the rent*') ("noteText=" + ($note.noteText -replace "`n", ' / '))
 Check 'the clock survives a restart' ($null -ne (PfFence 'Clock'))
-
-Case 'weather example'
-$w = $null
-foreach ($f in @((PfJson fence list).fences) + @(PfJson fence list)) { if ($f -and $f.tool -eq 'script' -and $f.title -ne 'Hello') { $w = $f } }
-Check 'the weather example is added' ($null -ne $w) "title=$($w.title)"
-if ($w) {
-  $s = WaitScript $w.title 40
-  Check 'the weather example prints something (needs the internet)' ($s.outcome -eq 'done' -and $s.output) "outcome=$($s.outcome) output=$(("$($s.output)" -split "`n")[0])"
-}
-Shot 't07-weather'
 
 Case 'cleanup'
 PfQuit

@@ -205,25 +205,10 @@ impl App {
         self.end_peek_now();
         let old_settings = self.state.config.settings.clone();
         let imported = matches!(source, ConfigSource::Import);
-        // A snapshot of an imported file brings its fences, never scripts: restoring it later
-        // would start them with no word of warning. That goes for the scripts a snapshot keeps
-        // itself and for those the file lists for fences that are in none of its layouts (only
-        // a snapshot can show them).
-        let snapshot_scripts: usize = if imported {
-            let shown: std::collections::HashSet<FenceId> = cfg
-                .layouts
-                .iter()
-                .flat_map(|l| &l.fences)
-                .map(|f| f.id)
-                .collect();
-            let listed = cfg.scripts.len();
-            cfg.scripts.retain(|id, _| shown.contains(id));
-            let kept: usize = cfg
-                .snapshots
-                .iter_mut()
-                .map(|s| std::mem::take(&mut s.scripts).len())
-                .sum();
-            listed - cfg.scripts.len() + kept
+        // A snapshot of an imported file brings its fences, never scripts (plugin fences keep
+        // theirs, without the folders picked on another computer).
+        let snapshot_scripts = if imported {
+            cfg.drop_imported_scripts()
         } else {
             0
         };
@@ -232,6 +217,7 @@ impl App {
         // script in snapshots and backups, and only the user's own turn of 小工具 takes it off.
         let file_scripts = if imported { cfg.hold_scripts() } else { 0 };
         self.state.replace_config(cfg);
+        self.drop_plain_secrets();
         if let Some(desk) = shell::user_desktop() {
             self.state.migrate_desktop_path(&desk);
         }
@@ -284,6 +270,8 @@ impl App {
         self.sync_windows_desktop_hotkey();
         self.apply_icon_variant();
         self.refresh_visuals(true);
+        self.migrate_tools(true);
+        self.plugins_after_replace();
         // Written before the page lists the backups: the first save of a day adds one.
         self.state.save_and_wait("import");
         self.push_settings_state();
@@ -737,6 +725,7 @@ impl App {
             // The scripts of an imported configuration that start once 小工具 is turned on:
             // the switch's card lists them.
             "heldScripts": self.state.config.held_scripts(),
+            "plugins": self.plugins_json(),
         })
         .to_string()
     }
@@ -1002,6 +991,9 @@ impl App {
                 if let Some(page) = SETTINGS_PAGES.iter().find(|page| Some(**page) == name) {
                     pecofence_core::usage::event_with("settings.page", page);
                 }
+                if name == Some("tools") {
+                    self.fetch_plugins();
+                }
             }
             Some("ringFence") => {
                 let host = v
@@ -1059,11 +1051,7 @@ impl App {
                         ));
                     }
                 }
-                Some(name @ ("newNote" | "newClock" | "newScript" | "newScriptExample")) => {
-                    let example = v
-                        .get("example")
-                        .and_then(|e| e.as_str())
-                        .and_then(crate::scripts::Example::parse);
+                Some(name @ ("newNote" | "newClock" | "newScript")) => {
                     // Clear of this window, which would cover it (`place_new_tool`). Only a
                     // maximized window leaves no such spot: then beside the middle of the
                     // primary monitor's work area, where a free spot is looked for.
@@ -1080,11 +1068,7 @@ impl App {
                         match name {
                             "newNote" => self.new_note_near(x, y),
                             "newClock" => self.new_clock_near(x, y),
-                            "newScript" => self.new_script_near(x, y, None),
-                            _ => match example {
-                                Some(kind) => self.new_script_example_of(kind, x, y),
-                                None => tracing::warn!("unknown script example on the page"),
-                            },
+                            _ => self.new_script_near(x, y, None),
                         }
                         self.tool_clear_of = None;
                     }
@@ -1215,6 +1199,7 @@ impl App {
                             pecofence_core::i18n::text("恢复快照前"),
                         );
                         let held = self.show_restored_layout();
+                        self.migrate_after_restore(id);
                         // The notice offers 撤销 for a few seconds, as after a delete: the
                         // layout from before is in the snapshot just taken.
                         self.settings_kept.restore_undo = before;
@@ -1241,6 +1226,7 @@ impl App {
                     {
                         self.state.delete_snapshot(before);
                         tracing::info!("snapshot restore undone from the page's notice");
+                        self.migrate_after_restore(before);
                         if self.show_restored_layout() > 0 {
                             self.settings_error(scripts_held_text());
                         }
@@ -1343,7 +1329,9 @@ impl App {
                     let number = |key: &str| v.get(key).and_then(|n| n.as_u64()).unwrap_or(0);
                     self.set_peek_hotkey_from_page(number("mods") as u32, number("vk") as u32);
                 }
-                Some("peekHotkeyRecording" | "windowsDesktopHotkeyRecording") => {
+                Some(
+                    "peekHotkeyRecording" | "windowsDesktopHotkeyRecording" | "pluginKeyRecording",
+                ) => {
                     if v.get("on").and_then(|o| o.as_bool()).unwrap_or(false) {
                         self.pause_hotkeys();
                     } else {
@@ -1365,6 +1353,10 @@ impl App {
                 Some("rateInStore") => self.open_store_rating(),
                 Some("openManual") => self.open_manual(),
                 Some("scriptGuide") => self.open_manual_at("#write-scripts"),
+                Some(
+                    name @ ("pluginsRefresh" | "pluginInstall" | "pluginAdd" | "pluginUninstall"
+                    | "pluginPage" | "pluginSetting" | "pluginKey" | "pluginItemRemove"),
+                ) => self.on_plugin_action(name, &v),
                 Some("openRepository") => {
                     let url = pecofence_core::brand::REPOSITORY_URL;
                     let _ = shell::shell_execute(std::path::Path::new(url), None, None);
@@ -1536,6 +1528,13 @@ impl App {
         self.ctx.behavior.title_align.set(new.title_align);
         self.ctx.behavior.tab_bar.set(new.tab_bar);
         self.ctx.behavior.label_color.set(new.label_color);
+        self.ctx.behavior.zoom_enabled.set(new.zoom.enabled);
+        // Switched off: a fence that is zoomed now goes back.
+        if !new.zoom.enabled {
+            for w in self.fences.values() {
+                w.close_zoom();
+            }
+        }
         self.ctx
             .behavior
             .hide_inactive_scrollbar
@@ -1565,6 +1564,26 @@ impl App {
         if chrome_changed {
             for w in self.fences.values() {
                 w.redraw();
+            }
+        }
+        // 收起时缩到标题的宽度 (GitHub #242): rolled fences narrow to their title rows or widen
+        // back; the count and chevron change what such a row needs.
+        self.ctx
+            .behavior
+            .compact_rolled
+            .set(new.roll_up.compact_rolled);
+        if new.roll_up.compact_rolled != old.roll_up.compact_rolled
+            || (new.roll_up.compact_rolled
+                && new.roll_up.hide_count_and_chevron != old.roll_up.hide_count_and_chevron)
+        {
+            tracing::info!(
+                compact = new.roll_up.compact_rolled,
+                hide_count = new.roll_up.hide_count_and_chevron,
+                "rolled fences take their rolled width again"
+            );
+            let hosts: Vec<FenceId> = self.fences.keys().copied().collect();
+            for host in hosts {
+                self.apply_auto_height(host);
             }
         }
         if new.tab_bar != old.tab_bar {
@@ -1694,6 +1713,7 @@ impl App {
             self.apply_portal_deco(*host);
         }
         self.apply_desktop_visibility("interface language changed");
+        self.plugins_lang_changed();
         tracing::debug!(
             windows = hosts.len(),
             "fence windows got their kept texts in the new language"

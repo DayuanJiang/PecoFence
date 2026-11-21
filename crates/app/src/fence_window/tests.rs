@@ -289,6 +289,53 @@ fn collapsed_tab_column_has_no_chevron_room() {
     assert_eq!(rail_len_for(3, RAIL_COLLAPSED_BOTTOM), 120.0);
 }
 
+/// 标题对齐 in a left tab column (feedback #192): three rows (108 DIP) in a 400 DIP column whose
+/// rows may lie between 12 and 352 sit at the top, in the middle of the column or at the end
+/// of their room, and go back up as the fence rolls up.
+#[test]
+fn title_alignment_moves_the_rows_of_a_tab_column() {
+    use pecofence_core::TitleAlign;
+    let room = (12.0, 352.0);
+    let rows = (108.0, 108.0);
+    assert_eq!(
+        rail_align_shift(TitleAlign::Left, 400.0, room, rows, 0.0),
+        0.0
+    );
+    assert_eq!(
+        rail_align_shift(TitleAlign::Center, 400.0, room, rows, 0.0),
+        134.0
+    );
+    assert_eq!(
+        rail_align_shift(TitleAlign::Right, 400.0, room, rows, 0.0),
+        232.0
+    );
+    assert_eq!(
+        rail_align_shift(TitleAlign::Center, 400.0, room, rows, 0.5),
+        67.0
+    );
+    assert_eq!(
+        rail_align_shift(TitleAlign::Center, 400.0, room, rows, 1.0),
+        0.0
+    );
+    // Rows that fill their room stay where they are.
+    assert_eq!(
+        rail_align_shift(TitleAlign::Center, 400.0, room, (340.0, 340.0), 0.0),
+        0.0
+    );
+    // A merge drag opens a 32 DIP row (and its 4 DIP gap): the rows at the end move up so that
+    // the last one stays inside the room, above the chevron.
+    let gapped = (108.0, 144.0);
+    assert_eq!(
+        rail_align_shift(TitleAlign::Right, 400.0, room, gapped, 0.0),
+        196.0
+    );
+    assert!(12.0 + rail_align_shift(TitleAlign::Right, 400.0, room, gapped, 0.0) + 144.0 <= 352.0);
+    assert_eq!(
+        rail_align_shift(TitleAlign::Center, 400.0, room, gapped, 0.0),
+        134.0
+    );
+}
+
 #[test]
 fn narrow_tab_strips_cannot_cover_the_chevron_or_count() {
     for count in 2..=10 {
@@ -2145,4 +2192,22 @@ fn a_shortcut_tip_shows_its_comment_or_where_it_leads() {
     assert_eq!(line(None, notepad), Some(place.clone()));
     assert_eq!(line(Some("@shell32.dll,-22566"), notepad), Some(place));
     assert_eq!(line(None, None), None);
+}
+
+/// Feedback #175 for the store's 时钟: a rolled fence's title row shows the built-in clock's
+/// time, or a light plugin's `view.caption`; neither means the name.
+#[test]
+fn a_rolled_fence_shows_the_clock_time_or_the_plugin_caption() {
+    use super::state::rolled_caption_of;
+    assert_eq!(
+        rolled_caption_of(Some("9:41".into()), None).as_deref(),
+        Some("9:41")
+    );
+    assert_eq!(
+        rolled_caption_of(None, Some("10:05")).as_deref(),
+        Some("10:05")
+    );
+    assert_eq!(rolled_caption_of(None, None), None);
+    // A clock with no time from Windows shows its name, whatever else there is.
+    assert_eq!(rolled_caption_of(Some(String::new()), Some("x")), None);
 }

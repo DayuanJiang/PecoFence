@@ -221,3 +221,56 @@ pub fn spawn_detached(exe: &str, args: &[&str]) -> Result<u32> {
         Ok(pi.dwProcessId)
     }
 }
+
+#[repr(C)]
+struct ProcessEntry {
+    size: u32,
+    usage: u32,
+    pid: u32,
+    heap: usize,
+    module: u32,
+    threads: u32,
+    parent: u32,
+    priority: i32,
+    flags: u32,
+    exe: [u16; 260],
+}
+
+windows_core::link!("kernel32.dll" "system" fn CreateToolhelp32Snapshot(flags: u32, pid: u32) -> HANDLE);
+windows_core::link!("kernel32.dll" "system" fn Process32FirstW(snapshot: HANDLE, entry: *mut ProcessEntry) -> windows_core::BOOL);
+windows_core::link!("kernel32.dll" "system" fn Process32NextW(snapshot: HANDLE, entry: *mut ProcessEntry) -> windows_core::BOOL);
+windows_core::link!("kernel32.dll" "system" fn ProcessIdToSessionId(pid: u32, session: *mut u32) -> windows_core::BOOL);
+
+/// The program names (`spotify.exe`, in lowercase) that run in this sign-in session, each once.
+pub fn running_programs() -> Vec<String> {
+    const TH32CS_SNAPPROCESS: u32 = 2;
+    let session = |pid: u32| {
+        let mut id = u32::MAX;
+        // SAFETY: plain FFI call with an out parameter.
+        unsafe { ProcessIdToSessionId(pid, &mut id) }
+            .as_bool()
+            .then_some(id)
+    };
+    let ours = session(current_pid());
+    let mut found = Vec::new();
+    // SAFETY: plain FFI calls on a snapshot closed below; the entry's size is set first.
+    unsafe {
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if snapshot.0.is_null() || snapshot.0 as isize == -1 {
+            return found;
+        }
+        let mut e: ProcessEntry = core::mem::zeroed();
+        e.size = core::mem::size_of::<ProcessEntry>() as u32;
+        let mut more = Process32FirstW(snapshot, &mut e).as_bool();
+        while more {
+            let len = e.exe.iter().position(|c| *c == 0).unwrap_or(e.exe.len());
+            let exe = String::from_utf16_lossy(&e.exe[..len]).to_lowercase();
+            if !found.contains(&exe) && session(e.pid) == ours {
+                found.push(exe);
+            }
+            more = Process32NextW(snapshot, &mut e).as_bool();
+        }
+        let _ = CloseHandle(snapshot);
+    }
+    found
+}

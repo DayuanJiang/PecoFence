@@ -14,12 +14,13 @@ const fixture = {
   locale: 'zh-CN', translations: {},
   settings: {
     language: 'zh-CN', idleOpacity: 1,
-    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, showTrayIcon: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
+    autostart: false, hideRealIcons: false, keepIconsHidden: false, hideInboxWhenIconsShown: false, offerNewFence: true, featureTips: true, undoNotices: true, showTrayIcon: true, autoCheckUpdates: true, perDesktopFences: false, quickHide: { enabled: true },
     showDesktop: 'keepVisible', theme: 'dark', menuColor: 'followMode', themeStyle: 'fluent', labelColor: 'auto', titleAlign: 'left', tabBar: 'top', backdrop: 'acrylic', iconSize: 48,
+    zoom: { enabled: true },
     icons: { tintRgb: null, tintStrength: 0.6, chameleon: false, shortcutArrows: true },
-    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false },
+    rollUp: { hoverPeek: true, clickToExpand: false, pushNeighbors: true, titleOnHover: false, hideInactiveScrollbar: false, switchTabOnHover: false, hideCountAndChevron: false, compactRolled: false },
     snapping: { enabled: true, gapPx: 8, sizeToCells: false, guideLines: true }, peek: { enabled: true, dim: true, hotkey: 'ctrlAltSpace', doubleCtrl: false },
-    tools: { enabled: false, clockSeconds: false, dialogJump: false, everything: false },
+    tools: { enabled: false, clockSeconds: false, dialogJump: false, everything: false, allowSystem: false },
   },
   rules: {
     keepUpdated: true, defaultTarget: 'inbox', unmatched: 'defaultTarget',
@@ -364,46 +365,186 @@ async function runTests() {
       }
     }
   });
-  await test('Tools page: one switch, a new note, one clock, the examples and the guide', async () => {
+  await test('Tools page: the 小工具 switch, the own script, the plugin list and the Windows functions switch', async () => {
     doc = await reset();
     doc.querySelector('[data-page=tools]').click();
     const page = doc.getElementById('page-tools');
-    assert(page.querySelectorAll('.toggle').length === 1, 'The tools page has more than one switch');
+    const binds = [...page.querySelectorAll('.toggle')].map(t => t.dataset.bind).join(' ');
+    assert(binds === 'tools.enabled tools.allowSystem', 'The tools page switches: ' + binds);
     for (const gone of ['tools.notes', 'tools.clock', 'tools.scripts', 'tools.clockSeconds']) {
       assert(!doc.querySelector(`[data-bind="${gone}"]`), gone + ' still has a switch');
     }
-    assert(!doc.getElementById('noteCount') && !doc.getElementById('newScriptExample'), 'The count line or 添加示例… is still there');
-    const titles = [...page.querySelectorAll('.card.child .t')].map(t => t.textContent).join(' / ');
-    assert(titles === '便签与待办 / 时钟 / 天气 / GitHub 仓库动态 / 电脑状态 / 用自己的脚本', 'Rows: ' + titles);
-    const before = frame.contentWindow.testMessages.length;
-    doc.querySelector('[data-bind="tools.enabled"]').click();
-    const patch = frame.contentWindow.testMessages.slice(before).find(m => m.type === 'patchSettings');
-    assert(patch && patch.settings.tools.enabled === true, 'The 小工具 switch not posted');
-    const last = () => frame.contentWindow.testMessages.at(-1);
-    doc.getElementById('newNote').click();
-    assert(last().type === 'action' && last().name === 'newNote', 'New note not asked for: ' + JSON.stringify(last()));
-    const clock = doc.getElementById('newClock');
-    assert(!clock.disabled && clock.textContent === '添加', 'Clock button wrong without a clock: ' + clock.textContent);
-    clock.click();
-    assert(last().name === 'newClock', 'New clock not asked for');
-    for (const [id, example] of [['addWeather', 'weather'], ['addGitHub', 'github'], ['addStatus', 'status']]) {
-      doc.getElementById(id).click();
-      assert(last().name === 'newScriptExample' && last().example === example, id + ' sent ' + JSON.stringify(last()));
+    for (const gone of ['newNote', 'newClock', 'addWeather', 'addGitHub', 'addStatus', 'noteCount', 'newScriptExample']) {
+      assert(!doc.getElementById(gone), gone + ' is still there');
     }
+    const titles = [...page.querySelectorAll('.card.child .t')].map(t => t.textContent).join(' / ');
+    assert(titles === '用自己的脚本', 'Rows: ' + titles);
+    const sent = (from) => frame.contentWindow.testMessages.slice(from).find(m => m.type === 'patchSettings');
+    let before = frame.contentWindow.testMessages.length;
+    doc.querySelector('[data-bind="tools.enabled"]').click();
+    assert(sent(before)?.settings.tools.enabled === true, 'The 小工具 switch not posted');
+    before = frame.contentWindow.testMessages.length;
+    doc.querySelector('[data-bind="tools.allowSystem"]').click();
+    assert(sent(before)?.settings.tools.allowSystem === true, 'The Windows functions switch not posted');
+    const last = () => frame.contentWindow.testMessages.at(-1);
     doc.getElementById('newScript').click();
     assert(last().name === 'newScript', 'Own script not asked for');
     doc.getElementById('scriptGuide').click();
     assert(last().name === 'scriptGuide', 'Guide not asked for');
-    // One clock at most: its button greys out while the desktop has one.
-    current().fences.push({ ...current().fences[0], id: 'clock-a', title: 'Clock', tool: { kind: 'clock' } });
+    // A note is no rule target.
     current().fences.push({ ...current().fences[0], id: 'note-a', title: 'Note A', tool: { kind: 'note' } });
     frame.contentWindow.testRefresh();
     await settle();
-    assert(clock.disabled && clock.textContent === '已在桌面上', 'Clock button not greyed with a clock: ' + clock.textContent);
-    // A note is no rule target.
     rulesPage(doc);
     assert(![...doc.querySelectorAll('#nrTarget option')].some(o => o.value === 'note-a'), 'A note is offered as a rule target');
-    current().fences.splice(-2);
+    current().fences.splice(-1);
+    doc = await reset();
+  });
+  await test('Plugin list: tags, details with a form per fence, the install warning', async () => {
+    doc = await reset();
+    // Every field the host sends (plugins_json), so the page meets what the app gives it.
+    const perms = { network: [], links: [], system: [], clipboard: 'none', background: false, folders: false, notify: false,
+      launch: false, drop: [], commands: [], media: 'none', apps: [], local: { loopback: [], lan: [] } };
+    const settings = [
+      { key: 'city', type: 'text', label: '城市', options: [] },
+      { key: 'unit', type: 'choice', label: '单位', options: [{ value: 'c', label: '摄氏' }, { value: 'f', label: '华氏' }] },
+      { key: 'tomorrow', type: 'switch', label: '显示明天', options: [] },
+    ];
+    const values = (city) => ({ city, unit: 'c', tomorrow: false });
+    const fence = (id, title, city) => ({ id, title, values: values(city), items: [], keys: [] });
+    current().plugins = { status: 'ready', held: false, open: null, list: [
+      { ...perms, id: 'weather', name: '天气', description: '今天和明天的天气', author: 'DayuanJiang', version: '1.0.0', installed: true, layer: 'light',
+        network: ['wttr.in'], state: 'installed', reason: null, page: true, settings,
+        fences: [fence('f-1', '东京', 'Tokyo'), fence('f-2', '大阪', 'Osaka')] },
+      { ...perms, id: 'runner', name: 'Runner', description: 'Runs ipconfig', author: 'tester', version: '2.0.0', installed: false, layer: 'light',
+        clipboard: 'write', system: ['ipconfig.exe'], state: 'install', reason: null, page: true, settings: [], fences: [], shown: '2.0.0 light runner' },
+      { ...perms, id: 'webdemo', name: 'Web demo', description: 'A page', author: 'tester', version: '1.0.0', installed: false, layer: 'web',
+        state: 'install', reason: null, page: true, settings: [], fences: [] },
+    ] };
+    frame.contentWindow.testRefresh();
+    await settle();
+    doc.querySelector('[data-page=tools]').click();
+    const rows = () => [...doc.querySelectorAll('#pluginList .pl-row')];
+    const tags = (i) => [...rows()[i].querySelectorAll('.pl-tags span')].map(s => s.textContent).join(' ');
+    assert(rows().length === 3, 'Rows: ' + rows().length);
+    assert(tags(0) === '联网' && tags(1) === '剪贴板 启动程序' && tags(2) === '占用内存较多', 'Tags: ' + [0, 1, 2].map(tags).join(' | '));
+    // Grey tags; only 启动程序 is yellow.
+    const colour = (s) => frame.contentWindow.getComputedStyle(s).backgroundColor;
+    const spans = rows().flatMap(r => [...r.querySelectorAll('.pl-tags span')]);
+    const yellow = spans.filter(s => s.textContent === '启动程序'), grey = spans.filter(s => s.textContent !== '启动程序');
+    assert(yellow.length === 1 && grey.every(s => colour(s) === colour(grey[0]) && colour(s) !== colour(yellow[0])),
+      'Tag colours: ' + spans.map(s => s.textContent + ' ' + colour(s)).join(' | '));
+    rows()[0].click();
+    await settle();
+    const forms = [...doc.querySelectorAll('#pluginList .pl-form')];
+    assert(forms.length === 2 && forms[1].textContent.includes('栅栏“大阪”的设置'), 'Forms: ' + forms.map(f => f.textContent).join(' | '));
+    const detail = doc.querySelector('#pluginList .pl-detail').textContent;
+    assert(detail.includes('联网：wttr.in') && detail.includes('卸载') && detail.includes('在 GitHub 上看介绍'), 'Details: ' + detail);
+    const last = () => frame.contentWindow.testMessages.at(-1);
+    const city = forms[1].querySelector('input[type=text]');
+    assert(city.value === 'Osaka' && forms[0].querySelector('input[type=text]').value === 'Tokyo', 'City boxes: ' + city.value);
+    city.focus();
+    city.value = 'Kyoto';
+    // A state that comes while the box is typed in keeps the box.
+    frame.contentWindow.testRefresh();
+    await settle();
+    assert(doc.activeElement === city, 'The box being typed in was drawn again');
+    city.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+    const m = last();
+    assert(m.name === 'pluginSetting' && m.id === 'weather' && m.fence === 'f-2' && m.key === 'city' && m.value === 'Kyoto', 'Text setting sent: ' + JSON.stringify(m));
+    city.blur();
+    await settle();
+    const form1 = doc.querySelectorAll('#pluginList .pl-form')[0];
+    const unit = form1.querySelector('select');
+    unit.value = 'f';
+    unit.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true }));
+    assert(last().fence === 'f-1' && last().key === 'unit' && last().value === 'f', 'Choice sent: ' + JSON.stringify(last()));
+    form1.querySelector('.toggle').click();
+    assert(last().fence === 'f-1' && last().key === 'tomorrow' && last().value === true, 'Switch sent: ' + JSON.stringify(last()));
+    // The install warning: what it does, the promise, and for programs the stricter paragraph.
+    rows()[1].querySelector('button').click();
+    const back = doc.getElementById('plBack'), sys = doc.getElementById('plSystem');
+    const text = back.textContent;
+    assert(!back.hidden && text.includes('它会做：') && text.includes('写入剪贴板') && text.includes('启动这些程序：ipconfig.exe') && text.includes('插件只能做这里列出的事，每个版本都经过自动检查和审查。'), 'Warning: ' + text);
+    assert(!sys.hidden && sys.textContent.includes('ipconfig.exe') && sys.textContent.includes('这些程序能做你的账号能做的任何事') && !doc.getElementById('plSystemOff').hidden, 'Programs paragraph: ' + sys.textContent);
+    const box = frame.contentWindow.getComputedStyle(back.querySelector('.pl-warn')).backgroundColor;
+    assert(box === 'rgb(67, 53, 25)', 'The warning box is not the caution colour: ' + box);
+    const strict = frame.contentWindow.getComputedStyle(sys).backgroundColor;
+    assert(strict !== box, 'The programs paragraph has the first box\'s tint: ' + strict);
+    assert(doc.getElementById('plChanged').hidden, 'The changed note shows on a first warning');
+    doc.getElementById('plOk').click();
+    assert(back.hidden && last().name === 'pluginInstall' && last().id === 'runner' && last().shown === '2.0.0 light runner', 'Install not asked for with what was shown: ' + JSON.stringify(last()));
+    // The host refused it (the entry changed meanwhile): the warning shows again, saying so.
+    current().plugins.ask = 'runner';
+    frame.contentWindow.testRefresh();
+    await settle();
+    assert(!back.hidden && !doc.getElementById('plChanged').hidden && doc.getElementById('plChanged').offsetHeight > 0, 'The warning did not show again');
+    doc.getElementById('plCancel').click();
+    // Cancelled: closing and opening a row draws the list again, without the warning. A row
+    // closes with the cards' motion (at most 400 ms).
+    const closing = () => new Promise(resolve => setTimeout(resolve, 420));
+    rows()[0].click();
+    await closing();
+    rows()[0].click();
+    await settle();
+    assert(back.hidden, 'The warning came back after its cancel');
+    current().plugins.ask = null;
+    // A plugin row has no empty icon space: its text starts at the card's padding.
+    const pad = frame.contentWindow.getComputedStyle(rows()[1]).paddingLeft;
+    assert(pad === '16px', 'Plugin row padding: ' + pad);
+    // With the switch on, the paragraph does not ask for it; a plugin without programs has none.
+    current().settings.tools.allowSystem = true;
+    frame.contentWindow.testRefresh();
+    await settle();
+    rows()[1].querySelector('button').click();
+    assert(doc.getElementById('plSystemOff').hidden, 'The switch is asked for while on');
+    doc.getElementById('plCancel').click();
+    rows()[2].querySelector('button').click();
+    assert(sys.hidden && back.textContent.includes('用网页显示内容，占用内存较多'), 'Web plugin warning: ' + back.textContent);
+    doc.getElementById('plCancel').click();
+    assert(last().name !== 'pluginInstall' || last().id === 'runner', 'Cancel installed');
+    // An update by another author names the one before.
+    const runner = current().plugins.list[1];
+    current().plugins.list[1] = { ...runner, state: 'confirm', installed: true, authorBefore: 'first-author' };
+    frame.contentWindow.testRefresh();
+    await settle();
+    rows()[1].querySelector('button').click();
+    const by = doc.getElementById('plBy').textContent;
+    assert(by === '作者换了，原来是 first-author，现在是 tester。审查过的版本是 2.0.0。', 'Author change: ' + by);
+    doc.getElementById('plCancel').click();
+    current().plugins.list[1] = runner;
+    frame.contentWindow.testRefresh();
+    await settle();
+    // 插件设置 in a fence's menu: the details open at that fence's settings.
+    rows()[0].click();
+    await closing();
+    assert(!doc.querySelector('#pluginList .pl-detail'), 'Details did not close');
+    current().plugins.open = [1, 'weather', 'f-2'];
+    frame.contentWindow.testRefresh();
+    await settle();
+    const opened = doc.querySelectorAll('#pluginList .pl-form');
+    assert(opened.length === 2 && opened[1].classList.contains('pl-flash') && !opened[0].classList.contains('pl-flash'), 'Not opened at the fence');
+    delete current().plugins;
+    current().settings.tools.allowSystem = false;
+    doc = await reset();
+  });
+  await test('Plugin list without an index: no answer, or one that did not pass its check', async () => {
+    doc = await reset();
+    const shows = async (status) => {
+      current().plugins = { status, held: false, open: null, list: [] };
+      frame.contentWindow.testRefresh();
+      await settle();
+      doc.querySelector('[data-page=tools]').click();
+      const list = doc.getElementById('pluginList');
+      return [list.textContent, !![...list.querySelectorAll('button')].find(b => b.textContent === '重试')];
+    };
+    const [offline, retry1] = await shows('offline');
+    assert(offline.includes('暂时连不上插件目录') && retry1, 'Offline: ' + offline);
+    const [unverified, retry2] = await shows('unverified');
+    assert(unverified.includes('插件目录没有通过校验') && !unverified.includes('连不上') && retry2, 'Unverified: ' + unverified);
+    const lede = doc.querySelector('#page-tools .page-lede');
+    assert(lede && lede.textContent.includes('插件商店') && lede.textContent.includes('照常能用'), 'Lede: ' + (lede && lede.textContent));
+    delete current().plugins;
     doc = await reset();
   });
   await test('文字大小 for notes and script fences, not for a clock or an ordinary fence', async () => {
@@ -1431,6 +1572,11 @@ async function runTests() {
     tips.click(); await settle();
     assert(current().settings.featureTips === false, 'Feature tips switch did not post');
     tips.click(); await settle();
+    const undo = doc.querySelector('[data-bind=undoNotices]');
+    assert(undo.getAttribute('aria-checked') === 'true', 'Undo notices not shown on');
+    undo.click(); await settle();
+    assert(current().settings.undoNotices === false, 'Undo notices switch did not post');
+    undo.click(); await settle();
   });
   await test('显示托盘图标: the switch, the 退出 card while it is off, and the search', async () => {
     doc = await reset();
@@ -2302,6 +2448,17 @@ async function runTests() {
     assert(!box.classList.contains('recording') && edit.hidden && choice().value === '3:75' && choiceText() === 'Ctrl + Alt + K', 'Saved shortcut not shown: ' + choiceText());
     assert(current().settings.peek.customHotkey === 'Ctrl+Alt+K', 'Shortcut not saved');
     assert(choice().options.length === 6, 'The recorded combination is not in the list');
+  });
+  await test('自定义… picked with the mouse in the list the page draws still records (feedback #189, #190)', async () => {
+    doc = await reset();
+    doc.querySelector('[data-page=peek]').click();
+    const box = doc.getElementById('peekHotkey'), edit = doc.getElementById('peekHotkeyEdit');
+    // The styled list (appearance: base-select) closes after its change event and gives the
+    // focus back to itself: the recording must survive that.
+    choose('custom'); choice().focus(); await settle();
+    assert(!edit.hidden && box.classList.contains('recording') && doc.activeElement === box && choice().value === 'custom', 'Recording ended when the list took the focus back');
+    press(box, 'k', 75, { ctrlKey: true, shiftKey: true }); await settle();
+    assert(current().settings.peek.customHotkey === 'Ctrl+Shift+K', 'Shortcut not saved: ' + current().settings.peek.customHotkey);
   });
   await test('A refused shortcut keeps recording with the reason; Esc cancels', async () => {
     doc = await reset();

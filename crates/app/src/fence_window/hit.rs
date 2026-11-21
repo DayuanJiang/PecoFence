@@ -523,12 +523,14 @@ impl FenceViewState {
             PressTarget::Tab(t) => self.tab_at(x_px, y_px) == Some(t),
             PressTarget::NoteBox(l) => self.note_box_at(x_px, y_px) == Some(l),
             PressTarget::NoteLink(l, s) => self.note_link_at(x_px, y_px) == Some((l, s)),
-            PressTarget::ScriptRow(r) => self.script_row_at(x_px, y_px) == Some(r),
+            PressTarget::ScriptRow(r, c) => self.script_row_at(x_px, y_px) == Some((r, c)),
         }
     }
 
     pub(super) fn grid_metrics(&self) -> GridMetrics {
-        self.grid().metrics(self.chrome.label_line_h())
+        self.grid()
+            .metrics(self.chrome.label_line_h())
+            .scaled(self.zoom_icon)
     }
 
     /// "按时间分组" sections of the current items as delivered (sorted, possibly reversed):
@@ -575,17 +577,25 @@ impl FenceViewState {
                 )
             }
             None => {
-                ItemLayout::Grid(
+                let line_h = self.chrome.label_line_h();
+                // A zoomed fence lays the same grid out at a larger scale; at rest the grid is
+                // the stored one, untouched.
+                let grid = if (self.zoom_icon - 1.0).abs() < f32::EPSILON {
+                    self.grid().grid(line_h, width_dip, n, &spans)
+                } else {
                     self.grid()
-                        .grid(self.chrome.label_line_h(), width_dip, n, &spans),
-                )
+                        .grid_zoomed(line_h, width_dip, n, &spans, self.zoom_icon)
+                };
+                ItemLayout::Grid(grid)
             }
         }
     }
 
-    /// Icon edge in DIPs for the current layout (rows: 20 DIPs at the default icon size).
+    /// Icon edge in DIPs for the current layout (rows: 20 DIPs at the default icon size). The
+    /// zoom factor is part of it: a zoomed fence lays its content out at a larger scale while
+    /// the grid keeps its column count, and every hit test reads the same number.
     pub(super) fn icon_dip(&self) -> f32 {
-        crate::layout::icon_dip(self.layout, self.icon_size)
+        crate::layout::icon_dip(self.layout, self.icon_size) * self.zoom_icon
     }
 
     pub(super) fn row_metrics(&self) -> Option<RowMetrics> {

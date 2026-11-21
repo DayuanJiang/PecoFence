@@ -47,6 +47,9 @@ pub struct AppState {
     /// Fences whose view or sort order just changed with the folder they show
     /// (`follow_folder_view`), until their window has taken it (`take_folder_view_changed`).
     folder_view_changed: HashSet<FenceId>,
+    /// Plugin fences whose view holds a note (`input: note`): their text is a note's, kept in
+    /// `Config::notes`, and they are edited and ticked as note fences are.
+    pub note_inputs: HashSet<FenceId>,
     /// When the youngest `.tmp` the rules skipped as too new has lasted `TMP_SETTLE_SECS`
     /// (Unix seconds): the App syncs the desktop again then (`take_tmp_settle_at`).
     tmp_settle_at: std::cell::Cell<Option<i64>>,
@@ -182,7 +185,18 @@ fn saver_for(store: &ConfigStore) -> ConfigSaver {
             Ok(()) if took >= SLOW_SAVE => {
                 tracing::info!(ms, "config saved; the disk kept the save waiting")
             }
-            Ok(()) => tracing::debug!(ms, path = %primary.display(), "config saved"),
+            Ok(()) => {
+                // Once per run: the rename into place was refused (feedback #186).
+                if let Some(code) = pecofence_core::config_store::take_in_place_note() {
+                    tracing::info!(
+                        rename_error = code,
+                        config_in_package = in_package_folder(&primary),
+                        place = shell::path_place(&primary),
+                        "config saved in place: Windows refused the rename of the temp file here"
+                    );
+                }
+                tracing::debug!(ms, path = %primary.display(), "config saved")
+            }
             // config.json holds every change: no "cannot save" notice for the backup copy.
             Err(e) if e.config_written() => tracing::warn!(
                 error = %e.error,
@@ -280,6 +294,7 @@ impl AppState {
             opened_folders: HashMap::new(),
             portal_missing: HashSet::new(),
             folder_view_changed: HashSet::new(),
+            note_inputs: HashSet::new(),
             tmp_settle_at: std::cell::Cell::new(None),
             work_areas,
             unplaced: Vec::new(),
@@ -369,7 +384,11 @@ impl AppState {
         if dir == config_dir(true) {
             return "portable";
         }
-        let in_package = in_package_folder(&self.store.primary_path()) || in_package_folder(dir);
+        // A Store edition's first start has no folder yet: with no real %APPDATA%\PecoFence its
+        // files go to the package's copy (the first start said "appdata" there).
+        let in_package = in_package_folder(&self.store.primary_path())
+            || in_package_folder(dir)
+            || (!dir.exists() && pecofence_platform::process::is_packaged());
         let old_name = dir
             .file_name()
             .is_some_and(|n| n == std::ffi::OsStr::new(pecofence_core::brand::LEGACY_DATA_DIR));
@@ -615,6 +634,7 @@ impl AppState {
             opened_folders: HashMap::new(),
             portal_missing: HashSet::new(),
             folder_view_changed: HashSet::new(),
+            note_inputs: HashSet::new(),
             tmp_settle_at: std::cell::Cell::new(None),
             work_areas: self.work_areas.clone(),
             unplaced: Vec::new(),
@@ -3220,7 +3240,7 @@ impl AppState {
     /// The text of note fence `id` (empty for a note without text yet); None for any other.
     pub fn note_text(&self, id: FenceId) -> Option<&str> {
         self.fence(id)
-            .filter(|f| f.tool == Some(FenceTool::Note))
+            .filter(|f| f.tool == Some(FenceTool::Note) || self.note_inputs.contains(&id))
             .map(|_| self.config.notes.get(&id).map_or("", String::as_str))
     }
 
@@ -3766,6 +3786,7 @@ mod tests {
             opened_folders: HashMap::new(),
             portal_missing: HashSet::new(),
             folder_view_changed: HashSet::new(),
+            note_inputs: HashSet::new(),
             tmp_settle_at: std::cell::Cell::new(None),
             work_areas,
             unplaced: Vec::new(),

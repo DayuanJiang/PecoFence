@@ -204,7 +204,7 @@ pub(super) fn on_timer_scroll_repeat(
     // pages and keep moving after the button is released.
     let pt = window::screen_to_client(hwnd, window::cursor_pos());
     let target = v.scroll_target();
-    let row_step = v.scroll_row_step(&v.scroll_extent().0);
+    let row_step = v.scroll_dims().row_step;
     match v.scrollbar_hit_for(pt.x, pt.y, target) {
         Some((hit, g)) if hit == side => {
             let step = scroll_step_for(hit, g.view_h, row_step);
@@ -657,8 +657,35 @@ pub(super) fn on_timer_clock(h: &HandlerCtx) -> Option<isize> {
                     v.redraw_content()
                 }
             });
+            // A rolled row as wide as its time: 9:59 to 10:00 needs a wider one.
+            if v.compact_collapsed
+                && v.roll_anim.is_none()
+                && !v.peeking
+                && v.compact_w_px() != window::window_rect_size(v.hwnd).0
+            {
+                tracing::debug!(fence = %h.fence_id, "clock: the rolled row takes the new time's width");
+                h.queue.push(Command::RolledWidthStale(h.fence_id));
+            }
         }
         v.arm_clock();
+    }
+    Some(0)
+}
+
+/// `WM_APP_ZOOM_PRESS`: while a fence is zoomed, a press on the desktop outside it puts it
+/// back (`fence_window/zoom.rs`). The watch ends with the zoom.
+pub(super) fn on_zoom_press(h: &HandlerCtx, hwnd: HWND, lparam: isize) -> Option<isize> {
+    let HandlerCtx { view, .. } = h;
+    let pt = pecofence_platform::POINT {
+        x: msg::lo_i16(lparam),
+        y: msg::hi_i16(lparam),
+    };
+    let closed = view
+        .borrow_mut()
+        .as_mut()
+        .is_some_and(|v| v.zoom_press_at(hwnd, pt));
+    if closed {
+        tracing::debug!("zoom closed by a click outside the fence");
     }
     Some(0)
 }

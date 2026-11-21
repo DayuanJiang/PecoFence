@@ -440,6 +440,23 @@ pub fn confirm(owner: HWND, text: &str, caption: &str) -> bool {
     }
 }
 
+/// Modal warning box with OK owned by `owner`, for something the user did that cannot be done.
+/// Pumps messages like [`confirm`].
+pub fn warn(owner: Option<HWND>, text: &str, caption: &str) {
+    let text = to_wide(text);
+    let caption = to_wide(caption);
+    let flags = MB_OK | MB_ICONWARNING | MB_SETFOREGROUND;
+    // SAFETY: both strings are NUL-terminated and outlive the call.
+    unsafe {
+        MessageBoxW(
+            owner,
+            PCWSTR(text.as_ptr()),
+            PCWSTR(caption.as_ptr()),
+            flags as u32,
+        );
+    }
+}
+
 /// Presses and releases `vk` as if typed (the modifiers held stay as they are): a shortcut
 /// PecoFence registered but does not want this time goes on to the window in front.
 pub fn send_key(vk: u32) {
@@ -520,6 +537,66 @@ pub fn secondary_button_down_async() -> bool {
     key_down_async(vk as u32)
 }
 
+thread_local! {
+    /// Where [`PressWatch`] posts the presses it sees, and with which message.
+    static PRESS_TARGET: std::cell::Cell<(HWND, u32)> =
+        const { std::cell::Cell::new((HWND(std::ptr::null_mut()), 0)) };
+}
+
+/// While it lives, every press of a mouse button anywhere on the screen is posted to the
+/// target window: `lparam` is the screen point (x in the low word, y in the high word, both
+/// signed), `wparam` the button message. A low-level mouse hook on this thread, so a quick tap
+/// on a touchpad, pressed and released between two looks at the button state, counts too.
+pub struct PressWatch(HHOOK);
+
+impl PressWatch {
+    pub fn start(target: HWND, message: u32) -> Option<Self> {
+        PRESS_TARGET.set((target, message));
+        // SAFETY: a low-level hook needs no module handle.
+        let hook = unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(press_watch_proc), None, 0) };
+        (!hook.0.is_null()).then_some(Self(hook))
+    }
+}
+
+impl Drop for PressWatch {
+    fn drop(&mut self) {
+        // SAFETY: balances SetWindowsHookExW.
+        unsafe {
+            let _ = UnhookWindowsHookEx(self.0);
+        }
+    }
+}
+
+unsafe extern "system" fn press_watch_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    let m = wparam.0 as u32;
+    if code >= 0
+        && [
+            WM_LBUTTONDOWN as u32,
+            WM_RBUTTONDOWN as u32,
+            WM_MBUTTONDOWN as u32,
+            WM_XBUTTONDOWN as u32,
+        ]
+        .contains(&m)
+    {
+        // SAFETY: for WH_MOUSE_LL, lParam points to an MSLLHOOKSTRUCT, which starts with the
+        // pointer's position; plain FFI calls.
+        let pt = unsafe { *(lparam.0 as *const POINT) };
+        // A press on one of this thread's popup menus (a fence's menu) is the menu's.
+        let on_menu = unsafe {
+            let under = WindowFromPoint(pt);
+            GetWindowThreadProcessId(under, None) == GetCurrentThreadId()
+                && crate::desktop::class_name(under) == "#32768"
+        };
+        if !on_menu {
+            let (target, message) = PRESS_TARGET.get();
+            let packed = (pt.x as u16 as u32 | ((pt.y as u16 as u32) << 16)) as isize;
+            post_message(target, message, m as usize, packed);
+        }
+    }
+    // SAFETY: passes the event on unchanged.
+    unsafe { CallNextHookEx(None, code, wparam, lparam) }
+}
+
 /// Gives `hwnd` the keyboard focus (a no-op unless this thread owns the foreground queue).
 pub fn set_focus(hwnd: HWND) {
     // SAFETY: plain FFI call.
@@ -552,6 +629,16 @@ pub fn set_standard_cursor(kind: StandardCursor) {
     unsafe {
         let c = LoadCursorW(None, id);
         let _ = SetCursor(Some(c));
+    }
+}
+
+/// Sets the cursor to `cursor`, an `HCURSOR` another component made (a web page's).
+pub fn set_cursor_handle(cursor: *mut core::ffi::c_void) {
+    if !cursor.is_null() {
+        // SAFETY: a cursor handle; SetCursor only reads it.
+        unsafe {
+            let _ = SetCursor(Some(HICON(cursor)));
+        }
     }
 }
 
@@ -1013,6 +1100,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             handled = handler(hwnd, msg, wparam.0, lparam.0);
             MESSAGE_DEPTH.with(|d| d.set(depth));
             let spent = started.elapsed();
+            if depth == 0 {
+                crate::busy::note_message(msg, wparam.0, spent);
+            }
             if depth == 0 && spent >= std::time::Duration::from_millis(4) {
                 tracing::debug!(
                     ms = (spent.as_secs_f64() * 10000.0).round() / 10.0,

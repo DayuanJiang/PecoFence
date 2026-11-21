@@ -1,11 +1,12 @@
 # Fence polish round 2026-11-12: a tool made on Settings > Tools is placed clear of the Settings
 # window. Before, the note went to the middle of the screen, fully under the window, and the
 # clock and the weather to the top left, partly under it. The window is tried where it opens by
-# itself, at the left edge of the screen and at the right edge; every button of the page that
-# makes a tool is used once. A note from the tray menu and one from the CLI keep their place.
-# The page of a release build is clicked by its labels (OCR). The steps expect the box's
-# 1600x900 screen: the window then leaves 320 px on each side, room for every tool but the
-# 360 px wide GitHub one, which is made with the window at the left edge.
+# itself, at the left edge of the screen and at the right edge. The tools are plugins now:
+# stand-ins of notes, clock, weather, github and pc-status are installed (no plugin index is
+# reached), and each row's 添加到桌面 makes its fence. A note from the tray menu (a notes
+# plugin fence) and one from the CLI keep their place. The page of a release build is clicked
+# by its labels (OCR). The steps expect the box's 1600x900 screen: the window then leaves 320 px
+# on each side.
 trap { PfTrap $_; continue }
 function ToolIds() { return @(@(PfJson fence list) | Where-Object { $_ -and $_.tool } | ForEach-Object { $_.id }) }
 # The tool fence that was not among $before, waited for up to $sec seconds ($null when none came).
@@ -33,37 +34,36 @@ function CheckClear($what, $f) {
   Check "$what is not under the Settings window" ((Under $f $s) -eq 0) "$what=$(ToolText $f) settings=$(WinText $s) covered=$(Under $f $s) px"
 }
 # The centre of the button $label in the row titled $title of the Tools page.
+# The plugin rows go below the page's fold: the page is scrolled to its top first, and down when
+# the row is not in sight.
 function RowButton($title, $label) {
   $sr = Rect $s
+  Wheel ($sr.L + 600) ($sr.T + 400) 10; Start-Sleep -Milliseconds 600
   $t = OcrFind $title ($sr.L + 260) $sr.T 520 ($sr.B - $sr.T)
+  if (-not $t) {
+    Wheel ($sr.L + 600) ($sr.T + 400) -6; Start-Sleep -Milliseconds 600
+    $t = OcrFind $title ($sr.L + 260) $sr.T 520 ($sr.B - $sr.T)
+  }
   if (-not $t) { return $null }
   return (OcrFind $label ($sr.R - 280) ($t[1] - 24) 280 90)
 }
 # Clicks that button and returns the tool fence it made.
-function AddTool($title, $label = '^Add$') {
+function AddTool($title, $label = '^Add to desktop$') {
   $before = ToolIds
   $b = RowButton $title $label
   if (-not $b) { return $null }
   [G]::Click($b[0], $b[1])
   return (NewTool $before)
 }
-# New note: the note fence, its editor closed again with Esc (the text is saved).
-function AddNote($text) {
-  $f = AddTool '^Notes and to' 'New note'
-  $ed = WaitWin 'PecoFence.NoteEdit' 8
-  if ($ed -ne [IntPtr]::Zero) { [G]::Type($text); Start-Sleep -Milliseconds 300; [G]::Press(0x1B); Start-Sleep -Milliseconds 800 }
-  return $f
-}
-# 新建便签 of the tray menu: the note fence, its editor closed again with Esc. The tray's overflow
-# window is opened first and left to settle: the menu's place follows the icon while it slides in.
+# The notes plugin's row: its fence.
+function AddNote($text) { return (AddTool '^Notes\W+Dayuan') }
+# 新建便签 of the tray menu: a fence of the notes plugin. The tray's overflow window is opened
+# first and left to settle: the menu's place follows the icon while it slides in.
 function TrayNote() {
   $before = ToolIds
   TrayIconRect | Out-Null; Start-Sleep -Milliseconds 1500
   TrayPick '^New note' | Out-Null
-  $f = NewTool $before
-  $ed = WaitWin 'PecoFence.NoteEdit' 8
-  if ($ed -ne [IntPtr]::Zero) { [G]::Type('tray'); Start-Sleep -Milliseconds 300; [G]::Press(0x1B); Start-Sleep -Milliseconds 800 }
-  return $f
+  return (NewTool $before)
 }
 # The Settings window moved to x = $left (its size and top kept), the Tools page shown again.
 function MoveSettings($left) {
@@ -76,6 +76,8 @@ function MoveSettings($left) {
 Case 'the first-run fences leave no room beside the window'
 CloseWindows
 Set-Culture en-US
+$env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:9/index.json'
+foreach ($id in 'notes', 'clock', 'weather', 'github', 'pc-status') { PfPlacePlugin (PfStandIn $id) $id }
 PfStart -Lang en
 Start-Sleep -Seconds 4
 $screenW = [G]::GetSystemMetrics(0)
@@ -95,8 +97,8 @@ Check 'with fences on both sides of the window, the window covers less than half
 Case 'the window where it opens by itself'
 ClearFences | Out-Null
 $note = AddNote 'as it opens'
-$clock = AddTool '^Clock$'
-$weather = AddTool '^Weather$'
+$clock = AddTool '^Clock\W+Dayuan'
+$weather = AddTool '^Weather\W+Dayuan'
 Start-Sleep -Seconds 1
 Shot 'place-2-as-it-opens'
 CheckClear 'the note' $note
@@ -108,11 +110,10 @@ Case 'the window at the left edge of the screen'
 ClearFences | Out-Null
 MoveSettings 0
 $sr = Rect $s
-$git = AddTool 'repository activity$'
-$status = AddTool '^PC status$'
-# 用自己的脚本 is the last row: scrolled into sight, then the file dialog names the script.
+$git = AddTool '^GitHub activity\W+Dayuan'
+$status = AddTool '^PC status\W+Dayuan'
+# 用自己的脚本: its file dialog names the script.
 Set-Content C:\pf\run\place.ps1 -Value 'Write-Output "placed"' -Encoding UTF8
-Wheel ($sr.L + 600) ($sr.T + 400) -6; Start-Sleep -Seconds 1
 $before = ToolIds
 $b = RowButton '^Your own script$' 'Choose script'
 [G]::Click($b[0], $b[1])
@@ -127,15 +128,14 @@ CheckClear 'the GitHub fence' $git
 CheckClear 'the PC status fence' $status
 CheckClear 'the fence of a script chosen in the file dialog' $own
 Check 'the GitHub fence is on the right of the window, the side with more room' ($git -and $git.windowRect.x -ge $sr.R) "github=$(ToolText $git) settings=$(WinText $s)"
-Wheel ($sr.L + 600) ($sr.T + 400) 6; Start-Sleep -Seconds 1
 
 Case 'the window at the right edge of the screen'
 ClearFences | Out-Null
 MoveSettings ($screenW - ($sr.R - $sr.L))
 $sr = Rect $s
 $note = AddNote 'right edge'
-$clock = AddTool '^Clock$'
-$weather = AddTool '^Weather$'
+$clock = AddTool '^Clock\W+Dayuan'
+$weather = AddTool '^Weather\W+Dayuan'
 Start-Sleep -Seconds 1
 Shot 'place-4-right-edge'
 CheckClear 'the note' $note

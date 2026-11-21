@@ -21,7 +21,8 @@ REVISION = ROOT / ".cache/store-v2"
 # --no-captions --out .cache/store-trailers/out/en/<lesson>-bare.mp4, which also writes the
 # poster frame as <lesson>-bare.png), cropped to the 1600x900 stage.
 LESSONS = {"search": "search", "dialog": "dialog-jump", "smart": "smart", "vdesk": "vdesk", "place": "free-place",
-           "undo": "undo", "tools": "tools"}
+           "undo": "undo"}
+# The tools block shows a still (tools.jpg, a frame of the manual's tools lesson) and no recording.
 LESSON_RENDERS = ROOT / ".cache/store-trailers/out/en"
 STAGE = (160, 22, 1760, 922)
 

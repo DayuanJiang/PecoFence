@@ -23,6 +23,9 @@ pub(super) struct InternalDrag {
 
 thread_local! {
     pub(super) static INTERNAL_DRAG: RefCell<Option<InternalDrag>> = const { RefCell::new(None) };
+    /// A drag out of a plugin row is on: PecoFence's own too, so no plugin fence takes its
+    /// file as one dropped from outside.
+    pub(super) static ROW_DRAG: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// What a drag would hit at a screen point inside this window.
@@ -370,6 +373,60 @@ pub(super) struct Feedback {
 /// — a tab pill, a folder item, the insertion caret of a 手动 fence, or the whole content — and
 /// keeps the shell's drag image (with its "移动到 …" badge) informed through
 /// `IDropTargetHelper`, as Explorer's folder views do.
+/// The most files one drop gives a plugin, and the most UTF-16 units of a dropped text.
+const MAX_PLUGIN_DROP: usize = 20;
+const MAX_PLUGIN_TEXT: usize = 256 * 1024;
+
+/// What a drag gives a plugin fence that takes `takes`: the files (none of PecoFence's own
+/// drags, a plugin row's too, at most 20, folders only for a launcher), the text and the http or https link, each
+/// only when the plugin takes that kind; None when that is nothing.
+fn plugin_payload(
+    data: &IDataObject,
+    takes: PluginDrops,
+    internal: bool,
+) -> Option<(Vec<PathBuf>, Option<String>, Option<String>)> {
+    let fits = |p: &PathBuf| p.is_absolute() && (takes.folders || !p.is_dir());
+    let own = internal || ROW_DRAG.with(std::cell::Cell::get);
+    let mut paths = if takes.files && !own && dragdrop::has_hdrop(data) {
+        dragdrop::hdrop_paths(data)
+    } else {
+        Vec::new()
+    };
+    if paths.len() > MAX_PLUGIN_DROP || !paths.iter().all(fits) {
+        paths.clear();
+    }
+    let text = takes
+        .text
+        .then(|| dragdrop::dropped_text(data, MAX_PLUGIN_TEXT));
+    let link = takes.links.then(|| dragdrop::inet_url(data)).flatten();
+    let url = link.and_then(|u| pecofence_core::web_address::WebAddress::parse(&u));
+    let (text, url) = (text.flatten(), url.map(|u| u.to_string()));
+    (!paths.is_empty() || text.is_some() || url.is_some()).then_some((paths, text, url))
+}
+
+/// A plugin drop links files and copies a text or a link (never a move: the source keeps its
+/// text); `kind` is what [`plugin_payload`] found.
+fn plugin_effect(kind: DropKind, allowed: u32) -> DropEffect {
+    let order = match kind {
+        DropKind::Files => [DropEffect::Link, DropEffect::Copy],
+        DropKind::Url => [DropEffect::Copy, DropEffect::Link],
+        _ => return DropEffect::None,
+    };
+    let offered = order.into_iter().find(|e| e.to_raw() & allowed != 0);
+    offered.unwrap_or(DropEffect::None)
+}
+
+/// Screen point (sx, sy) is over the tab pill of another fence than the plugin fence shown:
+/// what is dropped there is not for its plugin.
+fn over_other_tab(v: &FenceViewState, sx: i32, sy: i32) -> bool {
+    let r = window::window_rect(v.hwnd);
+    let tab = (v.tabs.len() > 1)
+        .then(|| v.tab_at(sx - r.left, sy - r.top))
+        .flatten();
+    tab.and_then(|i| v.tabs.get(i))
+        .is_some_and(|t| t.id != v.active)
+}
+
 pub(super) struct FenceDropHandler {
     pub(super) queue: CommandQueue,
     pub(super) view: Rc<RefCell<Option<FenceViewState>>>,
@@ -598,6 +655,15 @@ impl FenceDropHandler {
                 ..none
             };
         };
+        if v.plugin_drop.is_some() && !over_other_tab(v, pt.x, pt.y) {
+            let effect = plugin_effect(self.kind, allowed);
+            let title = v.title.clone();
+            return Feedback {
+                effect,
+                description: Some(drop_description(effect, title)),
+                hwnd: v.hwnd,
+            };
+        }
         // A tool fence (便签, 时钟) holds no items and a smart fence shows a search: nothing
         // drops on them.
         if v.takes_no_drops() {
@@ -722,6 +788,48 @@ impl FenceDropHandler {
     }
 }
 
+impl FenceDropHandler {
+    /// A drag the fence's own page started: the page gets it (`WebFence::page_drag`) and the
+    /// shell's drag picture follows; None for any other drag.
+    fn page_drag(
+        &mut self,
+        step: crate::web_plugin::DragStep,
+        data: Option<&IDataObject>,
+        keys: (u32, u32),
+        pt: DragPoint,
+    ) -> Option<DropEffect> {
+        use crate::web_plugin::DragStep;
+        let data = data.or(self.data.as_ref())?.clone();
+        let unknown = windows_core::Interface::cast(&data).ok()?;
+        // A view that is busy cannot tell whether the drag is its page's own: refused until it
+        // comes in again (never taken as a drag from outside).
+        let Ok(v) = self.view.try_borrow() else {
+            tracing::info!(?step, "a drag over a fence whose view is busy: refused");
+            self.kind = DropKind::None;
+            return Some(DropEffect::None);
+        };
+        let (web, hwnd) = {
+            let v = v.as_ref()?;
+            (v.web.clone()?, v.hwnd)
+        };
+        drop(v);
+        if !web.started_drag(&unknown) {
+            return None;
+        }
+        let effect = DropEffect::from_raw(web.page_drag(step, &unknown, keys, pt.x, pt.y));
+        self.data = (step == DragStep::Enter || step == DragStep::Over).then_some(data.clone());
+        if let Some(h) = &self.helper {
+            match step {
+                DragStep::Enter => h.drag_enter(hwnd, &data, pt, effect),
+                DragStep::Over => h.drag_over(pt, effect),
+                DragStep::Leave => h.drag_leave(),
+                DragStep::Drop => h.drop(&data, pt, effect),
+            }
+        }
+        Some(effect)
+    }
+}
+
 impl DropHandler for FenceDropHandler {
     fn drag_enter(
         &mut self,
@@ -730,6 +838,11 @@ impl DropHandler for FenceDropHandler {
         pt: DragPoint,
         allowed: u32,
     ) -> DropEffect {
+        use crate::web_plugin::DragStep;
+        if let Some(effect) = self.page_drag(DragStep::Enter, Some(data), (key_state, allowed), pt)
+        {
+            return effect;
+        }
         let internal = Self::internal().is_some();
         forget_link_folder();
         note_default_drop_effect();
@@ -745,6 +858,24 @@ impl DropHandler for FenceDropHandler {
         );
         self.path_drag =
             self.kind == DropKind::Files && hdrop.as_ref().is_some_and(|paths| !paths.is_empty());
+        // A plugin fence: what it takes of the drag (`Files` with files, `Url` with only a text
+        // or a link), or nothing.
+        let plugin = self
+            .view
+            .try_borrow()
+            .ok()
+            .and_then(|g| g.as_ref()?.plugin_drop);
+        if let Some(takes) = plugin {
+            let payload = plugin_payload(data, takes, internal);
+            self.kind = match &payload {
+                Some((paths, ..)) if !paths.is_empty() => DropKind::Files,
+                Some(_) => DropKind::Url,
+                None => DropKind::None,
+            };
+            let fits = payload.is_some();
+            tracing::info!(internal, ?takes, fits, "a drag over a plugin fence");
+            self.path_drag = false;
+        }
         self.data = Some(data.clone());
         self.last_description = None;
         self.right_button = key_state & dragdrop::MK_RBUTTON != 0;
@@ -785,6 +916,10 @@ impl DropHandler for FenceDropHandler {
     }
 
     fn drag_over(&mut self, key_state: u32, pt: DragPoint, allowed: u32) -> DropEffect {
+        let over = crate::web_plugin::DragStep::Over;
+        if let Some(effect) = self.page_drag(over, None, (key_state, allowed), pt) {
+            return effect;
+        }
         let started = self.over_stats.begin();
         if self.kind == DropKind::None {
             if let Some(h) = &self.helper {
@@ -804,6 +939,15 @@ impl DropHandler for FenceDropHandler {
     }
 
     fn drag_leave(&mut self) {
+        let leave = crate::web_plugin::DragStep::Leave;
+        let p = window::cursor_pos();
+        if self
+            .page_drag(leave, None, (0, 0), DragPoint { x: p.x, y: p.y })
+            .is_some()
+        {
+            self.data = None;
+            return;
+        }
         self.over_stats.report("leave");
         self.feedback(None, 0, 0);
         self.forget_data(true);
@@ -819,6 +963,10 @@ impl DropHandler for FenceDropHandler {
         pt: DragPoint,
         allowed: u32,
     ) -> DropEffect {
+        let step = crate::web_plugin::DragStep::Drop;
+        if let Some(effect) = self.page_drag(step, Some(data), (key_state, allowed), pt) {
+            return effect;
+        }
         self.over_stats.report("drop");
         let drop_started = Instant::now();
         if let Some(feedback) = self.shortcut_feedback(Some(pt), key_state, allowed) {
@@ -858,6 +1006,40 @@ impl DropHandler for FenceDropHandler {
         }
         let kind = std::mem::replace(&mut self.kind, DropKind::None);
         let internal = Self::internal();
+        let plugin = self.view.try_borrow_mut().ok().and_then(|mut g| {
+            let v = (g.as_mut())
+                .filter(|v| v.plugin_drop.is_some() && !over_other_tab(v, pt.x, pt.y))?;
+            v.apply_drop_feedback(None);
+            let r = window::window_rect(v.hwnd);
+            let row = v.script_row_at(pt.x - r.left, pt.y - r.top).map(|h| h.0);
+            // On a web page: the point in the page (its CSS pixels are the fence's DIPs).
+            let point = v.web.as_ref().map(|_| {
+                let scale = v.scale();
+                let x = (pt.x - r.left - v.content_x) as f32 / scale;
+                (x, (pt.y - r.top - v.content_y) as f32 / scale)
+            });
+            Some((v.active, v.plugin_drop?, row, point))
+        });
+        if let Some((fence, takes, row, point)) = plugin {
+            // The files go to the plugin as they are: nothing is moved or copied.
+            let effect = plugin_effect(kind, allowed);
+            let payload = plugin_payload(data, takes, internal.is_some());
+            if let Some((paths, text, url)) = payload.filter(|_| effect != DropEffect::None) {
+                self.queue.push(Command::PluginDrop {
+                    fence,
+                    paths,
+                    text,
+                    url,
+                    row,
+                    point,
+                });
+            }
+            self.forget_data(false);
+            if let Some(h) = &self.helper {
+                h.drop(data, pt, effect);
+            }
+            return effect;
+        }
         // Resolve the target and clear the highlights under one borrow.
         let resolved = self.view.try_borrow_mut().ok().and_then(|mut g| {
             g.as_mut().filter(|v| !v.takes_no_drops()).map(|v| {
@@ -1720,7 +1902,7 @@ impl FenceViewState {
                 let content = ContentDraw {
                     items: &items,
                     group_headers: &[],
-                    icon_size: self.icon_size as f32,
+                    icon_size: self.icon_size as f32 * self.zoom_icon,
                     label_lines: self.label_lines,
                     line_h: grid.metrics.line_h,
                     icon_top: grid.metrics.icon_top,
