@@ -394,8 +394,10 @@ rule.
 
 ## Tools (小工具)
 
-A tool fence shows a tool in place of desktop items. One switch in `settings`, `tools.enabled`
-(Settings › 小工具, `true` by default), covers note, clock and script fences: while it is off nothing
+A tool fence shows a tool in place of desktop items. Most tools are plugins from the plugin store
+(Settings › 小工具 › 插件, see [Plugins](#plugins)); notes, clocks and script fences of your own are
+also built in. One switch in `settings`, `tools.enabled` (Settings › 小工具, `true` by default),
+covers plugin, note, clock and script fences: while it is off nothing
 runs and tool fences have no window until it is switched on again. `fence create --tool` (and
 `--script`) switches it on. The desktop has one clock at most: a second `fence create --tool clock`
 fails with `limitReached`. Tool fences hold no items (rules, `item move --to` and drops refuse them) and take no
@@ -419,11 +421,13 @@ finds on the whole computer; Everything has to be running, and version 1.5 also 
 names by pinyin. Files and folders opened from the search box are counted in `config.json` under
 `searchHistory` (lower-case paths, at most 300) and rank higher next time.
 
-- **Notes and to-dos** (`--tool note`): lines of text; a line starting with `[ ]` (or `[x]`, after
+- **Notes and to-dos** (`--tool note`): PecoFence's own note fence (the 便签 plugin's fences are the
+  same note, and a `--tool note` fence becomes one once that plugin is installed): lines of text; a line starting with `[ ]` (or `[x]`, after
   an optional `- ` or `* `) is a to-do whose box ticks with a click. `fence get` reports
   `noteText`; `fence set <FENCE> noteText "..."` replaces it (use `\n` for line breaks in JSON).
   The text is kept in `config.json` under `notes`, so exports and daily backups carry it.
-- **Clock** (`--tool clock`): the time and the long date in Windows' region format;
+- **Clock** (`--tool clock`): PecoFence's own clock fence (it becomes a fence of the 时钟 plugin once
+  that plugin is installed): the time and the long date in Windows' region format;
   `settings set tools.clockSeconds true` (显示秒 in the clock's fence menu) adds the seconds.
 - **Script fences** (`--script <FILE>`): runs a .ps1, .py, .pyw, .cmd, .bat, .js or .exe every
   `scriptInterval` minutes (30 by default) without a window, at most 10 seconds, and shows what it
@@ -433,15 +437,35 @@ names by pinyin. Files and folders opened from the search box are counted in `co
   `outcome` (`done`, `failed`, `timedOut`, `missing`, `unsupported`, `notStarted`), `output`,
   `lastRun` and `running`. PowerShell scripts are run with UTF-8 output; Python with
   `PYTHONIOENCODING=utf-8`. PecoFence itself does not go online for this: the script does.
-  The 添加 buttons in Settings › 小工具 (and 新建小工具 in the tray and fence menus) write ready
-  examples into the configuration folder's `scripts` folder: 天气 (weather), GitHub 仓库动态 (a
-  repository's newest issues and pull requests) and 电脑状态 (a streaming script).
+  The examples 0.3.0 to 0.4.0 wrote into the configuration folder's `scripts` folder (天气, GitHub
+  仓库动态, 电脑状态) are plugins now: a script fence that still runs an example nobody edited
+  becomes a fence of that plugin, and an edited one stays a script fence.
 
 ```powershell
 pecofence-cli fence create --tool note --title Today --text "[ ] Pay rent`n[ ] Call Anna"
 pecofence-cli fence create --script "$env:USERPROFILE\Scripts\weather.ps1" --title Weather
 pecofence-cli fence set Weather scriptInterval 15
 ```
+
+## Plugins
+
+Plugins come from the plugin store (the repository DayuanJiang/PecoFence-plugins on GitHub) and are
+installed, updated and uninstalled in Settings › 小工具 › 插件, where each install first shows what
+the plugin will do; the CLI has no install command. A fence of an installed plugin runs
+`plugin:<id>` as its script:
+
+```powershell
+pecofence-cli fence create --script plugin:countdown --title Holidays
+pecofence-cli fence set Holidays scriptPath plugin:todo
+```
+
+`fence create --script plugin:<id>` fails with `invalidValue` when the plugin is not installed. `fence get` of a
+plugin fence reports `script` with `path` (`plugin:<id>`) and `output`, the text of the rows the
+plugin shows now (or why it stopped). `settings set tools.allowSystem true` is Settings › 小工具 ›
+「允许插件使用 Windows 底层功能」 (`false` by default): only with it on may a plugin that lists
+programs to start start them. A plugin's settings, its commands' shortcuts and its data are kept in
+the configuration and in `<config folder>\plugins-data\<id>\`; the plugin itself is in
+`<config folder>\plugins\<id>\<version>\`.
 
 ## Script fence output
 

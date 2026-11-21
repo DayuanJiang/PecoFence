@@ -21,6 +21,26 @@ using the `config` directory beside the executable.
 New logs and WebView2 profiles use `%LOCALAPPDATA%\PecoFence`. An outstanding
 desktop-icon recovery marker from the older name is recognized.
 
+## Upgrading from 0.4.0: tools become plugins
+
+From 0.5.0 the tools come from the plugin store (Settings › 小工具 › 插件). At the first start of
+0.5.0 PecoFence installs, in the background and without the install warning, the plugins of the
+tools you have, and moves each tool fence to its plugin once that plugin is installed and checked:
+note fences to 便签, clocks to 时钟, and script fences that still run an example of 0.3.0 to 0.4.0
+nobody edited to 天气, GitHub 仓库动态 or 电脑状态. Until then, and as long as the store cannot be
+reached, the fences stay as they were and keep working. The fences keep their place, size, looks
+and name; the text of a note stays where it always was (`notes` in `config.json`). Before the first
+fence moves, PecoFence saves the snapshot 「升级为插件之前」 (Settings › 布局与备份): restoring it
+brings the tools back as they were, until the configuration comes in again at the next start.
+Script fences of your own, and examples you edited, stay script fences (「用自己的脚本」).
+
+Plugins and their data live in the configuration folder: `plugins\<id>\<version>\` and
+`plugins-data\<id>\`. The ZIP edition keeps them in its `config` folder beside the executable.
+The Store edition keeps them, like its configuration, in its package's own copy of AppData
+(`%LOCALAPPDATA%\Packages\<package>\LocalCache\Roaming\PecoFence`), so uninstalling the Store
+app removes them; a web plugin's browser data is under `LocalCache\Local\PecoFence\WebView2Profiles`
+there. Web plugins need WebView2 152 or newer.
+
 ## Switching between the ZIP and the installer
 
 Releases offer `pecofence-v<version>-x64-portable.zip` and
@@ -128,6 +148,12 @@ options added after it, and its first save drops them:
 
 When you return to the later version, set them again, or restore the copy 0.3.3 kept of
 the newer file (see the next section).
+
+## Going back to 0.4.0
+
+0.4.0 does not know plugins. A plugin fence shows there as a script fence whose script cannot be
+found, and its settings and data are not used. The snapshot 「升级为插件之前」, which 0.5.0 saved
+before it moved the first tool fence, holds the notes, clocks and example script fences as they were.
 
 ## Going back to an earlier version from a later one
 
