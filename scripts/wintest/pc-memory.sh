@@ -4,19 +4,22 @@
 # turn (A B A B) as a portable test instance for --minutes, sampled every 30 s. Prints what
 # Task Manager shows for the PecoFence group (with the processes it started), the private
 # commit, the GPU memory, threads, handles and CPU time, median and maximum per build.
-#   pc-memory.sh <build A dir> <build B dir> [--minutes 30] [--order a,b,a,b] [--out DIR]
+#   pc-memory.sh <build A dir> <build B dir> [--minutes 30] [--order a,b,a,b] [--out DIR] [--feed DIR]
+# --feed: a local plugin index (tools/build-index.py --out of the plugin repository) that build B
+# reads as its store, so its tool fences become plugins as on a real upgrade.
 # A build dir holds pecofence.exe, pecofence-cli.exe and WebView2Loader.dll (a release zip
 # unpacked, or target/wintest-bin). Run it as the background command: about 2 hours for the
 # default order. The user's own PecoFence keeps running; the test copy has autostart, hotkeys,
 # hooks, the tray icon, update checks and usage uploads off, and hides no desktop icons.
 set -uo pipefail
 A=${1:?build A dir}; B=${2:?build B dir}; shift 2
-MINUTES=30; ORDER=a,b,a,b; OUT=
+MINUTES=30; ORDER=a,b,a,b; OUT=; FEED=
 while [ $# -gt 0 ]; do
   case $1 in
     --minutes) MINUTES=$2; shift 2 ;;
     --order) ORDER=$2; shift 2 ;;
     --out) OUT=$2; shift 2 ;;
+    --feed) FEED=$2; shift 2 ;;
     *) echo "unknown option $1"; exit 2 ;;
   esac
 done
@@ -47,6 +50,7 @@ ssh win "Remove-Item -Recurse -Force $ROOT -ErrorAction SilentlyContinue; New-It
 scp -q "$A"/pecofence.exe "$A"/pecofence-cli.exe "$A"/WebView2Loader.dll "win:$RROOT/a/" || exit 2
 scp -q "$B"/pecofence.exe "$B"/pecofence-cli.exe "$B"/WebView2Loader.dll "win:$RROOT/b/" || exit 2
 scp -q "$OUT/config.json" "$KIT/pc-memory.ps1" "win:$RROOT/" || exit 2
+if [ -n "$FEED" ]; then scp -q -r "$FEED" "win:$RROOT/feed" || exit 2; fi
 
 # Started by a task in the signed-in session at normal priority (a priority-7 task would give
 # the app a low memory priority, and Windows then trims it: numbers that look too good).
