@@ -121,13 +121,15 @@ fichiers qui correspondent apparaissent d’eux-mêmes, et les fichiers restent 
 
 ![New smart fence… dans le menu d’un groupe ouvre une petite fenêtre ; le modèle Downloads of the last 7 days remplit les conditions ; Create place sur le Bureau un groupe avec six fichiers, et un nouveau téléchargement y apparaît de lui-même.](../assets/smart.gif)
 
-### Des notes, une horloge et vos propres scripts.
+### Notes, tâches et plus encore, depuis la boutique de plugins.
 
-Ajoutez-les dans **Paramètres → Outils** : une note dont les lignes commençant par `[ ]` deviennent
-des tâches à cocher, une horloge avec la date et des groupes de script qui affichent ce qu’imprime
-un script, la météo par exemple.
+Installez ce dont vous avez besoin dans **Paramètres → Outils** : des notes, une horloge, la météo,
+une liste de tâches, un compte à rebours, l’état du PC, l’historique du presse-papiers et plus
+encore. Un plugin ne peut faire que ce qu’il annonce, et chaque version est vérifiée
+automatiquement et relue. Vos notes et horloges d’avant deviennent des plugins d’elles-mêmes, et
+votre propre script peut toujours afficher ce qu’il imprime.
 
-![Dans les Paramètres, New note place une note sur le Bureau et un clic coche sa première tâche ; Add place une horloge à côté, puis un groupe avec la météo à Tokyo.](../assets/tools.gif)
+![Paramètres → Outils liste les plugins de la boutique et ce que fait chacun ; sur le Bureau, le groupe du plugin À faire contient deux tâches, dont une cochée.](../assets/plugins.png)
 
 À voir aussi dans le manuel : [des groupes pour chaque bureau virtuel](https://pecofence.jiang.jp/fr/manual/#vdesk) ([GIF](../assets/vdesk.gif)),
 [des icônes du Bureau qui restent là où vous les posez](https://pecofence.jiang.jp/fr/manual/#free-place) ([GIF](../assets/free-place.gif)) et
@@ -147,7 +149,7 @@ un script, la météo par exemple.
 | **Des fichiers qui se manipulent comme d’habitude** | Menus contextuels de l’Explorateur, glisser-déposer, copier-coller, sélection multiple, miniatures et affichages Icônes, Liste ou Détails. |
 | **Gardez vos dossiers à portée de main** | Posez un dossier en direct sur votre Bureau. Parcourez ses sous-dossiers et voyez les changements au moment où ils se produisent. Le bouton Précédent de la souris remonte d'un dossier, Suivant y revient. |
 | **De la place quand il en faut** | Repliez un groupe sur son titre. Survolez-le pour le développer. Verrouillez une disposition qui vous convient. Double-cliquez sur le Bureau pour masquer vos groupes. Double-cliquez à nouveau pour les retrouver. |
-| **De petits outils dans vos groupes** | Des notes avec des tâches à cocher, une horloge avec la date et des groupes de script qui affichent ce qu’imprime votre propre script, la météo par exemple. Un clic sur une de leurs lignes peut ouvrir un lien ou cocher une tâche. Vous pouvez les ajouter tout de suite dans Paramètres → Outils ou depuis le menu de la zone de notification. |
+| **Des outils depuis la boutique de plugins** | Des notes, une horloge, la météo, des tâches, un compte à rebours, l’état du PC, l’historique du presse-papiers et plus encore, à installer dans Paramètres → Outils. Un plugin ne peut faire que ce qu’il annonce, chaque version est vérifiée automatiquement et relue, et une mise à jour qui ne demande rien de nouveau s’installe d’elle-même. Votre propre script affiche toujours ce qu’il imprime. [Écrire votre plugin](https://github.com/DayuanJiang/PecoFence-plugins) |
 | **Un retour toujours possible** | Instantanés de disposition, sauvegardes quotidiennes, import/export de la configuration et échange entre écrans. |
 | **Rechercher un paramètre** | Tapez dans la zone en haut des Paramètres (Ctrl+F) pour trouver n’importe quel paramètre par ses mots ou par d’autres noms courants. |
 | **Une empreinte légère** | Une application native en Rust qui n’occupe qu’environ 2 à 5 Mo de mémoire au repos (d’après le Gestionnaire des tâches). La fenêtre Paramètres en WebView2 se charge à la demande. |
