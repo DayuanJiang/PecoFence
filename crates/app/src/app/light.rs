@@ -104,6 +104,8 @@ pub(super) struct Light {
     /// Interface 2 (`launch.rs`): each fence's `view.menu`, the files of its last drop, the
     /// shortcuts registered (by hotkey id) and the ones another program holds.
     pub(super) menus: HashMap<FenceId, Vec<host::view::MenuItem>>,
+    /// Each fence's `view.caption`: what its title row shows while it is rolled up.
+    pub(super) captions: HashMap<FenceId, String>,
     pub(super) menu_shown: std::cell::RefCell<Vec<String>>,
     /// The id of the row whose own menu is shown (Some(null): a row without an id).
     pub(super) menu_row: std::cell::RefCell<Option<serde_json::Value>>,
@@ -334,6 +336,7 @@ impl App {
             self.light_send(host::Command::Stop(fence));
         }
         self.light.menus.remove(&fence);
+        self.light.captions.remove(&fence);
         self.light.drops.retain(|d| d.1 != fence);
         self.sync_plugin_keys();
         self.sync_media();
@@ -567,6 +570,14 @@ impl App {
                 host::Output::Show(fence, _, mut view) => {
                     let menu = std::mem::take(&mut view.menu);
                     self.light.menus.insert(fence, menu);
+                    match view.caption.take() {
+                        Some(caption) => {
+                            self.light.captions.insert(fence, caption);
+                        }
+                        None => {
+                            self.light.captions.remove(&fence);
+                        }
+                    }
                     let shown = self.plugin_rows(fence, view);
                     if let Some((rows, ..)) = self.light.running.get_mut(&fence) {
                         *rows = Some(shown);

@@ -2193,3 +2193,21 @@ fn a_shortcut_tip_shows_its_comment_or_where_it_leads() {
     assert_eq!(line(Some("@shell32.dll,-22566"), notepad), Some(place));
     assert_eq!(line(None, None), None);
 }
+
+/// Feedback #175 for the store's 时钟: a rolled fence's title row shows the built-in clock's
+/// time, or a light plugin's `view.caption`; neither means the name.
+#[test]
+fn a_rolled_fence_shows_the_clock_time_or_the_plugin_caption() {
+    use super::state::rolled_caption_of;
+    assert_eq!(
+        rolled_caption_of(Some("9:41".into()), None).as_deref(),
+        Some("9:41")
+    );
+    assert_eq!(
+        rolled_caption_of(None, Some("10:05")).as_deref(),
+        Some("10:05")
+    );
+    assert_eq!(rolled_caption_of(None, None), None);
+    // A clock with no time from Windows shows its name, whatever else there is.
+    assert_eq!(rolled_caption_of(Some(String::new()), Some("x")), None);
+}

@@ -598,6 +598,9 @@ pub struct ScriptView {
     /// The first run has not ended: the empty body says 「正在运行…」 in place of the "printed
     /// no text" hint.
     pub quiet: bool,
+    /// A light plugin's `view.caption`: the title row shows it in place of the name while the
+    /// fence is rolled up (a clock's time, feedback #175).
+    pub caption: Option<String>,
 }
 
 /// A note while its editor is open (`crate::note_edit`): the text as it stands in the

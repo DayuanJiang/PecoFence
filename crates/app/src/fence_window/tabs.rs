@@ -829,13 +829,11 @@ impl FenceViewState {
             };
             TAB_LEFT + span + end
         } else {
-            // A clock's rolled row shows the time: measured here before a roll-up has started
-            // too, so the width does not jump when it lands.
-            let time = self
-                .clock
-                .map(|_| pecofence_platform::fileinfo::clock_texts(false).0)
-                .filter(|t| !t.is_empty());
-            let title = time.unwrap_or_else(|| self.title.clone());
+            // A clock's rolled row shows the time, a plugin's its caption: measured here before
+            // a roll-up has started too, so the width does not jump when it lands.
+            let title = self
+                .caption_when_rolled()
+                .unwrap_or_else(|| self.title.clone());
             let row = self.chrome.lone_title_width(
                 &title,
                 self.title_count.as_deref(),

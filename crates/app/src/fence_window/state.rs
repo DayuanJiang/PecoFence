@@ -1212,15 +1212,27 @@ impl FenceViewState {
         self.note.is_some() || self.clock.is_some() || self.script.is_some() || self.web.is_some()
     }
 
-    /// 时钟与日期 rolled up (feedback #175): the title row shows the time, hours and minutes in
-    /// Windows' region format (12 or 24 hours), in place of the fence's name. None for any other
-    /// fence, an open clock, or when Windows gives no time.
-    pub(super) fn rolled_clock_caption(&self) -> Option<String> {
-        if self.clock.is_none() || !self.roll_target() {
-            return None;
-        }
-        let time = pecofence_platform::fileinfo::clock_texts(false).0;
-        (!time.is_empty()).then_some(time)
+    /// What the title row shows in place of the fence's name once the fence is rolled up
+    /// (feedback #175): 时钟与日期's time, hours and minutes in Windows' region format (12 or 24
+    /// hours), or a light plugin's `view.caption` (the 时钟 plugin's time). None for any other
+    /// fence, or when Windows gives no time. Asked rolled or not: the compact rolled width
+    /// measures it before a roll-up starts.
+    pub(super) fn caption_when_rolled(&self) -> Option<String> {
+        let time = (self.clock)
+            .is_some()
+            .then(|| pecofence_platform::fileinfo::clock_texts(false).0);
+        rolled_caption_of(
+            time,
+            self.script.as_ref().and_then(|s| s.caption.as_deref()),
+        )
+    }
+
+    /// [`Self::caption_when_rolled`] while the fence is rolled (or rolling) up: the title row's
+    /// text in place of the name.
+    pub(super) fn rolled_caption(&self) -> Option<String> {
+        self.roll_target()
+            .then(|| self.caption_when_rolled())
+            .flatten()
     }
 
     /// The rolled title shows 「N 项」 before the chevron: not for a tool (no items), a smart
@@ -1286,4 +1298,16 @@ pub(super) struct SliderDrag {
     pub(super) rect: [f32; 4],
     pub(super) last: Instant,
     pub(super) moved: bool,
+}
+
+/// The rolled title row's text in place of the name: a clock's time (`clock_time`, None for a
+/// fence that is no clock; an empty time is none), else a plugin's `view.caption`.
+pub(super) fn rolled_caption_of(
+    clock_time: Option<String>,
+    plugin: Option<&str>,
+) -> Option<String> {
+    match clock_time {
+        Some(time) => (!time.is_empty()).then_some(time),
+        None => plugin.map(str::to_string),
+    }
 }
