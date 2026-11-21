@@ -14,7 +14,6 @@ These selected assets are part of the public documentation:
 - `peek.gif`: the manual's Peek lesson (fences above a window, back behind it).
 - `smart.gif`: the manual's smart fence lesson (New smart fence…, a template, Create, a new
   download shows up by itself).
-- `tools.gif`: the manual's tools lesson (a note with to-dos, the clock, the weather script fence).
 - `vdesk.gif`, `free-place.gif`, `undo.gif`: the lessons on fences per virtual desktop, loose
   desktop icons and Ctrl+Z. The READMEs link them and show the six above.
 
