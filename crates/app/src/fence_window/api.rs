@@ -688,8 +688,9 @@ impl FenceWindow {
             v.peek_faded,
             v.clock_date,
             v.clock_time,
-            // What a rolled-up clock shows in its title row in place of its name (#175).
-            v.rolled_clock_caption(),
+            // What a rolled-up clock or plugin shows in its title row in place of its name
+            // (#175).
+            v.rolled_caption(),
         )
     }
 
@@ -2090,6 +2091,8 @@ impl FenceWindow {
                 // New rows of a fence that shows rows already: only the content is drawn
                 // again, as a clock's tick (a plugin clock's rows change every second).
                 let rows_only = v.script.is_some() && script.is_some();
+                let caption_changed = v.script.as_ref().and_then(|s| s.caption.as_deref())
+                    != script.as_ref().and_then(|s| s.caption.as_deref());
                 v.script = script;
                 if first_result && v.content_swap_shows() {
                     tracing::debug!(fence = %v.active, "script fence: the first result fades in");
@@ -2099,6 +2102,18 @@ impl FenceWindow {
                     let _ = v.redraw();
                 } else if !v.rolled_up {
                     let _ = v.redraw_content();
+                } else if caption_changed {
+                    // Rolled up, the caption is the title row (feedback #175).
+                    let _ = v.redraw_chrome_only();
+                }
+                if caption_changed
+                    && v.compact_collapsed
+                    && v.roll_anim.is_none()
+                    && !v.peeking
+                    && v.compact_w_px() != window::window_rect_size(v.hwnd).0
+                {
+                    tracing::debug!(fence = %v.fence_id, "plugin caption: the rolled row takes its width");
+                    v.queue.push(Command::RolledWidthStale(v.fence_id));
                 }
             }
         });
@@ -2216,6 +2231,17 @@ impl FenceWindow {
     pub fn shows_content(&self) -> bool {
         self.view.borrow().as_ref().is_some_and(|v| {
             !v.rolled_up && !v.retired && pecofence_platform::desktop::is_visible(v.hwnd)
+        })
+    }
+
+    /// Rolled up, the title row shows the plugin's `view.caption` (feedback #175): the plugin
+    /// still counts as shown, so a clock's caption keeps the time.
+    pub fn shows_rolled_caption(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| {
+            v.rolled_up
+                && !v.retired
+                && v.script.as_ref().is_some_and(|s| s.caption.is_some())
+                && pecofence_platform::desktop::is_visible(v.hwnd)
         })
     }
 

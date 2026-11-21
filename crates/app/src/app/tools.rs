@@ -378,6 +378,7 @@ impl App {
                 footer: String::new(),
                 footer_short: String::new(),
                 quiet: false,
+                caption: None,
             };
         };
         let plugin = super::plugins::plugin_id(&spec.path);
@@ -395,6 +396,7 @@ impl App {
                 footer: name,
                 footer_short: String::new(),
                 quiet: false,
+                caption: None,
             };
         }
         if let Some(view) = plugin.and_then(|_| self.light_view(id)) {
@@ -414,6 +416,7 @@ impl App {
                 footer: name,
                 footer_short: String::new(),
                 quiet: true,
+                caption: None,
             };
         };
         let when = pecofence_platform::fileinfo::format_local_time(*at);
@@ -468,6 +471,7 @@ impl App {
             footer: status,
             footer_short: short,
             quiet: false,
+            caption: None,
         }
     }
 

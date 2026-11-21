@@ -121,13 +121,15 @@ von selbst, und die Dateien bleiben, wo sie sind.
 
 ![New smart fence… im Menü eines Bereichs öffnet ein kleines Fenster; die Vorlage Downloads of the last 7 days füllt die Bedingungen aus; Create legt einen Bereich mit sechs Dateien auf den Desktop, und ein neuer Download erscheint von selbst darin.](../assets/smart.gif)
 
-### Notizen, eine Uhr und deine eigenen Skripte.
+### Notizen, Aufgaben und mehr aus dem Plugin-Store.
 
-Du fügst sie unter **Einstellungen → Werkzeuge** hinzu: eine Notiz, in der Zeilen, die mit `[ ]`
-beginnen, zu Aufgaben werden, eine Uhr mit Datum und Skriptbereiche, die zeigen, was ein Skript
-ausgibt, etwa das Wetter.
+Unter **Einstellungen → Werkzeuge** installierst du, was du brauchst: Notizen, eine Uhr, das
+Wetter, Aufgaben, einen Countdown, den PC-Status, den Zwischenablage-Verlauf und mehr. Ein Plugin
+kann nur, was es auflistet, und jede Version wird automatisch geprüft und begutachtet. Deine
+bisherigen Notizen und Uhren werden von selbst zu Plugins, und dein eigenes Skript kann weiterhin
+zeigen, was es ausgibt.
 
-![In den Einstellungen legt New note eine Notiz auf den Desktop, und ein Klick hakt ihre erste Aufgabe ab; Add stellt eine Uhr daneben, dann einen Bereich mit dem Wetter in Tokyo.](../assets/tools.gif)
+![Einstellungen → Werkzeuge listet die Plugins des Stores und was jedes tut; auf dem Desktop enthält der Bereich des Plugins Aufgaben zwei Einträge, einer davon abgehakt.](../assets/plugins.png)
 
 Mehr im Handbuch: [eigene Bereiche für jeden virtuellen Desktop](https://pecofence.jiang.jp/de/manual/#vdesk) ([GIF](../assets/vdesk.gif)),
 [Desktopsymbole, die bleiben, wo du sie hinlegst](https://pecofence.jiang.jp/de/manual/#free-place) ([GIF](../assets/free-place.gif)) und
@@ -147,7 +149,7 @@ Mehr im Handbuch: [eigene Bereiche für jeden virtuellen Desktop](https://pecofe
 | **Vertraute Dateiverwaltung** | Explorer-Kontextmenüs, Drag & Drop, Kopieren/Einfügen, Mehrfachauswahl, Miniaturansichten sowie Symbol-, Listen- und Detailansicht. |
 | **Ordner in Reichweite** | Hol dir einen Live-Ordner auf den Desktop. Stöbere in Unterordnern und sieh Änderungen sofort. Die Zurück-Taste der Maus geht einen Ordner hoch, die Vorwärts-Taste wieder hinein. |
 | **Platz, wenn du ihn brauchst** | Klappe einen Bereich bis auf den Titel ein. Zum Ausklappen einfach mit der Maus darauf zeigen. Sperre ein Layout, das dir gefällt. Ein Doppelklick auf den Desktop blendet alle Bereiche aus. Ein zweiter holt sie zurück. |
-| **Kleine Werkzeuge in Bereichen** | Notizen mit Aufgaben, eine Uhr mit Datum und Skriptbereiche, die zeigen, was dein eigenes Skript ausgibt, etwa das Wetter; ein Klick auf eine Zeile kann einen Link öffnen oder eine Aufgabe abhaken. Du kannst sie gleich unter Einstellungen → Werkzeuge oder im Taskleistenmenü hinzufügen. |
+| **Werkzeuge aus dem Plugin-Store** | Notizen, eine Uhr, das Wetter, Aufgaben, ein Countdown, der PC-Status, der Zwischenablage-Verlauf und mehr, installiert unter Einstellungen → Werkzeuge. Ein Plugin kann nur, was es auflistet, jede Version wird automatisch geprüft und begutachtet, und ein Update, das nichts Neues verlangt, installiert sich selbst. Dein eigenes Skript zeigt weiterhin, was es ausgibt. [Eigenes Plugin schreiben](https://github.com/DayuanJiang/PecoFence-plugins) |
 | **Ein Weg zurück** | Layout-Momentaufnahmen, tägliche Sicherungen, Import/Export der Konfiguration und Tausch zwischen Bildschirmen. |
 | **Einstellung suchen** | Tippe in das Feld oben in den Einstellungen (Strg+F), um jede Einstellung zu finden, über Wörter aus ihr oder über gängige andere Namen. |
 | **Ein kleiner Fußabdruck** | Eine native Rust-Anwendung, die im Leerlauf nur etwa 2 bis 5 MB Arbeitsspeicher belegt (laut Task-Manager). Das Einstellungsfenster (WebView2) wird erst bei Bedarf geladen. |

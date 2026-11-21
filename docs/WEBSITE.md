@@ -63,8 +63,9 @@ hide/show cover remains a frame from its existing recording, and the covers of s
 jump and the four newest cards are frames of their manual lessons.
 
 Below the gallery, the tools block (`#tools`) shows the manual's tools lesson the way a gallery card
-does (`manual/?only=tools&embed`, the recording `assets/tools.mp4` without JavaScript) and lists the
-three tools of Settings › Tools (小工具): notes and to-dos, the clock and script fences, side by side. Dialog jump, a switch on
+does (`manual/?only=tools&embed`: Settings › Tools with the plugin store, a To-do and a Weather plugin
+installed; `assets/tools.jpg`, a frame of that lesson, without JavaScript) and lists three tools
+(notes and to-dos, the clock and script fences) side by side. Dialog jump, a switch on
 Settings › 速览与搜索, has its own card in the gallery (`feature.dialog.*`).
 Its items are drawn like the small details further down, from
 `TOOLS` in `build-site.py` and the `tool.*` keys, with the switch names from `locales/`

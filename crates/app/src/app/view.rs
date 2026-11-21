@@ -148,6 +148,10 @@ impl App {
     /// a 重新启动 button.
     pub(super) fn light_view(&self, fence: FenceId) -> Option<ScriptView> {
         let stopped = self.light_stopped_rows(fence);
+        let caption = match stopped {
+            Some(_) => None,
+            None => self.light.captions.get(&fence).cloned(),
+        };
         let rows = stopped.or_else(|| self.light.running.get(&fence)?.0.clone());
         let quiet = rows.is_none() && self.light.running.contains_key(&fence);
         // A plugin that shows nothing shows nothing (no script's "printed no text" hint).
@@ -163,6 +167,7 @@ impl App {
         (quiet || rows.is_some()).then(|| ScriptView {
             rows: rows.unwrap_or_default(),
             quiet,
+            caption,
             ..ScriptView::default()
         })
     }

@@ -1130,6 +1130,6 @@
   "撤销提示": "Notifications d’annulation",
   "删除栅栏、按规则整理或把栅栏移到别的虚拟桌面后，右下角显示可以撤销的提示，10 秒后消失。关闭后不再显示，在栅栏上按 Ctrl+Z 照样能撤销": "Après la suppression d’un groupe, un classement par les règles ou l’envoi d’un groupe sur un autre bureau virtuel, une notification avec Annuler s’affiche dans le coin pendant 10 secondes. Désactivé, rien ne s’affiche ; Ctrl+Z dans un groupe annule toujours",
   "搜索别名\u0004撤销卡片|删除提示|通知|弹窗": "carte d’annulation|notification de suppression|notifications|fenêtre contextuelle",
-  "双击空白处放大栅栏": "Double-cliquez sur une zone vide pour agrandir la clôture",
-  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Double-cliquez sur une zone sans icônes : la clôture s'agrandit au centre de l'écran, icônes comprises ; un autre double-clic la remet en place. Agrandie, elle ne peut être ni déplacée ni redimensionnée, et les clôtures « disposées comme le bureau » sont exclues."
+  "双击空白处放大栅栏": "Double-cliquez sur une zone vide pour agrandir le groupe",
+  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Double-cliquez sur une zone sans icônes : le groupe s'agrandit au centre de l'écran, icônes comprises ; un autre double-clic le remet en place. Agrandi, il ne peut être ni déplacé ni redimensionné, et les groupes « Disposer comme le Bureau » sont exclus."
 }

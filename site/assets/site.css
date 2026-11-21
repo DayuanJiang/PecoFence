@@ -540,7 +540,8 @@ h2 {
     opacity: 1
 }
 
-.has-demo video {
+.has-demo video,
+.has-demo>img.poster {
     visibility: hidden
 }
 

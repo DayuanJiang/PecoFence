@@ -1130,6 +1130,6 @@
   "撤销提示": "Avisos para desfazer",
   "删除栅栏、按规则整理或把栅栏移到别的虚拟桌面后，右下角显示可以撤销的提示，10 秒后消失。关闭后不再显示，在栅栏上按 Ctrl+Z 照样能撤销": "Depois de excluir um grupo, organizar por regras ou enviar um grupo para outra área de trabalho virtual, um aviso com Desfazer aparece no canto por 10 segundos. Desativado, nenhum aparece; Ctrl+Z em um grupo continua desfazendo",
   "搜索别名\u0004撤销卡片|删除提示|通知|弹窗": "cartão desfazer|aviso de exclusão|notificações|pop-up",
-  "双击空白处放大栅栏": "Duplo clique no espaço vazio para ampliar a cerca",
-  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Dê um duplo clique onde não há ícones: a cerca cresce no centro da tela, ícones incluídos; outro duplo clique a devolve. Ampliada, ela não pode ser arrastada nem redimensionada, e as cercas “como a área de trabalho” ficam de fora."
+  "双击空白处放大栅栏": "Duplo clique no espaço vazio para ampliar o grupo",
+  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Dê um duplo clique onde não há ícones: o grupo cresce no centro da tela, ícones incluídos; outro duplo clique o devolve. Ampliado, ele não pode ser arrastado nem redimensionado, e os grupos com “Organizar como a área de trabalho” ficam de fora."
 }

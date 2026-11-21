@@ -28,7 +28,13 @@ pub struct View {
     pub rows: Vec<Row>,
     /// The plugin's entries in its fence menu: a click sends `command` {id, via: "menu"}.
     pub menu: Vec<MenuItem>,
+    /// What the fence's title row shows in place of its name while the fence is rolled up (a
+    /// clock's time, the days to a date): one line of at most [`MAX_CAPTION`] characters.
+    pub caption: Option<String>,
 }
+
+/// The longest `view.caption` (characters); the rest is cut.
+pub const MAX_CAPTION: usize = 24;
 
 /// At most this many menu entries, each of at most this many characters (one line).
 pub const MAX_MENU: usize = 8;
@@ -260,6 +266,15 @@ fn limit_menu(menu: &mut Vec<MenuItem>) {
     }
 }
 
+/// `view.caption` as the title row shows it: its first line, trimmed and cut to
+/// [`MAX_CAPTION`] characters; None when nothing is left.
+fn caption(text: &str) -> Option<String> {
+    let line = text.lines().next().unwrap_or_default().trim();
+    let line: String = line.chars().take(MAX_CAPTION).collect();
+    let line = line.trim_end().to_string();
+    (!line.is_empty()).then_some(line)
+}
+
 fn cut(text: &mut String) {
     if let Some((at, _)) = text.char_indices().nth(MAX_TEXT) {
         text.truncate(at);
@@ -384,6 +399,11 @@ pub fn read(json: &str) -> serde_json::Result<(View, Vec<String>)> {
     let menu = value.get("menu").cloned().unwrap_or_default();
     view.menu = Vec::<MenuItem>::deserialize(menu).unwrap_or_default();
     limit_menu(&mut view.menu);
+    match value.get("caption") {
+        None | Some(Value::Null) => {}
+        Some(Value::String(text)) => view.caption = caption(text),
+        Some(_) => dropped.push("caption".into()),
+    }
     dropped.sort();
     dropped.dedup();
     Ok((view, dropped))
@@ -617,6 +637,32 @@ mod tests {
         );
         assert!(parse("not json").is_err());
         assert!(parse("{}").unwrap().rows.is_empty());
+    }
+
+    /// `view.caption`, the rolled title row's text (feedback #175 for the 时钟 plugin): one
+    /// line, trimmed, at most 24 characters; empty or no string is none.
+    #[test]
+    fn the_caption_is_one_short_line() {
+        let shown = |json: &str| read(json).unwrap();
+        assert_eq!(
+            shown(r#"{"rows":[],"caption":"  9:41 "}"#)
+                .0
+                .caption
+                .as_deref(),
+            Some("9:41")
+        );
+        let long = shown(&format!(
+            r#"{{"caption":"{}\nsecond line"}}"#,
+            "長".repeat(40)
+        ))
+        .0;
+        assert_eq!(long.caption.unwrap().chars().count(), MAX_CAPTION);
+        assert_eq!(shown(r#"{"caption":"   "}"#).0.caption, None);
+        assert_eq!(shown(r#"{"caption":null}"#).0.caption, None);
+        assert_eq!(shown(r#"{"rows":[{"text":"a"}]}"#).0.caption, None);
+        let (view, dropped) = shown(r#"{"rows":[{"text":"a"}],"caption":12}"#);
+        assert_eq!((view.caption, view.rows.len()), (None, 1));
+        assert_eq!(dropped, vec!["caption".to_string()]);
     }
 
     #[test]

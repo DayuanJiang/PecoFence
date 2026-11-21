@@ -121,13 +121,14 @@ corrispondono compaiono da soli, e i file restano dove sono.
 
 ![New smart fence… nel menu di un riquadro apre una piccola finestra; il modello Downloads of the last 7 days compila le condizioni; Create mette sul desktop un riquadro con sei file, e un nuovo download vi compare da solo.](../assets/smart.gif)
 
-### Note, un orologio e i tuoi script.
+### Note, cose da fare e altro dal negozio dei plugin.
 
-Aggiungili da **Impostazioni → Strumenti**: una nota in cui le righe che iniziano con `[ ]`
-diventano attività da spuntare, un orologio con la data e riquadri script che mostrano ciò che
-stampa uno script, per esempio il meteo.
+Installa quello che ti serve da **Impostazioni → Strumenti**: note, un orologio, il meteo, le cose
+da fare, un conto alla rovescia, lo stato del PC, la cronologia degli appunti e altro. Un plugin può
+fare solo ciò che dichiara, e ogni versione viene controllata automaticamente e revisionata. Le note
+e gli orologi di prima diventano plugin da soli, e il tuo script può ancora mostrare ciò che stampa.
 
-![Nelle Impostazioni, New note mette una nota sul desktop e un clic spunta la sua prima attività; Add le affianca un orologio, poi un riquadro con il meteo di Tokyo.](../assets/tools.gif)
+![Impostazioni → Strumenti elenca i plugin del negozio e cosa fa ciascuno; sul desktop il riquadro del plugin Cose da fare contiene due attività, una già spuntata.](../assets/plugins.png)
 
 Nel manuale trovi anche: [riquadri per ogni desktop virtuale](https://pecofence.jiang.jp/it/manual/#vdesk) ([GIF](../assets/vdesk.gif)),
 [icone del desktop che restano dove le metti](https://pecofence.jiang.jp/it/manual/#free-place) ([GIF](../assets/free-place.gif)) e
@@ -147,7 +148,7 @@ Nel manuale trovi anche: [riquadri per ogni desktop virtuale](https://pecofence.
 | **Gestione dei file familiare** | Menu contestuali di Esplora file, trascinamento, copia e incolla, selezione multipla, miniature e viste a icone, elenco o dettagli. |
 | **Le cartelle a portata di mano** | Metti una cartella attiva sul desktop. Sfoglia le sottocartelle e guarda le modifiche comparire man mano che avvengono. Il tasto Indietro del mouse sale di una cartella, Avanti ci rientra. |
 | **Spazio quando serve** | Comprimi un riquadro fino al titolo. Passaci sopra con il puntatore per espanderlo. Blocca il layout quando ti soddisfa. Fai doppio clic sul desktop per nascondere i riquadri e di nuovo per mostrarli. |
-| **Piccoli strumenti nei riquadri** | Note con attività da spuntare, un orologio con la data e riquadri script che mostrano ciò che stampa il tuo script, per esempio il meteo; un clic su una delle loro righe può aprire un link o spuntare un’attività. Puoi aggiungerli subito da Impostazioni → Strumenti o dal menu dell’area di notifica. |
+| **Strumenti dal negozio dei plugin** | Note, un orologio, il meteo, le cose da fare, un conto alla rovescia, lo stato del PC, la cronologia degli appunti e altro, da installare in Impostazioni → Strumenti. Un plugin può fare solo ciò che dichiara, ogni versione viene controllata automaticamente e revisionata, e un aggiornamento che non chiede nulla di nuovo si installa da solo. Il tuo script mostra ancora ciò che stampa. [Scrivi il tuo plugin](https://github.com/DayuanJiang/PecoFence-plugins) |
 | **Un modo per tornare indietro** | Istantanee del layout, backup giornalieri, importazione ed esportazione della configurazione e scambio dei riquadri tra i monitor. |
 | **Trova un’impostazione** | Scrivi nella casella in alto nelle Impostazioni (Ctrl+F) per trovare qualsiasi impostazione dalle sue parole o con altri nomi comuni. |
 | **Ingombro ridotto** | Un’applicazione nativa scritta in Rust che, quando è inattiva, usa solo tra 2 e 5 MB circa di memoria in Gestione attività. Il pannello delle impostazioni in WebView2 si carica solo quando serve. |

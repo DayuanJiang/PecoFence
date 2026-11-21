@@ -74,6 +74,8 @@ peek-cold-icons    3   ec2    debug   peek-cold-icons.ps1
 peek-chinese       4   ec2    debug   peek-chinese-input.ps1
 update-check       6   ec2    debug   update-check.ps1
 plugins            2   ec2    debug   plugins.ps1
+# A light plugin's pf.show caption in the rolled title row (feedback #175 for the store's 时钟).
+plugin-caption     1   ec2    debug   plugin-caption.ps1
 plugin-clock       2   ec2    debug   plugin-clock.ps1
 web-plugin-A       2   ec2    debug   web-plugin.ps1                 --var Part=A
 web-plugin-C       3   ec2    debug   web-plugin.ps1                 --var Part=C

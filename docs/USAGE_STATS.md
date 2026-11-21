@@ -90,6 +90,7 @@ from a few central places of the program:
   `zorder`, `autostart`, `peek.enabled`, `peek.dim`, `peek.double_ctrl`, `peek.custom_hotkey`,
   `windows_desktop_hotkey`, `icons.tint_rgb`, `icons.tint_strength`, `icons.chameleon`,
   `icons.shortcut_arrows`, `tools.enabled`, `tools.clock_seconds`, `tools.dialog_jump`,
+  `tools.allow_system`,
   `tools.everything`.
 - **`settings.fence`**, when the settings window changed an option of a fence, with the
   option's name (never its value): `title`, `icon_size`, `spacing`, `spacing_px`, `icon_align`,
