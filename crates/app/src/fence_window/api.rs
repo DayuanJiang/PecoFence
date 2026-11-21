@@ -198,6 +198,7 @@ impl FenceWindow {
             col_drag: None,
             is_portal: false,
             note: None,
+            web: None,
             note_edit: None,
             note_drag: false,
             todo_drag: None,
@@ -217,6 +218,10 @@ impl FenceWindow {
             script: None,
             script_rows: Vec::new(),
             script_hover: None,
+            slider_drag: None,
+            script_scroll: ScriptScrollState::default(),
+            quiet_glide: false,
+            script_images: Vec::new(),
             script_fades: Fades::new(motion::FASTER, motion::FASTER, Curve::Linear),
             script_footer_form: "full",
             note_box_hover: None,
@@ -230,6 +235,7 @@ impl FenceWindow {
             filter_active: false,
             filter_tag: None,
             refuses_drops: false,
+            plugin_drop: None,
             label_w: 0.0,
             label_wide_w: 0.0,
             icons_pending: false,
@@ -250,6 +256,7 @@ impl FenceWindow {
             glass_dark_text: Cell::new(None),
             plate_halo: Cell::new(false),
             bare_dark_text: Cell::new(None),
+            light_text: Cell::new(None),
             content_look: Cell::new(None),
             backdrops: ctx.backdrops.borrow().clone(),
             backdrop_crop: None,
@@ -314,6 +321,7 @@ impl FenceWindow {
             cut: HashSet::new(),
             wheel_zoom_accum: 0,
             wheel_tab_accum: 0,
+            wheel_plugin_accum: (None, 0),
             tab_hover_switch: None,
             tab_hover_quick: false,
             tab_strip_left: None,
@@ -597,7 +605,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} idle_opacity={:.2} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={} rolled_caption={:?}",
+            "title={:?} idle_opacity={:.2} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} script_cells={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={} rolled_caption={:?}",
             v.title,
             v.idle_layer.opacity(),
             v.title_count,
@@ -654,7 +662,19 @@ impl FenceWindow {
                     .map(|&(line, _, r)| (line, r))
                     .collect::<Vec<_>>(),
             ),
-            dump_rects(&v.script_rows),
+            // By row (as before rows of cells), and by row * 100 + cell.
+            dump_rects(
+                &v.script_rows
+                    .iter()
+                    .map(|&(row, _, r)| (row, r))
+                    .collect::<Vec<_>>()
+            ),
+            dump_rects(
+                &v.script_rows
+                    .iter()
+                    .map(|&(row, cell, r)| (row * 100 + cell, r))
+                    .collect::<Vec<_>>()
+            ),
             v.off_desktop,
             v.desktop_tip,
             v.filter_tag,
@@ -898,6 +918,7 @@ impl FenceWindow {
             let _ = v.motion.stop(&v.content_panel.visual, Prop::Opacity);
             v.content_panel.visual.set_opacity(1.0);
             v.content_panel.visual.set_visible(!rolled);
+            v.web_shown(desktop::is_visible(v.hwnd));
             if rolled {
                 // `rect` is the expanded rect: the title row sits at its top, or at its bottom
                 // for a fence that last opened upward.
@@ -1848,6 +1869,11 @@ impl FenceWindow {
         self.with_view(|v| v.refuses_drops = on);
     }
 
+    /// What the plugin fence shown takes dropped, or nothing.
+    pub fn set_plugin_drop(&self, takes: Option<PluginDrops>) {
+        self.with_view(|v| v.plugin_drop = takes);
+    }
+
     /// The fence whose items this window currently shows (host or active tab).
     pub fn active_fence(&self) -> FenceId {
         self.view
@@ -1949,18 +1975,18 @@ impl FenceWindow {
     }
 
     /// A script's copy action uses a short, non-activating tip beside the pointer.
-    pub fn show_script_copy_result(&self, index: usize, copied: bool) {
+    pub fn show_script_copy_result(&self, index: usize, cell: usize, copied: bool) {
         let text = if copied {
             pecofence_core::i18n::text("已复制")
         } else {
             pecofence_core::i18n::text("复制失败，请重试")
         };
-        self.show_script_row_tip(index, text, 2000);
+        self.show_script_row_tip((index, cell), text, 2000);
     }
 
     /// A click on a script row that would start a program, in a script whose header does not
     /// allow that: the tip beside the pointer says so and names the line to add.
-    pub fn show_script_row_refused(&self, index: usize) {
+    pub fn show_script_row_refused(&self, index: usize, cell: usize) {
         // The line to add goes on a line of its own, so the tip does not break it in two.
         let text = pecofence_core::i18n::format(
             "这个脚本不能启动程序。要允许，在脚本开头的注释里加上：{0}",
@@ -1968,15 +1994,44 @@ impl FenceWindow {
         );
         // Long enough to read both sentences.
         let secs = pecofence_platform::sysparams::message_duration_secs().max(8);
-        self.show_script_row_tip(index, &text, secs * 1000);
+        self.show_script_row_tip((index, cell), &text, secs * 1000);
+    }
+
+    /// Where row `row` (cell `cell`) of the script fence shown is drawn now, on screen (px): a
+    /// plugin's one-line box opens over it. None when it is not in view.
+    pub fn script_row_screen_rect(&self, row: usize, cell: usize) -> Option<RECT> {
+        let guard = self.view.borrow();
+        let v = guard.as_ref()?;
+        let r = v
+            .script_rows
+            .iter()
+            .find(|(r, c, _)| *r == row && *c == cell)?
+            .2;
+        let win = window::window_rect(v.hwnd);
+        let (x, y, scale) = (win.left + v.content_x, win.top + v.content_y, v.scale());
+        let px = |dip: f32| (dip * scale).round() as i32;
+        Some(RECT {
+            left: x + px(r[0]),
+            top: y + px(r[1]),
+            right: x + px(r[2]),
+            bottom: y + px(r[3]),
+        })
+    }
+
+    /// The script row and cell under screen point (x, y), if any (a right-click's row).
+    pub fn script_row_at_screen(&self, x: i32, y: i32) -> Option<(usize, usize)> {
+        let guard = self.view.borrow();
+        let v = guard.as_ref()?;
+        let c = window::screen_to_client(v.hwnd, pecofence_platform::POINT { x, y });
+        v.script_row_at(c.x, c.y)
     }
 
     /// `text` in a non-activating tip beside the pointer for `ms`, as the result of a click
-    /// on script row `index`.
-    fn show_script_row_tip(&self, index: usize, text: &str, ms: u32) {
+    /// on script row `at` (its row and cell).
+    fn show_script_row_tip(&self, at: (usize, usize), text: &str, ms: u32) {
         self.with_view(|v| {
             v.hide_tip();
-            v.tip_target = Some(TipTarget::ScriptRow(index));
+            v.tip_target = Some(TipTarget::ScriptRow(at.0, at.1));
             let (x, y, above) = pointer_tip_place(v.scale());
             v.show_tip_text_at(text, x, y, above);
             window::set_timer(v.hwnd, TIMER_TIP_HIDE, ms);
@@ -2025,17 +2080,26 @@ impl FenceWindow {
                 if script.is_none() {
                     v.script_rows.clear();
                     v.script_hover = None;
+                    v.slider_drag = None;
+                    v.script_scroll = ScriptScrollState::default();
                 }
                 // The first result takes the place of 「正在运行…」 with the content's
                 // cross-fade (83 ms, as a change of view), not in one frame.
                 let first_result = v.script.as_ref().is_some_and(|s| s.quiet)
                     && script.as_ref().is_some_and(|s| !s.quiet);
+                // New rows of a fence that shows rows already: only the content is drawn
+                // again, as a clock's tick (a plugin clock's rows change every second).
+                let rows_only = v.script.is_some() && script.is_some();
                 v.script = script;
                 if first_result && v.content_swap_shows() {
                     tracing::debug!(fence = %v.active, "script fence: the first result fades in");
                     v.begin_content_swap(0);
                 }
-                let _ = v.redraw();
+                if !rows_only {
+                    let _ = v.redraw();
+                } else if !v.rolled_up {
+                    let _ = v.redraw_content();
+                }
             }
         });
     }
@@ -2145,6 +2209,22 @@ impl FenceWindow {
             .borrow()
             .as_ref()
             .is_some_and(|v| v.roll_target() || v.peeking)
+    }
+
+    /// What the native clock's tick asks before it draws: the content shows (not rolled up,
+    /// the window not hidden).
+    pub fn shows_content(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| {
+            !v.rolled_up && !v.retired && pecofence_platform::desktop::is_visible(v.hwnd)
+        })
+    }
+
+    /// The content area in DIPs.
+    pub fn content_dips(&self) -> (f32, f32) {
+        self.view.borrow().as_ref().map_or((0.0, 0.0), |v| {
+            let (w, h) = v.content_size_px();
+            (w as f32 / v.scale(), h as f32 / v.scale())
+        })
     }
 
     pub fn dpi(&self) -> u32 {
@@ -2925,6 +3005,13 @@ impl FenceWindow {
             })
         });
         picked.unwrap_or(Theme::for_mode(mode).text_primary)
+    }
+
+    /// Whether the content is drawn in light text now (on a dark plate or a dark wallpaper):
+    /// the `pf.theme` of a plugin in this fence is `dark` then.
+    pub fn draws_light_text(&self, mode: pecofence_render::ThemeMode) -> bool {
+        let picked = self.view.borrow().as_ref().map(|v| v.material_foreground());
+        picked.unwrap_or(Theme::for_mode(mode)).text_primary.r > 0.5
     }
 
     /// The title of `fence` as it is drawn, for its name box (`rename::begin_inline_rename`):

@@ -552,6 +552,33 @@ pub fn decode_scaled(path: &Path, max_width: u32, max_height: u32) -> Result<Dec
     })
 }
 
+/// [`decode_scaled`] for a picture of at most `limit` pixels on a side (a plugin's): a larger
+/// one is not scaled and gives an error.
+pub fn decode_scaled_within(
+    path: &Path,
+    max_width: u32,
+    max_height: u32,
+    limit: u32,
+) -> Result<DecodedImage> {
+    let mut big = false;
+    let image = decode(path, |w, h| {
+        big = w > limit || h > limit;
+        if big {
+            return ((1, 1), [0, 0, 1, 1]);
+        }
+        let scale = (max_width as f32 / w as f32)
+            .min(max_height as f32 / h as f32)
+            .min(1.0);
+        let dst_w = ((w as f32 * scale).round() as u32).max(1);
+        let dst_h = ((h as f32 * scale).round() as u32).max(1);
+        ((dst_w, dst_h), [0, 0, dst_w, dst_h])
+    })?;
+    if big {
+        return Err(windows_core::Error::from_hresult(E_FAIL));
+    }
+    Ok(image)
+}
+
 /// Decodes `path` at its own size and keeps at most `max_width` x `max_height` pixels of it:
 /// the middle when `centered`, else the top-left corner. That is all a monitor of that size
 /// shows of a centred or a tiled picture.
@@ -654,6 +681,39 @@ impl EncodeWideNul for std::ffi::OsStr {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decode_scaled_reads_a_png_and_keeps_its_ratio() {
+        // 4 x 2 pixels: red, green, blue, white over a black row.
+        const PNG: [u8; 75] = [
+            137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 4, 0, 0, 0, 2,
+            8, 2, 0, 0, 0, 240, 202, 234, 52, 0, 0, 0, 18, 73, 68, 65, 84, 120, 156, 99, 248, 207,
+            192, 192, 0, 198, 64, 192, 128, 12, 0, 107, 174, 5, 251, 35, 11, 8, 247, 0, 0, 0, 0,
+            73, 69, 78, 68, 174, 66, 96, 130,
+        ];
+        let _com = crate::com::StaGuard::init().unwrap();
+        let path = std::env::temp_dir().join(format!("pf-decode-{}.png", std::process::id()));
+        std::fs::write(&path, PNG).unwrap();
+        let whole = decode_scaled(&path, 64, 64).unwrap();
+        assert_eq!((whole.width, whole.height), (4, 2));
+        // Opaque BGRA: the first pixel is red.
+        assert_eq!(&whole.bgra[..4], &[0, 0, 255, 255]);
+        // Never enlarged, scaled down within the box with the same ratio.
+        let small = decode_scaled(&path, 2, 2).unwrap();
+        assert_eq!((small.width, small.height), (2, 1));
+        assert!(
+            decode_scaled(
+                std::path::Path::new(
+                    r"C:
+o\such.png"
+                ),
+                8,
+                8
+            )
+            .is_err()
+        );
+        let _ = std::fs::remove_file(&path);
+    }
 
     #[test]
     fn registry_watcher_delivers_a_real_value_change() {

@@ -46,33 +46,58 @@ fn profile_name(instance: Option<&str>) -> String {
 /// The WebView2 environment. Kept alive across opens (warm start ≈ 200 ms); the browser
 /// processes exit by themselves when no controller is alive.
 pub struct WebEnvironment {
-    env: Environment,
+    pub(crate) env: Environment,
+}
+
+/// WebView2's user data folder of this instance (the web plugins' profiles are in it too).
+pub fn user_data_folder() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir)
+        .join("PecoFence")
+        // Keep independent instances from sharing incompatible controller options.
+        .join("WebView2Profiles")
+        .join(profile_name(
+            pecofence_core::brand::var("PECOFENCE_INSTANCE")
+                .ok()
+                .as_deref(),
+        ))
 }
 
 impl WebEnvironment {
     pub fn create() -> Result<Self> {
-        let user_data = std::env::var_os("LOCALAPPDATA")
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir)
-            .join("PecoFence")
-            // Keep independent instances from sharing incompatible controller options.
-            .join("WebView2Profiles")
-            .join(profile_name(
-                pecofence_core::brand::var("PECOFENCE_INSTANCE")
-                    .ok()
-                    .as_deref(),
-            ));
+        let user_data = user_data_folder();
         let _ = std::fs::create_dir_all(&user_data);
-        let mut options =
-            EnvironmentOptions::new().user_data_folder(user_data.to_string_lossy().to_string());
+        crate::web_plugin::delete_left_profiles(&user_data);
+        // The web plugins' pages share this environment: no WebRTC (it would reach hosts the
+        // page's CSP does not list); Local Network Access on (off in WebView2 by default): a
+        // request to a declared host that resolves to this computer or the local network is not
+        // sent; no File System Access pickers (a file picked there is read or written without
+        // `folders`); no media keys (they would reach a plugin page that plays: the pages share
+        // one browser, so the keys cannot be given to some plugins only).
+        let mut args = String::from(
+            "--force-webrtc-ip-handling-policy=disable_non_proxied_udp \
+             --enable-features=LocalNetworkAccessChecks,msWebViewAllowLocalNetworkAccessChecks \
+             --disable-features=HardwareMediaKeyHandling \
+             --disable-blink-features=FileSystemAccessLocal",
+        );
         // Debug builds: `PECOFENCE_WEBVIEW_ARGS=--remote-debugging-port=9352` lets a test drive
         // the page (the options always pass browser arguments, so WebView2's own
         // WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS is not honoured).
         if cfg!(debug_assertions)
-            && let Ok(args) = pecofence_core::brand::var("PECOFENCE_WEBVIEW_ARGS")
+            && let Ok(more) = pecofence_core::brand::var("PECOFENCE_WEBVIEW_ARGS")
         {
-            options = options.additional_browser_arguments(args);
+            args = format!("{args} {more}");
         }
+        // The web plugins' pages (`web_plugin::SCHEME`): a scheme of the app's own never goes to
+        // the network, so a system proxy does not hear which plugins the user has.
+        let options = EnvironmentOptions::new()
+            .user_data_folder(user_data.to_string_lossy().to_string())
+            .additional_browser_arguments(args)
+            .custom_scheme(
+                crate::web_plugin::SCHEME,
+                &[&format!("{}://*", crate::web_plugin::SCHEME)],
+            );
         tracing::debug!("settings: creating WebView2 environment");
         let env = Environment::with_options(&options)?;
         tracing::debug!("settings: WebView2 environment ready");

@@ -142,6 +142,10 @@ function OnPartG() {
   trap { PfTrap $_; continue }
   Case 'made from a fence menu: the snapping gap, edges in line'
   OnSeed
+  # The tools are plugins: a stand-in of the notes plugin is installed (no plugin index is
+  # reached), and 新建便签 of a fence menu makes its fence.
+  $env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:9/index.json'
+  PfPlacePlugin (PfStandIn 'notes') 'notes'
   PfStart
   ClearFences | Out-Null
   Pf fence create --title 'Files' --rect '360,400,300,200' | Out-Null
@@ -151,13 +155,13 @@ function OnPartG() {
   Log "sources: $(OnRectText $files) | $(OnRectText $notes)"
 
   $before = OnFences
-  $picked = OnAddToDesktop $files '^(PC status|电脑状态)' '^(New tool|新建小工具)'
+  $picked = OnAddToDesktop $files '^(New note|新建便签)'
   $tool = OnNewFence $before
   $b = if ($tool) { OnBeside $files $tool } else { @{ gap = -1; off = -1; side = '' } }
   Shot 'g-tool-from-menu'
-  Check 'a tool from a fence menu: PC status made' ($null -ne $tool -and $tool.tool -eq 'script') "picked=$picked $(OnRectText $tool) tool=$($tool.tool)"
+  Check 'a tool from a fence menu: a fence of the notes plugin made' ($null -ne $tool -and $tool.tool -eq 'script' -and $tool.script.path -eq 'plugin:notes') "picked=$picked $(OnRectText $tool) tool=$($tool.tool) path=$($tool.script.path)"
   Check "the tool stands $OnGap px beside the fence it was made from, tops in line" ($b.gap -eq $OnGap -and $b.off -eq 0) "gap=$($b.gap) off=$($b.off) $($b.side); $(OnRectText $files) | $(OnRectText $tool)"
-  Check 'the example is titled as its menu line, not as its file' ($tool -and $tool.title -eq 'PC status') "title='$($tool.title)'"
+  Check 'the plugin fence is titled as its plugin' ($tool -and $tool.title -eq 'Notes') "title='$($tool.title)'"
   if ($tool) { Crop 'g-tool-gap' ($files.windowRect.x + $files.windowRect.w - 150) ($files.windowRect.y - 30) 360 130 | Out-Null; Pf fence delete $tool.id | Out-Null; Start-Sleep -Milliseconds 800 }
 
   $before = OnFences

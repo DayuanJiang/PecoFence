@@ -437,6 +437,11 @@ fn inet_url_format() -> FORMATETC {
 
 /// Reads a `TYMED_HGLOBAL` medium of `fmt` as raw bytes (copied out before release).
 pub(crate) fn hglobal_bytes(data: &IDataObject, fmt: &FORMATETC) -> Option<Vec<u8>> {
+    hglobal_bytes_max(data, fmt, usize::MAX)
+}
+
+/// [`hglobal_bytes`], at most the first `max` bytes of the block copied.
+fn hglobal_bytes_max(data: &IDataObject, fmt: &FORMATETC, max: usize) -> Option<Vec<u8>> {
     // SAFETY: standard GetData / GlobalLock protocol; the medium is released afterwards.
     unsafe {
         let medium = data.GetData(fmt).ok()?;
@@ -445,7 +450,7 @@ pub(crate) fn hglobal_bytes(data: &IDataObject, fmt: &FORMATETC) -> Option<Vec<u
         if !hglobal.0.is_null() {
             let ptr = GlobalLock(hglobal) as *const u8;
             if !ptr.is_null() {
-                let len = GlobalSize(hglobal);
+                let len = GlobalSize(hglobal).min(max);
                 out = Some(std::slice::from_raw_parts(ptr, len).to_vec());
                 let _ = GlobalUnlock(hglobal);
             }
@@ -463,6 +468,16 @@ pub fn has_inet_url(data: &IDataObject) -> bool {
 
 /// The dragged link, if it is an http(s) / ftp / file URL.
 pub fn inet_url(data: &IDataObject) -> Option<String> {
+    let s = inet_url_text(data)?;
+    let lower = s.to_lowercase();
+    ["http://", "https://", "ftp://", "file://"]
+        .iter()
+        .any(|p| lower.starts_with(p))
+        .then_some(s)
+}
+
+/// What the data object has as a browser link (`UniformResourceLocatorW`), whatever its kind.
+pub fn inet_url_text(data: &IDataObject) -> Option<String> {
     let bytes = hglobal_bytes(data, &inet_url_format())?;
     let units: Vec<u16> = bytes
         .as_chunks::<2>()
@@ -471,12 +486,21 @@ pub fn inet_url(data: &IDataObject) -> Option<String> {
         .map(|c| u16::from_le_bytes(*c))
         .take_while(|&u| u != 0)
         .collect();
-    let s = String::from_utf16_lossy(&units).trim().to_string();
-    let lower = s.to_lowercase();
-    ["http://", "https://", "ftp://", "file://"]
+    Some(String::from_utf16_lossy(&units).trim().to_string())
+}
+
+/// The dragged text (`CF_UNICODETEXT`), at most `max` UTF-16 units of it (no more is copied out
+/// of the block).
+pub fn dropped_text(data: &IDataObject, max: usize) -> Option<String> {
+    let format = hglobal_format(CF_UNICODETEXT as u16);
+    let bytes = hglobal_bytes_max(data, &format, max.saturating_mul(2))?;
+    let units = bytes
+        .as_chunks::<2>()
+        .0
         .iter()
-        .any(|p| lower.starts_with(p))
-        .then_some(s)
+        .map(|c| u16::from_le_bytes(*c));
+    let units: Vec<u16> = units.take_while(|&u| u != 0).take(max).collect();
+    (!units.is_empty()).then(|| String::from_utf16_lossy(&units))
 }
 
 fn file_group_format() -> FORMATETC {
@@ -985,6 +1009,90 @@ pub fn data_object_for_paths(paths: &[&Path]) -> Result<IDataObject> {
         unsafe { ILFree(Some(p)) };
     }
     bound
+}
+
+/// A data object of `text` alone (`CF_UNICODETEXT`), with `url` also as a browser link
+/// (`UniformResourceLocatorW`): what a drag of a plugin row's text or link carries out.
+pub fn data_object_for_text(text: &str, url: bool) -> Result<IDataObject> {
+    windows_core::link!("shell32.dll" "system" fn SHCreateDataObject(pidlfolder: *const core::ffi::c_void, cidl: u32, apidl: *const *const core::ffi::c_void, pdtinner: *mut core::ffi::c_void, riid: *const GUID, ppv: *mut *mut core::ffi::c_void) -> HRESULT);
+    let mut raw = core::ptr::null_mut();
+    // SAFETY: an empty shell data object; `raw` carries one reference, handed to the wrapper.
+    let data = unsafe {
+        SHCreateDataObject(
+            core::ptr::null(),
+            0,
+            core::ptr::null(),
+            core::ptr::null_mut(),
+            &IDataObject::IID,
+            &mut raw,
+        )
+        .ok()?;
+        IDataObject::from_raw(raw)
+    };
+    let units: Vec<u8> = (text.encode_utf16().chain([0]))
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    set_hglobal(&data, &hglobal_format(CF_UNICODETEXT as u16), &units)?;
+    if url {
+        set_hglobal(&data, &inet_url_format(), &units)?;
+    }
+    Ok(data)
+}
+
+/// Puts `bytes` on `data` as format `fmt` in a new HGLOBAL (the data object owns it then).
+fn set_hglobal(data: &IDataObject, fmt: &FORMATETC, bytes: &[u8]) -> Result<()> {
+    windows_core::link!("kernel32.dll" "system" fn GlobalAlloc(uflags: u32, dwbytes: usize) -> HGLOBAL);
+    windows_core::link!("kernel32.dll" "system" fn GlobalFree(hmem: HGLOBAL) -> HGLOBAL);
+    // SAFETY: standard GlobalAlloc / GlobalLock / SetData protocol; on success the data object
+    // owns the memory (fRelease = TRUE), on failure it is freed here.
+    unsafe {
+        let hmem = GlobalAlloc(0x0002, bytes.len());
+        let ptr = GlobalLock(hmem) as *mut u8;
+        if ptr.is_null() {
+            let _ = GlobalFree(hmem);
+            return Err(windows_core::Error::from_hresult(E_FAIL));
+        }
+        core::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, bytes.len());
+        let _ = GlobalUnlock(hmem);
+        let medium = STGMEDIUM {
+            tymed: TYMED_HGLOBAL as u32,
+            Anonymous: uSTGMEDIUM_0 { hGlobal: hmem },
+            pUnkForRelease: core::mem::ManuallyDrop::new(None),
+        };
+        let set = data.SetData(fmt, &medium, true);
+        if set.is_err() {
+            let _ = GlobalFree(hmem);
+        }
+        set.ok()
+    }
+}
+
+/// The names of the formats `data` offers (a standard one as `#<number>`): what a drag out of
+/// a web page carries, for its check.
+pub fn format_names(data: &IDataObject) -> Vec<String> {
+    windows_core::link!("user32.dll" "system" fn GetClipboardFormatNameW(format: u32, name: *mut u16, max: i32) -> i32);
+    windows_core::link!("ole32.dll" "system" fn CoTaskMemFree(pv: *const core::ffi::c_void));
+    let mut names = Vec::new();
+    // SAFETY: the enumerator hands out one FORMATETC a call; its target device is ours to free.
+    unsafe {
+        let Ok(list) = data.EnumFormatEtc(1) else {
+            return names;
+        };
+        let mut f = FORMATETC::default();
+        while names.len() < 100 && list.Next(1, &mut f, None).0 == 0 {
+            let cf = u32::from(f.cfFormat.0);
+            let mut name = [0u16; 128];
+            let n = GetClipboardFormatNameW(cf, name.as_mut_ptr(), 128);
+            names.push(match n {
+                1.. => String::from_utf16_lossy(&name[..n as usize]),
+                _ => format!("#{cf}"),
+            });
+            if !f.ptd.is_null() {
+                CoTaskMemFree(f.ptd as *const core::ffi::c_void);
+            }
+        }
+    }
+    names
 }
 
 /// Starts an OLE drag of `data` from `hwnd` with the shell's default drop source or ours (Esc /

@@ -55,6 +55,10 @@ $Sizes = @('small', 'normal', 'large', 'extraLarge')
 $BoxEdge = @{ small = 14; normal = 16; large = 21; extraLarge = 27 }
 $TextDip = @{ small = 12; normal = 14; large = 18; extraLarge = 24 }
 $NoteText = "[ ] first to-do`n[ ] second to-do`nplain line"
+# No plugin index is reached: nothing is installed or moved but what the steps place.
+$env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:9/index.json'
+# The notes plugin is not installed: the native notes keep their sizes (with it, a native note
+# moves to it once its editor closes), and 新建便签 opens 设置 › 小工具 to install it.
 PfStart -Script (DumpScript 500 25 3000)
 Start-Sleep -Seconds 2
 
@@ -87,15 +91,6 @@ function SubMenu($h, $regex, $has) {
   [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 700
   foreach ($m in @([W]::Tops('#32768'))) { if ((MenuTexts $m) -match $has) { return $m } }
   return [IntPtr]::Zero
-}
-# 新建小工具 > `$pick` from the tray menu or a fence menu.
-function TrayTool($pick) { $sub = SubMenu (TrayOpen) '^New tool' 'Weather'; if ($sub -eq [IntPtr]::Zero) { return $null }; return (MenuPick $pick $sub) }
-function FenceTool($pick) {
-  $add = SubMenu (FenceMenu (PlainFence)) '^Add to desktop' '^New fence'
-  if ($add -eq [IntPtr]::Zero) { return $null }
-  $sub = SubMenu $add '^New tool' 'Weather'
-  if ($sub -eq [IntPtr]::Zero) { return $null }
-  return (MenuPick $pick $sub)
 }
 # Hit rects of a dump field (note_boxes, script_rows) as objects: i, l, t, r, b in content DIPs.
 function DumpRects($w, $name) {
@@ -188,32 +183,27 @@ if ($Part -eq 'N') {
 $schema = & "$PfApp\pecofence-cli.exe" describe --schema Config --compact | Out-String
 [IO.File]::WriteAllText("$PfShots\config-schema.json", $schema.Trim(), (New-Object Text.UTF8Encoding($false)))
 Check 'the config schema has textSize' ($schema -match '"textSize"') "length=$($schema.Length)"
+# The menus' New note without the notes plugin: 设置 › 小工具, where it is installed. The sizes are
+# those of native notes (an earlier version's, made here by the CLI).
+function SettingsOpened() {
+  $sw = WaitWin 'PecoFence.Settings' 15
+  if ($sw -ne [IntPtr]::Zero) { Start-Sleep -Seconds 2; [L]::PostMessageW($sw, 0x10, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Seconds 1 }
+  return ($sw -ne [IntPtr]::Zero)
+}
 Case 'N1 note from the tray menu'
-$before = AllIds
 $m = TrayOpen
 Check 'the tray menu has New note' ((MenuTexts $m) -match 'New note') (MenuTexts $m)
 MenuPick '^New note' $m | Out-Null
-$ed = WaitWin 'PecoFence.NoteEdit' 10
-Check 'New note opens the editor at once (standard text)' ($ed -ne [IntPtr]::Zero -and (EditFont).height -eq -14) "editor=$ed font=$((EditFont).height)"
-[G]::Type($NoteText); [G]::Press(0x1B); Start-Sleep -Milliseconds 800
-$id = NewId $before
-Pf fence rename $id NoteTray | Out-Null
-Pf fence move NoteTray --x 80 --y 90 | Out-Null
-Pf fence resize NoteTray --w 380 --h 270 | Out-Null
+Check 'New note without the notes plugin opens the settings page to install it' (SettingsOpened) ''
+$id = "$((PfJson fence create --tool note --title NoteTray --text $NoteText --rect '80,90,380,270').fence.id)"
 Check 'a new note has the standard text size' ((FenceGet $id).textSize -eq 'normal') "textSize=$((FenceGet $id).textSize)"
 NoteSizes 'NoteTray' $id
 
 Case 'N2 note from the fence menu'
-$before = AllIds
 $add = SubMenu (FenceMenu (PlainFence)) '^Add to desktop' '^New fence'
 MenuPick '^New note' $add | Out-Null
-$ed = WaitWin 'PecoFence.NoteEdit' 10
-Check 'Add to desktop > New note opens the editor' ($ed -ne [IntPtr]::Zero)
-[G]::Type($NoteText); [G]::Press(0x1B); Start-Sleep -Milliseconds 800
-$id2 = NewId $before
-Pf fence rename $id2 NoteMenu | Out-Null
-Pf fence move NoteMenu --x 480 --y 90 | Out-Null
-Pf fence resize NoteMenu --w 380 --h 270 | Out-Null
+Check 'Add to desktop > New note without the notes plugin opens the settings page' (SettingsOpened) ''
+$id2 = "$((PfJson fence create --tool note --title NoteMenu --text $NoteText --rect '480,90,380,270').fence.id)"
 NoteSizes 'NoteMenu' $id2
 
 Case 'N3 note from the CLI'
@@ -284,14 +274,12 @@ function ScriptSizes($title, $id, $rows) {
   }
 }
 
-Case 'S1 PC status from the tray menu'
-$before = AllIds
-$picked = TrayTool '^PC status'
-$sid = NewId $before 15
-Check 'New tool > PC status makes a script fence' ($sid -and $picked) "picked=$picked id=$sid"
-Pf fence rename $sid StatusTray | Out-Null
-Pf fence move StatusTray --x 80 --y 90 | Out-Null
-Pf fence resize StatusTray --w 440 --h 330 | Out-Null
+# The menus' New tool offers only Your own script now: the PC status and weather examples of
+# 0.4.0 (kept in the kit) run as scripts of the user's own.
+Case 'S1 the PC status example of 0.4.0'
+Copy-Item 'C:\pf\kit\assets\old-examples\status.en.0.4.0.ps1' "$PfRun\status.ps1"
+$sid = "$((PfJson fence create --script "$PfRun\status.ps1" --title StatusTray --rect '80,90,440,330').fence.id)"
+Check 'a script fence runs it' ($sid -ne '') "id=$sid"
 $w = WaitRows 'StatusTray' 1 30
 ScriptSizes 'StatusTray' $sid 1
 # 特大: a click low on the IP row (copy=) copies the address. The example shows the row once its
@@ -311,14 +299,10 @@ if ($p) { $at = ContentPt $w (($p.l + $p.r) / 2) ($p.b - 4); [G]::Click($at[0], 
 $clip = Get-Clipboard
 Check 'StatusTray extraLarge: a click low on the IP row copies the address' ($ip -and "$clip".Trim() -eq $ip) "clip='$clip' ip=$ip row=$ipRow plate=$($p | ConvertTo-Json -Compress) rows=$(DumpVal $w 'script_rows')"
 
-Case 'S2 Weather from the fence menu'
-$before = AllIds
-$picked = FenceTool '^Weather'
-$wid = NewId $before 15
-Check 'Add to desktop > New tool > Weather makes a script fence' ($wid -and $picked) "picked=$picked id=$wid"
-Pf fence rename $wid WeatherMenu | Out-Null
-Pf fence move WeatherMenu --x 560 --y 90 | Out-Null
-Pf fence resize WeatherMenu --w 380 --h 260 | Out-Null
+Case 'S2 the weather example of 0.4.0'
+Copy-Item 'C:\pf\kit\assets\old-examples\weather.en.0.4.0.ps1' "$PfRun\weather.ps1"
+$wid = "$((PfJson fence create --script "$PfRun\weather.ps1" --title WeatherMenu --rect '560,90,380,260').fence.id)"
+Check 'a script fence runs it' ($wid -ne '') "id=$wid"
 Start-Sleep -Seconds 8
 foreach ($s in $Sizes) {
   $r = PfJson fence set $wid textSize $s
@@ -431,11 +415,13 @@ function ClockChecks($label, $id) {
 }
 
 if ($Part -eq 'C') {
-Case 'C1 clock from the tray menu'
-$before = AllIds
-$picked = TrayTool '^Clock$'
-$cid = NewId $before
-Check 'New tool > Clock in the tray menu makes a clock' ($cid -and $picked) "picked=$picked id=$cid"
+Case 'C1 the tray menu has no clock now; a clock of an earlier version'
+$sub = SubMenu (TrayOpen) '^New tool' 'Your own script'
+$texts = if ($sub -ne [IntPtr]::Zero) { MenuTexts $sub } else { '' }
+CloseMenus
+Check 'New tool in the tray menu offers only Your own script (the clock is a plugin)' ($texts -match 'Your own script' -and $texts -notmatch 'Clock') "$texts"
+$cid = "$((PfJson fence create --tool clock --title Clock).fence.id)"
+Check 'a native clock, as an earlier version made it' ($cid -ne '') "id=$cid"
 ClockChecks 'tray' $cid
 # Seconds make the time wider: in a tall narrow clock the width sets the size, and it fits.
 Pf fence resize $cid --w 250 --h 320 | Out-Null
@@ -455,11 +441,13 @@ Pf settings set tools.clockSeconds false | Out-Null
 Pf fence delete $cid | Out-Null
 Start-Sleep -Seconds 1
 
-Case 'C2 clock from the fence menu'
-$before = AllIds
-$picked = FenceTool '^Clock$'
-$cid = NewId $before
-Check 'Add to desktop > New tool > Clock makes a clock' ($cid -and $picked) "picked=$picked id=$cid"
+Case 'C2 the fence menu has no clock now; another native clock'
+$add = SubMenu (FenceMenu (PlainFence)) '^Add to desktop' '^New fence'
+$sub = if ($add -ne [IntPtr]::Zero) { SubMenu $add '^New tool' 'Your own script' } else { [IntPtr]::Zero }
+$texts = if ($sub -ne [IntPtr]::Zero) { MenuTexts $sub } else { '' }
+CloseMenus
+Check 'Add to desktop > New tool offers only Your own script' ($texts -match 'Your own script' -and $texts -notmatch 'Clock') "$texts"
+$cid = "$((PfJson fence create --tool clock --title Clock).fence.id)"
 ClockChecks 'menu' $cid
 Pf fence delete $cid | Out-Null
 Start-Sleep -Seconds 1

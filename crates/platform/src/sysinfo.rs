@@ -55,6 +55,18 @@ pub fn memory_load() -> Option<u32> {
     Some((100.0 - m.ullAvailPhys.0 as f64 * 100.0 / m.ullTotalPhys.0 as f64).round() as u32)
 }
 
+/// The battery's charge in percent and whether the charger is plugged in; None on a PC
+/// without a battery (or when Windows does not know).
+pub fn battery() -> Option<(u8, bool)> {
+    let mut status = SYSTEM_POWER_STATUS::default();
+    // SAFETY: a live struct for Windows to fill.
+    unsafe { GetSystemPowerStatus(&mut status) }.ok().ok()?;
+    // BatteryFlag 128: no battery; 255: unknown. BatteryLifePercent 255: unknown.
+    let known = status.BatteryFlag & 128 == 0 && status.BatteryFlag != 255;
+    (known && status.BatteryLifePercent <= 100)
+        .then_some((status.BatteryLifePercent, status.ACLineStatus == 1))
+}
+
 /// A local drive with a disk in it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Drive {

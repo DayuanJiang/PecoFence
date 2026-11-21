@@ -8,11 +8,13 @@ members = [
     "crates/watchdog",
     "crates/ipc",
     "crates/cli",
+    "crates/plugin-host",
+    "crates/plugin-check",
     "tools/bindgen",
 ]
 
 [workspace.package]
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.95"
 license = "Apache-2.0"
@@ -34,6 +36,8 @@ clap = { version = "4", features = ["derive", "wrap_help"] }
 schemars = { version = "1", features = ["uuid1"] }
 # Default readings only: the heteronym table would add about 320 KB to the exe.
 pinyin = { version = "0.11", default-features = false, features = ["plain"] }
+# Verifying the plugin index's signature only (no key generation, no randomness).
+ed25519-dalek = { version = "3", default-features = false }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "warn"
@@ -57,6 +61,9 @@ manual_div_ceil = "allow"
 [patch.crates-io]
 windows-composition = { path = "vendor/windows-composition" }
 windows-canvas = { path = "vendor/windows-canvas" }
+# windows-webview: vendored 0.100.0 with the composition controller (web plugins in a fence's
+# visual tree) and TrySuspend / Resume.
+windows-webview = { path = "vendor/windows-webview" }
 
 [profile.release]
 opt-level = 3

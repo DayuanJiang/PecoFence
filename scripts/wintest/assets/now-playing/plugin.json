@@ -1,0 +1,29 @@
+{
+  "id": "now-playing",
+  "version": "1.0.0",
+  "api": 2,
+  "layer": "light",
+  "name": {
+    "en": "Now playing", "zh-CN": "正在播放", "zh-TW": "正在播放", "ja": "再生中", "ko": "지금 재생 중", "de": "Läuft gerade",
+    "fr": "En cours de lecture", "es": "Reproduciendo", "pt-BR": "Tocando agora", "ru": "Сейчас играет", "it": "In riproduzione"
+  },
+  "description": {
+    "en": "The song or video playing now, with its cover, and buttons to pause it and skip.",
+    "zh-CN": "显示正在播放的歌曲或视频和它的封面，可以暂停和切歌。",
+    "zh-TW": "顯示正在播放的歌曲或影片和它的封面，可以暫停和切歌。",
+    "ja": "再生中の曲や動画とそのジャケットを表示し、一時停止や曲の切り替えができます。",
+    "ko": "지금 재생 중인 노래나 동영상과 표지를 보여 주고, 일시 정지하거나 곡을 넘길 수 있습니다.",
+    "de": "Das Lied oder Video, das gerade läuft, mit Cover, und Tasten zum Anhalten und Weiterspringen.",
+    "fr": "La chanson ou la vidéo en cours, avec sa pochette, et des boutons pour la mettre en pause et passer au suivant.",
+    "es": "La canción o el vídeo que se reproduce, con su portada, y botones para pausar y saltar.",
+    "pt-BR": "A música ou o vídeo que está tocando, com a capa, e botões para pausar e pular.",
+    "ru": "Песня или видео, которое сейчас играет, с обложкой и кнопками паузы и переключения.",
+    "it": "Il brano o il video in riproduzione, con la copertina, e pulsanti per metterlo in pausa e passare al successivo."
+  },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": {
+    "media": "control",
+    "apps": ["spotify.exe"]
+  }
+}

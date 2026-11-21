@@ -856,6 +856,9 @@ impl FenceViewState {
             );
         } else {
             self.rolled_up = false;
+            if self.script.is_some() {
+                self.queue.push(Command::ToolShownChanged);
+            }
             // Rasterise the content once at its final size; the growing HWND reveals it.
             let w = to_w.unwrap_or_else(|| self.chrome_panel.size_px().0);
             let top = self.content_y;
@@ -865,6 +868,8 @@ impl FenceViewState {
             self.content_panel
                 .visual
                 .set_offset(self.content_x as f32, top as f32, 0.0);
+            self.layout_web();
+            self.web_shown(true);
             if !mid_roll {
                 self.content_panel.visual.set_opacity(0.0);
             }

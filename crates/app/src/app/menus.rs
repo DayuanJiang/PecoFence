@@ -1,5 +1,6 @@
 //! Popup menus (tray, item, fence, details header) and their command ids.
 
+use super::tools::TOOL_MENU_ENTRIES;
 use super::*;
 use crate::layout::ICON_SIZE_PRESETS;
 
@@ -16,7 +17,8 @@ const CMD_PEEK: u32 = 10;
 const CMD_WINDOWS_DESKTOP: u32 = 15;
 /// 新建便签 (tray menu; only while 小工具 is on).
 const CMD_NEW_NOTE: u32 = 16;
-/// The tray's 新建小工具 submenu: 20..=24 (see `App::new_tool_submenu`).
+/// The tray's 新建小工具 submenu: 20 and the `TOOL_MENU_ENTRIES` - 1 ids after it (see
+/// `App::new_tool_submenu`).
 const CMD_NEW_TOOL: u32 = 20;
 /// Tray 「在桌面显示文件夹」 entries: 11..=14 (see `App::show_folder_submenu`).
 const CMD_SHOW_FOLDER: u32 = 11;
@@ -63,10 +65,15 @@ const CMD_FENCE_EDIT_NOTE: u32 = 308;
 const CMD_FENCE_ADD_TODO: u32 = 309;
 /// 显示秒 in a clock's fence menu.
 const CMD_FENCE_CLOCK_SECONDS: u32 = 515;
-/// The fence menu's 新建小工具 submenu: 520..=524.
+/// The fence menu's 新建小工具 submenu: 520 and the `TOOL_MENU_ENTRIES` - 1 ids after it.
 const CMD_FENCE_NEW_TOOL: u32 = 520;
 /// The fence menu's 新建智能栅栏… (the editor for a new fence) and a smart fence's 编辑条件….
 const CMD_FENCE_NEW_SMART: u32 = 530;
+// Each 新建小工具 submenu (a script example more is an id more) stays clear of the next command.
+const _: () = assert!(
+    CMD_NEW_TOOL + TOOL_MENU_ENTRIES <= CMD_NEW_SMART
+        && CMD_FENCE_NEW_TOOL + TOOL_MENU_ENTRIES <= CMD_FENCE_NEW_SMART
+);
 const CMD_FENCE_SMART_EDIT: u32 = 546;
 /// 筛选… / 清除筛选 in the menu of a folder fence or a smart fence.
 const CMD_FENCE_FILTER: u32 = 540;
@@ -84,6 +91,8 @@ const CMD_FENCE_SCRIPT_EDIT: u32 = 509;
 const CMD_FENCE_SCRIPT_PICK: u32 = 501;
 const CMD_FENCE_SCRIPT_FOLDER: u32 = 502;
 const CMD_FENCE_SCRIPT_INTERVAL_BASE: u32 = 1900;
+/// A plugin fence's 插件设置: the settings page at this fence's settings.
+const CMD_FENCE_PLUGIN_SETTINGS: u32 = 1930;
 /// The inbox's 为空时自动隐藏 (in place of 删除栅栏).
 const CMD_FENCE_HIDE_EMPTY: u32 = 305;
 const CMD_FENCE_DESKTOP_LAYOUT: u32 = 306;
@@ -429,8 +438,8 @@ impl App {
             CMD_WINDOWS_DESKTOP => self.set_windows_desktop(!self.windows_desktop, "tray menu"),
             CMD_PEEK => self.queue.push(Command::TogglePeek),
             CMD_NEW_FENCE => self.queue.push(Command::NewFence { x, y: y - 300 }),
-            CMD_NEW_NOTE => self.queue.push(Command::NewNote { x, y: y - 300 }),
-            c if (CMD_NEW_TOOL..CMD_NEW_TOOL + 5).contains(&c) => {
+            CMD_NEW_NOTE => self.new_plugin_fence("notes", x, y - 300),
+            c if (CMD_NEW_TOOL..CMD_NEW_TOOL + TOOL_MENU_ENTRIES).contains(&c) => {
                 self.new_tool_command(c - CMD_NEW_TOOL, x, y - 300)
             }
             c if (CMD_SHOW_FOLDER..CMD_SHOW_FOLDER + 4).contains(&c) => {
@@ -482,8 +491,14 @@ impl App {
             if let Some(a) = self.anchor.borrow_mut().as_mut() {
                 a.dialog_opened_from(owner);
             }
+            let location = verb.eq_ignore_ascii_case(SHELL_VERB_TARGET_LOCATION);
+            let before = location.then(pecofence_platform::dialogs::explorer_windows);
             if let Err(e) = sm.invoke(cmd, owner, POINT { x, y }, shift) {
                 tracing::warn!(error = %e, %verb, "shell verb failed");
+            } else if let Some(before) = before
+                && let [p] = &paths[..]
+            {
+                pecofence_platform::dialogs::select_after_open(p.clone(), true, before);
             }
             // Deletions / moves are picked up by the desktop watcher. What a namespace item's
             // verb changes (Empty Recycle Bin, hide This PC) arrives as a shell notification;
@@ -511,11 +526,13 @@ impl App {
                     && let Some(p) = item.path()
                 {
                     use std::os::windows::process::CommandExt;
+                    let before = pecofence_platform::dialogs::explorer_windows();
                     // `/select,"<path>"`: quoted as a whole (what `arg` does for a name with
                     // a space), the argument makes Explorer open Documents instead.
                     let _ = std::process::Command::new("explorer.exe")
                         .raw_arg(format!("/select,\"{p}\""))
                         .spawn();
+                    pecofence_platform::dialogs::select_after_open(p.into(), false, before);
                 }
             }
             CMD_ITEM_PROPERTIES => self.show_properties(fence, &items),
@@ -994,58 +1011,109 @@ impl App {
         } else if f.tool == Some(pecofence_core::FenceTool::Script) {
             let spec = self.state.config.scripts.get(&fence);
             let has_path = spec.is_some_and(|s| !s.path.is_empty());
-            let interval = spec.map_or(0, |s| s.interval_minutes);
-            let interval_menu = PopupMenu::new();
-            for (i, minutes) in pecofence_core::ScriptSpec::INTERVALS
-                .into_iter()
-                .enumerate()
-            {
-                let label = if minutes == 1 {
-                    pecofence_core::i18n::text("1 分钟").to_string()
-                } else if minutes == 60 {
-                    pecofence_core::i18n::text("1 小时").to_string()
-                } else if minutes < 60 {
-                    pecofence_core::i18n::format("{0} 分钟", &[minutes.to_string()])
-                } else {
-                    pecofence_core::i18n::format("{0} 小时", &[(minutes / 60).to_string()])
-                };
-                interval_menu.item(
-                    CMD_FENCE_SCRIPT_INTERVAL_BASE + i as u32,
-                    &label,
-                    interval == minutes,
+            let plugin = spec.and_then(|s| super::plugins::plugin_id(&s.path));
+            if let Some(id) = plugin {
+                // A plugin fence whose view holds a note (the notes plugin) is edited as a note.
+                if self.state.note_inputs.contains(&fence) {
+                    menu.item(
+                        CMD_FENCE_EDIT_NOTE,
+                        pecofence_core::i18n::text("编辑便签"),
+                        false,
+                        false,
+                    )
+                    .icon(glyph::EDIT)
+                    .item(
+                        CMD_FENCE_ADD_TODO,
+                        pecofence_core::i18n::text("添加待办"),
+                        false,
+                        false,
+                    )
+                    .icon(glyph::TODO);
+                }
+                // A plugin fence: its settings and details on the settings page, and a restart.
+                // Items and shortcuts are settings of the fence too.
+                let has_settings = self.plugin(id).is_some_and(|p| {
+                    let m = &p.manifest;
+                    !m.settings.is_empty()
+                        || m.permissions.launch
+                        || !m.permissions.commands.is_empty()
+                });
+                menu.item(
+                    CMD_FENCE_PLUGIN_SETTINGS,
+                    pecofence_core::i18n::text("插件设置"),
                     false,
-                );
+                    !has_settings,
+                )
+                .icon(glyph::SETTING)
+                .item(
+                    CMD_FENCE_SCRIPT_PICK,
+                    pecofence_core::i18n::text("插件详情"),
+                    false,
+                    false,
+                )
+                .icon(glyph::DOCUMENT)
+                .item(
+                    CMD_FENCE_SCRIPT_RUN,
+                    pecofence_core::i18n::text("重新启动插件"),
+                    false,
+                    false,
+                )
+                .icon(glyph::REFRESH);
+                self.add_plugin_menu(&menu, fence, id, (x, y));
+            } else {
+                let interval = spec.map_or(0, |s| s.interval_minutes);
+                let interval_menu = PopupMenu::new();
+                for (i, minutes) in pecofence_core::ScriptSpec::INTERVALS
+                    .into_iter()
+                    .enumerate()
+                {
+                    let label = if minutes == 1 {
+                        pecofence_core::i18n::text("1 分钟").to_string()
+                    } else if minutes == 60 {
+                        pecofence_core::i18n::text("1 小时").to_string()
+                    } else if minutes < 60 {
+                        pecofence_core::i18n::format("{0} 分钟", &[minutes.to_string()])
+                    } else {
+                        pecofence_core::i18n::format("{0} 小时", &[(minutes / 60).to_string()])
+                    };
+                    interval_menu.item(
+                        CMD_FENCE_SCRIPT_INTERVAL_BASE + i as u32,
+                        &label,
+                        interval == minutes,
+                        false,
+                    );
+                }
+                menu.item(
+                    CMD_FENCE_SCRIPT_RUN,
+                    pecofence_core::i18n::text("立即运行"),
+                    false,
+                    !has_path,
+                )
+                .icon(glyph::PLAY)
+                .item(
+                    CMD_FENCE_SCRIPT_PICK,
+                    pecofence_core::i18n::text("选择脚本…"),
+                    false,
+                    false,
+                )
+                .icon(glyph::DOCUMENT)
+                .submenu(pecofence_core::i18n::text("运行间隔"), interval_menu)
+                .icon(glyph::CLOCK)
+                .item(
+                    CMD_FENCE_SCRIPT_EDIT,
+                    pecofence_core::i18n::text("编辑脚本"),
+                    false,
+                    !has_path,
+                )
+                .icon(glyph::EDIT)
+                .item(
+                    CMD_FENCE_SCRIPT_FOLDER,
+                    pecofence_core::i18n::text("打开脚本所在的文件夹"),
+                    false,
+                    !has_path,
+                )
+                .icon(glyph::FOLDER_OPEN);
             }
-            menu.item(
-                CMD_FENCE_SCRIPT_RUN,
-                pecofence_core::i18n::text("立即运行"),
-                false,
-                !has_path,
-            )
-            .icon(glyph::PLAY)
-            .item(
-                CMD_FENCE_SCRIPT_PICK,
-                pecofence_core::i18n::text("选择脚本…"),
-                false,
-                false,
-            )
-            .icon(glyph::DOCUMENT)
-            .submenu(pecofence_core::i18n::text("运行间隔"), interval_menu)
-            .icon(glyph::CLOCK)
-            .item(
-                CMD_FENCE_SCRIPT_EDIT,
-                pecofence_core::i18n::text("编辑脚本"),
-                false,
-                !has_path,
-            )
-            .icon(glyph::EDIT)
-            .item(
-                CMD_FENCE_SCRIPT_FOLDER,
-                pecofence_core::i18n::text("打开脚本所在的文件夹"),
-                false,
-                !has_path,
-            )
-            .icon(glyph::FOLDER_OPEN);
         } else if f.tool == Some(pecofence_core::FenceTool::Clock) {
             // An entry with an icon shows no check mark: like 锁定位置和大小, it names what a
             // click does now.
@@ -1582,8 +1650,8 @@ impl App {
                 let rect = self.place_new_fence(3, 200.0, x, y, Some(host));
                 self.create_fence_with_rename(rect);
             }
-            CMD_FENCE_NEW_NOTE => self.queue.push(Command::NewNote { x, y }),
-            c if (CMD_FENCE_NEW_TOOL..CMD_FENCE_NEW_TOOL + 5).contains(&c) => {
+            CMD_FENCE_NEW_NOTE => self.new_plugin_fence("notes", x, y),
+            c if (CMD_FENCE_NEW_TOOL..CMD_FENCE_NEW_TOOL + TOOL_MENU_ENTRIES).contains(&c) => {
                 self.new_tool_command(c - CMD_FENCE_NEW_TOOL, x, y)
             }
             CMD_FENCE_CLOCK_SECONDS => {
@@ -1595,8 +1663,29 @@ impl App {
             CMD_FENCE_ADD_TODO => self.add_note_todo(fence),
             CMD_FENCE_SCRIPT_RUN => self.refresh_script(fence),
             CMD_FENCE_SCRIPT_EDIT => self.edit_script(fence),
-            CMD_FENCE_SCRIPT_PICK => self.pick_script_for(fence),
+            CMD_FENCE_SCRIPT_PICK => {
+                let spec = self.state.config.scripts.get(&fence);
+                match spec
+                    .and_then(|s| super::plugins::plugin_id(&s.path))
+                    .map(str::to_string)
+                {
+                    Some(id) => self.show_plugin(&id, None),
+                    None => self.pick_script_for(fence),
+                }
+            }
             CMD_FENCE_SCRIPT_FOLDER => self.open_script_folder(fence),
+            c if (super::launch::CMD_PLUGIN_MENU..super::launch::CMD_PLUGIN_MENU_END)
+                .contains(&c) =>
+            {
+                self.plugin_menu_chosen(fence, (c - super::launch::CMD_PLUGIN_MENU) as usize)
+            }
+            CMD_FENCE_PLUGIN_SETTINGS => {
+                let spec = self.state.config.scripts.get(&fence);
+                let id = spec.and_then(|s| super::plugins::plugin_id(&s.path));
+                if let Some(id) = id.map(str::to_string) {
+                    self.show_plugin(&id, Some(fence));
+                }
+            }
             c if (CMD_FENCE_SCRIPT_INTERVAL_BASE
                 ..CMD_FENCE_SCRIPT_INTERVAL_BASE
                     + pecofence_core::ScriptSpec::INTERVALS.len() as u32)

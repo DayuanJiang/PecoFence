@@ -1,0 +1,43 @@
+--out crates/platform/src/media_bindings.rs
+--flat --dead-code
+
+// The current media session (`media.rs`): what plays, its cover, play / pause / next / previous.
+// Interfaces carry the methods; the class entries alone would only be name shells.
+--filter
+    Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSessionManagerStatics.RequestAsync
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSessionManager.GetCurrentSession
+    Windows.Media.Control.GlobalSystemMediaTransportControlsSession
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSession.SourceAppUserModelId
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSession.TryGetMediaPropertiesAsync
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSession.GetTimelineProperties
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSession.GetPlaybackInfo
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSession.TryTogglePlayPauseAsync
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSession.TrySkipNextAsync
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSession.TrySkipPreviousAsync
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSession.MediaPropertiesChanged
+    Windows.Media.Control.MediaPropertiesChangedEventArgs
+    Windows.Foundation.TypedEventHandler
+    Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSessionMediaProperties.Title
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSessionMediaProperties.Artist
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSessionMediaProperties.AlbumTitle
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSessionMediaProperties.Thumbnail
+    Windows.Media.Control.GlobalSystemMediaTransportControlsSessionPlaybackInfo
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSessionPlaybackInfo.PlaybackStatus
+    Windows.Media.Control.GlobalSystemMediaTransportControlsSessionPlaybackStatus
+    Windows.Media.Control.GlobalSystemMediaTransportControlsSessionTimelineProperties
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSessionTimelineProperties.StartTime
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSessionTimelineProperties.EndTime
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSessionTimelineProperties.Position
+    Windows.Media.Control.IGlobalSystemMediaTransportControlsSessionTimelineProperties.LastUpdatedTime
+    Windows.Storage.Streams.IRandomAccessStreamReference.OpenReadAsync
+    Windows.Storage.Streams.IRandomAccessStreamWithContentType
+    Windows.Storage.Streams.IRandomAccessStream.Size
+    Windows.Storage.Streams.IInputStream
+    Windows.Storage.Streams.DataReader
+    Windows.Storage.Streams.IDataReaderFactory.CreateDataReader
+    Windows.Storage.Streams.IDataReaderStatics.FromBuffer
+    Windows.Storage.Streams.IDataReader.LoadAsync
+    Windows.Storage.Streams.IDataReader.ReadBytes
+    Windows.Storage.Streams.DataReaderLoadOperation

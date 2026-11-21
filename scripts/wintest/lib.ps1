@@ -130,6 +130,12 @@ public static class L {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out R r);
   [StructLayout(LayoutKind.Sequential)] public struct R { public int L, T, R2, B; }
   [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr h, uint m, IntPtr w, IntPtr l);
+  // Ime("00000804") asks the foreground window to switch to Chinese (PRC) with its default IME,
+  // Microsoft Pinyin; Ime("00000409") to English. Layout(): the foreground thread's layout in hex.
+  [DllImport("user32.dll")] static extern IntPtr LoadKeyboardLayoutW(string id, uint flags);
+  [DllImport("user32.dll")] static extern IntPtr GetKeyboardLayout(uint thread);
+  public static void Ime(string id) { var hkl = LoadKeyboardLayoutW(id, 1); PostMessageW(GetForegroundWindow(), 0x50, IntPtr.Zero, hkl); }
+  public static string Layout() { uint p; return GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), out p)).ToInt64().ToString("X"); }
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int hh, bool r);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowW(string c, string t);
   [StructLayout(LayoutKind.Explicit, Size=40)] public struct KI { [FieldOffset(0)] public uint type; [FieldOffset(8)] public ushort vk; [FieldOffset(10)] public ushort scan; [FieldOffset(12)] public uint flags; [FieldOffset(16)] public uint time; [FieldOffset(24)] public IntPtr extra; }
@@ -390,6 +396,138 @@ function PfStart([string[]]$Script = @('sleep 3600000'), [string]$Lang = 'en', [
   Log "started $PfInst control=$h"
   Start-Sleep -Seconds 3
   if ($Lang) { Pf settings set language $Lang | Out-Null }
+}
+
+# A local proxy for https (CONNECT, the bytes passed through) that keeps each request line, and
+# pf's system proxy (Internet Options, which WinHTTP and WebView2 follow) set to it or taken away
+# (`SystemProxy ''`). Set it before PfStart.
+Add-Type @'
+using System; using System.Collections.Concurrent; using System.Net; using System.Net.Sockets;
+using System.Runtime.InteropServices; using System.Text; using System.Threading.Tasks;
+public static class MiniProxy {
+  public static ConcurrentQueue<string> Seen = new ConcurrentQueue<string>();
+  static TcpListener listener;
+  public static void Start(int port) {
+    listener = new TcpListener(IPAddress.Loopback, port); listener.Start(); var l = listener;
+    Task.Run(async () => { while (true) { TcpClient c; try { c = await l.AcceptTcpClientAsync(); } catch { return; } Serve(c); } });
+  }
+  public static void Stop() { if (listener != null) listener.Stop(); listener = null; }
+  static async void Serve(TcpClient c) {
+    try {
+      var s = c.GetStream(); var buf = new byte[8192]; int n = await s.ReadAsync(buf, 0, buf.Length);
+      var line = Encoding.ASCII.GetString(buf, 0, n).Split('\r')[0]; Seen.Enqueue(line);
+      var to = line.Split(' ')[1].Split(':');
+      var t = new TcpClient(); await t.ConnectAsync(to[0], int.Parse(to[1])); var ts = t.GetStream();
+      var ok = Encoding.ASCII.GetBytes("HTTP/1.1 200 Connection established\r\n\r\n"); await s.WriteAsync(ok, 0, ok.Length);
+      await Task.WhenAny(s.CopyToAsync(ts), ts.CopyToAsync(s)); t.Close();
+    } catch { }
+    c.Close();
+  }
+  [DllImport("wininet.dll")] static extern bool InternetSetOption(IntPtr h, int option, IntPtr buffer, int len);
+  public static void Changed() { InternetSetOption(IntPtr.Zero, 39, IntPtr.Zero, 0); InternetSetOption(IntPtr.Zero, 37, IntPtr.Zero, 0); }
+}
+'@
+function SystemProxy([string]$server) {
+  $k = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+  if ($server) { Set-ItemProperty $k ProxyServer $server; Set-ItemProperty $k ProxyEnable 1 -Type DWord }
+  else { Set-ItemProperty $k ProxyEnable 0 -Type DWord; Remove-ItemProperty $k ProxyServer -ErrorAction SilentlyContinue }
+  [MiniProxy]::Changed()
+  Log "system proxy: '$server'"
+}
+
+# A plugin of the kit (`from`: a folder with plugin.json) installed as `id` the way an install
+# leaves it (plugins\<id>\<version>\ and current.txt). Before PfStart: PecoFence reads the
+# installed plugins once as it starts.
+function PfPlacePlugin([string]$from, [string]$id) {
+  $m = Get-Content "$from\plugin.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+  $root = "$PfApp\config\plugins\$id"; $to = "$root\$($m.version)"
+  New-Item -ItemType Directory -Force $to | Out-Null
+  Copy-Item "$from\*" $to -Force
+  if ($m.id -ne $id) { (Get-Content "$to\plugin.json" -Raw -Encoding UTF8) -replace "`"id`":\s*`"$($m.id)`"", "`"id`": `"$id`"" | Set-Content "$to\plugin.json" -Encoding UTF8 }
+  Set-Content "$root\current.txt" $m.version -Encoding ASCII -NoNewline
+  Log "plugin $id placed from $from"
+}
+
+# A stand-in of a tool plugin (notes, clock, weather, github, pc-status) for the upgrade steps:
+# plugin.json with the real plugin's id, name and settings, a main.js showing
+# "<id> stand-in, settings {...}", a README. Written to C:\pf\run\stand-ins\<id>; its folder.
+function PfStandIn([string]$id) {
+  $t = @{
+    'notes' = 'Notes', '便签', @()
+    'clock' = 'Clock', '时钟', @(@{ key = 'seconds'; type = 'switch'; label = @{ en = 'Show seconds' }; default = $false })
+    'weather' = 'Weather', '天气', @(@{ key = 'city'; type = 'text'; label = @{ en = 'City' }; default = '' })
+    'github' = 'GitHub activity', 'GitHub 仓库动态', @(@{ key = 'repo'; type = 'text'; label = @{ en = 'Repository' }; default = 'DayuanJiang/PecoFence' })
+    'pc-status' = 'PC status', '电脑状态', @()
+  }[$id]
+  $dir = "$PfRun\stand-ins\$id"; New-Item -ItemType Directory -Force $dir | Out-Null
+  $m = [ordered]@{ id = $id; version = '1.0.0'; api = 1; layer = 'light'; name = [ordered]@{ en = $t[0]; 'zh-CN' = $t[1] }
+    description = @{ en = 'Stand-in for the upgrade test (plugin-migrate.ps1).' }; author = 'DayuanJiang'; minPecoFence = '0.4.0'; permissions = @{}; settings = @($t[2]) }
+  [IO.File]::WriteAllText("$dir\plugin.json", ($m | ConvertTo-Json -Depth 6))
+  [IO.File]::WriteAllText("$dir\main.js", "// Stand-in for the $id plugin: shows that it runs and the settings its fence has.`npf.on(`"start`", () => pf.show({ rows: [{ text: `"$id stand-in, settings `" + JSON.stringify(pf.settings) }] }));`n")
+  [IO.File]::WriteAllText("$dir\README.md", "# $($t[0]) (stand-in)`n`nFor scripts/wintest/tests/plugin-migrate.ps1 only.`n")
+  return $dir
+}
+
+# A fence at `rect` (x,y,w,h px) running the installed plugin `id` (a script fence switched to
+# plugin:<id>); its id.
+function PfPluginFence([string]$title, [string]$rect, [string]$id) {
+  # Once: a fence made just before may be running it (cmd holds the file open a moment).
+  if (-not (Test-Path 'C:\pf\run\idle.cmd')) { Set-Content 'C:\pf\run\idle.cmd' '@echo off' -Encoding ASCII }
+  $f = PfJson fence create --title $title --script 'C:\pf\run\idle.cmd' --rect $rect
+  $fid = "$(if ($f.fence) { $f.fence.id } else { $f.id })"
+  Pf fence set $fid scriptPath "plugin:$id" | Out-Null
+  return $fid
+}
+# The fences running plugin `id`.
+function PluginFences([string]$id) { return @(@((PfJson fence list)) | Where-Object { $_ -and $_.script -and $_.script.path -eq "plugin:$id" }) }
+# What the script or plugin of fence `fid` shows now, its rows joined by line breaks.
+function FenceOut([string]$fid) { return "$((FenceGet $fid).script.output)" }
+# The rows of the plugin list in 设置 › 小工具 (CDP on the settings page), joined by ' / '.
+function PluginRows() { return (Js "[...document.querySelectorAll('#pluginList .pl-row')].map(r => r.textContent).join(' / ')") }
+# The number of lines matching the regex in every app log of this job.
+function LogCount($regex) { return @(PfLogAll | Where-Object { $_ -match $regex }).Count }
+
+# A local plugin index for PECOFENCE_PLUGINS_URL: the files under `dir` at
+# http://127.0.0.1:<port>/ (200 with the file, 404 without), one request at a time. With -Slow a
+# file with a .slow marker beside it comes 8 s late; with `log` each request line is added there.
+# Its process (Stop-Process it at the end).
+function PfFeed([int]$port, [string]$dir = 'C:\pf\run\pfeed', [string]$log = '', [switch]$Slow) {
+  Set-Content "$PfRun\pfeed-serve.ps1" @'
+param([int]$port, [string]$dir, [string]$log = '', [switch]$slow)
+$l = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse('127.0.0.1'), $port); $l.Start()
+while ($true) { $c = $l.AcceptTcpClient(); try { $s = $c.GetStream(); $r = New-Object IO.StreamReader($s); $line = $r.ReadLine(); while ($r.ReadLine()) {}
+  $path = $dir + (($line -split ' ')[1] -replace '/', '\'); if ($log) { Add-Content $log "$line" }
+  if ($slow -and (Test-Path -LiteralPath "$path.slow")) { Start-Sleep -Seconds 8 }
+  if (Test-Path -LiteralPath $path -PathType Leaf) { $b = [IO.File]::ReadAllBytes($path); $h = "HTTP/1.1 200 OK`r`nContent-Length: $($b.Length)`r`nConnection: close`r`n`r`n" } else { $b = @(); $h = "HTTP/1.1 404 Not Found`r`nContent-Length: 0`r`nConnection: close`r`n`r`n" }
+  $hb = [Text.Encoding]::ASCII.GetBytes($h); $s.Write($hb, 0, $hb.Length); if ($b.Length) { $s.Write($b, 0, $b.Length) }; $s.Flush() } catch {} finally { $c.Close() } }
+'@
+  $a = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "$PfRun\pfeed-serve.ps1", '-port', $port, '-dir', $dir)
+  if ($log) { $a += '-log', $log }
+  if ($Slow) { $a += '-slow' }
+  Log "feed on port $port from $dir log='$log' slow=$Slow"
+  return Start-Process powershell.exe -ArgumentList $a -WindowStyle Hidden -PassThru
+}
+
+# The process `id` and every process it started (as Task Manager groups them under the app),
+# leaving out the processes named `skip` and what they started.
+function PfGroup([int]$id, [string]$skip = '') {
+  $all = @(Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, Name)
+  $ids = @($id); $i = 0
+  while ($i -lt $ids.Count) { $ids += @($all | Where-Object { $_.ParentProcessId -eq $ids[$i] -and $_.Name -ne $skip } | ForEach-Object { [int]$_.ProcessId }); $i++ }
+  return $ids
+}
+# The private working set (Task Manager's Memory column) of the processes `ids`, in bytes by id.
+function PrivateWs([int[]]$ids) {
+  $s = (Get-Counter '\Process(*)\ID Process', '\Process(*)\Working Set - Private' -ErrorAction SilentlyContinue).CounterSamples
+  $byInst = @{}
+  foreach ($x in $s) {
+    $inst = $x.Path.Split('(')[1].Split(')')[0]
+    if (-not $byInst[$inst]) { $byInst[$inst] = @{} }
+    if ($x.Path -like '*\id process') { $byInst[$inst].id = [int]$x.CookedValue } else { $byInst[$inst].ws = $x.CookedValue }
+  }
+  $r = @{}
+  foreach ($v in $byInst.Values) { if ($ids -contains $v.id) { $r[$v.id] = $v.ws } }
+  return $r
 }
 
 # Ends PecoFence the way a sign-out does (it saves, restores the desktop icons and quits).

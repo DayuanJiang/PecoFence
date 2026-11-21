@@ -1,0 +1,384 @@
+//! 网页层 in the app: a web plugin fence's page (`crate::web_plugin`) and its optional main.js
+//! beside it (the light layer), the page's `pf.*` calls, the events pages get, and a page that
+//! crashed or cannot start (WebView2 missing or too old): the fence shows why, with 重新加载.
+
+use super::light::{note_stop, stopped_rows};
+use super::*;
+use crate::fence_window::{FenceWindow, ScriptView};
+use crate::web_plugin::{Failure, WebFence};
+use pecofence_core::i18n;
+use std::collections::HashMap;
+use std::rc::{Rc, Weak};
+use std::sync::Arc;
+use std::time::Instant;
+
+/// The most posts of a page that may wait for its main.js.
+const MAX_WAITING_POSTS: usize = 64;
+const WEBVIEW2_DOWNLOAD: &str = "https://developer.microsoft.com/microsoft-edge/webview2/";
+
+/// Why a fence's page does not run; it waits for 重新加载.
+enum Stop {
+    NoWebView2,
+    /// Older than 152: it would not hold the page to its Connection-Allowlist.
+    OldWebView2,
+    Failed(Failure),
+}
+
+#[derive(Default)]
+pub(super) struct Web {
+    /// When each fence's page failed within the last hour.
+    failures: HashMap<FenceId, Vec<Instant>>,
+    stopped: HashMap<FenceId, Stop>,
+    /// Where a fence's next page starts: its own address, when the page before loaded anew.
+    at: HashMap<FenceId, String>,
+    /// Per fence: its page's posts main.js has not had yet (`Arc::strong_count` - 1), and
+    /// whether the last one was refused (logged once).
+    posts: HashMap<FenceId, (Arc<()>, bool)>,
+}
+
+impl App {
+    /// `Command::StartWebFence`: the page of the web plugin the window of `host` shows, and the
+    /// plugin's main.js when it has one (not started again while it runs).
+    pub(super) fn start_web_fence(&mut self, host: FenceId) {
+        let Some(shown) = self.fences.get(&host).map(|w| w.active_fence()) else {
+            return;
+        };
+        let Some(plugin) = self.web_plugin_of(shown) else {
+            return;
+        };
+        let w = self.fences.get(&host);
+        if w.and_then(|w| w.web_plugin()).as_deref() == Some(&plugin.id)
+            || self.web_pages.stopped.contains_key(&shown)
+        {
+            return;
+        }
+        // Made once, as for the settings window (it pumps messages until the browser is there).
+        if !self.ensure_web_env() {
+            tracing::warn!(fence = %shown, plugin = plugin.id, "web plugin: no WebView2, the fence says so");
+            self.web_pages.stopped.insert(shown, Stop::NoWebView2);
+            return self.push_tool_view(host);
+        }
+        let version = (self.web_env.as_ref()).map_or(String::new(), |e| e.env.browser_version());
+        if !pecofence_core::plugins::webview2_enough(&version) {
+            tracing::warn!(fence = %shown, plugin = plugin.id, version, "web plugin: WebView2 older than 152 ignores Connection-Allowlist, the page is not loaded and the fence asks for an update");
+            self.web_pages.stopped.insert(shown, Stop::OldWebView2);
+            return self.push_tool_view(host);
+        }
+        let main = plugin.dir.join("main.js");
+        if main.is_file() && !self.light_runs(shown) {
+            self.start_light(shown, &plugin.id, &main);
+        }
+        if plugin.clipboard_read {
+            self.ensure_clipboard_listener();
+        }
+        let init = self.plugin(&plugin.id);
+        let init = init.map(|p| self.plugin_init(shown, &p.manifest));
+        let (Some(w), Some(env), Some(init)) =
+            (self.fences.get(&host), self.web_env.as_ref(), init)
+        else {
+            return;
+        };
+        let (queue, at) = (self.queue.clone(), self.web_pages.at.remove(&shown));
+        let web = WebFence::start(
+            &env.env,
+            &self.ctx.stack,
+            w.hwnd(),
+            shown,
+            plugin,
+            queue,
+            init,
+            at,
+        );
+        w.set_web(Some(web));
+        // Its page may watch the media session or the programs.
+        self.sync_media();
+    }
+
+    /// `push_tool_view` of a web plugin fence: why its page stopped, or 正在运行… until the page
+    /// is there.
+    pub(super) fn push_web_view(&self, w: &FenceWindow, host: FenceId, fence: FenceId, id: &str) {
+        if let Some(view) = self.web_stopped_view(fence) {
+            w.set_web(None);
+            w.set_script(Some(view));
+        } else if w.web_plugin().as_deref() != Some(id) {
+            w.set_script(Some(ScriptView {
+                quiet: true,
+                ..ScriptView::default()
+            }));
+            self.queue.push(Command::StartWebFence(host));
+        }
+    }
+
+    /// A stopped page's fence: why, in red, then 重新加载 (and the download of WebView2 when it
+    /// is missing or too old).
+    pub(super) fn web_stopped_view(&self, fence: FenceId) -> Option<ScriptView> {
+        let (why, download) = match self.web_pages.stopped.get(&fence)? {
+            Stop::NoWebView2 => (
+                i18n::text("需要 WebView2 才能显示这个插件。").to_string(),
+                true,
+            ),
+            // The browser of the WebView2 already started stays until PecoFence quits.
+            Stop::OldWebView2 => (
+                i18n::text("这个插件需要更新 WebView2。更新以后，请重新启动 PecoFence。")
+                    .to_string(),
+                true,
+            ),
+            Stop::Failed(f) => {
+                let reason = match f {
+                    Failure::BrowserExited => i18n::text("WebView2 的浏览器进程退出了"),
+                    Failure::PageExited => i18n::text("网页的进程退出了"),
+                    Failure::PageHung => i18n::text("网页没有响应"),
+                };
+                let text = i18n::format(
+                    "插件的网页一小时里停了三次，最后一次是因为{0}。",
+                    &[reason.to_string()],
+                );
+                (text, false)
+            }
+        };
+        let mut buttons = Vec::new();
+        if download {
+            buttons.push(i18n::text("下载 WebView2"));
+        }
+        buttons.push(i18n::text("重新加载"));
+        Some(ScriptView {
+            rows: stopped_rows(&why, &buttons, false),
+            ..ScriptView::default()
+        })
+    }
+
+    /// Plugin fence `fence`'s version changed (an update, a return to the version before): a
+    /// page it shows, or one stopped after its crashes, is made anew from the new folder.
+    pub(super) fn restart_web_page(&mut self, fence: FenceId) {
+        let was_stopped = self.web_pages.stopped.remove(&fence).is_some();
+        let host = self.state.host_of(fence);
+        let Some(w) = self.fences.get(&host) else {
+            return;
+        };
+        let shows = w.web().is_some_and(|web| web.fence == fence);
+        if shows {
+            w.set_web(None);
+        }
+        if shows || was_stopped {
+            tracing::info!(%fence, was_stopped, "web plugin: the page starts again for the new version");
+            self.push_tool_view(host);
+        }
+    }
+
+    /// `Command::WebPageReload`: the fence's page loads anew by itself; a new page is made at
+    /// `uri`, with what `pf` says now (settings, theme, size) and calls counted for it alone.
+    pub(super) fn reload_web_page(&mut self, page: Weak<WebFence>, uri: String) {
+        let Some(web) = page.upgrade() else {
+            return;
+        };
+        let (fence, host) = (web.fence, self.state.host_of(web.fence));
+        let Some(w) = self
+            .fences
+            .get(&host)
+            .filter(|w| w.web().is_some_and(|c| Rc::ptr_eq(&c, &web)))
+        else {
+            return;
+        };
+        tracing::info!(%fence, uri = %crate::web_plugin::short(&uri), "web plugin: the page starts again where it loads");
+        self.web_pages.at.insert(fence, uri);
+        w.set_web(None);
+        self.push_tool_view(host);
+    }
+
+    /// A click in a stopped page's fence (true: it was one): 下载 WebView2 opens its page in the
+    /// browser, 重新加载 starts the page again.
+    pub(super) fn web_row_clicked(&mut self, fence: FenceId, row: usize, cell: usize) -> bool {
+        let Some(stop) = self.web_pages.stopped.get(&fence) else {
+            return false;
+        };
+        let download = matches!(stop, Stop::NoWebView2 | Stop::OldWebView2);
+        if row != 1 {
+            return true;
+        }
+        if download && cell == 0 {
+            let owner = self.window_for(fence).map(|w| w.hwnd());
+            let path = std::path::Path::new(WEBVIEW2_DOWNLOAD);
+            let ok = shell::shell_execute(path, None, owner).is_ok();
+            tracing::info!(%fence, ok, "web plugin: the WebView2 download page opened");
+        } else {
+            tracing::info!(%fence, "web plugin: 重新加载, the page starts again");
+            self.web_pages.stopped.remove(&fence);
+            self.push_tool_view(self.state.host_of(fence));
+        }
+        true
+    }
+
+    /// A page's process ended or hung: the page is made anew, unless it is its third time
+    /// within an hour; then the fence says why and waits for 重新加载. When the browser process
+    /// ended, the next page makes the environment anew.
+    pub(super) fn web_page_failed(&mut self, page: Weak<WebFence>, failure: Failure) {
+        let Some(web) = page.upgrade() else {
+            return;
+        };
+        let (fence, began) = (web.fence, web.started);
+        let host = self.state.host_of(fence);
+        let current = self.fences.get(&host).and_then(|w| w.web());
+        if !current.is_some_and(|c| Rc::ptr_eq(&c, &web)) {
+            // An older page of the fence (its failure came late).
+            return;
+        }
+        drop(web);
+        if failure == Failure::BrowserExited {
+            self.web_env = None;
+        }
+        let (count, again) = note_stop(&mut self.web_pages.failures, fence);
+        tracing::warn!(%fence, ?failure, count, again, "web plugin: page failed; made anew when again, else the fence shows why");
+        if !again {
+            self.web_pages.stopped.insert(fence, Stop::Failed(failure));
+            // In the first minute after an update, back to the version before.
+            self.plugin_stopped(fence, began, false);
+        }
+        if let Some(w) = self.fences.get(&host) {
+            w.set_web(None);
+        }
+        self.push_tool_view(host);
+    }
+
+    /// A page's `pf.*` call: `post` goes to the plugin's main.js, `menu` (a right-click the
+    /// page did not take) opens the fence's menu, the rest run as the light layer's calls do
+    /// (`plugin_api`, the same permission checks). The menu and the calls a light plugin may make
+    /// only in a click need a press in the page within the last second, and each press lets one
+    /// through; `pf.launch.add` works only in main.js's `drop` handler (the page's `drop` event
+    /// comes after main.js's). The page's `pf.drop.*` read the fence's last drop with files.
+    pub(super) fn web_call(
+        &mut self,
+        page: Weak<WebFence>,
+        id: serde_json::Value,
+        call: String,
+        args: serde_json::Value,
+    ) {
+        let Some(web) = page.upgrade() else {
+            return;
+        };
+        let fence = web.fence;
+        let plugin = web.plugin.id.clone();
+        let gated = [
+            "menu",
+            "open",
+            "launch.open",
+            "launch.pick",
+            "media.control",
+        ];
+        if gated.contains(&call.as_str()) && !web.take_press() {
+            tracing::info!(plugin, %fence, call, "web plugin: refused, no click in the fence just before (or it let another call through)");
+            let why = format!("pf.{call} works only right after a click in the fence");
+            return web.reply(&id, Err(why));
+        }
+        match call.as_str() {
+            "post" => {
+                let posts = self.web_pages.posts.entry(fence).or_default();
+                let waiting = match may_wait(posts) {
+                    Ok(waiting) => waiting,
+                    Err(first) => {
+                        if first {
+                            tracing::info!(plugin, %fence, "web plugin: posts refused while 64 wait for main.js");
+                        }
+                        let why = format!(
+                            "pf.post: at most {MAX_WAITING_POSTS} messages wait for main.js"
+                        );
+                        return web.reply(&id, Err(why));
+                    }
+                };
+                let data = args.get(0).cloned().unwrap_or_default();
+                tracing::debug!(plugin, %fence, "web plugin: the page posts to its main.js");
+                self.plugin_message(fence, data, waiting);
+                web.reply(&id, Ok(serde_json::Value::Null));
+            }
+            // An error nobody caught in the page (the bridge tells the first three): as main.js's.
+            "errored" => {
+                let began = web.started;
+                drop(web);
+                tracing::info!(plugin, %fence, "web plugin: an error nobody caught in the page");
+                self.plugin_stopped(fence, began, true);
+            }
+            "navigate" => {
+                let uri = crate::web_plugin::short(args[0].as_str().unwrap_or(""));
+                tracing::info!(plugin, %fence, uri, "web plugin: navigation to another site refused in the page");
+            }
+            "menu" => {
+                let p = window::cursor_pos();
+                tracing::debug!(plugin, %fence, "web plugin: right-click on the page, the fence menu");
+                self.show_fence_menu(fence, p.x, p.y);
+            }
+            "launch.add" => {
+                tracing::info!(plugin, %fence, "web plugin: launch.add refused, only main.js adds items");
+                let why = "pf.launch.add works only in a drop handler of main.js";
+                web.reply(&id, Err(why.into()));
+            }
+            name if name.starts_with("drop.") && self.last_drop(fence).is_none() => {
+                tracing::info!(plugin, %fence, call, "web plugin: pf.drop refused, no drop with files on the fence");
+                let why = format!("pf.{call} needs a drop on the fence first");
+                web.reply(&id, Err(why));
+            }
+            _ => {
+                tracing::debug!(plugin, %fence, call, "web plugin: pf call");
+                drop(web);
+                // [file number, name or null, the drop's number], as the plugin host adds it.
+                let args = match self.last_drop(fence).filter(|_| call.starts_with("drop.")) {
+                    Some(drop) => serde_json::json!([args.get(0), args.get(1), drop]),
+                    None => args,
+                };
+                self.plugin_api(&page.clone(), fence, &call, args, move |result| {
+                    if let Some(web) = page.upgrade() {
+                        web.reply(&id, result);
+                    }
+                });
+            }
+        }
+    }
+
+    /// Event `name` for fence `fence`'s page, when it shows one.
+    pub(super) fn web_event(&self, fence: FenceId, name: &str, data: serde_json::Value) {
+        let web = self.window_for(fence).and_then(|w| w.web());
+        // The media session and the programs only while the page runs.
+        let told = |w: &Rc<WebFence>| !matches!(name, "media" | "apps") || w.runs();
+        if let Some(web) = web.filter(|w| w.fence == fence && told(w)) {
+            web.event(name, &data);
+        }
+    }
+
+    /// Event `name` for every page (`clipboard` and `media` only for the plugins that may read
+    /// them, `media` only while the page runs).
+    pub(super) fn web_events(&self, name: &str, data: serde_json::Value) {
+        for web in self.fences.values().filter_map(|w| w.web()) {
+            let p = &web.plugin;
+            let media = p.media && web.runs();
+            if (name != "clipboard" || p.clipboard_read) && (name != "media" || media) {
+                web.event(name, &data);
+            }
+        }
+    }
+}
+
+/// One more post of a page may wait for its main.js unless 64 do (`posts`: [`Web::posts`] of
+/// its fence): what it carries to count as waiting, or whether this is the first refusal since
+/// one went (the log says so once).
+fn may_wait(posts: &mut (Arc<()>, bool)) -> std::result::Result<Arc<()>, bool> {
+    let (waiting, refusing) = posts;
+    // The fence's own is one of the counts.
+    if Arc::strong_count(waiting) > MAX_WAITING_POSTS {
+        return Err(!std::mem::replace(refusing, true));
+    }
+    *refusing = false;
+    Ok(waiting.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn at_most_64_posts_of_a_page_wait_for_its_main_js() {
+        let mut posts = Default::default();
+        let mut held: Vec<_> = (0..64).map(|_| super::may_wait(&mut posts)).collect();
+        assert!(held.iter().all(std::result::Result::is_ok));
+        // The 65th is refused, logged once; one that main.js had makes room again.
+        assert_eq!(super::may_wait(&mut posts), Err(true));
+        assert_eq!(super::may_wait(&mut posts), Err(false));
+        held.pop();
+        assert!(super::may_wait(&mut posts).is_ok());
+    }
+}

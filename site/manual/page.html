@@ -1004,7 +1004,7 @@ if ($env:PECOFENCE_ACTION -eq 'add') { $n++; Set-Content $file $n }
 
           <section class="ws-sec">
             <h3>一直运行的脚本</h3>
-            <p>在脚本开头的注释里写上 <code>&lt;pecofence.type&gt;streamable&lt;/pecofence.type&gt;</code>，脚本就会一直运行，没有 10 秒的限制。它打印的每一行马上显示出来。打印一行 <code>~~~</code> 以后，下一行开始新的一屏，换掉原来的内容。栅栏留着最新的 40 行。「电脑状态」示例就是这样写的。</p>
+            <p>在脚本开头的注释里写上 <code>&lt;pecofence.type&gt;streamable&lt;/pecofence.type&gt;</code>，脚本就会一直运行，没有 10 秒的限制。它打印的每一行马上显示出来。打印一行 <code>~~~</code> 以后，下一行开始新的一屏，换掉原来的内容。栅栏留着最新的 300 行。「电脑状态」示例就是这样写的。</p>
 <pre class="ws-code"><code># &lt;pecofence.type&gt;streamable&lt;/pecofence.type&gt;
 # 每秒显示一次现在的时间
 while ($true) {

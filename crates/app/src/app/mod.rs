@@ -70,12 +70,18 @@ mod group;
 mod ipc;
 mod items;
 mod keyfocus;
+mod launch;
+mod light;
+mod light_host;
 mod live_wallpaper;
 mod lnk_targets;
+mod media;
 mod menu_frames;
 mod menus;
+mod migrate;
 mod motion;
 mod peek;
+mod plugins;
 mod portals;
 mod push;
 mod rating;
@@ -93,8 +99,10 @@ mod undo;
 mod updates;
 mod usage;
 mod vdesktops;
+mod view;
 mod visuals;
 mod wallpaper_refresh;
+mod web;
 mod welcome;
 mod windows_desktop;
 
@@ -533,6 +541,11 @@ pub struct App {
     store_startup_done: Option<std::sync::mpsc::Receiver<()>>,
     /// 脚本栅栏: last results, running and next due script fences.
     script_runs: tools::ScriptRuns,
+    plugins: plugins::Plugins,
+    light: light::Light,
+    web_pages: web::Web,
+    /// Plugin restarts held while a plugin fence's input is open (`view.rs`).
+    held: view::Held,
     /// `--light` / `--dark`: pin the theme this run.
     theme_override: Option<ThemeMode>,
     peek_class: WindowClass,
@@ -554,6 +567,8 @@ pub struct App {
     /// (`end_peek_now`).
     peek_from: Option<HWND>,
     peek_back: Option<HWND>,
+    /// The Peek shows this fence window alone (a plugin command's shortcut, `launch.rs`).
+    peek_only: Option<HWND>,
     /// The search list (rows, Everything's answer, a dialog waiting behind the Peek).
     search: search::SearchState,
     /// 「安装 Everything」 is running winget.
@@ -800,6 +815,7 @@ fn not_recorded(cmd: &Command) -> bool {
             | Command::RedrawAll
             | Command::WindowGone(_)
             | Command::FadeOutDone(_)
+            | Command::ToolShownChanged
             | Command::SettingsActivated
             // One for every frame while the 「新建栅栏」 button fades away by itself.
             | Command::MarqueeOffer(crate::marquee_offer::OfferEvent::Fading(_))
@@ -1220,6 +1236,15 @@ impl App {
                             }
                             Some(0)
                         }
+                        msg::WM_HOTKEY if wparam as i32 >= launch::HOTKEY_PLUGIN_FIRST => {
+                            if let Ok(mut guard) = cell.try_borrow_mut()
+                                && let Some(app) = guard.as_mut()
+                            {
+                                pecofence_core::usage::event_with("hotkey", "plugin");
+                                app.plugin_key_pressed(wparam as i32);
+                            }
+                            Some(0)
+                        }
                         msg::WM_HOTKEY if wparam as i32 == HOTKEY_WINDOWS_DESKTOP => {
                             if let Ok(mut guard) = cell.try_borrow_mut()
                                 && let Some(app) = guard.as_mut()
@@ -1357,6 +1382,8 @@ impl App {
                                 | updates::TIMER_UPDATE_CHECK
                                 | updates::TIMER_UPDATE_CARD
                                 | updates::TIMER_UPDATE_RESUME
+                                | plugins::TIMER_PLUGINS_CHECK
+                                | light::TIMER_PLUGIN_APPS
                                 | TIMER_PORTAL_BACK
                                 | TIMER_CONFIG_LOCKED
                                 | desktop_import::TIMER_WINDOWS_PLACES
@@ -1399,6 +1426,10 @@ impl App {
                                             }
                                             updates::TIMER_UPDATE_CHECK => app.auto_check_updates(),
                                             updates::TIMER_UPDATE_CARD => app.show_update_card(),
+                                            plugins::TIMER_PLUGINS_CHECK => {
+                                                app.daily_plugins_check()
+                                            }
+                                            light::TIMER_PLUGIN_APPS => app.poll_plugin_apps(),
                                             updates::TIMER_UPDATE_RESUME => {
                                                 app.update_check_after_resume()
                                             }
@@ -2057,6 +2088,7 @@ impl App {
             pecofence_platform::process::is_packaged(),
         );
 
+        let plugins = plugins::Plugins::load(&state.config_path_on_disk());
         let wallpaper_reader =
             WallpaperReader::start(control.hwnd(), args.wallpaper_override.clone());
         let mut app = App {
@@ -2137,6 +2169,10 @@ impl App {
             store_startup_state: None,
             store_startup_done: None,
             script_runs: tools::ScriptRuns::default(),
+            plugins,
+            light: light::Light::default(),
+            web_pages: web::Web::default(),
+            held: view::Held::default(),
             theme_override: if args.light {
                 Some(ThemeMode::Light)
             } else if args.dark {
@@ -2153,6 +2189,7 @@ impl App {
             peek_rest_in: None,
             peek_from: None,
             peek_back: None,
+            peek_only: None,
             search: Default::default(),
             everything_installing: false,
             snap_held: false,
@@ -2205,6 +2242,7 @@ impl App {
             live_told_page: None,
         };
         app.state.current_desktop = App::read_current_desktop();
+        app.drop_plain_secrets();
         // Watch the wallpaper settings, virtual-desktop state and Explorer's copies of the
         // picture; any signal starts a bounded burst of fast reads, because the image may arrive
         // after the notification.
@@ -2318,6 +2356,7 @@ impl App {
             );
             t.show_info("PecoFence", &text, true);
         }
+        app.remove_left_script_data();
         // Desktop folder moved since last run? Re-point the item records before syncing, or
         // every item would be orphaned and re-routed by the rules.
         if let Some(desk) = shell::user_desktop() {
@@ -2464,6 +2503,8 @@ impl App {
             app.schedule_save();
         }
         window::set_coalescable_timer(app.control.hwnd(), TIMER_HOUSEKEEPING, 60_000, 5_000);
+        // 升级为插件: before the scripts of examples that plugins replace start.
+        app.migrate_tools(true);
         // 脚本栅栏: the first results, without waiting for the minute.
         app.run_due_scripts();
         // 智能栅栏: the first search, likewise.
@@ -2492,6 +2533,7 @@ impl App {
 
         app.remove_old_update_downloads();
         app.arm_update_check(true);
+        app.arm_plugins_check(true);
         // Last of the startup balloons, so it is the one left showing.
         app.offer_crash_feedback();
         app.offer_welcome();
@@ -2724,6 +2766,8 @@ impl App {
         self.drain_fileops();
         self.drain_ipc();
         self.drain_updates();
+        self.drain_plugins();
+        self.drain_light();
         for _ in 0..8 {
             let cmds = self.queue.drain();
             if cmds.is_empty() {
@@ -2825,7 +2869,9 @@ impl App {
                 self.apply_auto_height(fence);
                 // Another fence moved or resized: the desktop-arranged one flows around it.
                 self.arrange_desktop_fence();
+                self.sync_light();
             }
+            Command::ToolShownChanged => self.sync_light(),
             Command::FenceDropped(fence) => self.move_out_of_overlap(fence),
             Command::GlideEnded(fence) => {
                 tracing::debug!(%fence, "glide ended: auto height fits the fence where it stands");
@@ -3152,6 +3198,19 @@ impl App {
                 landed,
                 on_desktop,
             } => self.shell_drop_landed(to, landed, on_desktop),
+            Command::PluginDrop {
+                fence,
+                paths,
+                text,
+                url,
+                row,
+                point,
+            } => self.plugin_dropped(fence, paths, (text, url), (row, point)),
+            Command::PluginDragEnded {
+                fence,
+                row,
+                dropped,
+            } => self.plugin_drag_ended(fence, row, dropped),
             Command::FenceMenu { fence, x, y } => self.show_fence_menu(fence, x, y),
             Command::HeaderMenu { fence, x, y } => self.show_header_menu(fence, x, y),
             Command::ItemMenu { fence, items, x, y } => self.show_item_menu(fence, items, x, y),
@@ -3202,10 +3261,16 @@ impl App {
             Command::ClearFenceFilter(fence) => {
                 self.set_fence_filter(fence, String::new(), "esc in the fence")
             }
-            Command::NewScriptExample { example, x, y } => {
-                self.new_script_example_of(example, x, y)
-            }
             Command::NewScript { x, y } => self.new_script_near(x, y, None),
+            Command::StartWebFence(host) => self.start_web_fence(host),
+            Command::WebCall {
+                page,
+                id,
+                call,
+                args,
+            } => self.web_call(page, id, call, args),
+            Command::WebPageFailed { page, failure } => self.web_page_failed(page, failure),
+            Command::WebPageReload { page, uri } => self.reload_web_page(page, uri),
             Command::EditNote { fence, caret } => self.edit_note(fence, caret),
             Command::NoteEditState {
                 fence,
@@ -3240,13 +3305,56 @@ impl App {
                 }
             }
             Command::NoteEditMenu { x, y } => crate::note_edit::text_menu(x, y),
-            Command::ToggleNoteLine { fence, line } => self.toggle_note_line(fence, line),
-            Command::MoveNoteLine { fence, from, to } => self.move_note_line(fence, from, to),
+            Command::ToggleNoteLine { fence, line } => {
+                let before = self.state.note_text(fence).map(str::to_string);
+                self.toggle_note_line(fence, line);
+                self.plugin_note_changed(fence, before);
+            }
+            Command::MoveNoteLine { fence, from, to } => {
+                let before = self.state.note_text(fence).map(str::to_string);
+                self.move_note_line(fence, from, to);
+                self.plugin_note_changed(fence, before);
+            }
             Command::OpenNoteLink { fence, line, start } => self.open_note_link(fence, line, start),
-            Command::ScriptRowClicked { fence, row } => self.script_row_clicked(fence, row),
+            // A stopped web page's rows go to the web layer first: its main.js may still run.
+            Command::ScriptRowClicked {
+                fence,
+                row,
+                cell,
+                fraction,
+                dragging,
+                double,
+            } => {
+                if self.web_row_clicked(fence, row, cell) {
+                } else if self.light_runs(fence) {
+                    self.plugin_row_clicked(fence, row, cell, fraction, dragging, double)
+                } else {
+                    self.script_row_clicked(fence, row, cell, fraction, dragging, double)
+                }
+            }
+            Command::FenceInkChanged { fence, light_text } => {
+                self.plugin_ink_changed(fence, light_text)
+            }
+            Command::PluginLineClosed {
+                fence,
+                row,
+                text,
+                submit,
+            } => self.plugin_line_closed(fence, row, text, submit),
+            Command::PluginHover { fence, row } => self.plugin_hover(fence, row),
+            Command::PluginWheel {
+                fence,
+                row,
+                cell,
+                steps,
+            } => self.plugin_wheel(fence, row, cell, steps),
             Command::EmptyActionClicked { fence } => self.smart_everything_clicked(fence),
             Command::EndNoteEdit => crate::note_edit::end_active(true),
-            Command::NoteEdited { fence, text } => self.note_edited(fence, &text),
+            Command::NoteEdited { fence, text } => {
+                let before = self.state.note_text(fence).map(str::to_string);
+                self.note_edited(fence, &text);
+                self.plugin_note_changed(fence, before);
+            }
             Command::NewFenceRect(rect) => self.offer_new_fence(rect),
             Command::MarqueeOffer(event) => self.on_marquee_offer(event),
             Command::DesktopMarquee(event) => self.on_desktop_marquee(event),
@@ -3503,6 +3611,7 @@ impl App {
     }
 
     pub fn shutdown(&mut self) {
+        self.quit_light();
         self.end_peek_now();
         self.commit_open_note();
         self.state.save_and_wait("exit");
@@ -3514,6 +3623,8 @@ impl App {
         pecofence_core::usage::event("exit");
         self.save_usage();
         self.tray = None;
+        // Last, with the fences and the tray icon already gone: it may take up to a second.
+        self.end_streams_at_quit();
     }
 }
 

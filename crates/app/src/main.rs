@@ -28,6 +28,7 @@ mod settings_host;
 mod shadow;
 mod share_log;
 mod state;
+mod web_plugin;
 
 use pecofence_core::log_file::{self, EXIT_WAIT};
 use pecofence_platform::com::OleGuard;

@@ -35,6 +35,15 @@ pub(super) fn on_mousemove(
         queue.push(Command::PortalPointerIn(v.active));
     }
     v.set_mouse_inside(true);
+    // A held slider of a script fence follows the pointer, wherever it goes.
+    if v.slider_drag.is_some() {
+        let cmd = v.slider_drag_move(x as i32);
+        drop(guard);
+        if let Some(cmd) = cmd {
+            queue.push(cmd);
+        }
+        return Some(0);
+    }
     // A press on a locked fence that turns into a drag: the lock glyph pulses.
     v.note_lock_drag((pt.x, pt.y));
     if v.marquee.is_some() {
@@ -77,6 +86,7 @@ pub(super) fn on_mousemove(
                 v.dismiss_rename_for_scroll();
             }
             v.scroll_y = next;
+            v.note_user_scroll();
         }
         // Keep the hot zone current so a release with the pointer off
         // the bar starts the contract delay at once.
@@ -457,6 +467,33 @@ pub(super) fn on_mousemove(
             }
         }
     }
+    // A press on a plugin row with a drag that leaves the drag threshold: PecoFence drags out
+    // what the row carries, and its plugin hears `dragend`.
+    if let Some(PressTarget::ScriptRow(row, _)) = v.pressed
+        && let Some(r) = v.script.as_ref().and_then(|s| s.rows.get(row))
+        && let Some(drag) = r.drag.clone()
+    {
+        let (tx, ty) = window::drag_threshold();
+        let (sx, sy) = v.press_origin;
+        if (x - sx).abs() > tx || (y - sy).abs() > ty {
+            let (fence, id) = (v.active, r.id.clone());
+            v.pressed = None;
+            v.press_inside = false;
+            v.script_hover = None;
+            v.hide_tip();
+            let _ = v.redraw_content();
+            drop(guard);
+            // ReleaseCapture sends WM_CAPTURECHANGED synchronously: no borrow held.
+            window::release_capture();
+            let dropped = row_drag_out(hwnd, &drag);
+            queue.push(Command::PluginDragEnded {
+                fence,
+                row: id,
+                dropped,
+            });
+            return Some(0);
+        }
+    }
     // A release-fired button is held: track whether the pointer is still
     // over it (Win32 button semantics: pressed fill and hover fill both go
     // when the pointer leaves, both return with it); no tip updates
@@ -469,7 +506,7 @@ pub(super) fn on_mousemove(
                 | PressTarget::Header(_)
                 | PressTarget::NoteBox(_)
                 | PressTarget::NoteLink(..)
-                | PressTarget::ScriptRow(_)
+                | PressTarget::ScriptRow(..)
         )
     {
         if p == PressTarget::Chevron {
@@ -505,7 +542,7 @@ pub(super) fn on_mousemove(
                 PressTarget::Header(c) => v.header_hover = inside.then_some(c),
                 PressTarget::NoteBox(l) => v.note_box_hover = inside.then_some(l),
                 PressTarget::NoteLink(l, s) => v.note_link_hover = inside.then_some((l, s)),
-                PressTarget::ScriptRow(r) => v.script_hover = inside.then_some(r),
+                PressTarget::ScriptRow(r, c) => v.script_hover = inside.then_some((r, c)),
                 _ => {}
             }
             v.redraw_for_press(p);
@@ -578,6 +615,9 @@ pub(super) fn on_mousemove(
     } else {
         v.note_link_at(x, y)
     };
+    if let Some(cmd) = v.plugin_hover_moved(v.script_hover, script_row) {
+        queue.push(cmd);
+    }
     let script_changed = (std::mem::replace(&mut v.script_hover, script_row) != script_row)
         | (std::mem::replace(&mut v.note_box_hover, note_box) != note_box)
         | (std::mem::replace(&mut v.note_link_hover, note_link) != note_link)
@@ -587,7 +627,7 @@ pub(super) fn on_mousemove(
         Some(TipTarget::Chevron)
     } else {
         v.tip_target_at(x, y, hit.filter(|_| behavior.info_tips.get()))
-            .or(script_row.map(TipTarget::ScriptRow))
+            .or(script_row.map(|(row, cell)| TipTarget::ScriptRow(row, cell)))
     };
     v.update_tip_target(tip, x, y);
     let header = if divider.is_some() || on_control {
@@ -656,4 +696,40 @@ fn window_under_cursor() -> (HWND, String, bool) {
         "Progman" | "WorkerW" | "SHELLDLL_DefView" | "SysListView32"
     );
     (hit, class, on_desktop)
+}
+
+/// Drags out what a plugin row carries: its data file (a copy, never a move: the file stays
+/// in the plugin's folder) when it really is a data file in its folder, its text, or its link.
+/// True when a target took it.
+fn row_drag_out(hwnd: HWND, drag: &RowDrag) -> bool {
+    const COPY: u32 = 1;
+    const LINK: u32 = 4;
+    let (data, allowed, kind) = match drag {
+        RowDrag::File { path, root } => {
+            let Some(real) = row_file(path, root) else {
+                tracing::info!(
+                    "plugin row drag refused: its file is not there, not a data file, or not in its folder (a link out)"
+                );
+                return false;
+            };
+            (dragdrop::data_object_for_paths(&[&real]), COPY, "file")
+        }
+        RowDrag::Text(t) => (dragdrop::data_object_for_text(t, false), COPY, "text"),
+        RowDrag::Url(u) => (dragdrop::data_object_for_text(u, true), COPY | LINK, "link"),
+    };
+    let data = match data {
+        Ok(data) => data,
+        Err(e) => {
+            tracing::warn!(kind, error = %e, "plugin row drag: no data object");
+            return false;
+        }
+    };
+    crate::peek::set_drag_click_through(true);
+    ROW_DRAG.with(|r| r.set(true));
+    let outcome = dragdrop::do_drag_drop(hwnd, &data, allowed, None);
+    ROW_DRAG.with(|r| r.set(false));
+    crate::peek::set_drag_click_through(false);
+    let (_, class, on_desktop) = window_under_cursor();
+    tracing::info!(kind, dropped = outcome.dropped, effect = ?outcome.effect, %class, on_desktop, "a drag out of a plugin row ended");
+    outcome.dropped && outcome.effect != DropEffect::None
 }

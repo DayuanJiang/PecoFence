@@ -1275,6 +1275,7 @@ impl App {
                 // Scripts of an imported configuration that the snapshot brought back wait
                 // for the 小工具 switch, as after the import.
                 let held = self.hold_switch_for_held_scripts("snapshot restored by the CLI");
+                self.migrate_after_restore(target);
                 self.schedule_save();
                 self.push_settings_state();
                 let mut extra = json!({ "restored": target });
@@ -2114,7 +2115,9 @@ impl App {
                     return Err(IpcError::usage("a script fence needs --script <file>")
                         .hint("pecofence-cli fence create --script C:\\path\\weather.ps1"));
                 };
-                if !std::path::Path::new(path).is_file() {
+                // `plugin:<id>`: an installed plugin's fence.
+                let plugin = super::plugins::plugin_id(path).and_then(|id| self.plugin(id));
+                if plugin.is_none() && !std::path::Path::new(path).is_file() {
                     return Err(IpcError::new(
                         ErrorCode::InvalidValue,
                         format!("no such script: {path}"),

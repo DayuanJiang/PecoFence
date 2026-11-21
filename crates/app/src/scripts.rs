@@ -12,7 +12,12 @@ pub const TIMEOUT: Duration = Duration::from_secs(10);
 /// What is kept of the output: enough for a fence, small enough for the UI thread.
 const MAX_BYTES: usize = 16 * 1024;
 const MAX_LINES: usize = 40;
+/// A streaming script's screen: the fence scrolls what does not fit, so it may be a long list
+/// or a whole song's lyrics.
+const STREAM_MAX_LINES: usize = 300;
 const MAX_LINE_CHARS: usize = 300;
+/// A row of cells (a `::` line) holds several rows' worth of parameters.
+const MAX_CELL_LINE_CHARS: usize = 2000;
 /// CREATE_NO_WINDOW: no console flashes up on the desktop.
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -117,6 +122,9 @@ pub struct RunEnv {
     pub theme: &'static str,
     /// `PECOFENCE_FENCE`: the fence's id.
     pub fence: String,
+    /// `PECOFENCE_LANGUAGE`: PecoFence's display language (`en`, `zh-CN`, `zh-TW`, `ja`, `ko`,
+    /// `de`, `fr`, `es`, `pt-BR`, `ru` or `it`).
+    pub language: &'static str,
 }
 
 /// Starts `path` in its own folder without a window, its output piped (and its input when
@@ -140,6 +148,7 @@ fn spawn(path: &Path, env: &RunEnv, stdin: bool) -> Result<std::process::Child, 
             .env("PECOFENCE_DATA", &env.data_dir)
             .env("PECOFENCE_THEME", env.theme)
             .env("PECOFENCE_FENCE", &env.fence)
+            .env("PECOFENCE_LANGUAGE", env.language)
             // A streaming Python script's lines would wait in its buffer otherwise.
             .env("PYTHONUNBUFFERED", "1");
         if let Some(dir) = path.parent() {
@@ -325,8 +334,18 @@ pub fn target_kind(target: &str, path: &Path) -> pecofence_core::script_output::
     }
 }
 
+/// The title a script asks for in its header (`<pecofence.title>`), when it does.
+pub fn title_of(path: &Path) -> Option<String> {
+    let mut head = vec![0u8; 8 * 1024];
+    let n = std::fs::File::open(path)
+        .and_then(|mut f| f.read(&mut head))
+        .unwrap_or(0);
+    pecofence_core::script_output::script_title(&String::from_utf8_lossy(&head[..n]))
+}
+
 /// What a streaming script shows, line by line, as SwiftBar does: every line is added at
-/// once; after a `~~~` line the next line starts a new screen. The newest [`MAX_LINES`] stay.
+/// once; after a `~~~` line the next line starts a new screen. The newest [`STREAM_MAX_LINES`]
+/// stay.
 #[derive(Default)]
 struct Screen {
     lines: std::collections::VecDeque<String>,
@@ -334,24 +353,24 @@ struct Screen {
 }
 
 impl Screen {
-    /// Takes one printed line; the text to show when it changed the screen.
-    fn push(&mut self, line: &str) -> Option<String> {
+    /// Takes one printed line; whether it changed the screen.
+    fn push(&mut self, line: &str) -> bool {
         if line.trim() == "~~~" {
             self.reset = true;
-            return None;
+            return false;
         }
         if std::mem::take(&mut self.reset) {
             self.lines.clear();
         }
         self.lines.push_back(line.to_string());
-        while self.lines.len() > MAX_LINES {
+        while self.lines.len() > STREAM_MAX_LINES {
             self.lines.pop_front();
         }
-        Some(self.text())
+        true
     }
 
     fn text(&self) -> String {
-        clean(&Vec::from(self.lines.clone()).join("\n"))
+        clean_to(&Vec::from(self.lines.clone()).join("\n"), STREAM_MAX_LINES)
     }
 }
 
@@ -428,9 +447,14 @@ impl Stream {
                             Ok(_) => {}
                         }
                         let text = decode(&line);
-                        if let Some(now) = screen.push(text.trim_end_matches(['\r', '\n'])) {
-                            shown = now.clone();
-                            on_event(StreamEvent::Block(now));
+                        // The lines of a screen that came together are shown together: what
+                        // the pipe already holds is read before the screen is passed on, so
+                        // a long one does not appear a line at a time.
+                        if screen.push(text.trim_end_matches(['\r', '\n']))
+                            && reader.buffer().is_empty()
+                        {
+                            shown = screen.text();
+                            on_event(StreamEvent::Block(shown.clone()));
                         }
                     }
                 }
@@ -466,6 +490,17 @@ impl Stream {
         }
         sent
     }
+
+    /// Closes the script's standard input: a script that watches it ends by itself and may
+    /// tidy up first (remove the files it kept only while it ran).
+    pub fn close_input(&mut self) {
+        self.input = None;
+    }
+
+    /// The script, or something it started, still runs.
+    pub fn running(&self) -> bool {
+        self.job.as_ref().is_some_and(|j| j.has_processes())
+    }
 }
 
 impl Drop for Stream {
@@ -477,18 +512,12 @@ impl Drop for Stream {
     }
 }
 
-/// Whether `path` holds the 电脑状态 example as PecoFence wrote it (Some(true) for the Chinese
-/// one). PecoFence then shows the same screens itself: the PowerShell that would run it takes
-/// about 100 MB of memory and asks WMI every 2 seconds. An edited copy runs as a script.
+/// Whether `path` holds a 电脑状态 example as PecoFence wrote it (Some(true) for a Chinese one).
+/// PecoFence then shows the same screens itself: the PowerShell that would run it takes about
+/// 100 MB of memory and asks WMI every 2 seconds. An edited copy runs as a script.
 fn unchanged_status(path: &Path) -> Option<bool> {
-    let small = std::fs::metadata(path).is_ok_and(|m| m.len() <= 16 * 1024);
-    if !small {
-        return None;
-    }
-    let now = unify_lines(&std::fs::read_to_string(path).ok()?);
-    [true, false]
-        .into_iter()
-        .find(|&chinese| unify_lines(example(Example::Status, chinese)) == now)
+    let (plugin, chinese) = unchanged_example(path)?;
+    (plugin == "pc-status").then_some(chinese)
 }
 
 /// The 电脑状态 example's screens, every 2 seconds, from a thread of their own: CPU and memory
@@ -686,13 +715,23 @@ fn decode(bytes: &[u8]) -> String {
 /// Line breaks as `\n`, colour codes and trailing spaces gone, at most [`MAX_LINES`] lines of
 /// [`MAX_LINE_CHARS`], no empty lines at either end.
 pub fn clean(text: &str) -> String {
+    clean_to(text, MAX_LINES)
+}
+
+/// [`clean`] keeping `max_lines` lines at most.
+fn clean_to(text: &str, max_lines: usize) -> String {
     let text = text.trim_start_matches('\u{feff}');
     let mut lines: Vec<String> = text
         .split('\n')
         .map(|l| {
             let l = strip_escapes(l.trim_end_matches('\r'));
             let l = l.trim_end();
-            l.chars().take(MAX_LINE_CHARS).collect()
+            let limit = if pecofence_core::script_output::is_cells_line(l) {
+                MAX_CELL_LINE_CHARS
+            } else {
+                MAX_LINE_CHARS
+            };
+            l.chars().take(limit).collect()
         })
         .collect();
     while lines.last().is_some_and(|l| l.is_empty()) {
@@ -703,7 +742,7 @@ pub fn clean(text: &str) -> String {
         .position(|l| !l.is_empty())
         .unwrap_or(lines.len());
     lines.drain(..first);
-    lines.truncate(MAX_LINES);
+    lines.truncate(max_lines);
     lines.join("\n")
 }
 
@@ -728,166 +767,99 @@ fn strip_escapes(line: &str) -> String {
     out
 }
 
-/// The script fence examples, as (Chinese, English) texts: the comments and labels are in
-/// that language (the weather's conditions come from the service as they are).
-pub fn example(kind: Example, chinese: bool) -> &'static str {
-    match (kind, chinese) {
-        (Example::Weather, true) => include_str!("../assets/scripts/weather.zh.ps1"),
-        (Example::Weather, false) => include_str!("../assets/scripts/weather.en.ps1"),
-        (Example::GitHub, true) => include_str!("../assets/scripts/github.zh.ps1"),
-        (Example::GitHub, false) => include_str!("../assets/scripts/github.en.ps1"),
-        (Example::Status, true) => include_str!("../assets/scripts/status.zh.ps1"),
-        (Example::Status, false) => include_str!("../assets/scripts/status.en.ps1"),
-    }
-}
-
-/// The text an example's file gets: Windows PowerShell 5.1 reads a script without a BOM in the
-/// ANSI code page (the emoji and Chinese text need the BOM), and Notepad keeps CRLF.
-pub fn example_file_text(kind: Example, chinese: bool) -> String {
-    format!(
-        "\u{feff}{}",
-        unify_lines(example(kind, chinese)).replace('\n', "\r\n")
-    )
-}
-
 /// Without a BOM, with LF line ends.
 fn unify_lines(text: &str) -> String {
     text.trim_start_matches('\u{feff}').replace("\r\n", "\n")
 }
 
-/// Examples as earlier versions wrote them, with the example and language that replace each:
-/// 0.3.0 and 0.3.1's PC status showed the IPv4 address of a disconnected adapter and drive C:
-/// only. The GitHub and weather examples of 0.3.0 to 0.3.3 printed text from the network
-/// unchanged, which could read as a row's parameters (a forged issue title started a program);
-/// the PC status of 0.3.2 and 0.3.3 lacks the header line its `run=` row now needs.
-const OLD_EXAMPLES: [(&str, Example, bool); 8] = [
-    (
-        include_str!("../assets/scripts/old/status.zh.0.3.0.ps1"),
-        Example::Status,
-        true,
-    ),
-    (
-        include_str!("../assets/scripts/old/status.en.0.3.0.ps1"),
-        Example::Status,
-        false,
-    ),
-    (
-        include_str!("../assets/scripts/old/status.zh.0.3.2.ps1"),
-        Example::Status,
-        true,
-    ),
-    (
-        include_str!("../assets/scripts/old/status.en.0.3.2.ps1"),
-        Example::Status,
-        false,
-    ),
-    (
-        include_str!("../assets/scripts/old/github.zh.0.3.0.ps1"),
-        Example::GitHub,
-        true,
-    ),
-    (
-        include_str!("../assets/scripts/old/github.en.0.3.0.ps1"),
-        Example::GitHub,
-        false,
-    ),
-    (
-        include_str!("../assets/scripts/old/weather.zh.0.3.0.ps1"),
-        Example::Weather,
-        true,
-    ),
-    (
-        include_str!("../assets/scripts/old/weather.en.0.3.0.ps1"),
-        Example::Weather,
-        false,
-    ),
+/// The built-in script fence examples of 0.3.0 to 0.4.0 (their texts are in
+/// `scripts/wintest/assets/old-examples`), by [`fingerprint`]: the plugin that does the same
+/// now (升级为插件) and whether the copy is the Chinese one.
+const EXAMPLES: [(&str, &str, bool); 14] = [
+    ("8a75815ee466c716", "weather", true),
+    ("c23ca258f50b0241", "weather", false),
+    ("c621790e6dd6b4cb", "weather", true),
+    ("94243be0c09d5316", "weather", false),
+    ("faff0f24d86c05d7", "github", true),
+    ("f8dfee797a990c73", "github", false),
+    ("c240092566c8ca8c", "github", true),
+    ("ba006aaaf6eecfea", "github", false),
+    ("1261a29200618fca", "pc-status", true),
+    ("4b8cf37e27cc4321", "pc-status", false),
+    ("7de6b92989962c3f", "pc-status", true),
+    ("4a99a5b96532b7e9", "pc-status", false),
+    ("555cdd68647abbb2", "pc-status", true),
+    ("aba934a36e483ceb", "pc-status", false),
 ];
 
-/// A script file that still holds an earlier version's example unchanged gets the current one,
-/// so a fence made from an old example shows its fixes; an edited copy stays as it is. True
-/// when the file was replaced.
-pub fn update_old_example(path: &Path) -> bool {
-    // Only small files can be an example (a script fence may run a large .exe).
-    let small = std::fs::metadata(path).is_ok_and(|m| m.len() <= 16 * 1024);
-    if !small {
-        return false;
+/// FNV-1a (64 bits) of a script without its BOM and with LF line ends: the same whatever an
+/// editor did to the line ends, and from one build of PecoFence to the next.
+fn fingerprint(text: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in unify_lines(text).bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
     }
-    let Ok(now) = std::fs::read_to_string(path) else {
-        return false;
-    };
-    let now = unify_lines(&now);
-    let Some(&(_, kind, chinese)) = OLD_EXAMPLES
-        .iter()
-        .find(|(old, _, _)| unify_lines(old) == now)
-    else {
-        return false;
-    };
-    match std::fs::write(path, example_file_text(kind, chinese)) {
-        Ok(()) => {
-            tracing::info!(
-                example = kind.name(),
-                chinese,
-                "unedited example script of an earlier version replaced by the current one"
-            );
-            true
-        }
-        Err(e) => {
-            tracing::warn!(example = kind.name(), error = %e, "updating an old example script failed");
-            false
-        }
-    }
+    format!("{hash:016x}")
 }
 
-/// 「添加示例…」: the script fence examples.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Example {
-    /// Today's weather (wttr.in).
-    Weather,
-    /// A GitHub repository's newest issues and pull requests: rows that open in the browser.
-    GitHub,
-    /// The computer's state every 2 seconds (a streaming script): colours, copy, run.
-    Status,
+/// The plugin a script file stands for when it holds a built-in example nobody edited (see
+/// [`EXAMPLES`]), and whether it is the Chinese one.
+fn unchanged_example(path: &Path) -> Option<(&'static str, bool)> {
+    // Only small files can be one (a script fence may run a large .exe).
+    if std::fs::metadata(path).map_or(true, |m| m.len() > 16 * 1024) {
+        return None;
+    }
+    let print = fingerprint(&std::fs::read_to_string(path).ok()?);
+    let (_, plugin, chinese) = EXAMPLES.iter().find(|(f, _, _)| *f == print)?;
+    Some((plugin, *chinese))
 }
 
-impl Example {
-    pub const ALL: [Self; 3] = [Self::Weather, Self::GitHub, Self::Status];
+/// 升级为插件: the plugin that does what script `path` does, when it is a built-in example
+/// nobody edited.
+pub fn example_plugin(path: &str) -> Option<&'static str> {
+    unchanged_example(Path::new(path)).map(|(plugin, _)| plugin)
+}
 
-    /// The example a settings page button names (`name()`).
-    pub fn parse(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|e| e.name() == name)
-    }
-
-    /// Its line in the menu.
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Weather => pecofence_core::i18n::text("天气"),
-            Self::GitHub => pecofence_core::i18n::text("GitHub 仓库动态"),
-            Self::Status => pecofence_core::i18n::text("电脑状态"),
-        }
-    }
-
-    /// The file it is written to in the configuration's `scripts` folder.
-    pub fn file_name(self) -> &'static str {
-        match self {
-            Self::Weather => pecofence_core::i18n::text("天气.ps1"),
-            Self::GitHub => pecofence_core::i18n::text("GitHub 动态.ps1"),
-            Self::Status => pecofence_core::i18n::text("电脑状态.ps1"),
-        }
-    }
-
-    /// For the log.
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Weather => "weather",
-            Self::GitHub => "github",
-            Self::Status => "status",
-        }
-    }
+/// The folders in `dir` (`scripts-data`) named after a fence that `keep` does not list: what
+/// script fences that are gone left behind. Files there and folders of other names stay.
+pub fn left_data_folders(
+    dir: &Path,
+    keep: &std::collections::HashSet<String>,
+) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().to_string();
+            uuid::Uuid::parse_str(&name).is_ok() && !keep.contains(&name)
+        })
+        .map(|e| e.path())
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_data_of_fences_that_are_gone_is_left_over() {
+        let dir = std::env::temp_dir().join(format!("pf-left-data-{}", std::process::id()));
+        let kept = uuid::Uuid::new_v4().to_string();
+        let gone = uuid::Uuid::new_v4().to_string();
+        for name in [&kept, &gone, &"notes".to_string()] {
+            std::fs::create_dir_all(dir.join(name)).unwrap();
+        }
+        std::fs::write(dir.join(uuid::Uuid::new_v4().to_string()), "a file").unwrap();
+        let keep = std::collections::HashSet::from([kept.clone()]);
+        let left = left_data_folders(&dir, &keep);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(left, vec![dir.join(&gone)]);
+        assert!(left_data_folders(&dir, &keep).is_empty());
+    }
 
     #[test]
     fn pc_status_selects_a_connected_ipv4_gateway_and_local_disks() {
@@ -912,30 +884,6 @@ mod tests {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-    }
-
-    #[test]
-    fn an_unedited_old_example_gets_the_current_one() {
-        let dir = std::env::temp_dir().join(format!("pf-old-example-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        for (old, kind, chinese) in OLD_EXAMPLES {
-            // As 0.3.0 wrote it: a BOM and CRLF.
-            let written = format!("\u{feff}{}", unify_lines(old).replace('\n', "\r\n"));
-            let path = dir.join(format!("{}-{chinese}.ps1", kind.name()));
-            std::fs::write(&path, &written).unwrap();
-            assert!(update_old_example(&path));
-            let now = std::fs::read_to_string(&path).unwrap();
-            assert_eq!(now, example_file_text(kind, chinese));
-            assert_ne!(now, written);
-            // The current one is left alone, and so is an edited old copy.
-            assert!(!update_old_example(&path));
-            let edited = format!("{written}# my own line\r\n");
-            std::fs::write(&path, &edited).unwrap();
-            assert!(!update_old_example(&path));
-            assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
-        }
-        assert!(!update_old_example(&dir.join("missing.ps1")));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -981,7 +929,7 @@ mod tests {
             assert_eq!(rows[5].color.as_deref(), Some("red"), "D: has 5 % left");
             assert!(rows[4].text.contains("50 GB") && rows[4].text.contains("50%"));
             // The script says the same: an edit of the example shows here.
-            let script = example(Example::Status, chinese);
+            let script = if chinese { STATUS_ZH } else { STATUS_EN };
             let fixed: &[&str] = if chinese {
                 &[
                     "内存已用 $mem% | color=",
@@ -1016,45 +964,92 @@ mod tests {
         assert!(no_ip.contains("没有连接网络") && no_ip.contains("color=green icon=🧠"));
     }
 
+    /// An example as an earlier version wrote it (the texts the app no longer has).
+    macro_rules! old_example {
+        ($name:literal) => {
+            include_str!(concat!(
+                "../../../scripts/wintest/assets/old-examples/",
+                $name
+            ))
+        };
+    }
+    const STATUS_ZH: &str = old_example!("status.zh.0.4.0.ps1");
+    const STATUS_EN: &str = old_example!("status.en.0.4.0.ps1");
+
     #[test]
-    fn only_an_unchanged_pc_status_example_skips_powershell() {
-        let dir = std::env::temp_dir().join(format!("pf-status-example-{}", std::process::id()));
+    fn every_example_of_earlier_versions_is_known_by_its_fingerprint() {
+        let dir = std::env::temp_dir().join(format!("pf-examples-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("status.ps1");
-        for chinese in [true, false] {
-            std::fs::write(&path, example_file_text(Example::Status, chinese)).unwrap();
-            assert_eq!(unchanged_status(&path), Some(chinese));
+        let texts = [
+            (old_example!("weather.zh.0.4.0.ps1"), "weather", true),
+            (old_example!("weather.en.0.4.0.ps1"), "weather", false),
+            (old_example!("weather.zh.0.3.0.ps1"), "weather", true),
+            (old_example!("weather.en.0.3.0.ps1"), "weather", false),
+            (old_example!("github.zh.0.4.0.ps1"), "github", true),
+            (old_example!("github.en.0.4.0.ps1"), "github", false),
+            (old_example!("github.zh.0.3.0.ps1"), "github", true),
+            (old_example!("github.en.0.3.0.ps1"), "github", false),
+            (STATUS_ZH, "pc-status", true),
+            (STATUS_EN, "pc-status", false),
+            (old_example!("status.zh.0.3.2.ps1"), "pc-status", true),
+            (old_example!("status.en.0.3.2.ps1"), "pc-status", false),
+            (old_example!("status.zh.0.3.0.ps1"), "pc-status", true),
+            (old_example!("status.en.0.3.0.ps1"), "pc-status", false),
+        ];
+        let path = dir.join("example.ps1");
+        for (text, plugin, chinese) in texts {
+            // As PecoFence wrote it (a BOM and CRLF), and as an editor may save it (LF).
+            for written in [
+                format!("\u{feff}{}", unify_lines(text).replace('\n', "\r\n")),
+                unify_lines(text),
+            ] {
+                std::fs::write(&path, &written).unwrap();
+                assert_eq!(
+                    unchanged_example(&path),
+                    Some((plugin, chinese)),
+                    "{plugin} {chinese}"
+                );
+                assert_eq!(
+                    unchanged_status(&path),
+                    (plugin == "pc-status").then_some(chinese)
+                );
+            }
+            // An edited copy is the user's own script.
+            std::fs::write(&path, format!("{text}# my own line\n")).unwrap();
+            assert_eq!(example_plugin(&path.to_string_lossy()), None);
         }
-        let edited = example_file_text(Example::Status, true)
-            .replace("Start-Sleep -Seconds 2", "Start-Sleep -Seconds 5");
-        std::fs::write(&path, edited).unwrap();
-        assert_eq!(unchanged_status(&path), None);
-        std::fs::write(&path, example_file_text(Example::Weather, true)).unwrap();
-        assert_eq!(unchanged_status(&path), None);
+        assert_eq!(example_plugin("plugin:weather"), None);
+        assert_eq!(
+            example_plugin(&dir.join("missing.ps1").to_string_lossy()),
+            None
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_stream_screen_follows_swiftbar() {
         let mut s = Screen::default();
-        assert_eq!(s.push("a").as_deref(), Some("a"));
-        assert_eq!(s.push("b").as_deref(), Some("a\nb"));
+        assert!(s.push("a"));
+        assert!(s.push("b"));
+        assert_eq!(s.text(), "a\nb");
         // `~~~` changes nothing until the next line, which starts a new screen.
-        assert_eq!(s.push("~~~"), None);
-        assert_eq!(s.push("c").as_deref(), Some("c"));
+        assert!(!s.push("~~~"));
+        assert_eq!(s.text(), "a\nb");
+        assert!(s.push("c"));
+        assert_eq!(s.text(), "c");
         // SwiftBar's way, `~~~` before each block, works the same.
         s.push("~~~");
         s.push("d");
-        assert_eq!(s.push("e").as_deref(), Some("d\ne"));
+        s.push("e");
+        assert_eq!(s.text(), "d\ne");
         // A log that never prints `~~~` shows its newest lines.
         let mut log = Screen::default();
-        let mut last = None;
-        for i in 0..100 {
-            last = log.push(&format!("line {i}"));
+        for i in 0..STREAM_MAX_LINES + 60 {
+            log.push(&format!("line {i}"));
         }
-        let last = last.unwrap();
-        assert_eq!(last.lines().count(), MAX_LINES);
-        assert!(last.ends_with("line 99"));
+        let last = log.text();
+        assert_eq!(last.lines().count(), STREAM_MAX_LINES);
+        assert!(last.ends_with(&format!("line {}", STREAM_MAX_LINES + 59)));
     }
 
     #[test]
@@ -1064,9 +1059,17 @@ mod tests {
             "+18°C 多云"
         );
         assert_eq!(clean("a\r\n\r\nb\r\n"), "a\n\nb");
-        let many: String = (0..100).map(|i| format!("{i}\n")).collect();
+        let many: String = (0..MAX_LINES + 60).map(|i| format!("{i}\n")).collect();
+        assert_eq!(
+            clean_to(&many, STREAM_MAX_LINES).lines().count(),
+            MAX_LINES + 60
+        );
         assert_eq!(clean(&many).lines().count(), MAX_LINES);
         assert_eq!(clean(&"x".repeat(1000)).chars().count(), MAX_LINE_CHARS);
+        // A row of cells keeps its tail: cut in the middle of a cell, it would show as text.
+        let cells = format!(":: {}", "a | action=x :: ".repeat(40));
+        assert!(cells.chars().count() > MAX_LINE_CHARS);
+        assert_eq!(clean(&cells), cells.trim_end());
     }
 
     #[test]
@@ -1165,138 +1168,6 @@ mod tests {
         assert!(!allows_run(&below));
         assert!(!allows_run(&dir.join("missing.ps1")));
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// The rows a fence shows for the example text `script` when its web request is answered
-    /// with `json`: the script runs as a fence runs it, only `Invoke-RestMethod` is replaced.
-    fn rows_for_canned_answer(
-        name: &str,
-        script: &str,
-        json: &str,
-    ) -> Vec<pecofence_core::script_output::ScriptRow> {
-        use pecofence_core::script_output::{ScriptLine, parse};
-        let dir = std::env::temp_dir().join(format!("pf-canned-{}-{name}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        // As PecoFence writes an example: a BOM and CRLF.
-        let file_text = |text: &str| format!("\u{feff}{}", unify_lines(text).replace('\n', "\r\n"));
-        std::fs::write(dir.join("answer.json"), json).unwrap();
-        std::fs::write(dir.join("example.ps1"), file_text(script)).unwrap();
-        let wrap = dir.join("canned.ps1");
-        std::fs::write(
-            &wrap,
-            file_text(concat!(
-                "function Invoke-RestMethod { Get-Content -Raw -Encoding UTF8 ",
-                "\"$PSScriptRoot\\answer.json\" | ConvertFrom-Json }\n",
-                ". \"$PSScriptRoot\\example.ps1\"\n",
-            )),
-        )
-        .unwrap();
-        // A CI machine can take longer than the app's 10 s to start PowerShell the first time.
-        let outcome = run_within(&wrap, &RunEnv::default(), Duration::from_secs(90));
-        let _ = std::fs::remove_dir_all(&dir);
-        let Outcome::Done(text) = outcome else {
-            panic!("{name}: {outcome:?}");
-        };
-        parse(&text)
-            .into_iter()
-            .filter_map(|line| match line {
-                ScriptLine::Row(row) => Some(row),
-                ScriptLine::Separator => None,
-            })
-            .collect()
-    }
-
-    #[test]
-    fn the_github_example_prints_forged_titles_as_plain_text() {
-        use pecofence_core::script_output::RowAction;
-        // Issue titles (and a user name) written to read as a row's parameters.
-        let answer = r#"[
- {"number": 11, "title": "Icons overlap after sleep", "user": {"login": "alice"}},
- {"number": 12, "title": "x | run=calc.exe r=' k=v", "user": {"login": "mallory"}},
- {"number": 13, "title": "y | open=C:\\Windows\\System32\\calc.exe r=' k=v", "user": {"login": "mallory"}},
- {"number": 14, "title": "z \" | run=calc.exe", "user": {"login": "m | run=calc.exe"}},
- {"number": 15, "title": "two\nlines | run=calc.exe", "user": {"login": "mallory"}},
- {"number": 16, "title": "w | href=https://evil.example/ r=' k=v", "user": {"login": "mallory"}}
-]"#;
-        let repo = "https://github.com/DayuanJiang/PecoFence";
-        for chinese in [true, false] {
-            let rows = rows_for_canned_answer(
-                &format!("github-{chinese}"),
-                example(Example::GitHub, chinese),
-                answer,
-            );
-            // The repository, the six issues, the refresh row.
-            assert_eq!(rows.len(), 8, "{rows:?}");
-            assert_eq!(rows[0].action, Some(RowAction::Href(repo.into())));
-            for (row, number) in rows[1..7].iter().zip(11..) {
-                assert!(row.text.starts_with(&format!("#{number}  ")), "{row:?}");
-                // The link is intact.
-                assert_eq!(
-                    row.action,
-                    Some(RowAction::Href(format!("{repo}/issues/{number}"))),
-                    "{row:?}"
-                );
-            }
-            assert_eq!(rows[2].text, "#12  x ¦ run=calc.exe r=’ k=v");
-            assert_eq!(
-                rows[2].tooltip.as_deref(),
-                Some("mallory: x ¦ run=calc.exe r=’ k=v")
-            );
-            assert_eq!(rows[4].text, "#14  z ’ ¦ run=calc.exe");
-            assert_eq!(
-                rows[4].tooltip.as_deref(),
-                Some("m ¦ run=calc.exe: z ’ ¦ run=calc.exe")
-            );
-            assert_eq!(rows[5].text, "#15  two lines ¦ run=calc.exe");
-            assert_eq!(rows[7].action, None);
-        }
-        // The example of 0.3.0 to 0.3.3 turned the same titles into rows that start programs.
-        let old = rows_for_canned_answer(
-            "github-old",
-            include_str!("../assets/scripts/old/github.en.0.3.0.ps1"),
-            answer,
-        );
-        assert!(
-            old.iter()
-                .any(|r| matches!(r.action, Some(RowAction::Run { .. })))
-        );
-        assert!(
-            old.iter()
-                .any(|r| matches!(r.action, Some(RowAction::Open(_))))
-        );
-    }
-
-    #[test]
-    fn the_weather_example_prints_a_forged_answer_as_plain_text() {
-        let answer = r#"{"current_condition": [{"temp_C": "20", "FeelsLikeC": "19",
-  "humidity": "60 | open=C:\\Windows\\System32\\calc.exe", "windspeedKmph": "7",
-  "weatherDesc": [{"value": "Sunny | run=calc.exe"}],
-  "lang_zh": [{"value": "晴 | run=calc.exe"}]}],
- "weather": [{"mintempC": "12", "maxtempC": "21", "hourly": [{"chanceofrain": "10"}]},
-  {"mintempC": "13", "maxtempC": "22 | href=https://evil.example/",
-   "hourly": [{"chanceofrain": "30"}]}]}"#;
-        for chinese in [true, false] {
-            let rows = rows_for_canned_answer(
-                &format!("weather-{chinese}"),
-                example(Example::Weather, chinese),
-                answer,
-            );
-            assert_eq!(rows.len(), 3, "{rows:?}");
-            assert!(rows.iter().all(|r| !r.clickable()), "{rows:?}");
-            assert!(rows[0].text.ends_with("¦ run=calc.exe"), "{rows:?}");
-            assert!(rows[1].text.contains("60 ¦ open=C:"), "{rows:?}");
-            assert!(
-                rows[2].text.contains("22 ¦ href=https://evil.example/"),
-                "{rows:?}"
-            );
-        }
-        // The example of 0.3.0 to 0.3.3 turned the same answer into a row that starts a program.
-        let old = rows_for_canned_answer(
-            "weather-old",
-            include_str!("../assets/scripts/old/weather.en.0.3.0.ps1"),
-            answer,
-        );
-        assert!(old.iter().any(|r| r.clickable()), "{old:?}");
     }
 
     #[test]

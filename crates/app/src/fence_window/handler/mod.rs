@@ -296,6 +296,9 @@ impl FenceWindow {
                 if let Some(done) = mouse::note_edit_mouse(h, hwnd, message, wparam, lparam) {
                     return Some(done);
                 }
+                if let Some(done) = super::web::on_mouse(h, hwnd, message, wparam, lparam) {
+                    return Some(done);
+                }
                 match message {
                     msg::WM_MOUSEACTIVATE => Some(msg::MA_NOACTIVATE),
                     // Alt+F4 / SC_CLOSE while the fence is the active window: fences are
@@ -311,7 +314,8 @@ impl FenceWindow {
                     }
                     msg::WM_WINDOWPOSCHANGING => nc::on_windowposchanging(h, hwnd, wparam, lparam),
                     msg::WM_NCHITTEST => nc::on_nchittest(h, hwnd, wparam, lparam),
-                    msg::WM_SETCURSOR => mouse::on_setcursor(h, hwnd, wparam, lparam),
+                    msg::WM_SETCURSOR => super::web::on_setcursor(h, lparam)
+                        .or_else(|| mouse::on_setcursor(h, hwnd, wparam, lparam)),
                     m if m == h.di_getdragimage && m != 0 => {
                         misc::on_getdragimage(h, hwnd, wparam, lparam)
                     }
@@ -330,7 +334,17 @@ impl FenceWindow {
                     msg::WM_MOUSELEAVE => mouse::on_mouseleave(h, hwnd, wparam, lparam),
                     msg::WM_LBUTTONDOWN => mouse::on_lbuttondown(h, hwnd, wparam, lparam),
                     msg::WM_LBUTTONUP => mouse::on_lbuttonup(h, hwnd, wparam, lparam),
-                    msg::WM_CAPTURECHANGED => mouse::on_capturechanged(h, hwnd, wparam, lparam),
+                    msg::WM_CAPTURECHANGED => {
+                        super::web::on_capture_changed(h);
+                        mouse::on_capturechanged(h, hwnd, wparam, lparam)
+                    }
+                    msg::WM_TIMER
+                        if wparam == crate::web_plugin::TIMER_WEB_SUSPEND
+                            || wparam == crate::web_plugin::TIMER_WEB_READY
+                            || wparam == crate::web_plugin::TIMER_WEB_INPUT =>
+                    {
+                        super::web::on_timer(h, wparam)
+                    }
                     msg::WM_KEYDOWN => keyboard::on_keydown(h, hwnd, wparam, lparam),
                     msg::WM_CHAR => keyboard::on_char(h, hwnd, wparam, lparam),
                     msg::WM_SYSKEYDOWN => keyboard::on_syskeydown(h, hwnd, wparam, lparam),
@@ -344,7 +358,10 @@ impl FenceWindow {
                     mouse::WM_XBUTTONDOWN => Some(1),
                     mouse::WM_XBUTTONUP => mouse::on_xbuttonup(h, hwnd, wparam, lparam),
                     msg::WM_SIZE => nc::on_size(h, hwnd, wparam, lparam),
-                    msg::WM_MOVE => nc::on_move(h, hwnd, wparam, lparam),
+                    msg::WM_MOVE => {
+                        super::web::on_moved(h);
+                        nc::on_move(h, hwnd, wparam, lparam)
+                    }
                     msg::WM_SHOWWINDOW => misc::on_showwindow(h, hwnd, wparam, lparam),
                     WM_APP_SET_VISIBLE => misc::on_app_set_visible(h, hwnd, wparam, lparam),
                     WM_APP_TAB_SWAP_DONE => misc::on_app_tab_swap_done(h, hwnd, wparam, lparam),

@@ -676,13 +676,14 @@ mod tests {
     /// removed. Before adding one, check that the value cannot hold a path, a file / folder /
     /// fence name, a title or anything else the user typed.
     const REVIEWED: &[(&str, &str)] = &[
-        ("access", "access"),      // crashlog: read / write / execute / other
-        ("at", "%at"),             // crashlog: `module+rva`
-        ("at", "script"),          // settings page script: fixed names
-        ("behavior", "?behavior"), // ShowDesktopBehavior enum
-        ("by", "by"),              // `&'static str`: what saved a fence rect / changed settings
-        ("class", "%class"),       // window class (under the cursor / above the desktop)
-        ("class", "%cls"),         // class of the window that ended a peek
+        ("access", "access"),       // crashlog: read / write / execute / other
+        ("at", "%at"),              // crashlog: `module+rva`
+        ("at", "script"),           // settings page script: fixed names
+        ("at", "?args.position()"), // where a drag began in a web page: two numbers
+        ("behavior", "?behavior"),  // ShowDesktopBehavior enum
+        ("by", "by"),               // `&'static str`: what saved a fence rect / changed settings
+        ("class", "%class"),        // window class (under the cursor / above the desktop)
+        ("class", "%cls"),          // class of the window that ended a peek
         ("class", "%desktop::class_name(front)"), // class of the window in front
         ("class", "%desktop::class_name(by)"), // class of the window that covered the fences
         // Class of the window the fences go above.
@@ -690,6 +691,9 @@ mod tests {
         // Explorer's desktop windows: class names, handles and counts.
         ("layers", "%desktop::describe_desktop_windows()"),
         ("command", "name"), // `Command` variant name
+        // A plugin's command id: from its reviewed plugin.json (letters, digits, -).
+        ("command", "command"),
+        ("command", "k.1"),
         // shell::path_place: fixed words for the kind of place a path is on.
         ("place", "shell::path_place(&primary)"),
         ("place", "shell::path_place(path)"),
@@ -699,21 +703,25 @@ mod tests {
         ("place", "shell::path_place(&target)"),
         ("place", "shell::path_place(&folder)"),
         ("place", "crate::shell::path_place(&dir)"),
+        ("place", "place"), // shell::drive_kind of a script picture: fixed names
         ("command", "a.worst_command"), // `Command` variant name (command_name)
         ("command", "command.as_deref()"), // hangwatch::running_command: a `Command` variant name
-        ("effect", "?effect"),          // DropEffect enum
-        ("family", "%f.family"),        // installed font family
+        ("effect", "?effect"), // DropEffect enum
+        ("effect", "?outcome.effect"), // DropEffect enum (a drag out of a plugin row)
+        ("family", "%f.family"), // installed font family
         // shell::log_ext: an extension of up to 10 ASCII letters and digits, `other`, `none`.
         ("file_ext", "ext.as_str()"),
         ("target_ext", "target_ext.as_deref()"),
         // shell::path_place of a shortcut's target.
         ("target_place", "target_place.as_deref()"),
-        ("generation", "?generation"),        // DesktopGeneration enum
-        ("generation", "generation"),         // GPU device generation (u64)
-        ("hotkey", "%c"),                     // Hotkey: modifier and key names ("Ctrl+Alt+Space")
-        ("hotkey", "%h"),                     // Hotkey
-        ("host_kind", "?host_kind"),          // Option<HostKind> enum
-        ("install", "install.as_str()"),      // feedback::install_kind: fixed names
+        ("generation", "?generation"), // DesktopGeneration enum
+        ("generation", "generation"),  // GPU device generation (u64)
+        ("hotkey", "%c"),              // Hotkey: modifier and key names ("Ctrl+Alt+Space")
+        ("hotkey", "%h"),              // Hotkey
+        ("hotkey", "%k.2"),            // Hotkey of a plugin command
+        ("hotkey", "?h.map(|h|h.to_string())"), // Hotkey of a plugin command, or none
+        ("host_kind", "?host_kind"),   // Option<HostKind> enum
+        ("install", "install.as_str()"), // feedback::install_kind: fixed names
         ("source", "source.as_str()"), // smart fence: where its results came from (fixed names)
         ("source", "r.source.as_str()"), // the same, of a smart fence worker's result
         ("language", "language.tag()"), // BCP 47 tag of a Language variant

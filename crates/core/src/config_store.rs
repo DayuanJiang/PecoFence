@@ -198,13 +198,18 @@ impl ConfigStore {
 
     /// Writes the config as pretty JSON to an arbitrary path (export).
     pub fn export_to(cfg: &Config, path: &Path) -> io::Result<()> {
-        // The search history lists the user's file paths: it stays on this computer.
-        if !cfg.search_history.is_empty() {
-            let mut shared = cfg.clone();
-            shared.search_history.clear();
-            return fs::write(path, Self::to_json(&shared)?);
+        // The search history lists the user's file paths, and the plugins' secret settings are
+        // encrypted for this Windows account: both stay on this computer.
+        let mut shared = cfg.clone();
+        shared.search_history.clear();
+        let snapshots = shared
+            .snapshots
+            .iter_mut()
+            .flat_map(|s| s.scripts.values_mut());
+        for spec in shared.scripts.values_mut().chain(snapshots) {
+            spec.settings.remove(crate::plugins::SECRETS);
         }
-        fs::write(path, Self::to_json(cfg)?)
+        fs::write(path, Self::to_json(&shared)?)
     }
 
     /// The file text: pretty JSON with the `$schema` field pointing at the published schema
@@ -975,11 +980,20 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let mut c = sample();
         c.note_search_open("C:\\Users\\me\\secret.txt");
+        // A plugin fence's secret settings stay too; its other settings go along.
+        let mut spec = ScriptSpec::new("plugin:weather");
+        let sealed = serde_json::json!({ "token": "0a0b0c" });
+        spec.settings.insert(crate::plugins::SECRETS.into(), sealed);
+        spec.settings.insert("city".into(), "Tokyo".into());
+        c.scripts.insert(FenceId::new_v4(), spec);
         let path = dir.join("out.json");
         ConfigStore::export_to(&c, &path).unwrap();
         let text = fs::read_to_string(&path).unwrap();
-        assert!(!text.contains("secret"), "{text}");
-        assert!(!text.contains("searchHistory"));
+        assert!(
+            !text.contains("secret") && !text.contains("0a0b0c"),
+            "{text}"
+        );
+        assert!(!text.contains("searchHistory") && text.contains("Tokyo"));
         let _ = fs::remove_dir_all(&dir);
     }
 

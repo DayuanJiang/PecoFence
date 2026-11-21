@@ -65,7 +65,9 @@ impl FenceViewState {
         }
         if content {
             if glide_done {
-                self.note_scroll_activity();
+                if !std::mem::take(&mut self.quiet_glide) {
+                    self.note_scroll_activity();
+                }
                 self.request_hover_refresh();
             }
             if self.marquee.is_some() {
@@ -307,8 +309,12 @@ impl FrameHandle {
             v.height_anim = None;
             if let Some(rolled) = rolled_at_end {
                 v.rolled_up = rolled;
+                if v.script.is_some() {
+                    v.queue.push(Command::ToolShownChanged);
+                }
                 v.content_panel.visual.set_opacity(1.0);
                 v.content_panel.visual.set_visible(!rolled);
+                v.web_shown(desktop::is_visible(hwnd));
                 // Rolled up after a hover peek raised it: back among the other fences.
                 if rolled && std::mem::take(&mut v.hover_raised) {
                     v.queue.push(Command::EndHoverRaise(hwnd));

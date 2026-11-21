@@ -1,0 +1,11 @@
+{
+  "id": "local-web",
+  "version": "1.0.0",
+  "api": 2,
+  "layer": "web",
+  "name": { "en": "Local web test", "zh-CN": "本机网页测试" },
+  "description": { "en": "A test web plugin that reaches Ollama on this computer through pf.http (tests/plugin-lan.ps1).", "zh-CN": "测试用的网页插件：经 pf.http 连接这台电脑上的 Ollama。" },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": { "local": { "loopback": [{ "port": 11434, "app": "Ollama" }] } }
+}

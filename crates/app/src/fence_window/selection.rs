@@ -122,7 +122,8 @@ pub(super) enum PressTarget {
     Chevron,
     NoteBox(usize),
     NoteLink(usize, usize),
-    ScriptRow(usize),
+    /// A script fence's row, and its cell when the row is a row of cells (else 0).
+    ScriptRow(usize, usize),
 }
 
 /// How a keyboard navigation key moves the cursor (Explorer): plain = select the target,
@@ -478,7 +479,7 @@ impl FenceViewState {
             | PressTarget::Header(_)
             | PressTarget::NoteBox(_)
             | PressTarget::NoteLink(..)
-            | PressTarget::ScriptRow(_) => {
+            | PressTarget::ScriptRow(..) => {
                 if !self.rolled_up {
                     let _ = self.redraw_content();
                 }
@@ -527,8 +528,12 @@ impl FenceViewState {
         } else if let Some((line, start)) = self.note_link_at(x_px, y_px).filter(|_| !second) {
             PressTarget::NoteLink(line, start)
         } else {
-            let row = self.script_row_at(x_px, y_px).filter(|_| !second)?;
-            PressTarget::ScriptRow(row)
+            // The second press on a button of a row of cells is another click (rapid clicks on
+            // Next all count); a plain row acts once per double-click.
+            let (row, cell) = self
+                .script_row_at(x_px, y_px)
+                .filter(|&(row, _)| !second || self.script_row_has_cells(row))?;
+            PressTarget::ScriptRow(row, cell)
         };
         tracing::debug!(fence = %self.active, target = ?p, second, "tool control pressed");
         self.pressed = Some(p);

@@ -1,0 +1,11 @@
+{
+  "id": "folders-test",
+  "version": "1.0.0",
+  "api": 2,
+  "layer": "light",
+  "name": { "en": "Folders test", "zh-CN": "文件夹测试" },
+  "description": { "en": "A test plugin: writes, makes folders and trashes in a picked folder." },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": { "folders": "readwrite" }
+}
