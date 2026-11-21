@@ -1,0 +1,60 @@
+--out crates/platform/src/capture_bindings.rs
+--flat --dead-code --minimal
+
+// Windows.Graphics.Capture and the D3D11 it needs, for live wallpaper players that PrintWindow
+// cannot read because they draw without a redirection bitmap (see `live_capture.rs`).
+// Keep this list precise: a class entry alone yields a name-only shell, the interface entries
+// pull in the methods.
+--filter
+    // The interface, not the method: metadata names its namespace `Windows.Win32...`, and this
+    // is the one spelling the filter accepts.
+    IGraphicsCaptureItemInterop
+    // Name-only shells: the classes are only the types of the calls below, and a whole class
+    // would pull in its statics (Visual, DispatcherQueue) and event handlers.
+    Windows.Graphics.Capture.GraphicsCaptureItem::{}
+    Windows.Graphics.Capture.GraphicsCaptureSession::{}
+    Windows.Graphics.Capture.Direct3D11CaptureFrame::{}
+    Windows.Graphics.Capture.Direct3D11CaptureFramePool::CreateFreeThreaded
+    Windows.Graphics.Capture.IDirect3D11CaptureFramePool.CreateCaptureSession
+    Windows.Graphics.Capture.IDirect3D11CaptureFramePool.TryGetNextFrame
+    Windows.Graphics.Capture.IDirect3D11CaptureFramePoolStatics2.CreateFreeThreaded
+    Windows.Graphics.Capture.IDirect3D11CaptureFrame.Surface
+    Windows.Graphics.Capture.IGraphicsCaptureSession.StartCapture
+    Windows.Graphics.Capture.IGraphicsCaptureSession2.put_IsCursorCaptureEnabled
+    Windows.Graphics.Capture.IGraphicsCaptureSession3.put_IsBorderRequired
+    Windows.Graphics.DirectX.DirectXPixelFormat
+    Windows.Graphics.DirectX.Direct3D11.IDirect3DDevice
+    Windows.Graphics.DirectX.Direct3D11.IDirect3DSurface
+    // The frame's surface is not a D3D11 texture itself: this is how the sample gets the
+    // texture behind it.
+    // Simple name: the metadata files it under a namespace the filter does not take.
+    IDirect3DDxgiInterfaceAccess
+    Windows.Foundation.IClosable.Close
+    Windows.Foundation.Size
+    CreateDirect3D11DeviceFromDXGIDevice
+    D3D11CreateDevice
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT
+    D3D11_CREATE_DEVICE_FLAG
+    D3D11_SDK_VERSION
+    D3D11_TEXTURE2D_DESC
+    D3D11_SUBRESOURCE_DATA
+    HMODULE
+    D3D11_USAGE_STAGING
+    D3D11_CPU_ACCESS_READ
+    D3D11_MAPPED_SUBRESOURCE
+    D3D11_MAP_READ
+    D3D_DRIVER_TYPE
+    D3D_DRIVER_TYPE_HARDWARE
+    D3D_FEATURE_LEVEL
+    D3D_FEATURE_LEVEL_11_0
+    D3D_FEATURE_LEVEL_10_1
+    D3D_FEATURE_LEVEL_10_0
+    DXGI_FORMAT
+    DXGI_FORMAT_B8G8R8A8_UNORM
+    DXGI_SAMPLE_DESC
+    IDXGIDevice
+    IDXGIAdapter
+    ID3D11Device
+    ID3D11DeviceContext
+    ID3D11Resource
+    ID3D11Texture2D
