@@ -2234,6 +2234,17 @@ impl FenceWindow {
         })
     }
 
+    /// Rolled up, the title row shows the plugin's `view.caption` (feedback #175): the plugin
+    /// still counts as shown, so a clock's caption keeps the time.
+    pub fn shows_rolled_caption(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| {
+            v.rolled_up
+                && !v.retired
+                && v.script.as_ref().is_some_and(|s| s.caption.is_some())
+                && pecofence_platform::desktop::is_visible(v.hwnd)
+        })
+    }
+
     /// The content area in DIPs.
     pub fn content_dips(&self) -> (f32, f32) {
         self.view.borrow().as_ref().map_or((0.0, 0.0), |v| {

@@ -156,12 +156,19 @@ impl App {
         );
     }
 
-    /// Fence `fence` shows its content now (the native clock asks the same before it draws).
-    fn light_shown(&self, fence: FenceId) -> (bool, (f32, f32)) {
+    /// Fence `fence` shows its content now (the native clock asks the same before it draws), or
+    /// rolled up its title row shows the plugin's caption (a clock's time goes on there); the
+    /// content size, and whether the content itself shows (only then a size is news).
+    fn light_shown(&self, fence: FenceId) -> (bool, (f32, f32), bool) {
         let w = self.fences.get(&self.state.host_of(fence));
         let w = w.filter(|w| w.active_fence() == fence);
-        w.map_or((false, (0.0, 0.0)), |w| {
-            (w.shows_content(), w.content_dips())
+        w.map_or((false, (0.0, 0.0), false), |w| {
+            let content = w.shows_content();
+            (
+                content || w.shows_rolled_caption(),
+                w.content_dips(),
+                content,
+            )
         })
     }
 
@@ -179,7 +186,7 @@ impl App {
         let dark = (self.window_for(fence)).map_or(self.theme_mode == ThemeMode::Dark, |w| {
             w.draws_light_text(self.theme_mode)
         });
-        let (_, size) = self.light_shown(fence);
+        let (_, size, _) = self.light_shown(fence);
         json!({
             "lang": pecofence_core::i18n::language().tag(),
             "theme": pecofence_core::plugins::theme(dark),
@@ -271,7 +278,7 @@ impl App {
             self.ensure_clipboard_listener();
         }
         let init = self.plugin_init(fence, &m);
-        let (shown, size) = self.light_shown(fence);
+        let (shown, size, _) = self.light_shown(fence);
         tracing::info!(%fence, id, version = m.version, shown, ?size, background = p.background, "plugin fence starts its main.js");
         self.light.stopped.remove(&fence);
         self.light.starts += 1;
@@ -363,11 +370,13 @@ impl App {
     pub(super) fn sync_light(&mut self) {
         let fences: Vec<FenceId> = self.light.running.keys().copied().collect();
         for fence in fences {
-            let (shown, size) = self.light_shown(fence);
+            let (shown, size, content) = self.light_shown(fence);
             let Some((_, was_shown, was_size, ..)) = self.light.running.get_mut(&fence) else {
                 continue;
             };
-            let resized = shown && (size.0 - was_size.0).abs() + (size.1 - was_size.1).abs() >= 1.0;
+            // Rolled up with a caption, the plugin runs on but its content has no size to tell.
+            let resized =
+                content && (size.0 - was_size.0).abs() + (size.1 - was_size.1).abs() >= 1.0;
             let toggled = std::mem::replace(was_shown, shown) != shown;
             if resized {
                 *was_size = size;
