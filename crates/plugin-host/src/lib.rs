@@ -52,7 +52,7 @@ pub const ERRORS_TOLD: u32 = 3;
 /// The last view goes into the fence's cache file at most this often (and when it stops).
 const CACHE_GAP: Duration = Duration::from_secs(60);
 /// The events PecoFence sends ([`Command::Event`] takes one of these names).
-pub const EVENTS: [&str; 24] = [
+pub const EVENTS: [&str; 26] = [
     "start",
     "show",
     "hide",
@@ -83,6 +83,10 @@ pub const EVENTS: [&str; 24] = [
     "wheel",
     // A drag out of a row (`drag`) ended: {row: the row's id, dropped: whether a target took it}.
     "dragend",
+    // Interface 3: the pointer moved ({x, y, monitor}, at most 30 a second); the keyboard focus
+    // or the text caret moved ({focus, caret}: rects or null).
+    "pointer",
+    "focus",
 ];
 /// `enter` and `leave` reach a plugin at most 10 times a second, `wheel` 20 times: what comes
 /// sooner waits, the pointer's last row and the wheel's steps added up.
@@ -930,7 +934,7 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                     // media session (the app tells only plugins that may see it) the same.
                     let told = match name {
                         "clipboard" => p.reads_clipboard && p.runs(),
-                        "media" | "apps" => p.runs(),
+                        "media" | "apps" | "pointer" | "focus" => p.runs(),
                         _ => true,
                     };
                     if !told {

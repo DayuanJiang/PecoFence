@@ -662,10 +662,10 @@ impl App {
                 if let Some(spec) = self.state.config.scripts.get_mut(&fence) {
                     let keys = spec.settings.entry(KEYS).or_insert_with(|| json!({}));
                     if let Some(keys) = keys.as_object_mut() {
-                        match h {
-                            Some(h) => keys.insert(command.clone(), h.to_string().into()),
-                            None => keys.remove(&command),
-                        };
+                        // 清除 keeps the command with no shortcut (null): the shortcut its
+                        // plugin brings (`key`) is not given to it again by an update.
+                        let key = h.map_or(Value::Null, |h| h.to_string().into());
+                        keys.insert(command.clone(), key);
                     }
                     self.state.mark_dirty();
                     self.schedule_save();
@@ -678,6 +678,51 @@ impl App {
             let box_id = v.get("box").cloned().unwrap_or_default();
             let result = json!({ "type": "pluginKeyResult", "box": box_id, "ok": refused.is_none(), "text": refused });
             host.post_json(&result.to_string());
+        }
+    }
+
+    /// Interface 3: the shortcut each command of fence `fence`'s plugin brings (`key`), for the
+    /// commands the fence has none for yet (one the user cleared is kept as null and stays
+    /// cleared). A shortcut PecoFence or another command has is not given; one another program
+    /// holds is, and shows as taken, as a shortcut the user picked would.
+    pub(super) fn seed_plugin_keys(&mut self, fence: FenceId) {
+        let Some(spec) = self.state.config.scripts.get(&fence) else {
+            return;
+        };
+        let plugin = super::plugins::plugin_id(&spec.path).and_then(|id| self.plugin(id));
+        let Some(commands) = plugin.map(|p| p.manifest.permissions.commands.clone()) else {
+            return;
+        };
+        let mut given = false;
+        for c in commands {
+            let Some(h) = c.key.as_deref().and_then(|k| Hotkey::parse(k).ok()) else {
+                continue;
+            };
+            let spec = self.state.config.scripts.get(&fence);
+            let keys = spec.and_then(|s| s.settings.get(KEYS)?.as_object().cloned());
+            if keys.is_some_and(|k| k.contains_key(&c.id)) {
+                tracing::debug!(%fence, command = c.id, "plugin's own shortcut: the fence has one or the user cleared it");
+                continue;
+            }
+            if let Some(why) = self.plugin_key_problem(fence, &c.id, h)
+                && self.hotkey_free(h)
+            {
+                tracing::info!(%fence, command = c.id, hotkey = %h, why, "plugin's own shortcut not given: PecoFence or another command has it");
+                continue;
+            }
+            if let Some(spec) = self.state.config.scripts.get_mut(&fence) {
+                let keys = spec.settings.entry(KEYS).or_insert_with(|| json!({}));
+                if let Some(keys) = keys.as_object_mut() {
+                    keys.insert(c.id.clone(), h.to_string().into());
+                    tracing::info!(%fence, command = c.id, hotkey = %h, "plugin's own shortcut given to its fence");
+                    given = true;
+                }
+            }
+        }
+        if given {
+            self.state.mark_dirty();
+            self.schedule_save();
+            self.sync_plugin_keys();
         }
     }
 

@@ -234,6 +234,13 @@ impl Host for Fake {
             "apps.running" => Ok(json!(self.app.iter().collect::<Vec<_>>())),
             "apps.front" if !self.front_asked.swap(true, Ordering::Relaxed) => Ok(json!(self.app)),
             "apps.front" => Ok(Value::Null),
+            // The pointer in the middle of one 1920 x 1080 monitor; the focus a text box in
+            // Notepad with its caret.
+            "pointer" => Ok(json!({
+                "x": 960, "y": 540, "monitor": { "x": 0, "y": 0, "width": 1920, "height": 1080 }
+            })),
+            "focus" => Ok(json!({ "x": 100, "y": 120, "width": 800, "height": 500 })),
+            "caret" => Ok(json!({ "x": 180, "y": 160, "width": 2, "height": 20 })),
             // The dropped file notes.txt (the drop's file 0): its text, its bytes in base64; a
             // save puts it into the data as the app does.
             n if n.starts_with("drop.") && args[0] != 0 => {

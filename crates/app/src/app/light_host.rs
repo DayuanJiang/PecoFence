@@ -43,6 +43,35 @@ pub(super) struct AppHost {
     /// The programs running and the one in front, as last read for `pf.apps` and the `apps`
     /// event (one read every 5 s at most, for all plugins).
     programs: Mutex<Option<(std::time::Instant, Programs)>>,
+    /// The keyboard focus and the caret as last read for `pf.focus`, `pf.caret` and the `focus`
+    /// event (read again when 100 ms old; PecoFence's own windows in front keep what was seen).
+    focus: Mutex<(Option<std::time::Instant>, Seen)>,
+}
+
+/// The focused element and the caret (screen pixels, None for none).
+pub(super) type Seen = (
+    Option<pecofence_platform::focus::ScreenRect>,
+    Option<pecofence_platform::focus::ScreenRect>,
+);
+
+/// A rectangle as `pf.focus`, `pf.caret` and the `focus` event give it, or null.
+pub(super) fn rect_json(r: Option<pecofence_platform::focus::ScreenRect>) -> Value {
+    r.map_or(
+        Value::Null,
+        |r| json!({ "x": r.x, "y": r.y, "width": r.width, "height": r.height }),
+    )
+}
+
+/// Where the pointer is (screen pixels) and the rectangle of its monitor: `pf.pointer` and the
+/// `pointer` event.
+pub(super) fn pointer_json() -> Value {
+    let p = window::cursor_pos();
+    let monitor = pecofence_platform::monitors::monitor_from_point(p.x, p.y);
+    let m = pecofence_platform::monitors::query(monitor).map(|m| m.bounds);
+    let m = m.map_or(Value::Null, |b| {
+        json!({ "x": b.left, "y": b.top, "width": b.right - b.left, "height": b.bottom - b.top })
+    });
+    json!({ "x": p.x, "y": p.y, "monitor": m })
 }
 
 /// The programs running and the program of the window in front (lowercase file names).
@@ -69,7 +98,48 @@ impl AppHost {
             cpu: Mutex::default(),
             media: Default::default(),
             programs: Mutex::default(),
+            focus: Mutex::default(),
         }
+    }
+
+    /// The focus and the caret, read again when the last read is 100 ms old or (`fresh`: the
+    /// reads of the `focus` event) at once. Runs on a worker thread: MSAA asks the program in
+    /// front, and one that does not answer would hold up the UI.
+    pub(super) fn focus_seen(&self, fresh: bool) -> Seen {
+        use pecofence_platform::focus::{Reading, read};
+        let Ok(mut last) = self.focus.lock() else {
+            return (None, None);
+        };
+        let recent = last
+            .0
+            .is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(100));
+        if recent && !fresh {
+            return last.1;
+        }
+        // A thread of an STA keeps its apartment (the guard fails and is not needed).
+        let _com = pecofence_platform::com::MtaGuard::init();
+        match read() {
+            Reading::Seen {
+                focus,
+                caret,
+                focus_by,
+                caret_by,
+            } => {
+                if (focus, caret) != last.1 {
+                    tracing::debug!(
+                        ?focus,
+                        ?caret,
+                        focus_by,
+                        caret_by,
+                        "plugins: the focus or the caret moved"
+                    );
+                }
+                last.1 = (focus, caret);
+            }
+            Reading::Own | Reading::Unknown => {}
+        }
+        last.0 = Some(std::time::Instant::now());
+        last.1
     }
 
     fn control(&self) -> HWND {
@@ -1068,6 +1138,9 @@ impl pecofence_plugin_host::Host for AppHost {
                 let app = (m.permissions.apps.iter()).find(|a| front == Some(a.to_lowercase()));
                 Ok(json!(app))
             }
+            "pointer" => Ok(pointer_json()),
+            "focus" => Ok(rect_json(self.focus_seen(false).0)),
+            "caret" => Ok(rect_json(self.focus_seen(false).1)),
             "notify" => {
                 let (title, body, sound) =
                     (arg(0), arg(1), args[2]["sound"].as_bool() == Some(true));

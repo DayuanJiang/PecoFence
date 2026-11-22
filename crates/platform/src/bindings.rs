@@ -1,4 +1,16 @@
 #[inline]
+pub unsafe fn AccessibleObjectFromWindow<T>(hwnd: HWND, dwid: u32) -> windows_core::Result<T>
+where
+    T: windows_core::Interface,
+{
+    windows_core::link!("oleacc.dll" "system" fn AccessibleObjectFromWindow(hwnd : HWND, dwid : u32, riid : *const windows_core::GUID, ppvobject : *mut *mut core::ffi::c_void) -> windows_core::HRESULT);
+    let mut result__ = core::ptr::null_mut();
+    unsafe {
+        AccessibleObjectFromWindow(hwnd, dwid, &T::IID, &mut result__)
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+    }
+}
+#[inline]
 pub unsafe fn AddClipboardFormatListener(hwnd: HWND) -> windows_core::BOOL {
     windows_core::link!("user32.dll" "system" fn AddClipboardFormatListener(hwnd : HWND) -> windows_core::BOOL);
     unsafe { AddClipboardFormatListener(hwnd) }
@@ -1500,6 +1512,11 @@ pub unsafe fn IsClipboardFormatAvailable(format: u32) -> windows_core::BOOL {
     unsafe { IsClipboardFormatAvailable(format) }
 }
 #[inline]
+pub unsafe fn IsHungAppWindow(hwnd: HWND) -> windows_core::BOOL {
+    windows_core::link!("user32.dll" "system" fn IsHungAppWindow(hwnd : HWND) -> windows_core::BOOL);
+    unsafe { IsHungAppWindow(hwnd) }
+}
+#[inline]
 pub unsafe fn IsIconic(hwnd: HWND) -> windows_core::BOOL {
     windows_core::link!("user32.dll" "system" fn IsIconic(hwnd : HWND) -> windows_core::BOOL);
     unsafe { IsIconic(hwnd) }
@@ -2988,6 +3005,11 @@ pub unsafe fn UpdateWindow(hwnd: HWND) -> windows_core::BOOL {
     unsafe { UpdateWindow(hwnd) }
 }
 #[inline]
+pub unsafe fn VariantClear(pvarg: *mut VARIANTARG) -> windows_core::HRESULT {
+    windows_core::link!("oleaut32.dll" "system" fn VariantClear(pvarg : *mut VARIANTARG) -> windows_core::HRESULT);
+    unsafe { VariantClear(pvarg) }
+}
+#[inline]
 pub unsafe fn WaitForMultipleObjects(
     lphandles: &[HANDLE],
     bwaitall: bool,
@@ -3283,6 +3305,7 @@ pub const CC_RGBINIT: i32 = 1;
 pub const CF_DIB: i32 = 8;
 pub const CF_HDROP: i32 = 15;
 pub const CF_UNICODETEXT: i32 = 13;
+pub const CHILDID_SELF: i32 = 0;
 #[repr(C, packed(1))]
 #[cfg(target_arch = "x86")]
 #[derive(Clone, Copy, Default)]
@@ -4566,6 +4589,387 @@ pub const HWND_MESSAGE: HWND = HWND(-3 as _);
 pub const HWND_NOTOPMOST: HWND = HWND(-2 as _);
 pub const HWND_TOP: HWND = HWND(0 as _);
 pub const HWND_TOPMOST: HWND = HWND(-1 as _);
+windows_core::imp::define_interface!(
+    IAccessible,
+    IAccessible_Vtbl,
+    0x618736e0_3c3d_11cf_810c_00aa00389b71
+);
+impl core::ops::Deref for IAccessible {
+    type Target = IDispatch;
+    fn deref(&self) -> &Self::Target {
+        unsafe { core::mem::transmute(self) }
+    }
+}
+windows_core::imp::interface_hierarchy!(IAccessible, windows_core::IUnknown, IDispatch);
+impl IAccessible {
+    pub(crate) unsafe fn accParent(&self) -> windows_core::Result<IDispatch> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accParent)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
+    pub(crate) unsafe fn accChildCount(&self) -> windows_core::Result<i32> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accChildCount)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .map(|| result__)
+        }
+    }
+    pub(crate) unsafe fn accChild(&self, varchild: &VARIANT) -> windows_core::Result<IDispatch> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accChild)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute_copy(varchild),
+                &mut result__,
+            )
+            .and_then(|| windows_core::imp::Type::from_abi(result__))
+        }
+    }
+    pub(crate) unsafe fn accName(
+        &self,
+        varchild: &VARIANT,
+    ) -> windows_core::Result<windows_core::BSTR> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accName)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute_copy(varchild),
+                &mut result__,
+            )
+            .map(|| core::mem::transmute(result__))
+        }
+    }
+    pub(crate) unsafe fn accValue(
+        &self,
+        varchild: &VARIANT,
+    ) -> windows_core::Result<windows_core::BSTR> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accValue)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute_copy(varchild),
+                &mut result__,
+            )
+            .map(|| core::mem::transmute(result__))
+        }
+    }
+    pub(crate) unsafe fn accDescription(
+        &self,
+        varchild: &VARIANT,
+    ) -> windows_core::Result<windows_core::BSTR> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accDescription)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute_copy(varchild),
+                &mut result__,
+            )
+            .map(|| core::mem::transmute(result__))
+        }
+    }
+    pub(crate) unsafe fn accRole(&self, varchild: &VARIANT) -> windows_core::Result<VARIANT> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accRole)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute_copy(varchild),
+                &mut result__,
+            )
+            .map(|| core::mem::transmute(result__))
+        }
+    }
+    pub(crate) unsafe fn accState(&self, varchild: &VARIANT) -> windows_core::Result<VARIANT> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accState)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute_copy(varchild),
+                &mut result__,
+            )
+            .map(|| core::mem::transmute(result__))
+        }
+    }
+    pub(crate) unsafe fn accHelp(
+        &self,
+        varchild: &VARIANT,
+    ) -> windows_core::Result<windows_core::BSTR> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accHelp)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute_copy(varchild),
+                &mut result__,
+            )
+            .map(|| core::mem::transmute(result__))
+        }
+    }
+    pub(crate) unsafe fn accHelpTopic(
+        &self,
+        pszhelpfile: *mut windows_core::BSTR,
+        varchild: &VARIANT,
+    ) -> windows_core::Result<i32> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accHelpTopic)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute(pszhelpfile),
+                core::mem::transmute_copy(varchild),
+                &mut result__,
+            )
+            .map(|| result__)
+        }
+    }
+    pub(crate) unsafe fn accKeyboardShortcut(
+        &self,
+        varchild: &VARIANT,
+    ) -> windows_core::Result<windows_core::BSTR> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accKeyboardShortcut)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute_copy(varchild),
+                &mut result__,
+            )
+            .map(|| core::mem::transmute(result__))
+        }
+    }
+    pub(crate) unsafe fn accFocus(&self) -> windows_core::Result<VARIANT> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accFocus)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .map(|| core::mem::transmute(result__))
+        }
+    }
+    pub(crate) unsafe fn accSelection(&self) -> windows_core::Result<VARIANT> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accSelection)(
+                windows_core::Interface::as_raw(self),
+                &mut result__,
+            )
+            .map(|| core::mem::transmute(result__))
+        }
+    }
+    pub(crate) unsafe fn accDefaultAction(
+        &self,
+        varchild: &VARIANT,
+    ) -> windows_core::Result<windows_core::BSTR> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accDefaultAction)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute_copy(varchild),
+                &mut result__,
+            )
+            .map(|| core::mem::transmute(result__))
+        }
+    }
+    pub(crate) unsafe fn accSelect(
+        &self,
+        flagsselect: i32,
+        varchild: &VARIANT,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).accSelect)(
+                windows_core::Interface::as_raw(self),
+                flagsselect,
+                core::mem::transmute_copy(varchild),
+            )
+        }
+    }
+    pub(crate) unsafe fn accLocation(
+        &self,
+        pxleft: *mut i32,
+        pytop: *mut i32,
+        pcxwidth: *mut i32,
+        pcyheight: *mut i32,
+        varchild: &VARIANT,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).accLocation)(
+                windows_core::Interface::as_raw(self),
+                pxleft as _,
+                pytop as _,
+                pcxwidth as _,
+                pcyheight as _,
+                core::mem::transmute_copy(varchild),
+            )
+        }
+    }
+    pub(crate) unsafe fn accNavigate(
+        &self,
+        navdir: i32,
+        varstart: &VARIANT,
+    ) -> windows_core::Result<VARIANT> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accNavigate)(
+                windows_core::Interface::as_raw(self),
+                navdir,
+                core::mem::transmute_copy(varstart),
+                &mut result__,
+            )
+            .map(|| core::mem::transmute(result__))
+        }
+    }
+    pub(crate) unsafe fn accHitTest(&self, xleft: i32, ytop: i32) -> windows_core::Result<VARIANT> {
+        unsafe {
+            let mut result__ = core::mem::zeroed();
+            (windows_core::Interface::vtable(self).accHitTest)(
+                windows_core::Interface::as_raw(self),
+                xleft,
+                ytop,
+                &mut result__,
+            )
+            .map(|| core::mem::transmute(result__))
+        }
+    }
+    pub(crate) unsafe fn accDoDefaultAction(&self, varchild: &VARIANT) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).accDoDefaultAction)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute_copy(varchild),
+            )
+        }
+    }
+    pub(crate) unsafe fn SetaccName(
+        &self,
+        varchild: &VARIANT,
+        szname: &windows_core::BSTR,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetaccName)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute_copy(varchild),
+                core::mem::transmute_copy(szname),
+            )
+        }
+    }
+    pub(crate) unsafe fn SetaccValue(
+        &self,
+        varchild: &VARIANT,
+        szvalue: &windows_core::BSTR,
+    ) -> windows_core::HRESULT {
+        unsafe {
+            (windows_core::Interface::vtable(self).SetaccValue)(
+                windows_core::Interface::as_raw(self),
+                core::mem::transmute_copy(varchild),
+                core::mem::transmute_copy(szvalue),
+            )
+        }
+    }
+}
+#[repr(C)]
+pub struct IAccessible_Vtbl {
+    pub base__: IDispatch_Vtbl,
+    pub accParent: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub accChildCount:
+        unsafe extern "system" fn(*mut core::ffi::c_void, *mut i32) -> windows_core::HRESULT,
+    pub accChild: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        VARIANT,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub accName: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        VARIANT,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub accValue: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        VARIANT,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub accDescription: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        VARIANT,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub accRole: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        VARIANT,
+        *mut VARIANT,
+    ) -> windows_core::HRESULT,
+    pub accState: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        VARIANT,
+        *mut VARIANT,
+    ) -> windows_core::HRESULT,
+    pub accHelp: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        VARIANT,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub accHelpTopic: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut *mut core::ffi::c_void,
+        VARIANT,
+        *mut i32,
+    ) -> windows_core::HRESULT,
+    pub accKeyboardShortcut: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        VARIANT,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub accFocus:
+        unsafe extern "system" fn(*mut core::ffi::c_void, *mut VARIANT) -> windows_core::HRESULT,
+    pub accSelection:
+        unsafe extern "system" fn(*mut core::ffi::c_void, *mut VARIANT) -> windows_core::HRESULT,
+    pub accDefaultAction: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        VARIANT,
+        *mut *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub accSelect:
+        unsafe extern "system" fn(*mut core::ffi::c_void, i32, VARIANT) -> windows_core::HRESULT,
+    pub accLocation: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        *mut i32,
+        *mut i32,
+        *mut i32,
+        *mut i32,
+        VARIANT,
+    ) -> windows_core::HRESULT,
+    pub accNavigate: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        i32,
+        VARIANT,
+        *mut VARIANT,
+    ) -> windows_core::HRESULT,
+    pub accHitTest: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        i32,
+        i32,
+        *mut VARIANT,
+    ) -> windows_core::HRESULT,
+    pub accDoDefaultAction:
+        unsafe extern "system" fn(*mut core::ffi::c_void, VARIANT) -> windows_core::HRESULT,
+    pub SetaccName: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        VARIANT,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+    pub SetaccValue: unsafe extern "system" fn(
+        *mut core::ffi::c_void,
+        VARIANT,
+        *mut core::ffi::c_void,
+    ) -> windows_core::HRESULT,
+}
+impl windows_core::RuntimeName for IAccessible {}
 windows_core::imp::define_interface!(
     IAdviseSink,
     IAdviseSink_Vtbl,
@@ -19808,6 +20212,8 @@ impl Default for NUMA_NODE_RELATIONSHIP_0 {
         unsafe { core::mem::zeroed() }
     }
 }
+pub const OBJID_CARET: i32 = -8;
+pub const OBJID_CLIENT: i32 = -4;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OLEMENUGROUPWIDTHS {
@@ -20863,6 +21269,7 @@ pub struct VARIANT_0_0_0_0 {
     pub pvRecord: *mut core::ffi::c_void,
     pub pRecInfo: core::mem::ManuallyDrop<Option<IRecordInfo>>,
 }
+pub type VARIANTARG = VARIANT;
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct VARIANT_BOOL(pub i16);
@@ -20907,6 +21314,7 @@ pub struct VS_FIXEDFILEINFO {
     pub dwFileDateMS: u32,
     pub dwFileDateLS: u32,
 }
+pub const VT_DISPATCH: VARENUM = 9;
 pub const VT_I4: VARENUM = 3;
 pub const VirtualDesktopManager: windows_core::GUID =
     windows_core::GUID::from_u128(0xaa509086_5ca9_4c25_8f95_589d3c07b48a);

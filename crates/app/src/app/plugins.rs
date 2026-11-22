@@ -436,6 +436,8 @@ impl App {
                 screen: p.manifest.permissions.screen,
                 webrtc: p.manifest.permissions.webrtc,
             },
+            pointer: p.manifest.permissions.pointer,
+            focus: p.manifest.permissions.focus,
         })
     }
 
@@ -745,8 +747,10 @@ impl App {
                     fences = fences.len(),
                     "plugins: installed, its fences start again"
                 );
-                // A web plugin's page, its rules and its main.js are the new version's.
+                // A web plugin's page, its rules and its main.js are the new version's; a
+                // command the update brings with its own shortcut gets it where it has none.
                 for fence in fences {
+                    self.seed_plugin_keys(fence);
                     self.restart_web_page(fence);
                     self.start_script(fence);
                 }
@@ -937,6 +941,9 @@ impl App {
         let made = self.plugin_fence_at(id, x, y);
         tracing::info!(id, made = made.is_some(), "plugins: fence added");
         self.tool_clear_of = None;
+        if let Some(fence) = made {
+            self.seed_plugin_keys(fence);
+        }
     }
 
     /// A fence of plugin `id` titled after it, placed near (`x`, `y`).

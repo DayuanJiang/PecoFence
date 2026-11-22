@@ -59,7 +59,7 @@ const CALLS: &str = "time.now time.format http.get http.post data.read data.writ
     sys.battery open openSystem run folder.pick folder.list folder.read folder.write folder.mkdir \
     folder.trash folder.writeBytes notify launch.list \
     launch.open launch.pick launch.remove media.current media.control apps.running apps.front \
-    drop.read drop.text drop.save";
+    drop.read drop.text drop.save pointer focus caret";
 
 /// A step of a drag over the page (`WebFence::page_drag`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,6 +86,10 @@ pub struct Plugin {
     /// It may see the media session (`media` event) and know of programs (`apps` event).
     pub media: bool,
     pub apps: bool,
+    /// Interface 3: it may know where the pointer is (`pointer` event) and where the focus and
+    /// the caret are (`focus` event).
+    pub pointer: bool,
+    pub focus: bool,
     pub asks: Asks,
 }
 

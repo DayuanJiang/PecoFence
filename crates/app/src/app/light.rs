@@ -118,11 +118,23 @@ pub(super) struct Light {
     /// Whether the programs are read for plugins (`apps`, every 5 s), and what each fence was
     /// last told (kept while the reads stop: a change meanwhile is told when they start again).
     apps: (bool, HashMap<FenceId, Value>),
+    /// Interface 3: whether the pointer is read for the `pointer` event, and where it was last.
+    pointer: (bool, Option<Value>),
+    /// Whether the focus and the caret are read for the `focus` event, whether a read is under
+    /// way on its thread (one at a time: a program in front that does not answer holds one
+    /// thread, not one more every 100 ms), and what was last told.
+    focus: (bool, Arc<AtomicBool>, Option<Value>),
 }
 
 /// The control window's timer of the programs read for `pf.apps` and the `apps` event.
 pub(super) const TIMER_PLUGIN_APPS: usize = 134;
 const APPS_EVERY_MS: u32 = 5000;
+/// The control window's timers of the `pointer` event (at most 30 a second) and the `focus`
+/// event (the focus and the caret read 10 times a second).
+pub(super) const TIMER_PLUGIN_POINTER: usize = 135;
+pub(super) const TIMER_PLUGIN_FOCUS: usize = 136;
+const POINTER_EVERY_MS: u32 = 33;
+const FOCUS_EVERY_MS: u32 = 100;
 
 impl App {
     fn light_send(&self, cmd: host::Command) {
@@ -697,6 +709,7 @@ impl App {
     /// in the background) or a web plugin's page that may see it is open; the same for the
     /// programs (`apps`, every 5 s).
     pub(super) fn sync_media(&mut self) {
+        self.sync_seeing();
         // A page counts while it shows, or hidden with `background`.
         let pages: Vec<_> = self
             .fences
@@ -798,6 +811,128 @@ impl App {
                 self.plugin_event(fence, "apps", state.clone());
                 self.web_event(fence, "apps", state);
             }
+        }
+    }
+
+    /// Interface 3: the fences whose plugin may know where the pointer is (`pointer`) or where
+    /// the focus and the caret are (`focus`), as `wants` and `page` say, and runs in a fence that
+    /// shows (or in the background), or whose web page runs.
+    fn seeing_watchers(
+        &self,
+        wants: fn(&pecofence_core::plugins::Permissions) -> bool,
+        page: fn(&crate::web_plugin::Plugin) -> bool,
+    ) -> Vec<FenceId> {
+        let mut fences: Vec<FenceId> = match self.light.host.as_ref() {
+            Some(api) => (self.light.running.iter())
+                .filter(|(f, r)| {
+                    let p = api.manifest(**f).map(|m| m.permissions.clone());
+                    p.is_some_and(|p| wants(&p) && (r.1 || p.background))
+                })
+                .map(|(f, _)| *f)
+                .collect(),
+            None => Vec::new(),
+        };
+        let pages = self.fences.values().filter_map(|w| w.web());
+        fences.extend(
+            pages
+                .filter(|w| w.runs() && page(&w.plugin))
+                .map(|w| w.fence),
+        );
+        fences.sort();
+        fences.dedup();
+        fences
+    }
+
+    /// The pointer and focus reads start with the first plugin that may know of them and shows.
+    fn sync_seeing(&mut self) {
+        let hwnd = self.control.hwnd();
+        if !self.light.pointer.0
+            && !self
+                .seeing_watchers(|p| p.pointer, |w| w.pointer)
+                .is_empty()
+        {
+            tracing::info!(
+                "plugins: one may know where the pointer is, it is read 30 times a second from now on"
+            );
+            self.light.pointer.0 = true;
+            window::set_timer(hwnd, TIMER_PLUGIN_POINTER, POINTER_EVERY_MS);
+        }
+        if !self.light.focus.0 && !self.seeing_watchers(|p| p.focus, |w| w.focus).is_empty() {
+            tracing::info!(
+                "plugins: one may know where the focus and the caret are, they are read 10 times a second from now on"
+            );
+            self.light.focus.0 = true;
+            window::set_timer(hwnd, TIMER_PLUGIN_FOCUS, FOCUS_EVERY_MS);
+        }
+    }
+
+    /// `TIMER_PLUGIN_POINTER`: where the pointer is; each watching plugin and page gets
+    /// `pointer` ({x, y, monitor}) when it moved. The reads stop when none watches.
+    pub(super) fn poll_plugin_pointer(&mut self) {
+        let fences = self.seeing_watchers(|p| p.pointer, |w| w.pointer);
+        if fences.is_empty() {
+            self.light.pointer = (false, None);
+            return tracing::info!("plugins: none knows where the pointer is now, its reads stop");
+        }
+        window::set_timer(self.control.hwnd(), TIMER_PLUGIN_POINTER, POINTER_EVERY_MS);
+        let now = light_host::pointer_json();
+        if self.light.pointer.1.as_ref() == Some(&now) {
+            return;
+        }
+        self.light.pointer.1 = Some(now.clone());
+        for fence in fences {
+            self.plugin_event(fence, "pointer", now.clone());
+            self.web_event(fence, "pointer", now.clone());
+        }
+    }
+
+    /// `TIMER_PLUGIN_FOCUS`: the focus and the caret read on a worker thread (MSAA asks the
+    /// program in front), one read at a time; the reads stop when none watches.
+    pub(super) fn poll_plugin_focus(&mut self) {
+        if self.seeing_watchers(|p| p.focus, |w| w.focus).is_empty() {
+            self.light.focus.0 = false;
+            self.light.focus.2 = None;
+            return tracing::info!(
+                "plugins: none knows where the focus and the caret are now, their reads stop"
+            );
+        }
+        window::set_timer(self.control.hwnd(), TIMER_PLUGIN_FOCUS, FOCUS_EVERY_MS);
+        let reading = self.light.focus.1.clone();
+        if reading.swap(true, Ordering::AcqRel) {
+            return tracing::debug!("plugins: the focus read before is still under way");
+        }
+        let api = self.light_host();
+        let (jobs, control) = (self.light.jobs.clone(), self.control.hwnd().0 as isize);
+        let read = move || {
+            let seen = api.focus_seen(true);
+            reading.store(false, Ordering::Release);
+            let job: UiJob = Box::new(move |app: &mut App| app.plugin_focus_read(seen));
+            Self::post_job(&jobs, control, job);
+        };
+        let spawned = std::thread::Builder::new()
+            .name("pecofence-focus".into())
+            .spawn(read);
+        if let Err(e) = spawned {
+            self.light.focus.1.store(false, Ordering::Release);
+            tracing::warn!(error = %e, "plugins: no thread to read the focus");
+        }
+    }
+
+    /// The watching plugins and pages get `focus` ({focus, caret}) when either moved.
+    fn plugin_focus_read(&mut self, seen: light_host::Seen) {
+        if !self.light.focus.0 {
+            return;
+        }
+        let state = json!({
+            "focus": light_host::rect_json(seen.0), "caret": light_host::rect_json(seen.1),
+        });
+        if self.light.focus.2.as_ref() == Some(&state) {
+            return;
+        }
+        self.light.focus.2 = Some(state.clone());
+        for fence in self.seeing_watchers(|p| p.focus, |w| w.focus) {
+            self.plugin_event(fence, "focus", state.clone());
+            self.web_event(fence, "focus", state.clone());
         }
     }
 

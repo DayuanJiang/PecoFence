@@ -134,6 +134,8 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
             "permissions.media control and playpause, next or previous".into(),
         ),
         "apps.running" | "apps.front" => (!p.apps.is_empty(), "permissions.apps".into()),
+        "pointer" => (p.pointer, "permissions.pointer".into()),
+        "focus" | "caret" => (p.focus, "permissions.focus".into()),
         "drop.read" | "drop.text" | "drop.save" => (
             p.drop.iter().any(|d| d == "files")
                 && args.get(0).is_some_and(Value::is_u64)
@@ -447,6 +449,28 @@ mod tests {
             None
         );
         assert!(refusal(&control, "media.control", &json!(["seek"])).is_some());
+        // Interface 3: the pointer, and the focus with the caret, each by its own permission.
+        let seeing = |pointer: bool, focus: bool| Permissions {
+            pointer,
+            focus,
+            ..Permissions::default()
+        };
+        assert!(
+            refused("pointer", json!([]))
+                .unwrap()
+                .contains("permissions.pointer")
+        );
+        assert!(
+            refused("caret", json!([]))
+                .unwrap()
+                .contains("permissions.focus")
+        );
+        assert_eq!(refusal(&seeing(true, false), "pointer", &json!([])), None);
+        assert!(refusal(&seeing(true, false), "focus", &json!([])).is_some());
+        for call in ["focus", "caret"] {
+            assert_eq!(refusal(&seeing(false, true), call, &json!([])), None);
+        }
+        assert!(refusal(&seeing(false, true), "pointer", &json!([])).is_some());
         for bad in ["", ".hidden", "a/b", "..", "x".repeat(65).as_str(), "名字"] {
             assert!(
                 refused("data.write", json!([bad, "x"])).is_some(),

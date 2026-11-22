@@ -212,8 +212,21 @@ pub struct Command {
     pub id: String,
     #[serde(default)]
     pub title: BTreeMap<String, String>,
+    /// Interface 3: the shortcut it brings (`Ctrl+Shift+M`), given to the fence an install makes
+    /// unless the user's fence has one for it already (see [`command_key_ok`]).
     #[serde(default)]
     pub key: Option<String>,
+}
+
+/// Whether `key` may be a command's own shortcut: a shortcut PecoFence's own boxes would take
+/// (`Hotkey::check`: a supported key, Ctrl, Alt or Win, no common Windows shortcut) that also
+/// holds Shift or Win. Ctrl+Alt with a letter alone is AltGr on German, French, Polish and other
+/// layouts: a plugin that took it would eat a character those users type (AltGr+Q is @).
+pub fn command_key_ok(key: &str) -> bool {
+    use crate::hotkey::{Hotkey, SHIFT, WIN};
+    Hotkey::parse(key)
+        .and_then(Hotkey::check)
+        .is_ok_and(|h| h.mods & (SHIFT | WIN) != 0)
 }
 
 /// What a plugin may do in the folders the user picks for it: none < read < readwrite < any.
@@ -812,6 +825,7 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
             && c.id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
             && c.title.get("en").is_some_and(|t| !t.trim().is_empty())
             && short(&c.title, 40)
+            && c.key.as_deref().is_none_or(command_key_ok)
     };
     if p.commands.len() > 8 || !once(&ids) || !p.commands.iter().all(command_ok) {
         return Err(format!("{}: bad commands", m.id));
@@ -2072,5 +2086,48 @@ mod tests {
         let only_cn = manifest(|v| v["name"] = json!({ "en": "Countdown", "zh-CN": "倒数日" }));
         assert_eq!(pick(&only_cn.name, "zh-TW"), "倒数日");
         assert_eq!(pick(&BTreeMap::new(), "en"), "");
+    }
+
+    #[test]
+    fn a_command_brings_a_shortcut_with_shift_or_win_and_pointer_and_focus_read() {
+        for good in [
+            "Ctrl+Shift+M",
+            "Ctrl+Alt+Shift+M",
+            "Win+Shift+F9",
+            "Alt+Shift+Space",
+            "ctrl + shift + f2",
+        ] {
+            assert!(command_key_ok(good), "{good}");
+        }
+        // Ctrl+Alt+M is AltGr+M (µ on a German keyboard); no Shift or Win; no modifier; Win
+        // alone; Task Manager's Ctrl+Shift+Esc; a key PecoFence does not know; nothing.
+        for bad in [
+            "Ctrl+Alt+M",
+            "Ctrl+M",
+            "Alt+F5",
+            "Shift+M",
+            "M",
+            "Win+M",
+            "Ctrl+Shift+Esc",
+            "Ctrl+Shift+Nope",
+            "",
+        ] {
+            assert!(!command_key_ok(bad), "{bad}");
+        }
+        let keyed = |key: &str| {
+            manifest(|v| {
+                v["api"] = API.into();
+                v["permissions"] = json!({ "commands": [{ "id": "show", "title": { "en": "Show" }, "key": key }] });
+            })
+        };
+        assert!(check_manifest(&keyed("Ctrl+Shift+M")).is_ok());
+        assert_eq!(
+            keyed("Ctrl+Shift+M").permissions.commands[0].key.as_deref(),
+            Some("Ctrl+Shift+M")
+        );
+        assert!(check_manifest(&keyed("Ctrl+Alt+M")).is_err());
+        let p = manifest(|v| v["permissions"] = json!({ "pointer": true, "focus": true }));
+        assert!(p.permissions.pointer && p.permissions.focus);
+        assert!(!manifest(|_| {}).permissions.pointer);
     }
 }

@@ -38,6 +38,9 @@
     openSystem: (name) => call("openSystem", [String(name)]),
     run: (program, args) => call("run", [String(program), (args || []).map(String)]),
     notify: (title, body, options) => call("notify", [String(title), String(body || ""), options || {}]),
+    pointer: () => call("pointer", []),
+    focus: () => call("focus", []),
+    caret: () => call("caret", []),
   };
   for (const [group, names] of Object.entries({
     http: ["get", "post"],
