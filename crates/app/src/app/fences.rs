@@ -1207,8 +1207,8 @@ impl App {
     /// (`SetWindowRgn` covers only its icon cells), so visibility is probed at the renamed
     /// item's cell instead of the window's top-center. Skips without stealing focus when
     /// another popup / Peek is active, the fence is hidden / rolled (including temporarily
-    /// hover-expanded rolled fences) / on another tab, or another window covers the fence,
-    /// reconciling `win_active` so hover-select never stalls.
+    /// hover-expanded rolled fences) / faded under another fence / on another tab, or another
+    /// window covers the fence, reconciling `win_active` so hover-select never stalls.
     pub(super) fn give_keyboard_after_item_rename(
         &mut self,
         fence: FenceId,
@@ -1225,6 +1225,7 @@ impl App {
         let peek_active = self.peek.is_some();
         let shows_content = w.shows_content();
         let rolled = w.is_rolled();
+        let covered_faded = w.covered_faded();
         let tab_matches = w.active_fence() == fence;
         let in_sight = !rename_open
             && !note_edit_open
@@ -1232,6 +1233,7 @@ impl App {
             && !peek_active
             && shows_content
             && !rolled
+            && !covered_faded
             && tab_matches
             && item_rename_fence_in_sight(w, item);
         let decision = item_rename_focus_decision(ItemRenameFocusInput {
@@ -1241,6 +1243,7 @@ impl App {
             peek_active,
             shows_content,
             rolled,
+            covered_faded,
             tab_matches,
             in_sight,
         });
@@ -1829,6 +1832,7 @@ pub(super) struct ItemRenameFocusInput {
     pub(super) peek_active: bool,
     pub(super) shows_content: bool,
     pub(super) rolled: bool,
+    pub(super) covered_faded: bool,
     pub(super) tab_matches: bool,
     pub(super) in_sight: bool,
 }
@@ -1854,6 +1858,9 @@ pub(super) fn item_rename_focus_decision(input: ItemRenameFocusInput) -> ItemRen
     }
     if !input.shows_content || input.rolled {
         return ItemRenameFocusDecision::Skip("fence hidden or rolled");
+    }
+    if input.covered_faded {
+        return ItemRenameFocusDecision::Skip("fence faded under another fence");
     }
     if !input.tab_matches {
         return ItemRenameFocusDecision::Skip("another tab is active");

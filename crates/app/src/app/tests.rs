@@ -1226,6 +1226,7 @@ fn item_rename_focus_restore_checks_popups_peek_visibility_and_tab() {
         peek_active: false,
         shows_content: true,
         rolled: false,
+        covered_faded: false,
         tab_matches: true,
         in_sight: true,
     };
@@ -1277,6 +1278,15 @@ fn item_rename_focus_restore_checks_popups_peek_visibility_and_tab() {
             ..ready
         }),
         ItemRenameFocusDecision::Skip("fence hidden or rolled")
+    );
+    // A fence faded out under another fence opened on top keeps its Win32 HWND visible, so
+    // `covered_faded` must block focus restoration even when the probe point is uncovered.
+    assert_eq!(
+        item_rename_focus_decision(ItemRenameFocusInput {
+            covered_faded: true,
+            ..ready
+        }),
+        ItemRenameFocusDecision::Skip("fence faded under another fence")
     );
     assert_eq!(
         item_rename_focus_decision(ItemRenameFocusInput {

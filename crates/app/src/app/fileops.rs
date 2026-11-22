@@ -266,6 +266,9 @@ impl App {
                 p.since = Instant::now();
             }
             self.select_pasted();
+            if self.fileops_running == 0 {
+                self.reconcile_fence_activation();
+            }
         }
     }
 

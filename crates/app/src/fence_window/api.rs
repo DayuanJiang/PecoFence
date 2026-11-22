@@ -3502,6 +3502,11 @@ impl FenceWindow {
         self.with_view(|v| v.set_covered(covered));
     }
 
+    /// Faded out under another fence opened on top (`set_covered`).
+    pub fn covered_faded(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| v.covered_faded)
+    }
+
     /// The Peek has this fence's opacity (`peek_fade_prepare`, `peek_fade_out`).
     pub fn peek_faded(&self) -> bool {
         self.view.borrow().as_ref().is_some_and(|v| v.peek_faded)
