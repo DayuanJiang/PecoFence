@@ -423,6 +423,14 @@ impl App {
             clipboard_read: p.manifest.permissions.clipboard.reads(),
             media: p.manifest.permissions.media.reads(),
             apps: !p.manifest.permissions.apps.is_empty(),
+            asks: crate::web_plugin::Asks {
+                camera: p.manifest.permissions.camera,
+                microphone: p.manifest.permissions.microphone,
+                location: p.manifest.permissions.location,
+                notify: p.manifest.permissions.notify,
+                screen: p.manifest.permissions.screen,
+                webrtc: p.manifest.permissions.webrtc,
+            },
         })
     }
 

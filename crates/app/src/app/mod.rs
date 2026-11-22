@@ -3276,6 +3276,9 @@ impl App {
                 call,
                 args,
             } => self.web_call(page, id, call, args),
+            Command::WebNotification { fence, title, body } => {
+                self.plugin_notify(fence, &title, &body, false)
+            }
             Command::WebPageFailed { page, failure } => self.web_page_failed(page, failure),
             Command::WebPageReload { page, uri } => self.reload_web_page(page, uri),
             Command::EditNote { fence, caret } => self.edit_note(fence, caret),

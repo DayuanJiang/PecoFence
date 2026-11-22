@@ -286,6 +286,14 @@ fn local_address(
 
 /// The SHA-256 of `data` in lowercase hex, for a header that carries the hash of a body.
 pub fn sha256_hex(data: &[u8]) -> String {
+    sha256(data)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// The SHA-256 of `data`.
+pub fn sha256(data: &[u8]) -> [u8; 32] {
     use crate::bindings::{BCRYPT_SHA256_ALG_HANDLE, BCryptHash};
     let mut hash = [0u8; 32];
     // SAFETY: `hash` is a live buffer of the length passed, the length of a SHA-256. Should
@@ -299,7 +307,7 @@ pub fn sha256_hex(data: &[u8]) -> String {
             hash.len() as u32,
         )
     };
-    hash.iter().map(|byte| format!("{byte:02x}")).collect()
+    hash
 }
 
 /// Sends `verb` for `url` with `body`; returns the status and, for a 200, the response's body

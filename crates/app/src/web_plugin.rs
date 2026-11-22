@@ -8,9 +8,12 @@
 //! network or a proxy, a secure context with an origin per plugin), every response
 //! with a fixed Content-Security-Policy whose `connect-src` lists only the plugin's `network`
 //! hosts (and the plugin's own files), and a Connection-Allowlist of the same hosts, which the
-//! browser applies to every connection (`Plugin::allowlist`). Permission requests, other sites,
+//! browser applies to every connection (`Plugin::allowlist`). The camera, the microphone, the
+//! location, notifications (shown as PecoFence's corner card), the screen picker and WebRTC only
+//! for a plugin that declares them (`Asks`, interface 3); other permission requests, other sites,
 //! new windows, external protocols (`mailto:`, `ms-settings:`: they start as navigations) and
-//! downloads are refused. The page calls `pf.*` through `postMessage`; only its own main frame is
+//! downloads are refused. Inline code runs only as written in the plugin's own HTML file: the CSP
+//! of each HTML file lists the hashes of its inline scripts and handlers (`page_csp`). The page calls `pf.*` through `postMessage`; only its own main frame is
 //! heard, and the app answers it with the code the light layer uses (`App::web_call`). Events
 //! (`show`, `hide`, `resize`, `theme`, `settings`, ...) reach the page as messages too.
 
@@ -24,7 +27,7 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 use windows_webview::{
     Color, CompositionController, Controller, ControllerOptions, Environment, EventRegistration,
-    MemoryUsageTargetLevel, MoveFocusReason, PermissionState, PreferredColorScheme,
+    MemoryUsageTargetLevel, MoveFocusReason, PermissionKind, PermissionState, PreferredColorScheme,
     ProcessFailedKind, WebResourceResponse, WebView,
 };
 
@@ -68,6 +71,7 @@ pub enum DragStep {
 }
 
 /// An installed web plugin a fence shows.
+#[derive(Clone)]
 pub struct Plugin {
     pub id: String,
     pub dir: PathBuf,
@@ -82,6 +86,21 @@ pub struct Plugin {
     /// It may see the media session (`media` event) and know of programs (`apps` event).
     pub media: bool,
     pub apps: bool,
+    pub asks: Asks,
+}
+
+/// What the page may ask the browser for (interface 3); everything else is refused.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Asks {
+    pub camera: bool,
+    pub microphone: bool,
+    pub location: bool,
+    /// Web notifications, shown as PecoFence's corner card (`notify`, as `pf.notify`).
+    pub notify: bool,
+    /// The screen picker (`getDisplayMedia`).
+    pub screen: bool,
+    /// WebRTC: no Connection-Allowlist on its responses and the constructors left in the page.
+    pub webrtc: bool,
 }
 
 /// Why a page stopped (`Command::WebPageFailed`).
@@ -100,8 +119,11 @@ impl Plugin {
         format!("{SCHEME}://{}/", self.id)
     }
 
-    /// The header every response gets; what the plugin writes itself does not count.
-    fn csp(&self) -> String {
+    /// The header every response gets; what the plugin writes itself does not count. `inline`:
+    /// the inline scripts and handler attributes of the HTML file it goes with, which run (by
+    /// their hashes); a script the page makes at run time does not, nor `eval`. Styles may be
+    /// inline, pictures, fonts and media may come from `data:` and `blob:` addresses.
+    fn csp(&self, inline: &pecofence_core::page_csp::InlineCode) -> String {
         let hosts: Vec<String> = self
             .network
             .iter()
@@ -112,9 +134,27 @@ impl Plugin {
         } else {
             format!(" {}", hosts.join(" "))
         };
+        let hash = |code: &String| {
+            let sum = pecofence_platform::http::sha256(code.as_bytes());
+            format!(" 'sha256-{}'", pecofence_core::page_csp::base64(&sum))
+        };
+        let scripts: String = inline
+            .scripts
+            .iter()
+            .chain(&inline.handlers)
+            .map(hash)
+            .collect();
+        let handlers = if inline.handlers.is_empty() {
+            ""
+        } else {
+            " 'unsafe-hashes'"
+        };
         // 'self': the plugin may fetch its own files (a JSON of its own).
         format!(
-            "default-src 'self'; connect-src 'self'{connect}; frame-src 'none'; form-action 'none'"
+            "default-src 'self'; script-src 'self'{scripts}{handlers}; \
+             style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; \
+             font-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self'; \
+             connect-src 'self'{connect}; frame-src 'none'; form-action 'none'"
         )
     }
 
@@ -296,12 +336,10 @@ impl WebFence {
         let mut events = Vec::new();
         // The plugin's files, each with the fixed CSP.
         {
-            let (dir, csp, allow, origin) = (
-                self.plugin.dir.clone(),
-                self.plugin.csp(),
-                self.plugin.allowlist(),
-                origin.clone(),
-            );
+            let (plugin, origin) = (self.plugin.clone(), origin.clone());
+            // WebRTC (`webrtc`): its connections go to peers nobody knows ahead, which the
+            // allowlist would refuse.
+            let allow = (!plugin.asks.webrtc).then(|| plugin.allowlist());
             events.push(
                 webview.on_web_resource_requested(&format!("{origin}*"), move |req| {
                     let uri = req.uri();
@@ -314,20 +352,29 @@ impl WebFence {
                     let plain = path.split('/').all(|p| {
                         !p.is_empty() && p != "." && p != ".." && !p.contains(['\\', ':', '%'])
                     });
-                    let body = plain.then(|| std::fs::read(dir.join(path)).ok()).flatten();
+                    let body = plain
+                        .then(|| std::fs::read(plugin.dir.join(path)).ok())
+                        .flatten();
                     tracing::debug!(path, found = body.is_some(), "web plugin: file asked for");
+                    let inline = match &body {
+                        Some(b) if mime(path).starts_with("text/html") => {
+                            pecofence_core::page_csp::inline_code(&String::from_utf8_lossy(b))
+                        }
+                        _ => pecofence_core::page_csp::InlineCode::default(),
+                    };
                     let response = match body {
                         Some(b) => WebResourceResponse::new(b).content_type(mime(path)),
                         None => WebResourceResponse::new(Vec::new()).status(404, "Not Found"),
                     };
                     // nosniff: a file runs as a script only when it is one (a picture that is
                     // also valid JavaScript does not).
-                    Some(
-                        response
-                            .header("Content-Security-Policy", &csp)
-                            .header("Connection-Allowlist", &allow)
-                            .header("X-Content-Type-Options", "nosniff"),
-                    )
+                    let response = response
+                        .header("Content-Security-Policy", &plugin.csp(&inline))
+                        .header("X-Content-Type-Options", "nosniff");
+                    Some(match &allow {
+                        Some(allow) => response.header("Connection-Allowlist", allow),
+                        None => response,
+                    })
                 })?,
             );
         }
@@ -362,11 +409,68 @@ impl WebFence {
             })?);
         }
         {
-            let id = id.clone();
+            let (id, asks) = (id.clone(), self.plugin.asks);
             events.push(webview.on_permission_requested(move |args| {
-                let _ = args.set_state(PermissionState::Deny);
-                tracing::info!(plugin = %id, kind = ?args.kind(), "web plugin: permission refused");
+                let kind = args.kind();
+                let allowed = match kind {
+                    PermissionKind::Camera => asks.camera,
+                    PermissionKind::Microphone => asks.microphone,
+                    PermissionKind::Geolocation => asks.location,
+                    PermissionKind::Notifications => asks.notify,
+                    _ => false,
+                };
+                // The manifest answers each request: a decision kept in the plugin's profile
+                // would answer for a manifest that says otherwise (an update, a version back).
+                let _ = args.set_saves_in_profile(false);
+                let state = if allowed { PermissionState::Allow } else { PermissionState::Deny };
+                let _ = args.set_state(state);
+                if allowed {
+                    tracing::info!(plugin = %id, ?kind, "web plugin: permission allowed, the manifest declares it");
+                } else {
+                    tracing::info!(plugin = %id, ?kind, "web plugin: permission refused");
+                }
             })?);
+        }
+        // L1: the screen picker shows only for a plugin with `screen`; for any other page the
+        // capture is cancelled before it shows (0.5.0 let every page open it).
+        {
+            let (id, screen) = (id.clone(), self.plugin.asks.screen);
+            match webview.on_screen_capture_starting(move |args| {
+                if !screen {
+                    let _ = args.set_cancel(true);
+                    tracing::info!(plugin = %id, "web plugin: screen capture refused, not declared");
+                } else {
+                    tracing::info!(plugin = %id, "web plugin: screen capture, the picker shows");
+                }
+            }) {
+                Ok(e) => events.push(e),
+                Err(e) => {
+                    tracing::warn!(plugin = %self.plugin.id, error = %e, "web plugin: no screen capture event, the page is not shown");
+                    return Err(e);
+                }
+            }
+        }
+        // Web notifications: PecoFence's corner card (`notify`), never Windows' own.
+        {
+            let (id, fence, queue, notify) = (
+                id.clone(),
+                self.fence,
+                self.queue.clone(),
+                self.plugin.asks.notify,
+            );
+            match webview.on_notification_received(move |args| {
+                let _ = args.set_handled(true);
+                if !notify {
+                    return tracing::info!(plugin = %id, "web plugin: notification dropped, no notify");
+                }
+                let (title, body) = args.title_and_body();
+                let _ = args.report_shown();
+                tracing::info!(plugin = %id, %fence, "web plugin: notification shown as PecoFence's card");
+                queue.push(Command::WebNotification { fence, title, body });
+            }) {
+                Ok(e) => events.push(e),
+                Err(e) => tracing::warn!(plugin = %self.plugin.id, error = %e, "web plugin: no notification event, notifications stay refused"),
+            }
         }
         {
             let id = id.clone();
@@ -477,7 +581,10 @@ impl WebFence {
             })?);
         }
         webview.add_script_to_execute_on_document_created(&bridge_script(
-            &origin, &self.init, drags,
+            &origin,
+            &self.init,
+            drags,
+            self.plugin.asks.webrtc,
         ))?;
         let (x, y, w, h, scale) = self.bounds.get();
         controller.set_rasterization_scale(scale)?;
@@ -856,21 +963,24 @@ fn scheme(dark: bool) -> PreferredColorScheme {
     }
 }
 
+/// No WebRTC without `webrtc`: it reaches hosts the CSP does not list. Connection-Allowlist
+/// blocks it in the browser (WebView2 152 and later); removing it here covers older runtimes. The
+/// script runs in every frame, blank ones too.
+const NO_WEBRTC: &str = r#"for (const k of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCRtpSender", "RTCRtpReceiver", "RTCIceTransport"]) delete window[k];"#;
+
 /// `pf` for the page, made before its own scripts run (scripts the host adds are not subject
 /// to the page's CSP). Every call goes to the app as `{id, call, args}` and comes back as
 /// `{id, result}` or `{id, error}`; events come as `{event, data}`. A right-click the page does
 /// not take (`preventDefault` on `contextmenu`) asks for the fence's menu; a navigation to another
 /// site is cancelled in the page and told to the app (`navigate`, for the log).
-fn bridge_script(origin: &str, init: &serde_json::Value, drags: bool) -> String {
+fn bridge_script(origin: &str, init: &serde_json::Value, drags: bool, webrtc: bool) -> String {
     let origin = origin.trim_end_matches('/');
+    let no_webrtc = if webrtc { "" } else { NO_WEBRTC };
     // A WebView2 that cannot check a drag out of the page (`on_drag_starting`): none starts.
     let no_drags = if drags { "" } else { NO_DRAGS };
     format!(
         r#"(() => {{
-  // No WebRTC: it reaches hosts the CSP does not list. Connection-Allowlist blocks it in the
-  // browser (WebView2 152 and later); removing it here covers older runtimes. The script runs in
-  // every frame, blank ones too.
-  for (const k of ["RTCPeerConnection", "webkitRTCPeerConnection", "RTCDataChannel", "RTCRtpSender", "RTCRtpReceiver", "RTCIceTransport"]) delete window[k];
+  {no_webrtc}
   // No File System Access (the browser has it off too, `--disable-blink-features`): a file picked
   // or dropped there would be read or written without `folders`.
   for (const k of ["showOpenFilePicker", "showSaveFilePicker", "showDirectoryPicker"]) delete window[k];
