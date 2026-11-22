@@ -50,6 +50,8 @@ struct NewTextMetric {
 /// Every family GDI lists for any character set, as it lists them.
 fn enum_families() -> Vec<String> {
     windows_core::link!("gdi32.dll" "system" fn EnumFontFamiliesExW(hdc: HDC, font: *const LOGFONTW, proc: Option<unsafe extern "system" fn(*const LOGFONTW, *const NewTextMetric, u32, LPARAM) -> i32>, lparam: LPARAM, flags: u32) -> i32);
+    const RASTER_FONTTYPE: u32 = 1;
+    const DEVICE_FONTTYPE: u32 = 2;
     const TRUETYPE_FONTTYPE: u32 = 4;
     const NTM_PS_OPENTYPE: u32 = 0x0002_0000;
     const NTM_TT_OPENTYPE: u32 = 0x0004_0000;
@@ -60,8 +62,13 @@ fn enum_families() -> Vec<String> {
         kind: u32,
         list: LPARAM,
     ) -> i32 {
-        // SAFETY: GDI hands an ENUMLOGFONTEXW (it starts with the LOGFONTW) and a
-        // NEWTEXTMETRICEXW (it starts with the NEWTEXTMETRICW) for an outline font; `list` is
+        // A raster or device font comes with a TEXTMETRICW only, which ends before
+        // `ntmFlags`; DirectWrite draws neither, so they are passed over unread.
+        if kind & (RASTER_FONTTYPE | DEVICE_FONTTYPE) != 0 {
+            return 1;
+        }
+        // SAFETY: GDI hands an ENUMLOGFONTEXW (it starts with the LOGFONTW) and, for the
+        // outline fonts left, a NEWTEXTMETRICEXW (it starts with the NEWTEXTMETRICW); `list` is
         // the Vec `enum_families` passed.
         let (font, flags, list) = unsafe {
             (
