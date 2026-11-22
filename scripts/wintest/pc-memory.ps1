@@ -7,7 +7,8 @@
 param(
   [string]$Root = 'C:\Users\me\pfmem-check',
   [string]$Order = 'a,b,a,b',
-  [int]$Minutes = 30
+  [int]$Minutes = 30,
+  [string]$PluginsUrl = ''
 )
 $ErrorActionPreference = 'Continue'
 # The CLI prints UTF-8: read in the console code page, Chinese fence titles break its JSON.
@@ -17,8 +18,9 @@ New-Item -ItemType Directory -Force $Out | Out-Null
 function Note($m) { "$(Get-Date -Format HH:mm:ss.fff) $m" | Add-Content "$Out\log.txt" -Encoding UTF8 }
 $env:PECOFENCE_INSTANCE = 'memcheck'
 $env:PECOFENCE_USAGE_URL = 'http://127.0.0.1:9'
-# A local plugin index (pc-memory.sh --feed): build b reads it as its store, so its tool fences
-# move to plugins as on a real upgrade (a test instance moves them only from a test index).
+# A plugin index (pc-memory.sh --feed: a local folder served here, or the store's address):
+# every build reads it as its store, so tool fences move to plugins as on a real upgrade (a test
+# instance moves them only from an index named this way; a build without plugins ignores it).
 $feedJob = $null
 if (Test-Path "$Root\feed\index.json") {
   $feedJob = Start-Job -ArgumentList "$Root\feed" -ScriptBlock {
@@ -29,8 +31,10 @@ if (Test-Path "$Root\feed\index.json") {
       if (Test-Path -LiteralPath $path -PathType Leaf) { $b = [IO.File]::ReadAllBytes($path); $h = "HTTP/1.1 200 OK`r`nContent-Length: $($b.Length)`r`nConnection: close`r`n`r`n" } else { $b = @(); $h = "HTTP/1.1 404 Not Found`r`nContent-Length: 0`r`nConnection: close`r`n`r`n" }
       $hb = [Text.Encoding]::ASCII.GetBytes($h); $s.Write($hb, 0, $hb.Length); if ($b.Length) { $s.Write($b, 0, $b.Length) }; $s.Flush() } catch {} finally { $c.Close() } }
   }
-  Note "plugin feed for build b on 127.0.0.1:8764 from $Root\feed"
+  $PluginsUrl = 'http://127.0.0.1:8764/index.json'
+  Note "plugin feed on 127.0.0.1:8764 from $Root\feed"
 }
+if ($PluginsUrl) { $env:PECOFENCE_PLUGINS_URL = $PluginsUrl; Note "plugin index: $PluginsUrl" }
 
 Add-Type @'
 using System; using System.Runtime.InteropServices; using System.Text;
@@ -86,8 +90,6 @@ foreach ($b in $Order.Split(',')) {
   Remove-Item "$dir\config" -Recurse -Force -ErrorAction SilentlyContinue
   New-Item -ItemType Directory -Force "$dir\config" | Out-Null
   Copy-Item "$Root\config.json" "$dir\config\config.json"
-  if ($feedJob -and $b -eq 'b') { $env:PECOFENCE_PLUGINS_URL = 'http://127.0.0.1:8764/index.json' }
-  else { Remove-Item Env:PECOFENCE_PLUGINS_URL -ErrorAction SilentlyContinue }
   $p = Start-Process "$dir\pecofence.exe" -ArgumentList '--portable', '--no-hide-icons' -WorkingDirectory $dir -PassThru
   $t0 = Get-Date
   Note "run $run build $b pid $($p.Id) priority $($p.PriorityClass)"
