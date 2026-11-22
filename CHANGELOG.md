@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A file made with the desktop's own menu on a monitor that 「桌面」 does not stand on stays on that monitor (feedback #207). After a right-click on the empty desktop of the second monitor, 新建 or 粘贴 put the file into 「桌面」 on the first one, far from the click (2,690 px in a test with two monitors), because 「桌面」 arranged like the desktop covers its own monitor only. Within 30 seconds of such a click, a new file that no rule takes now goes into the plain fence nearest the click on that monitor, after its other icons; a folder, smart or tool fence takes none, nor a locked or hidden fence or one on another virtual desktop, and a fence with tabs takes it into the tab on screen. The empty file or folder that 新建 makes gets its name box there, as Windows starts renaming it. With no such fence on that monitor the file goes to 「桌面」 as before.
+
 ## 0.5.0
 
 - Plugins: the tools come from a plugin store, and anyone can write more. Settings › 小工具 › 插件 lists the plugins of the store (the repository DayuanJiang/PecoFence-plugins on GitHub), each with its name, author, version, description and grey tags for what reaches past its fence (联网, 剪贴板, 后台运行, 占用内存较多; 启动程序 in yellow). A click on a row opens its details: 它会做的事, the settings of each of its fences (插件设置 in a plugin fence's menu opens them too), a shortcut for each of its commands, 在 GitHub 上看介绍 and 卸载. 安装 first shows a warning with the author, the reviewed version and every thing the plugin will do (「它会做：…」, 「插件只能做这里列出的事，每个版本都经过自动检查和审查。」); 安装并添加 installs it and puts its fence on the desktop, and 添加到桌面 adds another one later. In the tray and fence menus, 新建小工具 lists the installed plugins, then 更多插件… (this list) and 用自己的脚本…; 新建便签 adds a fence of the 便签 plugin, or opens its row to install it first. The store holds 便签, 时钟, 天气, GitHub 仓库动态, 电脑状态, 剪贴板历史, 待办, 倒数日, 每日记录, 启动器, 正在播放, Ollama and Home Assistant.

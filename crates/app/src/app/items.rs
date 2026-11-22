@@ -266,6 +266,94 @@ impl App {
         }
     }
 
+    /// Feedback #207: what the desktop's menu (新建, 粘贴) makes after a right-click on the empty
+    /// desktop of a monitor that 「桌面」 does not stand on stays on that monitor, as on a
+    /// Windows desktop: it goes into the plain fence nearest the click there, after its other
+    /// icons. Only files no rule took (the rules come first), within [`super::fences::MENU_PLACE_FOR`]
+    /// of the click; with no fence there that can take them they stay in 「桌面」. One new empty
+    /// file or folder (what 新建 makes) gets its name box, as Windows starts renaming it.
+    pub(super) fn route_to_menu_monitor(&mut self, added: &[PathBuf]) {
+        let Some((at, pt)) = self.desktop_menu_at else {
+            return;
+        };
+        let Some(inbox) = self.state.inbox_id() else {
+            return;
+        };
+        let new: Vec<ItemId> = added
+            .iter()
+            .filter_map(|p| self.state.item_id_for_path(p))
+            .filter(|id| {
+                self.state.fence(inbox).is_some_and(|f| {
+                    f.items.iter().any(|r| {
+                        r.item_id == *id && r.assigned_by == pecofence_core::AssignedBy::Migration
+                    })
+                })
+            })
+            .collect();
+        let Some(wa) = self.work_area_at(pt.x, pt.y) else {
+            return;
+        };
+        let on_wa = |r: RECT| {
+            let (x, y) = ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+            x >= wa.left && x < wa.right && y >= wa.top && y < wa.bottom
+        };
+        let inbox_there = self
+            .fences
+            .get(&self.state.host_of(inbox))
+            .is_some_and(|w| on_wa(w.rect()));
+        if new.is_empty() || inbox_there || at.elapsed() >= super::fences::MENU_PLACE_FOR {
+            return;
+        }
+        // Plain fences that show their items on that monitor now: not a folder, smart or tool
+        // fence, not 「桌面」, not locked, hidden or on another virtual desktop. A tab host takes
+        // them into the tab on screen.
+        let gap = |r: RECT| {
+            let dx = (r.left - pt.x).max(pt.x - r.right).max(0) as f64;
+            let dy = (r.top - pt.y).max(pt.y - r.bottom).max(0) as f64;
+            dx.hypot(dy)
+        };
+        let pick = self
+            .fences
+            .iter()
+            .filter(|(host, w)| {
+                self.on_current_desktop(**host)
+                    && pecofence_platform::desktop::is_visible(w.hwnd())
+                    && on_wa(w.rect())
+            })
+            .map(|(host, w)| (self.state.active_tab_of(*host), w.rect()))
+            .filter(|(id, _)| {
+                self.state
+                    .fence(*id)
+                    .is_some_and(|f| f.kind == FenceKind::Virtual && f.holds_items() && !f.locked)
+            })
+            .map(|(id, r)| (gap(r), id))
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        // The click is used up by these icons, as 「桌面」's own (#238).
+        self.desktop_menu_at = None;
+        let Some((distance, fence)) = pick else {
+            tracing::info!(click = ?pt, monitor = ?wa, items = new.len(), "desktop menu on a monitor without 「桌面」: no fence there takes new items, 「桌面」 keeps them");
+            return;
+        };
+        tracing::info!(click = ?pt, monitor = ?wa, %fence, distance = distance.round(), items = new.len(), "desktop menu on a monitor without 「桌面」: new items go to the fence nearest the click");
+        let moved = self.move_items_placed(&new, fence, None);
+        let fresh = |id: &ItemId| {
+            self.state
+                .item(*id)
+                .and_then(|it| it.path().map(PathBuf::from))
+                .is_some_and(|p| {
+                    std::fs::read_dir(&p).map_or_else(
+                        |_| std::fs::metadata(&p).is_ok_and(|m| m.len() == 0),
+                        |mut d| d.next().is_none(),
+                    )
+                })
+        };
+        if moved > 0 && new.len() == 1 && fresh(&new[0]) {
+            self.refresh_fence(fence);
+            self.begin_item_rename(fence, new[0]);
+        }
+        self.schedule_save();
+    }
+
     /// Moves portal items out to the real desktop and routes them into `to` once they appear.
     pub(super) fn move_portal_items_to_desktop(
         &mut self,

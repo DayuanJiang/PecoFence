@@ -1,8 +1,10 @@
 # Issues round 2026-11-22, two monitors.
-#   A  Feedback #207: a file made from the desktop menu (新建) after a right-click on the empty
-#      desktop of the second monitor goes where the right-click was, as on the Windows desktop.
-#      「桌面」 arranged like the desktop stands on the first monitor only; the new file went into
-#      it there.
+#   A  Feedback #207: 「桌面」 arranged like the desktop stands on the first monitor only. A file
+#      made from the desktop menu (新建) after a right-click on the empty desktop of the second
+#      monitor went into it there; now it goes into the plain fence nearest the click on the
+#      second monitor (a folder fence takes nothing), and the menu's 新建 › 文件夹 opens its name
+#      box there. With no fence on that monitor it still goes to 「桌面」. On the first monitor
+#      it takes the cell under the click, as before (#238).
 #   B  Feedback #203: icons dragged from a fence onto 「桌面」 arranged like the desktop and
 #      back, one and several at once, recorded (rec.ps1) so the frames can be looked at.
 # Default: both parts.
@@ -16,14 +18,23 @@ trap { PfTrap $_; continue }
 . C:\pf\kit\rec.ps1
 
 # Windows 11's desktop menu (a XAML window) closes on Esc once it has the keyboard.
-function CloseDeskMenu() {
-  for ($i = 0; $i -lt 4; $i++) {
+# Closes Windows' desktop menu: Esc twice, then clicks on bare desktop of the first monitor, until
+# the point `$pt` (where the menu was opened) is bare desktop again and the menu's window is not in
+# front. Esc does not always reach a menu opened on the second monitor.
+function CloseDeskMenu($pt) {
+  $desk = @('Progman', 'WorkerW')
+  for ($i = 0; $i -lt 8; $i++) {
     $fg = [W]::Cls([L]::GetForegroundWindow())
-    if ($fg -notlike 'Xaml*' -and $fg -ne '#32768') { break }
-    [G]::Press(0x1B); Start-Sleep -Milliseconds 400
+    $root = if ($pt) { [W]::RootClassAt($pt[0], $pt[1]) } else { 'Progman' }
+    if ($fg -notlike 'Xaml*' -and $fg -ne '#32768' -and $desk -contains $root) { break }
+    if ($i -lt 2) { [G]::Press(0x1B) } else {
+      $p = FreeSpot -NearX 300 -NearY 900
+      if ($p) { [Mon2]::Click($p[0], $p[1], $false) }
+    }
+    Start-Sleep -Milliseconds 600
   }
   CloseMenus
-  Log "desk menu closed; in front: $([W]::Cls([L]::GetForegroundWindow()))"
+  Log "desk menu closed after $i tries; in front: $([W]::Cls([L]::GetForegroundWindow())); at the click: $(if ($pt) { [W]::RootClassAt($pt[0], $pt[1]) })"
 }
 function M2Fmt($r) { if (-not $r) { return 'none' }; return "($($r.x),$($r.y) $($r.w)x$($r.h))" }
 function M2In($r, $x, $y) { return $r -and $x -ge $r.x -and $x -lt $r.x + $r.w -and $y -ge $r.y -and $y -lt $r.y + $r.h }
@@ -65,6 +76,29 @@ function M2WaitWhere($file, $sec = 8) {
   for ($i = 0; $i -lt $sec * 4; $i++) { $w = M2Where $file; if ($w -and $w.pt) { return $w }; Start-Sleep -Milliseconds 250 }
   return (M2Where $file)
 }
+# Clicks the item named `$name` of the open desktop menu (Windows 11's XAML menu, or the
+# classic one), found by UI Automation; false when it is not there.
+function M2MenuClick($name) {
+  $cond = New-Object Windows.Automation.PropertyCondition([Windows.Automation.AutomationElement]::NameProperty, $name)
+  for ($i = 0; $i -lt 10; $i++) {
+    foreach ($h in @([W]::Tops('Microsoft.UI.Content.PopupWindowSiteBridge')) + @([W]::Tops('XamlExplorerHostIslandWindow_WASDK')) + @([W]::Tops('#32768'))) {
+      try {
+        $e = [Windows.Automation.AutomationElement]::FromHandle($h).FindFirst([Windows.Automation.TreeScope]::Descendants, $cond)
+      } catch { $e = $null }
+      if ($e) {
+        $r = $e.Current.BoundingRectangle
+        if ($r.Width -gt 0) {
+          [Mon2]::Click([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2), $false)
+          Log "menu item '$name' clicked at $([int]($r.X + $r.Width / 2)),$([int]($r.Y + $r.Height / 2))"
+          return $true
+        }
+      }
+    }
+    Start-Sleep -Milliseconds 300
+  }
+  Log "menu item '$name' not found"
+  return $false
+}
 function M2Fmtw($w) { if (-not $w) { return 'not found' }; return "fence '$($w.fence)' ($($w.kind), desktop=$($w.desktop)) $(M2Fmt $w.rect) cell=$($w.cell) at $($w.pt -join ',')" }
 
 Case 'two monitors: A 1920x1080 at 100 % (primary), B at 125 % to its right'
@@ -82,64 +116,103 @@ foreach ($f in @(PfJson fence list)) { $g = FenceGet $f.id; Log "fence '$($g.tit
 ShotAll 'start'
 
 if ($Part -match 'A') {
-  Case 'A: a new file after a right-click on the empty desktop of B'
+  # As the reporter has it: 「新项目出现在桌面时自动归类」 off, so the new files are no rule's (a
+  # folder made by 新建 would go to 「文件夹」 by the first-run rules otherwise).
+  $rulesWere = Pf rule list
+  [IO.File]::WriteAllText("$PfRun\pk207-rules-off.json", ($rulesWere -replace '"keepUpdated":\s*true', '"keepUpdated": false'), (New-Object Text.UTF8Encoding $false))
+  Pf rule import "$PfRun\pk207-rules-off.json" | Out-Null
   $at = M2Bare $MB.workArea
   Check 'setup: bare desktop found on B' ($at -ne $null) "at=$($at -join ',') B work $(M2Fmt $MB.workArea)"
   if ($at) {
+    # No fence on B: the new file stays in 「桌面」 (on A), as before.
+    Case 'A: no fence on B: a new file after a right-click on B goes to 「桌面」'
     [Mon2]::Click($at[0], $at[1], $true); Start-Sleep -Milliseconds 900
     ShotAll 'a-menu-on-b'
-    CloseDeskMenu
-    # The menu's 新建 › 文本文档 writes the file at once; the test writes it itself. A type no rule
-    # takes, so the rules send it to 「桌面」.
+    CloseDeskMenu $at
+    # The menu's 新建 writes the file at once; the test writes it itself. A type no rule takes.
+    $n0 = "pk207 none $(Get-Date -Format HHmmss).pk207"
+    Set-Content -LiteralPath (Join-Path $PfDesk $n0) 'x'
+    $w0 = M2WaitWhere $n0
+    ShotAll 'a-no-fence-on-b'
+    Check 'with no fence on B the new file goes to 「桌面」' ($w0 -and $w0.desktop) (M2Fmtw $w0)
+    Remove-Item -LiteralPath (Join-Path $PfDesk $n0) -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+
+    # Fences on B around the click: a folder fence nearest (it shows its folder, so it takes
+    # nothing), the plain fence Near a little farther, Far in a corner.
+    Case 'A: fences on B: a new file after a right-click on B goes into the plain fence nearest the click'
+    $dir = Join-Path $PfRun 'pk207dir'
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    Pf fence create --portal $dir --rect "$($at[0] + 70),$($at[1] - 120),300,250" | Out-Null
+    Pf fence create --title Near --rect "$($at[0] - 470),$($at[1] - 120),380,250" | Out-Null
+    Pf fence create --title Far --rect "$($MB.workArea.x + 30),$($MB.workArea.y + $MB.workArea.h - 230),300,200" | Out-Null
+    Start-Sleep -Seconds 2
+    foreach ($t in 'pk207dir', 'Near', 'Far') { $g = FenceGet $t; Log "fence '$t' $(M2Fmt $g.windowRect)" }
+    $bare = @('Progman', 'WorkerW') -contains [W]::RootClassAt($at[0], $at[1])
+    Check 'setup: the click spot on B is still bare desktop' $bare "at=$($at -join ',') root=$([W]::RootClassAt($at[0], $at[1]))"
+    [Mon2]::Click($at[0], $at[1], $true); Start-Sleep -Milliseconds 900
+    CloseDeskMenu $at
     $n1 = "pk207 b $(Get-Date -Format HHmmss).pk207"
     Set-Content -LiteralPath (Join-Path $PfDesk $n1) 'x'
     $w1 = M2WaitWhere $n1
-    ShotAll 'a-new-file-b'
+    Start-Sleep -Milliseconds 600
+    ShotAll 'a-fence-on-b'
     Log "new file after the right-click on B ($($at -join ',')): $(M2Fmtw $w1)"
-    Check 'the new file shows on B, where the right-click was' ($w1 -and $w1.pt -and (M2In $MB.rect $w1.pt[0] $w1.pt[1])) (M2Fmtw $w1)
-    if ($w1 -and $w1.pt) {
-      $d = [math]::Sqrt([math]::Pow($w1.pt[0] - $at[0], 2) + [math]::Pow($w1.pt[1] - $at[1], 2))
-      Check 'it stands near the click (within two cells)' ($d -le 2.5 * 96 * 1.25) "distance $([int]$d) px"
-    }
+    Check 'the new file goes into Near, the plain fence on B nearest the click' ($w1 -and $w1.fence -eq 'Near') (M2Fmtw $w1)
+    $ren = @([W]::Tops('PecoFence.Rename')).Count
+    Check 'a file with content gets no name box' ($ren -eq 0) "rename windows=$ren"
     Remove-Item -LiteralPath (Join-Path $PfDesk $n1) -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+
+    # The real menu: 新建 › 文件夹 (English guest: New › Folder), clicked by UI Automation. (新建 ›
+    # 文本文档 comes with Notepad, which the Hyper-V runner removes.)
+    Case 'A: the desktop menu 新建 › 文件夹 on B opens the name box in Near'
+    $before = @(Get-ChildItem -LiteralPath $PfDesk -Directory | ForEach-Object Name)
+    [Mon2]::Click($at[0], $at[1], $true); Start-Sleep -Milliseconds 1200
+    $okNew = M2MenuClick 'New'
+    Start-Sleep -Milliseconds 900
+    ShotAll 'a-menu-new-b'
+    $okFolder = M2MenuClick 'Folder'
+    Check 'setup: the desktop menu took 新建 › 文件夹' ($okNew -and $okFolder) "new=$okNew folder=$okFolder"
+    Start-Sleep -Milliseconds 1500
+    $made = @(Get-ChildItem -LiteralPath $PfDesk -Directory | ForEach-Object Name | Where-Object { $before -notcontains $_ })
+    Log "folders the menu made: $($made -join ', ')"
+    if ($made.Count) {
+      $w3 = M2WaitWhere $made[0]
+      Start-Sleep -Milliseconds 600
+      ShotAll 'a-menu-new-folder-b'
+      Check 'the menu''s new folder goes into Near' ($w3 -and $w3.fence -eq 'Near') (M2Fmtw $w3)
+      $ren = @([W]::Tops('PecoFence.Rename')).Count
+      Check 'its name box opens' ($ren -ge 1) "rename windows=$ren; in front: $([W]::Cls([L]::GetForegroundWindow()))"
+      if ($ren -ge 1) {
+        [G]::Type('pk207 named'); Start-Sleep -Milliseconds 200; [G]::Press(0x0D); Start-Sleep -Milliseconds 1500
+        $named = Test-Path -LiteralPath (Join-Path $PfDesk 'pk207 named')
+        Check 'a name typed there renames the folder' $named "folders: $((Get-ChildItem -LiteralPath $PfDesk -Directory | ForEach-Object Name) -join ', ')"
+        ShotAll 'a-menu-new-folder-b-named'
+      }
+      CloseDeskMenu $at
+      foreach ($m in @($made) + 'pk207 named') { Remove-Item -LiteralPath (Join-Path $PfDesk $m) -Recurse -ErrorAction SilentlyContinue }
+    } else {
+      CloseDeskMenu $at
+    }
     Start-Sleep -Seconds 1
 
     # The same on A: 「桌面」 takes it under the click (0.5.0, #238).
     Case 'A: a new file after a right-click on the empty desktop of A (as before)'
     $atA = M2Bare $MA.workArea
     [Mon2]::Click($atA[0], $atA[1], $true); Start-Sleep -Milliseconds 900
-    CloseDeskMenu
+    CloseDeskMenu $atA
     $n2 = "pk207 a $(Get-Date -Format HHmmss).pk207"
     Set-Content -LiteralPath (Join-Path $PfDesk $n2) 'x'
     $w2 = M2WaitWhere $n2
     $want = "$([int][Math]::Floor(($atA[0] - $fi.windowRect.x - 4) / 80)),$([int][Math]::Floor(($atA[1] - $fi.windowRect.y - 4) / 96))"
     Check 'on A the new file takes the cell under the click in 「桌面」' ($w2 -and $w2.desktop -and $w2.cell -eq $want) "$(M2Fmtw $w2) want cell $want"
     Remove-Item -LiteralPath (Join-Path $PfDesk $n2) -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 1
-
-    # The real menu: 新建 › 文本文档 by its keys (English guest: New = w, Text Document = t).
-    Case 'A: the desktop menu 新建 › 文本文档 on B'
-    $before = @(Get-ChildItem -LiteralPath $PfDesk -Filter '*.txt' | ForEach-Object Name)
-    [Mon2]::Click($at[0], $at[1], $true); Start-Sleep -Milliseconds 1200
-    [G]::Press(0x57); Start-Sleep -Milliseconds 700
-    ShotAll 'a-menu-new-b'
-    [G]::Press(0x54); Start-Sleep -Milliseconds 1500
-    ShotAll 'a-menu-new-text-b'
-    $made = @(Get-ChildItem -LiteralPath $PfDesk -Filter '*.txt' | ForEach-Object Name | Where-Object { $before -notcontains $_ })
-    Log "files the menu made: $($made -join ', ')"
-    if ($made.Count) {
-      $w3 = M2WaitWhere $made[0]
-      Log "the menu's new text document: $(M2Fmtw $w3); in front: $([W]::Cls([L]::GetForegroundWindow()))"
-      Check 'the menu''s new text document shows on B' ($w3 -and $w3.pt -and (M2In $MB.rect $w3.pt[0] $w3.pt[1])) (M2Fmtw $w3)
-      [G]::Press(0x1B); Start-Sleep -Milliseconds 600
-      ShotAll 'a-menu-new-text-b-esc'
-      foreach ($m in $made) { Remove-Item -LiteralPath (Join-Path $PfDesk $m) -ErrorAction SilentlyContinue }
-    } else {
-      Log 'the menu keys made no file (the menu may not take w / t): not counted'
-      CloseDeskMenu
-    }
+    foreach ($t in 'pk207dir', 'Near', 'Far') { Pf fence delete $t | Out-Null }
     Start-Sleep -Seconds 1
   }
+  [IO.File]::WriteAllText("$PfRun\pk207-rules.json", $rulesWere, (New-Object Text.UTF8Encoding $false))
+  Pf rule import "$PfRun\pk207-rules.json" | Out-Null
 }
 
 if ($Part -match 'B') {

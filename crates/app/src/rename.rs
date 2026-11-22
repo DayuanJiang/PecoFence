@@ -710,7 +710,11 @@ fn begin_rename_at(
         }
     }
     window::show_normal(window.hwnd());
-    window::bring_to_front(window.hwnd());
+    // Explorer may hold the foreground (a file 新建 on the desktop routed into a fence, feedback
+    // #207): a plain switch is refused and the typed name went to Explorer's own hidden box.
+    if !window::claim_foreground(window.hwnd()) {
+        tracing::info!("name box shown without the keyboard: Windows refused the foreground");
+    }
     match select_end {
         Some(n) => ctl.focus_and_select(0, n as i32),
         None => ctl.focus_and_select_all(),
