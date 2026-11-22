@@ -1,12 +1,12 @@
 {
   "id": "seeing",
   "version": "1.0.0",
-  "api": 2,
+  "api": 3,
   "layer": "light",
   "name": { "en": "Seeing", "zh-CN": "看位置" },
   "description": { "en": "A test plugin that shows where the pointer, the focus and the caret are.", "zh-CN": "测试用的插件：显示鼠标、键盘焦点和输入光标在哪里。" },
   "author": "DayuanJiang",
-  "minPecoFence": "0.5.0",
+  "minPecoFence": "0.6.0",
   "permissions": {
     "pointer": true,
     "focus": true,
