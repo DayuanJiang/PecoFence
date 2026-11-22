@@ -3,8 +3,9 @@
 #      made from the desktop menu (新建) after a right-click on the empty desktop of the second
 #      monitor went into it there; now it goes into the plain fence nearest the click on the
 #      second monitor (a folder fence takes nothing), and the menu's 新建 › 文件夹 opens its name
-#      box there. With no fence on that monitor it still goes to 「桌面」. On the first monitor
-#      it takes the cell under the click, as before (#238).
+#      box there (a rolled fence opens; a locked one, also with tabs, takes nothing). With no fence
+#      on that monitor, or on 「桌面」's own monitor (also while it is hidden because it is empty),
+#      it still goes to 「桌面」. On the first monitor it takes the cell under the click (#238).
 #   B  Feedback #203: icons dragged from a fence onto 「桌面」 arranged like the desktop and
 #      back, one and several at once, recorded (rec.ps1) so the frames can be looked at.
 # Default: both parts.
@@ -164,9 +165,41 @@ if ($Part -match 'A') {
     Remove-Item -LiteralPath (Join-Path $PfDesk $n1) -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 1
 
+    # A fence with tabs nearer still, locked: the lock is its window's (the host's), so it takes
+    # nothing whichever tab it shows.
+    Case 'A: a locked fence with tabs on B takes nothing, whatever tab it shows'
+    Pf fence create --title Tabbed --rect "$($at[0] - 150),$($at[1] + 60),300,200" | Out-Null
+    Pf fence create --title TabX --rect "$($MB.workArea.x + 30),$($MB.workArea.y + 30),300,200" | Out-Null
+    Start-Sleep -Seconds 1
+    Pf fence merge TabX --into Tabbed | Out-Null
+    Start-Sleep -Seconds 1
+    Pf fence set Tabbed locked true | Out-Null
+    Start-Sleep -Seconds 2
+    $tg = FenceGet Tabbed; $tx = FenceGet TabX
+    $cfg = Get-Content (Join-Path $PfApp 'config\config.json') -Raw -ErrorAction SilentlyContinue
+    $act = @([regex]::Matches("$cfg", '"activeTab":\s*"([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
+    $shown = if ($act -contains $tx.id) { 'TabX (unlocked)' } elseif ($act -contains $tg.id) { 'Tabbed (the host)' } else { 'unknown' }
+    Log "Tabbed $($tg.id) $(M2Fmt $tg.windowRect) tabs=$($tg.tabs -join ',') locked=$($tg.locked); TabX $($tx.id) locked=$($tx.locked); shown tab: $shown"
+    [Mon2]::Click($at[0], $at[1], $true); Start-Sleep -Milliseconds 900
+    CloseDeskMenu $at
+    $n4 = "pk207 lock $(Get-Date -Format HHmmss).pk207"
+    Set-Content -LiteralPath (Join-Path $PfDesk $n4) 'x'
+    $w4 = M2WaitWhere $n4
+    Check "the locked fence with tabs takes nothing (shown tab: $shown): the file goes into Near" ($w4 -and $w4.fence -eq 'Near') (M2Fmtw $w4)
+    Remove-Item -LiteralPath (Join-Path $PfDesk $n4) -ErrorAction SilentlyContinue
+    Pf fence set Tabbed locked false | Out-Null
+    Pf fence delete TabX | Out-Null
+    Pf fence delete Tabbed | Out-Null
+    Start-Sleep -Seconds 1
+
+    # Near rolled up for the next case: it opens for the new folder (the reporter has 31 of 33 rolled).
+    Pf fence roll Near | Out-Null
+    Start-Sleep -Seconds 1
+    Check 'setup: Near is rolled up' ((FenceGet Near).rolledUp) "rolledUp=$((FenceGet Near).rolledUp)"
+
     # The real menu: 新建 › 文件夹 (English guest: New › Folder), clicked by UI Automation. (新建 ›
     # 文本文档 comes with Notepad, which the Hyper-V runner removes.)
-    Case 'A: the desktop menu 新建 › 文件夹 on B opens the name box in Near'
+    Case 'A: the desktop menu 新建 › 文件夹 on B with Near rolled up: Near opens, the name box opens there'
     $before = @(Get-ChildItem -LiteralPath $PfDesk -Directory | ForEach-Object Name)
     [Mon2]::Click($at[0], $at[1], $true); Start-Sleep -Milliseconds 1200
     $okNew = M2MenuClick 'New'
@@ -182,6 +215,7 @@ if ($Part -match 'A') {
       Start-Sleep -Milliseconds 600
       ShotAll 'a-menu-new-folder-b'
       Check 'the menu''s new folder goes into Near' ($w3 -and $w3.fence -eq 'Near') (M2Fmtw $w3)
+      Check 'Near opened for it' (-not (FenceGet Near).rolledUp) "rolledUp=$((FenceGet Near).rolledUp)"
       $ren = @([W]::Tops('PecoFence.Rename')).Count
       Check 'its name box opens' ($ren -ge 1) "rename windows=$ren; in front: $([W]::Cls([L]::GetForegroundWindow()))"
       if ($ren -ge 1) {
@@ -208,6 +242,29 @@ if ($Part -match 'A') {
     $want = "$([int][Math]::Floor(($atA[0] - $fi.windowRect.x - 4) / 80)),$([int][Math]::Floor(($atA[1] - $fi.windowRect.y - 4) / 96))"
     Check 'on A the new file takes the cell under the click in 「桌面」' ($w2 -and $w2.desktop -and $w2.cell -eq $want) "$(M2Fmtw $w2) want cell $want"
     Remove-Item -LiteralPath (Join-Path $PfDesk $n2) -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+
+    # 「桌面」 hidden while empty has no window: a right-click on its monitor still sends the new
+    # file to it (it stands there by its saved place), never to the nearest fence on A.
+    Case 'A: 「桌面」 hidden while empty: a new file after a right-click on A goes to 「桌面」'
+    $inTitle = $fi.title
+    $names = @(@(PfJson item list --fence $inTitle) | ForEach-Object { $_.name } | Where-Object { $_ })
+    foreach ($n in $names) { Pf item move $n --to 'Folders' | Out-Null }
+    Pf fence set $inbox.id hideWhenEmpty true | Out-Null
+    Start-Sleep -Seconds 2
+    $hid = FenceGet $inbox.id
+    Check 'setup: 「桌面」 is empty and has no window' (-not $hid.windowRect) "windowRect=$(M2Fmt $hid.windowRect) moved=$($names -join ', ')"
+    $atA2 = M2Bare $MA.workArea
+    [Mon2]::Click($atA2[0], $atA2[1], $true); Start-Sleep -Milliseconds 900
+    CloseDeskMenu $atA2
+    $n5 = "pk207 hidden $(Get-Date -Format HHmmss).pk207"
+    Set-Content -LiteralPath (Join-Path $PfDesk $n5) 'x'
+    $w5 = M2WaitWhere $n5
+    ShotAll 'a-hidden-desktop-fence'
+    Check 'the new file goes to 「桌面」, not to the nearest fence on A' ($w5 -and $w5.kind -eq 'inbox') (M2Fmtw $w5)
+    Remove-Item -LiteralPath (Join-Path $PfDesk $n5) -ErrorAction SilentlyContinue
+    Pf fence set $inbox.id hideWhenEmpty false | Out-Null
+    foreach ($n in $names) { Pf item move $n --to $inTitle | Out-Null }
     foreach ($t in 'pk207dir', 'Near', 'Far') { Pf fence delete $t | Out-Null }
     Start-Sleep -Seconds 1
   }
