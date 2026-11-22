@@ -438,12 +438,20 @@ pub(super) fn on_timer_hover_select(
     {
         // During a Peek the dimmer has the keyboard and hands the keys to the fence last used
         // (`focus_session`): no fence is the active window then, and each of them selects.
-        let elsewhere = !v.win_active
-            && !crate::note_edit::is_open()
-            && (behavior.floating.get() || keyboard_on_desktop());
+        // Read the real foreground window rather than cached `v.win_active` so a popup that
+        // closed without a second `WM_ACTIVATE(WA_INACTIVE)` cannot leave hover-select stuck.
+        let floating = behavior.floating.get();
+        let is_foreground = !floating && desktop::foreground_window() == hwnd;
+        let desktop_has_keyboard = !floating && !is_foreground && keyboard_on_desktop();
+        let (can_select, elsewhere) = hover_select_mode(
+            floating,
+            is_foreground,
+            crate::note_edit::is_open(),
+            desktop_has_keyboard,
+        );
         if let Some(i) = v.hover
             && !v.rolled_up
-            && (v.win_active || elsewhere)
+            && can_select
         {
             let changed = hover_item(
                 &mut v.selected,
