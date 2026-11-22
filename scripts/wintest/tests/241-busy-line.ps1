@@ -2,6 +2,8 @@
 # what the UI thread handled most, the frames drawn). The steps keep it busy for a minute with
 # fast pointer moves over a fence's icons (a mouse that reports thousands of moves a second)
 # and look for the line. On main there is no such line. About 3 minutes.
+# --var Part=low: a lighter load, between 2 and 10 % of a core (GitHub #251: 0.5.0 wrote the line
+# only from 10 %).
 $PfAllowLogErrors = $true
 
 Add-Type @'
@@ -62,6 +64,7 @@ if ($Part -eq 'other') { $n = [BusyMover]::Zigzag($spot[0] - 30, $spot[1] - 30, 
 # pointer): 1000 reports a second of the same point, over an icon of the fence.
 elseif ($Part -eq 'still') { $n = [BusyMover]::Zigzag($r.x + 80, $r.y + 100, 1, 1, 70, 1000) }
 elseif ($Part -eq 'shown') { $n = [BusyMover]::Zigzag($spot[0] - 30, $spot[1] - 30, 60, 60, 70, 1000) }
+elseif ($Part -eq 'low') { $n = [BusyMover]::Zigzag($r.x + 40, $r.y + 60, $r.w - 80, $r.h - 120, 70, 120) }
 else { $n = [BusyMover]::Zigzag($r.x + 40, $r.y + 60, $r.w - 80, $r.h - 120, 70, 8000) }
 $p.Refresh()
 $pct = [math]::Round(($p.TotalProcessorTime.TotalMilliseconds - $c0) / 700, 1)
@@ -69,7 +72,8 @@ Log "pointer moves: $n over 70 s; PecoFence used $pct % of a core"
 ParkMouse
 $line = PfWaitLog 'busy: PecoFence used the processor' 70
 Log "line: $line"
-Check 'the load kept PecoFence above 10 % of a core (else this case tests nothing)' ($pct -ge 10) "$pct %"
+if ($Part -eq 'low') { Check 'the load kept PecoFence between 2 and 10 % of a core (else this case tests nothing)' ($pct -ge 2 -and $pct -lt 10) "$pct %" }
+else { Check 'the load kept PecoFence above 10 % of a core (else this case tests nothing)' ($pct -ge 10) "$pct %" }
 Check 'a busy line names the threads and what the UI thread handled' ($line -match 'busy: PecoFence used the processor' -and $line -match 'threads=' -and $line -match 'ui_thread_handled=') "$line"
 PfQuit
 Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
