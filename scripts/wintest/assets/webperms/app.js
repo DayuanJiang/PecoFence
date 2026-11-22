@@ -42,26 +42,22 @@ window.t = {
       return why(e);
     }
   },
-  // Two peer connections of this page talk over a data channel (host candidates only).
+  // The ICE candidates of a connection with a STUN host (declared in the plugin's network): the
+  // server-reflexive one carries the public address. The browser's policy (default public
+  // interface only) keeps every other network adapter out of the candidates.
   webrtc: async () => {
     if (typeof RTCPeerConnection !== "function") return `no RTCPeerConnection (${typeof RTCPeerConnection})`;
     try {
-      const a = new RTCPeerConnection(), b = new RTCPeerConnection();
-      a.onicecandidate = (e) => e.candidate && b.addIceCandidate(e.candidate);
-      b.onicecandidate = (e) => e.candidate && a.addIceCandidate(e.candidate);
-      const ch = a.createDataChannel("t");
-      const got = new Promise((ok) => {
-        b.ondatachannel = (e) => (e.channel.onmessage = (m) => ok(`message ${m.data}`));
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+      pc.createDataChannel("t");
+      const found = [];
+      const done = new Promise((ok) => {
+        pc.onicecandidate = (e) => (e.candidate ? found.push(`${e.candidate.type} ${e.candidate.address}`) : ok());
       });
-      ch.onopen = () => ch.send("hi");
-      await a.setLocalDescription(await a.createOffer());
-      await b.setRemoteDescription(a.localDescription);
-      await b.setLocalDescription(await b.createAnswer());
-      await a.setRemoteDescription(b.localDescription);
-      const r = await settle(got, 6000);
-      a.close();
-      b.close();
-      return r === "pending" ? `no message (ice ${a.iceConnectionState})` : r;
+      await pc.setLocalDescription(await pc.createOffer());
+      await settle(done, 8000);
+      pc.close();
+      return `candidates: ${found.join(", ") || "none"}`;
     } catch (e) {
       return why(e);
     }

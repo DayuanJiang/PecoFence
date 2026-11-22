@@ -13,7 +13,7 @@
 # run.sh --bin target/wintest-bin-debug --extra <0.5.0 debug bin> --var Part=O --var Api=3 ...
 if (-not $Part) { $Part = 'U' }
 $Demo = 'C:\pf\kit\assets\webperms'
-$Declared = '"network": ["example.org"], "screen": true, "camera": true, "microphone": true, "location": true, "webrtc": true, "notify": true'
+$Declared = '"network": ["example.org", "stun.l.google.com"], "screen": true, "camera": true, "microphone": true, "location": true, "webrtc": true, "notify": true'
 
 # One call on the page: the Promise is awaited, with a user gesture (getDisplayMedia needs one).
 function Ask([string]$expr) {
@@ -47,7 +47,7 @@ function OpenPage() {
   $fid = PfPluginFence 'Perms' '420,160,380,420' 'webperms'
   $loaded = PfWaitLog 'web plugin: page loading' 30
   $reached = CdpOpen -Url 'pecofence-plugin://webperms/*' -sec 30
-  $ready = JsWait "document.getElementById('out').textContent === 'app.js 已运行'" 15
+  $ready = JsWait "(document.getElementById('out') || {}).textContent === 'app.js 已运行'" 15
   Check 'the test page is up' ($loaded -and $reached -and $ready) "loaded=$([bool]$loaded) cdp=$reached ready=$ready"
   return $fid
 }
@@ -108,13 +108,16 @@ if ($Part -eq 'D') {
   $m = Ask 'window.t.microphone()'
   Check 'the microphone gives a stream' ("$m" -like 'stream audio:*') "$m"
   $l = Ask 'window.t.location()'
-  Check 'the location is not refused (a position, or none known on this box)' ("$l" -eq 'position' -or "$l" -like 'error 2:*' -or "$l" -like 'error 3:*' -or "$l" -eq 'pending') "$l"
+  # PecoFence allows it; Windows' own location setting may still refuse it (off in the test guest).
+  $allowed = PfWaitLog 'web plugin: permission allowed, the manifest declares it.*Geolocation' 3
+  $byWindows = "$l" -like 'error 1:*' -and $allowed
+  Check 'the location is not refused by PecoFence (a position, none known, or Windows'' location setting off)' ("$l" -eq 'position' -or "$l" -like 'error 2:*' -or "$l" -like 'error 3:*' -or "$l" -eq 'pending' -or $byWindows) "$l / PecoFence allowed: $([bool]$allowed)"
   $n = Ask 'window.t.notification()'
   $card = PfWaitLog 'web plugin: notification' 5
   Shot 'D-notification-card'
   Check 'a notification shows as PecoFence''s card' ("$n" -eq 'shown' -and $card) "$n / $card"
   $w = Ask 'window.t.webrtc()'
-  Check 'two peer connections exchange a message' ("$w" -eq 'message hi') "$w"
+  Check 'the declared STUN host gives a server-reflexive candidate' ("$w" -match 'srflx ') "$w"
   $i = Ask 'window.t.inline()'
   Check 'code made at run time still does not run' ($i.runtimeScript -eq $false -and $i.evaluated -eq $false -and $i.blobWorker -eq $false) ($i | ConvertTo-Json -Compress)
 }
@@ -130,7 +133,7 @@ if ($Part -eq 'S') {
   PfStart -Lang en
   $script:Cdp = $null
   $reached = CdpOpen -Url 'pecofence-plugin://webperms/*' -sec 40
-  JsWait "document.getElementById('out').textContent === 'app.js 已运行'" 15 | Out-Null
+  JsWait "(document.getElementById('out') || {}).textContent === 'app.js 已运行'" 15 | Out-Null
   $c2 = Ask 'window.t.camera()'
   Check 'second start, declared: the camera gives a stream (the refusal was not kept)' ("$c2" -like 'stream video:*') "$c2 cdp=$reached"
   Case 'camera undeclared again'
@@ -139,7 +142,7 @@ if ($Part -eq 'S') {
   PfStart -Lang en
   $script:Cdp = $null
   $reached = CdpOpen -Url 'pecofence-plugin://webperms/*' -sec 40
-  JsWait "document.getElementById('out').textContent === 'app.js 已运行'" 15 | Out-Null
+  JsWait "(document.getElementById('out') || {}).textContent === 'app.js 已运行'" 15 | Out-Null
   $c3 = Ask 'window.t.camera()'
   Check 'third start, undeclared: the camera is refused (the grant was not kept)' ("$c3" -like 'NotAllowedError*') "$c3 cdp=$reached"
 }
@@ -156,7 +159,7 @@ if ($Part -eq 'O') {
   PfStart -Lang en
   $script:Cdp = $null
   $reached = CdpOpen -Url 'pecofence-plugin://webperms/*' -sec 40
-  JsWait "document.getElementById('out').textContent === 'app.js 已运行'" 15 | Out-Null
+  JsWait "(document.getElementById('out') || {}).textContent === 'app.js 已运行'" 15 | Out-Null
   $c2 = Ask 'window.t.camera()'
   $asked = PfWaitLog 'web plugin: permission allowed, the manifest declares it.*Camera' 5
   Check 'second start: PermissionRequested comes and the camera gives a stream (0.5.0''s kept refusal does not answer)' ("$c2" -like 'stream video:*' -and $asked) "$c2 / asked=$([bool]$asked) cdp=$reached"

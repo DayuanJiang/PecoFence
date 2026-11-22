@@ -191,8 +191,11 @@ if ($Part -eq 'A') {
   $tl | ForEach-Object { $_.Stop() }
   Check 'preconnect to an undeclared host, from the page and a blank frame, connects nowhere' ($hit -eq '') "connected: $hit"
   Check 'dns-prefetch of an undeclared host, from the page and a blank frame, asks no DNS' ((ipconfig /displaydns | Out-String) -notmatch "pf-hint-(frame-)?$tag") ''
-  $rtc = JsIsolated "(async () => { try { const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }); const found = []; const done = new Promise(ok => { pc.onicecandidate = e => { if (e.candidate) found.push(e.candidate.type || '?'); else ok(); }; setTimeout(ok, 4000); }); pc.createDataChannel('x'); await pc.setLocalDescription(await pc.createOffer()); await done; pc.close(); return 'candidates: ' + (found.join(',') || 'none'); } catch (e) { return 'threw ' + e.name; } })()"
-  Check 'WebRTC with globals of its own (an isolated world) finds no candidates' ("$rtc" -eq 'candidates: none' -or "$rtc" -like 'threw*') "$rtc"
+  $rtc = JsIsolated "(async () => { try { const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }); const found = []; const done = new Promise(ok => { pc.onicecandidate = e => { if (e.candidate) found.push((e.candidate.type || '?') + ' ' + (e.candidate.address || '')); else ok(); }; setTimeout(ok, 4000); }); pc.createDataChannel('x'); await pc.setLocalDescription(await pc.createOffer()); await done; pc.close(); return 'candidates: ' + (found.join(',') || 'none'); } catch (e) { return 'threw ' + e.name; } })()"
+  # Windows 10 gathers a host candidate under an mDNS name (no address); the undeclared STUN host
+  # gives none, so the page learns no address and reaches nothing.
+  $shown = @(("$rtc" -replace '^candidates: ', '') -split ', ' | Where-Object { $_ -and $_ -ne 'none' -and $_ -notmatch '^host [0-9a-f-]+\.local$' })
+  Check 'WebRTC with globals of its own (an isolated world) reaches no STUN server and shows no address (at most an mDNS name)' ("$rtc" -like 'threw*' -or ("$rtc" -like 'candidates:*' -and $shown.Count -eq 0)) "$rtc"
   Js "(location.href = 'mailto:pf@example.com', 1)" | Out-Null; Start-Sleep -Seconds 2
   Check 'a mailto: navigation is refused and the page stays as it was' ((Js "location.href") -like 'pecofence-plugin://webdemo/*' -and (Js "window.demo.clicks") -eq 1) "$(Js 'location.href')"
   Js "(tryNavigate(), 1)" | Out-Null; Start-Sleep -Seconds 2
