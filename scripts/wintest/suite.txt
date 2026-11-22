@@ -334,6 +334,7 @@ zoom-R             2   ec2    release pr245-zoom.ps1                --var Part=R
 zoom-GP            3   ec2    release pr245-zoom.ps1                --var Part=GP
 # Plugins in the Store edition: a test-signed package and the portable exe in one Hyper-V guest (manual: see the header of tests/msix-plugins.ps1).
 msix-plugins       6   manual debug   msix-plugins.ps1
-# Plugin interface 3 and PecoFence 0.5.0: the feed of assets/index3-feed (index.json with stand-ins, index-3.json); this build reads index-3.json and takes pf-keep down. index3-old runs it with 0.5.0 (manual: --bin of the 0.5.0 release).
+# Plugin interface 3 and PecoFence 0.5.0: the feed of assets/index3-feed (index.json with stand-ins, index-3.json); this build reads index-3.json, takes pf-keep down and updates pf-big with its 2 MB file; with index.json only it updates nothing from a stand-in. index3-old runs it with 0.5.0 (manual: --bin of the 0.5.0 release).
 plugin-index3      2   ec2    release plugin-index3.ps1             --var Part=new
+index3-fallback    2   ec2    release plugin-index3.ps1             --var Part=fallback
 index3-old         2   manual release plugin-index3.ps1             --var Part=old
