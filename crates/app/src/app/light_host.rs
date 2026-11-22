@@ -433,7 +433,7 @@ impl AppHost {
         let mut writable = self.on_ui(move |app| Ok(app.plugin_folders_of_plugin(fence)))?;
         writable.push(self.data_dir(fence)?.to_string_lossy().into_owned());
         let writable: Vec<PathBuf> = writable.into_iter().map(PathBuf::from).collect();
-        if inside(&path.to_string_lossy(), &writable).is_ok() {
+        if in_real_folder(&path, &writable) {
             tracing::info!(%fence, program, "pf.run refused: the program is in a folder the plugin may write");
             return Err(format!(
                 "{program} is in a folder the plugin may write: pf.run does not run it"
@@ -958,6 +958,17 @@ fn base64(bytes: &[u8]) -> String {
 /// The most entries `pf.folder.list` answers with.
 const MAX_LIST: usize = 2_000;
 
+/// Whether `program` lies inside one of `folders` as Windows resolves both (links, junctions and
+/// short 8.3 names): what `pf.run` refuses. No text step first, which another spelling of the
+/// same place would get past; a folder that cannot be resolved (gone) holds nothing.
+fn in_real_folder(program: &Path, folders: &[PathBuf]) -> bool {
+    let Ok(real) = std::fs::canonicalize(program) else {
+        return false;
+    };
+    let roots = folders.iter().filter_map(|f| std::fs::canonicalize(f).ok());
+    roots.into_iter().any(|root| real.starts_with(root))
+}
+
 /// How `pf.run` starts `path`: a PowerShell script through System32's powershell.exe
 /// (RemoteSigned: a script from the internet runs only when signed), anything else itself. For
 /// a `.bat` or `.cmd`, Rust's `Command` goes through cmd.exe and quotes each argument so that
@@ -1222,6 +1233,51 @@ mod tests {
             .unwrap();
         let text = String::from_utf8_lossy(&out.stdout);
         assert_eq!(text.trim(), "[a; echo INJECTED]", "{text}");
+    }
+
+    /// L11: a program in a folder the plugin may write is found however its path is written:
+    /// through a junction, by its short name, in another letter case.
+    #[test]
+    fn a_program_in_a_writable_folder_is_found_by_its_real_path() {
+        let dir = temp("real");
+        let (notes, other) = (dir.join("Notes Folder"), dir.join("Other"));
+        std::fs::create_dir_all(&notes).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let program = notes.join("drop.cmd");
+        std::fs::write(&program, "@echo off\r\n").unwrap();
+        let junction = dir.join("J");
+        let made = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&notes)
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "{made:?}");
+        let folders = [notes.clone()];
+        assert!(in_real_folder(&program, &folders));
+        assert!(in_real_folder(&junction.join("drop.cmd"), &folders));
+        let upper = PathBuf::from(program.to_string_lossy().to_uppercase());
+        assert!(in_real_folder(&upper, &folders));
+        // The folder named through the junction holds the program too.
+        assert!(in_real_folder(&program, std::slice::from_ref(&junction)));
+        // Its short 8.3 name, where the drive keeps short names.
+        let short = std::process::Command::new("cmd")
+            .arg("/c")
+            .arg(format!(
+                "for %I in (\"{}\") do @echo %~sI",
+                program.display()
+            ))
+            .output()
+            .unwrap();
+        let short = String::from_utf8_lossy(&short.stdout).trim().to_string();
+        if short.contains('~') {
+            assert!(in_real_folder(Path::new(&short), &folders), "{short}");
+        } else {
+            eprintln!("no short names on this drive: {short}");
+        }
+        assert!(!in_real_folder(&program, &[other]));
+        assert!(!in_real_folder(&program, &[dir.join("gone")]));
+        assert!(!in_real_folder(&dir.join("none.cmd"), &folders));
     }
 
     /// L10, L11: a written file that is no data file carries the Mark of the Web, which
