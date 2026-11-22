@@ -184,8 +184,12 @@ impl Host for Fake {
                 if let Some(why) = folder_write::name_refusal(&path) {
                     return Err(format!("{name}: {why}"));
                 }
+                let any = self.permissions.folders.any_kind();
                 match name {
-                    // The plugin host refused a file of another kind without folders any.
+                    "folder.write" if !any && !folder_write::is_data_file(&path) => Err(format!(
+                        "{name}: only these kinds of files: {} (permissions.folders any writes any kind)",
+                        folder_write::DATA_TYPES.join(" ")
+                    )),
                     "folder.writeBytes" => {
                         let bytes = folder_write::decode_base64(arg(1))
                             .ok_or_else(|| format!("{name}: not base64"))?;

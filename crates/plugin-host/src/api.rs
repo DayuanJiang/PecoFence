@@ -4,7 +4,6 @@
 //! a time, so that every host a request reaches is checked and seen.
 
 use pecofence_core::FenceId;
-use pecofence_core::folder_write::{DATA_TYPES, is_data_file};
 use pecofence_core::plugins::{
     Permissions, REFUSED_PORTS, local_class, network_local_class, valid_plain_name,
 };
@@ -116,13 +115,6 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
         "folder.pick" | "folder.list" | "folder.read" => {
             (p.folders.reads(), "permissions.folders".into())
         }
-        "folder.write" if p.folders.writes() && !p.folders.any_kind() && !is_data_file(arg(0)) => (
-            false,
-            format!(
-                "permissions.folders any for a file that is not one of {}",
-                DATA_TYPES.join(" ")
-            ),
-        ),
         "folder.write" | "folder.mkdir" | "folder.trash" => (
             p.folders.writes() && args.get(0).is_some_and(Value::is_string),
             "permissions.folders readwrite and a path".into(),
@@ -792,10 +784,10 @@ mod tests {
         let refused =
             |p: &Permissions, name: &str, path: &str| refusal(p, name, &json!([path, "AAAA"]));
         let path = r"C:\Users\me\Documents\x";
-        assert_eq!(refused(&both, "folder.write", &format!("{path}.txt")), None);
-        let why = refused(&both, "folder.write", &format!("{path}.zip")).unwrap();
+        // The kinds of files readwrite writes are the app's check, after the path's (light_host).
+        assert_eq!(refused(&both, "folder.write", &format!("{path}.zip")), None);
+        let why = refused(&both, "folder.writeBytes", &format!("{path}.png")).unwrap();
         assert!(why.contains("permissions.folders any"), "{why}");
-        assert!(refused(&both, "folder.writeBytes", &format!("{path}.png")).is_some());
         for name in [
             "folder.write",
             "folder.writeBytes",

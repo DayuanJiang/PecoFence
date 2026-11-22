@@ -182,14 +182,14 @@ Check 'the log has each write, folder and trash' (($n -join ',') -eq '2,2,2') "c
 
 Case 'refused by the path''s text'
 $bad = [ordered]@{
-  'x1-exe' = @("$Notes\a.exe", 'permissions.folders any'); 'x2-hta' = @("$Notes\a.hta", 'permissions.folders any')
-  'x3-lnk' = @("$Notes\a.lnk", 'permissions.folders any'); 'x4-stream' = @("$Notes\a.txt:hidden", 'colon')
+  'x1-exe' = @("$Notes\a.exe", 'only these kinds of files'); 'x2-hta' = @("$Notes\a.hta", 'only these kinds of files')
+  'x3-lnk' = @("$Notes\a.lnk", 'only these kinds of files'); 'x4-stream' = @("$Notes\a.txt:hidden", 'colon')
   'x5-dot-end' = @("$Notes\a.txt.", 'ends in a dot or a space'); 'x6-space-end' = @("$Notes\a.txt ", 'ends in a dot or a space')
   'x7-device' = @("$Notes\nul.txt", 'device name'); 'x8-dot-folder' = @("$Notes\.hidden\a.txt", 'starts with a dot')
   'x9-up' = @("$Notes\..\Other\a.txt", 'starts with a dot'); 'xa-outside' = @("$Lr\Other\a.txt", 'not inside a folder the user picked')
 }
 $wrong = @()
-foreach ($k in $bad.Keys) { $v = FCall $k 'write' $bad[$k][0] 'x'; if ($v -notmatch "^error folder.write[: ].*$([regex]::Escape($bad[$k][1]))") { $wrong += "$k=$v" } }
+foreach ($k in $bad.Keys) { $v = FCall $k 'write' $bad[$k][0] 'x'; if ($v -notmatch "^error folder.write: .*$([regex]::Escape($bad[$k][1]))") { $wrong += "$k=$v" } }
 Check 'other kinds, a colon, a trailing dot or space, a device, a dot folder, .., outside: each refused with its reason' ($wrong.Count -eq 0) ($wrong -join ' | ')
 $v = FCall 'xb-mkdir-dot' 'mkdir' "$Notes\.git"
 Check 'mkdir of a dot folder is refused too' ($v -match '^error folder.mkdir: .*starts with a dot' -and -not (Test-Path "$Notes\.git")) $v

@@ -657,7 +657,9 @@ impl AppHost {
                 let data = folder_write::is_data_file(&file_name);
                 if !data && !any {
                     let kinds = folder_write::DATA_TYPES.join(" ");
-                    return Err(refuse(&format!("only these kinds of files: {kinds}")));
+                    return Err(refuse(&format!(
+                        "only these kinds of files: {kinds} (permissions.folders any writes any kind)"
+                    )));
                 }
                 let bytes = if name == "folder.write" {
                     text_of(&args[1]).into_bytes()
