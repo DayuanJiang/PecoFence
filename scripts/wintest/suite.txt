@@ -86,6 +86,7 @@ web-plugin-V       1   ec2    debug   web-plugin.ps1                 --var Part=
 web-perms-U        1   ec2    debug   plugin-web-perms.ps1           --var Part=U --var Api=3
 web-perms-D        1   ec2    debug   plugin-web-perms.ps1           --var Part=D --var Api=3
 web-perms-S        1   ec2    debug   plugin-web-perms.ps1           --var Part=S --var Api=3
+# Part O needs 0.5.0's debug build as --extra (run.sh --extra <dir>): not in the suite's own runs.
 plugin-migrate     3   ec2    release plugin-migrate.ps1
 plugin-view        3   ec2    debug   plugin-view.ps1
 plugin-launcher    5   ec2    debug   plugin-launcher.ps1

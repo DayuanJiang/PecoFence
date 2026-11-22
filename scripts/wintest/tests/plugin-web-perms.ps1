@@ -7,7 +7,10 @@
 #           screen picker shows, or with --auto-select-desktop-capture-source the stream comes).
 #   Part S: a decision is not kept in the plugin's browser profile: camera refused, then declared
 #           (allowed), then not declared again (refused), one profile across three starts.
+#   Part O: the upgrade: 0.5.0 (its debug build in --extra) refuses the camera and keeps that in
+#           the profile; the build under test, the camera declared, still gets the stream.
 # run.sh --bin target/wintest-bin-debug --var Part=U|D|S [--var Api=3] tests/plugin-web-perms.ps1
+# run.sh --bin target/wintest-bin-debug --extra <0.5.0 debug bin> --var Part=O --var Api=3 ...
 if (-not $Part) { $Part = 'U' }
 $Demo = 'C:\pf\kit\assets\webperms'
 $Declared = '"network": ["example.org"], "screen": true, "camera": true, "microphone": true, "location": true, "webrtc": true, "notify": true'
@@ -57,6 +60,7 @@ if ($Part -eq 'D') { $env:PECOFENCE_WEBVIEW_ARGS += ' --auto-select-desktop-capt
 $script:Config = "$PfApp\config"
 PfPlacePlugin $Demo 'webperms'
 if ($Part -eq 'D') { Manifest $Declared }
+if ($Part -eq 'O') { Copy-Item "$PfExtra\*" $PfApp -Force; Log "first start: the build in $PfExtra" }
 PfStart -Lang en
 
 if ($Part -eq 'U') {
@@ -138,4 +142,22 @@ if ($Part -eq 'S') {
   JsWait "document.getElementById('out').textContent === 'app.js 已运行'" 15 | Out-Null
   $c3 = Ask 'window.t.camera()'
   Check 'third start, undeclared: the camera is refused (the grant was not kept)' ("$c3" -like 'NotAllowedError*') "$c3 cdp=$reached"
+}
+
+if ($Part -eq 'O') {
+  Case 'the camera refused by 0.5.0'
+  OpenPage | Out-Null
+  $c1 = Ask 'window.t.camera()'
+  Check 'first start (0.5.0): the camera is refused' ("$c1" -like 'NotAllowedError*') "$c1"
+  Case 'the build under test, camera declared'
+  PfQuit
+  Copy-Item "$PfBin\*" $PfApp -Force
+  Manifest '"network": ["example.org"], "camera": true'
+  PfStart -Lang en
+  $script:Cdp = $null
+  $reached = CdpOpen -Url 'pecofence-plugin://webperms/*' -sec 40
+  JsWait "document.getElementById('out').textContent === 'app.js 已运行'" 15 | Out-Null
+  $c2 = Ask 'window.t.camera()'
+  $asked = PfWaitLog 'web plugin: permission allowed, the manifest declares it.*Camera' 5
+  Check 'second start: PermissionRequested comes and the camera gives a stream (0.5.0''s kept refusal does not answer)' ("$c2" -like 'stream video:*' -and $asked) "$c2 / asked=$([bool]$asked) cdp=$reached"
 }
