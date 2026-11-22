@@ -642,11 +642,18 @@ pub fn network_local_class(host: &str) -> Option<&'static str> {
 }
 
 /// Whether a web plugin's page may reach `network` host `host` itself (its CSP and
-/// Connection-Allowlist list it): an internet name or IPv4 address. This computer, the local
-/// network and IPv6 addresses (which a CSP cannot name) it reaches through `pf.http` only, which
-/// keeps their rules.
+/// Connection-Allowlist list it): an internet name or a public IPv4 address. This computer, the
+/// local network, IPv6 addresses (which a CSP cannot name) and IPv4 addresses that are neither
+/// public nor local (0.0.0.0, multicast, 240/4) it reaches through `pf.http` only, which keeps
+/// their rules.
 pub fn page_reaches(host: &str) -> bool {
-    network_local_class(host).is_none() && !host.starts_with('[')
+    if host.starts_with('[') {
+        return false;
+    }
+    if crate::web_address::read_ip(host).is_some() {
+        return crate::web_address::public_ip(host);
+    }
+    network_local_class(host).is_none()
 }
 
 /// The kinds of program `system` may name: a program, and (interface 3) a batch file, which
@@ -1893,6 +1900,11 @@ mod tests {
             "localhost",
             "[2606:2800::1]",
             "x.local",
+            "0.0.0.0",
+            "224.0.0.251",
+            "239.255.255.250",
+            "240.0.0.1",
+            "255.255.255.255",
         ] {
             assert!(!page_reaches(not), "{not}");
         }
