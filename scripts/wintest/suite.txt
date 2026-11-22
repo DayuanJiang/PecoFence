@@ -139,6 +139,7 @@ polish-undo-C      1   ec2    debug   polish-undo.ps1                --var Part=
 polish-undo-D      1   ec2    release polish-undo.ps1                --var Part=D
 polish-undo-E      1   ec2    release polish-undo.ps1                --var Part=E
 polish-rename      1   ec2    release polish-rename.ps1
+rename-in-use-207  1   ec2    release 207-rename-in-use.ps1
 polish-drop        2   ec2    release polish-drop.ps1
 polish-reflow      2   ec2    release polish-reflow.ps1
 polish-reflow-cost 1   ec2    release polish-reflow.ps1              --var Part=P

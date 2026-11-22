@@ -54,7 +54,8 @@ pub(super) enum RenameError {
     /// Another entry of that name is already in the folder.
     Exists,
     /// Access denied (message): the folder needs administrator rights (the Public Desktop),
-    /// or a file inside the folder being renamed is open.
+    /// a file inside the folder being renamed is open, or another program has the file open
+    /// (feedback #207). The shell's rename takes it over with Explorer's own dialogs.
     Denied(String),
     /// The filesystem refused (message).
     Io(String),
@@ -62,6 +63,12 @@ pub(super) enum RenameError {
 
 fn rename_error(e: std::io::Error) -> RenameError {
     tracing::warn!(error = %e, "rename failed");
+    // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION: another program has the file open. A notice
+    // said "(os error 32)"; Explorer names the program and offers to try again.
+    if matches!(e.raw_os_error(), Some(32 | 33)) {
+        tracing::info!("rename: the file is in use; the shell's rename shows Explorer's dialog");
+        return RenameError::Denied(e.to_string());
+    }
     match e.kind() {
         std::io::ErrorKind::PermissionDenied => RenameError::Denied(e.to_string()),
         std::io::ErrorKind::AlreadyExists => RenameError::Exists,
@@ -568,8 +575,8 @@ impl App {
             }
             Err(RenameError::Unsupported) => None,
             Err(RenameError::Denied(e)) => match old {
-                // Explorer asks for administrator permission here; the shell's own rename
-                // does the same.
+                // Explorer asks for administrator permission here, or says which program has
+                // the file open with 重试; the shell's own rename does the same.
                 Some(old) => {
                     let owner = self
                         .state
