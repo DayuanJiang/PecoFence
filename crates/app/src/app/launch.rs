@@ -705,14 +705,17 @@ impl App {
             let Some(h) = c.key.as_deref().and_then(|k| Hotkey::parse(k).ok()) else {
                 continue;
             };
-            let kept = (before.unwrap_or_default().iter()).any(|o| o.id == c.id && o.key == c.key);
-            if before.is_some() && kept {
+            let was = before.map(|b| b.iter().find(|o| o.id == c.id));
+            if was.flatten().is_some_and(|o| o.key == c.key) {
                 continue;
             }
+            let old = was
+                .flatten()
+                .and_then(|o| Hotkey::parse(o.key.as_deref()?).ok());
             let spec = self.state.config.scripts.get(&fence);
-            let keys = spec.and_then(|s| s.settings.get(KEYS)?.as_object().cloned());
-            if keys.is_some_and(|k| k.contains_key(&c.id)) {
-                tracing::debug!(%fence, command, "plugin's own shortcut: the fence has one or the user cleared it");
+            let stored = spec.and_then(|s| s.settings.get(KEYS)?.get(&c.id).cloned());
+            if !key_to_give(stored.as_ref(), old, h) {
+                tracing::debug!(%fence, command, "plugin's own shortcut: the fence has one of its own or the user cleared it");
                 continue;
             }
             // PecoFence's own shortcuts, and a shortcut any fence gives a command (another fence
@@ -740,7 +743,8 @@ impl App {
                 let keys = spec.settings.entry(KEYS).or_insert_with(|| json!({}));
                 if let Some(keys) = keys.as_object_mut() {
                     keys.insert(c.id.clone(), h.to_string().into());
-                    tracing::info!(%fence, command, hotkey = %h, "plugin's own shortcut given to its fence");
+                    let replaced = stored.is_some();
+                    tracing::info!(%fence, command, hotkey = %h, replaced, "plugin's own shortcut given to its fence");
                     given = true;
                 }
             }
@@ -808,5 +812,48 @@ impl App {
             ));
         }
         None
+    }
+}
+
+/// Whether a command's own shortcut `new` goes to a fence whose saved entry for the command is
+/// `stored` (None: none; null: the user cleared it; a text: a shortcut), when the version before
+/// brought `old`: with no entry, yes; over the shortcut the version before brought (the user
+/// left it as given), yes, once it differs; over one the user picked or cleared, never.
+fn key_to_give(stored: Option<&Value>, old: Option<Hotkey>, new: Hotkey) -> bool {
+    match stored {
+        None => true,
+        Some(Value::String(text)) => {
+            let now = Hotkey::parse(text).ok();
+            old.is_some() && now == old && now != Some(new)
+        }
+        Some(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod key_tests {
+    use super::*;
+
+    #[test]
+    fn a_plugins_shortcut_goes_where_the_user_left_none_or_left_the_one_given() {
+        let k = |t: &str| Hotkey::parse(t).ok();
+        let (f9, f10) = (k("Ctrl+Shift+F9").unwrap(), k("Ctrl+Shift+F10").unwrap());
+        // Install, or a command new in an update: no entry.
+        assert!(key_to_give(None, None, f9));
+        // The update changes Ctrl+Shift+F9 to F10: the fence still has F9 as given.
+        assert!(key_to_give(Some(&json!("Ctrl+Shift+F9")), Some(f9), f10));
+        // The same as written another way is the same shortcut.
+        assert!(key_to_give(
+            Some(&json!("ctrl + shift + f9")),
+            Some(f9),
+            f10
+        ));
+        // The user picked another one, or cleared it: it stays.
+        assert!(!key_to_give(Some(&json!("Ctrl+Alt+K")), Some(f9), f10));
+        assert!(!key_to_give(Some(&Value::Null), Some(f9), f10));
+        // A shortcut the version before did not bring is the user's.
+        assert!(!key_to_give(Some(&json!("Ctrl+Shift+F9")), None, f10));
+        // Nothing changes when the entry is the new one already.
+        assert!(!key_to_give(Some(&json!("Ctrl+Shift+F10")), Some(f9), f10));
     }
 }
