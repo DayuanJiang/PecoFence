@@ -816,6 +816,11 @@ async function runTests() {
     assert([...sel.options].map(o => o.value).join() === ',Arial,Malgun Gothic,微软雅黑', 'Options: ' + [...sel.options].map(o => o.value).join());
     assert(sel.value === '' && sel.options[0].text === '默认', 'Default not shown: ' + sel.value);
     assert(sel.options[2].style.fontFamily.includes('Malgun Gothic'), 'A family is not shown in its own face');
+    // The language changes while the page is open: 默认 follows it (the release test of 0.5.1).
+    change(doc, 'language', 'en'); await settle();
+    assert(sel.options[0].text === 'Default', '默认 kept its old language: ' + sel.options[0].text);
+    change(doc, 'language', 'zh-CN'); await settle();
+    assert(sel.options[0].text === '默认', '默认 did not come back: ' + sel.options[0].text);
     const pick = async value => {
       sel.value = value; sel.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true })); await settle();
       return frame.contentWindow.testMessages.filter(m => m.type === 'patchSettings').at(-1);

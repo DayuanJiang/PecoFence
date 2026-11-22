@@ -1331,6 +1331,8 @@
         return option;
       }));
     }
+    // The list is kept while the fonts stay the same; its first row follows the language.
+    select.options[0].text = t("默认");
     select.value = chosen;
     select.onchange = () => {
       state.settings.font = select.value || null;
