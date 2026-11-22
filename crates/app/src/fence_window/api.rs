@@ -364,6 +364,7 @@ impl FenceWindow {
             vis_gen: 0,
             vis_deadline: None,
             peek_faded: false,
+            covered_faded: false,
             fade_trace: FadeTrace::default(),
             retired: false,
             off_desktop: false,
@@ -3465,6 +3466,17 @@ impl FenceWindow {
         let mut fading = false;
         self.with_view(|v| fading = v.peek_fade_to(0.0, true));
         fading
+    }
+
+    /// Opened on top of the fences under it until it rolls up: a hover peek, or a fence opened
+    /// over a gap under one row with pushing off (`hover_raised`).
+    pub fn opened_on_top(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| v.hover_raised)
+    }
+
+    /// See `FenceViewState::set_covered`.
+    pub fn set_covered(&self, covered: bool) {
+        self.with_view(|v| v.set_covered(covered));
     }
 
     /// The Peek has this fence's opacity (`peek_fade_prepare`, `peek_fade_out`).

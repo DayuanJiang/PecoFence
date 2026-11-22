@@ -672,6 +672,9 @@ pub struct FenceViewState {
     /// the shadow's alpha are the Peek's until `peek_fade_rest`, or until a show / hide fade
     /// takes them over.
     pub(super) peek_faded: bool,
+    /// Under a fence opened on top of it (`App::fade_covered_fences`): faded out with the
+    /// Peek's fade until that one rolls up or moves off (feedback #207).
+    pub(super) covered_faded: bool,
     /// What the current whole-window fade did so far (see `FadeTrace`).
     pub(super) fade_trace: FadeTrace,
     /// `FenceWindow::retire` was called: the window is fading out for good and lives only in

@@ -315,6 +315,27 @@ impl App {
     /// way rather than taken for a fence that one pushes.
     pub(super) fn reflow_pushed_except(&mut self, settling: &[FenceId]) {
         self.reflow_pushed_once(settling, true);
+        self.fade_covered_fences();
+    }
+
+    /// Fences a fence opened on top of them covers, fully or partly (a hover peek, or a click
+    /// open over a gap under one row with pushing off), fade out until it rolls up or moves
+    /// off (feedback #207). Fences the push slid out of its way are not covered.
+    fn fade_covered_fences(&self) {
+        let rect = |w: &FenceWindow| self.ctx.behavior.frame_rect(w.hwnd());
+        let tops: Vec<(HWND, RECT)> = (self.fences.values())
+            .filter(|w| w.opened_on_top())
+            .map(|w| (w.hwnd(), rect(w)))
+            .collect();
+        for w in self.fences.values().filter(|w| !w.is_desktop_arranged()) {
+            let r = rect(w);
+            let under = |t: &RECT| {
+                t.left < r.right && r.left < t.right && t.top < r.bottom && r.top < t.bottom
+            };
+            w.set_covered(
+                !w.opened_on_top() && tops.iter().any(|(h, t)| *h != w.hwnd() && under(t)),
+            );
+        }
     }
 
     /// One pass; `again`: run a second one when an open fence was fitted to its room without

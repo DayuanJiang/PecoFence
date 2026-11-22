@@ -369,6 +369,7 @@ impl FenceViewState {
         window::kill_timer(self.hwnd, TIMER_VISIBILITY_FINISH);
         self.vis_deadline = None;
         self.peek_faded = false;
+        self.covered_faded = false;
         if !self.motion.enabled() {
             self.vis_fade = None;
             self.reset_root();
@@ -443,6 +444,7 @@ impl FenceViewState {
         window::kill_timer(self.hwnd, TIMER_VISIBILITY_FINISH);
         self.vis_deadline = None;
         self.peek_faded = false;
+        self.covered_faded = false;
         self.hide_tip();
         // A retired window must always end in `FadeOutDone`, whoever hides it (quick hide,
         // Peek) while its exit fade is still running.
@@ -594,6 +596,36 @@ impl FenceViewState {
         self.frames.request();
         tracing::debug!(title = %self.title, to, "peek fade started");
         true
+    }
+
+    /// Under a fence opened on top of it, whose glass showed its title row through (it read as
+    /// that fence stuck behind it): it fades out with the Peek's fade while covered and back
+    /// when uncovered. A show / hide fade or the Peek that owns the root is left alone.
+    pub(super) fn set_covered(&mut self, covered: bool) {
+        if covered == self.covered_faded
+            || self.vis_fade.is_some()
+            || self.peek_faded
+            || (covered && (self.retired || !desktop::is_visible(self.hwnd)))
+        {
+            return;
+        }
+        self.covered_faded = covered;
+        let to = if covered { 0.0 } else { 1.0 };
+        tracing::debug!(title = %self.title, covered, "fence under one opened on top: fading");
+        let now = Instant::now();
+        if self.motion.enabled() {
+            let _ = self
+                .motion
+                .fade_to(&self.root, to, motion::FASTER, Curve::Linear);
+            self.shadow_alpha
+                .retarget(to, motion::FASTER, Curve::Linear, now);
+            self.shadow_fading = true;
+            self.frames.request();
+        } else {
+            self.root.set_opacity(to);
+            self.shadow_alpha = Tween::at(to, now);
+            self.apply_shadow_alpha(now);
+        }
     }
 
     /// The Peek is over (or its fade was cancelled): opaque with its shadow again, unless a

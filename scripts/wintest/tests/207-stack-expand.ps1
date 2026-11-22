@@ -14,6 +14,16 @@ public static class SeTop {
   [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint f);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowTextW(IntPtr h, System.Text.StringBuilder s, int n);
   public static string TitleAt(int x, int y) { POINT p; p.X = x; p.Y = y; var h = GetAncestor(WindowFromPoint(p), 2); var s = new System.Text.StringBuilder(256); GetWindowTextW(h, s, 256); return s.ToString(); }
+  [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
+  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+  // The heights of two windows about every 5 ms: "ms hA hB" per change.
+  static System.Threading.Thread th; static volatile bool on; static System.Collections.Generic.List<string> rows;
+  public static void Track(IntPtr a, IntPtr b) {
+    rows = new System.Collections.Generic.List<string>(); on = true; var sw = System.Diagnostics.Stopwatch.StartNew();
+    th = new System.Threading.Thread(() => { string last = null; while (on) { RECT ra, rb; GetWindowRect(a, out ra); GetWindowRect(b, out rb); string v = (ra.B - ra.T) + " " + (rb.B - rb.T); if (v != last) { last = v; lock (rows) rows.Add(sw.ElapsedMilliseconds + " " + v); } System.Threading.Thread.Sleep(5); } });
+    th.IsBackground = true; th.Start();
+  }
+  public static string[] Stop() { on = false; th.Join(500); lock (rows) return rows.ToArray(); }
 }
 '@
 
@@ -29,6 +39,7 @@ function TitlePt($t) { $r = Win $t; return @(($r.L + 100), ($r.T + 18)) }
 function ChevronPt($t) { $r = Win $t; return @(($r.R - 14), ($r.T + 18)) }
 function HoverTitle($t) { $p = TitlePt $t; [G]::MoveTo($p[0], $p[1]); Start-Sleep -Milliseconds 300; [G]::MoveTo($p[0] + 2, $p[1]) }
 function Tops($names) { return (($names | ForEach-Object { "$_@$((Win $_).T)" }) -join ' ') }
+function Faded($t, $c) { return (LogCount "fading title=$t covered=$c`$") }
 function Chevron($t) { $p = ChevronPt $t; [G]::Click($p[0], $p[1]); Start-Sleep -Milliseconds 1500; Park }
 
 $names = @()
@@ -63,6 +74,9 @@ Pf fence roll C0 | Out-Null; Start-Sleep -Milliseconds 500
 Pf fence create --title C1 --rect '500,240,300,200' | Out-Null
 Pf fence roll C1 | Out-Null; Start-Sleep -Milliseconds 500
 $c = @('C0', 'C1')
+Pf fence create --title D0 --rect '190,280,280,200' | Out-Null
+Pf item move (Join-Path $PfDesk $names[0]) --to D0 | Out-Null
+Pf fence roll D0 | Out-Null; Start-Sleep -Milliseconds 500
 Start-Sleep -Seconds 1; Park
 Log "work bottom $WorkB, column B has $n fences; A: $(Tops $a); B: $(Tops $b); C: $(Tops $c)"
 Shot 'stacks'
@@ -71,6 +85,7 @@ Shot 'stacks'
 function OpenByClick($what, $col, [int]$want, [switch]$Covers) {
   $top = $col[0]; $second = $col[1]
   $before = (Win $second).T
+  $f0 = Faded $second 'true'; $b0 = Faded $second 'false'
   Chevron $top
   $r = Win $top
   $over = [SeTop]::TitleAt($r.L + 150, [math]::Min($r.B - 4, $r.T + $TitleH + 30))
@@ -78,38 +93,62 @@ function OpenByClick($what, $col, [int]$want, [switch]$Covers) {
   Check "$what`: opens to $want px" ([math]::Abs((WinH $top) - $want) -le 2) "window $(WinH $top) px of 300 (title $TitleH); $second top $before -> $((Win $second).T); on top just under its title row: '$over'"
   Check "$what`: nothing covers the opened fence" ($over -eq $top) "on top just under its title row: '$over'"
   Check "$what`: the saved height stays 300 px" ((SavedH $top) -eq 300) "saved rect h $(SavedH $top)"
+  $faded = (Faded $second 'true') - $f0
+  Check "$what`: $second $(if ($Covers) { 'under it fades out' } else { 'is not covered and stays' })" ($faded -eq [int][bool]$Covers) "faded out $faded times"
   Chevron $top
   Check "$what`: rolled up again, still 300 px saved" ((WinH $top) -le $TitleH + 2 -and (SavedH $top) -eq 300) "window $(WinH $top) px, saved rect h $(SavedH $top)"
+  Check "$what`: $second back as before" (((Faded $second 'false') - $b0) -eq [int][bool]$Covers) "faded back $((Faded $second 'false') - $b0) times"
 }
 
-function Hover($what, $col) {
-  $top = $col[0]
+function Hover($what, $col, [switch]$Covers) {
+  $top = $col[0]; $second = $col[1]
+  $f0 = Faded $second 'true'; $b0 = Faded $second 'false'
   HoverTitle $top; Start-Sleep -Milliseconds 1400
   $r = Win $top
   $over = [SeTop]::TitleAt($r.L + 150, $r.T + $TitleH + 30)
   Shot "$what"
   Check "$what`: the hover peek opens in full, on top" ((WinH $top) -ge 298 -and $over -eq $top) "window $(WinH $top) px; on top under its title row: '$over'"
+  $faded = (Faded $second 'true') - $f0
+  if ($Covers) { Check "$what`: $second under the peek fades out" ($faded -eq 1) "faded out $faded times" }
   Park; Start-Sleep -Milliseconds 1200
+  if ($Covers) { Check "$what`: $second back once the peek rolled up" (((Faded $second 'false') - $b0) -eq 1) "faded back $((Faded $second 'false') - $b0) times" }
 }
 
 foreach ($push in 'true', 'false') {
   Pf settings set rollUp.pushNeighbors $push | Out-Null; Start-Sleep -Milliseconds 800
   Case "push $push"
-  OpenByClick "A push=$push click" $a 300
+  OpenByClick "A push=$push click" $a 300 -Covers:($push -eq 'false')
   # The push on stops the top of a full column where the fences below reach the taskbar.
   if ($push -eq 'true') {
     Chevron $b[0]; $h = WinH $b[0]; Shot "B push=true click"
     Check 'B push=true click: opens as far as the fences below can slide, saved 300 px' ($h -gt $TitleH + 80 -and $h -le 300 -and (SavedH $b[0]) -eq 300) "window $h px, saved rect h $(SavedH $b[0])"
     Chevron $b[0]
   } else {
-    OpenByClick "B push=$push click" $b 300
+    OpenByClick "B push=$push click" $b 300 -Covers
   }
-  Hover "B push=$push hover" $b
+  Hover "B push=$push hover" $b -Covers:($push -eq 'false')
   # C: with the push off it stops 8 px short of C1, only for this opening.
   $cWant = if ($push -eq 'true') { 300 } else { 240 - 8 - 40 }
   OpenByClick "C push=$push click" $c $cWant
   Hover "C push=$push hover" $c
 }
+
+Case 'push off: from a hover peek onto a fence it covers partly'
+# A0's peek covers A1 to A4 and the left half of D0. The pointer goes down inside A0, then out
+# onto D0's right half and rests there: D0 opens only once A0's peek has rolled up.
+$f0 = Faded 'D0' 'true'
+HoverTitle A0; Start-Sleep -Milliseconds 1400
+Check 'the peek covers D0 partly: D0 fades out' ((WinH A0) -ge 298 -and ((Faded 'D0' 'true') - $f0) -eq 1) "A0 $(WinH A0) px, D0 faded out $((Faded 'D0' 'true') - $f0) times"
+[SeTop]::Track((Hw A0), (Hw D0))
+Glide 142 58 300 300 8 25; Start-Sleep -Milliseconds 200
+Glide 300 300 420 298 6 25; [G]::MoveTo(421, 298); Start-Sleep -Milliseconds 2500
+$rows = @([SeTop]::Stop() | ForEach-Object { $s = $_ -split ' '; [pscustomobject]@{ ms = [int]$s[0]; a = [int]$s[1]; d = [int]$s[2] } })
+$aShut = @($rows | Where-Object { $_.a -le $TitleH + 2 } | Select-Object -First 1)
+$dOpen = @($rows | Where-Object { $_.d -gt $TitleH + 4 } | Select-Object -First 1)
+$line = ($rows | ForEach-Object { "+$($_.ms):$($_.a)/$($_.d)" }) -join ' '
+Shot 'D-after-peek'
+Check 'D0 opens only after A0 rolled up, and it does open' ($aShut.Count -eq 1 -and $dOpen.Count -eq 1 -and $dOpen[0].ms -ge $aShut[0].ms -and (WinH D0) -gt 100) "heights A0/D0: $line"
+Park; Start-Sleep -Milliseconds 1500
 
 Case 'push off: the fence below goes away, and a restart'
 Chevron C0
