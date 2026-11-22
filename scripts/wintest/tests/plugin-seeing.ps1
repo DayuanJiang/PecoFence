@@ -1,4 +1,4 @@
-# 插件 interface 3, plan v2 "Pointer, focus, shortcuts" (L2, L12, L14): the plugin in assets\seeing may know
+﻿# 插件 interface 3, plan v2 "Pointer, focus, shortcuts" (L2, L12, L14): the plugin in assets\seeing may know
 # where the pointer is (pf.pointer, the `pointer` event, at most 30 a second while it moves) and where the
 # keyboard focus and the text caret are (pf.focus, pf.caret, the `focus` event): GetGUIThreadInfo and MSAA
 # in Notepad; in Edge the MSAA caret and, as MSAA's focus stops at the document there, UI Automation's
@@ -182,9 +182,12 @@ if ($EdgeExe) {
 }
 
 Case 'the reads stop while no fence of such a plugin shows'
-$bg0 = Count $script:Bg 'pointer'
 Pf fence hide-all | Out-Null
 Check 'all fences hidden: the pointer and focus reads stop' ([bool](PfWaitLog 'none knows where the pointer is now' 4) -and [bool](PfWaitLog 'none knows where the focus and the caret are now' 4)) ''
+# Counted once the reads stopped: the view shows its count a little late, so events that came
+# before the hide could show up after it (seen on Windows 10).
+Start-Sleep -Seconds 1
+$bg0 = Count $script:Bg 'pointer'
 Glide 500 500 900 600 30 25
 Start-Sleep -Seconds 2
 Check 'a hidden fence of a background plugin gets no pointer event' ((Count $script:Bg 'pointer') -eq $bg0) "events $bg0 -> $(Count $script:Bg 'pointer')"
