@@ -186,6 +186,12 @@ fn split_url(url: &str, reach: Reach) -> Result<(bool, String, u16, String), Str
     Ok((a.secure, a.host, port, a.path))
 }
 
+/// Whether `error` (of [`get`], possibly joined with others) says an answer was larger than
+/// `limit` bytes.
+pub fn larger_than(error: &str, limit: usize) -> bool {
+    error.contains(&format!(" is larger than {limit} bytes"))
+}
+
 /// GETs `url` (following redirects) and returns the body of a 200 response, at most `limit`
 /// bytes. `headers` are extra request lines such as `Accept: …`, separated by `\r\n`.
 pub fn get(url: &str, user_agent: &str, headers: &str, limit: usize) -> Result<Vec<u8>, String> {
@@ -546,11 +552,8 @@ mod tests {
                 .unwrap_err()
                 .contains("HTTP 404")
         );
-        assert!(
-            get(&url, "PecoFence-test", "", 4)
-                .unwrap_err()
-                .contains("larger")
-        );
+        let error = get(&url, "PecoFence-test", "", 4).unwrap_err();
+        assert!(larger_than(&error, 4) && !larger_than(&error, 5) && !larger_than("HTTP 404", 4));
     }
 
     #[test]

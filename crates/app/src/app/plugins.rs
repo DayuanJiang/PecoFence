@@ -210,16 +210,26 @@ fn download(
             Some(index) => vec![list::test_file_url(index, commit, id, name)],
             None => list::file_urls(commit, id, name).to_vec(),
         };
-        // Up to the size the index gives it (a plugin file may have 5 MB), with time for it.
+        // Up to the size the index gives it (a plugin file may have 5 MB), with time for it. A
+        // larger answer is not the index's file either.
         let (max, wait) = (file.size as usize, super::updates::wait_for(file.size));
-        let bytes = get_first(&urls, max, wait).map_err(|e| (false, e))?;
+        let differs = || {
+            (
+                true,
+                format!("{name}: size or SHA-256 differs from the index"),
+            )
+        };
+        let bytes = get_first(&urls, max, wait).map_err(|e| {
+            if pecofence_platform::http::larger_than(&e, max) {
+                differs()
+            } else {
+                (false, e)
+            }
+        })?;
         if bytes.len() as u64 != file.size
             || pecofence_platform::http::sha256_hex(&bytes) != file.sha256
         {
-            return Err((
-                true,
-                format!("{name}: size or SHA-256 differs from the index"),
-            ));
+            return Err(differs());
         }
         // The index checked the name: parts of letters, digits, '.', '_' and '-'.
         let path = dir.join(name);
