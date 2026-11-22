@@ -108,6 +108,13 @@ impl AppHost {
         self.focus.lock().map_or((None, None), |s| *s)
     }
 
+    /// The reads stopped: nothing is kept (a later answer is null until the next read).
+    pub(super) fn focus_clear(&self) {
+        if let Ok(mut last) = self.focus.lock() {
+            *last = (None, None);
+        }
+    }
+
     /// Keeps the focus thread's `reading` and gives what is seen now: PecoFence's own window in
     /// front, or one that does not answer, keeps what was seen before.
     pub(super) fn focus_read(&self, reading: pecofence_platform::focus::Reading) -> Seen {
@@ -1143,9 +1150,17 @@ impl pecofence_plugin_host::Host for AppHost {
                 let app = (m.permissions.apps.iter()).find(|a| front == Some(a.to_lowercase()));
                 Ok(json!(app))
             }
-            "pointer" => Ok(pointer_json()),
-            "focus" => Ok(rect_json(self.focus_seen().0)),
-            "caret" => Ok(rect_json(self.focus_seen().1)),
+            // Null while the fence is hidden (`background` or not): asked of the UI thread, which
+            // knows what shows.
+            "pointer" | "focus" | "caret" => {
+                let shows = self.on_ui(move |app| Ok(app.plugin_fence_shows(fence)))?;
+                Ok(match name {
+                    _ if !shows => Value::Null,
+                    "pointer" => pointer_json(),
+                    "focus" => rect_json(self.focus_seen().0),
+                    _ => rect_json(self.focus_seen().1),
+                })
+            }
             "notify" => {
                 let (title, body, sound) =
                     (arg(0), arg(1), args[2]["sound"].as_bool() == Some(true));

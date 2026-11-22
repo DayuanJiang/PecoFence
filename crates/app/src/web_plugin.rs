@@ -893,6 +893,11 @@ impl WebFence {
         self.shown.get() || self.plugin.background
     }
 
+    /// The fence shows its page: where the pointer and the focus are is told only then.
+    pub fn shows(&self) -> bool {
+        self.shown.get()
+    }
+
     /// The fence shows its page (false: rolled up, hidden with the desktop). A hidden page goes to
     /// low memory at once; 30 s later it stops drawing and is suspended (`suspend`). It keeps
     /// drawing until then: a fence expanded again within 30 s shows its page in the same frame as

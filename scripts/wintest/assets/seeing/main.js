@@ -19,7 +19,7 @@ const show = () =>
 async function pull() {
   try {
     const [p, f, c] = await Promise.all([pf.pointer(), pf.focus(), pf.caret()]);
-    at.pull = `pointer ${p.x},${p.y} focus ${rect(f)} caret ${rect(c)}`;
+    at.pull = `pointer ${p ? `${p.x},${p.y}` : "none"} focus ${rect(f)} caret ${rect(c)}`;
   } catch (e) {
     at.pull = `refused ${e.message}`;
   }

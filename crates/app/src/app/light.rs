@@ -814,8 +814,8 @@ impl App {
     }
 
     /// Interface 3: the fences whose plugin may know where the pointer is (`pointer`) or where
-    /// the focus and the caret are (`focus`), as `wants` and `page` say, and runs in a fence that
-    /// shows (or in the background), or whose web page runs.
+    /// the focus and the caret are (`focus`), as `wants` and `page` say, and that show now (its
+    /// plugin or its web page). A hidden fence is told nothing, `background` or not.
     fn seeing_watchers(
         &self,
         wants: fn(&pecofence_core::plugins::Permissions) -> bool,
@@ -825,7 +825,7 @@ impl App {
             Some(api) => (self.light.running.iter())
                 .filter(|(f, r)| {
                     let p = api.manifest(**f).map(|m| m.permissions.clone());
-                    p.is_some_and(|p| wants(&p) && (r.1 || p.background))
+                    r.1 && p.is_some_and(|p| wants(&p))
                 })
                 .map(|(f, _)| *f)
                 .collect(),
@@ -834,12 +834,24 @@ impl App {
         let pages = self.fences.values().filter_map(|w| w.web());
         fences.extend(
             pages
-                .filter(|w| w.runs() && page(&w.plugin))
+                .filter(|w| w.shows() && page(&w.plugin))
                 .map(|w| w.fence),
         );
         fences.sort();
         fences.dedup();
         fences
+    }
+
+    /// Whether fence `fence` shows now (its plugin or its web page): `pf.pointer`, `pf.focus` and
+    /// `pf.caret` answer null while it is hidden.
+    pub(super) fn plugin_fence_shows(&self, fence: FenceId) -> bool {
+        let light = self.light.running.get(&fence).is_some_and(|r| r.1);
+        let page = self
+            .fences
+            .values()
+            .filter_map(|w| w.web())
+            .any(|w| w.fence == fence && w.shows());
+        light || page
     }
 
     /// The pointer and focus reads start with the first plugin that may know of them and shows.
@@ -880,14 +892,21 @@ impl App {
             // Made before the reader, so the reader's objects go first.
             let _com = pecofence_platform::com::MtaGuard::init();
             let mut reader = pecofence_platform::focus::Reader::default();
-            while wanted.load(Ordering::Acquire) {
-                let seen = api.focus_read(reader.read());
-                let job: UiJob = Box::new(move |app: &mut App| app.plugin_focus_read(seen));
-                Self::post_job(&jobs, control, job);
-                std::thread::sleep(FOCUS_EVERY);
+            loop {
+                while wanted.load(Ordering::Acquire) {
+                    let seen = api.focus_read(reader.read());
+                    let job: UiJob = Box::new(move |app: &mut App| app.plugin_focus_read(seen));
+                    Self::post_job(&jobs, control, job);
+                    std::thread::sleep(FOCUS_EVERY);
+                }
+                running.store(false, Ordering::Release);
+                // A start that came while this thread was ending found it running and started
+                // none: this thread takes it up (unless another one runs by now).
+                if !wanted.load(Ordering::Acquire) || running.swap(true, Ordering::AcqRel) {
+                    break;
+                }
             }
             drop(reader);
-            running.store(false, Ordering::Release);
         };
         let spawned = std::thread::Builder::new()
             .name("pecofence-focus".into())
@@ -927,6 +946,10 @@ impl App {
         if self.seeing_watchers(|p| p.focus, |w| w.focus).is_empty() {
             self.light.focus.0.store(false, Ordering::Release);
             self.light.focus.2 = None;
+            // What was seen is old by the time anyone asks again.
+            if let Some(api) = &self.light.host {
+                api.focus_clear();
+            }
             return tracing::info!(
                 "plugins: none knows where the focus and the caret are now, their reads stop"
             );

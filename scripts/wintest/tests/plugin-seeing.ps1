@@ -65,10 +65,18 @@ $bd = "$script:Config\plugins\blind\1.0.0"
 $m = Get-Content "$bd\plugin.json" -Raw -Encoding UTF8 | ConvertFrom-Json
 $m.permissions = [ordered]@{}; $m.name.'zh-CN' = '看不见'
 [IO.File]::WriteAllText("$bd\plugin.json", ($m | ConvertTo-Json -Depth 6))
+# A copy that runs on while hidden (`background`): hidden, it is told nothing all the same.
+PfPlacePlugin $Kit 'seeing-bg'
+$gd = "$script:Config\plugins\seeing-bg\1.0.0"
+$m = Get-Content "$gd\plugin.json" -Raw -Encoding UTF8 | ConvertFrom-Json
+$m.permissions | Add-Member -NotePropertyName background -NotePropertyValue $true
+$m.permissions.commands = @(); $m.name.'zh-CN' = '后台看位置'
+[IO.File]::WriteAllText("$gd\plugin.json", ($m | ConvertTo-Json -Depth 6))
 $env:PECOFENCE_WEBVIEW_ARGS = '--remote-debugging-port=9352'
 PfStart -Lang zh-CN
 $script:See = PfPluginFence '看位置' '40,60,520,170' 'seeing'
 $script:Blind = PfPluginFence '看不见' '40,260,520,170' 'blind'
+$script:Bg = PfPluginFence '后台看位置' '40,460,520,170' 'seeing-bg'
 Check 'both plugins start' ((Wait { (Out $script:See) -match 'pull pointer' -and (Out $script:Blind) -match 'pull refused' } 20)) "$(Out $script:See) | $(Out $script:Blind)"
 Check 'the pointer and focus reads start with the plugin that may know of them' ([bool](PfWaitLog 'one may know where the pointer is' 5) -and [bool](PfWaitLog 'one may know where the focus and the caret are' 5)) ''
 Shot 'fences'
@@ -174,9 +182,13 @@ if ($EdgeExe) {
 }
 
 Case 'the reads stop while no fence of such a plugin shows'
+$bg0 = Count $script:Bg 'pointer'
 Pf fence hide-all | Out-Null
 Check 'all fences hidden: the pointer and focus reads stop' ([bool](PfWaitLog 'none knows where the pointer is now' 4) -and [bool](PfWaitLog 'none knows where the focus and the caret are now' 4)) ''
 Glide 500 500 900 600 30 25
+Start-Sleep -Seconds 2
+Check 'a hidden fence of a background plugin gets no pointer event' ((Count $script:Bg 'pointer') -eq $bg0) "events $bg0 -> $(Count $script:Bg 'pointer')"
+Check 'and its calls answer null while hidden (its timer runs on)' ((Wait { (Out $script:Bg) -match 'pull pointer none focus none caret none' } 4)) "$(Out $script:Bg)"
 Pf fence show-all | Out-Null; Start-Sleep -Seconds 1
 Check 'shown again: the reads start again' ((LogCount 'one may know where the pointer is') -ge 2) "count=$(LogCount 'one may know where the pointer is')"
 

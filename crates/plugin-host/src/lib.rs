@@ -934,7 +934,10 @@ pub fn run(rx: Receiver<Command>, host: Arc<dyn Host>, format: Format, out: impl
                     // media session (the app tells only plugins that may see it) the same.
                     let told = match name {
                         "clipboard" => p.reads_clipboard && p.runs(),
-                        "media" | "apps" | "pointer" | "focus" => p.runs(),
+                        "media" | "apps" => p.runs(),
+                        // Where the pointer and the focus are: only while the fence shows,
+                        // `background` or not.
+                        "pointer" | "focus" => p.shown,
                         _ => true,
                     };
                     if !told {

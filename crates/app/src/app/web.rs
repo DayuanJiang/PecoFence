@@ -335,9 +335,13 @@ impl App {
     /// Event `name` for fence `fence`'s page, when it shows one.
     pub(super) fn web_event(&self, fence: FenceId, name: &str, data: serde_json::Value) {
         let web = self.window_for(fence).and_then(|w| w.web());
-        // The media session, the programs, the pointer and the focus only while the page runs.
-        let told =
-            |w: &Rc<WebFence>| !matches!(name, "media" | "apps" | "pointer" | "focus") || w.runs();
+        // The media session and the programs only while the page runs; the pointer and the focus
+        // only while it shows (`background` or not).
+        let told = |w: &Rc<WebFence>| match name {
+            "media" | "apps" => w.runs(),
+            "pointer" | "focus" => w.shows(),
+            _ => true,
+        };
         if let Some(web) = web.filter(|w| w.fence == fence && told(w)) {
             web.event(name, &data);
         }
