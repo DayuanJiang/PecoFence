@@ -683,9 +683,15 @@ impl App {
 
     /// Interface 3: the shortcut each command of fence `fence`'s plugin brings (`key`), for the
     /// commands the fence has none for yet (one the user cleared is kept as null and stays
-    /// cleared). A shortcut PecoFence or another command has is not given; one another program
-    /// holds is, and shows as taken, as a shortcut the user picked would.
-    pub(super) fn seed_plugin_keys(&mut self, fence: FenceId) {
+    /// cleared). After an update (`before`: the commands of the version before) only a command
+    /// it brings or whose shortcut it changed gets one, so an update that asks nothing gives no
+    /// fence a shortcut. A shortcut PecoFence or another command has is not given; one another
+    /// program holds is, and shows as taken, as a shortcut the user picked would.
+    pub(super) fn seed_plugin_keys(
+        &mut self,
+        fence: FenceId,
+        before: Option<&[pecofence_core::plugins::Command]>,
+    ) {
         let Some(spec) = self.state.config.scripts.get(&fence) else {
             return;
         };
@@ -698,16 +704,35 @@ impl App {
             let Some(h) = c.key.as_deref().and_then(|k| Hotkey::parse(k).ok()) else {
                 continue;
             };
+            let kept = (before.unwrap_or_default().iter()).any(|o| o.id == c.id && o.key == c.key);
+            if before.is_some() && kept {
+                continue;
+            }
             let spec = self.state.config.scripts.get(&fence);
             let keys = spec.and_then(|s| s.settings.get(KEYS)?.as_object().cloned());
             if keys.is_some_and(|k| k.contains_key(&c.id)) {
                 tracing::debug!(%fence, command = c.id, "plugin's own shortcut: the fence has one or the user cleared it");
                 continue;
             }
-            if let Some(why) = self.plugin_key_problem(fence, &c.id, h)
-                && self.hotkey_free(h)
-            {
-                tracing::info!(%fence, command = c.id, hotkey = %h, why, "plugin's own shortcut not given: PecoFence or another command has it");
+            // PecoFence's own shortcuts, and a shortcut any fence gives a command (another fence
+            // of this plugin too, running or not). Another program's is no reason: it shows as
+            // taken, so the user knows to pick one.
+            let dialog_jump = self.state.config.settings.tools.dialog_jump
+                && h == Hotkey::new(pecofence_core::hotkey::CTRL, 0x47);
+            let own = self.peek_hotkey == Some(h)
+                || self.windows_desktop_hotkey == Some(h)
+                || dialog_jump;
+            let held = self.state.config.scripts.iter().any(|(f, s)| {
+                let keys = s.settings.get(KEYS).and_then(Value::as_object);
+                keys.is_some_and(|k| {
+                    k.iter().any(|(command, text)| {
+                        (*f != fence || *command != c.id)
+                            && text.as_str().and_then(|t| Hotkey::parse(t).ok()) == Some(h)
+                    })
+                })
+            });
+            if own || held {
+                tracing::info!(%fence, command = c.id, hotkey = %h, own, held, "plugin's own shortcut not given: PecoFence or another command has it");
                 continue;
             }
             if let Some(spec) = self.state.config.scripts.get_mut(&fence) {

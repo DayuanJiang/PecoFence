@@ -717,6 +717,11 @@ impl App {
             return;
         }
         let before = self.plugin(id).map(|p| p.manifest.version.clone());
+        // The commands before: an update gives a shortcut only to a command it brings or whose
+        // shortcut it changed.
+        let commands_before = self
+            .plugin(id)
+            .map(|p| p.manifest.permissions.commands.clone());
         let result =
             result.and_then(|version| self.switch_plugin(id, &temp, &version, before.as_deref()));
         let _ = std::fs::remove_dir_all(&temp);
@@ -750,7 +755,7 @@ impl App {
                 // A web plugin's page, its rules and its main.js are the new version's; a
                 // command the update brings with its own shortcut gets it where it has none.
                 for fence in fences {
-                    self.seed_plugin_keys(fence);
+                    self.seed_plugin_keys(fence, commands_before.as_deref());
                     self.restart_web_page(fence);
                     self.start_script(fence);
                 }
@@ -942,7 +947,7 @@ impl App {
         tracing::info!(id, made = made.is_some(), "plugins: fence added");
         self.tool_clear_of = None;
         if let Some(fence) = made {
-            self.seed_plugin_keys(fence);
+            self.seed_plugin_keys(fence, None);
         }
     }
 

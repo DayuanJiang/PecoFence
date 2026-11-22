@@ -43,9 +43,9 @@ pub(super) struct AppHost {
     /// The programs running and the one in front, as last read for `pf.apps` and the `apps`
     /// event (one read every 5 s at most, for all plugins).
     programs: Mutex<Option<(std::time::Instant, Programs)>>,
-    /// The keyboard focus and the caret as last read for `pf.focus`, `pf.caret` and the `focus`
-    /// event (read again when 100 ms old; PecoFence's own windows in front keep what was seen).
-    focus: Mutex<(Option<std::time::Instant>, Seen)>,
+    /// The keyboard focus and the caret as the focus thread last read them (10 times a second
+    /// while a fence of a plugin that may know of them shows), for `pf.focus` and `pf.caret`.
+    focus: Mutex<Seen>,
 }
 
 /// The focused element and the caret (screen pixels, None for none).
@@ -102,44 +102,38 @@ impl AppHost {
         }
     }
 
-    /// The focus and the caret, read again when the last read is 100 ms old or (`fresh`: the
-    /// reads of the `focus` event) at once. Runs on a worker thread: MSAA asks the program in
-    /// front, and one that does not answer would hold up the UI.
-    pub(super) fn focus_seen(&self, fresh: bool) -> Seen {
-        use pecofence_platform::focus::{Reading, read};
+    /// The focus and the caret as last read (`pf.focus`, `pf.caret`): none before the focus
+    /// thread's first read.
+    pub(super) fn focus_seen(&self) -> Seen {
+        self.focus.lock().map_or((None, None), |s| *s)
+    }
+
+    /// Keeps the focus thread's `reading` and gives what is seen now: PecoFence's own window in
+    /// front, or one that does not answer, keeps what was seen before.
+    pub(super) fn focus_read(&self, reading: pecofence_platform::focus::Reading) -> Seen {
+        use pecofence_platform::focus::Reading;
         let Ok(mut last) = self.focus.lock() else {
             return (None, None);
         };
-        let recent = last
-            .0
-            .is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(100));
-        if recent && !fresh {
-            return last.1;
-        }
-        // A thread of an STA keeps its apartment (the guard fails and is not needed).
-        let _com = pecofence_platform::com::MtaGuard::init();
-        match read() {
-            Reading::Seen {
-                focus,
-                caret,
-                focus_by,
-                caret_by,
-            } => {
-                if (focus, caret) != last.1 {
-                    tracing::debug!(
-                        ?focus,
-                        ?caret,
-                        focus_by,
-                        caret_by,
-                        "plugins: the focus or the caret moved"
-                    );
-                }
-                last.1 = (focus, caret);
+        if let Reading::Seen {
+            focus,
+            caret,
+            focus_by,
+            caret_by,
+        } = reading
+        {
+            if (focus, caret) != *last {
+                tracing::debug!(
+                    ?focus,
+                    ?caret,
+                    focus_by,
+                    caret_by,
+                    "plugins: the focus or the caret moved"
+                );
             }
-            Reading::Own | Reading::Unknown => {}
+            *last = (focus, caret);
         }
-        last.0 = Some(std::time::Instant::now());
-        last.1
+        *last
     }
 
     fn control(&self) -> HWND {
@@ -1139,8 +1133,8 @@ impl pecofence_plugin_host::Host for AppHost {
                 Ok(json!(app))
             }
             "pointer" => Ok(pointer_json()),
-            "focus" => Ok(rect_json(self.focus_seen(false).0)),
-            "caret" => Ok(rect_json(self.focus_seen(false).1)),
+            "focus" => Ok(rect_json(self.focus_seen().0)),
+            "caret" => Ok(rect_json(self.focus_seen().1)),
             "notify" => {
                 let (title, body, sound) =
                     (arg(0), arg(1), args[2]["sound"].as_bool() == Some(true));

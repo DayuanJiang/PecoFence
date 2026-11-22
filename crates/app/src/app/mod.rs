@@ -1385,7 +1385,6 @@ impl App {
                                 | plugins::TIMER_PLUGINS_CHECK
                                 | light::TIMER_PLUGIN_APPS
                                 | light::TIMER_PLUGIN_POINTER
-                                | light::TIMER_PLUGIN_FOCUS
                                 | TIMER_PORTAL_BACK
                                 | TIMER_CONFIG_LOCKED
                                 | desktop_import::TIMER_WINDOWS_PLACES
@@ -1435,7 +1434,6 @@ impl App {
                                             light::TIMER_PLUGIN_POINTER => {
                                                 app.poll_plugin_pointer()
                                             }
-                                            light::TIMER_PLUGIN_FOCUS => app.poll_plugin_focus(),
                                             updates::TIMER_UPDATE_RESUME => {
                                                 app.update_check_after_resume()
                                             }

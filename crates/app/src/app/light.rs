@@ -120,21 +120,20 @@ pub(super) struct Light {
     apps: (bool, HashMap<FenceId, Value>),
     /// Interface 3: whether the pointer is read for the `pointer` event, and where it was last.
     pointer: (bool, Option<Value>),
-    /// Whether the focus and the caret are read for the `focus` event, whether a read is under
-    /// way on its thread (one at a time: a program in front that does not answer holds one
-    /// thread, not one more every 100 ms), and what was last told.
-    focus: (bool, Arc<AtomicBool>, Option<Value>),
+    /// Whether the focus and the caret are wanted for the `focus` event, whether the thread that
+    /// reads them runs (one long-lived thread: it keeps its UI Automation object), and what was
+    /// last told.
+    focus: (Arc<AtomicBool>, Arc<AtomicBool>, Option<Value>),
 }
 
 /// The control window's timer of the programs read for `pf.apps` and the `apps` event.
 pub(super) const TIMER_PLUGIN_APPS: usize = 134;
 const APPS_EVERY_MS: u32 = 5000;
-/// The control window's timers of the `pointer` event (at most 30 a second) and the `focus`
-/// event (the focus and the caret read 10 times a second).
+/// The control window's timer of the `pointer` event (at most 30 a second).
 pub(super) const TIMER_PLUGIN_POINTER: usize = 135;
-pub(super) const TIMER_PLUGIN_FOCUS: usize = 136;
 const POINTER_EVERY_MS: u32 = 33;
-const FOCUS_EVERY_MS: u32 = 100;
+/// How often the focus thread reads the focus and the caret.
+const FOCUS_EVERY: std::time::Duration = std::time::Duration::from_millis(100);
 
 impl App {
     fn light_send(&self, cmd: host::Command) {
@@ -857,12 +856,45 @@ impl App {
             self.light.pointer.0 = true;
             window::set_timer(hwnd, TIMER_PLUGIN_POINTER, POINTER_EVERY_MS);
         }
-        if !self.light.focus.0 && !self.seeing_watchers(|p| p.focus, |w| w.focus).is_empty() {
-            tracing::info!(
-                "plugins: one may know where the focus and the caret are, they are read 10 times a second from now on"
-            );
-            self.light.focus.0 = true;
-            window::set_timer(hwnd, TIMER_PLUGIN_FOCUS, FOCUS_EVERY_MS);
+        if !self.seeing_watchers(|p| p.focus, |w| w.focus).is_empty() {
+            self.start_focus_reads();
+        }
+    }
+
+    /// The focus thread: one long-lived thread (COM, its UI Automation object) reads the focus
+    /// and the caret 10 times a second while they are wanted and hands each read to the UI
+    /// thread (`plugin_focus_read`), which says when none wants them any more.
+    fn start_focus_reads(&mut self) {
+        let (wanted, running) = (self.light.focus.0.clone(), self.light.focus.1.clone());
+        wanted.store(true, Ordering::Release);
+        if running.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        tracing::info!(
+            "plugins: one may know where the focus and the caret are, they are read 10 times a second from now on"
+        );
+        let api = self.light_host();
+        let (jobs, control) = (self.light.jobs.clone(), self.control.hwnd().0 as isize);
+        let ended = running.clone();
+        let read = move || {
+            // Made before the reader, so the reader's objects go first.
+            let _com = pecofence_platform::com::MtaGuard::init();
+            let mut reader = pecofence_platform::focus::Reader::default();
+            while wanted.load(Ordering::Acquire) {
+                let seen = api.focus_read(reader.read());
+                let job: UiJob = Box::new(move |app: &mut App| app.plugin_focus_read(seen));
+                Self::post_job(&jobs, control, job);
+                std::thread::sleep(FOCUS_EVERY);
+            }
+            drop(reader);
+            running.store(false, Ordering::Release);
+        };
+        let spawned = std::thread::Builder::new()
+            .name("pecofence-focus".into())
+            .spawn(read);
+        if let Err(e) = spawned {
+            ended.store(false, Ordering::Release);
+            tracing::warn!(error = %e, "plugins: no thread to read the focus");
         }
     }
 
@@ -886,42 +918,18 @@ impl App {
         }
     }
 
-    /// `TIMER_PLUGIN_FOCUS`: the focus and the caret read on a worker thread (MSAA asks the
-    /// program in front), one read at a time; the reads stop when none watches.
-    pub(super) fn poll_plugin_focus(&mut self) {
+    /// A read of the focus thread: the watching plugins and pages get `focus` ({focus, caret})
+    /// when either moved; with none watching, the thread is told to end.
+    fn plugin_focus_read(&mut self, seen: light_host::Seen) {
+        if !self.light.focus.0.load(Ordering::Acquire) {
+            return;
+        }
         if self.seeing_watchers(|p| p.focus, |w| w.focus).is_empty() {
-            self.light.focus.0 = false;
+            self.light.focus.0.store(false, Ordering::Release);
             self.light.focus.2 = None;
             return tracing::info!(
                 "plugins: none knows where the focus and the caret are now, their reads stop"
             );
-        }
-        window::set_timer(self.control.hwnd(), TIMER_PLUGIN_FOCUS, FOCUS_EVERY_MS);
-        let reading = self.light.focus.1.clone();
-        if reading.swap(true, Ordering::AcqRel) {
-            return tracing::debug!("plugins: the focus read before is still under way");
-        }
-        let api = self.light_host();
-        let (jobs, control) = (self.light.jobs.clone(), self.control.hwnd().0 as isize);
-        let read = move || {
-            let seen = api.focus_seen(true);
-            reading.store(false, Ordering::Release);
-            let job: UiJob = Box::new(move |app: &mut App| app.plugin_focus_read(seen));
-            Self::post_job(&jobs, control, job);
-        };
-        let spawned = std::thread::Builder::new()
-            .name("pecofence-focus".into())
-            .spawn(read);
-        if let Err(e) = spawned {
-            self.light.focus.1.store(false, Ordering::Release);
-            tracing::warn!(error = %e, "plugins: no thread to read the focus");
-        }
-    }
-
-    /// The watching plugins and pages get `focus` ({focus, caret}) when either moved.
-    fn plugin_focus_read(&mut self, seen: light_host::Seen) {
-        if !self.light.focus.0 {
-            return;
         }
         let state = json!({
             "focus": light_host::rect_json(seen.0), "caret": light_host::rect_json(seen.1),

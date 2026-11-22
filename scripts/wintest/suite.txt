@@ -89,6 +89,7 @@ web-perms-S        1   ec2    debug   plugin-web-perms.ps1           --var Part=
 plugin-migrate     3   ec2    release plugin-migrate.ps1
 plugin-view        3   ec2    debug   plugin-view.ps1
 plugin-launcher    5   ec2    debug   plugin-launcher.ps1
+plugin-seeing      4   ec2    debug   plugin-seeing.ps1
 plugin-media       2   ec2    debug   plugin-media.ps1
 plugin-ui          3   ec2    debug   plugin-ui.ps1
 plugin-local       2   ec2    debug   plugin-local.ps1
