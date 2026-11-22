@@ -40,7 +40,7 @@
     notify: (title, body, options) => call("notify", [String(title), String(body || ""), options || {}]),
   };
   for (const [group, names] of Object.entries({
-    http: ["get", "post"],
+    http: ["get", "post", "save"],
     data: ["read", "write", "list", "remove"],
     clipboard: ["text", "files", "image", "setText", "setFiles", "setImage"],
     sys: ["cpu", "memory", "drives", "ip", "network", "battery"],

@@ -21,6 +21,8 @@ pub(super) type UiJob = Box<dyn FnOnce(&mut App) + Send>;
 const MAX_TEXT: usize = 256 * 1024;
 const MAX_DATA: u64 = 200 * 1024 * 1024;
 const MAX_FILE: u64 = 20 * 1024 * 1024;
+/// The most bytes `pf.http.save` takes from a server for one picture.
+const MAX_PICTURE: usize = 10 * 1024 * 1024;
 /// The most bytes of a dropped file `pf.drop.read` and `pf.drop.text` give a plugin: in base64
 /// with its JSON copy, 4 MB would not fit the plugin's 8 MB.
 const MAX_DROP_READ: u64 = 1024 * 1024;
@@ -522,6 +524,22 @@ impl AppHost {
         }))
     }
 
+    /// `pf.http.save`: `bytes`, a picture a server sent, become the data file `name` (replaced
+    /// whole). Only a PNG, JPEG, GIF or WebP is kept: anything else is refused, so the call
+    /// cannot store other files, and the picture's decoder meets nothing it was not made for.
+    fn save_picture(&self, fence: FenceId, name: &str, bytes: &[u8]) -> Result<(), String> {
+        if !is_picture(bytes) {
+            tracing::info!(%fence, bytes = bytes.len(), "plugin: a downloaded file refused, not a PNG, JPEG, GIF or WebP picture");
+            return Err("pf.http.save: the answer is not a PNG, JPEG, GIF or WebP picture".into());
+        }
+        let file = self.data_dir(fence)?.join(name);
+        self.write_data(fence, &file, bytes.len() as u64, |dir| {
+            replace_file(dir, &file, bytes)
+        })?;
+        tracing::info!(%fence, bytes = bytes.len(), "plugin: a picture saved into its data folder");
+        Ok(())
+    }
+
     fn save_cover(&self, fence: FenceId, hash: u64, bytes: &[u8]) -> Result<String, String> {
         let kind = if bytes.starts_with(b"\x89PNG") {
             "png"
@@ -835,6 +853,15 @@ pub(super) fn front_program() -> Option<String> {
     Some(path.file_name()?.to_string_lossy().to_lowercase())
 }
 
+/// Whether `bytes` start as a PNG, JPEG, GIF or WebP file.
+fn is_picture(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+        || bytes.starts_with(&[0xFF, 0xD8, 0xFF])
+        || bytes.starts_with(b"GIF87a")
+        || bytes.starts_with(b"GIF89a")
+        || (bytes.len() > 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP")
+}
+
 /// Standard base64 with padding.
 fn base64(bytes: &[u8]) -> String {
     const ABC: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -900,8 +927,11 @@ impl pecofence_plugin_host::Host for AppHost {
     fn call(&self, fence: FenceId, name: &str, args: Value) -> Result<Value, String> {
         let arg = |i: usize| args[i].as_str().unwrap_or_default().to_string();
         match name {
-            "http.get" | "http.post" => {
+            "http.get" | "http.post" | "http.save" => {
                 let options = &args[1];
+                // `pf.http.save`: a 200 answer goes into the data file named, never into the
+                // plugin's memory, and the plugin gets the status and headers with no body.
+                let save = options["save"].as_str().filter(|_| name == "http.save");
                 let mut agent = String::new();
                 let mut lines = String::new();
                 for (k, v) in options["headers"].as_object().into_iter().flatten() {
@@ -919,7 +949,11 @@ impl pecofence_plugin_host::Host for AppHost {
                 let verb = if name == "http.post" { "POST" } else { "GET" };
                 let url = arg(0);
                 let begun = Instant::now();
-                let max = pecofence_plugin_host::MAX_ANSWER;
+                let max = if save.is_some() {
+                    MAX_PICTURE
+                } else {
+                    pecofence_plugin_host::MAX_ANSWER
+                };
                 let local = options["local"].as_str();
                 if local == Some("lan") {
                     self.typed_device(fence, &url)?;
@@ -951,6 +985,12 @@ impl pecofence_plugin_host::Host for AppHost {
                     .filter_map(|l| l.split_once(':'))
                     .map(|(k, v)| (k.trim().to_ascii_lowercase(), v.trim().into()))
                     .collect();
+                if let Some(save) = save {
+                    if status == 200 {
+                        self.save_picture(fence, save, &bytes)?;
+                    }
+                    return Ok(json!({ "status": status, "headers": headers, "body": "" }));
+                }
                 let body = String::from_utf8_lossy(&bytes);
                 Ok(json!({ "status": status, "headers": headers, "body": body }))
             }
@@ -1071,6 +1111,27 @@ mod tests {
             assert_eq!(base64(bytes.as_bytes()), text);
         }
         assert_eq!(base64(&[0xFB, 0xFF]), "+/8=");
+    }
+
+    #[test]
+    fn only_pictures_are_saved_from_the_network() {
+        assert!(is_picture(b"\x89PNG\r\n\x1a\n...."));
+        assert!(is_picture(&[0xFF, 0xD8, 0xFF, 0xE0, 0, 0x10]));
+        assert!(is_picture(b"GIF89a...."));
+        assert!(is_picture(b"RIFF\x10\0\0\0WEBPVP8 "));
+        assert!(!is_picture(b"RIFF\x10\0\0\0WAVEfmt "));
+        assert!(!is_picture(b"MZ\x90\0"));
+        assert!(!is_picture(b"<html>"));
+        assert!(!is_picture(b""));
+        let dir = temp("picture");
+        let (host, fence) = host(&dir);
+        let jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0, 1, 2, 3];
+        host.save_picture(fence, "a.jpg", &jpeg).unwrap();
+        assert_eq!(std::fs::read(dir.join("t").join("a.jpg")).unwrap(), jpeg);
+        let why = host.save_picture(fence, "b.jpg", b"<html>").unwrap_err();
+        assert!(why.contains("not a PNG"), "{why}");
+        assert!(!dir.join("t").join("b.jpg").exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
