@@ -288,7 +288,7 @@ impl Permissions {
 
     /// What `self` uses of interface 3: its new fields ([`API3_FIELDS`]), `folders` `any`, a
     /// command's own `key`, and what interface 2 refused: a host that is an IP address or a name
-    /// without a dot, a script in `system`, more than 4 local ports. PecoFence 0.5.0 drops a
+    /// without a dot, a script in `system`, more than 20 programs or 4 local ports. PecoFence 0.5.0 drops a
     /// plugin with any of these, or would run it without them.
     pub fn api3_uses(&self) -> Vec<&'static str> {
         let flags = [
@@ -315,6 +315,7 @@ impl Permissions {
                 self.system.iter().any(|s| !program_of_api2(s)),
                 "scripts in system",
             ),
+            (self.system.len() > 20, "more than 20 programs"),
             (
                 self.local.ports().len() > LOCAL_PORTS_API2,
                 "more than 4 local ports",
