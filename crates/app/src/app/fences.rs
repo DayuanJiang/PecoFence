@@ -646,10 +646,13 @@ impl App {
             return;
         };
         let r = w.rect();
-        // Growing stops short of a fence below; the rest of the items scroll. One whose title
-        // row is at its bottom keeps that edge and stops short of a fence above instead (while
-        // it is expanded, the push pass has lifted those out of its way already).
-        if let Some(limit) = self.growth_limit_below(id, &r) {
+        // With pushNeighbors on the fences below make room, as for 适应内容大小 (feedback #208:
+        // a tab with more icons stopped at the fence below); off, growing stops short of it and
+        // the rest of the items scroll. One whose title row is at its bottom keeps that edge
+        // and stops short of a fence above instead (while it is expanded, the push pass has
+        // lifted those out of its way already).
+        let push = self.state.config.settings.roll_up.push_neighbors;
+        if !push && let Some(limit) = self.growth_limit_below(id, &r) {
             h = h.min(limit.max(r.bottom) - r.top);
         }
         if let Some(limit) = self.growth_limit_above(id, &r) {

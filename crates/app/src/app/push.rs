@@ -1,7 +1,7 @@
 //! Push neighbours (`rollUp.pushNeighbors`): while a fence is expanded (a click, a hover peek, or
-//! a taller height from the CLI), the fences stacked below it slide down out of its way, and
-//! slide back when it rolls up. Edge drags and the automatic size changes still stop short of
-//! the fence below as it shows. A fence with 向上展开 that opened upward keeps its bottom edge:
+//! a taller height from the CLI, 适应内容大小, an icon size or 自动高度), the fences stacked below
+//! it slide down out of its way, and slide back when it rolls up. Edge drags still stop short
+//! of the fence below as it shows. A fence with 向上展开 that opened upward keeps its bottom edge:
 //! the fences stacked above it slide up instead, none past the top of the screen. Which way it
 //! opens depends on how far they can go (`Behavior::expand_room`, kept here). A fence with
 //! 向上展开 is never pushed itself.
