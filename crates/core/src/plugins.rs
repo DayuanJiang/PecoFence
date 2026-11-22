@@ -1279,7 +1279,14 @@ mod tests {
         assert!(with("links", json!(["github.com"])).is_ok());
         assert!(with("links", json!(["localhost"])).is_err());
         assert!(with("links", json!(["192.168.1.1"])).is_err());
-        // Interface 3: network may name addresses and names without a dot, as written.
+        // Interface 3: network may name addresses and names without a dot, as written (api 3).
+        let with = |field: &str, list: serde_json::Value| {
+            check_manifest(&manifest(|v| {
+                v["api"] = json!(3);
+                v["permissions"][field] = list;
+            }))
+        };
+        assert!(with("network", json!(["nas"])).is_ok());
         for ok in [
             "192.168.1.1",
             "8.8.8.8",
@@ -1796,7 +1803,7 @@ mod tests {
         // Any number of ports (interface 3); the same port in both classes is two entries; a
         // port out of range does not read.
         let five = json!({ "loopback": [port(80, "a"), port(81, "b"), port(82, "c"), port(83, "d"), port(84, "e")] });
-        assert!(check_manifest(&with(2, five, &none)).is_ok());
+        assert!(check_manifest(&with(3, five, &none)).is_ok());
         let both = json!({ "loopback": [port(8080, "a")], "lan": [port(8080, "a")] });
         assert!(check_manifest(&with(2, both, &ha)).is_ok());
         let mut v = entry("countdown");
