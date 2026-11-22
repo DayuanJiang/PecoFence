@@ -2427,6 +2427,16 @@ impl FenceWindow {
         r
     }
 
+    /// Opened over the fences under it (`rollUp.pushNeighbors` off, a gap under one row): above
+    /// the other fences while it is open, as a hover peek is; its roll-up puts it back.
+    pub fn raise_while_open(&self) {
+        let hwnd = self.hwnd();
+        self.with_view(|v| {
+            v.hover_raised = true;
+            v.queue.push(Command::RaiseForHover(hwnd));
+        });
+    }
+
     /// Width the window expands to while it is collapsed to its left tab column or rolled to
     /// a compact title row (None otherwise: the window has its expanded width).
     pub fn collapsed_expanded_width_px(&self) -> Option<i32> {

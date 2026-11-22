@@ -149,6 +149,7 @@ polish-search-back 1   ec2    release polish-scroll.ps1              --var Part=
 polish-roll-click  1   ec2    release polish-fence-motion.ps1        --var Part=A
 polish-push-room   2   ec2    release polish-fence-motion.ps1        --var Part=B
 polish-drop-glide  1   ec2    release polish-fence-motion.ps1        --var Part=C
+stack-expand-207   2   ec2    release 207-stack-expand.ps1
 polish-lock-edges  2   ec2    release polish-lock-edges.ps1
 polish-metrics     2   ec2    release polish-metrics.ps1
 polish-quit-name   1   ec2    release polish-quit-namebox.ps1

@@ -248,7 +248,15 @@ impl App {
             .iter()
             .filter(|(id, w)| !w.is_desktop_arranged() && self.on_current_desktop(**id))
             .map(|(id, w)| {
-                let rect = w.rect();
+                // A height animation in flight counts with the height it ends at: at startup an
+                // open fence fitted to the gap above the fence below (`rooms_without_push`)
+                // is still on its way there.
+                let mut rect = w.rect();
+                match w.animation_end_height_px() {
+                    Some((h, true)) => rect.top = rect.bottom - h,
+                    Some((h, false)) => rect.bottom = rect.top + h,
+                    None => {}
+                }
                 let connected = |f: &pecofence_core::Fence| {
                     let on = |a: &WorkArea| a.device_path == f.geometry.monitor;
                     self.state.work_areas.iter().any(on)
@@ -342,35 +350,91 @@ impl App {
         clearance::limit_above(&self.other_fence_rects(id), r, self.gap_px(w.hwnd()))
     }
 
-    /// Expanding a rolled fence with `rollUp.pushNeighbors` off: the expanded height stops short
-    /// of a fence placed under the title row meanwhile (the rest of the items scroll). A fence
-    /// with 向上展开 picks its side and height from the room around its title row as it opens
-    /// instead (`expand_rooms_px`), without changing the height it is saved with.
-    pub(super) fn clamp_expand_height(&mut self, id: FenceId) {
+    /// With `rollUp.pushNeighbors` off, the gap under host `id` (not one with 向上展开): the room
+    /// below its top edge down to the next fence below, and the height of its title row and one
+    /// row of icons. None when no fence below limits it.
+    fn gap_below(&self, id: FenceId) -> Option<(i32, i32)> {
         if self.state.fence(id).is_some_and(|f| f.expand_upward) {
-            return;
+            return None;
         }
-        let Some(w) = self.fences.get(&id) else {
-            return;
-        };
-        // Collapsed to its left tab column, the fence expands to its own width too.
-        let r = w.footprint_rect();
-        let expanded = w.expanded_height_px();
+        let w = self.fences.get(&id)?;
+        // Collapsed to its left tab column, the fence expands to its own width too. Measured
+        // from its title row, as when it is rolled: open in full over a fence below (after a
+        // restart), that one still counts.
+        let mut r = w.footprint_rect();
+        r.bottom = r.top + w.resting_heights_px()?.0;
+        if w.row_at_bottom() {
+            return None;
+        }
+        // Every fence it shares a desktop with, shown yet or not (at startup none is), as the
+        // push pass counts them.
+        let others: Vec<RECT> = self
+            .fences
+            .iter()
+            .filter(|(fid, o)| {
+                **fid != id && !o.is_desktop_arranged() && self.share_a_desktop(id, **fid)
+            })
+            .map(|(_, o)| o.rect())
+            .collect();
+        let limit = clearance::limit_below(&others, &r, self.gap_px(w.hwnd()))?;
         let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
-        let (Some(limit), Some(steps)) =
-            (self.growth_limit_below(id, &r), self.grid_steps(id, scale))
-        else {
+        let steps = self.grid_steps(id, scale)?;
+        Some((limit - r.top, steps.height_within(0)))
+    }
+
+    /// The windows in the user's hands (moved or resized), which keep the height they have.
+    pub(super) fn windows_in_hand(&self) -> Vec<HWND> {
+        let mut held = Vec::new();
+        if let Some(sm) = self.ctx.behavior.size_move.borrow().as_ref() {
+            held.push(sm.hwnd);
+            held.extend(&sm.group);
+        }
+        held.extend(
+            self.fences
+                .values()
+                .filter(|w| w.zoom_busy())
+                .map(|w| w.hwnd()),
+        );
+        held
+    }
+
+    /// With `rollUp.pushNeighbors` off, how far each fence opens below its top edge: it stops
+    /// short of the next fence below while that gap holds a row of icons, and is held there
+    /// only for as long as it is open, as with the push on: the saved height stays its own, and
+    /// a hover peek and the next open take it (feedback #207: a stop short was saved, so the
+    /// top fence of a stack opened one row from then on). With a fence closer than one row it
+    /// opens to its saved height above the fences there, as a hover peek does.
+    pub(super) fn rooms_without_push(&self) -> Vec<(HWND, i32)> {
+        let held = self.windows_in_hand();
+        self.fences
+            .iter()
+            .filter(|(_, w)| !w.is_desktop_arranged() && !held.contains(&w.hwnd()))
+            .filter_map(|(&id, w)| {
+                let (room, row) = self.gap_below(id)?;
+                (room >= row).then_some((w.hwnd(), room))
+            })
+            .collect()
+    }
+
+    /// A rolled fence opens with `rollUp.pushNeighbors` off: says how far (the decision the
+    /// opening takes from [`Self::rooms_without_push`]) and, when it covers the fences under it,
+    /// raises it above them until it rolls up again.
+    pub(super) fn open_without_push(&self, id: FenceId) {
+        let (Some((room, row)), Some(w)) = (self.gap_below(id), self.fences.get(&id)) else {
             return;
         };
-        if r.top + expanded <= limit {
-            return;
+        let full = w.expanded_height_px();
+        let outcome = if room >= full {
+            "in full: the gap holds it"
+        } else if room >= row {
+            "stops short of the fence below"
+        } else {
+            "in full, above the fences below: the gap is under one row"
+        };
+        tracing::info!(%id, gap_px = room, row_px = row, full_px = full, outcome, "fence opens with pushing off");
+        if room < row && room < full {
+            w.raise_while_open();
         }
-        let h = steps.height_within(limit - r.top);
-        if h >= expanded {
-            return;
-        }
-        w.set_expanded_height_px(h);
-        self.record_bounds(id, r, true, h, "expand clamp");
     }
 
     /// Where a notice in the corner (`crate::notice`) must not go: the fence windows on show,

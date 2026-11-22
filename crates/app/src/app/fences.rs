@@ -1721,7 +1721,7 @@ impl App {
             && !self.state.config.settings.roll_up.push_neighbors
             && self.fences.get(&fence).is_some_and(|w| w.is_rolled())
         {
-            self.clamp_expand_height(fence);
+            self.open_without_push(fence);
         }
         if let Some(w) = self.fences.get(&fence) {
             w.set_rolled(rolled);
