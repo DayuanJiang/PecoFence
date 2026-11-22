@@ -168,7 +168,8 @@ if ($Part -match 'A') {
     # A fence with tabs nearer still, locked: the lock is its window's (the host's), so it takes
     # nothing whichever tab it shows.
     Case 'A: a locked fence with tabs on B takes nothing, whatever tab it shows'
-    Pf fence create --title Tabbed --rect "$($at[0] - 150),$($at[1] + 60),300,200" | Out-Null
+    # In the gap between Near and the folder fence, just above the click: the nearest fence.
+    Pf fence create --title Tabbed --rect "$($at[0] - 75),$($at[1] - 190),140,150" | Out-Null
     Pf fence create --title TabX --rect "$($MB.workArea.x + 30),$($MB.workArea.y + 30),300,200" | Out-Null
     Start-Sleep -Seconds 1
     Pf fence merge TabX --into Tabbed | Out-Null
@@ -180,6 +181,11 @@ if ($Part -match 'A') {
     $act = @([regex]::Matches("$cfg", '"activeTab":\s*"([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
     $shown = if ($act -contains $tx.id) { 'TabX (unlocked)' } elseif ($act -contains $tg.id) { 'Tabbed (the host)' } else { 'unknown' }
     Log "Tabbed $($tg.id) $(M2Fmt $tg.windowRect) tabs=$($tg.tabs -join ',') locked=$($tg.locked); TabX $($tx.id) locked=$($tx.locked); shown tab: $shown"
+    $r = $tg.windowRect
+    $gapT = [math]::Sqrt([math]::Pow([math]::Max(0, [math]::Max($r.x - $at[0], $at[0] - $r.x - $r.w)), 2) + [math]::Pow([math]::Max(0, [math]::Max($r.y - $at[1], $at[1] - $r.y - $r.h)), 2))
+    $rn = (FenceGet Near).windowRect
+    $gapN = [math]::Max(0, [math]::Max($rn.x - $at[0], $at[0] - $rn.x - $rn.w))
+    Check 'setup: the locked fence with tabs is nearer to the click than Near' ($gapT -lt $gapN) "Tabbed $([int]$gapT) px, Near $([int]$gapN) px"
     [Mon2]::Click($at[0], $at[1], $true); Start-Sleep -Milliseconds 900
     CloseDeskMenu $at
     $n4 = "pk207 lock $(Get-Date -Format HHmmss).pk207"
