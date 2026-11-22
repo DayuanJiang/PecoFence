@@ -1355,11 +1355,15 @@ impl DesktopAnchor {
             self.quick
                 .desktop_activated(sink_was_on, held, Instant::now(), pt);
             // The press that activated the desktop reached Explorer before the sink existed: a
-            // drag it starts still draws a marquee (from where the pointer is now). Activated
-            // any other way, the desktop ends the fence selection like a click on it does,
-            // unless a dialog opened from a fence just closed (the fence takes it back below).
+            // drag it starts still draws a marquee (from where the pointer is now). A press the
+            // sink already took keeps its own point: this event can come 200 ms into the drag,
+            // and starting again there moved the rectangle's corner (0.5.1 release test).
+            // Activated any other way, the desktop ends the fence selection like a click on it
+            // does, unless a dialog opened from a fence just closed (the fence takes it back below).
             if held {
-                self.begin_marquee(pt);
+                if self.quick.marquee_origin.is_none() {
+                    self.begin_marquee(pt);
+                }
             } else if back_to.is_none() {
                 self.emit_marquee(MarqueeEvent::Pressed {
                     additive: additive_modifier(),
