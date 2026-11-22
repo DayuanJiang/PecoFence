@@ -32,9 +32,14 @@ pub const MAX_FILES: usize = 100;
 pub const MAX_TOTAL: u64 = 5 * 1024 * 1024;
 
 /// The newest plugin interface this PecoFence knows (`api` in plugin.json).
-pub const API: u32 = 2;
-/// The most bytes `index.json` may have.
-pub const MAX_INDEX: usize = 1024 * 1024;
+pub const API: u32 = 3;
+/// The most bytes an index may have: `index-3.json`, which this PecoFence reads first. The
+/// `index.json` of PecoFence 0.5.0 and earlier stays under 1 MB (their limit): the plugin
+/// repository's build-index keeps it so.
+pub const MAX_INDEX: usize = 16 * 1024 * 1024;
+/// The first release that knows interface 3: a plugin using what interface 3 brought says
+/// `api: 3` and at least this `minPecoFence` (the plugin repository's checks).
+pub const API3_RELEASE: &str = "0.6.0";
 
 /// What a plugin may do with the clipboard: reading and writing are two separate rights.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -91,6 +96,21 @@ pub struct Permissions {
     pub apps: Vec<String>,
     /// Services of this computer and of a device of the local network, by port.
     pub local: Local,
+    // Interface 3 (each needs `api: 3`, see [`API3_FIELDS`]).
+    /// A web page may capture the screen (`getDisplayMedia`; the user picks what to share).
+    pub screen: bool,
+    /// Knows where the pointer is (`pf.pointer`, event `pointer`).
+    pub pointer: bool,
+    /// Knows where the keyboard focus and the text caret are (`pf.focus`, `pf.caret`).
+    pub focus: bool,
+    /// A web page may use the camera.
+    pub camera: bool,
+    /// A web page may use the microphone.
+    pub microphone: bool,
+    /// A web page may ask where the computer is (geolocation).
+    pub location: bool,
+    /// A web page may use WebRTC: direct connections to other computers, at any address.
+    pub webrtc: bool,
 }
 
 /// `local`: services `pf.http` may reach outside the internet (plain http too, never through a
@@ -177,15 +197,19 @@ pub fn device_host(typed: &str) -> Option<String> {
     crate::web_address::WebAddress::parse(&format!("http://{t}")).map(|a| a.host)
 }
 
-/// One command of `commands`: its id and its title by language.
+/// One command of `commands`: its id, its title by language and (interface 3) the shortcut the
+/// plugin brings (`"Ctrl+Shift+M"`), which the user may change or clear.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct Command {
     pub id: String,
     #[serde(default)]
     pub title: BTreeMap<String, String>,
+    #[serde(default)]
+    pub key: Option<String>,
 }
 
-/// What a plugin may do in the folders the user picks for it: none < read < readwrite.
+/// What a plugin may do in the folders the user picks for it: none < read < readwrite < any
+/// (interface 3: writes files of any type).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Folders {
@@ -193,6 +217,7 @@ pub enum Folders {
     None,
     Read,
     Readwrite,
+    Any,
 }
 
 impl Folders {
@@ -201,7 +226,7 @@ impl Folders {
     }
     /// `pf.folder.write`, `mkdir` and `trash`.
     pub fn writes(self) -> bool {
-        self == Self::Readwrite
+        self >= Self::Readwrite
     }
 }
 
@@ -260,6 +285,115 @@ impl Permissions {
             .filter_map(|(f, u)| u.then_some(f))
             .collect()
     }
+
+    /// What `self` uses of interface 3: its new fields ([`API3_FIELDS`]), `folders` `any`, a
+    /// command's own `key`, and what interface 2 refused: a host that is an IP address or a name
+    /// without a dot, a script in `system`, more than 4 local ports. PecoFence 0.5.0 drops a
+    /// plugin with any of these, or would run it without them.
+    pub fn api3_uses(&self) -> Vec<&'static str> {
+        let flags = [
+            self.screen,
+            self.pointer,
+            self.focus,
+            self.camera,
+            self.microphone,
+            self.location,
+            self.webrtc,
+        ];
+        let mut used: Vec<&'static str> = (API3_FIELDS.into_iter().zip(flags))
+            .filter_map(|(f, u)| u.then_some(f))
+            .collect();
+        let mut hosts = self.network.iter().chain(&self.links);
+        let more = [
+            (self.folders == Folders::Any, "folders any"),
+            (
+                self.commands.iter().any(|c| c.key.is_some()),
+                "command keys",
+            ),
+            (hosts.any(|h| !host_of_api2(h)), "IP or dotless hosts"),
+            (
+                self.system.iter().any(|s| !program_of_api2(s)),
+                "scripts in system",
+            ),
+            (
+                self.local.ports().len() > LOCAL_PORTS_API2,
+                "more than 4 local ports",
+            ),
+        ];
+        used.extend(more.into_iter().filter_map(|(u, f)| u.then_some(f)));
+        used
+    }
+}
+
+/// The permissions interface 3 brought: a manifest using any of them must say `api: 3`, so that
+/// PecoFence 0.5.0 (which would not see them) shows 需要更新 PecoFence instead of installing it.
+pub const API3_FIELDS: [&str; 7] = [
+    "screen",
+    "pointer",
+    "focus",
+    "camera",
+    "microphone",
+    "location",
+    "webrtc",
+];
+/// The most local ports interface 2 allowed (more need interface 3).
+pub const LOCAL_PORTS_API2: usize = 4;
+
+/// A host interface 2 accepted (PecoFence 0.5.0's rule): a name in lower case with a dot, whose
+/// last part starts with a letter. An IP address or a name without a dot needs interface 3.
+pub fn host_of_api2(host: &str) -> bool {
+    let parts: Vec<&str> = host.split('.').collect();
+    let part_ok = |p: &&str| {
+        (1..=63).contains(&p.len())
+            && !p.starts_with('-')
+            && !p.ends_with('-')
+            && p.bytes()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+    };
+    let last = parts.last().copied().unwrap_or("");
+    host.len() <= 253
+        && parts.len() >= 2
+        && parts.iter().all(part_ok)
+        && last.len() >= 2
+        && last.as_bytes()[0].is_ascii_lowercase()
+}
+
+/// A program interface 2 accepted (PecoFence 0.5.0's rule): an `.exe`, by full path or as a name
+/// in System32. A script (`.cmd`, `.bat`, `.ps1`) needs interface 3.
+pub fn program_of_api2(p: &str) -> bool {
+    let b = p.as_bytes();
+    let exe = (5..=260).contains(&p.len()) && p.to_ascii_lowercase().ends_with(".exe");
+    let name = p
+        .bytes()
+        .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c));
+    let path = b.len() > 3
+        && b[0].is_ascii_alphabetic()
+        && &b[1..3] == b":\\"
+        && !b[3..].iter().any(|c| b"/:*?\"<>|".contains(c) || *c < 32)
+        && !p.split('\\').any(|s| s.is_empty() || s == "..");
+    exe && (name || path)
+}
+
+/// The file sizes interface 2 allowed (PecoFence 0.5.0's): a larger file, or a plugin of more
+/// files or bytes, needs interface 3.
+pub const SIZES_API2: [(&str, u64); 4] = [
+    ("plugin.json", 64 * 1024),
+    ("main.js", 200 * 1024),
+    ("README.md", 64 * 1024),
+    ("screenshot.png", 300 * 1024),
+];
+pub const OTHER_SIZE_API2: u64 = 1024 * 1024;
+pub const MAX_FILES_API2: usize = 100;
+pub const MAX_TOTAL_API2: u64 = 5 * 1024 * 1024;
+
+/// Whether the files of `e` stay within interface 2's sizes ([`SIZES_API2`] and the rest).
+pub fn files_of_api2(e: &Entry) -> bool {
+    let within = |f: &FileEntry| {
+        let fixed = SIZES_API2.iter().find(|(name, _)| *name == f.name);
+        f.size <= fixed.map_or(OTHER_SIZE_API2, |(_, max)| *max)
+    };
+    let total: u64 = e.files.iter().map(|f| f.size).sum();
+    e.files.iter().all(within) && e.files.len() <= MAX_FILES_API2 && total <= MAX_TOTAL_API2
 }
 
 /// A plugin's `plugin.json`, and the same fields in its index entry.
@@ -548,6 +682,11 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
         return Err(format!("{}: bad settings", m.id));
     }
     let p = &m.permissions;
+    // Before the rules of each field: what interface 2 refused is interface 3's.
+    let newer3 = p.api3_uses();
+    if m.api < 3 && !newer3.is_empty() {
+        return Err(format!("{}: {} need api 3", m.id, newer3.join(", ")));
+    }
     for (field, hosts) in [("network", &p.network), ("links", &p.links)] {
         if hosts.len() > 20 || !hosts.iter().all(|h| valid_host(h)) {
             return Err(format!("{}: bad {field} hosts", m.id));
@@ -644,6 +783,9 @@ pub fn check_entry(e: &Entry) -> Result<(), String> {
     if e.files.len() > MAX_FILES || total > MAX_TOTAL {
         return Err(format!("{id}: too many files or bytes"));
     }
+    if e.manifest.api < 3 && !files_of_api2(e) {
+        return Err(format!("{id}: files over the sizes of api 2 need api 3"));
+    }
     if let Some(missing) = ["plugin.json", e.manifest.main_file(), "README.md"]
         .iter()
         .find(|n| !e.files.iter().any(|f| f.name == **n))
@@ -720,14 +862,29 @@ pub fn parse_manifest(bytes: &[u8]) -> Result<Manifest, String> {
     Ok(m)
 }
 
-/// The index: from GitHub, then jsDelivr, then the project website. Its signature is at the
-/// same address with `.sig`.
-pub fn index_urls() -> [String; 3] {
-    [
-        format!("https://raw.githubusercontent.com/{REPO}/index/index.json"),
-        format!("https://cdn.jsdelivr.net/gh/{REPO}@index/index.json"),
-        format!("{SITE}/index.json"),
-    ]
+/// The index: from GitHub, then jsDelivr, then the project website, `index-3.json` (every
+/// plugin) before `index.json` (what PecoFence 0.5.0 reads; taken while the plugin repository
+/// publishes no `index-3.json` yet). Its signature is at the same address with `.sig`.
+pub fn index_urls() -> [String; 6] {
+    let at = |name: &str| {
+        [
+            format!("https://raw.githubusercontent.com/{REPO}/index/{name}"),
+            format!("https://cdn.jsdelivr.net/gh/{REPO}@index/{name}"),
+            format!("{SITE}/{name}"),
+        ]
+    };
+    let [a, b, c] = at("index-3.json");
+    let [d, e, f] = at("index.json");
+    [a, b, c, d, e, f]
+}
+
+/// The addresses a test index (`PECOFENCE_PLUGINS_URL`) is read from: `index-3.json` beside an
+/// `index.json`, then the address itself.
+pub fn test_index_urls(url: &str) -> Vec<String> {
+    match url.strip_suffix("/index.json") {
+        Some(dir) => vec![format!("{dir}/index-3.json"), url.to_string()],
+        None => vec![url.to_string()],
+    }
 }
 
 /// A plugin file at the reviewed commit, from the same three places.
@@ -755,7 +912,9 @@ pub fn page_url(commit: &str, id: &str) -> String {
 /// writing the clipboard when it did not before, or `background`, `notify` turned on.
 /// Interface 2: a command or a kind of drop or a program of `apps` not there before, `launch`
 /// turned on, `media` from none to read to control, `folders` from none to read to readwrite,
-/// a class and port of `local` not there before (`loopback` and `lan` apart).
+/// a class and port of `local` not there before (`loopback` and `lan` apart). Interface 3:
+/// `screen`, `pointer`, `focus`, `camera`, `microphone`, `location` or `webrtc` turned on,
+/// `folders` up to `any`, a command's `key` added or changed.
 pub fn more_permissions(old: &Permissions, new: &Permissions) -> Vec<&'static str> {
     let old_ports = old.local.ports();
     let new_port = new.local.ports().iter().any(|p| !old_ports.contains(p));
@@ -764,9 +923,22 @@ pub fn more_permissions(old: &Permissions, new: &Permissions) -> Vec<&'static st
             .any(|h| !o.iter().any(|g| g.eq_ignore_ascii_case(h)))
     };
     let links = [old.links.as_slice(), old.network.as_slice()].concat();
-    // Command ids are compared exactly: `Show` is another command than `show`.
-    let new_command = (new.commands.iter()).any(|n| !old.commands.iter().any(|o| o.id == n.id));
+    // Command ids are compared exactly: `Show` is another command than `show`. A command whose
+    // own key is new or another one asks too: the key takes effect for the whole system.
+    let new_command = (new.commands.iter()).any(|n| {
+        !old.commands
+            .iter()
+            .any(|o| o.id == n.id && (n.key.is_none() || o.key == n.key))
+    });
+    let on = |o: bool, n: bool| n && !o;
     [
+        ("screen", on(old.screen, new.screen)),
+        ("pointer", on(old.pointer, new.pointer)),
+        ("focus", on(old.focus, new.focus)),
+        ("camera", on(old.camera, new.camera)),
+        ("microphone", on(old.microphone, new.microphone)),
+        ("location", on(old.location, new.location)),
+        ("webrtc", on(old.webrtc, new.webrtc)),
         ("commands", new_command),
         ("drop", added(&old.drop, &new.drop)),
         ("launch", new.launch && !old.launch),
@@ -1127,7 +1299,16 @@ mod tests {
         );
         assert_eq!(cdn, format!("https://cdn.jsdelivr.net/gh/{REPO}@{path}"));
         assert_eq!(site, format!("https://pecofence.jiang.jp/plugins/{path}"));
-        let [raw, cdn, site] = index_urls();
+        let [raw3, cdn3, site3, raw, cdn, site] = index_urls();
+        assert_eq!(
+            raw3,
+            format!("https://raw.githubusercontent.com/{REPO}/index/index-3.json")
+        );
+        assert_eq!(
+            cdn3,
+            format!("https://cdn.jsdelivr.net/gh/{REPO}@index/index-3.json")
+        );
+        assert_eq!(site3, "https://pecofence.jiang.jp/plugins/index-3.json");
         assert_eq!(
             raw,
             format!("https://raw.githubusercontent.com/{REPO}/index/index.json")
@@ -1137,6 +1318,17 @@ mod tests {
             format!("https://cdn.jsdelivr.net/gh/{REPO}@index/index.json")
         );
         assert_eq!(site, "https://pecofence.jiang.jp/plugins/index.json");
+        assert_eq!(
+            test_index_urls("http://127.0.0.1:8731/index.json"),
+            [
+                "http://127.0.0.1:8731/index-3.json",
+                "http://127.0.0.1:8731/index.json"
+            ]
+        );
+        assert_eq!(
+            test_index_urls("http://127.0.0.1:8731/feed.json"),
+            ["http://127.0.0.1:8731/feed.json"]
+        );
         let test = test_file_url(
             "http://127.0.0.1:8731/index.json",
             COMMIT,
@@ -1328,6 +1520,118 @@ mod tests {
     }
 
     #[test]
+    fn the_fields_of_interface_3_need_api_3_and_each_growth_asks() {
+        let with = |api: u32, p: serde_json::Value| {
+            manifest(|v| {
+                v["api"] = api.into();
+                v["permissions"] = p;
+            })
+        };
+        let new = [
+            json!({ "screen": true }),
+            json!({ "pointer": true }),
+            json!({ "focus": true }),
+            json!({ "camera": true }),
+            json!({ "microphone": true }),
+            json!({ "location": true }),
+            json!({ "webrtc": true }),
+        ];
+        assert_eq!(new.len(), API3_FIELDS.len());
+        for (p, field) in new.iter().zip(API3_FIELDS) {
+            let why = check_manifest(&with(2, p.clone())).unwrap_err();
+            assert!(why.contains(field) && why.contains("api 3"), "{why}");
+            assert!(check_manifest(&with(3, p.clone())).is_ok(), "{p}");
+            // PecoFence 0.5.0 (interface 2) shows 需要更新 PecoFence for it, this one installs.
+            assert!(with(3, p.clone()).api > 2 && !needs_newer_app(&with(3, p.clone()), "0.5.0"));
+            let more = more_permissions(&Permissions::default(), &with(3, p.clone()).permissions);
+            assert_eq!(more, [field]);
+            let back = more_permissions(&with(3, p.clone()).permissions, &Permissions::default());
+            assert!(back.is_empty(), "{back:?}");
+        }
+        // What interface 2 refused needs api 3 too (and the rules of the field after that).
+        for (p, what) in [
+            (json!({ "folders": "any" }), "folders any"),
+            (
+                json!({ "commands": [{ "id": "show", "title": { "en": "Show" }, "key": "Ctrl+Shift+M" }] }),
+                "command keys",
+            ),
+            (
+                json!({ "network": ["192.168.1.20"] }),
+                "IP or dotless hosts",
+            ),
+            (json!({ "links": ["nas"] }), "IP or dotless hosts"),
+            (
+                json!({ "system": ["C:\\Tools\\backup.cmd"] }),
+                "scripts in system",
+            ),
+            (
+                json!({ "local": { "loopback": [
+                    { "port": 1, "app": "A" }, { "port": 2, "app": "B" }, { "port": 3, "app": "C" },
+                    { "port": 4, "app": "D" }, { "port": 5, "app": "E" }] } }),
+                "more than 4 local ports",
+            ),
+        ] {
+            let why = check_manifest(&with(2, p.clone())).unwrap_err();
+            assert!(why.contains(what) && why.contains("api 3"), "{p}: {why}");
+            assert!(with(3, p).permissions.api3_uses().contains(&what));
+        }
+        assert!(check_manifest(&with(3, json!({ "folders": "any" }))).is_ok());
+        assert!(Folders::Any.writes() && Folders::Any > Folders::Readwrite);
+        // 0.5.0's own rules, kept to tell what needs api 3.
+        assert!(
+            host_of_api2("api.github.com") && !host_of_api2("10.0.0.2") && !host_of_api2("nas")
+        );
+        assert!(program_of_api2("ipconfig.exe") && !program_of_api2("C:\\a\\b.ps1"));
+        // Folders up to any asks, as does a command's key added or changed; a key taken away
+        // does not.
+        let perms = |p: serde_json::Value| -> Permissions { serde_json::from_value(p).unwrap() };
+        let rw = perms(json!({ "folders": "readwrite" }));
+        assert_eq!(
+            more_permissions(&rw, &perms(json!({ "folders": "any" }))),
+            ["folders"]
+        );
+        let keyed = |key: Option<&str>| {
+            perms(json!({ "commands": [{ "id": "show", "title": { "en": "Show" }, "key": key }] }))
+        };
+        assert_eq!(
+            more_permissions(&keyed(None), &keyed(Some("Ctrl+Shift+M"))),
+            ["commands"]
+        );
+        assert_eq!(
+            more_permissions(&keyed(Some("Ctrl+Shift+M")), &keyed(Some("Ctrl+Shift+N"))),
+            ["commands"]
+        );
+        assert!(more_permissions(&keyed(Some("Ctrl+Shift+M")), &keyed(None)).is_empty());
+        assert!(
+            more_permissions(&keyed(Some("Win+Shift+M")), &keyed(Some("Win+Shift+M"))).is_empty()
+        );
+        // An update to interface 3 that asks for more waits for the user.
+        let installed = with(2, json!({}));
+        let mut offered = with(3, json!({ "screen": true }));
+        offered.version = "1.1.0".into();
+        assert_eq!(update_kind(&installed, &offered, "0.6.0"), Update::Confirm);
+    }
+
+    #[test]
+    fn files_over_the_sizes_of_interface_2_need_api_3() {
+        let sized = |main: u64, extra: usize| -> Entry {
+            let mut v = entry("countdown");
+            v["files"][0]["size"] = main.into();
+            for i in 0..extra {
+                v["files"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({ "name": format!("f{i}.js"), "size": 10, "sha256": HASH }));
+            }
+            serde_json::from_value(v).unwrap()
+        };
+        assert!(files_of_api2(&sized(200 * 1024, 0)) && check_entry(&sized(200 * 1024, 0)).is_ok());
+        assert!(!files_of_api2(&sized(200 * 1024 + 1, 0)));
+        assert!(!files_of_api2(&sized(10, MAX_FILES_API2)));
+        assert!(files_of_api2(&sized(10, MAX_FILES_API2 - 3)));
+    }
+
+    #[test]
     fn local_ports_are_few_named_and_no_debugger_and_each_new_one_asks() {
         let ha = json!([{ "key": "host", "type": "device", "label": { "en": "Address" } }]);
         let with = |api: u32, local: serde_json::Value, settings: &serde_json::Value| {
@@ -1368,8 +1672,9 @@ mod tests {
                 "4444 (Selenium WebDriver)",
             ),
             (
+                // More than 4 is interface 3's (api 2 here).
                 json!({ "loopback": [port(80, "a"), port(81, "b"), port(82, "c"), port(83, "d"), port(84, "e")] }),
-                "at most 4",
+                "more than 4 local ports need api 3",
             ),
             (
                 json!({ "loopback": [port(80, "a"), port(80, "b")] }),
@@ -1492,7 +1797,7 @@ mod tests {
         assert_eq!(update_kind(&installed, &needs, "0.5.0"), Update::Auto);
         let api = manifest(|v| {
             v["version"] = "1.1.0".into();
-            v["api"] = 3.into();
+            v["api"] = (API + 1).into();
         });
         assert!(check_manifest(&api).is_ok());
         assert_eq!(

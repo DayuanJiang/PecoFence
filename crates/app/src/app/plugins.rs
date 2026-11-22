@@ -151,9 +151,10 @@ fn get_first(urls: &[String]) -> Result<Vec<u8>, String> {
 /// wrong or missing signature, or a serial lower than `serial` of the index kept, counts as no
 /// index there).
 fn fetch_index(test: Option<String>, serial: u64) -> Result<(Index, Vec<u8>), (bool, String)> {
-    let urls = test
-        .clone()
-        .map_or_else(|| list::index_urls().to_vec(), |u| vec![u]);
+    let urls = test.clone().map_or_else(
+        || list::index_urls().to_vec(),
+        |u| list::test_index_urls(&u),
+    );
     let (mut errors, mut came) = (Vec::new(), false);
     for url in urls {
         let got = super::updates::get_in_time(&url, "").and_then(|bytes| {
@@ -1265,6 +1266,10 @@ impl App {
                     "commands": p.commands.iter().map(|c| list::pick(&c.title, lang)).collect::<Vec<_>>(),
                     "media": format!("{:?}", p.media).to_lowercase(), "apps": p.apps, "local": p.local,
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),
+                    // Interface 3: what the warning names besides.
+                    "screen": p.screen, "pointer": p.pointer, "focus": p.focus, "camera": p.camera,
+                    "microphone": p.microphone, "location": p.location, "webrtc": p.webrtc,
+                    "commandKeys": p.commands.iter().filter_map(|c| Some([c.key.clone()?, list::pick(&c.title, lang).to_string()])).collect::<Vec<_>>(),
                     "state": state, "reason": reason, "page": index.is_some(),
                     "notes": mine.map(|_| self.plugin_notes(id)),
                     "settings": settings, "fences": fences, "shown": list::shown_key(m),
