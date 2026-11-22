@@ -529,6 +529,30 @@ async function runTests() {
     current().settings.tools.allowSystem = false;
     doc = await reset();
   });
+  await test('Plugin warning of interface 3: each new permission, folders any and a command\'s own key', async () => {
+    doc = await reset();
+    const perms = { network: [], links: [], system: [], clipboard: 'none', background: false, folders: 'any', notify: false,
+      launch: false, drop: [], commands: ['显示放大镜'], media: 'none', apps: [], local: { loopback: [], lan: [] },
+      screen: true, pointer: true, focus: true, camera: true, microphone: true, location: true, webrtc: true,
+      commandKeys: [['Ctrl+Shift+M', '显示放大镜']] };
+    current().plugins = { status: 'ready', held: false, open: null, list: [
+      { ...perms, id: 'magnifier', name: '放大镜', description: '放大鼠标附近', author: 'tester', version: '1.0.0', installed: false,
+        layer: 'web', state: 'install', reason: null, page: true, settings: [], fences: [], shown: '1.0.0 web magnifier' },
+    ] };
+    frame.contentWindow.testRefresh();
+    await settle();
+    doc.querySelector('[data-page=tools]').click();
+    doc.querySelector('#pluginList .pl-row button').click();
+    const text = doc.getElementById('plBack').textContent;
+    for (const line of ['读写你选的文件夹，任何类型的文件都能写', '能看到你的屏幕：每次开始时，由你选择共享哪个屏幕或窗口',
+      '知道鼠标在屏幕上的位置', '知道键盘焦点和输入光标在哪里', '能使用摄像头', '能使用麦克风', '能知道这台电脑的位置',
+      '能和其他电脑直接连接', '自带快捷键 Ctrl+Shift+M：显示放大镜']) {
+      assert(text.includes(line), 'The warning lacks ' + line + ': ' + text);
+    }
+    assert(!text.includes('只读不写') && !text.includes('读写你选的文件夹（装好后由你来选）'), 'Another folders line: ' + text);
+    doc.getElementById('plCancel')?.click();
+    doc = await reset();
+  });
   await test('Plugin list without an index: no answer, or one that did not pass its check', async () => {
     doc = await reset();
     const shows = async (status) => {
