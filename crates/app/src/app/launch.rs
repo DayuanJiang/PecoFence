@@ -701,6 +701,7 @@ impl App {
         };
         let mut given = false;
         for c in commands {
+            let command = c.id.as_str();
             let Some(h) = c.key.as_deref().and_then(|k| Hotkey::parse(k).ok()) else {
                 continue;
             };
@@ -711,7 +712,7 @@ impl App {
             let spec = self.state.config.scripts.get(&fence);
             let keys = spec.and_then(|s| s.settings.get(KEYS)?.as_object().cloned());
             if keys.is_some_and(|k| k.contains_key(&c.id)) {
-                tracing::debug!(%fence, command = c.id, "plugin's own shortcut: the fence has one or the user cleared it");
+                tracing::debug!(%fence, command, "plugin's own shortcut: the fence has one or the user cleared it");
                 continue;
             }
             // PecoFence's own shortcuts, and a shortcut any fence gives a command (another fence
@@ -732,14 +733,14 @@ impl App {
                 })
             });
             if own || held {
-                tracing::info!(%fence, command = c.id, hotkey = %h, own, held, "plugin's own shortcut not given: PecoFence or another command has it");
+                tracing::info!(%fence, command, hotkey = %h, own, held, "plugin's own shortcut not given: PecoFence or another command has it");
                 continue;
             }
             if let Some(spec) = self.state.config.scripts.get_mut(&fence) {
                 let keys = spec.settings.entry(KEYS).or_insert_with(|| json!({}));
                 if let Some(keys) = keys.as_object_mut() {
                     keys.insert(c.id.clone(), h.to_string().into());
-                    tracing::info!(%fence, command = c.id, hotkey = %h, "plugin's own shortcut given to its fence");
+                    tracing::info!(%fence, command, hotkey = %h, "plugin's own shortcut given to its fence");
                     given = true;
                 }
             }
