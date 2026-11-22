@@ -46,7 +46,7 @@ pub const API: u32 = 3;
 pub const MAX_INDEX: usize = 16 * 1024 * 1024;
 /// The first release that knows interface 3: a plugin using what interface 3 brought says
 /// `api: 3` and at least this `minPecoFence` (the plugin repository's checks).
-pub const API3_RELEASE: &str = "0.6.0";
+pub const API3_RELEASE: &str = "0.5.1";
 
 /// What a plugin may do with the clipboard: reading and writing are two separate rights.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -1763,7 +1763,7 @@ mod tests {
         let installed = with(2, json!({}));
         let mut offered = with(3, json!({ "screen": true }));
         offered.version = "1.1.0".into();
-        assert_eq!(update_kind(&installed, &offered, "0.6.0"), Update::Confirm);
+        assert_eq!(update_kind(&installed, &offered, "0.5.1"), Update::Confirm);
     }
 
     #[test]
