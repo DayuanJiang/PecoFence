@@ -6,7 +6,7 @@
   "name": { "en": "Limits test", "zh-CN": "限制测试" },
   "description": { "en": "A test plugin: requests to this computer, any file in a picked folder, batch files and scripts." },
   "author": "DayuanJiang",
-  "minPecoFence": "0.6.0",
+  "minPecoFence": "0.5.1",
   "permissions": {
     "network": ["127.0.0.1", "localhost", "nas"],
     "folders": "any",

@@ -4,7 +4,7 @@
 # tools only with it set); a PecoFence that knows index-3.json reads the one beside it first.
 #   Part old (any build, 0.5.0 too): a note and a clock of the old tools; the next start moves them to
 #                the store's notes and clock plugins, downloaded from the store.
-#   Part new (a debug build of 0.6.0 or later, CDP on the settings page): the same, then 设置 › 小工具
+#   Part new (a debug build of 0.5.1 or later, CDP on the settings page): the same, then 设置 › 小工具
 #                lists every store plugin, and Translator (light) and Emoji Picker (web) install
 #                into fences of their own.
 # Manual (needs the internet and the published index):
