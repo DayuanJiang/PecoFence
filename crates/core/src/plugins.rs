@@ -546,6 +546,11 @@ pub struct Entry {
     pub files: Vec<FileEntry>,
     #[serde(default)]
     pub disabled: Option<String>,
+    /// `index.json`'s stand-in of a plugin PecoFence 0.5.0 cannot read (which ignores the
+    /// field): its manifest and files are not the plugin's, so it counts only for a take-down,
+    /// never for an install or an update ([`Index::offer`]).
+    #[serde(default, rename = "standIn")]
+    pub stand_in: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -558,8 +563,14 @@ pub struct Index {
 }
 
 impl Index {
+    /// Plugin `id`'s entry, a stand-in too: what a take-down reads.
     pub fn get(&self, id: &str) -> Option<&Entry> {
         self.plugins.iter().find(|e| e.manifest.id == id)
+    }
+
+    /// Plugin `id`'s entry as it may be installed or updated from: none for a stand-in.
+    pub fn offer(&self, id: &str) -> Option<&Entry> {
+        self.get(id).filter(|e| !e.stand_in)
     }
 }
 
@@ -1189,6 +1200,19 @@ mod tests {
         let mut v = entry("countdown");
         f(&mut v);
         serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn a_stand_in_counts_for_its_take_down_only() {
+        let mut stand = entry("stand");
+        stand["standIn"] = true.into();
+        stand["disabled"] = "taken down".into();
+        let (i, dropped) = parse_index(&index(vec![stand, entry("plain")])).unwrap();
+        assert!(dropped.is_empty(), "{dropped:?}");
+        let s = i.get("stand").unwrap();
+        assert!(s.stand_in && s.disabled.as_deref() == Some("taken down"));
+        assert!(i.offer("stand").is_none());
+        assert!(i.offer("plain").is_some_and(|e| !e.stand_in));
     }
 
     #[test]

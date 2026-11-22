@@ -135,11 +135,11 @@ fn test_url(test_instance: bool) -> Option<String> {
     url.filter(|u| test_instance && u.starts_with("http://127.0.0.1:"))
 }
 
-/// The first address that answers (each gets 8 s).
-fn get_first(urls: &[String]) -> Result<Vec<u8>, String> {
+/// The first address that answers with at most `max` bytes (each gets `wait`).
+fn get_first(urls: &[String], max: usize, wait: std::time::Duration) -> Result<Vec<u8>, String> {
     let mut errors = Vec::new();
     for url in urls {
-        match super::updates::get_in_time(url, "") {
+        match super::updates::get_within(url, "", max, wait) {
             Ok(body) => return Ok(body),
             Err(e) => errors.push(e),
         }
@@ -157,7 +157,8 @@ fn fetch_index(test: Option<String>, serial: u64) -> Result<(Index, Vec<u8>), (b
     );
     let (mut errors, mut came) = (Vec::new(), false);
     for url in urls {
-        let got = super::updates::get_in_time(&url, "").and_then(|bytes| {
+        let got = super::updates::get_within(&url, "", list::MAX_INDEX, super::updates::INDEX_WAIT);
+        let got = got.and_then(|bytes| {
             came = true;
             let sig = super::updates::get_in_time(&format!("{url}.sig"), "");
             match sig {
@@ -209,7 +210,9 @@ fn download(
             Some(index) => vec![list::test_file_url(index, commit, id, name)],
             None => list::file_urls(commit, id, name).to_vec(),
         };
-        let bytes = get_first(&urls).map_err(|e| (false, e))?;
+        // Up to the size the index gives it (a plugin file may have 5 MB), with time for it.
+        let (max, wait) = (file.size as usize, super::updates::wait_for(file.size));
+        let bytes = get_first(&urls, max, wait).map_err(|e| (false, e))?;
         if bytes.len() as u64 != file.size
             || pecofence_platform::http::sha256_hex(&bytes) != file.sha256
         {
@@ -612,6 +615,7 @@ impl App {
             // Its code is gone (a take-down took it, a download after the listing again failed):
             // it comes again whatever failed.txt says, until it is there.
             let gone = !mine.ready;
+            let stand_in = entry.stand_in;
             tracing::info!(
                 id,
                 installed = mine.manifest.version,
@@ -620,10 +624,13 @@ impl App {
                 disabled,
                 failed,
                 gone,
+                stand_in,
                 "plugins: update check"
             );
             match why {
                 Some(why) if !disabled => self.disable_plugin(&id, &why),
+                // index.json's stand-in (no index-3.json was read): only its take-down counts.
+                _ if stand_in => {}
                 None if disabled => self.relist_plugin(&id, kind, failed),
                 None if gone || (kind == Update::Auto && !failed) => {
                     self.start_plugin_download(&id, false)
@@ -640,7 +647,8 @@ impl App {
         let Some(index) = &self.plugins.index else {
             return;
         };
-        let (Some(entry), commit) = (index.get(id).cloned(), index.commit.clone()) else {
+        // Never from a stand-in of index.json: its manifest and files are not the plugin's.
+        let (Some(entry), commit) = (index.offer(id).cloned(), index.commit.clone()) else {
             return;
         };
         if self.plugins.busy.contains_key(id) {
@@ -1194,7 +1202,7 @@ impl App {
                 // The warning showed this version and these permissions; when the index has
                 // changed them since, the warning is shown again.
                 let shown = v.get("shown").and_then(|s| s.as_str());
-                let now = self.plugins.index.as_ref().and_then(|i| i.get(id));
+                let now = self.plugins.index.as_ref().and_then(|i| i.offer(id));
                 let now = now.map(|e| list::shown_key(&e.manifest));
                 if shown.is_none() || shown != now.as_deref() {
                     tracing::warn!(
@@ -1242,10 +1250,12 @@ impl App {
         let offered = index.map(|i| i.plugins.as_slice()).unwrap_or_default();
         let others = offered
             .iter()
-            .filter(|e| e.disabled.is_none() && !installed.contains_key(&e.manifest.id))
+            .filter(|e| {
+                e.disabled.is_none() && !e.stand_in && !installed.contains_key(&e.manifest.id)
+            })
             .map(|e| (None, Some(&e.manifest)));
         let rows = installed.values().map(|p| {
-            let offered = index.and_then(|i| i.get(&p.manifest.id));
+            let offered = index.and_then(|i| i.offer(&p.manifest.id));
             (Some(p), offered.map(|e| &e.manifest))
         });
         let texts = |t: &BTreeMap<String, String>| list::pick(t, lang).to_string();
