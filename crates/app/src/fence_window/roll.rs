@@ -369,6 +369,7 @@ impl FenceViewState {
         window::kill_timer(self.hwnd, TIMER_VISIBILITY_FINISH);
         self.vis_deadline = None;
         self.peek_faded = false;
+        self.covered_faded = false;
         if !self.motion.enabled() {
             self.vis_fade = None;
             self.reset_root();
@@ -443,6 +444,7 @@ impl FenceViewState {
         window::kill_timer(self.hwnd, TIMER_VISIBILITY_FINISH);
         self.vis_deadline = None;
         self.peek_faded = false;
+        self.covered_faded = false;
         self.hide_tip();
         // A retired window must always end in `FadeOutDone`, whoever hides it (quick hide,
         // Peek) while its exit fade is still running.
@@ -497,9 +499,11 @@ impl FenceViewState {
         self.peek_faded = false;
         let _ = self.motion.stop(&self.root, Prop::Opacity);
         let _ = self.motion.stop(&self.root, Prop::Scale);
-        self.root.set_opacity(1.0);
+        // Still under a fence opened on top of it (`set_covered`): it stays faded out.
+        let opacity = if self.covered_faded { 0.0 } else { 1.0 };
+        self.root.set_opacity(opacity);
         self.motion.set_scale(&self.root, 1.0);
-        self.shadow_alpha = Tween::at(1.0, Instant::now());
+        self.shadow_alpha = Tween::at(opacity, Instant::now());
         self.shadow_fading = false;
         self.apply_shadow_alpha(Instant::now());
     }
@@ -596,6 +600,36 @@ impl FenceViewState {
         true
     }
 
+    /// Under a fence opened on top of it, whose glass showed its title row through (it read as
+    /// that fence stuck behind it): it fades out with the Peek's fade while covered and back
+    /// when uncovered. A show / hide fade or the Peek that owns the root is left alone.
+    pub(super) fn set_covered(&mut self, covered: bool) {
+        if covered == self.covered_faded
+            || self.vis_fade.is_some()
+            || self.peek_faded
+            || (covered && (self.retired || !desktop::is_visible(self.hwnd)))
+        {
+            return;
+        }
+        self.covered_faded = covered;
+        let to = if covered { 0.0 } else { 1.0 };
+        tracing::debug!(title = %self.title, covered, "fence under one opened on top: fading");
+        let now = Instant::now();
+        if self.motion.enabled() {
+            let _ = self
+                .motion
+                .fade_to(&self.root, to, motion::FASTER, Curve::Linear);
+            self.shadow_alpha
+                .retarget(to, motion::FASTER, Curve::Linear, now);
+            self.shadow_fading = true;
+            self.frames.request();
+        } else {
+            self.root.set_opacity(to);
+            self.shadow_alpha = Tween::at(to, now);
+            self.apply_shadow_alpha(now);
+        }
+    }
+
     /// The Peek is over (or its fade was cancelled): opaque with its shadow again, unless a
     /// show / hide fade took the root meanwhile or the window was hidden, which rest it
     /// themselves.
@@ -629,20 +663,31 @@ impl FenceViewState {
         true
     }
 
-    /// Title on hover for this fence: its own choice, else the global setting. A fence whose
-    /// tabs are on the left has no title row to fold away.
+    /// Title on hover for this fence: its own choice, else the global setting; 「不显示」
+    /// folds the row the same way. A fence whose tabs are on the left has no title row to
+    /// fold away.
     pub(super) fn title_on_hover(&self) -> bool {
         !self.tabs_on_rail()
-            && self
-                .title_on_hover_override
-                .unwrap_or_else(|| self.behavior.title_on_hover.get())
+            && (self.title_hidden
+                || self
+                    .title_on_hover_override
+                    .unwrap_or_else(|| self.behavior.title_on_hover.get()))
     }
 
     /// Whether the title row is shown right now (title-on-hover rule): also while another
-    /// fence is dragged over it to merge and while the title is being renamed.
+    /// fence is dragged over it to merge and while the title is being renamed. With 「不显示」
+    /// the pointer brings it only where it brings a hover-only row past 鼠标移入时保持透明:
+    /// in a rolled-up fence opened by the pointer and while the fence floats (Peek), and in a
+    /// fence whose tabs run along the top: the row holds them, and tabs nobody sees would
+    /// still take presses meant to move the fence.
     pub(super) fn title_visible_target(&self) -> bool {
+        let pointer = self.pointer_reveals()
+            && (!self.title_hidden
+                || self.title_row_strip()
+                || self.peeking
+                || self.behavior.floating.get());
         !self.title_on_hover()
-            || self.pointer_reveals()
+            || pointer
             || self.roll_target()
             || self.merge_hint
             || self.title_renaming
@@ -670,11 +715,11 @@ impl FenceViewState {
     }
 
     /// The title row is folded away and the pointer does not bring it back
-    /// (鼠标移入时保持透明 with title on hover). The row still moves the fence, and the
-    /// pointer over it takes the move cursor, the only sign of where it is; the roll-up
-    /// chevron, which is not drawn then, takes no click.
+    /// (鼠标移入时保持透明 with title on hover, or 「不显示」). The row still moves the fence,
+    /// and the pointer over it takes the move cursor, the only sign of where it is; the
+    /// roll-up chevron, which is not drawn then, takes no click.
     pub(super) fn title_row_unseen(&self) -> bool {
-        self.stays_clear() && !self.title_visible_target()
+        (self.stays_clear() || self.title_hidden) && !self.title_visible_target()
     }
 
     /// Whether floating above other windows (Peek) draws this fence differently: a fully

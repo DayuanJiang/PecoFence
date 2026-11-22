@@ -2408,6 +2408,7 @@ impl App {
         if app.state.first_run {
             app.fit_first_run_column();
         }
+        app.roll_up_opened_on_top();
         // Fences never stay on top of each other: pull apart any overlap the layout brings.
         app.settle_unplaced(true);
         if let Some(folder) = args.portal.as_deref() {
@@ -2743,8 +2744,14 @@ impl App {
         );
         let a = std::mem::take(&mut self.activity);
         let icon_failures = self.ctx.icons.borrow_mut().take_failures();
-        if a.animation_runs + a.slow_commands + a.drops + a.drags_out + icon_failures > 0 {
+        // GitHub #251: the share of a core since the last line; a quiet hour that used some
+        // writes the line too.
+        let cpu = self.busy.take_hour_share();
+        if a.animation_runs + a.slow_commands + a.drops + a.drags_out + icon_failures > 0
+            || cpu.is_some_and(|p| p >= 0.5)
+        {
             tracing::info!(
+                cpu_percent_of_a_core = cpu,
                 animation_runs = a.animation_runs,
                 stuttered_runs = a.stuttered_runs,
                 max_gap_ms = a.max_gap_ms,

@@ -716,6 +716,8 @@ impl App {
                 "player": note.player,
             })),
             "customThemes": custom_theme_names(&self.state),
+            // 字体: the installed families to pick from (read once).
+            "fontFamilies": pecofence_platform::fonts::families(),
             "customThemeError": self.custom_theme_error,
             "accent": accent,
             "update": self.update_json(),
@@ -1606,6 +1608,7 @@ impl App {
             || new.custom_theme != old.custom_theme
             || new.backdrop != old.backdrop;
         let icons_changed = new.icons != old.icons;
+        let font_changed = new.font != old.font;
         let push_changed = new.roll_up.push_neighbors != old.roll_up.push_neighbors;
         let inbox_hiding_changed =
             new.hide_inbox_when_icons_shown != old.hide_inbox_when_icons_shown;
@@ -1666,6 +1669,9 @@ impl App {
         }
         if visual_changed {
             self.refresh_visuals(true);
+        }
+        if font_changed {
+            self.apply_fonts();
         }
         if menus_changed {
             let menu = self.state.config.settings.menu_color;

@@ -348,6 +348,7 @@ impl FenceWindow {
             wanted_layout: ViewLayout::Icons,
             title_on_hover_override: None,
             transparent_on_hover: false,
+            title_hidden: false,
             style: FenceStyle::default(),
             spacing: 0,
             icon_align: IconAlign::Left,
@@ -363,6 +364,7 @@ impl FenceWindow {
             vis_gen: 0,
             vis_deadline: None,
             peek_faded: false,
+            covered_faded: false,
             fade_trace: FadeTrace::default(),
             retired: false,
             off_desktop: false,
@@ -2426,6 +2428,16 @@ impl FenceWindow {
         r
     }
 
+    /// Opened over the fences under it (`rollUp.pushNeighbors` off, a gap under one row): above
+    /// the other fences while it is open, as a hover peek is; its roll-up puts it back.
+    pub fn raise_while_open(&self) {
+        let hwnd = self.hwnd();
+        self.with_view(|v| {
+            v.hover_raised = true;
+            v.queue.push(Command::RaiseForHover(hwnd));
+        });
+    }
+
     /// Width the window expands to while it is collapsed to its left tab column or rolled to
     /// a compact title row (None otherwise: the window has its expanded width).
     pub fn collapsed_expanded_width_px(&self) -> Option<i32> {
@@ -2658,6 +2670,17 @@ impl FenceWindow {
         self.with_view(|v| {
             if v.title_on_hover_override != on {
                 v.title_on_hover_override = on;
+                let _ = v.redraw();
+            }
+        });
+    }
+
+    /// 「显示标题栏」 → 「不显示」: the title row stays folded away, the pointer included.
+    pub fn set_title_hidden(&self, hidden: bool) {
+        self.with_view(|v| {
+            if v.title_hidden != hidden {
+                v.title_hidden = hidden;
+                tracing::debug!(fence = %v.title, hidden, "title row never shown set");
                 let _ = v.redraw();
             }
         });
@@ -3443,6 +3466,22 @@ impl FenceWindow {
         let mut fading = false;
         self.with_view(|v| fading = v.peek_fade_to(0.0, true));
         fading
+    }
+
+    /// Opened on top of the fences under it until it rolls up: a hover peek, or a fence opened
+    /// over a gap under one row with pushing off (`hover_raised`).
+    pub fn opened_on_top(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| {
+            v.hover_raised
+                && !v.off_desktop
+                && !matches!(v.vis_fade, Some(super::roll::VisFade::Hiding { .. }))
+                && desktop::is_visible(v.hwnd)
+        })
+    }
+
+    /// See `FenceViewState::set_covered`.
+    pub fn set_covered(&self, covered: bool) {
+        self.with_view(|v| v.set_covered(covered));
     }
 
     /// The Peek has this fence's opacity (`peek_fade_prepare`, `peek_fade_out`).

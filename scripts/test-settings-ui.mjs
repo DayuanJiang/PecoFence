@@ -44,6 +44,7 @@ const fixture = {
   version: 'test', configPath: 'C:\\PecoFence\\config.json', memoryMb: 28, itemCount: 12,
   themeMode: 'dark', accent: '#60CDFF',
   customThemes: ['Frosted Glass', 'Warm'], customThemeError: null, styleInUse: 'fluent',
+  fontFamilies: ['Arial', 'Malgun Gothic', '微软雅黑'],
   peekHotkey: {
     chosen: { mods: 3, vk: 32, keys: ['Ctrl', 'Alt', '空格'], label: 'Ctrl+Alt+空格' },
     active: { mods: 3, vk: 32, keys: ['Ctrl', 'Alt', '空格'], label: 'Ctrl+Alt+空格' },
@@ -736,6 +737,9 @@ async function runTests() {
     assert(!doc.getElementById('fenceTransparentOnHover').hidden && !doc.querySelector('[data-fence=transparentOnHover]').classList.contains('on'), 'Stay-transparent switch not offered for a fully transparent fence, or on');
     doc.querySelector('[data-fence=transparentOnHover]').click(); await settle();
     assert(messages().at(-1).id === 'fence-b' && messages().at(-1).prop === 'transparentOnHover' && messages().at(-1).value === true, 'Stay transparent not posted');
+    assert([...doc.getElementById('fenceTitleOnHover').options].map(o => o.value).join() === 'default,always,hover,never', 'Title row choices: ' + [...doc.getElementById('fenceTitleOnHover').options].map(o => o.value).join());
+    change(doc, 'fenceTitleOnHover', 'never'); await settle();
+    assert(messages().at(-1).id === 'fence-b' && messages().at(-1).prop === 'titleOnHover' && messages().at(-1).value === 'never', 'No title row (不显示) not posted');
     change(doc, 'fenceSel', 'fence-a');
     assert(doc.querySelector('[data-fence=iconAlign]').value === 'left', 'Left icon alignment not shown');
     assert(doc.querySelector('[data-fence=iconAlign] [value=right]'), 'Right icon alignment missing');
@@ -781,6 +785,21 @@ async function runTests() {
     sel.value = 'light'; sel.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true })); await settle();
     const patch = frame.contentWindow.testMessages.filter(m => m.type === 'patchSettings').at(-1);
     assert(patch && patch.settings.menuColor === 'light', 'Not posted: ' + JSON.stringify(patch && patch.settings.menuColor));
+  });
+  await test('字体 lists 默认 and the installed families, each in its face, and posts the choice (feedback #208)', async () => {
+    doc = await reset();
+    const sel = doc.getElementById('fontFamily');
+    assert([...sel.options].map(o => o.value).join() === ',Arial,Malgun Gothic,微软雅黑', 'Options: ' + [...sel.options].map(o => o.value).join());
+    assert(sel.value === '' && sel.options[0].text === '默认', 'Default not shown: ' + sel.value);
+    assert(sel.options[2].style.fontFamily.includes('Malgun Gothic'), 'A family is not shown in its own face');
+    const pick = async value => {
+      sel.value = value; sel.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true })); await settle();
+      return frame.contentWindow.testMessages.filter(m => m.type === 'patchSettings').at(-1);
+    };
+    let patch = await pick('Malgun Gothic');
+    assert(patch && patch.settings.font === 'Malgun Gothic', 'Not posted: ' + JSON.stringify(patch && patch.settings.font));
+    patch = await pick('');
+    assert(patch && patch.settings.font === null, '默认 did not post null: ' + JSON.stringify(patch && patch.settings.font));
   });
   await test('在哪个虚拟桌面显示 lists the desktops, shows the choice and posts it; none for the inbox or one desktop', async () => {
     doc.querySelector('[data-page=fences]').click();

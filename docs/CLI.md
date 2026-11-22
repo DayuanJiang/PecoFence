@@ -185,8 +185,10 @@ tint), `titleColor` theme/tint/white/black/`"#RRGGBB"`, `titleSize` small/normal
 `textSize` small/normal/large/extraLarge (note and script fences: the size of their text, check
 boxes and clickable rows, 12/14/18/24 DIPs; normal by default; other fences refuse it, and a
 clock's text follows the size of its fence instead),
-`titleOnHover` default/hover/always (hover: the title row folds away until the pointer is over the
-fence; default follows `rollUp.titleOnHover`), `transparentOnHover` (a fence whose `opacity` is
+`titleOnHover` default/hover/always/never (hover: the title row folds away until the pointer is over the
+fence; never: it stays away under the pointer too, and its place still moves the fence and opens the fence
+menu; a rolled-up fence and a Peek still show it, and so does the pointer on a fence whose tabs run
+along the top, as with hover; default follows `rollUp.titleOnHover`), `transparentOnHover` (a fence whose `opacity` is
 transparent stays transparent while the pointer is over it: no glass, rim or shadow, and a title
 row hidden by `titleOnHover` stays hidden, though it still moves the fence; off by default; no
 effect at another opacity), `layout` icons/list/details,
@@ -335,6 +337,9 @@ or tab with a `titleColor` of its own keeps it; default auto),
 `customTheme` (the name of a theme file in the `themes` folder next to `config.json`, without
 `.json`; while it loads, its base style takes the place of `themeStyle`; `null` = the built-in
 style; see [THEMES.md](THEMES.md)),
+`font` (「字体」 on the settings page: the family of the fence titles, tabs and item names, such as
+`"Malgun Gothic"` or `"微软雅黑"`; it takes the place of the theme file's fonts and of Windows'
+fonts at their sizes and weights; a family that is not installed is left aside; `null` = 默认),
 `tabBar` (top/left: a fence with two or more tabs shows them in its title row, or lists them in a
 column on its left that takes the title row's place; rolled up, such a fence shrinks to the
 column; default top),

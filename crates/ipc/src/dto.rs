@@ -271,7 +271,8 @@ pub struct FenceDto {
     /// (`normal` for other fences; a clock's text follows the fence size).
     #[serde(default)]
     pub text_size: String,
-    /// `default` (the global `rollUp.titleOnHover`) | `hover` | `always`.
+    /// `default` (the global `rollUp.titleOnHover`) | `hover` | `always` | `never` (no title row,
+    /// the pointer does not bring it).
     #[serde(default)]
     pub title_on_hover: String,
     /// A fully transparent fence (`opacity` `transparent`) stays transparent while the pointer

@@ -296,6 +296,7 @@ impl App {
             .unwrap_or((None, 1.0));
         w.set_appearance(bd, op);
         w.set_title_on_hover(f.appearance.as_ref().and_then(|a| a.title_on_hover));
+        w.set_title_hidden(f.appearance.as_ref().is_some_and(|a| a.title_hidden));
         w.set_transparent_on_hover(
             f.appearance
                 .as_ref()
@@ -645,10 +646,13 @@ impl App {
             return;
         };
         let r = w.rect();
-        // Growing stops short of a fence below; the rest of the items scroll. One whose title
-        // row is at its bottom keeps that edge and stops short of a fence above instead (while
-        // it is expanded, the push pass has lifted those out of its way already).
-        if let Some(limit) = self.growth_limit_below(id, &r) {
+        // With pushNeighbors on the fences below make room, as for 适应内容大小 (feedback #208:
+        // a tab with more icons stopped at the fence below); off, growing stops short of it and
+        // the rest of the items scroll. One whose title row is at its bottom keeps that edge
+        // and stops short of a fence above instead (while it is expanded, the push pass has
+        // lifted those out of its way already).
+        let push = self.state.config.settings.roll_up.push_neighbors;
+        if !push && let Some(limit) = self.growth_limit_below(id, &r) {
             h = h.min(limit.max(r.bottom) - r.top);
         }
         if let Some(limit) = self.growth_limit_above(id, &r) {
@@ -1720,7 +1724,7 @@ impl App {
             && !self.state.config.settings.roll_up.push_neighbors
             && self.fences.get(&fence).is_some_and(|w| w.is_rolled())
         {
-            self.clamp_expand_height(fence);
+            self.open_without_push(fence);
         }
         if let Some(w) = self.fences.get(&fence) {
             w.set_rolled(rolled);

@@ -1,16 +1,18 @@
 //! A line in the log when PecoFence keeps the processor busy (GitHub #241: on one machine a
 //! quarter of a core went to PecoFence all the time, and its log could not say what did it).
-//! Checked with the housekeeping tick once a minute: when the last stretch took 10 % of one
+//! Checked with the housekeeping tick once a minute: when the last stretch took 2 % of one
 //! core or more, the line says which threads used it, what the UI thread handled most and
-//! how many frames were drawn. At most one line every 15 minutes.
+//! how many frames were drawn. At most one line every 15 minutes. The hourly `activity` line
+//! gives the share of a core since the line before ([`BusyWatch::take_hour_share`]).
 
 use super::App;
 use pecofence_platform::busy;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-/// The share of one core over the last stretch from which the line is written.
-const BUSY_PERCENT: f64 = 10.0;
+/// The share of one core over the last stretch from which the line is written. GitHub #251:
+/// Task Manager's 1 to 2 % of a virtual machine's processors stayed under the first 10 %.
+const BUSY_PERCENT: f64 = 2.0;
 const QUIET_AFTER_LINE: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Default)]
@@ -20,6 +22,25 @@ pub(super) struct BusyWatch {
     logged: Option<Instant>,
     /// Frames drawn since the last check (`App::on_frame`).
     pub(super) frames: u32,
+    /// When the stretch of the `activity` line began, and the processor time then.
+    hour: Option<(Instant, Duration)>,
+}
+
+impl BusyWatch {
+    /// The share of one core since the last call (None the first time), for the `activity` line.
+    pub(super) fn take_hour_share(&mut self) -> Option<f64> {
+        let now = (Instant::now(), busy::process_cpu()?);
+        let (at, cpu) = self.hour.replace(now)?;
+        Some(percent(now.1.saturating_sub(cpu), now.0.duration_since(at)))
+    }
+}
+
+/// Whether a stretch of `over` at `used` % of a core writes the busy line, `since_line` after
+/// the last one.
+fn writes_line(used: f64, over: Duration, since_line: Option<Duration>) -> bool {
+    used >= BUSY_PERCENT
+        && over >= Duration::from_secs(30)
+        && !since_line.is_some_and(|d| d < QUIET_AFTER_LINE)
 }
 
 /// Percent of one core that `used` is of `over`.
@@ -48,9 +69,7 @@ impl App {
         };
         let over = now.duration_since(at);
         let used = percent(cpu.saturating_sub(cpu_before), over);
-        let busy_line = used >= BUSY_PERCENT
-            && over >= Duration::from_secs(30)
-            && !watch.logged.is_some_and(|t| t.elapsed() < QUIET_AFTER_LINE);
+        let busy_line = writes_line(used, over, watch.logged.map(|t| t.elapsed()));
         // The same facts at debug level every minute (the test boxes log at debug).
         if !busy_line && !tracing::enabled!(tracing::Level::DEBUG) {
             return;
@@ -121,8 +140,18 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::percent;
+    use super::{percent, writes_line};
     use std::time::Duration;
+
+    #[test]
+    fn a_minute_at_two_percent_of_a_core_writes_the_line_once_a_quarter_hour() {
+        let s = Duration::from_secs;
+        assert!(writes_line(2.0, s(60), None));
+        assert!(!writes_line(1.9, s(60), None));
+        assert!(!writes_line(50.0, s(20), None), "a stretch under 30 s");
+        assert!(!writes_line(50.0, s(60), Some(s(14 * 60))));
+        assert!(writes_line(2.0, s(60), Some(s(15 * 60))));
+    }
 
     #[test]
     fn percent_is_of_one_core_with_one_decimal() {

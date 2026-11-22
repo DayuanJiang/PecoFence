@@ -3062,9 +3062,13 @@ impl AppState {
         self.edit_appearance(id, |a| a.text_size = size);
     }
 
-    /// Per-fence title on hover (None = follow `rollUp.titleOnHover`).
-    pub fn set_title_on_hover(&mut self, id: FenceId, on: Option<bool>) {
-        self.edit_appearance(id, |a| a.title_on_hover = on);
+    /// Per-fence title on hover (None = follow `rollUp.titleOnHover`); `hidden`: 「不显示」, the
+    /// title row never shows.
+    pub fn set_title_on_hover(&mut self, id: FenceId, on: Option<bool>, hidden: bool) {
+        self.edit_appearance(id, |a| {
+            a.title_on_hover = on;
+            a.title_hidden = hidden;
+        });
     }
 
     /// 鼠标移入时保持透明 of a fully transparent fence.

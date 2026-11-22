@@ -332,6 +332,14 @@ impl App {
         };
         let t_sync = t0.elapsed();
         self.route_pending_creation();
+        let added: Vec<PathBuf> = events
+            .iter()
+            .filter_map(|e| match e {
+                FsEvent::Added(p) => Some(p.clone()),
+                _ => None,
+            })
+            .collect();
+        self.route_to_menu_monitor(&added);
         if all {
             self.refresh_portals();
         } else {

@@ -290,6 +290,13 @@ pub(super) fn on_timer_peek_open(
             && v.roll_anim.is_none()
             && v.title_hover
         {
+            // Under a fence opened on top of it: that one's peek ends first, then this opens.
+            if v.covered_faded {
+                tracing::debug!(title = %v.title, "hover peek waits: a fence opened on top covers this one");
+                window::set_timer(hwnd, TIMER_PEEK_OPEN, 100);
+                peek_armed.set(true);
+                return Some(0);
+            }
             v.peeking = true;
             if v.expanded_h_px <= v.title_h_px() {
                 v.expanded_h_px = v.title_h_px() + (200.0 * v.scale()) as i32;

@@ -1387,24 +1387,33 @@ impl App {
     /// Icon labels and List / Details rows follow the desktop's icon-title font
     /// (`SPI_GETICONTITLELOGFONT`, which already carries the Accessibility text size; re-read on
     /// WM_SETTINGCHANGE) unless the custom theme names its own (its size times the text size),
-    /// and titles the theme's title font. When a font changed, every fence refits its labels
-    /// and re-lays out its grid or rows, then settles its auto height.
+    /// and titles the theme's title font. 「字体」 (`font`, feedback #208) takes the place of
+    /// both families, at the sizes and weights they have. When a font changed, every fence
+    /// refits its labels and re-lays out its grid or rows, then settles its auto height.
     pub(super) fn apply_fonts(&mut self) {
         let fonts = self
             .custom_theme
             .as_ref()
             .map(|c| c.fonts.clone())
             .unwrap_or_default();
+        let chosen = self.state.config.settings.font.clone();
+        let chosen = chosen.filter(|face| !face.trim().is_empty()).filter(|face| {
+            let installed = pecofence_platform::fonts::font_family_exists(face);
+            if !installed {
+                tracing::warn!(font = %face, "the chosen font is not installed; the built-in fonts stay");
+            }
+            installed
+        });
+        let title_family = chosen.clone().or(fonts.title_family);
         let titles = self
             .ctx
             .chrome
-            .set_title_font(fonts.title_family.as_deref(), fonts.title_weight)
+            .set_title_font(title_family.as_deref(), fonts.title_weight)
             .unwrap_or(false);
         let system = sysparams::icon_title_font();
         let text_scale = sysparams::text_scale_percent() as f32 / 100.0;
-        let family = fonts
-            .label_family
-            .clone()
+        let family = chosen
+            .or(fonts.label_family)
             .or_else(|| system.as_ref().map(|f| f.family.clone()));
         let labels = family.as_ref().is_some_and(|family| {
             let size = fonts
@@ -1424,7 +1433,9 @@ impl App {
         if !titles && !labels {
             return;
         }
-        tracing::info!(label = ?family, title = ?fonts.title_family, "fonts changed");
+        tracing::info!(label = ?family, title = ?title_family, "fonts changed");
+        // The shadows a theme draws under text were made from the old font's glyphs.
+        self.ctx.chrome.forget_text_shadows();
         let ids: Vec<FenceId> = self.fences.keys().copied().collect();
         for id in ids {
             if let Some(w) = self.fences.get(&id) {
