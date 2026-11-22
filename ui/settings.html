@@ -1869,14 +1869,19 @@
     const clip = { write: t("写入剪贴板"), read: t("读取剪贴板"), readwrite: t("读取和写入剪贴板") }[p.clipboard];
     const d = [p.network.length && [tf("联网：{0}", '\u0001'), p.network], p.links.length && [tf("在浏览器里打开这些网站：{0}", '\u0001'), p.links],
       clip, p.background && t("栅栏隐藏时继续运行"), (p.folders === 'read' || p.folders === true) && t("读取你选的文件夹，只读不写"),
-      p.folders === 'readwrite' && t("读写你选的文件夹（装好后由你来选）"), p.notify && t("显示提示，发出提示音"),
+      p.folders === 'readwrite' && t("读写你选的文件夹（装好后由你来选）"),
+      p.folders === 'any' && t("读写你选的文件夹，任何类型的文件都能写（装好后由你来选）"), p.notify && t("显示提示，发出提示音"),
       p.system.length && [tf("启动这些程序：{0}", '\u0001'), p.system], p.layer === 'web' && t("用网页显示内容，占用内存较多"),
       p.launch && t("打开你放进这个栅栏的文件、文件夹和程序"), p.drop.length && t("你拖到它上面的文件和文字，它能读取"),
       p.commands.length && [tf("有这些命令：{0}。可以在插件详情里给它们设快捷键", '\u0001'), p.commands],
       p.media === 'read' && t("看到正在播放的歌曲或视频：名字、歌手、专辑和封面"), p.media === 'control' && t("看到正在播放的歌曲或视频：名字、歌手、专辑和封面，并能暂停和切歌"),
       p.apps && p.apps.length && [tf("知道这些程序是否在运行、是否在最前面：{0}", '\u0001'), p.apps],
       ...(p.local?.loopback || []).map(l => [tf("连接这台电脑上的 {0}（端口 {1}）", '\u0001', l.port), [l.app]]),
-      ...(p.local?.lan || []).map(l => tf("连接你在设置里填写的局域网设备（端口 {0}）", l.port))].filter(Boolean);
+      ...(p.local?.lan || []).map(l => tf("连接你在设置里填写的局域网设备（端口 {0}）", l.port)),
+      p.screen && t("能看到你的屏幕：每次开始时，由你选择共享哪个屏幕或窗口"), p.pointer && t("知道鼠标在屏幕上的位置"),
+      p.focus && t("知道键盘焦点和输入光标在哪里"), p.camera && t("能使用摄像头"), p.microphone && t("能使用麦克风"),
+      p.location && t("能知道这台电脑的位置"), p.webrtc && t("能通过公网和其他电脑直接连接"),
+      ...(p.commandKeys || []).map(([key, title]) => [tf("自带快捷键 {0}：{1}", '\u0001', title), [key]])].filter(Boolean);
     return d.length ? d : [t("只显示内容，不联网，也不读剪贴板")];
   }
   // `el` with `text`, its \u0001 replaced by the names, each kept whole.

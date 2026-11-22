@@ -378,6 +378,12 @@ pub enum Command {
         page: std::rc::Weak<crate::web_plugin::WebFence>,
         uri: String,
     },
+    /// 网页层: a page shows a web notification (`notify`): PecoFence's corner card, as `pf.notify`.
+    WebNotification {
+        fence: FenceId,
+        title: String,
+        body: String,
+    },
     /// 网页层: a page's browser or render process ended, or the page hung.
     WebPageFailed {
         page: std::rc::Weak<crate::web_plugin::WebFence>,

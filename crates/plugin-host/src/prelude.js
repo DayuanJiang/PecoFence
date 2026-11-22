@@ -38,13 +38,16 @@
     openSystem: (name) => call("openSystem", [String(name)]),
     run: (program, args) => call("run", [String(program), (args || []).map(String)]),
     notify: (title, body, options) => call("notify", [String(title), String(body || ""), options || {}]),
+    pointer: () => call("pointer", []),
+    focus: () => call("focus", []),
+    caret: () => call("caret", []),
   };
   for (const [group, names] of Object.entries({
     http: ["get", "post"],
     data: ["read", "write", "list", "remove"],
     clipboard: ["text", "files", "image", "setText", "setFiles", "setImage"],
     sys: ["cpu", "memory", "drives", "ip", "network", "battery"],
-    folder: ["pick", "list", "read", "write", "mkdir", "trash"],
+    folder: ["pick", "list", "read", "write", "writeBytes", "mkdir", "trash"],
     launch: ["pick", "add", "list", "remove", "open"],
     media: ["current", "control"],
     apps: ["running", "front"],

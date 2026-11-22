@@ -1384,6 +1384,7 @@ impl App {
                                 | updates::TIMER_UPDATE_RESUME
                                 | plugins::TIMER_PLUGINS_CHECK
                                 | light::TIMER_PLUGIN_APPS
+                                | light::TIMER_PLUGIN_POINTER
                                 | TIMER_PORTAL_BACK
                                 | TIMER_CONFIG_LOCKED
                                 | desktop_import::TIMER_WINDOWS_PLACES
@@ -1430,6 +1431,9 @@ impl App {
                                                 app.daily_plugins_check()
                                             }
                                             light::TIMER_PLUGIN_APPS => app.poll_plugin_apps(),
+                                            light::TIMER_PLUGIN_POINTER => {
+                                                app.poll_plugin_pointer()
+                                            }
                                             updates::TIMER_UPDATE_RESUME => {
                                                 app.update_check_after_resume()
                                             }
@@ -3276,6 +3280,9 @@ impl App {
                 call,
                 args,
             } => self.web_call(page, id, call, args),
+            Command::WebNotification { fence, title, body } => {
+                self.plugin_notify(fence, &title, &body, false)
+            }
             Command::WebPageFailed { page, failure } => self.web_page_failed(page, failure),
             Command::WebPageReload { page, uri } => self.reload_web_page(page, uri),
             Command::EditNote { fence, caret } => self.edit_note(fence, caret),

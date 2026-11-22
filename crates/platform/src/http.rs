@@ -186,6 +186,12 @@ fn split_url(url: &str, reach: Reach) -> Result<(bool, String, u16, String), Str
     Ok((a.secure, a.host, port, a.path))
 }
 
+/// Whether `error` (of [`get`], possibly joined with others) says an answer was larger than
+/// `limit` bytes.
+pub fn larger_than(error: &str, limit: usize) -> bool {
+    error.contains(&format!(" is larger than {limit} bytes"))
+}
+
 /// GETs `url` (following redirects) and returns the body of a 200 response, at most `limit`
 /// bytes. `headers` are extra request lines such as `Accept: …`, separated by `\r\n`.
 pub fn get(url: &str, user_agent: &str, headers: &str, limit: usize) -> Result<Vec<u8>, String> {
@@ -286,6 +292,14 @@ fn local_address(
 
 /// The SHA-256 of `data` in lowercase hex, for a header that carries the hash of a body.
 pub fn sha256_hex(data: &[u8]) -> String {
+    sha256(data)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// The SHA-256 of `data`.
+pub fn sha256(data: &[u8]) -> [u8; 32] {
     use crate::bindings::{BCRYPT_SHA256_ALG_HANDLE, BCryptHash};
     let mut hash = [0u8; 32];
     // SAFETY: `hash` is a live buffer of the length passed, the length of a SHA-256. Should
@@ -299,7 +313,7 @@ pub fn sha256_hex(data: &[u8]) -> String {
             hash.len() as u32,
         )
     };
-    hash.iter().map(|byte| format!("{byte:02x}")).collect()
+    hash
 }
 
 /// Sends `verb` for `url` with `body`; returns the status and, for a 200, the response's body
@@ -319,18 +333,17 @@ fn request(
     let (secure, name, port, path) = split_url(url, reach)?;
     let (mut server, mut headers) = (name.clone(), headers.to_string());
     let mut pinned = Vec::new();
+    // An IPv6 host is `[...]` in an address and bare for the resolver.
+    let lookup = name.trim_start_matches('[').trim_end_matches(']');
     if reach == Reach::Internet {
         use std::net::ToSocketAddrs;
-        let found = (name.as_str(), port)
-            .to_socket_addrs()
-            .into_iter()
-            .flatten();
+        let found = (lookup, port).to_socket_addrs().into_iter().flatten();
         if let Some(ip) = found.map(|a| a.ip().to_string()).find(|ip| !public_ip(ip)) {
             tracing::info!(host = %name, %ip, "plugin request refused before connecting: the host resolves to this computer or the local network");
             return Err(refusal(&name, &ip, reach));
         }
     } else if plugin {
-        let (ip, fitting) = local_address(&name, port, reach)?;
+        let (ip, fitting) = local_address(lookup, port, reach)?;
         // Plain http goes to the address checked here; https by name, whose certificate names
         // it, and `on_status` lets it connect only to an address checked here.
         pinned = if secure {
@@ -539,11 +552,8 @@ mod tests {
                 .unwrap_err()
                 .contains("HTTP 404")
         );
-        assert!(
-            get(&url, "PecoFence-test", "", 4)
-                .unwrap_err()
-                .contains("larger")
-        );
+        let error = get(&url, "PecoFence-test", "", 4).unwrap_err();
+        assert!(larger_than(&error, 4) && !larger_than(&error, 5) && !larger_than("HTTP 404", 4));
     }
 
     #[test]

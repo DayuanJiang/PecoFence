@@ -16,6 +16,8 @@ mod download;
 mod environment;
 mod event;
 mod handler;
+#[expect(non_snake_case, non_camel_case_types)]
+mod media;
 mod options;
 mod profile;
 mod protocol;
@@ -45,6 +47,7 @@ pub use event::{
     PermissionRequestedArgs, PermissionState, ProcessFailedArgs, ProcessFailedKind,
     WebMessageReceivedArgs,
 };
+pub use media::{NotificationReceivedArgs, ScreenCaptureStartingArgs};
 pub use options::{EnvironmentOptions, ScrollBarStyle};
 pub use profile::{PreferredColorScheme, Profile};
 pub use protocol::{WebResourceRequest, WebResourceResponse};

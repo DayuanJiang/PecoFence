@@ -20,6 +20,8 @@ export XWIN_ACCEPT_LICENSE=1
 args=(); [ "$PROFILE" = release ] && args=(--release)
 cargo xwin build "${args[@]}" --target x86_64-pc-windows-msvc -p pecofence -p pecofence-cli -p pecofence-watchdog 2>&1 \
   | grep -E '^error|Finished' | tail -5
+# cargo's own status: a failed build must not copy the previous build's exe (a test would run it).
+[ "${PIPESTATUS[0]}" -eq 0 ] || { echo "build failed: nothing copied to $OUT" >&2; exit 1; }
 rm -rf "$OUT"; mkdir -p "$OUT"
 for e in pecofence pecofence-cli pecofence-watchdog; do
   cp "target/x86_64-pc-windows-msvc/$PROFILE/$e.exe" "$OUT/" || exit 2
@@ -28,6 +30,7 @@ cp third_party/webview2/WebView2Loader.x64.dll "$OUT/WebView2Loader.dll"
 # The test shell extension of tests/shellext-fault.ps1 (run.sh --extra target/wintest-shellext).
 cargo xwin build --release --target x86_64-pc-windows-msvc --manifest-path tools/shellext-fault/Cargo.toml \
   --target-dir target/shellext-fault 2>&1 | grep -E '^error' | tail -5
+[ "${PIPESTATUS[0]}" -eq 0 ] || { echo "test shell extension build failed" >&2; exit 1; }
 mkdir -p target/wintest-shellext
 cp target/shellext-fault/x86_64-pc-windows-msvc/release/pf_shellext_fault.dll target/wintest-shellext/ || exit 2
 echo "$PROFILE build in $OUT, pecofence.exe $(sha256sum "$OUT/pecofence.exe" | cut -c1-12)"

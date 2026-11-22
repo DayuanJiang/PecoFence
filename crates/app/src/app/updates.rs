@@ -172,11 +172,29 @@ fn source(test_instance: bool) -> (String, String, String) {
     }
 }
 
-/// `http::get` of one of a check's small files, waited for at most `ANSWER_WAIT`: the request
-/// runs on a thread of its own, and one that got no answer in time ends by itself later.
+/// `http::get` of one of a check's small files, waited for at most `ANSWER_WAIT`.
 pub(super) fn get_in_time(
     url: &str,
     headers: &'static str,
+) -> std::result::Result<Vec<u8>, String> {
+    get_within(url, headers, MAX_RELEASE_JSON, ANSWER_WAIT)
+}
+
+/// How long a download of `bytes` may take: `ANSWER_WAIT`, and a second more for each 128 KB
+/// (a 5 MB plugin file on a slow line). A plugin index may have up to `MAX_INDEX` bytes and
+/// waits 15 s.
+pub(super) fn wait_for(bytes: u64) -> std::time::Duration {
+    ANSWER_WAIT + std::time::Duration::from_secs(bytes / (128 * 1024))
+}
+pub(super) const INDEX_WAIT: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// `http::get` of at most `max` bytes, waited for at most `wait`: the request runs on a thread
+/// of its own, and one that got no answer in time ends by itself later.
+pub(super) fn get_within(
+    url: &str,
+    headers: &'static str,
+    max: usize,
+    wait: std::time::Duration,
 ) -> std::result::Result<Vec<u8>, String> {
     let (answer, waiting) = std::sync::mpsc::channel();
     let address = url.to_string();
@@ -187,16 +205,13 @@ pub(super) fn get_in_time(
                 &address,
                 &user_agent(),
                 headers,
-                MAX_RELEASE_JSON,
+                max,
             ));
         })
         .map_err(|e| e.to_string())?;
-    waiting.recv_timeout(ANSWER_WAIT).unwrap_or_else(|_| {
-        Err(format!(
-            "no answer from {url} within {} s",
-            ANSWER_WAIT.as_secs()
-        ))
-    })
+    waiting
+        .recv_timeout(wait)
+        .unwrap_or_else(|_| Err(format!("no answer from {url} within {} s", wait.as_secs())))
 }
 
 /// The site's copy of the latest release (`update.json` at `site`), with the card's line in the

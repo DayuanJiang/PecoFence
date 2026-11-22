@@ -135,11 +135,11 @@ fn test_url(test_instance: bool) -> Option<String> {
     url.filter(|u| test_instance && u.starts_with("http://127.0.0.1:"))
 }
 
-/// The first address that answers (each gets 8 s).
-fn get_first(urls: &[String]) -> Result<Vec<u8>, String> {
+/// The first address that answers with at most `max` bytes (each gets `wait`).
+fn get_first(urls: &[String], max: usize, wait: std::time::Duration) -> Result<Vec<u8>, String> {
     let mut errors = Vec::new();
     for url in urls {
-        match super::updates::get_in_time(url, "") {
+        match super::updates::get_within(url, "", max, wait) {
             Ok(body) => return Ok(body),
             Err(e) => errors.push(e),
         }
@@ -151,12 +151,14 @@ fn get_first(urls: &[String]) -> Result<Vec<u8>, String> {
 /// wrong or missing signature, or a serial lower than `serial` of the index kept, counts as no
 /// index there).
 fn fetch_index(test: Option<String>, serial: u64) -> Result<(Index, Vec<u8>), (bool, String)> {
-    let urls = test
-        .clone()
-        .map_or_else(|| list::index_urls().to_vec(), |u| vec![u]);
+    let urls = test.clone().map_or_else(
+        || list::index_urls().to_vec(),
+        |u| list::test_index_urls(&u),
+    );
     let (mut errors, mut came) = (Vec::new(), false);
     for url in urls {
-        let got = super::updates::get_in_time(&url, "").and_then(|bytes| {
+        let got = super::updates::get_within(&url, "", list::MAX_INDEX, super::updates::INDEX_WAIT);
+        let got = got.and_then(|bytes| {
             came = true;
             let sig = super::updates::get_in_time(&format!("{url}.sig"), "");
             match sig {
@@ -208,14 +210,26 @@ fn download(
             Some(index) => vec![list::test_file_url(index, commit, id, name)],
             None => list::file_urls(commit, id, name).to_vec(),
         };
-        let bytes = get_first(&urls).map_err(|e| (false, e))?;
+        // Up to the size the index gives it (a plugin file may have 5 MB), with time for it. A
+        // larger answer is not the index's file either.
+        let (max, wait) = (file.size as usize, super::updates::wait_for(file.size));
+        let differs = || {
+            (
+                true,
+                format!("{name}: size or SHA-256 differs from the index"),
+            )
+        };
+        let bytes = get_first(&urls, max, wait).map_err(|e| {
+            if pecofence_platform::http::larger_than(&e, max) {
+                differs()
+            } else {
+                (false, e)
+            }
+        })?;
         if bytes.len() as u64 != file.size
             || pecofence_platform::http::sha256_hex(&bytes) != file.sha256
         {
-            return Err((
-                true,
-                format!("{name}: size or SHA-256 differs from the index"),
-            ));
+            return Err(differs());
         }
         // The index checked the name: parts of letters, digits, '.', '_' and '-'.
         let path = dir.join(name);
@@ -416,12 +430,27 @@ impl App {
         p.usable().then(|| crate::web_plugin::Plugin {
             id: id.to_string(),
             dir: p.dir.clone(),
-            network: p.manifest.permissions.network.clone(),
+            // The page reaches internet hosts itself; this computer, the local network and
+            // IPv6 addresses only through pf.http, which keeps their rules (interface 3).
+            network: (p.manifest.permissions.network.iter())
+                .filter(|h| pecofence_core::plugins::page_reaches(h))
+                .cloned()
+                .collect(),
             links: p.manifest.permissions.links.clone(),
             background: p.manifest.permissions.background,
             clipboard_read: p.manifest.permissions.clipboard.reads(),
             media: p.manifest.permissions.media.reads(),
             apps: !p.manifest.permissions.apps.is_empty(),
+            asks: crate::web_plugin::Asks {
+                camera: p.manifest.permissions.camera,
+                microphone: p.manifest.permissions.microphone,
+                location: p.manifest.permissions.location,
+                notify: p.manifest.permissions.notify,
+                screen: p.manifest.permissions.screen,
+                webrtc: p.manifest.permissions.webrtc,
+            },
+            pointer: p.manifest.permissions.pointer,
+            focus: p.manifest.permissions.focus,
         })
     }
 
@@ -596,6 +625,7 @@ impl App {
             // Its code is gone (a take-down took it, a download after the listing again failed):
             // it comes again whatever failed.txt says, until it is there.
             let gone = !mine.ready;
+            let stand_in = entry.stand_in;
             tracing::info!(
                 id,
                 installed = mine.manifest.version,
@@ -604,10 +634,13 @@ impl App {
                 disabled,
                 failed,
                 gone,
+                stand_in,
                 "plugins: update check"
             );
             match why {
                 Some(why) if !disabled => self.disable_plugin(&id, &why),
+                // index.json's stand-in (no index-3.json was read): only its take-down counts.
+                _ if stand_in => {}
                 None if disabled => self.relist_plugin(&id, kind, failed),
                 None if gone || (kind == Update::Auto && !failed) => {
                     self.start_plugin_download(&id, false)
@@ -624,7 +657,8 @@ impl App {
         let Some(index) = &self.plugins.index else {
             return;
         };
-        let (Some(entry), commit) = (index.get(id).cloned(), index.commit.clone()) else {
+        // Never from a stand-in of index.json: its manifest and files are not the plugin's.
+        let (Some(entry), commit) = (index.offer(id).cloned(), index.commit.clone()) else {
             return;
         };
         if self.plugins.busy.contains_key(id) {
@@ -701,6 +735,11 @@ impl App {
             return;
         }
         let before = self.plugin(id).map(|p| p.manifest.version.clone());
+        // The commands before: an update gives a shortcut only to a command it brings or whose
+        // shortcut it changed.
+        let commands_before = self
+            .plugin(id)
+            .map(|p| p.manifest.permissions.commands.clone());
         let result =
             result.and_then(|version| self.switch_plugin(id, &temp, &version, before.as_deref()));
         let _ = std::fs::remove_dir_all(&temp);
@@ -731,8 +770,10 @@ impl App {
                     fences = fences.len(),
                     "plugins: installed, its fences start again"
                 );
-                // A web plugin's page, its rules and its main.js are the new version's.
+                // A web plugin's page, its rules and its main.js are the new version's; a
+                // command the update brings with its own shortcut gets it where it has none.
                 for fence in fences {
+                    self.seed_plugin_keys(fence, commands_before.as_deref());
                     self.restart_web_page(fence);
                     self.start_script(fence);
                 }
@@ -923,6 +964,9 @@ impl App {
         let made = self.plugin_fence_at(id, x, y);
         tracing::info!(id, made = made.is_some(), "plugins: fence added");
         self.tool_clear_of = None;
+        if let Some(fence) = made {
+            self.seed_plugin_keys(fence, None);
+        }
     }
 
     /// A fence of plugin `id` titled after it, placed near (`x`, `y`).
@@ -1168,7 +1212,7 @@ impl App {
                 // The warning showed this version and these permissions; when the index has
                 // changed them since, the warning is shown again.
                 let shown = v.get("shown").and_then(|s| s.as_str());
-                let now = self.plugins.index.as_ref().and_then(|i| i.get(id));
+                let now = self.plugins.index.as_ref().and_then(|i| i.offer(id));
                 let now = now.map(|e| list::shown_key(&e.manifest));
                 if shown.is_none() || shown != now.as_deref() {
                     tracing::warn!(
@@ -1216,10 +1260,12 @@ impl App {
         let offered = index.map(|i| i.plugins.as_slice()).unwrap_or_default();
         let others = offered
             .iter()
-            .filter(|e| e.disabled.is_none() && !installed.contains_key(&e.manifest.id))
+            .filter(|e| {
+                e.disabled.is_none() && !e.stand_in && !installed.contains_key(&e.manifest.id)
+            })
             .map(|e| (None, Some(&e.manifest)));
         let rows = installed.values().map(|p| {
-            let offered = index.and_then(|i| i.get(&p.manifest.id));
+            let offered = index.and_then(|i| i.offer(&p.manifest.id));
             (Some(p), offered.map(|e| &e.manifest))
         });
         let texts = |t: &BTreeMap<String, String>| list::pick(t, lang).to_string();
@@ -1265,6 +1311,10 @@ impl App {
                     "commands": p.commands.iter().map(|c| list::pick(&c.title, lang)).collect::<Vec<_>>(),
                     "media": format!("{:?}", p.media).to_lowercase(), "apps": p.apps, "local": p.local,
                     "clipboard": format!("{:?}", p.clipboard).to_lowercase(),
+                    // Interface 3: what the warning names besides.
+                    "screen": p.screen, "pointer": p.pointer, "focus": p.focus, "camera": p.camera,
+                    "microphone": p.microphone, "location": p.location, "webrtc": p.webrtc,
+                    "commandKeys": p.commands.iter().filter_map(|c| Some([c.key.clone()?, list::pick(&c.title, lang).to_string()])).collect::<Vec<_>>(),
                     "state": state, "reason": reason, "page": index.is_some(),
                     "notes": mine.map(|_| self.plugin_notes(id)),
                     "settings": settings, "fences": fences, "shown": list::shown_key(m),

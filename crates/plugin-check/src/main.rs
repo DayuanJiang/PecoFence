@@ -171,7 +171,7 @@ impl Host for Fake {
                     .flatten()
                     .unwrap_or_default()
             )),
-            "folder.write" | "folder.mkdir" | "folder.trash" => {
+            "folder.write" | "folder.writeBytes" | "folder.mkdir" | "folder.trash" => {
                 let path = arg(0).to_string();
                 let inside = path
                     .to_lowercase()
@@ -184,11 +184,19 @@ impl Host for Fake {
                 if let Some(why) = folder_write::name_refusal(&path) {
                     return Err(format!("{name}: {why}"));
                 }
+                let any = self.permissions.folders.any_kind();
                 match name {
-                    "folder.write" if !folder_write::is_data_file(&path) => Err(format!(
-                        "{name}: only these kinds of files: {}",
+                    "folder.write" if !any && !folder_write::is_data_file(&path) => Err(format!(
+                        "{name}: only these kinds of files: {} (permissions.folders any writes any kind)",
                         folder_write::DATA_TYPES.join(" ")
                     )),
+                    "folder.writeBytes" => {
+                        let bytes = folder_write::decode_base64(arg(1))
+                            .ok_or_else(|| format!("{name}: not base64"))?;
+                        let text = String::from_utf8_lossy(&bytes).into_owned();
+                        log.folder.insert(path, Some(text));
+                        Ok(Value::Null)
+                    }
                     "folder.write" => {
                         let text = args.get(1).map_or(String::new(), |v| match v {
                             Value::String(s) => s.clone(),
@@ -226,6 +234,13 @@ impl Host for Fake {
             "apps.running" => Ok(json!(self.app.iter().collect::<Vec<_>>())),
             "apps.front" if !self.front_asked.swap(true, Ordering::Relaxed) => Ok(json!(self.app)),
             "apps.front" => Ok(Value::Null),
+            // The pointer in the middle of one 1920 x 1080 monitor; the focus a text box in
+            // Notepad with its caret.
+            "pointer" => Ok(json!({
+                "x": 960, "y": 540, "monitor": { "x": 0, "y": 0, "width": 1920, "height": 1080 }
+            })),
+            "focus" => Ok(json!({ "x": 100, "y": 120, "width": 800, "height": 500 })),
+            "caret" => Ok(json!({ "x": 180, "y": 160, "width": 2, "height": 20 })),
             // The dropped file notes.txt (the drop's file 0): its text, its bytes in base64; a
             // save puts it into the data as the app does.
             n if n.starts_with("drop.") && args[0] != 0 => {

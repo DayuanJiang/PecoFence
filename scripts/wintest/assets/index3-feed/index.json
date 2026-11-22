@@ -1,0 +1,146 @@
+{
+ "format": 1,
+ "serial": 2,
+ "commit": "1d3aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "plugins": [
+  {
+   "id": "pf-keep",
+   "version": "2.0.0",
+   "api": 3,
+   "layer": "light",
+   "name": {
+    "en": "pf-keep"
+   },
+   "description": {
+    "en": "A test plugin of interface 3."
+   },
+   "author": "pftest",
+   "minPecoFence": "0.5.0",
+   "permissions": {
+    "folders": "readwrite"
+   },
+   "files": [
+    {
+     "name": "README.md",
+     "size": 24,
+     "sha256": "0fc8051ea43e86bb7f476935f6a929e5b77961a46fef0e2f8efe4772cb42a672"
+    },
+    {
+     "name": "main.js",
+     "size": 70,
+     "sha256": "77a5420b9b2eb79d235a4e71d3851c9a50bd778f8d65ab23b6800b8f001a285e"
+    },
+    {
+     "name": "plugin.json",
+     "size": 254,
+     "sha256": "73cb4f8c507ade8035612c7447b93960b7e40ff4ec253fd84ddb8995ed7939c5"
+    }
+   ],
+   "disabled": "a test take-down",
+   "standIn": true
+  },
+  {
+   "id": "pf-new",
+   "version": "1.0.0",
+   "api": 3,
+   "layer": "light",
+   "name": {
+    "en": "pf-new"
+   },
+   "description": {
+    "en": "A test plugin of interface 3."
+   },
+   "author": "pftest",
+   "minPecoFence": "0.5.0",
+   "permissions": {
+    "folders": "readwrite"
+   },
+   "files": [
+    {
+     "name": "README.md",
+     "size": 23,
+     "sha256": "4369649c06e79b8fa8cc5dd7c21d77ce119969dc7eedcdd83f65dc4eb3efad9d"
+    },
+    {
+     "name": "main.js",
+     "size": 69,
+     "sha256": "8c73fc39dcee4fda0c0c16f7c1df74ac6047483b389e2e04b225fb561ab4490d"
+    },
+    {
+     "name": "plugin.json",
+     "size": 252,
+     "sha256": "56b9b8818a20ddd684c38c737e616ecac6dafffa706e63c414ca969625108588"
+    }
+   ],
+   "standIn": true
+  },
+  {
+   "id": "pf-up",
+   "version": "2.0.0",
+   "api": 3,
+   "layer": "light",
+   "name": {
+    "en": "pf-up"
+   },
+   "description": {
+    "en": "A test plugin of interface 3."
+   },
+   "author": "pftest",
+   "minPecoFence": "0.5.0",
+   "permissions": {
+    "folders": "readwrite"
+   },
+   "files": [
+    {
+     "name": "README.md",
+     "size": 22,
+     "sha256": "d751581a17164609b0f6d08f830280a959eeb6fd908883f0f8b1377514a68ae9"
+    },
+    {
+     "name": "main.js",
+     "size": 68,
+     "sha256": "2100bc8e1855d7ea04cf653bb0dfa61b29fced4d84391c95fb102650aae8cfcc"
+    },
+    {
+     "name": "plugin.json",
+     "size": 250,
+     "sha256": "f7b9942394313b1a678ce8dcae709c741de34cd2a125d0bf6b549d57041b8883"
+    }
+   ],
+   "standIn": true
+  },
+  {
+   "id": "pf-big",
+   "version": "1.1.0",
+   "api": 3,
+   "layer": "web",
+   "name": {
+    "en": "pf-big"
+   },
+   "description": {
+    "en": "A test plugin of interface 3."
+   },
+   "author": "pftest",
+   "minPecoFence": "0.5.0",
+   "permissions": {},
+   "files": [
+    {
+     "name": "README.md",
+     "size": 23,
+     "sha256": "51ccbbaa559d898e0ee9fd883ae9945ce2073ca0addd72e3696ece748dc1c508"
+    },
+    {
+     "name": "index.html",
+     "size": 56,
+     "sha256": "49fc37a95fdfcfe87fc06278f077beb2695ba26a4332ea84b9dccc71458d9535"
+    },
+    {
+     "name": "plugin.json",
+     "size": 229,
+     "sha256": "c5975490f35280a22804f378258dddd9f4c4ee2dbc417e1a57d6b89840cb820b"
+    }
+   ],
+   "standIn": true
+  }
+ ]
+}

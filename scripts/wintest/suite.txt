@@ -81,9 +81,16 @@ web-plugin-A       2   ec2    debug   web-plugin.ps1                 --var Part=
 web-plugin-C       3   ec2    debug   web-plugin.ps1                 --var Part=C
 web-plugin-L       2   ec2    debug   web-plugin.ps1                 --var Part=L
 web-plugin-V       1   ec2    debug   web-plugin.ps1                 --var Part=V
+# Web plugins' browser permissions (interface 3): screen picker, camera, microphone, location,
+# notifications, WebRTC, inline code by hash; a decision is not kept in the profile.
+web-perms-U        1   ec2    debug   plugin-web-perms.ps1           --var Part=U --var Api=3
+web-perms-D        1   ec2    debug   plugin-web-perms.ps1           --var Part=D --var Api=3
+web-perms-S        1   ec2    debug   plugin-web-perms.ps1           --var Part=S --var Api=3
+# Part O needs 0.5.0's debug build as --extra (run.sh --extra <dir>): not in the suite's own runs.
 plugin-migrate     3   ec2    release plugin-migrate.ps1
 plugin-view        3   ec2    debug   plugin-view.ps1
 plugin-launcher    5   ec2    debug   plugin-launcher.ps1
+plugin-seeing      4   ec2    debug   plugin-seeing.ps1
 plugin-media       2   ec2    debug   plugin-media.ps1
 plugin-ui          3   ec2    debug   plugin-ui.ps1
 plugin-local       2   ec2    debug   plugin-local.ps1
@@ -91,6 +98,10 @@ plugin-folders     3   ec2    debug   plugin-folders.ps1
 plugin-drag        5   ec2    debug   plugin-drag.ps1
 plugin-drag-mon    3   manual debug   plugin-drag-monitors.ps1
 plugin-lan         2   ec2    debug   plugin-lan.ps1                 --var Lan=self
+# Plugin interface 3, lifted limits (L8 to L11): 127.0.0.1 and localhost in network, refused
+# ports for any host, a 1.5 MB answer, folders any with the Mark of the Web, batch files and
+# scripts with their arguments as text, no program from the web or the picked folder.
+plugin-limits3     2   ec2    release plugin-limits3.ps1
 plugin-media-store 1   manual debug   plugin-media-store.ps1 --extra packaging/msix
 plugins-six        3   manual debug   plugins-six.ps1
 smart-filter       1   ec2    release smart-filter.ps1
@@ -323,3 +334,7 @@ zoom-R             2   ec2    release pr245-zoom.ps1                --var Part=R
 zoom-GP            3   ec2    release pr245-zoom.ps1                --var Part=GP
 # Plugins in the Store edition: a test-signed package and the portable exe in one Hyper-V guest (manual: see the header of tests/msix-plugins.ps1).
 msix-plugins       6   manual debug   msix-plugins.ps1
+# Plugin interface 3 and PecoFence 0.5.0: the feed of assets/index3-feed (index.json with stand-ins, index-3.json); this build reads index-3.json, takes pf-keep down and updates pf-big with its 2 MB file; with index.json only it updates nothing from a stand-in. index3-old runs it with 0.5.0 (manual: --bin of the 0.5.0 release).
+plugin-index3      2   ec2    release plugin-index3.ps1             --var Part=new
+index3-fallback    2   ec2    release plugin-index3.ps1             --var Part=fallback
+index3-old         2   manual release plugin-index3.ps1             --var Part=old
