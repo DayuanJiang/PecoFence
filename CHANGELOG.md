@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.1
 
 - Plugin interface 3 (`api: 3`, from 0.5.1): a plugin may now declare more, and PecoFence shows each in the install warning and asks again when an update adds one: `screen` (a web page captures the screen; you pick the screen or window each time), `pointer`, `focus` (where the keyboard focus and the text caret are), `camera`, `microphone`, `location`, `webrtc` (direct connections to other computers over the internet), `folders` `any` (files of any type in a folder you pick) and a shortcut of its own on a command (`key`). Hosts that are IP addresses or names without a dot, scripts in `system`, more than 4 local ports and files over the sizes of 0.5.0 are interface 3's too. PecoFence reads the plugin store's new `index-3.json` first (up to 16 MB) and `index.json` when there is none; the store keeps `index.json` readable for 0.5.0, which shows such a plugin as 需要更新 PecoFence and still gets its take-downs.
 - A web plugin can no longer open the screen-sharing picker without saying so. In 0.5.0 any web plugin's page could call `getDisplayMedia()`: WebView2's own picker ("Choose what to share") showed in its fence, and a press on Share gave the plugin the screen although its manifest declared nothing and the install warning said nothing. Now the capture is cancelled before the picker shows (the page gets `NotAllowedError`) unless the plugin declares `screen`.
