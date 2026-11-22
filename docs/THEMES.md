@@ -92,7 +92,8 @@ A font name is a family name, in English or in the font's own language, such as
 `"Microsoft YaHei UI"`, `"微软雅黑"` or `"Georgia"`; for Segoe UI Variable write
 `"Segoe UI Variable Text"`. A font that is not installed is an error, so a misspelt name shows
 up in Settings. Text the font has no letters for (Chinese in a Latin font, for
-example) is drawn in a fallback font.
+example) is drawn in a fallback font. A font chosen in Settings › 常规 › 外观 › 字体 takes the
+place of `labelFont` and `titleFont`; with 「默认」 there, the theme's fonts are used.
 
 ### Colours
 

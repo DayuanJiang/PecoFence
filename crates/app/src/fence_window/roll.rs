@@ -629,20 +629,26 @@ impl FenceViewState {
         true
     }
 
-    /// Title on hover for this fence: its own choice, else the global setting. A fence whose
-    /// tabs are on the left has no title row to fold away.
+    /// Title on hover for this fence: its own choice, else the global setting; 「不显示」
+    /// folds the row the same way. A fence whose tabs are on the left has no title row to
+    /// fold away.
     pub(super) fn title_on_hover(&self) -> bool {
         !self.tabs_on_rail()
-            && self
-                .title_on_hover_override
-                .unwrap_or_else(|| self.behavior.title_on_hover.get())
+            && (self.title_hidden
+                || self
+                    .title_on_hover_override
+                    .unwrap_or_else(|| self.behavior.title_on_hover.get()))
     }
 
     /// Whether the title row is shown right now (title-on-hover rule): also while another
-    /// fence is dragged over it to merge and while the title is being renamed.
+    /// fence is dragged over it to merge and while the title is being renamed. With 「不显示」
+    /// the pointer brings it only where it brings a hover-only row past 鼠标移入时保持透明:
+    /// in a rolled-up fence opened by the pointer and while the fence floats (Peek).
     pub(super) fn title_visible_target(&self) -> bool {
+        let pointer = self.pointer_reveals()
+            && (!self.title_hidden || self.peeking || self.behavior.floating.get());
         !self.title_on_hover()
-            || self.pointer_reveals()
+            || pointer
             || self.roll_target()
             || self.merge_hint
             || self.title_renaming
@@ -670,11 +676,11 @@ impl FenceViewState {
     }
 
     /// The title row is folded away and the pointer does not bring it back
-    /// (鼠标移入时保持透明 with title on hover). The row still moves the fence, and the
-    /// pointer over it takes the move cursor, the only sign of where it is; the roll-up
-    /// chevron, which is not drawn then, takes no click.
+    /// (鼠标移入时保持透明 with title on hover, or 「不显示」). The row still moves the fence,
+    /// and the pointer over it takes the move cursor, the only sign of where it is; the
+    /// roll-up chevron, which is not drawn then, takes no click.
     pub(super) fn title_row_unseen(&self) -> bool {
-        self.stays_clear() && !self.title_visible_target()
+        (self.stays_clear() || self.title_hidden) && !self.title_visible_target()
     }
 
     /// Whether floating above other windows (Peek) draws this fence differently: a fully

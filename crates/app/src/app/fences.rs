@@ -296,6 +296,7 @@ impl App {
             .unwrap_or((None, 1.0));
         w.set_appearance(bd, op);
         w.set_title_on_hover(f.appearance.as_ref().and_then(|a| a.title_on_hover));
+        w.set_title_hidden(f.appearance.as_ref().is_some_and(|a| a.title_hidden));
         w.set_transparent_on_hover(
             f.appearance
                 .as_ref()

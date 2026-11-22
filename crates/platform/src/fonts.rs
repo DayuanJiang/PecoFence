@@ -26,6 +26,121 @@ pub fn font_family_exists(face: &str) -> bool {
     }
 }
 
+/// The font families a user can pick for the fence text (字体, feedback #208), sorted, by the
+/// names GDI shows (微软雅黑 on a Chinese system), read once. Only outline fonts DirectWrite can
+/// draw; no vertical (`@`) variants and no symbol fonts.
+pub fn families() -> &'static [String] {
+    static FAMILIES: OnceLock<Vec<String>> = OnceLock::new();
+    FAMILIES.get_or_init(|| {
+        let names = tidy_families(enum_families());
+        tracing::info!(count = names.len(), "font families listed");
+        names
+    })
+}
+
+/// NEWTEXTMETRICW up to `ntmFlags` (TEXTMETRICW: 11 LONGs, 4 WCHARs, 5 BYTEs).
+#[repr(C)]
+struct NewTextMetric {
+    _longs: [i32; 11],
+    _chars: [u16; 4],
+    _bytes: [u8; 5],
+    ntm_flags: u32,
+}
+
+/// Every family GDI lists for any character set, as it lists them.
+fn enum_families() -> Vec<String> {
+    windows_core::link!("gdi32.dll" "system" fn EnumFontFamiliesExW(hdc: HDC, font: *const LOGFONTW, proc: Option<unsafe extern "system" fn(*const LOGFONTW, *const NewTextMetric, u32, LPARAM) -> i32>, lparam: LPARAM, flags: u32) -> i32);
+    const TRUETYPE_FONTTYPE: u32 = 4;
+    const NTM_PS_OPENTYPE: u32 = 0x0002_0000;
+    const NTM_TT_OPENTYPE: u32 = 0x0004_0000;
+    const SYMBOL_CHARSET: u8 = 2;
+    unsafe extern "system" fn found(
+        font: *const LOGFONTW,
+        metric: *const NewTextMetric,
+        kind: u32,
+        list: LPARAM,
+    ) -> i32 {
+        // SAFETY: GDI hands an ENUMLOGFONTEXW (it starts with the LOGFONTW) and a
+        // NEWTEXTMETRICEXW (it starts with the NEWTEXTMETRICW) for an outline font; `list` is
+        // the Vec `enum_families` passed.
+        let (font, flags, list) = unsafe {
+            (
+                &*font,
+                (*metric).ntm_flags,
+                &mut *(list.0 as *mut Vec<String>),
+            )
+        };
+        let outline =
+            kind & TRUETYPE_FONTTYPE != 0 || flags & (NTM_PS_OPENTYPE | NTM_TT_OPENTYPE) != 0;
+        if outline && font.lfCharSet != SYMBOL_CHARSET {
+            let len = font.lfFaceName.iter().position(|&c| c == 0).unwrap_or(32);
+            list.push(from_wide(&font.lfFaceName[..len]));
+        }
+        1
+    }
+    let mut list: Vec<String> = Vec::new();
+    let query = LOGFONTW {
+        lfCharSet: DEFAULT_CHARSET as u8,
+        ..Default::default()
+    };
+    // SAFETY: the DC lives for the call; the callback writes only into `list`, which outlives it.
+    unsafe {
+        let dc = CreateCompatibleDC(None);
+        if dc.0.is_null() {
+            return list;
+        }
+        EnumFontFamiliesExW(
+            dc,
+            &query,
+            Some(found),
+            LPARAM(&mut list as *mut Vec<String> as isize),
+            0,
+        );
+        let _ = DeleteDC(dc);
+    }
+    list
+}
+
+/// GDI's family list made pickable: each name once, without `@` variants, without a weight or
+/// width GDI lists as a family of its own beside its family ("Segoe UI Semibold" beside
+/// "Segoe UI"), which DirectWrite knows only as a weight of that family, and without a name GDI
+/// cut at 31 characters ("Bahnschrift SemiBold SemiConden"), which no font has.
+fn tidy_families(listed: Vec<String>) -> Vec<String> {
+    const STYLES: &str = "thin hairline extralight ultralight light semilight demilight book \
+        regular medium semibold demibold bold extrabold ultrabold black heavy extrablack \
+        ultrablack condensed semicondensed narrow extended semiexpanded expanded italic oblique \
+        sb sl lt md bd xb";
+    let mut names: Vec<String> = Vec::new();
+    for name in listed {
+        let name = name.trim().to_string();
+        if name.is_empty() || name.starts_with('@') || name.encode_utf16().count() >= 31 {
+            continue;
+        }
+        if !names.iter().any(|n| n.eq_ignore_ascii_case(&name)) {
+            names.push(name);
+        }
+    }
+    let lower: Vec<String> = names.iter().map(|n| n.to_lowercase()).collect();
+    let style_of = |name: &str| {
+        lower.iter().any(|base| {
+            name.len() > base.len()
+                && name.starts_with(base.as_str())
+                && name[base.len()..].starts_with(' ')
+                && name[base.len()..]
+                    .split_whitespace()
+                    .all(|word| STYLES.split_whitespace().any(|style| style == word))
+        })
+    };
+    let mut kept: Vec<String> = names
+        .into_iter()
+        .zip(&lower)
+        .filter(|(_, low)| !style_of(low))
+        .map(|(name, _)| name)
+        .collect();
+    kept.sort_by_key(|n| n.to_lowercase());
+    kept
+}
+
 /// The family GDI picks for a font named `face`.
 fn resolved_face(face: &str) -> Option<String> {
     with_font(face, |dc| {
@@ -203,6 +318,45 @@ mod tests {
         assert!(font_family_exists("Microsoft YaHei"));
         assert!(!font_family_exists("PecoFence Font That Does Not Exist"));
         assert!(!font_installed("PecoFence Font That Does Not Exist"));
+    }
+
+    #[test]
+    fn the_family_list_has_each_family_once_without_its_weights() {
+        let listed = [
+            "Segoe UI",
+            "Segoe UI Semibold",
+            "Segoe UI Light",
+            "@Microsoft YaHei",
+            "Microsoft YaHei",
+            "microsoft yahei",
+            "微软雅黑",
+            "微软雅黑 Light",
+            "Arial Black",
+            "Arial",
+            "Bahnschrift SemiBold SemiConden",
+            "Malgun Gothic",
+            "Malgun Gothic Semilight",
+            "Segoe UI Emoji",
+            "",
+        ]
+        .map(String::from)
+        .to_vec();
+        assert_eq!(
+            tidy_families(listed),
+            [
+                "Arial",
+                "Malgun Gothic",
+                "Microsoft YaHei",
+                "Segoe UI",
+                "Segoe UI Emoji",
+                "微软雅黑",
+            ]
+        );
+        // The installed list: sorted, and has the fonts every Windows 10 and 11 ships.
+        let all = families();
+        assert!(all.iter().any(|f| f == "Arial"), "{all:?}");
+        assert!(!all.iter().any(|f| f.starts_with('@')));
+        assert!(!all.iter().any(|f| f.eq_ignore_ascii_case("Wingdings")));
     }
 
     #[test]

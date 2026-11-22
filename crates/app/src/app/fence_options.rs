@@ -165,6 +165,17 @@ pub(super) enum TitleColorChoice {
     Rgb([u8; 3]),
 }
 
+/// 「显示标题栏」 of one fence (`titleOnHover`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TitleRow {
+    /// 跟随常规设置: the global 「鼠标悬停时才显示标题栏」.
+    Default,
+    Always,
+    Hover,
+    /// 不显示 (feedback #208): the row never shows; its place still moves the fence.
+    Never,
+}
+
 /// One per-fence option, parsed and range-checked (shared by the settings page's `setFence`
 /// and the CLI's `fences.setOption`).
 #[derive(Clone, Debug, PartialEq)]
@@ -191,8 +202,8 @@ pub(super) enum FenceProp {
     TitleSize(Option<TitleSize>),
     /// 文字大小 of a note or script fence (None = normal).
     TextSize(Option<TitleSize>),
-    /// None = the global `rollUp.titleOnHover`.
-    TitleOnHover(Option<bool>),
+    /// 「显示标题栏」 (`titleOnHover`).
+    TitleOnHover(TitleRow),
     /// 鼠标移入时保持透明: acts while the opacity is 全透明.
     TransparentOnHover(bool),
     /// Regular fences: a double-clicked folder opens inside the fence.
@@ -376,11 +387,12 @@ pub(super) fn parse_fence_prop(
             }
         }
         "titleOnHover" => {
-            const ALLOWED: &[&str] = &["default", "hover", "always"];
+            const ALLOWED: &[&str] = &["default", "hover", "always", "never"];
             FenceProp::TitleOnHover(match as_str(ALLOWED)? {
-                "default" => None,
-                "hover" => Some(true),
-                "always" => Some(false),
+                "default" => TitleRow::Default,
+                "hover" => TitleRow::Hover,
+                "always" => TitleRow::Always,
+                "never" => TitleRow::Never,
                 _ => return Err(bad(ALLOWED)),
             })
         }
@@ -801,10 +813,16 @@ impl App {
         self.schedule_save();
     }
 
-    /// `None` = follow the global 「鼠标悬停时才显示标题栏」.
-    pub(super) fn set_fence_title_on_hover(&mut self, fence: FenceId, on: Option<bool>) {
+    /// 「显示标题栏」 of one fence; `Default` follows the global 「鼠标悬停时才显示标题栏」.
+    pub(super) fn set_fence_title_on_hover(&mut self, fence: FenceId, row: TitleRow) {
         let host = self.state.host_of(fence);
-        self.state.set_title_on_hover(host, on);
+        let on = match row {
+            TitleRow::Hover => Some(true),
+            TitleRow::Always => Some(false),
+            TitleRow::Default | TitleRow::Never => None,
+        };
+        self.state
+            .set_title_on_hover(host, on, row == TitleRow::Never);
         self.apply_fence_appearance(host);
         self.schedule_save();
     }
@@ -925,10 +943,15 @@ impl App {
             Some([0x00, 0x00, 0x00]) => "black".to_string(),
             Some(rgb) => hex(rgb),
         };
-        let title_on_hover = match h.appearance.as_ref().and_then(|a| a.title_on_hover) {
-            None => "default",
-            Some(true) => "hover",
-            Some(false) => "always",
+        let title_on_hover = match h
+            .appearance
+            .as_ref()
+            .map(|a| (a.title_hidden, a.title_on_hover))
+        {
+            Some((true, _)) => "never",
+            None | Some((false, None)) => "default",
+            Some((false, Some(true))) => "hover",
+            Some((false, Some(false))) => "always",
         };
         let title_size = size_name(title_size);
         let spacing = match Spacing::nearest(f.view.spacing) {
@@ -1227,7 +1250,7 @@ impl App {
                 self.set_fence_title_style(fence, title_rgb, size);
             }
             FenceProp::TextSize(size) => self.set_fence_text_size(fence, size),
-            FenceProp::TitleOnHover(on) => self.set_fence_title_on_hover(fence, on),
+            FenceProp::TitleOnHover(row) => self.set_fence_title_on_hover(fence, row),
             FenceProp::TransparentOnHover(on) => self.set_fence_transparent_on_hover(fence, on),
             FenceProp::OpenFoldersInside(on) => self.set_fence_open_folders_inside(fence, on),
             FenceProp::PortalNavigate(on) => self.set_fence_portal_navigate(fence, on),

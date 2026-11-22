@@ -284,6 +284,9 @@ o8-prewarm         2   manual release owner8-prewarm.ps1
 # and 右对齐 at 150 %.
 o6-align           4   ec2    release owner6-align.ps1
 o6-align-page      3   ec2    debug   owner6-align.ps1               --var Part=P
+# Feedback #208: 显示标题栏 不显示 and 字体 (Malgun Gothic, Microsoft YaHei, Georgia, a missing font, 默认).
+fb208-title-font   4   ec2    release fb208-title-font.ps1
+fb208-title-page   2   ec2    debug   fb208-title-font.ps1           --var Part=P
 o6-align-scale     3   resize release free-placement.ps1             --part S --steps owner6-align.ps1
 # Usage statistics: operations appear in usage.json, nothing typed does, an upload, the switch.
 usage-stats        4   ec2    release usage.ps1

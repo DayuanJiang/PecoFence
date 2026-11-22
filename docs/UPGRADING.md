@@ -155,6 +155,13 @@ the newer file (see the next section).
 found, and its settings and data are not used. The snapshot 「升级为插件之前」, which 0.5.0 saved
 before it moved the first tool fence, holds the notes, clocks and example script fences as they were.
 
+## Going back to 0.5.0
+
+0.5.0 does not know two options of later versions, and its first save drops them:
+
+- A fence whose 显示标题栏 is 不显示 shows its title row as with 跟随常规设置.
+- 字体 is gone: the fences show the theme's or Windows' fonts again.
+
 ## Going back to an earlier version from a later one
 
 Versions after 0.3.1 record at every save which version made it (`savedBy` in

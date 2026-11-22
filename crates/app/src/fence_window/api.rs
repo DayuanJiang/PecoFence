@@ -348,6 +348,7 @@ impl FenceWindow {
             wanted_layout: ViewLayout::Icons,
             title_on_hover_override: None,
             transparent_on_hover: false,
+            title_hidden: false,
             style: FenceStyle::default(),
             spacing: 0,
             icon_align: IconAlign::Left,
@@ -2658,6 +2659,17 @@ impl FenceWindow {
         self.with_view(|v| {
             if v.title_on_hover_override != on {
                 v.title_on_hover_override = on;
+                let _ = v.redraw();
+            }
+        });
+    }
+
+    /// 「显示标题栏」 → 「不显示」: the title row stays folded away, the pointer included.
+    pub fn set_title_hidden(&self, hidden: bool) {
+        self.with_view(|v| {
+            if v.title_hidden != hidden {
+                v.title_hidden = hidden;
+                tracing::debug!(fence = %v.title, hidden, "title row never shown set");
                 let _ = v.redraw();
             }
         });

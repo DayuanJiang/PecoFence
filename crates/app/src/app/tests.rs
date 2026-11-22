@@ -179,7 +179,7 @@ fn ctrl_wheel_skips_locked_fences_but_not_the_desktop_arranged_one() {
 }
 
 mod ipc {
-    use super::super::fence_options::{FenceProp, is_live_tick, parse_fence_prop};
+    use super::super::fence_options::{FenceProp, TitleRow, is_live_tick, parse_fence_prop};
     use super::super::ipc::{
         AUTO_SNAPSHOT_PREFIX, MAX_NAME_CHARS, MIN_EXPIRY_MS, adjusted, auto_snapshot_slot,
         check_rule_conditions, checked_name, clamp_to_work, is_inbox_alias, patch_settings_path,
@@ -803,14 +803,15 @@ mod ipc {
             parse_fence_prop("opacity", &json!("default")).unwrap(),
             FenceProp::Opacity(None)
         );
-        for (value, on) in [
-            ("default", None),
-            ("hover", Some(true)),
-            ("always", Some(false)),
+        for (value, row) in [
+            ("default", TitleRow::Default),
+            ("hover", TitleRow::Hover),
+            ("always", TitleRow::Always),
+            ("never", TitleRow::Never),
         ] {
             assert_eq!(
                 parse_fence_prop("titleOnHover", &json!(value)).unwrap(),
-                FenceProp::TitleOnHover(on)
+                FenceProp::TitleOnHover(row)
             );
         }
         assert_eq!(
@@ -818,7 +819,7 @@ mod ipc {
                 .unwrap_err()
                 .details
                 .unwrap()["allowed"],
-            json!(["default", "hover", "always"])
+            json!(["default", "hover", "always", "never"])
         );
         assert_eq!(
             parse_fence_prop("labelLines", &json!(4))
