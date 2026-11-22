@@ -499,9 +499,11 @@ impl FenceViewState {
         self.peek_faded = false;
         let _ = self.motion.stop(&self.root, Prop::Opacity);
         let _ = self.motion.stop(&self.root, Prop::Scale);
-        self.root.set_opacity(1.0);
+        // Still under a fence opened on top of it (`set_covered`): it stays faded out.
+        let opacity = if self.covered_faded { 0.0 } else { 1.0 };
+        self.root.set_opacity(opacity);
         self.motion.set_scale(&self.root, 1.0);
-        self.shadow_alpha = Tween::at(1.0, Instant::now());
+        self.shadow_alpha = Tween::at(opacity, Instant::now());
         self.shadow_fading = false;
         self.apply_shadow_alpha(Instant::now());
     }

@@ -3471,7 +3471,12 @@ impl FenceWindow {
     /// Opened on top of the fences under it until it rolls up: a hover peek, or a fence opened
     /// over a gap under one row with pushing off (`hover_raised`).
     pub fn opened_on_top(&self) -> bool {
-        self.view.borrow().as_ref().is_some_and(|v| v.hover_raised)
+        self.view.borrow().as_ref().is_some_and(|v| {
+            v.hover_raised
+                && !v.off_desktop
+                && !matches!(v.vis_fade, Some(super::roll::VisFade::Hiding { .. }))
+                && desktop::is_visible(v.hwnd)
+        })
     }
 
     /// See `FenceViewState::set_covered`.
