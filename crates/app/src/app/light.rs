@@ -891,6 +891,28 @@ impl App {
             .collect()
     }
 
+    /// The folders the user picked in any fence of fence `fence`'s plugin (`pf.run` runs no
+    /// program in one: the plugin could have written it there).
+    pub(super) fn plugin_folders_of_plugin(&self, fence: FenceId) -> Vec<String> {
+        let Some(path) = self
+            .state
+            .config
+            .scripts
+            .get(&fence)
+            .map(|s| s.path.clone())
+        else {
+            return Vec::new();
+        };
+        let scripts = self.state.config.scripts.iter();
+        let fences: Vec<FenceId> = (scripts.filter(|(_, s)| s.path == path))
+            .map(|(f, _)| *f)
+            .collect();
+        fences
+            .into_iter()
+            .flat_map(|f| self.plugin_folders(f))
+            .collect()
+    }
+
     /// The device addresses the user typed for plugin fence `fence` (its `device` settings, of
     /// the keys its installed manifest declares).
     pub(super) fn plugin_devices(&mut self, fence: FenceId) -> Vec<String> {

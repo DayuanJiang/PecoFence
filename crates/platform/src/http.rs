@@ -327,18 +327,17 @@ fn request(
     let (secure, name, port, path) = split_url(url, reach)?;
     let (mut server, mut headers) = (name.clone(), headers.to_string());
     let mut pinned = Vec::new();
+    // An IPv6 host is `[...]` in an address and bare for the resolver.
+    let lookup = name.trim_start_matches('[').trim_end_matches(']');
     if reach == Reach::Internet {
         use std::net::ToSocketAddrs;
-        let found = (name.as_str(), port)
-            .to_socket_addrs()
-            .into_iter()
-            .flatten();
+        let found = (lookup, port).to_socket_addrs().into_iter().flatten();
         if let Some(ip) = found.map(|a| a.ip().to_string()).find(|ip| !public_ip(ip)) {
             tracing::info!(host = %name, %ip, "plugin request refused before connecting: the host resolves to this computer or the local network");
             return Err(refusal(&name, &ip, reach));
         }
     } else if plugin {
-        let (ip, fitting) = local_address(&name, port, reach)?;
+        let (ip, fitting) = local_address(lookup, port, reach)?;
         // Plain http goes to the address checked here; https by name, whose certificate names
         // it, and `on_status` lets it connect only to an address checked here.
         pinned = if secure {

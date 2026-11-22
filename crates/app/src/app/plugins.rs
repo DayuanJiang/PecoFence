@@ -417,7 +417,12 @@ impl App {
         p.usable().then(|| crate::web_plugin::Plugin {
             id: id.to_string(),
             dir: p.dir.clone(),
-            network: p.manifest.permissions.network.clone(),
+            // The page reaches internet hosts itself; this computer, the local network and
+            // IPv6 addresses only through pf.http, which keeps their rules (interface 3).
+            network: (p.manifest.permissions.network.iter())
+                .filter(|h| pecofence_core::plugins::page_reaches(h))
+                .cloned()
+                .collect(),
             links: p.manifest.permissions.links.clone(),
             background: p.manifest.permissions.background,
             clipboard_read: p.manifest.permissions.clipboard.reads(),

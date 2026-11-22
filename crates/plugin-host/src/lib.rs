@@ -39,8 +39,8 @@ const SHOW_GAP: Duration = Duration::from_millis(100);
 const MAX_TIMERS: usize = 20;
 /// Requests (`pf.http`) a plugin may have going at once, and calls of any kind (a web plugin's
 /// page too).
-pub const MAX_REQUESTS: usize = 4;
-pub const MAX_CALLS: usize = 16;
+pub const MAX_REQUESTS: usize = 8;
+pub const MAX_CALLS: usize = 32;
 /// What `call` names the run of main.js itself: an error there stops the plugin (in any other
 /// run it is logged and the plugin goes on).
 const MAIN: &str = "main.js";
@@ -1110,6 +1110,38 @@ mod tests {
         Command::Event(FenceId::new_v4(), name, json!({ "id": "a" }))
     }
 
+    /// Interface 3: main.js may have 512 KB. Dense code of that size (11,000 small functions with
+    /// strings) starts within the 50 ms and 8 MB of the engine.
+    #[test]
+    fn a_main_js_of_the_largest_size_starts() {
+        let mut code = String::from("const t = {};\n");
+        let mut i = 0;
+        while code.len() < pecofence_core::plugins::FILES[1].1 as usize - 200 {
+            code.push_str(&format!(
+                "t.k{i} = function (a, b) {{ return a + b * {i} + 'text number {i} of the table'.length; }};\n"
+            ));
+            i += 1;
+        }
+        code.push_str("pf.show({ rows: [{ text: 'started ' + Object.keys(t).length }] });\n");
+        let begun = std::time::Instant::now();
+        let out = run_with(
+            &code,
+            Permissions::default(),
+            Arc::new(Fake::default()),
+            true,
+            300,
+            vec![],
+        );
+        eprintln!(
+            "largest main.js ({} bytes, {i} functions): {:?} until quit, stop {:?}",
+            code.len(),
+            begun.elapsed(),
+            stop_of(&out)
+        );
+        assert_eq!(stop_of(&out), None);
+        assert_eq!(texts(&out).last().cloned(), Some(format!("started {i}")));
+    }
+
     #[test]
     fn every_output_carries_the_number_of_its_start() {
         let code = "pf.show({ rows: [{ text: 'a' }] }); pf.post(1); pf.on('click', () => { for (;;) {} });";
@@ -1608,10 +1640,10 @@ mod tests {
     }
 
     #[test]
-    fn at_most_four_requests_at_once_and_the_clipboard_only_for_readers() {
+    fn at_most_eight_requests_at_once_and_the_clipboard_only_for_readers() {
         let code = r#"
             let made = 0, why = '', seen = 0;
-            for (let i = 0; i < 6; i++) { try { pf.http.get('https://a.com/' + i); made++; } catch (e) { why = e.message; } }
+            for (let i = 0; i < 10; i++) { try { pf.http.get('https://a.com/' + i); made++; } catch (e) { why = e.message; } }
             pf.on('clipboard', () => { seen++; });
             pf.every(1, () => pf.show({ rows: [{ text: made + ' ' + seen + ' ' + why }] }));
         "#;
@@ -1626,7 +1658,9 @@ mod tests {
         let out = run_with(code, p.clone(), fake, true, 600, vec![event("clipboard")]);
         let text = texts(&out).join("\n");
         assert!(
-            text.starts_with("4 0 http.get: too many calls at once"),
+            text.starts_with(
+                "8 0 http.get: too many calls at once (at most 8 requests and 32 calls)"
+            ),
             "{text}"
         );
         let p = Permissions {
@@ -1641,7 +1675,7 @@ mod tests {
             600,
             vec![event("clipboard")],
         );
-        assert!(texts(&out).join("\n").contains("4 1 "), "{out:?}");
+        assert!(texts(&out).join("\n").contains("8 1 "), "{out:?}");
     }
 
     #[test]

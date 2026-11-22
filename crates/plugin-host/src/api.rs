@@ -4,12 +4,16 @@
 //! a time, so that every host a request reaches is checked and seen.
 
 use pecofence_core::FenceId;
-use pecofence_core::plugins::{Permissions, local_class, valid_plain_name};
+use pecofence_core::folder_write::{DATA_TYPES, is_data_file};
+use pecofence_core::plugins::{
+    Permissions, REFUSED_PORTS, local_class, network_local_class, valid_plain_name,
+};
 use pecofence_core::web_address::WebAddress;
 use serde_json::{Value, json};
 
-/// The most bytes an answer to `pf.http` may have.
-pub const MAX_ANSWER: usize = 1024 * 1024;
+/// The most bytes an answer to `pf.http` may have (a light plugin's answer must also fit
+/// `MAX_ANSWER_JSON` in its engine, so this much reaches only a web page).
+pub const MAX_ANSWER: usize = 10 * 1024 * 1024;
 /// Redirects a request follows at most.
 const MAX_HOPS: usize = 5;
 
@@ -73,12 +77,20 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
     let (reads, writes) = (p.clipboard.reads(), p.clipboard.writes());
     let named = |i: usize| args.get(i).is_none_or(Value::is_null) || valid_plain_name(arg(i));
     let (ok, need) = match name {
-        "http.get" | "http.post" => (
-            (address.as_ref()).is_some_and(|a| internet(p, a) || local_class(p, a).is_some()),
-            format!(
-                "an https address with {shown} in permissions.network, or its port in permissions.local"
-            ),
-        ),
+        "http.get" | "http.post" => {
+            let port = address
+                .as_ref()
+                .map(|a| a.port.unwrap_or(if a.secure { 443 } else { 80 }));
+            if let Some((port, what)) = REFUSED_PORTS.iter().find(|(r, _)| Some(*r) == port) {
+                return Some(format!("{name}: port {port} ({what}) may not be reached"));
+            }
+            (
+                (address.as_ref()).is_some_and(|a| class_of(p, a).is_some()),
+                format!(
+                    "an https address with {shown} in permissions.network, or its port in permissions.local"
+                ),
+            )
+        }
         "open" => (
             host_in(&[&p.network, &p.links]),
             format!("an http or https address with {shown} in permissions.network or links"),
@@ -104,9 +116,20 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
         "folder.pick" | "folder.list" | "folder.read" => {
             (p.folders.reads(), "permissions.folders".into())
         }
+        "folder.write" if p.folders.writes() && !p.folders.any_kind() && !is_data_file(arg(0)) => (
+            false,
+            format!(
+                "permissions.folders any for a file that is not one of {}",
+                DATA_TYPES.join(" ")
+            ),
+        ),
         "folder.write" | "folder.mkdir" | "folder.trash" => (
             p.folders.writes() && args.get(0).is_some_and(Value::is_string),
             "permissions.folders readwrite and a path".into(),
+        ),
+        "folder.writeBytes" => (
+            p.folders.any_kind() && args.get(0).is_some_and(Value::is_string),
+            "permissions.folders any, a path and the bytes in base64".into(),
         ),
         "notify" => (p.notify, "permissions.notify".into()),
         n if n.starts_with("launch.") => (
@@ -133,9 +156,32 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
     (!ok).then(|| format!("{name} needs {need}"))
 }
 
-/// A request to the internet: https to a host of `network`.
+/// A request to the internet: https to a host of `network` that is no host of this computer or
+/// the local network.
 fn internet(p: &Permissions, a: &WebAddress) -> bool {
-    a.secure && p.network.iter().any(|h| h.eq_ignore_ascii_case(&a.host))
+    a.secure && declared(p, a) && network_local_class(&a.host).is_none()
+}
+
+/// The host of `a` is one of `network`.
+fn declared(p: &Permissions, a: &WebAddress) -> bool {
+    p.network.iter().any(|h| h.eq_ignore_ascii_case(&a.host))
+}
+
+/// Where a request to `a` goes, if the manifest lets it: `internet`, or `loopback` or `lan` by
+/// the local rules (never through a proxy, only to an address of that kind), with whether its
+/// host is one `network` declared (interface 3: an address or a name of this computer or the
+/// local network, which needs no `device` setting) rather than a `local` port.
+fn class_of(p: &Permissions, a: &WebAddress) -> Option<(&'static str, bool)> {
+    let listed = declared(p, a)
+        .then(|| network_local_class(&a.host))
+        .flatten();
+    if let Some(class) = listed {
+        Some((class, true))
+    } else if internet(p, a) {
+        Some(("internet", true))
+    } else {
+        local_class(p, a).map(|class| (class, false))
+    }
 }
 
 /// The host of an http or https address, in lowercase (None when [`WebAddress`] does not read
@@ -217,10 +263,10 @@ pub fn perform(
         // A request to `local` says its class: the host connects only to such an address
         // (and, for `lan`, only to a host the user typed), never through a proxy.
         let address = WebAddress::parse(&url);
-        let local = (address.as_ref())
-            .filter(|a| !internet(p, a))
-            .and_then(|a| local_class(p, a));
-        let class = local.unwrap_or("internet");
+        let reach = address.as_ref().and_then(|a| class_of(p, a));
+        let declared = reach.is_some_and(|(_, d)| d);
+        let class = reach.map_or("internet", |(c, _)| c);
+        let local = (class != "internet").then_some(class);
         let first = *first.get_or_insert(class);
         if hop > 0 {
             // A redirect stays in its class: from the internet never to this computer or the
@@ -245,7 +291,7 @@ pub fn perform(
         let answer = host.call(
             fence,
             &verb,
-            json!([url, { "headers": headers, "body": body, "local": local }]),
+            json!([url, { "headers": headers, "body": body, "local": local, "declared": declared }]),
         )?;
         if answer["body"]
             .as_str()
@@ -650,6 +696,114 @@ mod tests {
                 "http://localhost:11434/b",
             ]
         );
+    }
+
+    #[test]
+    fn network_addresses_and_short_names_go_by_the_local_rules_without_a_device() {
+        let p = perms(&[
+            "nas",
+            "192.168.1.20",
+            "[fd00::1]",
+            "8.8.8.8",
+            "localhost",
+            "a.com",
+        ]);
+        let ok = json!({ "status": 200, "headers": {}, "body": "" });
+        let fake = Fake {
+            answers: vec![
+                ("http://nas/x", ok.clone()),
+                ("http://192.168.1.20:8123/api", ok.clone()),
+                ("https://[fd00::1]/", ok.clone()),
+                ("https://8.8.8.8/", ok.clone()),
+                ("http://localhost:11434/api", ok.clone()),
+                ("https://a.com/", ok.clone()),
+                ("http://nas/away", moved(302, "https://a.com/")),
+            ],
+            ..Fake::default()
+        };
+        let fence = FenceId::new_v4();
+        let get = |url: &str| perform(&fake, fence, &p, "ua", "http.get", json!([url]));
+        for url in [
+            "http://nas/x",
+            "http://192.168.1.20:8123/api",
+            "https://[fd00::1]/",
+            "https://8.8.8.8/",
+            "http://localhost:11434/api",
+            "https://a.com/",
+        ] {
+            assert_eq!(refusal(&p, "http.get", &json!([url])), None, "{url}");
+            assert_eq!(get(url), Ok(ok.clone()), "{url}");
+        }
+        // Plain http to an internet host stays refused; a redirect keeps its class.
+        assert!(refusal(&p, "http.get", &json!(["http://8.8.8.8/"])).is_some());
+        let why = get("http://nas/away").unwrap_err();
+        assert!(why.contains("a redirect from lan to internet"), "{why}");
+        let calls = fake.calls.lock().unwrap();
+        let sent = |url: &str| {
+            calls
+                .iter()
+                .find(|c| c.1[0] == url)
+                .map(|c| c.1[1].clone())
+                .unwrap()
+        };
+        for (url, local) in [
+            ("http://nas/x", json!("lan")),
+            ("http://192.168.1.20:8123/api", json!("lan")),
+            ("https://[fd00::1]/", json!("lan")),
+            ("http://localhost:11434/api", json!("loopback")),
+            ("https://8.8.8.8/", Value::Null),
+            ("https://a.com/", Value::Null),
+        ] {
+            assert_eq!(sent(url)["local"], local, "{url}");
+            assert_eq!(sent(url)["declared"], true, "{url}");
+        }
+    }
+
+    #[test]
+    fn a_request_to_a_refused_port_is_refused_whatever_its_host() {
+        let p: Permissions = serde_json::from_value(json!({
+            "network": ["localhost", "127.0.0.1", "nas", "a.com"],
+            "local": { "loopback": [{ "port": 8080, "app": "x" }] },
+        }))
+        .unwrap();
+        for url in [
+            "https://127.0.0.1:6443/",
+            "https://localhost:2376/",
+            "http://nas:3389/",
+            "https://a.com:5986/",
+            "https://a.com:9222/json",
+        ] {
+            let why = refusal(&p, "http.get", &json!([url])).unwrap_or_default();
+            assert!(why.contains("may not be reached"), "{url}: {why}");
+        }
+        assert_eq!(
+            refusal(&p, "http.get", &json!(["https://a.com:8443/"])),
+            None
+        );
+    }
+
+    #[test]
+    fn folders_readwrite_writes_data_files_and_any_writes_any_file_and_bytes() {
+        let with = |folders: Folders| Permissions {
+            folders,
+            ..Permissions::default()
+        };
+        let (both, any) = (with(Folders::Readwrite), with(Folders::Any));
+        let refused =
+            |p: &Permissions, name: &str, path: &str| refusal(p, name, &json!([path, "AAAA"]));
+        let path = r"C:\Users\me\Documents\x";
+        assert_eq!(refused(&both, "folder.write", &format!("{path}.txt")), None);
+        let why = refused(&both, "folder.write", &format!("{path}.zip")).unwrap();
+        assert!(why.contains("permissions.folders any"), "{why}");
+        assert!(refused(&both, "folder.writeBytes", &format!("{path}.png")).is_some());
+        for name in [
+            "folder.write",
+            "folder.writeBytes",
+            "folder.mkdir",
+            "folder.trash",
+        ] {
+            assert_eq!(refused(&any, name, &format!("{path}.exe")), None, "{name}");
+        }
     }
 
     #[test]

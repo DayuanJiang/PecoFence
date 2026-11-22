@@ -159,7 +159,7 @@ impl AppHost {
                 }
                 let bytes = text.len() as u64;
                 self.write_data(fence, &file, bytes, |dir| {
-                    replace_file(dir, &file, text.as_bytes())
+                    replace_file(dir, &file, text.as_bytes(), false)
                 })?;
                 Ok(Value::Null)
             }
@@ -326,7 +326,12 @@ impl AppHost {
     }
 
     /// `pf.run`: only with 允许插件使用 Windows 底层功能 on, a program the manifest names (the
-    /// plugin host checked that), at most 30 s and 1 MB of output.
+    /// plugin host checked that), at most 30 s and 1 MB of output. A batch file goes through
+    /// Rust's `Command`, which quotes each argument for cmd.exe or refuses one it cannot (so no
+    /// argument becomes a command of its own); a PowerShell script through System32's
+    /// powershell.exe with RemoteSigned. Never a program marked as coming from the internet, nor
+    /// one inside a folder the plugin may write (a folder picked in any of its fences, its data
+    /// folder): it could have written the program there itself.
     fn run(&self, fence: FenceId, args: &Value) -> Result<Value, String> {
         use std::io::Read;
         use std::os::windows::process::CommandExt;
@@ -354,11 +359,28 @@ impl AppHost {
         if !path.is_file() || program.contains(['/', '\\']) && !Path::new(program).is_absolute() {
             return Err(format!("{program}: no such program"));
         }
+        let zone = std::fs::read_to_string(format!("{}:Zone.Identifier", path.display()));
+        if zone.is_ok_and(|z| folder_write::marked_from_web(&z)) {
+            tracing::info!(%fence, program, "pf.run refused: the program carries the Mark of the Web");
+            return Err(format!(
+                "{program} came from the internet (it carries the Mark of the Web): pf.run does not run it"
+            ));
+        }
+        let mut writable = self.on_ui(move |app| Ok(app.plugin_folders_of_plugin(fence)))?;
+        writable.push(self.data_dir(fence)?.to_string_lossy().into_owned());
+        let writable: Vec<PathBuf> = writable.into_iter().map(PathBuf::from).collect();
+        if inside(&path.to_string_lossy(), &writable).is_ok() {
+            tracing::info!(%fence, program, "pf.run refused: the program is in a folder the plugin may write");
+            return Err(format!(
+                "{program} is in a folder the plugin may write: pf.run does not run it"
+            ));
+        }
         let list: Vec<String> = (args[1].as_array().into_iter().flatten())
             .map(text_of)
             .collect();
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let mut child = std::process::Command::new(&path)
+        tracing::info!(%fence, program, args = list.len(), "pf.run: starting");
+        let mut child = program_command(&path)
             .args(&list)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
@@ -485,7 +507,9 @@ impl AppHost {
                     .data_dir(fence)?
                     .join(args[1].as_str().unwrap_or_default());
                 let size = bytes.len() as u64;
-                self.write_data(fence, &file, size, |dir| replace_file(dir, &file, &bytes))?;
+                self.write_data(fence, &file, size, |dir| {
+                    replace_file(dir, &file, &bytes, false)
+                })?;
                 Ok(Value::Null)
             }
         }
@@ -541,7 +565,7 @@ impl AppHost {
             {
                 let _ = std::fs::remove_file(old.path());
             }
-            replace_file(dir, &file, bytes)
+            replace_file(dir, &file, bytes, false)
         })?;
         tracing::debug!(%fence, bytes = bytes.len(), kind, "plugin: the media cover put into its data folder");
         Ok(name)
@@ -623,20 +647,31 @@ impl AppHost {
         if let Some(why) = folder_write::place_refusal(&real.to_string_lossy(), &forbidden) {
             return Err(refuse(&why));
         }
+        // `folders: "any"` (interface 3) writes and moves any kind of file; `readwrite` data files.
+        let any = self
+            .manifest(fence)
+            .is_some_and(|m| m.permissions.folders.any_kind());
         match name {
-            "folder.write" => {
+            "folder.write" | "folder.writeBytes" => {
                 let file_name = real.file_name().unwrap_or_default().to_string_lossy();
-                if !folder_write::is_data_file(&file_name) {
+                let data = folder_write::is_data_file(&file_name);
+                if !data && !any {
                     let kinds = folder_write::DATA_TYPES.join(" ");
                     return Err(refuse(&format!("only these kinds of files: {kinds}")));
                 }
-                let text = text_of(&args[1]);
-                if text.len() as u64 > MAX_FILE {
-                    return Err(refuse("the text is larger than 20 MB"));
+                let bytes = if name == "folder.write" {
+                    text_of(&args[1]).into_bytes()
+                } else {
+                    let text = args[1].as_str().unwrap_or_default();
+                    folder_write::decode_base64(text).ok_or_else(|| refuse("not base64"))?
+                };
+                if bytes.len() as u64 > MAX_FILE {
+                    return Err(refuse("the file is larger than 20 MB"));
                 }
                 let dir = real.parent().ok_or("folder.write: no folder")?;
-                replace_file(dir, &real, text.as_bytes())?;
-                tracing::info!(%fence, bytes = text.len(), "plugin wrote a file into a picked folder");
+                // A file that is no data file goes out marked as coming from the internet.
+                replace_file(dir, &real, &bytes, !data)?;
+                tracing::info!(%fence, bytes = bytes.len(), marked = !data, "plugin wrote a file into a picked folder");
                 Ok(Value::Null)
             }
             "folder.mkdir" => match std::fs::create_dir(&real) {
@@ -663,7 +698,7 @@ impl AppHost {
                     if entries.next().is_some() {
                         return Err(refuse("only an empty folder goes to the Recycle Bin"));
                     }
-                } else if !folder_write::is_data_file(&real.to_string_lossy()) {
+                } else if !any && !folder_write::is_data_file(&real.to_string_lossy()) {
                     let kinds = folder_write::DATA_TYPES.join(" ");
                     return Err(refuse(&format!("only these kinds of files: {kinds}")));
                 }
@@ -857,14 +892,43 @@ fn base64(bytes: &[u8]) -> String {
 /// The most entries `pf.folder.list` answers with.
 const MAX_LIST: usize = 2_000;
 
+/// How `pf.run` starts `path`: a PowerShell script through System32's powershell.exe
+/// (RemoteSigned: a script from the internet runs only when signed), anything else itself. For
+/// a `.bat` or `.cmd`, Rust's `Command` goes through cmd.exe and quotes each argument so that
+/// cmd reads it as text (`&calc` stays an argument), or refuses one it cannot quote.
+fn program_command(path: &Path) -> std::process::Command {
+    let script = path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("ps1"));
+    if !script {
+        return std::process::Command::new(path);
+    }
+    let system = std::env::var_os("SystemRoot").map(PathBuf::from);
+    let shell = system
+        .unwrap_or_default()
+        .join(r"System32\WindowsPowerShell\v1.0\powershell.exe");
+    let mut c = std::process::Command::new(shell);
+    c.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "RemoteSigned",
+        "-File",
+    ])
+    .arg(path);
+    c
+}
+
 /// The number in the name of the next temporary file of [`replace_file`].
 static TEMP_NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 
 /// Writes `bytes` to `file` whole: into a temporary file in `dir` first, then renamed over it,
 /// so a failed write (a full disk) leaves the file as it was. The temporary file is always a
 /// new one (another name while one is there): a file or a hard link someone put at that name
-/// beforehand is never opened, so nothing it leads to is written.
-fn replace_file(dir: &Path, file: &Path, bytes: &[u8]) -> Result<(), String> {
+/// beforehand is never opened, so nothing it leads to is written. With `mark` the temporary
+/// file gets the Mark of the Web before the rename (which keeps it); on a drive that cannot
+/// keep one (FAT, exFAT, some network drives) nothing is written.
+fn replace_file(dir: &Path, file: &Path, bytes: &[u8], mark: bool) -> Result<(), String> {
     use std::io::Write;
     let name = file.file_name().unwrap_or_default().to_string_lossy();
     let mut made = None;
@@ -887,7 +951,10 @@ fn replace_file(dir: &Path, file: &Path, bytes: &[u8]) -> Result<(), String> {
     let (temp, mut handle) = made.ok_or("no free name for a temporary file")?;
     let written = handle.write_all(bytes).and_then(|_| handle.flush());
     drop(handle);
-    let written = written.and_then(|_| std::fs::rename(&temp, file));
+    let stream = mark.then(|| format!("{}:Zone.Identifier", temp.display()));
+    let written = written
+        .and_then(|_| stream.map_or(Ok(()), |s| std::fs::write(s, folder_write::MARK_OF_THE_WEB)))
+        .and_then(|_| std::fs::rename(&temp, file));
     if let Err(e) = written {
         let _ = std::fs::remove_file(&temp);
         tracing::info!(file = %file.display(), error = %e, "plugin data not written, the old file stays");
@@ -921,7 +988,9 @@ impl pecofence_plugin_host::Host for AppHost {
                 let begun = Instant::now();
                 let max = pecofence_plugin_host::MAX_ANSWER;
                 let local = options["local"].as_str();
-                if local == Some("lan") {
+                // A `local.lan` port goes only to the device the user typed; a host `network`
+                // declared (interface 3) was shown before install and goes by the lan rules.
+                if local == Some("lan") && options["declared"] != json!(true) {
                     self.typed_device(fence, &url)?;
                 }
                 let (status, head, bytes) = match local {
@@ -961,7 +1030,7 @@ impl pecofence_plugin_host::Host for AppHost {
             "run" => self.run(fence, &args),
             "folder.pick" => self.on_ui(move |app| Ok(app.pick_plugin_folder(fence))),
             "folder.list" | "folder.read" => self.folder(fence, name, &args),
-            "folder.write" | "folder.mkdir" | "folder.trash" => {
+            "folder.write" | "folder.writeBytes" | "folder.mkdir" | "folder.trash" => {
                 self.folder_change(fence, name, &args)
             }
             n if n.starts_with("launch.") => {
@@ -1064,6 +1133,43 @@ mod tests {
         (host, fence)
     }
 
+    /// L11: an argument a batch file gets is text, never a command of its own (BatBadBut).
+    #[test]
+    fn a_batch_argument_with_an_ampersand_stays_an_argument() {
+        let dir = temp("bat");
+        let bat = dir.join("echo.bat");
+        std::fs::write(&bat, "@echo off\r\necho [%1]\r\n").unwrap();
+        let out = program_command(&bat)
+            .arg("&echo INJECTED")
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert_eq!(text.trim(), "[\"&echo INJECTED\"]", "{text}");
+        let ps1 = dir.join("args.ps1");
+        std::fs::write(&ps1, "Write-Output \"[$($args[0])]\"\r\n").unwrap();
+        let out = program_command(&ps1)
+            .arg("a; echo INJECTED")
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert_eq!(text.trim(), "[a; echo INJECTED]", "{text}");
+    }
+
+    /// L10, L11: a written file that is no data file carries the Mark of the Web, which
+    /// `pf.run` reads as coming from the internet.
+    #[test]
+    fn a_written_program_carries_the_mark_of_the_web() {
+        let dir = temp("mark");
+        let (file, data) = (dir.join("tool.exe"), dir.join("notes.txt"));
+        replace_file(&dir, &file, b"MZ", true).unwrap();
+        replace_file(&dir, &data, b"text", false).unwrap();
+        let zone = |p: &Path| std::fs::read_to_string(format!("{}:Zone.Identifier", p.display()));
+        assert!(folder_write::marked_from_web(&zone(&file).unwrap()));
+        assert!(zone(&data).is_err());
+        // No temporary file is left.
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
+    }
+
     #[test]
     fn dropped_bytes_come_in_standard_base64() {
         let cases = [("", ""), ("M", "TQ=="), ("Ma", "TWE="), ("Man", "TWFu")];
@@ -1105,7 +1211,7 @@ mod tests {
         for n in next..next + 50 {
             std::fs::hard_link(&outside, data.join(format!(".a.txt.{n}.tmp"))).unwrap();
         }
-        replace_file(&data, &data.join("a.txt"), b"new").unwrap();
+        replace_file(&data, &data.join("a.txt"), b"new", false).unwrap();
         assert_eq!(std::fs::read_to_string(data.join("a.txt")).unwrap(), "new");
         assert_eq!(std::fs::read_to_string(&outside).unwrap(), "keep");
         let _ = std::fs::remove_dir_all(&dir);

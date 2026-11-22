@@ -171,7 +171,7 @@ impl Host for Fake {
                     .flatten()
                     .unwrap_or_default()
             )),
-            "folder.write" | "folder.mkdir" | "folder.trash" => {
+            "folder.write" | "folder.writeBytes" | "folder.mkdir" | "folder.trash" => {
                 let path = arg(0).to_string();
                 let inside = path
                     .to_lowercase()
@@ -185,10 +185,14 @@ impl Host for Fake {
                     return Err(format!("{name}: {why}"));
                 }
                 match name {
-                    "folder.write" if !folder_write::is_data_file(&path) => Err(format!(
-                        "{name}: only these kinds of files: {}",
-                        folder_write::DATA_TYPES.join(" ")
-                    )),
+                    // The plugin host refused a file of another kind without folders any.
+                    "folder.writeBytes" => {
+                        let bytes = folder_write::decode_base64(arg(1))
+                            .ok_or_else(|| format!("{name}: not base64"))?;
+                        let text = String::from_utf8_lossy(&bytes).into_owned();
+                        log.folder.insert(path, Some(text));
+                        Ok(Value::Null)
+                    }
                     "folder.write" => {
                         let text = args.get(1).map_or(String::new(), |v| match v {
                             Value::String(s) => s.clone(),

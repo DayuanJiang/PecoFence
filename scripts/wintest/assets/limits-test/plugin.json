@@ -1,0 +1,20 @@
+{
+  "id": "limits-test",
+  "version": "1.0.0",
+  "api": 2,
+  "layer": "light",
+  "name": { "en": "Limits test", "zh-CN": "限制测试" },
+  "description": { "en": "A test plugin: requests to this computer, any file in a picked folder, batch files and scripts." },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": {
+    "network": ["127.0.0.1", "localhost", "nas"],
+    "folders": "any",
+    "system": [
+      "C:\\pf\\run\\lim\\echo.bat",
+      "C:\\pf\\run\\lim\\args.ps1",
+      "C:\\pf\\run\\lim\\web.cmd",
+      "C:\\pf\\run\\lim\\Notes\\drop.cmd"
+    ]
+  }
+}

@@ -19,17 +19,24 @@ pub const INDEX_KEY: [u8; 32] = [
 ];
 /// The files whose names are fixed, with the most bytes each may have. A light plugin has only
 /// these; a web plugin also has `index.html` and the files it uses (sub-folders allowed), each
-/// up to `OTHER_SIZE`.
+/// up to `OTHER_SIZE`. These are the one place of the sizes: the index check, the checker and
+/// the plugin repository's rules take them from here (0.5.0 had main.js 200 KB, other files
+/// 1 MB, 100 files and 5 MB, see [`V2_SIZES`]). main.js runs in the light engine's 8 MB: 700 KB
+/// of dense code (11,000 small functions) still starts there and 800 KB does not, so 512 KB
+/// leaves a plugin room for what it keeps.
 pub const FILES: [(&str, u64); 4] = [
     ("plugin.json", 64 * 1024),
-    ("main.js", 200 * 1024),
+    ("main.js", 512 * 1024),
     ("README.md", 64 * 1024),
     ("screenshot.png", 300 * 1024),
 ];
-pub const OTHER_SIZE: u64 = 1024 * 1024;
+pub const OTHER_SIZE: u64 = 5 * 1024 * 1024;
 /// A plugin's most files, and most bytes together.
-pub const MAX_FILES: usize = 100;
-pub const MAX_TOTAL: u64 = 5 * 1024 * 1024;
+pub const MAX_FILES: usize = 500;
+pub const MAX_TOTAL: u64 = 20 * 1024 * 1024;
+/// The sizes 0.5.0 and older check an index entry against (main.js, any other file, files, all
+/// bytes): an entry past them is dropped there, so it needs the newer index and `api: 3`.
+pub const V2_SIZES: (u64, u64, usize, u64) = (200 * 1024, 1024 * 1024, 100, 5 * 1024 * 1024);
 
 /// The newest plugin interface this PecoFence knows (`api` in plugin.json).
 pub const API: u32 = 3;
@@ -139,10 +146,11 @@ impl Local {
     }
 }
 
-/// The most ports `local` may name, both classes together.
-pub const MAX_LOCAL_PORTS: usize = 4;
-/// Ports `local` may not name: debuggers and remote administration, whose services run code or
-/// take over a computer for whoever connects.
+/// The most ports `local` named together in 0.5.0 and older (any number since interface 3).
+pub const V2_LOCAL_PORTS: usize = 4;
+/// Ports no plugin request reaches (`local` may not name them, and a request to any host on one
+/// is refused): debuggers and remote administration, whose services run code or take over a
+/// computer for whoever connects.
 pub const REFUSED_PORTS: [(u16, &str); 19] = [
     (22, "SSH"),
     (23, "Telnet"),
@@ -208,8 +216,10 @@ pub struct Command {
     pub key: Option<String>,
 }
 
-/// What a plugin may do in the folders the user picks for it: none < read < readwrite < any
-/// (interface 3: writes files of any type).
+/// What a plugin may do in the folders the user picks for it: none < read < readwrite < any.
+/// `readwrite` writes the data files of [`crate::folder_write::DATA_TYPES`]; `any` (interface 3)
+/// any file, also bytes (`pf.folder.writeBytes`), each file outside those types marked as coming
+/// from the internet.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Folders {
@@ -227,6 +237,10 @@ impl Folders {
     /// `pf.folder.write`, `mkdir` and `trash`.
     pub fn writes(self) -> bool {
         self >= Self::Readwrite
+    }
+    /// Any kind of file, not only data files, and `pf.folder.writeBytes`.
+    pub fn any_kind(self) -> bool {
+        self == Self::Any
     }
 }
 
@@ -573,10 +587,66 @@ pub fn valid_host(host: &str) -> bool {
         && last.as_bytes()[0].is_ascii_lowercase()
 }
 
-/// A program of `system`: a full path (`C:\…\x.exe`) or the name of a program in System32.
-fn valid_program(p: &str) -> bool {
+/// A host of `network` that is no internet name (interface 3): an IPv4 address (`192.168.1.20`,
+/// `8.8.8.8`), an IPv6 address in brackets as an address writes it (`[fd00::1]`, in its short
+/// lowercase form), or a name without a dot (`nas`). Such a host is reached by the local rules
+/// when it is this computer or the local network ([`network_local_class`]).
+pub fn valid_network_host(host: &str) -> bool {
+    if let Some(inner) = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        return inner
+            .parse::<std::net::Ipv6Addr>()
+            .is_ok_and(|ip| ip.to_string() == inner);
+    }
+    if host.bytes().all(|c| c.is_ascii_digit() || c == b'.') {
+        return host
+            .parse::<std::net::Ipv4Addr>()
+            .is_ok_and(|ip| ip.to_string() == host);
+    }
+    (1..=63).contains(&host.len())
+        && host.as_bytes()[0].is_ascii_lowercase()
+        && !host.ends_with('-')
+        && host
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+}
+
+/// Which local rules a request to `network` host `host` goes by (interface 3): `loopback` for
+/// this computer (`localhost`, 127/8, `[::1]`), `lan` for the local network (a private,
+/// link-local or 100.64/10 address, a name without a dot, a name under `.local`, `.lan`,
+/// `.internal` or `.home.arpa`); None for the internet. A `lan` host of `network` was declared
+/// in the manifest (and shown before install), so it needs no `device` setting; it connects only
+/// to an address of the local network, never through a proxy, and to none of [`REFUSED_PORTS`].
+pub fn network_local_class(host: &str) -> Option<&'static str> {
+    use crate::web_address::{lan_ip, loopback_ip, read_ip};
+    if host == "localhost" || loopback_ip(host) {
+        return Some("loopback");
+    }
+    if read_ip(host).is_some() {
+        return lan_ip(host).then_some("lan");
+    }
+    let local_suffix = [".local", ".lan", ".internal", ".home.arpa"];
+    (!host.contains('.') || local_suffix.iter().any(|s| host.ends_with(s))).then_some("lan")
+}
+
+/// Whether a web plugin's page may reach `network` host `host` itself (its CSP and
+/// Connection-Allowlist list it): an internet name or IPv4 address. This computer, the local
+/// network and IPv6 addresses (which a CSP cannot name) it reaches through `pf.http` only, which
+/// keeps their rules.
+pub fn page_reaches(host: &str) -> bool {
+    network_local_class(host).is_none() && !host.starts_with('[')
+}
+
+/// The kinds of program `system` may name: a program, and (interface 3) a batch file, which
+/// Rust's `Command` starts through cmd.exe with arguments it can quote safely (or refuses), and
+/// a PowerShell script, which the app starts with System32's powershell.exe.
+pub const PROGRAM_KINDS: [&str; 4] = [".exe", ".bat", ".cmd", ".ps1"];
+
+/// A program of `system`: a full path (`C:\…\x.exe`) or the name of a program in System32,
+/// ending in one of [`PROGRAM_KINDS`].
+pub fn valid_program(p: &str) -> bool {
     let b = p.as_bytes();
-    let exe = (5..=260).contains(&p.len()) && p.to_ascii_lowercase().ends_with(".exe");
+    let lower = p.to_ascii_lowercase();
+    let exe = (5..=260).contains(&p.len()) && PROGRAM_KINDS.iter().any(|k| lower.ends_with(k));
     let name = p
         .bytes()
         .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c));
@@ -688,12 +758,14 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
     if m.api < 3 && !newer3.is_empty() {
         return Err(format!("{}: {} need api 3", m.id, newer3.join(", ")));
     }
-    for (field, hosts) in [("network", &p.network), ("links", &p.links)] {
-        if hosts.len() > 20 || !hosts.iter().all(|h| valid_host(h)) {
-            return Err(format!("{}: bad {field} hosts", m.id));
-        }
+    let network_ok = |h: &String| valid_host(h) || valid_network_host(h);
+    if p.network.len() > 20 || !p.network.iter().all(network_ok) {
+        return Err(format!("{}: bad network hosts", m.id));
     }
-    if p.system.len() > 20 || !p.system.iter().all(|s| valid_program(s)) {
+    if p.links.len() > 20 || !p.links.iter().all(|h| valid_host(h)) {
+        return Err(format!("{}: bad links hosts", m.id));
+    }
+    if !p.system.iter().all(|s| valid_program(s)) {
         return Err(format!("{}: bad system programs", m.id));
     }
     let mut newer = p.api2_fields();
@@ -713,12 +785,11 @@ pub fn check_manifest(m: &Manifest) -> Result<(), String> {
     let ports = p.local.ports();
     let entries = (p.local.loopback.iter()).chain(&p.local.lan);
     let app_named = |l: &LocalPort| !l.app.trim().is_empty() && l.app.chars().count() <= 40;
-    if ports.len() > MAX_LOCAL_PORTS
-        || (0..ports.len()).any(|i| ports[..i].contains(&ports[i]) || ports[i].1 == 0)
+    if (0..ports.len()).any(|i| ports[..i].contains(&ports[i]) || ports[i].1 == 0)
         || !entries.clone().all(app_named)
     {
         return Err(format!(
-            "{}: bad local ports (at most {MAX_LOCAL_PORTS}, each once with its program)",
+            "{}: bad local ports (each once with its program)",
             m.id
         ));
     }
@@ -1104,7 +1175,7 @@ mod tests {
         let bad: [(&str, fn(&mut serde_json::Value)); 9] = [
             ("bad-file", |v| v["files"][0]["name"] = "run.exe".into()),
             ("too-big", |v| {
-                v["files"][0]["size"] = (200 * 1024 + 1).into()
+                v["files"][0]["size"] = (512 * 1024 + 1).into()
             }),
             ("short-hash", |v| v["files"][1]["sha256"] = "abc".into()),
             ("no-readme", |v| {
@@ -1207,17 +1278,47 @@ mod tests {
         };
         assert!(with("links", json!(["github.com"])).is_ok());
         assert!(with("links", json!(["localhost"])).is_err());
-        assert!(with("network", json!(["192.168.1.1"])).is_err());
+        assert!(with("links", json!(["192.168.1.1"])).is_err());
+        // Interface 3: network may name addresses and names without a dot, as written.
+        for ok in [
+            "192.168.1.1",
+            "8.8.8.8",
+            "nas",
+            "nas-2",
+            "localhost",
+            "[fd00::1]",
+            "[::1]",
+        ] {
+            assert!(with("network", json!([ok])).is_ok(), "{ok}");
+        }
+        for bad in [
+            "[FD00::1]",
+            "[fd00:0::1]",
+            "fd00::1",
+            "1.2.3",
+            "01.2.3.4",
+            "Nas",
+            "-nas",
+            "n_s",
+        ] {
+            assert!(with("network", json!([bad])).is_err(), "{bad}");
+        }
         for ok in [
             "notepad.exe",
             "C:\\Program Files\\Tool\\tool.exe",
             "ipconfig.EXE",
+            "C:\\Tools\\backup.cmd",
+            "C:\\Tools\\sync.bat",
+            "C:\\Tools\\report.ps1",
         ] {
             assert!(with("system", json!([ok])).is_ok(), "{ok}");
         }
+        let many: Vec<String> = (0..30).map(|i| format!("p{i}.exe")).collect();
+        assert!(with("system", json!(many)).is_ok(), "no count limit");
         for bad in [
             "notepad",
-            "cmd.bat",
+            "x.vbs",
+            "x.ps1.txt",
             "..\\x.exe",
             "C:\\a\\..\\x.exe",
             "C:/x.exe",
@@ -1692,7 +1793,10 @@ mod tests {
             let why = check_manifest(&with(2, bad.clone(), settings)).unwrap_err();
             assert!(why.contains(what), "{bad}: {why}");
         }
-        // The same port in both classes is two entries; a port out of range does not read.
+        // Any number of ports (interface 3); the same port in both classes is two entries; a
+        // port out of range does not read.
+        let five = json!({ "loopback": [port(80, "a"), port(81, "b"), port(82, "c"), port(83, "d"), port(84, "e")] });
+        assert!(check_manifest(&with(2, five, &none)).is_ok());
         let both = json!({ "loopback": [port(8080, "a")], "lan": [port(8080, "a")] });
         assert!(check_manifest(&with(2, both, &ha)).is_ok());
         let mut v = entry("countdown");
@@ -1739,6 +1843,52 @@ mod tests {
     }
 
     #[test]
+    fn network_hosts_of_this_computer_and_the_local_network_go_by_the_local_rules() {
+        for (host, class) in [
+            ("localhost", Some("loopback")),
+            ("127.0.0.1", Some("loopback")),
+            ("[::1]", Some("loopback")),
+            ("192.168.1.20", Some("lan")),
+            ("10.0.0.5", Some("lan")),
+            ("100.101.1.2", Some("lan")),
+            ("[fd00::1]", Some("lan")),
+            ("[fe80::1]", Some("lan")),
+            ("nas", Some("lan")),
+            ("homeassistant.local", Some("lan")),
+            ("router.lan", Some("lan")),
+            ("box.home.arpa", Some("lan")),
+            ("8.8.8.8", None),
+            ("[2606:2800::1]", None),
+            ("api.github.com", None),
+            ("local.example.com", None),
+        ] {
+            assert_eq!(network_local_class(host), class, "{host}");
+        }
+        // A page reaches internet names and public IPv4 itself; the rest only through pf.http.
+        assert!(page_reaches("api.github.com") && page_reaches("8.8.8.8"));
+        for not in [
+            "nas",
+            "192.168.1.20",
+            "localhost",
+            "[2606:2800::1]",
+            "x.local",
+        ] {
+            assert!(!page_reaches(not), "{not}");
+        }
+    }
+
+    #[test]
+    fn folders_any_writes_and_reads_and_is_more_than_readwrite() {
+        let m = manifest(|v| {
+            v["api"] = 2.into();
+            v["permissions"]["folders"] = "any".into();
+        });
+        let f = m.permissions.folders;
+        assert!(f.reads() && f.writes() && f.any_kind() && f > Folders::Readwrite);
+        assert!(!Folders::Readwrite.any_kind());
+    }
+
+    #[test]
     fn the_class_of_a_local_address_and_what_a_user_may_type_as_a_device() {
         let p: Permissions = serde_json::from_value(json!({ "local": {
             "loopback": [{ "port": 11434, "app": "Ollama" }],
@@ -1774,7 +1924,8 @@ mod tests {
             device_host("http://192.168.1.20:8123/lovelace").as_deref(),
             Some("192.168.1.20")
         );
-        for bad in ["", "my box", "a@b.local", "[fe80::1]", "http://", "a..b"] {
+        assert_eq!(device_host("[FE80::1]").as_deref(), Some("[fe80::1]"));
+        for bad in ["", "my box", "a@b.local", "[fe80::1%3]", "http://", "a..b"] {
             assert_eq!(device_host(bad), None, "{bad:?}");
         }
     }

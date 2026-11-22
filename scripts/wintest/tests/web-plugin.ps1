@@ -380,7 +380,7 @@ if ($Part -eq 'C') {
   Js "(window.limitResult = null, Promise.allSettled(Array.from({ length: 20 }, () => pf.http.get('https://example.org/'))).then((r) => window.limitResult = r.map((x) => x.status === 'fulfilled' ? 'ok' : String(x.reason && x.reason.message))), 1)" | Out-Null
   $r = @(JsWait "window.limitResult" 60)
   $ok = @($r | Where-Object { $_ -eq 'ok' }).Count; $many = @($r | Where-Object { $_ -match 'too many calls at once' }).Count
-  Check 'twenty requests at once: four go, sixteen are refused at once' ($ok -eq 4 -and $many -eq 16) ($r -join ' | ')
+  Check 'twenty requests at once: eight go, twelve are refused at once' ($ok -eq 8 -and $many -eq 12) ($r -join ' | ')
   Js "(chrome.webview.postMessage({ id: 1, call: 'time.now', args: ['x'.repeat(1100 * 1024)] }), 1)" | Out-Null
   Check 'a message over 1 MB is ignored' ([bool](PfWaitLog 'web plugin: a message over 1 MB ignored' 5)) ''
   Js "(window.big = null, pf.time.format('x'.repeat(1100 * 1024)).then(() => window.big = 'answered', e => window.big = e.name), 1)" | Out-Null
@@ -447,12 +447,12 @@ if ($Part -eq 'C') {
   Check 'the page got hide and show' ($ev -match 'hide' -and $ev -match 'show') "$ev"
 
   Case 'a page that crashes'
-  # Four requests that hang (a port of example.org that does not answer; WinHTTP gives up after
+  # Eight requests that hang (a port of example.org that does not answer; WinHTTP gives up after
   # 15 s) count for the page; the page made anew after the crash does not inherit them.
-  Js "(window.hung = Array.from({ length: 4 }, () => pf.http.get('https://example.org:81/')), window.fifth = null, pf.http.get('https://example.org/').then(() => window.fifth = 'ok', e => window.fifth = e.message), 1)" | Out-Null
+  Js "(window.hung = Array.from({ length: 8 }, () => pf.http.get('https://example.org:81/')), window.fifth = null, pf.http.get('https://example.org/').then(() => window.fifth = 'ok', e => window.fifth = e.message), 1)" | Out-Null
   $hungAt = Get-Date
   $fifth = JsWait "window.fifth" 5
-  Check 'while four requests of the page hang, a fifth is refused' ("$fifth" -match 'too many calls') "$fifth"
+  Check 'while eight requests of the page hang, a ninth is refused' ("$fifth" -match 'too many calls') "$fifth"
   $script:Cdp.Dispose(); $script:Cdp = $null
   $loads = LogCount 'web plugin: page loading'
   $k = Renderers; Log "renderers: $($k -join ',')"

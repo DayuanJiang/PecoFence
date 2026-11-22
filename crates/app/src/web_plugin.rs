@@ -57,7 +57,7 @@ const CALLS: &str = "time.now time.format http.get http.post data.read data.writ
     data.remove clipboard.text clipboard.files clipboard.image clipboard.setText \
     clipboard.setFiles clipboard.setImage sys.cpu sys.memory sys.drives sys.ip sys.network \
     sys.battery open openSystem run folder.pick folder.list folder.read folder.write folder.mkdir \
-    folder.trash notify launch.list \
+    folder.trash folder.writeBytes notify launch.list \
     launch.open launch.pick launch.remove media.current media.control apps.running apps.front \
     drop.read drop.text drop.save";
 
