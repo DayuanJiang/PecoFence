@@ -2408,6 +2408,7 @@ impl App {
         if app.state.first_run {
             app.fit_first_run_column();
         }
+        app.roll_up_opened_on_top();
         // Fences never stay on top of each other: pull apart any overlap the layout brings.
         app.settle_unplaced(true);
         if let Some(folder) = args.portal.as_deref() {

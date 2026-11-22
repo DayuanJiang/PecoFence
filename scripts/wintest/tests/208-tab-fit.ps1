@@ -55,6 +55,17 @@ foreach ($auto in 'false', 'true') {
   TabClick 'Few' 0
   Check "autoHeight $auto`: back on the tab with few icons, the fence below is back at its place" ((Win 'Below').T -eq 268) "after: $(State)"
 }
+Case 'autoHeight true at the bottom of the screen, nothing to push'
+$WorkB = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea.Bottom
+Pf fence move Below --rect '1200,60,300,200' | Out-Null
+Pf fence move Few --rect "400,$($WorkB - 260),300,200" | Out-Null; Start-Sleep -Milliseconds 1200
+TabClick 'Few' 1
+$d = HostWin
+Shot 'bottom-many'
+Check 'the tab with more icons stays inside the work area' ($d.b -le $WorkB -and $d.b - $d.t -ge 200) "host $($d.t)..$($d.b), work area bottom $WorkB"
+TabClick 'Few' 0
+Pf fence move Few --rect '400,60,300,200' | Out-Null
+Pf fence move Below --rect '400,268,300,200' | Out-Null; Start-Sleep -Milliseconds 1200
 Pf settings set rollUp.pushNeighbors false | Out-Null; Start-Sleep -Milliseconds 800
 Case 'autoHeight true, pushing off'
 TabClick 'Few' 1

@@ -77,6 +77,10 @@ $c = @('C0', 'C1')
 Pf fence create --title D0 --rect '190,280,280,200' | Out-Null
 Pf item move (Join-Path $PfDesk $names[0]) --to D0 | Out-Null
 Pf fence roll D0 | Out-Null; Start-Sleep -Milliseconds 500
+# E0 open from the start (never rolled), resting 4 px above E1, inside the 8 px snapping gap.
+Pf fence create --title E0 --rect '1340,40,240,200' | Out-Null
+Pf fence create --title E1 --rect '1340,244,240,200' | Out-Null
+Pf fence roll E1 | Out-Null; Start-Sleep -Milliseconds 500
 Start-Sleep -Seconds 1; Park
 Log "work bottom $WorkB, column B has $n fences; A: $(Tops $a); B: $(Tops $b); C: $(Tops $c)"
 Shot 'stacks'
@@ -151,17 +155,34 @@ Check 'D0 opens only after A0 rolled up, and it does open' ($aShut.Count -eq 1 -
 Park; Start-Sleep -Milliseconds 1500
 
 Case 'push off: the fence below goes away, and a restart'
+Check 'an open fence resting within the snapping gap above another keeps its height' ((WinH E0) -eq 200 -and (SavedH E0) -eq 200) "E0 window $(WinH E0) px, saved $(SavedH E0); E1 at $((Win E1).T)"
 Chevron C0
 Check 'C held short' ((WinH C0) -eq 192) "window $(WinH C0) px"
 Pf fence move C1 --rect '1350,600,200,200' | Out-Null; Start-Sleep -Milliseconds 1500
 Check 'the fence below moved away: C0 opens to its saved 300 px' ((WinH C0) -eq 300 -and (SavedH C0) -eq 300) "window $(WinH C0) px, saved rect h $(SavedH C0)"
+# C1 dragged across C0's lower part and back: C0 keeps its height while C1 is in the hand.
+$p = @(((Win C1).L + 60), ((Win C1).T + 18))
+[SeTop]::Track((Hw C0), (Hw C1))
+[G]::MoveTo($p[0], $p[1]); Start-Sleep -Milliseconds 150; MDown; Start-Sleep -Milliseconds 200
+# Round the B column (it ends near 690): down, left, then up into C0's lower part; back the same way.
+Glide $p[0] $p[1] $p[0] 800 8 25; Glide $p[0] 800 560 800 14 25; Glide 560 800 560 300 12 30; Start-Sleep -Milliseconds 300
+Glide 560 300 560 800 12 30; Glide 560 800 $p[0] 800 14 25; Glide $p[0] 800 $p[0] $p[1] 8 25; Start-Sleep -Milliseconds 200; MUp; Start-Sleep -Milliseconds 1200
+$hs = @([SeTop]::Stop() | ForEach-Object { [int](($_ -split ' ')[1]) } | Sort-Object -Unique)
+Park
+Check 'a fence dragged across the open one and back: its height stays' ($hs.Count -eq 1 -and $hs[0] -eq 300 -and (WinH C0) -eq 300) "C0 heights during the drag: $($hs -join ', '); C1 at $((Win C1).L),$((Win C1).T)"
 Chevron C0
 Pf fence move C1 --rect '500,240,300,200' | Out-Null; Start-Sleep -Milliseconds 1200
 Chevron C0
 Check 'the fence below back under it: C0 held short again' ((WinH C0) -eq 192 -and (SavedH C0) -eq 300) "window $(WinH C0) px, saved rect h $(SavedH C0); C1 at $((Win C1).T)"
+# B0 open over the rolled fences under it (a gap under one row) when PecoFence quits.
+Chevron B0
+Check 'B0 open on top before the restart' ((WinH B0) -ge 298) "B0 $(WinH B0) px; B: $(Tops $b)"
+$moved0 = LogCount 'overlapping fence moved'
 PfQuit; PfStart -Script @('sleep 3600000'); Start-Sleep -Seconds 3; Park
 Shot 'after-restart'
 Check 'after a restart: C0 open and held short, C1 not moved, 300 px saved' ((WinH C0) -eq 192 -and (Win C1).T -eq 240 -and (SavedH C0) -eq 300) "C0 window $(WinH C0) px, saved rect h $(SavedH C0); C1 at $((Win C1).T); A: $(Tops $a)"
+$bTops = @($b | Select-Object -First 7 | ForEach-Object { (Win $_).T })
+Check 'after a restart: B0 comes back rolled up, 300 px saved, the fences under it where they were' ((WinH B0) -le $TitleH + 2 -and (FenceGet B0).rolledUp -and (SavedH B0) -eq 300 -and ($bTops -join ',') -eq '40,84,128,172,216,260,304') "B0 $(WinH B0) px rolled=$((FenceGet B0).rolledUp) saved h $(SavedH B0); tops $($bTops -join ','); overlap moves at the start: $((LogCount 'overlapping fence moved') - $moved0)"
 Pf settings set rollUp.pushNeighbors true | Out-Null
 PfQuit
 foreach ($n in $names) { Remove-Item -LiteralPath (Join-Path $PfDesk $n) -Force -ErrorAction SilentlyContinue }

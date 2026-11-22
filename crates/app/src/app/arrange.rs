@@ -352,8 +352,9 @@ impl App {
 
     /// With `rollUp.pushNeighbors` off, the gap under host `id` (not one with 向上展开): the room
     /// below its top edge down to the next fence below, and the height of its title row and one
-    /// row of icons. None when no fence below limits it.
-    fn gap_below(&self, id: FenceId) -> Option<(i32, i32)> {
+    /// row of icons, and the snapping gap. None when no fence below limits it. `obstacles`: the
+    /// fences it can run into ([`Self::gap_obstacles`]).
+    fn gap_below(&self, id: FenceId, obstacles: &[(FenceId, RECT)]) -> Option<(i32, i32, i32)> {
         if self.state.fence(id).is_some_and(|f| f.expand_upward) {
             return None;
         }
@@ -366,20 +367,37 @@ impl App {
         if w.row_at_bottom() {
             return None;
         }
-        // Every fence it shares a desktop with, shown yet or not (at startup none is), as the
-        // push pass counts them.
-        let others: Vec<RECT> = self
-            .fences
-            .iter()
-            .filter(|(fid, o)| {
-                **fid != id && !o.is_desktop_arranged() && self.share_a_desktop(id, **fid)
-            })
-            .map(|(_, o)| o.rect())
+        let others: Vec<RECT> = (obstacles.iter())
+            .filter(|(fid, _)| *fid != id)
+            .map(|&(_, r)| r)
             .collect();
-        let limit = clearance::limit_below(&others, &r, self.gap_px(w.hwnd()))?;
+        let gap = self.gap_px(w.hwnd());
+        let limit = clearance::limit_below(&others, &r, gap)?;
         let scale = monitors::dpi_for_window(w.hwnd()).max(96) as f32 / 96.0;
         let steps = self.grid_steps(id, scale)?;
-        Some((limit - r.top, steps.height_within(0)))
+        Some((limit - r.top, steps.height_within(0), gap))
+    }
+
+    /// What a gap is measured against, read once per pass: every fence of the current desktop,
+    /// shown yet or not (at startup none is), as the push pass counts them; one in the user's
+    /// hands (`held`) limits nothing until it is let go.
+    fn gap_obstacles(&self, held: &[HWND]) -> Vec<(FenceId, RECT)> {
+        (self.fences.iter())
+            .filter(|(fid, o)| {
+                !o.is_desktop_arranged()
+                    && !held.contains(&o.hwnd())
+                    && self.on_current_desktop(**fid)
+            })
+            .map(|(&fid, o)| (fid, o.rect()))
+            .collect()
+    }
+
+    /// How a fence of `full` px opens over the gap below it (`gap_below`): `Some(true)` above
+    /// the fences there (the gap is under one row), `Some(false)` held short of them, None in
+    /// full. Only a fence whose full height reaches into the fence below is limited: one that
+    /// rests within the snapping gap above it keeps its height, as in 0.5.0.
+    fn gap_limits(full: i32, (room, row, gap): (i32, i32, i32)) -> Option<bool> {
+        (full > room + gap).then_some(room < row)
     }
 
     /// The windows in the user's hands (moved or resized), which keep the height they have.
@@ -395,6 +413,8 @@ impl App {
                 .filter(|w| w.zoom_busy())
                 .map(|w| w.hwnd()),
         );
+        // A tab torn off and dragged, as the push pass counts it.
+        held.extend(self.fences.values().flat_map(|w| w.dragged_windows()));
         held
     }
 
@@ -406,12 +426,14 @@ impl App {
     /// opens to its saved height above the fences there, as a hover peek does.
     pub(super) fn rooms_without_push(&self) -> Vec<(HWND, i32)> {
         let held = self.windows_in_hand();
+        let obstacles = self.gap_obstacles(&held);
         self.fences
             .iter()
             .filter(|(_, w)| !w.is_desktop_arranged() && !held.contains(&w.hwnd()))
             .filter_map(|(&id, w)| {
-                let (room, row) = self.gap_below(id)?;
-                (room >= row).then_some((w.hwnd(), room))
+                let gap = self.gap_below(id, &obstacles)?;
+                let on_top = Self::gap_limits(w.expanded_height_px(), gap)?;
+                (!on_top).then_some((w.hwnd(), gap.0))
             })
             .collect()
     }
@@ -420,20 +442,44 @@ impl App {
     /// opening takes from [`Self::rooms_without_push`]) and, when it covers the fences under it,
     /// raises it above them until it rolls up again.
     pub(super) fn open_without_push(&self, id: FenceId) {
-        let (Some((room, row)), Some(w)) = (self.gap_below(id), self.fences.get(&id)) else {
+        let obstacles = self.gap_obstacles(&self.windows_in_hand());
+        let (Some(gap), Some(w)) = (self.gap_below(id, &obstacles), self.fences.get(&id)) else {
             return;
         };
         let full = w.expanded_height_px();
-        let outcome = if room >= full {
-            "in full: the gap holds it"
-        } else if room >= row {
-            "stops short of the fence below"
-        } else {
-            "in full, above the fences below: the gap is under one row"
+        let on_top = Self::gap_limits(full, gap);
+        let outcome = match on_top {
+            None => "in full: it does not reach the fence below",
+            Some(false) => "stops short of the fence below",
+            Some(true) => "in full, above the fences below: the gap is under one row",
         };
-        tracing::info!(%id, gap_px = room, row_px = row, full_px = full, outcome, "fence opens with pushing off");
-        if room < row && room < full {
+        tracing::info!(%id, gap_px = gap.0, row_px = gap.1, full_px = full, outcome, "fence opens with pushing off");
+        if on_top == Some(true) {
             w.raise_while_open();
+        }
+    }
+
+    /// Startup with `rollUp.pushNeighbors` off: a fence left open over a gap under one row lay
+    /// above the fences under it only while it was raised, which a restart does not keep. It
+    /// comes back rolled up, as a hover peek would, so it covers nothing and no overlap is
+    /// pulled apart.
+    pub(super) fn roll_up_opened_on_top(&mut self) {
+        if self.state.config.settings.roll_up.push_neighbors {
+            return;
+        }
+        let open: Vec<FenceId> = (self.fences.iter())
+            .filter(|(_, w)| !w.is_rolled() && !w.is_desktop_arranged())
+            .map(|(&id, _)| id)
+            .collect();
+        let obstacles = self.gap_obstacles(&[]);
+        for id in open {
+            let full = self.fences.get(&id).map_or(0, |w| w.expanded_height_px());
+            if let Some(gap) = self.gap_below(id, &obstacles)
+                && Self::gap_limits(full, gap) == Some(true)
+            {
+                tracing::info!(%id, gap_px = gap.0, row_px = gap.1, "startup: a fence open over the ones under it is rolled up");
+                self.set_roll(id, true);
+            }
         }
     }
 

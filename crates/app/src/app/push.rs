@@ -322,19 +322,19 @@ impl App {
     /// open over a gap under one row with pushing off), fade out until it rolls up or moves
     /// off (feedback #207). Fences the push slid out of its way are not covered.
     fn fade_covered_fences(&self) {
-        let rect = |w: &FenceWindow| self.ctx.behavior.frame_rect(w.hwnd());
-        let tops: Vec<(HWND, RECT)> = (self.fences.values())
-            .filter(|w| w.opened_on_top())
-            .map(|w| (w.hwnd(), rect(w)))
+        let all: Vec<(&FenceWindow, RECT, bool)> = (self.fences.values())
+            .filter(|w| !w.is_desktop_arranged())
+            .map(|w| (w, self.ctx.behavior.frame_rect(w.hwnd()), w.opened_on_top()))
             .collect();
-        for w in self.fences.values().filter(|w| !w.is_desktop_arranged()) {
-            let r = rect(w);
+        let tops: Vec<(HWND, RECT)> = (all.iter())
+            .filter(|(.., on_top)| *on_top)
+            .map(|(w, r, _)| (w.hwnd(), *r))
+            .collect();
+        for &(w, r, on_top) in &all {
             let under = |t: &RECT| {
                 t.left < r.right && r.left < t.right && t.top < r.bottom && r.top < t.bottom
             };
-            w.set_covered(
-                !w.opened_on_top() && tops.iter().any(|(h, t)| *h != w.hwnd() && under(t)),
-            );
+            w.set_covered(!on_top && tops.iter().any(|(h, t)| *h != w.hwnd() && under(t)));
         }
     }
 
