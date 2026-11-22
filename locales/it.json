@@ -1131,7 +1131,7 @@
   "能使用摄像头": "Può usare la fotocamera",
   "能使用麦克风": "Può usare il microfono",
   "能知道这台电脑的位置": "Può sapere dove si trova questo computer",
-  "能和其他电脑直接连接（视频通话、传文件），连接哪台电脑不受限制": "Può collegarsi direttamente ad altri computer (videochiamate, invio di file), a qualsiasi computer",
+  "能通过公网和其他电脑直接连接": "Può collegarsi direttamente ad altri computer tramite Internet",
   "自带快捷键 {0}：{1}": "Porta una propria scorciatoia {0}: {1}",
   "添加文件夹": "Aggiungi una cartella",
   "插件不能写入这个文件夹。系统文件夹、程序文件夹、AppData、ProgramData、PecoFence 自己的文件夹、磁盘的根目录、你的用户文件夹本身、名字以点开头的文件夹，还有链接和目录连接点，都不能交给插件写入。请换一个文件夹，例如“文档”里的一个文件夹。": "Il plugin non può scrivere in questa cartella. Le cartelle di sistema, le cartelle dei programmi, AppData, ProgramData, le cartelle di PecoFence, la radice di un'unità, la tua cartella utente stessa, le cartelle il cui nome inizia con un punto, i collegamenti e le giunzioni non vengono mai dati a un plugin per scriverci. Scegli un'altra cartella, per esempio una dentro Documenti.",

@@ -546,7 +546,7 @@ async function runTests() {
     const text = doc.getElementById('plBack').textContent;
     for (const line of ['读写你选的文件夹，任何类型的文件都能写', '能看到你的屏幕：每次开始时，由你选择共享哪个屏幕或窗口',
       '知道鼠标在屏幕上的位置', '知道键盘焦点和输入光标在哪里', '能使用摄像头', '能使用麦克风', '能知道这台电脑的位置',
-      '能和其他电脑直接连接', '自带快捷键 Ctrl+Shift+M：显示放大镜']) {
+      '能通过公网和其他电脑直接连接', '自带快捷键 Ctrl+Shift+M：显示放大镜']) {
       assert(text.includes(line), 'The warning lacks ' + line + ': ' + text);
     }
     assert(!text.includes('只读不写') && !text.includes('读写你选的文件夹（装好后由你来选）'), 'Another folders line: ' + text);

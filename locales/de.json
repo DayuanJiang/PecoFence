@@ -1131,7 +1131,7 @@
   "能使用摄像头": "Kann die Kamera verwenden",
   "能使用麦克风": "Kann das Mikrofon verwenden",
   "能知道这台电脑的位置": "Kann wissen, wo dieser Computer ist",
-  "能和其他电脑直接连接（视频通话、传文件），连接哪台电脑不受限制": "Kann sich direkt mit anderen Computern verbinden (Videoanrufe, Dateiübertragung), mit jedem Computer",
+  "能通过公网和其他电脑直接连接": "Kann sich über das Internet direkt mit anderen Computern verbinden",
   "自带快捷键 {0}：{1}": "Bringt eine eigene Tastenkombination mit {0}: {1}",
   "添加文件夹": "Ordner hinzufügen",
   "插件不能写入这个文件夹。系统文件夹、程序文件夹、AppData、ProgramData、PecoFence 自己的文件夹、磁盘的根目录、你的用户文件夹本身、名字以点开头的文件夹，还有链接和目录连接点，都不能交给插件写入。请换一个文件夹，例如“文档”里的一个文件夹。": "Das Plugin kann in diesen Ordner nicht schreiben. Systemordner, Programmordner, AppData, ProgramData, die Ordner von PecoFence, das Stammverzeichnis eines Laufwerks, dein Benutzerordner selbst, Ordner, deren Name mit einem Punkt beginnt, Verknüpfungen und Verzeichnisverbindungen werden einem Plugin nie zum Schreiben gegeben. Bitte wähle einen anderen Ordner, zum Beispiel einen in Dokumente.",

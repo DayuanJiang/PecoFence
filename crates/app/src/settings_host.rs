@@ -71,14 +71,19 @@ impl WebEnvironment {
         crate::web_plugin::delete_left_profiles(&user_data);
         // The web plugins' pages share this environment: WebRTC only for a plugin that declares
         // `webrtc` (every other page has a Connection-Allowlist and no WebRTC constructors, see
-        // `web_plugin`; the browser-wide UDP policy is left alone, or its peers could not be
-        // reached); Local Network Access on (off in WebView2 by default): a
+        // `web_plugin`), and for every page only through the network adapter of the default
+        // route (no VPN or other adapter's address in a candidate; an undeclared page reaches no
+        // STUN host through its Connection-Allowlist, so in an isolated world Windows 10 shows it
+        // at most a host candidate under an mDNS name, no address), UDP stays, so a
+        // declared page reaches peers through its STUN and TURN hosts; Local Network Access on
+        // (off in WebView2 by default): a
         // request to a declared host that resolves to this computer or the local network is not
         // sent; no File System Access pickers (a file picked there is read or written without
         // `folders`); no media keys (they would reach a plugin page that plays: the pages share
         // one browser, so the keys cannot be given to some plugins only).
         let mut args = String::from(
-            "--enable-features=LocalNetworkAccessChecks,msWebViewAllowLocalNetworkAccessChecks \
+            "--force-webrtc-ip-handling-policy=default_public_interface_only \
+             --enable-features=LocalNetworkAccessChecks,msWebViewAllowLocalNetworkAccessChecks \
              --disable-features=HardwareMediaKeyHandling \
              --disable-blink-features=FileSystemAccessLocal",
         );

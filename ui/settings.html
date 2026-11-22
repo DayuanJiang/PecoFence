@@ -1880,7 +1880,7 @@
       ...(p.local?.lan || []).map(l => tf("连接你在设置里填写的局域网设备（端口 {0}）", l.port)),
       p.screen && t("能看到你的屏幕：每次开始时，由你选择共享哪个屏幕或窗口"), p.pointer && t("知道鼠标在屏幕上的位置"),
       p.focus && t("知道键盘焦点和输入光标在哪里"), p.camera && t("能使用摄像头"), p.microphone && t("能使用麦克风"),
-      p.location && t("能知道这台电脑的位置"), p.webrtc && t("能和其他电脑直接连接（视频通话、传文件），连接哪台电脑不受限制"),
+      p.location && t("能知道这台电脑的位置"), p.webrtc && t("能通过公网和其他电脑直接连接"),
       ...(p.commandKeys || []).map(([key, title]) => [tf("自带快捷键 {0}：{1}", '\u0001', title), [key]])].filter(Boolean);
     return d.length ? d : [t("只显示内容，不联网，也不读剪贴板")];
   }
