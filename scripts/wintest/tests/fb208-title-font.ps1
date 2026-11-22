@@ -2,7 +2,8 @@
 #   N  显示标题栏 不显示 (fence set <fence> titleOnHover never): the title row stays folded away at
 #      rest and under the pointer (with 鼠标悬停时显示 it comes back under the pointer); its place
 #      is still the caption (move cursor, a drag moves the fence, a right-click opens the fence
-#      menu), the roll-up chevron takes no click; rolled up and in a Peek the row shows.
+#      menu), the roll-up chevron takes no click; rolled up and in a Peek the row shows. A fence
+#      with tabs along the top keeps them in the row: there the pointer brings it, as on hover.
 #   F  字体 (settings set font "<family>"): titles, tabs and item names take the family at once,
 #      Malgun Gothic and Microsoft YaHei; a family that is not installed and 默认 (null) leave
 #      the fences exactly as they were.
@@ -149,6 +150,21 @@ if ($Part -match 'N') {
   Check 'N titleOnHover default ends 不显示: the row shows again' ($back -eq 'default' -and [Tf]::Diff($restN, $restD) -gt 2000) "titleOnHover=$back, $([Tf]::Diff($restN, $restD)) px differ"
   $bad = Pf fence set TfN titleOnHover sometimes
   Check 'N a wrong value names the four allowed ones' ("$bad" -match 'never' -and "$bad" -match 'always') ("$bad".Trim() -replace '\s+', ' ')
+  # Tabs along the top are in the title row: 不显示 brings the row with the pointer there, so
+  # no tab that cannot be seen takes a press meant to move the fence.
+  TfFence 'TfM' '900,160,420,260' @('tf 4 合同')
+  Pf fence merge TfM --into TfN | Out-Null; Start-Sleep -Milliseconds 1500
+  Pf fence set TfN titleOnHover never | Out-Null; Start-Sleep -Milliseconds 1200
+  $wr = FR 'TfN'
+  $in = @([int]($wr.x + 210), [int]($wr.y + 36 + 8 + 96 + 50))
+  ParkMouse 1300 700; Start-Sleep -Milliseconds 900
+  $tRest = Strip $wr; Crop 'N-7-tabs-rest' ($wr.x - 16) ($wr.y - 16) ($wr.w + 32) ($wr.h + 32) | Out-Null
+  [G]::MoveTo($in[0], $in[1]); Start-Sleep -Milliseconds 900
+  $tHov = Strip $wr; Crop 'N-8-tabs-pointer' ($wr.x - 16) ($wr.y - 16) ($wr.w + 32) ($wr.h + 32) | Out-Null
+  $dT = [Tf]::Diff($tRest, $tHov)
+  $tabs = (FenceGet 'TfN').tabs.Count
+  Check 'N 不显示 with tabs along the top: the row is folded at rest and comes with the pointer, tabs and all' ($tabs -ge 1 -and $dT -gt 300) "tabs=$tabs; $dT of $($wr.w * 36) px of the title row differ"
+  ParkMouse 1300 700
   ClearFences | Out-Null
   TfClean
 }

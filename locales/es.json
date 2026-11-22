@@ -394,7 +394,7 @@
   "给玻璃染上一层颜色，标签页的色条随之变化": "Colorear el cristal y los indicadores de pestañas",
   "要跟随色调，请先选一种色调": "Para usar «Según el tinte», elige primero un tinte",
   "显示标题栏": "Mostrar barra de título",
-  "鼠标悬停时显示：平时隐藏标题栏，鼠标移到栅栏上才出现。不显示：一直不出现，按住标题栏原来的位置仍可拖动栅栏": "Al pasar el cursor: la barra de título permanece oculta hasta que el cursor esté sobre el grupo. Nunca: no aparece nunca; el grupo se puede arrastrar desde donde estaba la barra de título",
+  "鼠标悬停时显示：平时隐藏标题栏，鼠标移到栅栏上才出现。不显示：一直不出现，按住标题栏原来的位置仍可拖动栅栏；标签页排在顶部时，鼠标移上去仍会出现": "Al pasar el cursor: la barra de título permanece oculta hasta que el cursor esté sobre el grupo. Nunca: no aparece nunca; el grupo se puede arrastrar desde donde estaba la barra de título. Con pestañas arriba, sigue apareciendo al pasar el cursor",
   "不显示": "Nunca",
   "跟随常规设置": "Según el ajuste General",
   "始终显示": "Siempre",

@@ -675,10 +675,15 @@ impl FenceViewState {
     /// Whether the title row is shown right now (title-on-hover rule): also while another
     /// fence is dragged over it to merge and while the title is being renamed. With 「不显示」
     /// the pointer brings it only where it brings a hover-only row past 鼠标移入时保持透明:
-    /// in a rolled-up fence opened by the pointer and while the fence floats (Peek).
+    /// in a rolled-up fence opened by the pointer and while the fence floats (Peek), and in a
+    /// fence whose tabs run along the top: the row holds them, and tabs nobody sees would
+    /// still take presses meant to move the fence.
     pub(super) fn title_visible_target(&self) -> bool {
         let pointer = self.pointer_reveals()
-            && (!self.title_hidden || self.peeking || self.behavior.floating.get());
+            && (!self.title_hidden
+                || self.title_row_strip()
+                || self.peeking
+                || self.behavior.floating.get());
         !self.title_on_hover()
             || pointer
             || self.roll_target()

@@ -187,7 +187,8 @@ boxes and clickable rows, 12/14/18/24 DIPs; normal by default; other fences refu
 clock's text follows the size of its fence instead),
 `titleOnHover` default/hover/always/never (hover: the title row folds away until the pointer is over the
 fence; never: it stays away under the pointer too, and its place still moves the fence and opens the fence
-menu; a rolled-up fence and a Peek still show it; default follows `rollUp.titleOnHover`), `transparentOnHover` (a fence whose `opacity` is
+menu; a rolled-up fence and a Peek still show it, and so does the pointer on a fence whose tabs run
+along the top, as with hover; default follows `rollUp.titleOnHover`), `transparentOnHover` (a fence whose `opacity` is
 transparent stays transparent while the pointer is over it: no glass, rim or shadow, and a title
 row hidden by `titleOnHover` stays hidden, though it still moves the fence; off by default; no
 effect at another opacity), `layout` icons/list/details,

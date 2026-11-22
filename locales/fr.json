@@ -418,7 +418,7 @@
   "给玻璃染上一层颜色，标签页的色条随之变化": "Teinter le verre et les indicateurs d’onglets",
   "要跟随色调，请先选一种色调": "Pour « Selon la teinte », choisissez d’abord une teinte",
   "显示标题栏": "Afficher la barre de titre",
-  "鼠标悬停时显示：平时隐藏标题栏，鼠标移到栅栏上才出现。不显示：一直不出现，按住标题栏原来的位置仍可拖动栅栏": "Au survol : la barre de titre reste masquée jusqu’à ce que le pointeur passe sur le groupe. Jamais : elle n’apparaît jamais ; le groupe se déplace toujours depuis l’endroit de la barre de titre",
+  "鼠标悬停时显示：平时隐藏标题栏，鼠标移到栅栏上才出现。不显示：一直不出现，按住标题栏原来的位置仍可拖动栅栏；标签页排在顶部时，鼠标移上去仍会出现": "Au survol : la barre de titre reste masquée jusqu’à ce que le pointeur passe sur le groupe. Jamais : elle n’apparaît jamais ; le groupe se déplace toujours depuis l’endroit de la barre de titre. Avec des onglets en haut, elle apparaît quand même au survol",
   "不显示": "Jamais",
   "跟随常规设置": "Selon le réglage Général",
   "始终显示": "Toujours",

@@ -417,7 +417,7 @@
   "给玻璃染上一层颜色，标签页的色条随之变化": "Applica una tonalità al vetro e alle barre colorate delle schede",
   "要跟随色调，请先选一种色调": "Per seguire la tonalità, selezionane prima una",
   "显示标题栏": "Mostra la barra del titolo",
-  "鼠标悬停时显示：平时隐藏标题栏，鼠标移到栅栏上才出现。不显示：一直不出现，按住标题栏原来的位置仍可拖动栅栏": "Al passaggio del mouse: la barra del titolo resta nascosta finché il puntatore non si trova sul riquadro. Mai: non compare mai; il riquadro si trascina ancora dal punto della barra del titolo",
+  "鼠标悬停时显示：平时隐藏标题栏，鼠标移到栅栏上才出现。不显示：一直不出现，按住标题栏原来的位置仍可拖动栅栏；标签页排在顶部时，鼠标移上去仍会出现": "Al passaggio del mouse: la barra del titolo resta nascosta finché il puntatore non si trova sul riquadro. Mai: non compare mai; il riquadro si trascina ancora dal punto della barra del titolo. Con le schede in alto compare comunque al passaggio del mouse",
   "不显示": "Mai",
   "跟随常规设置": "Usa l’impostazione generale",
   "始终显示": "Sempre",
