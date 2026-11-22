@@ -101,7 +101,7 @@ impl Host for Fake {
         let arg = |i: usize| args.get(i).and_then(Value::as_str).unwrap_or_default();
         let mut log = self.log();
         match name {
-            "http.get" | "http.post" => {
+            "http.get" | "http.post" | "http.save" => {
                 let url = arg(0);
                 if args[1]["local"] == "lan" && !self.devices.contains(&url_host(url)) {
                     return Err(format!(
@@ -115,6 +115,17 @@ impl Host for Fake {
                     .filter(|(p, _)| url.starts_with(p.as_str()));
                 let (_, a) = answer.max_by_key(|(p, _)| p.len()).ok_or(OFFLINE)?;
                 let field = |k: &str, or: Value| a.get(k).cloned().unwrap_or(or);
+                // A save puts a picture into the data as the app does (a 200 answer only) and
+                // answers with no body.
+                if let Some(file) = args[1]["save"].as_str().filter(|_| name == "http.save") {
+                    let status = field("status", json!(200));
+                    if status == 200 {
+                        log.data.insert(file.to_string(), "(picture)".into());
+                    }
+                    return Ok(
+                        json!({ "status": status, "headers": field("headers", json!({})), "body": "" }),
+                    );
+                }
                 Ok(json!({
                     "status": field("status", json!(200)),
                     "headers": field("headers", json!({})),

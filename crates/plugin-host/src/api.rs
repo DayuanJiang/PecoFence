@@ -73,10 +73,16 @@ pub fn refusal(p: &Permissions, name: &str, args: &Value) -> Option<String> {
     let (reads, writes) = (p.clipboard.reads(), p.clipboard.writes());
     let named = |i: usize| args.get(i).is_none_or(Value::is_null) || valid_plain_name(arg(i));
     let (ok, need) = match name {
-        "http.get" | "http.post" => (
-            (address.as_ref()).is_some_and(|a| internet(p, a) || local_class(p, a).is_some()),
+        "http.get" | "http.post" | "http.save" => (
+            (address.as_ref()).is_some_and(|a| internet(p, a) || local_class(p, a).is_some())
+                && (name != "http.save" || valid_plain_name(arg(1))),
             format!(
-                "an https address with {shown} in permissions.network, or its port in permissions.local"
+                "an https address with {shown} in permissions.network, or its port in permissions.local{}",
+                if name == "http.save" {
+                    ", and a data name"
+                } else {
+                    ""
+                }
             ),
         ),
         "open" => (
@@ -203,7 +209,11 @@ pub fn perform(
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
-    let options = args.get(1).cloned().unwrap_or(Value::Null);
+    // `pf.http.save(url, name, options)`: the picture goes into the data file `name`, so the
+    // options come third and the host is told the name to write.
+    let save = (name == "http.save").then(|| args.get(1).cloned().unwrap_or(Value::Null));
+    let options = args.get(if save.is_some() { 2 } else { 1 });
+    let options = options.cloned().unwrap_or(Value::Null);
     let mut headers = options["headers"].as_object().cloned().unwrap_or_default();
     headers.retain(|k, v| {
         v.is_string() && !["user-agent", "host"].contains(&k.to_ascii_lowercase().as_str())
@@ -225,10 +235,10 @@ pub fn perform(
         if hop > 0 {
             // A redirect stays in its class: from the internet never to this computer or the
             // local network (307 and 308 would take a POST's body along), nor back.
-            let refused = refusal(p, &verb, &json!([url])).or_else(|| {
+            let args = json!([url, save]);
+            let refused = refusal(p, &verb, &args).or_else(|| {
                 (class != first).then(|| format!("a redirect from {first} to {class}"))
             });
-            let args = json!([url]);
             host.note(
                 fence,
                 Note::Call {
@@ -245,7 +255,7 @@ pub fn perform(
         let answer = host.call(
             fence,
             &verb,
-            json!([url, { "headers": headers, "body": body, "local": local }]),
+            json!([url, { "headers": headers, "body": body, "local": local, "save": save }]),
         )?;
         if answer["body"]
             .as_str()
@@ -265,7 +275,8 @@ pub fn perform(
         if origin(&next) != origin(&url) {
             headers.retain(|k, _| k == "User-Agent");
         }
-        if status == 303 || (verb == "http.post" && status < 307) {
+        // A saving request stays one: it saves the picture the redirect leads to.
+        if verb == "http.post" && (status == 303 || status < 307) {
             (verb, body) = ("http.get".into(), Value::Null);
         }
         tracing::debug!(%fence, status, from = url, to = next, "plugin request redirected");
@@ -648,6 +659,57 @@ mod tests {
                 "http://localhost:11434/up",
                 "http://localhost:11434/a",
                 "http://localhost:11434/b",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_saved_picture_needs_a_data_name_and_survives_redirects() {
+        let p = perms(&["a.com", "img.a.com"]);
+        let refused = |args: Value| refusal(&p, "http.save", &args);
+        assert_eq!(refused(json!(["https://a.com/p.jpg", "meal.jpg"])), None);
+        let why = refused(json!(["https://a.com/p.jpg", "../x"])).unwrap();
+        assert!(why.contains("a data name"), "{why}");
+        assert!(refused(json!(["https://a.com/p.jpg"])).is_some());
+        assert!(refused(json!(["https://b.com/p.jpg", "meal.jpg"])).is_some());
+        // A redirect to a host that is not listed is refused, and a 303 keeps it a save.
+        let ok = json!({ "status": 200, "headers": {}, "body": "" });
+        let fake = Fake {
+            answers: vec![
+                ("https://a.com/p", moved(303, "https://img.a.com/p.jpg")),
+                ("https://img.a.com/p.jpg", ok.clone()),
+                ("https://a.com/out", moved(302, "https://b.com/p.jpg")),
+            ],
+            ..Fake::default()
+        };
+        let fence = FenceId::new_v4();
+        let save = |url: &str| {
+            let args = json!([url, "meal.jpg", { "headers": { "x-test": "1" } }]);
+            perform(&fake, fence, &p, "ua", "http.save", args)
+        };
+        assert_eq!(save("https://a.com/p"), Ok(ok));
+        let why = save("https://a.com/out").unwrap_err();
+        assert!(why.contains("redirect refused"), "{why}");
+        let calls = fake.calls.lock().unwrap();
+        let sent: Vec<(&str, &str, &Value, &Value)> = (calls.iter())
+            .map(|c| {
+                (
+                    c.0.as_str(),
+                    c.1[0].as_str().unwrap(),
+                    &c.1[1]["save"],
+                    &c.1[1]["headers"]["x-test"],
+                )
+            })
+            .collect();
+        let name = json!("meal.jpg");
+        let header = json!("1");
+        // The header goes along only while the redirect stays on the same host.
+        assert_eq!(
+            sent,
+            [
+                ("http.save", "https://a.com/p", &name, &header),
+                ("http.save", "https://img.a.com/p.jpg", &name, &Value::Null),
+                ("http.save", "https://a.com/out", &name, &header),
             ]
         );
     }

@@ -32,7 +32,7 @@ pub const MAX_FILES: usize = 100;
 pub const MAX_TOTAL: u64 = 5 * 1024 * 1024;
 
 /// The newest plugin interface this PecoFence knows (`api` in plugin.json).
-pub const API: u32 = 2;
+pub const API: u32 = 3;
 /// The most bytes `index.json` may have.
 pub const MAX_INDEX: usize = 1024 * 1024;
 
@@ -1492,7 +1492,7 @@ mod tests {
         assert_eq!(update_kind(&installed, &needs, "0.5.0"), Update::Auto);
         let api = manifest(|v| {
             v["version"] = "1.1.0".into();
-            v["api"] = 3.into();
+            v["api"] = (API + 1).into();
         });
         assert!(check_manifest(&api).is_ok());
         assert_eq!(
