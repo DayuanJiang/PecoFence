@@ -83,9 +83,9 @@ web-plugin-L       2   ec2    debug   web-plugin.ps1                 --var Part=
 web-plugin-V       1   ec2    debug   web-plugin.ps1                 --var Part=V
 # Web plugins' browser permissions (interface 3): screen picker, camera, microphone, location,
 # notifications, WebRTC, inline code by hash; a decision is not kept in the profile.
-web-perms-U        1   ec2    debug   plugin-web-perms.ps1           --var Part=U
-web-perms-D        1   ec2    debug   plugin-web-perms.ps1           --var Part=D
-web-perms-S        1   ec2    debug   plugin-web-perms.ps1           --var Part=S
+web-perms-U        1   ec2    debug   plugin-web-perms.ps1           --var Part=U --var Api=3
+web-perms-D        1   ec2    debug   plugin-web-perms.ps1           --var Part=D --var Api=3
+web-perms-S        1   ec2    debug   plugin-web-perms.ps1           --var Part=S --var Api=3
 plugin-migrate     3   ec2    release plugin-migrate.ps1
 plugin-view        3   ec2    debug   plugin-view.ps1
 plugin-launcher    5   ec2    debug   plugin-launcher.ps1
