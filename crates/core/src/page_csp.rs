@@ -93,8 +93,52 @@ fn attributes(html: &str, mut at: usize) -> (Vec<(String, String)>, usize) {
     }
 }
 
-/// An attribute value as the browser reads it: the character references decoded (the named
-/// ones code is written with, and numeric ones).
+/// The named character references a handler attribute may hold: these and numeric ones
+/// (`&#39;`, `&#x27;`) are decoded as the browser decodes them, so the hash matches. Any other
+/// named reference (`&nbsp;`) is left as written, so its handler would not run: the store's
+/// checker refuses such a page ([`foreign_references`]).
+pub const DECODED_REFERENCES: [&str; 5] = ["amp", "lt", "gt", "quot", "apos"];
+
+/// The named character references in the handler attributes of an HTML file that are not in
+/// [`DECODED_REFERENCES`] (`["nbsp"]`): a page with any is refused by the checker.
+pub fn foreign_references(html: &str) -> Vec<String> {
+    let html = html.replace("\r\n", "\n").replace('\r', "\n");
+    let mut found = Vec::new();
+    let mut at = 0;
+    while let Some(lt) = html[at..].find('<').map(|i| at + i) {
+        let name_len = html[lt + 1..]
+            .bytes()
+            .take_while(u8::is_ascii_alphanumeric)
+            .count();
+        if name_len == 0 {
+            at = lt + 1;
+            continue;
+        }
+        let (attrs, end) = attributes(&html, lt + 1 + name_len);
+        for (_, value) in attrs
+            .iter()
+            .filter(|(k, _)| k.starts_with("on") && k.len() > 2)
+        {
+            for part in value.split('&').skip(1) {
+                let name: String = part
+                    .chars()
+                    .take_while(char::is_ascii_alphanumeric)
+                    .collect();
+                let named = !name.is_empty()
+                    && !name.starts_with('#')
+                    && part[name.len()..].starts_with(';');
+                if named && !DECODED_REFERENCES.contains(&name.as_str()) && !found.contains(&name) {
+                    found.push(name);
+                }
+            }
+        }
+        at = end;
+    }
+    found
+}
+
+/// An attribute value as the browser reads it: the references of [`DECODED_REFERENCES`] and the
+/// numeric ones decoded, any other left as written.
 fn decode(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     let mut rest = value;
@@ -103,6 +147,7 @@ fn decode(value: &str) -> String {
         rest = &rest[amp..];
         let end = rest.find(';').filter(|&i| i <= 10);
         let named = end.and_then(|i| match &rest[1..i] {
+            // The order of DECODED_REFERENCES.
             "amp" => Some('&'),
             "lt" => Some('<'),
             "gt" => Some('>'),
@@ -181,6 +226,33 @@ mod tests {
             vec!["x = '</scr'".to_string()]
         );
         assert_eq!(inline_code("<p>a < b</p><").scripts, Vec::<String>::new());
+    }
+
+    #[test]
+    fn numeric_references_several_handlers_and_unquoted_values() {
+        let html = "<div onclick=\"a(&#39;x&#39;) + b(&#x27;y&#x27;)\" onmouseover=\"m()\" \
+            onkeyup='k(&lt;1&gt;)'>d</div><img onload=go() src=x><b onclick=c(1)>b</b>";
+        assert_eq!(
+            inline_code(html).handlers,
+            vec![
+                "a('x') + b('y')".to_string(),
+                "m()".to_string(),
+                "k(<1>)".to_string(),
+                "go()".to_string(),
+                "c(1)".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn other_named_references_stay_and_are_named_for_the_checker() {
+        let html = "<p onclick=\"a('&nbsp;') && b(&amp;)\" title=\"&copy;\">x</p>";
+        assert_eq!(
+            inline_code(html).handlers,
+            vec!["a('&nbsp;') && b(&)".to_string()]
+        );
+        assert_eq!(foreign_references(html), vec!["nbsp".to_string()]);
+        assert!(foreign_references("<a onclick=\"x(&#39;1&#39;, &quot;2&quot;)\">").is_empty());
     }
 
     #[test]
