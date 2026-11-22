@@ -1276,16 +1276,18 @@ mod tests {
         // The folder named through the junction holds the program too.
         assert!(in_real_folder(&program, std::slice::from_ref(&junction)));
         // Its short 8.3 name, where the drive keeps short names.
+        // The command line as written (raw_arg): `arg` would escape the quotes for cmd.
+        use std::os::windows::process::CommandExt;
         let short = std::process::Command::new("cmd")
-            .arg("/c")
-            .arg(format!(
-                "for %I in (\"{}\") do @echo %~sI",
+            .raw_arg(format!(
+                "/c for %I in (\"{}\") do @echo %~sI",
                 program.display()
             ))
             .output()
             .unwrap();
         let short = String::from_utf8_lossy(&short.stdout).trim().to_string();
-        if short.contains('~') {
+        let names_it = std::fs::canonicalize(&short).ok() == std::fs::canonicalize(&program).ok();
+        if short.contains('~') && names_it {
             assert!(in_real_folder(Path::new(&short), &folders), "{short}");
         } else {
             eprintln!("no short names on this drive: {short}");
