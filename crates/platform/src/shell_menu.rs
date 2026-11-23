@@ -81,6 +81,70 @@ impl ShellContextMenu {
         })
     }
 
+    /// Binds Explorer's context-menu handler for the single item an id list names, the way
+    /// [`for_paths`](Self::for_paths) does for file paths. Used for a shortcut whose target is a
+    /// shell item rather than a file (a packaged app in the AppsFolder, which has no file-system
+    /// path). The array copies the id list; the caller keeps ownership of `pidl`.
+    pub fn for_idlist(pidl: *const ITEMIDLIST) -> Result<Self> {
+        if pidl.is_null() {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let pidls = [pidl as LPCITEMIDLIST];
+        // SAFETY: the array copies the id list; BHID_SFUIObject yields its UI object.
+        let menu = unsafe {
+            let array: IShellItemArray = SHCreateShellItemArrayFromIDLists(&pidls)?;
+            array.BindToHandler(None, &BHID_SFUIObject)
+        }?;
+        Ok(Self {
+            menu,
+            first: 0,
+            end: 0,
+        })
+    }
+
+    /// Whether the item offers a top-level command whose canonical verb is `verb` (ASCII case
+    /// insensitive), e.g. `runas` for "Run as administrator". The menu is prepared for invoking
+    /// only (`CMF_OPTIMIZEFORINVOKE`) and thrown away: it is not shown. Packaged apps that cannot
+    /// be elevated simply do not list the verb, so this answers "may it be elevated?" without
+    /// assuming every packaged app can.
+    pub fn has_verb(&self, verb: &str) -> bool {
+        // SAFETY: temporary menu owned and destroyed here.
+        let hmenu = unsafe { CreatePopupMenu() };
+        let found = (|| {
+            // SAFETY: hmenu is the menu created above.
+            let hr = unsafe {
+                self.menu
+                    .QueryContextMenu(hmenu, 0, 1, 0x7FFF, CMF_OPTIMIZEFORINVOKE)
+            };
+            crate::fpu::restore("QueryContextMenu");
+            if hr.is_err() {
+                return false;
+            }
+            let count = (hr.0 as u32) & 0xFFFF;
+            (0..count).any(|i| {
+                let mut buf = [0u16; 128];
+                // SAFETY: buffer size passed in characters; the W variant writes UTF-16.
+                let hr = unsafe {
+                    self.menu.GetCommandString(
+                        i as usize,
+                        GCS_VERBW,
+                        None,
+                        buf.as_mut_ptr() as *mut i8,
+                        buf.len() as u32,
+                    )
+                };
+                if hr.is_err() {
+                    return false;
+                }
+                let n = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+                String::from_utf16_lossy(&buf[..n]).eq_ignore_ascii_case(verb)
+            })
+        })();
+        // SAFETY: we own the menu.
+        let _ = unsafe { DestroyMenu(hmenu) };
+        found
+    }
+
     /// Appends the shell's items to `hmenu` at position `index`, using ids in `first..=last`.
     /// Returns how many ids were used. The menu becomes the thread's active shell menu until drop.
     pub fn populate(

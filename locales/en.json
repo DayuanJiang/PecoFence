@@ -1143,5 +1143,7 @@
   "删除栅栏、按规则整理或把栅栏移到别的虚拟桌面后，右下角显示可以撤销的提示，10 秒后消失。关闭后不再显示，在栅栏上按 Ctrl+Z 照样能撤销": "After you delete a fence, sort items by the rules or send a fence to another virtual desktop, a notice with Undo shows in the corner for 10 seconds. Turned off, none shows; Ctrl+Z on a fence still undoes",
   "搜索别名\u0004撤销卡片|删除提示|通知|弹窗": "undo card|delete notice|notifications|popup",
   "双击空白处放大栅栏": "Double-click empty space to zoom the fence",
-  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Double-click a fence where there are no icons: it grows to the middle of the screen, icons and all; double-click again to put it back. While zoomed it cannot be dragged or resized, and fences arranged like the desktop are left out."
+  "双击栅栏里没有图标的地方，栅栏放大到屏幕正中，图标一起变大；再双击回到原位。放大时不能拖动，也不能改大小；“像桌面一样排列”的栅栏不参与": "Double-click a fence where there are no icons: it grows to the middle of the screen, icons and all; double-click again to put it back. While zoomed it cannot be dragged or resized, and fences arranged like the desktop are left out.",
+  "以管理员身份运行\tCtrl+Shift+Enter": "Run as administrator\tCtrl+Shift+Enter",
+  "无法以管理员身份运行。": "Could not run as administrator."
 }

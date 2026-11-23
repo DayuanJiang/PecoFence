@@ -116,6 +116,12 @@ pub enum Command {
         from: FenceId,
         inside: bool,
     },
+    /// 以管理员身份运行 (Ctrl+Shift+Enter) on a selection: the single program or shortcut to
+    /// one starts through Windows' UAC prompt; anything else is ignored.
+    RunAsAdmin {
+        fence: FenceId,
+        items: Vec<ItemId>,
+    },
     /// Move `items` into `to` (internal drag or menu). `at`: dropped between the icons of a
     /// 手动 fence, they go before that display index (counted before they arrived); None = after
     /// the others.

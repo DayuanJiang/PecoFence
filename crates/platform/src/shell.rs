@@ -1800,6 +1800,163 @@ pub fn shell_execute(path: &Path, verb: Option<&str>, owner: Option<HWND>) -> Re
     result
 }
 
+/// Whether Windows can start `path` with its "runas" verb: a program (`.exe`), a shortcut to one,
+/// or a shortcut to a packaged app (AppsFolder/MSIX) that offers "Run as administrator". Reading a
+/// shortcut's target reads the link file.
+pub fn can_run_as_admin(path: &Path) -> bool {
+    let program = |p: &Path| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe"));
+    program(path)
+        || (path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("lnk"))
+            // A shortcut that is only online is not read: reading it would download it, on the
+            // UI thread that builds the menu (as `shortcut_tip` refuses to).
+            && file_attributes(path) & ATTRS_NOT_HERE == 0
+            && (shortcut_target_expanded(path).is_some_and(|t| program(&t))
+                // A packaged app's shortcut has no file target: it points at a shell item whose
+                // own menu decides whether it may be elevated (Windows Terminal can, many UWP
+                // apps cannot), so the verb is read, never assumed.
+                || shortcut_elevatable_app(path)))
+}
+
+/// True when `path` is a packaged-app shortcut (no file-system target, an AppsFolder id list
+/// instead) whose shell item offers the "runas" verb. Builds the item's context menu once with
+/// `CMF_OPTIMIZEFORINVOKE` and reads its verbs; it is never shown.
+fn shortcut_elevatable_app(path: &Path) -> bool {
+    match shortcut_app_idlist(path) {
+        Some(pidl) => {
+            let ok = crate::shell_menu::ShellContextMenu::for_idlist(pidl)
+                .is_ok_and(|m| m.has_verb("runas"));
+            // SAFETY: the id list came from `GetIDList` and is freed once.
+            unsafe { ILFree(Some(pidl)) };
+            ok
+        }
+        None => false,
+    }
+}
+
+/// The id list a `.lnk` points at when its target is a shell item rather than a file: a packaged
+/// app in the AppsFolder, whose file-system path is empty. `None` for a shortcut with a normal
+/// file target, one that is only online, or one that cannot be read. The caller frees the
+/// returned id list with [`ILFree`].
+fn shortcut_app_idlist(path: &Path) -> Option<*const ITEMIDLIST> {
+    if !path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("lnk"))
+        || file_attributes(path) & ATTRS_NOT_HERE != 0
+    {
+        return None;
+    }
+    // A shortcut with a real file target is launched by that target, not as a shell item.
+    if shortcut_target_expanded(path).is_some() {
+        return None;
+    }
+    let link = load_shortcut(path)?;
+    // SAFETY: COM call on a live shortcut; the id list is handed to the caller to free.
+    let pidl = unsafe { link.GetIDList() }.ok()?;
+    (!pidl.is_null()).then_some(pidl as *const ITEMIDLIST)
+}
+
+/// True when `error` is Windows' "the user cancelled": a refused UAC prompt, or a file
+/// operation's dismissed prompt.
+pub fn is_user_cancelled(error: &windows_core::Error) -> bool {
+    error.code() == E_CANCELLED
+}
+
+/// Starts `path` with Windows' administrator prompt (the shell's "runas" verb). PecoFence is not
+/// elevated itself, and nothing is recorded to run the program elevated later: every call asks
+/// through UAC, and a refused prompt fails with [`is_user_cancelled`]'s code.
+///
+/// A `.lnk` to a file is resolved first, so its target starts with the shortcut's own arguments
+/// and working directory, as Explorer's "Run as administrator" on that shortcut does; the shell's
+/// id-list form would hand the link to its own menu handler instead. A `.lnk` to a packaged app
+/// (no file target) is elevated through that app's own shell menu "runas" verb, which is where
+/// Explorer's own entry comes from.
+pub fn run_as_admin(path: &Path, owner: Option<HWND>) -> Result<()> {
+    if let Some((target, arguments, directory)) = shortcut_launch_info(path) {
+        return execute_elevated(&target, arguments.as_deref(), directory.as_deref(), owner);
+    }
+    if let Some(pidl) = shortcut_app_idlist(path) {
+        let result = run_as_admin_idlist(pidl, owner);
+        // SAFETY: the id list came from `GetIDList` and is freed once.
+        unsafe { ILFree(Some(pidl)) };
+        return result;
+    }
+    shell_execute(path, Some("runas"), owner)
+}
+
+/// Invokes the "runas" verb of the shell item `pidl` names (a packaged app in the AppsFolder),
+/// the way Explorer's "Run as administrator" on that app does. A refused UAC prompt comes back as
+/// [`is_user_cancelled`]'s code, as elsewhere.
+fn run_as_admin_idlist(pidl: *const ITEMIDLIST, owner: Option<HWND>) -> Result<()> {
+    let menu = crate::shell_menu::ShellContextMenu::for_idlist(pidl)?;
+    menu.invoke_verb("runas", owner.unwrap_or_default(), POINT::default(), false)
+}
+
+/// `runas` on a resolved program, with the arguments and working directory a shortcut keeps.
+fn execute_elevated(
+    program: &Path,
+    arguments: Option<&str>,
+    directory: Option<&Path>,
+    owner: Option<HWND>,
+) -> Result<()> {
+    let file = path_wide(program);
+    let verb = to_wide("runas");
+    let arguments = arguments.map(to_wide);
+    let directory = directory.map(path_wide);
+    let mut info = SHELLEXECUTEINFOW {
+        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOASYNC as u32,
+        hwnd: owner.unwrap_or_default(),
+        lpVerb: PCWSTR(verb.as_ptr()),
+        lpFile: PCWSTR(file.as_ptr()),
+        lpParameters: arguments
+            .as_ref()
+            .map_or(PCWSTR::null(), |a| PCWSTR(a.as_ptr())),
+        lpDirectory: directory
+            .as_ref()
+            .map_or(PCWSTR::null(), |d| PCWSTR(d.as_ptr())),
+        nShow: SW_SHOWNORMAL,
+        ..Default::default()
+    };
+    // SAFETY: all referenced buffers outlive the call.
+    unsafe { ShellExecuteExW(&mut info) }.ok()
+}
+
+/// What a shortcut starts, for [`run_as_admin`]: its target (environment variables expanded),
+/// its command-line arguments and its working directory. None for a file that is no `.lnk` or
+/// cannot be read as one.
+fn shortcut_launch_info(path: &Path) -> Option<(PathBuf, Option<String>, Option<PathBuf>)> {
+    if !path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("lnk"))
+    {
+        return None;
+    }
+    let link = load_shortcut(path)?;
+    let target = PathBuf::from(shortcut_path(&link, 0)?);
+    // SAFETY: the buffers are sized, NUL-terminated, and live for the calls.
+    let (arguments, directory) = unsafe {
+        let mut args = [0u16; 1024];
+        let arguments = link
+            .GetArguments(PWSTR(args.as_mut_ptr()), args.len() as i32)
+            .ok()
+            .ok()
+            .map(|_| crate::wide::from_wide(&args).trim().to_string())
+            .filter(|a| !a.is_empty());
+        let mut dir = [0u16; 1024];
+        let directory = link
+            .GetWorkingDirectory(PWSTR(dir.as_mut_ptr()), dir.len() as i32)
+            .ok()
+            .ok()
+            .map(|_| expand_env(crate::wide::from_wide(&dir).trim()))
+            .filter(|d| !d.is_empty())
+            .map(PathBuf::from);
+        (arguments, directory)
+    };
+    Some((target, arguments, directory))
+}
+
 /// Whether `path` lies where the Store edition, installed on another drive, sees its own data
 /// instead of the real folders: `<that drive>:\Users\<this user's profile name>\AppData\...`.
 /// Windows keeps a packaged program's data for that drive in `<drive>:\WpSystem\<SID>\AppData`
@@ -2630,5 +2787,104 @@ mod recycle_tests {
             "a.txt"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod admin_tests {
+    use super::*;
+
+    /// A shortcut keeps the target, arguments and working directory that "Run as
+    /// administrator" must pass on; only programs and shortcuts to programs are offered.
+    #[test]
+    fn a_shortcut_keeps_its_target_arguments_and_folder() {
+        let _com = crate::com::StaGuard::init().unwrap();
+        let dir = std::env::temp_dir().join(format!("pecofence-runas-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let program = dir.join("Demo App.exe");
+        std::fs::write(&program, b"MZ").unwrap();
+        let link_path = dir.join("Demo.lnk");
+        {
+            let target = path_wide(&program);
+            let args = to_wide("--flag \"two words\"");
+            let work = path_wide(&dir);
+            let file = path_wide(&link_path);
+            // SAFETY: standard IShellLink usage; every string outlives the calls.
+            unsafe {
+                let link: IShellLinkW =
+                    CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).unwrap();
+                link.SetPath(PCWSTR(target.as_ptr())).ok().unwrap();
+                link.SetArguments(PCWSTR(args.as_ptr())).ok().unwrap();
+                link.SetWorkingDirectory(PCWSTR(work.as_ptr()))
+                    .ok()
+                    .unwrap();
+                let persist: IPersistFile = link.cast().unwrap();
+                persist.Save(PCWSTR(file.as_ptr()), true).ok().unwrap();
+            }
+        }
+        let (target, arguments, directory) = shortcut_launch_info(&link_path).unwrap();
+        assert_eq!(target, program);
+        assert_eq!(arguments.as_deref(), Some("--flag \"two words\""));
+        assert_eq!(directory.as_deref(), Some(dir.as_path()));
+        assert!(can_run_as_admin(&link_path));
+        assert!(can_run_as_admin(&program));
+        let text = dir.join("notes.txt");
+        std::fs::write(&text, b"x").unwrap();
+        assert!(!can_run_as_admin(&text));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A refused UAC prompt arrives as ERROR_CANCELLED, which the menu reports as a cancel
+    /// rather than a failure; other errors keep their warning.
+    #[test]
+    fn a_refused_prompt_is_a_cancel() {
+        let cancelled = windows_core::Error::from_hresult(E_CANCELLED);
+        assert!(is_user_cancelled(&cancelled));
+        let denied =
+            windows_core::Error::from_hresult(windows_core::HRESULT(0x8007_0005_u32 as i32));
+        assert!(!is_user_cancelled(&denied));
+    }
+
+    /// A shortcut that points at a shell item with no file-system path (as a packaged app's
+    /// shortcut does) is found as an id-list shortcut, not a file one; but it is offered for
+    /// elevation only when its item truly carries the "runas" verb. The Recycle Bin stands in
+    /// for such a target on any machine: a namespace item, no file path, and no "runas", so it
+    /// is recognised yet refused — the rule never assumes an item can be elevated.
+    #[test]
+    fn a_namespace_shortcut_is_offered_only_with_the_runas_verb() {
+        let _com = crate::com::StaGuard::init().unwrap();
+        let dir = std::env::temp_dir().join(format!("pecofence-runas-ns-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let link_path = dir.join("Recycle.lnk");
+        let bin = to_wide(&format!("::{RECYCLE_BIN_CLSID}"));
+        // SAFETY: the Recycle Bin parses to an id list, freed below; standard IShellLink usage.
+        unsafe {
+            let mut pidl: LPITEMIDLIST = std::ptr::null_mut();
+            SHParseDisplayName(PCWSTR(bin.as_ptr()), None, &mut pidl, SFGAOF(0), None)
+                .ok()
+                .unwrap();
+            assert!(!pidl.is_null());
+            let link: IShellLinkW =
+                CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER).unwrap();
+            link.SetIDList(pidl).ok().unwrap();
+            let persist: IPersistFile = link.cast().unwrap();
+            persist
+                .Save(PCWSTR(path_wide(&link_path).as_ptr()), true)
+                .ok()
+                .unwrap();
+            ILFree(Some(pidl));
+        }
+        // It has no file target (so the file-launch path declines it)…
+        assert!(shortcut_launch_info(&link_path).is_none());
+        // …but it is recognised as an id-list (namespace/packaged) shortcut…
+        let pidl = shortcut_app_idlist(&link_path).expect("an id-list shortcut");
+        // SAFETY: from `shortcut_app_idlist`, freed once here.
+        unsafe { ILFree(Some(pidl)) };
+        // …and, lacking the "runas" verb, it is not offered for elevation.
+        assert!(!shortcut_elevatable_app(&link_path));
+        assert!(!can_run_as_admin(&link_path));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
