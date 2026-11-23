@@ -256,6 +256,16 @@ pub(super) fn on_keydown(
                 });
             }
         }
+        // Ctrl+Shift+Enter: Windows' "Run as administrator" for the selected program, or the
+        // target of its shortcut, as in Explorer. A held key asks once.
+        k if k == msg::VK_RETURN && ctrl && shift => {
+            if lparam & (1 << 30) == 0 && !ids.is_empty() {
+                queue.push(Command::RunAsAdmin {
+                    fence: v.active,
+                    items: ids,
+                });
+            }
+        }
         // During the Peek (the dimmer passed the key on), as Enter in the search box does: the
         // Peek ends and the items open, folders in Explorer (opened inside the fence, a folder
         // would sit behind the windows the Peek uncovered).

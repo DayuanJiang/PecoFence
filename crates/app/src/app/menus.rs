@@ -41,6 +41,8 @@ const CMD_ITEM_EMPTY_BIN: u32 = 107;
 /// 剪切 / 复制 of our own, in a menu without Windows' part (which has them otherwise).
 const CMD_ITEM_CUT: u32 = 111;
 const CMD_ITEM_COPY: u32 = 112;
+/// 以管理员身份运行: one program, or a shortcut to one, through Windows' UAC prompt.
+const CMD_ITEM_RUNAS: u32 = 119;
 /// 像桌面一样排列 and 栅栏选项… in the item menu of the arranged 「桌面」 fence, whose own fence
 /// menu is out of reach (its window is only the icon cells).
 const CMD_ITEM_DESKTOP_LAYOUT: u32 = 108;
@@ -202,6 +204,8 @@ pub(super) mod glyph {
     pub const REMOVE: char = '\u{E738}';
     /// Copy: 复制路径 in the menu of a Peek search result.
     pub const COPY: char = '\u{E8C8}';
+    /// Shield: 以管理员身份运行 (Windows' UAC prompt).
+    pub const SHIELD: char = '\u{E7EF}';
     pub const VIEW: char = '\u{E890}';
     /// Hide (Fluent ED1A). Segoe MDL2 Assets has no crossed-out eye, so Windows 10 shows RedEye.
     pub fn hide() -> char {
@@ -262,6 +266,7 @@ pub(super) mod glyph {
             REMOVE,
             COPY,
             VIEW,
+            SHIELD,
             hide(),
             TASK_VIEW,
             BROOM,
@@ -520,6 +525,7 @@ impl App {
                     self.launch(*id, fence, inside);
                 }
             }
+            CMD_ITEM_RUNAS => self.run_as_admin(fence, &items),
             CMD_ITEM_LOCATION => {
                 if let Some(item) = items.first().and_then(|id| self.state.item(*id))
                     && !item.is_namespace()
@@ -596,6 +602,19 @@ impl App {
         }
     }
 
+    /// The path of the single selected program, or shortcut to one, that Windows can start
+    /// with its "runas" verb (以管理员身份运行); None for folders, documents and selections of
+    /// several items.
+    fn admin_path_of(&self, items: &[ItemId]) -> Option<PathBuf> {
+        let [only] = items else { return None };
+        let item = self.state.item(*only)?;
+        if item.is_namespace() {
+            return None;
+        }
+        let path = PathBuf::from(item.path()?);
+        shell::can_run_as_admin(&path).then_some(path)
+    }
+
     /// Test dump (`--test-script item-menu`): the menu a right-click on `item` would show.
     pub(super) fn item_menu_labels(&self, fence: FenceId, item: ItemId) -> Vec<String> {
         self.build_item_menu(fence, &[item]).0.labels()
@@ -625,6 +644,8 @@ impl App {
                 .and_then(|it| it.path())
                 .is_some_and(|p| shell::is_recycle_bin_path(Path::new(p)))
         );
+        // The one program (or shortcut to one) that Windows' "runas" verb can start.
+        let admin = self.admin_path_of(items).is_some();
         // PecoFence's own entries have a glyph each, as in the fence menu and the tray menu.
         menu.item(
             CMD_ITEM_OPEN,
@@ -634,6 +655,15 @@ impl App {
         )
         .icon(glyph::OPEN)
         .default_item(CMD_ITEM_OPEN);
+        if admin {
+            menu.item(
+                CMD_ITEM_RUNAS,
+                pecofence_core::i18n::text("以管理员身份运行\tCtrl+Shift+Enter"),
+                false,
+                false,
+            )
+            .icon(glyph::SHIELD);
+        }
         if single_bin {
             // A bin too big to answer quickly is taken for full.
             let full = shell::recycle_bin_has_items_now(Duration::from_millis(200)).unwrap_or(true);
@@ -785,6 +815,12 @@ impl App {
                     // Explorer's own 打开 / 删除 (and 重命名 where it adds one, 清空回收站 for
                     // the bin) duplicate ours.
                     sm.remove_verbs(menu.handle(), &["open", "delete", "rename", "empty"]);
+                    // Our 以管理员身份运行 above starts the shortcut's target with its own
+                    // arguments and folder: Explorer's copy would ask twice for the same
+                    // program (and only it is taken away: other items keep Windows' entry).
+                    if admin {
+                        sm.remove_verbs(menu.handle(), &["runas"]);
+                    }
                     // A shortcut gets Windows' own 打开文件所在的位置: it opens the target's
                     // folder with the target selected, as on Explorer's desktop. Ours, under the
                     // same name, would select the shortcut itself, so Windows' entry stays alone.

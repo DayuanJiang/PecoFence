@@ -843,6 +843,60 @@ impl App {
         }
     }
 
+    /// 以管理员身份运行 / Ctrl+Shift+Enter: one program, or one shortcut to a program, starts
+    /// with Windows' own UAC prompt. Only that program is elevated: PecoFence stays as it is, and
+    /// nothing is recorded to run the program elevated later. A refused prompt is a cancel, not
+    /// a fault.
+    pub(super) fn run_as_admin(&mut self, fence: FenceId, items: &[ItemId]) {
+        let [item] = items else {
+            tracing::info!(
+                selected = items.len(),
+                "run as administrator: one item only"
+            );
+            return;
+        };
+        let Some(path) = self
+            .state
+            .item(*item)
+            .and_then(|it| it.path().map(PathBuf::from))
+        else {
+            return;
+        };
+        if shell::is_namespace_path(&path) || !shell::can_run_as_admin(&path) {
+            tracing::info!(
+                place = shell::path_place(&path),
+                ext = shell::log_ext(&path),
+                "run as administrator: not a program or a shortcut to one"
+            );
+            return;
+        }
+        let owner = self
+            .window_for(fence)
+            .map(|w| w.hwnd())
+            .unwrap_or(self.control.hwnd());
+        match shell::run_as_admin(&path, Some(owner)) {
+            Ok(()) => tracing::info!(
+                place = shell::path_place(&path),
+                ext = shell::log_ext(&path),
+                "run as administrator: started"
+            ),
+            Err(e) if shell::is_user_cancelled(&e) => tracing::info!(
+                place = shell::path_place(&path),
+                ext = shell::log_ext(&path),
+                "run as administrator: cancelled at the UAC prompt"
+            ),
+            Err(e) => {
+                tracing::warn!(
+                    place = shell::path_place(&path),
+                    ext = shell::log_ext(&path),
+                    error = %e,
+                    "run as administrator failed"
+                );
+                self.toast(pecofence_core::i18n::text("无法以管理员身份运行。").to_string());
+            }
+        }
+    }
+
     /// Ctrl+C / Ctrl+X: the files go on the clipboard exactly as Explorer puts them there (the
     /// shell's data object of the files with `Preferred DropEffect`, `clipboard::set_files`);
     /// cut items draw dimmed. The Recycle Bin and the other special items cannot be cut or
