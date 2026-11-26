@@ -5,7 +5,7 @@ $animationsWereEnabled = [Anim]::Get()
 try {
   [Anim]::Set($true)
   PfStart
-  Pf fence create --title RollResize --rect '400,260,360,320' | Out-Null
+  Pf fence create --title RollResize --rect '400,340,360,320' | Out-Null
   Pf fence set RollResize autoHeight false | Out-Null
   Pf fence set RollResize expandUpward true | Out-Null
   $hwnd = [G]::FindWindowW('PecoFence.Fence', 'RollResize')
@@ -23,6 +23,7 @@ try {
   $deadline = [Diagnostics.Stopwatch]::StartNew()
   $hit = $null
   $sampleHeight = $null
+  $sample = $null
   while ($deadline.ElapsedMilliseconds -lt 5000) {
     $r = Rect $hwnd
     $height = $r.B - $r.T
@@ -32,11 +33,13 @@ try {
       if ($r.L -eq $after.L -and $r.T -eq $after.T -and $r.R -eq $after.R -and $r.B -eq $after.B) {
         $hit = $edgeHit
         $sampleHeight = $height
+        $sample = $r
         break
       }
     }
     Start-Sleep -Milliseconds 1
   }
+  Check 'The fence is expanding upward from the rolled title' ($sample -and $sample.T -lt $rolled.T -and $sample.B -eq $rolled.B) "rolled top=$($rolled.T) bottom=$($rolled.B) sampled top=$($sample.T) bottom=$($sample.B)"
   Check 'An expanding fence does not offer its top resize edge' ($hit -eq 1) "hit=$hit height=$sampleHeight rolled=$rolledHeight open=$openHeight"
   Check 'The unroll command succeeded' ($unroll.WaitForExit(5000) -and $unroll.ExitCode -eq 0)
   Start-Sleep -Milliseconds 450
