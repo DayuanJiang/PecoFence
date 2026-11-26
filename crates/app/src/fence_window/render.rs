@@ -733,6 +733,8 @@ impl FenceViewState {
             pecofence_core::i18n::text("找不到此文件夹。")
         } else if self.is_portal {
             pecofence_core::i18n::text("此文件夹为空。")
+        } else if self.is_clear() {
+            ""
         } else {
             pecofence_core::i18n::text("将项目拖到此处")
         }
