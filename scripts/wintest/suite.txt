@@ -332,6 +332,8 @@ cpu-threads        9   manual release 251-cpu-threads.ps1
 zoom-ZTF           2   ec2    release pr245-zoom.ps1                --var Part=ZTF
 zoom-R             2   ec2    release pr245-zoom.ps1                --var Part=R
 zoom-GP            3   ec2    release pr245-zoom.ps1                --var Part=GP
+# GitHub #269: fully transparent empty fences hide the idle invitation in every layout.
+empty-fence-hint   1   ec2    release empty-fence-hint.ps1
 # Plugins in the Store edition: a test-signed package and the portable exe in one Hyper-V guest (manual: see the header of tests/msix-plugins.ps1).
 msix-plugins       6   manual debug   msix-plugins.ps1
 # Plugin interface 3 and PecoFence 0.5.0: the feed of assets/index3-feed (index.json with stand-ins, index-3.json); this build reads index-3.json, takes pf-keep down and updates pf-big with its 2 MB file; with index.json only it updates nothing from a stand-in. index3-old runs it with 0.5.0 (manual: --bin of the 0.5.0 release).
