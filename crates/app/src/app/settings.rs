@@ -1673,6 +1673,11 @@ impl App {
         if font_changed {
             self.apply_fonts();
         }
+        // 动态壁纸实时渲染 switched, or the look became (or stopped being) Liquid Glass.
+        if self.state.config.settings.live_wallpaper != old.live_wallpaper {
+            self.stop_live_streams();
+        }
+        self.arm_live_frame_timer(1);
         if menus_changed {
             let menu = self.state.config.settings.menu_color;
             super::visuals::apply_menu_colors(menu, self.theme_mode, "setting changed");

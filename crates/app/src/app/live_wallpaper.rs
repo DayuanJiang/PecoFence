@@ -2,15 +2,16 @@
 //! player window, so the backdrops show captures of that window instead (feedback #24). A
 //! capture is a still picture: Liquid Glass frosts it (see `MonitorRecipe::show_live`), and it
 //! is taken again for a new window, after a wallpaper signal, when the desktop comes to the
-//! front, and once a minute while a fence on that monitor can be seen.
+//! front, and every ten seconds while a fence on that monitor can be seen.
 
 use super::visuals::{MonitorRecipe, backdrop_signature, monitor_recipes, unreadable_monitors};
 use super::*;
 use crate::commands::WM_APP_LIVE_WALLPAPER;
-use pecofence_platform::live_wallpaper;
+use pecofence_platform::{live_capture, live_wallpaper};
 
-/// A visible fence's backdrop catches up with the live wallpaper this often.
-pub(super) const LIVE_REFRESH: Duration = Duration::from_secs(60);
+/// A visible fence's backdrop catches up with the live wallpaper this often. With the light
+/// frost (see `LIVE_FROST_DIP`) this is what keeps a still frame from reading as frozen.
+pub(super) const LIVE_REFRESH: Duration = Duration::from_secs(10);
 /// The desktop came to the front: no new capture if the last one is this recent.
 pub(super) const LIVE_FRONT_REFRESH: Duration = Duration::from_secs(2);
 /// A new window (every window after a wallpaper signal) is captured again at every check (at
@@ -24,14 +25,15 @@ const LIVE_GONE_AFTER: Duration = Duration::from_secs(2);
 /// A capture whose result has not come back after this is given up (see
 /// `capture_live_wallpapers`).
 const LIVE_CAPTURE_GIVE_UP: Duration = Duration::from_secs(30);
-/// Captures are kept this many times smaller than the monitor: Fluent builds its backdrop at
-/// that size, and frosted glass shows no more detail.
-const CAPTURE_DOWNSCALE: u32 = 4;
+/// Captures keep the player window's own pixels. Liquid Glass shows a capture as the fence's
+/// backdrop (Liquid Glass only), and a detailed wallpaper must not be softened before the
+/// glass sees it; acrylic downsamples it in `MonitorBackdrop::build` anyway.
+const CAPTURE_DOWNSCALE: u32 = 1;
 /// Wallpaper Engine's clone mode shows one monitor's wallpaper on the others in windows of this
 /// class, through a DWM thumbnail of the window it copies (feedback #55).
 const CLONE_CLASS: &str = "WPECloneView";
 /// A settled window whose captures came back empty this many times in a row draws nothing
-/// PrintWindow can read.
+/// PrintWindow or Windows.Graphics.Capture can read.
 const BLIND_AFTER: u32 = 3;
 
 impl LiveWallpaper {
@@ -61,9 +63,24 @@ pub(super) struct LiveWallpaper {
     reported: Option<isize>,
     /// Empty captures of `hwnd` in a row once it settled.
     empty: u32,
-    /// `hwnd` cannot be captured (no redirection bitmap, or `BLIND_AFTER` empty captures): the
-    /// backdrop shows a neutral colour, not an old capture or the Windows wallpaper under it.
+    /// `hwnd` cannot be captured (nothing can read the window, or `BLIND_AFTER` empty captures):
+    /// the backdrop shows a neutral colour (Fluent) or a see-through pane (Liquid Glass), not an
+    /// old capture or the Windows wallpaper under it.
     pub(super) blind: bool,
+    /// A real-time GPU stream is feeding this monitor: its still captures are skipped.
+    pub(super) realtime: bool,
+}
+
+/// A real-time capture of one monitor's live wallpaper, on the renderer's device.
+pub(super) struct LiveStream {
+    monitor: RECT,
+    hwnd: isize,
+    capturer: live_capture::GpuCapturer,
+    frame: Option<live_capture::GpuFrame>,
+    /// When the last frame arrived: a stream that presents none for two seconds falls back to
+    /// the still pipeline.
+    last_frame_at: Instant,
+    failed: bool,
 }
 
 /// What the worker hands back: per monitor the recipe (with its new capture), the window when
@@ -149,11 +166,9 @@ fn capture_and_build(work: Vec<(MonitorRecipe, Option<isize>)>) -> Result<Built>
                     Ok((rect, image)) => Some((Some(rect), image)),
                     Err(reason) => {
                         let copied = clone_source(window).map(capture);
-                        // A clone of a window PrintWindow cannot read is as blind as it.
+                        // A clone of a window nothing can read is as blind as it.
                         let reason = match copied {
-                            Some(Err(live_wallpaper::NOT_REDIRECTED)) => {
-                                live_wallpaper::NOT_REDIRECTED
-                            }
+                            Some(Err(live_capture::UNAVAILABLE)) => live_capture::UNAVAILABLE,
                             _ => reason,
                         };
                         let copied = copied.and_then(|copied| copied.ok());
@@ -452,6 +467,7 @@ impl App {
                             reported: None,
                             empty: 0,
                             blind: false,
+                            realtime: false,
                         }
                     });
                     let hwnd = hwnd.0 as isize;
@@ -483,6 +499,7 @@ impl App {
                 "live wallpaper gone; backdrops follow the Windows wallpaper"
             );
         }
+        self.arm_live_frame_timer(1);
     }
 
     /// A wallpaper signal: the live wallpapers may have changed along with the Windows
@@ -501,6 +518,9 @@ impl App {
     /// and not hidden behind the foreground window.
     pub(super) fn capture_live_wallpapers(&mut self, min_age: Duration) {
         let due = |l: &LiveWallpaper| {
+            if l.realtime {
+                return false;
+            }
             let min_age = if l.since.elapsed() < LIVE_SETTLE {
                 min_age.min(LIVE_SETTLE_REFRESH)
             } else {
@@ -629,13 +649,13 @@ impl App {
                 return;
             }
         };
-        // A window without a redirection bitmap never shows PrintWindow anything: its monitors
-        // go blind at once, others after BLIND_AFTER empty captures, not before the window
-        // settled (a player that just started can be black). Logged once per window once it
-        // settled, and when it goes blind.
+        // A window neither PrintWindow nor Windows.Graphics.Capture can read goes blind at once,
+        // others after BLIND_AFTER empty captures, not before the window settled (a player that
+        // just started can be black). Logged once per window once it settled, and when it goes
+        // blind.
         let mut blinded = false;
         for (hwnd, reason, copied) in empty {
-            let never = reason == live_wallpaper::NOT_REDIRECTED;
+            let never = reason == live_capture::UNAVAILABLE;
             let mut report = None;
             for live in self.live.iter_mut().filter(|l| l.hwnd == hwnd) {
                 let settled = never || live.since.elapsed() >= LIVE_SETTLE;
@@ -718,6 +738,148 @@ impl App {
         }
         self.tell_live_wallpaper();
     }
+
+    /// Whether Liquid Glass should show live frames: the setting is on, the look is Liquid
+    /// Glass, a player is there, and the fences are not the solid look.
+    fn live_realtime_wanted(&self) -> bool {
+        self.state.config.settings.live_wallpaper.realtime
+            && self.ctx.theme.borrow().liquid_glass
+            && !self.live.is_empty()
+            && pecofence_core::brand::var_os("PECOFENCE_SOLID").is_none()
+    }
+
+    /// Arms `TIMER_LIVE_FRAME` unless a check is already waiting.
+    pub(super) fn arm_live_frame_timer(&mut self, delay_ms: u32) {
+        if self.live_frame_armed || !self.live_realtime_wanted() {
+            return;
+        }
+        self.live_frame_armed = true;
+        window::set_timer(self.control.hwnd(), TIMER_LIVE_FRAME, delay_ms);
+    }
+
+    /// Stops every real-time stream and sends the fences back to the still wallpaper.
+    pub(super) fn stop_live_streams(&mut self) {
+        if self.live_streams.is_empty() && self.live_frames.is_none() {
+            return;
+        }
+        self.live_streams.clear();
+        self.live_frames = None;
+        for live in &mut self.live {
+            live.realtime = false;
+        }
+        let empty = Rc::new(crate::fence_window::LiveFrames::default());
+        for window in self.fences.values() {
+            window.set_live_frames(empty.clone());
+        }
+    }
+
+    /// `TIMER_LIVE_FRAME`: takes every stream's newest frame and hands the set to the fences.
+    pub(super) fn tick_live_streams(&mut self) {
+        self.live_frame_armed = false;
+        if !self.live_realtime_wanted() {
+            self.stop_live_streams();
+            return;
+        }
+        let wanted: Vec<(RECT, isize)> = self.live.iter().map(|l| (l.monitor, l.hwnd)).collect();
+        self.live_streams
+            .retain(|s| !s.failed && wanted.iter().any(|&(m, h)| m == s.monitor && h == s.hwnd));
+        for &(monitor, hwnd) in &wanted {
+            if self
+                .live_streams
+                .iter()
+                .any(|s| s.monitor == monitor && s.hwnd == hwnd)
+            {
+                continue;
+            }
+            match live_capture::GpuCapturer::new(
+                self.ctx.stack.d3d_device_ptr(),
+                HWND(hwnd as *mut core::ffi::c_void),
+            ) {
+                Ok(capturer) => self.live_streams.push(LiveStream {
+                    monitor,
+                    hwnd,
+                    capturer,
+                    frame: None,
+                    last_frame_at: Instant::now(),
+                    failed: false,
+                }),
+                Err(reason) => {
+                    tracing::debug!(
+                        %reason,
+                        "real-time live wallpaper not available; the still capture stays"
+                    );
+                }
+            }
+        }
+        // Fences a foreground window covers take no frames: the last picture stays.
+        let foreground = foreground_rect();
+        let fences: Vec<RECT> = self
+            .fences
+            .values()
+            .map(FenceWindow::hwnd)
+            .filter(|&h| desktop::is_visible(h) && !desktop::is_cloaked(h))
+            .map(window::window_rect)
+            .filter(|f| {
+                !foreground.is_some_and(|g| {
+                    g.left <= f.left && g.top <= f.top && g.right >= f.right && g.bottom >= f.bottom
+                })
+            })
+            .collect();
+        let now = Instant::now();
+        let mut monitors = Vec::new();
+        for stream in &mut self.live_streams {
+            let shown = fences.iter().any(|f| {
+                f.left < stream.monitor.right
+                    && f.right > stream.monitor.left
+                    && f.top < stream.monitor.bottom
+                    && f.bottom > stream.monitor.top
+            });
+            if !shown {
+                // Not failing while nothing can see it.
+                stream.last_frame_at = now;
+                continue;
+            }
+            if let Some(frame) = stream.capturer.next_frame() {
+                stream.frame = Some(frame);
+                stream.last_frame_at = now;
+            }
+            if stream.last_frame_at.elapsed() >= Duration::from_secs(2) {
+                stream.failed = true;
+                stream.capturer.close();
+                continue;
+            }
+            if let Some(frame) = &stream.frame {
+                let rect = stream.capturer.rect();
+                monitors.push((
+                    stream.monitor,
+                    pecofence_render::LiveTexture {
+                        texture: frame.texture_ptr() as usize,
+                        left: rect.left,
+                        top: rect.top,
+                        width: frame.width,
+                        height: frame.height,
+                    },
+                ));
+            }
+        }
+        self.live_streams.retain(|s| !s.failed);
+        for live in &mut self.live {
+            live.realtime = self
+                .live_streams
+                .iter()
+                .any(|s| s.monitor == live.monitor && s.frame.is_some());
+        }
+        let frames = Rc::new(crate::fence_window::LiveFrames { monitors });
+        let had = self.live_frames.is_some();
+        self.live_frames = Some(frames.clone());
+        if !frames.monitors.is_empty() || had {
+            for window in self.fences.values() {
+                window.set_live_frames(frames.clone());
+            }
+        }
+        let fps = self.state.config.settings.live_wallpaper.fps();
+        self.arm_live_frame_timer((1000 / fps.max(1)).max(1));
+    }
 }
 
 #[cfg(test)]
@@ -742,6 +904,7 @@ mod tests {
             reported: None,
             empty: 0,
             blind,
+            realtime: false,
         };
         let live = [
             entry(0, Some(Arc::new(Image::solid(4, 4, [9, 9, 9]))), false),
@@ -785,6 +948,7 @@ mod tests {
             reported: None,
             empty: 0,
             blind,
+            realtime: false,
         };
         // Liquid Glass over a player whose picture cannot be read: the card holds, also in
         // the moment a player's window is missing between two wallpapers.

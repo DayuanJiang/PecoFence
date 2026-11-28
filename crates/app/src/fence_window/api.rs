@@ -265,6 +265,7 @@ impl FenceWindow {
             backdrop_origin: None,
             backdrop_key: format!("backdrop:{:x}", hwnd.0 as isize),
             gpu_glass: RefCell::new(pecofence_render::gpu_glass::GpuGlass::default()),
+            live_frames: Rc::new(super::LiveFrames::default()),
             chrome_panel,
             content_panel,
             content_x: 0,
@@ -3192,6 +3193,18 @@ impl FenceWindow {
             };
             if let Err(error) = result {
                 tracing::warn!(%error, "redraw after wallpaper change failed");
+            }
+        });
+    }
+
+    /// Live wallpaper frames for Liquid Glass: the plate samples them until the next set.
+    pub fn set_live_frames(&self, frames: Rc<super::LiveFrames>) {
+        self.with_view(|v| {
+            v.live_frames = frames;
+            if v.theme.liquid_glass
+                && let Err(error) = v.redraw()
+            {
+                tracing::warn!(%error, "redraw after live wallpaper frame failed");
             }
         });
     }

@@ -727,6 +727,9 @@
           <div class="s" id="customThemeHelp"></div>
           <div class="s error" id="customThemeError" aria-live="polite" hidden></div>
         </div></div>
+      <div class="card" id="liveRealtimeCard"><div class="l"><span class="ic" data-alt="&#xE7C4;">&#xE7C4;</span><div><div class="t">动态壁纸实时渲染</div><div class="s">Liquid Glass 栅栏直接显示动态壁纸的每一帧；关闭后每 10 秒取一帧静止画面</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="liveWallpaper.realtime"></div></div>
+      <div class="card" id="liveFpsCard"><div class="l"><span class="ic">&#xE9D9;</span><div><div class="t">实时帧率</div><div class="s">每秒从动态壁纸取多少帧</div></div></div>
+        <select data-bind="liveWallpaper.fps"><option value="15">15 fps</option><option value="30">30 fps</option><option value="60">60 fps</option></select></div>
       <div class="card"><div class="l"><span class="ic" data-alt="&#xE793;">&#xE7A1;</span><div><div class="t">颜色模式</div></div></div>
         <select data-bind="theme"><option value="followWindowsMode">跟随 Windows 模式</option><option value="followAppMode">跟随应用模式</option><option value="light">浅色</option><option value="dark">深色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE700;</span><div><div class="t">菜单颜色</div><div class="s">托盘菜单，以及栅栏和图标的右键菜单</div></div></div>
@@ -1235,9 +1238,14 @@
     // there and why. A wallpaper whose picture cannot be read gives a see-through pane, one
     // that can be read a frosted still picture.
     const live = glass ? state.liveWallpaper : null, note = document.getElementById('liveWallpaperNote');
+    const realtime = !!(settings.liveWallpaper && settings.liveWallpaper.realtime);
+    document.getElementById('liveRealtimeCard').hidden = !glass;
+    document.getElementById('liveFpsCard').hidden = !glass;
     note.hidden = !live;
     note.textContent = !live ? '' : live.readable
-      ? t("动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”")
+      ? realtime
+        ? t("动态壁纸播放时，Liquid Glass 实时显示壁纸画面。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”")
+        : t("动态壁纸播放时，Liquid Glass 用壁纸的静止截图做成磨砂玻璃。想让壁纸本身透出来，到“栅栏”页把不透明度改成“更透明”")
       : live.player
         ? tf("{0} 的壁纸画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响", live.player)
         : t("这种动态壁纸的画面读不到，Liquid Glass 栅栏现在是半透明玻璃，没有折射效果。关掉动态壁纸后恢复；Fluent 不受影响");

@@ -8,6 +8,31 @@ use std::{
 use windows_canvas::{DrawingSession, Matrix3x2, Rect, Vector2};
 use windows_core::{Interface, Result};
 
+/// How much Liquid Glass frosts a live wallpaper frame, in DIPs. The still path applies the
+/// same blur on the CPU (`MonitorRecipe::show_live`).
+pub const LIVE_FROST_DIP: f32 = 3.0;
+
+/// A live wallpaper window's latest frame, on the renderer's Direct3D device.
+#[derive(Clone, Copy, Debug)]
+pub struct LiveTexture {
+    /// The frame's `ID3D11Texture2D`, as a raw pointer. Valid until the capturer's next frame
+    /// and only on the thread that draws.
+    pub texture: usize,
+    /// The window rectangle the frame covers (virtual-screen pixels).
+    pub left: i32,
+    pub top: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// The live texture Liquid Glass shows instead of the wallpaper, and the frost it gets.
+#[derive(Clone, Copy, Debug)]
+pub struct LiveGlass {
+    pub texture: LiveTexture,
+    /// Gaussian blur sigma in screen pixels (the still path's `LIVE_FROST_DIP` × DPI scale).
+    pub frost_sigma: f32,
+}
+
 fn property<T: Copy>(effect: &b::ID2D1Effect, index: i32, kind: i32, value: &T) -> Result<()> {
     // Only POD scalar/float arrays are passed by this module.
     let bytes = unsafe { std::slice::from_raw_parts((value as *const T).cast(), size_of::<T>()) };
@@ -89,12 +114,48 @@ struct Upload {
 pub struct WallpaperCache {
     /// Most recent first.
     entries: Vec<Upload>,
+    /// Live frames wrapped for Direct2D, by their texture pointer. A capturer reuses two
+    /// textures, so this stays small; a new device (or leaving Liquid Glass) drops them.
+    live: HashMap<usize, b::ID2D1Bitmap1>,
     pub uploads: u64,
 }
 
 impl WallpaperCache {
     pub fn clear(&mut self) {
         self.entries.clear();
+        self.live.clear();
+    }
+
+    /// A Direct2D bitmap over a live frame's texture. It stays valid while the capturer lives:
+    /// both are on this device, and the capturer reuses the texture rather than freeing it.
+    fn live_bitmap(
+        &mut self,
+        context: &b::ID2D1DeviceContext,
+        pointer: usize,
+    ) -> Result<b::ID2D1Bitmap1> {
+        if let Some(bitmap) = self.live.get(&pointer) {
+            return Ok(bitmap.clone());
+        }
+        let raw = pointer as *mut core::ffi::c_void;
+        // SAFETY: the capturer keeps the texture alive; it lives on this D2D device's D3D
+        // device, which `CreateBitmapFromDxgiSurface` requires.
+        let texture = unsafe { b::ID3D11Texture2D::from_raw_borrowed(&raw) }.ok_or_else(|| {
+            windows_core::Error::from_hresult(windows_core::HRESULT(0x80070057u32 as i32))
+        })?;
+        let surface: b::IDXGISurface = texture.cast()?;
+        let properties = b::D2D1_BITMAP_PROPERTIES1 {
+            pixelFormat: b::D2D1_PIXEL_FORMAT {
+                format: b::DXGI_FORMAT_B8G8R8A8_UNORM,
+                alphaMode: b::D2D1_ALPHA_MODE_IGNORE,
+            },
+            dpiX: 96.0,
+            dpiY: 96.0,
+            bitmapOptions: b::D2D1_BITMAP_OPTIONS_NONE,
+            ..Default::default()
+        };
+        let bitmap = unsafe { context.CreateBitmapFromDxgiSurface(&surface, Some(&properties)) }?;
+        self.live.insert(pointer, bitmap.clone());
+        Ok(bitmap)
     }
 
     /// Releases the textures of sets nobody holds any more (a replaced wallpaper, or every
@@ -248,6 +309,13 @@ fn light_matrix(level: f32) -> [f32; 20] {
 struct Effects {
     source: Option<Rc<Wallpaper>>,
     border: b::ID2D1Effect,
+    /// A live wallpaper frame, moved to its screen position before `border`.
+    live_transform: b::ID2D1Effect,
+    /// Gaussian blur between `border` and `position` while a live frame is shown.
+    frost: b::ID2D1Effect,
+    /// `position` reads `frost` (live) instead of `border` (still wallpaper).
+    live_mode: bool,
+    frost_sigma: Option<u32>,
     position: b::ID2D1Effect,
     displace: b::ID2D1Effect,
     light: b::ID2D1Effect,
@@ -281,6 +349,15 @@ impl Effects {
             b::D2D1_BORDER_EDGE_MODE_CLAMP,
         )?;
         let position = effect(&b::CLSID_D2D12DAffineTransform)?;
+        // Only a live wallpaper frame goes through this: the still wallpaper was blurred on
+        // the CPU already.
+        let frost = effect(&b::CLSID_D2D1GaussianBlur)?;
+        enumeration(
+            &frost,
+            b::D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION,
+            b::D2D1_GAUSSIANBLUR_OPTIMIZATION_SPEED,
+        )?;
+        let live_transform = effect(&b::CLSID_D2D12DAffineTransform)?;
         let displace = effect(&b::CLSID_D2D1DisplacementMap)?;
         enumeration(
             &displace,
@@ -323,6 +400,7 @@ impl Effects {
         let ring_scale = effect(&b::CLSID_D2D12DAffineTransform)?;
         unsafe {
             position.SetInput(0, &border.GetOutput()?, true);
+            frost.SetInput(0, &live_transform.GetOutput()?, true);
             displace.SetInput(0, &position.GetOutput()?, true);
             saturate.SetInput(0, &displace.GetOutput()?, true);
             rim.SetInput(0, &saturate.GetOutput()?, true);
@@ -339,6 +417,10 @@ impl Effects {
         Ok(Self {
             source: None,
             border,
+            live_transform,
+            frost,
+            live_mode: false,
+            frost_sigma: None,
             position,
             displace,
             light,
@@ -443,6 +525,19 @@ impl Effects {
         }
         Ok(())
     }
+
+    fn set_frost(&mut self, sigma: f32) -> Result<()> {
+        let sigma = sigma.max(0.0);
+        if self.frost_sigma != Some(sigma.to_bits()) {
+            scalar(
+                &self.frost,
+                b::D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION,
+                sigma,
+            )?;
+            self.frost_sigma = Some(sigma.to_bits());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -496,6 +591,7 @@ impl GpuGlass {
         radius: f32,
         opacity: f32,
         hover: f32,
+        live: Option<&LiveGlass>,
     ) -> Result<()> {
         if self.failed {
             return Err(windows_core::Error::from_hresult(windows_core::HRESULT(
@@ -514,7 +610,7 @@ impl GpuGlass {
         session.set_transform(&Matrix3x2::identity());
         self.origin_y = origin_y;
         let result = self.draw_inner(
-            session, cache, sources, rect, rest_h, origin_y, scale, radius, opacity, hover,
+            session, cache, sources, rect, rest_h, origin_y, scale, radius, opacity, hover, live,
         );
         session.set_transform(&saved);
         if let Err(error) = &result {
@@ -663,20 +759,61 @@ impl GpuGlass {
         radius: f32,
         opacity: f32,
         hover: f32,
+        live: Option<&LiveGlass>,
     ) -> Result<()> {
         let context: b::ID2D1DeviceContext = session.raw().cast()?;
-        let source = cache.get(&context, sources)?;
         if self.effects.is_none() {
             self.effects = Some(Effects::new(&context)?);
         }
         let effects = self.effects.as_mut().unwrap();
-        if effects
-            .source
-            .as_ref()
-            .is_none_or(|old| !Rc::ptr_eq(old, &source))
-        {
-            unsafe { effects.border.SetInput(0, &source.image, true) };
-            effects.source = Some(source);
+        match live {
+            Some(live) => {
+                // The frame covers the player window at native size; move it to its screen
+                // position, then let `position` shift it to the plate as the wallpaper is.
+                let bitmap = cache.live_bitmap(&context, live.texture.texture)?;
+                let image: b::ID2D1Image = bitmap.cast()?;
+                unsafe {
+                    effects.live_transform.SetInput(0, &image, true);
+                }
+                matrix(
+                    &effects.live_transform,
+                    [
+                        1.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                        live.texture.left as f32,
+                        live.texture.top as f32,
+                    ],
+                )?;
+                unsafe {
+                    effects
+                        .border
+                        .SetInput(0, &effects.live_transform.GetOutput()?, true);
+                }
+                effects.set_frost(live.frost_sigma)?;
+                if !effects.live_mode {
+                    unsafe {
+                        effects
+                            .position
+                            .SetInput(0, &effects.frost.GetOutput()?, true)
+                    };
+                    effects.live_mode = true;
+                }
+            }
+            None => {
+                let source = cache.get(&context, sources)?;
+                unsafe { effects.border.SetInput(0, &source.image, true) };
+                effects.source = Some(source);
+                if effects.live_mode {
+                    unsafe {
+                        effects
+                            .position
+                            .SetInput(0, &effects.border.GetOutput()?, true)
+                    };
+                    effects.live_mode = false;
+                }
+            }
         }
         let w = rect[2].max(1) as u32;
         let h = rect[3].max(1) as u32;

@@ -10,6 +10,8 @@ pub const CLSID_D2D1Composite: windows_core::GUID =
     windows_core::GUID::from_u128(0x48fc9f51_f6ac_48f1_8b58_3b28ac46f76d);
 pub const CLSID_D2D1DisplacementMap: windows_core::GUID =
     windows_core::GUID::from_u128(0xedc48364_0417_4111_9450_43845fa9f890);
+pub const CLSID_D2D1GaussianBlur: windows_core::GUID =
+    windows_core::GUID::from_u128(0x1feb6d69_2fe6_4ac9_8c58_1d7f93e7a6a5);
 pub type D2D1_2DAFFINETRANSFORM_PROP = i32;
 pub const D2D1_2DAFFINETRANSFORM_PROP_TRANSFORM_MATRIX: D2D1_2DAFFINETRANSFORM_PROP = 2;
 pub type D2D1_ALPHA_MODE = i32;
@@ -103,6 +105,11 @@ pub type D2D1_EXTEND_MODE = i32;
 pub const D2D1_EXTEND_MODE_CLAMP: D2D1_EXTEND_MODE = 0;
 pub type D2D1_FEATURE_LEVEL = i32;
 pub type D2D1_GAMMA = i32;
+pub type D2D1_GAUSSIANBLUR_OPTIMIZATION = i32;
+pub const D2D1_GAUSSIANBLUR_OPTIMIZATION_SPEED: D2D1_GAUSSIANBLUR_OPTIMIZATION = 0;
+pub type D2D1_GAUSSIANBLUR_PROP = i32;
+pub const D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION: D2D1_GAUSSIANBLUR_PROP = 1;
+pub const D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION: D2D1_GAUSSIANBLUR_PROP = 0;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct D2D1_GRADIENT_STOP {
