@@ -170,6 +170,8 @@ pub enum Backdrop<'a> {
         wallpaper: &'a Rc<Vec<crate::MonitorBackdrop>>,
         rect: [i32; 4],
         scale: f32,
+        /// A live wallpaper frame for this monitor: it replaces the still wallpaper.
+        live: Option<crate::gpu_glass::LiveGlass>,
     },
     /// DWM paints the material (system Acrylic); only a light tint layer is drawn here.
     SystemMaterial,
@@ -1172,6 +1174,7 @@ fn draw_plate(
             wallpaper,
             rect,
             scale,
+            live,
         } => {
             // A folded title row moves the lens (and its bezel) down to the plate top. While
             // the row glides, the lens is built for the height it ends at and stretched.
@@ -1190,6 +1193,7 @@ fn draw_plate(
                 radius,
                 opacity.min(1.0) * plate_a,
                 hover,
+                live.as_ref(),
             );
             if let Err(error) = result {
                 if windows_canvas::is_device_lost(error.code()) {

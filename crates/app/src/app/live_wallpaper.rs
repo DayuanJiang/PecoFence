@@ -67,6 +67,20 @@ pub(super) struct LiveWallpaper {
     /// the backdrop shows a neutral colour (Fluent) or a see-through pane (Liquid Glass), not an
     /// old capture or the Windows wallpaper under it.
     pub(super) blind: bool,
+    /// A real-time GPU stream is feeding this monitor: its still captures are skipped.
+    pub(super) realtime: bool,
+}
+
+/// A real-time capture of one monitor's live wallpaper, on the renderer's device.
+pub(super) struct LiveStream {
+    monitor: RECT,
+    hwnd: isize,
+    capturer: live_capture::GpuCapturer,
+    frame: Option<live_capture::GpuFrame>,
+    /// When the last frame arrived: a stream that presents none for two seconds falls back to
+    /// the still pipeline.
+    last_frame_at: Instant,
+    failed: bool,
 }
 
 /// What the worker hands back: per monitor the recipe (with its new capture), the window when
@@ -453,6 +467,7 @@ impl App {
                             reported: None,
                             empty: 0,
                             blind: false,
+                            realtime: false,
                         }
                     });
                     let hwnd = hwnd.0 as isize;
@@ -484,6 +499,7 @@ impl App {
                 "live wallpaper gone; backdrops follow the Windows wallpaper"
             );
         }
+        self.arm_live_frame_timer(1);
     }
 
     /// A wallpaper signal: the live wallpapers may have changed along with the Windows
@@ -502,6 +518,9 @@ impl App {
     /// and not hidden behind the foreground window.
     pub(super) fn capture_live_wallpapers(&mut self, min_age: Duration) {
         let due = |l: &LiveWallpaper| {
+            if l.realtime {
+                return false;
+            }
             let min_age = if l.since.elapsed() < LIVE_SETTLE {
                 min_age.min(LIVE_SETTLE_REFRESH)
             } else {
@@ -719,6 +738,148 @@ impl App {
         }
         self.tell_live_wallpaper();
     }
+
+    /// Whether Liquid Glass should show live frames: the setting is on, the look is Liquid
+    /// Glass, a player is there, and the fences are not the solid look.
+    fn live_realtime_wanted(&self) -> bool {
+        self.state.config.settings.live_wallpaper.realtime
+            && self.ctx.theme.borrow().liquid_glass
+            && !self.live.is_empty()
+            && pecofence_core::brand::var_os("PECOFENCE_SOLID").is_none()
+    }
+
+    /// Arms `TIMER_LIVE_FRAME` unless a check is already waiting.
+    pub(super) fn arm_live_frame_timer(&mut self, delay_ms: u32) {
+        if self.live_frame_armed || !self.live_realtime_wanted() {
+            return;
+        }
+        self.live_frame_armed = true;
+        window::set_timer(self.control.hwnd(), TIMER_LIVE_FRAME, delay_ms);
+    }
+
+    /// Stops every real-time stream and sends the fences back to the still wallpaper.
+    pub(super) fn stop_live_streams(&mut self) {
+        if self.live_streams.is_empty() && self.live_frames.is_none() {
+            return;
+        }
+        self.live_streams.clear();
+        self.live_frames = None;
+        for live in &mut self.live {
+            live.realtime = false;
+        }
+        let empty = Rc::new(crate::fence_window::LiveFrames::default());
+        for window in self.fences.values() {
+            window.set_live_frames(empty.clone());
+        }
+    }
+
+    /// `TIMER_LIVE_FRAME`: takes every stream's newest frame and hands the set to the fences.
+    pub(super) fn tick_live_streams(&mut self) {
+        self.live_frame_armed = false;
+        if !self.live_realtime_wanted() {
+            self.stop_live_streams();
+            return;
+        }
+        let wanted: Vec<(RECT, isize)> = self.live.iter().map(|l| (l.monitor, l.hwnd)).collect();
+        self.live_streams
+            .retain(|s| !s.failed && wanted.iter().any(|&(m, h)| m == s.monitor && h == s.hwnd));
+        for &(monitor, hwnd) in &wanted {
+            if self
+                .live_streams
+                .iter()
+                .any(|s| s.monitor == monitor && s.hwnd == hwnd)
+            {
+                continue;
+            }
+            match live_capture::GpuCapturer::new(
+                self.ctx.stack.d3d_device_ptr(),
+                HWND(hwnd as *mut core::ffi::c_void),
+            ) {
+                Ok(capturer) => self.live_streams.push(LiveStream {
+                    monitor,
+                    hwnd,
+                    capturer,
+                    frame: None,
+                    last_frame_at: Instant::now(),
+                    failed: false,
+                }),
+                Err(reason) => {
+                    tracing::debug!(
+                        %reason,
+                        "real-time live wallpaper not available; the still capture stays"
+                    );
+                }
+            }
+        }
+        // Fences a foreground window covers take no frames: the last picture stays.
+        let foreground = foreground_rect();
+        let fences: Vec<RECT> = self
+            .fences
+            .values()
+            .map(FenceWindow::hwnd)
+            .filter(|&h| desktop::is_visible(h) && !desktop::is_cloaked(h))
+            .map(window::window_rect)
+            .filter(|f| {
+                !foreground.is_some_and(|g| {
+                    g.left <= f.left && g.top <= f.top && g.right >= f.right && g.bottom >= f.bottom
+                })
+            })
+            .collect();
+        let now = Instant::now();
+        let mut monitors = Vec::new();
+        for stream in &mut self.live_streams {
+            let shown = fences.iter().any(|f| {
+                f.left < stream.monitor.right
+                    && f.right > stream.monitor.left
+                    && f.top < stream.monitor.bottom
+                    && f.bottom > stream.monitor.top
+            });
+            if !shown {
+                // Not failing while nothing can see it.
+                stream.last_frame_at = now;
+                continue;
+            }
+            if let Some(frame) = stream.capturer.next_frame() {
+                stream.frame = Some(frame);
+                stream.last_frame_at = now;
+            }
+            if stream.last_frame_at.elapsed() >= Duration::from_secs(2) {
+                stream.failed = true;
+                stream.capturer.close();
+                continue;
+            }
+            if let Some(frame) = &stream.frame {
+                let rect = stream.capturer.rect();
+                monitors.push((
+                    stream.monitor,
+                    pecofence_render::LiveTexture {
+                        texture: frame.texture_ptr() as usize,
+                        left: rect.left,
+                        top: rect.top,
+                        width: frame.width,
+                        height: frame.height,
+                    },
+                ));
+            }
+        }
+        self.live_streams.retain(|s| !s.failed);
+        for live in &mut self.live {
+            live.realtime = self
+                .live_streams
+                .iter()
+                .any(|s| s.monitor == live.monitor && s.frame.is_some());
+        }
+        let frames = Rc::new(crate::fence_window::LiveFrames { monitors });
+        let had = self.live_frames.is_some();
+        self.live_frames = Some(frames.clone());
+        if !frames.monitors.is_empty() || had {
+            for window in self.fences.values() {
+                window.set_live_frames(frames.clone());
+            }
+        }
+        let fps = self.state.config.settings.live_wallpaper.fps();
+        self.arm_live_frame_timer((1000 / fps.max(1)).max(1));
+    }
 }
 
 #[cfg(test)]
@@ -743,6 +904,7 @@ mod tests {
             reported: None,
             empty: 0,
             blind,
+            realtime: false,
         };
         let live = [
             entry(0, Some(Arc::new(Image::solid(4, 4, [9, 9, 9]))), false),
@@ -786,6 +948,7 @@ mod tests {
             reported: None,
             empty: 0,
             blind,
+            realtime: false,
         };
         // Liquid Glass over a player whose picture cannot be read: the card holds, also in
         // the moment a player's window is missing between two wallpapers.

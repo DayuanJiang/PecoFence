@@ -81,6 +81,8 @@ impl App {
 
     /// A new GPU device, then new surfaces for every window, redrawn at once.
     fn rebuild_render_stack(&mut self) -> windows_core::Result<()> {
+        // Streams hold textures on the old device: drop them before it goes.
+        self.stop_live_streams();
         self.rebuild_stack()?;
         self.ctx.bitmaps.borrow_mut().clear();
         self.ctx.chrome.forget_text_layouts();
@@ -88,6 +90,8 @@ impl App {
             w.recreate_surfaces(&self.ctx.stack);
         }
         self.redraw_notices();
+        // Fresh streams on the new device, for a live wallpaper still on screen.
+        self.arm_live_frame_timer(1);
         Ok(())
     }
 

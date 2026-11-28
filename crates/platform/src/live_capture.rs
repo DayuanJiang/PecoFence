@@ -183,6 +183,212 @@ unsafe fn frame(
     pixels
 }
 
+/// A persistent Windows.Graphics.Capture session on the renderer's Direct3D device. Frames
+/// are copied into two textures of our own and stay on the GPU (no CPU readback); the caller
+/// polls [`GpuCapturer::next_frame`] from the thread that draws, so the textures are never
+/// touched from two threads at once. The renderer wraps the returned texture into a Direct2D
+/// bitmap: both live on the same device.
+pub struct GpuCapturer {
+    /// Kept alive so the textures and frame pool keep a device to live on.
+    _device: ID3D11Device,
+    context: ID3D11DeviceContext,
+    pool: Direct3D11CaptureFramePool,
+    session: GraphicsCaptureSession,
+    rect: RECT,
+    textures: [Option<ID3D11Texture2D>; 2],
+    current: usize,
+    closed: bool,
+}
+
+/// One frame ready for the GPU: `texture` holds the window's pixels on the renderer's device.
+pub struct GpuFrame {
+    texture: ID3D11Texture2D,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl GpuFrame {
+    /// The frame's `ID3D11Texture2D` as a raw pointer, valid while this frame is alive.
+    pub fn texture_ptr(&self) -> *mut core::ffi::c_void {
+        windows_core::Interface::as_raw(&self.texture)
+    }
+}
+
+impl GpuCapturer {
+    /// Starts capturing `hwnd` (or the top-level window that contains it) on `device`, the
+    /// renderer's Direct3D device. Call from the UI thread: the session and its textures are
+    /// used there from then on.
+    pub fn new(device: *mut core::ffi::c_void, hwnd: HWND) -> Result<Self, &'static str> {
+        // SAFETY: `device` is a live ID3D11Device owned by the caller; borrowing keeps it so.
+        unsafe {
+            let borrowed = ID3D11Device::from_raw_borrowed(&device).ok_or(UNAVAILABLE)?;
+            let device = borrowed.clone();
+            let context = device.GetImmediateContext().map_err(|_| UNAVAILABLE)?;
+            let root = crate::desktop::root_ancestor(hwnd);
+            let mut targets = vec![hwnd];
+            if !root.0.is_null() && root != hwnd {
+                targets.push(root);
+            }
+            for target in targets {
+                let Some(item) = item(target) else {
+                    continue;
+                };
+                let rect = window_rect(target);
+                let (w, h) = (rect.right - rect.left, rect.bottom - rect.top);
+                if w <= 0 || h <= 0 {
+                    continue;
+                }
+                if let Ok(capturer) = Self::start(&device, &context, item, rect, w as u32, h as u32)
+                {
+                    return Ok(capturer);
+                }
+            }
+            Err(UNAVAILABLE)
+        }
+    }
+
+    /// The window rectangle the frames cover (virtual-screen pixels).
+    pub fn rect(&self) -> RECT {
+        self.rect
+    }
+
+    /// The newest frame, if Windows.Graphics.Capture presented one since the last call.
+    pub fn next_frame(&mut self) -> Option<GpuFrame> {
+        if self.closed {
+            return None;
+        }
+        let frame = self.pool.TryGetNextFrame().ok()?;
+        let result = (|| -> Option<GpuFrame> {
+            let surface = frame.Surface().ok()?;
+            let access: IDirect3DDxgiInterfaceAccess = surface.cast().ok()?;
+            let source: ID3D11Texture2D =
+                unsafe { access.GetInterface::<ID3D11Texture2D>() }.ok()?;
+            let mut desc = D3D11_TEXTURE2D_DESC::default();
+            // SAFETY: the description is written into `desc`.
+            unsafe { source.GetDesc(&mut desc as *mut _) };
+            let owned = self.textures[self.current].as_ref()?;
+            let mut ours = D3D11_TEXTURE2D_DESC::default();
+            // SAFETY: the description is written into `ours`.
+            unsafe { owned.GetDesc(&mut ours as *mut _) };
+            if (desc.Width, desc.Height) != (ours.Width, ours.Height) {
+                return None;
+            }
+            let destination: ID3D11Resource = owned.cast().ok()?;
+            let source: ID3D11Resource = source.cast().ok()?;
+            // SAFETY: both resources have the same size and format, on this device.
+            unsafe { self.context.CopyResource(&destination, &source) };
+            Some(GpuFrame {
+                texture: owned.clone(),
+                width: desc.Width,
+                height: desc.Height,
+            })
+        })();
+        if let Ok(closable) = frame.cast::<IClosable>() {
+            let _ = closable.Close();
+        }
+        if result.is_some() {
+            self.current = 1 - self.current;
+        }
+        result
+    }
+
+    /// Stops the session and releases the frame pool.
+    pub fn close(&mut self) {
+        if self.closed {
+            return;
+        }
+        self.closed = true;
+        if let Ok(closable) = self.session.cast::<IClosable>() {
+            let _ = closable.Close();
+        }
+        if let Ok(closable) = self.pool.cast::<IClosable>() {
+            let _ = closable.Close();
+        }
+    }
+
+    unsafe fn start(
+        device: &ID3D11Device,
+        context: &ID3D11DeviceContext,
+        item: GraphicsCaptureItem,
+        rect: RECT,
+        width: u32,
+        height: u32,
+    ) -> Result<Self, &'static str> {
+        let dxgi: IDXGIDevice = device.cast().map_err(|_| UNAVAILABLE)?;
+        let mut direct3d: Option<windows_core::IInspectable> = None;
+        // SAFETY: the call writes an IInspectable for the device into `direct3d`.
+        unsafe {
+            CreateDirect3D11DeviceFromDXGIDevice(
+                windows_core::Interface::as_raw(&dxgi),
+                &mut direct3d as *mut _ as *mut *mut core::ffi::c_void,
+            )
+            .ok()
+            .map_err(|_| UNAVAILABLE)?;
+        }
+        let direct3d: IDirect3DDevice = direct3d
+            .ok_or(UNAVAILABLE)?
+            .cast()
+            .map_err(|_| UNAVAILABLE)?;
+        let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
+            &direct3d,
+            DirectXPixelFormat::B8G8R8A8UIntNormalized,
+            2,
+            SizeInt32 {
+                width: width as i32,
+                height: height as i32,
+            },
+        )
+        .map_err(|_| UNAVAILABLE)?;
+        let session = pool.CreateCaptureSession(&item).map_err(|_| UNAVAILABLE)?;
+        if let Ok(session2) = session.cast::<IGraphicsCaptureSession2>() {
+            let _ = session2.SetIsCursorCaptureEnabled(false);
+        }
+        if let Ok(session3) = session.cast::<IGraphicsCaptureSession3>() {
+            let _ = session3.SetIsBorderRequired(false);
+        }
+        session.StartCapture().map_err(|_| UNAVAILABLE)?;
+        let create = |w: u32, h: u32| -> Result<ID3D11Texture2D, &'static str> {
+            let desc = D3D11_TEXTURE2D_DESC {
+                Width: w,
+                Height: h,
+                MipLevels: 1,
+                ArraySize: 1,
+                Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                SampleDesc: DXGI_SAMPLE_DESC {
+                    Count: 1,
+                    Quality: 0,
+                },
+                Usage: D3D11_USAGE_DEFAULT,
+                BindFlags: (D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET) as u32,
+                CPUAccessFlags: 0,
+                MiscFlags: 0,
+            };
+            let mut texture: Option<ID3D11Texture2D> = None;
+            // SAFETY: the texture is created from this device with the description above.
+            unsafe { device.CreateTexture2D(&desc, None, Some(&mut texture as *mut _)) }
+                .ok()
+                .map_err(|_| UNAVAILABLE)?;
+            texture.ok_or(UNAVAILABLE)
+        };
+        Ok(Self {
+            _device: device.clone(),
+            context: context.clone(),
+            pool,
+            session,
+            rect,
+            textures: [Some(create(width, height)?), Some(create(width, height)?)],
+            current: 0,
+            closed: false,
+        })
+    }
+}
+
+impl Drop for GpuCapturer {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
 /// The pixels of `texture`, copied through a staging texture the CPU can read.
 unsafe fn read_texture(
     device: &ID3D11Device,

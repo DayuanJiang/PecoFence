@@ -156,6 +156,14 @@ impl RenderStack {
         }
     }
 
+    /// The Direct3D device the fences render on, as a raw pointer: Windows.Graphics.Capture
+    /// starts its session on it so live wallpapers stay on the GPU. Valid until [`Self::recover`].
+    pub fn d3d_device_ptr(&self) -> *mut core::ffi::c_void {
+        use windows_core::Interface;
+        let gpu = self.gpu.borrow();
+        Interface::as_raw(gpu.device.d3d_device())
+    }
+
     /// The adapter the fences render on, for feedback reports: its name and the version of its
     /// user-mode driver (`AMD Radeon(TM) Graphics, driver 32.0.21025.10016`).
     pub fn adapter(&self) -> Option<String> {

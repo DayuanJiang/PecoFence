@@ -183,6 +183,9 @@ const IDLE_TRIM_MS: u32 = 30_000;
 /// The live wallpaper capture worker finished (`WM_APP_LIVE_WALLPAPER`); retried while the App
 /// is borrowed.
 const TIMER_LIVE_CAPTURED: usize = 61;
+/// Re-armed while Liquid Glass shows a live wallpaper in real time: `GpuCapturer::next_frame`
+/// and a redraw of the fences.
+const TIMER_LIVE_FRAME: usize = 135;
 /// `TaskbarCreated` arrived while the App was borrowed: renew the shell change registration
 /// shortly.
 const TIMER_SHELL_WATCH_RETRY: usize = 62;
@@ -612,6 +615,11 @@ pub struct App {
     /// Monitors a live wallpaper covers, and the capture of them in progress.
     live: Vec<live_wallpaper::LiveWallpaper>,
     live_capture: Option<live_wallpaper::LiveCapture>,
+    /// Real-time GPU captures of the live wallpapers (Liquid Glass).
+    live_streams: Vec<live_wallpaper::LiveStream>,
+    /// The frames last handed to the fences, and whether `TIMER_LIVE_FRAME` is armed.
+    live_frames: Option<Rc<crate::fence_window::LiveFrames>>,
+    live_frame_armed: bool,
     /// The worker of a given-up capture that has not returned yet (one at most).
     live_abandoned: Option<std::thread::JoinHandle<()>>,
     /// The card that says why Liquid Glass fences are frosted panes over a live wallpaper
@@ -1364,6 +1372,7 @@ impl App {
                                 TIMER_WALLPAPER_PREWARM
                                 | TIMER_PREWARM_FINISH
                                 | TIMER_LIVE_CAPTURED
+                                | TIMER_LIVE_FRAME
                                 | TIMER_SHELL_WATCH_RETRY
                                 | TIMER_STARTUP_TASK
                                 | TIMER_TMP_SETTLE
@@ -1395,6 +1404,7 @@ impl App {
                                         match wparam {
                                             TIMER_PREWARM_FINISH => app.finish_prewarm(),
                                             TIMER_LIVE_CAPTURED => app.finish_live_capture(),
+                                            TIMER_LIVE_FRAME => app.tick_live_streams(),
                                             TIMER_SHELL_WATCH_RETRY => app.renew_shell_watch(),
                                             TIMER_STARTUP_TASK => app.finish_store_startup(),
                                             TIMER_TMP_SETTLE => app.sync_settled_tmp(),
@@ -2236,6 +2246,9 @@ impl App {
             startup_backdrops: None,
             live: Vec::new(),
             live_capture: None,
+            live_streams: Vec::new(),
+            live_frames: None,
+            live_frame_armed: false,
             live_abandoned: None,
             live_card_told: None,
             live_card_waits: "",

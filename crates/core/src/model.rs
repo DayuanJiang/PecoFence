@@ -286,6 +286,37 @@ pub struct Settings {
     /// have no window until it is switched on again.
     #[serde(default)]
     pub tools: ToolSettings,
+    /// 动态壁纸实时渲染: Liquid Glass fences show a live wallpaper's frames instead of a still
+    /// capture every ten seconds.
+    #[serde(default)]
+    pub live_wallpaper: LiveWallpaperSettings,
+}
+
+/// 动态壁纸实时渲染: on by default at 30 fps; off keeps the ten-second still captures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(schemars::JsonSchema))]
+#[serde(default, rename_all = "camelCase")]
+pub struct LiveWallpaperSettings {
+    /// Show every frame of the live wallpaper under Liquid Glass fences.
+    pub realtime: bool,
+    /// Frames per second while `realtime` is on (15, 30 or 60).
+    pub fps: u32,
+}
+
+impl Default for LiveWallpaperSettings {
+    fn default() -> Self {
+        Self {
+            realtime: true,
+            fps: 30,
+        }
+    }
+}
+
+impl LiveWallpaperSettings {
+    /// The frame rate to capture at, kept to what the settings page offers.
+    pub fn fps(&self) -> u32 {
+        self.fps.clamp(15, 60)
+    }
 }
 
 /// 小工具: one switch for note, clock and script fences (on by default), and the other tool
@@ -532,6 +563,7 @@ impl Default for Settings {
             icons: IconSettings::default(),
             desktop_path: None,
             tools: ToolSettings::default(),
+            live_wallpaper: LiveWallpaperSettings::default(),
         }
     }
 }

@@ -468,6 +468,8 @@ pub struct FenceViewState {
     /// `BitmapCache` key of the uploaded crop (per window; dropped whenever the crop changes).
     pub(super) backdrop_key: String,
     pub(super) gpu_glass: RefCell<pecofence_render::gpu_glass::GpuGlass>,
+    /// Live wallpaper frames to sample instead of `backdrops` (Liquid Glass, real-time).
+    pub(super) live_frames: Rc<super::LiveFrames>,
     pub(super) chrome_panel: Panel,
     pub(super) content_panel: Panel,
     /// Device px from the window's top-left corner to the content panel as last laid out
@@ -751,6 +753,27 @@ impl FenceViewState {
     pub(super) fn poster(&self, msg: u32, wparam: usize) -> impl Fn() + Send + 'static {
         let hwnd = self.hwnd.0 as isize;
         move || window::post_message(HWND(hwnd as *mut core::ffi::c_void), msg, wparam, 0)
+    }
+
+    /// The live wallpaper frame under this plate, when real-time rendering has one for its
+    /// monitor: Liquid Glass shows it instead of the still wallpaper.
+    pub(super) fn live_glass(
+        &self,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+    ) -> Option<pecofence_render::LiveGlass> {
+        let (cx, cy) = (x + w / 2, y + h / 2);
+        let (_, texture) = self
+            .live_frames
+            .monitors
+            .iter()
+            .find(|(r, _)| cx >= r.left && cx < r.right && cy >= r.top && cy < r.bottom)?;
+        Some(pecofence_render::LiveGlass {
+            texture: *texture,
+            frost_sigma: pecofence_render::gpu_glass::LIVE_FROST_DIP * self.scale(),
+        })
     }
 
     pub(super) fn scale(&self) -> f32 {

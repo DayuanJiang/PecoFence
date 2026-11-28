@@ -395,7 +395,7 @@ impl MonitorRecipe {
 /// Liquid Glass barely frosts a live wallpaper capture: only enough to soften a still frame
 /// (the wallpaper around the fence keeps moving). The capture is what the fence shows, and a
 /// heavier frost turns a detailed wallpaper into a flat grey haze.
-const LIVE_FROST_DIP: f32 = 3.0;
+const LIVE_FROST_DIP: f32 = pecofence_render::gpu_glass::LIVE_FROST_DIP;
 
 /// One recipe per live monitor of `snapshot`, with the captures of `live` wallpapers.
 pub(super) fn monitor_recipes(

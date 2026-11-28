@@ -186,6 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     wallpaper: &sources,
                     rect: [left, top, w, h],
                     scale,
+                    live: None,
                 }
             } else {
                 Backdrop::Glass(

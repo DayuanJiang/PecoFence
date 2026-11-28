@@ -48,6 +48,7 @@ pub mod theme;
 pub use backdrop::{GpuPixels, Image, MicaTint, MonitorBackdrop, WallpaperPosition};
 pub use bitmaps::BitmapCache;
 pub use custom_theme::CustomTheme;
+pub use gpu_glass::{LiveGlass, LiveTexture};
 pub use panel::{Clip, Panel};
 pub use stack::RenderStack;
 pub use theme::{Theme, ThemeMode};

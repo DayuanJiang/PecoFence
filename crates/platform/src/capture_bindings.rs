@@ -1,5 +1,16 @@
 windows_core::link!("d3d11.dll" "system" fn CreateDirect3D11DeviceFromDXGIDevice(dxgidevice : *mut core::ffi::c_void, graphicsdevice : *mut *mut core::ffi::c_void) -> windows_core::HRESULT);
 windows_core::link!("d3d11.dll" "system" fn D3D11CreateDevice(padapter : *mut core::ffi::c_void, drivertype : D3D_DRIVER_TYPE, software : HMODULE, flags : u32, pfeaturelevels : *const D3D_FEATURE_LEVEL, featurelevels : u32, sdkversion : u32, ppdevice : *mut *mut core::ffi::c_void, pfeaturelevel : *mut D3D_FEATURE_LEVEL, ppimmediatecontext : *mut *mut core::ffi::c_void) -> windows_core::HRESULT);
+pub const D3D11_BIND_CONSTANT_BUFFER: D3D11_BIND_FLAG = 4;
+pub const D3D11_BIND_DECODER: D3D11_BIND_FLAG = 512;
+pub const D3D11_BIND_DEPTH_STENCIL: D3D11_BIND_FLAG = 64;
+pub type D3D11_BIND_FLAG = i32;
+pub const D3D11_BIND_INDEX_BUFFER: D3D11_BIND_FLAG = 2;
+pub const D3D11_BIND_RENDER_TARGET: D3D11_BIND_FLAG = 32;
+pub const D3D11_BIND_SHADER_RESOURCE: D3D11_BIND_FLAG = 8;
+pub const D3D11_BIND_STREAM_OUTPUT: D3D11_BIND_FLAG = 16;
+pub const D3D11_BIND_UNORDERED_ACCESS: D3D11_BIND_FLAG = 128;
+pub const D3D11_BIND_VERTEX_BUFFER: D3D11_BIND_FLAG = 1;
+pub const D3D11_BIND_VIDEO_ENCODER: D3D11_BIND_FLAG = 1024;
 pub type D3D11_BLEND = i32;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -593,6 +604,7 @@ impl Default for D3D11_UNORDERED_ACCESS_VIEW_DESC_0 {
     }
 }
 pub type D3D11_USAGE = i32;
+pub const D3D11_USAGE_DEFAULT: D3D11_USAGE = 0;
 pub const D3D11_USAGE_STAGING: D3D11_USAGE = 3;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

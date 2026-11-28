@@ -38,6 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             24.0,
             1.0,
             0.0,
+            None,
         )
     })?;
     let pixels = target.read_pixels()?;
@@ -63,6 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             24.0,
             0.5,
             0.0,
+            None,
         )
     })?;
     let pixels = target.read_pixels()?;
@@ -95,6 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 24.0,
                 1.0,
                 0.0,
+                None,
             )
         })?;
     }
@@ -126,6 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 24.0,
                 1.0,
                 0.0,
+                None,
             )
         })?;
         let pixels = target.read_pixels()?;
@@ -160,6 +164,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     24.0,
                     1.0,
                     0.0,
+                    None,
                 )
             })?;
             centres.push(target.read_pixels()?[centre]);
@@ -219,6 +224,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     24.0,
                     1.0,
                     0.0,
+                    None,
                 )
             })?;
             assert!((target.read_pixels()?[centre] as i32 - expected).abs() <= 1);
@@ -241,6 +247,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     radius,
                     1.0,
                     0.0,
+                    None,
                 )
             })?;
             target.read_pixels()?;
@@ -268,6 +275,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 24.0,
                 1.0,
                 0.0,
+                None,
             )
         })?;
         assert!((target.read_pixels()?[centre] as i32 - 180).abs() <= 1);
@@ -302,6 +310,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     24.0,
                     1.0,
                     0.0,
+                    None,
                 )
             })?;
             let plain = target.read_pixels()?;
@@ -319,6 +328,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     24.0,
                     1.0,
                     0.0,
+                    None,
                 )?;
                 renderer.draw_control(s, 100, rect, 1.0, 14.0, 1.0)?;
                 Ok(())
@@ -371,6 +381,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 24.0,
                 1.0,
                 0.0,
+                None,
             )
         })?;
         target.read_pixels()?;
@@ -392,6 +403,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     24.0,
                     1.0,
                     0.0,
+                    None,
                 )
             })?;
             submit.push(started.elapsed().as_secs_f64() * 1000.0);
@@ -433,6 +445,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     16.0,
                     1.0,
                     0.0,
+                    None,
                 )
             })?;
             target.read_pixels()?;

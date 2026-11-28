@@ -917,6 +917,7 @@ impl FenceViewState {
                     wallpaper: &wallpaper,
                     rect: [x, y, w, h],
                     scale: self.scale(),
+                    live: self.live_glass(x, y, w, h),
                 }
             }
             (BackdropMode::Acrylic, Some(crop)) => Backdrop::Glass(crop, self.scale()),
@@ -2843,6 +2844,7 @@ impl FenceViewState {
                 wallpaper: &wallpaper,
                 rect: [r.0, r.1, r.2, r.3],
                 scale,
+                live: self.live_glass(r.0, r.1, r.2, r.3),
             })
         } else {
             None

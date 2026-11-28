@@ -59,6 +59,13 @@ pub fn own_file_op_started() {
     OWN_FILE_OPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Live wallpaper frames while real-time rendering is on: per monitor, the frame's texture on
+/// the renderer's device and the window rectangle it covers. Shared with every fence window.
+#[derive(Default)]
+pub(crate) struct LiveFrames {
+    pub monitors: Vec<(RECT, pecofence_render::LiveTexture)>,
+}
+
 pub fn own_file_op_ended() {
     use std::sync::atomic::Ordering::Relaxed;
     let _ = OWN_FILE_OPS.try_update(Relaxed, Relaxed, |n| n.checked_sub(1));
