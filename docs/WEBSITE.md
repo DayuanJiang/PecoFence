@@ -17,6 +17,7 @@ The product page at <https://pecofence.jiang.jp> is a static site generated from
 | `site/assets/showcase-wallpaper.jpg` | The hero's backdrop: the original wallpaper from the revision-2 Store scene |
 | `site/i18n/<language>.json` | Copy for each language; `en.json` is the source and every other file must have the same keys |
 | `site/site.json` | Domain, repository URL and the language list |
+| `site/compare.html`, `site/compare/<language>.json`, `site/assets/compare.css` | The comparison page at `<language>/compare/`: PecoFence beside Stardock Fences in a table (price, source code, what only PecoFence has, the shared features, Windows versions), what else PecoFence does, and questions with direct answers. A row says Fences lacks something only after a check against Stardock's product page, release notes and changelog. It is built only for the languages that have a JSON file. In those languages the header (wider than 840 px), the footer and a band above the home page's download section link to it. The page names no product other than PecoFence and Stardock Fences, and links only to PecoFence's own pages; when a Fences fact changes, update `checked` and the rows together |
 | `site/manual/` | The animated user manual (see [The user manual](#the-user-manual)) |
 
 The build writes `dist/site/`: `index.html` for English, one `<language>/index.html`

@@ -1,0 +1,115 @@
+{
+  "nav": "Comparar con Fences",
+  "title": "Una alternativa gratuita a Stardock Fences: PecoFence frente a Fences | PecoFence",
+  "description": "PecoFence es una alternativa gratuita y de código abierto a Stardock Fences para Windows 11 y 10. Grupos, pestañas, reglas de orden y grupos de carpeta, con entre 2 y 5 MB de memoria en reposo.",
+  "h1": "Una alternativa gratuita a Stardock Fences: PecoFence",
+  "lead": "¿Quieres ordenar el escritorio como con Stardock Fences, pero sin pagar? Usa PecoFence. Es gratuito y de código abierto, funciona en Windows 11 y 10 y reúne los iconos del escritorio en grupos, con pestañas, reglas de orden y grupos de carpeta. En reposo ocupa entre 2 y 5 MB de memoria.",
+  "checked": "Datos comprobados el 28 de noviembre de 2026.",
+  "table_title": "PecoFence y Stardock Fences, lado a lado",
+  "columns": [
+    "",
+    "PecoFence",
+    "Stardock Fences 7"
+  ],
+  "rows": [
+    [
+      "Precio",
+      "Gratis",
+      "Desde 10 $"
+    ],
+    [
+      "Código fuente",
+      "Abierto",
+      "Cerrado"
+    ],
+    [
+      "Un atajo busca en los archivos de todos los grupos",
+      "Sí",
+      "No"
+    ],
+    [
+      "Los cuadros Abrir y Guardar van a la carpeta abierta en el Explorador de archivos",
+      "Sí",
+      "No"
+    ],
+    [
+      "Grupos propios para cada escritorio virtual",
+      "Sí",
+      "No"
+    ],
+    [
+      "Grupos de herramientas: notas, reloj, scripts",
+      "Sí",
+      "No"
+    ],
+    [
+      "Iconos reunidos en grupos",
+      "Sí",
+      "Sí"
+    ],
+    [
+      "Pestañas",
+      "Sí",
+      "Sí"
+    ],
+    [
+      "Reglas que ordenan los archivos nuevos",
+      "Sí",
+      "Sí"
+    ],
+    [
+      "Grupos de carpeta",
+      "Sí",
+      "Sí"
+    ],
+    [
+      "Atajo que muestra los grupos sobre las ventanas abiertas",
+      "Sí",
+      "Sí"
+    ],
+    [
+      "Versiones de Windows",
+      "Windows 10 y 11",
+      "Windows 10 y 11"
+    ]
+  ],
+  "extras_title": "Qué más hace PecoFence",
+  "extras": [
+    "Grupos que se llenan solos: guarda una búsqueda como grupo, por ejemplo las descargas de los últimos 7 días o todos los archivos de más de 1 GB. Los archivos nuevos que coinciden aparecen solos.",
+    "Deja que tu agente de IA lo configure: con la herramienta de línea de comandos incluida, Claude Code, Codex y Cursor pueden leer y cambiar la distribución, la apariencia y las reglas de orden.",
+    "Las herramientas tienen una tienda de plugins."
+  ],
+  "faq_title": "Preguntas frecuentes",
+  "faq": [
+    [
+      "¿Hay una alternativa gratuita a Stardock Fences?",
+      "Sí, PecoFence. Es gratuito y de código abierto con licencia Apache 2.0 y, como Fences, tiene grupos, pestañas, reglas de orden y grupos de carpeta."
+    ],
+    [
+      "¿PecoFence funciona en Windows 10?",
+      "Sí. Funciona en Windows 10 1809 o posterior y en Windows 11 22H2 o posterior. La edición de Microsoft Store necesita Windows 10 2004 o posterior."
+    ],
+    [
+      "¿PecoFence mueve mis archivos?",
+      "No. Las reglas automáticas solo cambian en qué grupo se muestra un archivo, y el archivo sigue donde está en el disco. Los movimientos que inicias tú funcionan igual que en el Explorador de archivos."
+    ],
+    [
+      "¿Cuánta memoria usa PecoFence?",
+      "Entre 2 y 5 MB en reposo según el Administrador de tareas. Es una aplicación nativa escrita en Rust, y la ventana de Configuración carga WebView2 solo cuando la abres."
+    ],
+    [
+      "¿Cómo instalo PecoFence?",
+      "Instálalo desde Microsoft Store o ejecuta winget install DayuanJiang.PecoFence. En la página de versiones de GitHub hay un ZIP portátil y un instalador."
+    ],
+    [
+      "¿Qué pasa con mi escritorio al salir de PecoFence?",
+      "Los iconos del escritorio vuelven a aparecer al salir, y el escritorio de Windows funciona como siempre."
+    ]
+  ],
+  "get": "Descarga PecoFence",
+  "manual": "Leer el manual",
+  "source": "El precio y las funciones de Fences proceden del sitio web de Stardock, del anuncio de Fences 7 del 18 de noviembre de 2026 y del registro de cambios publicado.",
+  "band_title": "¿Vienes de Stardock Fences?",
+  "band_text": "Grupos, pestañas, reglas de orden y grupos de carpeta: PecoFence los tiene todos, y es gratuito y de código abierto.",
+  "band_button": "Comparar PecoFence con Fences"
+}

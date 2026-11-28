@@ -1,0 +1,115 @@
+{
+  "nav": "Comparer avec Fences",
+  "title": "Une alternative gratuite à Stardock Fences : PecoFence comparé à Fences | PecoFence",
+  "description": "PecoFence est une alternative gratuite et open source à Stardock Fences pour Windows 11 et 10. Groupes, onglets, règles de tri et groupes de dossier, pour environ 2 à 5 Mo de mémoire au repos.",
+  "h1": "Une alternative gratuite à Stardock Fences : PecoFence",
+  "lead": "Vous voulez organiser votre Bureau comme avec Stardock Fences, sans payer ? Utilisez PecoFence. Il est gratuit et open source, fonctionne sous Windows 11 et 10 et range les icônes du Bureau dans des groupes, avec des onglets, des règles de tri et des groupes de dossier. Au repos, il occupe environ 2 à 5 Mo de mémoire.",
+  "checked": "Informations vérifiées le 28 novembre 2026.",
+  "table_title": "PecoFence et Stardock Fences côte à côte",
+  "columns": [
+    "",
+    "PecoFence",
+    "Stardock Fences 7"
+  ],
+  "rows": [
+    [
+      "Prix",
+      "Gratuit",
+      "À partir de 10 $"
+    ],
+    [
+      "Code source",
+      "Open source",
+      "Fermé"
+    ],
+    [
+      "Un raccourci cherche parmi les fichiers de tous les groupes",
+      "Oui",
+      "Non"
+    ],
+    [
+      "Les boîtes Ouvrir et Enregistrer vont au dossier ouvert dans l’Explorateur",
+      "Oui",
+      "Non"
+    ],
+    [
+      "Des groupes pour chaque bureau virtuel",
+      "Oui",
+      "Non"
+    ],
+    [
+      "Groupes d’outils : notes, horloge, scripts",
+      "Oui",
+      "Non"
+    ],
+    [
+      "Icônes rangées dans des groupes",
+      "Oui",
+      "Oui"
+    ],
+    [
+      "Onglets",
+      "Oui",
+      "Oui"
+    ],
+    [
+      "Règles qui trient les nouveaux fichiers",
+      "Oui",
+      "Oui"
+    ],
+    [
+      "Groupes de dossier",
+      "Oui",
+      "Oui"
+    ],
+    [
+      "Raccourci qui affiche les groupes au-dessus des fenêtres",
+      "Oui",
+      "Oui"
+    ],
+    [
+      "Versions de Windows",
+      "Windows 10 et 11",
+      "Windows 10 et 11"
+    ]
+  ],
+  "extras_title": "Ce que PecoFence fait en plus",
+  "extras": [
+    "Des groupes qui se remplissent tout seuls : enregistrez une recherche comme groupe, par exemple les téléchargements des 7 derniers jours ou tous les fichiers de plus de 1 Go. Les nouveaux fichiers correspondants apparaissent d’eux-mêmes.",
+    "Laissez votre agent IA tout configurer : l’outil en ligne de commande fourni permet à Claude Code, Codex et Cursor de lire et de modifier la disposition, l’apparence et les règles de tri.",
+    "Les outils ont une boutique de plugins."
+  ],
+  "faq_title": "Questions fréquentes",
+  "faq": [
+    [
+      "Existe-t-il une alternative gratuite à Stardock Fences ?",
+      "Oui, PecoFence. Il est gratuit et open source sous licence Apache 2.0 et propose, comme Fences, des groupes, des onglets, des règles de tri et des groupes de dossier."
+    ],
+    [
+      "PecoFence fonctionne-t-il sous Windows 10 ?",
+      "Oui. Il fonctionne sous Windows 10 1809 ou version ultérieure et sous Windows 11 22H2 ou version ultérieure. L’édition du Microsoft Store demande Windows 10 2004 ou version ultérieure."
+    ],
+    [
+      "PecoFence déplace-t-il mes fichiers ?",
+      "Non. Les règles automatiques changent seulement le groupe qui affiche un fichier, et le fichier reste où il est sur le disque. Vos propres déplacements se comportent comme dans l’Explorateur."
+    ],
+    [
+      "Combien de mémoire PecoFence utilise-t-il ?",
+      "Environ 2 à 5 Mo au repos, d’après le Gestionnaire des tâches. C’est une application native en Rust, et la fenêtre Paramètres ne charge WebView2 que lorsque vous l’ouvrez."
+    ],
+    [
+      "Comment installer PecoFence ?",
+      "Installez-le depuis le Microsoft Store ou exécutez winget install DayuanJiang.PecoFence. Un ZIP portable et un programme d’installation se trouvent sur la page des versions de GitHub."
+    ],
+    [
+      "Que devient mon Bureau quand je quitte PecoFence ?",
+      "Les icônes du Bureau réapparaissent quand vous quittez, et le Bureau de Windows fonctionne comme d’habitude."
+    ]
+  ],
+  "get": "Télécharger PecoFence",
+  "manual": "Lire le manuel",
+  "source": "Le prix et les fonctions de Fences proviennent du site de Stardock, de l’annonce de Fences 7 du 18 novembre 2026 et du journal des modifications publié.",
+  "band_title": "Vous venez de Stardock Fences ?",
+  "band_text": "Groupes, onglets, règles de tri et groupes de dossier : PecoFence les a tous, et il est gratuit et open source.",
+  "band_button": "Comparer PecoFence et Fences"
+}

@@ -662,6 +662,36 @@ h2 {
 
 /* Download and footer */
 
+/* The band that leads to the comparison page (languages that have one). The download section
+   below brings its own space above. */
+.compare-band-section {
+    padding-bottom: 0
+}
+
+.compare-band {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 32px 36px;
+    border: 1px solid var(--edge);
+    border-radius: 16px;
+    background: white
+}
+
+.compare-band h2 {
+    margin: 0 0 8px;
+    font-size: 26px;
+    letter-spacing: -.02em
+}
+
+.compare-band p {
+    max-width: 720px;
+    margin: 0;
+    color: var(--ink-soft)
+}
+
 .download-banner {
     position: relative;
     overflow: hidden;

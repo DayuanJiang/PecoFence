@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{c_title}}</title>
+<meta name="description" content="{{c_description}}">
+<link rel="canonical" href="{{canonical}}">
+{{alternates}}
+<meta property="og:type" content="article">
+<meta property="og:title" content="{{c_title}}">
+<meta property="og:description" content="{{c_description}}">
+<meta property="og:url" content="{{canonical}}">
+<meta property="og:image" content="{{hero_image}}">
+<meta name="theme-color" content="#f6f7fb">
+<link rel="icon" href="{{root}}assets/mark.svg?v={{v}}" type="image/svg+xml">
+<link rel="stylesheet" href="{{root}}assets/base.css?v={{v}}">
+<link rel="stylesheet" href="{{root}}assets/compare.css?v={{v}}">
+<script src="{{root}}assets/site.js?v={{v}}" defer></script>
+</head>
+<body>
+{{header}}
+
+<main id="main" class="container compare">
+  <h1>{{c_h1}}</h1>
+  <p class="compare-lead">{{c_lead}}</p>
+  <p class="compare-checked">{{c_checked}}</p>
+
+  <h2>{{c_table_title}}</h2>
+  <div class="compare-table">
+    <table>
+{{c_table}}
+    </table>
+  </div>
+
+  <h2>{{c_extras_title}}</h2>
+  <ul>
+{{c_extras}}
+  </ul>
+
+  <h2>{{c_faq_title}}</h2>
+{{c_faq}}
+
+  <div class="compare-actions">
+    <a class="button primary" href="{{home}}#download">{{c_get}}<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+    <a class="button" href="{{manual}}">{{c_manual}}</a>
+  </div>
+
+  <p class="compare-checked">{{c_source}}</p>
+</main>
+
+{{footer}}
+</body>
+</html>

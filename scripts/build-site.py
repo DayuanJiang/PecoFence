@@ -173,6 +173,7 @@ def main():
     asset_version = hashlib.sha256(
         (SITE / "assets/base.css").read_bytes() + (SITE / "assets/site.css").read_bytes()
         + (SITE / "assets/site.js").read_bytes() + (SITE / "assets/mark.svg").read_bytes()
+        + (SITE / "assets/compare.css").read_bytes()
     ).hexdigest()[:10]
     languages = config["languages"]
     english = json.loads((SITE / "i18n/en.json").read_text(encoding="utf-8"))
@@ -197,9 +198,22 @@ def main():
         f'<link rel="alternate" hreflang="{lang["code"]}" href="{origin}/{lang["dir"]}">' for lang in languages
     ) + f'\n<link rel="alternate" hreflang="x-default" href="{origin}/">'
 
+    # The comparison page exists only for the languages that have site/compare/<code>.json.
+    compare_languages = [lang for lang in languages if (SITE / "compare" / f"{lang['code']}.json").exists()]
+    compare_template = (SITE / "compare.html").read_text(encoding="utf-8")
+
     urls = []
     for language in languages:
         code, directory = language["code"], language["dir"]
+        compare = (json.loads((SITE / "compare" / f"{code}.json").read_text(encoding="utf-8"))
+                   if language in compare_languages else None)
+
+        def compare_links(home, current=""):
+            # The header's and the footer's link to the comparison page, empty where the language has none.
+            if not compare:
+                return {"compare_nav": "", "compare_link": ""}
+            link = f'href="{home}compare/"{current}>{html.escape(compare["nav"])}</a>'
+            return {"compare_nav": f'<a class="nav-compare" {link}', "compare_link": f"<li><a {link}</li>"}
         hero = ROOT / "docs/assets" / f"hero-{code}.png"
         if not hero.is_file():
             raise SystemExit(f"Missing localized share image: {hero}")
@@ -262,11 +276,20 @@ def main():
             "feature_tabs": feature_tabs(strings),
             "details": detail_items(strings),
             "tools": detail_items(strings, "tool", TOOLS, TOOL_ICONS),
+            # The home page's band that leads to the comparison page.
+            "compare_band": (
+                '  <section class="section container compare-band-section" aria-labelledby="compare-band-title">\n'
+                '    <div class="compare-band">\n'
+                f'      <div><h2 id="compare-band-title">{html.escape(compare["band_title"])}</h2>'
+                f'<p>{html.escape(compare["band_text"])}</p></div>\n'
+                f'      <a class="button" href="compare/">{html.escape(compare["band_button"])}'
+                '<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>\n'
+                '    </div>\n  </section>\n') if compare else "",
             "year": str(datetime.date.today().year),
             "v": asset_version,
         }
         # Header and footer as on the home page (links relative to it) ...
-        chrome = {"home": "", "manual": "manual/", "manual_current": "",
+        chrome = {"home": "", "manual": "manual/", "manual_current": "", **compare_links(""),
                   "language_options": language_options(lambda lang: f"{root}{lang['dir']}")}
         values["header"] = render(header, {**values, **chrome}, strings)
         values["footer"] = render(footer, {**values, **chrome}, strings)
@@ -279,6 +302,7 @@ def main():
         # The 404 page Cloudflare Pages shows for a missing path under <dir>. It can be
         # served at any depth, so its links start at the site root.
         chrome = {"root": "/", "home": f"/{directory}", "manual": f"/{directory}manual/", "manual_current": "",
+                  **compare_links(f"/{directory}"),
                   "language_options": language_options(lambda lang: f"/{lang['dir']}")}
         parts = {"header": render(header, {**values, **chrome}, strings),
                  "footer": render(footer, {**values, **chrome}, strings)}
@@ -288,6 +312,7 @@ def main():
         # ... and on the manual at <dir>manual/, one level down.
         up = "../" + root
         chrome = {"root": up, "home": "../", "manual": "./", "manual_current": ' aria-current="page"',
+                  **compare_links("../"),
                   "language_options": language_options(lambda lang: f"{up}{lang['dir']}manual/")}
         parts = {
             "head": "\n".join(
@@ -310,6 +335,41 @@ def main():
                 problems.append(f"manual/i18n/{code}.json: {missing} untranslated strings (shown in Chinese)")
         manual_i18n.build(out / directory / "manual", code, data, manual_i18n.fill(parts))
         urls.append(f"{origin}/{directory}manual/")
+
+        # The comparison page at <dir>compare/, also one level down.
+        if compare:
+            escape = html.escape
+            # The language picker lists only the languages that have this page.
+            options = "\n".join(
+                f'        <option value="{lang["code"]}" data-href="{up}{lang["dir"]}compare/"'
+                f'{" selected" if lang is language else ""}>{escape(lang["name"])}</option>'
+                for lang in compare_languages)
+            chrome = {"root": up, "home": "../", "manual": "../manual/", "manual_current": "",
+                      **compare_links("../", ' aria-current="page"'), "language_options": options}
+            page_values = {
+                **values, **chrome,
+                "canonical": f"{origin}/{directory}compare/",
+                "alternates": "\n".join(
+                    [f'<link rel="alternate" hreflang="{lang["code"]}" href="{origin}/{lang["dir"]}compare/">'
+                     for lang in compare_languages]
+                    + [f'<link rel="alternate" hreflang="x-default" href="{origin}/compare/">']),
+                "header": render(header, {**values, **chrome}, strings),
+                "footer": render(footer, {**values, **chrome}, strings),
+                "c_table": "      <thead><tr>" + "".join(f"<th>{escape(name)}</th>" for name in compare["columns"])
+                           + "</tr></thead>\n      <tbody>\n" + "\n".join(
+                    "        <tr>" + "".join(f"<td>{escape(cell)}</td>" for cell in row) + "</tr>"
+                    for row in compare["rows"]) + "\n      </tbody>",
+                "c_extras": "\n".join(f"    <li>{escape(text)}</li>" for text in compare["extras"]),
+                "c_faq": "\n".join(f'  <div class="compare-question"><h3>{escape(q)}</h3><p>{escape(a)}</p></div>'
+                                   for q, a in compare["faq"]),
+            }
+            for key in ("title", "description", "h1", "lead", "checked", "table_title", "extras_title",
+                        "faq_title", "get", "manual", "source"):
+                page_values[f"c_{key}"] = escape(compare[key])
+            target = out / directory / "compare" / "index.html"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(render(compare_template, page_values, strings), encoding="utf-8", newline="\n")
+            urls.append(f"{origin}/{directory}compare/")
 
     # The app's second source for its update check. A deployment replaces the whole site, so
     # --strict fails without it rather than publish a site that lost the file.
