@@ -56,6 +56,8 @@ frame-pacing       2   ec2    release frame-pacing.ps1
 render-memory      5   ec2    release software-render-memory.ps1
 rolled-AB          4   ec2    release rolled-fences.ps1              --var Part=AB
 rolled-CD          3   ec2    release rolled-fences.ps1              --var Part=CD
+# Native resize hit tests stay off during expansion and return when the fence lands.
+roll-resize-hit    1   ec2    release roll-resize-hit.ps1
 issues-hover-G     3   ec2    release issues-hover.ps1               --var Part=G
 issues-hover-H     4   ec2    release issues-hover.ps1               --var Part=H
 issues-hover-MX    3   ec2    release issues-hover.ps1               --var Part=MX

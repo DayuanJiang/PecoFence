@@ -80,7 +80,12 @@ pub(super) fn on_nchittest(
     let Some(v) = guard.as_ref() else {
         return Some(msg::HTCLIENT);
     };
-    Some(hit_code(v, &window::window_rect(hwnd), x, y, v.locked))
+    let hit = hit_code(v, &window::window_rect(hwnd), x, y, v.locked);
+    // The roll animation owns the window bounds until it lands.
+    if v.roll_anim.is_some() && (msg::HTLEFT..=msg::HTBOTTOMRIGHT).contains(&hit) {
+        return Some(msg::HTCLIENT);
+    }
+    Some(hit)
 }
 
 /// What WM_NCHITTEST answers for the screen point (`x`, `y`) of the fence at `rect`. `locked` is
@@ -973,11 +978,11 @@ pub(super) fn on_syscommand(
 ) -> Option<isize> {
     let HandlerCtx { view, .. } = h;
     let cmd = (wparam & 0xFFF0) as u32;
-    let locked = view
+    let (locked, rolling) = view
         .try_borrow()
         .ok()
-        .and_then(|g| g.as_ref().map(|v| v.locked))
-        .unwrap_or(false);
+        .and_then(|g| g.as_ref().map(|v| (v.locked, v.roll_anim.is_some())))
+        .unwrap_or_default();
     if locked && (cmd == msg::SC_MOVE || cmd == msg::SC_SIZE) {
         // Refused: the lock glyph pulses so the fence reads as locked, not as stuck.
         if let Ok(mut guard) = view.try_borrow_mut()
@@ -985,6 +990,10 @@ pub(super) fn on_syscommand(
         {
             v.pulse_lock("move or size command on a locked fence");
         }
+        return Some(0);
+    }
+    // An edge hit just before the animation started may already have queued SC_SIZE.
+    if cmd == msg::SC_SIZE && rolling {
         return Some(0);
     }
     if cmd == msg::SC_MOVE || cmd == msg::SC_SIZE {
