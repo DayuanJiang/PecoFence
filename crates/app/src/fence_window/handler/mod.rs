@@ -54,6 +54,20 @@ pub(in crate::fence_window) fn desktop_surface_class(class: &str) -> bool {
     matches!(class, anchor::FENCE_CLASS | "Progman" | "WorkerW")
 }
 
+/// Single-click hover-select eligibility: returns `(can_select, needs_take_keyboard)` from the
+/// real foreground state so a stale cached `win_active` flag cannot block keyboard claiming or
+/// hover-select behind another program.
+pub(in crate::fence_window) fn hover_select_mode(
+    floating: bool,
+    is_foreground: bool,
+    note_edit_open: bool,
+    desktop_has_keyboard: bool,
+) -> (bool, bool) {
+    let active = !floating && is_foreground;
+    let elsewhere = !active && !note_edit_open && (floating || desktop_has_keyboard);
+    (active || elsewhere, elsewhere)
+}
+
 /// Opens `ids` as Enter does: a lone folder in a fence that navigates folders opens in place,
 /// anything else is launched.
 pub(super) fn open_items(v: &FenceViewState, queue: &CommandQueue, ids: Vec<ItemId>) {

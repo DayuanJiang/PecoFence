@@ -1212,3 +1212,168 @@ fn the_shell_menu_prewarm_takes_a_shortcut_to_a_local_file() {
     let (file, _) = prewarm_pick(&shortcuts, &[], |_| Some("no target path"), there);
     assert_eq!(file, None);
 }
+
+#[test]
+fn item_rename_focus_restore_checks_popups_peek_visibility_and_tab() {
+    use super::fences::{
+        ItemRenameFocusDecision, ItemRenameFocusInput, item_rename_focus_decision,
+    };
+
+    let ready = ItemRenameFocusInput {
+        rename_open: false,
+        note_edit_open: false,
+        filter_open: false,
+        peek_active: false,
+        shows_content: true,
+        rolled: false,
+        covered_faded: false,
+        tab_matches: true,
+        in_sight: true,
+    };
+    assert_eq!(
+        item_rename_focus_decision(ready),
+        ItemRenameFocusDecision::Restore
+    );
+    assert_eq!(
+        item_rename_focus_decision(ItemRenameFocusInput {
+            rename_open: true,
+            ..ready
+        }),
+        ItemRenameFocusDecision::Skip("open name box")
+    );
+    assert_eq!(
+        item_rename_focus_decision(ItemRenameFocusInput {
+            note_edit_open: true,
+            ..ready
+        }),
+        ItemRenameFocusDecision::Skip("open note editor")
+    );
+    assert_eq!(
+        item_rename_focus_decision(ItemRenameFocusInput {
+            filter_open: true,
+            ..ready
+        }),
+        ItemRenameFocusDecision::Skip("open filter box")
+    );
+    assert_eq!(
+        item_rename_focus_decision(ItemRenameFocusInput {
+            peek_active: true,
+            ..ready
+        }),
+        ItemRenameFocusDecision::Skip("peek active")
+    );
+    assert_eq!(
+        item_rename_focus_decision(ItemRenameFocusInput {
+            shows_content: false,
+            ..ready
+        }),
+        ItemRenameFocusDecision::Skip("fence hidden or rolled")
+    );
+    // Covers both persistently rolled fences and rolled fences temporarily hover-expanded
+    // (`shows_content == true` while `is_rolled() == true`).
+    assert_eq!(
+        item_rename_focus_decision(ItemRenameFocusInput {
+            shows_content: true,
+            rolled: true,
+            ..ready
+        }),
+        ItemRenameFocusDecision::Skip("fence hidden or rolled")
+    );
+    // A fence faded out under another fence opened on top keeps its Win32 HWND visible, so
+    // `covered_faded` must block focus restoration even when the probe point is uncovered.
+    assert_eq!(
+        item_rename_focus_decision(ItemRenameFocusInput {
+            covered_faded: true,
+            ..ready
+        }),
+        ItemRenameFocusDecision::Skip("fence faded under another fence")
+    );
+    assert_eq!(
+        item_rename_focus_decision(ItemRenameFocusInput {
+            tab_matches: false,
+            ..ready
+        }),
+        ItemRenameFocusDecision::Skip("another tab is active")
+    );
+    assert_eq!(
+        item_rename_focus_decision(ItemRenameFocusInput {
+            in_sight: false,
+            ..ready
+        }),
+        ItemRenameFocusDecision::Skip("another window covers the fence")
+    );
+}
+
+#[test]
+fn desktop_arranged_item_probe_uses_clipped_cell_midpoint() {
+    use super::fences::visible_cell_probe;
+    use pecofence_platform::RECT;
+
+    let bounds = RECT {
+        left: 0,
+        top: 0,
+        right: 1920,
+        bottom: 1040,
+    };
+    let cell = RECT {
+        left: 20,
+        top: 40,
+        right: 100,
+        bottom: 140,
+    };
+    assert_eq!(visible_cell_probe(cell, bounds), Some((60, 90)));
+
+    // Partially clipped cell probes inside the visible intersection.
+    let clipped = RECT {
+        left: -20,
+        top: 1000,
+        right: 60,
+        bottom: 1100,
+    };
+    assert_eq!(visible_cell_probe(clipped, bounds), Some((30, 1020)));
+
+    // One-pixel intersection at negative coordinates (monitor to the left/above primary)
+    // must stay strictly inside `[left, right)` x `[top, bottom)` instead of rounding toward 0.
+    let neg_bounds = RECT {
+        left: -1920,
+        top: -1080,
+        right: 0,
+        bottom: 0,
+    };
+    let one_px_at_zero = RECT {
+        left: -1,
+        top: -1,
+        right: 40,
+        bottom: 40,
+    };
+    assert_eq!(
+        visible_cell_probe(one_px_at_zero, neg_bounds),
+        Some((-1, -1))
+    );
+    let one_px_deep_neg = RECT {
+        left: -1001,
+        top: -501,
+        right: -1000,
+        bottom: -500,
+    };
+    assert_eq!(
+        visible_cell_probe(one_px_deep_neg, neg_bounds),
+        Some((-1001, -501))
+    );
+
+    // Completely outside or degenerate cells return None.
+    let outside = RECT {
+        left: 2000,
+        top: 0,
+        right: 2080,
+        bottom: 100,
+    };
+    assert_eq!(visible_cell_probe(outside, bounds), None);
+    let empty = RECT {
+        left: 50,
+        top: 50,
+        right: 50,
+        bottom: 100,
+    };
+    assert_eq!(visible_cell_probe(empty, bounds), None);
+}

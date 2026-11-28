@@ -44,6 +44,15 @@ pub(super) fn run_shell_paste(job: &ShellPaste) -> dragdrop::DropEffect {
     })
 }
 
+/// Outcome of an inline item rename (`App::rename_item_file`): either finished synchronously
+/// (carrying the item id to focus, which changes for a renamed portal item) or handed off to
+/// the shell's own prompt (elevation / access-denied fallback), which keeps keyboard focus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ItemRenameOutcome {
+    Finished(ItemId),
+    ShellPrompt,
+}
+
 /// Why [`App::rename_item_to`] declined.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum RenameError {
@@ -519,6 +528,7 @@ impl App {
             &self.ctx.chrome.label_family(),
             label_size,
             crate::layout::row_text_scale(label_size),
+            fence,
             item,
             current,
             select_end,
@@ -553,21 +563,48 @@ impl App {
         }
     }
 
-    /// Renames the file behind an item to `name` (+ the hidden extension Explorer would keep).
-    /// The inline-edit path: problems are toasted, nothing is returned.
-    pub(super) fn rename_item_file(&mut self, item: ItemId, name: &str) {
-        let Some(it) = self.state.item(item) else {
+    /// Reconciles every fence's cached `win_active` flag with the real foreground window once
+    /// a rename popup closes without handing focus back to the fence. While `PecoFence.Rename`
+    /// was open, `on_activate` kept `win_active` true so the selection stayed accented; when
+    /// focus then leaves for another program or the desktop, the fence receives no second
+    /// `WM_ACTIVATE(WA_INACTIVE)` and would otherwise stay stuck active.
+    pub(super) fn reconcile_fence_activation(&self) {
+        if self.fileops_running > 0 {
             return;
+        }
+        let front = desktop::root_ancestor(desktop::foreground_window());
+        let cls = desktop::class_name(front);
+        if cls == "#32768" {
+            return;
+        }
+        let rename_owner = (cls == "PecoFence.Rename")
+            .then(|| {
+                crate::rename::active_fence().and_then(|f| self.window_for(f).map(|w| w.hwnd()))
+            })
+            .flatten();
+        for w in self.fences.values() {
+            let active = front == w.hwnd() || rename_owner == Some(w.hwnd());
+            w.sync_active(active);
+        }
+    }
+
+    /// Renames the file behind an item to `name` (+ the hidden extension Explorer would keep).
+    /// The inline-edit path: problems are toasted; returns the item id to focus afterwards
+    /// (which may have been rekeyed in a folder portal) or `ShellPrompt` when an elevation /
+    /// shell prompt owns the interaction.
+    pub(super) fn rename_item_file(&mut self, item: ItemId, name: &str) -> ItemRenameOutcome {
+        let Some(it) = self.state.item(item) else {
+            return ItemRenameOutcome::Finished(item);
         };
         if it.is_namespace() {
-            return;
+            return ItemRenameOutcome::Finished(item);
         }
         let name = name.trim();
         // `old` is the file name (hidden extension included), not the displayed spelling. An
         // emptied box keeps the name, as in Explorer (else the hidden suffix alone, ".txt" or
         // ".lnk", would become the whole name).
         if name.is_empty() || name == it.display_name {
-            return;
+            return ItemRenameOutcome::Finished(item);
         }
         let file_name = it
             .path()
@@ -578,6 +615,7 @@ impl App {
         let old = it.path().map(PathBuf::from);
         let new_name = format!("{name}{suffix}");
         let portal = self.state.is_portal_item(item);
+        let mut outcome = ItemRenameOutcome::Finished(item);
         let toast = match self.rename_item_to(item, &new_name) {
             Ok(new) => {
                 // In a sorted fence the new name may send the icon out of view: the fence
@@ -587,6 +625,7 @@ impl App {
                 } else {
                     item
                 };
+                outcome = ItemRenameOutcome::Finished(id);
                 for w in self.fences.values() {
                     w.reveal_item(id);
                 }
@@ -614,7 +653,9 @@ impl App {
                     // The watcher reports the prompt's rename; it must not be refused for a
                     // deleted file's record at the new name (as in `rename_item_to`).
                     self.state.forget_orphan_at(&old.with_file_name(&new_name));
-                    self.start_shell_rename(old, new_name, owner);
+                    if self.start_shell_rename(old, new_name, owner) {
+                        outcome = ItemRenameOutcome::ShellPrompt;
+                    }
                     None
                 }
                 None => Some(pecofence_core::i18n::format("重命名失败：{0}", &[e])),
@@ -631,6 +672,7 @@ impl App {
         if let (Some(text), Some(t)) = (toast, &self.tray) {
             t.show_info("PecoFence", &text, true);
         }
+        outcome
     }
 
     /// The toast for a name no file can have (the inline editor's Enter and commit paths).

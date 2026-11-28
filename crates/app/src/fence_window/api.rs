@@ -3130,12 +3130,30 @@ impl FenceWindow {
         })
     }
 
+    /// Screen rectangle of an item's cell (icon and name; its row in the list views).
+    pub fn item_cell_rect(&self, item: ItemId) -> Option<RECT> {
+        self.view
+            .borrow()
+            .as_ref()
+            .and_then(|v| v.item_cell_rect(item))
+    }
+
     /// Screen rectangle of an item's label, for the rename popup.
     pub fn item_label_rect(&self, item: ItemId) -> Option<RECT> {
         self.view
             .borrow()
             .as_ref()
             .and_then(|v| v.item_label_rect(item))
+    }
+
+    /// Reconciles the cached `win_active` flag with the real foreground window (for example
+    /// after a rename popup closes without handing foreground back to this fence).
+    pub fn sync_active(&self, active: bool) {
+        self.with_view(|v| {
+            if v.set_active(active) {
+                let _ = v.redraw_content();
+            }
+        });
     }
 
     pub fn device_lost(&self) -> bool {
@@ -3482,6 +3500,11 @@ impl FenceWindow {
     /// See `FenceViewState::set_covered`.
     pub fn set_covered(&self, covered: bool) {
         self.with_view(|v| v.set_covered(covered));
+    }
+
+    /// Faded out under another fence opened on top (`set_covered`).
+    pub fn covered_faded(&self) -> bool {
+        self.view.borrow().as_ref().is_some_and(|v| v.covered_faded)
     }
 
     /// The Peek has this fence's opacity (`peek_fade_prepare`, `peek_fade_out`).

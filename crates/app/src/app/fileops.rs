@@ -76,11 +76,16 @@ impl App {
     }
 
     /// Renames `path` to `new_name` through the shell on a worker thread (see
-    /// [`FileOpThen::Rename`]).
-    pub(super) fn start_shell_rename(&mut self, path: PathBuf, new_name: String, owner: HWND) {
+    /// [`FileOpThen::Rename`]). Returns whether the worker thread started.
+    pub(super) fn start_shell_rename(
+        &mut self,
+        path: PathBuf,
+        new_name: String,
+        owner: HWND,
+    ) -> bool {
         self.run_fileop(Some(owner), FileOpThen::Rename, move |owner| {
             shell::rename_with_prompt(&path, &new_name, owner)
-        });
+        })
     }
 
     /// The shell's delete of `paths` (Recycle Bin, or permanent with Shift, with Explorer's
@@ -261,6 +266,9 @@ impl App {
                 p.since = Instant::now();
             }
             self.select_pasted();
+            if self.fileops_running == 0 {
+                self.reconcile_fence_activation();
+            }
         }
     }
 

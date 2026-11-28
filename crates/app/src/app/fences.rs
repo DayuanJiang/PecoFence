@@ -1202,6 +1202,75 @@ impl App {
         tracing::debug!(%fence, why, got, "fence takes the keyboard");
     }
 
+    /// Returns the keyboard to `fence`'s window after an item rename popup closed with Enter
+    /// or Esc (#184). Unlike `give_keyboard`, a desktop-arranged 「桌面」 fence has no title bar
+    /// (`SetWindowRgn` covers only its icon cells), so visibility is probed at the renamed
+    /// item's cell instead of the window's top-center. Skips without stealing focus when
+    /// another popup / Peek is active, the fence is hidden / rolled (including temporarily
+    /// hover-expanded rolled fences) / faded under another fence / on another tab, or another
+    /// window covers the fence, reconciling `win_active` so hover-select never stalls.
+    pub(super) fn give_keyboard_after_item_rename(
+        &mut self,
+        fence: FenceId,
+        item: ItemId,
+        why: &'static str,
+    ) {
+        let Some(w) = self.window_for(fence) else {
+            self.reconcile_fence_activation();
+            return;
+        };
+        let rename_open = crate::rename::active_target().is_some();
+        let note_edit_open = crate::note_edit::is_open();
+        let filter_open = crate::filter_box::active_fence().is_some();
+        let peek_active = self.peek.is_some();
+        let shows_content = w.shows_content();
+        let rolled = w.is_rolled();
+        let covered_faded = w.covered_faded();
+        let tab_matches = w.active_fence() == fence;
+        let in_sight = !rename_open
+            && !note_edit_open
+            && !filter_open
+            && !peek_active
+            && shows_content
+            && !rolled
+            && !covered_faded
+            && tab_matches
+            && item_rename_fence_in_sight(w, item);
+        let decision = item_rename_focus_decision(ItemRenameFocusInput {
+            rename_open,
+            note_edit_open,
+            filter_open,
+            peek_active,
+            shows_content,
+            rolled,
+            covered_faded,
+            tab_matches,
+            in_sight,
+        });
+        match decision {
+            ItemRenameFocusDecision::Restore => {
+                let got = w.take_keyboard();
+                tracing::debug!(
+                    %fence,
+                    %item,
+                    why,
+                    got,
+                    "fence takes the keyboard after item rename"
+                );
+            }
+            ItemRenameFocusDecision::Skip(reason) => {
+                tracing::debug!(
+                    %fence,
+                    %item,
+                    why,
+                    reason,
+                    "keyboard stays after item rename"
+                );
+            }
+        }
+        self.reconcile_fence_activation();
+    }
+
     /// The fence window nearest to `gone` (the rect of a window that was just deleted) takes
     /// the keyboard, so the Ctrl+Z the delete notice suggests reaches PecoFence at once
     /// instead of the taskbar or the desktop. 「桌面」 arranged like the desktop spans the
@@ -1752,6 +1821,85 @@ fn fence_in_sight(w: &FenceWindow) -> bool {
     let r = w.rect();
     let dpi = monitors::dpi_for_window(w.hwnd()).max(96) as i32;
     let at = desktop::window_from_point((r.left + r.right) / 2, r.top + 12 * dpi / 96);
+    desktop::root_ancestor(at) == w.hwnd()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct ItemRenameFocusInput {
+    pub(super) rename_open: bool,
+    pub(super) note_edit_open: bool,
+    pub(super) filter_open: bool,
+    pub(super) peek_active: bool,
+    pub(super) shows_content: bool,
+    pub(super) rolled: bool,
+    pub(super) covered_faded: bool,
+    pub(super) tab_matches: bool,
+    pub(super) in_sight: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum ItemRenameFocusDecision {
+    Restore,
+    Skip(&'static str),
+}
+
+pub(super) fn item_rename_focus_decision(input: ItemRenameFocusInput) -> ItemRenameFocusDecision {
+    if input.rename_open {
+        return ItemRenameFocusDecision::Skip("open name box");
+    }
+    if input.note_edit_open {
+        return ItemRenameFocusDecision::Skip("open note editor");
+    }
+    if input.filter_open {
+        return ItemRenameFocusDecision::Skip("open filter box");
+    }
+    if input.peek_active {
+        return ItemRenameFocusDecision::Skip("peek active");
+    }
+    if !input.shows_content || input.rolled {
+        return ItemRenameFocusDecision::Skip("fence hidden or rolled");
+    }
+    if input.covered_faded {
+        return ItemRenameFocusDecision::Skip("fence faded under another fence");
+    }
+    if !input.tab_matches {
+        return ItemRenameFocusDecision::Skip("another tab is active");
+    }
+    if !input.in_sight {
+        return ItemRenameFocusDecision::Skip("another window covers the fence");
+    }
+    ItemRenameFocusDecision::Restore
+}
+
+/// Midpoint of `cell` clipped to `bounds`, or `None` when the intersection is empty.
+pub(super) fn visible_cell_probe(cell: RECT, bounds: RECT) -> Option<(i32, i32)> {
+    let left = cell.left.max(bounds.left);
+    let top = cell.top.max(bounds.top);
+    let right = cell.right.min(bounds.right);
+    let bottom = cell.bottom.min(bounds.bottom);
+    if left >= right || top >= bottom {
+        return None;
+    }
+    let x = left + ((i64::from(right) - i64::from(left)) / 2) as i32;
+    let y = top + ((i64::from(bottom) - i64::from(top)) / 2) as i32;
+    Some((x, y))
+}
+
+/// Visibility probe scoped to item-rename focus restoration: normal fences keep using
+/// `fence_in_sight`, while a desktop-arranged 「桌面」 fence (`SetWindowRgn` union of icon
+/// cells) probes inside the renamed item's visible cell so `keyboard_to_nearest_fence` keeps
+/// its existing `fence_in_sight` semantics untouched.
+fn item_rename_fence_in_sight(w: &FenceWindow, item: ItemId) -> bool {
+    if !w.is_desktop_arranged() {
+        return fence_in_sight(w);
+    }
+    let Some(cell) = w.item_cell_rect(item) else {
+        return false;
+    };
+    let Some((x, y)) = visible_cell_probe(cell, w.rect()) else {
+        return false;
+    };
+    let at = desktop::window_from_point(x, y);
     desktop::root_ancestor(at) == w.hwnd()
 }
 

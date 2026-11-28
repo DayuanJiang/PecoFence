@@ -2211,3 +2211,23 @@ fn a_rolled_fence_shows_the_clock_time_or_the_plugin_caption() {
     // A clock with no time from Windows shows its name, whatever else there is.
     assert_eq!(rolled_caption_of(Some(String::new()), Some("x")), None);
 }
+
+#[test]
+fn hover_select_mode_follows_real_foreground_and_peek() {
+    use super::handler::hover_select_mode;
+
+    // This fence already has the foreground: select without re-claiming foreground.
+    assert_eq!(hover_select_mode(false, true, false, false), (true, false));
+    // Desktop or another fence has the keyboard: select and claim foreground.
+    assert_eq!(hover_select_mode(false, false, false, true), (true, true));
+    // Another program is in front: neither select nor steal foreground.
+    assert_eq!(
+        hover_select_mode(false, false, false, false),
+        (false, false)
+    );
+    // Note editor open keeps the keyboard away from hover-select.
+    assert_eq!(hover_select_mode(false, false, true, true), (false, false));
+    // During a Peek the dimmer holds foreground and every fence selects via focus_session.
+    assert_eq!(hover_select_mode(true, false, false, false), (true, true));
+    assert_eq!(hover_select_mode(true, false, true, false), (false, false));
+}

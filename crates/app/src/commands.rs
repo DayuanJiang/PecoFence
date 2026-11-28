@@ -324,9 +324,19 @@ pub enum Command {
         item: ItemId,
     },
     /// The rename popup committed a new display name for an item (file gets renamed).
+    /// `restore_focus` holds the owning fence when Enter closed the popup while it had the
+    /// keyboard.
     RenameItemCommit {
         item: ItemId,
         name: String,
+        restore_focus: Option<FenceId>,
+    },
+    /// The item rename popup closed without committing (Esc, replacement or scroll).
+    /// `restore_focus` is true only when Esc closed it while it had the keyboard.
+    ItemRenameCancelled {
+        fence: FenceId,
+        item: ItemId,
+        restore_focus: bool,
     },
     /// Enter in the rename popup with a name holding a reserved character: the editor stays
     /// open, the App says why.

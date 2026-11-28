@@ -567,6 +567,7 @@ impl App {
                         self.queue.push(Command::RenameItemCommit {
                             item,
                             name: (*name).to_string(),
+                            restore_focus: None,
                         });
                     }
                 }

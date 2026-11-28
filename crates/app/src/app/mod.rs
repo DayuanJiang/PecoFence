@@ -794,6 +794,7 @@ fn not_recorded(cmd: &Command) -> bool {
             | Command::DesktopIconsAtRest
             | Command::BeginFenceRename(_)
             | Command::EndItemRename { .. }
+            | Command::ItemRenameCancelled { .. }
             | Command::FocusFence(_)
             | Command::RaiseFence(_)
             | Command::RaiseForHover(_)
@@ -3411,9 +3412,42 @@ impl App {
             Command::BeginFenceRename(fence) => self.begin_rename_after_fade(fence),
             Command::EditFenceName(fence) => self.begin_rename(fence),
             Command::RenameItem { fence, item } => self.begin_item_rename(fence, item),
-            Command::RenameItemCommit { item, name } => {
+            Command::RenameItemCommit {
+                item,
+                name,
+                restore_focus,
+            } => {
                 self.end_item_rename_visuals();
-                self.rename_item_file(item, &name);
+                match self.rename_item_file(item, &name) {
+                    items::ItemRenameOutcome::Finished(final_item) => {
+                        if let Some(fence) = restore_focus {
+                            self.give_keyboard_after_item_rename(
+                                fence,
+                                final_item,
+                                "item name box committed",
+                            );
+                        } else {
+                            self.reconcile_fence_activation();
+                        }
+                    }
+                    items::ItemRenameOutcome::ShellPrompt => {}
+                }
+            }
+            Command::ItemRenameCancelled {
+                fence,
+                item,
+                restore_focus,
+            } => {
+                self.end_item_rename_visuals();
+                for w in self.fences.values() {
+                    w.redraw();
+                }
+                self.roll_tip_after_name_box();
+                if restore_focus {
+                    self.give_keyboard_after_item_rename(fence, item, "item name box cancelled");
+                } else {
+                    self.reconcile_fence_activation();
+                }
             }
             // Under the name box, which stays open; a Windows notification if it is gone.
             Command::RenameItemInvalid => {

@@ -29,6 +29,19 @@ pub enum RenameTarget {
     PluginLine(FenceId, usize),
 }
 
+/// Why an active rename session closed. Only a keyboard close (`Enter` or `Esc` in the box)
+/// while the popup still owned the foreground returns keyboard focus to the fence behind it;
+/// clicking another window, opening a replacement box or programmatic closes never steal focus.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CloseReason {
+    Keyboard,
+    External,
+}
+
+fn should_restore_focus(reason: CloseReason, had_keyboard: bool) -> bool {
+    reason == CloseReason::Keyboard && had_keyboard
+}
+
 struct RenameSession {
     /// The tip under the box that says why Enter did not take the name (`show_hint`); made
     /// when first needed. Before `window`: it goes first.
@@ -37,6 +50,7 @@ struct RenameSession {
     dark: bool,
     window: Window,
     edit: edit::EditControl,
+    fence: FenceId,
     target: RenameTarget,
     queue: CommandQueue,
     committed: bool,
@@ -198,6 +212,7 @@ pub fn begin_inline_rename(
             rect,
             dpi,
             title.font_dip,
+            fence,
             RenameTarget::Fence(fence),
             current,
             None,
@@ -239,6 +254,7 @@ pub fn begin_inline_rename(
         rect,
         dpi,
         14.0,
+        fence,
         RenameTarget::Fence(fence),
         current,
         None,
@@ -290,6 +306,7 @@ pub fn begin_line_input(
         rect,
         dpi,
         font_dip,
+        at.0,
         RenameTarget::PluginLine(at.0, at.1),
         current,
         None,
@@ -401,6 +418,7 @@ pub fn begin_item_rename(
     font_face: &str,
     font_dip: f32,
     text_scale: f32,
+    fence: FenceId,
     item: ItemId,
     current: String,
     select_end: Option<usize>,
@@ -413,6 +431,7 @@ pub fn begin_item_rename(
         r,
         dpi,
         font_dip,
+        fence,
         RenameTarget::Item(item),
         current,
         select_end,
@@ -554,6 +573,7 @@ fn begin_rename_at(
     r: RECT,
     dpi: u32,
     font_dip: f32,
+    fence: FenceId,
     target: RenameTarget,
     current: String,
     select_end: Option<usize>,
@@ -565,7 +585,7 @@ fn begin_rename_at(
     // title's.
     let font = item_box.map(|(_, face, weight)| (face, weight));
     let item_box = item_box.map(|(b, _, _)| b);
-    end_active(false);
+    end_active_with(false, CloseReason::External);
     CLASS.with(|c| {
         if c.borrow().is_none() {
             *c.borrow_mut() = WindowClass::register(RENAME_CLASS, ClassOptions::default()).ok();
@@ -585,7 +605,7 @@ fn begin_rename_at(
         move |hwnd: HWND, message: u32, wparam: usize, _lparam: isize| -> Option<isize> {
             match message {
                 msg::WM_COMMAND if msg::hi_u16(wparam) == edit::EN_KILLFOCUS => {
-                    end_active(true);
+                    end_active_with(true, CloseReason::External);
                     Some(0)
                 }
                 // The text changed: an icon's name box follows its lines, and the hint about
@@ -734,6 +754,7 @@ fn begin_rename_at(
             dark,
             window,
             edit: ctl,
+            fence,
             target,
             queue,
             committed: false,
@@ -770,7 +791,7 @@ fn on_key(vk: u32) -> bool {
                     s.submit = vk == msg::VK_RETURN;
                 }
             });
-            end_active(true);
+            end_active_with(true, CloseReason::Keyboard);
         }
         return ends;
     }
@@ -790,12 +811,12 @@ fn on_key(vk: u32) -> bool {
                 false
             });
             if !kept {
-                end_active(true);
+                end_active_with(true, CloseReason::Keyboard);
             }
             true
         }
         k if k == msg::VK_ESCAPE => {
-            end_active(false);
+            end_active_with(false, CloseReason::Keyboard);
             true
         }
         _ => false,
@@ -832,8 +853,20 @@ pub fn active_target() -> Option<RenameTarget> {
     ACTIVE.with(|a| a.borrow().as_ref().map(|s| s.target))
 }
 
-/// Finishes the active session (if any). `commit` pushes the new title.
+/// The fence that owns the open rename popup, if one is open.
+pub fn active_fence() -> Option<FenceId> {
+    ACTIVE
+        .try_with(|a| a.try_borrow().ok()?.as_ref().map(|s| s.fence))
+        .ok()
+        .flatten()
+}
+
+/// Finishes the active session (if any). `commit` pushes the new title or item name.
 pub fn end_active(commit: bool) {
+    end_active_with(commit, CloseReason::External);
+}
+
+fn end_active_with(commit: bool, reason: CloseReason) {
     // `try_with`: when the app quits with a name box open, the box is destroyed while the
     // thread-local is torn down, and its EN_KILLFOCUS comes back here (a panic at exit before).
     let session = ACTIVE.try_with(|a| a.borrow_mut().take()).ok().flatten();
@@ -841,6 +874,7 @@ pub fn end_active(commit: bool) {
         // Closed by its own keys (Enter, Esc), not by a click elsewhere: the keyboard is still
         // here and goes on to the fence below. Read before the popup is destroyed.
         let had_keyboard = desktop::foreground_window() == s.window.hwnd();
+        let restore_focus = should_restore_focus(reason, had_keyboard);
         if commit && !s.committed {
             s.committed = true;
             let text = s.edit.text();
@@ -852,7 +886,11 @@ pub fn end_active(commit: bool) {
                     // The wrapping box takes pasted text as it comes: a line break is no
                     // part of a file name.
                     let name = text.replace(['\r', '\n'], "");
-                    s.queue.push(Command::RenameItemCommit { item, name })
+                    s.queue.push(Command::RenameItemCommit {
+                        item,
+                        name,
+                        restore_focus: restore_focus.then_some(s.fence),
+                    })
                 }
                 RenameTarget::PluginLine(fence, row) => {
                     let text = match s.item_box.is_some_and(|b| b.breaks) {
@@ -868,20 +906,52 @@ pub fn end_active(commit: bool) {
                 }
             }
         } else {
-            if let RenameTarget::PluginLine(fence, row) = s.target {
-                s.queue.push(Command::PluginLineClosed {
-                    fence,
-                    row,
-                    text: None,
-                    submit: false,
-                });
+            match s.target {
+                RenameTarget::Item(item) => {
+                    s.queue.push(Command::ItemRenameCancelled {
+                        fence: s.fence,
+                        item,
+                        restore_focus,
+                    });
+                }
+                RenameTarget::PluginLine(fence, row) => {
+                    s.queue.push(Command::PluginLineClosed {
+                        fence,
+                        row,
+                        text: None,
+                        submit: false,
+                    });
+                    s.queue.push(Command::RedrawAll);
+                }
+                RenameTarget::Fence(_) => {
+                    s.queue.push(Command::RedrawAll);
+                }
             }
-            s.queue.push(Command::RedrawAll);
         }
-        if let RenameTarget::Fence(fence) | RenameTarget::PluginLine(fence, _) = s.target {
-            tracing::debug!(%fence, commit, had_keyboard, "fence name box closed");
-            if had_keyboard {
-                s.queue.push(Command::FocusFence(fence));
+        match s.target {
+            RenameTarget::Fence(fence) | RenameTarget::PluginLine(fence, _) => {
+                tracing::debug!(
+                    %fence,
+                    commit,
+                    ?reason,
+                    had_keyboard,
+                    restore_focus,
+                    "fence name box closed"
+                );
+                if restore_focus {
+                    s.queue.push(Command::FocusFence(fence));
+                }
+            }
+            RenameTarget::Item(item) => {
+                tracing::debug!(
+                    fence = %s.fence,
+                    %item,
+                    commit,
+                    ?reason,
+                    had_keyboard,
+                    restore_focus,
+                    "item name box closed"
+                );
             }
         }
         drop(s.edit);
@@ -892,8 +962,9 @@ pub fn end_active(commit: bool) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ITEM_BOX_MAX_LINES, TitlePlace, box_colors, has_reserved_char, invalid_file_name,
-        item_box_place, rename_hidden_suffix, rename_select_len, title_box_place,
+        CloseReason, ITEM_BOX_MAX_LINES, TitlePlace, box_colors, has_reserved_char,
+        invalid_file_name, item_box_place, rename_hidden_suffix, rename_select_len,
+        should_restore_focus, title_box_place,
     };
     use pecofence_core::TitleAlign;
     use pecofence_platform::RECT;
@@ -1148,5 +1219,13 @@ mod tests {
             rename_select_len("报告.docx", r"C:\d\报告.docx", false),
             Some(2)
         );
+    }
+
+    #[test]
+    fn rename_only_restores_focus_after_keyboard_close_with_foreground() {
+        assert!(should_restore_focus(CloseReason::Keyboard, true));
+        assert!(!should_restore_focus(CloseReason::Keyboard, false));
+        assert!(!should_restore_focus(CloseReason::External, true));
+        assert!(!should_restore_focus(CloseReason::External, false));
     }
 }
