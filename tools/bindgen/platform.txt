@@ -1105,3 +1105,13 @@
     GUID_ContainerFormatPng
     WICBitmapEncoderNoCache
     MB_ICONASTERISK
+    // ---- plugins: pf.focus and pf.caret (MSAA: the caret object and the focused element)
+    AccessibleObjectFromWindow
+    IAccessible
+    OBJID_CARET
+    OBJID_CLIENT
+    CHILDID_SELF
+    VariantClear
+    VT_I4
+    VT_DISPATCH
+    IsHungAppWindow

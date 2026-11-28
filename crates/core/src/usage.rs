@@ -284,6 +284,7 @@ const REPORTED_SETTINGS: &[&str] = &[
 /// `"unset"`.
 const SET_OR_UNSET: &[&str] = &[
     "customTheme",
+    "font",
     "peek.customHotkey",
     "windowsDesktopHotkey",
     "icons.tintRgb",
@@ -445,6 +446,7 @@ mod tests {
         let text = "MARKER C:\\Users\\me";
         let mut settings = Settings {
             custom_theme: Some(text.into()),
+            font: Some(text.into()),
             windows_desktop_hotkey: Some(text.into()),
             desktop_path: Some(text.into()),
             ..Settings::default()

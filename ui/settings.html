@@ -738,6 +738,8 @@
         <select data-bind="labelColor"><option value="auto">自动</option><option value="white">白色</option><option value="black">黑色</option></select></div>
       <div class="card"><div class="l"><span class="ic">&#xE8E4;</span><div><div class="t">标题对齐</div></div></div>
         <select data-bind="titleAlign"><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE8E9;</span><div><div class="t" id="fontTitle">字体</div><div class="s">栅栏标题、标签页和图标名称。默认：用主题文件里的字体，没有就跟随 Windows</div></div></div>
+        <select id="fontFamily" aria-labelledby="fontTitle"></select></div>
       <div class="card"><div class="l"><span class="ic" data-alt="&#xE8CB;">&#xE7B1;</span><div><div class="t">自动隐藏滚动条</div><div class="s">鼠标移到栅栏上或滚动时才显示</div></div></div><div class="toggle" role="switch" tabindex="0" data-bind="rollUp.hideInactiveScrollbar"></div></div>
       <div class="card"><div class="l"><span class="ic">&#xE706;</span><div><div class="t">闲置时的不透明度</div><div class="s">鼠标移开时淡化背景、图标和文字；悬停或操作时恢复正常</div></div></div>
         <select data-bind="idleOpacity"><option value="1">不淡化</option><option value="0.7">70%</option><option value="0.45">45%</option><option value="0.25">25%</option></select></div>
@@ -860,8 +862,8 @@
         <select id="fenceTitleSize" data-fence="titleSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
       <div class="card" id="fenceTextSize"><div class="l"><span class="ic">&#xE70B;</span><div><div class="t">文字大小</div><div class="s">栅栏里文字的大小</div></div></div>
         <select id="fenceTextSizeSel" data-fence="textSize"><option value="small">小</option><option value="normal">标准</option><option value="large">大</option><option value="extraLarge">特大</option></select></div>
-      <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">显示标题栏</div><div class="s">鼠标悬停时显示：平时隐藏标题栏，鼠标移到栅栏上才出现</div></div></div>
-        <select id="fenceTitleOnHover" data-fence="titleOnHover"><option value="default">跟随常规设置</option><option value="always">始终显示</option><option value="hover">鼠标悬停时显示</option></select></div>
+      <div class="card"><div class="l"><span class="ic">&#xE737;</span><div><div class="t">显示标题栏</div><div class="s">鼠标悬停时显示：平时隐藏标题栏，鼠标移到栅栏上才出现。不显示：一直不出现，按住标题栏原来的位置仍可拖动栅栏；标签页排在顶部时，鼠标移上去仍会出现</div></div></div>
+        <select id="fenceTitleOnHover" data-fence="titleOnHover"><option value="default">跟随常规设置</option><option value="always">始终显示</option><option value="hover">鼠标悬停时显示</option><option value="never">不显示</option></select></div>
       <div class="card" id="fenceLooksAll"><div class="l"><span class="ic">&#xE8C8;</span><div><div class="t">所有栅栏用同样的外观</div><div class="s">把上面的不透明度、色调、标题颜色、标题字号和标题栏设置用到其他栅栏</div></div></div><button id="fenceLooksAllBtn">应用到所有栅栏</button></div>
       <div id="fenceLayoutGroup">
       <h3>布局</h3>
@@ -1321,6 +1323,29 @@
     const error = document.getElementById('customThemeError'), message = chosen && state.customThemeError;
     error.hidden = !message;
     error.textContent = message ? tf("主题文件有误，正在使用内置风格：{0}", message) : '';
+  }
+
+  // 字体 (feedback #208): 默认, then the installed families the host lists, each in its own face;
+  // a chosen family that is gone stays listed. Rebuilt only when the list changed.
+  function bindFont() {
+    const select = document.getElementById('fontFamily'), chosen = state.settings.font || '';
+    const names = [...(state.fontFamilies || [])];
+    if (chosen && !names.includes(chosen)) names.push(chosen);
+    const wanted = ['', ...names];
+    if ([...select.options].map(o => o.value).join('\n') !== wanted.join('\n')) {
+      select.replaceChildren(new Option(t("默认"), ''), ...names.map(name => {
+        const option = new Option(name, name);
+        option.style.fontFamily = `"${name}"`;
+        return option;
+      }));
+    }
+    // The list is kept while the fonts stay the same; its first row follows the language.
+    select.options[0].text = t("默认");
+    select.value = chosen;
+    select.onchange = () => {
+      state.settings.font = select.value || null;
+      commit('font');
+    };
   }
 
   // The desktop uses cached native optics. The Liquid Glass tile refracts its backdrop through a
@@ -1854,14 +1879,19 @@
     const clip = { write: t("写入剪贴板"), read: t("读取剪贴板"), readwrite: t("读取和写入剪贴板") }[p.clipboard];
     const d = [p.network.length && [tf("联网：{0}", '\u0001'), p.network], p.links.length && [tf("在浏览器里打开这些网站：{0}", '\u0001'), p.links],
       clip, p.background && t("栅栏隐藏时继续运行"), (p.folders === 'read' || p.folders === true) && t("读取你选的文件夹，只读不写"),
-      p.folders === 'readwrite' && t("读写你选的文件夹（装好后由你来选）"), p.notify && t("显示提示，发出提示音"),
+      p.folders === 'readwrite' && t("读写你选的文件夹（装好后由你来选）"),
+      p.folders === 'any' && t("读写你选的文件夹，任何类型的文件都能写（装好后由你来选）"), p.notify && t("显示提示，发出提示音"),
       p.system.length && [tf("启动这些程序：{0}", '\u0001'), p.system], p.layer === 'web' && t("用网页显示内容，占用内存较多"),
       p.launch && t("打开你放进这个栅栏的文件、文件夹和程序"), p.drop.length && t("你拖到它上面的文件和文字，它能读取"),
       p.commands.length && [tf("有这些命令：{0}。可以在插件详情里给它们设快捷键", '\u0001'), p.commands],
       p.media === 'read' && t("看到正在播放的歌曲或视频：名字、歌手、专辑和封面"), p.media === 'control' && t("看到正在播放的歌曲或视频：名字、歌手、专辑和封面，并能暂停和切歌"),
       p.apps && p.apps.length && [tf("知道这些程序是否在运行、是否在最前面：{0}", '\u0001'), p.apps],
       ...(p.local?.loopback || []).map(l => [tf("连接这台电脑上的 {0}（端口 {1}）", '\u0001', l.port), [l.app]]),
-      ...(p.local?.lan || []).map(l => tf("连接你在设置里填写的局域网设备（端口 {0}）", l.port))].filter(Boolean);
+      ...(p.local?.lan || []).map(l => tf("连接你在设置里填写的局域网设备（端口 {0}）", l.port)),
+      p.screen && t("能看到你的屏幕：每次开始时，由你选择共享哪个屏幕或窗口"), p.pointer && t("知道鼠标在屏幕上的位置"),
+      p.focus && t("知道键盘焦点和输入光标在哪里"), p.camera && t("能使用摄像头"), p.microphone && t("能使用麦克风"),
+      p.location && t("能知道这台电脑的位置"), p.webrtc && t("能通过公网和其他电脑直接连接"),
+      ...(p.commandKeys || []).map(([key, title]) => [tf("自带快捷键 {0}：{1}", '\u0001', title), [key]])].filter(Boolean);
     return d.length ? d : [t("只显示内容，不联网，也不读剪贴板")];
   }
   // `el` with `text`, its \u0001 replaced by the names, each kept whole.
@@ -3937,7 +3967,7 @@
       document.getElementById('rateStore').hidden = !m.storeEdition;
       renderWorkspaceSummary(m.fences.length, m.itemCount);
       document.getElementById('cfgPath').textContent = m.configPath;
-      bindAll(); bindThemeStyle(); bindCustomTheme(); bindDesktopIcons(); bindRollExpand(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); renderTools(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderStartupNote(); renderWindowsDesktopHotkey();
+      bindAll(); bindThemeStyle(); bindCustomTheme(); bindFont(); bindDesktopIcons(); bindRollExpand(); bindIconTint(); renderDependents(); renderFences(); renderRules(); renderLayout(); renderTools(); updateKind(); renderAppearance(); renderDesktopIconsStatus(); renderStartupNote(); renderWindowsDesktopHotkey();
       update = m.update; renderUpdate();
       drawnSoon();
     } else if (m.type === 'workspaceSummary') {

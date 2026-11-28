@@ -54,7 +54,8 @@ pub(super) enum RenameError {
     /// Another entry of that name is already in the folder.
     Exists,
     /// Access denied (message): the folder needs administrator rights (the Public Desktop),
-    /// or a file inside the folder being renamed is open.
+    /// a file inside the folder being renamed is open, or another program has the file open
+    /// (feedback #207). The shell's rename takes it over with Explorer's own dialogs.
     Denied(String),
     /// The filesystem refused (message).
     Io(String),
@@ -62,6 +63,12 @@ pub(super) enum RenameError {
 
 fn rename_error(e: std::io::Error) -> RenameError {
     tracing::warn!(error = %e, "rename failed");
+    // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION: another program has the file open. A notice
+    // said "(os error 32)"; Explorer names the program and offers to try again.
+    if matches!(e.raw_os_error(), Some(32 | 33)) {
+        tracing::info!("rename: the file is in use; the shell's rename shows Explorer's dialog");
+        return RenameError::Denied(e.to_string());
+    }
     match e.kind() {
         std::io::ErrorKind::PermissionDenied => RenameError::Denied(e.to_string()),
         std::io::ErrorKind::AlreadyExists => RenameError::Exists,
@@ -264,6 +271,118 @@ impl App {
                 self.begin_item_rename(fence, id);
             }
         }
+    }
+
+    /// Feedback #207: what the desktop's menu (新建, 粘贴) makes after a right-click on the empty
+    /// desktop of a monitor that 「桌面」 does not stand on stays on that monitor, as on a
+    /// Windows desktop: it goes into the plain fence nearest the click there, after its other
+    /// icons. Only files no rule took (the rules come first), within [`super::fences::MENU_PLACE_FOR`]
+    /// of the click; with no fence there that can take them they stay in 「桌面」. One new empty
+    /// file or folder (what 新建 makes) gets its name box, as Windows starts renaming it.
+    pub(super) fn route_to_menu_monitor(&mut self, added: &[PathBuf]) {
+        let Some((at, pt)) = self.desktop_menu_at else {
+            return;
+        };
+        let Some(inbox) = self.state.inbox_id() else {
+            return;
+        };
+        let new: Vec<ItemId> = added
+            .iter()
+            .filter_map(|p| self.state.item_id_for_path(p))
+            .filter(|id| {
+                self.state.fence(inbox).is_some_and(|f| {
+                    f.items.iter().any(|r| {
+                        r.item_id == *id && r.assigned_by == pecofence_core::AssignedBy::Migration
+                    })
+                })
+            })
+            .collect();
+        let Some(wa) = self.work_area_at(pt.x, pt.y) else {
+            return;
+        };
+        let on_wa = |r: RECT| {
+            let (x, y) = ((r.left + r.right) / 2, (r.top + r.bottom) / 2);
+            x >= wa.left && x < wa.right && y >= wa.top && y < wa.bottom
+        };
+        // Where 「桌面」 stands: its window, or the place it is saved at while it has none (hidden
+        // while empty), so the files of a one-monitor desktop still go to it.
+        let inbox_host = self.state.host_of(inbox);
+        let inbox_rect = match self.fences.get(&inbox_host) {
+            Some(w) => Some(w.rect()),
+            None => self.state.fence(inbox_host).map(|f| {
+                let px = self.state.fence_px_rect(f);
+                RECT {
+                    left: px.left,
+                    top: px.top,
+                    right: px.right,
+                    bottom: px.bottom,
+                }
+            }),
+        };
+        if new.is_empty()
+            || inbox_rect.is_some_and(on_wa)
+            || at.elapsed() >= super::fences::MENU_PLACE_FOR
+        {
+            return;
+        }
+        // Plain fences that show their items on that monitor now: not a folder, smart or tool
+        // fence, not one with a folder opened inside, not 「桌面」; not locked (a lock is its
+        // window's, the host's), hidden or on another virtual desktop. A tab host takes them
+        // into the tab on screen.
+        let gap = |r: RECT| {
+            let dx = (r.left - pt.x).max(pt.x - r.right).max(0) as f64;
+            let dy = (r.top - pt.y).max(pt.y - r.bottom).max(0) as f64;
+            dx.hypot(dy)
+        };
+        let pick = self
+            .fences
+            .iter()
+            .filter(|(host, w)| {
+                self.on_current_desktop(**host)
+                    && pecofence_platform::desktop::is_visible(w.hwnd())
+                    && on_wa(w.rect())
+                    && self.state.fence(**host).is_some_and(|f| !f.locked)
+            })
+            .map(|(host, w)| (*host, self.state.active_tab_of(*host), w.rect()))
+            .filter(|(_, id, _)| {
+                self.state.portal_path(*id).is_none()
+                    && self
+                        .state
+                        .fence(*id)
+                        .is_some_and(|f| f.kind == FenceKind::Virtual && f.holds_items())
+            })
+            .map(|(host, id, r)| (gap(r), host, id))
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+        // The click is used up by these icons, as 「桌面」's own (#238).
+        self.desktop_menu_at = None;
+        let Some((distance, host, fence)) = pick else {
+            tracing::info!(click = ?pt, monitor = ?wa, items = new.len(), "desktop menu on a monitor without 「桌面」: no fence there takes new items, 「桌面」 keeps them");
+            return;
+        };
+        let rolled = self.fences.get(&host).is_some_and(|w| w.is_rolled());
+        tracing::info!(click = ?pt, monitor = ?wa, %fence, distance = distance.round(), rolled, items = new.len(), "desktop menu on a monitor without 「桌面」: new items go to the fence nearest the click");
+        // A rolled fence opens, as a click on it would, so the new icon and its name box show.
+        if rolled {
+            self.set_roll(host, false);
+        }
+        let moved = self.move_items_placed(&new, fence, None);
+        // What 新建 makes is empty; an empty file pasted with the menu gets the box too (accepted).
+        let fresh = |id: &ItemId| {
+            self.state
+                .item(*id)
+                .and_then(|it| it.path().map(PathBuf::from))
+                .is_some_and(|p| {
+                    std::fs::read_dir(&p).map_or_else(
+                        |_| std::fs::metadata(&p).is_ok_and(|m| m.len() == 0),
+                        |mut d| d.next().is_none(),
+                    )
+                })
+        };
+        if moved > 0 && new.len() == 1 && fresh(&new[0]) {
+            self.refresh_fence(fence);
+            self.begin_item_rename(fence, new[0]);
+        }
+        self.schedule_save();
     }
 
     /// Moves portal items out to the real desktop and routes them into `to` once they appear.
@@ -480,8 +599,8 @@ impl App {
             }
             Err(RenameError::Unsupported) => None,
             Err(RenameError::Denied(e)) => match old {
-                // Explorer asks for administrator permission here; the shell's own rename
-                // does the same.
+                // Explorer asks for administrator permission here, or says which program has
+                // the file open with 重试; the shell's own rename does the same.
                 Some(old) => {
                     let owner = self
                         .state

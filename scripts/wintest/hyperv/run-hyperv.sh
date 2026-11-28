@@ -1,7 +1,8 @@
 #!/bin/bash
 # Runs steps files in a Hyper-V guest of the Windows PC (Windows 11 or 10) and prints the same
 # table as run.sh does for an EC2 box.
-#   run-hyperv.sh --vm NAME [--bin DIR] [--extra DIR] [--out DIR] [--timeout SEC] [--keep-notepad] [--elevated] [--prep FILE] steps.ps1 ...
+#   run-hyperv.sh --vm NAME [--bin DIR] [--extra DIR] [--out DIR] [--timeout SEC] [--keep-notepad] [--elevated] [--prep FILE] [--var NAME=VALUE ...] steps.ps1 ...
+# --var sets $NAME = 'VALUE' for the steps, as run.sh does.
 # The PC is `ssh $WINTEST_HV_SSH` (default win), an administrator with Hyper-V. The guest must be
 # Off with no checkpoint (another session's checkpoint means it is in use): guest-run.ps1 takes a
 # checkpoint, sets 1600x900 (the steps expect it), runs one PFJob job per steps file, and
@@ -16,7 +17,7 @@ HV=$(cd "$(dirname "$0")" && pwd)
 KIT=$(cd "$HV/.." && pwd)
 REPO=$(cd "$KIT/../.." && pwd)
 SSHH=${WINTEST_HV_SSH:-win}
-VM=; BIN=$REPO/target/wintest-bin; EXTRA=; TIMEOUT=1500; NOTEPAD=-ClassicNotepad; ELEV=; PREP=
+VM=; BIN=$REPO/target/wintest-bin; EXTRA=; TIMEOUT=1500; NOTEPAD=-ClassicNotepad; ELEV=; PREP=; VARS=
 # The PID keeps two runs started in the same second (two guests at once) out of each other's folder on the PC.
 TAG=$(date +%m%d-%H%M%S)-$$
 OUT=${CLAUDE_JOB_DIR:-/tmp/pecofence-wintest}/tmp/wintest-hv-$TAG
@@ -30,6 +31,10 @@ while [ $# -gt 0 ]; do
     --keep-notepad) NOTEPAD=; shift ;;
     --elevated) ELEV=-Elevated; shift ;;
     --prep) PREP=$2; shift 2 ;;
+    --var)
+      vn=${2%%=*}; vv=${2#*=}
+      [[ "$2" == *=* && "$vn" =~ ^[A-Za-z_][A-Za-z0-9_]*$ && "$vv" != *\'* ]] || { echo "--var wants NAME=VALUE (no quotes)"; exit 2; }
+      VARS+="\$$vn = '$vv'"$'\n'; shift 2 ;;
     -*) echo "unknown option $1"; exit 2 ;;
     *) break ;;
   esac
@@ -48,13 +53,13 @@ ps() {  # PowerShell on the PC, UTF-8 out
 }
 
 # ---- files: the kit's scripts and the steps as run.sh writes them (UTF-8 with BOM, CRLF, a trap)
-python3 -I - "$STAGE/stage/kit" "$KIT" -- "$@" <<'EOF'
+PF_VARS=$VARS python3 -I - "$STAGE/stage/kit" "$KIT" -- "$@" <<'EOF'
 import os, sys
 dst, kit, rest = sys.argv[1], sys.argv[2], sys.argv[4:]
 def put(src, to, trap=False):
     text = open(src, encoding='utf-8-sig').read()
     if trap:
-        text = 'trap { PfTrap $_; continue }; ' + text
+        text = 'trap { PfTrap $_; continue }; ' + os.environ.get('PF_VARS', '') + text
     open(to, 'w', encoding='utf-8-sig', newline='\r\n').write(text)
 for n in sorted(os.listdir(kit)):
     if n.endswith('.ps1'):

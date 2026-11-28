@@ -155,6 +155,17 @@ the newer file (see the next section).
 found, and its settings and data are not used. The snapshot 「升级为插件之前」, which 0.5.0 saved
 before it moved the first tool fence, holds the notes, clocks and example script fences as they were.
 
+## Going back to 0.5.0
+
+0.5.0 does not know two options of later versions, and its first save drops them:
+
+- A fence whose 显示标题栏 is 不显示 shows its title row as with 跟随常规设置.
+- 字体 is gone: the fences show the theme's or Windows' fonts again.
+- A plugin of interface 3 (one that declares the screen, the pointer, the focus, the camera, the
+  microphone, the location, WebRTC, any files, scripts to start or a shortcut of its own, or is
+  larger than 0.5.0 allows) does not run there: 0.5.0 takes it for a plugin that needs a newer
+  PecoFence. Its settings and data stay, and it runs again once a version that knows it is back.
+
 ## Going back to an earlier version from a later one
 
 Versions after 0.3.1 record at every save which version made it (`savedBy` in

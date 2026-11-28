@@ -44,6 +44,7 @@ const fixture = {
   version: 'test', configPath: 'C:\\PecoFence\\config.json', memoryMb: 28, itemCount: 12,
   themeMode: 'dark', accent: '#60CDFF',
   customThemes: ['Frosted Glass', 'Warm'], customThemeError: null, styleInUse: 'fluent',
+  fontFamilies: ['Arial', 'Malgun Gothic', '微软雅黑'],
   peekHotkey: {
     chosen: { mods: 3, vk: 32, keys: ['Ctrl', 'Alt', '空格'], label: 'Ctrl+Alt+空格' },
     active: { mods: 3, vk: 32, keys: ['Ctrl', 'Alt', '空格'], label: 'Ctrl+Alt+空格' },
@@ -528,6 +529,30 @@ async function runTests() {
     current().settings.tools.allowSystem = false;
     doc = await reset();
   });
+  await test('Plugin warning of interface 3: each new permission, folders any and a command\'s own key', async () => {
+    doc = await reset();
+    const perms = { network: [], links: [], system: [], clipboard: 'none', background: false, folders: 'any', notify: false,
+      launch: false, drop: [], commands: ['显示放大镜'], media: 'none', apps: [], local: { loopback: [], lan: [] },
+      screen: true, pointer: true, focus: true, camera: true, microphone: true, location: true, webrtc: true,
+      commandKeys: [['Ctrl+Shift+M', '显示放大镜']] };
+    current().plugins = { status: 'ready', held: false, open: null, list: [
+      { ...perms, id: 'magnifier', name: '放大镜', description: '放大鼠标附近', author: 'tester', version: '1.0.0', installed: false,
+        layer: 'web', state: 'install', reason: null, page: true, settings: [], fences: [], shown: '1.0.0 web magnifier' },
+    ] };
+    frame.contentWindow.testRefresh();
+    await settle();
+    doc.querySelector('[data-page=tools]').click();
+    doc.querySelector('#pluginList .pl-row button').click();
+    const text = doc.getElementById('plBack').textContent;
+    for (const line of ['读写你选的文件夹，任何类型的文件都能写', '能看到你的屏幕：每次开始时，由你选择共享哪个屏幕或窗口',
+      '知道鼠标在屏幕上的位置', '知道键盘焦点和输入光标在哪里', '能使用摄像头', '能使用麦克风', '能知道这台电脑的位置',
+      '能通过公网和其他电脑直接连接', '自带快捷键 Ctrl+Shift+M：显示放大镜']) {
+      assert(text.includes(line), 'The warning lacks ' + line + ': ' + text);
+    }
+    assert(!text.includes('只读不写') && !text.includes('读写你选的文件夹（装好后由你来选）'), 'Another folders line: ' + text);
+    doc.getElementById('plCancel')?.click();
+    doc = await reset();
+  });
   await test('Plugin list without an index: no answer, or one that did not pass its check', async () => {
     doc = await reset();
     const shows = async (status) => {
@@ -736,6 +761,9 @@ async function runTests() {
     assert(!doc.getElementById('fenceTransparentOnHover').hidden && !doc.querySelector('[data-fence=transparentOnHover]').classList.contains('on'), 'Stay-transparent switch not offered for a fully transparent fence, or on');
     doc.querySelector('[data-fence=transparentOnHover]').click(); await settle();
     assert(messages().at(-1).id === 'fence-b' && messages().at(-1).prop === 'transparentOnHover' && messages().at(-1).value === true, 'Stay transparent not posted');
+    assert([...doc.getElementById('fenceTitleOnHover').options].map(o => o.value).join() === 'default,always,hover,never', 'Title row choices: ' + [...doc.getElementById('fenceTitleOnHover').options].map(o => o.value).join());
+    change(doc, 'fenceTitleOnHover', 'never'); await settle();
+    assert(messages().at(-1).id === 'fence-b' && messages().at(-1).prop === 'titleOnHover' && messages().at(-1).value === 'never', 'No title row (不显示) not posted');
     change(doc, 'fenceSel', 'fence-a');
     assert(doc.querySelector('[data-fence=iconAlign]').value === 'left', 'Left icon alignment not shown');
     assert(doc.querySelector('[data-fence=iconAlign] [value=right]'), 'Right icon alignment missing');
@@ -781,6 +809,26 @@ async function runTests() {
     sel.value = 'light'; sel.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true })); await settle();
     const patch = frame.contentWindow.testMessages.filter(m => m.type === 'patchSettings').at(-1);
     assert(patch && patch.settings.menuColor === 'light', 'Not posted: ' + JSON.stringify(patch && patch.settings.menuColor));
+  });
+  await test('字体 lists 默认 and the installed families, each in its face, and posts the choice (feedback #208)', async () => {
+    doc = await reset();
+    const sel = doc.getElementById('fontFamily');
+    assert([...sel.options].map(o => o.value).join() === ',Arial,Malgun Gothic,微软雅黑', 'Options: ' + [...sel.options].map(o => o.value).join());
+    assert(sel.value === '' && sel.options[0].text === '默认', 'Default not shown: ' + sel.value);
+    assert(sel.options[2].style.fontFamily.includes('Malgun Gothic'), 'A family is not shown in its own face');
+    // The language changes while the page is open: 默认 follows it (the release test of 0.5.1).
+    change(doc, 'language', 'en'); await settle();
+    assert(sel.options[0].text === 'Default', '默认 kept its old language: ' + sel.options[0].text);
+    change(doc, 'language', 'zh-CN'); await settle();
+    assert(sel.options[0].text === '默认', '默认 did not come back: ' + sel.options[0].text);
+    const pick = async value => {
+      sel.value = value; sel.dispatchEvent(new frame.contentWindow.Event('change', { bubbles: true })); await settle();
+      return frame.contentWindow.testMessages.filter(m => m.type === 'patchSettings').at(-1);
+    };
+    let patch = await pick('Malgun Gothic');
+    assert(patch && patch.settings.font === 'Malgun Gothic', 'Not posted: ' + JSON.stringify(patch && patch.settings.font));
+    patch = await pick('');
+    assert(patch && patch.settings.font === null, '默认 did not post null: ' + JSON.stringify(patch && patch.settings.font));
   });
   await test('在哪个虚拟桌面显示 lists the desktops, shows the choice and posts it; none for the inbox or one desktop', async () => {
     doc.querySelector('[data-page=fences]').click();

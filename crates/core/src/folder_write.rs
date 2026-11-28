@@ -8,6 +8,52 @@ pub const DATA_TYPES: [&str; 10] = [
     "txt", "md", "json", "csv", "log", "ics", "png", "jpg", "gif", "webp",
 ];
 
+/// What a file a plugin wrote that is not a data file carries in its `Zone.Identifier` stream
+/// (the Mark of the Web): Windows treats it as downloaded from the internet, SmartScreen and
+/// Office ask before they run or open it, and `pf.run` refuses it.
+pub const MARK_OF_THE_WEB: &str = "[ZoneTransfer]\r\nZoneId=3\r\n";
+
+/// Whether the text of a `Zone.Identifier` stream marks its file as coming from the internet or
+/// a restricted site (zone 3 or 4).
+pub fn marked_from_web(zone_identifier: &str) -> bool {
+    (zone_identifier.lines())
+        .filter_map(|l| l.trim().strip_prefix("ZoneId="))
+        .any(|z| z.trim().parse::<u32>().is_ok_and(|z| z >= 3))
+}
+
+/// The bytes of standard base64 with padding (what `pf.folder.writeBytes` takes); None for
+/// anything else.
+pub fn decode_base64(text: &str) -> Option<Vec<u8>> {
+    let b = text.as_bytes();
+    if !b.len().is_multiple_of(4) {
+        return None;
+    }
+    let value = |c: u8| match c {
+        b'A'..=b'Z' => Some(c - b'A'),
+        b'a'..=b'z' => Some(c - b'a' + 26),
+        b'0'..=b'9' => Some(c - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    };
+    let mut out = Vec::with_capacity(b.len() / 4 * 3);
+    for (i, chunk) in b.chunks(4).enumerate() {
+        let last = i + 1 == b.len() / 4;
+        let pad = chunk.iter().rev().take_while(|c| **c == b'=').count();
+        if pad > 2 || (pad > 0 && !last) {
+            return None;
+        }
+        let mut n = 0u32;
+        for &c in &chunk[..4 - pad] {
+            n = (n << 6) | u32::from(value(c)?);
+        }
+        n <<= 6 * pad as u32;
+        let bytes = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
+        out.extend_from_slice(&bytes[..3 - pad]);
+    }
+    Some(out)
+}
+
 /// Whether file name `name` ends in one of [`DATA_TYPES`] (any letter case).
 pub fn is_data_file(name: &str) -> bool {
     name.rsplit_once('.').is_some_and(|(stem, ext)| {
@@ -178,6 +224,26 @@ mod tests {
             ],
             this_computer: vec!["localhost".into(), "pc-me".into(), "192.168.1.5".into()],
         }
+    }
+
+    #[test]
+    fn base64_reads_padded_text_and_refuses_anything_else() {
+        assert_eq!(decode_base64("").unwrap(), b"");
+        assert_eq!(decode_base64("TWFu").unwrap(), b"Man");
+        assert_eq!(decode_base64("TWE=").unwrap(), b"Ma");
+        assert_eq!(decode_base64("TQ==").unwrap(), b"M");
+        assert_eq!(decode_base64("AP8A/w==").unwrap(), [0, 255, 0, 255]);
+        for bad in ["TWF", "TQ=A", "TQ==TWFu", "T===", "TW-u", "TWFu\n"] {
+            assert!(decode_base64(bad).is_none(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn the_mark_of_the_web_is_zone_3_or_4() {
+        assert!(marked_from_web(MARK_OF_THE_WEB));
+        assert!(marked_from_web("[ZoneTransfer]\nZoneId=4\nReferrerUrl=x"));
+        assert!(!marked_from_web("[ZoneTransfer]\r\nZoneId=1\r\n"));
+        assert!(!marked_from_web(""));
     }
 
     #[test]

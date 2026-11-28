@@ -6,8 +6,9 @@ use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 /// An http or https address read strictly: the host is letters, digits, `.` and `-` (kept in
-/// lowercase, without a dot at the end), with an optional port; no user name (`@`) and no
-/// backslash before the path, no blank in the host and no control character anywhere.
+/// lowercase, without a dot at the end), or an IPv6 address in brackets (kept in its short
+/// lowercase form, `[fd00::1]`, without a zone), with an optional port; no user name (`@`) and
+/// no backslash before the path, no blank in the host and no control character anywhere.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WebAddress {
     pub secure: bool,
@@ -29,15 +30,25 @@ impl WebAddress {
         }
         let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
         let (authority, path) = rest.split_at(end);
+        // An IPv6 address: `[` the address `]`, then perhaps `:` and the port.
+        if let Some(inner) = authority.strip_prefix('[') {
+            let (ip, after) = inner.split_once(']')?;
+            let ip = ip.parse::<std::net::Ipv6Addr>().ok()?;
+            let port = match after {
+                "" => None,
+                _ => Some(read_port(after.strip_prefix(':')?)?),
+            };
+            let host = format!("[{ip}]");
+            let path = absolute(path);
+            return Some(Self {
+                secure,
+                host,
+                port,
+                path,
+            });
+        }
         let (host, port) = match authority.split_once(':') {
-            Some((host, port)) => {
-                let digits =
-                    (1..=5).contains(&port.len()) && port.bytes().all(|b| b.is_ascii_digit());
-                (
-                    host,
-                    Some(port.parse::<u16>().ok().filter(|p| digits && *p > 0)?),
-                )
-            }
+            Some((host, port)) => (host, Some(read_port(port)?)),
             None => (authority, None),
         };
         let host = host.trim_end_matches('.').to_ascii_lowercase();
@@ -47,17 +58,27 @@ impl WebAddress {
         if !plain || host.split('.').any(str::is_empty) {
             return None;
         }
-        let path = if path.starts_with('/') {
-            path.to_string()
-        } else {
-            format!("/{path}")
-        };
         Some(Self {
             secure,
             host,
             port,
-            path,
+            path: absolute(path),
         })
+    }
+}
+
+/// A port of an address: 1 to 5 digits, 1 to 65535.
+fn read_port(port: &str) -> Option<u16> {
+    let digits = (1..=5).contains(&port.len()) && port.bytes().all(|b| b.is_ascii_digit());
+    port.parse::<u16>().ok().filter(|p| digits && *p > 0)
+}
+
+/// The path of an address, starting with `/`.
+fn absolute(path: &str) -> String {
+    if path.starts_with('/') {
+        path.to_string()
+    } else {
+        format!("/{path}")
     }
 }
 
@@ -175,6 +196,11 @@ mod tests {
             read("https://a.com/x\\y z").as_deref(),
             Some("https://a.com/x\\y z")
         );
+        // An IPv6 address in brackets, in its short lowercase form.
+        let v6 = WebAddress::parse("http://[FD00:0:0::1]:8123/api").unwrap();
+        assert_eq!((v6.host.as_str(), v6.port), ("[fd00::1]", Some(8123)));
+        assert_eq!(v6.to_string(), "http://[fd00::1]:8123/api");
+        assert_eq!(read("https://[::1]").as_deref(), Some("https://[::1]/"));
     }
 
     #[test]
@@ -224,7 +250,13 @@ mod tests {
             "https://github.com\u{3000}/",
             "https://github.com/\n",
             "https://github.com\\evil.com/",
-            "https://[::1]/",
+            "https://[::1/",
+            "https://[fe80::1%5]/",
+            "https://[::1]x/",
+            "https://[::1]:/",
+            "https://[::1]:0/",
+            "https://[g::1]/",
+            "https://[127.0.0.1]/",
             "https://bücher.de/",
             "https://a..com/",
             "https://.a.com/",

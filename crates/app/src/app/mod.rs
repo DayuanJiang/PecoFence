@@ -185,7 +185,7 @@ const IDLE_TRIM_MS: u32 = 30_000;
 const TIMER_LIVE_CAPTURED: usize = 61;
 /// Re-armed while Liquid Glass shows a live wallpaper in real time: `GpuCapturer::next_frame`
 /// and a redraw of the fences.
-const TIMER_LIVE_FRAME: usize = 135;
+const TIMER_LIVE_FRAME: usize = 136;
 /// `TaskbarCreated` arrived while the App was borrowed: renew the shell change registration
 /// shortly.
 const TIMER_SHELL_WATCH_RETRY: usize = 62;
@@ -1393,6 +1393,7 @@ impl App {
                                 | updates::TIMER_UPDATE_RESUME
                                 | plugins::TIMER_PLUGINS_CHECK
                                 | light::TIMER_PLUGIN_APPS
+                                | light::TIMER_PLUGIN_POINTER
                                 | TIMER_PORTAL_BACK
                                 | TIMER_CONFIG_LOCKED
                                 | desktop_import::TIMER_WINDOWS_PLACES
@@ -1440,6 +1441,9 @@ impl App {
                                                 app.daily_plugins_check()
                                             }
                                             light::TIMER_PLUGIN_APPS => app.poll_plugin_apps(),
+                                            light::TIMER_PLUGIN_POINTER => {
+                                                app.poll_plugin_pointer()
+                                            }
                                             updates::TIMER_UPDATE_RESUME => {
                                                 app.update_check_after_resume()
                                             }
@@ -2421,6 +2425,7 @@ impl App {
         if app.state.first_run {
             app.fit_first_run_column();
         }
+        app.roll_up_opened_on_top();
         // Fences never stay on top of each other: pull apart any overlap the layout brings.
         app.settle_unplaced(true);
         if let Some(folder) = args.portal.as_deref() {
@@ -2756,8 +2761,14 @@ impl App {
         );
         let a = std::mem::take(&mut self.activity);
         let icon_failures = self.ctx.icons.borrow_mut().take_failures();
-        if a.animation_runs + a.slow_commands + a.drops + a.drags_out + icon_failures > 0 {
+        // GitHub #251: the share of a core since the last line; a quiet hour that used some
+        // writes the line too.
+        let cpu = self.busy.take_hour_share();
+        if a.animation_runs + a.slow_commands + a.drops + a.drags_out + icon_failures > 0
+            || cpu.is_some_and(|p| p >= 0.5)
+        {
             tracing::info!(
+                cpu_percent_of_a_core = cpu,
                 animation_runs = a.animation_runs,
                 stuttered_runs = a.stuttered_runs,
                 max_gap_ms = a.max_gap_ms,
@@ -3282,6 +3293,9 @@ impl App {
                 call,
                 args,
             } => self.web_call(page, id, call, args),
+            Command::WebNotification { fence, title, body } => {
+                self.plugin_notify(fence, &title, &body, false)
+            }
             Command::WebPageFailed { page, failure } => self.web_page_failed(page, failure),
             Command::WebPageReload { page, uri } => self.reload_web_page(page, uri),
             Command::EditNote { fence, caret } => self.edit_note(fence, caret),

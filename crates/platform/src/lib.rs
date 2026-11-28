@@ -76,6 +76,7 @@ pub mod edit;
 pub mod everything;
 pub mod filedialog;
 pub mod fileinfo;
+pub mod focus;
 pub mod fonts;
 pub mod fpu;
 pub mod frameclock;

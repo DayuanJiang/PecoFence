@@ -13,6 +13,7 @@ pub mod log_file;
 pub mod matcher;
 pub mod model;
 pub mod note;
+pub mod page_csp;
 pub mod plugins;
 pub mod rules;
 pub mod script_output;

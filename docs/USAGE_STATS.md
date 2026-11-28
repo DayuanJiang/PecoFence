@@ -31,7 +31,7 @@ minutes after the start.
 | `day` | The local date of the report. |
 | `app`, `edition` | The PecoFence version, and whether it is the Store, installer or ZIP edition (and portable). |
 | `windows`, `language` | The Windows build and PecoFence's display language. |
-| `settings` | The settings that are a switch, a choice from a list or a number, under their names in `config.json`. A setting that holds text (a custom theme, a shortcut, a tint colour) appears only as `"set"` or `"unset"`. |
+| `settings` | The settings that are a switch, a choice from a list or a number, under their names in `config.json`. A setting that holds text (a custom theme, a font, a shortcut, a tint colour) appears only as `"set"` or `"unset"`. |
 | `state` | How many fences, tabs, folder fences, smart fences, tool fences, rules and items there are. |
 | `health` | How long the last start took, the most memory the program held that day, and whether the run before a start of that day crashed (`crashed`: its log says so, or the watchdog had to start PecoFence again) or was cut off: it hung and was ended, was ended from Task Manager, or the power went (`cutOff`). Version 0.4.0 counts both as `crashed`. |
 | `events` | What was used that day, in order: the second of the day, a name from the list below, and for some names a second word. At most 2,000 a day. |

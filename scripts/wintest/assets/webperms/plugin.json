@@ -1,0 +1,10 @@
+{
+  "id": "webperms",
+  "version": "1.0.0",
+  "layer": "web",
+  "name": { "en": "Web permissions test", "zh-CN": "网页权限测试" },
+  "description": { "en": "A test web plugin: screen sharing, camera, microphone, location, notifications, WebRTC and inline code.", "zh-CN": "测试用的网页插件：共享屏幕、摄像头、麦克风、位置、通知、WebRTC 和内联代码。" },
+  "author": "DayuanJiang",
+  "minPecoFence": "0.5.0",
+  "permissions": { "network": ["example.org"] }
+}

@@ -1059,8 +1059,13 @@ impl DesktopAnchor {
     /// front), so waiting for that event lost the double-click. Windows 10 often reports no
     /// event for a click on the desktop from any window (an app that opened at sign-in, a
     /// virtual desktop switch): there they are followed all the time. The sink takes only
-    /// presses on the bare desktop (`begin_marquee`); it costs one message per pointer move
-    /// (measured: under 1 % of a core while the pointer moves without a pause).
+    /// presses on the bare desktop (`begin_marquee`); it costs one message per pointer report,
+    /// about 22 us on Server 2022 and 1.8 us on Server 2025 (GitHub #251: 1.2 to 2.8 % of a core
+    /// at 1,000 reports a second). Following them only while the desktop, the taskbar or no
+    /// window is in front was tried (2026-11-22): every case in PF-Win10 worked as before but the
+    /// one at sign-in, where the click on the desktop from the window that opened then (Notepad
+    /// from the Startup folder, then Windows' Copilot) came without an event and the poll found
+    /// the desktop in front only after that press: the first double-click was lost.
     fn follows_desktop_clicks(&self, hwnd: HWND) -> bool {
         self.generation == Generation::Legacy
             || hwnd.0.is_null()
@@ -1350,11 +1355,15 @@ impl DesktopAnchor {
             self.quick
                 .desktop_activated(sink_was_on, held, Instant::now(), pt);
             // The press that activated the desktop reached Explorer before the sink existed: a
-            // drag it starts still draws a marquee (from where the pointer is now). Activated
-            // any other way, the desktop ends the fence selection like a click on it does,
-            // unless a dialog opened from a fence just closed (the fence takes it back below).
+            // drag it starts still draws a marquee (from where the pointer is now). A press the
+            // sink already took keeps its own point: this event can come 200 ms into the drag,
+            // and starting again there moved the rectangle's corner (0.5.1 release test).
+            // Activated any other way, the desktop ends the fence selection like a click on it
+            // does, unless a dialog opened from a fence just closed (the fence takes it back below).
             if held {
-                self.begin_marquee(pt);
+                if self.quick.marquee_origin.is_none() {
+                    self.begin_marquee(pt);
+                }
             } else if back_to.is_none() {
                 self.emit_marquee(MarqueeEvent::Pressed {
                     additive: additive_modifier(),

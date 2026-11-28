@@ -197,6 +197,11 @@ pub struct Settings {
     /// loads, its `base` takes the place of `themeStyle`.
     #[serde(default)]
     pub custom_theme: Option<String>,
+    /// 字体 (feedback #208): the font family of the fence titles, tabs and item names. None
+    /// keeps the theme file's fonts, else Windows' (Segoe UI Variable for titles, the desktop
+    /// icon font for names). A family that is not installed is ignored.
+    #[serde(default)]
+    pub font: Option<String>,
     /// Colour of the item names in every fence; fence titles have their own `titleColor`.
     #[serde(default)]
     pub label_color: LabelColor,
@@ -536,6 +541,7 @@ impl Default for Settings {
             idle_opacity: 1.0,
             theme_style: ThemeStyle::Fluent,
             custom_theme: None,
+            font: None,
             label_color: LabelColor::Auto,
             title_align: TitleAlign::Left,
             tab_bar: TabBar::Top,
@@ -1146,6 +1152,10 @@ pub struct AppearanceOverride {
     /// `rollUp.titleOnHover`).
     #[serde(default)]
     pub title_on_hover: Option<bool>,
+    /// 「显示标题栏」 → 「不显示」 (feedback #208): the title row never shows, the pointer does
+    /// not bring it either; its place still moves the fence. `title_on_hover` is then unused.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub title_hidden: bool,
     /// The tint washes only the title row instead of the whole glass.
     #[serde(default)]
     pub tint_title_only: bool,

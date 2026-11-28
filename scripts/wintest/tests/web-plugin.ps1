@@ -191,8 +191,11 @@ if ($Part -eq 'A') {
   $tl | ForEach-Object { $_.Stop() }
   Check 'preconnect to an undeclared host, from the page and a blank frame, connects nowhere' ($hit -eq '') "connected: $hit"
   Check 'dns-prefetch of an undeclared host, from the page and a blank frame, asks no DNS' ((ipconfig /displaydns | Out-String) -notmatch "pf-hint-(frame-)?$tag") ''
-  $rtc = JsIsolated "(async () => { try { const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }); const found = []; const done = new Promise(ok => { pc.onicecandidate = e => { if (e.candidate) found.push(e.candidate.type || '?'); else ok(); }; setTimeout(ok, 4000); }); pc.createDataChannel('x'); await pc.setLocalDescription(await pc.createOffer()); await done; pc.close(); return 'candidates: ' + (found.join(',') || 'none'); } catch (e) { return 'threw ' + e.name; } })()"
-  Check 'WebRTC with globals of its own (an isolated world) finds no candidates' ("$rtc" -eq 'candidates: none' -or "$rtc" -like 'threw*') "$rtc"
+  $rtc = JsIsolated "(async () => { try { const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }); const found = []; const done = new Promise(ok => { pc.onicecandidate = e => { if (e.candidate) found.push((e.candidate.type || '?') + ' ' + (e.candidate.address || '')); else ok(); }; setTimeout(ok, 4000); }); pc.createDataChannel('x'); await pc.setLocalDescription(await pc.createOffer()); await done; pc.close(); return 'candidates: ' + (found.join(',') || 'none'); } catch (e) { return 'threw ' + e.name; } })()"
+  # Windows 10 gathers a host candidate under an mDNS name (no address); the undeclared STUN host
+  # gives none, so the page learns no address and reaches nothing.
+  $shown = @(("$rtc" -replace '^candidates: ', '') -split ', ' | Where-Object { $_ -and $_ -ne 'none' -and $_ -notmatch '^host [0-9a-f-]+\.local$' })
+  Check 'WebRTC with globals of its own (an isolated world) reaches no STUN server and shows no address (at most an mDNS name)' ("$rtc" -like 'threw*' -or ("$rtc" -like 'candidates:*' -and $shown.Count -eq 0)) "$rtc"
   Js "(location.href = 'mailto:pf@example.com', 1)" | Out-Null; Start-Sleep -Seconds 2
   Check 'a mailto: navigation is refused and the page stays as it was' ((Js "location.href") -like 'pecofence-plugin://webdemo/*' -and (Js "window.demo.clicks") -eq 1) "$(Js 'location.href')"
   Js "(tryNavigate(), 1)" | Out-Null; Start-Sleep -Seconds 2
@@ -380,7 +383,7 @@ if ($Part -eq 'C') {
   Js "(window.limitResult = null, Promise.allSettled(Array.from({ length: 20 }, () => pf.http.get('https://example.org/'))).then((r) => window.limitResult = r.map((x) => x.status === 'fulfilled' ? 'ok' : String(x.reason && x.reason.message))), 1)" | Out-Null
   $r = @(JsWait "window.limitResult" 60)
   $ok = @($r | Where-Object { $_ -eq 'ok' }).Count; $many = @($r | Where-Object { $_ -match 'too many calls at once' }).Count
-  Check 'twenty requests at once: four go, sixteen are refused at once' ($ok -eq 4 -and $many -eq 16) ($r -join ' | ')
+  Check 'twenty requests at once: eight go, twelve are refused at once' ($ok -eq 8 -and $many -eq 12) ($r -join ' | ')
   Js "(chrome.webview.postMessage({ id: 1, call: 'time.now', args: ['x'.repeat(1100 * 1024)] }), 1)" | Out-Null
   Check 'a message over 1 MB is ignored' ([bool](PfWaitLog 'web plugin: a message over 1 MB ignored' 5)) ''
   Js "(window.big = null, pf.time.format('x'.repeat(1100 * 1024)).then(() => window.big = 'answered', e => window.big = e.name), 1)" | Out-Null
@@ -447,12 +450,12 @@ if ($Part -eq 'C') {
   Check 'the page got hide and show' ($ev -match 'hide' -and $ev -match 'show') "$ev"
 
   Case 'a page that crashes'
-  # Four requests that hang (a port of example.org that does not answer; WinHTTP gives up after
+  # Eight requests that hang (a port of example.org that does not answer; WinHTTP gives up after
   # 15 s) count for the page; the page made anew after the crash does not inherit them.
-  Js "(window.hung = Array.from({ length: 4 }, () => pf.http.get('https://example.org:81/')), window.fifth = null, pf.http.get('https://example.org/').then(() => window.fifth = 'ok', e => window.fifth = e.message), 1)" | Out-Null
+  Js "(window.hung = Array.from({ length: 8 }, () => pf.http.get('https://example.org:81/')), window.fifth = null, pf.http.get('https://example.org/').then(() => window.fifth = 'ok', e => window.fifth = e.message), 1)" | Out-Null
   $hungAt = Get-Date
   $fifth = JsWait "window.fifth" 5
-  Check 'while four requests of the page hang, a fifth is refused' ("$fifth" -match 'too many calls') "$fifth"
+  Check 'while eight requests of the page hang, a ninth is refused' ("$fifth" -match 'too many calls') "$fifth"
   $script:Cdp.Dispose(); $script:Cdp = $null
   $loads = LogCount 'web plugin: page loading'
   $k = Renderers; Log "renderers: $($k -join ',')"

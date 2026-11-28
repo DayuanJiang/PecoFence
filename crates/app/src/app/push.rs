@@ -1,7 +1,7 @@
 //! Push neighbours (`rollUp.pushNeighbors`): while a fence is expanded (a click, a hover peek, or
-//! a taller height from the CLI), the fences stacked below it slide down out of its way, and
-//! slide back when it rolls up. Edge drags and the automatic size changes still stop short of
-//! the fence below as it shows. A fence with 向上展开 that opened upward keeps its bottom edge:
+//! a taller height from the CLI, 适应内容大小, an icon size or 自动高度), the fences stacked below
+//! it slide down out of its way, and slide back when it rolls up. Edge drags still stop short
+//! of the fence below as it shows. A fence with 向上展开 that opened upward keeps its bottom edge:
 //! the fences stacked above it slide up instead, none past the top of the screen. Which way it
 //! opens depends on how far they can go (`Behavior::expand_room`, kept here). A fence with
 //! 向上展开 is never pushed itself.
@@ -315,6 +315,27 @@ impl App {
     /// way rather than taken for a fence that one pushes.
     pub(super) fn reflow_pushed_except(&mut self, settling: &[FenceId]) {
         self.reflow_pushed_once(settling, true);
+        self.fade_covered_fences();
+    }
+
+    /// Fences a fence opened on top of them covers, fully or partly (a hover peek, or a click
+    /// open over a gap under one row with pushing off), fade out until it rolls up or moves
+    /// off (feedback #207). Fences the push slid out of its way are not covered.
+    fn fade_covered_fences(&self) {
+        let all: Vec<(&FenceWindow, RECT, bool)> = (self.fences.values())
+            .filter(|w| !w.is_desktop_arranged())
+            .map(|w| (w, self.ctx.behavior.frame_rect(w.hwnd()), w.opened_on_top()))
+            .collect();
+        let tops: Vec<(HWND, RECT)> = (all.iter())
+            .filter(|(.., on_top)| *on_top)
+            .map(|(w, r, _)| (w.hwnd(), *r))
+            .collect();
+        for &(w, r, on_top) in &all {
+            let under = |t: &RECT| {
+                t.left < r.right && r.left < t.right && t.top < r.bottom && r.top < t.bottom
+            };
+            w.set_covered(!on_top && tops.iter().any(|(h, t)| *h != w.hwnd() && under(t)));
+        }
     }
 
     /// One pass; `again`: run a second one when an open fence was fitted to its room without
@@ -322,11 +343,15 @@ impl App {
     fn reflow_pushed_once(&mut self, settling: &[FenceId], again: bool) {
         let enabled = self.state.config.settings.roll_up.push_neighbors;
         if !enabled && self.ctx.behavior.pushed.borrow().is_empty() {
-            self.keep_expand_rooms(None, &[]);
-            // Switched off while a fence was open only as far as the fences below left room:
-            // nothing holds it short now, it has its own height again.
-            for w in self.fences.values() {
-                w.fit_open_to_room(i32::MAX);
+            // An open fence stops short of the fence below (`rooms_without_push`); one held
+            // short for the push before it was switched off, or one the fence below no longer
+            // limits, has its own height again.
+            let below = self.rooms_without_push();
+            let held = self.windows_in_hand();
+            self.keep_expand_rooms(None, &below);
+            for w in self.fences.values().filter(|w| !held.contains(&w.hwnd())) {
+                let room = below.iter().find(|(h, _)| *h == w.hwnd());
+                w.fit_open_to_room(room.map_or(i32::MAX, |&(_, room)| room));
             }
             return;
         }
@@ -432,7 +457,7 @@ impl App {
         let (below, waiting) = if enabled {
             rooms_below(&slots)
         } else {
-            (Vec::new(), Vec::new())
+            (self.rooms_without_push(), Vec::new())
         };
         self.keep_expand_rooms(enabled.then(|| rooms(&slots)), &below);
         // No borrow held: SetWindowPos runs the fences' handlers synchronously.
@@ -555,7 +580,7 @@ impl App {
                         .map_or(wa.top, |t| t.max(wa.top));
                     let bottom = crate::layout::clearance::limit_below(&others, &r, gap)
                         .map_or(wa.bottom, |b| b.min(wa.bottom));
-                    (r.bottom - top, bottom - r.top)
+                    (r.bottom - top, room_below.unwrap_or(bottom - r.top))
                 }
             };
             rooms.push((w.hwnd(), room.0, room.1));

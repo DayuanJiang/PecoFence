@@ -640,6 +640,9 @@ pub struct FenceViewState {
     pub(super) title_on_hover_override: Option<bool>,
     /// 鼠标移入时保持透明 (`AppearanceOverride::transparent_on_hover`); see `stays_clear`.
     pub(super) transparent_on_hover: bool,
+    /// 「显示标题栏」 → 「不显示」 (`AppearanceOverride::title_hidden`): the title row folds away
+    /// as with title on hover, and the pointer does not bring it back.
+    pub(super) title_hidden: bool,
     /// Per-fence colour wash / title colour / title size.
     pub(super) style: FenceStyle,
     /// Icon grid spacing in DIPs (FenceView.spacing).
@@ -671,6 +674,9 @@ pub struct FenceViewState {
     /// the shadow's alpha are the Peek's until `peek_fade_rest`, or until a show / hide fade
     /// takes them over.
     pub(super) peek_faded: bool,
+    /// Under a fence opened on top of it (`App::fade_covered_fences`): faded out with the
+    /// Peek's fade until that one rolls up or moves off (feedback #207).
+    pub(super) covered_faded: bool,
     /// What the current whole-window fade did so far (see `FadeTrace`).
     pub(super) fade_trace: FadeTrace,
     /// `FenceWindow::retire` was called: the window is fading out for good and lives only in
