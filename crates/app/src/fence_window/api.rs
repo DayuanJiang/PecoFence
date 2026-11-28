@@ -607,7 +607,7 @@ impl FenceWindow {
             },
         );
         format!(
-            "title={:?} idle_opacity={:.2} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} script_cells={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={} rolled_caption={:?}",
+            "title={:?} idle_opacity={:.2} title_count={:?} filtered={} opacity={:.2} scale={:.3} fade={fade} retired={} rolled={} rolling={} peeking={} items={} tabs={} selected={} focused={:?} focus_ring={} shadow_visible={} shadow_alpha={} layout={:?} locked={} auto_height={} active={} scroll={:.1} client={:?} client_offset=({},{}) chrome={:?} glass={:?} wallpaper_uploads={} title_size={} tab_fonts={:?} tab_rects={:?} content_x={} content={:?} capture={} tab_drag={} window_drag={} detach_pending={} plate_inset={} plate_alpha={:.2} mouse_inside={} content_y={} text_size={} clock_text={}/{} note_boxes={} note_links={} script_rows={} script_cells={} off_desktop={} desktop_tip={:?} filter_tag={:?} badge={} rolled_count={} tag_fit={:?} peek_faded={} clock_date={} clock_time={} rolled_caption={:?} empty_text_visible={}",
             v.title,
             v.idle_layer.opacity(),
             v.title_count,
@@ -693,6 +693,10 @@ impl FenceWindow {
             // What a rolled-up clock or plugin shows in its title row in place of its name
             // (#175).
             v.rolled_caption(),
+            !v.rolled_up
+                && !v.shows_tool()
+                && v.empty_text_draw(Instant::now())
+                    .is_some_and(|(text, _)| !text.is_empty()),
         )
     }
 
