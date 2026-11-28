@@ -378,7 +378,8 @@ select {
 
 /* Narrower screens keep the manual link; GitHub stays in the footer ("Source code"). */
 @media(max-width:840px) {
-    .primary-nav .nav-github {
+    .primary-nav .nav-github,
+    .primary-nav .nav-compare {
         display: none
     }
 

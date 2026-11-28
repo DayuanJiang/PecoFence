@@ -1,0 +1,115 @@
+{
+  "nav": "Confronto con Fences",
+  "title": "Un’alternativa gratuita a Stardock Fences: PecoFence a confronto con Fences | PecoFence",
+  "description": "PecoFence è un’alternativa gratuita e open source a Stardock Fences per Windows 11 e 10. Riquadri, schede, regole di ordinamento e riquadri cartella, con tra 2 e 5 MB circa di memoria quando è inattivo.",
+  "h1": "Un’alternativa gratuita a Stardock Fences: PecoFence",
+  "lead": "Vuoi ordinare il desktop come con Stardock Fences, ma senza pagare? Usa PecoFence. È gratuito e open source, funziona su Windows 11 e 10 e raccoglie le icone del desktop in riquadri, con schede, regole di ordinamento e riquadri cartella. Quando è inattivo usa tra 2 e 5 MB circa di memoria.",
+  "checked": "Dati verificati il 28 novembre 2026.",
+  "table_title": "PecoFence e Stardock Fences a confronto",
+  "columns": [
+    "",
+    "PecoFence",
+    "Stardock Fences 7"
+  ],
+  "rows": [
+    [
+      "Prezzo",
+      "Gratis",
+      "Da 10 $"
+    ],
+    [
+      "Codice sorgente",
+      "Aperto",
+      "Chiuso"
+    ],
+    [
+      "Una scorciatoia cerca tra i file di tutti i riquadri",
+      "Sì",
+      "No"
+    ],
+    [
+      "Le finestre Apri e Salva vanno alla cartella aperta in Esplora file",
+      "Sì",
+      "No"
+    ],
+    [
+      "Riquadri per ogni desktop virtuale",
+      "Sì",
+      "No"
+    ],
+    [
+      "Riquadri strumento: note, orologio, script",
+      "Sì",
+      "No"
+    ],
+    [
+      "Icone raccolte in riquadri",
+      "Sì",
+      "Sì"
+    ],
+    [
+      "Schede",
+      "Sì",
+      "Sì"
+    ],
+    [
+      "Regole che ordinano i nuovi file",
+      "Sì",
+      "Sì"
+    ],
+    [
+      "Riquadri cartella",
+      "Sì",
+      "Sì"
+    ],
+    [
+      "Scorciatoia che mostra i riquadri sopra le finestre aperte",
+      "Sì",
+      "Sì"
+    ],
+    [
+      "Versioni di Windows",
+      "Windows 10 e 11",
+      "Windows 10 e 11"
+    ]
+  ],
+  "extras_title": "Cos’altro fa PecoFence",
+  "extras": [
+    "Riquadri che si riempiono da soli: salva una ricerca come riquadro, per esempio i download degli ultimi 7 giorni o tutti i file oltre 1 GB. I nuovi file che corrispondono compaiono da soli.",
+    "Lascia configurare tutto al tuo agente IA: con lo strumento da riga di comando incluso, Claude Code, Codex e Cursor possono leggere e modificare disposizione, aspetto e regole di ordinamento.",
+    "Gli strumenti hanno uno store di plugin."
+  ],
+  "faq_title": "Domande frequenti",
+  "faq": [
+    [
+      "Esiste un’alternativa gratuita a Stardock Fences?",
+      "Sì, PecoFence. È gratuito e open source con licenza Apache 2.0 e, come Fences, ha riquadri, schede, regole di ordinamento e riquadri cartella."
+    ],
+    [
+      "PecoFence funziona su Windows 10?",
+      "Sì. Funziona su Windows 10 1809 o versioni successive e su Windows 11 22H2 o versioni successive. L’edizione del Microsoft Store richiede Windows 10 2004 o versioni successive."
+    ],
+    [
+      "PecoFence sposta i miei file?",
+      "No. Le regole automatiche cambiano solo il riquadro in cui viene mostrato un file, e il file resta dov’è sul disco. Gli spostamenti avviati da te funzionano esattamente come in Esplora file."
+    ],
+    [
+      "Quanta memoria usa PecoFence?",
+      "Tra 2 e 5 MB circa quando è inattivo, in Gestione attività. È un’applicazione nativa scritta in Rust, e la finestra delle impostazioni carica WebView2 solo quando la apri."
+    ],
+    [
+      "Come si installa PecoFence?",
+      "Installalo dal Microsoft Store oppure esegui winget install DayuanJiang.PecoFence. Uno ZIP portatile e un programma di installazione sono nella pagina delle versioni su GitHub."
+    ],
+    [
+      "Cosa succede al desktop quando esco da PecoFence?",
+      "Le icone del desktop ricompaiono quando esci, e il desktop di Windows funziona come sempre."
+    ]
+  ],
+  "get": "Scarica PecoFence",
+  "manual": "Leggi il manuale",
+  "source": "Il prezzo e le funzioni di Fences provengono dal sito di Stardock, dall’annuncio di Fences 7 del 18 novembre 2026 e dal registro delle modifiche pubblicato.",
+  "band_title": "Arrivi da Stardock Fences?",
+  "band_text": "Riquadri, schede, regole di ordinamento e riquadri cartella: PecoFence li ha tutti, ed è gratuito e open source.",
+  "band_button": "Confronta PecoFence e Fences"
+}

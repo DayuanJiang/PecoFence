@@ -1,0 +1,115 @@
+{
+  "nav": "和 Fences 对比",
+  "title": "免费的 Fences 替代品：PecoFence 和 Stardock Fences 对比 | PecoFence",
+  "description": "PecoFence 是免费、开源的 Windows 桌面整理软件，可以替代 Stardock Fences。栅栏、标签、自动归类、文件夹栅栏和速览都有，空闲时内存占用约 2 到 5 MB。",
+  "h1": "免费的 Fences 替代品：PecoFence",
+  "lead": "想要 Stardock Fences 那样的桌面整理，又不想付费，可以用 PecoFence。它免费、开源，支持 Windows 11 和 10，把桌面图标收进栅栏，标签、自动归类规则、文件夹栅栏和速览都有，空闲时内存占用约 2 到 5 MB。",
+  "checked": "以下信息核对于 2026 年 11 月 28 日。",
+  "table_title": "PecoFence 和 Stardock Fences 对比",
+  "columns": [
+    "项目",
+    "PecoFence",
+    "Stardock Fences 7"
+  ],
+  "rows": [
+    [
+      "价格",
+      "免费",
+      "10 美元起"
+    ],
+    [
+      "源代码",
+      "开源",
+      "不公开"
+    ],
+    [
+      "一个快捷键搜索所有栅栏里的文件",
+      "有",
+      "没有"
+    ],
+    [
+      "对话框跳转到资源管理器正开着的文件夹",
+      "有",
+      "没有"
+    ],
+    [
+      "每个虚拟桌面一套栅栏",
+      "有",
+      "没有"
+    ],
+    [
+      "便签、时钟、脚本等小工具栅栏",
+      "有",
+      "没有"
+    ],
+    [
+      "把图标收进栅栏",
+      "有",
+      "有"
+    ],
+    [
+      "标签",
+      "有",
+      "有"
+    ],
+    [
+      "新文件自动归类",
+      "有",
+      "有"
+    ],
+    [
+      "文件夹栅栏",
+      "有",
+      "有"
+    ],
+    [
+      "速览快捷键",
+      "有",
+      "有"
+    ],
+    [
+      "支持的系统",
+      "Windows 10 和 11",
+      "Windows 10 和 11"
+    ]
+  ],
+  "extras_title": "PecoFence 还能做这些",
+  "extras": [
+    "智能栅栏：把一次搜索存成栅栏，比如最近 7 天的下载、所有超过 1 GB 的文件，符合条件的新文件自己出现。",
+    "让 AI 助手替你配置：自带命令行工具，Claude Code、Codex、Cursor 可以直接读取和修改桌面布局、外观和归类规则。",
+    "搜索支持拼音，小工具还有插件商店。"
+  ],
+  "faq_title": "常见问题",
+  "faq": [
+    [
+      "有没有免费的 Fences 替代品？",
+      "有，PecoFence。它免费、开源，使用 Apache 2.0 许可证，Fences 的栅栏、标签、自动归类、文件夹栅栏和速览它都有。"
+    ],
+    [
+      "PecoFence 支持 Windows 10 吗？",
+      "支持。它可以在 Windows 10 1809 及以上版本和 Windows 11 22H2 及以上版本运行。微软商店版需要 Windows 10 2004 及以上版本。"
+    ],
+    [
+      "PecoFence 会移动我的文件吗？",
+      "不会。自动规则只改变文件显示在哪个栅栏，文件在磁盘上的位置不变。你主动发起的移动，和资源管理器里的操作完全一样。"
+    ],
+    [
+      "PecoFence 占多少内存？",
+      "空闲时在任务管理器里约 2 到 5 MB。它是 Rust 编写的原生应用，设置窗口只在打开时才加载 WebView2。"
+    ],
+    [
+      "怎么安装 PecoFence？",
+      "在微软商店里安装，或者运行 winget install DayuanJiang.PecoFence。便携版 ZIP 和安装包在 GitHub 的发布页。"
+    ],
+    [
+      "退出 PecoFence 后桌面会怎样？",
+      "退出时桌面图标会恢复显示，Windows 的桌面照常使用。"
+    ]
+  ],
+  "get": "获取 PecoFence",
+  "manual": "查看使用手册",
+  "source": "Fences 的价格和功能来自 Stardock 官网、2026 年 11 月 18 日的 Fences 7 发布公告和官方更新记录。",
+  "band_title": "从 Stardock Fences 换过来？",
+  "band_text": "栅栏、标签、自动归类、文件夹栅栏和速览，PecoFence 都有，而且免费、开源。",
+  "band_button": "看 PecoFence 和 Fences 的对比"
+}

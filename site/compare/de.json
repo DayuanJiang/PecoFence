@@ -1,0 +1,115 @@
+{
+  "nav": "Vergleich mit Fences",
+  "title": "Kostenlose Alternative zu Stardock Fences: PecoFence im Vergleich | PecoFence",
+  "description": "PecoFence ist eine kostenlose Open-Source-Alternative zu Stardock Fences für Windows 11 und 10. Bereiche, Tabs, Sortierregeln und Ordnerbereiche, bei etwa 2 bis 5 MB Arbeitsspeicher im Leerlauf.",
+  "h1": "Kostenlose Alternative zu Stardock Fences: PecoFence",
+  "lead": "Du willst den Desktop so ordnen wie mit Stardock Fences, aber nichts dafür bezahlen? Dann nimm PecoFence. Es ist kostenlos und Open Source, läuft unter Windows 11 und 10 und fasst Desktopsymbole in Bereichen zusammen, mit Tabs, Sortierregeln und Ordnerbereichen. Im Leerlauf belegt es etwa 2 bis 5 MB Arbeitsspeicher.",
+  "checked": "Stand der Angaben: 28. November 2026.",
+  "table_title": "PecoFence und Stardock Fences im Vergleich",
+  "columns": [
+    "",
+    "PecoFence",
+    "Stardock Fences 7"
+  ],
+  "rows": [
+    [
+      "Preis",
+      "Kostenlos",
+      "Ab 10 $"
+    ],
+    [
+      "Quellcode",
+      "Open Source",
+      "Nicht öffentlich"
+    ],
+    [
+      "Eine Tastenkombination durchsucht die Dateien aller Bereiche",
+      "Ja",
+      "Nein"
+    ],
+    [
+      "Öffnen- und Speichern-Dialoge springen zum Ordner, der im Explorer offen ist",
+      "Ja",
+      "Nein"
+    ],
+    [
+      "Eigene Bereiche für jeden virtuellen Desktop",
+      "Ja",
+      "Nein"
+    ],
+    [
+      "Werkzeugbereiche: Notizen, Uhr, Skripte",
+      "Ja",
+      "Nein"
+    ],
+    [
+      "Symbole in Bereichen zusammenfassen",
+      "Ja",
+      "Ja"
+    ],
+    [
+      "Tabs",
+      "Ja",
+      "Ja"
+    ],
+    [
+      "Regeln, die neue Dateien einsortieren",
+      "Ja",
+      "Ja"
+    ],
+    [
+      "Ordnerbereiche",
+      "Ja",
+      "Ja"
+    ],
+    [
+      "Tastenkombination, die die Bereiche über offene Fenster holt",
+      "Ja",
+      "Ja"
+    ],
+    [
+      "Windows-Versionen",
+      "Windows 10 und 11",
+      "Windows 10 und 11"
+    ]
+  ],
+  "extras_title": "Was PecoFence außerdem kann",
+  "extras": [
+    "Bereiche, die sich selbst füllen: Speichere eine Suche als Bereich, etwa die Downloads der letzten 7 Tage oder alle Dateien über 1 GB. Passende neue Dateien erscheinen von selbst.",
+    "Lass deinen KI-Agenten einrichten: Mit dem mitgelieferten Kommandozeilenwerkzeug können Claude Code, Codex und Cursor Layout, Aussehen und Sortierregeln lesen und ändern.",
+    "Für die Werkzeuge gibt es einen Plugin-Store."
+  ],
+  "faq_title": "Häufige Fragen",
+  "faq": [
+    [
+      "Gibt es eine kostenlose Alternative zu Stardock Fences?",
+      "Ja, PecoFence. Es ist kostenlos und Open Source unter der Apache-2.0-Lizenz und hat wie Fences Bereiche, Tabs, Sortierregeln und Ordnerbereiche."
+    ],
+    [
+      "Läuft PecoFence unter Windows 10?",
+      "Ja. Es läuft unter Windows 10 1809 oder neuer und unter Windows 11 22H2 oder neuer. Die Version aus dem Microsoft Store braucht Windows 10 2004 oder neuer."
+    ],
+    [
+      "Verschiebt PecoFence meine Dateien?",
+      "Nein. Automatische Regeln ändern nur, welcher Bereich eine Datei anzeigt, und die Datei bleibt auf dem Datenträger, wo sie ist. Verschiebungen, die du selbst anstößt, funktionieren genau wie im Explorer."
+    ],
+    [
+      "Wie viel Arbeitsspeicher braucht PecoFence?",
+      "Im Leerlauf etwa 2 bis 5 MB laut Task-Manager. Es ist eine native Rust-Anwendung, und die Einstellungen laden WebView2 erst, wenn du sie öffnest."
+    ],
+    [
+      "Wie installiere ich PecoFence?",
+      "Installiere es aus dem Microsoft Store oder führe winget install DayuanJiang.PecoFence aus. Ein portables ZIP und ein Installationsprogramm findest du auf der Releases-Seite bei GitHub."
+    ],
+    [
+      "Was passiert mit meinem Desktop, wenn ich PecoFence beende?",
+      "Beim Beenden erscheinen deine Desktopsymbole wieder, und der Windows-Desktop funktioniert wie gewohnt."
+    ]
+  ],
+  "get": "PecoFence herunterladen",
+  "manual": "Zum Handbuch",
+  "source": "Preis und Funktionen von Fences stammen von der Stardock-Website, der Ankündigung von Fences 7 vom 18. November 2026 und dem veröffentlichten Änderungsprotokoll.",
+  "band_title": "Du kommst von Stardock Fences?",
+  "band_text": "Bereiche, Tabs, Sortierregeln und Ordnerbereiche: PecoFence hat sie alle, kostenlos und Open Source.",
+  "band_button": "PecoFence und Fences vergleichen"
+}

@@ -1,0 +1,115 @@
+{
+  "nav": "Compare with Fences",
+  "title": "A free Stardock Fences alternative: PecoFence vs Fences | PecoFence",
+  "description": "PecoFence is a free, open-source alternative to Stardock Fences for Windows 11 and 10. Fences, tabs, sorting rules, folder fences and Peek, in about 2 to 5 MB of memory at rest.",
+  "h1": "A free alternative to Stardock Fences: PecoFence",
+  "lead": "If you want the desktop organizing that Stardock Fences does without paying for it, use PecoFence. It is free and open source, runs on Windows 11 and 10, and groups desktop icons into fences with tabs, sorting rules, folder fences and Peek. At rest it uses about 2 to 5 MB of memory.",
+  "checked": "Facts checked on 28 November 2026.",
+  "table_title": "PecoFence and Stardock Fences side by side",
+  "columns": [
+    "",
+    "PecoFence",
+    "Stardock Fences 7"
+  ],
+  "rows": [
+    [
+      "Price",
+      "Free",
+      "From $10"
+    ],
+    [
+      "Source code",
+      "Open source",
+      "Closed"
+    ],
+    [
+      "One shortcut searches the files in every fence",
+      "Yes",
+      "No"
+    ],
+    [
+      "Open and Save dialogs jump to the folder open in File Explorer",
+      "Yes",
+      "No"
+    ],
+    [
+      "A set of fences for each virtual desktop",
+      "Yes",
+      "No"
+    ],
+    [
+      "Tool fences: notes, clock, scripts",
+      "Yes",
+      "No"
+    ],
+    [
+      "Icons grouped into fences",
+      "Yes",
+      "Yes"
+    ],
+    [
+      "Tabs",
+      "Yes",
+      "Yes"
+    ],
+    [
+      "Rules that sort new files",
+      "Yes",
+      "Yes"
+    ],
+    [
+      "Folder fences",
+      "Yes",
+      "Yes"
+    ],
+    [
+      "Peek shortcut",
+      "Yes",
+      "Yes"
+    ],
+    [
+      "Windows versions",
+      "Windows 10 and 11",
+      "Windows 10 and 11"
+    ]
+  ],
+  "extras_title": "What else PecoFence does",
+  "extras": [
+    "Smart fences: save a search as a fence, such as the downloads of the last 7 days or every file over 1 GB, and matching files show up by themselves.",
+    "Let your AI agent set it up: the built-in command line tool lets Claude Code, Codex and Cursor read and change your layout, appearance and sorting rules.",
+    "Search finds Chinese names by pinyin, and tool fences have a plugin store."
+  ],
+  "faq_title": "Questions people ask",
+  "faq": [
+    [
+      "Is there a free alternative to Stardock Fences?",
+      "Yes, PecoFence. It is free and open source under the Apache 2.0 license, and it has the fences, tabs, sorting rules, folder fences and Peek that Fences has."
+    ],
+    [
+      "Does PecoFence work on Windows 10?",
+      "Yes. It runs on Windows 10 1809 or later and on Windows 11 22H2 or later. The Microsoft Store edition needs Windows 10 2004 or later."
+    ],
+    [
+      "Does PecoFence move my files?",
+      "No. Sorting rules only change which fence shows a file, and the file stays where it is on disk. Moves you start yourself work exactly as in File Explorer."
+    ],
+    [
+      "How much memory does PecoFence use?",
+      "About 2 to 5 MB at rest in Task Manager. It is a native Rust application, and the Settings window loads WebView2 only while it is open."
+    ],
+    [
+      "How do I install PecoFence?",
+      "Install it from the Microsoft Store, or run winget install DayuanJiang.PecoFence. A portable ZIP and an installer are on the GitHub releases page."
+    ],
+    [
+      "What happens to my desktop when I exit PecoFence?",
+      "Your desktop icons come back when you exit, and the Windows desktop works as usual."
+    ]
+  ],
+  "get": "Get PecoFence",
+  "manual": "Read the manual",
+  "source": "The price and features of Fences come from Stardock's website, its Fences 7 release announcement of 18 November 2026 and its published changelog.",
+  "band_title": "Coming from Stardock Fences?",
+  "band_text": "Fences, tabs, sorting rules, folder fences and Peek: PecoFence has them all, and it is free and open source.",
+  "band_button": "See PecoFence next to Fences"
+}
